@@ -1,0 +1,145 @@
+# Example configuration for agent6. Copy to agent6.toml and edit.
+# Every field is REQUIRED. Missing fields cause `agent6 check-config` to fail.
+
+[agent6]
+config_version = 1
+
+# =============================================================================
+# Providers
+# =============================================================================
+# Each [providers.<name>] block declares ONE backend you can call. The
+# table key (<name>) is yours to pick — you reference it from
+# [models.<role>] below. Configure as many as you want; at least one is
+# required, and every role must route to one that exists.
+#
+# Two `kind`s are supported:
+#   - "anthropic"      → the Anthropic Messages endpoint.
+#   - "openai"  → any OpenAI Chat Completions-compatible endpoint
+#                        (OpenAI itself, OpenRouter, Ollama, vLLM, LM
+#                        Studio, llama.cpp's server, etc.). Each separate
+#                        endpoint gets its OWN [providers.<name>] block
+#                        with its own api_key_env / base_url — that's how
+#                        you run OpenAI and OpenRouter side-by-side.
+
+[providers.anthropic]
+kind = "anthropic"
+api_key_env = "ANTHROPIC_API_KEY"
+prompt_caching = true
+
+# OpenAI proper:
+# [providers.openai]
+# kind = "openai"
+# api_key_env = "OPENAI_API_KEY"
+
+# OpenRouter (proxy to ~100 models incl. Llama 3, Mixtral, DeepSeek):
+# [providers.openrouter]
+# kind = "openai"
+# api_key_env = "OPENROUTER_API_KEY"
+# base_url = "https://openrouter.ai/api/v1"
+# extra_headers = { "HTTP-Referer" = "https://github.com/you/your-repo", "X-Title" = "agent6" }
+
+# Ollama (local, no auth — omit api_key_env entirely):
+# [providers.ollama]
+# kind = "openai"
+# base_url = "http://localhost:11434/v1"
+
+# vLLM / LM Studio / llama.cpp server, etc.:
+# [providers.local]
+# kind = "openai"
+# base_url = "http://localhost:8000/v1"
+
+# =============================================================================
+# Role routing
+# =============================================================================
+# Pick which provider (by table-key name above) and which model serves each
+# sub-agent role. EVERY role must be present. A common mix-and-match shape:
+#
+#   planner    -> anthropic     (strong reasoning)
+#   worker     -> openrouter    (cheaper bulk edits)
+#   critic     -> anthropic     (cheap fast model from same family)
+#   reviewer   -> anthropic     (cross-vendor review of worker diffs)
+#   summarizer -> ollama        (free local compression of long output)
+
+[models.planner]
+provider = "anthropic"
+model = "claude-opus-4-5"
+
+[models.worker]
+provider = "anthropic"
+model = "claude-sonnet-4-5"
+
+[models.critic]
+provider = "anthropic"
+model = "claude-sonnet-4-5"
+
+[models.reviewer]
+provider = "anthropic"
+model = "claude-opus-4-5"
+
+[models.summarizer]
+provider = "anthropic"
+model = "claude-haiku-4-5"
+
+[sandbox]
+# "auto"     picks the strongest profile this kernel + container can run.
+# "strict"   = user/mount/pid/ipc/uts/net namespaces + pivot_root + landlock
+#              + seccomp + capset(0) + rlimits + NO_NEW_PRIVS.
+#              `agent6 run` REFUSES to start if 'strict' is asked for but the
+#              host blocks unprivileged user namespaces.
+# "hardened" = no namespaces, but still landlock + seccomp + capset(0) +
+#              rlimits + NO_NEW_PRIVS. Works under default-seccomp Docker.
+profile = "auto"
+# "no" | "provider_only" | "allow"
+# "provider_only" allows the host endpoints of every configured provider.
+network = "provider_only"
+# "yes" | "no" | "ask"
+run_commands = "ask"
+
+[git]
+require_clean_worktree = true
+auto_stash = false
+# When true, each run cuts a fresh `agent6/<slug>` branch off HEAD. When
+# false, agent6 stays on the current branch and just remembers the
+# starting sha (so `commit_strategy` finalization can still rewind).
+branch_per_run = true
+# All strategies commit once per plan step during the run — that's what
+# gives the reviewer clean per-step diffs and lets resume pick up after
+# a crash. The strategy only governs end-of-run FINALIZATION:
+#
+# "per_step" → leave the per-step commits as the final history.
+#              Best for blame + bisect, produces N commits.
+# "squash"   → soft-reset the branch back to the run's starting sha and
+#              produce ONE combined commit listing every step. The
+#              per-step commits remain reachable via reflog for recovery.
+# "stage"    → soft-reset only: changes are left staged for you to
+#              inspect and commit (or split) by hand.
+# "none"     → mixed-reset: changes land in the worktree unstaged. You
+#              review `git diff` and commit (or discard) manually.
+commit_strategy = "per_step"
+allow_push = false
+allow_force = false
+allow_history_rewrite = false
+
+# Optional commit identity overrides. All three fields default to None, in
+# which case agent6 honors the project's existing `git config user.name` /
+# `user.email`. If neither an override nor a usable git config is present,
+# `agent6 run` refuses to start (it will not silently commit as an empty
+# identity).
+#
+# Use `coauthor` to tag commits with the human operator's name, e.g.
+# `coauthor = "Alice <alice@example.com>"` appends a `Co-authored-by:` trailer.
+# [git.commit]
+# name = "agent6-bot"
+# email = "agent6@example.com"
+# coauthor = "Alice <alice@example.com>"
+
+[workflow]
+default = "implement"
+# What "step succeeded" means. Required.
+verify_command = ["uv", "run", "pytest", "-x"]
+
+[budget]
+# Hard stop. When either ceiling is reached the run aborts with exit code 3.
+# The run is resumable: bump the limit and `agent6 run --resume <run-id>`.
+max_input_tokens = 2000000
+max_output_tokens = 200000

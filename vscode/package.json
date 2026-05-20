@@ -1,0 +1,28 @@
+{
+  "name": "agent6-tail",
+  "displayName": "agent6: tail run",
+  "description": "Tail a running or completed agent6 run by following its logs.jsonl",
+  "publisher": "agent6",
+  "version": "0.0.1",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other"],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "agent6.tailRun",
+        "title": "agent6: Tail a run"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.0"
+  }
+}

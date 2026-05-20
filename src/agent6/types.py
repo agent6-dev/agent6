@@ -1,0 +1,85 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Eric Lesiuta
+"""Internal value types — frozen dataclasses, constructed by us only.
+
+Compare with `agent6.models` which holds pydantic models at LLM/config boundaries.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Literal
+
+NetworkMode = Literal["no", "provider_only", "allow"]
+TernaryMode = Literal["no", "ask", "yes"]
+SandboxProfile = Literal["strict", "hardened"]
+
+
+@dataclass(frozen=True, slots=True)
+class CommandResult:
+    """Result of running a command (in or out of the jail)."""
+
+    argv: tuple[str, ...]
+    returncode: int
+    stdout: str
+    stderr: str
+    duration_s: float
+
+    @property
+    def ok(self) -> bool:
+        return self.returncode == 0
+
+
+@dataclass(frozen=True, slots=True)
+class JailPolicy:
+    """What the jail is allowed to do for a single child invocation."""
+
+    cwd: Path
+    argv: tuple[str, ...]
+    profile: SandboxProfile = "strict"
+    env: tuple[tuple[str, str], ...] = ()
+    allow_network: bool = False
+    extra_ro_paths: tuple[Path, ...] = ()
+    extra_rw_paths: tuple[Path, ...] = ()
+    timeout_s: float = 600.0
+
+
+@dataclass(frozen=True, slots=True)
+class RepoSummary:
+    """Compact view of a repository handed to the planner."""
+
+    root: Path
+    branch: str
+    head_sha: str
+    file_count: int
+    top_level: tuple[str, ...]
+    agents_md: str
+    recent_log: str
+
+
+@dataclass(frozen=True, slots=True)
+class FileContext:
+    """Files relevant to a single workflow step, gathered deterministically by the workflow."""
+
+    files: tuple[tuple[Path, str], ...] = field(default_factory=tuple)
+
+    def as_text(self, max_chars_per_file: int = 20_000) -> str:
+        chunks: list[str] = []
+        for path, content in self.files:
+            body = (
+                content
+                if len(content) <= max_chars_per_file
+                else (content[:max_chars_per_file] + "\n…[truncated]…\n")
+            )
+            chunks.append(f"### {path}\n```\n{body}\n```")
+        return "\n\n".join(chunks)
+
+
+@dataclass(frozen=True, slots=True)
+class SandboxReport:
+    """Result of one sandbox self-test."""
+
+    name: str
+    ok: bool
+    detail: str

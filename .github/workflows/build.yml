@@ -1,0 +1,60 @@
+name: build
+
+# Builds the Python wheel + sdist. The hatch hook (hatch_build.py) runs
+# `cargo build --release --locked` against jail/Cargo.toml as part of the
+# wheel build and bundles the resulting agent6-jail binary inside the
+# wheel under agent6/sandbox/_bin/.
+#
+# Only actions from `actions/*`, `astral-sh/*`, and `pypa/*` are used and
+# pinned to the latest immutable tag. Rust comes pre-installed on the
+# `ubuntu-24.04` runner image, so no third-party toolchain or cache action
+# is needed.
+
+on:
+  push:
+    branches: [master, main]
+    tags: ["v*"]
+  pull_request:
+  workflow_call:
+    outputs:
+      wheel_artifact:
+        description: Name of the uploaded wheel/sdist artifact.
+        value: ${{ jobs.build.outputs.wheel_artifact }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build wheel + sdist (jail bundled by hatch hook)
+    runs-on: ubuntu-24.04
+    outputs:
+      wheel_artifact: ${{ steps.names.outputs.wheel }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Verify Rust toolchain is present on the runner
+        run: |
+          cargo --version
+          rustc --version
+
+      - name: Build wheel + sdist (hatch hook compiles + bundles agent6-jail)
+        run: uv build --wheel --sdist --out-dir dist/
+
+      - name: Verify wheel metadata
+        run: uv tool run --from twine twine check dist/*
+
+      - id: names
+        run: echo "wheel=agent6-dist" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: agent6-dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14

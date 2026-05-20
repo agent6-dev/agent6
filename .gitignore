@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+.eggs/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# Rust
+jail/target/
+# Build-hook output: bundled jail binary copied into the package tree by
+# hatch_build.py during `uv sync` / `uv build`.
+src/agent6/sandbox/_bin/
+
+# Editor
+.vscode/*.log
+*.swp
+
+# agent6 runtime
+.agent6/
+.agent6-self-review/
+agent6.toml

@@ -1,0 +1,160 @@
+# tach module-boundary configuration.
+# Enforces the dependency graph declared in the plan.
+
+exclude = [
+  "**/.venv/**",
+  "**/tests/**",
+  "**/target/**",
+]
+source_roots = ["src"]
+exact = true
+forbid_circular_dependencies = true
+
+[[modules]]
+path = "agent6"
+depends_on = []
+
+[[modules]]
+path = "agent6.cli"
+depends_on = [
+  "agent6.config",
+  "agent6.detect",
+  "agent6.sandbox",
+  "agent6.workflows",
+  "agent6.models",
+  "agent6.types",
+  "agent6.providers", "agent6", "agent6.tools",
+  "agent6.memory",
+  "agent6.budget",
+  "agent6.events",
+  "agent6.git_ops",
+  "agent6.init",
+  "agent6.ui",
+  "agent6.graph.client",
+  "agent6.graph.curator",
+  "agent6.graph.models",
+  "agent6.graph.storage",
+  "agent6.run_id",
+]
+
+[[modules]]
+path = "agent6.workflows"
+depends_on = [
+  "agent6.agents",
+  "agent6.tools",
+  "agent6.git_ops",
+  "agent6.models",
+  "agent6.types",
+  "agent6.config",
+  "agent6.providers",
+  "agent6.events",
+  "agent6.graph.client",
+  "agent6.graph.curator",
+  "agent6.graph.models",
+  "agent6.graph.storage",
+]
+
+[[modules]]
+path = "agent6.agents"
+depends_on = [
+  "agent6.providers",
+  "agent6.models",
+  "agent6.types",
+  "agent6.graph.models",
+]
+
+[[modules]]
+path = "agent6.providers"
+depends_on = ["agent6.budget"]
+
+[[modules]]
+path = "agent6.events"
+depends_on = []
+
+[[modules]]
+path = "agent6.ui"
+depends_on = []
+
+[[modules]]
+path = "agent6.init"
+depends_on = []
+
+[[modules]]
+path = "agent6.budget"
+depends_on = []
+
+[[modules]]
+path = "agent6.sandbox"
+depends_on = [ "agent6.types"]
+
+[[modules]]
+path = "agent6.tools"
+depends_on = ["agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.config", "agent6.events"]
+
+[[modules]]
+path = "agent6.tools.schema"
+depends_on = []
+
+[[modules]]
+path = "agent6.git_ops"
+depends_on = ["agent6.types"]
+
+[[modules]]
+path = "agent6.config"
+depends_on = []
+
+[[modules]]
+path = "agent6.detect"
+depends_on = ["agent6.types"]
+
+[[modules]]
+path = "agent6.models"
+depends_on = []
+
+[[modules]]
+path = "agent6.types"
+depends_on = []
+
+[[modules]]
+path = "agent6.memory"
+depends_on = ["agent6.graph.ulid"]
+
+[[modules]]
+path = "agent6.graph"
+depends_on = []
+
+[[modules]]
+path = "agent6.graph.models"
+depends_on = []
+
+[[modules]]
+path = "agent6.graph.ulid"
+depends_on = []
+
+[[modules]]
+path = "agent6.run_id"
+depends_on = ["agent6._data", "agent6.graph.ulid"]
+
+[[modules]]
+path = "agent6._data"
+depends_on = []
+
+[[modules]]
+path = "agent6.graph.storage"
+depends_on = ["agent6.graph.models"]
+
+[[modules]]
+path = "agent6.graph.curator"
+depends_on = ["agent6.graph.models", "agent6.graph.storage", "agent6.graph.ulid"]
+
+[[modules]]
+path = "agent6.graph.ipc"
+depends_on = []
+
+[[modules]]
+path = "agent6.graph.client"
+depends_on = ["agent6.graph.ipc", "agent6.graph.models"]
+
+[[modules]]
+path = "agent6.graph.server"
+depends_on = ["agent6.graph.curator", "agent6.graph.ipc", "agent6.graph.models", "agent6.graph.storage"]
