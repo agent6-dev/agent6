@@ -47,6 +47,17 @@ struct Policy {
     extra_ro_paths: Vec<PathBuf>,
     #[serde(default)]
     extra_rw_paths: Vec<PathBuf>,
+    /// Paths inside `cwd` to make READ-ONLY from the child's view. In
+    /// strict, these are re-bound RO on top of the workspace mount. In
+    /// hardened (no mount namespace), the Landlock ruleset switches from
+    /// "RW on cwd" to "R on cwd + RW on each top-level entry except
+    /// these" — same end result for files that exist at jail-launch time,
+    /// at the cost of denying writes to new top-level entries created
+    /// after the jail starts. Used to keep an LLM-driven `run_command`
+    /// from rewriting `.git`, `agent6.toml`, or `.agent6/`. Each entry
+    /// must be absolute; entries that don't exist on disk are skipped.
+    #[serde(default)]
+    extra_protect_paths: Vec<PathBuf>,
     #[serde(default = "default_timeout")]
     timeout_s: f64,
 }
@@ -253,6 +264,77 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
         Some(""),
     )
     .map_err(io_err)?;
+    // Re-bind each protect path RO on top of the workspace mount. Subdirs
+    // and individual files are both supported; non-existent entries are
+    // skipped silently so a project without (e.g.) a `.agent6/` dir is not
+    // a fatal config error.
+    for src in &policy.extra_protect_paths {
+        // Reject paths outside cwd defensively (Python side filters them too,
+        // but the launcher is its own trust boundary).
+        let rel = match src.strip_prefix(&policy.cwd) {
+            Ok(r) => r,
+            Err(_) => {
+                eprintln!(
+                    "agent6-jail: skipping protect_path {} (not under cwd {})",
+                    src.display(),
+                    policy.cwd.display(),
+                );
+                continue;
+            }
+        };
+        if !src.exists() {
+            continue;
+        }
+        let target = cwd_in.join(rel);
+        // Ensure the mount point exists inside our new rootfs (it should,
+        // via the cwd bind, but be defensive for first-run-on-fresh-repo).
+        if src.is_dir() {
+            fs::create_dir_all(&target)?;
+        } else if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent)?;
+            if !target.exists() {
+                fs::File::create(&target)?;
+            }
+        }
+        // Bind the original host path onto the target inside the new rootfs,
+        // then remount read-only. Binding from the host path (rather than
+        // self-binding inside the new mount) avoids EPERM on kernels that
+        // refuse re-binding paths already covered by a recursive parent
+        // bind in a user namespace.
+        mount(
+            Some(src.as_path()),
+            &target,
+            Some(""),
+            MsFlags::MS_BIND,
+            Some(""),
+        )
+        .map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!("protect bind {} -> {}: {e}", src.display(), target.display()),
+            )
+        })?;
+        mount(
+            Some(""),
+            &target,
+            Some(""),
+            // MS_NOSUID | MS_NODEV are required on the remount in a user
+            // namespace — the kernel refuses to clear them, and bind
+            // remounts in older kernels do not preserve them automatically.
+            MsFlags::MS_BIND
+                | MsFlags::MS_REMOUNT
+                | MsFlags::MS_RDONLY
+                | MsFlags::MS_NOSUID
+                | MsFlags::MS_NODEV,
+            Some(""),
+        )
+        .map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!("protect remount-ro {}: {e}", target.display()),
+            )
+        })?;
+    }
     // Extra RO paths.
     for src in &policy.extra_ro_paths {
         if !src.exists() {
@@ -382,12 +464,89 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
         .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("create ruleset: {e}")))?;
     let mut ruleset = ruleset;
 
-    // Read+write: the child's working directory and any explicitly granted rw paths.
-    let mut rw_paths: Vec<PathBuf> = vec![policy.cwd.clone(), PathBuf::from("/tmp")];
+    // protect_paths: in hardened we cannot do a bind-remount-RO (no mount
+    // namespace). Instead, we DON'T grant RW on cwd as a whole. We grant R
+    // on cwd recursively (so .git etc. stay readable), then enumerate
+    // cwd's top-level entries and grant RW only to the ones that are not
+    // in the protect set. Landlock rules are purely additive within a
+    // single ruleset, so if no rule grants W on a path, writes to it are
+    // denied — that's what gives us the read-only carve-out.
+    //
+    // Limitation: new top-level entries created by the child at the root
+    // of cwd are not in any RW rule and will be read-only. Anything
+    // inside an existing top-level dir (src/, tests/, …) gets the full
+    // recursive RW rule and behaves normally.
+    let has_protect = !policy.extra_protect_paths.is_empty();
+    let protect_set: std::collections::HashSet<PathBuf> = policy
+        .extra_protect_paths
+        .iter()
+        .filter_map(|p| p.canonicalize().ok().or_else(|| Some(p.clone())))
+        .collect();
+
+    if has_protect {
+        // R on cwd recursively, so protected paths remain readable.
+        if let Ok(fd) = PathFd::new(&policy.cwd) {
+            ruleset = ruleset.add_rule(PathBeneath::new(fd, access_read)).map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("rule r cwd {}: {e}", policy.cwd.display()),
+                )
+            })?;
+        }
+        // RW only on non-protected top-level entries.
+        let entries = match fs::read_dir(&policy.cwd) {
+            Ok(it) => it,
+            Err(e) => {
+                return Err(io::Error::new(
+                    e.kind(),
+                    format!("read_dir cwd {}: {e}", policy.cwd.display()),
+                ));
+            }
+        };
+        for entry in entries.flatten() {
+            let p = entry.path();
+            let canon = p.canonicalize().unwrap_or_else(|_| p.clone());
+            if protect_set.contains(&canon) || protect_set.contains(&p) {
+                continue;
+            }
+            if let Ok(fd) = PathFd::new(&p) {
+                ruleset = ruleset.add_rule(PathBeneath::new(fd, access_all)).map_err(|e| {
+                    io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("rule rw {}: {e}", p.display()),
+                    )
+                })?;
+            }
+        }
+    } else {
+        // No protect set: original behavior, RW on cwd as a whole.
+        if let Ok(fd) = PathFd::new(&policy.cwd) {
+            ruleset = ruleset.add_rule(PathBeneath::new(fd, access_all)).map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("rule rw cwd {}: {e}", policy.cwd.display()),
+                )
+            })?;
+        }
+    }
+
+    // Read+write: /tmp and any explicitly granted rw paths.
+    let mut rw_paths: Vec<PathBuf> = vec![PathBuf::from("/tmp")];
     for p in &policy.extra_rw_paths {
         rw_paths.push(p.clone());
     }
     for p in &rw_paths {
+        // Skip any rw_path that would shadow a protect_path. Landlock
+        // rules combine permissively: if any rule grants W on a path,
+        // the write is allowed. A blanket RW grant on an ancestor of a
+        // protected path defeats the carve-out, so drop the ancestor.
+        if has_protect && protect_set.iter().any(|prot| prot.starts_with(p)) {
+            eprintln!(
+                "agent6-jail: hardened: skipping rw grant on {} (would shadow a protect_path)",
+                p.display()
+            );
+            continue;
+        }
         if let Ok(fd) = PathFd::new(p) {
             ruleset = ruleset.add_rule(PathBeneath::new(fd, access_all)).map_err(|e| {
                 io::Error::new(io::ErrorKind::Other, format!("rule rw {}: {e}", p.display()))

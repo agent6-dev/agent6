@@ -103,3 +103,81 @@ def test_jail_blocks_write_outside_workspace(jail_bin: Path, tmp_path: Path) -> 
     # The file system inside the jail is bind-mounted onto /tmp; the host /tmp marker
     # should NOT exist because the in-jail /tmp is a fresh tmpfs.
     assert not marker.exists()
+
+
+def test_jail_protect_paths_block_writes_to_subdir(jail_bin: Path, tmp_path: Path) -> None:
+    """extra_protect_paths must make a sub-directory of cwd read-only."""
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir()
+    (git_dir / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+    # First confirm without protection the write succeeds inside the jail.
+    res_unprotected = run_in_jail(
+        JailPolicy(
+            cwd=tmp_path,
+            argv=("/bin/sh", "-c", "echo pwned > .git/HEAD && cat .git/HEAD"),
+            timeout_s=10.0,
+        )
+    )
+    assert res_unprotected.returncode == 0
+    assert "pwned" in res_unprotected.stdout
+    # Reset and protect.
+    (git_dir / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+    res_protected = run_in_jail(
+        JailPolicy(
+            cwd=tmp_path,
+            argv=("/bin/sh", "-c", "echo pwned > .git/HEAD; cat .git/HEAD"),
+            extra_protect_paths=(git_dir,),
+            timeout_s=10.0,
+        )
+    )
+    # The shell write fails (EROFS) but `cat` still runs; HEAD is unchanged.
+    assert "pwned" not in res_protected.stdout
+    assert (git_dir / "HEAD").read_text(encoding="utf-8") == "ref: refs/heads/main\n"
+
+
+def test_jail_protect_paths_block_writes_to_file(jail_bin: Path, tmp_path: Path) -> None:
+    """extra_protect_paths must also protect individual files (e.g. agent6.toml)."""
+    cfg = tmp_path / "agent6.toml"
+    cfg.write_text("original\n", encoding="utf-8")
+    res = run_in_jail(
+        JailPolicy(
+            cwd=tmp_path,
+            argv=("/bin/sh", "-c", "echo pwned > agent6.toml; cat agent6.toml"),
+            extra_protect_paths=(cfg,),
+            timeout_s=10.0,
+        )
+    )
+    assert "pwned" not in res.stdout
+    assert cfg.read_text(encoding="utf-8") == "original\n"
+
+
+def test_jail_hardened_protect_paths_block_writes(jail_bin: Path, tmp_path: Path) -> None:
+    """Hardened profile blocks writes to protect_paths via Landlock carve-out.
+
+    Hardened has no mount namespace so it cannot bind-remount RO; instead the
+    launcher switches its Landlock rules from `RW on cwd` to `R on cwd + RW
+    on every top-level entry except the protect set`. End result for paths
+    that exist at jail-launch time is the same: writes are denied.
+    """
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir()
+    (git_dir / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+    # Make a sibling that the worker IS allowed to write to, to prove we
+    # didn't accidentally lock down the whole cwd.
+    (tmp_path / "src").mkdir()
+    res = run_in_jail(
+        JailPolicy(
+            cwd=tmp_path,
+            argv=(
+                "/bin/sh",
+                "-c",
+                "echo ok > src/x.txt && echo pwned > .git/HEAD; cat src/x.txt; cat .git/HEAD",
+            ),
+            profile="hardened",
+            extra_protect_paths=(git_dir,),
+            timeout_s=10.0,
+        )
+    )
+    assert "ok" in res.stdout  # sibling write succeeded
+    assert "pwned" not in res.stdout  # protected write rejected
+    assert (git_dir / "HEAD").read_text(encoding="utf-8") == "ref: refs/heads/main\n"

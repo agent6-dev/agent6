@@ -47,14 +47,16 @@ jobs:
         run: uv build --wheel --sdist --out-dir dist/
 
       - name: Re-tag wheel for PyPI (linux_x86_64 -> manylinux_2_34_x86_64)
-        # `uv build` tags the wheel with the host platform tag
-        # (`linux_x86_64`) because the hatch hook bundles the native
-        # agent6-jail binary. PyPI refuses unqualified `linux_*` tags.
-        # The runner is `ubuntu-24.04` (glibc 2.39), so the bundled
-        # binary is compatible with glibc >= 2.34. Re-tagging is
-        # purely metadata: `wheel tags` rewrites the filename and the
-        # WHEEL metadata in-place; `--remove` deletes the old wheel
-        # so `dist/` only contains the publishable artifact.
+        # `uv build` tags the wheel as `py3-none-linux_x86_64` (set
+        # explicitly by `hatch_build.py`: the only native artifact is the
+        # bundled `agent6-jail` binary, which is independent of the Python
+        # ABI — one wheel covers every interpreter that satisfies
+        # `requires-python = ">=3.12"`). PyPI refuses unqualified `linux_*`
+        # tags. The runner is `ubuntu-24.04` (glibc 2.39), so the bundled
+        # binary is compatible with glibc >= 2.34. Re-tagging is purely
+        # metadata: `wheel tags` rewrites the filename and the WHEEL
+        # metadata in-place; `--remove` deletes the old wheel so `dist/`
+        # only contains the publishable artifact.
         run: |
           uv tool run --from wheel wheel tags \
             --platform-tag manylinux_2_34_x86_64 \

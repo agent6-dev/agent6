@@ -127,6 +127,20 @@ class SandboxConfig(BaseModel):
     # `[providers.*]` block.
     network: Literal["no", "provider_only", "allow"]
     run_commands: Literal["yes", "no", "ask"]
+    # Make `.git/` read-only from the child's view so a worker that gains
+    # `run_command` (e.g. `run_commands = "ask"` + user approval) cannot
+    # `rm -rf .git`, rewrite history, or otherwise corrupt the repository
+    # from inside a child process. The workflow's own commits go through
+    # `git_ops.py` from the agent process (outside the jail) and are
+    # unaffected. Strict re-binds it RO; hardened switches Landlock from
+    # "RW on cwd" to "R on cwd + RW on each top-level entry except the
+    # protect set". Hardened-mode side effect: writes to NEW top-level
+    # entries created at the cwd root after launch are denied.
+    protect_git: bool
+    # Same idea, for `agent6.toml` and `.agent6/` (run state, transcripts,
+    # graph). The curator subprocess has its own jail policy that does
+    # grant `.agent6/` write access; worker children do not.
+    protect_agent6: bool
 
 
 class GitCommitConfig(BaseModel):

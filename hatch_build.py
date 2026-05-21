@@ -106,9 +106,15 @@ class JailBuildHook(BuildHookInterface):
         """Stamp the wheel as platform-specific iff we actually have a binary.
 
         Without this, hatchling builds a `py3-none-any` wheel which is wrong
-        when we embed a native binary. With it, hatchling infers the current
-        interpreter + ABI + platform tag (e.g. `cp312-cp312-linux_x86_64`).
+        when we embed a native binary. With it, we set an explicit
+        `py3-none-linux_x86_64` tag — the only native artifact is the bundled
+        `agent6-jail` binary, which does not depend on the Python ABI, so a
+        single wheel covers every interpreter satisfying `requires-python`
+        (3.12, 3.13, 3.14, …). The CI workflow then retags `linux_*` to
+        `manylinux_2_34_*` for PyPI.
         """
         if dest.is_file():
             build_data["pure_python"] = False
-            build_data["infer_tag"] = True
+            build_data["infer_tag"] = False
+            # py3-none-<plat>: any Python 3, no ABI dependency, host platform.
+            build_data["tag"] = f"py3-none-linux_{os.uname().machine}"

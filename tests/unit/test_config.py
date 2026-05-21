@@ -43,6 +43,8 @@ model = "claude-x"
 profile = "auto"
 network = "provider_only"
 run_commands = "ask"
+protect_git = true
+protect_agent6 = true
 
 [git]
 require_clean_worktree = true

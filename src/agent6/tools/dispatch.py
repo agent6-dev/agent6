@@ -258,12 +258,19 @@ class ToolDispatcher:
 
     def _run_argv_in_jail(self, argv: tuple[str, ...], *, label: str) -> dict[str, Any]:
         allow_network = self._config.sandbox.network == "allow"
+        protect_paths: list[Path] = []
+        if self._config.sandbox.protect_git:
+            protect_paths.append(self._root / ".git")
+        if self._config.sandbox.protect_agent6:
+            protect_paths.append(self._root / "agent6.toml")
+            protect_paths.append(self._root / ".agent6")
         policy = JailPolicy(
             cwd=self._root,
             argv=argv,
             profile=self._sandbox_profile,
             env=tuple(sorted(_passthrough_env().items())),
             allow_network=allow_network,
+            extra_protect_paths=tuple(protect_paths),
         )
         try:
             res: CommandResult = run_in_jail(policy)

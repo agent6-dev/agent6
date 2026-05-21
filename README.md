@@ -8,14 +8,11 @@ Linux-only.
   tool surface.
 - Every child process runs inside `agent6-jail` (Rust + Linux user
   namespaces + Landlock + seccomp).
-- Git operations refuse `push`, `--force`, and history rewrite.
+- The workflow's own git operations refuse `push`, `--force`, and
+  history rewrite; the sandbox additionally re-binds `.git/`,
+  `agent6.toml`, and `.agent6/` read-only inside the jail so worker
+  scripts cannot corrupt them.
 - No web UI, no plugin system, no telemetry, no auto-update.
-
-**Status**: pre-release. The synthetic benchmark in
-[bench/results.md](bench/results.md) passes 8 / 8 tasks across three
-consecutive runs at ~$0.45 each after fourteen iteration cycles (F1-F14).
-The full verify chain (ruff + format + pyright + tach + pytest) is
-292 tests green. Latest PyPI release is 0.0.3 (previous: 0.0.2).
 
 ## Threat model
 
@@ -25,19 +22,60 @@ The worker model is treated as adversarial. It must not be able to:
 - read files outside the project (plus any sibling read-only paths)
 - reach the network except the host:port of each `[providers.*]` block
   (when `sandbox.network = "provider_only"`)
-- rewrite, push, or hard-reset git history
+- corrupt the project's git history or its own configuration / run
+  state from inside the sandbox
 - leave background processes running after the run ends
 
-Enforcement is layered:
+Enforcement is layered, and the threat model bullets above map to layers
+as follows:
 
-- **Landlock** is applied to the agent's own Python process to restrict
-  what *it* can read/write.
-- **`agent6-jail`** (a small Rust binary) wraps every child command:
-  fresh user/mount/pid/ipc/uts/net namespace, pivots into a minimal
-  rootfs, applies Landlock and a seccomp filter, drops capabilities, then
-  execs the child.
+- **`git_ops.py` refusals** (`push`, `--force`, `reset --hard`,
+  `branch -D`, history rewrite) constrain only the *workflow's own*
+  git calls from the agent process. They do not police what the
+  worker does. See [src/agent6/git_ops.py](src/agent6/git_ops.py).
+- **Tool surface** ([src/agent6/tools/schema.py](src/agent6/tools/schema.py)).
+  The LLM cannot directly invoke `shell` or `write_file`. It has
+  `apply_edit`, `read_file`, `list_dir`, `grep`, `run_verify_command`
+  (operator-fixed argv), and — only when `sandbox.run_commands` is
+  `"yes"` or `"ask"` — `run_command(argv)`. The first six tools cannot
+  spawn an LLM-chosen subprocess.
+- **`agent6-jail`** wraps *every* child command (verify, run_command,
+  curator): fresh user/mount/pid/ipc/uts/net namespace, pivots into a
+  minimal rootfs, applies Landlock, seccomp filter, drops
+  capabilities, `NO_NEW_PRIVS`. In strict profile the network
+  namespace is empty when `sandbox.network != "allow"` — `git push`,
+  `curl`, `pip install`, DNS all fail with no route, even from an
+  ad-hoc script that the worker writes and runs via `run_command`.
+- **`sandbox.protect_git` + `sandbox.protect_agent6`** (default `true`)
+  make `.git/`, `agent6.toml`, and `.agent6/` read-only from the
+  child's view. In **strict** they are re-bound RO on top of the
+  workspace mount. In **hardened** (no mount namespace) the launcher
+  switches its Landlock setup from "RW on cwd" to "R on cwd + RW on
+  each top-level entry except the protect set" — same end result for
+  paths that exist when the jail starts, at the cost of denying writes
+  to *new* top-level entries created at the cwd root after launch
+  (anything inside an existing top-level dir like `src/` still gets
+  the full recursive RW rule). This closes the "worker writes a shell
+  script that does `rm -rf .git` or `git reset --hard origin/main`"
+  loophole; the workflow's own commits go through `git_ops.py` from
+  outside the jail and are unaffected.
+- **Landlock on the agent process itself** further restricts what the
+  agent's Python code can read/write outside the jail.
 
-See [SECURITY.md](SECURITY.md) for the per-layer breakdown.
+What is NOT protected:
+
+- If you set `sandbox.run_commands = "yes"` (or `"ask"` and approve)
+  and `sandbox.network = "allow"`, the worker can talk to anywhere on
+  the public internet from inside the sandbox. Don't do this.
+- The protected paths are read-only inside the jail, but the worker
+  can still create *new* files anywhere else under the cwd. A worker
+  that wants to corrupt your project can still write garbage source
+  code; that's what the reviewer + verify_command are for, not the
+  sandbox.
+
+See [SECURITY.md](SECURITY.md) for the per-layer breakdown and
+[ARCHITECTURE.md](ARCHITECTURE.md) for state machines of each
+workflow.
 
 ## Architecture
 
@@ -450,9 +488,3 @@ uv run ruff check && uv run ruff format --check && \
 Security-sensitive changes (anything in `sandbox/`, `tools/`, `git_ops`,
 `providers/`, `graph/curator`) must include a security review note in
 the commit message.
-
-## License
-
-Apache License 2.0. See [LICENSE](LICENSE) for the full text. Every
-source file carries an `SPDX-License-Identifier: Apache-2.0` header and
-a `Copyright 2026 Eric Lesiuta` notice.

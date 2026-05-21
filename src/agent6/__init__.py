@@ -6,4 +6,4 @@ from __future__ import annotations
 
 # Single source of truth for the package version. `pyproject.toml` reads this
 # via `[tool.hatch.version]` so we never have to keep two files in sync.
-__version__ = "0.0.3"
+__version__ = "0.0.4"

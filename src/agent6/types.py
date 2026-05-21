@@ -42,6 +42,13 @@ class JailPolicy:
     allow_network: bool = False
     extra_ro_paths: tuple[Path, ...] = ()
     extra_rw_paths: tuple[Path, ...] = ()
+    # Paths inside ``cwd`` that the launcher must make read-only from the
+    # child's view. Strict re-binds them RO on top of the workspace mount;
+    # hardened switches its Landlock rules from "RW on cwd" to "R on cwd
+    # + RW on each top-level entry except these". Used to keep an
+    # LLM-driven ``run_command`` from rewriting ``.git``, ``agent6.toml``,
+    # or ``.agent6/`` even though those live inside the project root.
+    extra_protect_paths: tuple[Path, ...] = ()
     timeout_s: float = 600.0
 
 

@@ -56,6 +56,12 @@ model = "claude-haiku-4-5"
 profile = "auto"
 network = "provider_only"
 run_commands = "ask"
+# Make .git/ and agent6.toml/.agent6/ read-only from the child's view
+# so a worker cannot rewrite history or forge transcripts from inside
+# a run_command. Works in both profiles (strict: bind-remount-RO;
+# hardened: Landlock carve-out). See agent6.example.toml.
+protect_git = true
+protect_agent6 = true
 
 [git]
 require_clean_worktree = true
