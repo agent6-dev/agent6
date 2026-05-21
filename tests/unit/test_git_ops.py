@@ -135,8 +135,8 @@ def test_commit_all_with_identity_overrides_author(tmp_path: Path) -> None:
         tmp_path,
         "add f",
         identity=CommitIdentity(
-            name="agent6-bot",
-            email="bot@example.com",
+            name="agent6",
+            email="agent6@example.com",
             coauthor="Alice <alice@example.com>",
         ),
     )
@@ -146,7 +146,7 @@ def test_commit_all_with_identity_overrides_author(tmp_path: Path) -> None:
         capture_output=True,
         text=True,
     ).stdout
-    assert "agent6-bot|bot@example.com|" in show
+    assert "agent6|agent6@example.com|" in show
     assert "Co-authored-by: Alice <alice@example.com>" in show
 
 

@@ -18,6 +18,7 @@ depends_on = []
 path = "agent6.cli"
 depends_on = [
   "agent6.config",
+  "agent6.config_fix",
   "agent6.detect",
   "agent6.sandbox",
   "agent6.workflows",
@@ -102,6 +103,10 @@ depends_on = ["agent6.types"]
 [[modules]]
 path = "agent6.config"
 depends_on = []
+
+[[modules]]
+path = "agent6.config_fix"
+depends_on = ["agent6.config", "agent6.init"]
 
 [[modules]]
 path = "agent6.detect"

@@ -139,7 +139,7 @@ class GitCommitConfig(BaseModel):
     as `(no author) <(none)>`.
 
     Set `name` / `email` to override the identity on commits made by this
-    agent (e.g. to commit as `agent6-bot <bot@example.com>`). Set
+    agent (e.g. to commit as `agent6 <agent6@local>`). Set
     `coauthor` to append a `Co-authored-by:` trailer naming the human
     operator (e.g. `"Alice <alice@example.com>"`).
     """

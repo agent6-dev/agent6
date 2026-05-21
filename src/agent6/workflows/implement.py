@@ -8,6 +8,7 @@ The control flow is in Python; the LLM is a typed component, not the orchestrato
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -22,6 +23,7 @@ from agent6.agents import (
     worker_edit,
 )
 from agent6.agents.planner_revise import planner_revise
+from agent6.agents.triage import TaskClassification, triage_classify
 from agent6.config import Config
 from agent6.events import EventSink, UserInputSink
 from agent6.git_ops import (
@@ -53,10 +55,26 @@ from agent6.models import AlignmentAction, AlignmentVerdict, Edit, FileEdit, Pla
 from agent6.providers import Provider
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.types import CommandResult, FileContext, RepoSummary
+from agent6.workflows.profiles import DEFAULT_PROFILE, PROFILES, Profile
 
 
 class WorkflowError(Exception):
     """A workflow encountered an unrecoverable error."""
+
+
+_TEST_PATH_RE = re.compile(
+    r"^diff --git a/(?:.*/)?(?:test_[^/\s]+|[^/\s]+_test\.py|tests?/[^\s]+)\b",
+    re.MULTILINE,
+)
+
+
+def _diff_touches_tests(diff: str) -> bool:
+    """Return True if the unified diff modifies any test file.
+
+    Recognises common Python conventions: `test_*.py`, `*_test.py`, and any
+    file under a `tests/` or `test/` directory at any depth.
+    """
+    return bool(_TEST_PATH_RE.search(diff))
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +111,17 @@ class ImplementWorkflow:
     reviewer: Provider
     critic: Provider
     dispatcher: ToolDispatcher
+    # Stronger model used for the worker's RETRY attempt (e.g. opus when the
+    # primary worker is sonnet). When None, the primary worker provider is
+    # reused for the retry. See bench/results.md tier 4 for cost analysis.
+    worker_escalation: Provider | None = None
+    # Cheap classifier (typically haiku-class) used at the top of ``run`` to
+    # pick a ``Profile``. When None, the workflow uses ``profile`` directly
+    # (or ``DEFAULT_PROFILE`` if both are None). See agents/triage.py.
+    triage: Provider | None = None
+    # Optional pin: when set, triage is skipped and this profile is used.
+    # Useful for tests and bench harnesses that want deterministic dispatch.
+    profile: Profile | None = None
     confirm_plan: Callable[[Plan], bool] = field(default=lambda _p: True)
     logger: Callable[[str], None] = field(default=print)
     graph_client: GraphClient | None = None
@@ -125,17 +154,50 @@ class ImplementWorkflow:
         else:
             branch = repo.branch
 
-        self._log("REFINE_SPEC")
-        refined = critic_refine(self.critic, user_task=user_task, agents_md=repo.agents_md)
-        if refined.open_questions:
-            joined = "\n  - ".join(q.question for q in refined.open_questions)
-            raise WorkflowError(
-                "Open questions from critic — run `agent6 plan new` first to "
-                f"answer them, then `agent6 run` again:\n  - {joined}"
-            )
+        # Pick a workflow profile. Operator pin > triage > conservative default.
+        profile = self._select_profile(user_task=user_task, repo=repo)
 
-        self._log("PLAN")
-        plan = planner_plan(self.planner, refined_task=refined.refined_task, repo=repo)
+        if profile.skip_critic:
+            self._log("REFINE_SPEC (skipped per profile — using raw task)")
+            self._emit("critic.skipped", reason="profile", task_class="trivial_or_single")
+            refined = RefinedSpec(refined_task=user_task)
+        else:
+            self._log("REFINE_SPEC")
+            refined = critic_refine(self.critic, user_task=user_task, agents_md=repo.agents_md)
+            if refined.open_questions:
+                joined = "\n  - ".join(q.question for q in refined.open_questions)
+                raise WorkflowError(
+                    "Open questions from critic — run `agent6 plan new` first to "
+                    f"answer them, then `agent6 run` again:\n  - {joined}"
+                )
+
+        if profile.skip_planner:
+            self._log("PLAN (skipped per profile — synthesising single-step plan)")
+            self._emit("planner.skipped", reason="profile", task_class="trivial")
+            # When the planner is skipped, the synthesised step has no LLM-
+            # selected ``relevant_paths``. Fall back to a deterministic
+            # repo-root scan: every non-hidden file at depth 1 (top-level)
+            # that isn't a directory. For the bench's trivial tasks this is
+            # exactly the right set (e.g. calc.py + test_calc.py + TASK.md);
+            # for larger repos it caps out at a small handful of root files,
+            # which is still strictly better than the empty set (the worker
+            # would otherwise reply "no file contents provided"). Capped at
+            # 12 entries to keep the worker's prompt small.
+            synth_paths = tuple(entry for entry in repo.top_level if not entry.endswith("/"))[:12]
+            plan = Plan(
+                summary=refined.refined_task,
+                steps=(
+                    Step(
+                        title=refined.refined_task[:80].strip() or "implement",
+                        rationale="single-step plan synthesised by triage (TRIVIAL)",
+                        acceptance=refined.refined_task,
+                        relevant_paths=synth_paths,
+                    ),
+                ),
+            )
+        else:
+            self._log("PLAN")
+            plan = planner_plan(self.planner, refined_task=refined.refined_task, repo=repo)
         self._log(f"  plan: {plan.summary}")
         for i, step in enumerate(plan.steps, 1):
             self._log(f"  {i}. {step.title}")
@@ -154,6 +216,11 @@ class ImplementWorkflow:
         root_node_id: str | None = None
         if self.graph_client is not None:
             root_node_id, step_node_ids = self._seed_graph_from_plan(plan)
+
+        # Expose the selected profile to _run_step. We store it on self
+        # (rather than threading through every step call) so the public
+        # signature of _run_step stays stable.
+        self._active_profile = profile
 
         original_task = refined.refined_task
         results: list[StepResult] = []
@@ -383,7 +450,56 @@ class ImplementWorkflow:
             duration_s=float(out.get("duration_s", 0.0)),
         )
 
-    def _run_step(
+    def _select_profile(self, *, user_task: str, repo: RepoSummary) -> Profile:
+        """Pick the workflow ``Profile`` for this run.
+
+        Precedence:
+        1. ``self.profile`` (operator pin) — used verbatim.
+        2. ``self.triage`` set → call the triage classifier and look up the
+           profile in ``PROFILES``. On classifier error, fall back to
+           ``DEFAULT_PROFILE`` and emit ``triage.failed``.
+        3. Both None → ``DEFAULT_PROFILE`` (full pipeline, conservative).
+        """
+        if self.profile is not None:
+            self._emit("profile.pinned", profile=self._profile_name(self.profile))
+            self._log(f"PROFILE: {self._profile_name(self.profile)} (pinned)")
+            return self.profile
+        if self.triage is None:
+            self._emit("profile.default", reason="no_triage_provider")
+            self._log(f"PROFILE: {self._profile_name(DEFAULT_PROFILE)} (default; no triage)")
+            return DEFAULT_PROFILE
+        try:
+            cls: TaskClassification = triage_classify(
+                self.triage,
+                user_task=user_task,
+                agents_md=repo.agents_md,
+                repo=repo,
+            )
+        except Exception as exc:
+            self._emit("triage.failed", error=str(exc)[:400])
+            self._log(f"  triage failed: {exc} — using default profile")
+            return DEFAULT_PROFILE
+        profile = PROFILES[cls.task_class]
+        self._emit(
+            "triage.classified",
+            task_class=str(cls.task_class.value),
+            confidence=cls.confidence,
+            reasoning=cls.reasoning[:200],
+        )
+        self._log(
+            f"PROFILE: {cls.task_class.value} "
+            f"(confidence={cls.confidence:.2f}) — {cls.reasoning[:120]}"
+        )
+        return profile
+
+    @staticmethod
+    def _profile_name(profile: Profile) -> str:
+        for cls, p in PROFILES.items():
+            if p is profile:
+                return str(cls.value)
+        return "custom"
+
+    def _run_step(  # noqa: PLR0912, PLR0915
         self,
         step: Step,
         *,
@@ -410,15 +526,25 @@ class ImplementWorkflow:
             )
 
         attempt_feedback = ""
-        for attempt in range(2):
+        active_profile = getattr(self, "_active_profile", None) or DEFAULT_PROFILE
+        max_attempts = max(1, active_profile.max_step_retries)
+        for attempt in range(max_attempts):
             # Re-gather file context EVERY attempt: previous attempts may have
             # partially modified files (some edits applied, then one failed),
             # so the worker must always see current on-disk content or its
             # next `old_string` will not match.
             ctx = self._gather_files(step)
+            worker_provider = self.worker
+            if (
+                attempt >= active_profile.escalate_after_attempt
+                and active_profile.enable_escalation
+                and self.worker_escalation is not None
+            ):
+                worker_provider = self.worker_escalation
+                self._emit("worker.escalated", step=step.title, attempt=attempt + 1)
             try:
                 edit = worker_edit(
-                    self.worker,
+                    worker_provider,
                     step=step,
                     file_context=ctx,
                     previous_attempt_feedback=attempt_feedback,
@@ -427,6 +553,21 @@ class ImplementWorkflow:
                     sibling_commits=sibling_commits,
                 )
             except Exception as exc:
+                # A single attempt failing inside the worker call (JSON parse,
+                # provider transient, validation error) shouldn't abort the
+                # whole step if retries remain. Consume the attempt, feed the
+                # error back, and let the loop carry on. Only the LAST attempt
+                # marks the step failed — matching the behaviour of an apply
+                # failure or verify failure on the last loop iteration.
+                if attempt + 1 < max_attempts:
+                    self._emit(
+                        "worker.error",
+                        step=step.title,
+                        attempt=attempt + 1,
+                        error=str(exc)[:300],
+                    )
+                    attempt_feedback = f"worker error: {exc}"
+                    continue
                 self._mark_node_failed(node_id, f"worker error: {exc}")
                 return StepResult(title=step.title, status="failed", notes=f"worker error: {exc}")
 
@@ -450,20 +591,50 @@ class ImplementWorkflow:
                     commit_sha=start_sha,
                     notes="no-op: step already satisfied by prior work",
                 )
-            try:
-                review = reviewer_review(
-                    self.reviewer,
-                    step=step,
-                    diff=diff,
-                    verify_output=(verify.stdout + verify.stderr),
-                    verify_ok=verify.ok,
-                    agents_md=agents_md,
+            # Green-verify fast-path: if the verify command succeeded and the
+            # diff did not modify any test file, the diff is consistent with
+            # the project's executable specification — there is no value in
+            # spending a (typically opus-class) reviewer call to second-guess
+            # passing tests. Skip the reviewer entirely and treat as pass.
+            # See bench/results.md tier 3 (vending FSM) and tier 4 (multibug)
+            # for the empirical history that motivated this short-circuit.
+            review = None
+            review_failed_reason = ""
+            # Reviewer-on-failure is purely diagnostic — it analyzes the
+            # failing diff so the next attempt can do better. When a retry
+            # is queued (escalation OR cheap-retry), the next worker call
+            # already receives the verify output and the previous diff in
+            # its prompt, so the diagnostic call is redundant and just adds
+            # one opus call per failed step. Only run the reviewer on the
+            # LAST attempt — at that point the workflow is about to fail
+            # the step and the reviewer's proposed_followup is the only
+            # remaining signal for any human-driven follow-up.
+            # See bench/results.md tier-4 reruns for the empirical history.
+            retry_queued = not verify.ok and attempt + 1 < max_attempts
+            if verify.ok and not _diff_touches_tests(diff):
+                self._emit(
+                    "reviewer.skipped",
+                    step=step.title,
+                    reason="green_verify_no_test_changes",
                 )
-            except Exception as exc:
-                review = None
-                review_failed_reason = f"reviewer error: {exc}"
+            elif retry_queued:
+                self._emit(
+                    "reviewer.skipped",
+                    step=step.title,
+                    reason="retry_queued",
+                )
             else:
-                review_failed_reason = ""
+                try:
+                    review = reviewer_review(
+                        self.reviewer,
+                        step=step,
+                        diff=diff,
+                        verify_output=(verify.stdout + verify.stderr),
+                        verify_ok=verify.ok,
+                        agents_md=agents_md,
+                    )
+                except Exception as exc:
+                    review_failed_reason = f"reviewer error: {exc}"
 
             if verify.ok and (review is None or review.verdict == "pass"):
                 trailers = {

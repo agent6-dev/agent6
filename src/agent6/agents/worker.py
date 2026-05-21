@@ -40,6 +40,16 @@ sites, what counts as scope creep, refactoring discipline, error-handling
 philosophy — comes from the AGENTS.md content in the user message. Follow it.
 If AGENTS.md is empty, default to minimum-necessary edits matching the file's
 existing style.
+
+Tests are the authoritative behavioural specification. When a relevant_paths
+test file pins down what a function must do (which inputs raise, which return
+which value, which state transitions are legal), match that behaviour even if
+prose comments, docstrings, or summary headers in the production file
+disagree. Prose can be stale or summarised; the tests are what verify_command
+actually checks. If a docstring's "summary" line and its detailed transition
+table disagree, the table (and the tests) win. If a docstring contradicts a
+test outright, treat the test as the spec and add a brief `notes` entry
+flagging the discrepancy.
 """
 
 

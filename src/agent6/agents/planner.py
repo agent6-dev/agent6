@@ -34,6 +34,18 @@ Rules:
   pattern: changing `render(lines, numbered)` to `render(lines, numbered,
   reverse)` and leaving the test file update for the next step; renaming a
   method in one step and updating callers in the next.
+- Interdependent stubs / cross-method protocols: when several methods of the
+  same class (or several functions in the same module) are all stubs and the
+  tests for ANY one of them exercise the others — for example a state machine
+  where `test_happy_path` calls `insert` then `select` then verifies a final
+  state, or a parser whose `tokenize` test calls `lex` and `peek` — the whole
+  cluster is ONE step. Splitting `implement insert`, `implement select`,
+  `implement refund` into three steps is forbidden because step 1's verify
+  must run tests that call `select` and `refund`, which are still stubs, so
+  verify cannot go green until all three are done. The signal is: multiple
+  stub bodies in the same file whose tests are not independently runnable.
+  When you see that pattern, plan ONE step "implement the FooBar protocol"
+  with all the relevant methods, not one step per method.
 - Behaviour, not shape: each step's `acceptance` must describe an OBSERVABLE
   effect — what the code now does that it didn't before — not just the static
   shape of the code change. Acceptance that only says "function now takes a

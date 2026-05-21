@@ -11,10 +11,11 @@ Linux-only.
 - Git operations refuse `push`, `--force`, and history rewrite.
 - No web UI, no plugin system, no telemetry, no auto-update.
 
-**Status**: pre-release, version `0.0.1`. 208 tests pass. The synthetic
-benchmark in [bench/results.md](bench/results.md) surfaced four
-reproducible workflow issues that should land before a tagged 0.1.0 PyPI
-release.
+**Status**: pre-release. The synthetic benchmark in
+[bench/results.md](bench/results.md) passes 8 / 8 tasks across three
+consecutive runs at ~$0.45 each after fourteen iteration cycles (F1-F14).
+The full verify chain (ruff + format + pyright + tach + pytest) is
+292 tests green. Latest PyPI release is 0.0.3 (previous: 0.0.2).
 
 ## Threat model
 
@@ -103,7 +104,7 @@ If installing from source, you also need:
 From source (development):
 
 ```bash
-git clone https://github.com/<you>/agent6
+git clone https://github.com/elesiuta/agent6
 cd agent6
 uv sync --extra tui
 uv run agent6 --help
@@ -118,7 +119,7 @@ uv run agent6 --help
 The `[tui]` extra pulls in `textual` for the live dashboard. Skip it
 with `uv sync` if you don't want the TUI.
 
-From PyPI (once released):
+From PyPI:
 
 ```bash
 uv tool install agent6
@@ -159,6 +160,11 @@ agent6 init
 # Sanity checks.
 agent6 check-config
 agent6 check-sandbox
+
+# If `check-config` reports missing fields after an upgrade, walk through
+# the additions interactively (each one sourced from the starter
+# template, with a [y/N] prompt before any write):
+agent6 check-config --fix
 
 # Plan-only: cheap pre-flight, no code changes.
 agent6 plan new "add a --json output mode to the CLI"
@@ -362,18 +368,21 @@ process has authority to mutate the graph.
 
 ## Benchmark
 
-See [bench/results.md](bench/results.md) for a 4-task synthetic benchmark
-(bug fix, add CLI flag, refactor, type annotations). First run completed
-**0/4** tasks for **~$0.08** of spend and surfaced four reproducible
-workflow issues with concrete suggested fixes. Re-run with:
+See [bench/results.md](bench/results.md) for an 8-task synthetic
+benchmark (bug fix, CLI flag, refactor, type annotations, deprecation
+fix, subcommand, logging, extract-method). After fourteen iteration
+cycles all eight tasks now PASS three runs in a row at **~$0.45** per
+run. The iteration history in `bench/results.md` documents what broke
+at each step and the workflow / prompt fix that landed for it. Re-run
+with:
 
 ```bash
 bash bench/run_bench.sh
 cat /tmp/agent6-bench/*/result.json
 ```
 
-A direct head-to-head against `claude-code` and other coding agents is
-not in this repo — it would need a shared task set and a neutral runner.
+A head-to-head against `claude-code` on the same task set is tracked
+separately under `bench/comparison/`.
 
 ## Repository layout
 
@@ -408,24 +417,24 @@ bench/              synthetic benchmark harness + results
 
 Open work, in priority order:
 
-1. **Fix the four bench findings** (F1–F4 in
-   [bench/results.md](bench/results.md)): per-step verify gating,
-   edit-by-old-string fragility on consecutive steps, critic
-   conservatism, run-log-before-dirty-check race.
+1. **Harder bench tasks** — multi-file refactors, async bugs,
+   type-error cascades, adversarial / prompt-injected `AGENTS.md`. The
+   existing 8-task suite passes consistently; the next iteration needs
+   tasks that exercise more of the failure surface.
 2. **Network-egress test corpus** — adversarial tests that try to
    exfiltrate via DNS, ICMP, IPv6, and unix sockets and assert they are
    all blocked under `network = "provider_only"`.
 3. **`agent6 init --template`** — write a starter `AGENTS.md` for common
    stacks (Python lib, Node app, …) instead of just a stub.
-4. **Headless run mode** — non-interactive `--no-confirm-anything` for
+4. **`agent6 check-config --fix`** — implemented on `dev-0.0.3`:
+   interactive repair that compares the user's TOML against the
+   starter template, prints would-be additions, and inserts them
+   after a `[y/N]` prompt.
+5. **Headless run mode** — non-interactive `--no-confirm-anything` for
    CI; today `--yes` auto-confirms the plan only, not every
    `run_commands` prompt.
-5. **`agent6 review` against a remote PR** — fetch + review without
+6. **`agent6 review` against a remote PR** — fetch + review without
    checkout.
-6. **First PyPI release** — wired in
-   [.github/workflows/pypi.yml](.github/workflows/pypi.yml) via Trusted
-   Publishing inside a manylinux container so the bundled `agent6-jail`
-   links against an old enough glibc. Blocked on items 1–2.
 
 ## Contributing
 

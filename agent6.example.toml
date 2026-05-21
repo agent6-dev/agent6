@@ -129,8 +129,8 @@ allow_history_rewrite = false
 # Use `coauthor` to tag commits with the human operator's name, e.g.
 # `coauthor = "Alice <alice@example.com>"` appends a `Co-authored-by:` trailer.
 # [git.commit]
-# name = "agent6-bot"
-# email = "agent6@example.com"
+# name = "agent6"
+# email = "agent6@local"
 # coauthor = "Alice <alice@example.com>"
 
 [workflow]

@@ -25,6 +25,7 @@ import argcomplete
 from agent6 import __version__
 from agent6.budget import BudgetExceeded, BudgetTracker
 from agent6.config import AnthropicProviderEntry, Config, ConfigError, RoleName, load_config
+from agent6.config_fix import FixKind, apply_fixes, propose_fixes
 from agent6.detect import detect, select_profile
 from agent6.events import EventSink, UserInputSink
 from agent6.git_ops import (
@@ -481,7 +482,23 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
         help="Run id of the plan to edit (default: most recent).",
     )
 
-    sub.add_parser("check-config", help="Validate config and print detected environment.")
+    check_config_p = sub.add_parser(
+        "check-config", help="Validate config and print detected environment."
+    )
+    check_config_p.add_argument(
+        "--fix",
+        action="store_true",
+        help=(
+            "If the config is missing required fields, print the recommended"
+            " additions (sourced from the starter template) and offer to"
+            " insert them after confirmation."
+        ),
+    )
+    check_config_p.add_argument(
+        "--yes",
+        action="store_true",
+        help="With --fix, apply proposed additions without an interactive prompt.",
+    )
     sub.add_parser(
         "check-sandbox",
         help="Run sandbox self-tests against the current kernel and report.",
@@ -609,7 +626,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
         if args.plan_command == "edit":
             return _cmd_plan_edit(args.config, run_id=args.run_id)
     if args.command == "check-config":
-        return _cmd_check_config(args.config)
+        return _cmd_check_config(args.config, fix=args.fix, assume_yes=args.yes)
     if args.command == "check-sandbox":
         return _cmd_check_sandbox()
     if args.command == "memory":
@@ -642,7 +659,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
 # ---------------------------------------------------------------------------
 
 
-def _cmd_check_config(path: Path) -> int:
+def _cmd_check_config(path: Path, *, fix: bool = False, assume_yes: bool = False) -> int:
     env = detect()
     print(f"Container signals: {list(env.container_signals) or 'none'}")
     print(f"Kernel: {env.kernel.raw} (Landlock TCP: {env.kernel.supports_landlock_tcp})")
@@ -652,9 +669,14 @@ def _cmd_check_config(path: Path) -> int:
     try:
         cfg = load_config(path)
     except ConfigError as exc:
+        if fix:
+            return _run_fix_flow(path, original_error=str(exc), assume_yes=assume_yes)
         print(f"\nCONFIG ERROR:\n{exc}", file=sys.stderr)
         return 2
-    print(f"\nConfig file OK: {path}")
+    if fix:
+        print(f"\nConfig file OK: {path} — no missing fields to fix.")
+    else:
+        print(f"\nConfig file OK: {path}")
     print(f"  sandbox.profile = {cfg.sandbox.profile}")
     print(f"  sandbox.network = {cfg.sandbox.network}")
     print(f"  sandbox.run_commands = {cfg.sandbox.run_commands}")
@@ -667,6 +689,56 @@ def _cmd_check_config(path: Path) -> int:
         print(f"\nREFUSE: {exc}", file=sys.stderr)
         return 1
     print(f"  -> selected profile: {selected}")
+    return 0
+
+
+def _run_fix_flow(path: Path, *, original_error: str, assume_yes: bool) -> int:
+    """Interactive --fix flow invoked when initial validation failed.
+
+    Prints the original error, lists each proposed insertion sourced from
+    the starter template, asks for confirmation (unless `assume_yes`),
+    then writes the file and re-validates. Returns 0 only if the file
+    validates after the edits.
+    """
+    print(f"\nCONFIG ERROR:\n{original_error}", file=sys.stderr)
+    result = propose_fixes(path)
+    if not result.fixes:
+        print(
+            "\n--fix: no automatic repair available for the errors above.",
+            file=sys.stderr,
+        )
+        for line in result.remaining_errors:
+            print(f"  - {line}", file=sys.stderr)
+        return 2
+    print("\n--fix: proposed additions (sourced from the starter template):\n")
+    for index, item in enumerate(result.fixes, start=1):
+        kind_label = "new section" if item.kind is FixKind.NEW_SECTION else "new field"
+        print(f"  [{index}] {kind_label}: {item.description}")
+        for line in item.render_preview().splitlines():
+            print(f"        {line}")
+    if result.remaining_errors:
+        print("\nThese errors are NOT addressable by --fix:")
+        for line in result.remaining_errors:
+            print(f"  - {line}")
+    if not assume_yes:
+        try:
+            answer = input(f"\nApply all {len(result.fixes)} additions to {path}? [y/N]: ")
+        except EOFError:
+            answer = ""
+        if answer.strip().lower() not in {"y", "yes"}:
+            print("--fix: aborted, no changes written.")
+            return 2
+    apply_fixes(path, result.fixes)
+    print(f"\n--fix: wrote {len(result.fixes)} additions to {path}.")
+    try:
+        load_config(path)
+    except ConfigError as exc:
+        print(
+            f"\n--fix: file still does not validate after edits:\n{exc}",
+            file=sys.stderr,
+        )
+        return 2
+    print("--fix: file now validates cleanly.")
     return 0
 
 
@@ -961,6 +1033,38 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
             events=events,
             budget=budget,
         )
+        # Worker escalation: on the worker's retry attempt, route to a stronger
+        # model. We reuse the planner role's (provider, model) — planner is
+        # typically opus-class, which is the right escalation curve from a
+        # sonnet-class primary worker. Same connection class, separate event
+        # role label so cost is attributed independently.
+        rm_planner = cfg.models.planner
+        escalation_inner = _build_role_provider(
+            cfg, "planner", transcript_sink=transcript_sink, budget=budget
+        )
+        worker_escalation: Provider = _InstrumentedProvider(
+            inner=escalation_inner,
+            role="worker_escalation",
+            model=rm_planner.model,
+            provider_name=rm_planner.provider,
+            events=events,
+            budget=budget,
+        )
+        # Triage: reuse the summarizer's (provider, model) — both want a
+        # cheap haiku-class model and decoupling them isn't worth a new
+        # config field today. Instrumented under its own role label.
+        rm_sum = cfg.models.summarizer
+        triage_inner = _build_role_provider(
+            cfg, "summarizer", transcript_sink=transcript_sink, budget=budget
+        )
+        triage_provider: Provider = _InstrumentedProvider(
+            inner=triage_inner,
+            role="triage",
+            model=rm_sum.model,
+            provider_name=rm_sum.provider,
+            events=events,
+            budget=budget,
+        )
     except ProviderError as exc:
         print(f"ERROR: provider init failed: {exc}", file=sys.stderr)
         return 2
@@ -989,6 +1093,8 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                 worker=worker,
                 reviewer=reviewer,
                 critic=critic,
+                worker_escalation=worker_escalation,
+                triage=triage_provider,
                 dispatcher=dispatcher,
                 confirm_plan=_make_confirm(auto_confirm, user_inputs=user_inputs),
                 graph_client=graph_client,

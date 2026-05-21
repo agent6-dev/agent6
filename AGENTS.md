@@ -6,10 +6,11 @@ list of invariants that PRs are not allowed to weaken.
 
 ## Stability policy (pre-1.0)
 
-agent6 has never cut a release; the version in `src/agent6/__init__.py`
-is `0.0.1`. Until `1.0.0`, treat every public shape — config TOML, IPC
-messages, on-disk graph format, CLI flags, transcript layout — as
-**liquid**. Prefer breaking a shape cleanly over carrying it:
+agent6 has shipped 0.0.3 to PyPI; the version in
+`src/agent6/__init__.py` is the single source of truth. Until `1.0.0`,
+treat every public shape — config TOML, IPC messages, on-disk graph
+format, CLI flags, transcript layout — as **liquid**. Prefer breaking
+a shape cleanly over carrying it:
 
 - No backward-compat shims, deprecation warnings, or aliased field names.
 - No migration code or `config_version` translators. Bump
@@ -57,7 +58,7 @@ uv run ruff check && uv run ruff format --check && \
   uv run pyright && uv run tach check && uv run pytest
 ```
 
-All five must pass. 208 tests currently green.
+All five must pass. 292 tests currently green.
 
 ## Security invariants (do not weaken)
 
