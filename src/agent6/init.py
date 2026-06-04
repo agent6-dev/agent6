@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """`agent6 init` — write starter agent6.toml, AGENTS.md, and .gitignore entries.
 
-Per Round-2 Locked Decision §2: never overwrite existing files. If the target
+Never overwrite existing files. If the target
 exists, write a `.suggested` sibling and tell the user to diff. The bundled
 templates are deliberately short and opinionated; the user is expected to
 edit them.
@@ -28,27 +28,17 @@ prompt_caching = true
 # agent6.example.toml for OpenAI-compatible examples (OpenAI, OpenRouter,
 # Ollama, vLLM, llama.cpp).
 
-# Route each sub-agent role to one of the providers above. Mix and match
-# freely (e.g. Anthropic planner + OpenRouter worker + Anthropic reviewer).
-[models.planner]
-provider = "anthropic"
-model = "claude-opus-4-5"
-
+# Route each live role to one of the providers above. there
+# are only two roles: ``worker`` (drives ``agent6 run`` / ``agent6 resume``;
+# its pricing also drives the USD-to-token budget conversion) and
+# ``reviewer`` (used by the one-shot ``agent6 review`` subcommand).
 [models.worker]
-provider = "anthropic"
-model = "claude-sonnet-4-5"
-
-[models.critic]
 provider = "anthropic"
 model = "claude-sonnet-4-5"
 
 [models.reviewer]
 provider = "anthropic"
 model = "claude-opus-4-5"
-
-[models.summarizer]
-provider = "anthropic"
-model = "claude-haiku-4-5"
 
 [sandbox]
 # "auto" picks the strongest profile this kernel + container can run.
@@ -73,15 +63,53 @@ allow_force = false
 allow_history_rewrite = false
 
 [workflow]
-default = "implement"
 # What "step succeeded" means in your repo. EDIT THIS.
 verify_command = ["uv", "run", "pytest", "-x"]
+# Optional one-shot task rewrite before the worker loop. Default "off".
+# revise_prompt = "off"
 
 [budget]
 # Hard stop. The run is resumable from the persistent task graph.
 max_input_tokens = 2000000
 max_output_tokens = 200000
 """
+
+
+# Per-profile overrides for the [workflow].verify_command line + a hint at
+# the top of AGENTS.md. The TOML scaffolding above is otherwise identical
+# across profiles; profiles are deliberately a tiny convenience, not a
+# divergence point.
+_PROFILE_VERIFY_COMMANDS: dict[str, list[str]] = {
+    "py": ["uv", "run", "pytest", "-x"],
+    "rust": ["cargo", "test", "--quiet"],
+    "node": ["npm", "test", "--silent"],
+}
+
+_PROFILE_AGENTS_HINTS: dict[str, str] = {
+    "py": "uv run pytest -x",
+    "rust": "cargo test --quiet",
+    "node": "npm test --silent",
+}
+
+
+def _render_starter_toml(profile: str) -> str:
+    """Substitute the verify_command line for the chosen profile."""
+    cmd = _PROFILE_VERIFY_COMMANDS.get(profile)
+    if cmd is None:
+        raise ValueError(f"unknown init profile: {profile!r}")
+    rendered = ", ".join(f'"{p}"' for p in cmd)
+    return _STARTER_TOML.replace(
+        'verify_command = ["uv", "run", "pytest", "-x"]',
+        f"verify_command = [{rendered}]",
+    )
+
+
+def _render_starter_agents_md(profile: str) -> str:
+    hint = _PROFILE_AGENTS_HINTS.get(profile, "uv run pytest -x")
+    return _STARTER_AGENTS_MD.replace(
+        "# EDIT: replace with your actual verify pipeline.\nuv run pytest -x",
+        f"# EDIT: replace with your actual verify pipeline.\n{hint}",
+    )
 
 
 _STARTER_AGENTS_MD = """\
@@ -169,12 +197,14 @@ def _update_gitignore(root: Path) -> str:
     return f"  .gitignore: appended {len(missing)} entries ({', '.join(missing)})"
 
 
-def init_workspace(root: Path, *, force: bool) -> int:
+def init_workspace(root: Path, *, force: bool, profile: str = "py") -> int:
     """Write starter files into `root`. Returns a CLI exit code."""
     root = root.resolve()
-    print(f"agent6 init: {root}")
-    print(_write_or_suggest(root / "agent6.toml", _STARTER_TOML, force=force))
-    print(_write_or_suggest(root / "AGENTS.md", _STARTER_AGENTS_MD, force=force))
+    print(f"agent6 init: {root}  (profile={profile})")
+    starter_toml = _render_starter_toml(profile)
+    starter_agents_md = _render_starter_agents_md(profile)
+    print(_write_or_suggest(root / "agent6.toml", starter_toml, force=force))
+    print(_write_or_suggest(root / "AGENTS.md", starter_agents_md, force=force))
     print(_update_gitignore(root))
     print()
     print("Next:")

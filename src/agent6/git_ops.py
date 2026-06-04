@@ -14,6 +14,7 @@ import os
 import re
 import shutil
 import subprocess
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -123,7 +124,19 @@ def _run(
         duration_s=0.0,
     )
     if check and not result.ok:
-        raise GitError(f"git {' '.join(args)} failed: {proc.stderr.strip()}")
+        # Surface stdout too. `git commit` writes its informational
+        # output (including "nothing to commit, working tree clean", pre-
+        # commit hook output, and most user-facing messages) to STDOUT,
+        # not stderr. Capturing only stderr produced empty error strings
+        # like "git commit -m <subject> failed: " that gave the operator
+        # zero signal when triaging a failed auto-commit in the wild.
+        stderr_msg = proc.stderr.strip()
+        stdout_msg = proc.stdout.strip()
+        if stderr_msg and stdout_msg:
+            detail = f"{stderr_msg} | stdout: {stdout_msg}"
+        else:
+            detail = stderr_msg or stdout_msg or f"exit {proc.returncode}"
+        raise GitError(f"git {' '.join(args)} failed: {detail}")
     return result
 
 
@@ -240,6 +253,84 @@ def recent_log(path: Path, n: int = 20) -> str:
     return res.stdout if res.ok else ""
 
 
+def revert_head(path: Path) -> str:
+    """Forward-revert HEAD via ``git revert HEAD --no-edit``.
+
+    Backs the interactive REPL's ``/undo`` so the operator
+    can roll back the last auto-commit without rewriting history. Returns
+    the SHA of the new revert commit. AGENTS.md forbids ``reset --hard``
+    and force operations; ``revert`` is the policy-compliant undo.
+    """
+    _run(path, "revert", "HEAD", "--no-edit")
+    sha_res = _run(path, "rev-parse", "HEAD")
+    return sha_res.stdout.strip() if sha_res.ok else ""
+
+
+def tracked_files(path: Path) -> tuple[str, ...]:
+    """Return the list of repo-tracked files via ``git ls-files``.
+
+    POSIX-style separators, sorted by ``git``'s own order. Empty tuple
+    outside a git repo or when ls-files fails - callers must treat this
+    as "no map available" rather than "empty repo".
+    """
+    res = _run(path, "ls-files", "-z", check=False)
+    if not res.ok:
+        return ()
+    return tuple(p for p in res.stdout.split("\x00") if p)
+
+
+def co_change_pairs(
+    path: Path,
+    *,
+    n_commits: int = 200,
+    min_pair_count: int = 2,
+    max_pairs: int = 30,
+) -> list[tuple[str, str, int]]:
+    """Mine git history for co-change file pairs.
+
+    Walks the last *n_commits* commits, groups changed files per commit,
+    and returns the top *max_pairs* most-frequent unordered (fileA, fileB)
+    pairs that co-changed in at least *min_pair_count* commits. Each
+    tuple is (file_a, file_b, count). Sorted by count descending, ties
+    broken alphabetically.
+
+    Cheap signal for the planner: "file A and file B change together
+    73% of the time" is a strong prior for "if you edit A, you probably
+    also need to touch B". Returns an empty list if git history is too
+    shallow to find any qualifying pairs (e.g. the fresh-clone bench
+    case with --depth=1).
+
+    Skips merge commits (--no-merges) so multi-parent diffs don't
+    artificially inflate co-change frequencies.
+    """
+    res = _run(
+        path,
+        "log",
+        f"-n{n_commits}",
+        "--no-merges",
+        "--name-only",
+        "--pretty=format:%x00",
+        check=False,
+    )
+    if not res.ok:
+        return []
+    # Output is groups of (NUL-separator, blank line, file paths...) per
+    # commit. Split on NUL to get per-commit file lists.
+    pair_counter: Counter[tuple[str, str]] = Counter()
+    for chunk in res.stdout.split("\x00"):
+        files = [line.strip() for line in chunk.strip().splitlines() if line.strip()]
+        # Skip binary-marker lines and any non-file entries (defensive).
+        files = sorted(set(f for f in files if "/" in f or "." in f))
+        if len(files) < 2:
+            continue
+        for i in range(len(files)):
+            for j in range(i + 1, len(files)):
+                pair_counter[(files[i], files[j])] += 1
+    qualifying = [(a, b, c) for (a, b), c in pair_counter.items() if c >= min_pair_count]
+    qualifying.sort(key=lambda t: (-t[2], t[0], t[1]))
+    return qualifying[:max_pairs]
+
+
 def diff_since(path: Path, base_sha: str) -> str:
     # `git diff <base>` only considers tracked content. Newly created files
     # from a worker edit are untracked at this point (commit_all stages and
@@ -268,9 +359,39 @@ def reset_to(path: Path, sha: str, *, mode: str) -> None:
     _run(path, "reset", f"--{mode}", sha)
 
 
-def make_run_branch_name(prefix: str = "agent6") -> str:
+def rollback_to_known_good(path: Path, sha: str) -> None:
+    """Restore branch tip + worktree to *sha* after a regressing commit.
+
+    Used by metric-driven workflows when the latest commit measurably
+    regressed past the run's starting baseline: instead of compounding
+    edits on top of a known-broken state, we rewind the branch tip to
+    the last-known-good commit and restore the worktree to match. The
+    rewound commits remain reachable via reflog (audit trail), so this
+    is recoverable.
+
+    Implementation: ``git reset --mixed sha`` rewinds HEAD + index while
+    leaving the worktree alone; the follow-up ``git checkout -- .``
+    then snaps the worktree back to the index (i.e. to *sha*'s tree).
+    Two steps rather than ``reset --hard`` so we stay within the
+    "no destructive resets" invariant — anything orphaned is still in
+    the reflog and ``git_ops`` callers never get a primitive that
+    unconditionally clobbers uncommitted work.
+    """
+    if not sha:
+        raise GitError("rollback_to_known_good: sha must be non-empty")
+    _run(path, "reset", "--mixed", sha)
+    _run(path, "checkout", "--", ".")
+
+
+def make_run_branch_name(prefix: str = "agent6", task_slug: str | None = None) -> str:
+    """Build a run branch name like ``agent6/20260526-120000-fix-bug``.
+
+    ``task_slug`` is the slugified user task; when omitted the slug falls
+    back to the prefix so the function remains useful for ad-hoc callers.
+    """
     ts = _dt.datetime.now(tz=_dt.UTC).strftime("%Y%m%d-%H%M%S")
-    return f"{prefix}/{ts}-{slugify(prefix)}"
+    slug = task_slug if task_slug else slugify(prefix)
+    return f"{prefix}/{ts}-{slug}"
 
 
 def show_commit(path: Path, sha: str, *, max_bytes: int = 16_384) -> str:

@@ -109,6 +109,26 @@ def test_budget_update_populates_view() -> None:
     )
     assert s.budget.input_total == 100
     assert s.budget.input_cap == 1000
+    # USD fields default cleanly when the event omits them.
+    assert s.budget.usd_total == 0.0
+    assert s.budget.usd_partial is False
+
+
+def test_budget_update_carries_usd_total() -> None:
+    s = apply_event(
+        initial_state(),
+        {
+            "type": "budget.update",
+            "input_total": 100,
+            "output_total": 50,
+            "input_cap": 1000,
+            "output_cap": 500,
+            "usd_total": 0.1234,
+            "usd_partial": True,
+        },
+    )
+    assert s.budget.usd_total == 0.1234
+    assert s.budget.usd_partial is True
 
 
 def test_verify_lifecycle() -> None:

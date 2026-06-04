@@ -52,6 +52,8 @@ class BudgetView:
     input_cap: int = 0
     output_cap: int = 0
     per_model_tokens: dict[str, int] = field(default_factory=dict)
+    usd_total: float = 0.0
+    usd_partial: bool = False  # True if some models had no price (under-estimate)
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +61,9 @@ class RoleCall:
     role: str
     model: str
     in_flight: bool
+    # Live SSE text accumulator. Reset on every role.call,
+    # appended-to on each role.text_delta, frozen on role.result.
+    streamed_text: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,7 +100,7 @@ _MAX_TOOL_HISTORY = 50
 _MAX_LOG_TAIL = 400
 
 
-def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PLR0911, PLR0912
+def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PLR0911, PLR0912, PLR0915
     """Fold one event into the run state. Pure function."""
     etype = event.get("type", "")
     log_line = _format_log_line(event)
@@ -155,7 +160,21 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
                     role=str(event.get("role", "")),
                     model=str(event.get("model", "")),
                     in_flight=True,
+                    streamed_text="",
                 ),
+            )
+
+        case "role.text_delta":
+            # Append SSE delta to the in-flight RoleCall.
+            last = state.last_role
+            if last is None or not last.in_flight:
+                return state
+            piece = str(event.get("text", ""))
+            if not piece:
+                return state
+            return replace(
+                state,
+                last_role=replace(last, streamed_text=last.streamed_text + piece),
             )
 
         case "role.result":
@@ -218,6 +237,8 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
                     input_cap=int(event.get("input_cap", 0)),
                     output_cap=int(event.get("output_cap", 0)),
                     per_model_tokens={str(k): int(v) for k, v in per_model.items()},
+                    usd_total=float(event.get("usd_total", 0.0)),
+                    usd_partial=bool(event.get("usd_partial", False)),
                 ),
             )
 

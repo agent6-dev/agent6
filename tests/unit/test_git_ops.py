@@ -199,3 +199,21 @@ def test_reset_to_rejects_hard(tmp_path: Path) -> None:
     _init_repo(tmp_path)
     with pytest.raises(GitError, match="mode must be 'soft' or 'mixed'"):
         reset_to(tmp_path, status(tmp_path).head_sha, mode="hard")
+
+
+def test_commit_error_surfaces_stdout_when_stderr_empty(tmp_path: Path) -> None:
+    """`git commit` writes "nothing to commit, working tree
+    clean" to STDOUT, not stderr. `_run` only captured
+    stderr, producing error strings like "git commit -m X failed: "
+    with no useful detail. The new behaviour must include stdout when
+    stderr is empty so the operator gets actionable signal."""
+    _init_repo(tmp_path)
+    # `commit_all` will stage a no-op and call `git commit`, which exits
+    # 1 with "nothing to commit, working tree clean" on STDOUT.
+    with pytest.raises(GitError) as excinfo:
+        commit_all(tmp_path, "no-op commit on clean repo")
+    msg = str(excinfo.value)
+    # The detail (from stdout) must be present so callers can pattern-match.
+    assert "nothing to commit" in msg.lower()
+    # And the prefix must still identify which git invocation failed.
+    assert "git commit" in msg

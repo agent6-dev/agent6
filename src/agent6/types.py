@@ -63,6 +63,30 @@ class RepoSummary:
     top_level: tuple[str, ...]
     agents_md: str
     recent_log: str
+    # Top co-change pairs mined from `git log --name-only`. Tuple
+    # of (file_a, file_b, count) sorted by count desc. Empty when the
+    # repo has insufficient history (e.g. fresh --depth=1 clone in the
+    # realworld bench) or when no pair co-changed at least 2 commits.
+    co_change_pairs: tuple[tuple[str, str, int], ...] = ()
+    # Top "hot" symbols mined from the tree-sitter index. Tuple
+    # of (name, kind, def_path, def_line, files_referenced) sorted by
+    # cross-file reference count desc. Complements co_change_pairs:
+    # works on fresh repos (no history needed). Empty when the index
+    # is disabled or no symbol crosses the min_files_referenced
+    # threshold.
+    hot_symbols: tuple[tuple[str, str, str, int, int], ...] = ()
+    # Compact directory map built from `git ls-files`. Multi-line
+    # string of `path/  (N files: a, b, ...)` rows, capped so it stays
+    # within a few KB. Empty outside a git repo or when ls-files fails.
+    repo_map: str = ""
+    # per-file symbol outline mined from the tree-sitter index.
+    # Multi-line string of `PATH:` headers followed by `  KIND NAME:LINE`
+    # rows, ordered by source position. Capped so the block never exceeds
+    # a few KB of system-prompt space; oversized files are truncated with
+    # a `... (+N more)` row, and overflow at the file level is summarised
+    # as `... (N more files)`. Empty when no parser is available or the
+    # index is disabled.
+    symbol_outline: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,7 +95,7 @@ class FileContext:
 
     files: tuple[tuple[Path, str], ...] = field(default_factory=tuple)
 
-    def as_text(self, max_chars_per_file: int = 20_000) -> str:
+    def as_text(self, max_chars_per_file: int = 200_000) -> str:
         chunks: list[str] = []
         for path, content in self.files:
             body = (

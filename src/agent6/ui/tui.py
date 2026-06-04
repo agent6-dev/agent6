@@ -178,13 +178,22 @@ class Agent6TUI(App[int]):
 
     # --- rendering ---------------------------------------------------
 
-    def _render(self) -> None:
+    def _render(self) -> None:  # noqa: PLR0915
         s = self.state
         # Top header
         role = s.last_role
         role_line = (
             f"{role.role} / {role.model} {'…' if role.in_flight else ''}" if role else "(idle)"
         )
+        # Live SSE text deltas. Show the tail of the
+        # streaming assistant message in the header while the role
+        # call is in-flight; once the call resolves the text is
+        # frozen with the role and the in-flight ellipsis drops.
+        if role and role.in_flight and role.streamed_text:
+            tail = role.streamed_text.replace("\n", " ⏎ ")
+            if len(tail) > 80:
+                tail = "…" + tail[-79:]
+            role_line = f"{role_line}  ▸ {tail}"
         step = (
             f"step {s.current_step_index}/{len(s.steps)}"
             if s.current_step_index
@@ -195,8 +204,14 @@ class Agent6TUI(App[int]):
             if s.finished and s.all_passed
             else ("[b red]done (failed)[/]" if s.finished else "")
         )
+        # Live cost meter in the top header. "$0.0123" updates
+        # after every role.result; "~" prefix flags that some models
+        # weren't in the pricing table so the figure is a lower bound.
+        cost_prefix = "~" if s.budget.usd_partial else ""
+        cost = f"[b]{cost_prefix}${s.budget.usd_total:.4f}[/]"
         self.query_one("#top", Static).update(
-            f"[b]agent6[/]  {step}   role: {role_line}   {finished}\ntask: {s.user_task[:120]}"
+            f"[b]agent6[/]  {step}   role: {role_line}   cost: {cost}   {finished}\n"
+            f"task: {s.user_task[:120]}"
         )
 
         # Plan tree
@@ -223,7 +238,8 @@ class Agent6TUI(App[int]):
             bar.progress = min(used, cap)
         bar.tooltip = (
             f"in {s.budget.input_total}/{s.budget.input_cap}  "
-            f"out {s.budget.output_total}/{s.budget.output_cap}"
+            f"out {s.budget.output_total}/{s.budget.output_cap}  "
+            f"{'~' if s.budget.usd_partial else ''}${s.budget.usd_total:.4f}"
         )
 
         # Tool table
@@ -242,9 +258,24 @@ class Agent6TUI(App[int]):
             log.write(line)
         self._last_log_len = len(s.log_tail)
 
-        # Diff (latest)
+        # Diff (latest) or verify output. When a verify is
+        # running or just finished, surface its exit code and tail in
+        # the panel - otherwise it's invisible until the next log scroll.
         diff_widget = self.query_one("#diff", Static)
-        if s.diffs:
+        verify = s.last_verify
+        if verify is not None and (verify.exit_code is None or not s.diffs):
+            if verify.exit_code is None:
+                header = f"[b]verify running:[/] {' '.join(verify.cmd)[:200]}"
+                body = "…"
+            else:
+                colour = "green" if verify.exit_code == 0 else "red"
+                header = (
+                    f"[b {colour}]verify exit={verify.exit_code}[/] "
+                    f"({verify.duration_s:.1f}s)  {' '.join(verify.cmd)[:160]}"
+                )
+                body = (verify.stderr_tail or verify.stdout_tail)[:2000] or "(no output)"
+            diff_widget.update(f"{header}\n{body}")
+        elif s.diffs:
             latest_idx = max(s.diffs.keys())
             text = s.diffs[latest_idx]
             diff_widget.update(f"[b]diff for step #{latest_idx}[/]\n" + text[:2000])
