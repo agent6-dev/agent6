@@ -29,6 +29,7 @@ class _FakeProvider:
         messages: list[dict[str, object]],
         tools: list[ToolDefinition] | None = None,
         max_tokens: int = 1024,
+        temperature: float | None = None,
     ) -> ProviderResponse:
         if self.raise_error:
             raise ProviderError("boom")
