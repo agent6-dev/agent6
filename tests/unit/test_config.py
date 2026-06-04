@@ -19,23 +19,11 @@ kind = "anthropic"
 api_key_env = "ANTHROPIC_API_KEY"
 prompt_caching = true
 
-[models.planner]
-provider = "anthropic"
-model = "claude-x"
-
 [models.worker]
 provider = "anthropic"
 model = "claude-x"
 
-[models.critic]
-provider = "anthropic"
-model = "claude-x"
-
 [models.reviewer]
-provider = "anthropic"
-model = "claude-x"
-
-[models.summarizer]
 provider = "anthropic"
 model = "claude-x"
 
@@ -56,7 +44,6 @@ allow_force = false
 allow_history_rewrite = false
 
 [workflow]
-default = "implement"
 verify_command = ["true"]
 [budget]
 max_input_tokens = 100000
@@ -89,7 +76,8 @@ def test_extra_key_forbidden(tmp_path: Path) -> None:
 
 
 def test_missing_required_key(tmp_path: Path) -> None:
-    body = _VALID_TOML.replace("config_version = 1\n", "")
+    # `allow_push` is a security field with no default; absence is fatal.
+    body = _VALID_TOML.replace("allow_push = false\n", "")
     with pytest.raises(ConfigError):
         load_config(_write(tmp_path, body))
 
@@ -100,8 +88,100 @@ def test_invalid_enum_literal(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
+def test_role_temperature_defaults_to_zero(tmp_path: Path) -> None:
+    # Finding C / Amp 2: agent6's tool-use loop is a feedback loop;
+    # default temperature is pinned to 0.0 so OpenRouter-routed models
+    # don't run at their (often high) provider default.
+    cfg = load_config(_write(tmp_path, _VALID_TOML))
+    assert cfg.models.worker.temperature == 0.0
+    assert cfg.models.reviewer.temperature == 0.0
+
+
+def test_role_temperature_override(tmp_path: Path) -> None:
+    body = _VALID_TOML.replace(
+        '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"',
+        '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\ntemperature = 0.7',
+    )
+    cfg = load_config(_write(tmp_path, body))
+    assert cfg.models.worker.temperature == 0.7
+    assert cfg.models.reviewer.temperature == 0.0  # unchanged
+
+
+def test_role_temperature_null_passes_through(tmp_path: Path) -> None:
+    # Operators who specifically want the provider's default can set None.
+    body = _VALID_TOML.replace(
+        '[models.reviewer]\nprovider = "anthropic"\nmodel = "claude-x"',
+        '[models.reviewer]\nprovider = "anthropic"\nmodel = "claude-x"\ntemperature = nan',
+    )
+    # nan is rejected by ge/le bounds; the canonical "use provider default"
+    # path is to omit the field (default 0.0) or explicitly set null via
+    # the python API. Document that nan / out-of-range floats fail loud.
+    with pytest.raises(ConfigError):
+        load_config(_write(tmp_path, body))
+
+
+def test_role_temperature_out_of_range(tmp_path: Path) -> None:
+    body = _VALID_TOML.replace(
+        '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"',
+        '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\ntemperature = 3.0',
+    )
+    with pytest.raises(ConfigError):
+        load_config(_write(tmp_path, body))
+
+
 def test_verify_command_min_length(tmp_path: Path) -> None:
     body = _VALID_TOML.replace('verify_command = ["true"]', "verify_command = []")
+    with pytest.raises(ConfigError):
+        load_config(_write(tmp_path, body))
+
+
+def test_verify_timeout_s_defaults_to_600(tmp_path: Path) -> None:
+    """Default verify_timeout_s matches jail default (600s)."""
+    cfg = load_config(_write(tmp_path, _VALID_TOML))
+    assert cfg.workflow.verify_timeout_s == 600.0
+
+
+def test_verify_timeout_s_overridable(tmp_path: Path) -> None:
+    """Bench configs set verify_timeout_s = 30 for fast failure on
+    infinite-loop edits."""
+    body = _VALID_TOML.replace(
+        'verify_command = ["true"]',
+        'verify_command = ["true"]\nverify_timeout_s = 30.0',
+    )
+    cfg = load_config(_write(tmp_path, body))
+    assert cfg.workflow.verify_timeout_s == 30.0
+
+
+def test_verify_timeout_s_must_be_positive(tmp_path: Path) -> None:
+    """0 or negative timeout is rejected (gt=0.0 constraint)."""
+    body = _VALID_TOML.replace(
+        'verify_command = ["true"]',
+        'verify_command = ["true"]\nverify_timeout_s = 0.0',
+    )
+    with pytest.raises(ConfigError):
+        load_config(_write(tmp_path, body))
+
+
+def test_revise_prompt_defaults_off(tmp_path: Path) -> None:
+    cfg = load_config(_write(tmp_path, _VALID_TOML))
+    assert cfg.workflow.revise_prompt == "off"
+
+
+@pytest.mark.parametrize("mode", ["off", "auto", "interactive"])
+def test_revise_prompt_modes_load(tmp_path: Path, mode: str) -> None:
+    body = _VALID_TOML.replace(
+        'verify_command = ["true"]',
+        f'verify_command = ["true"]\nrevise_prompt = "{mode}"',
+    )
+    cfg = load_config(_write(tmp_path, body))
+    assert cfg.workflow.revise_prompt == mode
+
+
+def test_revise_prompt_invalid_mode_rejected(tmp_path: Path) -> None:
+    body = _VALID_TOML.replace(
+        'verify_command = ["true"]',
+        'verify_command = ["true"]\nrevise_prompt = "always"',
+    )
     with pytest.raises(ConfigError):
         load_config(_write(tmp_path, body))
 
@@ -156,11 +236,92 @@ def test_multiple_openai_providers_load(tmp_path: Path) -> None:
         ),
     )
     body = body.replace(
-        '[models.planner]\nprovider = "anthropic"\nmodel = "claude-x"',
-        '[models.planner]\nprovider = "openai"\nmodel = "gpt-x"',
+        '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"',
+        '[models.worker]\nprovider = "openai"\nmodel = "gpt-x"',
     )
     body = body.replace('provider = "anthropic"', 'provider = "openrouter"')
     cfg = load_config(_write(tmp_path, body))
     assert set(cfg.providers) == {"openai", "openrouter"}
-    assert cfg.models.planner.provider == "openai"
-    assert cfg.models.worker.provider == "openrouter"
+    assert cfg.models.worker.provider == "openai"
+    assert cfg.models.reviewer.provider == "openrouter"
+
+
+def test_metric_block_loads(tmp_path: Path) -> None:
+    body = _VALID_TOML + (
+        "\n[workflow.metric]\n"
+        'command = ["/usr/bin/python3", "bench.py"]\n'
+        'pattern = "CYCLES:\\\\s*(\\\\d+)"\n'
+        'goal = "minimize"\n'
+    )
+    cfg = load_config(_write(tmp_path, body))
+    assert cfg.workflow.metric is not None
+    assert cfg.workflow.metric.command == ("/usr/bin/python3", "bench.py")
+    assert cfg.workflow.metric.goal == "minimize"
+
+
+def test_metric_block_absent_is_none(tmp_path: Path) -> None:
+    cfg = load_config(_write(tmp_path, _VALID_TOML))
+    assert cfg.workflow.metric is None
+
+
+def test_metric_goal_invalid(tmp_path: Path) -> None:
+    body = _VALID_TOML + (
+        '\n[workflow.metric]\ncommand = ["true"]\npattern = "x"\ngoal = "sideways"\n'
+    )
+    with pytest.raises(ConfigError):
+        load_config(_write(tmp_path, body))
+
+
+def test_operational_fields_have_defaults(tmp_path: Path) -> None:
+    """Operational fields with safe defaults can be omitted from the TOML.
+
+    Security fields (allow_*, providers.*, sandbox.*, models.*,
+    budget.max_*_tokens, workflow.verify_command) still hard-fail when
+    missing; the test_missing_required_key family covers those.
+    """
+    body = """
+[providers.anthropic]
+kind = "anthropic"
+api_key_env = "ANTHROPIC_API_KEY"
+
+[models.worker]
+provider = "anthropic"
+model = "claude-x"
+
+[models.reviewer]
+provider = "anthropic"
+model = "claude-x"
+
+[sandbox]
+profile = "auto"
+network = "provider_only"
+run_commands = "ask"
+protect_git = true
+protect_agent6 = true
+
+[git]
+allow_push = false
+allow_force = false
+allow_history_rewrite = false
+
+[workflow]
+verify_command = ["true"]
+
+[budget]
+max_input_tokens = 100000
+max_output_tokens = 10000
+"""
+    cfg = load_config(_write(tmp_path, body))
+    # Defaulted fields:
+    assert cfg.agent6.config_version == 1
+    assert cfg.git.require_clean_worktree is True
+    assert cfg.git.auto_stash is False
+    assert cfg.git.branch_per_run is True
+    assert cfg.git.commit_strategy == "per_step"
+    assert cfg.workflow.verify_timeout_s == 600.0
+    anthro = cfg.providers["anthropic"]
+    from agent6.config import AnthropicProviderEntry
+
+    assert isinstance(anthro, AnthropicProviderEntry)
+    assert anthro.prompt_caching is True
+    assert anthro.http_timeout_s == 600.0

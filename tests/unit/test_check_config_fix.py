@@ -31,12 +31,12 @@ def _all_required_paths_from_schema() -> set[str]:
     """Walk `Config` fields and return every `<section>.<field>` path
     that is required (no default, simple section), expressed in
     starter-template flat form (e.g. `"providers.anthropic.api_key_env"`,
-    `"models.planner.provider"`).
+    `"models.worker.provider"`).
 
     The starter template uses a single representative provider
-    (`anthropic`) and the five fixed roles (planner / worker / critic /
-    reviewer / summarizer), so dict-valued sections like `providers`
-    and `models` enumerate exactly those keys.
+    (`anthropic`) and the two fixed roles (worker / reviewer), so
+    dict-valued sections like `providers` and `models` enumerate
+    exactly those keys.
     """
     parsed = tomllib.loads(_STARTER_TOML)
     paths: set[str] = set()
@@ -58,8 +58,8 @@ def test_starter_recommendations_parses_template() -> None:
     # Every section we expect is present.
     assert "agent6" in recs
     assert "providers.anthropic" in recs
-    assert "models.planner" in recs
-    assert "models.summarizer" in recs
+    assert "models.worker" in recs
+    assert "models.reviewer" in recs
     assert "sandbox" in recs
     assert "git" in recs
     assert "workflow" in recs
@@ -167,8 +167,10 @@ def test_propose_fixes_missing_whole_section(tmp_path: Path) -> None:
 
 
 def test_propose_fixes_missing_field_in_present_section(tmp_path: Path) -> None:
-    # Drop `auto_stash` from [git]; section header remains.
-    text = _MINIMAL_VALID.replace("auto_stash = false\n", "")
+    # Drop `allow_force` from [git]; section header remains. `allow_force`
+    # is a security field with no default, so its absence is a `missing`
+    # error that `--fix` can address.
+    text = _MINIMAL_VALID.replace("allow_force = false\n", "")
     cfg = _write(tmp_path, "agent6.toml", text)
     result = propose_fixes(cfg)
     assert result.remaining_errors == ()
@@ -176,8 +178,8 @@ def test_propose_fixes_missing_field_in_present_section(tmp_path: Path) -> None:
     fix = result.fixes[0]
     assert fix.kind is FixKind.INSERT_FIELD
     assert fix.section == "git"
-    assert fix.key == "auto_stash"
-    assert fix.lines == ("auto_stash = false",)
+    assert fix.key == "allow_force"
+    assert fix.lines == ("allow_force = false",)
 
 
 def test_propose_fixes_mixed_sections_and_fields(tmp_path: Path) -> None:
@@ -213,7 +215,7 @@ def test_propose_fixes_passes_through_non_missing_errors(tmp_path: Path) -> None
 
 
 def test_apply_fixes_inserts_field_after_header(tmp_path: Path) -> None:
-    text = _MINIMAL_VALID.replace("auto_stash = false\n", "")
+    text = _MINIMAL_VALID.replace("allow_force = false\n", "")
     cfg = _write(tmp_path, "agent6.toml", text)
     result = propose_fixes(cfg)
     apply_fixes(cfg, result.fixes)
@@ -222,7 +224,7 @@ def test_apply_fixes_inserts_field_after_header(tmp_path: Path) -> None:
     # And the new line sits directly after the [git] header.
     lines = cfg.read_text(encoding="utf-8").splitlines()
     git_index = lines.index("[git]")
-    assert lines[git_index + 1] == "auto_stash = false"
+    assert lines[git_index + 1] == "allow_force = false"
 
 
 def test_apply_fixes_appends_whole_section(tmp_path: Path) -> None:
@@ -248,7 +250,7 @@ def test_apply_fixes_preserves_existing_comments(tmp_path: Path) -> None:
     text = _MINIMAL_VALID.replace(
         "[git]\n",
         "# my custom comment\n[git]\n",
-    ).replace("auto_stash = false\n", "")
+    ).replace("allow_force = false\n", "")
     cfg = _write(tmp_path, "agent6.toml", text)
     result = propose_fixes(cfg)
     apply_fixes(cfg, result.fixes)
@@ -259,7 +261,7 @@ def test_apply_fixes_preserves_existing_comments(tmp_path: Path) -> None:
 
 def test_apply_fixes_idempotent_after_validation(tmp_path: Path) -> None:
     # Once applied, a second propose returns no fixes.
-    text = _MINIMAL_VALID.replace("auto_stash = false\n", "")
+    text = _MINIMAL_VALID.replace("allow_force = false\n", "")
     cfg = _write(tmp_path, "agent6.toml", text)
     apply_fixes(cfg, propose_fixes(cfg).fixes)
     again = propose_fixes(cfg)
@@ -306,14 +308,14 @@ def test_cli_check_config_fix_assume_yes_repairs_file(
 ) -> None:
     from agent6.cli import _cmd_check_config  # pyright: ignore[reportPrivateUsage]
 
-    text = _MINIMAL_VALID.replace("auto_stash = false\n", "")
+    text = _MINIMAL_VALID.replace("allow_force = false\n", "")
     cfg = _write(tmp_path, "agent6.toml", text)
     rc = _cmd_check_config(cfg, fix=True, assume_yes=True)
     assert rc == 0
     Config.model_validate(tomllib.loads(cfg.read_text(encoding="utf-8")))
     out = capsys.readouterr()
     combined = out.out + out.err
-    assert "auto_stash = false" in combined
+    assert "allow_force = false" in combined
     assert "now validates cleanly" in combined
 
 
@@ -324,7 +326,7 @@ def test_cli_check_config_fix_interactive_decline(
 ) -> None:
     from agent6.cli import _cmd_check_config  # pyright: ignore[reportPrivateUsage]
 
-    text = _MINIMAL_VALID.replace("auto_stash = false\n", "")
+    text = _MINIMAL_VALID.replace("allow_force = false\n", "")
     cfg = _write(tmp_path, "agent6.toml", text)
     original = cfg.read_text(encoding="utf-8")
     monkeypatch.setattr("sys.stdin", io.StringIO("n\n"))

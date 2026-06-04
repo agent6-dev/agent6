@@ -2,10 +2,11 @@
 # Copyright 2026 Eric Lesiuta
 """`agent6 check-config --fix` — interactive repair for stale agent6.toml.
 
-`Config` (in `agent6.config`) intentionally has no implicit defaults: every
-field is required at load time. That keeps the schema self-documenting,
-but it means a user whose config predates a release gets a wall of
-`field required` errors with no hint about what to set.
+Security-sensitive fields in `agent6.config.Config` have no defaults
+(every `sandbox.*`, `providers.*`, `models.*`, `budget.max_*_tokens`,
+`git.allow_*`, and `workflow.verify_command` must be set explicitly).
+A user whose config predates a release that added a new required field
+gets a `field required` error with no hint about what to set.
 
 This module bridges the gap. It compares the user's TOML to the canonical
 starter template in `agent6.init` (`_STARTER_TOML`), produces a list of
@@ -19,8 +20,9 @@ Important invariants:
 * Never round-trip the user's file through a TOML serializer. We only
   append blocks or insert single lines after a section header. Existing
   content (comments, ordering, formatting) is left untouched.
-* Never add load-time defaults to `Config`. `Fix` only produces explicit
-  text to insert; it does NOT relax validation.
+* `Fix` only produces explicit text to insert; it does NOT relax
+  validation. Operational fields that already have a default in
+  `Config` are not surfaced as missing.
 * Only `missing` errors are addressable; any other `ValidationError`
   (e.g. wrong type, unknown extra key) is returned in `remaining_errors`
   for the caller to surface.
@@ -102,7 +104,7 @@ def starter_recommendations() -> dict[str, dict[str, Any]]:
     """Parse `_STARTER_TOML` and return a `{section_path: {key: value}}` map.
 
     `section_path` is the dotted header (e.g. `providers.anthropic`,
-    `models.planner`, `budget`). Values are native Python (str, int,
+    `models.worker`, `budget`). Values are native Python (str, int,
     bool, list[str]). This map is the canonical source of recommended
     values used by `propose_fixes`.
 
