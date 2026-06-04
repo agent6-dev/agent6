@@ -9,9 +9,11 @@ audit surface and pinned URL. Supports prompt caching via the
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,6 +22,7 @@ from typing import Any
 import httpx
 
 from agent6.budget import BudgetTracker
+from agent6.providers.egress import http_post, http_stream
 
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
@@ -30,7 +33,17 @@ _REDACTED = "<REDACTED>"
 
 
 class ProviderError(Exception):
-    """Anthropic call failed."""
+    """Anthropic call failed.
+
+    ``status_code`` is the upstream HTTP status when the failure originated
+    from an API error response (None for network/parse failures). The loop's
+    retry wrapper uses it to skip retrying permanent client errors such as
+    401/402/403 that will never succeed on a second attempt.
+    """
+
+    def __init__(self, *args: object, status_code: int | None = None) -> None:
+        super().__init__(*args)
+        self.status_code = status_code
 
 
 def _redact_headers(headers: dict[str, str]) -> dict[str, str]:
@@ -106,6 +119,13 @@ class ProviderResponse:
     output_tokens: int
     cache_read_tokens: int
     cache_creation_tokens: int
+    # provider-reported USD cost for this single call. Currently
+    # populated only by the OpenAI-compatible provider when the upstream
+    # gateway returns ``usage.cost`` (OpenRouter does; OpenAI direct does
+    # not; Anthropic does not). Zero means "no authoritative figure was
+    # supplied" — callers fall back to the price-table estimate in
+    # ``BudgetTracker.estimate_usd``.
+    cost_usd: float = 0.0
     raw: dict[str, Any] = field(default_factory=dict)
 
 
@@ -127,6 +147,7 @@ class AnthropicProvider:
         model: str,
         env_var: str,
         prompt_caching: bool = True,
+        timeout_s: float = 120.0,
         transcript_sink: TranscriptSink | None = None,
         budget: BudgetTracker | None = None,
     ) -> AnthropicProvider:
@@ -137,6 +158,7 @@ class AnthropicProvider:
             api_key=key,
             model=model,
             prompt_caching=prompt_caching,
+            timeout_s=timeout_s,
             transcript_sink=transcript_sink,
             budget=budget,
         )
@@ -148,7 +170,14 @@ class AnthropicProvider:
         messages: list[dict[str, Any]],
         tools: list[ToolDefinition] | None = None,
         max_tokens: int = DEFAULT_MAX_TOKENS,
+        temperature: float | None = None,
+        reasoning_effort: str | None = None,
+        text_delta_callback: Callable[[str], None] | None = None,
     ) -> ProviderResponse:
+        # reasoning_effort is an OpenAI-reasoning-model knob; Anthropic
+        # extended thinking uses a different shape. Silently no-op so
+        # cross-provider loop code doesn't have to branch.
+        del reasoning_effort
         # Hard-stop: refuse the call up front if we're already over budget.
         if self.budget is not None:
             self.budget.check()
@@ -183,11 +212,26 @@ class AnthropicProvider:
             "system": system_blocks,
             "messages": messages,
         }
+        if temperature is not None:
+            body["temperature"] = temperature
         if tool_payload:
             body["tools"] = tool_payload
 
+        # opt-in SSE streaming. When the caller passes a
+        # text_delta_callback we POST with `stream: true` and feed text
+        # deltas to the callback as they arrive, then synthesise a
+        # ProviderResponse identical in shape to the non-streaming path
+        # at message_stop. Non-streaming is the default to keep bench
+        # runs and the existing test suite on the audited code path.
+        if text_delta_callback is not None:
+            return self._call_streaming(
+                headers=headers,
+                body=body,
+                text_delta_callback=text_delta_callback,
+            )
+
         try:
-            resp = httpx.post(
+            resp = http_post(
                 ANTHROPIC_URL,
                 headers=headers,
                 content=json.dumps(body).encode("utf-8"),
@@ -210,7 +254,10 @@ class AnthropicProvider:
                     response_status=resp.status_code,
                     response_body=resp.text[:8192],
                 )
-            raise ProviderError(f"Anthropic API error {resp.status_code}: {resp.text[:500]}")
+            raise ProviderError(
+                f"Anthropic API error {resp.status_code}: {resp.text[:500]}",
+                status_code=resp.status_code,
+            )
         data: dict[str, Any] = resp.json()
         if self.transcript_sink is not None:
             self.transcript_sink.record(
@@ -220,6 +267,194 @@ class AnthropicProvider:
                 response_body=data,
             )
         parsed = _parse_response(data)
+        if self.budget is not None:
+            self.budget.record(
+                model=self.model,
+                input_tokens=parsed.input_tokens,
+                output_tokens=parsed.output_tokens,
+                cache_read_tokens=parsed.cache_read_tokens,
+                cache_creation_tokens=parsed.cache_creation_tokens,
+            )
+        return parsed
+
+    def _call_streaming(  # noqa: PLR0912, PLR0915
+        self,
+        *,
+        headers: dict[str, str],
+        body: dict[str, Any],
+        text_delta_callback: Callable[[str], None],
+    ) -> ProviderResponse:
+        """SSE streaming variant.
+
+        Iterates the Anthropic Messages SSE stream, fans text_delta
+        deltas to ``text_delta_callback`` as they arrive, and at
+        message_stop returns a ProviderResponse whose .raw is shaped
+        identically to a non-streaming response so callers (Workflow,
+        transcript replay) don't need a streaming-aware code path.
+        """
+        body = dict(body)
+        body["stream"] = True
+        stream_headers = dict(headers)
+        stream_headers["accept"] = "text/event-stream"
+
+        # Accumulators for the synthesised non-streaming-shape response.
+        content_blocks: list[dict[str, Any]] = []
+        # Per-index in-flight builders. Anthropic indexes content blocks
+        # 0..N within a single message; one block at a time is "open".
+        text_acc: dict[int, list[str]] = {}
+        tool_acc: dict[int, dict[str, Any]] = {}
+        json_partial: dict[int, list[str]] = {}
+        stop_reason: str = ""
+        usage_input = 0
+        usage_output = 0
+        usage_cache_read = 0
+        usage_cache_creation = 0
+
+        sse_lines: list[str] = []  # for transcript audit trail
+        try:
+            with http_stream(
+                "POST",
+                ANTHROPIC_URL,
+                headers=stream_headers,
+                content=json.dumps(body).encode("utf-8"),
+                timeout=self.timeout_s,
+            ) as resp:
+                if resp.status_code >= 400:
+                    error_body = resp.read().decode("utf-8", errors="replace")[:8192]
+                    if self.transcript_sink is not None:
+                        self.transcript_sink.record(
+                            request_headers=stream_headers,
+                            request_body=body,
+                            response_status=resp.status_code,
+                            response_body=error_body,
+                        )
+                    raise ProviderError(
+                        f"Anthropic API error {resp.status_code}: {error_body[:500]}"
+                    )
+                event_type: str = ""
+                for line in resp.iter_lines():
+                    sse_lines.append(line)
+                    if not line:
+                        event_type = ""
+                        continue
+                    if line.startswith("event:"):
+                        event_type = line[6:].strip()
+                        continue
+                    if not line.startswith("data:"):
+                        continue
+                    data_str = line[5:].strip()
+                    if not data_str:
+                        continue
+                    try:
+                        evt: dict[str, Any] = json.loads(data_str)
+                    except json.JSONDecodeError:
+                        continue
+                    et = event_type or str(evt.get("type", ""))
+                    if et == "message_start":
+                        msg = evt.get("message", {})
+                        u = msg.get("usage", {}) or {}
+                        usage_input = int(u.get("input_tokens", usage_input))
+                        usage_cache_read = int(u.get("cache_read_input_tokens", usage_cache_read))
+                        usage_cache_creation = int(
+                            u.get("cache_creation_input_tokens", usage_cache_creation)
+                        )
+                    elif et == "content_block_start":
+                        idx = int(evt.get("index", 0))
+                        cb = evt.get("content_block", {}) or {}
+                        btype = cb.get("type")
+                        if btype == "text":
+                            text_acc[idx] = [str(cb.get("text", ""))]
+                        elif btype == "tool_use":
+                            tool_acc[idx] = {
+                                "type": "tool_use",
+                                "id": cb.get("id", ""),
+                                "name": cb.get("name", ""),
+                                "input": cb.get("input", {}) or {},
+                            }
+                            json_partial[idx] = []
+                    elif et == "content_block_delta":
+                        idx = int(evt.get("index", 0))
+                        d = evt.get("delta", {}) or {}
+                        dt = d.get("type")
+                        if dt == "text_delta":
+                            piece = str(d.get("text", ""))
+                            text_acc.setdefault(idx, []).append(piece)
+                            if piece:
+                                # Callback failure must never break the
+                                # stream — cosmetic surface.
+                                with contextlib.suppress(Exception):
+                                    text_delta_callback(piece)
+                        elif dt == "input_json_delta":
+                            json_partial.setdefault(idx, []).append(str(d.get("partial_json", "")))
+                    elif et == "content_block_stop":
+                        idx = int(evt.get("index", 0))
+                        if idx in text_acc:
+                            content_blocks.append(
+                                {
+                                    "type": "text",
+                                    "text": "".join(text_acc.pop(idx)),
+                                }
+                            )
+                        elif idx in tool_acc:
+                            tu = tool_acc.pop(idx)
+                            partial = "".join(json_partial.pop(idx, []))
+                            if partial:
+                                try:
+                                    tu["input"] = json.loads(partial)
+                                except json.JSONDecodeError:
+                                    # Stream truncated mid-JSON; surface
+                                    # what we have rather than dropping
+                                    # the tool_use entirely.
+                                    tu["input"] = {"_partial_json": partial}
+                            content_blocks.append(tu)
+                    elif et == "message_delta":
+                        d = evt.get("delta", {}) or {}
+                        if "stop_reason" in d:
+                            stop_reason = str(d.get("stop_reason", "") or "")
+                        u = evt.get("usage", {}) or {}
+                        if "output_tokens" in u:
+                            usage_output = int(u.get("output_tokens", usage_output))
+                    elif et == "message_stop":
+                        break
+                    elif et == "error":
+                        err = evt.get("error", {}) or {}
+                        raise ProviderError(
+                            f"Anthropic stream error: {err.get('type')}: {err.get('message')}"
+                        )
+        except httpx.HTTPError as exc:
+            if self.transcript_sink is not None:
+                self.transcript_sink.record(
+                    request_headers=stream_headers,
+                    request_body=body,
+                    response_status=0,
+                    response_body=f"HTTPError: {exc}",
+                )
+            raise ProviderError(f"HTTP error streaming Anthropic: {exc}") from exc
+
+        # Synthesise the non-streaming-shaped response body so
+        # downstream consumers (transcript replay, assistant_blocks
+        # reconstruction in Workflow) see the same shape they would
+        # see from a non-streaming call.
+        synthesised: dict[str, Any] = {
+            "type": "message",
+            "role": "assistant",
+            "content": content_blocks,
+            "stop_reason": stop_reason,
+            "usage": {
+                "input_tokens": usage_input,
+                "output_tokens": usage_output,
+                "cache_read_input_tokens": usage_cache_read,
+                "cache_creation_input_tokens": usage_cache_creation,
+            },
+        }
+        if self.transcript_sink is not None:
+            self.transcript_sink.record(
+                request_headers=stream_headers,
+                request_body=body,
+                response_status=200,
+                response_body=synthesised,
+            )
+        parsed = _parse_response(synthesised)
         if self.budget is not None:
             self.budget.record(
                 model=self.model,

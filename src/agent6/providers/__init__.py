@@ -12,6 +12,7 @@ sub-agents' point of view.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 
 from agent6.providers.anthropic import (
@@ -32,6 +33,11 @@ class Provider(Protocol):
     sub-agent currently exercises tool use through the provider — tools
     are dispatched in Python via `ToolDispatcher` — so the `tools`
     parameter exists for forward-compatibility only.
+
+    ``text_delta_callback`` is an opt-in SSE streaming hook.
+    When set, providers MAY stream text deltas to the callback as they
+    arrive. When ``None`` (default), providers use the non-streaming
+    code path.
     """
 
     def call(
@@ -41,6 +47,9 @@ class Provider(Protocol):
         messages: list[dict[str, Any]],
         tools: list[ToolDefinition] | None = ...,
         max_tokens: int = ...,
+        temperature: float | None = ...,
+        reasoning_effort: str | None = ...,
+        text_delta_callback: Callable[[str], None] | None = ...,
     ) -> ProviderResponse: ...
 
 

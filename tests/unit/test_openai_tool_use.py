@@ -1,0 +1,637 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Eric Lesiuta
+"""Tests for OpenAIProvider tool-use translation.
+
+Validates the Anthropic-shape <-> OpenAI Chat Completions translation
+in both directions: outgoing messages (tool_use -> tool_calls,
+tool_result -> role=tool) and incoming responses (tool_calls ->
+tool_uses tuple in Anthropic shape).
+
+Uses a stub `httpx.post` so no network call is made; the test asserts
+on the request body and synthesises an OpenAI-shape response.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+import httpx
+import pytest
+
+from agent6.providers import OpenAIProvider, ToolDefinition
+from agent6.providers.openai import (
+    anthropic_to_openai_messages,
+    tools_to_openai,
+)
+
+
+class _FakeResponse:
+    def __init__(self, *, status_code: int, payload: dict[str, Any]):
+        self.status_code = status_code
+        self._payload = payload
+        self.text = ""
+
+    def json(self) -> dict[str, Any]:
+        return self._payload
+
+
+def _ok_response(message: dict[str, Any]) -> dict[str, Any]:
+    """Build an OpenAI-shape response with the given assistant message."""
+    return {
+        "choices": [{"message": message, "finish_reason": "tool_calls"}],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+    }
+
+
+def test_translate_text_only_user_message() -> None:
+    """The simple-text case: string content stays a string."""
+    out = anthropic_to_openai_messages(
+        "sys",
+        [{"role": "user", "content": "hello"}],
+    )
+    assert out == [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "hello"},
+    ]
+
+
+def test_translate_assistant_tool_use_becomes_tool_calls() -> None:
+    """Anthropic tool_use block in assistant content -> OpenAI tool_calls."""
+    msgs = [
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "Let me read that file."},
+                {
+                    "type": "tool_use",
+                    "id": "t1",
+                    "name": "read_file",
+                    "input": {"path": "foo.py"},
+                },
+            ],
+        }
+    ]
+    out = anthropic_to_openai_messages("sys", msgs)
+    assert out[0] == {"role": "system", "content": "sys"}
+    assert out[1]["role"] == "assistant"
+    assert out[1]["content"] == "Let me read that file."
+    assert out[1]["tool_calls"] == [
+        {
+            "id": "t1",
+            "type": "function",
+            "function": {
+                "name": "read_file",
+                "arguments": json.dumps({"path": "foo.py"}),
+            },
+        }
+    ]
+
+
+def test_translate_user_tool_result_becomes_role_tool_message() -> None:
+    """tool_result in user content -> separate role=tool message."""
+    msgs = [
+        {
+            "role": "user",
+            "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "file content"}],
+        }
+    ]
+    out = anthropic_to_openai_messages("sys", msgs)
+    # system + role=tool message; no user message (no text).
+    assert len(out) == 2
+    assert out[1] == {"role": "tool", "tool_call_id": "t1", "content": "file content"}
+
+
+def test_translate_user_text_plus_tool_result_emits_both() -> None:
+    """Mixed content: tool_result MUST come first (OpenAI requires
+    role=tool to immediately follow the assistant's tool_calls), then
+    the user text as a follow-up turn.
+
+    Emitted text first then tool_result, which both
+    violated the OpenAI ordering rule AND caused harness-injected
+    notices ([loop-guard], [harness], [critic]) to arrive BEFORE the
+    tool result they were commenting on. Weak models lost the causal
+    link and ignored the notice entirely - observed live with Kimi K2.6
+    looping on `read_file` 10x in a row despite three loop-guard
+    notices being injected.
+    """
+    msgs = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "[loop-guard] stop re-reading"},
+                {"type": "tool_result", "tool_use_id": "t1", "content": "data"},
+            ],
+        }
+    ]
+    out = anthropic_to_openai_messages("sys", msgs)
+    # tool_result first, then the user text.
+    assert out[1] == {"role": "tool", "tool_call_id": "t1", "content": "data"}
+    assert out[2] == {"role": "user", "content": "[loop-guard] stop re-reading"}
+
+
+def test_translate_loop_guard_notice_lands_after_tool_results() -> None:
+    """regression: when the harness injects a [loop-guard] /
+    [harness] / [critic] notice into a user turn that also carries
+    tool_results, the notice must land in a SEPARATE user message
+    AFTER all the role=tool messages so weak models see it as a fresh
+    instruction rather than something the tool said. Tests with
+    multiple tool_results to confirm ordering."""
+    msgs = [
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "tool_use", "id": "t1", "name": "read_file", "input": {"path": "a"}},
+                {"type": "tool_use", "id": "t2", "name": "read_file", "input": {"path": "b"}},
+            ],
+        },
+        {
+            "role": "user",
+            "content": [
+                {"type": "tool_result", "tool_use_id": "t1", "content": "data_a"},
+                {"type": "tool_result", "tool_use_id": "t2", "content": "data_b"},
+                {"type": "text", "text": "[loop-guard] you have looped 3x; pivot"},
+            ],
+        },
+    ]
+    out = anthropic_to_openai_messages("sys", msgs)
+    # system, assistant, tool t1, tool t2, user notice
+    assert len(out) == 5
+    assert out[1]["role"] == "assistant"
+    assert out[2] == {"role": "tool", "tool_call_id": "t1", "content": "data_a"}
+    assert out[3] == {"role": "tool", "tool_call_id": "t2", "content": "data_b"}
+    assert out[4]["role"] == "user"
+    assert "[loop-guard]" in out[4]["content"]
+
+
+def test_translate_tool_result_list_content_flattened() -> None:
+    """Anthropic tool_result content can be a list of blocks - flatten to string."""
+    msgs = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "t1",
+                    "content": [
+                        {"type": "text", "text": "first "},
+                        {"type": "text", "text": "second"},
+                    ],
+                }
+            ],
+        }
+    ]
+    out = anthropic_to_openai_messages("sys", msgs)
+    assert out[1]["content"] == "first second"
+
+
+def test_tools_to_openai_translation() -> None:
+    """ToolDefinition -> OpenAI function-tool entries."""
+    tools = [
+        ToolDefinition(
+            name="read_file",
+            description="Read a file",
+            input_schema={"type": "object", "properties": {"path": {"type": "string"}}},
+        ),
+        ToolDefinition(
+            name="grep",
+            description="Search",
+            input_schema={"type": "object", "properties": {"pattern": {"type": "string"}}},
+        ),
+    ]
+    out = tools_to_openai(tools)
+    assert out == [
+        {
+            "type": "function",
+            "function": {
+                "name": "read_file",
+                "description": "Read a file",
+                "parameters": {"type": "object", "properties": {"path": {"type": "string"}}},
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "grep",
+                "description": "Search",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"pattern": {"type": "string"}},
+                },
+            },
+        },
+    ]
+
+
+def test_call_with_tools_translates_request_and_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """End-to-end: caller passes Anthropic-shape inputs, gets Anthropic-shape
+    response back. Tools go out as OpenAI function-tools and come back as
+    tool_uses tuple."""
+    captured: dict[str, Any] = {}
+
+    def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
+        captured["url"] = url
+        captured["body"] = json.loads(kwargs["content"].decode("utf-8"))
+        return _FakeResponse(
+            status_code=200,
+            payload=_ok_response(
+                {
+                    "role": "assistant",
+                    "content": "Found it.",
+                    "tool_calls": [
+                        {
+                            "id": "call_42",
+                            "type": "function",
+                            "function": {
+                                "name": "read_file",
+                                "arguments": '{"path": "src/foo.py"}',
+                            },
+                        }
+                    ],
+                }
+            ),
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    provider = OpenAIProvider(api_key="k", model="gpt-x")
+    tools = [
+        ToolDefinition(
+            name="read_file",
+            description="Read a file",
+            input_schema={"type": "object", "properties": {"path": {"type": "string"}}},
+        )
+    ]
+    resp = provider.call(
+        system="sys",
+        messages=[{"role": "user", "content": "find the bug"}],
+        tools=tools,
+        max_tokens=100,
+    )
+    # Request body has tools as OpenAI function entries.
+    assert captured["body"]["tools"][0]["type"] == "function"
+    assert captured["body"]["tools"][0]["function"]["name"] == "read_file"
+    # Response was translated to Anthropic-shape ProviderResponse.
+    assert resp.text == "Found it."
+    assert len(resp.tool_uses) == 1
+    tu = resp.tool_uses[0]
+    assert tu["id"] == "call_42"
+    assert tu["name"] == "read_file"
+    assert tu["input"] == {"path": "src/foo.py"}
+    # raw.content mirrors Anthropic's response shape so worker_loop's
+    # `assistant_blocks = resp.raw.get("content")` works uniformly.
+    assert {"type": "text", "text": "Found it."} in resp.raw["content"]
+    assert any(
+        b.get("type") == "tool_use" and b.get("name") == "read_file" for b in resp.raw["content"]
+    )
+
+
+def test_response_with_malformed_tool_arguments_doesnt_crash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the model returns invalid JSON in tool arguments, surface as
+    `_raw_arguments` so debugging is possible but don't blow up the
+    parser."""
+
+    def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
+        return _FakeResponse(
+            status_code=200,
+            payload=_ok_response(
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {
+                                "name": "read_file",
+                                # Invalid JSON
+                                "arguments": '{"path": "foo.py',
+                            },
+                        }
+                    ],
+                }
+            ),
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    provider = OpenAIProvider(api_key="k", model="gpt-x")
+    resp = provider.call(system="s", messages=[{"role": "user", "content": "u"}])
+    assert resp.tool_uses[0]["input"] == {"_raw_arguments": '{"path": "foo.py'}
+
+
+def test_huge_malformed_tool_arguments_are_capped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Finding C: a degenerate model (Kimi K2.6 was observed live)
+    can emit a 30+ KB tool-arg payload of repeating escape sequences that
+    exhausts the completion-token cap mid-string. Surfacing the entire
+    raw blob in `_raw_arguments` lets that toxic content survive into the
+    next tool-error round-trip and primes the same degeneration on the
+    next turn. Cap the diagnostic at 500 chars + an origin marker."""
+    huge = '{"edits": [{"kind":"replace","old_string":"' + ("\\n" * 15000)
+
+    def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
+        return _FakeResponse(
+            status_code=200,
+            payload=_ok_response(
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call_x",
+                            "type": "function",
+                            "function": {
+                                "name": "apply_edit",
+                                "arguments": huge,
+                            },
+                        }
+                    ],
+                }
+            ),
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    provider = OpenAIProvider(api_key="k", model="gpt-x")
+    resp = provider.call(system="s", messages=[{"role": "user", "content": "u"}])
+    parsed = resp.tool_uses[0]["input"]
+    assert "_raw_arguments" in parsed
+    raw = parsed["_raw_arguments"]
+    # Capped well below the original payload size.
+    assert len(raw) < 700, f"expected ~500-char cap; got {len(raw)}"
+    assert f"original was {len(huge)} chars" in raw
+    # Cap kicks in by 500 chars; the original 15k `\n` escapes must not
+    # survive verbatim.
+    assert raw.count("\\n") < 300
+
+
+def test_extended_thinking_silently_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Anthropic-shape extended_thinking param doesn't translate to OpenAI;
+    silently drop so cross-provider workflow code doesn't have to branch."""
+    captured: dict[str, Any] = {}
+
+    def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
+        captured["body"] = json.loads(kwargs["content"].decode("utf-8"))
+        return _FakeResponse(
+            status_code=200,
+            payload=_ok_response({"role": "assistant", "content": "ok"}),
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    provider = OpenAIProvider(api_key="k", model="gpt-x")
+    provider.call(
+        system="s",
+        messages=[{"role": "user", "content": "u"}],
+        extended_thinking={"type": "enabled", "budget_tokens": 1000},
+    )
+    assert "thinking" not in captured["body"]
+    assert "extended_thinking" not in captured["body"]
+
+
+def test_no_tools_path_still_works(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Back-compat: when no tools are passed, behave as before."""
+    captured: dict[str, Any] = {}
+
+    def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
+        captured["body"] = json.loads(kwargs["content"].decode("utf-8"))
+        return _FakeResponse(
+            status_code=200,
+            payload=_ok_response({"role": "assistant", "content": "hi"}),
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    provider = OpenAIProvider(api_key="k", model="gpt-x")
+    resp = provider.call(system="s", messages=[{"role": "user", "content": "u"}])
+    assert "tools" not in captured["body"]
+    assert resp.text == "hi"
+    assert resp.tool_uses == ()
+
+
+def test_full_loop_message_roundtrip(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Simulates one turn of a worker_loop-style conversation: assistant
+    emits a tool_use (which we get back as Anthropic shape), then the
+    workflow appends a tool_result in user content, and the NEXT call's
+    OpenAI request has the right role=tool message."""
+    captured_bodies: list[dict[str, Any]] = []
+
+    def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
+        captured_bodies.append(json.loads(kwargs["content"].decode("utf-8")))
+        # Always reply with a finish tool_call so the test is deterministic.
+        return _FakeResponse(
+            status_code=200,
+            payload=_ok_response(
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_done",
+                            "type": "function",
+                            "function": {
+                                "name": "finish_step",
+                                "arguments": '{"edit": {"edits": [], "notes": "ok"}}',
+                            },
+                        }
+                    ],
+                }
+            ),
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    provider = OpenAIProvider(api_key="k", model="gpt-x")
+
+    # First call: simple user prompt.
+    provider.call(
+        system="s",
+        messages=[{"role": "user", "content": "read foo.py"}],
+        tools=[
+            ToolDefinition(
+                name="read_file",
+                description="x",
+                input_schema={"type": "object"},
+            )
+        ],
+    )
+
+    # Second call: simulating the loop after one read_file round-trip.
+    provider.call(
+        system="s",
+        messages=[
+            {"role": "user", "content": "read foo.py"},
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "t1",
+                        "name": "read_file",
+                        "input": {"path": "foo.py"},
+                    }
+                ],
+            },
+            {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "x = 1"}],
+            },
+        ],
+        tools=[
+            ToolDefinition(
+                name="read_file",
+                description="x",
+                input_schema={"type": "object"},
+            )
+        ],
+    )
+    # Second request body has 4 messages: system, user-text, assistant
+    # (with tool_calls), tool (role=tool with result).
+    second_body = captured_bodies[1]
+    msgs = second_body["messages"]
+    assert msgs[0]["role"] == "system"
+    assert msgs[1] == {"role": "user", "content": "read foo.py"}
+    assert msgs[2]["role"] == "assistant"
+    assert msgs[2]["tool_calls"][0]["function"]["name"] == "read_file"
+    assert msgs[3] == {"role": "tool", "tool_call_id": "t1", "content": "x = 1"}
+
+
+# --- Text-emitted tool-call recovery (small local models) ----------------
+#
+# Some Ollama / llama.cpp chat templates don't parse the model's tool
+# call into native `tool_calls`; the call leaks into the assistant text.
+# `_parse_response` recovers it ONLY when no native tool_calls are present
+# AND the recovered name matches an offered tool. These tests pin that
+# behaviour and guard against regressions for well-behaved models.
+
+_READ_FILE_TOOL = ToolDefinition(
+    name="read_file",
+    description="Read a file",
+    input_schema={"type": "object", "properties": {"path": {"type": "string"}}},
+)
+
+
+def _call_with_text_content(
+    monkeypatch: pytest.MonkeyPatch,
+    content: str,
+    *,
+    tools: list[ToolDefinition] | None = None,
+) -> Any:
+    def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
+        return _FakeResponse(
+            status_code=200,
+            payload={
+                "choices": [
+                    {"message": {"role": "assistant", "content": content}, "finish_reason": "stop"}
+                ],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+            },
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    provider = OpenAIProvider(api_key="k", model="qwen2.5-coder")
+    return provider.call(
+        system="s",
+        messages=[{"role": "user", "content": "read foo"}],
+        tools=[_READ_FILE_TOOL] if tools is None else tools,
+    )
+
+
+def test_bare_json_tool_call_in_text_is_recovered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A model that emits the call as a bare JSON object in `content`."""
+    resp = _call_with_text_content(
+        monkeypatch, '{"name": "read_file", "arguments": {"path": "calc.py"}}'
+    )
+    assert len(resp.tool_uses) == 1
+    tu = resp.tool_uses[0]
+    assert tu["name"] == "read_file"
+    assert tu["input"] == {"path": "calc.py"}
+    # The consumed JSON is stripped from the visible text so it isn't
+    # echoed back into the model's context on the next turn.
+    assert resp.text == ""
+
+
+def test_hermes_tool_call_tags_are_recovered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Qwen/Hermes `<tool_call>...</tool_call>` wrapper, with prose around."""
+    content = (
+        "Let me read the file.\n"
+        '<tool_call>\n{"name": "read_file", "arguments": {"path": "calc.py"}}\n</tool_call>'
+    )
+    resp = _call_with_text_content(monkeypatch, content)
+    assert len(resp.tool_uses) == 1
+    assert resp.tool_uses[0]["input"] == {"path": "calc.py"}
+    assert resp.text == "Let me read the file."
+
+
+def test_fenced_json_tool_call_is_recovered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ```json fenced tool call."""
+    content = '```json\n{"name": "read_file", "arguments": {"path": "calc.py"}}\n```'
+    resp = _call_with_text_content(monkeypatch, content)
+    assert len(resp.tool_uses) == 1
+    assert resp.tool_uses[0]["input"] == {"path": "calc.py"}
+
+
+def test_native_tool_calls_take_precedence_over_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When native tool_calls ARE present, the text fallback never fires —
+    even if the content also contains tool-call-shaped JSON."""
+
+    def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
+        return _FakeResponse(
+            status_code=200,
+            payload=_ok_response(
+                {
+                    "role": "assistant",
+                    "content": '{"name": "read_file", "arguments": {"path": "ignore.py"}}',
+                    "tool_calls": [
+                        {
+                            "id": "call_native",
+                            "type": "function",
+                            "function": {
+                                "name": "read_file",
+                                "arguments": '{"path": "real.py"}',
+                            },
+                        }
+                    ],
+                }
+            ),
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    provider = OpenAIProvider(api_key="k", model="gpt-x")
+    resp = provider.call(
+        system="s",
+        messages=[{"role": "user", "content": "u"}],
+        tools=[_READ_FILE_TOOL],
+    )
+    assert len(resp.tool_uses) == 1
+    assert resp.tool_uses[0]["id"] == "call_native"
+    assert resp.tool_uses[0]["input"] == {"path": "real.py"}
+
+
+def test_plain_json_answer_is_not_misread_as_tool_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A model legitimately answering with a JSON object whose `name`
+    is NOT an offered tool must stay plain text — no false coercion."""
+    content = '{"name": "Alice", "arguments": {"age": 30}}'
+    resp = _call_with_text_content(monkeypatch, content)
+    assert resp.tool_uses == ()
+    assert resp.text == content
+
+
+def test_text_coercion_disabled_when_no_tools_offered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With no tools offered, tool-call-shaped JSON stays text."""
+    content = '{"name": "read_file", "arguments": {"path": "calc.py"}}'
+    resp = _call_with_text_content(monkeypatch, content, tools=[])
+    assert resp.tool_uses == ()
+    assert resp.text == content
