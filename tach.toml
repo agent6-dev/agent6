@@ -22,7 +22,6 @@ depends_on = [
   "agent6.detect",
   "agent6.sandbox",
   "agent6.workflows",
-  "agent6.models",
   "agent6.types",
   "agent6.providers", "agent6", "agent6.tools",
   "agent6.memory",
@@ -36,6 +35,8 @@ depends_on = [
   "agent6.graph.models",
   "agent6.graph.storage",
   "agent6.run_id",
+  "agent6.mcp_server",
+  "agent6.machine",
 ]
 
 [[modules]]
@@ -43,25 +44,20 @@ path = "agent6.workflows"
 depends_on = [
   "agent6.agents",
   "agent6.tools",
+  "agent6.tools.schema",
   "agent6.git_ops",
-  "agent6.models",
   "agent6.types",
   "agent6.config",
   "agent6.providers",
-  "agent6.events",
+  "agent6.budget",  # loop workflow needs BudgetExceeded
   "agent6.graph.client",
-  "agent6.graph.curator",
   "agent6.graph.models",
-  "agent6.graph.storage",
 ]
 
 [[modules]]
 path = "agent6.agents"
 depends_on = [
   "agent6.providers",
-  "agent6.models",
-  "agent6.types",
-  "agent6.graph.models",
 ]
 
 [[modules]]
@@ -90,7 +86,9 @@ depends_on = [ "agent6.types"]
 
 [[modules]]
 path = "agent6.tools"
-depends_on = ["agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.config", "agent6.events"]
+# Dispatch.py uses graph.models intent types for the
+# DAG-as-tool handlers (add_task / update_task / set_cursor).
+depends_on = ["agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.config", "agent6.events", "agent6.graph.models"]
 
 [[modules]]
 path = "agent6.tools.schema"
@@ -102,7 +100,7 @@ depends_on = ["agent6.types"]
 
 [[modules]]
 path = "agent6.config"
-depends_on = []
+depends_on = ["agent6.budget"]
 
 [[modules]]
 path = "agent6.config_fix"
@@ -111,10 +109,6 @@ depends_on = ["agent6.config", "agent6.init"]
 [[modules]]
 path = "agent6.detect"
 depends_on = ["agent6.types"]
-
-[[modules]]
-path = "agent6.models"
-depends_on = []
 
 [[modules]]
 path = "agent6.types"
@@ -145,6 +139,15 @@ path = "agent6._data"
 depends_on = []
 
 [[modules]]
+path = "agent6.mcp_server"
+depends_on = [
+  "agent6",
+  "agent6.config",
+  "agent6.tools",
+  "agent6.graph.storage",
+]
+
+[[modules]]
 path = "agent6.graph.storage"
 depends_on = ["agent6.graph.models"]
 
@@ -163,3 +166,35 @@ depends_on = ["agent6.graph.ipc", "agent6.graph.models"]
 [[modules]]
 path = "agent6.graph.server"
 depends_on = ["agent6.graph.curator", "agent6.graph.ipc", "agent6.graph.models", "agent6.graph.storage"]
+
+[[modules]]
+path = "agent6.machine"
+depends_on = ["agent6.machine.authoring", "agent6.machine.model", "agent6.machine.graph", "agent6.machine.engine", "agent6.machine.journal"]
+
+[[modules]]
+path = "agent6.machine.authoring"
+depends_on = []
+
+[[modules]]
+path = "agent6.machine.predicate"
+depends_on = []
+
+[[modules]]
+path = "agent6.machine.template"
+depends_on = ["agent6.machine.predicate"]
+
+[[modules]]
+path = "agent6.machine.model"
+depends_on = ["agent6.machine.predicate", "agent6.machine.template"]
+
+[[modules]]
+path = "agent6.machine.graph"
+depends_on = ["agent6.machine.model"]
+
+[[modules]]
+path = "agent6.machine.journal"
+depends_on = []
+
+[[modules]]
+path = "agent6.machine.engine"
+depends_on = ["agent6.machine.model", "agent6.machine.template", "agent6.machine.predicate", "agent6.machine.journal", "agent6.sandbox", "agent6.types"]

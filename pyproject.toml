@@ -11,6 +11,8 @@ dependencies = [
     "pydantic>=2.7,<3",
     "httpx>=0.27,<1",
     "argcomplete>=3,<4",
+    "tree-sitter==0.25.2",
+    "tree-sitter-language-pack==1.8.1",
 ]
 
 [project.optional-dependencies]
@@ -107,7 +109,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S", "PLR2004", "PLR0915", "PLC0415", "B017"]
-"bench/**" = ["S", "PLR0912", "PLR0915", "PLC0415", "PLW2901", "SIM105", "SIM114", "E501"]
+"bench/**" = ["S", "PLR0912", "PLR0915", "PLC0415", "PLW2901", "SIM105", "SIM114", "SIM115", "E501", "PTH"]
 
 [tool.pyright]
 include = ["src", "tests"]
