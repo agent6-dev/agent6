@@ -13,7 +13,11 @@ from typing import Literal
 
 NetworkMode = Literal["no", "provider_only", "allow"]
 TernaryMode = Literal["no", "ask", "yes"]
-SandboxProfile = Literal["strict", "hardened"]
+# `none` is the unsandboxed profile selected on hosts without the Linux
+# sandbox (macOS, or any non-Linux platform). It runs child commands as
+# plain subprocesses with no kernel-enforced confinement; it is only ever
+# reached via `select_profile` on a non-Linux host and never from config.
+SandboxProfile = Literal["strict", "hardened", "none"]
 
 
 @dataclass(frozen=True, slots=True)

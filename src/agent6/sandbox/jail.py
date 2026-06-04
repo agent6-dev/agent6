@@ -70,11 +70,56 @@ def _policy_to_json(policy: JailPolicy) -> str:
     )
 
 
+def _run_unsandboxed(policy: JailPolicy) -> CommandResult:
+    """Run `policy.argv` as a plain subprocess (no confinement).
+
+    Used only for the `none` profile on non-Linux hosts. Inherits the parent
+    environment (so `PATH` etc. resolve normally) overlaid with `policy.env`;
+    runs in `policy.cwd`. The sandbox-only knobs (network, ro/rw/protect paths)
+    have no effect here — there is no kernel mechanism to enforce them.
+    """
+    env = {**os.environ, **{k: v for k, v in policy.env}}
+    start = time.monotonic()
+    # Unsandboxed escape hatch (non-Linux only); see run_in_jail docstring.
+    proc = subprocess.run(
+        list(policy.argv),
+        cwd=str(policy.cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=policy.timeout_s,
+    )
+    duration = time.monotonic() - start
+    return CommandResult(
+        argv=tuple(policy.argv),
+        returncode=int(proc.returncode),
+        stdout=proc.stdout,
+        stderr=proc.stderr,
+        duration_s=duration,
+    )
+
+
 def run_in_jail(policy: JailPolicy) -> CommandResult:
     """Run `policy.argv` inside the sandbox.
 
     Raises JailUnavailableError if the launcher binary is missing or setup fails.
+
+    The `none` profile is the unsandboxed path used on non-Linux hosts (see
+    `agent6.detect.select_profile`): the command runs as a plain subprocess
+    with no kernel confinement. This is never reached on Linux and never from
+    config — `select_profile` only returns `none` when `profile = "auto"` on a
+    platform without the Linux sandbox, and the CLI prints a prominent warning
+    before any such run.
+
+    Security review note: this is the single, audited place where an
+    LLM-influenced argv runs without the jail. It exists solely so agent6 is
+    usable on platforms (macOS) where the Landlock/seccomp/namespace sandbox
+    does not exist. All real-isolation profiles still go through the Rust
+    launcher; nothing here weakens the Linux boundary.
     """
+    if policy.profile == "none":
+        return _run_unsandboxed(policy)
     binary = _locate_jail_binary()
     if binary is None:
         raise JailUnavailableError(

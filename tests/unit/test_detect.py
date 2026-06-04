@@ -53,6 +53,7 @@ def _env(*, userns: bool) -> Environment:
         container_signals=(),
         kernel=KernelInfo(raw="6.14.0", major=6, minor=14),
         userns_supported=userns,
+        sandbox_available=True,
     )
 
 
@@ -86,3 +87,41 @@ def test_select_profile_hardened_always_ok() -> None:
 def test_select_profile_unknown_raises() -> None:
     with pytest.raises(RuntimeError, match=r"unknown sandbox\.profile"):
         select_profile("lax", _env(userns=True))
+
+
+def _no_sandbox_env() -> Environment:
+    """An Environment as detected on a non-Linux host (no kernel sandbox)."""
+    return Environment(
+        in_container=False,
+        container_signals=(),
+        kernel=KernelInfo(raw="unknown", major=0, minor=0),
+        userns_supported=False,
+        sandbox_available=False,
+    )
+
+
+def test_detected_profile_none_without_sandbox() -> None:
+    assert _no_sandbox_env().detected_profile == "none"
+
+
+def test_select_profile_auto_is_none_without_sandbox() -> None:
+    assert select_profile("auto", _no_sandbox_env()) == "none"
+
+
+def test_select_profile_strict_refused_without_sandbox() -> None:
+    with pytest.raises(RuntimeError, match="Linux kernel sandbox"):
+        select_profile("strict", _no_sandbox_env())
+
+
+def test_select_profile_hardened_refused_without_sandbox() -> None:
+    with pytest.raises(RuntimeError, match="Linux kernel sandbox"):
+        select_profile("hardened", _no_sandbox_env())
+
+
+def test_sandbox_available_matches_platform(monkeypatch: pytest.MonkeyPatch) -> None:
+    import agent6.detect as detect_mod
+
+    monkeypatch.setattr(detect_mod.sys, "platform", "darwin")
+    assert detect_mod.sandbox_available() is False
+    monkeypatch.setattr(detect_mod.sys, "platform", "linux")
+    assert detect_mod.sandbox_available() is True

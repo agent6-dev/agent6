@@ -26,6 +26,7 @@ def _env(*, major: int, minor: int) -> Environment:
         container_signals=(),
         kernel=KernelInfo(raw=f"{major}.{minor}.0", major=major, minor=minor),
         userns_supported=True,
+        sandbox_available=True,
     )
 
 

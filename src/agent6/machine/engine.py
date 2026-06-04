@@ -56,7 +56,7 @@ from agent6.machine.model import (
 from agent6.machine.predicate import evaluate, parse_predicate
 from agent6.machine.template import parse_template, render_command, render_string, render_value
 from agent6.sandbox.jail import JailUnavailableError, run_in_jail
-from agent6.types import JailPolicy
+from agent6.types import JailPolicy, SandboxProfile
 
 __all__ = [
     "AgentExecResult",
@@ -154,13 +154,14 @@ class LiveWorld:
     journal: MachineJournal
     agent_runner: Callable[[AgentRequest], AgentExecResult] | None = None
     poll_interval_s: float = 0.5
+    profile: SandboxProfile = "strict"
 
     def run_tool(self, argv: tuple[str, ...], timeout_s: float) -> ToolExecResult:
         env = tuple((key, os.environ[key]) for key in _SAFE_ENV_KEYS if key in os.environ)
         policy = JailPolicy(
             cwd=self.cwd,
             argv=argv,
-            profile="strict",
+            profile=self.profile,
             env=env,
             allow_network=False,
             timeout_s=float(timeout_s),

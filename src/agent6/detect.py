@@ -11,6 +11,7 @@ import functools
 import os
 import re
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -44,17 +45,26 @@ class Environment:
     container_signals: tuple[str, ...]
     kernel: KernelInfo
     userns_supported: bool
+    sandbox_available: bool
 
     @property
     def detected_profile(self) -> SandboxProfile:
         """The strongest jail profile this environment can actually run.
 
-        `strict` requires `CLONE_NEWUSER` (and friends) to succeed; on hosts
-        where userns is blocked (default-seccomp Docker, AppArmor-restricted
-        Ubuntu, locked-down kiosks) we fall back to `hardened`, which keeps
-        Landlock + seccomp + capset + rlimits + NO_NEW_PRIVS but skips
-        namespaces. `hardened` is still real kernel-enforced isolation.
+        On non-Linux hosts (macOS) the kernel sandbox does not exist at all,
+        so the only profile is `none` (unsandboxed): child commands run as
+        plain subprocesses with no confinement. Callers are expected to warn
+        loudly when this is selected.
+
+        On Linux, `strict` requires `CLONE_NEWUSER` (and friends) to succeed;
+        on hosts where userns is blocked (default-seccomp Docker,
+        AppArmor-restricted Ubuntu, locked-down kiosks) we fall back to
+        `hardened`, which keeps Landlock + seccomp + capset + rlimits +
+        NO_NEW_PRIVS but skips namespaces. `hardened` is still real
+        kernel-enforced isolation.
         """
+        if not self.sandbox_available:
+            return "none"
         return "strict" if self.userns_supported else "hardened"
 
 
@@ -119,6 +129,17 @@ def probe_userns_supported() -> bool:
     return result.returncode == 0
 
 
+def sandbox_available() -> bool:
+    """Return True iff the Linux kernel sandbox can be used on this host.
+
+    The sandbox (jail launcher + Landlock + seccomp + namespaces + egress
+    broker) is Linux-only. On every other platform there is no confinement
+    mechanism, so we run unsandboxed (`profile = none`) and refuse any config
+    that explicitly asked for isolation.
+    """
+    return sys.platform.startswith("linux")
+
+
 def detect() -> Environment:
     """Detect kernel + container indicators + userns capability."""
     signals = detect_container_signals()
@@ -127,6 +148,7 @@ def detect() -> Environment:
         container_signals=signals,
         kernel=read_kernel(),
         userns_supported=probe_userns_supported(),
+        sandbox_available=sandbox_available(),
     )
 
 
@@ -137,6 +159,18 @@ def select_profile(requested: str, env: Environment) -> SandboxProfile:
     cannot provide. This is the "no silent downgrade" rule: we never give the
     user less isolation than they configured.
     """
+    if not env.sandbox_available:
+        # Non-Linux host: there is no kernel sandbox. `auto` resolves to the
+        # unsandboxed `none` profile (callers warn); an explicit request for
+        # real isolation is refused rather than silently downgraded.
+        if requested == "auto":
+            return "none"
+        raise RuntimeError(
+            f"sandbox.profile = {requested!r} requires the Linux kernel sandbox "
+            f"(Landlock + seccomp + namespaces), which is not available on "
+            f"{sys.platform!r}. Set profile = 'auto' to run unsandboxed on this "
+            f"platform, or run agent6 on Linux for kernel-enforced isolation."
+        )
     if requested == "auto":
         return env.detected_profile
     if requested == "strict":

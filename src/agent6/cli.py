@@ -181,6 +181,25 @@ def _provider_endpoints(cfg: Config) -> set[Endpoint]:
     return eps
 
 
+def _warn_if_unsandboxed(selected_profile: SandboxProfile) -> None:
+    """Print a prominent warning when running without the kernel sandbox.
+
+    The `none` profile is only reached on non-Linux hosts (see
+    `agent6.detect.select_profile`); commands run as plain subprocesses with
+    no confinement, so the operator must be told loudly.
+    """
+    if selected_profile != "none":
+        return
+    print(
+        "[agent6] WARNING: the Linux kernel sandbox is unavailable on this "
+        f"platform ({sys.platform}); running UNSANDBOXED. Commands, including "
+        "the LLM's run_command tool and verify_command, execute as plain "
+        "subprocesses with NO filesystem, network, or syscall confinement. "
+        "Run agent6 on Linux for kernel-enforced isolation.",
+        file=sys.stderr,
+    )
+
+
 def _maybe_start_egress(
     cfg: Config, selected_profile: SandboxProfile
 ) -> tuple[BrokerHandle | None, Path | None, str | None]:
@@ -205,8 +224,9 @@ def _maybe_start_egress(
             (
                 "sandbox.network = 'provider_only' requires the strict profile "
                 "(unprivileged user namespaces) to confine egress, but this host "
-                "only supports the hardened profile. Set sandbox.network = 'allow' "
-                "or 'no', or enable user namespaces."
+                f"only supports the {selected_profile!r} profile. Set "
+                "sandbox.network = 'allow' or 'no', or run on a Linux host with "
+                "user namespaces enabled."
             ),
         )
     endpoints = _provider_endpoints(cfg)
@@ -1436,6 +1456,10 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
     cwd = Path.cwd()
     has_agent_state = any(getattr(state, "kind", None) == "agent" for state in spec.states.values())
     agent_runner: Callable[[AgentRequest], AgentExecResult] | None = None
+    # Default profile for tool-only machines (no agent6.toml required): resolve
+    # from the host. On non-Linux this is `none` (unsandboxed); on Linux it is
+    # strict/hardened per userns support.
+    profile: SandboxProfile = detect().detected_profile
     if has_agent_state:
         try:
             cfg = load_config(cwd / "agent6.toml")
@@ -1454,6 +1478,7 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
             return 2
         root = cwd / ".agent6" / "machines" / spec.machine
         agent_runner = _build_machine_agent_runner(cfg, cwd, profile, root / "agent_transcripts")
+    _warn_if_unsandboxed(profile)
     root = cwd / ".agent6" / "machines" / spec.machine
     journal = MachineJournal(root)
     try:
@@ -1461,7 +1486,7 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
             journal.ensure_dirs()
             if not journal.exists():
                 write_source(root, path.read_text(encoding="utf-8"))
-            world = LiveWorld(cwd=cwd, journal=journal, agent_runner=agent_runner)
+            world = LiveWorld(cwd=cwd, journal=journal, agent_runner=agent_runner, profile=profile)
             result = drive(spec, journal, world, live=True, exit_on_wait=exit_on_wait)
     except (JournalError, EngineError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
@@ -1614,6 +1639,7 @@ def _cmd_machine_create(  # noqa: PLR0911, PLR0912, PLR0915
     except RuntimeError as exc:
         print(f"REFUSING: {exc}", file=sys.stderr)
         return 2
+    _warn_if_unsandboxed(profile)
 
     scratch = cwd / ".agent6" / "machine-drafts" / new_friendly_id()
     scratch.mkdir(parents=True, exist_ok=True)
@@ -1704,8 +1730,11 @@ def _cmd_check_config(path: Path, *, fix: bool = False, assume_yes: bool = False
     print(f"Container signals: {list(env.container_signals) or 'none'}")
     print(f"Kernel: {env.kernel.raw} (Landlock TCP: {env.kernel.supports_landlock_tcp})")
     print(f"Userns supported: {env.userns_supported}")
+    print(f"Sandbox available: {env.sandbox_available}")
     print(f"Detected sandbox profile: {env.detected_profile}")
-    print(f"Landlock ABI on this host: {landlock_abi()}")
+    # landlock_abi() issues a Linux-only syscall; only probe where it applies.
+    abi_str = str(landlock_abi()) if env.sandbox_available else "n/a (no Linux sandbox)"
+    print(f"Landlock ABI on this host: {abi_str}")
     try:
         cfg = load_config(path)
     except ConfigError as exc:
@@ -2205,6 +2234,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     except RuntimeError as exc:
         print(f"REFUSING: {exc}", file=sys.stderr)
         return 2
+    _warn_if_unsandboxed(selected_profile)
 
     missing = _check_provider_env_vars(cfg)
     if missing is not None:
@@ -2789,6 +2819,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     except RuntimeError as exc:
         print(f"REFUSING: {exc}", file=sys.stderr)
         return 2
+    _warn_if_unsandboxed(selected_profile)
 
     missing = _check_provider_env_vars(cfg)
     if missing is not None:
