@@ -1,0 +1,47 @@
+{
+  "name": "click-format-filename",
+  "description": "click.format_filename: bytes/str + shorten + replace invalid bytes with U+FFFD",
+  "repo_url": "https://github.com/pallets/click.git",
+  "commit": "8.1.7",
+  "install": [
+    [
+      "python3",
+      "-m",
+      "venv",
+      ".venv"
+    ],
+    [
+      ".venv/bin/pip",
+      "-q",
+      "install",
+      "-U",
+      "pip"
+    ],
+    [
+      ".venv/bin/pip",
+      "-q",
+      "install",
+      "pytest"
+    ]
+  ],
+  "break": [
+    {
+      "path": "src/click/utils.py",
+      "find": "    :param filename: formats a filename for UI display.  This will also convert\n                     the filename into unicode without failing.\n    :param shorten: this optionally shortens the filename to strip of the\n                    path that leads up to it.\n    \"\"\"\n    if shorten:\n        filename = os.path.basename(filename)\n    else:\n        filename = os.fspath(filename)\n\n    if isinstance(filename, bytes):\n        filename = filename.decode(sys.getfilesystemencoding(), \"replace\")\n    else:\n        filename = filename.encode(\"utf-8\", \"surrogateescape\").decode(\n            \"utf-8\", \"replace\"\n        )\n\n    return filename\n",
+      "replace": "    :param filename: formats a filename for UI display.  This will also convert\n                     the filename into unicode without failing.\n    :param shorten: this optionally shortens the filename to strip of the\n                    path that leads up to it.\n    \"\"\"\n    raise NotImplementedError(\"agent6-realworld: restore this implementation\")\n"
+    }
+  ],
+  "task_md": "# Restore `click.format_filename`\n\nThe function `format_filename()` in `src/click/utils.py` currently raises\n`NotImplementedError` with the message `agent6-realworld: restore this\nimplementation`. Restore the original behaviour.\n\nBehaviour required (verified by `tests/test_utils.py::test_filename_formatting`):\n- `format_filename(b\"foo.txt\") == \"foo.txt\"`\n- `format_filename(b\"/x/foo.txt\") == \"/x/foo.txt\"`\n- `format_filename(\"/x/foo.txt\") == \"/x/foo.txt\"`\n- `format_filename(\"/x/foo.txt\", shorten=True) == \"foo.txt\"`\n- `format_filename(b\"/x/\\xff.txt\", shorten=True) == \"\\ufffd.txt\"` (invalid byte replaced with U+FFFD)\n\nConstraints:\n- Do not modify any test file.\n- Use only what is already imported in `src/click/utils.py` (stdlib `os`, `sys` are already imported).\n- When `shorten=True`, take the basename **before** decoding so the path is stripped on either bytes or str inputs.\n- For `bytes`, decode using `sys.getfilesystemencoding()` with `errors=\"replace\"`.\n- For `str`, round-trip through UTF-8 with `surrogateescape`/`replace` so surrogates get replaced with U+FFFD.\n\nVerify with the configured verify command.\n",
+  "verify_command": [
+    "env",
+    "PYTHONPATH=src",
+    ".venv/bin/python",
+    "-m",
+    "pytest",
+    "-x",
+    "-q",
+    "tests/test_utils.py::test_filename_formatting",
+    "-p",
+    "no:cacheprovider"
+  ]
+}

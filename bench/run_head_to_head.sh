@@ -11,14 +11,14 @@
 # cumulative spend exceeds CLAUDE_TOTAL_BUDGET_USD (default 5.00).
 #
 # Usage:
-#   BENCH_SRC=/tmp/agent6-bench-0.0.2 bash bench/run_head_to_head.sh
+#   BENCH_SRC=/tmp/agent6-bench-baseline bash bench/run_head_to_head.sh
 #
 # Output: $BENCH_ROOT/head_to_head.md plus per-task result.json.
 
 set -euo pipefail
 
-REPO=/home/eric/agent6
-BENCH_SRC="${BENCH_SRC:-/tmp/agent6-bench-0.0.2}"
+REPO="${AGENT6_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+BENCH_SRC="${BENCH_SRC:-/tmp/agent6-bench-baseline}"
 BENCH_ROOT="${BENCH_ROOT:-/tmp/agent6-bench-claude}"
 PER_TASK_BUDGET_USD="${PER_TASK_BUDGET_USD:-0.50}"
 CLAUDE_TOTAL_BUDGET_USD="${CLAUDE_TOTAL_BUDGET_USD:-5.00}"

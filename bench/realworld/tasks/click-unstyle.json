@@ -1,0 +1,20 @@
+{
+  "name": "click-unstyle",
+  "description": "click.unstyle: strip ANSI escapes (small util fn)",
+  "repo_url": "https://github.com/pallets/click.git",
+  "commit": "8.1.7",
+  "install": [
+    ["python3", "-m", "venv", ".venv"],
+    [".venv/bin/pip", "-q", "install", "-U", "pip"],
+    [".venv/bin/pip", "-q", "install", "pytest"]
+  ],
+  "break": [
+    {
+      "path": "src/click/termui.py",
+      "find": "    :param text: the text to remove style information from.\n    \"\"\"\n    return strip_ansi(text)\n",
+      "replace": "    :param text: the text to remove style information from.\n    \"\"\"\n    raise NotImplementedError(\"agent6-realworld: restore this implementation\")\n"
+    }
+  ],
+  "task_md": "# Restore `click.unstyle`\n\nThe function `unstyle()` in `src/click/termui.py` currently raises\n`NotImplementedError` with the message `agent6-realworld: restore this\nimplementation`. Restore the original behaviour: it must remove ANSI\nstyling information from the given text and return the plain string.\n\nConstraints:\n- Do not modify any test file.\n- Use only what is already imported in `src/click/termui.py` (or add a\n  reasonable stdlib import if absolutely necessary).\n- The verify command runs only the two relevant tests; both must pass.\n\nVerify with the configured verify command.\n",
+  "verify_command": ["env", "PYTHONPATH=src", ".venv/bin/python", "-m", "pytest", "-x", "-q", "tests/test_utils.py::test_styling", "tests/test_utils.py::test_unstyle_other_ansi"]
+}

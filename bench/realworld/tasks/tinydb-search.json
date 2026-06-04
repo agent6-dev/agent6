@@ -1,0 +1,20 @@
+{
+  "name": "tinydb-search",
+  "description": "tinydb Query.search: regex substring match on a field",
+  "repo_url": "https://github.com/msiemens/tinydb.git",
+  "commit": "v4.8.0",
+  "install": [
+    ["python3", "-m", "venv", ".venv"],
+    [".venv/bin/pip", "-q", "install", "-U", "pip"],
+    [".venv/bin/pip", "-q", "install", "pytest", "pytest-cov"]
+  ],
+  "break": [
+    {
+      "path": "tinydb/queries.py",
+      "find": "    def search(self, regex: str, flags: int = 0) -> QueryInstance:\n        \"\"\"\n        Run a regex test against a dict value (only substring string has to\n        match).\n\n        >>> Query().f1.search(r'^\\\\w+$')\n\n        :param regex: The regular expression to use for matching\n        :param flags: regex flags to pass to ``re.match``\n        \"\"\"\n\n        def test(value):\n            if not isinstance(value, str):\n                return False\n\n            return re.search(regex, value, flags) is not None\n\n        return self._generate_test(test, ('search', self._path, regex))",
+      "replace": "    def search(self, regex: str, flags: int = 0) -> QueryInstance:\n        \"\"\"\n        Run a regex test against a dict value (only substring has to match).\n\n        Restore this. The cache key tuple should be ('search', self._path, regex).\n        Non-string values must yield False without raising. Use re.search.\n        \"\"\"\n        raise NotImplementedError(\"agent6-realworld: restore this implementation\")"
+    }
+  ],
+  "task_md": "# Restore `tinydb.queries.Query.search`\n\nThe method `Query.search` in `tinydb/queries.py` currently raises\n`NotImplementedError`. Restore an implementation so that the relevant tests\npass.\n\nBehaviour:\n- It is a substring regex match (use `re.search`, not `re.match`).\n- Field value that is not a string must return False (no exception).\n- The cache key tuple passed to `self._generate_test` must be exactly\n  `('search', self._path, regex)` so the query cache works correctly.\n- The implementation must mirror the existing `matches` method (just\n  above it) in style.\n\nConstraints:\n- Do not modify any test file.\n- Stdlib only.\n\nVerify with the configured verify command.\n",
+  "verify_command": ["env", "PYTHONPATH=.", ".venv/bin/python", "-m", "pytest", "-x", "-q", "tests/test_queries.py::test_regex", "-p", "no:cacheprovider", "--no-cov"]
+}

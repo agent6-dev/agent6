@@ -1,0 +1,51 @@
+{
+  "name": "werkzeug-safe-join",
+  "description": "werkzeug.security.safe_join: path-traversal-safe path joining",
+  "repo_url": "https://github.com/pallets/werkzeug.git",
+  "commit": "3.0.1",
+  "install": [
+    [
+      "python3",
+      "-m",
+      "venv",
+      ".venv"
+    ],
+    [
+      ".venv/bin/pip",
+      "-q",
+      "install",
+      "-U",
+      "pip"
+    ],
+    [
+      ".venv/bin/pip",
+      "-q",
+      "install",
+      "pytest",
+      "markupsafe"
+    ]
+  ],
+  "break": [
+    {
+      "path": "src/werkzeug/security.py",
+      "find": "def safe_join(directory: str, *pathnames: str) -> str | None:\n    \"\"\"Safely join zero or more untrusted path components to a base\n    directory to avoid escaping the base directory.\n\n    :param directory: The trusted base directory.\n    :param pathnames: The untrusted path components relative to the\n        base directory.\n    :return: A safe path, otherwise ``None``.\n    \"\"\"\n    if not directory:\n        # Ensure we end up with ./path if directory=\"\" is given,\n        # otherwise the first untrusted part could become trusted.\n        directory = \".\"\n\n    parts = [directory]\n\n    for filename in pathnames:\n        if filename != \"\":\n            filename = posixpath.normpath(filename)\n\n        if (\n            any(sep in filename for sep in _os_alt_seps)\n            or os.path.isabs(filename)\n            or filename == \"..\"\n            or filename.startswith(\"../\")\n        ):\n            return None\n\n        parts.append(filename)\n\n    return posixpath.join(*parts)\n",
+      "replace": "def safe_join(directory: str, *pathnames: str) -> str | None:\n    \"\"\"Safely join zero or more untrusted path components to a base\n    directory to avoid escaping the base directory.\n\n    :param directory: The trusted base directory.\n    :param pathnames: The untrusted path components relative to the\n        base directory.\n    :return: A safe path, otherwise ``None``.\n    \"\"\"\n    raise NotImplementedError(\"agent6-realworld: restore this implementation\")\n"
+    }
+  ],
+  "task_md": "# Restore `werkzeug.security.safe_join`\n\nThe function `safe_join()` in `src/werkzeug/security.py` currently raises\n`NotImplementedError` with the message `agent6-realworld: restore this\nimplementation`. Restore the original behaviour: safely join untrusted\npath components to a trusted base directory, returning `None` if any\ncomponent would escape the base directory or use an alternative separator.\n\nBehaviour (verified by `tests/test_security.py::test_safe_join`,\n`test_safe_join_os_sep`, `test_safe_join_empty_trusted`):\n\n- `safe_join(\"foo\", \"bar/baz\") == \"foo/bar/baz\"` (use `posixpath.join`).\n- `safe_join(\"foo\", \"../bar/baz\") is None` (rejects parent-escapes).\n- If `directory` is empty, treat it as `\".\"` so the first component\n  cannot become trusted on its own (`safe_join(\"\", \"c:test.txt\") == \"./c:test.txt\"`).\n- Reject any filename that, after `posixpath.normpath`, contains a\n  separator listed in `_os_alt_seps`, is absolute (`os.path.isabs`),\n  equals `\"..\"`, or starts with `\"../\"`.\n- Do **not** call `posixpath.normpath` on an empty string (it would\n  collapse to `\".\"`); leave empty path components alone.\n\nConstraints:\n- Do not modify any test file.\n- `os`, `posixpath`, and `_os_alt_seps` are already in scope.\n- Stdlib only.\n\nVerify with the configured verify command.\n",
+  "verify_command": [
+    "env",
+    "PYTHONPATH=src",
+    ".venv/bin/python",
+    "-m",
+    "pytest",
+    "-x",
+    "-q",
+    "--noconftest",
+    "tests/test_security.py::test_safe_join",
+    "tests/test_security.py::test_safe_join_os_sep",
+    "tests/test_security.py::test_safe_join_empty_trusted",
+    "-p",
+    "no:cacheprovider"
+  ]
+}

@@ -19,7 +19,7 @@
 
 set -euo pipefail
 
-REPO=/home/eric/agent6
+REPO="${AGENT6_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 BENCH_ROOT=${BENCH_ROOT:-/tmp/agent6-bench-mega}
 cd "$REPO"
 export AGENT6_JAIL_BIN="${AGENT6_JAIL_BIN:-$REPO/jail/target/release/agent6-jail}"
@@ -39,14 +39,6 @@ prompt_caching = true
 
 # Thinker roles use opus: decomposition and review judgement benefit from
 # the stronger reasoning model on harder tasks.
-[models.planner]
-provider = "anthropic"
-model = "claude-opus-4-5"
-
-[models.critic]
-provider = "anthropic"
-model = "claude-opus-4-5"
-
 [models.reviewer]
 provider = "anthropic"
 model = "claude-opus-4-5"
@@ -57,14 +49,12 @@ model = "claude-opus-4-5"
 provider = "anthropic"
 model = "claude-sonnet-4-5"
 
-[models.summarizer]
-provider = "anthropic"
-model = "claude-haiku-4-5"
-
 [sandbox]
 profile = "auto"
 network = "provider_only"
 run_commands = "yes"
+protect_git = true
+protect_agent6 = true
 
 [git]
 require_clean_worktree = true
@@ -76,7 +66,6 @@ allow_force = false
 allow_history_rewrite = false
 
 [workflow]
-default = "implement"
 verify_command = ["python3", "-m", "unittest", "-v"]
 
 [budget]
@@ -1075,7 +1064,7 @@ run_task() {
   log="$BENCH_ROOT/logs/${name}.log"
   start_ns=$(date +%s%N)
   set +e
-  ( cd "$dir" && "$AGENT6_BIN" --config "$dir/agent6.toml" run --yes "$task_text" ) \
+  ( cd "$dir" && "$AGENT6_BIN" --config "$dir/agent6.toml" run "$task_text" ) \
     > "$log" 2>&1
   local exit_code=$?
   set -e

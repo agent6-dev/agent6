@@ -1,0 +1,20 @@
+{
+  "name": "click-rename-split-opt",
+  "description": "Rename click.parser.split_opt -> split_option across 3 files (8 call sites + 2 imports)",
+  "repo_url": "https://github.com/pallets/click.git",
+  "commit": "8.1.7",
+  "install": [
+    ["python3", "-m", "venv", ".venv"],
+    [".venv/bin/pip", "-q", "install", "-U", "pip"],
+    [".venv/bin/pip", "-q", "install", "pytest"]
+  ],
+  "break": [
+    {
+      "path": "src/click/parser.py",
+      "find": "def split_opt(opt: str) -> t.Tuple[str, str]:",
+      "replace": "def split_option(opt: str) -> t.Tuple[str, str]:"
+    }
+  ],
+  "task_md": "# Rename `click.parser.split_opt` to `split_option` across the package\n\nThe internal helper `split_opt(opt)` in `src/click/parser.py` has been\nrenamed to `split_option(opt)` (the def line is already updated). All\ncall sites and imports in the rest of the `src/click/` package still\nreference the old name `split_opt` and will fail with `NameError` /\n`ImportError` until updated.\n\n**Task**: rename every remaining `split_opt` reference inside\n`src/click/` so that the package imports cleanly and the verify\ncommand passes.\n\n**Where to look** (you must find all of them):\n- `src/click/parser.py` itself - 2 internal call sites still use the\n  old name.\n- `src/click/formatting.py` - 1 import + 1 call site.\n- `src/click/core.py` - 1 import + multiple call sites.\n\nDo not modify any file under `tests/`. Do not change the function's\nsignature or behaviour - this is purely a rename. The new name\n`split_option` is final; do not revert to `split_opt`.\n\nVerify with the configured verify command (runs a focused subset of\nthe click test suite that exercises the option-parsing path which\nroutes through `split_option`).\n",
+  "verify_command": ["env", "PYTHONPATH=src", ".venv/bin/python", "-m", "pytest", "-x", "-q", "tests/test_basic.py", "tests/test_options.py::test_prefixes", "tests/test_options.py::test_invalid_option", "tests/test_options.py::test_counting"]
+}

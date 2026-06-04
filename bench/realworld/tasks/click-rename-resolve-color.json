@@ -1,0 +1,20 @@
+{
+  "name": "click-rename-resolve-color",
+  "description": "Rename click.globals.resolve_color_default -> default_color_setting across 3 files (4 call sites + 2 imports)",
+  "repo_url": "https://github.com/pallets/click.git",
+  "commit": "8.1.7",
+  "install": [
+    ["python3", "-m", "venv", ".venv"],
+    [".venv/bin/pip", "-q", "install", "-U", "pip"],
+    [".venv/bin/pip", "-q", "install", "pytest"]
+  ],
+  "break": [
+    {
+      "path": "src/click/globals.py",
+      "find": "def resolve_color_default(color: t.Optional[bool] = None) -> t.Optional[bool]:",
+      "replace": "def default_color_setting(color: t.Optional[bool] = None) -> t.Optional[bool]:"
+    }
+  ],
+  "task_md": "# Rename `click.globals.resolve_color_default` to `default_color_setting`\n\nThe internal helper `resolve_color_default(color)` in\n`src/click/globals.py` has been renamed to `default_color_setting(color)`\n(the def line is already updated). All call sites and imports in the\nrest of the `src/click/` package still reference the old name\n`resolve_color_default` and will fail with `ImportError` until\nupdated.\n\n**Task**: rename every remaining `resolve_color_default` reference\ninside `src/click/` so that the package imports cleanly and the\nverify command passes.\n\n**Where to look** (find all of them):\n- `src/click/termui.py` - 1 import + 2 call sites\n- `src/click/utils.py` - 1 import + 1 call site\n\nDo not modify any file under `tests/`. Do not change the function's\nsignature or behaviour - this is purely a rename. The new name\n`default_color_setting` is final; do not revert to\n`resolve_color_default`.\n\nVerify with the configured verify command (runs a focused subset of\nthe click test suite that exercises the color-handling paths).\n",
+  "verify_command": ["env", "PYTHONPATH=src", ".venv/bin/python", "-m", "pytest", "-x", "-q", "tests/test_termui.py", "tests/test_basic.py"]
+}
