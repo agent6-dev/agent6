@@ -29,7 +29,6 @@ serialize and parse deterministically.
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 from collections.abc import Generator, Iterable
@@ -39,6 +38,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from agent6.graph.models import NodeSnapshot, TaskNode
+from agent6.portable import fsync_dir, lock_exclusive, unlock
 
 # ---- run layout -----------------------------------------------------------
 
@@ -124,12 +124,8 @@ def _atomic_write(path: Path, data: str | bytes) -> None:
             ft.flush()
             os.fsync(ft.fileno())
     tmp.replace(path)
-    # fsync parent dir so the rename is durable.
-    dfd = os.open(path.parent, os.O_DIRECTORY)
-    try:
-        os.fsync(dfd)
-    finally:
-        os.close(dfd)
+    # fsync parent dir so the rename is durable (no-op on Windows).
+    fsync_dir(path.parent)
 
 
 def _append_line(path: Path, line: str) -> None:
@@ -150,11 +146,11 @@ def flock(path: Path) -> Generator[None]:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT, 0o644)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        lock_exclusive(fd, blocking=True)
         yield
     finally:
         try:
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            unlock(fd)
         finally:
             os.close(fd)
 

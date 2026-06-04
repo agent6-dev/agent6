@@ -115,6 +115,10 @@ path = "agent6.types"
 depends_on = []
 
 [[modules]]
+path = "agent6.portable"
+depends_on = []
+
+[[modules]]
 path = "agent6.memory"
 depends_on = ["agent6.graph.ulid"]
 
@@ -149,7 +153,7 @@ depends_on = [
 
 [[modules]]
 path = "agent6.graph.storage"
-depends_on = ["agent6.graph.models"]
+depends_on = ["agent6.graph.models", "agent6.portable"]
 
 [[modules]]
 path = "agent6.graph.curator"
@@ -193,7 +197,7 @@ depends_on = ["agent6.machine.model"]
 
 [[modules]]
 path = "agent6.machine.journal"
-depends_on = []
+depends_on = ["agent6.portable"]
 
 [[modules]]
 path = "agent6.machine.engine"

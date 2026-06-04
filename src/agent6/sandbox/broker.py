@@ -41,7 +41,6 @@ from __future__ import annotations
 
 import contextlib
 import ctypes
-import fcntl
 import os
 import selectors
 import signal
@@ -52,6 +51,14 @@ import threading
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+
+# The egress broker is Linux-only (user/network namespaces + SIOCSIFFLAGS
+# ioctl on the loopback device). `fcntl` does not exist on Windows; guard the
+# import so the module merely *imports* everywhere (sandbox/__init__ re-exports
+# it). Every function that touches `fcntl` is gated behind os.unshare, which is
+# itself Linux-only, so the name is always bound where it is actually used.
+if sys.platform == "linux":
+    import fcntl
 
 _RECV_CHUNK = 65536
 _UPSTREAM_CONNECT_TIMEOUT_S = 30.0

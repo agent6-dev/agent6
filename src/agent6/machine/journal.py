@@ -25,7 +25,6 @@ Layout under ``.agent6/machines/<id>/`` (§5.3)::
 
 from __future__ import annotations
 
-import fcntl
 import os
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -34,6 +33,8 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
+
+from agent6.portable import lock_exclusive, unlock
 
 __all__ = [
     "AgentFact",
@@ -300,13 +301,13 @@ def machine_lock(root: Path) -> Generator[None]:
     fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
     try:
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            lock_exclusive(fd, blocking=False)
         except OSError as exc:
             raise JournalError(f"machine is already running (lock held): {lock_path}") from exc
         try:
             yield
         finally:
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            unlock(fd)
     finally:
         os.close(fd)
 
