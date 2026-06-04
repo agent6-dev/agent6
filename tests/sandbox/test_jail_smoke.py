@@ -105,6 +105,28 @@ def test_jail_blocks_write_outside_workspace(jail_bin: Path, tmp_path: Path) -> 
     assert not marker.exists()
 
 
+def test_jail_dev_null_is_writable(jail_bin: Path, tmp_path: Path) -> None:
+    """Writes to /dev/null and friends must succeed under both profiles.
+
+    Regression test for the click-short-help bench task INTERNALERROR:
+    pytest's logging plugin opens /dev/null O_WRONLY|O_APPEND when a
+    `log_file` is configured (click's conftest does this), and the previous
+    Landlock rules granted only read+execute on /dev — surfacing as
+    PermissionError before any test could run.
+    """
+    for profile in ("strict", "hardened"):
+        res = run_in_jail(
+            JailPolicy(
+                cwd=tmp_path,
+                argv=("/bin/sh", "-c", "echo x > /dev/null && echo OK"),
+                profile=profile,
+                timeout_s=10.0,
+            )
+        )
+        assert res.returncode == 0, f"{profile} stderr: {res.stderr!r}"
+        assert "OK" in res.stdout, f"{profile} stdout: {res.stdout!r}"
+
+
 def test_jail_protect_paths_block_writes_to_subdir(jail_bin: Path, tmp_path: Path) -> None:
     """extra_protect_paths must make a sub-directory of cwd read-only."""
     git_dir = tmp_path / ".git"

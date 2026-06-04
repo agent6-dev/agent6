@@ -269,26 +269,32 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
     // skipped silently so a project without (e.g.) a `.agent6/` dir is not
     // a fatal config error.
     for src in &policy.extra_protect_paths {
+        // Canonicalize so a symlink at .git/ can't trick us into bind-mounting
+        // a target outside cwd into the jail. If the path doesn't exist yet,
+        // canonicalize fails — skip it (the protect-path is a no-op anyway).
+        let canon_src = match src.canonicalize() {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        let canon_cwd = policy.cwd.canonicalize().unwrap_or_else(|_| policy.cwd.clone());
         // Reject paths outside cwd defensively (Python side filters them too,
         // but the launcher is its own trust boundary).
-        let rel = match src.strip_prefix(&policy.cwd) {
+        let rel = match canon_src.strip_prefix(&canon_cwd) {
             Ok(r) => r,
             Err(_) => {
                 eprintln!(
-                    "agent6-jail: skipping protect_path {} (not under cwd {})",
+                    "agent6-jail: skipping protect_path {} (canonical {} not under cwd {})",
                     src.display(),
-                    policy.cwd.display(),
+                    canon_src.display(),
+                    canon_cwd.display(),
                 );
                 continue;
             }
         };
-        if !src.exists() {
-            continue;
-        }
         let target = cwd_in.join(rel);
         // Ensure the mount point exists inside our new rootfs (it should,
         // via the cwd bind, but be defensive for first-run-on-fresh-repo).
-        if src.is_dir() {
+        if canon_src.is_dir() {
             fs::create_dir_all(&target)?;
         } else if let Some(parent) = target.parent() {
             fs::create_dir_all(parent)?;
@@ -296,13 +302,13 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
                 fs::File::create(&target)?;
             }
         }
-        // Bind the original host path onto the target inside the new rootfs,
+        // Bind the canonical host path onto the target inside the new rootfs,
         // then remount read-only. Binding from the host path (rather than
         // self-binding inside the new mount) avoids EPERM on kernels that
         // refuse re-binding paths already covered by a recursive parent
         // bind in a user namespace.
         mount(
-            Some(src.as_path()),
+            Some(canon_src.as_path()),
             &target,
             Some(""),
             MsFlags::MS_BIND,
@@ -311,7 +317,7 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
         .map_err(|e| {
             io::Error::new(
                 io::ErrorKind::Other,
-                format!("protect bind {} -> {}: {e}", src.display(), target.display()),
+                format!("protect bind {} -> {}: {e}", canon_src.display(), target.display()),
             )
         })?;
         mount(
@@ -441,6 +447,20 @@ fn apply_landlock_strict() -> io::Result<()> {
             ruleset = ruleset
                 .add_rule(PathBeneath::new(fd, access_read_exec))
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("rule {ro}: {e}")))?;
+        }
+    }
+    // Grant WriteFile on the harmless sink devices. /dev/null and /dev/full
+    // are bind-mounted from the host (see setup_rootfs) and pytest's logging
+    // plugin opens /dev/null O_WRONLY|O_APPEND when log_file is configured,
+    // which would otherwise EACCES under the /dev read-only rule above and
+    // surface as INTERNALERROR. WriteFile on these specific inodes does not
+    // grant create/symlink/unlink and cannot be used to escape the jail.
+    for dev in ["null", "zero", "full"] {
+        let p = format!("/dev/{dev}");
+        if let Ok(fd) = PathFd::new(&p) {
+            ruleset = ruleset
+                .add_rule(PathBeneath::new(fd, AccessFs::WriteFile))
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("rule {p}: {e}")))?;
         }
     }
     ruleset
@@ -574,6 +594,15 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
             })?;
         }
     }
+    // Same sink-device carve-out as the strict profile; see comment there.
+    for dev in ["null", "zero", "full"] {
+        let p = format!("/dev/{dev}");
+        if let Ok(fd) = PathFd::new(&p) {
+            ruleset = ruleset
+                .add_rule(PathBeneath::new(fd, AccessFs::WriteFile))
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("rule {p}: {e}")))?;
+        }
+    }
 
     ruleset
         .restrict_self()
@@ -600,6 +629,9 @@ fn apply_seccomp() -> io::Result<()> {
     // foot-guns: ptrace, mount, setns, unshare, kexec, bpf, perf, keyctl, etc.
     let denied: &[i64] = &[
         libc::SYS_ptrace,
+        libc::SYS_process_vm_readv,
+        libc::SYS_process_vm_writev,
+        libc::SYS_kcmp,
         libc::SYS_mount,
         libc::SYS_umount2,
         libc::SYS_pivot_root,

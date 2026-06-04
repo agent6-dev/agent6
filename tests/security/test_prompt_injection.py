@@ -25,19 +25,10 @@ config_version = 1
 kind = "anthropic"
 api_key_env = "ANTHROPIC_API_KEY"
 prompt_caching = true
-[models.planner]
-provider = "anthropic"
-model = "x"
 [models.worker]
 provider = "anthropic"
 model = "x"
-[models.critic]
-provider = "anthropic"
-model = "x"
 [models.reviewer]
-provider = "anthropic"
-model = "x"
-[models.summarizer]
 provider = "anthropic"
 model = "x"
 [sandbox]
@@ -55,7 +46,6 @@ allow_push = false
 allow_force = false
 allow_history_rewrite = false
 [workflow]
-default = "implement"
 verify_command = ["true"]
 [budget]
 max_input_tokens = 100000
@@ -111,7 +101,7 @@ _ABSOLUTE_CORPUS = [
     "/etc/passwd",
     "/etc/shadow",
     "/root/.ssh/authorized_keys",
-    "/home/eric/.ssh/id_rsa",
+    "/home/user/.ssh/id_rsa",
     "/proc/self/mem",
     "/dev/sda",
     "/var/log/auth.log",
