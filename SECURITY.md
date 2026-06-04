@@ -41,7 +41,11 @@ Under that adversary, agent6 aims to make the following true:
 1. No writes outside the project working directory.
 2. No reads of files outside the project working directory (+ read-only
    sibling paths, if explicitly configured).
-3. No network egress except to the configured provider endpoints.
+3. No network egress except to the configured provider endpoints. This is
+   enforced structurally only when `sandbox.network = "provider_only"`
+   (see Defense Layer 1b); with `network = "allow"`/`"no"` the agent
+   process retains host network access and only the destination *port* is
+   constrained by Landlock.
 4. No `git push`, no `--force`, no history rewrite, no `reset --hard`.
 5. No persistence after the run terminates (no daemon, no cron, no
    `.bashrc` mutation — the jail's mount namespace is the
@@ -49,26 +53,70 @@ Under that adversary, agent6 aims to make the following true:
 
 ## Defense layers
 
-### 1. Agent-process Landlock
+### 1. Agent-process Landlock (hardened profile)
 
-Applied at the very start of `agent6 run`, before any LLM call. Restricts
-the Python process itself:
+Applied at the start of `agent6 run`/`resume`, before any provider or
+network object is built, **on the `hardened` profile only**. The `strict`
+profile does not take this path: it runs every child command in its own
+user+mount+pid+net namespace (a strictly stronger boundary than Landlocking
+the parent) and confines provider egress with the broker (Defense Layer
+1b); applying agent-process Landlock there would additionally break the
+jail's `pivot_root(2)`/`mount(2)` on kernels at Landlock ABI ≥ 7. Where it
+applies it restricts the Python process itself (irrevocably, inherited by
+every child it spawns):
 
-- FS read: cwd + the directory containing the config file.
-- FS write: cwd only.
-- TCP connect (kernel ≥ 6.7, Landlock ABI ≥ 4): the resolved IPs of
-  every configured `[providers.<name>]` endpoint — `api.anthropic.com:443`
-  for each entry with `kind = "anthropic"`, plus the host:port of
-  `base_url` for each entry with `kind = "openai"` (default
-  `api.openai.com:443`, but any OpenAI-compatible base URL is honoured:
-  OpenRouter, Ollama, vLLM, llama.cpp, …). Configure as many providers as
-  you want; every one's endpoint is added to the allowlist.
+- FS read: cwd, `$HOME`, `/usr`, `/etc`, `/tmp`, the common `/dev`
+  character devices, and `/run`/`/proc` when present.
+- FS write: cwd, `/tmp`, the `/dev` character devices, and `/proc` when
+  present.
+- TCP connect (kernel ≥ 6.7, Landlock ABI ≥ 4): Landlock's network hook
+  filters by **destination port only** — there is no host/IP primitive in
+  Landlock. agent6 allows the set of ports used by configured
+  `[providers.<name>]` endpoints (`443` for each `kind = "anthropic"`
+  entry; the port of `base_url` for each `kind = "openai"` entry — default
+  `443`, but any OpenAI-compatible base URL is honoured: OpenRouter,
+  Ollama, vLLM, llama.cpp, …). This stops the agent from connecting to
+  arbitrary services on other ports, but on its own it does **not** pin
+  egress to a specific host: anything reachable on an allowed port is
+  permitted. For true host-level egress confinement use
+  `sandbox.network = "provider_only"` (Defense Layer 1b).
 
 On older kernels TCP-connect rules are not available; agent6 prints a
 loud warning and runs with FS-only Landlock. In that mode the agent
 process is still confined for filesystem access, but you should not run
 it on a host where the agent's UID has access to sensitive credentials
 the agent could open and send over the network.
+
+### 1b. Provider-only egress broker (`sandbox.network = "provider_only"`)
+
+When enabled (strict profile only — it relies on unprivileged user
+namespaces), `agent6 run` confines its own process to host-level egress:
+
+1. While still in the host network namespace and single-threaded, the
+   agent binds one `AF_UNIX` listening socket per allow-listed provider
+   `host:port` and `fork()`s a small **broker** child. The broker stays
+   in the host netns; for each connection accepted on a given socket it
+   dials the single fixed `host:port` that socket represents (resolved
+   per-connect, so the allow-list is robust to CDN IP rotation) and
+   splices bytes. TLS is end-to-end: the broker only ever sees ciphertext.
+2. The agent then `unshare(CLONE_NEWUSER | CLONE_NEWNET)` into a fresh,
+   **empty** network namespace (loopback only — no veth, no default
+   route). Its sole path off-host is the set of unix sockets, each of
+   which is hard-wired to one provider endpoint chosen by the operator,
+   never by the (untrusted) LLM at connect time.
+
+This is **fail-closed**: the kernel network namespace is the real
+boundary. A missing route means no connectivity (the agent cannot connect
+at all), never a silent leak. Because the upstream of each socket is fixed
+at bind time, the egress allow-list is structural rather than a filter the
+agent could be tricked into widening. On hosts that only support the
+hardened profile the run is **refused** rather than executed unconfined.
+
+Curator and other `AF_UNIX`-based helpers are unaffected (unix sockets
+cross the netns boundary). MCP servers that need their own outbound
+network access will not have it under `provider_only`; that is a
+deliberate limitation, not a bug.
+
 
 ### 2. `agent6-jail` (Rust) for every child command
 

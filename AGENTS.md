@@ -6,7 +6,7 @@ list of invariants that PRs are not allowed to weaken.
 
 ## Stability policy (pre-1.0)
 
-agent6 has shipped 0.0.3 to PyPI; the version in
+agent6 is pre-1.0; the version in
 `src/agent6/__init__.py` is the single source of truth. Until `1.0.0`,
 treat every public shape — config TOML, IPC messages, on-disk graph
 format, CLI flags, transcript layout — as **liquid**. Prefer breaking
@@ -58,7 +58,7 @@ uv run ruff check && uv run ruff format --check && \
   uv run pyright && uv run tach check && uv run pytest
 ```
 
-All five must pass. 292 tests currently green.
+All five must pass. 691 tests currently green.
 
 ## Security invariants (do not weaken)
 
@@ -71,7 +71,7 @@ All five must pass. 292 tests currently green.
   audited argv depending only on operator input are allowed to call
   `subprocess.run` / `subprocess.Popen` directly: `git_ops.py`,
   `detect.py`, `graph/curator.py`, `graph/client.py`, `sandbox/jail.py`
-  (the launcher itself), `tools/code_index.py` (LSP from config), and a
+  (the launcher itself), and a
   small set of `cli.py` helpers (TUI spawn, `$EDITOR` for plan editing,
   `git diff/log` for the review subcommand, `rg` for history search).
   Audit with `rg 'subprocess\.(run|Popen)' src/agent6/`.

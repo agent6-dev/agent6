@@ -25,6 +25,9 @@ config_version = 1
 kind = "anthropic"
 api_key_env = "ANTHROPIC_API_KEY"
 prompt_caching = true
+# per-HTTP-call timeout (connect + read) in seconds. Default 600.
+# Lower this on benches where you want a stuck provider to fail fast.
+# http_timeout_s = 600.0
 
 # OpenAI proper:
 # [providers.openai]
@@ -37,6 +40,8 @@ prompt_caching = true
 # api_key_env = "OPENROUTER_API_KEY"
 # base_url = "https://openrouter.ai/api/v1"
 # extra_headers = { "HTTP-Referer" = "https://github.com/you/your-repo", "X-Title" = "agent6" }
+# Reasoning models on OpenRouter sometimes stall; bump the per-HTTP-call timeout:
+# http_timeout_s = 1200.0
 
 # Ollama (local, no auth — omit api_key_env entirely):
 # [providers.ollama]
@@ -52,33 +57,31 @@ prompt_caching = true
 # Role routing
 # =============================================================================
 # Pick which provider (by table-key name above) and which model serves each
-# sub-agent role. EVERY role must be present. A common mix-and-match shape:
+# Two live roles:
 #
-#   planner    -> anthropic     (strong reasoning)
-#   worker     -> openrouter    (cheaper bulk edits)
-#   critic     -> anthropic     (cheap fast model from same family)
-#   reviewer   -> anthropic     (cross-vendor review of worker diffs)
-#   summarizer -> ollama        (free local compression of long output)
-
-[models.planner]
-provider = "anthropic"
-model = "claude-opus-4-5"
+#   worker   -> drives `agent6 run` / `agent6 resume`; its model's pricing also
+#               drives the USD-to-token budget conversion.
+#   reviewer -> used by the one-shot `agent6 review` subcommand.
+#
+# Any provider may serve either role; cross-vendor mixes work fine
+# (e.g. anthropic worker + openrouter reviewer).
 
 [models.worker]
 provider = "anthropic"
 model = "claude-sonnet-4-5"
-
-[models.critic]
-provider = "anthropic"
-model = "claude-sonnet-4-5"
+# Sampling temperature, pinned per call. Defaults to 0.0 — agent6's
+# tool-use loop is a feedback loop and high-temperature sampling causes
+# observable degeneration on some open-weights models (caught
+# Kimi K2.6 looping on `\n` escapes until it hit the completion-tokens
+# cap). Anthropic / OpenAI flagships are tuned to behave at any
+# temperature; OpenRouter routes to provider defaults that vary.
+# Override only if you specifically want the model's default behaviour.
+# temperature = 0.0
 
 [models.reviewer]
 provider = "anthropic"
 model = "claude-opus-4-5"
-
-[models.summarizer]
-provider = "anthropic"
-model = "claude-haiku-4-5"
+# temperature = 0.0
 
 [sandbox]
 # "auto"     picks the strongest profile this kernel + container can run.
@@ -150,12 +153,73 @@ allow_history_rewrite = false
 # coauthor = "Alice <alice@example.com>"
 
 [workflow]
-default = "implement"
 # What "step succeeded" means. Required.
 verify_command = ["uv", "run", "pytest", "-x"]
+
+# Optional. critic-in-loop. When != "off", the workflow runs the
+# `reviewer` model as a critic at the chosen trigger and shows its
+# verdict to the worker on the next turn. Modes:
+#   "off"            - default; the worker runs solo.
+#   "on_verify_fail" - critique after every verify failure.
+#   "before_finish"  - intercept finish_run; if critic says NEEDS_WORK
+#                      the finish is revoked and the loop continues.
+#   "periodic"       - run every `critic_period` iterations.
+# critic = "off"
+# critic_period = 10
+
+# Optional. prompt-revision pass. When enabled, the `reviewer`
+# model gets one no-tools call before the worker loop to rewrite a raw
+# task into a clearer task spec. The original task is still included as
+# authoritative context so intent drift is visible.
+#   "off"         - default; no revision.
+#   "auto"        - revise, print before/after, then proceed.
+#   "interactive" - revise, then prompt to accept/edit/use original.
+# revise_prompt = "off"
 
 [budget]
 # Hard stop. When either ceiling is reached the run aborts with exit code 3.
 # The run is resumable: bump the limit and `agent6 run --resume <run-id>`.
 max_input_tokens = 2000000
 max_output_tokens = 200000
+
+# =============================================================================
+# Notify hook
+# =============================================================================
+# Optional. When `on_complete` is non-empty, agent6 runs this argv after
+# `agent6 run` or `agent6 resume` finishes (success OR failure), outside
+# the jail, with the following env vars set:
+#   AGENT6_RUN_ID    - run id (e.g. 20251104-abc123)
+#   AGENT6_RUN_DIR   - absolute path to the run directory
+#   AGENT6_RUN_OK    - "1" on success, "0" on any non-success reason
+#   AGENT6_RUN_REASON- e.g. "silent_finish" | "max_iterations" | "provider_error"
+# argv is operator-controlled (no LLM input), but the hook still runs as
+# your user — only put things you'd type at your own shell here.
+# [notify]
+# on_complete = ["notify-send", "agent6", "run finished"]
+# timeout_s = 30.0
+
+# =============================================================================
+# MCP (Model Context Protocol) servers
+# =============================================================================
+# Optional. Each entry under [[mcp.servers]] is a long-lived subprocess
+# agent6 spawns at run start. It speaks JSON-RPC 2.0 over stdio (the MCP
+# spec). Tools the server advertises become available to the LLM as
+# `mcp__<name>__<tool>` and route through the normal tool surface.
+#
+# Trust model: each server runs as YOUR user, OUTSIDE the agent6 jail.
+# The `command` is operator-controlled (never LLM-influenced), same as
+# `notify.on_complete`. The LLM CAN influence the *arguments* sent to
+# `tools/call`, so each MCP server is its own tool surface to audit -
+# vet it as carefully as you'd vet a `run_command` allow-list.
+#
+# A misbehaving server (crash, hang, malformed JSON) surfaces as a
+# clean tool failure and the agent keeps running.
+# [mcp]
+# enabled = true
+#
+# [[mcp.servers]]
+# name = "fs"                                  # appears as mcp__fs__<tool>
+# command = ["uvx", "mcp-server-filesystem", "/tmp/sandbox"]
+# enabled = true
+# startup_timeout_s = 10.0
+# call_timeout_s = 60.0
