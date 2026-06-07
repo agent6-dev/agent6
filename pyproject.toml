@@ -48,7 +48,7 @@ exclude = ["src/agent6/jail"]
 # `uv sync` (editable install) or `uv build` (release) therefore produces a
 # self-contained install — no separate `cargo build` step required. The
 # hook degrades gracefully when cargo is not on PATH (the resulting wheel
-# is pure-Python and `agent6 check-sandbox` tells the user to build the
+# is pure-Python and `agent6 check sandbox` tells the user to build the
 # binary themselves). For PyPI distribution, run the build inside a
 # manylinux container (e.g. cibuildwheel) so the bundled binary links
 # against an old enough glibc.

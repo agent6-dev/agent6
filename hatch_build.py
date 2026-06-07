@@ -23,7 +23,7 @@ The hook is deliberately tolerant:
 
   - If `cargo` is not on PATH (e.g. a user pip-installs an sdist on a
     Rust-less host) we skip with a clear stderr note and produce a
-    pure-Python wheel without the binary. `agent6 check-sandbox` will
+    pure-Python wheel without the binary. `agent6 check sandbox` will
     then tell the user to build the binary themselves.
   - If `AGENT6_SKIP_JAIL_BUILD=1` is set we also skip. Useful when the
     CI pipeline builds the jail in a dedicated job.

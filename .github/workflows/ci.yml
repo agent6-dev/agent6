@@ -49,7 +49,7 @@ jobs:
       - run: uv run pytest -ra
 
   sandbox-smoke:
-    name: agent6 check-sandbox
+    name: agent6 check sandbox
     needs: build
     runs-on: ubuntu-24.04
     steps:
@@ -74,9 +74,9 @@ jobs:
         # unprivileged userns creation, which makes agent6's `strict`
         # sandbox profile fail with `uid_map: Operation not permitted`.
         # The GitHub Actions ubuntu-24.04 runner image carries this
-        # restriction; relax it so check-sandbox can actually exercise
+        # restriction; relax it so check sandbox can actually exercise
         # the strict path the rest of the world will use.
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
-      - name: agent6 check-sandbox
-        run: agent6 check-sandbox
+      - name: agent6 check sandbox
+        run: agent6 check sandbox
