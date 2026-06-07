@@ -22,7 +22,7 @@ from agent6.machine.model import ToolState
 from agent6.types import SandboxProfile
 
 
-def _cfg(agent_network: str = "providers", tool_network: str = "blocked") -> Config:
+def _cfg(agent_network: str = "providers", tool_network: str = "block") -> Config:
     return validate_config(
         {"sandbox": {"agent_network": agent_network, "tool_network": tool_network}}
     )
@@ -41,59 +41,70 @@ def test_is_loopback() -> None:
 
 @pytest.mark.parametrize("profile", ["strict", "none"])
 def test_check_network_profile_allows_off_hardened(profile: SandboxProfile) -> None:
-    # local/carveouts only refused on hardened; strict supports them, none is
-    # unsandboxed (warned elsewhere), so neither refuses here.
-    assert _check_network_profile(_cfg("local", "blocked"), profile) is None
-    assert _check_network_profile(_cfg("open", "carveouts"), profile) is None
+    # local/only_explicit_states only refused on hardened; strict supports them,
+    # none is unsandboxed (warned elsewhere), so neither refuses here.
+    assert _check_network_profile(_cfg("local", "block"), profile) is None
+    assert _check_network_profile(_cfg("open", "only_explicit_states"), profile) is None
 
 
 def test_check_network_profile_refuses_local_on_hardened() -> None:
-    assert "local" in (_check_network_profile(_cfg("local", "blocked"), "hardened") or "")
+    assert "local" in (_check_network_profile(_cfg("local", "block"), "hardened") or "")
 
 
-def test_check_network_profile_refuses_carveouts_on_hardened() -> None:
-    assert "carveouts" in (_check_network_profile(_cfg("open", "carveouts"), "hardened") or "")
+def test_check_network_profile_refuses_only_explicit_states_on_hardened() -> None:
+    msg = _check_network_profile(_cfg("open", "only_explicit_states"), "hardened")
+    assert msg is not None and "only_explicit_states" in msg
 
 
 # --- _machine_network_refusal ----------------------------------------------
 
 _TOOL = ToolState(kind="tool", command=("x",), timeout_secs=5, on={"ok": "s"})
 _NET_TOOL = ToolState(
-    kind="tool", command=("x",), timeout_secs=5, on={"ok": "s"}, allow_network=True
+    kind="tool", command=("x",), timeout_secs=5, on={"ok": "s"}, allow_network="allow"
+)
+_BLOCK_TOOL = ToolState(
+    kind="tool", command=("x",), timeout_secs=5, on={"ok": "s"}, allow_network="block"
 )
 
 
-def test_refusal_networked_tool_under_blocked() -> None:
-    msg = _machine_network_refusal(_cfg("providers", "blocked"), "strict", [_NET_TOOL], True)
+def test_refusal_networked_tool_under_block() -> None:
+    msg = _machine_network_refusal(_cfg("providers", "block"), "strict", [_NET_TOOL])
     assert msg is not None and "allow_network" in msg
 
 
-def test_refusal_providers_carveouts_strict_ok() -> None:
+def test_refusal_providers_explicit_states_strict_ok() -> None:
     # The headline combo: confined agent + audited networked tool, on strict.
     assert (
-        _machine_network_refusal(_cfg("providers", "carveouts"), "strict", [_NET_TOOL], True)
+        _machine_network_refusal(_cfg("providers", "only_explicit_states"), "strict", [_NET_TOOL])
         is None
     )
 
 
-def test_refusal_blocked_tools_on_hardened() -> None:
-    msg = _machine_network_refusal(_cfg("providers", "blocked"), "hardened", [_TOOL], False)
+def test_refusal_block_tools_on_hardened() -> None:
+    msg = _machine_network_refusal(_cfg("providers", "block"), "hardened", [_TOOL])
     assert msg is not None and "strict" in msg
 
 
-def test_refusal_allowed_tools_on_hardened_ok() -> None:
-    assert _machine_network_refusal(_cfg("open", "allowed"), "hardened", [_TOOL], False) is None
+def test_refusal_explicit_block_state_on_hardened() -> None:
+    # tool_network=allow runs auto/allow tools on hardened, but an explicit
+    # allow_network="block" demand can't be honored there -> refuse.
+    msg = _machine_network_refusal(_cfg("open", "allow"), "hardened", [_BLOCK_TOOL])
+    assert msg is not None and "block" in msg
+
+
+def test_refusal_allow_auto_tools_on_hardened_ok() -> None:
+    assert _machine_network_refusal(_cfg("open", "allow"), "hardened", [_TOOL]) is None
 
 
 # --- _maybe_start_egress (local / open / non-strict short-circuits) --------
 
 
 def test_egress_open_does_nothing() -> None:
-    assert _maybe_start_egress(_cfg("open", "blocked"), "strict") == (None, None, None)
+    assert _maybe_start_egress(_cfg("open", "block"), "strict") == (None, None, None)
 
 
 def test_egress_non_strict_defers_to_landlock() -> None:
-    assert _maybe_start_egress(_cfg("providers", "blocked"), "hardened") == (None, None, None)
+    assert _maybe_start_egress(_cfg("providers", "block"), "hardened") == (None, None, None)
 
 
 def test_egress_local_refuses_non_local_provider() -> None:

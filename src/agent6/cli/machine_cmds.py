@@ -322,38 +322,47 @@ def _machine_protect_paths(machine_path: Path, cwd: Path) -> tuple[Path, ...]:
 
 
 def _machine_network_refusal(
-    cfg: Config, profile: SandboxProfile, tool_states: list[ToolState], has_network_tool: bool
+    cfg: Config, profile: SandboxProfile, tool_states: list[ToolState]
 ) -> str | None:
     """A refusal message if this machine's tool-network needs can't be honored.
 
     Layers machine-specific rules on top of `_check_network_profile` (which
-    handles agent_network=local / tool_network=carveouts on `hardened`):
-    a tool opting into the network needs `tool_network != "blocked"`; and on
-    `hardened` per-tool isolation is impossible, so a machine with tool states
-    under `tool_network = "blocked"` is refused rather than silently handed the
-    host network. Returns None when fine.
+    handles agent_network=local / tool_network=only_explicit_states on
+    `hardened`). On `hardened` per-tool isolation is impossible, so we refuse —
+    rather than silently mis-confine — whenever isolation is *required*: by the
+    operator (`tool_network = "block"`) or by a state (`allow_network = "block"`).
+    A networked state under `tool_network = "block"` is a config conflict and is
+    refused on any profile. Returns None when fine.
     """
     net_err = _check_network_profile(cfg, profile)
     if net_err is not None:
         return net_err
     tn = cfg.sandbox.tool_network
-    if has_network_tool and tn == "blocked":
+    has_allow = any(s.allow_network == "allow" for s in tool_states)
+    has_block = any(s.allow_network == "block" for s in tool_states)
+    if has_allow and tn == "block":
         return (
-            "a tool state sets allow_network = true but sandbox.tool_network ="
-            " 'blocked'. Set sandbox.tool_network = 'carveouts' for audited"
-            " per-tool egress."
+            'a tool state sets allow_network = "allow" but sandbox.tool_network ='
+            " 'block'. Set sandbox.tool_network = 'only_explicit_states' for"
+            " audited per-tool egress."
         )
-    if tool_states and tn == "blocked" and profile == "hardened":
+    if tool_states and tn == "block" and profile == "hardened":
         return (
             "isolating a machine's tool-state network requires the strict profile"
             " (a per-tool network namespace); this host supports only 'hardened'."
-            " Run on strict, or set sandbox.tool_network = 'allowed' (tools share"
+            " Run on strict, or set sandbox.tool_network = 'allow' (tools share"
             " the host network)."
+        )
+    if has_block and profile == "hardened":
+        return (
+            'a tool state sets allow_network = "block" (network must be denied),'
+            " but the hardened profile can't isolate one tool's network. Run on"
+            ' strict, or use allow_network = "auto" to tolerate the host network.'
         )
     return None
 
 
-def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa: PLR0911, PLR0912
+def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa: PLR0911
     try:
         spec = load_machine(path)
     except MachineError as exc:
@@ -365,7 +374,6 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
     states = list(spec.states.values())
     has_agent_state = any(getattr(s, "kind", None) == "agent" for s in states)
     tool_states = [s for s in states if isinstance(s, ToolState)]
-    has_network_tool = any(s.allow_network for s in tool_states)
     agent_runner: Callable[[AgentRequest], AgentExecResult] | None = None
     # Default profile for confinement-free machines: resolve from the host.
     profile: SandboxProfile = detect().detected_profile
@@ -387,20 +395,10 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
         except RuntimeError as exc:
             print(f"REFUSING: {exc}", file=sys.stderr)
             return 2
-        refusal = _machine_network_refusal(cfg, profile, tool_states, has_network_tool)
+        refusal = _machine_network_refusal(cfg, profile, tool_states)
         if refusal is not None:
             print(f"REFUSING: {refusal}", file=sys.stderr)
             return 2
-        if tool_states and profile == "hardened" and cfg.sandbox.tool_network == "allowed":
-            # hardened has no per-child netns, so a tool's allow_network = false
-            # cannot be honored — every tool command shares the host network.
-            # The operator opted into "allowed" (broad), so we warn, not refuse.
-            print(
-                "[agent6] note: on the hardened profile tool states are not"
-                " network-isolated per-tool — every tool command shares the host"
-                " network (per-tool allow_network needs the strict profile).",
-                file=sys.stderr,
-            )
         if has_agent_state:
             missing = _check_provider_keys(cfg)
             if missing is not None:

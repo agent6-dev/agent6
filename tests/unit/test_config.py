@@ -93,27 +93,28 @@ def test_network_defaults_are_secure(tmp_path: Path) -> None:
     body = _VALID_TOML.replace('agent_network = "providers"\n', "")
     cfg = load_config(_write(tmp_path, body))
     assert cfg.sandbox.agent_network == "providers"  # confined to providers
-    assert cfg.sandbox.tool_network == "blocked"  # no jailed-command network
+    assert cfg.sandbox.tool_network == "block"  # no jailed-command network
 
 
-def test_tool_network_allowed_requires_agent_open(tmp_path: Path) -> None:
+def test_tool_network_allow_requires_agent_open(tmp_path: Path) -> None:
     # run_command runs inside the agent process; it can't reach the network
-    # while the agent is confined, so allowed requires agent_network=open.
+    # while the agent is confined, so allow requires agent_network=open.
     body = _VALID_TOML.replace(
-        'agent_network = "providers"', 'agent_network = "providers"\ntool_network = "allowed"'
+        'agent_network = "providers"', 'agent_network = "providers"\ntool_network = "allow"'
     )
-    with pytest.raises(ConfigError, match="tool_network = 'allowed'"):
+    with pytest.raises(ConfigError, match="tool_network = 'allow'"):
         load_config(_write(tmp_path, body))
 
 
-def test_tool_network_carveouts_allowed_with_confined_agent(tmp_path: Path) -> None:
-    # carveouts is exempt: machine tool states are jailed by the host-netns
-    # engine, not the confined agent.
+def test_tool_network_explicit_states_ok_with_confined_agent(tmp_path: Path) -> None:
+    # only_explicit_states is exempt: machine tool states are jailed by the
+    # host-netns engine, not the confined agent.
     body = _VALID_TOML.replace(
-        'agent_network = "providers"', 'agent_network = "providers"\ntool_network = "carveouts"'
+        'agent_network = "providers"',
+        'agent_network = "providers"\ntool_network = "only_explicit_states"',
     )
     cfg = load_config(_write(tmp_path, body))
-    assert cfg.sandbox.tool_network == "carveouts"
+    assert cfg.sandbox.tool_network == "only_explicit_states"
 
 
 def test_allow_urls_defaults_empty(tmp_path: Path) -> None:

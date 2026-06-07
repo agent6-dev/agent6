@@ -89,11 +89,11 @@ def _check_network_profile(cfg: Config, selected_profile: SandboxProfile) -> str
     """A refusal message if the network config can't be enforced on this profile.
 
     ``agent_network = "local"`` (loopback-pinning) and ``tool_network =
-    "carveouts"`` (singling one tool out) both need a network namespace, which
-    only the ``strict`` profile provides. On ``hardened`` (a real sandbox that
-    can't provide them) we refuse rather than silently under-confine; on
-    ``none`` (no sandbox at all) the unsandboxed warning already covers it and
-    we run. Returns None when fine.
+    "only_explicit_states"`` (singling one tool out) both need a network
+    namespace, which only the ``strict`` profile provides. On ``hardened`` (a
+    real sandbox that can't provide them) we refuse rather than silently
+    under-confine; on ``none`` (no sandbox at all) the unsandboxed warning
+    already covers it and we run. Returns None when fine.
     """
     if selected_profile != "hardened":
         return None
@@ -104,11 +104,11 @@ def _check_network_profile(cfg: Config, selected_profile: SandboxProfile) -> str
             " pinning needs the egress broker), but this host supports only"
             " 'hardened'. Use 'providers' or 'open'."
         )
-    if sb.tool_network == "carveouts":
+    if sb.tool_network == "only_explicit_states":
         return (
-            "sandbox.tool_network = 'carveouts' requires the strict profile (a"
-            " per-tool network namespace singles one tool out), but this host"
-            " supports only 'hardened'. Use 'blocked' or 'allowed'."
+            "sandbox.tool_network = 'only_explicit_states' requires the strict"
+            " profile (a per-tool network namespace singles one tool out), but"
+            " this host supports only 'hardened'. Use 'block' or 'allow'."
         )
     return None
 

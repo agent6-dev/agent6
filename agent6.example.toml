@@ -135,11 +135,11 @@ profile = "auto"
 # providers only (local models; strict-only). "open" = unconfined.
 agent_network = "providers"
 # Whether JAILED commands (run_command, verify, machine tool states) may reach
-# the network: "blocked" | "carveouts" | "allowed"
-# "blocked" = none. "carveouts" = only machine tool states that set
-# allow_network = true (audited, deterministic), run_command stays offline
-# (strict-only). "allowed" = run_command too (requires agent_network = "open").
-tool_network = "blocked"
+# the network: "block" | "only_explicit_states" | "allow"
+# "block" = none. "only_explicit_states" = only machine tool states that set
+# allow_network = "allow" (audited, deterministic); run_command stays offline
+# (strict-only). "allow" = run_command too (requires agent_network = "open").
+tool_network = "block"
 # Extra egress destinations the AGENT process may reach under
 # agent_network = "providers", on top of the provider endpoints. Each entry is a
 # host, host:port, or full URL (a missing scheme implies https / port 443); only

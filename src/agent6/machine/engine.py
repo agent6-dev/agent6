@@ -391,8 +391,13 @@ def _execute(
 ) -> tuple[str, str, Fact]:
     if isinstance(state, ToolState):
         argv = render_command(state.command, blackboard, where="command")
+        # Under the explicit-only model a tool reaches the network iff it set
+        # allow_network = "allow" (the operator-set ceiling + hardened limits are
+        # enforced as machine-run startup refusals). "auto"/"block" → isolated.
         result = world.run_tool(
-            tuple(argv), float(state.timeout_secs), allow_network=state.allow_network
+            tuple(argv),
+            float(state.timeout_secs),
+            allow_network=state.allow_network == "allow",
         )
         if result.timed_out:
             label = "timeout"

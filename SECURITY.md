@@ -46,7 +46,7 @@ Under that adversary, agent6 aims to make the following true:
    "providers"` (the default; see Defense Layer 1b); `"local"` narrows it to
    loopback providers, `"open"` lifts it. Jailed commands (`run_command`,
    machine `tool` states) are governed separately by `sandbox.tool_network`
-   (default `"blocked"`); see Defense Layer 1b and §8.
+   (default `"block"`); see Defense Layer 1b and §8.
 4. No `git push`, no `--force`, no history rewrite, no `reset --hard`.
 5. No persistence after the run terminates (no daemon, no cron, no
    `.bashrc` mutation — the jail's mount namespace is the
@@ -284,30 +284,34 @@ deterministic** tool reach the network — a `tool` command is fixed/operator-
 reviewed (unlike `run_command`, whose argv the LLM chooses), so a networked
 audited tool is not a free exfiltration channel.
 
-`sandbox.tool_network` governs jailed-command egress: `"blocked"` (default —
-none), `"carveouts"` (only `tool` states with `allow_network = true`;
-`run_command` stays offline), `"allowed"` (`run_command` too — requires
+`sandbox.tool_network` governs jailed-command egress: `"block"` (default —
+none), `"only_explicit_states"` (only `tool` states with `allow_network =
+"allow"`; `run_command` stays offline), `"allow"` (`run_command` too — requires
 `agent_network = "open"`, since `run_command` runs inside the agent process and
-cannot out-reach a confined agent). The enforceable combinations:
+cannot out-reach a confined agent). A tool reaches the network only if it sets
+`allow_network = "allow"`; `"auto"` (default) and `"block"` mean no network.
+The enforceable combinations:
 
-| `agent_network` | `tool_network` | agent process | `run_command` | `tool allow_network=true` |
+| `agent_network` | `tool_network` | agent process | `run_command` | `tool allow_network="allow"` |
 |---|---|---|---|---|
-| `providers` *(def)* | `blocked` *(def)* | providers + `allow_urls` | none | none |
-| `providers` | `carveouts` | providers + `allow_urls` | none | host network |
-| `local` | `carveouts` | loopback providers only | none | host network |
-| `open` | `allowed` | unconfined | host network | host network |
+| `providers` *(def)* | `block` *(def)* | providers + `allow_urls` | none | none |
+| `providers` | `only_explicit_states` | providers + `allow_urls` | none | host network |
+| `local` | `only_explicit_states` | loopback providers only | none | host network |
+| `open` | `allow` | unconfined | host network | host network |
 
-`carveouts` and `agent_network = "local"` require the `strict` profile (they
-need a per-child / per-process network namespace); on `hardened` they are
-refused rather than silently under-confined. Every surface fails closed:
+`only_explicit_states` and `agent_network = "local"` require the `strict`
+profile (they need a per-child / per-process network namespace); on `hardened`
+they are refused rather than silently under-confined. Every surface fails closed:
 
 - **Operator-gated, machine-declared.** `agent_network`/`tool_network` are read
   only from the operator's global/repo config — a machine's `[config]` overlay
   (possibly LLM-drafted or shared) is rejected at load if it declares
   `[providers.*]` or `[sandbox.*]`. A `tool` merely *declares* `allow_network`;
-  it only reaches the network if the operator set `tool_network = "carveouts"`
-  (or `"allowed"`). A networked tool under `tool_network = "blocked"` is
-  refused, naming the offending state.
+  it only reaches the network if the operator set `tool_network =
+  "only_explicit_states"` (or `"allow"`). A networked tool under `tool_network =
+  "block"` is refused, naming the offending state; an explicit `allow_network =
+  "block"` (network must be denied) is refused on `hardened`, which can't
+  isolate a single tool's network.
 - **Bundle confinement.** Helper scripts live in an operator-reviewed
   `scripts/` directory beside the `.asm.toml`. `machine check` validates
   that every entry under `scripts/` resolves *inside* the bundle (symlinks

@@ -32,7 +32,7 @@ max_transitions = 100
 kind = "tool"
 command = ["scripts/fetch.sh"]
 timeout_secs = 5
-allow_network = true
+allow_network = "allow"
 on = { ok = "store", nonzero = "stop_fail", timeout = "stop_fail" }
 
 [states.store]
@@ -62,20 +62,20 @@ def _write(tmp_path: Path, text: str, name: str = "m.asm.toml") -> Path:
 # --- ToolState.allow_network field -----------------------------------------
 
 
-def test_tool_allow_network_defaults_false(tmp_path: Path) -> None:
-    text = NET_MACHINE.replace("allow_network = true\n", "")
+def test_tool_allow_network_defaults_auto(tmp_path: Path) -> None:
+    text = NET_MACHINE.replace('allow_network = "allow"\n', "")
     spec = load_machine(_write(tmp_path, text))
     fetch = spec.states["fetch"]
     assert isinstance(fetch, ToolState)
-    assert fetch.allow_network is False
+    assert fetch.allow_network == "auto"
 
 
-def test_tool_allow_network_roundtrips_true(tmp_path: Path) -> None:
+def test_tool_allow_network_roundtrips(tmp_path: Path) -> None:
     spec = load_machine(_write(tmp_path, NET_MACHINE))
     fetch = spec.states["fetch"]
     store = spec.states["store"]
-    assert isinstance(fetch, ToolState) and fetch.allow_network is True
-    assert isinstance(store, ToolState) and store.allow_network is False
+    assert isinstance(fetch, ToolState) and fetch.allow_network == "allow"
+    assert isinstance(store, ToolState) and store.allow_network == "auto"
 
 
 # --- engine threads allow_network through to the World ----------------------

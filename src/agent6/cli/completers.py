@@ -41,7 +41,7 @@ def _complete_models(
 _CONFIG_ENUM_CHOICES: dict[str, tuple[str, ...]] = {
     "sandbox.profile": ("auto", "strict", "hardened"),
     "sandbox.agent_network": ("providers", "local", "open"),
-    "sandbox.tool_network": ("blocked", "carveouts", "allowed"),
+    "sandbox.tool_network": ("block", "only_explicit_states", "allow"),
     "sandbox.run_commands": ("yes", "no", "ask"),
     "git.commit_strategy": ("per_step", "squash", "stage", "none"),
     "workflow.critic": ("off", "on_verify_fail", "before_finish", "periodic"),

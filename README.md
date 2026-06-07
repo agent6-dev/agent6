@@ -242,7 +242,7 @@ Enforcement is layered:
   agent's Python code can read or write outside the jail.
 
 If you set `sandbox.run_commands = "yes"`, `sandbox.agent_network = "open"`,
-and `sandbox.tool_network = "allowed"` the worker can talk to anywhere on the
+and `sandbox.tool_network = "allow"` the worker can talk to anywhere on the
 public internet from inside the sandbox. The defaults exist for a reason.
 
 See [SECURITY.md](SECURITY.md) for the per-layer breakdown.
@@ -251,7 +251,7 @@ See [SECURITY.md](SECURITY.md) for the per-layer breakdown.
 
 agent6 is **secure by default**: every field has a default, and
 security-sensitive ones default to the safe value (`allow_push = false`,
-`agent_network = "providers"`, `tool_network = "blocked"`,
+`agent_network = "providers"`, `tool_network = "block"`,
 `run_commands = "ask"`, `protect_* = true`).
 Start from [agent6.example.toml](agent6.example.toml), or just run
 `agent6 connect` + `agent6 model` (global) and `agent6 init` (per-repo).
@@ -267,7 +267,7 @@ exactly where it came from; `agent6 check` validates without running.
 [sandbox]
 profile = "auto"              # auto | strict | hardened
 agent_network = "providers"   # providers | local | open  (agent's LLM egress)
-tool_network = "blocked"      # blocked | carveouts | allowed  (jailed commands)
+tool_network = "block"        # block | only_explicit_states | allow  (jailed cmds)
 allow_urls = []               # extra agent egress hosts under "providers"
 run_commands = "ask"          # yes | no | ask
 protect_git = true

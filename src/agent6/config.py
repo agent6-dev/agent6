@@ -7,7 +7,7 @@ pydantic and surface field-pointing errors.
 
 Field policy: **secure by default, fully auditable**. Every field has a
 default, and security-sensitive fields default to the *safe* value
-(``sandbox.agent_network = "providers"``, ``sandbox.tool_network = "blocked"``,
+(``sandbox.agent_network = "providers"``, ``sandbox.tool_network = "block"``,
 ``sandbox.run_commands = "ask"``,
 ``sandbox.protect_* = true``, ``git.allow_push/force/history_rewrite =
 false``). This means a config can be layered (global ``$XDG_CONFIG_HOME``
@@ -247,15 +247,15 @@ class SandboxConfig(BaseModel):
     # Whether JAILED commands (`run_command`, `verify`, `metric`, and machine
     # `tool` states) may reach the network. A jailed child can never out-reach
     # the process that launches it, so:
-    #  - `blocked`: no jailed command gets the network.
-    #  - `carveouts`: blocked, EXCEPT machine `tool` states that opt in with
-    #    `allow_network = true` (audited, deterministic commands); `run_command`
-    #    stays blocked. `strict`-only — singling one tool out needs a per-child
-    #    network namespace, which only `strict` provides.
-    #  - `allowed`: `run_command` reaches the network too. Because `run_command`
+    #  - `block`: no jailed command gets the network.
+    #  - `only_explicit_states`: blocked, EXCEPT machine `tool` states that opt
+    #    in with `allow_network = "allow"` (audited, deterministic commands);
+    #    `run_command` stays blocked. `strict`-only — singling one tool out needs
+    #    a per-child network namespace, which only `strict` provides.
+    #  - `allow`: `run_command` reaches the network too. Because `run_command`
     #    runs inside the (possibly confined) agent process, this requires
     #    `agent_network = "open"`.
-    tool_network: Literal["blocked", "carveouts", "allowed"] = "blocked"
+    tool_network: Literal["block", "only_explicit_states", "allow"] = "block"
     run_commands: Literal["yes", "no", "ask"] = "ask"
     # Make `.git/` read-only from the child's view so a worker that gains
     # `run_command` (e.g. `run_commands = "ask"` + user approval) cannot
@@ -295,15 +295,16 @@ class SandboxConfig(BaseModel):
     def _check_network_combo(self) -> SandboxConfig:
         # A jailed child can never out-reach the process that launches it, and
         # `run_command` runs inside the agent process. So letting `run_command`
-        # reach the network (`tool_network = "allowed"`) requires the agent to
-        # be unconfined. `carveouts` is exempt: machine `tool` states are jailed
-        # by the host-netns engine, not the (possibly confined) agent.
-        if self.tool_network == "allowed" and self.agent_network != "open":
+        # reach the network (`tool_network = "allow"`) requires the agent to be
+        # unconfined. `only_explicit_states` is exempt: machine `tool` states are
+        # jailed by the host-netns engine, not the (possibly confined) agent.
+        if self.tool_network == "allow" and self.agent_network != "open":
             raise ValueError(
-                "sandbox.tool_network = 'allowed' requires sandbox.agent_network"
+                "sandbox.tool_network = 'allow' requires sandbox.agent_network"
                 " = 'open' — run_command runs inside the agent process and cannot"
-                " reach the network while the agent is confined. Use 'carveouts'"
-                " for audited per-tool egress, or set agent_network = 'open'."
+                " reach the network while the agent is confined. Use"
+                " 'only_explicit_states' for audited per-tool egress, or set"
+                " agent_network = 'open'."
             )
         return self
 

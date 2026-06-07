@@ -314,29 +314,31 @@ A `list`-typed variable spliced as a bare argv element
 `scan-inbox` here is an illustrative stand-in — a `tool` state runs
 whatever audited command the operator names.
 
-**Network (opt-in, default off).** A `tool` runs fully network-isolated
-(empty netns) unless it sets `allow_network = true`. Because the machine
-engine is a host-netns *supervisor* (each `agent` state confines itself in its
-own subprocess; see §9), an opt-in `tool` can reach the host network even while
-the agents stay confined to the provider API — a `tool` command is fixed and
-operator-reviewed, so it is not a free exfiltration channel the way a networked
-`run_command` would be. Whether opt-in is honored is the operator's call via
-`sandbox.tool_network` (read from the global/repo config, never the machine
-overlay):
+**Network (opt-in, default off).** A `tool`'s `allow_network` is one of
+`"auto"` (default — no network), `"allow"` (wants the host network), or
+`"block"` (no network, *required*: refuse on `hardened`, which can't isolate a
+single tool). A tool reaches the network only when it sets `allow_network =
+"allow"`. Because the machine engine is a host-netns *supervisor* (each `agent`
+state confines itself in its own subprocess; see §9), an opt-in `tool` can reach
+the host network even while the agents stay confined to the provider API — a
+`tool` command is fixed and operator-reviewed, so it is not a free exfiltration
+channel the way a networked `run_command` would be. Whether the opt-in is
+honored is the operator's call via `sandbox.tool_network` (read from the
+global/repo config, never the machine overlay):
 
-| `sandbox.agent_network` | `sandbox.tool_network` | agent egress | `tool` w/ `allow_network=true` |
+| `sandbox.agent_network` | `sandbox.tool_network` | agent egress | `tool` w/ `allow_network="allow"` |
 |---|---|---|---|
-| `providers` *(def)* | `blocked` *(def)* | providers + `allow_urls` | none |
-| `providers` | `carveouts` | providers + `allow_urls` | **host network** |
-| `local` | `carveouts` | loopback providers only | **host network** |
-| `open` | `allowed` | unconfined | host network (and `run_command`) |
+| `providers` *(def)* | `block` *(def)* | providers + `allow_urls` | none |
+| `providers` | `only_explicit_states` | providers + `allow_urls` | **host network** |
+| `local` | `only_explicit_states` | loopback providers only | **host network** |
+| `open` | `allow` | unconfined | host network (and `run_command`) |
 
 So the headline setup — confined agents + one audited networked tool — is
-`sandbox.agent_network = "providers"`, `sandbox.tool_network = "carveouts"`,
-and `allow_network = true` on that one state. `carveouts` (and `local`) need
-the `strict` profile; a networked tool under `tool_network = "blocked"`, or a
-tool-network config the profile can't honor, is refused at startup naming the
-state.
+`sandbox.agent_network = "providers"`, `sandbox.tool_network =
+"only_explicit_states"`, and `allow_network = "allow"` on that one state.
+`only_explicit_states` (and `local`) need the `strict` profile; a networked tool
+under `tool_network = "block"`, or a tool-network config the profile can't
+honor, is refused at startup naming the state.
 
 **Script bundles.** A machine is a *bundle*: the `.asm.toml` file plus an
 optional sibling `scripts/` directory holding operator-reviewed helper

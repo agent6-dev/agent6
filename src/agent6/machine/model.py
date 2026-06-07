@@ -253,17 +253,21 @@ class ToolState(BaseModel):
     capture: Capture | None = None
     timeout_secs: int = Field(gt=0)
     on: dict[str, str]
-    # Opt-in network access for this tool's jailed subprocess. Default false
-    # keeps the command network-isolated (empty netns) — the deterministic,
-    # offline default. When true, the tool gets the host network *if* the
-    # operator permits it via ``sandbox.tool_network = "carveouts"`` (or
-    # ``"allowed"``); under ``"blocked"`` the run is refused naming this state.
-    # This is enforceable because the machine engine is a host-netns supervisor:
-    # the tool's jail can reach the host network while the agent states stay
-    # confined to the provider API. The tool merely *declares* the need; whether
-    # it is granted is the operator's call (``sandbox.tool_network`` is read from
-    # the global/repo config, never a machine overlay).
-    allow_network: bool = False
+    # This tool's network stance for its jailed subprocess:
+    #  - ``auto`` (default): no network; isolated (empty netns) where the profile
+    #    can (``strict``), tolerant where it can't (``hardened`` shares the host
+    #    netns) — the deterministic, offline default that runs anywhere.
+    #  - ``allow``: wants the host network. Granted only if the operator permits
+    #    it via ``sandbox.tool_network`` (``only_explicit_states`` or ``allow``);
+    #    under ``block`` the run is refused naming this state. Enforceable because
+    #    the machine engine is a host-netns supervisor: the tool's jail can reach
+    #    the network while the agent states stay confined to the provider API.
+    #  - ``block``: no network, REQUIRED — refuse on ``hardened`` (which can't
+    #    guarantee per-tool isolation), unlike ``auto`` which tolerates it.
+    # The tool only *declares*; whether ``allow`` is granted is the operator's
+    # call (``sandbox.tool_network``, read from global/repo config, never a
+    # machine overlay).
+    allow_network: Literal["auto", "allow", "block"] = "auto"
 
 
 class WaitState(BaseModel):

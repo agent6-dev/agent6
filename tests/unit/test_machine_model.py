@@ -423,7 +423,7 @@ def test_machine_config_overlay_rejects_sandbox(tmp_path: Path) -> None:
         + """
 [config.sandbox]
 agent_network = "open"
-tool_network = "allowed"
+tool_network = "allow"
 """
     )
     problems = _problems(tmp_path, body)
