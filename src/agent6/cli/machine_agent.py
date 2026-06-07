@@ -98,6 +98,14 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
         provider = _build_role_provider(
             cfg, "worker", transcript_sink=TranscriptSink(transcript_dir), budget=budget
         )
+        # Re-confirm the cwd-containment invariant at the subprocess boundary
+        # (defense in depth — the engine already filtered these).
+        root_r = root.resolve()
+        protect = tuple(
+            rp
+            for p in req.get("protect_paths", [])
+            if (rp := Path(p).resolve()).is_relative_to(root_r)
+        )
         dispatcher = ToolDispatcher(
             root=root,
             config=cfg,
@@ -107,7 +115,7 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
             graph_client=None,
             run_root_node_id=None,
             mcp_manager=None,
-            extra_protect_paths=tuple(Path(p) for p in req.get("protect_paths", [])),
+            extra_protect_paths=protect,
         )
         wf = Workflow(
             root=root,

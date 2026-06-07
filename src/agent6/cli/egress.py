@@ -151,7 +151,10 @@ def _maybe_start_egress(
     try:
         broker = start_egress_broker(endpoints, sock_dir=sock_dir)
         enter_network_isolation()
-    except EgressBrokerError as exc:
+    except (EgressBrokerError, OSError) as exc:
+        # OSError covers a socket bind/listen failure inside start_egress_broker
+        # (resource exhaustion, permissions). Fail closed: clean up the socket
+        # dir and refuse the run rather than leak it or run unconfined.
         shutil.rmtree(sock_dir, ignore_errors=True)
         return None, None, f"could not establish agent-network confinement: {exc}"
     for ep in endpoints:

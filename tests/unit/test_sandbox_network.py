@@ -6,6 +6,7 @@ the supervisor subprocess that runs a machine `agent` state self-confined."""
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -172,3 +173,96 @@ def test_run_one_returns_finish_payload(
     out = machine_agent._run_one(req)  # pyright: ignore[reportPrivateUsage]
     assert out["reason"] == "finish_run"
     assert out["payload"] == {"label": "ok"}
+
+
+def _stub_loop(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """Stub the agent loop in machine_agent; return a dict capturing dispatcher kwargs."""
+    from agent6.workflows.loop import RunResult
+
+    class _FakeWf:
+        def __init__(self, **_kw: object) -> None:
+            pass
+
+        def run(self, _prompt: str) -> RunResult:
+            return RunResult(
+                reason="finish_run",
+                completed=True,
+                summary="d",
+                iterations=1,
+                tool_calls=0,
+                finish_payload={},
+            )
+
+    captured: dict[str, Any] = {}
+
+    def _disp(**kw: object) -> object:
+        captured.update(kw)
+        return object()
+
+    def _prov(*_a: object, **_k: object) -> object:
+        return object()
+
+    monkeypatch.setattr(machine_agent, "Workflow", _FakeWf)
+    monkeypatch.setattr(machine_agent, "_build_role_provider", _prov)
+    monkeypatch.setattr(machine_agent, "ToolDispatcher", _disp)
+    return captured
+
+
+def test_run_one_drops_out_of_cwd_protect_paths(
+    iso: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured = _stub_loop(monkeypatch)
+    inside = iso / "m.asm.toml"
+    inside.write_text("x", encoding="utf-8")
+    outside = tmp_path.parent / "evil.asm.toml"
+    outside.write_text("x", encoding="utf-8")
+    req = {
+        "cwd": str(iso),
+        "root": str(iso),
+        "overlay": {},
+        "profile": "none",
+        "transcript_dir": str(tmp_path / "t"),
+        "protect_paths": [str(inside), str(outside)],
+        "request": {
+            "model": "claude-x",
+            "prompt": "go",
+            "timeout_s": 5.0,
+            "provider": "anthropic",
+            "thinking": None,
+            "temperature": None,
+            "max_usd": None,
+            "max_input_tokens": None,
+            "max_output_tokens": None,
+        },
+    }
+    machine_agent._run_one(req)  # pyright: ignore[reportPrivateUsage]
+    # Only the in-cwd path survives the subprocess-boundary re-validation.
+    assert captured["extra_protect_paths"] == (inside.resolve(),)
+
+
+def test_egress_fails_closed_and_cleans_up_on_socket_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import agent6.cli.egress as eg
+
+    sock = tmp_path / "egress-sock"
+
+    def _fake_mkdtemp(**_k: object) -> str:
+        sock.mkdir()
+        return str(sock)
+
+    def _boom(*_a: object, **_k: object) -> object:
+        raise OSError("too many open files")
+
+    monkeypatch.setattr(eg.tempfile, "mkdtemp", _fake_mkdtemp)
+    monkeypatch.setattr(eg, "start_egress_broker", _boom)
+    cfg = validate_config(
+        {
+            "providers": {"anthropic": {"kind": "anthropic"}},
+            "sandbox": {"agent_network": "providers"},
+        }
+    )
+    broker, sock_dir, err = _maybe_start_egress(cfg, "strict")
+    assert broker is None and sock_dir is None
+    assert err is not None and "too many open files" in err
+    assert not sock.exists()  # the socket dir was cleaned up, not leaked

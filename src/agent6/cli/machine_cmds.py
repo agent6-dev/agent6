@@ -353,7 +353,7 @@ def _machine_network_refusal(
     return None
 
 
-def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa: PLR0911
+def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa: PLR0911, PLR0912
     try:
         spec = load_machine(path)
     except MachineError as exc:
@@ -391,6 +391,16 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
         if refusal is not None:
             print(f"REFUSING: {refusal}", file=sys.stderr)
             return 2
+        if tool_states and profile == "hardened" and cfg.sandbox.tool_network == "allowed":
+            # hardened has no per-child netns, so a tool's allow_network = false
+            # cannot be honored — every tool command shares the host network.
+            # The operator opted into "allowed" (broad), so we warn, not refuse.
+            print(
+                "[agent6] note: on the hardened profile tool states are not"
+                " network-isolated per-tool — every tool command shares the host"
+                " network (per-tool allow_network needs the strict profile).",
+                file=sys.stderr,
+            )
         if has_agent_state:
             missing = _check_provider_keys(cfg)
             if missing is not None:
