@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Phase 4: opt-in networked tool states + machine script-bundle validation."""
+"""Machine tool egress: per-state allow_network, bundle validation, and the
+running machine's files made read-only in run jails (immutability)."""
 
 from __future__ import annotations
 
@@ -10,7 +11,10 @@ from typing import Any
 
 import pytest
 
-from agent6.cli.machine_cmds import _validate_bundle  # pyright: ignore[reportPrivateUsage]
+from agent6.cli.machine_cmds import (
+    _machine_protect_paths,  # pyright: ignore[reportPrivateUsage]
+    _validate_bundle,  # pyright: ignore[reportPrivateUsage]
+)
 from agent6.machine import MachineJournal, ToolState, drive, load_machine
 from agent6.machine.engine import LiveWorld, ToolExecResult
 
@@ -147,6 +151,48 @@ def test_liveworld_non_network_tool_is_isolated(
     world = LiveWorld(cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), profile="strict")
     world.run_tool(("true",), 5.0, allow_network=False)
     assert seen[-1].allow_network is False
+
+
+def test_liveworld_passes_protect_paths_to_jail(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen = _patch_jail(monkeypatch)
+    guarded = (tmp_path / "m.asm.toml", tmp_path / "scripts")
+    world = LiveWorld(
+        cwd=tmp_path,
+        journal=MachineJournal(tmp_path / "i"),
+        profile="strict",
+        protect_paths=guarded,
+    )
+    world.run_tool(("true",), 5.0)
+    assert seen[-1].extra_protect_paths == guarded
+
+
+# --- machine-file immutability (_machine_protect_paths) --------------------
+
+
+def test_protect_paths_include_machine_file_and_scripts(tmp_path: Path) -> None:
+    f = _write(tmp_path, NET_MACHINE)
+    (tmp_path / "scripts").mkdir()
+    got = _machine_protect_paths(f, tmp_path)
+    assert f.resolve() in got
+    assert (tmp_path / "scripts").resolve() in got
+
+
+def test_protect_paths_skip_missing_scripts(tmp_path: Path) -> None:
+    f = _write(tmp_path, NET_MACHINE)  # no scripts/ dir
+    got = _machine_protect_paths(f, tmp_path)
+    assert got == (f.resolve(),)
+
+
+def test_protect_paths_exclude_machine_outside_cwd(tmp_path: Path) -> None:
+    # A machine file outside the jail-mounted cwd isn't in the child's view, so
+    # it isn't (and can't be) protected.
+    outside = tmp_path.parent / "outside.asm.toml"
+    outside.write_text(NET_MACHINE, encoding="utf-8")
+    sub = tmp_path / "repo"
+    sub.mkdir()
+    assert _machine_protect_paths(outside, sub) == ()
 
 
 # --- bundle / script-path validation ---------------------------------------

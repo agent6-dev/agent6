@@ -231,7 +231,11 @@ def _cmd_machine_graph(path: Path, *, fmt: str) -> int:
 
 
 def _build_machine_agent_runner(
-    overlay: dict[str, Any], cwd: Path, profile: SandboxProfile, transcript_dir: Path
+    overlay: dict[str, Any],
+    cwd: Path,
+    profile: SandboxProfile,
+    transcript_dir: Path,
+    protect_paths: tuple[Path, ...] = (),
 ) -> Callable[[AgentRequest], AgentExecResult]:
     """Build the runner an `agent` state uses to drive a confined agent6 loop.
 
@@ -252,6 +256,7 @@ def _build_machine_agent_runner(
             "overlay": overlay,
             "profile": profile,
             "transcript_dir": str(transcript_dir),
+            "protect_paths": [str(p) for p in protect_paths],
             "request": {
                 "model": request.model,
                 "prompt": request.prompt,
@@ -303,6 +308,19 @@ def _build_machine_agent_runner(
     return run_agent
 
 
+def _machine_protect_paths(machine_path: Path, cwd: Path) -> tuple[Path, ...]:
+    """The machine's own ``.asm.toml`` + ``scripts/`` bundle, to mark read-only
+    in run jails. Only paths under the jail-mounted cwd are enforceable (a path
+    outside cwd isn't in the child's view, so it can't edit it anyway)."""
+    cwd_r = cwd.resolve()
+    out: list[Path] = []
+    for p in (machine_path, machine_path.parent / "scripts"):
+        rp = p.resolve()
+        if rp.exists() and _is_inside(rp, cwd_r):
+            out.append(rp)
+    return tuple(out)
+
+
 def _machine_network_refusal(
     cfg: Config, profile: SandboxProfile, tool_states: list[ToolState], has_network_tool: bool
 ) -> str | None:
@@ -351,6 +369,9 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
     agent_runner: Callable[[AgentRequest], AgentExecResult] | None = None
     # Default profile for confinement-free machines: resolve from the host.
     profile: SandboxProfile = detect().detected_profile
+    # The running machine's own file + scripts bundle are read-only in every
+    # run jail, so a tool/agent can't rewrite its own logic or audited scripts.
+    protect_paths = _machine_protect_paths(path, cwd)
     # Load the effective config when an `agent` state needs it, or when there
     # are any tool states (we need sandbox.tool_network/profile to gate egress).
     if has_agent_state or tool_states:
@@ -379,7 +400,7 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
             # The engine is a host-netns supervisor; each agent state confines
             # itself in its own subprocess per sandbox.agent_network.
             agent_runner = _build_machine_agent_runner(
-                spec.config, cwd, profile, root / "agent_transcripts"
+                spec.config, cwd, profile, root / "agent_transcripts", protect_paths
             )
     _warn_if_unsandboxed(profile)
     root = _machines_dir(cwd) / spec.machine
@@ -394,6 +415,7 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
                 journal=journal,
                 agent_runner=agent_runner,
                 profile=profile,
+                protect_paths=protect_paths,
             )
             result = drive(spec, journal, world, live=True, exit_on_wait=exit_on_wait)
     except (JournalError, EngineError) as exc:

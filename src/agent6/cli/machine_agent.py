@@ -107,6 +107,7 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
             graph_client=None,
             run_root_node_id=None,
             mcp_manager=None,
+            extra_protect_paths=tuple(Path(p) for p in req.get("protect_paths", [])),
         )
         wf = Workflow(
             root=root,

@@ -347,7 +347,9 @@ mounted cwd at run time, so keep the bundle at (or under) the directory you
 run `agent6` from. `machine check` validates the bundle: every entry under
 `scripts/` must resolve *inside* the bundle (symlinks that escape via
 `..`/absolute are rejected) and every static `scripts/...` command
-reference must exist and stay inside the bundle.
+reference must exist and stay inside the bundle. During a run the bundle (the
+`.asm.toml` + `scripts/`) is **read-only in every jail**, so a tool or agent
+cannot rewrite its own machine logic or audited scripts mid-run.
 
 #### `wait`
 

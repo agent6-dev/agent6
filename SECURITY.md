@@ -316,7 +316,10 @@ refused rather than silently under-confined. Every surface fails closed:
   machine cannot smuggle a path that reads or executes outside its own
   directory. Scripts are drafted at authoring time and reviewed/committed
   by the operator, never fetched or generated from untrusted model output
-  at run time.
+  at run time. And during a run, the machine's own `.asm.toml` + `scripts/`
+  are made **read-only in every jail** (alongside `.git`/`.agent6`), so a
+  tool or agent state cannot rewrite its own logic, add an `allow_network`
+  flag, or alter an audited script mid-run or for a future run.
 
 ## Prompt-injection resilience
 

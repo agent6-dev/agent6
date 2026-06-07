@@ -165,6 +165,10 @@ class LiveWorld:
     agent_runner: Callable[[AgentRequest], AgentExecResult] | None = None
     poll_interval_s: float = 0.5
     profile: SandboxProfile = "strict"
+    # Paths made read-only in every tool jail — the running machine's own
+    # `.asm.toml` + `scripts/` bundle, so a tool can't rewrite its own machine
+    # logic or audited scripts mid-run (set by the CLI).
+    protect_paths: tuple[Path, ...] = ()
 
     def run_tool(
         self, argv: tuple[str, ...], timeout_s: float, *, allow_network: bool = False
@@ -181,6 +185,7 @@ class LiveWorld:
             profile=self.profile,
             env=env,
             allow_network=allow_network,
+            extra_protect_paths=self.protect_paths,
             timeout_s=float(timeout_s),
         )
         try:

@@ -245,10 +245,15 @@ class ToolDispatcher:
         graph_client: object | None = None,
         run_root_node_id: str | None = None,
         mcp_manager: MCPManager | None = None,
+        extra_protect_paths: tuple[Path, ...] = (),
     ) -> None:
         self._root = root.resolve()
         self._config = config
         self._sandbox_profile: SandboxProfile = sandbox_profile
+        # Extra read-only paths layered into every run_command jail on top of
+        # protect_git/protect_agent6 (e.g. a running machine's own .asm.toml +
+        # scripts bundle, so an agent state can't rewrite them mid-run).
+        self._extra_protect_paths = extra_protect_paths
         self._approver: _Approver = approver or _default_approver
         self._events = events
         # Optional GraphClient + root-task id for the DAG-as-tool
@@ -864,6 +869,7 @@ class ToolDispatcher:
         if self._config.sandbox.protect_agent6:
             protect_paths.append((self._root / "agent6.toml").resolve())
             protect_paths.append((self._root / self._agent6_dir_name).resolve())
+        protect_paths.extend(self._extra_protect_paths)
         # caller-provided timeout overrides the JailPolicy default
         # (600s). Used by verify_command + metric_command for fast failure
         # detection on pathological edits.
