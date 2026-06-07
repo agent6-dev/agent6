@@ -152,6 +152,12 @@ Other commands:
 - `agent6 history graph [<run-id>]` — render the persisted task graph.
 - `agent6 config fill` — materialize every effective value into one
   explicit config file (global by default, `--repo` for the repo).
+- `agent6 config get/set/unset/add/remove <key> [value]` — read or edit a
+  single dotted leaf (e.g. `sandbox.network`). Writes go to the global
+  config by default, `--repo` for the repo, or `--machine FILE` for a
+  machine's `[config]` overlay (`providers.*` is forbidden there). `add`/
+  `remove` edit list fields such as `sandbox.allow_urls`. Every edit is
+  re-validated and rolled back if it would produce an invalid config.
 
 ## How it works
 
@@ -200,7 +206,8 @@ The worker LLM is treated as adversarial. It must not be able to:
 - write outside the project's working directory;
 - read files outside the project (plus any sibling read-only paths);
 - reach the network except the host:port of each `[providers.*]` block
-  (when `sandbox.network = "provider_only"`);
+  (when `sandbox.network = "provider_only"`), plus any extra destinations
+  the operator explicitly allow-lists in `sandbox.allow_urls`;
 - corrupt the project's git history or its own configuration / run
   state from inside the sandbox;
 - leave background processes running after the run ends.
@@ -259,6 +266,7 @@ exactly where it came from; `agent6 check` validates without running.
 [sandbox]
 profile = "auto"              # auto | strict | hardened
 network = "provider_only"     # no | provider_only | allow
+allow_urls = []               # extra egress hosts under provider_only
 run_commands = "ask"          # yes | no | ask
 protect_git = true
 protect_agent6 = true

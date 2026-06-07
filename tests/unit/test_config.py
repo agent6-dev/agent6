@@ -89,6 +89,35 @@ def test_invalid_enum_literal(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
+def test_allow_urls_defaults_empty(tmp_path: Path) -> None:
+    # Secure default: no extra egress destinations beyond the providers.
+    cfg = load_config(_write(tmp_path, _VALID_TOML))
+    assert cfg.sandbox.allow_urls == ()
+
+
+def test_allow_urls_accepts_host_hostport_and_url(tmp_path: Path) -> None:
+    body = _VALID_TOML.replace(
+        "protect_agent6 = true",
+        'protect_agent6 = true\nallow_urls = ["example.com", "h.com:8443", "https://api.x.com/v1"]',
+    )
+    cfg = load_config(_write(tmp_path, body))
+    assert cfg.sandbox.allow_urls == ("example.com", "h.com:8443", "https://api.x.com/v1")
+
+
+def test_allow_urls_rejects_portless_garbage(tmp_path: Path) -> None:
+    body = _VALID_TOML.replace("protect_agent6 = true", 'protect_agent6 = true\nallow_urls = [""]')
+    with pytest.raises(ConfigError, match=r"allow_urls"):
+        load_config(_write(tmp_path, body))
+
+
+def test_allow_urls_rejects_bad_port(tmp_path: Path) -> None:
+    body = _VALID_TOML.replace(
+        "protect_agent6 = true", 'protect_agent6 = true\nallow_urls = ["h.com:99999"]'
+    )
+    with pytest.raises(ConfigError, match=r"allow_urls"):
+        load_config(_write(tmp_path, body))
+
+
 def test_role_temperature_defaults_to_zero(tmp_path: Path) -> None:
     # Finding C / Amp 2: agent6's tool-use loop is a feedback loop;
     # default temperature is pinned to 0.0 so OpenRouter-routed models

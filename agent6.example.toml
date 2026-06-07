@@ -131,6 +131,14 @@ profile = "auto"
 # "no" | "provider_only" | "allow"
 # "provider_only" allows the host endpoints of every configured provider.
 network = "provider_only"
+# Extra egress destinations permitted under "provider_only", on top of the
+# provider endpoints. Each entry is a host, host:port, or full URL (a missing
+# scheme implies https / port 443); only the host:port opens a broker socket.
+# Secure default empty. MERGE is last-overlay-wins (the most-specific tier
+# that sets it replaces the list wholesale, like other list fields); provider
+# endpoints always union in. Edit with `agent6 config add/remove
+# sandbox.allow_urls <host>`. Ignored when network is "no" or "allow".
+allow_urls = []
 # "yes" | "no" | "ask"
 run_commands = "ask"
 # Re-bind .git/ READ-ONLY (or, in hardened, switch Landlock to a

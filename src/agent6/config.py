@@ -25,6 +25,7 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 from typing import Annotated, Literal
+from urllib.parse import urlsplit
 
 from pydantic import (
     BaseModel,
@@ -52,6 +53,29 @@ ProviderKind = Literal["anthropic", "openai"]
 # ``worker`` when unset (see ModelsConfig.resolve).
 RoleName = Literal["worker", "reviewer", "planner"]
 ThinkingLevel = Literal["off", "low", "medium", "high"]
+
+
+def _validate_allow_url(entry: str) -> None:
+    """Reject a `sandbox.allow_urls` entry that has no usable host:port.
+
+    Accepts a bare ``host``, ``host:port``, or full URL; a missing scheme
+    implies ``https://``. Only the host:port is meaningful for the egress
+    broker, so the body/path is ignored. Kept in lock-step with the egress
+    folding in ``cli._allow_url_endpoints`` — both prepend ``https://`` when
+    the entry omits a scheme, then parse with ``urlsplit``.
+    """
+    if not entry or not entry.strip():
+        raise ValueError("sandbox.allow_urls entries must be non-empty")
+    normalized = entry if "://" in entry else f"https://{entry}"
+    try:
+        parts = urlsplit(normalized)
+        port = parts.port  # urlsplit raises ValueError on an out-of-range port
+    except ValueError as exc:
+        raise ValueError(f"invalid sandbox.allow_urls entry {entry!r}: {exc}") from exc
+    if not parts.hostname:
+        raise ValueError(f"sandbox.allow_urls entry {entry!r} has no host")
+    if port is not None and not (1 <= port <= 65535):
+        raise ValueError(f"sandbox.allow_urls entry {entry!r} has an invalid port")
 
 
 class AnthropicProviderEntry(BaseModel):
@@ -232,6 +256,24 @@ class SandboxConfig(BaseModel):
     # graph). The curator subprocess has its own jail policy that does
     # grant `.agent6/` write access; worker children do not.
     protect_agent6: bool = True
+    # Extra egress destinations the agent is permitted to reach under
+    # `network = "provider_only"`, on top of the configured provider
+    # endpoints. Each entry is a `host`, `host:port`, or full URL (a missing
+    # scheme implies https / port 443); only the host:port is used to open a
+    # broker socket. Secure default empty — no destination beyond the
+    # providers is reachable. MERGE: last-overlay-wins (the most-specific tier
+    # that sets the key replaces it wholesale, like every other list field);
+    # provider endpoints always UNION in regardless of tier. Effective egress
+    # = union(provider endpoints) + allow_urls(winning tier). Only meaningful
+    # under `provider_only`; ignored when network is `no` or `allow`.
+    allow_urls: tuple[str, ...] = ()
+
+    @field_validator("allow_urls")
+    @classmethod
+    def _check_allow_urls(cls, v: tuple[str, ...]) -> tuple[str, ...]:
+        for entry in v:
+            _validate_allow_url(entry)
+        return v
 
 
 class GitCommitConfig(BaseModel):

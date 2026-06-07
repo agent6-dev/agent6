@@ -65,6 +65,28 @@ def test_source_map_attribution(repo: Path) -> None:
     assert eff.sources["git.allow_push"] == "default"
 
 
+def test_allow_urls_last_overlay_wins(repo: Path) -> None:
+    # allow_urls is a list field: the most-specific tier that sets it replaces
+    # it wholesale (no union across tiers), like every other list field.
+    gpath = repo.parent / "g" / "config.toml"
+    gpath.write_text(
+        gpath.read_text(encoding="utf-8").replace(
+            'run_commands = "ask"', 'run_commands = "ask"\nallow_urls = ["g.com"]'
+        ),
+        encoding="utf-8",
+    )
+    rpath = repo / ".agent6" / "config.toml"
+    rpath.write_text(
+        rpath.read_text(encoding="utf-8").replace(
+            'run_commands = "yes"', 'run_commands = "yes"\nallow_urls = ["r.com"]'
+        ),
+        encoding="utf-8",
+    )
+    eff = load_effective(repo)
+    assert eff.config.sandbox.allow_urls == ("r.com",)  # repo replaces global
+    assert eff.sources["sandbox.allow_urls"] == "repo"
+
+
 def test_render_show_marks_overrides(repo: Path) -> None:
     eff = load_effective(repo)
     text = render_show(eff)

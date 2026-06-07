@@ -193,6 +193,28 @@ def load_effective_with_overlay(repo_root: Path, overlay: dict[str, Any]) -> Eff
     return _effective_from_layers(layers, source="(merged config layers + machine overlay)")
 
 
+def leaf_keys(eff: EffectiveConfig) -> list[str]:
+    """Every dotted leaf path in the effective config, sorted (for completion)."""
+    return sorted(_flatten(eff.config.model_dump(mode="python")))
+
+
+def effective_leaf(eff: EffectiveConfig, dotted_key: str) -> tuple[Any, str] | None:
+    """The ``(value, source-layer)`` for *dotted_key*, or None if it is not a leaf.
+
+    Mirrors `config show`: the value comes from the merged+validated config and
+    the source is the layer that set it (``default`` when no layer did).
+    """
+    leaves = _flatten(eff.config.model_dump(mode="python"))
+    if dotted_key not in leaves:
+        return None
+    return leaves[dotted_key], eff.sources.get(dotted_key, "default")
+
+
+def format_value(val: Any) -> str:
+    """Render a config leaf value the same way `config show` does."""
+    return _fmt_value(val)
+
+
 # ---------------------------------------------------------------------------
 # Rendering: `config show`
 # ---------------------------------------------------------------------------

@@ -19,6 +19,7 @@ import sys
 import tempfile
 import threading
 import time
+import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,6 +37,9 @@ from agent6.config import (
     RoleName,
 )
 from agent6.config_layer import (
+    effective_leaf,
+    format_value,
+    leaf_keys,
     load_effective,
     load_effective_with_overlay,
     materialize,
@@ -286,6 +290,24 @@ def _provider_endpoints(cfg: Config) -> set[Endpoint]:
     return eps
 
 
+def _allow_url_endpoints(cfg: Config) -> set[Endpoint]:
+    """Extra ``host:port`` endpoints from ``sandbox.allow_urls``.
+
+    Each entry is already validated by ``SandboxConfig`` as a host, host:port,
+    or URL. We normalize a missing scheme to ``https://`` (so a bare host
+    defaults to 443) — kept in lock-step with ``config._validate_allow_url`` —
+    then reuse ``parse_endpoint``. Folded into the provider-only egress
+    allow-list alongside the provider endpoints (union); the winning config
+    tier already decided which ``allow_urls`` list applies.
+    """
+    eps: set[Endpoint] = set()
+    for entry in cfg.sandbox.allow_urls:
+        url = entry if "://" in entry else f"https://{entry}"
+        host, port = parse_endpoint(url)
+        eps.add(Endpoint(host=host, port=port))
+    return eps
+
+
 def _warn_if_unsandboxed(selected_profile: SandboxProfile) -> None:
     """Print a prominent warning when running without the kernel sandbox.
 
@@ -334,7 +356,7 @@ def _maybe_start_egress(
                 "user namespaces enabled."
             ),
         )
-    endpoints = _provider_endpoints(cfg)
+    endpoints = _provider_endpoints(cfg) | _allow_url_endpoints(cfg)
     sock_dir = Path(tempfile.mkdtemp(prefix="agent6-egress-"))
     try:
         broker = start_egress_broker(endpoints, sock_dir=sock_dir)
@@ -1108,6 +1130,43 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
     config_sub.add_parser(
         "path", help="Print the resolved global + repo config (and secrets) file paths."
     )
+    config_get = config_sub.add_parser(
+        "get", help="Print a leaf's effective value and which layer set it."
+    )
+    config_get_key = config_get.add_argument("key", help="Dotted leaf path, e.g. sandbox.network.")
+    config_get_key.completer = _complete_config_keys  # type: ignore[attr-defined]
+    config_get.add_argument(
+        "--machine",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="View the value with a machine file's [config] overlay applied.",
+    )
+    for verb, blurb in (
+        ("set", "Set a leaf to a scalar value (global by default)."),
+        ("unset", "Remove a leaf, reverting it to the next-lower layer / default."),
+        ("add", "Append a value to a list field (e.g. sandbox.allow_urls)."),
+        ("remove", "Remove a value from a list field."),
+    ):
+        p = config_sub.add_parser(verb, help=blurb)
+        key_arg = p.add_argument("key", help="Dotted leaf path, e.g. sandbox.network.")
+        key_arg.completer = _complete_config_keys  # type: ignore[attr-defined]
+        if verb != "unset":
+            val_arg = p.add_argument("value", help="Value (TOML-typed; bare text is a string).")
+            val_arg.completer = _complete_config_values  # type: ignore[attr-defined]
+        p.add_argument(
+            "--repo",
+            action="store_true",
+            help="Write .agent6/config.toml instead of the global config.",
+        )
+        machine_arg = p.add_argument(
+            "--machine",
+            type=Path,
+            default=None,
+            metavar="FILE",
+            help="Edit a machine file's [config] overlay (providers.* forbidden).",
+        )
+        machine_arg.completer = _complete_machine_files  # type: ignore[attr-defined]
 
     check_p = sub.add_parser(
         "check",
@@ -1503,6 +1562,16 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             return _cmd_config_fill(args.config, to_repo=args.repo, force=args.force)
         if args.config_command == "path":
             return _cmd_config_path()
+        if args.config_command == "get":
+            return _cmd_config_get(args.key, machine=args.machine)
+        if args.config_command == "set":
+            return _cmd_config_set(args.key, args.value, repo=args.repo, machine=args.machine)
+        if args.config_command == "unset":
+            return _cmd_config_unset(args.key, repo=args.repo, machine=args.machine)
+        if args.config_command == "add":
+            return _cmd_config_add(args.key, args.value, repo=args.repo, machine=args.machine)
+        if args.config_command == "remove":
+            return _cmd_config_remove(args.key, args.value, repo=args.repo, machine=args.machine)
     if args.command == "check":
         return _cmd_check(args.config, section=args.section)
     if args.command == "connect":
@@ -2052,6 +2121,116 @@ def _upsert_toml_table(path: Path, table: str, fields: dict[str, str | bool | No
     path.write_text("\n".join(new_lines).rstrip("\n") + "\n", encoding="utf-8")
 
 
+def _toml_repr(value: object) -> str:
+    """Serialize a scalar or list-of-scalars to its TOML literal form."""
+    if isinstance(value, bool):  # bool first: it is a subclass of int
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return repr(value)
+    if isinstance(value, str):
+        return _toml_value(value)
+    if isinstance(value, (list, tuple)):
+        return "[" + ", ".join(_toml_repr(v) for v in value) + "]"
+    raise ValueError(f"cannot serialize {value!r} to TOML")
+
+
+def _parse_cli_value(value: str) -> object:
+    """Interpret a CLI-supplied value the way TOML would.
+
+    ``true``/``false`` become bools, numbers become int/float, quoted or
+    bracketed text parses as a TOML string/array, and anything else (e.g. a
+    bare enum like ``provider_only`` or a model id) is taken verbatim as a
+    string. This keeps ``config set sandbox.network provider_only`` ergonomic
+    while still allowing ``config set sandbox.protect_git false``.
+    """
+    try:
+        return tomllib.loads(f"_v = {value}")["_v"]
+    except tomllib.TOMLDecodeError:
+        return value
+
+
+def _split_dotted_key(dotted_key: str) -> tuple[str, str]:
+    """Split ``sandbox.network`` into ``("sandbox", "network")``.
+
+    Config leaves always live under a section table, so a usable key has at
+    least two non-empty segments; the parent segments form the TOML table.
+    """
+    parts = dotted_key.split(".")
+    if len(parts) < 2 or any(not p for p in parts):
+        raise ValueError(
+            f"config key must be a dotted leaf path like 'sandbox.network', got {dotted_key!r}"
+        )
+    return ".".join(parts[:-1]), parts[-1]
+
+
+def _upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
+    """Set a single ``table.leaf`` key in *path*, preserving the rest verbatim.
+
+    Like :func:`_upsert_toml_table` this is deliberate line surgery rather than
+    a full serializer round-trip, so comments and sibling keys/tables survive.
+    Creates the ``[table]`` block if it is absent.
+    """
+    table, leaf = _split_dotted_key(dotted_key)
+    new_line = f"{leaf} = {_toml_repr(value)}"
+    text = path.read_text(encoding="utf-8") if path.is_file() else ""
+    lines = text.splitlines()
+    header = f"[{table}]"
+    start = next((i for i, line in enumerate(lines) if line.strip() == header), None)
+    if start is None:
+        prefix = text if (not text or text.endswith("\n")) else text + "\n"
+        sep = "\n" if prefix and not prefix.endswith("\n\n") else ""
+        path.write_text(prefix + sep + header + "\n" + new_line + "\n", encoding="utf-8")
+        return
+    end = next(
+        (j for j in range(start + 1, len(lines)) if lines[j].lstrip().startswith("[")),
+        len(lines),
+    )
+    leaf_re = re.compile(rf"^\s*{re.escape(leaf)}\s*=")
+    for j in range(start + 1, end):
+        if leaf_re.match(lines[j]):
+            lines[j] = new_line
+            path.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
+            return
+    insert_at = end
+    while insert_at - 1 > start and lines[insert_at - 1].strip() == "":
+        insert_at -= 1
+    lines[insert_at:insert_at] = [new_line]
+    path.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
+
+
+def _remove_toml_leaf(path: Path, dotted_key: str) -> bool:
+    """Delete a single ``table.leaf`` line from *path*. Returns True if removed."""
+    table, leaf = _split_dotted_key(dotted_key)
+    if not path.is_file():
+        return False
+    lines = path.read_text(encoding="utf-8").splitlines()
+    header = f"[{table}]"
+    start = next((i for i, line in enumerate(lines) if line.strip() == header), None)
+    if start is None:
+        return False
+    end = next(
+        (j for j in range(start + 1, len(lines)) if lines[j].lstrip().startswith("[")),
+        len(lines),
+    )
+    leaf_re = re.compile(rf"^\s*{re.escape(leaf)}\s*=")
+    for j in range(start + 1, end):
+        if leaf_re.match(lines[j]):
+            del lines[j]
+            out = "\n".join(lines).rstrip("\n") + "\n" if lines else ""
+            path.write_text(out, encoding="utf-8")
+            return True
+    return False
+
+
+def _read_toml_file(path: Path) -> dict[str, Any]:
+    """Parse *path* as TOML, or return an empty dict if it does not exist."""
+    if not path.is_file():
+        return {}
+    return tomllib.loads(path.read_text(encoding="utf-8"))
+
+
 def _cmd_config_show(config_path: Path | None, *, as_json: bool) -> int:
     try:
         eff = load_effective(Path.cwd(), config_path)
@@ -2092,6 +2271,195 @@ def _cmd_config_fill(config_path: Path | None, *, to_repo: bool, force: bool) ->
     chown_to_real_user(target)
     print(f"Wrote fully-resolved config to {target}")
     return 0
+
+
+def _read_toml_leaf(data: dict[str, Any], dotted_key: str) -> object:
+    """Walk *data* by the dotted key, returning the value or None if absent."""
+    cur: object = data
+    for part in dotted_key.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return None
+        cur = cur[part]
+    return cur
+
+
+def _config_write_target(*, repo: bool, machine: Path | None) -> tuple[Path, str]:
+    """Resolve the file + dotted-key prefix a config write should target.
+
+    Global by default; ``--repo`` writes the in-repo config; ``--machine FILE``
+    edits that machine's ``[config]`` overlay (so keys are prefixed ``config.``
+    and land in ``[config.<section>]``). ``--repo`` and ``--machine`` together
+    are ambiguous and rejected.
+    """
+    if machine is not None:
+        if repo:
+            raise ValueError("use either --repo or --machine, not both")
+        return machine, "config."
+    if repo:
+        return repo_config_path_for(Path.cwd()), ""
+    return global_config_path(), ""
+
+
+def _reject_machine_providers(key: str, machine: Path | None) -> str | None:
+    """Error string if *key* touches ``providers.*`` in a machine overlay."""
+    if machine is not None and (key == "providers" or key.startswith("providers.")):
+        return "machine [config] overlays must not set providers.* (endpoints/keys are global-only)"
+    return None
+
+
+def _revalidate_config(target: Path, prior_text: str | None, *, machine: Path | None) -> str | None:
+    """Re-validate the config after a write; restore *prior_text* on failure.
+
+    Returns a ready-to-print error message when the edit produced an invalid
+    config (so the caller fails loud and the file is left untouched), else None.
+    """
+    try:
+        if machine is not None:
+            overlay = _read_toml_file(target).get("config", {})
+            load_effective_with_overlay(Path.cwd(), overlay if isinstance(overlay, dict) else {})
+        else:
+            load_effective(Path.cwd(), None)
+    except ConfigError as exc:
+        if prior_text is None:
+            target.unlink(missing_ok=True)
+        else:
+            target.write_text(prior_text, encoding="utf-8")
+        return str(exc)
+    return None
+
+
+def _cmd_config_get(key: str, *, machine: Path | None) -> int:
+    """Print a leaf's effective value + the layer that set it."""
+    try:
+        if machine is not None:
+            overlay = _read_toml_file(machine).get("config", {})
+            eff = load_effective_with_overlay(
+                Path.cwd(), overlay if isinstance(overlay, dict) else {}
+            )
+        else:
+            eff = load_effective(Path.cwd(), None)
+    except ConfigError as exc:
+        print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
+        return 2
+    found = effective_leaf(eff, key)
+    if found is None:
+        print(f"ERROR: {key!r} is not a config leaf (see `agent6 config show`).", file=sys.stderr)
+        return 2
+    value, source = found
+    print(f"{key} = {format_value(value)}  [{source}]")
+    return 0
+
+
+def _cmd_config_set(key: str, value: str, *, repo: bool, machine: Path | None) -> int:
+    """Set a scalar leaf in the target file (global / repo / machine overlay)."""
+    if err := _reject_machine_providers(key, machine):
+        print(f"ERROR: {err}", file=sys.stderr)
+        return 2
+    try:
+        target, prefix = _config_write_target(repo=repo, machine=machine)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    target.parent.mkdir(parents=True, exist_ok=True)
+    prior = target.read_text(encoding="utf-8") if target.is_file() else None
+    parsed = _parse_cli_value(value)
+    try:
+        _upsert_toml_leaf(target, prefix + key, parsed)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    if err := _revalidate_config(target, prior, machine=machine):
+        print(f"ERROR: {key} = {value!r} is not valid:\n{err}", file=sys.stderr)
+        return 2
+    chown_to_real_user(target.parent)
+    chown_to_real_user(target)
+    print(f"Set {key} = {format_value(parsed)} in {target}")
+    return 0
+
+
+def _cmd_config_unset(key: str, *, repo: bool, machine: Path | None) -> int:  # noqa: PLR0911
+    """Remove a leaf so it reverts to the next-lower layer / built-in default."""
+    if err := _reject_machine_providers(key, machine):
+        print(f"ERROR: {err}", file=sys.stderr)
+        return 2
+    try:
+        target, prefix = _config_write_target(repo=repo, machine=machine)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    if not target.is_file():
+        print(f"ERROR: {target} does not exist; nothing to unset.", file=sys.stderr)
+        return 2
+    prior = target.read_text(encoding="utf-8")
+    try:
+        removed = _remove_toml_leaf(target, prefix + key)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    if not removed:
+        print(f"{key} is not set in {target}; nothing to unset.")
+        return 0
+    if err := _revalidate_config(target, prior, machine=machine):
+        print(f"ERROR: unsetting {key} left an invalid config:\n{err}", file=sys.stderr)
+        return 2
+    chown_to_real_user(target)
+    print(f"Unset {key} in {target}")
+    return 0
+
+
+def _config_list_edit(  # noqa: PLR0911
+    key: str, value: str, *, repo: bool, machine: Path | None, add: bool
+) -> int:
+    """Shared body for `config add` / `config remove` on a list field."""
+    if err := _reject_machine_providers(key, machine):
+        print(f"ERROR: {err}", file=sys.stderr)
+        return 2
+    try:
+        target, prefix = _config_write_target(repo=repo, machine=machine)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    current = _read_toml_leaf(_read_toml_file(target), prefix + key)
+    if current is None:
+        current = []
+    if not isinstance(current, list):
+        print(f"ERROR: {key} is not a list field in {target}.", file=sys.stderr)
+        return 2
+    parsed = _parse_cli_value(value)
+    items = list(current)
+    if add:
+        if parsed in items:
+            print(f"{format_value(parsed)} already in {key}.")
+            return 0
+        items.append(parsed)
+    else:
+        if parsed not in items:
+            print(f"{format_value(parsed)} not in {key}.")
+            return 0
+        items = [x for x in items if x != parsed]
+    target.parent.mkdir(parents=True, exist_ok=True)
+    prior = target.read_text(encoding="utf-8") if target.is_file() else None
+    try:
+        _upsert_toml_leaf(target, prefix + key, items)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    if err := _revalidate_config(target, prior, machine=machine):
+        print(f"ERROR: {value!r} is not valid for {key}:\n{err}", file=sys.stderr)
+        return 2
+    chown_to_real_user(target.parent)
+    chown_to_real_user(target)
+    verb, prep = ("Added", "to") if add else ("Removed", "from")
+    print(f"{verb} {format_value(parsed)} {prep} {key} in {target}")
+    return 0
+
+
+def _cmd_config_add(key: str, value: str, *, repo: bool, machine: Path | None) -> int:
+    return _config_list_edit(key, value, repo=repo, machine=machine, add=True)
+
+
+def _cmd_config_remove(key: str, value: str, *, repo: bool, machine: Path | None) -> int:
+    return _config_list_edit(key, value, repo=repo, machine=machine, add=False)
 
 
 # Known provider presets for `agent6 connect`. kind + default base_url; the
@@ -2254,6 +2622,52 @@ def _complete_models(
     if not provider:
         return []
     return [m for m in _models_for(None, provider) if m.startswith(prefix)]
+
+
+# Dotted config leaves whose type is a Literal/enum, with their allowed values.
+# Used by the `config set/add/remove` value completer so TAB offers the exact
+# valid choices (e.g. `config set sandbox.network <TAB>` -> no/provider_only/allow).
+_CONFIG_ENUM_CHOICES: dict[str, tuple[str, ...]] = {
+    "sandbox.profile": ("auto", "strict", "hardened"),
+    "sandbox.network": ("no", "provider_only", "allow"),
+    "sandbox.run_commands": ("yes", "no", "ask"),
+    "git.commit_strategy": ("per_step", "squash", "stage", "none"),
+    "workflow.critic": ("off", "on_verify_fail", "before_finish", "periodic"),
+    "workflow.revise_prompt": ("off", "auto", "interactive"),
+    "models.worker.thinking": ("off", "low", "medium", "high"),
+    "models.reviewer.thinking": ("off", "low", "medium", "high"),
+    "models.planner.thinking": ("off", "low", "medium", "high"),
+}
+
+
+def _complete_config_keys(prefix: str, **_kw: object) -> list[str]:
+    """argcomplete: known dotted config leaf paths (effective + enum keys)."""
+    try:
+        keys = set(leaf_keys(load_effective(Path.cwd(), None)))
+    except ConfigError:
+        keys = set()
+    keys |= set(_CONFIG_ENUM_CHOICES)
+    return sorted(k for k in keys if k.startswith(prefix))
+
+
+def _complete_config_values(
+    prefix: str, parsed_args: argparse.Namespace | None = None, **_kw: object
+) -> list[str]:
+    """argcomplete: the Literal choices for the config key already typed."""
+    key = getattr(parsed_args, "key", "") or ""
+    return [v for v in _CONFIG_ENUM_CHOICES.get(key, ()) if v.startswith(prefix)]
+
+
+def _complete_machine_files(prefix: str, **_kw: object) -> list[str]:
+    """argcomplete: machine ``*.asm.toml`` files under cwd and the machines dir."""
+    out: set[str] = set()
+    try:
+        for base in (Path.cwd(), _machines_dir(Path.cwd())):
+            if base.is_dir():
+                out.update(str(p) for p in base.rglob("*.asm.toml"))
+    except OSError:
+        return []
+    return sorted(p for p in out if p.startswith(prefix))
 
 
 def _prompt_for_provider(config_path: Path | None) -> str:

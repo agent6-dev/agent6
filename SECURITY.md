@@ -117,6 +117,22 @@ cross the netns boundary). MCP servers that need their own outbound
 network access will not have it under `provider_only`; that is a
 deliberate limitation, not a bug.
 
+**`sandbox.allow_urls` (operator-controlled egress additions).** The
+allow-list above is, by default, exactly the configured provider
+endpoints. An operator may widen it with `sandbox.allow_urls` — a set of
+`host` / `host:port` / URL entries that get their own broker sockets
+alongside the providers (effective egress = union of provider endpoints
+and `allow_urls`). Security properties are unchanged: each added socket is
+still hard-wired at bind time to one operator-chosen `host:port`, resolved
+per-connect, and the LLM cannot add, widen, or redirect an entry — it is a
+static config field, never written from model output. The default is empty
+(secure by default), entries are validated at config-load time, and the
+field is only consulted under `provider_only` (ignored under `no`/`allow`).
+Merge is last-overlay-wins: the most-specific config tier that sets
+`allow_urls` replaces it wholesale, so a repo or machine overlay cannot
+silently *append* to a narrower global allow-list — it must restate the
+full set, keeping the effective allow-list auditable via `config show`.
+
 
 ### 2. `agent6-jail` (Rust) for every child command
 
