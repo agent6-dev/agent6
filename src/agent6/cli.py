@@ -100,6 +100,7 @@ from agent6.memory import (
 from agent6.memory import (
     list_entries as memory_list,
 )
+from agent6.models_cache import list_models
 from agent6.paths import (
     chown_to_real_user,
     effective_user,
@@ -1137,11 +1138,12 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
         "connect",
         help="Interactively add a provider + API key (stored in the global secrets file).",
     )
-    connect_p.add_argument(
+    connect_provider = connect_p.add_argument(
         "--provider",
         default="",
         help="Provider name to add/update (e.g. anthropic, openrouter). Prompted if omitted.",
     )
+    connect_provider.completer = _complete_providers  # type: ignore[attr-defined]
     connect_p.add_argument(
         "--repo",
         action="store_true",
@@ -1153,13 +1155,26 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
         help="Show or set which model + thinking level each role uses (planner/worker/reviewer).",
     )
     model_p.add_argument(
-        "--role",
-        choices=("planner", "worker", "reviewer"),
+        "role",
+        nargs="?",
         default="",
+        metavar="{planner,worker,reviewer}",
         help="Role to set. Omit to print the current assignments.",
     )
-    model_p.add_argument("--provider", default="", help="Provider name for the role.")
-    model_p.add_argument("--model", default="", help="Model identifier for the role.")
+    model_provider = model_p.add_argument(
+        "provider",
+        nargs="?",
+        default="",
+        help="Provider name for the role (prompted from connected providers if omitted).",
+    )
+    model_provider.completer = _complete_providers  # type: ignore[attr-defined]
+    model_model = model_p.add_argument(
+        "model",
+        nargs="?",
+        default="",
+        help="Model identifier for the role (prompted from the provider's catalog if omitted).",
+    )
+    model_model.completer = _complete_models  # type: ignore[attr-defined]
     model_p.add_argument(
         "--thinking",
         choices=("off", "low", "medium", "high"),
@@ -2178,13 +2193,103 @@ def _cmd_connect(*, provider: str, to_repo: bool) -> int:
     chown_to_real_user(target)
     print(f"Wrote [providers.{name}] to {target}.")
     print(
-        "\nNext: `agent6 model --role worker --provider "
-        f"{name} --model <model>` to route a role here, then `agent6 config show`."
+        "\nNext: `agent6 model worker "
+        f"{name} <model>` to route a role here, then `agent6 config show`."
     )
     return 0
 
 
-def _cmd_model(
+def _safe_input(prompt: str) -> str | None:
+    """``input`` that returns None instead of raising on EOF / non-interactive stdin."""
+    try:
+        return input(prompt).strip()
+    except (EOFError, OSError):
+        return None
+
+
+def _connected_providers(config_path: Path | None) -> list[str]:
+    """Provider names declared in the effective config (empty on any error)."""
+    try:
+        eff = load_effective(Path.cwd(), config_path)
+    except ConfigError:
+        return []
+    return sorted(eff.config.providers)
+
+
+def _configured_models_for(cfg: Config, provider: str) -> list[str]:
+    """Models already assigned to *provider* across the three roles."""
+    out: set[str] = set()
+    for role in ("worker", "reviewer", "planner"):
+        rm = cfg.models.resolve(role)  # type: ignore[arg-type]
+        if rm is not None and rm.provider == provider:
+            out.add(rm.model)
+    return sorted(out)
+
+
+def _models_for(config_path: Path | None, provider: str) -> list[str]:
+    """Known model ids for *provider*: configured ones unioned with the live list."""
+    try:
+        eff = load_effective(Path.cwd(), config_path)
+    except ConfigError:
+        return []
+    options = set(_configured_models_for(eff.config, provider))
+    entry = eff.config.providers.get(provider)
+    if entry is not None:
+        api_key = resolve_api_key(provider, getattr(entry, "api_key_env", None))
+        options.update(list_models(provider, entry, api_key))
+    return sorted(options)
+
+
+def _complete_providers(prefix: str, **_kw: object) -> list[str]:
+    """argcomplete: connected provider names + known presets."""
+    names = set(_connected_providers(None)) | set(_CONNECT_PRESETS)
+    return sorted(n for n in names if n.startswith(prefix))
+
+
+def _complete_models(
+    prefix: str, parsed_args: argparse.Namespace | None = None, **_kw: object
+) -> list[str]:
+    """argcomplete: live + configured model ids for the already-typed provider."""
+    provider = getattr(parsed_args, "provider", "") or ""
+    if not provider:
+        return []
+    return [m for m in _models_for(None, provider) if m.startswith(prefix)]
+
+
+def _prompt_for_provider(config_path: Path | None) -> str:
+    """Interactively pick a provider, defaulting to the first connected one."""
+    providers = _connected_providers(config_path)
+    if providers:
+        print("Connected providers: " + ", ".join(providers))
+        default = providers[0]
+        choice = _safe_input(f"Provider [{default}]: ")
+        if choice is None:
+            return ""
+        return choice or default
+    print("No providers connected yet — run `agent6 connect` first, or type a name.")
+    return _safe_input("Provider: ") or ""
+
+
+def _prompt_for_model(config_path: Path | None, provider: str) -> str:
+    """Interactively pick a model for *provider* from the live/configured list."""
+    options = _models_for(config_path, provider)
+    if options:
+        print(f"Models for {provider}:")
+        for i, model in enumerate(options, 1):
+            print(f"  {i:>2}. {model}")
+        choice = _safe_input("Model (name or number): ")
+        if choice is None:
+            return ""
+        if choice.isdigit():
+            idx = int(choice) - 1
+            if 0 <= idx < len(options):
+                return options[idx]
+        return choice
+    print(f"No known models for {provider} (couldn't reach its API or none configured).")
+    return _safe_input("Model: ") or ""
+
+
+def _cmd_model(  # noqa: PLR0911
     config_path: Path | None,
     *,
     role: str,
@@ -2210,12 +2315,28 @@ def _cmd_model(
                 think = rm.thinking or "-"
                 print(f"  {r:<9} {rm.provider}/{rm.model}  thinking={think}  [{src}]")
         print(
-            "\nSet one with: agent6 model --role worker --provider <p> --model <m>"
-            " [--thinking low|medium|high]"
+            "\nSet one with: agent6 model worker <provider> <model>"
+            " [--thinking low|medium|high]  (provider/model are prompted if omitted)"
         )
         return 0
-    if not provider or not model:
-        print("ERROR: --provider and --model are required when --role is given.", file=sys.stderr)
+    if role not in ("planner", "worker", "reviewer"):
+        print(
+            f"ERROR: unknown role {role!r} (choose from planner, worker, reviewer).",
+            file=sys.stderr,
+        )
+        return 2
+    # Positional provider/model are optional: prompt interactively when blank,
+    # prefilling the provider list from connected providers and the model list
+    # from that provider's live/configured catalog.
+    if not provider:
+        provider = _prompt_for_provider(config_path)
+    if not provider:
+        print("ERROR: no provider given.", file=sys.stderr)
+        return 2
+    if not model:
+        model = _prompt_for_model(config_path, provider)
+    if not model:
+        print("ERROR: no model given.", file=sys.stderr)
         return 2
     target = repo_config_path_for(Path.cwd()) if to_repo else global_config_path()
     target.parent.mkdir(parents=True, exist_ok=True)

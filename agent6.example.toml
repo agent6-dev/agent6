@@ -90,7 +90,7 @@ prompt_caching = true
 #
 # Any provider may serve any role; cross-vendor mixes work fine
 # (e.g. anthropic worker + openrouter reviewer). Set these once globally with
-# `agent6 model --role worker --provider <p> --model <m> [--thinking ...]`.
+# `agent6 model worker <provider> <model> [--thinking ...]`.
 
 [models.worker]
 provider = "anthropic"

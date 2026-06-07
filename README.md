@@ -111,7 +111,7 @@ register-python-argcomplete --shell fish agent6 > ~/.config/fish/completions/age
 # Connect a provider once (stored in ~/.config/agent6/, key in a 0600
 # secrets file). Works across every repo.
 agent6 connect                # interactive: pick provider, paste API key
-agent6 model --role worker --provider anthropic --model claude-sonnet-4-5
+agent6 model worker anthropic claude-sonnet-4-5
 
 # In a project: scaffold .agent6/config.toml + AGENTS.md and gitignore .agent6/.
 agent6 init

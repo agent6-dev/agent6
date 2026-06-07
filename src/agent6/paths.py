@@ -117,6 +117,28 @@ def secrets_path(user: RealUser | None = None) -> Path:
     return global_config_dir(user) / "secrets.toml"
 
 
+_CACHE_DIR_ENV = "AGENT6_CACHE_HOME"  # points at the agent6 cache dir itself
+
+
+def cache_dir(user: RealUser | None = None) -> Path:
+    """The agent6 user cache directory (for non-authoritative, regenerable data).
+
+    Precedence mirrors :func:`global_config_dir`: ``AGENT6_CACHE_HOME`` >
+    ``$XDG_CACHE_HOME/agent6`` (only when not running through sudo) >
+    ``<real-user-home>/.cache/agent6``. Holds throwaway caches such as the
+    provider model-list snapshots used for shell completion; safe to delete.
+    """
+    override = os.environ.get(_CACHE_DIR_ENV)
+    if override:
+        return Path(override).expanduser()
+    user = user or effective_user()
+    if not user.via_sudo:
+        xdg = os.environ.get("XDG_CACHE_HOME")
+        if xdg:
+            return Path(xdg) / "agent6"
+    return user.home / ".cache" / "agent6"
+
+
 # Default name of the in-repo agent6 directory (config + run state). The
 # operator can rename it via ``[agent6].workspace_subdir`` in the GLOBAL
 # config only (the per-repo config lives inside this dir, so it cannot name

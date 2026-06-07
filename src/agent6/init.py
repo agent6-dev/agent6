@@ -31,7 +31,7 @@ verify_command = ["uv", "run", "pytest", "-x"]
 
 # Providers, models, and API keys usually live in your GLOBAL config:
 #   agent6 connect                       # add a provider + API key
-#   agent6 model --role worker ...       # pick the model for a role
+#   agent6 model worker <provider> <model>  # pick the model for a role
 # Override per-repo by uncommenting, e.g.:
 # [models.worker]
 # provider = "anthropic"
@@ -231,7 +231,9 @@ def init_workspace(
     print()
     print("Next:")
     print("  1. agent6 connect                 # add a provider + API key (global)")
-    print("  2. agent6 model --role worker ... # pick your worker model (or set it globally)")
+    print(
+        "  2. agent6 model worker <provider> <model> # pick your worker model (or set it globally)"
+    )
     print(f"  3. Edit {cfg_path.relative_to(root)}: set `verify_command` for this repo.")
     print("  4. agent6 config show             # audit the effective config")
     print("  5. agent6 check                   # sandbox + config pre-flight")

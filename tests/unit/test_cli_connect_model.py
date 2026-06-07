@@ -109,19 +109,7 @@ def test_connect_local_endpoint_no_key(
 
 
 def test_model_set_and_show(iso: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    rc = main(
-        [
-            "model",
-            "--role",
-            "worker",
-            "--provider",
-            "anthropic",
-            "--model",
-            "claude-x",
-            "--thinking",
-            "medium",
-        ]
-    )
+    rc = main(["model", "worker", "anthropic", "claude-x", "--thinking", "medium"])
     assert rc == 0
     gc = (tmp_path / "g" / "config.toml").read_text(encoding="utf-8")
     assert "[models.worker]" in gc
@@ -136,14 +124,38 @@ def test_model_set_and_show(iso: Path, tmp_path: Path, capsys: pytest.CaptureFix
     assert "claude-x" in out
 
 
-def test_model_set_requires_provider_and_model(iso: Path) -> None:
-    assert main(["model", "--role", "worker"]) == 2
+def test_model_aborts_without_provider(iso: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Role given but provider omitted and none connected: the prompt gets an
+    # empty answer and the command refuses rather than writing a bad config.
+    monkeypatch.setattr("builtins.input", lambda prompt="": "")
+    assert main(["model", "worker"]) == 2
+
+
+def test_model_interactive_prefill(
+    iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A provider is connected; the model list is served live (mocked). The
+    # operator picks the provider by default and the model by number.
+    (tmp_path / "g").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "g" / "config.toml").write_text(
+        '[providers.anthropic]\nkind = "anthropic"\n', encoding="utf-8"
+    )
+
+    def fake_list_models(*a: object, **k: object) -> list[str]:
+        return ["claude-a", "claude-b"]
+
+    monkeypatch.setattr("agent6.cli.list_models", fake_list_models)
+    answers = iter(["", "2"])  # provider default, then model #2
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
+    rc = main(["model", "worker"])
+    assert rc == 0
+    gc = (tmp_path / "g" / "config.toml").read_text(encoding="utf-8")
+    assert "[models.worker]" in gc
+    assert "claude-b" in gc
 
 
 def test_model_repo_scope_writes_repo(iso: Path, tmp_path: Path) -> None:
-    rc = main(
-        ["model", "--role", "reviewer", "--provider", "anthropic", "--model", "claude-o", "--repo"]
-    )
+    rc = main(["model", "reviewer", "anthropic", "claude-o", "--repo"])
     assert rc == 0
     repo_cfg = (tmp_path / ".agent6" / "config.toml").read_text(encoding="utf-8")
     assert "[models.reviewer]" in repo_cfg
