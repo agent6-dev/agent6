@@ -49,7 +49,7 @@ PYTHON_BIN="${PYTHON_BIN:-$(command -v python3)}"
 [ -n "${OPENROUTER_API_KEY:-}" ] || { echo "OPENROUTER_API_KEY not set" >&2; exit 1; }
 
 cd "$REPO"
-export AGENT6_JAIL_BIN="${AGENT6_JAIL_BIN:-$REPO/jail/target/release/agent6-jail}"
+export AGENT6_JAIL_BIN="${AGENT6_JAIL_BIN:-$REPO/src/agent6/jail/target/release/agent6-jail}"
 AGENT6_BIN="$REPO/.venv/bin/agent6"
 [ -x "$AGENT6_BIN" ] || { echo "agent6 not found at $AGENT6_BIN" >&2; exit 1; }
 [ -x "$AGENT6_JAIL_BIN" ] || { echo "jail launcher missing at $AGENT6_JAIL_BIN" >&2; exit 1; }
@@ -211,7 +211,7 @@ start_ns=$(date +%s%N)
 set +e
 # Current CLI takes only a positional `task` arg; legacy --yes /
 # --no-tui flags have been removed.
-( cd "$WORKDIR" && "$AGENT6_BIN" run "$task_text" ) \
+( cd "$WORKDIR" && "$AGENT6_BIN" --config agent6.toml run "$task_text" ) \
   > "$LOGDIR/agent6.stdout" 2> "$LOGDIR/agent6.stderr"
 ag_exit=$?
 set -e

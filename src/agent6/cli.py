@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import datetime as _dt
+import getpass
 import json
 import os
 import re
@@ -33,9 +34,8 @@ from agent6.config import (
     ConfigError,
     NotifyConfig,
     RoleName,
-    load_config,
 )
-from agent6.config_fix import FixKind, apply_fixes, propose_fixes
+from agent6.config_layer import load_effective, materialize, render_show
 from agent6.detect import Environment, detect, select_profile
 from agent6.events import EventSink
 from agent6.git_ops import (
@@ -93,6 +93,15 @@ from agent6.memory import (
 from agent6.memory import (
     list_entries as memory_list,
 )
+from agent6.paths import (
+    chown_to_real_user,
+    effective_user,
+    global_config_path,
+    is_root,
+    repo_config_path,
+    root_optin_enabled,
+    secrets_path,
+)
 from agent6.providers import (
     AnthropicProvider,
     OpenAIProvider,
@@ -117,6 +126,7 @@ from agent6.sandbox import (
     run_in_jail,
     start_egress_broker,
 )
+from agent6.secrets import SecretsError, load_secrets, resolve_api_key, save_secret
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.mcp_client import MCPManager
 from agent6.types import JailPolicy, SandboxProfile, SandboxReport
@@ -134,36 +144,53 @@ def _build_role_provider(
 ) -> Provider:
     """Construct the configured provider for `role`.
 
-    `model_override` (if truthy) replaces the model string from
-    `[models.<role>].model`; provider routing is unchanged. Caller is
-    responsible for env-var presence checks via
-    `_check_provider_env_vars(cfg)` BEFORE this is called.
+    Resolves the API key via `agent6.secrets.resolve_api_key` (env var named
+    by `api_key_env` first, then `secrets.toml`). `model_override` (if
+    truthy) replaces the model string; provider routing is unchanged. The
+    role's `thinking` level is wired to the provider's default reasoning
+    effort. Callers should have validated routing via
+    `cfg.require_runnable(role)` first.
     """
-    rm = cfg.models.all()[role]
+    rm = cfg.models.resolve(role)
+    if rm is None:  # pragma: no cover - blocked by require_runnable
+        raise ProviderError(f"no model configured for role {role!r}")
     model = model_override or rm.model
     entry = cfg.providers.get(rm.provider)
     if entry is None:  # pragma: no cover - blocked by config validation
         raise ProviderError(
             f"models.{role}.provider = {rm.provider!r} but [providers.{rm.provider}] missing"
         )
+    key = resolve_api_key(rm.provider, entry.api_key_env)
     if isinstance(entry, AnthropicProviderEntry):
-        return AnthropicProvider.from_env(
-            env_var=entry.api_key_env,
+        if not key:
+            raise ProviderError(
+                f"No API key for provider {rm.provider!r}. Run `agent6 connect`"
+                f" to store one, or set the {entry.api_key_env or 'provider'} env var."
+            )
+        return AnthropicProvider(
+            api_key=key,
             model=model,
             prompt_caching=entry.prompt_caching,
             timeout_s=entry.http_timeout_s,
             transcript_sink=transcript_sink,
             budget=budget,
         )
-    return OpenAIProvider.from_env(
-        env_var=entry.api_key_env,
+    return OpenAIProvider(
+        api_key=key or "",
         model=model,
         base_url=entry.base_url,
-        extra_headers=entry.extra_headers,
+        extra_headers=tuple(sorted(entry.extra_headers.items())),
         timeout_s=entry.http_timeout_s,
         transcript_sink=transcript_sink,
         budget=budget,
+        reasoning_effort=rm.thinking,
     )
+
+
+def _role_temperature(cfg: Config, role: RoleName) -> float | None:
+    """The configured sampling temperature for *role* (worker fallback)."""
+    rm = cfg.models.resolve(role)
+    return rm.temperature if rm is not None else None
 
 
 def _provider_endpoints(cfg: Config) -> set[Endpoint]:
@@ -624,7 +651,8 @@ def _build_critic_provider(
     critic_inner = _build_role_provider(
         cfg, "reviewer", transcript_sink=transcript_sink, budget=budget
     )
-    rm = cfg.models.reviewer
+    rm = cfg.models.resolve("reviewer")
+    assert rm is not None  # critic only runs once a worker/reviewer model exists
     return _InstrumentedProvider(
         inner=critic_inner,
         role="critic",
@@ -648,7 +676,8 @@ def _build_prompt_reviser_provider(
     reviser_inner = _build_role_provider(
         cfg, "reviewer", transcript_sink=transcript_sink, budget=budget
     )
-    rm = cfg.models.reviewer
+    rm = cfg.models.resolve("reviewer")
+    assert rm is not None  # reviser only runs once a worker/reviewer model exists
     return _InstrumentedProvider(
         inner=reviser_inner,
         role="prompt_reviser",
@@ -672,7 +701,8 @@ def _build_summariser_provider(
     summariser_inner = _build_role_provider(
         cfg, "reviewer", transcript_sink=transcript_sink, budget=budget
     )
-    rm = cfg.models.reviewer
+    rm = cfg.models.resolve("reviewer")
+    assert rm is not None  # summariser falls back to the worker model
     return _InstrumentedProvider(
         inner=summariser_inner,
         role="summariser",
@@ -792,22 +822,34 @@ def _install_steer_sigint(events: EventSink) -> _SteerState:
     return _SteerState(requested=requested, clear=clear, prompt=prompt, restore=restore)
 
 
-def _check_provider_env_vars(cfg: Config) -> str | None:
-    """Return an error message if any required API key env var is unset.
+def _check_provider_keys(cfg: Config) -> str | None:
+    """Return an error message if any referenced provider has no resolvable key.
 
-    Only providers actually referenced by `[models.<role>]` are checked.
-    OpenAI-compat providers with `api_key_env = None` are skipped
+    A key may come from the env var named by ``api_key_env`` or from
+    ``secrets.toml`` (via ``agent6 connect``). Only providers actually
+    referenced by a configured ``[models.<role>]`` are checked.
+    OpenAI-compat providers with no key configured at all are skipped
     (unauthenticated local endpoints like Ollama).
     """
-    needed = {rm.provider for rm in cfg.models.all().values()}
+    try:
+        secrets = load_secrets()
+    except SecretsError as exc:
+        return str(exc)
+    needed = {rm.provider for rm in cfg.models.configured().values()}
     for name, entry in cfg.providers.items():
         if name not in needed:
             continue
-        env = entry.api_key_env
-        if env is None:
+        key = resolve_api_key(name, entry.api_key_env, secrets=secrets)
+        if key:
             continue
-        if not os.environ.get(env):
-            return f"environment variable {env} (for [providers.{name}]) is not set."
+        if isinstance(entry, AnthropicProviderEntry):
+            return (
+                f"no API key for [providers.{name}] (Anthropic). Run"
+                f" `agent6 connect` or set the {entry.api_key_env or 'API key'} env var."
+            )
+        # OpenAI-compatible: a missing key is only an error if the endpoint
+        # clearly expects one; local endpoints legitimately need none, so we
+        # do not block here.
     return None
 
 
@@ -817,8 +859,22 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
     parser.add_argument(
         "--config",
         type=Path,
-        default=Path("agent6.toml"),
-        help="Path to agent6 config (default: ./agent6.toml).",
+        default=None,
+        metavar="FILE",
+        help=(
+            "Explicit config file, layered on top of the global"
+            " (~/.config/agent6/config.toml) and per-repo (.agent6/config.toml)"
+            " configs. Default: use only those two layers + built-in defaults."
+        ),
+    )
+    parser.add_argument(
+        "--allow-root",
+        action="store_true",
+        help=(
+            "Permit running as root (also AGENT6_ALLOW_ROOT=1). Off by default:"
+            " running an LLM-driven agent as root is dangerous. Under sudo,"
+            " agent6 reads your config/secrets and chowns new files back to you."
+        ),
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -924,8 +980,9 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
     resume_p.add_argument(
         "--config",
         type=Path,
-        default=Path("agent6.toml"),
-        help="Path to agent6.toml (defaults to ./agent6.toml).",
+        default=None,
+        metavar="FILE",
+        help="Explicit config file (layered over global + repo configs).",
     )
     resume_p.add_argument(
         "--force-resume",
@@ -933,50 +990,104 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
         help="Resume even if snapshot commit is missing or worktree has diverged.",
     )
 
-    check_config_p = sub.add_parser(
-        "check-config", help="Validate config and print detected environment."
+    config_p = sub.add_parser(
+        "config",
+        help="Inspect and materialize the layered config (global + repo + defaults).",
     )
-    check_config_p.add_argument(
-        "--fix",
-        action="store_true",
+    config_sub = config_p.add_subparsers(dest="config_command", required=True)
+    config_show = config_sub.add_parser(
+        "show",
         help=(
-            "If the config is missing required fields, print the recommended"
-            " additions (sourced from the starter template) and offer to"
-            " insert them after confirmation."
+            "Print every effective config value and where it came from"
+            " (default / global / repo / flag). `*` marks values that override"
+            " the built-in default."
         ),
     )
-    check_config_p.add_argument(
-        "--yes",
-        action="store_true",
-        help="With --fix, apply proposed additions without an interactive prompt.",
+    config_show.add_argument(
+        "--json", action="store_true", dest="as_json", help="Emit JSON instead of a table."
     )
-    sub.add_parser(
-        "check-sandbox",
-        help="Run sandbox self-tests against the current kernel and report.",
+    config_fill = config_sub.add_parser(
+        "fill",
+        help=(
+            "Write the fully-resolved config (every effective value, explicit)"
+            " to a file — the global config by default, or the repo config with"
+            " --repo. Handy before tightening defaults or for an audit snapshot."
+        ),
+    )
+    config_fill.add_argument(
+        "--repo",
+        action="store_true",
+        help="Write .agent6/config.toml instead of the global config.",
+    )
+    config_fill.add_argument(
+        "--force", action="store_true", help="Overwrite the target file if it already exists."
+    )
+    config_sub.add_parser(
+        "path", help="Print the resolved global + repo config (and secrets) file paths."
     )
 
-    doctor_p = sub.add_parser(
-        "doctor",
+    check_p = sub.add_parser(
+        "check",
         help=(
-            "Consolidated pre-flight: sandbox + MCP + verify_command + config."
-            " Read-only; safe to run on any clean repo."
+            "Pre-flight checks: sandbox + config + provider keys + MCP +"
+            " verify_command. Read-only; safe on any clean repo."
         ),
     )
-    doctor_p.add_argument(
+    check_p.add_argument(
         "section",
         nargs="?",
         default="all",
-        choices=("all", "sandbox", "mcp", "verify", "config"),
+        choices=("all", "sandbox", "config", "mcp", "verify"),
         help=(
-            "Limit the report to one section. 'all' (default) runs every"
-            " check in order and prints a single PASS/FAIL summary."
+            "Limit the report to one section. 'all' (default) runs every check"
+            " and prints a single PASS/FAIL summary."
         ),
     )
-    doctor_p.add_argument(
+    check_p.add_argument(
         "--config",
         type=Path,
-        default=Path("agent6.toml"),
-        help="Path to agent6.toml (defaults to ./agent6.toml).",
+        default=None,
+        metavar="FILE",
+        help="Explicit config file (layered over global + repo configs).",
+    )
+
+    connect_p = sub.add_parser(
+        "connect",
+        help="Interactively add a provider + API key (stored in the global secrets file).",
+    )
+    connect_p.add_argument(
+        "--provider",
+        default="",
+        help="Provider name to add/update (e.g. anthropic, openrouter). Prompted if omitted.",
+    )
+    connect_p.add_argument(
+        "--repo",
+        action="store_true",
+        help="Write the [providers.*] block to .agent6/config.toml instead of the global config.",
+    )
+
+    model_p = sub.add_parser(
+        "model",
+        help="Show or set which model + thinking level each role uses (planner/worker/reviewer).",
+    )
+    model_p.add_argument(
+        "--role",
+        choices=("planner", "worker", "reviewer"),
+        default="",
+        help="Role to set. Omit to print the current assignments.",
+    )
+    model_p.add_argument("--provider", default="", help="Provider name for the role.")
+    model_p.add_argument("--model", default="", help="Model identifier for the role.")
+    model_p.add_argument(
+        "--thinking",
+        choices=("off", "low", "medium", "high"),
+        default="",
+        help="Reasoning/thinking effort for the role.",
+    )
+    model_p.add_argument(
+        "--repo",
+        action="store_true",
+        help="Write to .agent6/config.toml instead of the global config.",
     )
 
     mem_p = sub.add_parser("memory", help="Manage persistent agent memories.")
@@ -1114,8 +1225,9 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
     mcp_serve.add_argument(
         "--config",
         type=Path,
-        default=Path("agent6.toml"),
-        help="Path to agent6.toml (defaults to ./agent6.toml in cwd).",
+        default=None,
+        metavar="FILE",
+        help="Explicit config file (layered over global + repo configs).",
     )
 
     machine_p = sub.add_parser(
@@ -1199,6 +1311,9 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
     # (see `agent6 --help` and the README for activation instructions).
     argcomplete.autocomplete(parser)
     args = parser.parse_args(argv)
+    root_rc = _enforce_root_policy(getattr(args, "allow_root", False))
+    if root_rc is not None:
+        return root_rc
     if args.command == "run":
         if args.continue_run:
             if args.task:
@@ -1272,12 +1387,26 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
         return _cmd_watch(args.run_id, plain=args.plain, since=args.since)
     if args.command == "resume":
         return _cmd_resume(args.config, args.run_id, force=args.force_resume)
-    if args.command == "check-config":
-        return _cmd_check_config(args.config, fix=args.fix, assume_yes=args.yes)
-    if args.command == "check-sandbox":
-        return _cmd_check_sandbox()
-    if args.command == "doctor":
-        return _cmd_doctor(args.config, section=args.section)
+    if args.command == "config":
+        if args.config_command == "show":
+            return _cmd_config_show(args.config, as_json=args.as_json)
+        if args.config_command == "fill":
+            return _cmd_config_fill(args.config, to_repo=args.repo, force=args.force)
+        if args.config_command == "path":
+            return _cmd_config_path()
+    if args.command == "check":
+        return _cmd_check(args.config, section=args.section)
+    if args.command == "connect":
+        return _cmd_connect(provider=args.provider, to_repo=args.repo)
+    if args.command == "model":
+        return _cmd_model(
+            args.config,
+            role=args.role,
+            provider=args.provider,
+            model=args.model,
+            thinking=args.thinking,
+            to_repo=args.repo,
+        )
     if args.command == "memory":
         if args.memory_command == "add":
             return _cmd_memory_add(args.scope, args.body)
@@ -1462,11 +1591,12 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
     profile: SandboxProfile = detect().detected_profile
     if has_agent_state:
         try:
-            cfg = load_config(cwd / "agent6.toml")
+            cfg = load_effective(cwd, None).config
+            cfg.require_runnable("worker", need_verify=False)
         except ConfigError as exc:
             print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
             return 2
-        missing = _check_provider_env_vars(cfg)
+        missing = _check_provider_keys(cfg)
         if missing is not None:
             print(missing, file=sys.stderr)
             return 2
@@ -1625,11 +1755,12 @@ def _cmd_machine_create(  # noqa: PLR0911, PLR0912, PLR0915
         return 2
     cwd = Path.cwd()
     try:
-        cfg = load_config(cwd / "agent6.toml")
+        cfg = load_effective(cwd, None).config
+        cfg.require_runnable("worker", need_verify=False)
     except ConfigError as exc:
         print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
         return 2
-    missing = _check_provider_env_vars(cfg)
+    missing = _check_provider_keys(cfg)
     if missing is not None:
         print(missing, file=sys.stderr)
         return 2
@@ -1725,88 +1856,251 @@ def _cmd_machine_create(  # noqa: PLR0911, PLR0912, PLR0915
     return 0
 
 
-def _cmd_check_config(path: Path, *, fix: bool = False, assume_yes: bool = False) -> int:
-    env = detect()
-    print(f"Container signals: {list(env.container_signals) or 'none'}")
-    print(f"Kernel: {env.kernel.raw} (Landlock TCP: {env.kernel.supports_landlock_tcp})")
-    print(f"Userns supported: {env.userns_supported}")
-    print(f"Sandbox available: {env.sandbox_available}")
-    print(f"Detected sandbox profile: {env.detected_profile}")
-    # landlock_abi() issues a Linux-only syscall; only probe where it applies.
-    abi_str = str(landlock_abi()) if env.sandbox_available else "n/a (no Linux sandbox)"
-    print(f"Landlock ABI on this host: {abi_str}")
-    try:
-        cfg = load_config(path)
-    except ConfigError as exc:
-        if fix:
-            return _run_fix_flow(path, original_error=str(exc), assume_yes=assume_yes)
-        print(f"\nCONFIG ERROR:\n{exc}", file=sys.stderr)
-        return 2
-    if fix:
-        print(f"\nConfig file OK: {path} — no missing fields to fix.")
-    else:
-        print(f"\nConfig file OK: {path}")
-    print(f"  sandbox.profile = {cfg.sandbox.profile}")
-    print(f"  sandbox.network = {cfg.sandbox.network}")
-    print(f"  sandbox.run_commands = {cfg.sandbox.run_commands}")
-    print(f"  workflow.verify_command = {' '.join(cfg.workflow.verify_command)}")
+def _enforce_root_policy(allow_root: bool) -> int | None:
+    """Gate running as root behind an explicit opt-in.
 
+    Returns a non-zero exit code (to refuse) when running as root without
+    ``--allow-root`` / ``AGENT6_ALLOW_ROOT=1``; returns None to proceed. When
+    proceeding as root it prints a loud banner. We deliberately do NOT drop
+    privileges: under sudo the LLM's verify/run commands need to run as root
+    inside the jail, so the jail — not the process uid — is the boundary.
+    """
+    if not is_root():
+        return None
+    if not root_optin_enabled(allow_root):
+        print(
+            "[agent6] REFUSING to run as root. Running an LLM-driven agent as root"
+            " is dangerous. If a task genuinely needs it, re-run with --allow-root"
+            " (or set AGENT6_ALLOW_ROOT=1).",
+            file=sys.stderr,
+        )
+        return 2
+    user = effective_user()
+    who = f" on behalf of {user.name} (uid {user.uid})" if user.via_sudo else ""
+    print(
+        f"[agent6] WARNING: running as root{who}. The LLM's commands execute as"
+        " root inside the jail; files agent6 writes under the repo are chowned"
+        " back to you when invoked via sudo. Proceed with care.",
+        file=sys.stderr,
+    )
+    return None
+
+
+def _toml_value(value: str | bool) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def _upsert_toml_table(path: Path, table: str, fields: dict[str, str | bool | None]) -> None:
+    """Insert or replace a single ``[table]`` block in *path*, preserving the
+    rest of the file (other tables and their comments).
+
+    Append-only-ish: we never round-trip the whole document through a TOML
+    serializer (which would drop comments); we only rewrite the target
+    table's span. ``None`` field values are omitted.
+    """
+    block_lines = [f"[{table}]"]
+    for key, val in fields.items():
+        if val is None:
+            continue
+        block_lines.append(f"{key} = {_toml_value(val)}")
+    block = "\n".join(block_lines)
+
+    text = path.read_text(encoding="utf-8") if path.is_file() else ""
+    lines = text.splitlines()
+    header = f"[{table}]"
+    start: int | None = None
+    for i, line in enumerate(lines):
+        if line.strip() == header:
+            start = i
+            break
+    if start is None:
+        prefix = text if not text or text.endswith("\n") else text + "\n"
+        sep = "\n" if prefix and not prefix.endswith("\n\n") else ""
+        path.write_text(prefix + sep + block + "\n", encoding="utf-8")
+        return
+    end = len(lines)
+    for j in range(start + 1, len(lines)):
+        if lines[j].lstrip().startswith("["):
+            end = j
+            break
+    new_lines = lines[:start] + block.splitlines() + [""] + lines[end:]
+    path.write_text("\n".join(new_lines).rstrip("\n") + "\n", encoding="utf-8")
+
+
+def _cmd_config_show(config_path: Path | None, *, as_json: bool) -> int:
     try:
-        selected = select_profile(cfg.sandbox.profile, env)
-    except RuntimeError as exc:
-        print(f"\nREFUSE: {exc}", file=sys.stderr)
-        return 1
-    print(f"  -> selected profile: {selected}")
+        eff = load_effective(Path.cwd(), config_path)
+    except ConfigError as exc:
+        print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
+        return 2
+    print(render_show(eff, as_json=as_json), end="")
     return 0
 
 
-def _run_fix_flow(path: Path, *, original_error: str, assume_yes: bool) -> int:
-    """Interactive --fix flow invoked when initial validation failed.
+def _cmd_config_path() -> int:
+    user = effective_user()
+    gp = global_config_path(user)
+    rp = repo_config_path(Path.cwd())
+    sp = secrets_path(user)
+    for label, p in (("global config", gp), ("repo config  ", rp), ("secrets      ", sp)):
+        note = "" if p.is_file() else "  (not present)"
+        print(f"{label}: {p}{note}")
+    return 0
 
-    Prints the original error, lists each proposed insertion sourced from
-    the starter template, asks for confirmation (unless `assume_yes`),
-    then writes the file and re-validates. Returns 0 only if the file
-    validates after the edits.
-    """
-    print(f"\nCONFIG ERROR:\n{original_error}", file=sys.stderr)
-    result = propose_fixes(path)
-    if not result.fixes:
-        print(
-            "\n--fix: no automatic repair available for the errors above.",
-            file=sys.stderr,
-        )
-        for line in result.remaining_errors:
-            print(f"  - {line}", file=sys.stderr)
-        return 2
-    print("\n--fix: proposed additions (sourced from the starter template):\n")
-    for index, item in enumerate(result.fixes, start=1):
-        kind_label = "new section" if item.kind is FixKind.NEW_SECTION else "new field"
-        print(f"  [{index}] {kind_label}: {item.description}")
-        for line in item.render_preview().splitlines():
-            print(f"        {line}")
-    if result.remaining_errors:
-        print("\nThese errors are NOT addressable by --fix:")
-        for line in result.remaining_errors:
-            print(f"  - {line}")
-    if not assume_yes:
-        try:
-            answer = input(f"\nApply all {len(result.fixes)} additions to {path}? [y/N]: ")
-        except EOFError:
-            answer = ""
-        if answer.strip().lower() not in {"y", "yes"}:
-            print("--fix: aborted, no changes written.")
-            return 2
-    apply_fixes(path, result.fixes)
-    print(f"\n--fix: wrote {len(result.fixes)} additions to {path}.")
+
+def _cmd_config_fill(config_path: Path | None, *, to_repo: bool, force: bool) -> int:
     try:
-        load_config(path)
+        eff = load_effective(Path.cwd(), config_path)
     except ConfigError as exc:
+        print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
+        return 2
+    target = repo_config_path(Path.cwd()) if to_repo else global_config_path()
+    if target.is_file() and not force:
         print(
-            f"\n--fix: file still does not validate after edits:\n{exc}",
+            f"ERROR: {target} already exists. Re-run with --force to overwrite.",
             file=sys.stderr,
         )
         return 2
-    print("--fix: file now validates cleanly.")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(materialize(eff.config), encoding="utf-8")
+    chown_to_real_user(target.parent)
+    chown_to_real_user(target)
+    print(f"Wrote fully-resolved config to {target}")
+    return 0
+
+
+# Known provider presets for `agent6 connect`. kind + default base_url; the
+# table key (provider name) is what [models.<role>].provider references and
+# what the key is stored under in secrets.toml.
+_CONNECT_PRESETS: dict[str, dict[str, str]] = {
+    "anthropic": {"kind": "anthropic"},
+    "openai": {"kind": "openai", "base_url": "https://api.openai.com/v1"},
+    "openrouter": {"kind": "openai", "base_url": "https://openrouter.ai/api/v1"},
+    "ollama": {"kind": "openai", "base_url": "http://localhost:11434/v1"},
+}
+
+
+def _cmd_connect(*, provider: str, to_repo: bool) -> int:
+    """Interactively add a provider + API key.
+
+    Security: this command NEVER executes anything supplied by a remote. It
+    only prompts locally (key via getpass, no echo), stores the key in the
+    0600 secrets file, and writes a minimal ``[providers.<name>]`` block.
+    """
+    print("agent6 connect — add a provider + API key.\n")
+    name = provider.strip()
+    if not name:
+        print("Known presets: " + ", ".join(sorted(_CONNECT_PRESETS)) + " (or any custom name).")
+        try:
+            name = input("Provider name [anthropic]: ").strip() or "anthropic"
+        except EOFError:
+            print("ERROR: no input.", file=sys.stderr)
+            return 2
+    preset = _CONNECT_PRESETS.get(name)
+    kind = preset["kind"] if preset else ""
+    if not kind:
+        try:
+            kind = input(f"Provider kind for {name!r} [anthropic/openai]: ").strip() or "anthropic"
+        except EOFError:
+            return 2
+    if kind not in ("anthropic", "openai"):
+        print(
+            f"ERROR: unknown provider kind {kind!r} (expected anthropic or openai).",
+            file=sys.stderr,
+        )
+        return 2
+    base_url = (preset or {}).get("base_url", "")
+    if kind == "openai":
+        default_url = base_url or "https://api.openai.com/v1"
+        try:
+            base_url = input(f"Base URL [{default_url}]: ").strip() or default_url
+        except EOFError:
+            base_url = default_url
+
+    try:
+        api_key = getpass.getpass(f"API key for {name} (input hidden, blank for none): ").strip()
+    except EOFError:
+        api_key = ""
+    if api_key:
+        try:
+            saved = save_secret(name, api_key)
+        except SecretsError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
+        print(f"Saved key to {saved} (0600).")
+    else:
+        print("No key entered; assuming an unauthenticated/local endpoint.")
+
+    target = repo_config_path(Path.cwd()) if to_repo else global_config_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fields: dict[str, str | bool | None] = {"kind": kind}
+    if kind == "openai" and base_url and base_url != "https://api.openai.com/v1":
+        fields["base_url"] = base_url
+    _upsert_toml_table(target, f"providers.{name}", fields)
+    chown_to_real_user(target.parent)
+    chown_to_real_user(target)
+    print(f"Wrote [providers.{name}] to {target}.")
+    print(
+        "\nNext: `agent6 model --role worker --provider "
+        f"{name} --model <model>` to route a role here, then `agent6 config show`."
+    )
+    return 0
+
+
+def _cmd_model(
+    config_path: Path | None,
+    *,
+    role: str,
+    provider: str,
+    model: str,
+    thinking: str,
+    to_repo: bool,
+) -> int:
+    """Show or set the model + thinking level for a role."""
+    if not role:
+        try:
+            eff = load_effective(Path.cwd(), config_path)
+        except ConfigError as exc:
+            print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
+            return 2
+        print("Role assignments (planner/worker fall back to worker when unset):\n")
+        for r in ("planner", "worker", "reviewer"):
+            rm = eff.config.models.resolve(r)  # type: ignore[arg-type]
+            src = eff.sources.get(f"models.{r}.model", "default")
+            if rm is None:
+                print(f"  {r:<9} (unset)")
+            else:
+                think = rm.thinking or "-"
+                print(f"  {r:<9} {rm.provider}/{rm.model}  thinking={think}  [{src}]")
+        print(
+            "\nSet one with: agent6 model --role worker --provider <p> --model <m>"
+            " [--thinking low|medium|high]"
+        )
+        return 0
+    if not provider or not model:
+        print("ERROR: --provider and --model are required when --role is given.", file=sys.stderr)
+        return 2
+    target = repo_config_path(Path.cwd()) if to_repo else global_config_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fields: dict[str, str | bool | None] = {"provider": provider, "model": model}
+    if thinking:
+        fields["thinking"] = thinking
+    _upsert_toml_table(target, f"models.{role}", fields)
+    chown_to_real_user(target.parent)
+    chown_to_real_user(target)
+    # Re-validate so a bad combination is caught immediately.
+    try:
+        load_effective(Path.cwd(), config_path)
+    except ConfigError as exc:
+        print(f"Wrote {target}, but the config no longer validates:\n{exc}", file=sys.stderr)
+        return 2
+    print(
+        f"Set [models.{role}] = {provider}/{model}"
+        f"{f' (thinking={thinking})' if thinking else ''} in {target}."
+    )
     return 0
 
 
@@ -1893,8 +2187,8 @@ class _DoctorCheck:
     detail: str
 
 
-def _cmd_doctor(config_path: Path, *, section: str) -> int:
-    """Consolidated pre-flight (sandbox + MCP + verify + config).
+def _cmd_check(config_path: Path | None, *, section: str) -> int:
+    """Consolidated pre-flight (sandbox + config + MCP + verify).
 
     All checks are read-only. The command never spawns the agent loop,
     never makes a network call to the configured providers, and never
@@ -1903,7 +2197,7 @@ def _cmd_doctor(config_path: Path, *, section: str) -> int:
 
     Returns 0 when every selected check passes, 1 otherwise.
     """
-    print(f"agent6 doctor: section={section}")
+    print(f"agent6 check: section={section}")
     print()
 
     checks: list[_DoctorCheck] = []
@@ -1914,18 +2208,27 @@ def _cmd_doctor(config_path: Path, *, section: str) -> int:
             _DoctorCheck(
                 name="sandbox",
                 ok=(rc == 0),
-                detail="all jail probes passed" if rc == 0 else f"check-sandbox exit {rc}",
+                detail="all jail probes passed" if rc == 0 else f"check sandbox exit {rc}",
             )
         )
         print()
 
     try:
-        cfg = load_config(config_path) if section in {"all", "mcp", "verify", "config"} else None
+        cfg = (
+            load_effective(Path.cwd(), config_path).config
+            if section in {"all", "mcp", "verify", "config"}
+            else None
+        )
     except (ConfigError, OSError) as exc:
         cfg = None
         if section in {"all", "mcp", "verify", "config"}:
-            print(f"== config ==\n[FAIL] cannot load {config_path}: {exc}\n")
+            print(f"== config ==\n[FAIL] cannot load config: {exc}\n")
             checks.append(_DoctorCheck(name="config_load", ok=False, detail=str(exc)))
+
+    if cfg is not None and section in {"all", "config"}:
+        print("== config ==")
+        checks.extend(_check_config_section(cfg))
+        print()
 
     if cfg is not None and section in {"all", "mcp"}:
         print("== mcp ==")
@@ -1937,11 +2240,6 @@ def _cmd_doctor(config_path: Path, *, section: str) -> int:
         checks.extend(_doctor_check_verify(cfg))
         print()
 
-    if cfg is not None and section in {"all", "config"}:
-        print("== config ==")
-        checks.extend(_doctor_check_config(cfg))
-        print()
-
     print("== summary ==")
     overall_ok = True
     for c in checks:
@@ -1949,6 +2247,30 @@ def _cmd_doctor(config_path: Path, *, section: str) -> int:
         print(f"[{flag}] {c.name}: {c.detail}")
         overall_ok = overall_ok and c.ok
     return 0 if overall_ok else 1
+
+
+def _check_config_section(cfg: Config) -> list[_DoctorCheck]:
+    """Environment detection + profile selection + static config checks."""
+    env = detect()
+    print(f"  kernel: {env.kernel.raw} (Landlock TCP: {env.kernel.supports_landlock_tcp})")
+    print(f"  userns supported: {env.userns_supported}")
+    print(f"  sandbox available: {env.sandbox_available}")
+    abi_str = str(landlock_abi()) if env.sandbox_available else "n/a (no Linux sandbox)"
+    print(f"  Landlock ABI: {abi_str}")
+    print(
+        f"  sandbox.profile = {cfg.sandbox.profile}  network = {cfg.sandbox.network}"
+        f"  run_commands = {cfg.sandbox.run_commands}"
+    )
+    out: list[_DoctorCheck] = []
+    try:
+        selected = select_profile(cfg.sandbox.profile, env)
+        print(f"  -> selected profile: {selected}")
+        out.append(_DoctorCheck(name="config.profile", ok=True, detail=f"selected {selected}"))
+    except RuntimeError as exc:
+        print(f"  [FAIL] profile selection: {exc}")
+        out.append(_DoctorCheck(name="config.profile", ok=False, detail=str(exc)))
+    out.extend(_doctor_check_config(cfg))
+    return out
 
 
 def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
@@ -2010,13 +2332,13 @@ def _doctor_check_verify(cfg: Config) -> list[_DoctorCheck]:
 
 
 def _doctor_check_config(cfg: Config) -> list[_DoctorCheck]:
-    """Static config sanity checks: provider env vars + worktree git policy."""
+    """Static config sanity checks: provider keys + worktree git policy."""
     out: list[_DoctorCheck] = []
-    env_err = _check_provider_env_vars(cfg)
+    env_err = _check_provider_keys(cfg)
     ok_env = env_err is None
-    detail_env = "all required API key env vars set" if ok_env else env_err or ""
-    print(f"[{'PASS' if ok_env else 'FAIL'}] config.provider_env: {detail_env}")
-    out.append(_DoctorCheck(name="config.provider_env", ok=ok_env, detail=detail_env))
+    detail_env = "all referenced provider keys resolve" if ok_env else env_err or ""
+    print(f"[{'PASS' if ok_env else 'FAIL'}] config.provider_keys: {detail_env}")
+    out.append(_DoctorCheck(name="config.provider_keys", ok=ok_env, detail=detail_env))
 
     ok_git = cfg.git.allow_push is False
     detail_git = "git.allow_push=False (push is blocked, as required)"
@@ -2150,6 +2472,13 @@ def _start_mcp_manager_if_enabled(cfg: Config) -> MCPManager | None:
     return MCPManager.start(configs, logger=lambda m: print(m, file=sys.stderr))
 
 
+def _manifest_model_brief(rm: Any) -> dict[str, str] | None:
+    """``{provider, model}`` for a resolved role, or None when unset."""
+    if rm is None:
+        return None
+    return {"provider": rm.provider, "model": rm.model}
+
+
 def _write_run_manifest(
     layout: RunLayout,
     *,
@@ -2178,14 +2507,8 @@ def _write_run_manifest(
         "base_branch": base_branch,
         "run_branch": run_branch,
         "models": {
-            "worker": {
-                "provider": cfg.models.worker.provider,
-                "model": cfg.models.worker.model,
-            },
-            "reviewer": {
-                "provider": cfg.models.reviewer.provider,
-                "model": cfg.models.reviewer.model,
-            },
+            "worker": _manifest_model_brief(cfg.models.resolve("worker")),
+            "reviewer": _manifest_model_brief(cfg.models.resolve("reviewer")),
         },
         "workflow": {
             "critic": cfg.workflow.critic,
@@ -2199,7 +2522,7 @@ def _write_run_manifest(
 
 
 def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
-    config_path: Path,
+    config_path: Path | None,
     task: str,
     *,
     run_id: str = "",
@@ -2216,9 +2539,16 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     edit-tools filtered out, ``finish_planning`` instead of
     ``finish_run``, no auto-commit. The plan markdown lands at
     ``<run-dir>/plan.md`` and is consumed by ``agent6 run --from-plan``.
+    The ``planner`` model role drives plan mode (falls back to ``worker``).
     """
     try:
-        cfg = load_config(config_path)
+        cfg = load_effective(Path.cwd(), config_path).config
+    except ConfigError as exc:
+        print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
+        return 2
+    role: RoleName = "planner" if mode == "plan" else "worker"
+    try:
+        cfg.require_runnable(role, need_verify=(mode == "run"))
     except ConfigError as exc:
         print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
         return 2
@@ -2236,7 +2566,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         return 2
     _warn_if_unsandboxed(selected_profile)
 
-    missing = _check_provider_env_vars(cfg)
+    missing = _check_provider_keys(cfg)
     if missing is not None:
         print(missing, file=sys.stderr)
         return 2
@@ -2323,12 +2653,12 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         max_output_tokens=cfg.budget.max_output_tokens,
     )
 
-    # Workflow uses ONE provider (worker role) for everything. No
-    # critic/triage/planner/reviewer/escalation cascade.
-    worker_inner = _build_role_provider(
-        cfg, "worker", transcript_sink=transcript_sink, budget=budget
-    )
-    rm_worker = cfg.models.worker
+    # Workflow uses ONE provider for everything (the worker role, or the
+    # planner role in plan mode). No critic/triage/planner/reviewer/escalation
+    # cascade inside the loop.
+    worker_inner = _build_role_provider(cfg, role, transcript_sink=transcript_sink, budget=budget)
+    rm_worker = cfg.models.resolve(role)
+    assert rm_worker is not None  # require_runnable validated this
     # Enable SSE streaming when stderr is a TTY (covers TUI
     # and interactive shell use). Bench/CI runs pipe stderr, so they
     # stay on the audited non-streaming code path UNLESS the operator
@@ -2339,7 +2669,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     stream_text = sys.stderr.isatty() or os.environ.get("AGENT6_FORCE_STREAM") == "1"
     provider: Provider = _InstrumentedProvider(
         inner=worker_inner,
-        role="worker",
+        role=role,
         model=rm_worker.model,
         provider_name=rm_worker.provider,
         events=events,
@@ -2430,9 +2760,9 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                 critic_period=cfg.workflow.critic_period,
                 prompt_reviser_provider=prompt_reviser_provider,
                 revise_prompt=cfg.workflow.revise_prompt,
-                temperature=cfg.models.worker.temperature,
-                critic_temperature=cfg.models.reviewer.temperature,
-                prompt_reviser_temperature=cfg.models.reviewer.temperature,
+                temperature=_role_temperature(cfg, role),
+                critic_temperature=_role_temperature(cfg, "reviewer"),
+                prompt_reviser_temperature=_role_temperature(cfg, "reviewer"),
                 prompt_revision_selector=(
                     _select_revised_prompt if cfg.workflow.revise_prompt == "interactive" else None
                 ),
@@ -2459,6 +2789,8 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         if mcp_manager is not None:
             mcp_manager.close()
         _stop_egress(egress_broker, egress_sock_dir)
+        # Never leave root-owned run state in the user's repo (sudo case).
+        chown_to_real_user(cwd / ".agent6")
 
     if interrupted:
         return 130
@@ -2752,7 +3084,7 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0912, PLR0
 
 
 def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
-    config_path: Path, run_id: str, *, force: bool
+    config_path: Path | None, run_id: str, *, force: bool
 ) -> int:
     """Resume a paused/crashed run from its snapshot.
 
@@ -2808,7 +3140,8 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
             return 1
 
     try:
-        cfg = load_config(config_path)
+        cfg = load_effective(Path.cwd(), config_path).config
+        cfg.require_runnable("worker")
     except ConfigError as exc:
         print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
         return 2
@@ -2821,7 +3154,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
         return 2
     _warn_if_unsandboxed(selected_profile)
 
-    missing = _check_provider_env_vars(cfg)
+    missing = _check_provider_keys(cfg)
     if missing is not None:
         print(missing, file=sys.stderr)
         return 2
@@ -2865,7 +3198,8 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     worker_inner = _build_role_provider(
         cfg, "worker", transcript_sink=transcript_sink, budget=budget
     )
-    rm_worker = cfg.models.worker
+    rm_worker = cfg.models.resolve("worker")
+    assert rm_worker is not None  # require_runnable validated this
     # Streaming gated on stderr TTY (matches _cmd_run);
     # AGENT6_FORCE_STREAM=1 forces it on for bench/CI.
     stream_text = sys.stderr.isatty() or os.environ.get("AGENT6_FORCE_STREAM") == "1"
@@ -2930,8 +3264,8 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
                 critic_provider=critic_provider,
                 critic_mode=cfg.workflow.critic,
                 critic_period=cfg.workflow.critic_period,
-                temperature=cfg.models.worker.temperature,
-                critic_temperature=cfg.models.reviewer.temperature,
+                temperature=_role_temperature(cfg, "worker"),
+                critic_temperature=_role_temperature(cfg, "reviewer"),
                 summariser_provider=summariser_provider,
             )
             try:
@@ -2957,6 +3291,8 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
         if mcp_manager is not None:
             mcp_manager.close()
         _stop_egress(egress_broker, egress_sock_dir)
+        # Never leave root-owned run state in the user's repo (sudo case).
+        chown_to_real_user(cwd / ".agent6")
 
     if interrupted:
         return 130
@@ -3129,7 +3465,10 @@ def _print_node_dfs(node: TaskNode, nodes: dict[str, TaskNode], *, depth: int) -
 
 
 def _cmd_init(*, force: bool, profile: str) -> int:
-    return init_workspace(Path.cwd(), force=force, profile=profile)
+    rc = init_workspace(Path.cwd(), force=force, profile=profile)
+    # Don't leave root-owned scaffolding in the user's repo (sudo case).
+    chown_to_real_user(Path.cwd() / ".agent6")
+    return rc
 
 
 def _cmd_diff(*, run_id: str, stat: bool, paths: tuple[str, ...]) -> int:  # noqa: PLR0911
@@ -3197,7 +3536,7 @@ def _cmd_diff(*, run_id: str, stat: bool, paths: tuple[str, ...]) -> int:  # noq
     return proc.returncode
 
 
-def _cmd_mcp_serve(config_path: Path) -> int:
+def _cmd_mcp_serve(config_path: Path | None) -> int:
     """Spawn an MCP stdio server against ``config_path``'s
     workspace. Thin wrapper so dispatch stays uniform with the other
     ``_cmd_*`` helpers."""
@@ -3205,7 +3544,7 @@ def _cmd_mcp_serve(config_path: Path) -> int:
 
 
 def _cmd_review(  # noqa: PLR0911
-    config_path: Path,
+    config_path: Path | None,
     *,
     base: str,
     head: str,
@@ -3214,12 +3553,13 @@ def _cmd_review(  # noqa: PLR0911
 ) -> int:
     """Print a freeform code review of a diff to stdout. Read-only; no jail."""
     try:
-        cfg = load_config(config_path)
+        cfg = load_effective(Path.cwd(), config_path).config
+        cfg.require_runnable("reviewer", need_verify=False)
     except ConfigError as exc:
         print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
         return 2
 
-    err = _check_provider_env_vars(cfg)
+    err = _check_provider_keys(cfg)
     if err is not None:
         print(f"ERROR: {err}", file=sys.stderr)
         return 2

@@ -27,7 +27,7 @@ write a compatibility branch, delete the old shape instead.
 - **Language**: Python 3.12+. Every `.py` file starts with
   `from __future__ import annotations`. Strict pyright.
 - **Layout**: src layout under `src/agent6/`. Tests under `tests/`.
-  Rust crate for the sandbox launcher under `jail/`.
+  Rust crate for the sandbox launcher under `src/agent6/jail/`.
 - **Style**: ruff is the only formatter and linter. Line length 100. Run
   `uv run ruff check` and `uv run ruff format` before committing.
 - **Typing**: pydantic v2 ONLY at trust boundaries (config, LLM I/O, tool
@@ -50,8 +50,9 @@ write a compatibility branch, delete the old shape instead.
 
 ## Verify command
 
-This is also what `verify_command` should be set to in `agent6.toml` when
-running the agent on this repo:
+This is also what `verify_command` should be set to in this repo's agent6
+config (`.agent6/config.toml`, or a `--config` file) when running the
+agent on this repo:
 
 ```bash
 uv run ruff check && uv run ruff format --check && \
@@ -77,14 +78,28 @@ All five must pass. 691 tests currently green.
   Audit with `rg 'subprocess\.(run|Popen)' src/agent6/`.
 - `src/agent6/git_ops.py` refuses `push`, `--force`, history rewrite,
   `reset --hard`, and `branch -D` unconditionally. Do not add overrides.
-- Config has no implicit defaults. Every field is required at load time
-  (`extra="forbid", frozen=True`). Adding a default to `Config` requires
-  the same scrutiny as adding a tool.
+- Config is **secure by default**: every field has a default, and
+  security-sensitive fields default to the *safe* value (`sandbox.network
+  = "provider_only"`, `run_commands = "ask"`, `protect_* = true`,
+  `git.allow_* = false`). Config is layered (built-in defaults < global
+  `$XDG_CONFIG_HOME/agent6/config.toml` < per-repo `.agent6/config.toml`
+  < `--config FILE`) and every leaf is auditable via `agent6 config show`.
+  `Config` stays `extra="forbid", frozen=True`; loosening a security
+  default requires the same scrutiny as adding a tool.
+- Secrets (provider API keys) live in `$XDG_CONFIG_HOME/agent6/secrets.toml`,
+  enforced `0600` + owner-only (see `secrets.py`). They are never written
+  to transcripts, never printed by `config show`, and never mounted into
+  the jail. `agent6 connect` must NEVER execute anything a remote returns
+  (OAuth/paste only) — the opencode RCE class of bug.
+- Running as root requires explicit opt-in (`--allow-root` /
+  `AGENT6_ALLOW_ROOT=1`); under sudo, agent6 reads the real user's
+  config/secrets and chowns new `.agent6/` files back to them. It does NOT
+  drop privileges in-process — the jail is the boundary.
 - `[providers.anthropic]` and `[providers.openai]` are the only network
   endpoints the agent is allowed to talk to. New providers go through the
   same Landlock + jail audit; do not bypass.
 - The `agent6-jail` Rust binary is part of the security boundary. Changes
-  to `jail/src/main.rs` need at minimum a review note covering: what mount
+  to `src/agent6/jail/src/main.rs` need at minimum a review note covering: what mount
   points changed, what landlock rules changed, what seccomp syscalls were
   added or removed, and what `/dev` nodes are exposed.
 

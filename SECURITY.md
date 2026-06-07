@@ -14,7 +14,7 @@ Please include:
 
 - agent6 version (`agent6 --version`).
 - Linux kernel version + distro (`uname -a` + `/etc/os-release`).
-- The output of `agent6 check-sandbox`.
+- The output of `agent6 check sandbox`.
 - Minimal reproduction, ideally as a failing test under `tests/security/`.
 
 ## Threat model
@@ -191,9 +191,38 @@ diff, branch creation, checkout) and refuses, by construction, to call:
 - anything containing `--force` or `-f` on a destructive verb.
 
 `git.allow_push`, `git.allow_force`, and `git.allow_history_rewrite` in
-`agent6.toml` exist for forward compatibility but are currently ignored
-— they will stay ignored until there is a concrete review of what a
-"safe push" would look like.
+the agent6 config exist for forward compatibility but are currently
+ignored — they will stay ignored until there is a concrete review of what
+a "safe push" would look like.
+
+### 5b. Secrets, `connect`, and running as root
+
+- **Secrets at rest.** Provider API keys live in
+  `$XDG_CONFIG_HOME/agent6/secrets.toml`, created and enforced `0600`
+  (owner read/write only). agent6 refuses to read the file if it is
+  group/other-accessible or owned by another user — the same posture as
+  an SSH private key. Keys may alternatively come from an environment
+  variable named by `[providers.<name>].api_key_env`; the env var takes
+  precedence. Keys are never written to transcripts, never printed by
+  `agent6 config show` (redacted), and never mounted into the jail —
+  provider calls happen in agent6's own process, outside the sandbox.
+- **`agent6 connect` never executes remote input.** The connect flow only
+  prompts locally (key via `getpass`, no echo) and writes config/secrets.
+  It does not run any command, URL, or script returned by a provider or
+  any remote — by construction. This is a deliberate guard against the
+  class of bug where a login flow runs an attacker-supplied shell command.
+  agent6 also opens no listening network socket of any kind (MCP is
+  stdio; the egress broker is a private Unix socket).
+- **Root.** Running an LLM-driven agent as root is dangerous, so agent6
+  refuses unless the operator explicitly opts in with `--allow-root` (or
+  `AGENT6_ALLOW_ROOT=1`), and prints a loud banner. When invoked through
+  `sudo`, agent6 resolves the *real* user from `SUDO_UID`/`SUDO_GID`/
+  `SUDO_USER`, reads that user's config + secrets (not root's), and
+  `chown`s anything it writes under the repo's `.agent6/` back to them so
+  no root-owned files are left behind. agent6 does not drop privileges
+  in-process: under `sudo` the worker's verify/run commands are expected
+  to need root and run as root inside the jail, so the jail — not the
+  process uid — is the security boundary.
 
 ### 6. Curator subprocess
 

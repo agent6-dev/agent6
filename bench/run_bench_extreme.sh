@@ -16,7 +16,7 @@ set -euo pipefail
 REPO="${AGENT6_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 BENCH_ROOT=${BENCH_ROOT:-/tmp/agent6-bench-extreme}
 cd "$REPO"
-export AGENT6_JAIL_BIN="${AGENT6_JAIL_BIN:-$REPO/jail/target/release/agent6-jail}"
+export AGENT6_JAIL_BIN="${AGENT6_JAIL_BIN:-$REPO/src/agent6/jail/target/release/agent6-jail}"
 mkdir -p "$BENCH_ROOT/logs"
 AGENT6_BIN="$REPO/.venv/bin/agent6"
 [ -x "$AGENT6_BIN" ] || { echo "agent6 not found at $AGENT6_BIN" >&2; exit 1; }

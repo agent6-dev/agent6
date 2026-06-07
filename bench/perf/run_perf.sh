@@ -39,7 +39,7 @@ MAX_OUTPUT_TOKENS="${AGENT6_PERF_MAX_OUT:-120000}"
 PYTHON_BIN="${PYTHON_BIN:-$(command -v python3)}"
 
 cd "$REPO"
-export AGENT6_JAIL_BIN="${AGENT6_JAIL_BIN:-$REPO/jail/target/release/agent6-jail}"
+export AGENT6_JAIL_BIN="${AGENT6_JAIL_BIN:-$REPO/src/agent6/jail/target/release/agent6-jail}"
 AGENT6_BIN="$REPO/.venv/bin/agent6"
 [ -x "$AGENT6_BIN" ] || { echo "agent6 not found at $AGENT6_BIN" >&2; exit 1; }
 [ -x "$AGENT6_JAIL_BIN" ] || { echo "jail launcher missing at $AGENT6_JAIL_BIN" >&2; exit 1; }
@@ -239,7 +239,7 @@ task_text=$(cat "$WORKDIR/TASK.md")
 
 start_ns=$(date +%s%N)
 set +e
-( cd "$WORKDIR" && "$AGENT6_BIN" run "$task_text" ) \
+( cd "$WORKDIR" && "$AGENT6_BIN" --config agent6.toml run "$task_text" ) \
   > "$LOGDIR/agent6.stdout" 2> "$LOGDIR/agent6.stderr"
 ag_exit=$?
 set -e

@@ -68,10 +68,12 @@ on `PATH`. The hatch build hook invokes `cargo build` to compile
 
 ## Install
 
-From PyPI:
+From PyPI (pick your installer):
 
 ```bash
-uv tool install agent6
+uv tool install agent6     # recommended (isolated, on PATH)
+pipx install agent6        # also isolated, on PATH
+pip install agent6         # into the current environment
 ```
 
 From source:
@@ -101,14 +103,20 @@ register-python-argcomplete --shell fish agent6 > ~/.config/fish/completions/age
 ## Quick start
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
+# Connect a provider once (stored in ~/.config/agent6/, key in a 0600
+# secrets file). Works across every repo.
+agent6 connect                # interactive: pick provider, paste API key
+agent6 model --role worker --provider anthropic --model claude-sonnet-4-5
 
-# Scaffold agent6.toml + AGENTS.md and add .agent6/ to .gitignore.
+# In a project: scaffold .agent6/config.toml + AGENTS.md and gitignore .agent6/.
 agent6 init
 
-# Sanity checks.
-agent6 check-config
-agent6 check-sandbox
+# Audit the effective config: every value + where it came from
+# (default / global / repo). `*` marks values that override the default.
+agent6 config show
+
+# Pre-flight: sandbox + config + provider keys + verify_command.
+agent6 check
 
 # Run the agent on a task.
 agent6 run "add a --json output mode to the CLI"
@@ -120,17 +128,25 @@ agent6 resume <run-id>
 agent6 review --base origin/main --head HEAD
 ```
 
+Config is layered: built-in **secure defaults** < global
+`~/.config/agent6/config.toml` < per-repo `.agent6/config.toml` < an
+explicit `--config FILE`. A repo can be zero-config when the global
+config supplies a provider + model; the one thing a repo always needs is
+its `verify_command`.
+
 Other commands:
 
 - `agent6 watch [<run-id>]` — attach the live TUI to an existing run
   (defaults to the most recent).
+- `agent6 plan "<task>"` — read-only planning pass (uses the `planner`
+  model, falls back to `worker`); execute with `agent6 run --from-plan`.
 - `agent6 memory` — manage persistent agent memory under
-  `.agent6/memory/`.
+  `.agent6/memories/`.
 - `agent6 history search <query>` — ripgrep-backed search over
   persisted transcripts.
 - `agent6 history graph [<run-id>]` — render the persisted task graph.
-- `agent6 check-config --fix` — interactively fill in missing config
-  fields after an upgrade.
+- `agent6 config fill` — materialize every effective value into one
+  explicit config file (global by default, `--repo` for the repo).
 
 ## How it works
 
@@ -221,8 +237,13 @@ See [SECURITY.md](SECURITY.md) for the per-layer breakdown.
 
 ## Configuration
 
-Start from [agent6.example.toml](agent6.example.toml). Every field is
-required at load time; `agent6 check-config` validates without running.
+agent6 is **secure by default**: every field has a default, and
+security-sensitive ones default to the safe value (`allow_push = false`,
+`network = "provider_only"`, `run_commands = "ask"`, `protect_* = true`).
+Start from [agent6.example.toml](agent6.example.toml), or just run
+`agent6 connect` + `agent6 model` (global) and `agent6 init` (per-repo).
+Use `agent6 config show` to audit the effective value of every field and
+exactly where it came from; `agent6 check` validates without running.
 
 ```toml
 [sandbox]
@@ -404,7 +425,10 @@ piping the run-dir into `agent6 review`.
 ```
 src/agent6/
   cli.py            argparse entry points
-  config.py         pydantic-strict config
+  config.py         pydantic-strict config (secure-by-default)
+  config_layer.py   layered config merge + source map (show/fill)
+  paths.py          XDG paths + sudo/root resolution
+  secrets.py        0600 secrets file + API-key resolution
   budget.py         per-model pricing + per-run accounting
   events.py         structured run-event log
   git_ops.py        git wrappers; refuses push/force/rewrite
@@ -417,9 +441,9 @@ src/agent6/
   tools/            dispatcher + schemas for the LLM tool surface
   providers/        Anthropic + OpenAI HTTP clients (httpx, no SDK)
   sandbox/          jail.py (Python wrapper) + landlock.py
+  jail/             Rust crate for agent6-jail (built into sandbox/_bin)
   graph/            curator subprocess + UDS IPC + on-disk graph store
   ui/               event fold + JSONL tailer + optional textual TUI
-jail/               Rust crate for agent6-jail
 tests/
   unit/             unit tests
   integration/      crash-resume, curator IPC

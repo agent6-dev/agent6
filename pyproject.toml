@@ -38,6 +38,10 @@ packages = ["src/agent6"]
 # wheel build. It lives in .gitignore, so we have to list it explicitly
 # as an artifact for hatchling to include it in the wheel.
 artifacts = ["src/agent6/sandbox/_bin/agent6-jail"]
+# The Rust crate source + its build dir live inside the package tree
+# (src/agent6/jail) but must never ship in the wheel — the runtime only
+# needs the compiled binary bundled under sandbox/_bin.
+exclude = ["src/agent6/jail"]
 
 # Build the Rust `agent6-jail` binary as a side effect of building the
 # wheel and bundle it inside the wheel under agent6/sandbox/_bin/. A plain
@@ -53,12 +57,10 @@ path = "hatch_build.py"
 
 [tool.hatch.build.targets.sdist]
 # The Rust crate sources ship in the sdist so a downstream consumer can build
-# the jail from source. The compiled binary itself is never embedded.
+# the jail from source. They live under src/agent6/jail (included via
+# "src/agent6"); the compiled binary + build dir are excluded below.
 include = [
     "src/agent6",
-    "jail/Cargo.toml",
-    "jail/Cargo.lock",
-    "jail/src",
     "hatch_build.py",
     "README.md",
     "SECURITY.md",
@@ -67,9 +69,11 @@ include = [
     "tach.toml",
     "LICENSE",
 ]
-# Never ship a built binary inside the sdist; the build hook regenerates it.
+# Never ship a built binary or Rust build artifacts inside the sdist; the
+# build hook regenerates the binary from the crate sources.
 exclude = [
     "src/agent6/sandbox/_bin",
+    "src/agent6/jail/target",
 ]
 
 [dependency-groups]

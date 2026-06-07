@@ -1,77 +1,41 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 init` — write starter agent6.toml, AGENTS.md, and .gitignore entries.
+"""`agent6 init` — write a starter per-repo config, AGENTS.md, and .gitignore.
 
-Never overwrite existing files. If the target
-exists, write a `.suggested` sibling and tell the user to diff. The bundled
-templates are deliberately short and opinionated; the user is expected to
-edit them.
+Writes ``.agent6/config.toml`` (the per-repo override, layered on top of the
+global ``~/.config/agent6/config.toml`` and secure built-in defaults),
+``AGENTS.md``, and appends agent6 entries to ``.gitignore``. Never overwrites
+existing files: if a target exists, write a ``.suggested`` sibling and tell
+the user to diff. Templates are deliberately short — providers, models, and
+API keys normally live in the global config (set via ``agent6 connect`` /
+``agent6 model``), so a repo only needs its ``verify_command``.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
+from agent6.paths import repo_config_path
+
 _STARTER_TOML = """\
-# agent6 configuration. Every field is REQUIRED.
-
-[agent6]
-config_version = 1
-
-[providers.anthropic]
-kind = "anthropic"
-api_key_env = "ANTHROPIC_API_KEY"
-prompt_caching = true
-
-# Add additional providers as needed; the table key (e.g. "openrouter",
-# "ollama") is the name you reference from [models.<role>] below. See
-# agent6.example.toml for OpenAI-compatible examples (OpenAI, OpenRouter,
-# Ollama, vLLM, llama.cpp).
-
-# Route each live role to one of the providers above. there
-# are only two roles: ``worker`` (drives ``agent6 run`` / ``agent6 resume``;
-# its pricing also drives the USD-to-token budget conversion) and
-# ``reviewer`` (used by the one-shot ``agent6 review`` subcommand).
-[models.worker]
-provider = "anthropic"
-model = "claude-sonnet-4-5"
-
-[models.reviewer]
-provider = "anthropic"
-model = "claude-opus-4-5"
-
-[sandbox]
-# "auto" picks the strongest profile this kernel + container can run.
-# See agent6.example.toml in the agent6 source tree for full notes.
-profile = "auto"
-network = "provider_only"
-run_commands = "ask"
-# Make .git/ and agent6.toml/.agent6/ read-only from the child's view
-# so a worker cannot rewrite history or forge transcripts from inside
-# a run_command. Works in both profiles (strict: bind-remount-RO;
-# hardened: Landlock carve-out). See agent6.example.toml.
-protect_git = true
-protect_agent6 = true
-
-[git]
-require_clean_worktree = true
-auto_stash = false
-branch_per_run = true
-commit_strategy = "per_step"
-allow_push = false
-allow_force = false
-allow_history_rewrite = false
+# agent6 per-repo config (.agent6/config.toml).
+#
+# Layered on top of: built-in secure defaults < your global config
+# (~/.config/agent6/config.toml) < this file. Run `agent6 config show` to see
+# every effective value and where it comes from. agent6 is secure by default,
+# so this file only needs the few things that are specific to THIS repo.
 
 [workflow]
-# What "step succeeded" means in your repo. EDIT THIS.
+# What "a step succeeded" means in this repo. EDIT THIS to your real pipeline.
 verify_command = ["uv", "run", "pytest", "-x"]
-# Optional one-shot task rewrite before the worker loop. Default "off".
-# revise_prompt = "off"
 
-[budget]
-# Hard stop. The run is resumable from the persistent task graph.
-max_input_tokens = 2000000
-max_output_tokens = 200000
+# Providers, models, and API keys usually live in your GLOBAL config:
+#   agent6 connect                       # add a provider + API key
+#   agent6 model --role worker ...       # pick the model for a role
+# Override per-repo by uncommenting, e.g.:
+# [models.worker]
+# provider = "anthropic"
+# model = "claude-sonnet-4-5"
 """
 
 
@@ -126,7 +90,7 @@ change a project convention, build command, dependency, or security invariant.
 ## Verify command
 
 The command agent6 runs to decide whether a step "succeeded". Must match
-the `verify_command` in `agent6.toml`.
+the `verify_command` in `.agent6/config.toml`.
 
 ```bash
 # EDIT: replace with your actual verify pipeline.
@@ -163,6 +127,7 @@ def _write_or_suggest(path: Path, content: str, *, force: bool) -> str:
 
     Returns a one-line status message describing what happened.
     """
+    path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists() and not force:
         suggested = path.with_name(path.name + ".suggested")
         suggested.write_text(content, encoding="utf-8")
@@ -203,13 +168,15 @@ def init_workspace(root: Path, *, force: bool, profile: str = "py") -> int:
     print(f"agent6 init: {root}  (profile={profile})")
     starter_toml = _render_starter_toml(profile)
     starter_agents_md = _render_starter_agents_md(profile)
-    print(_write_or_suggest(root / "agent6.toml", starter_toml, force=force))
+    print(_write_or_suggest(repo_config_path(root), starter_toml, force=force))
     print(_write_or_suggest(root / "AGENTS.md", starter_agents_md, force=force))
     print(_update_gitignore(root))
     print()
     print("Next:")
-    print("  1. Edit agent6.toml: set `verify_command` for your repo.")
-    print("  2. Edit AGENTS.md: fill in the EDIT markers.")
-    print("  3. export ANTHROPIC_API_KEY=...")
-    print("  4. agent6 check-config agent6.toml")
+    print("  1. agent6 connect                 # add a provider + API key (global)")
+    print("  2. agent6 model --role worker ... # pick your worker model (or set it globally)")
+    print("  3. Edit .agent6/config.toml: set `verify_command` for this repo.")
+    print("  4. agent6 config show             # audit the effective config")
+    print("  5. agent6 check                   # sandbox + config pre-flight")
+    print('  6. agent6 run "<task>"')
     return 0

@@ -34,7 +34,8 @@ from pathlib import Path
 from typing import IO, Any
 
 from agent6 import __version__
-from agent6.config import Config, load_config
+from agent6.config import Config
+from agent6.config_layer import load_effective
 from agent6.graph.storage import RunLayout, load_graph
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 
@@ -369,16 +370,17 @@ class MCPServer:
 # ---------------------------------------------------------------------------
 
 
-def run_server(config_path: Path) -> int:
-    """``agent6 mcp serve`` body. Loads config from ``config_path``
-    (which lives in the workspace root), spawns an :class:`MCPServer`
-    against cwd, and serves until stdin EOF. Returns 0 on clean exit."""
+def run_server(config_path: Path | None) -> int:
+    """``agent6 mcp serve`` body. Loads the layered effective config
+    (global + repo, plus an optional explicit ``config_path``), spawns an
+    :class:`MCPServer` against cwd, and serves until stdin EOF. Returns 0
+    on clean exit."""
+    root = Path.cwd()
     try:
-        cfg = load_config(config_path)
+        cfg = load_effective(root, config_path).config
     except Exception as exc:
-        print(f"ERROR: failed to load {config_path}: {exc}", file=sys.stderr)
+        print(f"ERROR: failed to load config: {exc}", file=sys.stderr)
         return 2
-    root = config_path.resolve().parent
     server = MCPServer(
         root=root,
         config=cfg,

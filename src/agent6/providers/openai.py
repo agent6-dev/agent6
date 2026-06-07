@@ -152,6 +152,11 @@ class OpenAIProvider:
     timeout_s: float = 120.0
     transcript_sink: TranscriptSink | None = None
     budget: BudgetTracker | None = None
+    # Default reasoning effort for this provider (off|low|medium|high), wired
+    # from the role's `[models.<role>].thinking`. A per-call `reasoning_effort`
+    # argument takes precedence; below this sits the AGENT6_REASONING_EFFORT
+    # env override. Only affects OpenAI-compatible reasoning models.
+    reasoning_effort: str | None = None
 
     @property
     def endpoint(self) -> str:
@@ -279,11 +284,16 @@ class OpenAIProvider:
         # (per-turn + latch) was therefore removed. The
         # "off" knob remains for explicit operator/bench use.
         if _is_reasoning_model(self.model):
-            if reasoning_effort is not None:
-                if reasoning_effort.strip().lower() == "off":
+            # Precedence: per-call argument > provider default (from config
+            # `thinking`) > AGENT6_REASONING_EFFORT env > "low".
+            effective_reasoning = (
+                reasoning_effort if reasoning_effort is not None else self.reasoning_effort
+            )
+            if effective_reasoning is not None:
+                if effective_reasoning.strip().lower() == "off":
                     body["reasoning"] = {"enabled": False}
                 else:
-                    body["reasoning"] = {"effort": reasoning_effort.strip().lower()}
+                    body["reasoning"] = {"effort": effective_reasoning.strip().lower()}
             else:
                 override = os.environ.get("AGENT6_REASONING_EFFORT", "").strip().lower()
                 if override == "off":

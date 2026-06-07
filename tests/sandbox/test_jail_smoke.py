@@ -33,12 +33,13 @@ def _jail_binary() -> Path | None:
     env = os.environ.get("AGENT6_JAIL_BIN")
     if env and Path(env).is_file():
         return Path(env)
-    p = Path(__file__).resolve().parents[2] / "jail" / "target" / "release" / "agent6-jail"
-    if p.is_file():
-        return p
-    p_dbg = Path(__file__).resolve().parents[2] / "jail" / "target" / "debug" / "agent6-jail"
-    if p_dbg.is_file():
-        return p_dbg
+    p = Path(__file__).resolve().parents[2] / "src" / "agent6" / "jail" / "target"
+    release = p / "release" / "agent6-jail"
+    if release.is_file():
+        return release
+    debug = p / "debug" / "agent6-jail"
+    if debug.is_file():
+        return debug
     return None
 
 
@@ -57,7 +58,7 @@ def jail_bin() -> Path:
         if cargo is None:
             pytest.skip("cargo not available")
         repo_root = Path(__file__).resolve().parents[2]
-        manifest = str(repo_root / "jail" / "Cargo.toml")
+        manifest = str(repo_root / "src" / "agent6" / "jail" / "Cargo.toml")
         subprocess.run(
             [cargo, "build", "--release", "--manifest-path", manifest],
             check=True,

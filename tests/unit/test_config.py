@@ -75,11 +75,12 @@ def test_extra_key_forbidden(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
-def test_missing_required_key(tmp_path: Path) -> None:
-    # `allow_push` is a security field with no default; absence is fatal.
+def test_security_field_defaults_to_safe_value(tmp_path: Path) -> None:
+    # `allow_push` is a security field; omitting it must default to the SAFE
+    # (disabled) value rather than failing to load (secure-by-default).
     body = _VALID_TOML.replace("allow_push = false\n", "")
-    with pytest.raises(ConfigError):
-        load_config(_write(tmp_path, body))
+    cfg = load_config(_write(tmp_path, body))
+    assert cfg.git.allow_push is False
 
 
 def test_invalid_enum_literal(tmp_path: Path) -> None:
@@ -93,6 +94,8 @@ def test_role_temperature_defaults_to_zero(tmp_path: Path) -> None:
     # default temperature is pinned to 0.0 so OpenRouter-routed models
     # don't run at their (often high) provider default.
     cfg = load_config(_write(tmp_path, _VALID_TOML))
+    assert cfg.models.worker is not None
+    assert cfg.models.reviewer is not None
     assert cfg.models.worker.temperature == 0.0
     assert cfg.models.reviewer.temperature == 0.0
 
@@ -103,6 +106,8 @@ def test_role_temperature_override(tmp_path: Path) -> None:
         '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\ntemperature = 0.7',
     )
     cfg = load_config(_write(tmp_path, body))
+    assert cfg.models.worker is not None
+    assert cfg.models.reviewer is not None
     assert cfg.models.worker.temperature == 0.7
     assert cfg.models.reviewer.temperature == 0.0  # unchanged
 
@@ -129,10 +134,14 @@ def test_role_temperature_out_of_range(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
-def test_verify_command_min_length(tmp_path: Path) -> None:
+def test_empty_verify_command_loads_but_not_runnable(tmp_path: Path) -> None:
+    # Empty verify_command is allowed at load time (so `config show` works);
+    # require_runnable is what refuses to start a run without it.
     body = _VALID_TOML.replace('verify_command = ["true"]', "verify_command = []")
+    cfg = load_config(_write(tmp_path, body))
+    assert cfg.workflow.verify_command == ()
     with pytest.raises(ConfigError):
-        load_config(_write(tmp_path, body))
+        cfg.require_runnable("worker")
 
 
 def test_verify_timeout_s_defaults_to_600(tmp_path: Path) -> None:
@@ -195,14 +204,18 @@ def test_role_routes_to_unconfigured_provider_rejected(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
-def test_no_providers_configured_rejected(tmp_path: Path) -> None:
+def test_no_providers_loads_but_not_runnable(tmp_path: Path) -> None:
+    # Secure-by-default: a config with no providers is valid (a global config
+    # may define them); require_runnable refuses to start without one.
     body = _VALID_TOML.replace(
         '[providers.anthropic]\nkind = "anthropic"\n'
         'api_key_env = "ANTHROPIC_API_KEY"\nprompt_caching = true\n',
         "",
     )
+    cfg = load_config(_write(tmp_path, body))
+    assert cfg.providers == {}
     with pytest.raises(ConfigError):
-        load_config(_write(tmp_path, body))
+        cfg.require_runnable("worker")
 
 
 def test_openai_provider_with_no_api_key_env_loads(tmp_path: Path) -> None:
@@ -242,6 +255,8 @@ def test_multiple_openai_providers_load(tmp_path: Path) -> None:
     body = body.replace('provider = "anthropic"', 'provider = "openrouter"')
     cfg = load_config(_write(tmp_path, body))
     assert set(cfg.providers) == {"openai", "openrouter"}
+    assert cfg.models.worker is not None
+    assert cfg.models.reviewer is not None
     assert cfg.models.worker.provider == "openai"
     assert cfg.models.reviewer.provider == "openrouter"
 

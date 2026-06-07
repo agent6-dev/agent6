@@ -61,7 +61,7 @@ class JailBuildHook(BuildHookInterface):
             self._maybe_mark_platform_wheel(build_data, dest)
             return
 
-        manifest = root / "jail" / "Cargo.toml"
+        manifest = root / "src" / "agent6" / "jail" / "Cargo.toml"
         if not manifest.is_file():
             print(
                 f"[hatch_build] {manifest} not found, skipping cargo build",
@@ -86,7 +86,7 @@ class JailBuildHook(BuildHookInterface):
             check=True,
         )
 
-        built = root / "jail" / "target" / "release" / _BIN_NAME
+        built = root / "src" / "agent6" / "jail" / "target" / "release" / _BIN_NAME
         if not built.is_file():
             print(
                 f"[hatch_build] cargo build succeeded but {built} is missing",

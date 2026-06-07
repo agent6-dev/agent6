@@ -21,7 +21,7 @@
 					}
 				},
 				"ruff.nativeServer": "on",
-				"rust-analyzer.linkedProjects": ["jail/Cargo.toml"],
+				"rust-analyzer.linkedProjects": ["src/agent6/jail/Cargo.toml"],
 				"files.insertFinalNewline": true,
 				"files.trimTrailingWhitespace": true
 			},

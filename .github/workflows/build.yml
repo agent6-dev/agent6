@@ -1,7 +1,7 @@
 name: build
 
 # Builds the Python wheel + sdist. The hatch hook (hatch_build.py) runs
-# `cargo build --release --locked` against jail/Cargo.toml as part of the
+# `cargo build --release --locked` against src/agent6/jail/Cargo.toml as part of the
 # wheel build and bundles the resulting agent6-jail binary inside the
 # wheel under agent6/sandbox/_bin/.
 #

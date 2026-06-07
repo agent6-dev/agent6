@@ -101,17 +101,24 @@ def test_build_authoring_prompt_retry_includes_diagnostics() -> None:
 
 
 def _stub_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
-    def _load(_path: object) -> object:
-        return SimpleNamespace(sandbox=SimpleNamespace(profile="none"))
+    def _require_runnable(*_a: object, **_k: object) -> None:
+        return None
 
-    def _env_ok(_cfg: object) -> str | None:
+    def _load(_root: object, _explicit: object = None) -> object:
+        cfg = SimpleNamespace(
+            sandbox=SimpleNamespace(profile="none"),
+            require_runnable=_require_runnable,
+        )
+        return SimpleNamespace(config=cfg)
+
+    def _keys_ok(_cfg: object) -> str | None:
         return None
 
     def _profile(_profile_name: object, _env: object) -> object:
         return object()
 
-    monkeypatch.setattr(cli, "load_config", _load)
-    monkeypatch.setattr(cli, "_check_provider_env_vars", _env_ok)
+    monkeypatch.setattr(cli, "load_effective", _load)
+    monkeypatch.setattr(cli, "_check_provider_keys", _keys_ok)
     monkeypatch.setattr(cli, "select_profile", _profile)
 
 

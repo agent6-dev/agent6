@@ -5,14 +5,19 @@
 This is a trust boundary (untrusted text -> structured types), so we use
 pydantic and surface field-pointing errors.
 
-Field policy: security-sensitive fields (``sandbox.*``, ``providers.*``,
-``models.*``, ``budget.max_*_tokens``, ``git.allow_*``,
-``workflow.verify_command``) are required — they must reflect explicit
-operator intent. Operational fields with safe defaults
-(``agent6.config_version``, ``git.require_clean_worktree``, ``git.auto_stash``,
-``git.branch_per_run``, ``git.commit_strategy``, ``workflow.verify_timeout_s``,
-and the Anthropic ``prompt_caching`` toggle) provide sane defaults so a
-fresh config does not need to know every knob.
+Field policy: **secure by default, fully auditable**. Every field has a
+default, and security-sensitive fields default to the *safe* value
+(``sandbox.network = "provider_only"``, ``sandbox.run_commands = "ask"``,
+``sandbox.protect_* = true``, ``git.allow_push/force/history_rewrite =
+false``). This means a config can be layered (global ``$XDG_CONFIG_HOME``
+defaults, per-repo ``./.agent6/config.toml`` overrides) and a repo can be
+zero-config when the global config supplies providers + models. Use
+``agent6 config show`` to audit the *effective* value of every field and
+exactly where it came from (default / global / repo / flag). The few
+things a run genuinely cannot guess — a provider+key and the repo's
+``verify_command`` — are checked by :meth:`Config.require_runnable` with a
+friendly pointer to ``agent6 connect`` / ``agent6 init`` rather than a
+load-time failure, so ``config show`` always works.
 """
 
 from __future__ import annotations
@@ -33,7 +38,11 @@ class ConfigError(Exception):
 _BASE_MODEL_CONFIG = ConfigDict(extra="forbid", frozen=True)
 
 ProviderKind = Literal["anthropic", "openai"]
-RoleName = Literal["worker", "reviewer"]
+# The three live roles. ``planner`` drives ``agent6 plan`` and ``reviewer``
+# drives ``agent6 review`` + the in-loop critic; both fall back to
+# ``worker`` when unset (see ModelsConfig.resolve).
+RoleName = Literal["worker", "reviewer", "planner"]
+ThinkingLevel = Literal["off", "low", "medium", "high"]
 
 
 class AnthropicProviderEntry(BaseModel):
@@ -46,7 +55,10 @@ class AnthropicProviderEntry(BaseModel):
     model_config = _BASE_MODEL_CONFIG
 
     kind: Literal["anthropic"]
-    api_key_env: str = Field(min_length=1)
+    # Name of the env var holding the API key. Optional: leave it unset to
+    # let `agent6 connect` store the key in secrets.toml instead. Either
+    # source works; the env var (when set and non-empty) takes precedence.
+    api_key_env: str | None = Field(default=None, min_length=1)
     prompt_caching: bool = True
     # per-HTTP-call timeout (connect + read) for this provider in
     # seconds. Default 600s is generous enough for a slow provider streaming
@@ -127,37 +139,66 @@ class RoleModel(BaseModel):
     provider: str = Field(min_length=1)
     model: str = Field(min_length=1)
     temperature: float | None = Field(default=0.0, ge=0.0, le=2.0)
+    # Reasoning/thinking effort for this role. ``None`` leaves the
+    # provider default; ``off`` disables it explicitly. Mapped per
+    # provider: OpenAI-compatible reasoning models receive a
+    # ``reasoning.effort`` knob, Anthropic models receive an
+    # ``extended_thinking`` budget. Non-reasoning models ignore it.
+    thinking: ThinkingLevel | None = None
 
 
 class ModelsConfig(BaseModel):
     """Per-role provider + model routing.
 
-    there are only two live roles:
+    Three roles, all optional:
 
     - ``worker`` drives the single-loop agent (``agent6 run`` / ``agent6
-      resume``); pricing for this model also drives the USD → token
-      budget conversion.
-    - ``reviewer`` is used by the one-shot ``agent6 review`` subcommand.
+      resume``); its pricing also drives the USD -> token budget
+      conversion.
+    - ``planner`` drives ``agent6 plan`` (the read-only planning pass).
+      Unset -> falls back to ``worker`` (set it to a frontier model + high
+      thinking for careful up-front planning).
+    - ``reviewer`` drives the one-shot ``agent6 review`` subcommand and the
+      optional in-loop critic. Unset -> falls back to ``worker``.
 
-    Any of the configured providers may serve either role.
+    Any configured provider may serve any role. Leaving every role unset is
+    valid (e.g. a global config that only declares providers); a role is
+    only *required* for the command that uses it, checked by
+    :meth:`Config.require_runnable`.
     """
 
     model_config = _BASE_MODEL_CONFIG
 
-    worker: RoleModel
-    reviewer: RoleModel
+    worker: RoleModel | None = None
+    reviewer: RoleModel | None = None
+    planner: RoleModel | None = None
 
-    def all(self) -> dict[RoleName, RoleModel]:
-        return {
-            "worker": self.worker,
-            "reviewer": self.reviewer,
-        }
+    def configured(self) -> dict[str, RoleModel]:
+        """Only the roles explicitly set (used for validation/key checks)."""
+        out: dict[str, RoleModel] = {}
+        if self.worker is not None:
+            out["worker"] = self.worker
+        if self.reviewer is not None:
+            out["reviewer"] = self.reviewer
+        if self.planner is not None:
+            out["planner"] = self.planner
+        return out
+
+    def resolve(self, role: RoleName) -> RoleModel | None:
+        """The effective model for *role*, applying worker fallbacks."""
+        if role == "worker":
+            return self.worker
+        if role == "planner":
+            return self.planner or self.worker
+        if role == "reviewer":
+            return self.reviewer or self.worker
+        return None
 
 
 class SandboxConfig(BaseModel):
     model_config = _BASE_MODEL_CONFIG
 
-    profile: Literal["auto", "strict", "hardened"]
+    profile: Literal["auto", "strict", "hardened"] = "auto"
     # `provider_only` confines the agent process to an empty network
     # namespace whose only route out is a per-endpoint unix socket served
     # by a trusted broker (see agent6.sandbox.broker): egress is structurally
@@ -166,8 +207,8 @@ class SandboxConfig(BaseModel):
     # refused on hosts that only support `hardened`. `no` keeps the process
     # in the host netns with no egress confinement at the process level;
     # `allow` is identical to `no` (egress unrestricted).
-    network: Literal["no", "provider_only", "allow"]
-    run_commands: Literal["yes", "no", "ask"]
+    network: Literal["no", "provider_only", "allow"] = "provider_only"
+    run_commands: Literal["yes", "no", "ask"] = "ask"
     # Make `.git/` read-only from the child's view so a worker that gains
     # `run_command` (e.g. `run_commands = "ask"` + user approval) cannot
     # `rm -rf .git`, rewrite history, or otherwise corrupt the repository
@@ -177,11 +218,11 @@ class SandboxConfig(BaseModel):
     # "RW on cwd" to "R on cwd + RW on each top-level entry except the
     # protect set". Hardened-mode side effect: writes to NEW top-level
     # entries created at the cwd root after launch are denied.
-    protect_git: bool
+    protect_git: bool = True
     # Same idea, for `agent6.toml` and `.agent6/` (run state, transcripts,
     # graph). The curator subprocess has its own jail policy that does
     # grant `.agent6/` write access; worker children do not.
-    protect_agent6: bool
+    protect_agent6: bool = True
 
 
 class GitCommitConfig(BaseModel):
@@ -213,9 +254,13 @@ class GitConfig(BaseModel):
     auto_stash: bool = False
     branch_per_run: bool = True
     commit_strategy: Literal["per_step", "squash", "stage", "none"] = "per_step"
-    allow_push: bool
-    allow_force: bool
-    allow_history_rewrite: bool
+    # Security-sensitive: default to the safe (disabled) value. agent6's
+    # git_ops layer refuses push / force / history rewrite unconditionally
+    # regardless of these toggles; they exist for the few workflows that
+    # legitimately need them and must be opted into explicitly.
+    allow_push: bool = False
+    allow_force: bool = False
+    allow_history_rewrite: bool = False
     commit: GitCommitConfig = Field(default_factory=GitCommitConfig)
 
 
@@ -242,7 +287,12 @@ class MetricConfig(BaseModel):
 class WorkflowConfig(BaseModel):
     model_config = _BASE_MODEL_CONFIG
 
-    verify_command: tuple[str, ...] = Field(min_length=1)
+    # The command agent6 runs to decide whether a step "succeeded". This is
+    # inherently repo-specific, so it has no useful global default and
+    # defaults to empty; `Config.require_runnable` requires it before a run
+    # (with a pointer to `agent6 init`). `agent6 plan` / `agent6 review` do
+    # not need it.
+    verify_command: tuple[str, ...] = ()
     # per-call timeout for verify_command (and metric_command) in
     # seconds. Defaults to the jail's general 600s but should be cranked
     # MUCH lower for benches where the verify is a fast correctness test
@@ -275,8 +325,11 @@ class WorkflowConfig(BaseModel):
 class BudgetConfig(BaseModel):
     model_config = _BASE_MODEL_CONFIG
 
-    max_input_tokens: int = Field(gt=0)
-    max_output_tokens: int = Field(gt=0)
+    # Hard stops on token spend. Defaults are generous safety ceilings (the
+    # run is resumable from the persistent task graph if hit); tighten them
+    # per-repo or use `max_usd` for a dollar cap.
+    max_input_tokens: int = Field(gt=0, default=2_000_000)
+    max_output_tokens: int = Field(gt=0, default=200_000)
     # Optional: operator-friendly USD cap. When set AND the token
     # ceilings are zero / unset / lower than the converted-from-USD
     # values, the loader replaces them with the converted ceilings
@@ -363,19 +416,22 @@ class Config(BaseModel):
     model_config = _BASE_MODEL_CONFIG
 
     agent6: Agent6Section = Field(default_factory=Agent6Section)
-    providers: dict[str, ProviderEntry] = Field(min_length=1)
-    models: ModelsConfig
-    sandbox: SandboxConfig
-    git: GitConfig
-    workflow: WorkflowConfig
-    budget: BudgetConfig
+    providers: dict[str, ProviderEntry] = Field(default_factory=dict)
+    models: ModelsConfig = Field(default_factory=ModelsConfig)
+    sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
+    git: GitConfig = Field(default_factory=GitConfig)
+    workflow: WorkflowConfig = Field(default_factory=WorkflowConfig)
+    budget: BudgetConfig = Field(default_factory=BudgetConfig)
     notify: NotifyConfig = Field(default_factory=NotifyConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
 
     @model_validator(mode="after")
     def _cross_validate_provider_routing(self) -> Config:
-        for role, rm in self.models.all().items():
-            if rm.provider not in self.providers:
+        # Only configured roles are checked here, and only when their
+        # provider is actually present; an empty/partial config is valid
+        # at load time (require_runnable enforces completeness per command).
+        for role, rm in self.models.configured().items():
+            if self.providers and rm.provider not in self.providers:
                 known = ", ".join(sorted(self.providers)) or "(none)"
                 raise ValueError(
                     f"models.{role}.provider = {rm.provider!r} but"
@@ -396,8 +452,12 @@ class Config(BaseModel):
         will dominate."""
         if self.budget.max_usd <= 0:
             return self
-        worker_model = self.models.worker.model
-        usd_in, usd_out = usd_budget_to_tokens(self.budget.max_usd, worker_model=worker_model)
+        worker = self.models.resolve("worker")
+        if worker is None:
+            # No worker model to price against yet; the conversion is
+            # applied once a runnable config is assembled.
+            return self
+        usd_in, usd_out = usd_budget_to_tokens(self.budget.max_usd, worker_model=worker.model)
         new_in = min(self.budget.max_input_tokens, usd_in)
         new_out = min(self.budget.max_output_tokens, usd_out)
         if new_in == self.budget.max_input_tokens and new_out == self.budget.max_output_tokens:
@@ -409,13 +469,60 @@ class Config(BaseModel):
         )
         return self.model_copy(update={"budget": new_budget})
 
+    def require_runnable(self, role: RoleName = "worker", *, need_verify: bool = True) -> None:
+        """Raise ConfigError unless *role* can actually run.
 
-def _format_validation_error(err: ValidationError, path: Path) -> str:
-    lines = [f"Config validation failed: {path}"]
+        Checks (in order) that a provider is configured, the role resolves
+        to a model whose provider exists, and — for execution roles — that
+        ``verify_command`` is set. Messages point at the command that fixes
+        the gap so a fresh user is never stuck.
+        """
+        if not self.providers:
+            raise ConfigError(
+                "No providers configured. Run `agent6 connect` to add one"
+                " (stored in your global config), or add a [providers.*]"
+                " block to .agent6/config.toml."
+            )
+        rm = self.models.resolve(role)
+        if rm is None:
+            raise ConfigError(
+                f"No model configured for the {role!r} role. Run `agent6 model`"
+                " to set it, or add a [models.worker] block to your config."
+            )
+        if rm.provider not in self.providers:
+            known = ", ".join(sorted(self.providers)) or "(none)"
+            raise ConfigError(
+                f"models.{role}.provider = {rm.provider!r} but [providers.{rm.provider}]"
+                f" is not configured. Known providers: {known}."
+            )
+        if need_verify and not self.workflow.verify_command:
+            raise ConfigError(
+                "workflow.verify_command is empty — agent6 needs to know what"
+                " 'a step succeeded' means in this repo. Run `agent6 init` (it"
+                " writes a starter) or set workflow.verify_command in"
+                " .agent6/config.toml."
+            )
+
+
+def _format_validation_error(err: ValidationError, source: str) -> str:
+    lines = [f"Config validation failed: {source}"]
     for issue in err.errors():
         loc = ".".join(str(part) for part in issue["loc"]) or "<root>"
         lines.append(f"  - {loc}: {issue['msg']} (type={issue['type']})")
     return "\n".join(lines)
+
+
+def validate_config(raw: dict[str, object], *, source: str = "<config>") -> Config:
+    """Validate an already-parsed (and possibly layer-merged) config dict.
+
+    Shared by :func:`load_config` and the layered loader
+    (``agent6.config_layer``) so both surface identical field-pointing
+    errors.
+    """
+    try:
+        return Config.model_validate(raw)
+    except ValidationError as exc:
+        raise ConfigError(_format_validation_error(exc, source)) from exc
 
 
 def load_config(path: Path) -> Config:
@@ -429,7 +536,4 @@ def load_config(path: Path) -> Config:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"Config file is not valid TOML ({path}): {exc}") from exc
-    try:
-        return Config.model_validate(raw)
-    except ValidationError as exc:
-        raise ConfigError(_format_validation_error(exc, path)) from exc
+    return validate_config(raw, source=str(path))

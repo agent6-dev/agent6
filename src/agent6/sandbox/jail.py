@@ -43,10 +43,13 @@ def _locate_jail_binary() -> Path | None:
     found = shutil.which("agent6-jail")
     if found:
         return Path(found)
-    # Look beside the repo (un-bundled dev checkout fallback)
+    # Look beside the repo (un-bundled dev checkout fallback). The crate
+    # lives at src/agent6/jail; this file is src/agent6/sandbox/jail.py, so
+    # the crate is one level up from the sandbox package.
+    pkg_root = Path(__file__).resolve().parents[1]
     candidates = [
-        Path(__file__).resolve().parents[3] / "jail" / "target" / "release" / "agent6-jail",
-        Path(__file__).resolve().parents[3] / "jail" / "target" / "debug" / "agent6-jail",
+        pkg_root / "jail" / "target" / "release" / "agent6-jail",
+        pkg_root / "jail" / "target" / "debug" / "agent6-jail",
     ]
     for cand in candidates:
         if cand.is_file():
@@ -125,7 +128,7 @@ def run_in_jail(policy: JailPolicy) -> CommandResult:
         raise JailUnavailableError(
             "agent6-jail binary not found. Install agent6 from a built wheel"
             " (which bundles the binary), or build from source with"
-            " `cargo build --release --locked --manifest-path jail/Cargo.toml`,"
+            " `cargo build --release --locked --manifest-path src/agent6/jail/Cargo.toml`,"
             f" or set {_ENV_VAR}=/path/to/agent6-jail."
         )
     spec = _policy_to_json(policy)

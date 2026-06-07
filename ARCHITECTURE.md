@@ -20,7 +20,14 @@ import workflows or the CLI. Crossing a boundary is almost always a
 sign of the wrong design.
 
 - **cli** ([src/agent6/cli.py](src/agent6/cli.py)) — argument parsing,
-  optional TUI spawn, top-level dispatch. Picks a workflow.
+  optional TUI spawn, top-level dispatch. Picks a workflow. Config is
+  resolved by [config_layer.py](src/agent6/config_layer.py) (built-in
+  secure defaults < global `~/.config/agent6/config.toml` < per-repo
+  `.agent6/config.toml` < `--config FILE`), with paths + sudo/root
+  resolution in [paths.py](src/agent6/paths.py) and API keys in
+  [secrets.py](src/agent6/secrets.py). Roles: `worker` drives
+  `run`/`resume`, `planner` drives `plan` (falls back to `worker`),
+  `reviewer` drives `review` + the in-loop critic.
 - **workflows** ([src/agent6/workflows/](src/agent6/workflows/)) — two
   exist: `loop` (the agent loop driving `agent6 run` / `agent6 resume`)
   and `review` (the read-only review pass driving `agent6 review`).
@@ -98,7 +105,7 @@ flowchart TD
     Tools -->|run_verify_command, run_metric_command, run_command| Jail[agent6-jail]
     Jail --> NS[user/mount/pid/ipc/uts/net NS]
     Jail --> Pivot[pivot_root into minimal rootfs]
-    Jail --> ROBinds[RO binds: .git, agent6.toml, .agent6/]
+    Jail --> ROBinds[RO binds: .git, .agent6/ config + run state]
     Jail --> Land[Landlock V1 rules]
     Jail --> Sec[seccomp filter]
     Jail --> Caps[capset 0 + NO_NEW_PRIVS]
@@ -153,7 +160,7 @@ against a pydantic schema before applying it.
 | Review workflow                  | [src/agent6/workflows/review.py](src/agent6/workflows/review.py)      |
 | Code-review agent                | [src/agent6/agents/code_review.py](src/agent6/agents/code_review.py)  |
 | Jail launcher (Python wrapper)   | [src/agent6/sandbox/jail.py](src/agent6/sandbox/jail.py)              |
-| Jail launcher (Rust binary)      | [jail/src/main.rs](jail/src/main.rs)                                  |
+| Jail launcher (Rust binary)      | [src/agent6/jail/src/main.rs](src/agent6/jail/src/main.rs)            |
 | Git policy                       | [src/agent6/git_ops.py](src/agent6/git_ops.py)                        |
 | Provider clients                 | [src/agent6/providers/](src/agent6/providers/)                        |
 | Knowledge graph (curator)        | [src/agent6/graph/](src/agent6/graph/)                                |

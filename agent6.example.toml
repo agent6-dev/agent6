@@ -1,5 +1,15 @@
-# Example configuration for agent6. Copy to agent6.toml and edit.
-# Every field is REQUIRED. Missing fields cause `agent6 check-config` to fail.
+# Example configuration for agent6.
+#
+# agent6 is SECURE BY DEFAULT: every field has a default (security-sensitive
+# ones default to the safe value), so you only set what you want to change.
+# Config is layered, lowest precedence first:
+#   built-in defaults  <  global ~/.config/agent6/config.toml  <  per-repo
+#   ./.agent6/config.toml  <  an explicit `--config FILE`.
+# Run `agent6 config show` to see every effective value and where it came
+# from. The fastest way to get going is `agent6 connect` (provider + key,
+# global) and `agent6 init` (per-repo verify_command); this file documents
+# the full surface for when you want to hand-edit. `agent6 check` validates
+# without running.
 
 [agent6]
 config_version = 1
@@ -23,6 +33,9 @@ config_version = 1
 
 [providers.anthropic]
 kind = "anthropic"
+# API key resolution: the env var named by `api_key_env` (when set), else
+# the key stored by `agent6 connect` in secrets.toml. Omit api_key_env to
+# rely solely on `agent6 connect`.
 api_key_env = "ANTHROPIC_API_KEY"
 prompt_caching = true
 # per-HTTP-call timeout (connect + read) in seconds. Default 600.
@@ -57,14 +70,18 @@ prompt_caching = true
 # Role routing
 # =============================================================================
 # Pick which provider (by table-key name above) and which model serves each
-# Two live roles:
+# role. Three roles, all optional (each falls back to `worker` when unset):
 #
 #   worker   -> drives `agent6 run` / `agent6 resume`; its model's pricing also
 #               drives the USD-to-token budget conversion.
-#   reviewer -> used by the one-shot `agent6 review` subcommand.
+#   planner  -> drives the read-only `agent6 plan` pass. Set this to a frontier
+#               model + high `thinking` for careful up-front planning.
+#   reviewer -> drives the one-shot `agent6 review` subcommand and the optional
+#               in-loop critic.
 #
-# Any provider may serve either role; cross-vendor mixes work fine
-# (e.g. anthropic worker + openrouter reviewer).
+# Any provider may serve any role; cross-vendor mixes work fine
+# (e.g. anthropic worker + openrouter reviewer). Set these once globally with
+# `agent6 model --role worker --provider <p> --model <m> [--thinking ...]`.
 
 [models.worker]
 provider = "anthropic"
@@ -82,6 +99,14 @@ model = "claude-sonnet-4-5"
 provider = "anthropic"
 model = "claude-opus-4-5"
 # temperature = 0.0
+
+# Optional: a dedicated planner model for `agent6 plan` (falls back to worker).
+# `thinking` sets reasoning effort (off|low|medium|high); OpenAI-compatible
+# reasoning models honor it via a reasoning-effort knob.
+# [models.planner]
+# provider = "anthropic"
+# model = "claude-opus-4-5"
+# thinking = "high"
 
 [sandbox]
 # "auto"     picks the strongest profile this kernel + container can run.
@@ -153,7 +178,8 @@ allow_history_rewrite = false
 # coauthor = "Alice <alice@example.com>"
 
 [workflow]
-# What "step succeeded" means. Required.
+# What "step succeeded" means. Required for `agent6 run` (checked at run
+# time, not load time); `agent6 plan` / `agent6 review` do not need it.
 verify_command = ["uv", "run", "pytest", "-x"]
 
 # Optional. critic-in-loop. When != "off", the workflow runs the
