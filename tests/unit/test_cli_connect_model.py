@@ -45,6 +45,56 @@ def test_connect_stores_key_and_provider_and_never_execs(
     assert calls == []
 
 
+def test_connect_prints_post_entry_key_summary(
+    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Simulate Python < 3.14 getpass (no echo_char): the helper must print a
+    # length + last-four summary so the operator can tell the paste landed.
+    def _fake_getpass(prompt: str = "", **kwargs: object) -> str:
+        if "echo_char" in kwargs:
+            raise TypeError("echo_char unsupported")
+        return "sk-ant-0123456789wxyz"
+
+    monkeypatch.setattr("agent6.cli.getpass.getpass", _fake_getpass)
+    rc = main(["connect", "--provider", "anthropic"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Captured key: 21 chars, ending …wxyz" in out
+    # The key itself is never echoed in full.
+    assert "sk-ant-0123456789wxyz" not in out
+
+
+def test_connect_short_key_summary_omits_tail(
+    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def _fake_getpass(prompt: str = "", **kwargs: object) -> str:
+        if "echo_char" in kwargs:
+            raise TypeError("echo_char unsupported")
+        return "short"
+
+    monkeypatch.setattr("agent6.cli.getpass.getpass", _fake_getpass)
+    rc = main(["connect", "--provider", "anthropic"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Captured key: 5 chars." in out
+    assert "ending" not in out
+
+
+def test_connect_masked_echo_skips_summary(
+    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Simulate Python 3.14+ getpass that accepts echo_char: no post-entry
+    # summary is printed because the keystrokes were already masked live.
+    def _fake_getpass(prompt: str = "", **kwargs: object) -> str:
+        return "sk-ant-0123456789wxyz"
+
+    monkeypatch.setattr("agent6.cli.getpass.getpass", _fake_getpass)
+    rc = main(["connect", "--provider", "anthropic"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Captured key:" not in out
+
+
 def test_connect_local_endpoint_no_key(
     iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

@@ -2090,12 +2090,39 @@ _CONNECT_PRESETS: dict[str, dict[str, str]] = {
 }
 
 
+def _prompt_api_key(name: str) -> str:
+    """Prompt for an API key without leaking it.
+
+    On Python 3.14+ ``getpass`` accepts ``echo_char`` so we mask each
+    keystroke with ``*`` — live feedback that the paste landed, without ever
+    revealing the key. On 3.12/3.13 input stays fully hidden and we print a
+    post-entry summary (length + last four chars) so the operator can still
+    tell a partial/garbled paste from a clean one. The key itself is never
+    logged.
+    """
+    prompt = f"API key for {name} (input hidden, blank for none): "
+    masked = False
+    try:
+        api_key = getpass.getpass(prompt, echo_char="*").strip()  # type: ignore[call-arg]
+        masked = True
+    except TypeError:
+        # Python < 3.14: no echo_char parameter.
+        api_key = getpass.getpass(prompt).strip()
+    except EOFError:
+        return ""
+    if api_key and not masked:
+        tail = f", ending …{api_key[-4:]}" if len(api_key) >= 8 else ""
+        print(f"Captured key: {len(api_key)} chars{tail}.")
+    return api_key
+
+
 def _cmd_connect(*, provider: str, to_repo: bool) -> int:
     """Interactively add a provider + API key.
 
     Security: this command NEVER executes anything supplied by a remote. It
-    only prompts locally (key via getpass, no echo), stores the key in the
-    0600 secrets file, and writes a minimal ``[providers.<name>]`` block.
+    only prompts locally (key via getpass — hidden, or masked with ``*`` on
+    Python 3.14+), stores the key in the 0600 secrets file, and writes a
+    minimal ``[providers.<name>]`` block.
     """
     print("agent6 connect — add a provider + API key.\n")
     name = provider.strip()
@@ -2128,7 +2155,7 @@ def _cmd_connect(*, provider: str, to_repo: bool) -> int:
             base_url = default_url
 
     try:
-        api_key = getpass.getpass(f"API key for {name} (input hidden, blank for none): ").strip()
+        api_key = _prompt_api_key(name)
     except EOFError:
         api_key = ""
     if api_key:

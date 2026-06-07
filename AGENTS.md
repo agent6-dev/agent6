@@ -22,6 +22,30 @@ a shape cleanly over carrying it:
 Once we ship 1.0 the rules change. Until then: if you're tempted to
 write a compatibility branch, delete the old shape instead.
 
+## Design principles
+
+These are the standing rationales behind the small decisions. State them
+here once; do not re-justify them per-command in code comments or docs.
+
+- **One obvious way (Zen of Python).** Prefer a single, well-named command
+  over near-duplicate aliases. We have `agent6 connect`, not also
+  `agent6 auth login` — agent6 stores an API key, it does not run an auth
+  flow or a session, so there is nothing to "log in"/"log out" of.
+- **Principle of least surprise.** A command does the boring, expected
+  thing. Config writes default to the **global** config with `--repo`
+  (and, where relevant, `--machine FILE`) to redirect — the same target
+  selection everywhere (`connect`, `model`, `config set/...`). Set-valued
+  config merges **last-overlay-wins**, like every other list: the most
+  specific layer that sets it wins, so a repo can tighten a global value
+  without a surprising union.
+- **Consistency.** New subcommands mirror the shape of existing ones
+  (positional core args, `--repo`/`--machine` target flags, argcomplete on
+  fixed-choice values) rather than inventing per-command conventions.
+- **Secure by default.** Every new knob ships with the safe value as its
+  default (egress closed, network confined), and stays auditable through
+  `agent6 config show`. Widening a security boundary is opt-in and carries
+  a security-review note in the commit message.
+
 ## Project conventions
 
 - **Language**: Python 3.12+. Every `.py` file starts with

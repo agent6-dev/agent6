@@ -207,10 +207,11 @@ a "safe push" would look like.
   `agent6 config show` (redacted), and never mounted into the jail —
   provider calls happen in agent6's own process, outside the sandbox.
 - **`agent6 connect` never executes remote input.** The connect flow only
-  prompts locally (key via `getpass`, no echo) and writes config/secrets.
-  It does not run any command, URL, or script returned by a provider or
-  any remote — by construction. This is a deliberate guard against the
-  class of bug where a login flow runs an attacker-supplied shell command.
+  prompts locally (key via `getpass` — hidden, or masked with `*` on Python
+  3.14+) and writes config/secrets. It does not run any command, URL, or
+  script returned by a provider or any remote — by construction. This is a
+  deliberate guard against the class of bug where a login flow runs an
+  attacker-supplied shell command.
   agent6 also opens no listening network socket of any kind (MCP is
   stdio; the egress broker is a private Unix socket).
 - **Root.** Running an LLM-driven agent as root is dangerous, so agent6
