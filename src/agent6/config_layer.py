@@ -25,9 +25,9 @@ from pathlib import Path
 from typing import Any, Literal
 
 from agent6.config import Config, ConfigError, validate_config
-from agent6.paths import global_config_path, repo_config_path
+from agent6.paths import agent6_dir, global_config_path, repo_config_path
 
-LayerName = Literal["default", "global", "repo", "flag"]
+LayerName = Literal["default", "global", "repo", "flag", "machine"]
 
 # Display order for `config show` / `config fill` (model definition order).
 _SECTION_ORDER = (
@@ -64,19 +64,69 @@ def _read_toml(path: Path) -> dict[str, Any]:
         raise ConfigError(f"Config file is not valid TOML ({path}): {exc}") from exc
 
 
+def _global_workspace_subdir() -> str | None:
+    """Read ``[agent6].workspace_subdir`` from the GLOBAL config only.
+
+    This is the one setting that must be resolved *before* the layered merge,
+    because it names the in-repo directory where the per-repo config lives.
+    It is honored only from the global config; ``_forbid_repo_subdir`` rejects
+    it anywhere else.
+    """
+    gpath = global_config_path()
+    if not gpath.is_file():
+        return None
+    data = _read_toml(gpath)
+    section = data.get("agent6")
+    if isinstance(section, dict):
+        sub = section.get("workspace_subdir")
+        if isinstance(sub, str):
+            return sub
+    return None
+
+
+def _forbid_repo_subdir(layer_name: str, data: dict[str, Any]) -> None:
+    """Refuse ``workspace_subdir`` in a repo/flag layer (global-only setting)."""
+    section = data.get("agent6")
+    if isinstance(section, dict) and "workspace_subdir" in section:
+        raise ConfigError(
+            f"[agent6].workspace_subdir may only be set in the global config"
+            f" ({global_config_path()}), not in the {layer_name} config — the"
+            " per-repo config lives inside the directory it would name."
+        )
+
+
+def resolved_agent6_dir(repo_root: Path) -> Path:
+    """The in-repo agent6 dir for *repo_root*, honoring the global rename."""
+    return agent6_dir(repo_root, _global_workspace_subdir())
+
+
+def repo_config_path_for(repo_root: Path) -> Path:
+    """The per-repo config path for *repo_root*, honoring the global rename."""
+    return repo_config_path(repo_root, _global_workspace_subdir())
+
+
 def discover_layers(repo_root: Path, explicit_path: Path | None) -> list[Layer]:
-    """The config layers that exist, in precedence order (low -> high)."""
+    """The config layers that exist, in precedence order (low -> high).
+
+    The repo config is located under the (possibly renamed) agent6 dir, whose
+    name comes from the global config's ``[agent6].workspace_subdir``.
+    """
     layers: list[Layer] = []
     gpath = global_config_path()
     if gpath.is_file():
         layers.append(Layer("global", gpath, _read_toml(gpath)))
-    rpath = repo_config_path(repo_root)
+    subdir = _global_workspace_subdir()
+    rpath = repo_config_path(repo_root, subdir)
     if rpath.is_file():
-        layers.append(Layer("repo", rpath, _read_toml(rpath)))
+        data = _read_toml(rpath)
+        _forbid_repo_subdir("repo", data)
+        layers.append(Layer("repo", rpath, data))
     if explicit_path is not None:
         if not explicit_path.is_file():
             raise ConfigError(f"--config file not found: {explicit_path}")
-        layers.append(Layer("flag", explicit_path, _read_toml(explicit_path)))
+        data = _read_toml(explicit_path)
+        _forbid_repo_subdir("--config", data)
+        layers.append(Layer("flag", explicit_path, data))
     return layers
 
 
@@ -106,23 +156,41 @@ def _flatten(data: dict[str, Any], prefix: str = "") -> dict[str, Any]:
     return out
 
 
-def load_effective(repo_root: Path, explicit_path: Path | None = None) -> EffectiveConfig:
-    """Merge + validate all layers and record per-leaf provenance."""
-    layers = discover_layers(repo_root, explicit_path)
+def _effective_from_layers(layers: list[Layer], *, source: str) -> EffectiveConfig:
+    """Merge *layers* low->high, validate, and build the per-leaf source map."""
     merged: dict[str, Any] = {}
     source_of_leaf: dict[str, str] = {}
     for layer in layers:
         merged = _deep_merge(merged, layer.data)
         for leaf in _flatten(layer.data):
             source_of_leaf[leaf] = layer.name
-    config = validate_config(merged, source="(merged config layers)")
+    config = validate_config(merged, source=source)
     # Source map over the *effective* config: every leaf the model
     # produced, attributed to the layer that set it or "default".
     effective_leaves = _flatten(config.model_dump(mode="python"))
-    sources: dict[str, str] = {}
-    for leaf in effective_leaves:
-        sources[leaf] = source_of_leaf.get(leaf, "default")
+    sources = {leaf: source_of_leaf.get(leaf, "default") for leaf in effective_leaves}
     return EffectiveConfig(config=config, sources=sources, layers=tuple(layers))
+
+
+def load_effective(repo_root: Path, explicit_path: Path | None = None) -> EffectiveConfig:
+    """Merge + validate all layers and record per-leaf provenance."""
+    layers = discover_layers(repo_root, explicit_path)
+    return _effective_from_layers(layers, source="(merged config layers)")
+
+
+def load_effective_with_overlay(repo_root: Path, overlay: dict[str, Any]) -> EffectiveConfig:
+    """Like :func:`load_effective` but with *overlay* as the highest layer.
+
+    Used by `agent6 machine run` to apply a machine file's ``[config]``
+    table on top of the repo/global/default layers. The overlay is merged
+    and validated exactly like a config file; its leaves are labelled
+    ``machine`` in the provenance map (``config show`` style).
+    """
+    layers = discover_layers(repo_root, None)
+    if overlay:
+        _forbid_repo_subdir("machine overlay", overlay)
+        layers = [*layers, Layer("machine", None, overlay)]
+    return _effective_from_layers(layers, source="(merged config layers + machine overlay)")
 
 
 # ---------------------------------------------------------------------------
@@ -265,13 +333,17 @@ def _is_table_array(value: Any) -> bool:
     )
 
 
-def materialize(config: Config) -> str:
+def materialize(config: Config, *, for_repo: bool = False) -> str:
     """Render the fully-resolved config as a complete TOML document.
 
     Used by ``agent6 config fill`` to snapshot every effective value into
     one explicit file (handy before tightening defaults or for an audit).
+    When ``for_repo`` is set, the global-only ``[agent6].workspace_subdir``
+    is dropped (it is invalid in a per-repo config).
     """
     data = config.model_dump(mode="python")
+    if for_repo and isinstance(data.get("agent6"), dict):
+        data["agent6"].pop("workspace_subdir", None)
     lines: list[str] = [
         "# agent6 effective config, materialized by `agent6 config fill`.",
         "# Every value below is explicit; edit freely.",

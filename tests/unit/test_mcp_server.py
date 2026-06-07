@@ -237,7 +237,7 @@ def test_query_dag_missing_run_returns_tool_error(tmp_path: Path) -> None:
 
 
 def test_query_dag_reads_persisted_nodes(tmp_path: Path) -> None:
-    layout = RunLayout(root=tmp_path, run_id="r1")
+    layout = RunLayout(state_dir=tmp_path / ".agent6", run_id="r1")
     layout.ensure()
     node = TaskNode(
         id="01ARZ3NDEKTSV4RRFFQ69G5FAV",

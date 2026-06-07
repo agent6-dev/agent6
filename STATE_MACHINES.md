@@ -258,6 +258,14 @@ output_schema = "classification"   # named schema in [schemas.*]; validates fini
 capture = { finish_json = "verdict" }   # parsed finish_run payload -> blackboard var `verdict`
 timeout_secs = 600
 on = { ok = "route", failed = "poll", budget_exhausted = "halt", timeout = "poll" }
+
+# Optional per-state overrides (inherit the effective config when unset):
+# provider = "anthropic"           # which [providers.*] entry backs this call
+# thinking = "high"                # off | low | medium | high (extended thinking)
+# temperature = 0.2
+# max_usd = 1.5                    # this agent slice's budget caps
+# max_input_tokens = 100000
+# max_output_tokens = 4096
 ```
 
 An `agent` state spins up a normal agent6 `run` with its own snapshot
@@ -266,6 +274,14 @@ it returns is the outcome label; its structured product is whatever
 `finish_run` emitted, validated against `output_schema`, captured into
 the blackboard. The LLM cannot pick the next state — it can only
 populate variables that a downstream `branch` reads.
+
+The optional per-state knobs above tune *how* that loop runs: `provider`
+/ `thinking` / `temperature` select and tune the model, and the
+`max_usd` / `max_input_tokens` / `max_output_tokens` caps bound this one
+agent slice. Each falls back to the effective config (machine `[config]`
+overlay < repo < global < defaults; §4.9) when omitted. Connection
+secrets are never expressed here — only a `provider` *name* that must
+already exist in the effective config.
 
 #### `tool`
 
@@ -521,6 +537,36 @@ Rules (all enforced at `machine check`):
   the named schema, so the field must exist and its type is known
   statically (a `list`/`json`/record field still may not be dotted
   further unless it is itself a record).
+
+### 4.9 Machine config overlay (`[config]`)
+
+A machine file may carry an optional top-level `[config]` table: an
+ordinary agent6 config fragment that layers on top of the effective
+repo/global/default config for the duration of the machine run. It is
+the **highest-precedence** config layer (`machine[config]` < `--config`
+is *not* applicable here — the machine overlay wins over repo and
+global), and every knob `agent6 config show` lists is valid inside it.
+
+```toml
+[config.workflow]
+critic = "on_verify_fail"
+verify_command = ["uv", "run", "pytest", "-q"]
+
+[config.budget]
+max_usd = 50.0
+```
+
+Unset keys read straight through to the lower layers, so a machine only
+states what it wants to change. Two hard rules:
+
+- **No connections/secrets.** A `[config.providers.*]` block is a
+  *load-time* error — provider endpoints, api-key env names, and any
+  secret value live in the global config / secrets store, never in a
+  `.asm.toml` file. The overlay can only *route to* a provider name that
+  already exists in the effective config.
+- Per-`agent`-state knobs (§4.3) override the overlay for that one state.
+  Precedence for an agent loop is therefore: per-state knob > machine
+  `[config]` > repo config > global config > built-in default.
 
 ---
 

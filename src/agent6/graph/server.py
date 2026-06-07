@@ -124,16 +124,16 @@ def _serve_connection(curator: GraphCurator, conn: socket.socket) -> None:
 
 
 def main(argv: tuple[str, ...] | None = None) -> int:
-    """`agent6-curator <repo-root> <run-id> <sock-path>` entrypoint."""
+    """`agent6-curator <state-dir> <run-id> <sock-path>` entrypoint."""
     args = list(sys.argv[1:] if argv is None else argv)
     if len(args) != 3:
         print(
-            "usage: agent6-curator <repo-root> <run-id> <sock-path>",
+            "usage: agent6-curator <state-dir> <run-id> <sock-path>",
             file=sys.stderr,
         )
         return 2
-    repo_root, run_id, sock_path = Path(args[0]), args[1], Path(args[2])
-    layout = RunLayout(root=repo_root, run_id=run_id)
+    state_dir, run_id, sock_path = Path(args[0]), args[1], Path(args[2])
+    layout = RunLayout(state_dir=state_dir, run_id=run_id)
     try:
         serve(layout, sock_path)
     except KeyboardInterrupt:

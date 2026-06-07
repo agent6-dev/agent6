@@ -35,7 +35,14 @@ from agent6.config import (
     NotifyConfig,
     RoleName,
 )
-from agent6.config_layer import load_effective, materialize, render_show
+from agent6.config_layer import (
+    load_effective,
+    load_effective_with_overlay,
+    materialize,
+    render_show,
+    repo_config_path_for,
+    resolved_agent6_dir,
+)
 from agent6.detect import Environment, detect, select_profile
 from agent6.events import EventSink
 from agent6.git_ops import (
@@ -98,7 +105,6 @@ from agent6.paths import (
     effective_user,
     global_config_path,
     is_root,
-    repo_config_path,
     root_optin_enabled,
     secrets_path,
 )
@@ -174,6 +180,7 @@ def _build_role_provider(
             timeout_s=entry.http_timeout_s,
             transcript_sink=transcript_sink,
             budget=budget,
+            thinking=rm.thinking,
         )
     return OpenAIProvider(
         api_key=key or "",
@@ -191,6 +198,76 @@ def _role_temperature(cfg: Config, role: RoleName) -> float | None:
     """The configured sampling temperature for *role* (worker fallback)."""
     rm = cfg.models.resolve(role)
     return rm.temperature if rm is not None else None
+
+
+def _add_budget_flags(parser: argparse.ArgumentParser) -> None:
+    """Add per-run budget override flags (override ``[budget]`` config)."""
+    parser.add_argument(
+        "--max-usd",
+        type=float,
+        default=None,
+        metavar="USD",
+        help="Override [budget].max_usd for this run (dollar cap; 0 disables).",
+    )
+    parser.add_argument(
+        "--max-input-tokens",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Override [budget].max_input_tokens for this run.",
+    )
+    parser.add_argument(
+        "--max-output-tokens",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Override [budget].max_output_tokens for this run.",
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _BudgetOverrides:
+    """Per-run budget overrides parsed from ``--max-*`` flags."""
+
+    max_usd: float | None = None
+    max_input_tokens: int | None = None
+    max_output_tokens: int | None = None
+
+    @classmethod
+    def from_args(cls, args: argparse.Namespace) -> _BudgetOverrides:
+        return cls(
+            max_usd=getattr(args, "max_usd", None),
+            max_input_tokens=getattr(args, "max_input_tokens", None),
+            max_output_tokens=getattr(args, "max_output_tokens", None),
+        )
+
+    def apply(self, cfg: Config) -> Config:
+        return cfg.with_budget_overrides(
+            max_usd=self.max_usd,
+            max_input_tokens=self.max_input_tokens,
+            max_output_tokens=self.max_output_tokens,
+        )
+
+
+def _agent6_dir(repo_root: Path) -> Path:
+    """The in-repo agent6 dir (config + run state), honoring the global rename.
+
+    The directory name comes solely from the global config's
+    ``[agent6].workspace_subdir`` (default ``.agent6``), so this is cheap and
+    works for read-only commands (``watch``/``history``/...) without a full
+    config merge.
+    """
+    return resolved_agent6_dir(repo_root)
+
+
+def _runs_dir(repo_root: Path) -> Path:
+    """The ``runs/`` directory under the resolved agent6 dir."""
+    return _agent6_dir(repo_root) / "runs"
+
+
+def _machines_dir(repo_root: Path) -> Path:
+    """The ``machines/`` directory under the resolved agent6 dir."""
+    return _agent6_dir(repo_root) / "machines"
 
 
 def _provider_endpoints(cfg: Config) -> set[Endpoint]:
@@ -570,7 +647,7 @@ def _repl_show_recent_events(root: Path, run_id: str, *, n: int) -> None:
     if not run_id:
         print("[agent6] /watch: no run id available", file=sys.stderr)
         return
-    events_path = root / ".agent6" / "runs" / run_id / "events.jsonl"
+    events_path = _runs_dir(root) / run_id / "events.jsonl"
     if not events_path.is_file():
         print(f"[agent6] /watch: no events.jsonl at {events_path}", file=sys.stderr)
         return
@@ -618,7 +695,9 @@ def _repl_list_mcp(mcp_manager: MCPManager | None) -> None:
 def _repl_run_init(root: Path) -> None:
     """REPL /init: run init_workspace (non-destructive without --force)."""
     try:
-        rc = init_workspace(root, force=False, profile="py")
+        rc = init_workspace(
+            root, force=False, profile="py", repo_config_target=repo_config_path_for(root)
+        )
     except Exception as exc:
         print(f"[agent6] /init failed: {exc}", file=sys.stderr)
         return
@@ -916,6 +995,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             " task description. Mutually exclusive with a positional task."
         ),
     )
+    _add_budget_flags(run_p)
 
     plan_p = sub.add_parser(
         "plan",
@@ -943,6 +1023,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
         metavar="RUN_ID",
         help="Open the plan.md for a prior plan run in $EDITOR (default: vi) and exit.",
     )
+    _add_budget_flags(plan_p)
 
     watch_p = sub.add_parser(
         "watch",
@@ -989,6 +1070,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
         action="store_true",
         help="Resume even if snapshot commit is missing or worktree has diverged.",
     )
+    _add_budget_flags(resume_p)
 
     config_p = sub.add_parser(
         "config",
@@ -1135,12 +1217,17 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
 
     init_p = sub.add_parser(
         "init",
-        help="Write starter agent6.toml, AGENTS.md, and update .gitignore in the cwd.",
+        help="Scaffold the per-repo config (.agent6/config.toml), AGENTS.md, and .gitignore.",
     )
     init_p.add_argument(
         "--force",
         action="store_true",
         help="Overwrite existing files (default: refuse and write a .suggested sibling).",
+    )
+    init_p.add_argument(
+        "--yes",
+        action="store_true",
+        help="Skip the interactive prompts; write all starter files non-interactively.",
     )
     init_p.add_argument(
         "--profile",
@@ -1151,7 +1238,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             "py (default): `uv run pytest -x`. "
             "rust: `cargo test`. "
             "node: `npm test --silent`. "
-            "Edit agent6.toml afterward to match your real pipeline."
+            "Edit the config afterward to match your real pipeline."
         ),
     )
 
@@ -1326,7 +1413,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
                     file=sys.stderr,
                 )
                 return 2
-            target = _most_recent_run_id(Path.cwd() / ".agent6" / "runs")
+            target = _most_recent_run_id(_runs_dir(Path.cwd()))
             if target is None:
                 print(
                     "ERROR: --continue: no prior runs under .agent6/runs/ in this cwd.",
@@ -1334,7 +1421,9 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
                 )
                 return 2
             print(f"[agent6] --continue: resuming {target}", file=sys.stderr)
-            return _cmd_resume(args.config, target, force=False)
+            return _cmd_resume(
+                args.config, target, force=False, budget_overrides=_BudgetOverrides.from_args(args)
+            )
         if args.from_plan:
             if args.task:
                 print(
@@ -1345,9 +1434,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             resolved = _resolve_plan_run_id(args.from_plan)
             if resolved is None:
                 return 2
-            plan_md = (Path.cwd() / ".agent6" / "runs" / resolved / "plan.md").read_text(
-                encoding="utf-8"
-            )
+            plan_md = (_runs_dir(Path.cwd()) / resolved / "plan.md").read_text(encoding="utf-8")
             task = (
                 f"The following plan was prepared by a planning pass at {resolved}."
                 f" Execute it.\n\n{plan_md}"
@@ -1362,6 +1449,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             task,
             run_id=args.run_id,
             interactive=args.interactive,
+            budget_overrides=_BudgetOverrides.from_args(args),
         )
     if args.command == "plan":
         if args.show and args.edit:
@@ -1382,11 +1470,17 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             args.task,
             run_id=args.run_id,
             mode="plan",
+            budget_overrides=_BudgetOverrides.from_args(args),
         )
     if args.command == "watch":
         return _cmd_watch(args.run_id, plain=args.plain, since=args.since)
     if args.command == "resume":
-        return _cmd_resume(args.config, args.run_id, force=args.force_resume)
+        return _cmd_resume(
+            args.config,
+            args.run_id,
+            force=args.force_resume,
+            budget_overrides=_BudgetOverrides.from_args(args),
+        )
     if args.command == "config":
         if args.config_command == "show":
             return _cmd_config_show(args.config, as_json=args.as_json)
@@ -1419,7 +1513,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
     if args.command == "history" and args.history_command == "graph":
         return _cmd_history_graph(args.run)
     if args.command == "init":
-        return _cmd_init(force=args.force, profile=args.profile)
+        return _cmd_init(force=args.force, profile=args.profile, assume_yes=args.yes)
     if args.command == "review":
         return _cmd_review(
             args.config,
@@ -1500,21 +1594,31 @@ def _build_machine_agent_runner(
     """
 
     def run_agent(request: AgentRequest) -> AgentExecResult:
+        # Apply this agent state's per-state overrides (model/provider/
+        # thinking/temperature/budget) on top of the effective config.
+        state_cfg = cfg.with_machine_agent_overrides(
+            provider=request.provider,
+            model=request.model,
+            thinking=request.thinking,
+            temperature=request.temperature,
+            max_usd=request.max_usd,
+            max_input_tokens=request.max_input_tokens,
+            max_output_tokens=request.max_output_tokens,
+        )
         budget = BudgetTracker(
-            max_input_tokens=cfg.budget.max_input_tokens,
-            max_output_tokens=cfg.budget.max_output_tokens,
+            max_input_tokens=state_cfg.budget.max_input_tokens,
+            max_output_tokens=state_cfg.budget.max_output_tokens,
         )
         transcript_sink = TranscriptSink(transcript_dir)
         provider = _build_role_provider(
-            cfg,
+            state_cfg,
             "worker",
             transcript_sink=transcript_sink,
             budget=budget,
-            model_override=request.model,
         )
         dispatcher = ToolDispatcher(
             root=root,
-            config=cfg,
+            config=state_cfg,
             sandbox_profile=profile,
             approver=None,
             events=None,
@@ -1524,10 +1628,13 @@ def _build_machine_agent_runner(
         )
         wf = Workflow(
             root=root,
-            config=cfg,
+            config=state_cfg,
             provider=provider,
             dispatcher=dispatcher,
             logger=lambda msg: print(msg, file=sys.stderr),
+            compact_drop_at_chars=state_cfg.workflow.compact_drop_at_chars,
+            compact_summarise_at_chars=state_cfg.workflow.compact_summarise_at_chars,
+            context_summary_max_tokens=state_cfg.workflow.context_summary_max_tokens,
         )
 
         box: dict[str, RunResult | BaseException] = {}
@@ -1591,7 +1698,7 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
     profile: SandboxProfile = detect().detected_profile
     if has_agent_state:
         try:
-            cfg = load_effective(cwd, None).config
+            cfg = load_effective_with_overlay(cwd, spec.config).config
             cfg.require_runnable("worker", need_verify=False)
         except ConfigError as exc:
             print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
@@ -1606,10 +1713,10 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
         except RuntimeError as exc:
             print(f"REFUSING: {exc}", file=sys.stderr)
             return 2
-        root = cwd / ".agent6" / "machines" / spec.machine
+        root = _machines_dir(cwd) / spec.machine
         agent_runner = _build_machine_agent_runner(cfg, cwd, profile, root / "agent_transcripts")
     _warn_if_unsandboxed(profile)
-    root = cwd / ".agent6" / "machines" / spec.machine
+    root = _machines_dir(cwd) / spec.machine
     journal = MachineJournal(root)
     try:
         with machine_lock(root):
@@ -1635,7 +1742,7 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
 
 
 def _cmd_machine_replay(machine_id: str) -> int:
-    root = Path.cwd() / ".agent6" / "machines" / machine_id
+    root = _machines_dir(Path.cwd()) / machine_id
     if not root.is_dir():
         print(f"ERROR: no machine instance at {root}", file=sys.stderr)
         return 1
@@ -1661,7 +1768,7 @@ def _cmd_machine_replay(machine_id: str) -> int:
 
 
 def _cmd_machine_status(machine_id: str) -> int:
-    root = Path.cwd() / ".agent6" / "machines" / machine_id
+    root = _machines_dir(Path.cwd()) / machine_id
     if not root.is_dir():
         print(f"ERROR: no machine instance at {root}", file=sys.stderr)
         return 1
@@ -1713,7 +1820,7 @@ def _cmd_machine_status(machine_id: str) -> int:
 
 
 def _cmd_machine_poke(machine_id: str) -> int:
-    root = Path.cwd() / ".agent6" / "machines" / machine_id
+    root = _machines_dir(Path.cwd()) / machine_id
     if not root.is_dir():
         print(f"ERROR: no machine instance at {root}", file=sys.stderr)
         return 1
@@ -1772,7 +1879,7 @@ def _cmd_machine_create(  # noqa: PLR0911, PLR0912, PLR0915
         return 2
     _warn_if_unsandboxed(profile)
 
-    scratch = cwd / ".agent6" / "machine-drafts" / new_friendly_id()
+    scratch = _agent6_dir(cwd) / "machine-drafts" / new_friendly_id()
     scratch.mkdir(parents=True, exist_ok=True)
     runner = _build_machine_agent_runner(cfg, cwd, profile, scratch / "agent_transcripts")
 
@@ -1943,7 +2050,7 @@ def _cmd_config_show(config_path: Path | None, *, as_json: bool) -> int:
 def _cmd_config_path() -> int:
     user = effective_user()
     gp = global_config_path(user)
-    rp = repo_config_path(Path.cwd())
+    rp = repo_config_path_for(Path.cwd())
     sp = secrets_path(user)
     for label, p in (("global config", gp), ("repo config  ", rp), ("secrets      ", sp)):
         note = "" if p.is_file() else "  (not present)"
@@ -1957,7 +2064,7 @@ def _cmd_config_fill(config_path: Path | None, *, to_repo: bool, force: bool) ->
     except ConfigError as exc:
         print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
         return 2
-    target = repo_config_path(Path.cwd()) if to_repo else global_config_path()
+    target = repo_config_path_for(Path.cwd()) if to_repo else global_config_path()
     if target.is_file() and not force:
         print(
             f"ERROR: {target} already exists. Re-run with --force to overwrite.",
@@ -1965,7 +2072,7 @@ def _cmd_config_fill(config_path: Path | None, *, to_repo: bool, force: bool) ->
         )
         return 2
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(materialize(eff.config), encoding="utf-8")
+    target.write_text(materialize(eff.config, for_repo=to_repo), encoding="utf-8")
     chown_to_real_user(target.parent)
     chown_to_real_user(target)
     print(f"Wrote fully-resolved config to {target}")
@@ -2034,7 +2141,7 @@ def _cmd_connect(*, provider: str, to_repo: bool) -> int:
     else:
         print("No key entered; assuming an unauthenticated/local endpoint.")
 
-    target = repo_config_path(Path.cwd()) if to_repo else global_config_path()
+    target = repo_config_path_for(Path.cwd()) if to_repo else global_config_path()
     target.parent.mkdir(parents=True, exist_ok=True)
     fields: dict[str, str | bool | None] = {"kind": kind}
     if kind == "openai" and base_url and base_url != "https://api.openai.com/v1":
@@ -2083,7 +2190,7 @@ def _cmd_model(
     if not provider or not model:
         print("ERROR: --provider and --model are required when --role is given.", file=sys.stderr)
         return 2
-    target = repo_config_path(Path.cwd()) if to_repo else global_config_path()
+    target = repo_config_path_for(Path.cwd()) if to_repo else global_config_path()
     target.parent.mkdir(parents=True, exist_ok=True)
     fields: dict[str, str | bool | None] = {"provider": provider, "model": model}
     if thinking:
@@ -2352,15 +2459,16 @@ def _doctor_check_config(cfg: Config) -> list[_DoctorCheck]:
 def _ensure_agent6_gitignored(
     root: Path,
     *,
+    agent6_dir: Path,
     identity: CommitIdentity | None = None,
     logger: Callable[[str], None] = print,
 ) -> None:
-    """Make sure `.agent6/` is in `.gitignore` before we write anything under it.
+    """Make sure the agent6 dir is in `.gitignore` before we write under it.
 
-    `agent6 run` and `agent6 plan` create `.agent6/runs/<id>/` early in startup
-    (transcripts, run log). If the project's `.gitignore` doesn't already
-    exclude `.agent6/`, those files become untracked content and the
-    `require_clean_worktree` pre-flight check then refuses to proceed — a
+    `agent6 run` and `agent6 plan` create ``<agent6-dir>/runs/<id>/`` early in
+    startup (transcripts, run log). If the project's `.gitignore` doesn't
+    already exclude the agent6 dir, those files become untracked content and
+    the `require_clean_worktree` pre-flight check then refuses to proceed — a
     self-DoS that confuses first-time users.
 
     Append the entry, then commit `.gitignore` immediately so the worktree
@@ -2370,9 +2478,10 @@ def _ensure_agent6_gitignored(
     belongs.
     """
     gitignore = root / ".gitignore"
-    entry = ".agent6/"
+    name = agent6_dir.name
+    entry = f"{name}/"
     existing = gitignore.read_text(encoding="utf-8") if gitignore.is_file() else ""
-    if any(line.strip() in {entry, "/.agent6/", ".agent6"} for line in existing.splitlines()):
+    if any(line.strip() in {entry, f"/{entry}", name} for line in existing.splitlines()):
         return
     suffix = "" if existing.endswith("\n") or not existing else "\n"
     gitignore.write_text(
@@ -2528,6 +2637,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     run_id: str = "",
     interactive: bool = False,
     mode: Literal["run", "plan"] = "run",
+    budget_overrides: _BudgetOverrides | None = None,
 ) -> int:
     """Single-loop agent: one provider, one LLM driving via tool
     calls over the audited tool surface, deterministic harness (jail +
@@ -2543,6 +2653,8 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     """
     try:
         cfg = load_effective(Path.cwd(), config_path).config
+        if budget_overrides is not None:
+            cfg = budget_overrides.apply(cfg)
     except ConfigError as exc:
         print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
         return 2
@@ -2599,8 +2711,9 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
 
     # Layout: standard run-dir scaffolding for transcripts + logs.
     effective_run_id = run_id or new_friendly_id()
-    layout = RunLayout(root=cwd, run_id=effective_run_id)
-    _ensure_agent6_gitignored(cwd, identity=identity)
+    agent6_dir = _agent6_dir(cwd)
+    layout = RunLayout(state_dir=agent6_dir, run_id=effective_run_id)
+    _ensure_agent6_gitignored(cwd, agent6_dir=agent6_dir, identity=identity)
     layout.ensure()
 
     # Optionally cut a fresh branch for the run so the human can later
@@ -2701,7 +2814,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     with contextlib.suppress(FileNotFoundError):
         sock_link.unlink()
     sock_link.symlink_to(sock_path)
-    curator_proc = spawn_curator(cwd, effective_run_id, sock_path)
+    curator_proc = spawn_curator(agent6_dir, effective_run_id, sock_path)
     print(f"[agent6] run id: {effective_run_id}", file=sys.stderr)
 
     # Spawn any configured MCP servers BEFORE the workflow
@@ -2767,6 +2880,9 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                     _select_revised_prompt if cfg.workflow.revise_prompt == "interactive" else None
                 ),
                 summariser_provider=summariser_provider,
+                compact_drop_at_chars=cfg.workflow.compact_drop_at_chars,
+                compact_summarise_at_chars=cfg.workflow.compact_summarise_at_chars,
+                context_summary_max_tokens=cfg.workflow.context_summary_max_tokens,
             )
             try:
                 result = wf.run(task)
@@ -2790,7 +2906,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
             mcp_manager.close()
         _stop_egress(egress_broker, egress_sock_dir)
         # Never leave root-owned run state in the user's repo (sudo case).
-        chown_to_real_user(cwd / ".agent6")
+        chown_to_real_user(agent6_dir)
 
     if interrupted:
         return 130
@@ -2853,7 +2969,7 @@ def _resolve_plan_run_id(run_id: str) -> str | None:
     Prints an error and returns None on failure. Used by ``run --from-plan``,
     ``plan --show``, and ``plan --edit``.
     """
-    runs_dir = Path.cwd() / ".agent6" / "runs"
+    runs_dir = _runs_dir(Path.cwd())
     try:
         resolved = resolve_run_id(runs_dir, run_id)
     except RunIdError as exc:
@@ -2874,7 +2990,7 @@ def _cmd_plan_show(run_id: str) -> int:
     resolved = _resolve_plan_run_id(run_id)
     if resolved is None:
         return 2
-    plan = Path.cwd() / ".agent6" / "runs" / resolved / "plan.md"
+    plan = _runs_dir(Path.cwd()) / resolved / "plan.md"
     sys.stdout.write(plan.read_text(encoding="utf-8"))
     return 0
 
@@ -2888,7 +3004,7 @@ def _cmd_plan_edit(run_id: str) -> int:
     resolved = _resolve_plan_run_id(run_id)
     if resolved is None:
         return 2
-    plan = Path.cwd() / ".agent6" / "runs" / resolved / "plan.md"
+    plan = _runs_dir(Path.cwd()) / resolved / "plan.md"
     editor = os.environ.get("EDITOR", "vi")
     try:
         result = subprocess.run([editor, str(plan)], check=False)
@@ -2924,7 +3040,7 @@ def _cmd_watch(run_id: str, *, plain: bool = False, since: int = 0) -> int:  # n
     line tail of ``events.jsonl``; useful in headless terminals
     or when ``textual`` isn't installed.
     """
-    runs_dir = Path.cwd() / ".agent6" / "runs"
+    runs_dir = _runs_dir(Path.cwd())
     if run_id:
         try:
             resolved = resolve_run_id(runs_dir, run_id)
@@ -3084,7 +3200,11 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0912, PLR0
 
 
 def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
-    config_path: Path | None, run_id: str, *, force: bool
+    config_path: Path | None,
+    run_id: str,
+    *,
+    force: bool,
+    budget_overrides: _BudgetOverrides | None = None,
 ) -> int:
     """Resume a paused/crashed run from its snapshot.
 
@@ -3099,15 +3219,16 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     ``max_output_tokens``. This is by design - the budget is a per-
     invocation runaway-cost circuit breaker.
     """
-    runs_dir = Path.cwd() / ".agent6" / "runs"
+    cwd = Path.cwd()
+    agent6_dir = _agent6_dir(cwd)
+    runs_dir = agent6_dir / "runs"
     try:
         resolved = resolve_run_id(runs_dir, run_id)
     except RunIdError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     run_id = resolved
-    cwd = Path.cwd()
-    layout = RunLayout(root=cwd, run_id=run_id)
+    layout = RunLayout(state_dir=agent6_dir, run_id=run_id)
     if not layout.run_dir.is_dir():
         print(f"ERROR: no such run dir: {layout.run_dir}", file=sys.stderr)
         return 2
@@ -3141,6 +3262,8 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
 
     try:
         cfg = load_effective(Path.cwd(), config_path).config
+        if budget_overrides is not None:
+            cfg = budget_overrides.apply(cfg)
         cfg.require_runnable("worker")
     except ConfigError as exc:
         print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
@@ -3169,7 +3292,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     except GitError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
-    _ensure_agent6_gitignored(cwd, identity=identity)
+    _ensure_agent6_gitignored(cwd, agent6_dir=agent6_dir, identity=identity)
 
     transcript_sink = TranscriptSink(layout.transcripts_dir)
     events = EventSink(layout.logs_path)
@@ -3226,7 +3349,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     with contextlib.suppress(FileNotFoundError):
         sock_link.unlink()
     sock_link.symlink_to(sock_path)
-    curator_proc = spawn_curator(cwd, run_id, sock_path)
+    curator_proc = spawn_curator(agent6_dir, run_id, sock_path)
     print(f"[agent6] resume run id: {run_id}", file=sys.stderr)
 
     mcp_manager = _start_mcp_manager_if_enabled(cfg)
@@ -3267,6 +3390,9 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
                 temperature=_role_temperature(cfg, "worker"),
                 critic_temperature=_role_temperature(cfg, "reviewer"),
                 summariser_provider=summariser_provider,
+                compact_drop_at_chars=cfg.workflow.compact_drop_at_chars,
+                compact_summarise_at_chars=cfg.workflow.compact_summarise_at_chars,
+                context_summary_max_tokens=cfg.workflow.context_summary_max_tokens,
             )
             try:
                 result = wf.resume()
@@ -3292,7 +3418,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
             mcp_manager.close()
         _stop_egress(egress_broker, egress_sock_dir)
         # Never leave root-owned run state in the user's repo (sudo case).
-        chown_to_real_user(cwd / ".agent6")
+        chown_to_real_user(agent6_dir)
 
     if interrupted:
         return 130
@@ -3324,7 +3450,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
 
 def _cmd_memory_add(scope: MemoryScope, body: str) -> int:
     try:
-        entry = memory_add(Path.cwd(), scope, body)
+        entry = memory_add(_agent6_dir(Path.cwd()), scope, body)
     except Agent6MemoryError as exc:
         print(f"MEMORY ERROR: {exc}", file=sys.stderr)
         return 2
@@ -3334,7 +3460,7 @@ def _cmd_memory_add(scope: MemoryScope, body: str) -> int:
 
 def _cmd_memory_list(scope: MemoryScope | None, *, include_invalidated: bool) -> int:
     try:
-        entries = memory_list(Path.cwd(), scope)
+        entries = memory_list(_agent6_dir(Path.cwd()), scope)
     except Agent6MemoryError as exc:
         print(f"MEMORY ERROR: {exc}", file=sys.stderr)
         return 2
@@ -3356,7 +3482,7 @@ def _cmd_memory_list(scope: MemoryScope | None, *, include_invalidated: bool) ->
 
 def _cmd_memory_invalidate(memory_id: str, reason: str) -> int:
     try:
-        entry = memory_invalidate(Path.cwd(), memory_id, reason)
+        entry = memory_invalidate(_agent6_dir(Path.cwd()), memory_id, reason)
     except Agent6MemoryError as exc:
         print(f"MEMORY ERROR: {exc}", file=sys.stderr)
         return 2
@@ -3378,7 +3504,7 @@ def _cmd_history_search(query: str, *, fixed: bool, run_id: str) -> int:
             file=sys.stderr,
         )
         return 2
-    runs_root = Path.cwd() / ".agent6" / "runs"
+    runs_root = _runs_dir(Path.cwd())
     if run_id:
         try:
             run_id = resolve_run_id(runs_root, run_id)
@@ -3408,7 +3534,7 @@ def _cmd_history_search(query: str, *, fixed: bool, run_id: str) -> int:
 def _cmd_history_graph(run_id: str) -> int:
     """Render the persisted TaskNode tree for a run as a DFS-ordered listing."""
 
-    runs_dir = Path.cwd() / ".agent6" / "runs"
+    runs_dir = _runs_dir(Path.cwd())
     if run_id:
         try:
             target_id = resolve_run_id(runs_dir, run_id)
@@ -3430,7 +3556,7 @@ def _cmd_history_graph(run_id: str) -> int:
         target_id = candidates[0].name
         print(f"[agent6] showing graph for most recent run: {target_id}", file=sys.stderr)
 
-    layout = RunLayout(root=Path.cwd(), run_id=target_id)
+    layout = RunLayout(state_dir=_agent6_dir(Path.cwd()), run_id=target_id)
     nodes = load_graph(layout)
     if not nodes:
         print(f"ERROR: run {target_id} has no persisted graph nodes", file=sys.stderr)
@@ -3464,10 +3590,19 @@ def _print_node_dfs(node: TaskNode, nodes: dict[str, TaskNode], *, depth: int) -
         _print_node_dfs(child, nodes, depth=depth + 1)
 
 
-def _cmd_init(*, force: bool, profile: str) -> int:
-    rc = init_workspace(Path.cwd(), force=force, profile=profile)
+def _cmd_init(*, force: bool, profile: str, assume_yes: bool = False) -> int:
+    cwd = Path.cwd()
+    target = repo_config_path_for(cwd)
+    interactive = not assume_yes and not force and sys.stdin.isatty()
+    rc = init_workspace(
+        cwd,
+        force=force,
+        profile=profile,
+        repo_config_target=target,
+        interactive=interactive,
+    )
     # Don't leave root-owned scaffolding in the user's repo (sudo case).
-    chown_to_real_user(Path.cwd() / ".agent6")
+    chown_to_real_user(target.parent)
     return rc
 
 
@@ -3479,7 +3614,7 @@ def _cmd_diff(*, run_id: str, stat: bool, paths: tuple[str, ...]) -> int:  # noq
     out to ``git diff`` with operator-controlled argv (no LLM input).
     """
     cwd = Path.cwd()
-    runs_dir = cwd / ".agent6" / "runs"
+    runs_dir = _runs_dir(cwd)
     if not runs_dir.is_dir():
         print(f"ERROR: no runs directory at {runs_dir}", file=sys.stderr)
         return 2
@@ -3499,7 +3634,7 @@ def _cmd_diff(*, run_id: str, stat: bool, paths: tuple[str, ...]) -> int:  # noq
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
 
-    layout = RunLayout(root=cwd, run_id=target_id)
+    layout = RunLayout(state_dir=_agent6_dir(cwd), run_id=target_id)
     if not layout.manifest_path.is_file():
         print(
             f"ERROR: run {target_id} has no manifest.json "
@@ -3601,7 +3736,7 @@ def _cmd_review(  # noqa: PLR0911
         max_input_tokens=cfg.budget.max_input_tokens,
         max_output_tokens=cfg.budget.max_output_tokens,
     )
-    layout_root = root / ".agent6" / "reviews"
+    layout_root = _agent6_dir(root) / "reviews"
     layout_root.mkdir(parents=True, exist_ok=True)
     transcript_sink = TranscriptSink(layout_root)
 

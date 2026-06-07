@@ -144,14 +144,16 @@ class GraphClient:
 
 
 def spawn_curator(
-    repo_root: Path,
+    state_dir: Path,
     run_id: str,
     sock_path: Path,
 ) -> subprocess.Popen[bytes]:
     """Launch `agent6-curator` for one run and return the Popen.
 
-    The caller is responsible for connecting (via `GraphClient`) and for
-    terminating the process on shutdown.
+    ``state_dir`` is the resolved run-state base (see
+    ``agent6.paths.state_dir``); the curator writes the run's graph under
+    ``<state_dir>/runs/<run_id>``. The caller is responsible for connecting
+    (via `GraphClient`) and for terminating the process on shutdown.
     """
     sock_path.parent.mkdir(parents=True, exist_ok=True)
     return subprocess.Popen(
@@ -159,7 +161,7 @@ def spawn_curator(
             sys.executable,
             "-m",
             "agent6.graph.server",
-            str(repo_root),
+            str(state_dir),
             run_id,
             str(sock_path),
         ],

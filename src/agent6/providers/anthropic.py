@@ -28,6 +28,17 @@ ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
 DEFAULT_MAX_TOKENS = 8192
 
+# Maps the cross-provider ``thinking`` level (off/low/medium/high) onto an
+# Anthropic extended-thinking ``budget_tokens`` value. Anthropic requires
+# ``budget_tokens >= 1024`` and ``budget_tokens < max_tokens``; the call
+# site lifts ``max_tokens`` above the chosen budget so the model always has
+# room to answer after it finishes thinking.
+_THINKING_BUDGET_TOKENS: dict[str, int] = {
+    "low": 4096,
+    "medium": 8192,
+    "high": 16384,
+}
+
 _REDACT_HEADER_NAMES = frozenset({"x-api-key", "authorization", "proxy-authorization"})
 _REDACTED = "<REDACTED>"
 
@@ -139,6 +150,11 @@ class AnthropicProvider:
     timeout_s: float = 120.0
     transcript_sink: TranscriptSink | None = None
     budget: BudgetTracker | None = None
+    # Extended-thinking level (off/low/medium/high). When not "off" the
+    # call enables Anthropic extended thinking with a budget drawn from
+    # ``_THINKING_BUDGET_TOKENS`` and drops ``temperature`` (Anthropic
+    # rejects temperature overrides while thinking is enabled).
+    thinking: str | None = None
 
     @classmethod
     def from_env(
@@ -150,6 +166,7 @@ class AnthropicProvider:
         timeout_s: float = 120.0,
         transcript_sink: TranscriptSink | None = None,
         budget: BudgetTracker | None = None,
+        thinking: str | None = None,
     ) -> AnthropicProvider:
         key = os.environ.get(env_var, "").strip()
         if not key:
@@ -161,6 +178,7 @@ class AnthropicProvider:
             timeout_s=timeout_s,
             transcript_sink=transcript_sink,
             budget=budget,
+            thinking=thinking,
         )
 
     def call(  # noqa: PLR0912
@@ -174,9 +192,10 @@ class AnthropicProvider:
         reasoning_effort: str | None = None,
         text_delta_callback: Callable[[str], None] | None = None,
     ) -> ProviderResponse:
-        # reasoning_effort is an OpenAI-reasoning-model knob; Anthropic
-        # extended thinking uses a different shape. Silently no-op so
-        # cross-provider loop code doesn't have to branch.
+        # ``reasoning_effort`` is the OpenAI-reasoning-model knob; Anthropic
+        # extended thinking uses a different shape and is configured on the
+        # provider itself (``self.thinking``), so the cross-provider call
+        # argument is ignored here.
         del reasoning_effort
         # Hard-stop: refuse the call up front if we're already over budget.
         if self.budget is not None:
@@ -206,13 +225,23 @@ class AnthropicProvider:
                     block["cache_control"] = {"type": "ephemeral"}
                 tool_payload.append(block)
 
+        thinking_budget = _THINKING_BUDGET_TOKENS.get(self.thinking or "off")
+        if thinking_budget is not None:
+            # Anthropic requires ``budget_tokens < max_tokens``; lift the
+            # ceiling so the model keeps room to answer after thinking.
+            max_tokens = max(max_tokens, thinking_budget + DEFAULT_MAX_TOKENS)
+
         body: dict[str, Any] = {
             "model": self.model,
             "max_tokens": max_tokens,
             "system": system_blocks,
             "messages": messages,
         }
-        if temperature is not None:
+        if thinking_budget is not None:
+            # Extended thinking is incompatible with temperature overrides,
+            # so only pass temperature when thinking is disabled.
+            body["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
+        elif temperature is not None:
             body["temperature"] = temperature
         if tool_payload:
             body["tools"] = tool_payload
@@ -304,6 +333,13 @@ class AnthropicProvider:
         text_acc: dict[int, list[str]] = {}
         tool_acc: dict[int, dict[str, Any]] = {}
         json_partial: dict[int, list[str]] = {}
+        # Extended-thinking builders. ``thinking_acc`` collects the visible
+        # reasoning text and ``signature_acc`` the cryptographic signature
+        # Anthropic requires to be echoed back on the next turn when a tool
+        # call follows a thinking block. Dropping either breaks multi-turn
+        # tool use under extended thinking, so both must round-trip.
+        thinking_acc: dict[int, list[str]] = {}
+        signature_acc: dict[int, list[str]] = {}
         stop_reason: str = ""
         usage_input = 0
         usage_output = 0
@@ -364,6 +400,14 @@ class AnthropicProvider:
                         btype = cb.get("type")
                         if btype == "text":
                             text_acc[idx] = [str(cb.get("text", ""))]
+                        elif btype == "thinking":
+                            thinking_acc[idx] = [str(cb.get("thinking", ""))]
+                            signature_acc[idx] = [str(cb.get("signature", ""))]
+                        elif btype == "redacted_thinking":
+                            # Opaque encrypted block — pass straight through.
+                            content_blocks.append(
+                                {"type": "redacted_thinking", "data": cb.get("data", "")}
+                            )
                         elif btype == "tool_use":
                             tool_acc[idx] = {
                                 "type": "tool_use",
@@ -384,6 +428,10 @@ class AnthropicProvider:
                                 # stream — cosmetic surface.
                                 with contextlib.suppress(Exception):
                                     text_delta_callback(piece)
+                        elif dt == "thinking_delta":
+                            thinking_acc.setdefault(idx, []).append(str(d.get("thinking", "")))
+                        elif dt == "signature_delta":
+                            signature_acc.setdefault(idx, []).append(str(d.get("signature", "")))
                         elif dt == "input_json_delta":
                             json_partial.setdefault(idx, []).append(str(d.get("partial_json", "")))
                     elif et == "content_block_stop":
@@ -395,6 +443,15 @@ class AnthropicProvider:
                                     "text": "".join(text_acc.pop(idx)),
                                 }
                             )
+                        elif idx in thinking_acc:
+                            block_out: dict[str, Any] = {
+                                "type": "thinking",
+                                "thinking": "".join(thinking_acc.pop(idx)),
+                            }
+                            sig = "".join(signature_acc.pop(idx, []))
+                            if sig:
+                                block_out["signature"] = sig
+                            content_blocks.append(block_out)
                         elif idx in tool_acc:
                             tu = tool_acc.pop(idx)
                             partial = "".join(json_partial.pop(idx, []))

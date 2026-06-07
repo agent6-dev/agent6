@@ -37,6 +37,7 @@ from agent6 import __version__
 from agent6.config import Config
 from agent6.config_layer import load_effective
 from agent6.graph.storage import RunLayout, load_graph
+from agent6.paths import agent6_dir
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 
 _PROTOCOL_VERSION = "2024-11-05"
@@ -85,12 +86,12 @@ def _deny_approver(_prompt: str) -> bool:
     return False
 
 
-def _runs_root(root: Path) -> Path:
-    return root / ".agent6" / "runs"
+def _runs_root(agent6_dir: Path) -> Path:
+    return agent6_dir / "runs"
 
 
-def _most_recent_run_id(root: Path) -> str | None:
-    runs = _runs_root(root)
+def _most_recent_run_id(agent6_dir: Path) -> str | None:
+    runs = _runs_root(agent6_dir)
     if not runs.is_dir():
         return None
     candidates = sorted((d for d in runs.iterdir() if d.is_dir()), reverse=True)
@@ -116,6 +117,7 @@ class MCPServer:
     ) -> None:
         self._root = root.resolve()
         self._config = config
+        self._agent6_dir = agent6_dir(self._root, config.agent6.workspace_subdir)
         self._stdin = stdin
         self._stdout = stdout
         self._dispatcher = ToolDispatcher(
@@ -333,11 +335,11 @@ class MCPServer:
         if isinstance(run_id_arg, str) and run_id_arg:
             run_id = run_id_arg
         else:
-            resolved = _most_recent_run_id(self._root)
+            resolved = _most_recent_run_id(self._agent6_dir)
             if resolved is None:
-                raise ToolError("no runs found under .agent6/runs/")
+                raise ToolError("no runs found under the agent6 runs dir")
             run_id = resolved
-        layout = RunLayout(root=self._root, run_id=run_id)
+        layout = RunLayout(state_dir=self._agent6_dir, run_id=run_id)
         if not layout.run_dir.is_dir():
             raise ToolError(f"run not found: {run_id}")
         nodes = load_graph(layout)
@@ -347,7 +349,7 @@ class MCPServer:
         }
 
     def _h_list_runs(self, _args: dict[str, Any]) -> dict[str, Any]:
-        runs = _runs_root(self._root)
+        runs = _runs_root(self._agent6_dir)
         if not runs.is_dir():
             return {"runs": []}
         entries: list[dict[str, Any]] = []

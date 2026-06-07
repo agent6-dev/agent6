@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.machine.model import MachineError, load_machine
+from agent6.machine.model import AgentState, MachineError, load_machine
 
 # The worked example from STATE_MACHINES.md §10. The canonical
 # happy path; error-case tests mutate a copy of this.
@@ -338,3 +338,78 @@ def test_initial_must_exist(tmp_path: Path) -> None:
     body = VALID_MACHINE.replace('initial = "poll"', 'initial = "ghost"')
     problems = _problems(tmp_path, body)
     assert any("initial state 'ghost'" in p for p in problems)
+
+
+# -- per-agent-state knobs + machine [config] overlay ----------------------
+
+
+def test_agent_state_per_state_knobs_parse(tmp_path: Path) -> None:
+    body = VALID_MACHINE.replace(
+        '''[states.classify]
+kind  = "agent"
+model = "claude-sonnet-4-5"''',
+        """[states.classify]
+kind  = "agent"
+model = "claude-sonnet-4-5"
+provider = "anthropic"
+thinking = "high"
+temperature = 0.2
+max_usd = 1.5
+max_input_tokens = 100000
+max_output_tokens = 4096""",
+    )
+    spec = load_machine(_write(tmp_path, body))
+    state = spec.states["classify"]
+    assert isinstance(state, AgentState)
+    assert state.provider == "anthropic"
+    assert state.thinking == "high"
+    assert state.temperature == 0.2
+    assert state.max_usd == 1.5
+    assert state.max_input_tokens == 100000
+    assert state.max_output_tokens == 4096
+
+
+def test_agent_state_knobs_default_none(tmp_path: Path) -> None:
+    spec = load_machine(_write(tmp_path, VALID_MACHINE))
+    state = spec.states["classify"]
+    assert isinstance(state, AgentState)
+    assert state.provider is None
+    assert state.thinking is None
+    assert state.temperature is None
+    assert state.max_usd is None
+
+
+def test_agent_state_unknown_thinking_rejected(tmp_path: Path) -> None:
+    body = VALID_MACHINE.replace(
+        'model = "claude-sonnet-4-5"',
+        'model = "claude-sonnet-4-5"\nthinking = "extreme"',
+    )
+    assert _problems(tmp_path, body)
+
+
+def test_machine_config_overlay_parses(tmp_path: Path) -> None:
+    body = (
+        VALID_MACHINE
+        + """
+[config.workflow]
+critic = "on_verify_fail"
+
+[config.budget]
+max_usd = 50.0
+"""
+    )
+    spec = load_machine(_write(tmp_path, body))
+    assert spec.config["workflow"]["critic"] == "on_verify_fail"
+    assert spec.config["budget"]["max_usd"] == 50.0
+
+
+def test_machine_config_overlay_rejects_providers(tmp_path: Path) -> None:
+    body = (
+        VALID_MACHINE
+        + """
+[config.providers.anthropic]
+kind = "anthropic"
+"""
+    )
+    problems = _problems(tmp_path, body)
+    assert any("providers" in p for p in problems)

@@ -14,6 +14,15 @@
 [agent6]
 config_version = 1
 
+# Directory name agent6 uses inside each repo for its config + run state
+# (config.toml, runs/, machines/, memories/). Defaults to ".agent6".
+# GLOBAL-CONFIG-ONLY: set this in ~/.config/agent6/config.toml, never in a
+# per-repo config (the repo config lives *inside* this directory, so a repo
+# can't rename its own home). Bare directory name only — no slashes, no "..",
+# no absolute paths. The whole directory (config and state together) is what
+# gets renamed; agent6 never stores state outside the repo.
+# workspace_subdir = ".agent6"
+
 # =============================================================================
 # Providers
 # =============================================================================
@@ -101,8 +110,10 @@ model = "claude-opus-4-5"
 # temperature = 0.0
 
 # Optional: a dedicated planner model for `agent6 plan` (falls back to worker).
-# `thinking` sets reasoning effort (off|low|medium|high); OpenAI-compatible
-# reasoning models honor it via a reasoning-effort knob.
+# `thinking` sets reasoning effort (off|low|medium|high). OpenAI-compatible
+# reasoning models honor it via a reasoning-effort knob; Anthropic models map
+# it onto an extended-thinking token budget (low/medium/high ≈ 4k/8k/16k
+# thinking tokens, with `max_tokens` lifted above the budget automatically).
 # [models.planner]
 # provider = "anthropic"
 # model = "claude-opus-4-5"
@@ -202,11 +213,33 @@ verify_command = ["uv", "run", "pytest", "-x"]
 #   "interactive" - revise, then prompt to accept/edit/use original.
 # revise_prompt = "off"
 
+# Context compaction thresholds (cumulative tool-result size, in chars).
+# agent6 keeps long runs inside the model's context window in two tiers:
+#   1. At `compact_drop_at_chars` the oldest tool_results are replaced by a
+#      short "re-call if needed" placeholder (the task DAG + recent turns are
+#      preserved).
+#   2. At `compact_summarise_at_chars` the elided history is summarised by the
+#      `reviewer` model and the conversation restarts from (task + summary).
+#      The task DAG is durable across this restart, so the worker recovers
+#      task-level state with `dag_list_tasks` rather than starting over.
+# `context_summary_max_tokens` caps that summary. Raise the thresholds for
+# big-context models; lower them to compact sooner on tight context budgets.
+# compact_drop_at_chars = 256000
+# compact_summarise_at_chars = 768000
+# context_summary_max_tokens = 2048
+
 [budget]
 # Hard stop. When either ceiling is reached the run aborts with exit code 3.
 # The run is resumable: bump the limit and `agent6 run --resume <run-id>`.
 max_input_tokens = 2000000
 max_output_tokens = 200000
+# Optional USD ceiling. When set, it is converted to token caps using the
+# worker model's price table at load time. Override any of these per-run from
+# the CLI without editing config:
+#   agent6 run --max-usd 5 "..."
+#   agent6 run --max-input-tokens 500000 --max-output-tokens 50000 "..."
+#   agent6 resume --max-usd 5 <run-id>
+# max_usd = 10.0
 
 # =============================================================================
 # Notify hook

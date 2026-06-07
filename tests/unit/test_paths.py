@@ -72,6 +72,10 @@ def test_chown_to_real_user_is_noop_when_not_root(
     f.write_text("hi", encoding="utf-8")
     # Must not raise and must not attempt a chown.
     called: list[object] = []
-    monkeypatch.setattr(os, "lchown", lambda *a: called.append(a))
+
+    def _fake_lchown(*a: object) -> None:
+        called.append(a)
+
+    monkeypatch.setattr(os, "lchown", _fake_lchown)
     paths.chown_to_real_user(f)
     assert called == []

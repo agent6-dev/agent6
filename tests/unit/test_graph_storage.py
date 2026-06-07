@@ -38,7 +38,7 @@ def _mk_node(
 
 
 def test_layout_ensure_creates_dirs(tmp_path: Path) -> None:
-    layout = RunLayout(root=tmp_path, run_id="run1")
+    layout = RunLayout(state_dir=tmp_path / ".agent6", run_id="run1")
     layout.ensure()
     assert layout.graph_dir.is_dir()
     assert layout.snapshots_dir.is_dir()
@@ -46,7 +46,7 @@ def test_layout_ensure_creates_dirs(tmp_path: Path) -> None:
 
 
 def test_write_and_load_single_node(tmp_path: Path) -> None:
-    layout = RunLayout(root=tmp_path, run_id="run1")
+    layout = RunLayout(state_dir=tmp_path / ".agent6", run_id="run1")
     layout.ensure()
     n = _mk_node("0" * 25 + "A", relevant_paths=("src/a.py", "src/b.py"))
     write_node(layout, {n.id: n}, n)
@@ -58,7 +58,7 @@ def test_write_and_load_single_node(tmp_path: Path) -> None:
 
 
 def test_frontmatter_quotes_special_chars(tmp_path: Path) -> None:
-    layout = RunLayout(root=tmp_path, run_id="run1")
+    layout = RunLayout(state_dir=tmp_path / ".agent6", run_id="run1")
     layout.ensure()
     n = _mk_node(
         "0" * 25 + "B",
@@ -72,7 +72,7 @@ def test_frontmatter_quotes_special_chars(tmp_path: Path) -> None:
 
 
 def test_load_graph_reconstructs_parent_dir_layout(tmp_path: Path) -> None:
-    layout = RunLayout(root=tmp_path, run_id="run1")
+    layout = RunLayout(state_dir=tmp_path / ".agent6", run_id="run1")
     layout.ensure()
     root = _mk_node("0" * 25 + "C", children=("0" * 25 + "D",))
     child = _mk_node("0" * 25 + "D", parent=root.id)

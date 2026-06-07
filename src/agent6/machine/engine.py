@@ -99,6 +99,14 @@ class AgentRequest:
     model: str
     prompt: str
     timeout_s: float
+    # Optional per-state overrides mirrored from ``AgentState``. ``None``
+    # means "fall back to the effective config" in the world implementation.
+    provider: str | None = None
+    thinking: str | None = None
+    temperature: float | None = None
+    max_usd: float | None = None
+    max_input_tokens: int | None = None
+    max_output_tokens: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -390,7 +398,17 @@ def _execute(
     if isinstance(state, AgentState):
         prompt = render_string(parse_template(state.prompt), blackboard, where="agent prompt")
         result = world.run_agent(
-            AgentRequest(model=state.model, prompt=prompt, timeout_s=float(state.timeout_secs))
+            AgentRequest(
+                model=state.model,
+                prompt=prompt,
+                timeout_s=float(state.timeout_secs),
+                provider=state.provider,
+                thinking=state.thinking,
+                temperature=state.temperature,
+                max_usd=state.max_usd,
+                max_input_tokens=state.max_input_tokens,
+                max_output_tokens=state.max_output_tokens,
+            )
         )
         outcome = _agent_outcome(spec, state, result)
         payload = result.payload if outcome == "ok" else None

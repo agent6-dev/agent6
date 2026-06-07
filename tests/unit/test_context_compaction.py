@@ -86,3 +86,16 @@ def test_compact_skips_non_tool_result_blocks() -> None:
     assert msgs[0]["content"][0]["type"] == "tool_use"
     # Oldest tool_result elided.
     assert elided == 1
+
+
+def test_restart_notice_is_dag_aware() -> None:
+    """The tier-2 summarise-and-restart notice must point the worker at its
+    durable task DAG so cross-compaction task state is recovered."""
+    from agent6.workflows.loop import (
+        _CONTEXT_RESTART_NOTICE as notice,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    assert "dag_list_tasks" in notice
+    assert "DAG" in notice
+    # Still tells the worker not to start over.
+    assert "Do NOT start over" in notice

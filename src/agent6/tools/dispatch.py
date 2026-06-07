@@ -25,6 +25,7 @@ from agent6.graph.models import (
     TaskNodeDraft,
     UpdateStatusIntent,
 )
+from agent6.paths import agent6_dir as _agent6_dir_path
 from agent6.sandbox.jail import JailUnavailableError, run_in_jail
 from agent6.tools.index import Symbol, SymbolIndex
 from agent6.tools.lsp import LspClient, LspError
@@ -163,26 +164,28 @@ def _resolve_in_root(root: Path, candidate: str) -> _SafePath:
     return _SafePath(abs_path=abs_path, rel_path=rel)
 
 
-def _refuse_agent6_write(candidate: str, resolved: _SafePath | None = None) -> None:
-    """Writes under ``.agent6/`` corrupt the harness's own observability
+def _refuse_agent6_write(candidate: str, dir_name: str, resolved: _SafePath | None = None) -> None:
+    """Writes under the agent6 dir corrupt the harness's own observability
     and resume state. The DAG curator writes ``graph.jsonl`` there, the event
     sink writes ``log.jsonl``, the transcript sink writes ``transcripts/*``.
     A stray ``apply_edit`` / ``apply_patch`` from the LLM into any of those
     would silently break the resumable-DAG moat. Reads are still allowed (the
     agent may legitimately want to inspect its own prior transcript on resume).
 
-    Checks both the raw candidate string AND the post-symlink-resolution
-    relative path, so a symlink ``./decoy -> .agent6`` can't be used to launder
-    a write through the prefix check.
+    ``dir_name`` is the agent6 dir's name (``.agent6`` by default, or whatever
+    ``[agent6].workspace_subdir`` renamed it to). Checks both the raw
+    candidate string AND the post-symlink-resolution relative path, so a
+    symlink ``./decoy -> .agent6`` can't be used to launder a write through
+    the prefix check.
     """
     parts = Path(candidate).parts
-    if parts and parts[0] == ".agent6":
-        raise ToolError(f"Refusing to write under .agent6/ (agent6 run state): {candidate!r}")
+    if parts and parts[0] == dir_name:
+        raise ToolError(f"Refusing to write under {dir_name}/ (agent6 run state): {candidate!r}")
     if resolved is not None:
         rel_parts = resolved.rel_path.parts
-        if rel_parts and rel_parts[0] == ".agent6":
+        if rel_parts and rel_parts[0] == dir_name:
             raise ToolError(
-                f"Refusing to write under .agent6/ via symlink: {candidate!r} "
+                f"Refusing to write under {dir_name}/ via symlink: {candidate!r} "
                 f"resolves to {resolved.rel_path!s}"
             )
 
@@ -261,6 +264,10 @@ class ToolDispatcher:
         # prefix to the manager. Discovered tool names are also added
         # to ``available_tool_names()`` so the workflow exposes them.
         self._mcp_manager = mcp_manager
+        # Name of the in-repo agent6 dir (``.agent6`` or the
+        # ``[agent6].workspace_subdir`` rename). Used by the write-refusal
+        # guard and the jail protect-paths so both track the configured name.
+        self._agent6_dir_name = _agent6_dir_path(self._root, config.agent6.workspace_subdir).name
         self._handlers: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
             ReadFileInput.TOOL_NAME: self._read_file,
             ListDirInput.TOOL_NAME: self._list_dir,
@@ -455,9 +462,9 @@ class ToolDispatcher:
 
     def _apply_edit(self, raw: dict[str, Any]) -> dict[str, Any]:
         args = ApplyEditInput.model_validate(raw)
-        _refuse_agent6_write(args.path)
+        _refuse_agent6_write(args.path, self._agent6_dir_name)
         sp = _resolve_in_root(self._root, args.path)
-        _refuse_agent6_write(args.path, sp)
+        _refuse_agent6_write(args.path, self._agent6_dir_name, sp)
         # Write-outside-cwd is enforced by _resolve_in_root already (root == cwd).
         applied: list[str] = []
         existing = sp.abs_path.read_text(encoding="utf-8") if sp.abs_path.exists() else None
@@ -524,9 +531,9 @@ class ToolDispatcher:
 
     def _apply_patch(self, raw: dict[str, Any]) -> dict[str, Any]:
         args = ApplyPatchInput.model_validate(raw)
-        _refuse_agent6_write(args.path)
+        _refuse_agent6_write(args.path, self._agent6_dir_name)
         sp = _resolve_in_root(self._root, args.path)
-        _refuse_agent6_write(args.path, sp)
+        _refuse_agent6_write(args.path, self._agent6_dir_name, sp)
         existing = sp.abs_path.read_text(encoding="utf-8") if sp.abs_path.exists() else None
         try:
             target_path, new_content = apply_patch_text(args.patch, existing)
@@ -853,7 +860,7 @@ class ToolDispatcher:
             protect_paths.append((self._root / ".git").resolve())
         if self._config.sandbox.protect_agent6:
             protect_paths.append((self._root / "agent6.toml").resolve())
-            protect_paths.append((self._root / ".agent6").resolve())
+            protect_paths.append((self._root / self._agent6_dir_name).resolve())
         # caller-provided timeout overrides the JailPolicy default
         # (600s). Used by verify_command + metric_command for fast failure
         # detection on pathological edits.

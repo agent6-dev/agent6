@@ -26,9 +26,18 @@ import tomllib
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Discriminator, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Discriminator,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from agent6.budget import usd_budget_to_tokens
+from agent6.paths import validate_workspace_subdir
 
 
 class ConfigError(Exception):
@@ -301,6 +310,18 @@ class WorkflowConfig(BaseModel):
     # Setting too low for slow legitimate tests will cause false-positive
     # failures, so leave at 600 unless the verify is reliably fast.
     verify_timeout_s: float = Field(gt=0.0, default=600.0)
+    # Tiered context-compaction thresholds (approximate chars of cumulative
+    # message content; tokens ~= chars/4). When the running input grows past
+    # ``compact_drop_at_chars`` the oldest tool_results are replaced by a
+    # short placeholder (the worker can re-call the tool to refetch). Past
+    # ``compact_summarise_at_chars`` the conversation is summarized and
+    # restarted (the durable task DAG survives; the restart notice points the
+    # worker at ``dag_list_tasks`` to recover task-level state).
+    # ``context_summary_max_tokens`` caps the summarizer's output. Raise the
+    # thresholds for big-context models; lower them to compact sooner.
+    compact_drop_at_chars: int = Field(gt=0, default=256_000)
+    compact_summarise_at_chars: int = Field(gt=0, default=768_000)
+    context_summary_max_tokens: int = Field(gt=0, default=2048)
     # Optional. None means "no metric; ``run_metric_command`` is unavailable".
     metric: MetricConfig | None = None
     # critic-in-loop. When != "off", Workflow runs the
@@ -344,6 +365,19 @@ class Agent6Section(BaseModel):
     model_config = _BASE_MODEL_CONFIG
 
     config_version: int = Field(ge=1, le=1, default=1)
+    # Rename the in-repo agent6 directory (default ``.agent6``) that holds
+    # this config + run state. A BARE directory name only (no path
+    # separators, no ``..``, not absolute). Can ONLY be set in the GLOBAL
+    # config: the per-repo config lives inside this dir, so it cannot name
+    # the dir that contains it. Setting it in a repo/flag config is an error.
+    workspace_subdir: str | None = None
+
+    @field_validator("workspace_subdir")
+    @classmethod
+    def _check_workspace_subdir(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        return validate_workspace_subdir(v)
 
 
 class NotifyConfig(BaseModel):
@@ -468,6 +502,71 @@ class Config(BaseModel):
             max_usd=self.budget.max_usd,
         )
         return self.model_copy(update={"budget": new_budget})
+
+    def with_budget_overrides(
+        self,
+        *,
+        max_usd: float | None = None,
+        max_input_tokens: int | None = None,
+        max_output_tokens: int | None = None,
+    ) -> Config:
+        """Return a copy with budget fields overridden (e.g. from CLI flags).
+
+        Re-validates through ``model_validate`` so the USD->token conversion
+        in ``_apply_usd_budget_override`` runs again on the new values.
+        ``None`` means "keep the existing value".
+        """
+        if max_usd is None and max_input_tokens is None and max_output_tokens is None:
+            return self
+        data = self.model_dump(mode="python")
+        budget = data.setdefault("budget", {})
+        if max_usd is not None:
+            budget["max_usd"] = max_usd
+        if max_input_tokens is not None:
+            budget["max_input_tokens"] = max_input_tokens
+        if max_output_tokens is not None:
+            budget["max_output_tokens"] = max_output_tokens
+        return Config.model_validate(data)
+
+    def with_machine_agent_overrides(
+        self,
+        *,
+        provider: str | None = None,
+        model: str | None = None,
+        thinking: str | None = None,
+        temperature: float | None = None,
+        max_usd: float | None = None,
+        max_input_tokens: int | None = None,
+        max_output_tokens: int | None = None,
+    ) -> Config:
+        """Return a copy with a machine ``agent`` state's per-state knobs applied.
+
+        Overrides the ``worker`` role (the role machine agent loops run as)
+        and the budget caps. ``None`` means "inherit the effective config".
+        Re-validates so the USD->token conversion and provider-name checks
+        run against the merged result.
+        """
+        data = self.model_dump(mode="python")
+        worker = data.setdefault("models", {}).get("worker")
+        if worker is None:
+            worker = {}
+            data["models"]["worker"] = worker
+        if provider is not None:
+            worker["provider"] = provider
+        if model is not None:
+            worker["model"] = model
+        if thinking is not None:
+            worker["thinking"] = thinking
+        if temperature is not None:
+            worker["temperature"] = temperature
+        budget = data.setdefault("budget", {})
+        if max_usd is not None:
+            budget["max_usd"] = max_usd
+        if max_input_tokens is not None:
+            budget["max_input_tokens"] = max_input_tokens
+        if max_output_tokens is not None:
+            budget["max_output_tokens"] = max_output_tokens
+        return Config.model_validate(data)
 
     def require_runnable(self, role: RoleName = "worker", *, need_verify: bool = True) -> None:
         """Raise ConfigError unless *role* can actually run.

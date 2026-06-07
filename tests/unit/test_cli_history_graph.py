@@ -51,7 +51,7 @@ def _seed_tree(tmp_path: Path, run_id: str) -> None:
         sub1b
       step2 (failed)
     """
-    layout = RunLayout(root=tmp_path, run_id=run_id)
+    layout = RunLayout(state_dir=tmp_path / ".agent6", run_id=run_id)
     layout.ensure()
     root_id = "0" * 25 + "R"
     s1_id = "0" * 25 + "1"
@@ -122,7 +122,7 @@ def test_history_graph_empty_graph_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    layout = RunLayout(root=tmp_path, run_id="empty-run-CCCC33")
+    layout = RunLayout(state_dir=tmp_path / ".agent6", run_id="empty-run-CCCC33")
     layout.ensure()
     rc = main(["history", "graph", "empty-run-CCCC33"])
     err = capsys.readouterr().err

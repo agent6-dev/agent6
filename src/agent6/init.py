@@ -137,45 +137,102 @@ def _write_or_suggest(path: Path, content: str, *, force: bool) -> str:
     return f"  {verb}: {path.name}"
 
 
-def _update_gitignore(root: Path) -> str:
+def _update_gitignore(root: Path, agent6_dir_name: str) -> str:
     """Append any missing entries from `_GITIGNORE_ENTRIES` to `.gitignore`.
 
     Idempotent: if the file already contains every entry (line-equal match
     after strip), no write happens. Existing content is never reordered or
-    removed.
+    removed. ``agent6_dir_name`` is the (possibly renamed) agent6 dir.
     """
+    entries = tuple(f"{agent6_dir_name}/" if e == ".agent6/" else e for e in _GITIGNORE_ENTRIES)
     gi = root / ".gitignore"
     existing_lines: set[str] = set()
     existing_text = ""
     if gi.exists():
         existing_text = gi.read_text(encoding="utf-8")
         existing_lines = {line.strip() for line in existing_text.splitlines()}
-    missing = [e for e in _GITIGNORE_ENTRIES if e not in existing_lines]
+    missing = [e for e in entries if e not in existing_lines]
     if not missing:
         return "  .gitignore: already has all agent6 entries"
+    verb = "appended to" if existing_text else "created"
     block = ["", "# agent6 (added by `agent6 init`)", *missing, ""]
     new_text = existing_text
     if new_text and not new_text.endswith("\n"):
         new_text += "\n"
     new_text += "\n".join(block)
     gi.write_text(new_text, encoding="utf-8")
-    return f"  .gitignore: appended {len(missing)} entries ({', '.join(missing)})"
+    return f"  .gitignore: {verb} {len(missing)} entries ({', '.join(missing)})"
 
 
-def init_workspace(root: Path, *, force: bool, profile: str = "py") -> int:
-    """Write starter files into `root`. Returns a CLI exit code."""
+def _ask(prompt: str, default: bool) -> bool:
+    """Yes/no prompt. Returns *default* on EOF or empty input."""
+    suffix = "[Y/n]" if default else "[y/N]"
+    try:
+        ans = input(f"{prompt} {suffix}: ").strip().lower()
+    except EOFError:
+        return default
+    if not ans:
+        return default
+    return ans in ("y", "yes")
+
+
+def init_workspace(
+    root: Path,
+    *,
+    force: bool,
+    profile: str = "py",
+    repo_config_target: Path | None = None,
+    interactive: bool = False,
+) -> int:
+    """Write starter files into `root`. Returns a CLI exit code.
+
+    ``repo_config_target`` is the per-repo config path to write (honors the
+    global ``workspace_subdir`` rename); defaults to ``<root>/.agent6/config.toml``.
+    When ``interactive`` and stdin is a TTY, prompt before writing the config
+    (global vs repo) and before amending an existing AGENTS.md / .gitignore.
+    """
     root = root.resolve()
+    cfg_path = repo_config_target or repo_config_path(root)
+    agent6_dir_name = cfg_path.parent.name
     print(f"agent6 init: {root}  (profile={profile})")
     starter_toml = _render_starter_toml(profile)
     starter_agents_md = _render_starter_agents_md(profile)
-    print(_write_or_suggest(repo_config_path(root), starter_toml, force=force))
-    print(_write_or_suggest(root / "AGENTS.md", starter_agents_md, force=force))
-    print(_update_gitignore(root))
+
+    if interactive and not force:
+        # 1. Config scope: a repo config is optional — providers/models/keys
+        #    usually live in the global config (agent6 connect / agent6 model).
+        if _ask(
+            f"Write a starter repo config at {cfg_path.relative_to(root)}?"
+            " (providers/keys usually live in your global config)",
+            default=True,
+        ):
+            print(_write_or_suggest(cfg_path, starter_toml, force=force))
+        else:
+            print("  skipped repo config (using global config + defaults)")
+        # 2. AGENTS.md: create, or offer to leave an existing one untouched.
+        agents = root / "AGENTS.md"
+        if agents.exists():
+            if _ask("AGENTS.md exists — write a .suggested sibling to diff?", default=False):
+                print(_write_or_suggest(agents, starter_agents_md, force=False))
+            else:
+                print("  kept existing AGENTS.md")
+        else:
+            print(_write_or_suggest(agents, starter_agents_md, force=force))
+        # 3. .gitignore: always offered (create or amend; idempotent).
+        if _ask(f"Add agent6 entries (incl. {agent6_dir_name}/) to .gitignore?", default=True):
+            print(_update_gitignore(root, agent6_dir_name))
+        else:
+            print("  skipped .gitignore (note: run state must be ignored to keep a clean tree)")
+    else:
+        print(_write_or_suggest(cfg_path, starter_toml, force=force))
+        print(_write_or_suggest(root / "AGENTS.md", starter_agents_md, force=force))
+        print(_update_gitignore(root, agent6_dir_name))
+
     print()
     print("Next:")
     print("  1. agent6 connect                 # add a provider + API key (global)")
     print("  2. agent6 model --role worker ... # pick your worker model (or set it globally)")
-    print("  3. Edit .agent6/config.toml: set `verify_command` for this repo.")
+    print(f"  3. Edit {cfg_path.relative_to(root)}: set `verify_command` for this repo.")
     print("  4. agent6 config show             # audit the effective config")
     print("  5. agent6 check                   # sandbox + config pre-flight")
     print('  6. agent6 run "<task>"')

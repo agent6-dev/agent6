@@ -45,14 +45,19 @@ from agent6.portable import fsync_dir, lock_exclusive, unlock
 
 @dataclass(frozen=True, slots=True)
 class RunLayout:
-    """Filesystem layout for one `agent6 run`."""
+    """Filesystem layout for one `agent6 run`.
 
-    root: Path  # repo root
+    ``state_dir`` is the resolved run-state base (``<repo>/.agent6`` by
+    default, or wherever ``[agent6].state_dir`` points). See
+    ``agent6.paths.state_dir``.
+    """
+
+    state_dir: Path
     run_id: str
 
     @property
     def run_dir(self) -> Path:
-        return self.root / ".agent6" / "runs" / self.run_id
+        return self.state_dir / "runs" / self.run_id
 
     @property
     def manifest_path(self) -> Path:

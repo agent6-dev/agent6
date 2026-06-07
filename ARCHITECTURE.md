@@ -25,7 +25,9 @@ sign of the wrong design.
   secure defaults < global `~/.config/agent6/config.toml` < per-repo
   `.agent6/config.toml` < `--config FILE`), with paths + sudo/root
   resolution in [paths.py](src/agent6/paths.py) and API keys in
-  [secrets.py](src/agent6/secrets.py). Roles: `worker` drives
+  [secrets.py](src/agent6/secrets.py). The in-repo directory name
+  (`.agent6` by default — config and run state together) is settable via
+  the global-only `[agent6].workspace_subdir`. Roles: `worker` drives
   `run`/`resume`, `planner` drives `plan` (falls back to `worker`),
   `reviewer` drives `review` + the in-loop critic.
 - **workflows** ([src/agent6/workflows/](src/agent6/workflows/)) — two
@@ -76,6 +78,14 @@ Notes:
   `dag_set_cursor` / `dag_list_tasks` write to a curator-owned side
   store. They do not gate the loop; they are notes the worker keeps
   for itself and the user.
+- **Context compaction.** Long runs are kept inside the model's context
+  window in two tiers (thresholds in `[workflow]`): at
+  `compact_drop_at_chars` the oldest tool_results are replaced by a
+  short "re-call if needed" placeholder; at `compact_summarise_at_chars`
+  the elided history is summarised by the `reviewer` model and the
+  conversation restarts from (task + summary). The curator-owned task
+  DAG survives the restart, so the worker recovers task-level state with
+  `dag_list_tasks` instead of starting over.
 - **`finish_run(summary)`** is the only terminal tool. Calling it
   emits a `run.end` event and returns control to the CLI.
 

@@ -40,7 +40,7 @@ def _init_repo(tmp_path: Path) -> Path:
 
 
 def _setup_curator_with_snapshot(repo: Path) -> tuple[GraphCurator, str]:
-    layout = RunLayout(root=repo, run_id="run1")
+    layout = RunLayout(state_dir=repo / ".agent6", run_id="run1")
     curator = GraphCurator(layout)
     node = curator.add_subtask(
         AddSubtaskIntent(

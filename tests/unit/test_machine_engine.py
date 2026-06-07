@@ -507,6 +507,30 @@ def test_agent_ok_captures_payload_and_routes(tmp_path: Path) -> None:
     assert world.agent_calls[0].prompt == "Review the change."
 
 
+def test_agent_per_state_knobs_threaded_to_request(tmp_path: Path) -> None:
+    body = REVIEWER.replace(
+        'prompt = "Review the change."',
+        'prompt = "Review the change."\n'
+        'provider = "anthropic"\n'
+        'thinking = "high"\n'
+        "temperature = 0.3\n"
+        "max_usd = 2.5\n"
+        "max_input_tokens = 90000\n"
+        "max_output_tokens = 5000",
+    )
+    journal, f = _load(tmp_path, body)
+    spec = load_machine(f)
+    world = FakeWorld({}, agent_results=[_agent("finish_run", {"approved": True})])
+    drive(spec, journal, world, live=True)
+    req = world.agent_calls[0]
+    assert req.provider == "anthropic"
+    assert req.thinking == "high"
+    assert req.temperature == 0.3
+    assert req.max_usd == 2.5
+    assert req.max_input_tokens == 90000
+    assert req.max_output_tokens == 5000
+
+
 def test_agent_ok_but_rejected_routes_fail(tmp_path: Path) -> None:
     journal, f = _load(tmp_path, REVIEWER)
     spec = load_machine(f)

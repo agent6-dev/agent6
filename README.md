@@ -68,13 +68,18 @@ on `PATH`. The hatch build hook invokes `cargo build` to compile
 
 ## Install
 
-From PyPI (pick your installer):
+Install from [PyPI](https://pypi.org/project/agent6/) with [uv](https://docs.astral.sh/uv/getting-started/installation/) or [pipx](https://pipx.pypa.io/stable/how-to/install-pipx/).
 
 ```bash
-uv tool install agent6     # recommended (isolated, on PATH)
-pipx install agent6        # also isolated, on PATH
-pip install agent6         # into the current environment
+uv tool install "agent6[tui]"
+pipx install "agent6[tui]"
 ```
+
+The `tui` extra pulls in `textual` for the live dashboard; drop it
+(`agent6`) for a headless install. Both tools drop the `agent6` entry
+point in a user bin directory (`~/.local/bin`); if it isn't on your
+`PATH` yet, run `uv tool update-shell` or `pipx ensurepath` (then restart
+your shell).
 
 From source:
 
@@ -85,8 +90,8 @@ uv sync --extra tui
 uv run agent6 --help
 ```
 
-The `tui` extra pulls in `textual` for the live dashboard. To override
-the bundled jail binary, set `AGENT6_JAIL_BIN=/path/to/agent6-jail`.
+To override the bundled jail binary, set
+`AGENT6_JAIL_BIN=/path/to/agent6-jail`.
 
 ### Shell tab-completion
 
@@ -246,6 +251,11 @@ Use `agent6 config show` to audit the effective value of every field and
 exactly where it came from; `agent6 check` validates without running.
 
 ```toml
+[agent6]
+# Optional, GLOBAL config only: rename the in-repo agent6 directory
+# (config + run state) from ".agent6" to a name of your choosing.
+# workspace_subdir = ".agent6"
+
 [sandbox]
 profile = "auto"              # auto | strict | hardened
 network = "provider_only"     # no | provider_only | allow
@@ -264,10 +274,17 @@ allow_history_rewrite = false
 
 [workflow]
 verify_command = ["uv", "run", "pytest", "-x"]
+# Context compaction thresholds (cumulative tool-result chars). Tier 1 elides
+# old tool_results; tier 2 summarises + restarts (DAG survives, recovered via
+# dag_list_tasks). Defaults shown.
+# compact_drop_at_chars = 256000
+# compact_summarise_at_chars = 768000
+# context_summary_max_tokens = 2048
 
 [budget]
 max_input_tokens  = 2000000
 max_output_tokens = 200000
+# max_usd = 10.0               # optional; converted to token caps at load
 
 [providers.anthropic]
 kind = "anthropic"
@@ -282,6 +299,12 @@ model = "claude-sonnet-4-5"
 provider = "anthropic"
 model = "claude-sonnet-4-5"
 ```
+
+Budget ceilings can be overridden per-run from the CLI without touching
+config: `agent6 run --max-usd 5 "..."`, or
+`--max-input-tokens` / `--max-output-tokens` on `run`, `plan`, and
+`resume`.
+
 
 ### Sandbox profiles
 
@@ -309,7 +332,15 @@ Two model roles are used:
 | Role       | Routed by             | Used by                                                                          |
 | ---------- | --------------------- | -------------------------------------------------------------------------------- |
 | `worker`   | `[models.worker]`     | `agent6 run` and `agent6 resume`. Also drives the USD↔token budget conversion.   |
-| `reviewer` | `[models.reviewer]`   | `agent6 review` (read-only diff review).                                         |
+| `reviewer` | `[models.reviewer]`   | `agent6 review` (read-only diff review) and the optional in-loop critic.         |
+| `planner`  | `[models.planner]`    | `agent6 plan` (read-only planning pass). Falls back to `worker` when unset.      |
+
+Each role takes an optional `thinking` level (`off`/`low`/`medium`/`high`).
+OpenAI-compatible reasoning models receive a reasoning-effort knob; Anthropic
+models map it onto an extended-thinking token budget (low/medium/high ≈
+4k/8k/16k thinking tokens, with `max_tokens` lifted above the budget
+automatically).
+
 
 ## Tool surface
 

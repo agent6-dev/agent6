@@ -340,3 +340,72 @@ max_output_tokens = 10000
     assert isinstance(anthro, AnthropicProviderEntry)
     assert anthro.prompt_caching is True
     assert anthro.http_timeout_s == 600.0
+
+
+def test_compaction_defaults(tmp_path: Path) -> None:
+    cfg = load_config(_write(tmp_path, _VALID_TOML))
+    assert cfg.workflow.compact_drop_at_chars == 256_000
+    assert cfg.workflow.compact_summarise_at_chars == 768_000
+    assert cfg.workflow.context_summary_max_tokens == 2048
+
+
+def test_compaction_thresholds_overridable(tmp_path: Path) -> None:
+    body = _VALID_TOML.replace(
+        'verify_command = ["true"]',
+        'verify_command = ["true"]\n'
+        "compact_drop_at_chars = 100000\n"
+        "compact_summarise_at_chars = 300000\n"
+        "context_summary_max_tokens = 1024",
+    )
+    cfg = load_config(_write(tmp_path, body))
+    assert cfg.workflow.compact_drop_at_chars == 100000
+    assert cfg.workflow.compact_summarise_at_chars == 300000
+    assert cfg.workflow.context_summary_max_tokens == 1024
+
+
+def test_compaction_threshold_must_be_positive(tmp_path: Path) -> None:
+    body = _VALID_TOML.replace(
+        'verify_command = ["true"]',
+        'verify_command = ["true"]\ncompact_drop_at_chars = 0',
+    )
+    with pytest.raises(ConfigError):
+        load_config(_write(tmp_path, body))
+
+
+def test_with_budget_overrides(tmp_path: Path) -> None:
+    cfg = load_config(_write(tmp_path, _VALID_TOML))
+    out = cfg.with_budget_overrides(max_input_tokens=5, max_output_tokens=7)
+    assert out.budget.max_input_tokens == 5
+    assert out.budget.max_output_tokens == 7
+    # Original is unchanged (frozen, returns a copy).
+    assert cfg.budget.max_input_tokens == 100000
+
+
+def test_with_budget_overrides_noop_returns_self(tmp_path: Path) -> None:
+    cfg = load_config(_write(tmp_path, _VALID_TOML))
+    assert cfg.with_budget_overrides() is cfg
+
+
+def test_with_machine_agent_overrides(tmp_path: Path) -> None:
+    cfg = load_config(_write(tmp_path, _VALID_TOML))
+    out = cfg.with_machine_agent_overrides(
+        model="claude-y",
+        thinking="high",
+        temperature=0.5,
+        max_usd=2.0,
+    )
+    assert out.models.worker is not None
+    assert out.models.worker.model == "claude-y"
+    assert out.models.worker.thinking == "high"
+    assert out.models.worker.temperature == 0.5
+    assert out.budget.max_usd == 2.0
+    # Provider name untouched when not overridden.
+    assert out.models.worker.provider == "anthropic"
+
+
+def test_with_machine_agent_overrides_provider(tmp_path: Path) -> None:
+    cfg = load_config(_write(tmp_path, _VALID_TOML))
+    out = cfg.with_machine_agent_overrides(provider="anthropic", model="claude-z")
+    assert out.models.worker is not None
+    assert out.models.worker.provider == "anthropic"
+    assert out.models.worker.model == "claude-z"

@@ -39,7 +39,7 @@ def _wait_for_socket(path: Path, timeout_s: float = 5.0) -> None:
 @pytest.fixture
 def curator_proc(tmp_path: Path):  # type: ignore[no-untyped-def]
     sock_path = tmp_path / ".agent6" / "runs" / "run1" / "curator.sock"
-    proc = spawn_curator(tmp_path, "run1", sock_path)
+    proc = spawn_curator(tmp_path / ".agent6", "run1", sock_path)
     try:
         _wait_for_socket(sock_path)
         yield sock_path, proc

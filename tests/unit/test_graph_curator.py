@@ -23,7 +23,7 @@ from agent6.graph.storage import RunLayout
 
 
 def _layout(tmp_path: Path) -> RunLayout:
-    return RunLayout(root=tmp_path, run_id="run1")
+    return RunLayout(state_dir=tmp_path / ".agent6", run_id="run1")
 
 
 def _draft(title: str = "do thing", deps: tuple[str, ...] = ()) -> TaskNodeDraft:

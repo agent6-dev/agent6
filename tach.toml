@@ -90,7 +90,7 @@ depends_on = [ "agent6.types"]
 path = "agent6.tools"
 # Dispatch.py uses graph.models intent types for the
 # DAG-as-tool handlers (add_task / update_task / set_cursor).
-depends_on = ["agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.config", "agent6.events", "agent6.graph.models"]
+depends_on = ["agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.config", "agent6.paths", "agent6.events", "agent6.graph.models"]
 
 [[modules]]
 path = "agent6.tools.schema"
@@ -102,7 +102,7 @@ depends_on = ["agent6.types"]
 
 [[modules]]
 path = "agent6.config"
-depends_on = ["agent6.budget"]
+depends_on = ["agent6.budget", "agent6.paths"]
 
 [[modules]]
 path = "agent6.paths"
@@ -158,6 +158,7 @@ depends_on = [
   "agent6",
   "agent6.config",
   "agent6.config_layer",
+  "agent6.paths",
   "agent6.tools",
   "agent6.graph.storage",
 ]

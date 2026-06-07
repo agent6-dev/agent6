@@ -90,6 +90,36 @@ def test_flag_layer_wins(repo: Path, tmp_path: Path) -> None:
     assert eff.sources["sandbox.run_commands"] == "flag"
 
 
+def test_overlay_is_highest_layer(repo: Path) -> None:
+    from agent6.config_layer import load_effective_with_overlay
+
+    overlay = {"sandbox": {"run_commands": "no"}, "workflow": {"critic": "periodic"}}
+    eff = load_effective_with_overlay(repo, overlay)
+    # Overlay beats the repo value.
+    assert eff.config.sandbox.run_commands == "no"
+    assert eff.sources["sandbox.run_commands"] == "machine"
+    # Overlay sets a brand-new value.
+    assert eff.config.workflow.critic == "periodic"
+    assert eff.sources["workflow.critic"] == "machine"
+    # Lower layers still read through where the overlay is silent.
+    assert eff.config.workflow.verify_command == ("pytest", "-q")
+
+
+def test_empty_overlay_matches_load_effective(repo: Path) -> None:
+    from agent6.config_layer import load_effective_with_overlay
+
+    eff = load_effective_with_overlay(repo, {})
+    assert eff.config.sandbox.run_commands == "yes"
+
+
+def test_overlay_forbids_workspace_subdir(repo: Path) -> None:
+    from agent6.config_layer import load_effective_with_overlay
+
+    overlay = {"agent6": {"workspace_subdir": ".other"}}
+    with pytest.raises(ConfigError, match="workspace_subdir"):
+        load_effective_with_overlay(repo, overlay)
+
+
 def test_materialize_roundtrips(repo: Path, tmp_path: Path) -> None:
     eff = load_effective(repo)
     text = materialize(eff.config)

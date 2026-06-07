@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Persistent agent memories under `.agent6/memories/`.
+"""Persistent agent memories under ``<state_dir>/memories/``.
 
 Three scopes, each backed by a single markdown file:
   - facts.md       (immutable observations)
@@ -63,14 +63,14 @@ class MemoryEntry:
         return not self.invalidated_at
 
 
-def _memories_dir(root: Path) -> Path:
-    return root / ".agent6" / "memories"
+def _memories_dir(state_dir: Path) -> Path:
+    return state_dir / "memories"
 
 
-def _scope_path(root: Path, scope: MemoryScope) -> Path:
+def _scope_path(state_dir: Path, scope: MemoryScope) -> Path:
     if scope not in _SCOPES:
         raise MemoryError(f"unknown memory scope: {scope!r} (want one of {_SCOPES})")
-    return _memories_dir(root) / f"{scope}.md"
+    return _memories_dir(state_dir) / f"{scope}.md"
 
 
 def _now() -> str:
@@ -153,12 +153,12 @@ def _atomic_write(path: Path, text: str) -> None:
     tmp.replace(path)
 
 
-def add(root: Path, scope: MemoryScope, body: str) -> MemoryEntry:
+def add(state_dir: Path, scope: MemoryScope, body: str) -> MemoryEntry:
     """Append a new entry. Returns the persisted entry (with assigned id)."""
     body = body.strip()
     if not body:
         raise MemoryError("memory body must be non-empty")
-    path = _scope_path(root, scope)
+    path = _scope_path(state_dir, scope)
     entries = _parse_file(path, scope)
     entry = MemoryEntry(id=new_ulid(), scope=scope, created_at=_now(), body=body)
     entries.append(entry)
@@ -166,21 +166,21 @@ def add(root: Path, scope: MemoryScope, body: str) -> MemoryEntry:
     return entry
 
 
-def list_entries(root: Path, scope: MemoryScope | None = None) -> tuple[MemoryEntry, ...]:
+def list_entries(state_dir: Path, scope: MemoryScope | None = None) -> tuple[MemoryEntry, ...]:
     scopes: tuple[MemoryScope, ...] = (scope,) if scope is not None else _SCOPES
     out: list[MemoryEntry] = []
     for s in scopes:
-        out.extend(_parse_file(_scope_path(root, s), s))
+        out.extend(_parse_file(_scope_path(state_dir, s), s))
     return tuple(out)
 
 
-def invalidate(root: Path, memory_id: str, reason: str) -> MemoryEntry:
+def invalidate(state_dir: Path, memory_id: str, reason: str) -> MemoryEntry:
     """Mark `memory_id` invalidated. Body is preserved."""
     reason = reason.strip()
     if not reason:
         raise MemoryError("invalidation reason must be non-empty")
     for scope in _SCOPES:
-        path = _scope_path(root, scope)
+        path = _scope_path(state_dir, scope)
         entries = _parse_file(path, scope)
         for i, e in enumerate(entries):
             if e.id != memory_id:

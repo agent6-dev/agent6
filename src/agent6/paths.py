@@ -117,9 +117,47 @@ def secrets_path(user: RealUser | None = None) -> Path:
     return global_config_dir(user) / "secrets.toml"
 
 
-def repo_config_path(repo_root: Path) -> Path:
-    """The committable-or-ignored per-repo override (``./.agent6/config.toml``)."""
-    return repo_root / ".agent6" / "config.toml"
+# Default name of the in-repo agent6 directory (config + run state). The
+# operator can rename it via ``[agent6].workspace_subdir`` in the GLOBAL
+# config only (the per-repo config lives inside this dir, so it cannot name
+# the dir that contains it).
+DEFAULT_WORKSPACE_SUBDIR = ".agent6"
+
+
+def validate_workspace_subdir(name: str) -> str:
+    """Validate a ``[agent6].workspace_subdir`` value.
+
+    Must be a bare directory name living directly under the repo root: no
+    path separators, no ``.``/``..``, not absolute. Returns the name on
+    success; raises ``ValueError`` otherwise.
+    """
+    if not name or name in (".", ".."):
+        raise ValueError("workspace_subdir must be a non-empty directory name")
+    if "/" in name or "\\" in name or (os.altsep and os.altsep in name):
+        raise ValueError(
+            f"workspace_subdir must be a bare directory name (no path separators): {name!r}"
+        )
+    if Path(name).is_absolute():
+        raise ValueError(f"workspace_subdir must be relative to the repo, not absolute: {name!r}")
+    return name
+
+
+def agent6_dir(repo_root: Path, workspace_subdir: str | None = None) -> Path:
+    """The in-repo agent6 directory holding config + run state.
+
+    ``<repo_root>/.agent6`` by default, or ``<repo_root>/<workspace_subdir>``
+    when the global config renames it.
+    """
+    return repo_root / (workspace_subdir or DEFAULT_WORKSPACE_SUBDIR)
+
+
+def repo_config_path(repo_root: Path, workspace_subdir: str | None = None) -> Path:
+    """The per-repo config file (``<repo>/<agent6-dir>/config.toml``).
+
+    The config lives inside the (possibly renamed) agent6 dir; the dir name
+    itself comes from the global config (see ``config_layer``).
+    """
+    return agent6_dir(repo_root, workspace_subdir) / "config.toml"
 
 
 def is_root() -> bool:

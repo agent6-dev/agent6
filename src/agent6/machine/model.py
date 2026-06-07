@@ -229,6 +229,19 @@ class AgentState(BaseModel):
     capture: Capture
     timeout_secs: int = Field(gt=0)
     on: dict[str, str]
+    # Optional per-state overrides for how this agent loop is driven. When
+    # unset each falls back to the effective config (machine ``[config]``
+    # overlay < repo < global < defaults). ``provider`` selects which
+    # ``[providers.*]`` entry backs the call; ``thinking`` and ``temperature``
+    # tune reasoning/sampling; the budget caps bound this single agent slice.
+    # Secrets/connection keys are never expressed here — only the provider
+    # *name*, which must already exist in the effective config.
+    provider: str | None = None
+    thinking: Literal["off", "low", "medium", "high"] | None = None
+    temperature: float | None = None
+    max_usd: float | None = Field(default=None, gt=0.0)
+    max_input_tokens: int | None = Field(default=None, gt=0)
+    max_output_tokens: int | None = Field(default=None, gt=0)
 
 
 class ToolState(BaseModel):
@@ -283,6 +296,25 @@ class MachineSpec(BaseModel):
     vars: VarsSection = Field(default_factory=VarsSection)
     schemas: dict[str, dict[str, _FieldSpecT]] = Field(default_factory=dict)
     states: dict[str, StateSpec]
+    # Machine-level agent6 config overlay. Anything set here layers on top of
+    # the effective repo/global/default config for the duration of the
+    # machine run (``machine[config]`` is the highest-precedence layer). It is
+    # an ordinary agent6 config fragment — every knob ``agent6 config show``
+    # lists is valid — but it MUST NOT carry connections/secrets: the
+    # ``[providers.*]`` blocks (endpoints + api-key env names) and any secret
+    # value stay in the global config / secrets store, never in a machine
+    # file. Unset keys simply read through to the lower layers.
+    config: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _forbid_connections_in_overlay(self) -> MachineSpec:
+        if "providers" in self.config:
+            raise ValueError(
+                "machine `[config]` overlay must not declare `[providers.*]` —"
+                " connections and secrets live in the global config / secrets"
+                " store, never in a .asm.toml file"
+            )
+        return self
 
 
 # --------------------------------------------------------------------------
