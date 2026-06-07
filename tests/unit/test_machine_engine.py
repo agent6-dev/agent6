@@ -252,11 +252,15 @@ class FakeWorld:
     wakes: list[Literal["tick", "signal"]] = field(default_factory=list)
     clock: float = 1000.0
     calls: list[tuple[str, ...]] = field(default_factory=list)
+    net_calls: list[tuple[tuple[str, ...], bool]] = field(default_factory=list)
     agent_results: list[AgentExecResult] = field(default_factory=list)
     agent_calls: list[AgentRequest] = field(default_factory=list)
 
-    def run_tool(self, argv: tuple[str, ...], timeout_s: float) -> ToolExecResult:
+    def run_tool(
+        self, argv: tuple[str, ...], timeout_s: float, *, allow_network: bool = False
+    ) -> ToolExecResult:
         self.calls.append(argv)
+        self.net_calls.append((argv, allow_network))
         return self.tool_results[argv[0]]
 
     def run_agent(self, request: AgentRequest) -> AgentExecResult:

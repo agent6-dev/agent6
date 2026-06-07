@@ -80,6 +80,7 @@ from agent6.machine import (
     MachineJournal,
     MachineSpec,
     StepEvent,
+    ToolState,
     build_authoring_prompt,
     drive,
     extract_toml,
@@ -1637,12 +1638,100 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
 # ---------------------------------------------------------------------------
 
 
+def _is_inside(path: Path, root: Path) -> bool:
+    """True iff *path* is *root* or lives beneath it (both already resolved)."""
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def _bundle_script_ref(element: str) -> str | None:
+    """Return the relative script path a static command element names, else None.
+
+    A bundle script reference is a relative path whose first component is
+    ``scripts`` (e.g. ``scripts/fetch.sh`` or ``./scripts/fetch.sh``). Absolute
+    paths (``/usr/bin/bash``) are interpreter/binary paths, not bundle refs.
+    """
+    cleaned = element[2:] if element.startswith("./") else element
+    if not cleaned or cleaned.startswith("/"):
+        return None
+    parts = Path(cleaned).parts
+    if parts and parts[0] == "scripts":
+        return cleaned
+    return None
+
+
+def _check_scripts_dir(scripts_dir: Path, bundle: Path) -> list[str]:
+    """Every entry under ``scripts/`` must resolve to a path inside the bundle."""
+    if not scripts_dir.is_dir():
+        return ["bundle 'scripts' exists but is not a directory"]
+    problems: list[str] = []
+    for entry in sorted(scripts_dir.rglob("*")):
+        rel = entry.relative_to(scripts_dir)
+        try:
+            resolved = entry.resolve()
+        except OSError as exc:
+            problems.append(f"scripts/{rel}: {exc}")
+            continue
+        if not _is_inside(resolved, bundle):
+            problems.append(f"scripts/{rel} resolves outside the bundle ({resolved}) — refusing")
+    return problems
+
+
+def _check_command_scripts(name: str, state: ToolState, bundle: Path) -> list[str]:
+    """Static tool-command script references must exist and stay in the bundle."""
+    problems: list[str] = []
+    for element in state.command:
+        if "{{" in element:
+            continue  # templated; cannot resolve statically
+        ref = _bundle_script_ref(element)
+        if ref is None:
+            continue
+        target = bundle / ref
+        if not _is_inside(target.resolve(), bundle):
+            problems.append(f"state {name!r}: script {element!r} escapes the bundle")
+        elif not target.exists():
+            problems.append(f"state {name!r}: script {element!r} not found in bundle")
+    return problems
+
+
+def _validate_bundle(spec: MachineSpec, machine_path: Path) -> list[str]:
+    """Validate a machine's script bundle (the ``.asm.toml`` + a sibling ``scripts/``).
+
+    Security-critical: every entry under ``scripts/`` must resolve to a path
+    INSIDE the bundle (rejects symlinks that escape via ``..``/absolute), and
+    every static tool-command element that references a bundled script must
+    exist and stay inside the bundle. Dynamic (templated) command elements are
+    skipped — they cannot be resolved without a blackboard.
+    """
+    try:
+        bundle = machine_path.parent.resolve()
+    except OSError as exc:
+        return [f"cannot resolve bundle directory for {machine_path}: {exc}"]
+    problems: list[str] = []
+    scripts_dir = bundle / "scripts"
+    if scripts_dir.exists():
+        problems.extend(_check_scripts_dir(scripts_dir, bundle))
+    for name, state in spec.states.items():
+        if isinstance(state, ToolState):
+            problems.extend(_check_command_scripts(name, state, bundle))
+    return problems
+
+
 def _cmd_machine_check(path: Path) -> int:
     try:
         spec = load_machine(path)
     except MachineError as exc:
         print(f"FAIL: {path}", file=sys.stderr)
         for problem in exc.problems:
+            print(f"  - {problem}", file=sys.stderr)
+        return 1
+    bundle_problems = _validate_bundle(spec, path)
+    if bundle_problems:
+        print(f"FAIL: {path} (bundle)", file=sys.stderr)
+        for problem in bundle_problems:
             print(f"  - {problem}", file=sys.stderr)
         return 1
     print(f"OK: {path} ({spec.machine}, {len(spec.states)} states)")
@@ -1775,21 +1864,26 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
         return 1
     cwd = Path.cwd()
     has_agent_state = any(getattr(state, "kind", None) == "agent" for state in spec.states.values())
+    has_network_tool = any(
+        isinstance(state, ToolState) and state.allow_network for state in spec.states.values()
+    )
     agent_runner: Callable[[AgentRequest], AgentExecResult] | None = None
     # Default profile for tool-only machines (no agent6.toml required): resolve
     # from the host. On non-Linux this is `none` (unsandboxed); on Linux it is
     # strict/hardened per userns support.
     profile: SandboxProfile = detect().detected_profile
-    if has_agent_state:
+    tool_network_allowed = False
+    # Load the effective config when an `agent` state needs it, OR when any
+    # tool opts into the network (so we can read sandbox.network/profile to
+    # gate that egress). Tool-only machines with no networked tool stay
+    # config-free and fully isolated, exactly as before.
+    if has_agent_state or has_network_tool:
         try:
             cfg = load_effective_with_overlay(cwd, spec.config).config
-            cfg.require_runnable("worker", need_verify=False)
+            if has_agent_state:
+                cfg.require_runnable("worker", need_verify=False)
         except ConfigError as exc:
             print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
-            return 2
-        missing = _check_provider_keys(cfg)
-        if missing is not None:
-            print(missing, file=sys.stderr)
             return 2
         env = detect()
         try:
@@ -1797,8 +1891,23 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
         except RuntimeError as exc:
             print(f"REFUSING: {exc}", file=sys.stderr)
             return 2
-        root = _machines_dir(cwd) / spec.machine
-        agent_runner = _build_machine_agent_runner(cfg, cwd, profile, root / "agent_transcripts")
+        tool_network_allowed = cfg.sandbox.network == "allow"
+        if has_network_tool and not tool_network_allowed:
+            print(
+                "[agent6] note: a tool state requests the network but"
+                f" sandbox.network = {cfg.sandbox.network!r}; it will run"
+                " network-isolated (set sandbox.network = 'allow' to permit it).",
+                file=sys.stderr,
+            )
+        if has_agent_state:
+            missing = _check_provider_keys(cfg)
+            if missing is not None:
+                print(missing, file=sys.stderr)
+                return 2
+            root = _machines_dir(cwd) / spec.machine
+            agent_runner = _build_machine_agent_runner(
+                cfg, cwd, profile, root / "agent_transcripts"
+            )
     _warn_if_unsandboxed(profile)
     root = _machines_dir(cwd) / spec.machine
     journal = MachineJournal(root)
@@ -1807,7 +1916,13 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
             journal.ensure_dirs()
             if not journal.exists():
                 write_source(root, path.read_text(encoding="utf-8"))
-            world = LiveWorld(cwd=cwd, journal=journal, agent_runner=agent_runner, profile=profile)
+            world = LiveWorld(
+                cwd=cwd,
+                journal=journal,
+                agent_runner=agent_runner,
+                profile=profile,
+                tool_network_allowed=tool_network_allowed,
+            )
             result = drive(spec, journal, world, live=True, exit_on_wait=exit_on_wait)
     except (JournalError, EngineError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

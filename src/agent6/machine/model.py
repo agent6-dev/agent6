@@ -253,6 +253,18 @@ class ToolState(BaseModel):
     capture: Capture | None = None
     timeout_secs: int = Field(gt=0)
     on: dict[str, str]
+    # Opt-in network access for this tool's jailed subprocess. Default false
+    # keeps the command fully network-isolated (empty netns), which is the
+    # deterministic/offline default for tool states. When true the child is
+    # granted egress ONLY if the effective ``sandbox.network = "allow"`` — the
+    # same gate the agent's own ``run_command`` uses. Under ``provider_only``/
+    # ``no`` an opt-in tool still runs isolated: the egress broker confines the
+    # agent's in-process provider calls, not arbitrary subprocesses, so handing
+    # a child host networking would defeat ``provider_only``. Set
+    # ``[config] sandbox.network = "allow"`` in the machine overlay (operator
+    # decision) alongside this flag to let an operator-reviewed bundle script
+    # reach the network.
+    allow_network: bool = False
 
 
 class WaitState(BaseModel):

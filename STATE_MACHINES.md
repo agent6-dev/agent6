@@ -314,6 +314,28 @@ A `list`-typed variable spliced as a bare argv element
 `scan-inbox` here is an illustrative stand-in — a `tool` state runs
 whatever audited command the operator names.
 
+**Network (opt-in, default off).** A `tool` runs fully network-isolated
+(empty netns) unless it sets `allow_network = true`. Even then the child
+gets egress only when the effective `sandbox.network = "allow"` — the same
+gate the agent's own `run_command` uses. Under `provider_only`/`no` an
+opt-in tool still runs isolated: the egress broker (and `sandbox.allow_urls`)
+confines the *agent's* in-process provider calls, not arbitrary
+subprocesses, so handing a child host networking would defeat
+`provider_only`. To let an operator-reviewed script reach the network, set
+both `allow_network = true` on the state and `sandbox.network = "allow"` in
+the machine `[config]` overlay — two explicit, auditable opt-ins.
+
+**Script bundles.** A machine is a *bundle*: the `.asm.toml` file plus an
+optional sibling `scripts/` directory holding operator-reviewed helper
+scripts (the kind `machine create` may draft). A `tool` references one by a
+relative path whose first segment is `scripts/`, e.g.
+`command = ["bash", "scripts/fetch.sh"]`; it resolves against the jail's
+mounted cwd at run time, so keep the bundle at (or under) the directory you
+run `agent6` from. `machine check` validates the bundle: every entry under
+`scripts/` must resolve *inside* the bundle (symlinks that escape via
+`..`/absolute are rejected) and every static `scripts/...` command
+reference must exist and stay inside the bundle.
+
 #### `wait`
 
 ```toml

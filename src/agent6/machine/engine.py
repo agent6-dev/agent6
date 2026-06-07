@@ -131,7 +131,9 @@ class AgentExecResult:
 class World(Protocol):
     """Everything the engine is allowed to observe from the outside."""
 
-    def run_tool(self, argv: tuple[str, ...], timeout_s: float) -> ToolExecResult: ...
+    def run_tool(
+        self, argv: tuple[str, ...], timeout_s: float, *, allow_network: bool = False
+    ) -> ToolExecResult: ...
 
     def run_agent(self, request: AgentRequest) -> AgentExecResult: ...
 
@@ -163,15 +165,22 @@ class LiveWorld:
     agent_runner: Callable[[AgentRequest], AgentExecResult] | None = None
     poll_interval_s: float = 0.5
     profile: SandboxProfile = "strict"
+    # Whether an opt-in (`allow_network = true`) tool state may actually reach
+    # the network. The CLI sets this to ``cfg.sandbox.network == "allow"`` —
+    # the same gate the agent's `run_command` uses. False (default) keeps every
+    # tool fully network-isolated regardless of its own opt-in.
+    tool_network_allowed: bool = False
 
-    def run_tool(self, argv: tuple[str, ...], timeout_s: float) -> ToolExecResult:
+    def run_tool(
+        self, argv: tuple[str, ...], timeout_s: float, *, allow_network: bool = False
+    ) -> ToolExecResult:
         env = tuple((key, os.environ[key]) for key in _SAFE_ENV_KEYS if key in os.environ)
         policy = JailPolicy(
             cwd=self.cwd,
             argv=argv,
             profile=self.profile,
             env=env,
-            allow_network=False,
+            allow_network=allow_network and self.tool_network_allowed,
             timeout_s=float(timeout_s),
         )
         try:
@@ -377,7 +386,9 @@ def _execute(
 ) -> tuple[str, str, Fact]:
     if isinstance(state, ToolState):
         argv = render_command(state.command, blackboard, where="command")
-        result = world.run_tool(tuple(argv), float(state.timeout_secs))
+        result = world.run_tool(
+            tuple(argv), float(state.timeout_secs), allow_network=state.allow_network
+        )
         if result.timed_out:
             label = "timeout"
         elif result.exit_code != 0:

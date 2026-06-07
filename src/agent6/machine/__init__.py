@@ -43,7 +43,13 @@ from agent6.machine.journal import (
     read_source,
     write_source,
 )
-from agent6.machine.model import MachineError, MachineSpec, load_machine, validate_semantics
+from agent6.machine.model import (
+    MachineError,
+    MachineSpec,
+    ToolState,
+    load_machine,
+    validate_semantics,
+)
 
 __all__ = [
     "MACHINE_AUTHOR_GUIDE",
@@ -65,6 +71,7 @@ __all__ = [
     "Snapshot",
     "StepEvent",
     "ToolExecResult",
+    "ToolState",
     "WaitFact",
     "World",
     "build_authoring_prompt",

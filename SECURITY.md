@@ -263,6 +263,34 @@ socket. The only sockets it opens are:
 There is no telemetry, no auto-update, no remote control plane, and no
 shared state outside the project directory.
 
+### 8. State-machine tool egress + script bundles
+
+State machines (`.asm.toml`, see [STATE_MACHINES.md](STATE_MACHINES.md))
+run each `tool` state's command through the same `agent6-jail` as every
+other child. Two Phase-4 surfaces are security-relevant and both fail
+closed:
+
+- **Opt-in tool network.** A `tool` is network-isolated by default. Its
+  `allow_network = true` is only the per-state opt-in; the child gets real
+  egress only when the effective `sandbox.network = "allow"` — the identical
+  gate the worker's `run_command` uses (`tools/dispatch.py`). Under
+  `provider_only`/`no` an opt-in tool still runs in an empty netns: the
+  egress broker confines the *agent's* in-process provider calls, not
+  arbitrary subprocesses, so a child is never silently handed host
+  networking that would defeat `provider_only`. Enabling egress therefore
+  takes two explicit operator opt-ins (the state flag plus
+  `sandbox.network = "allow"`), neither of which the LLM can set — the
+  machine `[config]` overlay is author-supplied and forbids `providers.*`.
+- **Bundle confinement.** Helper scripts live in an operator-reviewed
+  `scripts/` directory beside the `.asm.toml`. `machine check` validates
+  that every entry under `scripts/` resolves *inside* the bundle (symlinks
+  that escape via `..`/absolute are rejected) and that every static
+  `scripts/...` command reference exists and stays inside the bundle, so a
+  machine cannot smuggle a path that reads or executes outside its own
+  directory. Scripts are drafted at authoring time and reviewed/committed
+  by the operator, never fetched or generated from untrusted model output
+  at run time.
+
 ## Prompt-injection resilience
 
 The test suite under [`tests/security/test_prompt_injection.py`](tests/security/test_prompt_injection.py)
