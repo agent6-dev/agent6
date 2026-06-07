@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from agent6.cli import _validate_bundle  # pyright: ignore[reportPrivateUsage]
+from agent6.cli.machine_cmds import _validate_bundle  # pyright: ignore[reportPrivateUsage]
 from agent6.machine import MachineJournal, ToolState, drive, load_machine
 from agent6.machine.engine import LiveWorld, ToolExecResult
 

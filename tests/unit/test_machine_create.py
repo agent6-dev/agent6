@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent6 import cli
+from agent6.cli import machine_cmds as cli  # create + its preflight helpers live here now
 from agent6.cli import main
 from agent6.machine import (
     TOML_PAYLOAD_KEY,

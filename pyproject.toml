@@ -132,6 +132,18 @@ reportUnknownMemberType = false
 reportUnknownVariableType = false
 reportUnknownArgumentType = false
 
+# The `agent6.cli` package is a single CLI split across cohesive modules that
+# share underscore-prefixed helpers among themselves (command dispatch, run
+# scaffolding, toml/egress/provider helpers). That cross-module sharing is the
+# package's own internal API — not a public surface — so the
+# private-usage/unused-symbol checks (which assume `_name` is file-local) only
+# produce noise here. They stay strict everywhere else.
+[[tool.pyright.executionEnvironments]]
+root = "src/agent6/cli"
+reportPrivateUsage = false
+reportUnusedFunction = false
+reportUnusedClass = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers --strict-config"

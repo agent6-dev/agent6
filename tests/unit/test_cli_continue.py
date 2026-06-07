@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from agent6.cli import (
+from agent6.cli import main
+from agent6.cli.plan_watch import (
     _most_recent_run_id,  # pyright: ignore[reportPrivateUsage]
-    main,
 )
 
 

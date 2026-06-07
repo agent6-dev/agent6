@@ -23,14 +23,14 @@ def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 def test_connect_stores_key_and_provider_and_never_execs(
     iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr("agent6.cli.getpass.getpass", lambda prompt="": "sk-ant-FAKE")
+    monkeypatch.setattr("agent6.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-FAKE")
     # Security: connect must NEVER run a subprocess (no remote-supplied command).
     calls: list[object] = []
 
     def _record_run(*args: object, **kwargs: object) -> None:
         calls.append(args)
 
-    monkeypatch.setattr("agent6.cli.subprocess.run", _record_run)
+    monkeypatch.setattr("subprocess.run", _record_run)
 
     rc = main(["connect", "--provider", "anthropic"])
     assert rc == 0
@@ -55,7 +55,7 @@ def test_connect_prints_post_entry_key_summary(
             raise TypeError("echo_char unsupported")
         return "sk-ant-0123456789wxyz"
 
-    monkeypatch.setattr("agent6.cli.getpass.getpass", _fake_getpass)
+    monkeypatch.setattr("agent6.cli.connect.getpass.getpass", _fake_getpass)
     rc = main(["connect", "--provider", "anthropic"])
     assert rc == 0
     out = capsys.readouterr().out
@@ -72,7 +72,7 @@ def test_connect_short_key_summary_omits_tail(
             raise TypeError("echo_char unsupported")
         return "short"
 
-    monkeypatch.setattr("agent6.cli.getpass.getpass", _fake_getpass)
+    monkeypatch.setattr("agent6.cli.connect.getpass.getpass", _fake_getpass)
     rc = main(["connect", "--provider", "anthropic"])
     assert rc == 0
     out = capsys.readouterr().out
@@ -88,7 +88,7 @@ def test_connect_masked_echo_skips_summary(
     def _fake_getpass(prompt: str = "", **kwargs: object) -> str:
         return "sk-ant-0123456789wxyz"
 
-    monkeypatch.setattr("agent6.cli.getpass.getpass", _fake_getpass)
+    monkeypatch.setattr("agent6.cli.connect.getpass.getpass", _fake_getpass)
     rc = main(["connect", "--provider", "anthropic"])
     assert rc == 0
     out = capsys.readouterr().out
@@ -98,7 +98,7 @@ def test_connect_masked_echo_skips_summary(
 def test_connect_local_endpoint_no_key(
     iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr("agent6.cli.getpass.getpass", lambda prompt="": "")
+    monkeypatch.setattr("agent6.cli.connect.getpass.getpass", lambda prompt="": "")
     monkeypatch.setattr("builtins.input", lambda prompt="": "")  # accept default base_url
     rc = main(["connect", "--provider", "ollama"])
     assert rc == 0
@@ -144,7 +144,7 @@ def test_model_interactive_prefill(
     def fake_list_models(*a: object, **k: object) -> list[str]:
         return ["claude-a", "claude-b"]
 
-    monkeypatch.setattr("agent6.cli.list_models", fake_list_models)
+    monkeypatch.setattr("agent6.cli.model.list_models", fake_list_models)
     answers = iter(["", "2"])  # provider default, then model #2
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
     rc = main(["model", "worker"])

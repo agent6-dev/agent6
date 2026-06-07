@@ -26,7 +26,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from agent6.budget import BudgetTracker
-from agent6.cli import _build_repl_hook  # pyright: ignore[reportPrivateUsage]
+from agent6.cli.run import _build_repl_hook  # pyright: ignore[reportPrivateUsage]
 from agent6.git_ops import GitError, revert_head
 
 

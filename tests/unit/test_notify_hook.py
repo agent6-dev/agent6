@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.cli import _fire_notify_hook  # pyright: ignore[reportPrivateUsage]
+from agent6.cli.run import _fire_notify_hook  # pyright: ignore[reportPrivateUsage]
 from agent6.config import NotifyConfig
 
 

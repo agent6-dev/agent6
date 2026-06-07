@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.cli import (
+from agent6.cli.egress import (
     _allow_url_endpoints,  # pyright: ignore[reportPrivateUsage]
     _provider_endpoints,  # pyright: ignore[reportPrivateUsage]
 )

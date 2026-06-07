@@ -1,0 +1,222 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Eric Lesiuta
+# PYTHON_ARGCOMPLETE_OK
+"""agent6 command-line interface."""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+import argcomplete
+
+from agent6.cli._common import _BudgetOverrides, _enforce_root_policy, _runs_dir
+from agent6.cli.check_cmds import _cmd_check
+from agent6.cli.config_cmds import (
+    _cmd_config_add,
+    _cmd_config_fill,
+    _cmd_config_get,
+    _cmd_config_path,
+    _cmd_config_remove,
+    _cmd_config_set,
+    _cmd_config_show,
+    _cmd_config_unset,
+)
+from agent6.cli.connect import _cmd_connect
+from agent6.cli.machine_cmds import (
+    _cmd_machine_check,
+    _cmd_machine_create,
+    _cmd_machine_graph,
+    _cmd_machine_poke,
+    _cmd_machine_replay,
+    _cmd_machine_run,
+    _cmd_machine_status,
+    _cmd_machine_test,
+)
+from agent6.cli.misc_cmds import (
+    _cmd_diff,
+    _cmd_history_graph,
+    _cmd_history_search,
+    _cmd_init,
+    _cmd_mcp_serve,
+    _cmd_memory_add,
+    _cmd_memory_invalidate,
+    _cmd_memory_list,
+    _cmd_review,
+)
+from agent6.cli.model import _cmd_model
+from agent6.cli.parser import build_parser
+from agent6.cli.plan_watch import (
+    _cmd_plan_edit,
+    _cmd_plan_show,
+    _cmd_watch,
+    _most_recent_run_id,
+    _resolve_plan_run_id,
+)
+from agent6.cli.run import _cmd_resume, _cmd_run
+
+
+def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR0915
+    parser = build_parser()
+    argcomplete.autocomplete(parser)
+    args = parser.parse_args(argv)
+    root_rc = _enforce_root_policy(getattr(args, "allow_root", False))
+    if root_rc is not None:
+        return root_rc
+    if args.command == "run":
+        if args.continue_run:
+            if args.task:
+                print("ERROR: pass either a task OR --continue, not both.", file=sys.stderr)
+                return 2
+            if args.run_id:
+                print(
+                    "ERROR: --run-id is incompatible with --continue"
+                    " (--continue resolves the most recent run automatically).",
+                    file=sys.stderr,
+                )
+                return 2
+            target = _most_recent_run_id(_runs_dir(Path.cwd()))
+            if target is None:
+                print(
+                    "ERROR: --continue: no prior runs under .agent6/runs/ in this cwd.",
+                    file=sys.stderr,
+                )
+                return 2
+            print(f"[agent6] --continue: resuming {target}", file=sys.stderr)
+            return _cmd_resume(
+                args.config, target, force=False, budget_overrides=_BudgetOverrides.from_args(args)
+            )
+        if args.from_plan:
+            if args.task:
+                print(
+                    "ERROR: --from-plan is mutually exclusive with a task argument.",
+                    file=sys.stderr,
+                )
+                return 2
+            resolved = _resolve_plan_run_id(args.from_plan)
+            if resolved is None:
+                return 2
+            plan_md = (_runs_dir(Path.cwd()) / resolved / "plan.md").read_text(encoding="utf-8")
+            task = (
+                f"The following plan was prepared by a planning pass at {resolved}."
+                f" Execute it.\n\n{plan_md}"
+            )
+        else:
+            if not args.task:
+                print("ERROR: 'run' needs a task argument (or --continue).", file=sys.stderr)
+                return 2
+            task = args.task
+        return _cmd_run(
+            args.config,
+            task,
+            run_id=args.run_id,
+            interactive=args.interactive,
+            budget_overrides=_BudgetOverrides.from_args(args),
+        )
+    if args.command == "plan":
+        if args.show and args.edit:
+            print("ERROR: --show and --edit are mutually exclusive.", file=sys.stderr)
+            return 2
+        if args.show:
+            return _cmd_plan_show(args.show)
+        if args.edit:
+            return _cmd_plan_edit(args.edit)
+        if not args.task:
+            print(
+                "ERROR: 'plan' needs a task argument (or --show/--edit).",
+                file=sys.stderr,
+            )
+            return 2
+        return _cmd_run(
+            args.config,
+            args.task,
+            run_id=args.run_id,
+            mode="plan",
+            budget_overrides=_BudgetOverrides.from_args(args),
+        )
+    if args.command == "watch":
+        return _cmd_watch(args.run_id, plain=args.plain, since=args.since)
+    if args.command == "resume":
+        return _cmd_resume(
+            args.config,
+            args.run_id,
+            force=args.force_resume,
+            budget_overrides=_BudgetOverrides.from_args(args),
+        )
+    if args.command == "config":
+        if args.config_command == "show":
+            return _cmd_config_show(args.config, as_json=args.as_json)
+        if args.config_command == "fill":
+            return _cmd_config_fill(args.config, to_repo=args.repo, force=args.force)
+        if args.config_command == "path":
+            return _cmd_config_path()
+        if args.config_command == "get":
+            return _cmd_config_get(args.key, machine=args.machine)
+        if args.config_command == "set":
+            return _cmd_config_set(args.key, args.value, repo=args.repo, machine=args.machine)
+        if args.config_command == "unset":
+            return _cmd_config_unset(args.key, repo=args.repo, machine=args.machine)
+        if args.config_command == "add":
+            return _cmd_config_add(args.key, args.value, repo=args.repo, machine=args.machine)
+        if args.config_command == "remove":
+            return _cmd_config_remove(args.key, args.value, repo=args.repo, machine=args.machine)
+    if args.command == "check":
+        return _cmd_check(args.config, section=args.section)
+    if args.command == "connect":
+        return _cmd_connect(provider=args.provider, to_repo=args.repo)
+    if args.command == "model":
+        return _cmd_model(
+            args.config,
+            role=args.role,
+            provider=args.provider,
+            model=args.model,
+            thinking=args.thinking,
+            to_repo=args.repo,
+        )
+    if args.command == "memory":
+        if args.memory_command == "add":
+            return _cmd_memory_add(args.scope, args.body)
+        if args.memory_command == "list":
+            return _cmd_memory_list(args.scope or None, include_invalidated=args.all)
+        if args.memory_command == "invalidate":
+            return _cmd_memory_invalidate(args.memory_id, args.reason)
+    if args.command == "history" and args.history_command == "search":
+        return _cmd_history_search(args.query, fixed=not args.regex, run_id=args.run)
+    if args.command == "history" and args.history_command == "graph":
+        return _cmd_history_graph(args.run)
+    if args.command == "init":
+        return _cmd_init(force=args.force, profile=args.profile, assume_yes=args.yes)
+    if args.command == "review":
+        return _cmd_review(
+            args.config,
+            base=args.base,
+            head=args.head,
+            paths=tuple(args.paths),
+            model_override=args.model,
+        )
+    if args.command == "diff":
+        return _cmd_diff(
+            run_id=args.run_id,
+            stat=args.stat,
+            paths=tuple(args.paths),
+        )
+    if args.command == "mcp" and args.mcp_command == "serve":
+        return _cmd_mcp_serve(args.config)
+    if args.command == "machine" and args.machine_command == "check":
+        return _cmd_machine_check(args.file)
+    if args.command == "machine" and args.machine_command == "test":
+        return _cmd_machine_test(args.file, blackboard=args.blackboard)
+    if args.command == "machine" and args.machine_command == "graph":
+        return _cmd_machine_graph(args.file, fmt=args.format)
+    if args.command == "machine" and args.machine_command == "run":
+        return _cmd_machine_run(args.file, exit_on_wait=args.exit_on_wait)
+    if args.command == "machine" and args.machine_command == "status":
+        return _cmd_machine_status(args.machine_id)
+    if args.command == "machine" and args.machine_command == "poke":
+        return _cmd_machine_poke(args.machine_id)
+    if args.command == "machine" and args.machine_command == "replay":
+        return _cmd_machine_replay(args.machine_id)
+    if args.command == "machine" and args.machine_command == "create":
+        return _cmd_machine_create(args.task, output=args.output, max_attempts=args.max_attempts)
+    parser.error("unknown command")  # pragma: no cover
+    return 2

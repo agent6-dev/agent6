@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 
-from agent6.cli import _format_plain_event  # pyright: ignore[reportPrivateUsage]
+from agent6.cli.plan_watch import _format_plain_event  # pyright: ignore[reportPrivateUsage]
 
 
 def test_format_plain_event_renders_known_fields() -> None:

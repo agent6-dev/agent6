@@ -14,7 +14,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 from agent6.budget import BudgetTracker
-from agent6.cli import _InstrumentedProvider  # pyright: ignore[reportPrivateUsage]
+from agent6.cli.providers import _InstrumentedProvider  # pyright: ignore[reportPrivateUsage]
 from agent6.providers import ProviderResponse
 
 
