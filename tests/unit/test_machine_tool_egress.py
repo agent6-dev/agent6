@@ -107,7 +107,10 @@ def test_engine_passes_per_state_allow_network(tmp_path: Path) -> None:
     assert world.net_calls == [(("scripts/fetch.sh",), True), (("store",), False)]
 
 
-# --- LiveWorld gates opt-in egress on tool_network_allowed -----------------
+# --- LiveWorld (supervisor) honors the per-state allow_network flag --------
+# The engine is the host-netns supervisor; whether an opt-in is permitted at
+# all is gated at machine-run startup (sandbox.tool_network), so LiveWorld just
+# passes the per-state flag straight through to the jail.
 
 
 @dataclass
@@ -128,46 +131,20 @@ def _patch_jail(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
     return seen
 
 
-def test_liveworld_grants_network_only_when_allowed(
+def test_liveworld_networked_tool_inherits_host_netns(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen = _patch_jail(monkeypatch)
-    world = LiveWorld(
-        cwd=tmp_path,
-        journal=MachineJournal(tmp_path / "i"),
-        profile="strict",
-        tool_network_allowed=True,
-    )
+    world = LiveWorld(cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), profile="strict")
     world.run_tool(("curl", "x"), 5.0, allow_network=True)
     assert seen[-1].allow_network is True
 
 
-def test_liveworld_denies_network_under_provider_only(
+def test_liveworld_non_network_tool_is_isolated(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen = _patch_jail(monkeypatch)
-    # tool_network_allowed reflects cfg.sandbox.network != "allow": the opt-in
-    # tool is still isolated (the broker confines provider calls, not children).
-    world = LiveWorld(
-        cwd=tmp_path,
-        journal=MachineJournal(tmp_path / "i"),
-        profile="strict",
-        tool_network_allowed=False,
-    )
-    world.run_tool(("curl", "x"), 5.0, allow_network=True)
-    assert seen[-1].allow_network is False
-
-
-def test_liveworld_non_network_tool_never_gets_network(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    seen = _patch_jail(monkeypatch)
-    world = LiveWorld(
-        cwd=tmp_path,
-        journal=MachineJournal(tmp_path / "i"),
-        profile="strict",
-        tool_network_allowed=True,
-    )
+    world = LiveWorld(cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), profile="strict")
     world.run_tool(("true",), 5.0, allow_network=False)
     assert seen[-1].allow_network is False
 

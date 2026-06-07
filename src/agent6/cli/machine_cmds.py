@@ -4,18 +4,21 @@
 
 from __future__ import annotations
 
+import contextlib
 import datetime as _dt
+import json
+import os
+import signal
+import subprocess
 import sys
-import threading
+import tempfile
 import tomllib
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
-from agent6.budget import BudgetTracker
 from agent6.cli._common import _agent6_dir, _check_provider_keys, _machines_dir
-from agent6.cli.egress import _warn_if_unsandboxed
-from agent6.cli.providers import _build_role_provider
+from agent6.cli.egress import _check_network_profile, _warn_if_unsandboxed
 from agent6.config import (
     Config,
     ConfigError,
@@ -48,13 +51,8 @@ from agent6.machine import (
     render,
     write_source,
 )
-from agent6.providers import (
-    TranscriptSink,
-)
 from agent6.run_id import new_friendly_id
-from agent6.tools.dispatch import ToolDispatcher
 from agent6.types import SandboxProfile
-from agent6.workflows.loop import RunResult, Workflow
 
 
 def _is_inside(path: Path, root: Path) -> bool:
@@ -233,106 +231,108 @@ def _cmd_machine_graph(path: Path, *, fmt: str) -> int:
 
 
 def _build_machine_agent_runner(
-    cfg: Config, root: Path, profile: SandboxProfile, transcript_dir: Path
+    overlay: dict[str, Any], cwd: Path, profile: SandboxProfile, transcript_dir: Path
 ) -> Callable[[AgentRequest], AgentExecResult]:
-    """Build the live runner an `agent` state uses to drive a normal agent6 loop.
+    """Build the runner an `agent` state uses to drive a confined agent6 loop.
 
-    Each invocation gets a fresh budget slice, provider (with the state's model),
-    dispatcher, and `Workflow`; it runs until the agent calls `finish_run` (or
-    the loop stops for another reason) and surfaces the structured payload.
-
-    The state's `timeout_secs` is enforced with a watchdog: the loop runs in a
-    daemon thread joined for the timeout. On expiry we return the `timeout`
-    outcome; the abandoned thread is bounded by its own one-shot budget slice
-    (true mid-call cancellation needs out-of-process execution — Phase 4).
+    The machine engine is a host-netns supervisor; each `agent` state runs in
+    its OWN subprocess (`agent6.cli.machine_agent`) which confines its egress
+    per `sandbox.agent_network` before running the loop — independently of the
+    engine and of sibling `tool` states. The subprocess is spawned with a fixed
+    argv (no LLM-derived content) and handed the request via a temp file; the
+    operator-authored prompt travels in that file, never on the command line.
+    ``timeout_secs`` is enforced by killing the subprocess's whole process group
+    (true mid-call cancellation, and the per-agent broker is torn down with it).
     """
 
     def run_agent(request: AgentRequest) -> AgentExecResult:
-        # Apply this agent state's per-state overrides (model/provider/
-        # thinking/temperature/budget) on top of the effective config.
-        state_cfg = cfg.with_machine_agent_overrides(
-            provider=request.provider,
-            model=request.model,
-            thinking=request.thinking,
-            temperature=request.temperature,
-            max_usd=request.max_usd,
-            max_input_tokens=request.max_input_tokens,
-            max_output_tokens=request.max_output_tokens,
-        )
-        budget = BudgetTracker(
-            max_input_tokens=state_cfg.budget.max_input_tokens,
-            max_output_tokens=state_cfg.budget.max_output_tokens,
-        )
-        transcript_sink = TranscriptSink(transcript_dir)
-        provider = _build_role_provider(
-            state_cfg,
-            "worker",
-            transcript_sink=transcript_sink,
-            budget=budget,
-        )
-        dispatcher = ToolDispatcher(
-            root=root,
-            config=state_cfg,
-            sandbox_profile=profile,
-            approver=None,
-            events=None,
-            graph_client=None,
-            run_root_node_id=None,
-            mcp_manager=None,
-        )
-        wf = Workflow(
-            root=root,
-            config=state_cfg,
-            provider=provider,
-            dispatcher=dispatcher,
-            logger=lambda msg: print(msg, file=sys.stderr),
-            compact_drop_at_chars=state_cfg.workflow.compact_drop_at_chars,
-            compact_summarise_at_chars=state_cfg.workflow.compact_summarise_at_chars,
-            context_summary_max_tokens=state_cfg.workflow.context_summary_max_tokens,
-        )
-
-        box: dict[str, RunResult | BaseException] = {}
-
-        def _target() -> None:
+        payload = {
+            "cwd": str(cwd),
+            "root": str(cwd),
+            "overlay": overlay,
+            "profile": profile,
+            "transcript_dir": str(transcript_dir),
+            "request": {
+                "model": request.model,
+                "prompt": request.prompt,
+                "timeout_s": request.timeout_s,
+                "provider": request.provider,
+                "thinking": request.thinking,
+                "temperature": request.temperature,
+                "max_usd": request.max_usd,
+                "max_input_tokens": request.max_input_tokens,
+                "max_output_tokens": request.max_output_tokens,
+            },
+        }
+        with tempfile.TemporaryDirectory(prefix="agent6-machine-agent-") as td:
+            req_file = Path(td) / "request.json"
+            out_file = Path(td) / "result.json"
+            req_file.write_text(json.dumps(payload), encoding="utf-8")
+            argv = [
+                sys.executable,
+                "-m",
+                "agent6.cli.machine_agent",
+                str(req_file),
+                str(out_file),
+            ]
+            # Own session/process group so the timeout kill takes the agent
+            # subprocess AND its broker/jail children with it.
+            proc = subprocess.Popen(argv, start_new_session=True)
             try:
-                box["result"] = wf.run(request.prompt)
-            except Exception as exc:  # surfaced on the main thread
-                box["error"] = exc
-
-        thread = threading.Thread(target=_target, daemon=True)
-        thread.start()
-        thread.join(request.timeout_s)
-        usd, _ = budget.estimate_usd()
-        snap = budget.snapshot()
-        input_total = snap["input_total"]
-        output_total = snap["output_total"]
-        assert isinstance(input_total, int)
-        assert isinstance(output_total, int)
-        input_tokens = input_total
-        output_tokens = output_total
-        if thread.is_alive():
+                proc.wait(timeout=request.timeout_s)
+            except subprocess.TimeoutExpired:
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                proc.wait()
+                return AgentExecResult(reason="timeout", payload=None)
+            if proc.returncode != 0 or not out_file.is_file():
+                return AgentExecResult(reason="error", payload=None)
+            try:
+                out = json.loads(out_file.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return AgentExecResult(reason="error", payload=None)
+            result_payload = out.get("payload")
             return AgentExecResult(
-                reason="timeout",
-                payload=None,
-                usd=usd,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
+                reason=str(out.get("reason", "error")),
+                payload=result_payload if isinstance(result_payload, dict) else None,
+                usd=float(out.get("usd", 0.0)),
+                input_tokens=int(out.get("input_tokens", 0)),
+                output_tokens=int(out.get("output_tokens", 0)),
             )
-        error = box.get("error")
-        if isinstance(error, BaseException):
-            raise error
-        result = box["result"]
-        assert isinstance(result, RunResult)
-        payload = result.finish_payload if result.reason == "finish_run" else None
-        return AgentExecResult(
-            reason=result.reason,
-            payload=payload,
-            usd=usd,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-        )
 
     return run_agent
+
+
+def _machine_network_refusal(
+    cfg: Config, profile: SandboxProfile, tool_states: list[ToolState], has_network_tool: bool
+) -> str | None:
+    """A refusal message if this machine's tool-network needs can't be honored.
+
+    Layers machine-specific rules on top of `_check_network_profile` (which
+    handles agent_network=local / tool_network=carveouts on `hardened`):
+    a tool opting into the network needs `tool_network != "blocked"`; and on
+    `hardened` per-tool isolation is impossible, so a machine with tool states
+    under `tool_network = "blocked"` is refused rather than silently handed the
+    host network. Returns None when fine.
+    """
+    net_err = _check_network_profile(cfg, profile)
+    if net_err is not None:
+        return net_err
+    tn = cfg.sandbox.tool_network
+    if has_network_tool and tn == "blocked":
+        return (
+            "a tool state sets allow_network = true but sandbox.tool_network ="
+            " 'blocked'. Set sandbox.tool_network = 'carveouts' for audited"
+            " per-tool egress."
+        )
+    if tool_states and tn == "blocked" and profile == "hardened":
+        return (
+            "isolating a machine's tool-state network requires the strict profile"
+            " (a per-tool network namespace); this host supports only 'hardened'."
+            " Run on strict, or set sandbox.tool_network = 'allowed' (tools share"
+            " the host network)."
+        )
+    return None
 
 
 def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa: PLR0911
@@ -344,21 +344,16 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
             print(f"  - {problem}", file=sys.stderr)
         return 1
     cwd = Path.cwd()
-    has_agent_state = any(getattr(state, "kind", None) == "agent" for state in spec.states.values())
-    has_network_tool = any(
-        isinstance(state, ToolState) and state.allow_network for state in spec.states.values()
-    )
+    states = list(spec.states.values())
+    has_agent_state = any(getattr(s, "kind", None) == "agent" for s in states)
+    tool_states = [s for s in states if isinstance(s, ToolState)]
+    has_network_tool = any(s.allow_network for s in tool_states)
     agent_runner: Callable[[AgentRequest], AgentExecResult] | None = None
-    # Default profile for tool-only machines (no agent6.toml required): resolve
-    # from the host. On non-Linux this is `none` (unsandboxed); on Linux it is
-    # strict/hardened per userns support.
+    # Default profile for confinement-free machines: resolve from the host.
     profile: SandboxProfile = detect().detected_profile
-    tool_network_allowed = False
-    # Load the effective config when an `agent` state needs it, OR when any
-    # tool opts into the network (so we can read sandbox.network/profile to
-    # gate that egress). Tool-only machines with no networked tool stay
-    # config-free and fully isolated, exactly as before.
-    if has_agent_state or has_network_tool:
+    # Load the effective config when an `agent` state needs it, or when there
+    # are any tool states (we need sandbox.tool_network/profile to gate egress).
+    if has_agent_state or tool_states:
         try:
             cfg = load_effective_with_overlay(cwd, spec.config).config
             if has_agent_state:
@@ -366,28 +361,25 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
         except ConfigError as exc:
             print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
             return 2
-        env = detect()
         try:
-            profile = select_profile(cfg.sandbox.profile, env)
+            profile = select_profile(cfg.sandbox.profile, detect())
         except RuntimeError as exc:
             print(f"REFUSING: {exc}", file=sys.stderr)
             return 2
-        tool_network_allowed = cfg.sandbox.network == "allow"
-        if has_network_tool and not tool_network_allowed:
-            print(
-                "[agent6] note: a tool state requests the network but"
-                f" sandbox.network = {cfg.sandbox.network!r}; it will run"
-                " network-isolated (set sandbox.network = 'allow' to permit it).",
-                file=sys.stderr,
-            )
+        refusal = _machine_network_refusal(cfg, profile, tool_states, has_network_tool)
+        if refusal is not None:
+            print(f"REFUSING: {refusal}", file=sys.stderr)
+            return 2
         if has_agent_state:
             missing = _check_provider_keys(cfg)
             if missing is not None:
                 print(missing, file=sys.stderr)
                 return 2
             root = _machines_dir(cwd) / spec.machine
+            # The engine is a host-netns supervisor; each agent state confines
+            # itself in its own subprocess per sandbox.agent_network.
             agent_runner = _build_machine_agent_runner(
-                cfg, cwd, profile, root / "agent_transcripts"
+                spec.config, cwd, profile, root / "agent_transcripts"
             )
     _warn_if_unsandboxed(profile)
     root = _machines_dir(cwd) / spec.machine
@@ -402,7 +394,6 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
                 journal=journal,
                 agent_runner=agent_runner,
                 profile=profile,
-                tool_network_allowed=tool_network_allowed,
             )
             result = drive(spec, journal, world, live=True, exit_on_wait=exit_on_wait)
     except (JournalError, EngineError) as exc:
@@ -553,17 +544,21 @@ def _cmd_machine_create(  # noqa: PLR0911, PLR0912, PLR0915
     if missing is not None:
         print(missing, file=sys.stderr)
         return 2
-    env = detect()
     try:
-        profile = select_profile(cfg.sandbox.profile, env)
+        profile = select_profile(cfg.sandbox.profile, detect())
     except RuntimeError as exc:
         print(f"REFUSING: {exc}", file=sys.stderr)
+        return 2
+    net_err = _check_network_profile(cfg, profile)
+    if net_err is not None:
+        print(f"REFUSING: {net_err}", file=sys.stderr)
         return 2
     _warn_if_unsandboxed(profile)
 
     scratch = _agent6_dir(cwd) / "machine-drafts" / new_friendly_id()
     scratch.mkdir(parents=True, exist_ok=True)
-    runner = _build_machine_agent_runner(cfg, cwd, profile, scratch / "agent_transcripts")
+    # Authoring drafts a machine; it has no machine [config] overlay of its own.
+    runner = _build_machine_agent_runner({}, cwd, profile, scratch / "agent_transcripts")
 
     prior_toml: str | None = None
     diagnostics: list[str] | None = None

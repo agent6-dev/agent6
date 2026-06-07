@@ -42,10 +42,11 @@ Under that adversary, agent6 aims to make the following true:
 2. No reads of files outside the project working directory (+ read-only
    sibling paths, if explicitly configured).
 3. No network egress except to the configured provider endpoints. This is
-   enforced structurally only when `sandbox.network = "provider_only"`
-   (see Defense Layer 1b); with `network = "allow"`/`"no"` the agent
-   process retains host network access and only the destination *port* is
-   constrained by Landlock.
+   enforced structurally for the agent process when `sandbox.agent_network =
+   "providers"` (the default; see Defense Layer 1b); `"local"` narrows it to
+   loopback providers, `"open"` lifts it. Jailed commands (`run_command`,
+   machine `tool` states) are governed separately by `sandbox.tool_network`
+   (default `"blocked"`); see Defense Layer 1b and §8.
 4. No `git push`, no `--force`, no history rewrite, no `reset --hard`.
 5. No persistence after the run terminates (no daemon, no cron, no
    `.bashrc` mutation — the jail's mount namespace is the
@@ -79,7 +80,7 @@ every child it spawns):
   arbitrary services on other ports, but on its own it does **not** pin
   egress to a specific host: anything reachable on an allowed port is
   permitted. For true host-level egress confinement use
-  `sandbox.network = "provider_only"` (Defense Layer 1b).
+  `sandbox.agent_network = "providers"` (Defense Layer 1b).
 
 On older kernels TCP-connect rules are not available; agent6 prints a
 loud warning and runs with FS-only Landlock. In that mode the agent
@@ -87,7 +88,7 @@ process is still confined for filesystem access, but you should not run
 it on a host where the agent's UID has access to sensitive credentials
 the agent could open and send over the network.
 
-### 1b. Provider-only egress broker (`sandbox.network = "provider_only"`)
+### 1b. Provider-only egress broker (`sandbox.agent_network = "providers"`)
 
 When enabled (strict profile only — it relies on unprivileged user
 namespaces), `agent6 run` confines its own process to host-level egress:
@@ -112,9 +113,16 @@ at bind time, the egress allow-list is structural rather than a filter the
 agent could be tricked into widening. On hosts that only support the
 hardened profile the run is **refused** rather than executed unconfined.
 
+`agent_network = "local"` uses the same broker but pins it to *loopback*
+provider endpoints only (local models such as Ollama) and refuses a non-local
+provider; `agent_network = "open"` skips the broker entirely. For `agent6
+machine run`, each `agent` state runs in its own subprocess that performs this
+same broker setup for itself (the engine is a thin host-netns supervisor), so a
+machine agent's egress is confined exactly as a normal run's is.
+
 Curator and other `AF_UNIX`-based helpers are unaffected (unix sockets
 cross the netns boundary). MCP servers that need their own outbound
-network access will not have it under `provider_only`; that is a
+network access will not have it under `providers`; that is a
 deliberate limitation, not a bug.
 
 **`sandbox.allow_urls` (operator-controlled egress additions).** The
@@ -127,7 +135,8 @@ still hard-wired at bind time to one operator-chosen `host:port`, resolved
 per-connect, and the LLM cannot add, widen, or redirect an entry — it is a
 static config field, never written from model output. The default is empty
 (secure by default), entries are validated at config-load time, and the
-field is only consulted under `provider_only` (ignored under `no`/`allow`).
+field is only consulted under `agent_network = "providers"` (ignored under
+`local`/`open`). It widens only the agent path, never a jailed command.
 Merge is last-overlay-wins: the most-specific config tier that sets
 `allow_urls` replaces it wholesale, so a repo or machine overlay cannot
 silently *append* to a narrower global allow-list — it must restate the
@@ -263,27 +272,42 @@ socket. The only sockets it opens are:
 There is no telemetry, no auto-update, no remote control plane, and no
 shared state outside the project directory.
 
-### 8. State-machine tool egress + script bundles
+### 8. State-machine egress (the supervisor model) + script bundles
 
-State machines (`.asm.toml`, see [STATE_MACHINES.md](STATE_MACHINES.md))
-run each `tool` state's command through the same `agent6-jail` as every
-other child. Two Phase-4 surfaces are security-relevant and both fail
-closed:
+A `agent6 machine run` engine is a thin **supervisor** that stays in the host
+network namespace and makes no network calls itself. Each `agent` state runs in
+its own subprocess that confines its egress per `sandbox.agent_network` (the
+broker, §1b); each `tool` state is jailed by the engine, so a per-tool
+`allow_network` decides its netns independently of the agent. This is what lets
+a machine confine its agents to the provider API while letting one **audited,
+deterministic** tool reach the network — a `tool` command is fixed/operator-
+reviewed (unlike `run_command`, whose argv the LLM chooses), so a networked
+audited tool is not a free exfiltration channel.
 
-- **Opt-in tool network.** A `tool` is network-isolated by default. Its
-  `allow_network = true` is only the per-state opt-in; the child gets real
-  egress only when the effective `sandbox.network = "allow"` — the identical
-  gate the worker's `run_command` uses (`tools/dispatch.py`). Under
-  `provider_only`/`no` an opt-in tool still runs in an empty netns: the
-  egress broker confines the *agent's* in-process provider calls, not
-  arbitrary subprocesses, so a child is never silently handed host
-  networking that would defeat `provider_only`. Enabling egress therefore
-  takes two explicit operator opt-ins (the state flag plus
-  `sandbox.network = "allow"`). The state flag aside, neither sandbox setting
-  is settable by the machine: its `[config]` overlay (possibly LLM-drafted or
-  shared, so untrusted) is rejected at load if it declares `[providers.*]` OR
-  `[sandbox.*]` — both are operator-only, read solely from the global/repo
-  config. So a machine can never widen its own egress or weaken its jail.
+`sandbox.tool_network` governs jailed-command egress: `"blocked"` (default —
+none), `"carveouts"` (only `tool` states with `allow_network = true`;
+`run_command` stays offline), `"allowed"` (`run_command` too — requires
+`agent_network = "open"`, since `run_command` runs inside the agent process and
+cannot out-reach a confined agent). The enforceable combinations:
+
+| `agent_network` | `tool_network` | agent process | `run_command` | `tool allow_network=true` |
+|---|---|---|---|---|
+| `providers` *(def)* | `blocked` *(def)* | providers + `allow_urls` | none | none |
+| `providers` | `carveouts` | providers + `allow_urls` | none | host network |
+| `local` | `carveouts` | loopback providers only | none | host network |
+| `open` | `allowed` | unconfined | host network | host network |
+
+`carveouts` and `agent_network = "local"` require the `strict` profile (they
+need a per-child / per-process network namespace); on `hardened` they are
+refused rather than silently under-confined. Every surface fails closed:
+
+- **Operator-gated, machine-declared.** `agent_network`/`tool_network` are read
+  only from the operator's global/repo config — a machine's `[config]` overlay
+  (possibly LLM-drafted or shared) is rejected at load if it declares
+  `[providers.*]` or `[sandbox.*]`. A `tool` merely *declares* `allow_network`;
+  it only reaches the network if the operator set `tool_network = "carveouts"`
+  (or `"allowed"`). A networked tool under `tool_network = "blocked"` is
+  refused, naming the offending state.
 - **Bundle confinement.** Helper scripts live in an operator-reviewed
   `scripts/` directory beside the `.asm.toml`. `machine check` validates
   that every entry under `scripts/` resolves *inside* the bundle (symlinks

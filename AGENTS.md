@@ -103,8 +103,9 @@ All five must pass. 691 tests currently green.
 - `src/agent6/git_ops.py` refuses `push`, `--force`, history rewrite,
   `reset --hard`, and `branch -D` unconditionally. Do not add overrides.
 - Config is **secure by default**: every field has a default, and
-  security-sensitive fields default to the *safe* value (`sandbox.network
-  = "provider_only"`, `run_commands = "ask"`, `protect_* = true`,
+  security-sensitive fields default to the *safe* value (`sandbox.agent_network
+  = "providers"`, `sandbox.tool_network = "blocked"`, `run_commands = "ask"`,
+  `protect_* = true`,
   `git.allow_* = false`). Config is layered (built-in defaults < global
   `$XDG_CONFIG_HOME/agent6/config.toml` < per-repo `.agent6/config.toml`
   < `--config FILE`) and every leaf is auditable via `agent6 config show`.

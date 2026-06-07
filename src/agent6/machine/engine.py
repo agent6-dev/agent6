@@ -165,22 +165,22 @@ class LiveWorld:
     agent_runner: Callable[[AgentRequest], AgentExecResult] | None = None
     poll_interval_s: float = 0.5
     profile: SandboxProfile = "strict"
-    # Whether an opt-in (`allow_network = true`) tool state may actually reach
-    # the network. The CLI sets this to ``cfg.sandbox.network == "allow"`` —
-    # the same gate the agent's `run_command` uses. False (default) keeps every
-    # tool fully network-isolated regardless of its own opt-in.
-    tool_network_allowed: bool = False
 
     def run_tool(
         self, argv: tuple[str, ...], timeout_s: float, *, allow_network: bool = False
     ) -> ToolExecResult:
+        # The engine is the host-netns supervisor, so an opt-in tool's jail
+        # gets the host network (it inherits the engine's netns); a non-opt-in
+        # tool gets a fresh empty netns. Whether opt-in is permitted at all is
+        # gated by the CLI at startup (sandbox.tool_network), so by the time we
+        # run, `allow_network` is authoritative.
         env = tuple((key, os.environ[key]) for key in _SAFE_ENV_KEYS if key in os.environ)
         policy = JailPolicy(
             cwd=self.cwd,
             argv=argv,
             profile=self.profile,
             env=env,
-            allow_network=allow_network and self.tool_network_allowed,
+            allow_network=allow_network,
             timeout_s=float(timeout_s),
         )
         try:

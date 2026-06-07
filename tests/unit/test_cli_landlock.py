@@ -30,10 +30,13 @@ def _env(*, major: int, minor: int) -> Environment:
     )
 
 
-def _cfg() -> Any:
+def _cfg(agent_network: str = "providers") -> Any:
     # Minimal stand-in: one OpenAI-compatible provider on the default port.
     entry = SimpleNamespace(base_url="https://openrouter.ai/api/v1")
-    return SimpleNamespace(providers=SimpleNamespace(values=lambda: [entry]))
+    return SimpleNamespace(
+        providers=SimpleNamespace(values=lambda: [entry]),
+        sandbox=SimpleNamespace(agent_network=agent_network),
+    )
 
 
 def _report() -> LandlockReport:
@@ -62,6 +65,23 @@ def test_agent_landlock_applied_on_hardened(monkeypatch: pytest.MonkeyPatch) -> 
     # Ports are derived from the configured providers (default 443 here),
     # not blanket-allowed.
     assert calls[0]["tcp_connect_ports"] == (443,)
+
+
+def test_agent_landlock_open_network_imposes_no_tcp_rule(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def _rec(**kwargs: Any) -> LandlockReport:
+        calls.append(kwargs)
+        return _report()
+
+    monkeypatch.setattr(cli, "apply_agent_landlock", _rec)
+    err = cli._maybe_apply_agent_landlock(  # pyright: ignore[reportPrivateUsage]
+        _cfg(agent_network="open"), "hardened", _env(major=6, minor=14)
+    )
+    assert err is None
+    # FS Landlock still applies on hardened, but agent_network="open" imposes
+    # no TCP-connect restriction.
+    assert calls[0]["tcp_connect_ports"] == ()
 
 
 def test_agent_landlock_skipped_on_strict(monkeypatch: pytest.MonkeyPatch) -> None:

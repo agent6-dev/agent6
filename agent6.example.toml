@@ -128,16 +128,26 @@ model = "claude-opus-4-5"
 # "hardened" = no namespaces, but still landlock + seccomp + capset(0) +
 #              rlimits + NO_NEW_PRIVS. Works under default-seccomp Docker.
 profile = "auto"
-# "no" | "provider_only" | "allow"
-# "provider_only" allows the host endpoints of every configured provider.
-network = "provider_only"
-# Extra egress destinations permitted under "provider_only", on top of the
-# provider endpoints. Each entry is a host, host:port, or full URL (a missing
-# scheme implies https / port 443); only the host:port opens a broker socket.
-# Secure default empty. MERGE is last-overlay-wins (the most-specific tier
-# that sets it replaces the list wholesale, like other list fields); provider
-# endpoints always union in. Edit with `agent6 config add/remove
-# sandbox.allow_urls <host>`. Ignored when network is "no" or "allow".
+# Where the AGENT process (its own LLM/provider HTTP) may connect:
+#   "providers" | "local" | "open"
+# "providers" confines it to the configured [providers.*] endpoints + allow_urls
+# (broker on strict; Landlock provider-ports on hardened). "local" = loopback
+# providers only (local models; strict-only). "open" = unconfined.
+agent_network = "providers"
+# Whether JAILED commands (run_command, verify, machine tool states) may reach
+# the network: "blocked" | "carveouts" | "allowed"
+# "blocked" = none. "carveouts" = only machine tool states that set
+# allow_network = true (audited, deterministic), run_command stays offline
+# (strict-only). "allowed" = run_command too (requires agent_network = "open").
+tool_network = "blocked"
+# Extra egress destinations the AGENT process may reach under
+# agent_network = "providers", on top of the provider endpoints. Each entry is a
+# host, host:port, or full URL (a missing scheme implies https / port 443); only
+# the host:port opens a broker socket. Secure default empty. MERGE is
+# last-overlay-wins (the most-specific tier that sets it replaces the list
+# wholesale); provider endpoints always union in. Edit with
+# `agent6 config add/remove sandbox.allow_urls <host>`. Only widens the agent
+# path — never a jailed tool/run_command. Ignored under "local"/"open".
 allow_urls = []
 # "yes" | "no" | "ask"
 run_commands = "ask"

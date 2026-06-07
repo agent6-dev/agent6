@@ -33,7 +33,7 @@ provider = "anthropic"
 model = "x"
 [sandbox]
 profile = "auto"
-network = "no"
+agent_network = "open"
 run_commands = "no"
 protect_git = true
 protect_agent6 = true

@@ -852,7 +852,10 @@ class ToolDispatcher:
         label: str,
         timeout_s: float | None = None,
     ) -> dict[str, Any]:
-        allow_network = self._config.sandbox.network == "allow"
+        # run_command reaches the network only under tool_network = "allowed"
+        # (which the config validator pins to agent_network = "open", so this
+        # process is in the host netns and the child inherits it).
+        allow_network = self._config.sandbox.tool_network == "allowed"
         # Resolve symlinks so the launcher's strip_prefix(cwd) check sees
         # canonical paths; the Rust side canonicalizes too as a backstop.
         protect_paths: list[Path] = []

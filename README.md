@@ -153,7 +153,7 @@ Other commands:
 - `agent6 config fill` — materialize every effective value into one
   explicit config file (global by default, `--repo` for the repo).
 - `agent6 config get/set/unset/add/remove <key> [value]` — read or edit a
-  single dotted leaf (e.g. `sandbox.network`). Writes go to the global
+  single dotted leaf (e.g. `sandbox.agent_network`). Writes go to the global
   config by default, `--repo` for the repo, or `--machine FILE` for a
   machine's `[config]` overlay (`providers.*` is forbidden there). `add`/
   `remove` edit list fields such as `sandbox.allow_urls`. Every edit is
@@ -206,7 +206,7 @@ The worker LLM is treated as adversarial. It must not be able to:
 - write outside the project's working directory;
 - read files outside the project (plus any sibling read-only paths);
 - reach the network except the host:port of each `[providers.*]` block
-  (when `sandbox.network = "provider_only"`), plus any extra destinations
+  (when `sandbox.agent_network = "providers"`), plus any extra destinations
   the operator explicitly allow-lists in `sandbox.allow_urls`;
 - corrupt the project's git history or its own configuration / run
   state from inside the sandbox;
@@ -223,9 +223,9 @@ Enforcement is layered:
 - **`agent6-jail`** wraps every child command (verify, metric,
   `run_command`, curator): fresh user/mount/pid/ipc/uts/net namespaces,
   pivots into a minimal rootfs, applies Landlock, a seccomp filter,
-  drops capabilities, sets `NO_NEW_PRIVS`. In the strict profile, the
-  network namespace is empty when `sandbox.network != "allow"` —
-  `git push`, `curl`, `pip install`, and DNS all fail with no route,
+  drops capabilities, sets `NO_NEW_PRIVS`. In the strict profile, a jailed
+  command's network namespace is empty unless `sandbox.tool_network` grants
+  it — `git push`, `curl`, `pip install`, and DNS all fail with no route,
   even from an ad-hoc script the worker writes and executes via
   `run_command`.
 - **`sandbox.protect_git` + `sandbox.protect_agent6`** (default `true`)
@@ -241,9 +241,9 @@ Enforcement is layered:
 - **Landlock on the agent process itself** further restricts what the
   agent's Python code can read or write outside the jail.
 
-If you set `sandbox.run_commands = "yes"` and `sandbox.network =
-"allow"` the worker can talk to anywhere on the public internet from
-inside the sandbox. The defaults exist for a reason.
+If you set `sandbox.run_commands = "yes"`, `sandbox.agent_network = "open"`,
+and `sandbox.tool_network = "allowed"` the worker can talk to anywhere on the
+public internet from inside the sandbox. The defaults exist for a reason.
 
 See [SECURITY.md](SECURITY.md) for the per-layer breakdown.
 
@@ -251,7 +251,8 @@ See [SECURITY.md](SECURITY.md) for the per-layer breakdown.
 
 agent6 is **secure by default**: every field has a default, and
 security-sensitive ones default to the safe value (`allow_push = false`,
-`network = "provider_only"`, `run_commands = "ask"`, `protect_* = true`).
+`agent_network = "providers"`, `tool_network = "blocked"`,
+`run_commands = "ask"`, `protect_* = true`).
 Start from [agent6.example.toml](agent6.example.toml), or just run
 `agent6 connect` + `agent6 model` (global) and `agent6 init` (per-repo).
 Use `agent6 config show` to audit the effective value of every field and
@@ -265,8 +266,9 @@ exactly where it came from; `agent6 check` validates without running.
 
 [sandbox]
 profile = "auto"              # auto | strict | hardened
-network = "provider_only"     # no | provider_only | allow
-allow_urls = []               # extra egress hosts under provider_only
+agent_network = "providers"   # providers | local | open  (agent's LLM egress)
+tool_network = "blocked"      # blocked | carveouts | allowed  (jailed commands)
+allow_urls = []               # extra agent egress hosts under "providers"
 run_commands = "ask"          # yes | no | ask
 protect_git = true
 protect_agent6 = true

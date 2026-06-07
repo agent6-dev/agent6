@@ -39,8 +39,8 @@ def _global_toml(tmp_path: Path) -> dict[str, object]:
 
 
 def test_set_scalar_writes_global(iso: Path) -> None:
-    assert _run(["config", "set", "sandbox.network", "no"]) == 0
-    assert _global_toml(iso)["sandbox"] == {"network": "no"}  # type: ignore[comparison-overlap]
+    assert _run(["config", "set", "sandbox.agent_network", "open"]) == 0
+    assert _global_toml(iso)["sandbox"] == {"agent_network": "open"}  # type: ignore[comparison-overlap]
 
 
 def test_set_bool_is_typed_not_string(iso: Path) -> None:
@@ -51,20 +51,20 @@ def test_set_bool_is_typed_not_string(iso: Path) -> None:
 
 
 def test_set_rejects_invalid_enum_and_reverts(iso: Path) -> None:
-    assert _run(["config", "set", "sandbox.network", "provider_only"]) == 0
-    assert _run(["config", "set", "sandbox.network", "bogus"]) == 2
+    assert _run(["config", "set", "sandbox.agent_network", "providers"]) == 0
+    assert _run(["config", "set", "sandbox.agent_network", "bogus"]) == 2
     # The bad write was reverted: the prior valid value survives.
     sandbox = _global_toml(iso)["sandbox"]
     assert isinstance(sandbox, dict)
-    assert sandbox["network"] == "provider_only"
+    assert sandbox["agent_network"] == "providers"
 
 
 def test_get_reports_value_and_source(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    _run(["config", "set", "sandbox.network", "no"])
+    _run(["config", "set", "sandbox.agent_network", "open"])
     capsys.readouterr()
-    assert _run(["config", "get", "sandbox.network"]) == 0
+    assert _run(["config", "get", "sandbox.agent_network"]) == 0
     out = capsys.readouterr().out
-    assert "sandbox.network = no" in out
+    assert "sandbox.agent_network = open" in out
     assert "[global]" in out
 
 
@@ -88,25 +88,25 @@ def test_unset_reverts_to_default(iso: Path, capsys: pytest.CaptureFixture[str])
 
 
 def test_unset_missing_key_is_noop(iso: Path) -> None:
-    _run(["config", "set", "sandbox.network", "no"])  # create the file
+    _run(["config", "set", "sandbox.agent_network", "open"])  # create the file
     assert _run(["config", "unset", "sandbox.protect_git"]) == 0
 
 
 def test_set_preserves_sibling_keys(iso: Path) -> None:
-    _run(["config", "set", "sandbox.network", "no"])
+    _run(["config", "set", "sandbox.agent_network", "open"])
     _run(["config", "set", "sandbox.run_commands", "yes"])
     sandbox = _global_toml(iso)["sandbox"]
-    assert sandbox == {"network": "no", "run_commands": "yes"}  # type: ignore[comparison-overlap]
+    assert sandbox == {"agent_network": "open", "run_commands": "yes"}  # type: ignore[comparison-overlap]
 
 
 # --- repo target ------------------------------------------------------------
 
 
 def test_set_repo_writes_repo_config(iso: Path) -> None:
-    assert _run(["config", "set", "sandbox.network", "no", "--repo"]) == 0
+    assert _run(["config", "set", "sandbox.agent_network", "open", "--repo"]) == 0
     repo_cfg = (iso / ".agent6" / "config.toml").read_text(encoding="utf-8")
     assert "[sandbox]" in repo_cfg
-    assert 'network = "no"' in repo_cfg
+    assert 'agent_network = "open"' in repo_cfg
     assert not (iso / "g" / "config.toml").is_file()
 
 
@@ -171,15 +171,15 @@ def test_machine_overlay_rejects_sandbox(iso: Path) -> None:
     # Sandbox policy is an operator-only decision — a machine file (possibly
     # LLM-drafted/shared) must not weaken the jail via its [config] overlay.
     mf = _machine_file(iso)
-    assert _run(["config", "set", "sandbox.network", "allow", "--machine", str(mf)]) == 2
+    assert _run(["config", "set", "sandbox.agent_network", "open", "--machine", str(mf)]) == 2
     assert _run(["config", "add", "sandbox.allow_urls", "evil.com", "--machine", str(mf)]) == 2
     # ...but the same keys are settable in the global config.
-    assert _run(["config", "set", "sandbox.network", "allow"]) == 0
+    assert _run(["config", "set", "sandbox.agent_network", "open"]) == 0
 
 
 def test_repo_and_machine_together_rejected(iso: Path) -> None:
     mf = _machine_file(iso)
-    rc = _run(["config", "set", "sandbox.network", "no", "--repo", "--machine", str(mf)])
+    rc = _run(["config", "set", "sandbox.agent_network", "open", "--repo", "--machine", str(mf)])
     assert rc == 2
 
 

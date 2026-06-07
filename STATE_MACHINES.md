@@ -315,15 +315,28 @@ A `list`-typed variable spliced as a bare argv element
 whatever audited command the operator names.
 
 **Network (opt-in, default off).** A `tool` runs fully network-isolated
-(empty netns) unless it sets `allow_network = true`. Even then the child
-gets egress only when the effective `sandbox.network = "allow"` — the same
-gate the agent's own `run_command` uses. Under `provider_only`/`no` an
-opt-in tool still runs isolated: the egress broker (and `sandbox.allow_urls`)
-confines the *agent's* in-process provider calls, not arbitrary
-subprocesses, so handing a child host networking would defeat
-`provider_only`. To let an operator-reviewed script reach the network, set
-both `allow_network = true` on the state and `sandbox.network = "allow"` in
-the machine `[config]` overlay — two explicit, auditable opt-ins.
+(empty netns) unless it sets `allow_network = true`. Because the machine
+engine is a host-netns *supervisor* (each `agent` state confines itself in its
+own subprocess; see §9), an opt-in `tool` can reach the host network even while
+the agents stay confined to the provider API — a `tool` command is fixed and
+operator-reviewed, so it is not a free exfiltration channel the way a networked
+`run_command` would be. Whether opt-in is honored is the operator's call via
+`sandbox.tool_network` (read from the global/repo config, never the machine
+overlay):
+
+| `sandbox.agent_network` | `sandbox.tool_network` | agent egress | `tool` w/ `allow_network=true` |
+|---|---|---|---|
+| `providers` *(def)* | `blocked` *(def)* | providers + `allow_urls` | none |
+| `providers` | `carveouts` | providers + `allow_urls` | **host network** |
+| `local` | `carveouts` | loopback providers only | **host network** |
+| `open` | `allowed` | unconfined | host network (and `run_command`) |
+
+So the headline setup — confined agents + one audited networked tool — is
+`sandbox.agent_network = "providers"`, `sandbox.tool_network = "carveouts"`,
+and `allow_network = true` on that one state. `carveouts` (and `local`) need
+the `strict` profile; a networked tool under `tool_network = "blocked"`, or a
+tool-network config the profile can't honor, is refused at startup naming the
+state.
 
 **Script bundles.** A machine is a *bundle*: the `.asm.toml` file plus an
 optional sibling `scripts/` directory holding operator-reviewed helper

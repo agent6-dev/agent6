@@ -7,7 +7,8 @@ pydantic and surface field-pointing errors.
 
 Field policy: **secure by default, fully auditable**. Every field has a
 default, and security-sensitive fields default to the *safe* value
-(``sandbox.network = "provider_only"``, ``sandbox.run_commands = "ask"``,
+(``sandbox.agent_network = "providers"``, ``sandbox.tool_network = "blocked"``,
+``sandbox.run_commands = "ask"``,
 ``sandbox.protect_* = true``, ``git.allow_push/force/history_rewrite =
 false``). This means a config can be layered (global ``$XDG_CONFIG_HOME``
 defaults, per-repo ``./.agent6/config.toml`` overrides) and a repo can be
@@ -232,15 +233,29 @@ class SandboxConfig(BaseModel):
     model_config = _BASE_MODEL_CONFIG
 
     profile: Literal["auto", "strict", "hardened"] = "auto"
-    # `provider_only` confines the agent process to an empty network
-    # namespace whose only route out is a per-endpoint unix socket served
-    # by a trusted broker (see agent6.sandbox.broker): egress is structurally
-    # limited to the host:port of every configured `[providers.*]` block.
-    # Requires the strict profile (unprivileged user namespaces); the run is
-    # refused on hosts that only support `hardened`. `no` keeps the process
-    # in the host netns with no egress confinement at the process level;
-    # `allow` is identical to `no` (egress unrestricted).
-    network: Literal["no", "provider_only", "allow"] = "provider_only"
+    # Where the agent PROCESS (its own LLM/provider HTTP) may connect:
+    #  - `providers`: only the configured `[providers.*]` endpoints, plus any
+    #    `allow_urls`. On `strict` this is structural — a trusted broker (see
+    #    agent6.sandbox.broker) confines the agent to an empty netns whose only
+    #    routes are per-endpoint unix sockets; on `hardened` it is Landlock
+    #    TCP-port confinement to the provider ports.
+    #  - `local`: only loopback providers (local models, e.g. Ollama). `strict`-
+    #    only; refused if a configured provider is non-local or `allow_urls` is
+    #    set (there is nothing external to allow-list when offline).
+    #  - `open`: unconfined egress.
+    agent_network: Literal["providers", "local", "open"] = "providers"
+    # Whether JAILED commands (`run_command`, `verify`, `metric`, and machine
+    # `tool` states) may reach the network. A jailed child can never out-reach
+    # the process that launches it, so:
+    #  - `blocked`: no jailed command gets the network.
+    #  - `carveouts`: blocked, EXCEPT machine `tool` states that opt in with
+    #    `allow_network = true` (audited, deterministic commands); `run_command`
+    #    stays blocked. `strict`-only — singling one tool out needs a per-child
+    #    network namespace, which only `strict` provides.
+    #  - `allowed`: `run_command` reaches the network too. Because `run_command`
+    #    runs inside the (possibly confined) agent process, this requires
+    #    `agent_network = "open"`.
+    tool_network: Literal["blocked", "carveouts", "allowed"] = "blocked"
     run_commands: Literal["yes", "no", "ask"] = "ask"
     # Make `.git/` read-only from the child's view so a worker that gains
     # `run_command` (e.g. `run_commands = "ask"` + user approval) cannot
@@ -256,8 +271,8 @@ class SandboxConfig(BaseModel):
     # graph). The curator subprocess has its own jail policy that does
     # grant `.agent6/` write access; worker children do not.
     protect_agent6: bool = True
-    # Extra egress destinations the agent is permitted to reach under
-    # `network = "provider_only"`, on top of the configured provider
+    # Extra egress destinations the AGENT process may reach under
+    # `agent_network = "providers"`, on top of the configured provider
     # endpoints. Each entry is a `host`, `host:port`, or full URL (a missing
     # scheme implies https / port 443); only the host:port is used to open a
     # broker socket. Secure default empty — no destination beyond the
@@ -265,7 +280,8 @@ class SandboxConfig(BaseModel):
     # that sets the key replaces it wholesale, like every other list field);
     # provider endpoints always UNION in regardless of tier. Effective egress
     # = union(provider endpoints) + allow_urls(winning tier). Only meaningful
-    # under `provider_only`; ignored when network is `no` or `allow`.
+    # under `agent_network = "providers"`; ignored under `local`/`open`. It
+    # widens only the agent path, never a jailed `tool`/`run_command`.
     allow_urls: tuple[str, ...] = ()
 
     @field_validator("allow_urls")
@@ -274,6 +290,22 @@ class SandboxConfig(BaseModel):
         for entry in v:
             _validate_allow_url(entry)
         return v
+
+    @model_validator(mode="after")
+    def _check_network_combo(self) -> SandboxConfig:
+        # A jailed child can never out-reach the process that launches it, and
+        # `run_command` runs inside the agent process. So letting `run_command`
+        # reach the network (`tool_network = "allowed"`) requires the agent to
+        # be unconfined. `carveouts` is exempt: machine `tool` states are jailed
+        # by the host-netns engine, not the (possibly confined) agent.
+        if self.tool_network == "allowed" and self.agent_network != "open":
+            raise ValueError(
+                "sandbox.tool_network = 'allowed' requires sandbox.agent_network"
+                " = 'open' — run_command runs inside the agent process and cannot"
+                " reach the network while the agent is confined. Use 'carveouts'"
+                " for audited per-tool egress, or set agent_network = 'open'."
+            )
+        return self
 
 
 class GitCommitConfig(BaseModel):

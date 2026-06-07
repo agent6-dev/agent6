@@ -1,0 +1,136 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Eric Lesiuta
+"""Subprocess entry: run ONE machine `agent` state, self-confined.
+
+A machine run's engine is a thin supervisor that stays in the host network
+namespace and makes no network calls itself. Each `agent` state runs *here*, in
+its own fresh process, so it can confine its OWN egress per
+`sandbox.agent_network` (the broker on `strict`, Landlock on `hardened`) —
+independently of the engine and of sibling `tool` states. That is what lets a
+machine run a broker-confined agent alongside an audited, network-carved-out
+tool in the same run.
+
+Invoked as ``python -m agent6.cli.machine_agent <request.json> <result.json>``.
+It reads a request, sets up the sandbox while still single-threaded, runs the
+agent loop to completion, and writes the result. The engine enforces the
+timeout by killing this process, which gives true mid-call cancellation.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+from agent6.budget import BudgetTracker
+from agent6.cli.egress import (
+    _check_network_profile,
+    _maybe_apply_agent_landlock,
+    _maybe_start_egress,
+    _stop_egress,
+)
+from agent6.cli.providers import _build_role_provider
+from agent6.config_layer import load_effective_with_overlay
+from agent6.detect import detect
+from agent6.providers import TranscriptSink
+from agent6.tools.dispatch import ToolDispatcher
+from agent6.types import SandboxProfile
+from agent6.workflows.loop import Workflow
+
+
+def _result(
+    reason: str, payload: dict[str, Any] | None, budget: BudgetTracker | None
+) -> dict[str, Any]:
+    usd = 0.0
+    inp = out = 0
+    if budget is not None:
+        usd, _ = budget.estimate_usd()
+        snap = budget.snapshot()
+        inp_v, out_v = snap["input_total"], snap["output_total"]
+        assert isinstance(inp_v, int) and isinstance(out_v, int)
+        inp, out = inp_v, out_v
+    return {
+        "reason": reason,
+        "payload": payload,
+        "usd": usd,
+        "input_tokens": inp,
+        "output_tokens": out,
+    }
+
+
+def _run_one(req: dict[str, Any]) -> dict[str, Any]:
+    cwd = Path(req["cwd"])
+    profile: SandboxProfile = req["profile"]
+    root = Path(req["root"])
+    transcript_dir = Path(req["transcript_dir"])
+    r = req["request"]
+    cfg = load_effective_with_overlay(cwd, req["overlay"]).config.with_machine_agent_overrides(
+        provider=r["provider"],
+        model=r["model"],
+        thinking=r["thinking"],
+        temperature=r["temperature"],
+        max_usd=r["max_usd"],
+        max_input_tokens=r["max_input_tokens"],
+        max_output_tokens=r["max_output_tokens"],
+    )
+    # Confine THIS process's egress per sandbox.agent_network (single-threaded
+    # here, as required by unshare). The engine already validated the combo, but
+    # re-check defensively and fail closed.
+    net_err = _check_network_profile(cfg, profile)
+    if net_err is not None:
+        print(f"REFUSING: {net_err}", file=sys.stderr)
+        return _result("error", None, None)
+    broker, sock_dir, egress_err = _maybe_start_egress(cfg, profile)
+    if egress_err is not None:
+        print(f"REFUSING: {egress_err}", file=sys.stderr)
+        return _result("error", None, None)
+    budget: BudgetTracker | None = None
+    try:
+        landlock_err = _maybe_apply_agent_landlock(cfg, profile, detect())
+        if landlock_err is not None:
+            print(f"REFUSING: {landlock_err}", file=sys.stderr)
+            return _result("error", None, None)
+        budget = BudgetTracker(
+            max_input_tokens=cfg.budget.max_input_tokens,
+            max_output_tokens=cfg.budget.max_output_tokens,
+        )
+        provider = _build_role_provider(
+            cfg, "worker", transcript_sink=TranscriptSink(transcript_dir), budget=budget
+        )
+        dispatcher = ToolDispatcher(
+            root=root,
+            config=cfg,
+            sandbox_profile=profile,
+            approver=None,
+            events=None,
+            graph_client=None,
+            run_root_node_id=None,
+            mcp_manager=None,
+        )
+        wf = Workflow(
+            root=root,
+            config=cfg,
+            provider=provider,
+            dispatcher=dispatcher,
+            logger=lambda msg: print(msg, file=sys.stderr),
+            compact_drop_at_chars=cfg.workflow.compact_drop_at_chars,
+            compact_summarise_at_chars=cfg.workflow.compact_summarise_at_chars,
+            context_summary_max_tokens=cfg.workflow.context_summary_max_tokens,
+        )
+        result = wf.run(r["prompt"])
+        payload = result.finish_payload if result.reason == "finish_run" else None
+        return _result(result.reason, payload, budget)
+    finally:
+        _stop_egress(broker, sock_dir)
+
+
+def main() -> int:
+    req = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+    out = _run_one(req)
+    Path(sys.argv[2]).write_text(json.dumps(out), encoding="utf-8")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

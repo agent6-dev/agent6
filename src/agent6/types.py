@@ -11,7 +11,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-NetworkMode = Literal["no", "provider_only", "allow"]
 TernaryMode = Literal["no", "ask", "yes"]
 # `none` is the unsandboxed profile selected on hosts without the Linux
 # sandbox (macOS, or any non-Linux platform). It runs child commands as

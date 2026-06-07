@@ -179,7 +179,9 @@ def _check_config_section(cfg: Config) -> list[_DoctorCheck]:
     abi_str = str(landlock_abi()) if env.sandbox_available else "n/a (no Linux sandbox)"
     print(f"  Landlock ABI: {abi_str}")
     print(
-        f"  sandbox.profile = {cfg.sandbox.profile}  network = {cfg.sandbox.network}"
+        f"  sandbox.profile = {cfg.sandbox.profile}"
+        f"  agent_network = {cfg.sandbox.agent_network}"
+        f"  tool_network = {cfg.sandbox.tool_network}"
         f"  run_commands = {cfg.sandbox.run_commands}"
     )
     out: list[_DoctorCheck] = []

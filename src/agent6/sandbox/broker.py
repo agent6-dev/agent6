@@ -3,7 +3,7 @@
 """Rootless provider-only egress broker.
 
 Implements the host-level egress allow-list promised by
-``[sandbox] network = "provider_only"`` without root, nftables, or any
+``[sandbox] agent_network = "providers"`` without root, nftables, or any
 external package.
 
 Design (strict profile only — requires unprivileged user namespaces):

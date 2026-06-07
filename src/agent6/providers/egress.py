@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Process-wide egress routing for provider HTTP calls.
 
-When ``[sandbox] network = "provider_only"`` is active the agent process
+When ``[sandbox] agent_network = "providers"`` is active the agent process
 runs inside a fresh, empty network namespace (see
 ``agent6.sandbox.broker``). It has **zero** IP connectivity of its own;
 the only way out is a set of ``AF_UNIX`` sockets, one per allow-listed
@@ -14,7 +14,7 @@ issue every request; if an endpoint has a broker socket registered, the
 request is dialled over that unix-domain socket (TLS stays end-to-end —
 the broker only ever splices ciphertext). If no socket is registered the
 request falls through to a plain ``httpx`` call, byte-for-byte identical
-to the un-sandboxed path, so non-``provider_only`` runs are unaffected.
+to the un-sandboxed path, so runs without it are unaffected.
 
 Fail-closed: the kernel network namespace is the actual security
 boundary. If the registry is empty or wrong while the process is

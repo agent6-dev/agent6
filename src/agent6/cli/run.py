@@ -31,6 +31,7 @@ from agent6.cli._common import (
     _start_mcp_manager_if_enabled,
 )
 from agent6.cli.egress import (
+    _check_network_profile,
     _maybe_apply_agent_landlock,
     _maybe_start_egress,
     _stop_egress,
@@ -538,6 +539,11 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         return 2
     _warn_if_unsandboxed(selected_profile)
 
+    net_err = _check_network_profile(cfg, selected_profile)
+    if net_err is not None:
+        print(f"REFUSING: {net_err}", file=sys.stderr)
+        return 2
+
     missing = _check_provider_keys(cfg)
     if missing is not None:
         print(missing, file=sys.stderr)
@@ -900,6 +906,11 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
         print(f"REFUSING: {exc}", file=sys.stderr)
         return 2
     _warn_if_unsandboxed(selected_profile)
+
+    net_err = _check_network_profile(cfg, selected_profile)
+    if net_err is not None:
+        print(f"REFUSING: {net_err}", file=sys.stderr)
+        return 2
 
     missing = _check_provider_keys(cfg)
     if missing is not None:

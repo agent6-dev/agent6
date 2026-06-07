@@ -196,7 +196,9 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     config_get = config_sub.add_parser(
         "get", help="Print a leaf's effective value and which layer set it."
     )
-    config_get_key = config_get.add_argument("key", help="Dotted leaf path, e.g. sandbox.network.")
+    config_get_key = config_get.add_argument(
+        "key", help="Dotted leaf path, e.g. sandbox.agent_network."
+    )
     config_get_key.completer = _complete_config_keys  # type: ignore[attr-defined]
     config_get.add_argument(
         "--machine",
@@ -212,7 +214,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ("remove", "Remove a value from a list field."),
     ):
         p = config_sub.add_parser(verb, help=blurb)
-        key_arg = p.add_argument("key", help="Dotted leaf path, e.g. sandbox.network.")
+        key_arg = p.add_argument("key", help="Dotted leaf path, e.g. sandbox.agent_network.")
         key_arg.completer = _complete_config_keys  # type: ignore[attr-defined]
         if verb != "unset":
             val_arg = p.add_argument("value", help="Value (TOML-typed; bare text is a string).")

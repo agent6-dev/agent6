@@ -80,43 +80,80 @@ def _warn_if_unsandboxed(selected_profile: SandboxProfile) -> None:
     )
 
 
+def _is_loopback(host: str) -> bool:
+    """True for a loopback host (a local model endpoint, e.g. Ollama)."""
+    return host in ("localhost", "127.0.0.1", "::1", "0.0.0.0") or host.startswith("127.")  # noqa: S104
+
+
+def _check_network_profile(cfg: Config, selected_profile: SandboxProfile) -> str | None:
+    """A refusal message if the network config can't be enforced on this profile.
+
+    ``agent_network = "local"`` (loopback-pinning) and ``tool_network =
+    "carveouts"`` (singling one tool out) both need a network namespace, which
+    only the ``strict`` profile provides. On ``hardened`` (a real sandbox that
+    can't provide them) we refuse rather than silently under-confine; on
+    ``none`` (no sandbox at all) the unsandboxed warning already covers it and
+    we run. Returns None when fine.
+    """
+    if selected_profile != "hardened":
+        return None
+    sb = cfg.sandbox
+    if sb.agent_network == "local":
+        return (
+            "sandbox.agent_network = 'local' requires the strict profile (loopback"
+            " pinning needs the egress broker), but this host supports only"
+            " 'hardened'. Use 'providers' or 'open'."
+        )
+    if sb.tool_network == "carveouts":
+        return (
+            "sandbox.tool_network = 'carveouts' requires the strict profile (a"
+            " per-tool network namespace singles one tool out), but this host"
+            " supports only 'hardened'. Use 'blocked' or 'allowed'."
+        )
+    return None
+
+
 def _maybe_start_egress(
     cfg: Config, selected_profile: SandboxProfile
 ) -> tuple[BrokerHandle | None, Path | None, str | None]:
-    """Establish provider-only egress confinement, if configured.
+    """Confine the agent process's egress via the broker, if configured.
 
-    Returns ``(broker, sock_dir, error)``. When ``error`` is non-None the
-    caller must refuse the run (the message is ready to print). When
-    ``sandbox.network != "provider_only"`` returns ``(None, None, None)``
-    and nothing is confined.
+    Returns ``(broker, sock_dir, error)``. ``error`` non-None ⇒ the caller must
+    refuse the run. Only acts on the ``strict`` profile under
+    ``agent_network ∈ {providers, local}`` — on ``open`` nothing is confined,
+    and on ``hardened`` the agent-process Landlock (see
+    :func:`_maybe_apply_agent_landlock`) provides port-level confinement
+    instead. ``local`` restricts to loopback provider endpoints and refuses any
+    non-local provider.
 
-    Must be called before any network-using object is built and while the
-    process is single-threaded (``unshare(CLONE_NEWUSER)`` requires it).
-    On success this process is left inside an empty network namespace and
-    the egress routes are registered so provider calls reach the broker.
+    Must run before any network object is built and while single-threaded
+    (``unshare(CLONE_NEWUSER)``). On success the process is left inside an empty
+    network namespace whose only routes are the broker's per-endpoint sockets.
     """
-    if cfg.sandbox.network != "provider_only":
+    mode = cfg.sandbox.agent_network
+    if mode == "open" or selected_profile != "strict":
         return None, None, None
-    if selected_profile != "strict":
-        return (
-            None,
-            None,
-            (
-                "sandbox.network = 'provider_only' requires the strict profile "
-                "(unprivileged user namespaces) to confine egress, but this host "
-                f"only supports the {selected_profile!r} profile. Set "
-                "sandbox.network = 'allow' or 'no', or run on a Linux host with "
-                "user namespaces enabled."
-            ),
-        )
-    endpoints = _provider_endpoints(cfg) | _allow_url_endpoints(cfg)
+    if mode == "local":
+        eps = _provider_endpoints(cfg)
+        non_local = sorted(f"{e.host}:{e.port}" for e in eps if not _is_loopback(e.host))
+        if non_local:
+            return (
+                None,
+                None,
+                "sandbox.agent_network = 'local' permits only loopback providers,"
+                f" but these are non-local: {', '.join(non_local)}. Use a local"
+                " model (e.g. Ollama) or set agent_network = 'providers'.",
+            )
+        endpoints = eps
+    else:  # providers
+        endpoints = _provider_endpoints(cfg) | _allow_url_endpoints(cfg)
     sock_dir = Path(tempfile.mkdtemp(prefix="agent6-egress-"))
     try:
         broker = start_egress_broker(endpoints, sock_dir=sock_dir)
         enter_network_isolation()
     except EgressBrokerError as exc:
         shutil.rmtree(sock_dir, ignore_errors=True)
-        return None, None, f"could not establish provider-only egress: {exc}"
+        return None, None, f"could not establish agent-network confinement: {exc}"
     for ep in endpoints:
         uds = broker.uds_for(ep.host, ep.port)
         if uds is not None:
@@ -179,10 +216,15 @@ def _maybe_apply_agent_landlock(
         *proc_paths,
     )
     write_paths = (cwd, tmp, *dev_files, *proc_paths)
-    # Allow connecting only to the ports the configured providers dial,
-    # rather than blanket-allowing 443: a self-hosted gateway on another
-    # port still works, and nothing else can open a TCP connection.
-    ports = tuple(sorted({ep.port for ep in _provider_endpoints(cfg)}))
+    # Hardened can't run the broker, so we fall back to Landlock TCP-connect
+    # rules: under `providers` confine to the provider ports (host-level, weaker
+    # than the broker but the best hardened offers); under `open` impose no TCP
+    # restriction. (`local` is refused on hardened by `_check_network_profile`.)
+    ports: tuple[int, ...] = (
+        ()
+        if cfg.sandbox.agent_network == "open"
+        else tuple(sorted({ep.port for ep in _provider_endpoints(cfg)}))
+    )
     try:
         report = apply_agent_landlock(
             read_paths=read_paths,

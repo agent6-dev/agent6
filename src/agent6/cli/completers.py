@@ -37,10 +37,11 @@ def _complete_models(
 
 # Dotted config leaves whose type is a Literal/enum, with their allowed values.
 # Used by the `config set/add/remove` value completer so TAB offers the exact
-# valid choices (e.g. `config set sandbox.network <TAB>` -> no/provider_only/allow).
+# valid choices (e.g. `config set sandbox.agent_network <TAB>` -> providers/...).
 _CONFIG_ENUM_CHOICES: dict[str, tuple[str, ...]] = {
     "sandbox.profile": ("auto", "strict", "hardened"),
-    "sandbox.network": ("no", "provider_only", "allow"),
+    "sandbox.agent_network": ("providers", "local", "open"),
+    "sandbox.tool_network": ("blocked", "carveouts", "allowed"),
     "sandbox.run_commands": ("yes", "no", "ask"),
     "git.commit_strategy": ("per_step", "squash", "stage", "none"),
     "workflow.critic": ("off", "on_verify_fail", "before_finish", "periodic"),
