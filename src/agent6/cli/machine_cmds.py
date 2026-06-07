@@ -91,7 +91,7 @@ def _check_scripts_dir(scripts_dir: Path, bundle: Path) -> list[str]:
         rel = entry.relative_to(scripts_dir)
         try:
             resolved = entry.resolve()
-        except OSError as exc:
+        except (OSError, RuntimeError) as exc:  # RuntimeError: circular symlink
             problems.append(f"scripts/{rel}: {exc}")
             continue
         if not _is_inside(resolved, bundle):
@@ -109,7 +109,12 @@ def _check_command_scripts(name: str, state: ToolState, bundle: Path) -> list[st
         if ref is None:
             continue
         target = bundle / ref
-        if not _is_inside(target.resolve(), bundle):
+        try:
+            resolved = target.resolve()
+        except (OSError, RuntimeError) as exc:  # RuntimeError: circular symlink
+            problems.append(f"state {name!r}: script {element!r}: {exc}")
+            continue
+        if not _is_inside(resolved, bundle):
             problems.append(f"state {name!r}: script {element!r} escapes the bundle")
         elif not target.exists():
             problems.append(f"state {name!r}: script {element!r} not found in bundle")

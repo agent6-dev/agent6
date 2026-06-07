@@ -413,3 +413,17 @@ kind = "anthropic"
     )
     problems = _problems(tmp_path, body)
     assert any("providers" in p for p in problems)
+
+
+def test_machine_config_overlay_rejects_sandbox(tmp_path: Path) -> None:
+    # Sandbox policy (jail network/run_commands/protection) is operator-only;
+    # a machine file must not weaken it via its [config] overlay.
+    body = (
+        VALID_MACHINE
+        + """
+[config.sandbox]
+network = "allow"
+"""
+    )
+    problems = _problems(tmp_path, body)
+    assert any("sandbox" in p for p in problems)

@@ -279,8 +279,11 @@ closed:
   arbitrary subprocesses, so a child is never silently handed host
   networking that would defeat `provider_only`. Enabling egress therefore
   takes two explicit operator opt-ins (the state flag plus
-  `sandbox.network = "allow"`), neither of which the LLM can set — the
-  machine `[config]` overlay is author-supplied and forbids `providers.*`.
+  `sandbox.network = "allow"`). The state flag aside, neither sandbox setting
+  is settable by the machine: its `[config]` overlay (possibly LLM-drafted or
+  shared, so untrusted) is rejected at load if it declares `[providers.*]` OR
+  `[sandbox.*]` — both are operator-only, read solely from the global/repo
+  config. So a machine can never widen its own egress or weaken its jail.
 - **Bundle confinement.** Helper scripts live in an operator-reviewed
   `scripts/` directory beside the `.asm.toml`. `machine check` validates
   that every entry under `scripts/` resolves *inside* the bundle (symlinks

@@ -211,6 +211,27 @@ def test_bundle_flags_symlink_escape(tmp_path: Path) -> None:
     assert any("outside the bundle" in p for p in problems)
 
 
+def test_bundle_reports_circular_symlink_in_scripts(tmp_path: Path) -> None:
+    # A circular symlink makes Path.resolve() raise RuntimeError; the validator
+    # must report it as a problem, not crash.
+    f = _write(tmp_path, NET_MACHINE)
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "loop").symlink_to(tmp_path / "scripts" / "loop")
+    spec = load_machine(f)
+    problems = _validate_bundle(spec, f)  # must not raise
+    assert any("loop" in p for p in problems)
+
+
+def test_bundle_reports_circular_symlink_command_ref(tmp_path: Path) -> None:
+    text = NET_MACHINE.replace('command = ["scripts/fetch.sh"]', 'command = ["scripts/loop"]')
+    f = _write(tmp_path, text)
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "loop").symlink_to(tmp_path / "scripts" / "loop")
+    spec = load_machine(f)
+    problems = _validate_bundle(spec, f)  # must not raise
+    assert any("fetch" not in p and "loop" in p for p in problems)
+
+
 def test_machine_check_fails_on_bad_bundle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from agent6.cli import main
 

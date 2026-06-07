@@ -19,6 +19,7 @@ list, so completion degrades to free-text rather than breaking the shell.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 from pathlib import Path
@@ -36,11 +37,19 @@ _CACHE_TTL_S = 600  # 10 minutes
 _FETCH_TIMEOUT_S = 1.5  # keep tab-completion snappy
 
 
-def _cache_path(provider_name: str) -> Path:
+def _cache_path(provider_name: str) -> Path | None:
+    """Cache file for *provider_name*, or None when the name is not a safe
+    single path component. Provider names are config table keys; guard against
+    ``/`` or ``..`` so a crafted name can't write the cache outside cache_dir().
+    """
+    if provider_name in ("", ".", "..") or provider_name != Path(provider_name).name:
+        return None
     return cache_dir() / "models" / f"{provider_name}.json"
 
 
-def _read_cache(path: Path) -> list[str] | None:
+def _read_cache(path: Path | None) -> list[str] | None:
+    if path is None:
+        return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -51,7 +60,9 @@ def _read_cache(path: Path) -> list[str] | None:
     return None
 
 
-def _write_cache(path: Path, models: list[str]) -> None:
+def _write_cache(path: Path | None, models: list[str]) -> None:
+    if path is None:
+        return
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({"models": models}), encoding="utf-8")
@@ -104,10 +115,10 @@ def list_models(
     """
     path = _cache_path(provider_name)
     cached = _read_cache(path)
-    try:
-        age = time.time() - path.stat().st_mtime
-    except OSError:
-        age = float("inf")
+    age = float("inf")
+    if path is not None:
+        with contextlib.suppress(OSError):
+            age = time.time() - path.stat().st_mtime
     if cached is not None and age < ttl_s:
         return cached
     try:

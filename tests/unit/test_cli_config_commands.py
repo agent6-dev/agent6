@@ -151,19 +151,30 @@ def _machine_file(tmp_path: Path) -> Path:
 
 def test_machine_overlay_set_and_get(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
     mf = _machine_file(iso)
-    assert _run(["config", "set", "sandbox.network", "no", "--machine", str(mf)]) == 0
+    # A non-security knob is fine in a machine overlay (workflow tuning).
+    assert _run(["config", "set", "workflow.critic", "on_verify_fail", "--machine", str(mf)]) == 0
     data = tomllib.loads(mf.read_text(encoding="utf-8"))
-    assert data["config"] == {"sandbox": {"network": "no"}}  # type: ignore[comparison-overlap]
+    assert data["config"] == {"workflow": {"critic": "on_verify_fail"}}  # type: ignore[comparison-overlap]
     # The original machine tables survive the edit.
     assert data["machine"]["name"] == "demo"  # type: ignore[index]
     capsys.readouterr()
-    assert _run(["config", "get", "sandbox.network", "--machine", str(mf)]) == 0
+    assert _run(["config", "get", "workflow.critic", "--machine", str(mf)]) == 0
     assert "[machine]" in capsys.readouterr().out
 
 
 def test_machine_overlay_rejects_providers(iso: Path) -> None:
     mf = _machine_file(iso)
     assert _run(["config", "set", "providers.x.kind", "anthropic", "--machine", str(mf)]) == 2
+
+
+def test_machine_overlay_rejects_sandbox(iso: Path) -> None:
+    # Sandbox policy is an operator-only decision — a machine file (possibly
+    # LLM-drafted/shared) must not weaken the jail via its [config] overlay.
+    mf = _machine_file(iso)
+    assert _run(["config", "set", "sandbox.network", "allow", "--machine", str(mf)]) == 2
+    assert _run(["config", "add", "sandbox.allow_urls", "evil.com", "--machine", str(mf)]) == 2
+    # ...but the same keys are settable in the global config.
+    assert _run(["config", "set", "sandbox.network", "allow"]) == 0
 
 
 def test_repo_and_machine_together_rejected(iso: Path) -> None:

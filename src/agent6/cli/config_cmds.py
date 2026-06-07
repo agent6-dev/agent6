@@ -93,10 +93,23 @@ def _config_write_target(*, repo: bool, machine: Path | None) -> tuple[Path, str
     return global_config_path(), ""
 
 
-def _reject_machine_providers(key: str, machine: Path | None) -> str | None:
-    """Error string if *key* touches ``providers.*`` in a machine overlay."""
-    if machine is not None and (key == "providers" or key.startswith("providers.")):
-        return "machine [config] overlays must not set providers.* (endpoints/keys are global-only)"
+def _reject_machine_protected(key: str, machine: Path | None) -> str | None:
+    """Error string if *key* touches an operator-only table in a machine overlay.
+
+    Mirrors ``MachineSpec._forbid_protected_overlay_tables``: a machine
+    ``[config]`` overlay must not carry ``providers.*`` (endpoints/secrets) or
+    ``sandbox.*`` (jail policy — network egress incl. allow_urls, run_commands,
+    .git/.agent6 protection). Those are operator decisions, set in the
+    global/repo config, never in a (possibly untrusted) machine file.
+    """
+    if machine is None:
+        return None
+    for table in ("providers", "sandbox"):
+        if key == table or key.startswith(f"{table}."):
+            return (
+                f"machine [config] overlays must not set {table}.* —"
+                " connections/secrets and sandbox policy are operator-only (global/repo config)"
+            )
     return None
 
 
@@ -145,7 +158,7 @@ def _cmd_config_get(key: str, *, machine: Path | None) -> int:
 
 def _cmd_config_set(key: str, value: str, *, repo: bool, machine: Path | None) -> int:
     """Set a scalar leaf in the target file (global / repo / machine overlay)."""
-    if err := _reject_machine_providers(key, machine):
+    if err := _reject_machine_protected(key, machine):
         print(f"ERROR: {err}", file=sys.stderr)
         return 2
     try:
@@ -172,7 +185,7 @@ def _cmd_config_set(key: str, value: str, *, repo: bool, machine: Path | None) -
 
 def _cmd_config_unset(key: str, *, repo: bool, machine: Path | None) -> int:  # noqa: PLR0911
     """Remove a leaf so it reverts to the next-lower layer / built-in default."""
-    if err := _reject_machine_providers(key, machine):
+    if err := _reject_machine_protected(key, machine):
         print(f"ERROR: {err}", file=sys.stderr)
         return 2
     try:
@@ -204,7 +217,7 @@ def _config_list_edit(  # noqa: PLR0911
     key: str, value: str, *, repo: bool, machine: Path | None, add: bool
 ) -> int:
     """Shared body for `config add` / `config remove` on a list field."""
-    if err := _reject_machine_providers(key, machine):
+    if err := _reject_machine_protected(key, machine):
         print(f"ERROR: {err}", file=sys.stderr)
         return 2
     try:

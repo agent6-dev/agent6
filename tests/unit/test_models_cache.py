@@ -90,3 +90,23 @@ def test_never_raises_on_bad_payload(cache_home: Path, monkeypatch: pytest.Monke
     monkeypatch.setattr(httpx, "get", _garbage)
     entry = OpenAIProviderEntry(kind="openai")
     assert models_cache.list_models("openai", entry, "sk") == []
+
+
+def test_unsafe_provider_name_has_no_cache_path() -> None:
+    # A provider name with path separators / traversal must not form a cache
+    # path (no writing the cache outside cache_dir/models).
+    cache_path = models_cache._cache_path  # pyright: ignore[reportPrivateUsage]
+    assert cache_path("../../etc/cron") is None
+    assert cache_path("a/b") is None
+    assert cache_path("..") is None
+    assert cache_path("openrouter") is not None
+
+
+def test_unsafe_provider_name_still_fetches(
+    cache_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An unsafe name skips the cache but still fetches live (never raises).
+    monkeypatch.setattr(httpx, "get", _ok_response(["m1"]))
+    entry = OpenAIProviderEntry(kind="openai", base_url="https://api.openai.com/v1")
+    assert models_cache.list_models("../evil", entry, "sk") == ["m1"]
+    assert not (cache_home / "models").exists()  # nothing written outside

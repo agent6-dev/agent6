@@ -581,11 +581,15 @@ max_usd = 50.0
 Unset keys read straight through to the lower layers, so a machine only
 states what it wants to change. Two hard rules:
 
-- **No connections/secrets.** A `[config.providers.*]` block is a
-  *load-time* error — provider endpoints, api-key env names, and any
-  secret value live in the global config / secrets store, never in a
-  `.asm.toml` file. The overlay can only *route to* a provider name that
-  already exists in the effective config.
+- **No connections/secrets, no sandbox policy.** A `[config.providers.*]`
+  or `[config.sandbox.*]` block is a *load-time* error. Provider endpoints,
+  api-key env names, and secret values live in the global config / secrets
+  store; sandbox policy (network egress incl. `allow_urls`, `run_commands`,
+  `.git`/`.agent6` protection) is an operator decision in the global/repo
+  config. A machine file may be LLM-drafted or shared, so it must not be able
+  to widen its own egress or weaken its jail through the overlay. The overlay
+  can only *route to* a provider name that already exists in the effective
+  config.
 - Per-`agent`-state knobs (§4.3) override the overlay for that one state.
   Precedence for an agent loop is therefore: per-state knob > machine
   `[config]` > repo config > global config > built-in default.
