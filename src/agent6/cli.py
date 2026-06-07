@@ -73,6 +73,7 @@ from agent6.machine import (
     AgentExecResult,
     AgentFact,
     AgentRequest,
+    DryRunReport,
     EngineError,
     JournalError,
     LiveWorld,
@@ -83,6 +84,7 @@ from agent6.machine import (
     ToolState,
     build_authoring_prompt,
     drive,
+    dry_run,
     extract_toml,
     load_machine,
     machine_lock,
@@ -1402,6 +1404,22 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
         help="Validate a .asm.toml machine file (parse, type-check, reachability). Pure.",
     )
     machine_check.add_argument("file", type=Path, help="Path to the .asm.toml machine file.")
+    machine_test = machine_sub.add_parser(
+        "test",
+        help=(
+            "Dry-run a machine without I/O: synthesize each state's success fact"
+            " (per-state) and evaluate branch predicates against a fixture"
+            " (per-branch). Pure — no jail/network/provider calls."
+        ),
+    )
+    machine_test.add_argument("file", type=Path, help="Path to the .asm.toml machine file.")
+    machine_test.add_argument(
+        "--blackboard",
+        type=Path,
+        default=None,
+        metavar="FIXTURE.toml",
+        help="TOML fixture of variable values, overlaid on defaults for branch routing.",
+    )
     machine_graph = machine_sub.add_parser(
         "graph",
         help="Emit the machine as a state diagram (mermaid or Graphviz dot).",
@@ -1617,6 +1635,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
         return _cmd_mcp_serve(args.config)
     if args.command == "machine" and args.machine_command == "check":
         return _cmd_machine_check(args.file)
+    if args.command == "machine" and args.machine_command == "test":
+        return _cmd_machine_test(args.file, blackboard=args.blackboard)
     if args.command == "machine" and args.machine_command == "graph":
         return _cmd_machine_graph(args.file, fmt=args.format)
     if args.command == "machine" and args.machine_command == "run":
@@ -1736,6 +1756,63 @@ def _cmd_machine_check(path: Path) -> int:
         return 1
     print(f"OK: {path} ({spec.machine}, {len(spec.states)} states)")
     return 0
+
+
+def _cmd_machine_test(path: Path, *, blackboard: Path | None) -> int:
+    # `machine test` is `machine check` plus a pure dry-run; reuse the same
+    # load + bundle validation so a malformed machine fails the same way.
+    try:
+        spec = load_machine(path)
+    except MachineError as exc:
+        print(f"FAIL: {path}", file=sys.stderr)
+        for problem in exc.problems:
+            print(f"  - {problem}", file=sys.stderr)
+        return 1
+    bundle_problems = _validate_bundle(spec, path)
+    if bundle_problems:
+        print(f"FAIL: {path} (bundle)", file=sys.stderr)
+        for problem in bundle_problems:
+            print(f"  - {problem}", file=sys.stderr)
+        return 1
+    fixture: dict[str, Any] | None = None
+    if blackboard is not None:
+        if not blackboard.is_file():
+            print(f"ERROR: blackboard fixture not found: {blackboard}", file=sys.stderr)
+            return 2
+        try:
+            fixture = tomllib.loads(blackboard.read_text(encoding="utf-8"))
+        except tomllib.TOMLDecodeError as exc:
+            print(f"ERROR: blackboard fixture is not valid TOML: {exc}", file=sys.stderr)
+            return 2
+    report = dry_run(spec, fixture)
+    _print_dry_run_report(spec, report)
+    if report.ok:
+        print(
+            f"\nOK: {path} dry-run passed ({len(report.states)} states, "
+            f"{len(report.branches)} branches)"
+        )
+        return 0
+    print(f"\nFAIL: {path} dry-run found problems", file=sys.stderr)
+    return 1
+
+
+def _print_dry_run_report(spec: MachineSpec, report: DryRunReport) -> None:
+    """Render the per-state and per-branch dry-run tables."""
+    mark = {True: "ok", False: "FAIL"}
+    print(f"machine {spec.machine!r}: per-state dry-run")
+    print(f"  {'STATE':<16} {'KIND':<9} {'->LABEL':<9} {'GOTO':<14} STATUS  DETAIL")
+    for s in report.states:
+        print(
+            f"  {s.name:<16} {s.kind:<9} {(s.label or '-'):<9} {(s.goto or '-'):<14}"
+            f" {mark[s.ok]:<6}  {s.detail}"
+        )
+    if report.branches:
+        print("\nper-branch routing (fixture overlaid on defaults)")
+        print(f"  {'STATE':<16} {'CLAUSE':<7} {'GOTO':<14} STATUS  PREDICATE")
+        for b in report.branches:
+            clause = "-" if b.clause_index is None else f"[{b.clause_index}]"
+            pred = b.detail if not b.ok else (b.predicate or "")
+            print(f"  {b.name:<16} {clause:<7} {(b.goto or '-'):<14} {mark[b.ok]:<6}  {pred}")
 
 
 def _cmd_machine_graph(path: Path, *, fmt: str) -> int:

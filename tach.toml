@@ -190,7 +190,7 @@ depends_on = ["agent6.graph.curator", "agent6.graph.ipc", "agent6.graph.models",
 
 [[modules]]
 path = "agent6.machine"
-depends_on = ["agent6.machine.authoring", "agent6.machine.model", "agent6.machine.graph", "agent6.machine.engine", "agent6.machine.journal"]
+depends_on = ["agent6.machine.authoring", "agent6.machine.model", "agent6.machine.graph", "agent6.machine.engine", "agent6.machine.journal", "agent6.machine.dryrun"]
 
 [[modules]]
 path = "agent6.machine.authoring"
@@ -219,3 +219,7 @@ depends_on = ["agent6.portable"]
 [[modules]]
 path = "agent6.machine.engine"
 depends_on = ["agent6.machine.model", "agent6.machine.template", "agent6.machine.predicate", "agent6.machine.journal", "agent6.sandbox", "agent6.types"]
+
+[[modules]]
+path = "agent6.machine.dryrun"
+depends_on = ["agent6.machine.model", "agent6.machine.template", "agent6.machine.predicate", "agent6.machine.journal", "agent6.machine.engine"]

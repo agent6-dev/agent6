@@ -18,6 +18,7 @@ from agent6.machine.authoring import (
     build_authoring_prompt,
     extract_toml,
 )
+from agent6.machine.dryrun import BranchCheck, DryRunReport, StateCheck, dry_run
 from agent6.machine.engine import (
     AgentExecResult,
     AgentRequest,
@@ -57,6 +58,8 @@ __all__ = [
     "AgentExecResult",
     "AgentFact",
     "AgentRequest",
+    "BranchCheck",
+    "DryRunReport",
     "EngineError",
     "GraphFormat",
     "JournalError",
@@ -69,6 +72,7 @@ __all__ = [
     "MachineSpec",
     "PendingWait",
     "Snapshot",
+    "StateCheck",
     "StepEvent",
     "ToolExecResult",
     "ToolState",
@@ -76,6 +80,7 @@ __all__ = [
     "World",
     "build_authoring_prompt",
     "drive",
+    "dry_run",
     "extract_toml",
     "load_machine",
     "machine_lock",
