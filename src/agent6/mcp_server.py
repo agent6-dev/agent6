@@ -171,7 +171,7 @@ class MCPServer:
                 description=(
                     "Run an arbitrary argv inside the agent6 jail (Landlock + seccomp"
                     " + user namespace). Requires [sandbox].run_commands = 'auto' or"
-                    " 'yes' in agent6.toml; 'ask' and 'no' modes are refused at the"
+                    " 'yes' in your config; 'ask' and 'no' modes are refused at the"
                     " MCP boundary because there is no operator to prompt."
                 ),
                 input_schema={

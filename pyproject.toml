@@ -65,7 +65,7 @@ include = [
     "README.md",
     "SECURITY.md",
     "AGENTS.md",
-    "agent6.example.toml",
+    "CONFIG.md",
     "tach.toml",
     "LICENSE",
 ]

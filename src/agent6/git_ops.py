@@ -84,7 +84,7 @@ def verify_git_identity(path: Path, identity: CommitIdentity) -> tuple[str, str]
             f"Git identity not configured: {joined} is empty. Either run\n"
             f"    git -C {path} config user.name 'Your Name'\n"
             f"    git -C {path} config user.email 'you@example.com'\n"
-            f"or set [git.commit].name / [git.commit].email in agent6.toml."
+            f"or set [git.commit].name / [git.commit].email in your agent6 config."
         )
     return name, email
 

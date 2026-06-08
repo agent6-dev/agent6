@@ -35,7 +35,7 @@ import pwd
 from dataclasses import dataclass
 from pathlib import Path
 
-# Environment overrides. All optional; documented in agent6.example.toml.
+# Environment overrides. All optional; documented in CONFIG.md.
 _ALLOW_ROOT_ENV = "AGENT6_ALLOW_ROOT"
 _GLOBAL_DIR_ENV = "AGENT6_CONFIG_HOME"  # points at the agent6 global dir itself
 

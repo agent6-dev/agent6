@@ -156,7 +156,7 @@ class LiveWorld:
 
     ``agent`` states are delegated to an injected ``agent_runner`` so the engine
     module need not import the provider / workflow stack; the CLI wires the real
-    runner (loading ``agent6.toml``, building a provider and the loop). When no
+    runner (loading the effective config, building a provider and the loop). When no
     runner is configured, reaching an ``agent`` state fails loudly.
     """
 

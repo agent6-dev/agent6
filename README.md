@@ -191,9 +191,9 @@ breakdown, and the sandbox profiles.
 ## Configuration
 
 agent6 is **secure by default**: every field has a default, and
-security-sensitive ones default to the safe value. The full annotated
-reference is [agent6.example.toml](agent6.example.toml); the sandbox
-profiles and security knobs are explained in [SECURITY.md](SECURITY.md).
+security-sensitive ones default to the safe value. The full field
+reference is [CONFIG.md](CONFIG.md); the sandbox profiles and security
+model are explained in [SECURITY.md](SECURITY.md).
 Get started with `agent6 connect` + `agent6 model` (global) and
 `agent6 init` (per-repo). `agent6 config show` audits every effective
 value and where it came from; `agent6 check` validates without running.

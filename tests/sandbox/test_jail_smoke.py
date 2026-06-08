@@ -159,13 +159,13 @@ def test_jail_protect_paths_block_writes_to_subdir(jail_bin: Path, tmp_path: Pat
 
 
 def test_jail_protect_paths_block_writes_to_file(jail_bin: Path, tmp_path: Path) -> None:
-    """extra_protect_paths must also protect individual files (e.g. agent6.toml)."""
-    cfg = tmp_path / "agent6.toml"
+    """extra_protect_paths must also protect individual files (not just dirs)."""
+    cfg = tmp_path / "protected.txt"
     cfg.write_text("original\n", encoding="utf-8")
     res = run_in_jail(
         JailPolicy(
             cwd=tmp_path,
-            argv=("/bin/sh", "-c", "echo pwned > agent6.toml; cat agent6.toml"),
+            argv=("/bin/sh", "-c", "echo pwned > protected.txt; cat protected.txt"),
             extra_protect_paths=(cfg,),
             timeout_s=10.0,
         )

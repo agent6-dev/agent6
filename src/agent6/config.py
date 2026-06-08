@@ -267,8 +267,8 @@ class SandboxConfig(BaseModel):
     # protect set". Hardened-mode side effect: writes to NEW top-level
     # entries created at the cwd root after launch are denied.
     protect_git: bool = True
-    # Same idea, for `agent6.toml` and `.agent6/` (run state, transcripts,
-    # graph). The curator subprocess has its own jail policy that does
+    # Same idea, for the `.agent6/` directory (config + run state: transcripts,
+    # graph, logs). The curator subprocess has its own jail policy that does
     # grant `.agent6/` write access; worker children do not.
     protect_agent6: bool = True
     # Extra egress destinations the AGENT process may reach under

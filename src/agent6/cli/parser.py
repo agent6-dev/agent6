@@ -446,7 +446,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help=(
             "Run agent6 as an MCP stdio server, exposing run_verify /"
             " run_in_sandbox / apply_patch_in_sandbox / query_dag / list_runs"
-            " against the cwd's agent6.toml. Speaks line-delimited JSON-RPC"
+            " using the cwd's agent6 config. Speaks line-delimited JSON-RPC"
             " on stdin/stdout; spawn from an MCP-aware client (e.g. VS Code"
             " Copilot's hand-off menu) and configure it with this command."
         ),

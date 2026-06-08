@@ -6,7 +6,7 @@ Both `AnthropicProvider` (Anthropic Messages) and `OpenAIProvider` (any
 OpenAI Chat Completions-compatible endpoint: OpenAI, OpenRouter, Ollama,
 vLLM, llama.cpp) satisfy the `Provider` Protocol and can serve ANY
 sub-agent role. Role-to-provider routing lives in `[models.<role>]` in
-`agent6.toml`; the providers themselves are interchangeable from the
+your config; the providers themselves are interchangeable from the
 sub-agents' point of view.
 """
 

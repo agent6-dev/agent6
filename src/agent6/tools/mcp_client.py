@@ -21,7 +21,7 @@ Threat model
 
 Each MCP server runs as the *operator's* user, OUTSIDE the agent6 jail,
 with whatever environment the operator's shell has. The argv comes
-exclusively from ``agent6.toml`` (``[[mcp.servers]] command = [...]``);
+exclusively from your config (``[[mcp.servers]] command = [...]``);
 the LLM cannot influence it. This is the same trust model as the
 ``[notify].on_complete`` hook: operator-controlled argv, full user
 authority, no sandboxing.

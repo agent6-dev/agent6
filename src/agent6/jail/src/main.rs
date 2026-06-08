@@ -54,7 +54,7 @@ struct Policy {
     /// these" — same end result for files that exist at jail-launch time,
     /// at the cost of denying writes to new top-level entries created
     /// after the jail starts. Used to keep an LLM-driven `run_command`
-    /// from rewriting `.git`, `agent6.toml`, or `.agent6/`. Each entry
+    /// from rewriting `.git` or `.agent6/`. Each entry
     /// must be absolute; entries that don't exist on disk are skipped.
     #[serde(default)]
     extra_protect_paths: Vec<PathBuf>,

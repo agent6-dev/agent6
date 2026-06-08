@@ -7,7 +7,7 @@ OpenAI itself, OpenRouter, Ollama (`/v1`), vLLM, LM Studio, llama.cpp's
 server, Kimi via Moonshot, DeepSeek-V3 via the official API or via
 OpenRouter. Any sub-agent role (planner, worker, critic, reviewer,
 summarizer) can be routed through this provider via
-`[models.<role>]` in `agent6.toml`.
+`[models.<role>]` in your config.
 
 Single audited HTTP call site, same shape as
 `agent6.providers.anthropic`. Uses httpx directly (no SDK) for a

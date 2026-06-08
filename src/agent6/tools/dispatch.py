@@ -867,7 +867,6 @@ class ToolDispatcher:
         if self._config.sandbox.protect_git:
             protect_paths.append((self._root / ".git").resolve())
         if self._config.sandbox.protect_agent6:
-            protect_paths.append((self._root / "agent6.toml").resolve())
             protect_paths.append((self._root / self._agent6_dir_name).resolve())
         protect_paths.extend(self._extra_protect_paths)
         # caller-provided timeout overrides the JailPolicy default

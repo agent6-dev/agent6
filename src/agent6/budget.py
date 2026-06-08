@@ -23,7 +23,7 @@ provider call raises `BudgetExceeded`; the workflow drains and the
 process exits with a distinct exit code so resume tooling can
 recognise the condition.
 
-USD budgets: configure `[budget].max_usd` in agent6.toml to specify a
+USD budgets: configure `[budget].max_usd` in your config to specify a
 dollar cap; the config loader converts it to token ceilings at load
 time using the worker model's pricing (see `usd_budget_to_tokens` in
 this module). Tokens stay the authoritative ceiling because token

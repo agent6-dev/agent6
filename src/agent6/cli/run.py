@@ -107,7 +107,7 @@ _REPL_HELP = (
     "  /mcp                     - list MCP servers + tools currently wired\n"
     "                              into the agent's tool surface\n"
     "  /init                    - run `agent6 init` in the current cwd to\n"
-    "                              (re)write agent6.toml/AGENTS.md scaffolds\n"
+    "                              (re)write .agent6/config.toml + AGENTS.md scaffolds\n"
     "  /undo                    - git revert HEAD (forward revert of the\n"
     "                              last auto-commit; safe under git policy).\n"
     "                              History is preserved: a NEW commit is\n"
@@ -234,7 +234,7 @@ def _repl_list_mcp(mcp_manager: MCPManager | None) -> None:
     """REPL /mcp: print configured MCP servers + their tool surface."""
     if mcp_manager is None:
         print(
-            "[agent6] /mcp: no MCP servers configured (set [mcp] in agent6.toml)",
+            "[agent6] /mcp: no MCP servers configured (set [mcp] in your config)",
             file=sys.stderr,
         )
         return
@@ -807,7 +807,7 @@ def _fire_notify_hook(
 ) -> None:
     """Run the operator-configured post-completion hook.
 
-    The argv comes from `[notify].on_complete` in agent6.toml — operator-
+    The argv comes from `[notify].on_complete` in your config — operator-
     controlled, not LLM-controlled — so it does not go through the jail.
     Failures are logged to stderr and do not change the agent6 exit code.
     """
