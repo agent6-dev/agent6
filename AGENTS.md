@@ -83,7 +83,7 @@ uv run ruff check && uv run ruff format --check && \
   uv run pyright && uv run tach check && uv run pytest
 ```
 
-All five must pass. 691 tests currently green.
+All five must pass; keep the suite green.
 
 ## Security invariants (do not weaken)
 
@@ -96,10 +96,12 @@ All five must pass. 691 tests currently green.
   audited argv depending only on operator input are allowed to call
   `subprocess.run` / `subprocess.Popen` directly: `git_ops.py`,
   `detect.py`, `graph/curator.py`, `graph/client.py`, `sandbox/jail.py`
-  (the launcher itself), and a
-  small set of `cli.py` helpers (TUI spawn, `$EDITOR` for plan editing,
-  `git diff/log` for the review subcommand, `rg` for history search).
-  Audit with `rg 'subprocess\.(run|Popen)' src/agent6/`.
+  (the launcher itself), and a small set of `cli/` helpers (TUI spawn,
+  `$EDITOR` for plan editing, `git diff/log` for the review subcommand,
+  `rg` for history search, and the `machine run` supervisor that spawns
+  each agent state as a fixed-argv `python -m agent6.cli.machine_agent`
+  subprocess — its request, including the prompt, travels in a temp file,
+  never on argv). Audit with `rg 'subprocess\.(run|Popen)' src/agent6/`.
 - `src/agent6/git_ops.py` refuses `push`, `--force`, history rewrite,
   `reset --hard`, and `branch -D` unconditionally. Do not add overrides.
 - Config is **secure by default**: every field has a default, and

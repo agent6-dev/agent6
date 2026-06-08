@@ -209,16 +209,14 @@ expected.
 
 ### 4. Fixed tool surface
 
-The LLM only sees the tools declared in
-`src/agent6/tools/schema.py`:
-
-`read_file`, `list_dir`, `grep`, `apply_edit`, `run_verify_command`,
-and (capability-gated) `run_command`.
-
-There is no `shell`, no `write_file` (writes go through `apply_edit`,
-which is an in-process rewriter that refuses paths outside cwd), no
-`web_fetch`, no `eval`, no MCP. Adding a tool requires a security review
-note in the commit message — see [AGENTS.md](AGENTS.md).
+The LLM only ever sees the fixed, audited set declared in
+`src/agent6/tools/schema.py` (enumerated in the README): structured
+edits, read-only navigation, fixed-argv verify/metric commands, a
+terminal `finish_run`, a curator-backed task notepad, and the
+capability-gated `run_command`. There is no `shell`, no `write_file`
+(writes go through `apply_edit`, an in-process rewriter that refuses
+paths outside cwd), no `web_fetch`, and no `eval`. Adding a tool requires
+a security review note in the commit message — see [AGENTS.md](AGENTS.md).
 
 ### 5. Git invariants
 

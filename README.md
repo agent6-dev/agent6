@@ -163,100 +163,39 @@ Other commands:
 
 agent6 is a single-loop agent: one provider, one model, one message
 history. The model drives the run by calling tools; the workflow
-dispatches tools, snapshots state, and tracks budget.
+dispatches them, snapshots state before every LLM call (so any run is
+resumable), commits when `verify_command` passes, and tracks budget with
+hard stops. Module boundaries (`cli → workflows → agents → tools →
+sandbox`) are enforced by [tach](https://docs.gauge.sh/).
 
-```
-                    +---------------------------+
-                    |         agent6 CLI        |
-                    +-------------+-------------+
-                                  |
-                +-----------------+-----------------+
-                |                 |                 |
-          +-----v-----+     +-----v-----+    +------v-----+
-          | workflows |     |  agents/  |    |   graph/   |
-          |  run      |     |code_review|    |   curator  |
-          |  review   |     |           |    | (subproc)  |
-          +-----+-----+     +-----+-----+    +------------+
-                |                 |
-          +-----v-----------------v-----+
-          |        tools/dispatch       |
-          | read_file list_dir grep ... |
-          | apply_edit apply_patch ...  |
-          | run_verify_command ...      |
-          | finish_run dag_* ...        |
-          +-------------+---------------+
-                        |
-                +-------v-------+
-                | sandbox/jail  |
-                +-------+-------+
-                        | JSON policy
-                +-------v-------+
-                | agent6-jail   |  (Rust; userns + Landlock + seccomp)
-                +---------------+
-```
+See **[ARCHITECTURE.md](ARCHITECTURE.md)** for the run/review loops, the
+curator subprocess, on-disk run state, and where each concern lives.
 
-Module boundaries are enforced by [tach](https://docs.gauge.sh/):
-`cli → workflows → agents → tools → sandbox`. See
-[ARCHITECTURE.md](ARCHITECTURE.md) for the state machines.
+## Security
 
-### Threat model
+The worker LLM is treated as adversarial — it cannot write or read
+outside the workspace, reach the network beyond the configured provider
+endpoints, corrupt git history or its own run state, or leave processes
+running after the run. This is enforced *structurally*: every LLM-chosen
+child command runs in the `agent6-jail` sandbox (namespaces + `pivot_root`
++ Landlock + seccomp), the agent's own egress is broker-confined to the
+provider endpoints, and `git_ops.py` refuses `push` / `--force` /
+history-rewrite unconditionally. Defaults are safe (`run_commands =
+"ask"`, `agent_network = "providers"`, `tool_network = "block"`,
+`protect_* = true`, `git.allow_* = false`).
 
-The worker LLM is treated as adversarial. It must not be able to:
-
-- write outside the project's working directory;
-- read files outside the project (plus any sibling read-only paths);
-- reach the network except the host:port of each `[providers.*]` block
-  (when `sandbox.agent_network = "providers"`), plus any extra destinations
-  the operator explicitly allow-lists in `sandbox.allow_urls`;
-- corrupt the project's git history or its own configuration / run
-  state from inside the sandbox;
-- leave background processes running after the run ends.
-
-Enforcement is layered:
-
-- **Tool surface** ([src/agent6/tools/schema.py](src/agent6/tools/schema.py)).
-  The LLM cannot directly invoke a shell or write arbitrary files. It
-  has structured-edit, read-only navigation, fixed-argv verify/metric
-  commands, a DAG side-store, and a terminal `finish_run`. When
-  `sandbox.run_commands` is `"yes"` or `"ask"` it additionally gets
-  `run_command(argv)`.
-- **`agent6-jail`** wraps every child command (verify, metric,
-  `run_command`, curator): fresh user/mount/pid/ipc/uts/net namespaces,
-  pivots into a minimal rootfs, applies Landlock, a seccomp filter,
-  drops capabilities, sets `NO_NEW_PRIVS`. In the strict profile, a jailed
-  command's network namespace is empty unless `sandbox.tool_network` grants
-  it — `git push`, `curl`, `pip install`, and DNS all fail with no route,
-  even from an ad-hoc script the worker writes and executes via
-  `run_command`.
-- **`sandbox.protect_git` + `sandbox.protect_agent6`** (default `true`)
-  make `.git/`, `agent6.toml`, and `.agent6/` read-only inside the
-  child's view. In `strict` they are re-bound RO on top of the
-  workspace mount; in `hardened` the launcher switches its Landlock
-  policy to read-only on the cwd with read-write carve-outs for each
-  top-level entry except the protect set.
-- **`git_ops.py`** ([src/agent6/git_ops.py](src/agent6/git_ops.py))
-  constrains the workflow's own git calls: `push`, `--force`,
-  `reset --hard`, `branch -D`, and history rewrites are refused
-  unconditionally.
-- **Landlock on the agent process itself** further restricts what the
-  agent's Python code can read or write outside the jail.
-
-If you set `sandbox.run_commands = "yes"`, `sandbox.agent_network = "open"`,
-and `sandbox.tool_network = "allow"` the worker can talk to anywhere on the
-public internet from inside the sandbox. The defaults exist for a reason.
-
-See [SECURITY.md](SECURITY.md) for the per-layer breakdown.
+See **[SECURITY.md](SECURITY.md)** for the threat model, the per-layer
+breakdown, and the sandbox profiles.
 
 ## Configuration
 
 agent6 is **secure by default**: every field has a default, and
-security-sensitive ones default to the safe value (`allow_push = false`,
-`agent_network = "providers"`, `tool_network = "block"`,
-`run_commands = "ask"`, `protect_* = true`).
-Start from [agent6.example.toml](agent6.example.toml), or just run
-`agent6 connect` + `agent6 model` (global) and `agent6 init` (per-repo).
-Use `agent6 config show` to audit the effective value of every field and
-exactly where it came from; `agent6 check` validates without running.
+security-sensitive ones default to the safe value. The full annotated
+reference is [agent6.example.toml](agent6.example.toml); the sandbox
+profiles and security knobs are explained in [SECURITY.md](SECURITY.md).
+Get started with `agent6 connect` + `agent6 model` (global) and
+`agent6 init` (per-repo). `agent6 config show` audits every effective
+value and where it came from; `agent6 check` validates without running.
 
 ```toml
 [agent6]
@@ -284,12 +223,6 @@ allow_history_rewrite = false
 
 [workflow]
 verify_command = ["uv", "run", "pytest", "-x"]
-# Context compaction thresholds (cumulative tool-result chars). Tier 1 elides
-# old tool_results; tier 2 summarises + restarts (DAG survives, recovered via
-# dag_list_tasks). Defaults shown.
-# compact_drop_at_chars = 256000
-# compact_summarise_at_chars = 768000
-# context_summary_max_tokens = 2048
 
 [budget]
 max_input_tokens  = 2000000
@@ -314,18 +247,6 @@ Budget ceilings can be overridden per-run from the CLI without touching
 config: `agent6 run --max-usd 5 "..."`, or
 `--max-input-tokens` / `--max-output-tokens` on `run`, `plan`, and
 `resume`.
-
-
-### Sandbox profiles
-
-- **strict** — user/mount/pid/ipc/uts/net namespaces + `pivot_root`
-  into a minimal rootfs + Landlock + seccomp + `capset(0)` + rlimits +
-  `NO_NEW_PRIVS`. Requires unprivileged user namespaces.
-- **hardened** — no namespaces, but still Landlock + seccomp +
-  `capset(0)` + rlimits + `NO_NEW_PRIVS`. Works inside default-seccomp
-  Docker.
-- **auto** — `strict` if the kernel allows, else `hardened`. Logs the
-  chosen profile on every run.
 
 ### Providers and models
 
@@ -355,8 +276,10 @@ automatically).
 ## Tool surface
 
 The set of tools given to the LLM is fixed and audited in
-[src/agent6/tools/schema.py](src/agent6/tools/schema.py). Adding a tool
-requires a security review note in the commit message.
+[src/agent6/tools/schema.py](src/agent6/tools/schema.py) (see
+[SECURITY.md](SECURITY.md) §4 for why this surface is the security
+boundary). Adding a tool requires a security review note in the commit
+message.
 
 Read-only navigation:
 
@@ -406,50 +329,25 @@ Pricing lives in [src/agent6/budget.py](src/agent6/budget.py) and is
 updated by hand from the providers' public pricing pages. The budgets
 in `agent6.toml` hard-stop the run; a stopped run is resumable.
 
-## Live event log and TUI
-
-Every run writes a structured JSONL event stream to
-`.agent6/runs/<run-id>/logs.jsonl`. The vocabulary is small and stable:
-
-| Event                       | Notable fields                              |
-| --------------------------- | ------------------------------------------- |
-| `run.start`                 | `user_task`                                 |
-| `tool.call` / `.result`     | `name`, `args` (preview), `ok`, `summary`   |
-| `verify.start` / `.end`     | `cmd`, `exit_code`, `duration_s`, `*_tail`  |
-| `role.call` / `.result`     | `role`, `model`, `tokens_in`, `tokens_out`  |
-| `budget.update`             | totals + caps for input/output tokens       |
-| `approval.prompt`/`.answer` | `id`, `prompt`, `approved`, `source`        |
-| `dag.*`                     | task add / update / cursor moves            |
-| `run.end`                   | `summary`                                   |
-
-This is the data contract for any external viewer. The fold from event
-stream to UI state lives in [src/agent6/ui/state.py](src/agent6/ui/state.py)
-as a pure function.
+## Live view
 
 When installed with the `tui` extra and stdout is a TTY, `agent6 run`
-spawns a separate process running `python -m agent6.ui --watch
-<run-dir>` that renders the task DAG, budget bar, tool table, log tail,
-and latest diff. The TUI is read-only on the log; the only thing it
-writes is `<run-dir>/approvals/<id>.answer` when the user clicks Allow
-or Deny on a `run_command` approval modal. Attach later with
-`agent6 watch`.
+spawns a separate, read-only textual dashboard (task DAG, budget bar,
+tool table, log tail, latest diff); attach later with `agent6 watch`.
+The only thing the TUI writes is an approval answer when you Allow/Deny a
+`run_command` prompt. It folds a structured JSONL event stream
+(`.agent6/runs/<run-id>/logs.jsonl`) that is also the stable contract for
+any external viewer — the event vocabulary is in
+[ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Persistence
 
-Each run writes to `.agent6/runs/<run-id>/`:
-
-- `graph.jsonl` — append-only journal of every task-graph mutation.
-- `graph.dot` — current task graph, regenerated atomically.
-- `nodes/*.md` — one markdown file per task node, rewritten atomically.
-- `logs.jsonl` — per-event log (LLM turns, tool calls, costs).
-- `snapshots/` — per-tool-call JSON snapshots that drive `agent6 resume`.
-- `transcripts/` — full provider request/response pairs for replay.
-
-A separate `agent6-curator` subprocess owns all writes to this
-directory and runs under its own jail policy that allows writes only
-to `.agent6/`. The main agent process talks to it over a Unix-domain
-socket; the curator validates every IPC frame against a pydantic
-schema before applying it.
+Each run's state lives under `.agent6/runs/<run-id>/` (append-only task
+graph, per-call snapshots that drive `agent6 resume`, full transcripts,
+and the event log). It is written *exclusively* by a sandboxed
+`agent6-curator` subprocess over a pydantic-validated IPC channel, so a
+bug in the agent can't scribble the run directory. See
+[ARCHITECTURE.md](ARCHITECTURE.md) for the on-disk layout and the curator.
 
 ## End-of-run notify hook
 
@@ -460,38 +358,6 @@ vars set: `AGENT6_RUN_ID`, `AGENT6_RUN_DIR`, `AGENT6_RUN_OK`
 your user; the argv is operator-controlled (never derived from LLM
 output). Typical use: a `notify-send` desktop popup, a Slack curl, or
 piping the run-dir into `agent6 review`.
-
-## Repository layout
-
-```
-src/agent6/
-  cli.py            argparse entry points
-  config.py         pydantic-strict config (secure-by-default)
-  config_layer.py   layered config merge + source map (show/fill)
-  paths.py          XDG paths + sudo/root resolution
-  secrets.py        0600 secrets file + API-key resolution
-  budget.py         per-model pricing + per-run accounting
-  events.py         structured run-event log
-  git_ops.py        git wrappers; refuses push/force/rewrite
-  memory.py         persistent agent memory
-  detect.py         kernel + container capability detection
-  init.py           `agent6 init` scaffolding
-  agents/           single-turn LLM call shapes (code_review)
-  workflows/        the agent loop (run) and read-only review
-  machine/          declarative state-machine layer (see STATE_MACHINES.md)
-  tools/            dispatcher + schemas for the LLM tool surface
-  providers/        Anthropic + OpenAI HTTP clients (httpx, no SDK)
-  sandbox/          jail.py (Python wrapper) + landlock.py
-  jail/             Rust crate for agent6-jail (built into sandbox/_bin)
-  graph/            curator subprocess + UDS IPC + on-disk graph store
-  ui/               event fold + JSONL tailer + optional textual TUI
-tests/
-  unit/             unit tests
-  integration/      crash-resume, curator IPC
-  sandbox/          live jail smoke tests + Landlock probes
-  security/         prompt-injection corpus tests
-bench/              perf + realworld benchmark harnesses
-```
 
 ## Contributing
 

@@ -3,8 +3,8 @@
 This document is a map of how agent6 runs end-to-end. The diagrams
 are mermaid (`mermaid` fenced blocks render natively on GitHub). For
 per-file conventions and stability rules see [AGENTS.md](AGENTS.md).
-For the security model see [SECURITY.md](SECURITY.md) and the threat
-model section of [README.md](README.md).
+For the security model — threat model, defense layers, sandbox profiles —
+see [SECURITY.md](SECURITY.md).
 
 ## Layering
 
@@ -19,7 +19,7 @@ Boundaries are enforced by [tach](https://docs.gauge.sh/) (see
 import workflows or the CLI. Crossing a boundary is almost always a
 sign of the wrong design.
 
-- **cli** ([src/agent6/cli.py](src/agent6/cli.py)) — argument parsing,
+- **cli** ([src/agent6/cli/](src/agent6/cli/)) — argument parsing,
   optional TUI spawn, top-level dispatch. Picks a workflow. Config is
   resolved by [config_layer.py](src/agent6/config_layer.py) (built-in
   secure defaults < global `~/.config/agent6/config.toml` < per-repo
@@ -105,8 +105,8 @@ stateDiagram-v2
 
 ## Enforcement layering
 
-The threat model in [README.md](README.md) summarizes which guarantee
-each layer provides. As a diagram:
+[SECURITY.md](SECURITY.md) details which guarantee each layer provides.
+As a diagram:
 
 ```mermaid
 flowchart TD
@@ -158,6 +158,32 @@ runs under its own jail policy that allows writes only to `.agent6/`.
 This means even a bug in the agent process cannot scribble over the
 run directory in an unsafe way; the curator validates every IPC frame
 against a pydantic schema before applying it.
+
+## Run state on disk
+
+Each run's directory `.agent6/runs/<run-id>/` holds:
+
+- `graph.jsonl` — append-only journal of every task-graph mutation.
+- `graph.dot` — current task graph, regenerated atomically.
+- `nodes/*.md` — one markdown file per task node, rewritten atomically.
+- `logs.jsonl` — the structured event stream (below).
+- `snapshots/` — per-tool-call JSON snapshots that drive `agent6 resume`.
+- `transcripts/` — full provider request/response pairs for replay.
+
+The `logs.jsonl` vocabulary is small and stable — the data contract for
+any external viewer (the fold to UI state lives in
+[src/agent6/ui/state.py](src/agent6/ui/state.py) as a pure function):
+
+| Event                       | Notable fields                              |
+| --------------------------- | ------------------------------------------- |
+| `run.start`                 | `user_task`                                 |
+| `tool.call` / `.result`     | `name`, `args` (preview), `ok`, `summary`   |
+| `verify.start` / `.end`     | `cmd`, `exit_code`, `duration_s`, `*_tail`  |
+| `role.call` / `.result`     | `role`, `model`, `tokens_in`, `tokens_out`  |
+| `budget.update`             | totals + caps for input/output tokens       |
+| `approval.prompt`/`.answer` | `id`, `prompt`, `approved`, `source`        |
+| `dag.*`                     | task add / update / cursor moves            |
+| `run.end`                   | `summary`                                   |
 
 ## Where things live
 
