@@ -11,6 +11,7 @@ from agent6.cli.toml_io import _upsert_toml_table
 from agent6.config import (
     Config,
     ConfigError,
+    RoleName,
 )
 from agent6.config_layer import (
     load_effective,
@@ -44,8 +45,9 @@ def _connected_providers(config_path: Path | None) -> list[str]:
 def _configured_models_for(cfg: Config, provider: str) -> list[str]:
     """Models already assigned to *provider* across the three roles."""
     out: set[str] = set()
-    for role in ("worker", "reviewer", "planner"):
-        rm = cfg.models.resolve(role)  # type: ignore[arg-type]
+    roles: tuple[RoleName, ...] = ("worker", "reviewer", "planner")
+    for role in roles:
+        rm = cfg.models.resolve(role)
         if rm is not None and rm.provider == provider:
             out.add(rm.model)
     return sorted(out)
@@ -98,10 +100,10 @@ def _prompt_for_model(config_path: Path | None, provider: str) -> str:
     return _safe_input("Model: ") or ""
 
 
-def _cmd_model(  # noqa: PLR0911
+def _cmd_model(
     config_path: Path | None,
     *,
-    role: str,
+    role: str | None,
     provider: str,
     model: str,
     thinking: str,
@@ -115,8 +117,9 @@ def _cmd_model(  # noqa: PLR0911
             print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
             return 2
         print("Role assignments (planner/worker fall back to worker when unset):\n")
-        for r in ("planner", "worker", "reviewer"):
-            rm = eff.config.models.resolve(r)  # type: ignore[arg-type]
+        show_roles: tuple[RoleName, ...] = ("planner", "worker", "reviewer")
+        for r in show_roles:
+            rm = eff.config.models.resolve(r)
             src = eff.sources.get(f"models.{r}.model", "default")
             if rm is None:
                 print(f"  {r:<9} (unset)")
@@ -128,12 +131,7 @@ def _cmd_model(  # noqa: PLR0911
             " [--thinking low|medium|high]  (provider/model are prompted if omitted)"
         )
         return 0
-    if role not in ("planner", "worker", "reviewer"):
-        print(
-            f"ERROR: unknown role {role!r} (choose from planner, worker, reviewer).",
-            file=sys.stderr,
-        )
-        return 2
+    # `role` is validated by argparse `choices`, so it is one of the three here.
     # Positional provider/model are optional: prompt interactively when blank,
     # prefilling the provider list from connected providers and the model list
     # from that provider's live/configured catalog.

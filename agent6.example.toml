@@ -120,7 +120,12 @@ model = "claude-opus-4-5"
 # thinking = "high"
 
 [sandbox]
-# "auto"     picks the strongest profile this kernel + container can run.
+# You set one of "auto" | "strict" | "hardened". It resolves to an EFFECTIVE
+# profile that actually runs: "strict" | "hardened" | "none".
+# "auto"     picks the strongest the host supports: strict, else hardened
+#            (Linux without unprivileged user namespaces), else "none" — the
+#            UNSANDBOXED profile on non-Linux (macOS/Windows; a loud warning is
+#            printed). "none" is never settable directly.
 # "strict"   = user/mount/pid/ipc/uts/net namespaces + pivot_root + landlock
 #              + seccomp + capset(0) + rlimits + NO_NEW_PRIVS.
 #              `agent6 run` REFUSES to start if 'strict' is asked for but the

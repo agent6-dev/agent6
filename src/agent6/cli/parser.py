@@ -278,11 +278,14 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "model",
         help="Show or set which model + thinking level each role uses (planner/worker/reviewer).",
     )
+    # choices gives both argparse validation and argcomplete tab-completion for
+    # free. default=None (not "") so the omitted case isn't checked against
+    # choices — argparse validates choices against a string default otherwise.
     model_p.add_argument(
         "role",
         nargs="?",
-        default="",
-        metavar="{planner,worker,reviewer}",
+        choices=("planner", "worker", "reviewer"),
+        default=None,
         help="Role to set. Omit to print the current assignments.",
     )
     model_provider = model_p.add_argument(

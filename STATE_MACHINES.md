@@ -328,7 +328,7 @@ global/repo config, never the machine overlay):
 
 | `sandbox.agent_network` | `sandbox.tool_network` | agent egress | `tool` w/ `allow_network="allow"` |
 |---|---|---|---|
-| `providers` *(def)* | `block` *(def)* | providers + `allow_urls` | none |
+| `providers` *(def)* | `block` *(def)* | providers + `allow_urls` | ⛔ refused |
 | `providers` | `only_explicit_states` | providers + `allow_urls` | **host network** |
 | `local` | `only_explicit_states` | loopback providers only | **host network** |
 | `open` | `allow` | unconfined | host network (and `run_command`) |

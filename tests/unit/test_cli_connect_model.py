@@ -124,6 +124,13 @@ def test_model_set_and_show(iso: Path, tmp_path: Path, capsys: pytest.CaptureFix
     assert "claude-x" in out
 
 
+def test_model_rejects_unknown_role(iso: Path) -> None:
+    # argparse `choices` validates the role positional (and feeds argcomplete).
+    with pytest.raises(SystemExit) as exc:
+        main(["model", "bogus", "anthropic", "claude-x"])
+    assert exc.value.code == 2
+
+
 def test_model_aborts_without_provider(iso: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Role given but provider omitted and none connected: the prompt gets an
     # empty answer and the command refuses rather than writing a bad config.
