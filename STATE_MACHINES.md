@@ -16,45 +16,29 @@ the security model, the tool surface, or the stability policy in
 
 ## 1. Motivation
 
-Today agent6 has exactly two workflows ([ARCHITECTURE.md](ARCHITECTURE.md)):
+agent6's two workflows ([ARCHITECTURE.md](ARCHITECTURE.md)) — `run` (the
+agent loop) and `review` (a read-only diff pass) — are both *single-shot*:
+you start them, they finish. There is no first-class way to express a
+program that runs indefinitely, reacting to the clock or to external
+signals, branching, looping, and occasionally invoking an agent run as
+one step among many.
 
-- `run` — one LLM, one history, one loop, driven by the model calling
-  tools until `finish_run`.
-- `review` — a single read-only pass over a diff.
+"Always-on" autonomous agents target this, but tend to put the LLM in the
+driver's seat of the *control flow*, not just the *work* — so the same
+inputs produce different paths, crashes lose state, and runs can't be
+replayed. agent6 can do better because the `run` workflow is already a
+deterministic, snapshot-and-replay state machine internally. State
+machines **lift that pattern up one layer**: the operator authors the
+control flow as a static graph, and the LLM stays confined to the work
+*inside* a state.
 
-Both are *single-shot*: you start them, they finish, you read the
-result. There is no first-class way to express **a program that runs
-indefinitely**, reacting to the clock or to external signals, making
-*branching* decisions, looping, and occasionally invoking an agent run
-as one step among many.
-
-People reach for tools like "always-on" autonomous agents (the
-open-claw / 24-7-daemon genre) for exactly this. Those tools tend to be
-unreliable and non-deterministic: an LLM is in the driver's seat of the
-*control flow*, not just the *work*, so the same inputs produce
-different paths, crashes lose state, and you cannot replay or backtest a
-run.
-
-agent6 is unusually well-positioned to do this *better* because the
-`run` workflow is already a deterministic, snapshot-and-replay state
-machine internally. State machines **lift that pattern up one layer**:
-the operator authors the control flow as a static graph, and the LLM
-stays confined to the work *inside* a state.
-
-### Example use case (illustrative, out of scope to ship)
-
-> Poll a watched location on a fixed interval. When new items appear,
-> have an agent classify each one into a typed verdict. On a
-> high-confidence verdict, take a side-effecting step (record it,
-> archive it, notify) and loop. Otherwise wait and poll again.
-
-Whatever the watched location and the side effect actually *are* is
-**out of scope** here — anything that talks to the outside world would
-be a new, separately-audited tool, which the security invariants gate by
-default. The point is the *shape*: a long-running loop with an initial
-state, timed polling, branches on classification output, side-effecting
-steps, and terminal states. That shape is what state machines make
-first-class.
+A representative shape (the watched location and side effects would each
+be separately-audited tools, out of scope here): poll on a fixed
+interval; when items appear, have an agent classify each into a typed
+verdict; on a high-confidence verdict take a side-effecting step and
+loop, else wait and poll again. A long-running loop with timed polling,
+branches on agent output, side-effecting steps, and terminal states is
+what state machines make first-class.
 
 ---
 
@@ -122,13 +106,10 @@ comfortable to hand-edit and diff. The parsed document is validated by a
 pydantic v2 model at the trust boundary (`extra="forbid", frozen=True`),
 exactly like `Config`.
 
-> **Naming.** The suffix is `.asm.toml`. The generic, copyable name
-> ("agent state machine", deliberately model/vendor-neutral like
-> `AGENTS.md`) was chosen over the agent6-specific `.a6m.toml` so the
-> format can become a shared convention other tools adopt. If a clash
-> with assembly-language `.asm` ever bites in tooling, `.a6m.toml`
-> remains the fallback — the parser keys off the doubled extension, not
-> the stem.
+> **Naming.** The suffix is `.asm.toml` ("agent state machine" —
+> deliberately vendor-neutral like `AGENTS.md`, so other tools can adopt
+> it). `.a6m.toml` is a documented fallback if the assembly-language
+> `.asm` clash ever bites; the parser keys off the doubled extension.
 
 ### 4.1 Top-level shape
 
@@ -176,11 +157,9 @@ in — not a runtime convention.
 | `[vars.code]`     | a `tool` state's `capture`                         | mutable (deterministic) | `default` | `pending`, `cursor` |
 | `[vars.agent]`    | an `agent` state's validated `finish_run` payload | mutable (LLM)     | `default`     | `verdict` (a `[schemas.*]` record) |
 
-`branch`, `wait`, and `terminal` states never write the blackboard:
-`branch` only routes, `wait` only sleeps, `terminal` only ends. Only
-`tool` states (into `[vars.code]`) and `agent` states (into
-`[vars.agent]`) mutate it. This makes the set of writers small and
-fully static.
+Only `tool` states (into `[vars.code]`) and `agent` states (into
+`[vars.agent]`) ever mutate the blackboard; `branch`/`wait`/`terminal`
+only route, sleep, or end.
 
 - **`[vars.operator]`** are the machine's parameters: set once when the
   operator authors/commits the file and **never** written by any state.
@@ -279,7 +258,7 @@ The optional per-state knobs above tune *how* that loop runs: `provider`
 / `thinking` / `temperature` select and tune the model, and the
 `max_usd` / `max_input_tokens` / `max_output_tokens` caps bound this one
 agent slice. Each falls back to the effective config (machine `[config]`
-overlay < repo < global < defaults; §4.9) when omitted. Connection
+overlay < repo < global < defaults; §4.7) when omitted. Connection
 secrets are never expressed here — only a `provider` *name* that must
 already exist in the effective config.
 
@@ -577,7 +556,7 @@ Rules (all enforced at `machine check`):
   statically (a `list`/`json`/record field still may not be dotted
   further unless it is itself a record).
 
-### 4.9 Machine config overlay (`[config]`)
+### 4.7 Machine config overlay (`[config]`)
 
 A machine file may carry an optional top-level `[config]` table: an
 ordinary agent6 config fragment that layers on top of the effective
@@ -801,8 +780,10 @@ No new runtime dependency (`tomllib` + `pydantic` + stdlib `ast`).
   navigation (§4.5), not Python attribute resolution. A `.asm.toml`
   file is data, not code.
 - **All side effects stay jailed.** `tool` states go through
-  `run_in_jail`; `agent` states are ordinary jailed runs. The engine
-  itself runs in the agent's own (Landlocked) process, like `git_ops`.
+  `run_in_jail`; each `agent` state is an ordinary jailed run in its own
+  self-confining subprocess (the engine is a host-netns supervisor). The
+  per-state network model and its refusals are specified in
+  [SECURITY.md](SECURITY.md) §8.
 - **Budget is mandatory.** `[budget].max_usd` is required (no implicit
   default), enforced by the existing `BudgetTracker`. A runaway 24/7
   loop is spend-bounded by construction.
@@ -932,60 +913,33 @@ stateDiagram-v2
 
 ## 11. Implementation status
 
-The feature is implemented in full and shipped behind the `machine`
-subcommand without touching `run`/`review`. It landed in five phases,
-each independently shippable and covered by unit tests:
-
-1. **Spec + validator + graph** — `machine/model.py`,
-   `machine/predicate.py`, `machine/graph.py`, and `agent6 machine
-   check`/`graph`. Pure, no execution. Tested for parse errors,
-   non-total branches, unreachable states, type mismatches, the
-   three-owner blackboard ownership wall (`[vars.operator]` read-only,
-   `tool` → `[vars.code]`, `agent` → `[vars.agent]`), the naming rules
-   (global uniqueness across owners, no bare `vars.*`, reserved names,
-   identifier grammar), and the predicate allow-list (rejecting Python
-   attribute access, arbitrary calls, comprehensions).
-2. **Engine + journal + persistence** — `machine/engine.py`,
-   `machine/journal.py`, and `agent6 machine run`, with `tool`,
-   `branch`, `terminal`, and `wait` states, plus crash-recovery and
-   `replay`.
-3. **`agent` state** — the LLM-backed state, run through an injected
-   runner (§8) whose `finish_run` payload is validated against
-   `output_schema` and captured into the blackboard.
-4. **24/7 ergonomics** — `agent6 machine status`/`poke`, `machine run
-   --exit-on-wait` persisted-wake, and per-`agent` spend (USD + tokens)
-   tracking summed by `status`.
-5. **`machine create`** (§7.1) — LLM-assisted authoring against the
-   stable grammar and `machine check`. Pure assistance; never auto-runs.
+Implemented in full under `src/agent6/machine/` (model, predicate, graph,
+engine, journal) and exposed via the `machine` subcommands (§7), without
+touching `run`/`review`. All state kinds, crash recovery, `replay`, the
+`agent` state, the 24/7 ergonomics (`status`/`poke`, persisted-wake,
+per-agent spend), and `machine create` are covered by unit tests.
 
 ---
 
 ## 12. Resolved decisions
 
-These design decisions are settled (operator-approved 2026-06-01) and
-recorded here so the rationale travels with the spec.
+Settled design choices, recorded so the rationale travels with the spec:
 
-- **`wait` runtime (systemd vs resident).** The *format* commits to
-  journaling an **absolute next-wake instant**; the v1 *runtime* is
-  plain in-process blocking (§4.3, §6). A persisted-wake/systemd driver
-  is a later add-on that runs the identical file with no format change.
-- **Schema language.** Inline `[schemas.*]` TOML (§4.6), **not** JSON
-  Schema — no new dependency, human-editable, and one mechanism for both
-  `output_schema` validation and navigable record vars. Fields are
-  required by default (`optional = true` to relax) and string fields may
-  carry an `enum`.
-- **`agent` writes beyond `finish_run`.** **No.** Exactly one validated
-  structured output per `agent` state is the LLM's only write channel
-  (§4.2). Multiple outputs are expressed as multiple fields of one
-  record.
-- **Concurrency.** v1 is **strictly sequential** — one active state, no
-  fork/join. Composition is achieved by running multiple independent
-  machines (each its own process, lock, and journal). Explicit
-  `fork`/`join` kinds may be added later if a real need appears.
-- **`json` navigability.** Opaque `json` is **wholesale-only and may not
-  be dotted** (§4.2); any value navigated with `.field` must be a
-  declared record type (§4.6), so every path is statically checkable.
-- **List → argv.** No `join` filter; lists reach a command via
-  **splicing** a lone `"{{ listvar }}"` argv element (§4.4).
-- **Naming.** Subcommand is `machine`; file suffix is `.asm.toml`
-  (`.a6m.toml` kept as a documented fallback — §4).
+- **`wait` runtime** — the format journals an absolute next-wake instant;
+  the v1 runtime is plain in-process blocking (§4.3, §6). A
+  persisted-wake/systemd driver can run the identical file later.
+- **Schema language** — inline `[schemas.*]` TOML (§4.6), not JSON Schema:
+  no new dependency, human-editable, one mechanism for both
+  `output_schema` validation and navigable record vars.
+- **`agent` writes** — exactly one validated `finish_run` payload per
+  `agent` state is the LLM's only write channel (§4.2); multiple outputs
+  are fields of one record.
+- **Concurrency** — strictly sequential (one active state, no fork/join);
+  compose by running independent machines. `fork`/`join` may come later.
+- **`json` navigability** — opaque `json` is wholesale-only; anything
+  navigated with `.field` must be a declared record type (§4.6), so every
+  path is statically checkable.
+- **List → argv** — no `join` filter; a lone `"{{ listvar }}"` argv
+  element is spliced to one element per item (§4.4).
+- **Naming** — subcommand `machine`; suffix `.asm.toml` (`.a6m.toml`
+  fallback, §4).
