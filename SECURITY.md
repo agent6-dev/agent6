@@ -174,38 +174,34 @@ strict schema and refuses on any unknown field.
 
 ### 3. Profile selection
 
-Two distinct things share the word "profile":
+You *set* the config knob `sandbox.profile`; it resolves against the host to an
+*effective profile* — what actually runs. There is no `none` knob (you cannot
+ask for it) and no `auto` effective profile (it is resolved away). No silent
+downgrade: an explicit request the host can't satisfy is refused, not weakened.
 
-- **The config knob** `sandbox.profile` ∈ `{auto, strict, hardened}` (default
-  `auto`) — what you *set*. There is no `none` knob; you cannot ask for it.
-- **The effective profile** ∈ `{strict, hardened, none}` — what actually runs
-  after the knob is resolved against the host. There is no `auto` here (it has
-  been resolved away).
+| `sandbox.profile` | Host | Effective profile |
+|---|---|---|
+| `auto` *(default)* | Linux, user namespaces available | `strict` |
+| `auto` | Linux, no user namespaces | `hardened` |
+| `auto` | non-Linux (macOS / Windows) | `none` |
+| `strict` | Linux, user namespaces available | `strict` |
+| `strict` | anything else | ⛔ refuse to run |
+| `hardened` | Linux (user namespaces or not) | `hardened` |
+| `hardened` | non-Linux (macOS / Windows) | ⛔ refuse to run |
 
 The three effective profiles:
 
-- **strict** — full namespaces (user/mount/pid/ipc/uts/net) + pivot_root +
-  landlock + seccomp + capset(0) + rlimits + NO_NEW_PRIVS. Requires
-  unprivileged user namespaces (Linux).
-- **hardened** — no namespaces (so it works inside default-seccomp Docker,
-  where the container blocks the inner `clone(CLONE_NEW*)`), but still landlock
-  + seccomp + capset(0) + rlimits + NO_NEW_PRIVS. The container itself is the
-  blast radius.
+- **strict** — full namespaces (user/mount/pid/ipc/uts/net) + `pivot_root` +
+  Landlock + seccomp + `capset(0)` + rlimits + `NO_NEW_PRIVS`.
+- **hardened** — Landlock + seccomp + `capset(0)` + rlimits + `NO_NEW_PRIVS`,
+  but **no namespaces** (so it works inside default-seccomp Docker, where the
+  container blocks the inner `clone(CLONE_NEW*)`; the container is the blast
+  radius).
 - **none** — *unsandboxed*: child commands run as plain subprocesses with no
-  kernel-enforced confinement. It is the only profile available on non-Linux
-  hosts (macOS/Windows), is **never selectable from config**, and always prints
-  a loud warning at startup.
+  kernel-enforced confinement; always with a loud warning.
 
-How the knob resolves:
-
-- **strict** / **hardened** — request that effective profile; `strict` refuses
-  to start if unavailable.
-- **auto** (default) — pick the strongest the host supports: `strict`, else
-  `hardened` (Linux without unprivileged user namespaces), else `none`
-  (non-Linux). The chosen effective profile is logged on every run.
-
-CI should use `profile = "strict"` to fail loudly if the sandbox is weaker than
-expected.
+CI should set `profile = "strict"` to fail loudly if the sandbox is weaker than
+expected. "User namespaces available" means `unshare -U -r true` succeeds.
 
 ### 4. Fixed tool surface
 
@@ -300,38 +296,35 @@ deterministic** tool reach the network — a `tool` command is fixed/operator-
 reviewed (unlike `run_command`, whose argv the LLM chooses), so a networked
 audited tool is not a free exfiltration channel.
 
-`sandbox.tool_network` governs jailed-command egress: `"block"` (default — no
-jailed egress at all), `"only_explicit_states"` (only `tool` states with
-`allow_network = "allow"`; `run_command` stays offline), `"allow"` (`run_command`
-too — requires `agent_network = "open"`, since `run_command` runs inside the
-agent process and cannot out-reach a confined agent). A tool reaches the network
-only if it sets `allow_network = "allow"`; `allow_network = "auto"` (the default)
-and `"block"` keep it offline.
-The table cells below describe the **`strict`** effective profile (§3 defines the
-profiles); footnotes ¹–⁴ give the `hardened` / `none` deltas. The last two
-columns are a tool's `allow_network` value; "offline" = no network egress.
+`sandbox.tool_network` is the operator's ceiling for jailed-command egress;
+`allow_network` is a `tool` state's request within it. The table enumerates
+every `agent_network` × `tool_network` combination on the **`strict`** profile
+(§3); the notes after it cover `hardened` / `none`. "offline" = no egress.
 
-| `agent_network` | `tool_network` | agent process | `run_command` | tool `allow_network="auto"` (def) | tool `allow_network="allow"` |
-|---|---|---|---|---|---|
-| `providers` *(def)* | `block` *(def)* | providers + `allow_urls` ¹ | offline | offline ² | ⛔ refused ⁴ |
-| `providers` | `only_explicit_states` ³ | providers + `allow_urls` ¹ | offline | offline ² | host network |
-| `local` ³ | `only_explicit_states` ³ | loopback providers only | offline | offline ² | host network |
-| `open` | `allow` | unconfined | host network | offline ² | host network |
+| `agent_network` | `tool_network` | agent egress | `run_command` | networked `tool` (`allow_network = "allow"`) |
+|---|---|---|---|---|
+| `providers` *(def)* | `block` *(def)* | providers + `allow_urls` | offline | ⛔ refused\* |
+| `providers` | `only_explicit_states` | providers + `allow_urls` | offline | host network |
+| `local` | `block` | loopback providers | offline | ⛔ refused\* |
+| `local` | `only_explicit_states` | loopback providers | offline | host network |
+| `open` | `block` | unconfined | offline | ⛔ refused\* |
+| `open` | `only_explicit_states` | unconfined | offline | host network |
+| `open` | `allow` | unconfined | host network | host network |
+| `providers` / `local` | `allow` | ⛔ run refused — `allow` requires `agent_network = "open"` | — | — |
 
-¹ Agent egress (`agent_network = "providers"`): on `strict`, broker-pinned to the
-exact host:ports (Defense Layer 1b); on `hardened`, Landlock allows the provider
-*ports* only (not specific hosts); on `none`, unconfined.
-
-² A tool with `allow_network = "auto"` or `"block"` (offline): on `strict`,
-network-isolated (empty netns); on `hardened` there is no per-process netns so it
-shares the host network — `"auto"` tolerates this, `"block"` is instead
-**refused**; on `none`, unconfined.
-
-³ Needs the `strict` profile (a per-process network namespace): **refused** on
-`hardened`, unconfined on `none`.
-
-⁴ Config conflict (`allow_network = "allow"` under `tool_network = "block"`):
-**refused** on every profile.
+- A `tool` with `allow_network = "auto"` (default) or `"block"` is always
+  **offline**. `\*` a `tool` that sets `"allow"` under `tool_network = "block"`
+  is a config conflict — the run is refused.
+- `tool_network = "allow"` also networks `run_command`; since `run_command` runs
+  inside the agent process it requires `agent_network = "open"` (last row).
+- **Profiles.** Cells show `strict`. `tool_network`'s per-command isolation is
+  strict-only (it needs a network namespace). On `hardened` (no namespaces)
+  jailed children inherit the agent's Landlock, so their egress follows
+  `agent_network` (provider *ports* under `providers`/`local`, unrestricted
+  under `open`) and `tool_network` cannot tighten it — a machine with `tool`
+  states is **refused** under `block`/`only_explicit_states`, and
+  `agent_network = "local"` needs `strict`. Agent-process egress degrades the
+  same way (§1, §1b). On `none`: unsandboxed, with a warning.
 
 Every surface fails closed:
 
@@ -341,7 +334,7 @@ Every surface fails closed:
   `[providers.*]` or `[sandbox.*]`. A `tool` merely *declares* `allow_network`;
   whether `"allow"` is honored is the operator's call via `tool_network`, and
   every conflict or unenforceable demand is refused at startup naming the state
-  (footnotes ²–⁴), never silently mis-confined.
+  (see the rows/notes above), never silently mis-confined.
 - **Bundle confinement.** Helper scripts live in an operator-reviewed
   `scripts/` directory beside the `.asm.toml`. `machine check` validates
   that every entry under `scripts/` resolves *inside* the bundle (symlinks
