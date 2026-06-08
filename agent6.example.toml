@@ -168,7 +168,7 @@ run_commands = "ask"
 # unaffected. Set false only if your verify_command needs to write to
 # .git (uncommon).
 protect_git = true
-# Same idea, for agent6.toml + the .agent6/ run directory (transcripts,
+# Same idea, for the agent6 config + the .agent6/ run directory (transcripts,
 # graph state, logs). The curator subprocess has its own jail policy
 # granting it write access to .agent6/; worker children do not.
 protect_agent6 = true

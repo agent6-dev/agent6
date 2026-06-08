@@ -66,34 +66,25 @@ jail's `pivot_root(2)`/`mount(2)` on kernels at Landlock ABI ≥ 7. Where it
 applies it restricts the Python process itself (irrevocably, inherited by
 every child it spawns):
 
-- FS read: cwd, `$HOME`, `/usr`, `/etc`, `/tmp`, the common `/dev`
-  character devices, and `/run`/`/proc` when present.
-- FS write: cwd, `/tmp`, the `/dev` character devices, and `/proc` when
-  present.
-- TCP connect (kernel ≥ 6.7, Landlock ABI ≥ 4): Landlock's network hook
-  filters by **destination port only** — there is no host/IP primitive in
-  Landlock. agent6 allows the set of ports used by configured
-  `[providers.<name>]` endpoints (`443` for each `kind = "anthropic"`
-  entry; the port of `base_url` for each `kind = "openai"` entry — default
-  `443`, but any OpenAI-compatible base URL is honoured: OpenRouter,
-  Ollama, vLLM, llama.cpp, …). This stops the agent from connecting to
-  arbitrary services on other ports, but on its own it does **not** pin
-  egress to a specific host: anything reachable on an allowed port is
-  permitted. For true host-level egress confinement use
-  `sandbox.agent_network = "providers"` (Defense Layer 1b).
+| Landlock rule | Allowed |
+|---|---|
+| FS read | cwd, `$HOME`, `/usr`, `/etc`, `/tmp`, the common `/dev` char devices, and `/run` + `/proc` when present |
+| FS write | cwd, `/tmp`, the `/dev` char devices, and `/proc` when present |
+| TCP connect (kernel ≥ 6.7) | the *ports* of configured providers — `443` for each `anthropic` entry, the `base_url` port for each `openai` entry (default `443`) |
 
-On older kernels TCP-connect rules are not available; agent6 prints a
-loud warning and runs with FS-only Landlock. In that mode the agent
-process is still confined for filesystem access, but you should not run
-it on a host where the agent's UID has access to sensitive credentials
-the agent could open and send over the network.
+Landlock's network hook filters by destination **port only** (it has no
+host/IP primitive), so it blocks connections on other ports but does **not**
+pin egress to a specific host — for that use `sandbox.agent_network = "providers"`
+(Defense Layer 1b). On older kernels (no TCP rules) agent6 warns and runs
+FS-only Landlock; don't run there on a host whose UID can read credentials the
+agent could exfiltrate.
 
 ### 1b. Provider-only egress broker (`sandbox.agent_network = "providers"`)
 
 When enabled (strict profile only — it relies on unprivileged user
 namespaces), `agent6 run` confines its own process to host-level egress:
 
-1. While still in the host network namespace and single-threaded, the
+1. While still in the host network namespace (netns) and single-threaded, the
    agent binds one `AF_UNIX` listening socket per allow-listed provider
    `host:port` and `fork()`s a small **broker** child. The broker stays
    in the host netns; for each connection accepted on a given socket it
@@ -111,11 +102,11 @@ boundary. A missing route means no connectivity (the agent cannot connect
 at all), never a silent leak. Because the upstream of each socket is fixed
 at bind time, the egress allow-list is structural rather than a filter the
 agent could be tricked into widening. On hosts that only support the
-hardened profile the run is **refused** rather than executed unconfined.
+hardened profile agent6 **refuses to run** rather than execute unconfined.
 
-`agent_network = "local"` uses the same broker but pins it to *loopback*
+`sandbox.agent_network = "local"` uses the same broker but pins it to *loopback*
 provider endpoints only (local models such as Ollama) and refuses a non-local
-provider; `agent_network = "open"` skips the broker entirely. For `agent6
+provider; `sandbox.agent_network = "open"` skips the broker entirely. For `agent6
 machine run`, each `agent` state runs in its own subprocess that performs this
 same broker setup for itself (the engine is a thin host-netns supervisor), so a
 machine agent's egress is confined exactly as a normal run's is.
@@ -135,8 +126,8 @@ still hard-wired at bind time to one operator-chosen `host:port`, resolved
 per-connect, and the LLM cannot add, widen, or redirect an entry — it is a
 static config field, never written from model output. The default is empty
 (secure by default), entries are validated at config-load time, and the
-field is only consulted under `agent_network = "providers"` (ignored under
-`local`/`open`). It widens only the agent path, never a jailed command.
+field is only consulted under `sandbox.agent_network = "providers"` (ignored
+under `local`/`open`). It widens only the agent path, never a jailed command.
 Merge is last-overlay-wins: the most-specific config tier that sets
 `allow_urls` replaces it wholesale, so a repo or machine overlay cannot
 silently *append* to a narrower global allow-list — it must restate the
@@ -174,8 +165,8 @@ strict schema and refuses on any unknown field.
 
 ### 3. Profile selection
 
-You *set* the config knob `sandbox.profile`; it resolves against the host to an
-*effective profile* — what actually runs. There is no `none` knob (you cannot
+You *set* the `sandbox.profile` field; it resolves against the host to an
+*effective profile* — what actually runs. There is no `none` value (you cannot
 ask for it) and no `auto` effective profile (it is resolved away). No silent
 downgrade: an explicit request the host can't satisfy is refused, not weakened.
 
@@ -296,43 +287,54 @@ deterministic** tool reach the network — a `tool` command is fixed/operator-
 reviewed (unlike `run_command`, whose argv the LLM chooses), so a networked
 audited tool is not a free exfiltration channel.
 
-`sandbox.tool_network` is the operator's ceiling for jailed-command egress;
-`allow_network` is a `tool` state's request within it. The table enumerates
-every `agent_network` × `tool_network` combination on the **`strict`** profile
-(§3); the notes after it cover `hardened` / `none`. "offline" = no egress.
+Egress is set by `sandbox.agent_network`, `sandbox.tool_network`, and a per-tool
+`allow_network`; the effective profile (§3) decides what is *enforceable*. The
+tables cover every case; "offline" = no egress.
 
-| `agent_network` | `tool_network` | agent egress | `run_command` | networked `tool` (`allow_network = "allow"`) |
-|---|---|---|---|---|
-| `providers` *(def)* | `block` *(def)* | providers + `allow_urls` | offline | ⛔ refused\* |
-| `providers` | `only_explicit_states` | providers + `allow_urls` | offline | host network |
-| `local` | `block` | loopback providers | offline | ⛔ refused\* |
-| `local` | `only_explicit_states` | loopback providers | offline | host network |
-| `open` | `block` | unconfined | offline | ⛔ refused\* |
-| `open` | `only_explicit_states` | unconfined | offline | host network |
-| `open` | `allow` | unconfined | host network | host network |
-| `providers` / `local` | `allow` | ⛔ run refused — `allow` requires `agent_network = "open"` | — | — |
+**Agent-process egress** — the agent's own LLM/provider HTTP, by `sandbox.agent_network`:
 
-- A `tool` with `allow_network = "auto"` (default) or `"block"` is always
-  **offline**. `\*` a `tool` that sets `"allow"` under `tool_network = "block"`
-  is a config conflict — the run is refused.
-- `tool_network = "allow"` also networks `run_command`; since `run_command` runs
-  inside the agent process it requires `agent_network = "open"` (last row).
-- **Profiles.** Cells show `strict`. `tool_network`'s per-command isolation is
-  strict-only (it needs a network namespace). On `hardened` (no namespaces)
-  jailed children inherit the agent's Landlock, so their egress follows
-  `agent_network` (provider *ports* under `providers`/`local`, unrestricted
-  under `open`) and `tool_network` cannot tighten it — a machine with `tool`
-  states is **refused** under `block`/`only_explicit_states`, and
-  `agent_network = "local"` needs `strict`. Agent-process egress degrades the
-  same way (§1, §1b). On `none`: unsandboxed, with a warning.
+| `sandbox.agent_network` | `strict` | `hardened` | `none` |
+|---|---|---|---|
+| `providers` *(def)* | provider endpoints + `allow_urls`, broker-pinned (§1b) | provider *ports* only (Landlock) | unconfined ⚠ |
+| `local` | loopback providers only, broker-pinned (refuse to run if any provider isn't loopback) | ⛔ refuse to run | unconfined ⚠ |
+| `open` | unconfined | unconfined | unconfined ⚠ |
+
+**Jailed-command egress** — `run_command` and machine `tool` states, by
+`sandbox.tool_network` (columns; cells are the `strict` profile):
+
+| jailed command | `block` *(def)* | `only_explicit_states` | `allow` |
+|---|---|---|---|
+| `run_command` | offline | offline | host network |
+| `tool`, `allow_network = "auto"` (def) / `"block"` | offline | offline | offline |
+| `tool`, `allow_network = "allow"` | ⛔ refuse to run | host network | host network |
+
+**Refusals** — these configurations **refuse to run** (fail-closed):
+
+| Configuration | When |
+|---|---|
+| `sandbox.tool_network = "allow"` without `sandbox.agent_network = "open"` | config load, any profile ¹ |
+| a `tool` sets `allow_network = "allow"` under `sandbox.tool_network = "block"` | machine start, any profile |
+| `sandbox.agent_network = "local"` or `sandbox.tool_network = "only_explicit_states"` | run start, `hardened` ² |
+| a machine with `tool` states under `sandbox.tool_network = "block"`, or a `tool` with `allow_network = "block"` | machine start, `hardened` ² |
+
+- ⚠ `none` (non-Linux) is **unsandboxed**: nothing above is enforced and nothing
+  is refused — the run proceeds with a loud warning.
+- ¹ `run_command` runs inside the agent process, so it can't reach the network
+  while the agent is confined — hence `sandbox.tool_network = "allow"` needs
+  `sandbox.agent_network = "open"`.
+- ² `sandbox.tool_network`'s per-command isolation needs a network namespace, so
+  it is **`strict`-only**. On `hardened` (no namespaces) a jailed child instead
+  inherits the agent's Landlock and follows `sandbox.agent_network`; the cases
+  that would need real per-command isolation are refused rather than mis-confined.
 
 Every surface fails closed:
 
-- **Operator-gated, machine-declared.** `agent_network`/`tool_network` are read
-  only from the operator's global/repo config — a machine's `[config]` overlay
-  (possibly LLM-drafted or shared) is rejected at load if it declares
-  `[providers.*]` or `[sandbox.*]`. A `tool` merely *declares* `allow_network`;
-  whether `"allow"` is honored is the operator's call via `tool_network`, and
+- **Operator-gated, machine-declared.** `sandbox.agent_network`/
+  `sandbox.tool_network` are read only from the operator's global/repo config — a
+  machine's `[config]` overlay (possibly LLM-drafted or shared) is rejected at
+  load if it declares `[providers.*]` or `[sandbox.*]`. A `tool` merely
+  *declares* `allow_network`; whether `"allow"` is honored is the operator's call
+  via `sandbox.tool_network`, and
   every conflict or unenforceable demand is refused at startup naming the state
   (see the rows/notes above), never silently mis-confined.
 - **Bundle confinement.** Helper scripts live in an operator-reviewed
@@ -368,7 +370,7 @@ not to bound what an attacker can do.
   net-isolated in `strict` via the empty network namespace.
 - **User namespaces** must be enabled
   (`kernel.unprivileged_userns_clone = 1`). Some distros disable this
-  by default; agent6 will detect that and refuse `strict`.
+  by default; agent6 detects that and refuses to run `strict`.
 - **seccomp** is required by the jail; on rare hardened kernels that
   block seccomp from unprivileged callers, the jail fails closed.
 - **Devcontainers**: the jail's `hardened` profile is what you get

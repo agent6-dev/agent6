@@ -106,8 +106,8 @@ All five must pass; keep the suite green.
   `reset --hard`, and `branch -D` unconditionally. Do not add overrides.
 - Config is **secure by default**: every field has a default, and
   security-sensitive fields default to the *safe* value (`sandbox.agent_network
-  = "providers"`, `sandbox.tool_network = "block"`, `run_commands = "ask"`,
-  `protect_* = true`,
+  = "providers"`, `sandbox.tool_network = "block"`, `sandbox.run_commands =
+  "ask"`, `sandbox.protect_* = true`,
   `git.allow_* = false`). Config is layered (built-in defaults < global
   `$XDG_CONFIG_HOME/agent6/config.toml` < per-repo `.agent6/config.toml`
   < `--config FILE`) and every leaf is auditable via `agent6 config show`.

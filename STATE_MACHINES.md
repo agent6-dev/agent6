@@ -295,8 +295,8 @@ whatever audited command the operator names.
 
 **Network (opt-in, default off).** A `tool`'s `allow_network` is one of
 `"auto"` (default — no network), `"allow"` (wants the host network), or
-`"block"` (no network, *required*: refuse on `hardened`, which can't isolate a
-single tool). A tool reaches the network only when it sets `allow_network =
+`"block"` (no network, *required* — refuses to run on `hardened`, which can't
+isolate a single tool). A tool reaches the network only when it sets `allow_network =
 "allow"`. Because the machine engine is a host-netns *supervisor* (each `agent`
 state confines itself in its own subprocess; see §9), an opt-in `tool` can reach
 the host network even while the agents stay confined to the provider API — a
@@ -307,7 +307,7 @@ global/repo config, never the machine overlay):
 
 | `sandbox.agent_network` | `sandbox.tool_network` | agent egress | `tool` w/ `allow_network="allow"` |
 |---|---|---|---|
-| `providers` *(def)* | `block` *(def)* | providers + `allow_urls` | ⛔ refused |
+| `providers` *(def)* | `block` *(def)* | providers + `allow_urls` | ⛔ refuse to run |
 | `providers` | `only_explicit_states` | providers + `allow_urls` | **host network** |
 | `local` | `only_explicit_states` | loopback providers only | **host network** |
 | `open` | `allow` | unconfined | host network (and `run_command`) |
@@ -316,8 +316,8 @@ So the headline setup — confined agents + one audited networked tool — is
 `sandbox.agent_network = "providers"`, `sandbox.tool_network =
 "only_explicit_states"`, and `allow_network = "allow"` on that one state.
 `only_explicit_states` (and `local`) need the `strict` profile; a networked tool
-under `tool_network = "block"`, or a tool-network config the profile can't
-honor, is refused at startup naming the state.
+under `sandbox.tool_network = "block"`, or a tool-network config the profile
+can't honor, refuses to run at startup naming the state.
 
 **Script bundles.** A machine is a *bundle*: the `.asm.toml` file plus an
 optional sibling `scripts/` directory holding operator-reviewed helper
@@ -541,20 +541,12 @@ note       = { type = "str", optional = true }
 
 Rules (all enforced at `machine check`):
 
-- **Field types** are `str`, `int`, `float`, `bool`, `list[<scalar>]`,
-  another **schema name** (recursion; cycles are a load error), or
-  `json` (the opaque escape hatch — a `json` field is itself not
-  dottable, §4.2).
-- **Required by default.** A field must be present in a validated
-  payload unless declared `optional = true` (mirrors `Config`'s
-  `extra="forbid"`). Validation also forbids *unknown* fields.
-- **`enum`** (string fields only) constrains a `str` to a fixed list of
-  literals, checked at the `finish_run`/capture boundary — strictly
-  earlier than re-checking the value in a `branch`.
-- A `.field` navigation in a predicate/template is type-checked against
-  the named schema, so the field must exist and its type is known
-  statically (a `list`/`json`/record field still may not be dotted
-  further unless it is itself a record).
+| Rule | Behavior |
+|---|---|
+| **Field types** | `str`, `int`, `float`, `bool`, `list[<scalar>]`, another **schema name** (recursive; cycles are a load error), or `json` (opaque escape hatch — itself not dottable, §4.2) |
+| **Required by default** | every field must be present in a validated payload unless `optional = true` (mirrors `Config`'s `extra="forbid"`); unknown fields are rejected |
+| **`enum`** | string fields only; constrains a `str` to a fixed literal list, checked at the `finish_run`/capture boundary (earlier than a `branch` would re-check it) |
+| **Dotting** | a `.field` in a predicate/template is type-checked against the schema (field must exist); a `list`/`json`/non-record field may not be dotted further |
 
 ### 4.7 Machine config overlay (`[config]`)
 

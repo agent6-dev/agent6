@@ -180,9 +180,10 @@ running after the run. This is enforced *structurally*: every LLM-chosen
 child command runs in the `agent6-jail` sandbox (namespaces + `pivot_root`
 + Landlock + seccomp), the agent's own egress is broker-confined to the
 provider endpoints, and `git_ops.py` refuses `push` / `--force` /
-history-rewrite unconditionally. Defaults are safe (`run_commands =
-"ask"`, `agent_network = "providers"`, `tool_network = "block"`,
-`protect_* = true`, `git.allow_* = false`).
+history-rewrite unconditionally. Defaults are safe
+(`sandbox.agent_network = "providers"`, `sandbox.tool_network = "block"`,
+`sandbox.run_commands = "ask"`, `sandbox.protect_* = true`,
+`git.allow_* = false`).
 
 See **[SECURITY.md](SECURITY.md)** for the threat model, the per-layer
 breakdown, and the sandbox profiles.
@@ -206,7 +207,7 @@ value and where it came from; `agent6 check` validates without running.
 [sandbox]
 profile = "auto"              # auto | strict | hardened
 agent_network = "providers"   # providers | local | open  (agent's LLM egress)
-tool_network = "block"        # block | only_explicit_states | allow  (jailed cmds)
+tool_network = "block"        # block | only_explicit_states | allow  (jailed commands)
 allow_urls = []               # extra agent egress hosts under "providers"
 run_commands = "ask"          # yes | no | ask
 protect_git = true
@@ -240,7 +241,7 @@ model = "claude-sonnet-4-5"
 
 [models.reviewer]
 provider = "anthropic"
-model = "claude-sonnet-4-5"
+model = "claude-opus-4-5"
 ```
 
 Budget ceilings can be overridden per-run from the CLI without touching
@@ -258,7 +259,7 @@ Per-provider `http_timeout_s` (default `600.0`) caps each HTTP call —
 raise it for slow reasoning models, lower it to fail fast on a stuck
 endpoint.
 
-Two model roles are used:
+agent6 uses three model roles:
 
 | Role       | Routed by             | Used by                                                                          |
 | ---------- | --------------------- | -------------------------------------------------------------------------------- |
@@ -326,8 +327,8 @@ Token + cost summary:
 ```
 
 Pricing lives in [src/agent6/budget.py](src/agent6/budget.py) and is
-updated by hand from the providers' public pricing pages. The budgets
-in `agent6.toml` hard-stop the run; a stopped run is resumable.
+updated by hand from the providers' public pricing pages. The `[budget]`
+ceilings in your config hard-stop the run; a stopped run is resumable.
 
 ## Live view
 
