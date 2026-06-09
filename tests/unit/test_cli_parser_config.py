@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Eric Lesiuta
+"""`--config FILE` parses in both positions for run/plan/resume/check.
+
+The documented `agent6 run --config FILE` (config after the subcommand) used to
+error; and a subparser `default=None` would clobber the top-level
+`agent6 --config FILE run` form back to None. Both must now set `args.config`.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from agent6.cli.parser import build_parser
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["run", "--config", "c.toml", "task"],
+        ["--config", "c.toml", "run", "task"],
+        ["plan", "--config", "c.toml", "task"],
+        ["--config", "c.toml", "plan", "task"],
+        ["resume", "rid", "--config", "c.toml"],
+        ["--config", "c.toml", "resume", "rid"],
+        ["check", "--config", "c.toml"],
+        ["--config", "c.toml", "check"],
+    ],
+)
+def test_config_flag_parses_in_both_positions(argv: list[str]) -> None:
+    args = build_parser().parse_args(argv)
+    assert args.config == Path("c.toml")
+
+
+def test_config_defaults_to_none_when_absent() -> None:
+    args = build_parser().parse_args(["run", "task"])
+    assert args.config is None

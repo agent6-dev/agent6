@@ -52,6 +52,18 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     run_p.add_argument("--run-id", default="", help="Explicit run id (default: generate one).")
     run_p.add_argument(
+        "--config",
+        type=Path,
+        # SUPPRESS (not None): a subparser default would otherwise clobber a
+        # top-level `agent6 --config FILE <cmd>` back to None. With SUPPRESS the
+        # subparser only sets `config` when --config is given AFTER the
+        # subcommand, so both `agent6 --config F run` and `agent6 run --config F`
+        # work; the top-level --config supplies the always-present default.
+        default=argparse.SUPPRESS,
+        metavar="FILE",
+        help="Explicit config file (layered over global + repo configs).",
+    )
+    run_p.add_argument(
         "--continue",
         dest="continue_run",
         action="store_true",
@@ -97,6 +109,18 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Task description (in quotes). Omit when using --show/--edit.",
     )
     plan_p.add_argument("--run-id", default="", help="Explicit run id (default: generate one).")
+    plan_p.add_argument(
+        "--config",
+        type=Path,
+        # SUPPRESS (not None): a subparser default would otherwise clobber a
+        # top-level `agent6 --config FILE <cmd>` back to None. With SUPPRESS the
+        # subparser only sets `config` when --config is given AFTER the
+        # subcommand, so both `agent6 --config F run` and `agent6 run --config F`
+        # work; the top-level --config supplies the always-present default.
+        default=argparse.SUPPRESS,
+        metavar="FILE",
+        help="Explicit config file (layered over global + repo configs).",
+    )
     plan_p.add_argument(
         "--show",
         default="",
@@ -147,7 +171,12 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     resume_p.add_argument(
         "--config",
         type=Path,
-        default=None,
+        # SUPPRESS (not None): a subparser default would otherwise clobber a
+        # top-level `agent6 --config FILE <cmd>` back to None. With SUPPRESS the
+        # subparser only sets `config` when --config is given AFTER the
+        # subcommand, so both `agent6 --config F run` and `agent6 run --config F`
+        # work; the top-level --config supplies the always-present default.
+        default=argparse.SUPPRESS,
         metavar="FILE",
         help="Explicit config file (layered over global + repo configs).",
     )
@@ -253,7 +282,12 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     check_p.add_argument(
         "--config",
         type=Path,
-        default=None,
+        # SUPPRESS (not None): a subparser default would otherwise clobber a
+        # top-level `agent6 --config FILE <cmd>` back to None. With SUPPRESS the
+        # subparser only sets `config` when --config is given AFTER the
+        # subcommand, so both `agent6 --config F run` and `agent6 run --config F`
+        # work; the top-level --config supplies the always-present default.
+        default=argparse.SUPPRESS,
         metavar="FILE",
         help="Explicit config file (layered over global + repo configs).",
     )
@@ -454,7 +488,12 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     mcp_serve.add_argument(
         "--config",
         type=Path,
-        default=None,
+        # SUPPRESS (not None): a subparser default would otherwise clobber a
+        # top-level `agent6 --config FILE <cmd>` back to None. With SUPPRESS the
+        # subparser only sets `config` when --config is given AFTER the
+        # subcommand, so both `agent6 --config F run` and `agent6 run --config F`
+        # work; the top-level --config supplies the always-present default.
+        default=argparse.SUPPRESS,
         metavar="FILE",
         help="Explicit config file (layered over global + repo configs).",
     )
