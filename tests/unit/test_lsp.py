@@ -233,3 +233,33 @@ def test_lsp_location_is_frozen() -> None:
     loc = LspLocation(path=Path("x.py"), line=1, col=2)
     with pytest.raises(AttributeError):
         loc.line = 99  # type: ignore[misc]
+
+
+def _hung_server_argv() -> list[str]:
+    # Sends a Content-Length header then never the body -> a blocking read in
+    # the old code hung forever; the reader-thread + deadline must time out.
+    import sys
+
+    return [
+        sys.executable,
+        "-c",
+        "import sys,time;sys.stdout.buffer.write(b'Content-Length: 100\\r\\n\\r\\n');"
+        "sys.stdout.buffer.flush();time.sleep(30)",
+    ]
+
+
+def test_lsp_request_times_out_on_hung_server(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import time
+
+    from agent6.tools import lsp as lspmod
+
+    monkeypatch.setattr(lspmod, "_find_ty_argv", _hung_server_argv)
+    client = LspClient(tmp_path)
+    client._START_TIMEOUT_S = 0.6  # pyright: ignore[reportPrivateUsage]
+    started = time.monotonic()
+    with pytest.raises(LspError, match="timed out"):
+        client.start()  # initialize never gets its response
+    assert time.monotonic() - started < 5.0  # deadline enforced, did not hang
+    client.close()

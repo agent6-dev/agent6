@@ -32,7 +32,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 
 class LspError(Exception):
@@ -118,6 +118,15 @@ class LspClient:
         self._next_id = 1
         self._open_versions: dict[str, int] = {}
         self._lock = threading.Lock()
+        # A background reader drains stdout into `_responses` (keyed by request
+        # id) and notifies `_resp_cond`. `_send_request` then waits on the
+        # condition with a wall-clock deadline -- so a server that accepts a
+        # request and then HANGS (never sends the body) trips the timeout
+        # instead of blocking the agent forever in a synchronous read.
+        self._responses: dict[int, dict[str, Any]] = {}
+        self._resp_cond = threading.Condition()
+        self._reader: threading.Thread | None = None
+        self._reader_stop = threading.Event()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -141,6 +150,12 @@ class LspClient:
             )
         except OSError as exc:
             raise LspError(f"LSP unavailable: failed to spawn {argv[0]}: {exc}") from exc
+        self._reader_stop.clear()
+        self._responses.clear()
+        self._reader = threading.Thread(
+            target=self._reader_loop, args=(self._proc.stdout,), daemon=True
+        )
+        self._reader.start()
         try:
             self._initialize()
         except LspError:
@@ -151,9 +166,10 @@ class LspClient:
         if self._proc is None:
             return
         proc = self._proc
-        self._proc = None
+        self._reader_stop.set()
         with contextlib.suppress(Exception):
             self._send_notification("exit", None)
+        self._proc = None
         with contextlib.suppress(OSError):
             if proc.stdin is not None:
                 proc.stdin.close()
@@ -167,6 +183,13 @@ class LspClient:
         if proc.poll() is None:
             with contextlib.suppress(Exception):
                 proc.kill()
+        # Wake any in-flight _send_request and join the reader (stdout has EOF'd
+        # now that the process is gone).
+        with self._resp_cond:
+            self._resp_cond.notify_all()
+        if self._reader is not None:
+            self._reader.join(timeout=2.0)
+            self._reader = None
         self._open_versions.clear()
 
     # ------------------------------------------------------------------
@@ -301,26 +324,44 @@ class LspClient:
     ) -> Any:
         req_id = self._next_id
         self._next_id += 1
-        msg = {"jsonrpc": "2.0", "id": req_id, "method": method, "params": params}
-        self._write_message(msg)
         deadline_s = timeout_s if timeout_s is not None else self._REQUEST_TIMEOUT_S
-        # Drain server-pushed messages (diagnostics, progress, etc.)
-        # until we see the matching response id. The synchronous
-        # _read_message blocks on stdout; a wall-clock budget is
-        # enforced by an outer counter so a wedged server can't hang
-        # the agent forever.
-        start = time.monotonic()
-        while True:
-            if time.monotonic() - start > deadline_s:
-                raise LspError(f"LSP request {method!r} timed out after {deadline_s}s")
-            reply = self._read_message()
-            if reply is None:
-                raise LspError(f"LSP server closed stdout during {method!r}")
-            if reply.get("id") == req_id:
-                if "error" in reply:
-                    raise LspError(f"LSP {method!r} error: {reply['error']}")
-                return reply.get("result")
-            # else: notification / unrelated request → discard.
+        self._write_message({"jsonrpc": "2.0", "id": req_id, "method": method, "params": params})
+        # Wait for the reader thread to surface our response, enforcing the
+        # wall-clock deadline via the condition (so a hung server can't block us
+        # forever -- the blocking read lives in the reader thread, not here).
+        deadline = time.monotonic() + deadline_s
+        with self._resp_cond:
+            while req_id not in self._responses:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise LspError(f"LSP request {method!r} timed out after {deadline_s}s")
+                if self._reader is None or not self._reader.is_alive():
+                    raise LspError(f"LSP server closed stdout during {method!r}")
+                self._resp_cond.wait(timeout=remaining)
+            reply = self._responses.pop(req_id)
+        if "error" in reply:
+            raise LspError(f"LSP {method!r} error: {reply['error']}")
+        return reply.get("result")
+
+    def _reader_loop(self, stdout: IO[bytes]) -> None:
+        """Drain stdout into `_responses`. Runs in a daemon thread so the
+        synchronous framing reads can block without stalling the caller."""
+        while not self._reader_stop.is_set():
+            try:
+                msg = self._read_message_blocking(stdout)
+            except LspError:
+                break  # framing error -> stop reading
+            if msg is None:
+                break  # EOF
+            rid = msg.get("id")
+            # Only responses to OUR requests (an id plus result/error, no
+            # method). Server-initiated requests/notifications are discarded.
+            if isinstance(rid, int) and "method" not in msg:
+                with self._resp_cond:
+                    self._responses[rid] = msg
+                    self._resp_cond.notify_all()
+        with self._resp_cond:  # wake any waiter so it can fail fast on EOF
+            self._resp_cond.notify_all()
 
     def _send_notification(self, method: str, params: Any) -> None:
         msg: dict[str, Any] = {"jsonrpc": "2.0", "method": method}
@@ -339,10 +380,7 @@ class LspClient:
         except OSError as exc:
             raise LspError(f"LSP write failed: {exc}") from exc
 
-    def _read_message(self) -> dict[str, Any] | None:
-        if self._proc is None or self._proc.stdout is None:
-            return None
-        stdout = self._proc.stdout
+    def _read_message_blocking(self, stdout: IO[bytes]) -> dict[str, Any] | None:
         content_length: int | None = None
         while True:
             line = stdout.readline()
