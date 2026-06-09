@@ -39,6 +39,7 @@ from agent6.tools.dispatch import ToolDispatcher, ToolError
 from agent6.tools.index import Symbol
 from agent6.tools.schema import (
     ALL_TOOLS,
+    ASK_EXTRA_TOOLS,
     LOOP_EXTRA_TOOLS,
     PLAN_EXTRA_TOOLS,
     ApplyEditInput,
@@ -423,6 +424,44 @@ operator must resolve before execution. Leave the `**A:**` lines blank
 Call `finish_planning` exactly once when the plan is complete. Do not
 call any other tools after `finish_planning`.
 </plan-output>
+"""
+
+_ASK_SYSTEM_PROMPT_BASE = """<role>
+You are agent6 in ASK mode, a sandboxed read-only assistant. The first
+user message is a QUESTION (about this codebase, a specific file, how to
+do something, a design idea to brainstorm, a bug to reason through, or how
+to use agent6 itself). Your job is to INVESTIGATE and ANSWER -- not to
+implement.
+
+You CANNOT change anything: `apply_edit`, `apply_patch`, commit tools, and
+the task-DAG tools are not exposed. You CAN read the repo and run commands
+to investigate (run a test to see output, check a value, `git log`,
+dependency versions, a quick `python -c` probe). Commands run jailed and
+confined to the workspace; do NOT use them to make changes you intend to
+keep -- if the answer requires an edit, describe the edit, don't apply it.
+</role>
+
+<tool-use-rules>
+- Anchor reads: prefer `outline` to see a file's shape before `read_file`.
+- For symbol queries prefer `find_definition` / `find_references` over
+  plain `grep` (those exclude strings/comments).
+- `run_command` is for investigation only (read-only probes, running a
+  test/script to observe behaviour). It is gated by the operator's
+  `run_commands` policy and may prompt for approval or be disabled.
+- Investigate only as much as the question needs; don't spelunk the whole
+  repo for a question a couple of reads can answer.
+</tool-use-rules>
+
+<answer>
+When you have enough to answer, write the answer as your final message --
+clear, well-structured GitHub-flavoured markdown -- and stop (emit no tool
+call on that turn). That final message IS the answer shown to the user.
+Be direct and concrete: cite file:line where relevant, show short code
+snippets, and when the question is open-ended give a recommendation, not an
+exhaustive survey. If the question is ambiguous, state your interpretation
+and answer it; if you genuinely cannot determine something from the repo,
+say so plainly rather than guessing.
+</answer>
 """
 
 _V2_VERIFY_BLOCK_TEMPLATE = """<verify-command>
@@ -1186,7 +1225,7 @@ def _build_system_prompt(
     *,
     config: Config,
     repo: RepoSummary,
-    mode: Literal["run", "plan"] = "run",
+    mode: Literal["run", "plan", "ask"] = "run",
 ) -> str:
     """Assemble the system prompt from static blocks + run-specific context.
 
@@ -1199,7 +1238,13 @@ def _build_system_prompt(
     are appended unchanged so the planner sees the same project context
     an executor would.
     """
-    base = _PLAN_SYSTEM_PROMPT_BASE if mode == "plan" else _SYSTEM_PROMPT_BASE
+    base = (
+        _ASK_SYSTEM_PROMPT_BASE
+        if mode == "ask"
+        else _PLAN_SYSTEM_PROMPT_BASE
+        if mode == "plan"
+        else _SYSTEM_PROMPT_BASE
+    )
     parts = [base]
 
     # When the bench harness sets
@@ -1300,7 +1345,7 @@ def _build_system_prompt(
 def _tool_definitions(
     dispatcher: ToolDispatcher,
     *,
-    mode: Literal["run", "plan"] = "run",
+    mode: Literal["run", "plan", "ask"] = "run",
 ) -> list[ToolDefinition]:
     """Build the tool list exposed to the loop. Filters by what the
     dispatcher actually allows (e.g. run_command may be disabled).
@@ -1311,13 +1356,20 @@ def _tool_definitions(
     ``finish_run``/``run_metric_command``, adds ``finish_planning``).
     """
     available = set(dispatcher.available_tool_names())
-    extras: tuple[type[Any], ...] = PLAN_EXTRA_TOOLS if mode == "plan" else LOOP_EXTRA_TOOLS
-    base_tools: tuple[type[Any], ...] = ALL_TOOLS
+    extras: tuple[type[Any], ...]
     if mode == "plan":
-        # Plan mode is read-only; filter mutating tools even if the
-        # dispatcher would otherwise allow them.
-        plan_blocked = {ApplyEditInput.TOOL_NAME, ApplyPatchInput.TOOL_NAME}
-        base_tools = tuple(cls for cls in ALL_TOOLS if cls.TOOL_NAME not in plan_blocked)
+        extras = PLAN_EXTRA_TOOLS
+    elif mode == "ask":
+        extras = ASK_EXTRA_TOOLS
+    else:
+        extras = LOOP_EXTRA_TOOLS
+    base_tools: tuple[type[Any], ...] = ALL_TOOLS
+    if mode in ("plan", "ask"):
+        # Plan and ask are read-only; filter mutating tools even if the
+        # dispatcher would otherwise allow them (the dispatcher's own
+        # mode guard is the second line of defence).
+        blocked = {ApplyEditInput.TOOL_NAME, ApplyPatchInput.TOOL_NAME}
+        base_tools = tuple(cls for cls in ALL_TOOLS if cls.TOOL_NAME not in blocked)
     out: list[ToolDefinition] = []
     for cls in (*base_tools, *extras):
         if cls.TOOL_NAME not in available and cls not in extras:
@@ -1491,7 +1543,7 @@ class Workflow:
     # commit-on-verify-pass, and on finish_planning writes the
     # ``plan_markdown`` argument to ``plan_output_path`` before exiting.
     # ``plan_output_path`` is required when ``mode="plan"``.
-    mode: Literal["run", "plan"] = "run"
+    mode: Literal["run", "plan", "ask"] = "run"
     plan_output_path: Path | None = None
     # weak-model resilience. Open-weights models (observed live
     # with Kimi K2.6) sometimes emit a single empty assistant turn
@@ -1871,7 +1923,10 @@ class Workflow:
                     return RunResult(
                         completed=True,
                         reason="silent_finish",
-                        summary=text[:1000],
+                        # In ask mode the final prose IS the answer the caller
+                        # prints, so keep it whole; run/plan only need a short
+                        # summary line.
+                        summary=text if self.mode == "ask" else text[:1000],
                         iterations=iteration,
                         tool_calls=tool_calls,
                     )

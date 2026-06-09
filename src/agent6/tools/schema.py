@@ -432,6 +432,12 @@ PLAN_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     FinishPlanningInput,
 )
 
+# Tool list for ask mode (`agent6 ask`). Read-only Q&A: like plan it filters
+# `apply_edit`/`apply_patch` out of `ALL_TOOLS` at the workflow layer, but it
+# exposes NO control tools at all -- no DAG, no finish_planning, no finish_run.
+# The agent answers by emitting its final message as prose (a "silent finish").
+ASK_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = ()
+
 
 def schemas_as_provider_tools() -> list[dict[str, Any]]:
     """Emit Anthropic-API-shape tool descriptors. (kept dict-typed to avoid circular import)"""

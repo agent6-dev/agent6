@@ -18,8 +18,11 @@ from agent6.tools.schema import (
     PLAN_EXTRA_TOOLS,
     ApplyEditInput,
     ApplyPatchInput,
+    DagAddTaskInput,
     FinishPlanningInput,
     FinishRunInput,
+    ReadFileInput,
+    RunCommandInput,
 )
 from agent6.types import RepoSummary
 from agent6.workflows import loop as loopmod
@@ -211,6 +214,35 @@ def test_tool_definitions_run_mode_includes_edit_tools(tmp_path: Path) -> None:
     assert ApplyPatchInput.TOOL_NAME in names
     assert FinishRunInput.TOOL_NAME in names
     assert FinishPlanningInput.TOOL_NAME not in names
+
+
+def test_tool_definitions_ask_mode_is_read_only_with_commands(tmp_path: Path) -> None:
+    # ask: read tools + run_command (when the config allows it), but NO edits and
+    # NO control tools (no finish_run/finish_planning/DAG) -- it silent-finishes.
+    p = tmp_path / "agent6.toml"
+    p.write_text(_VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"'), "utf-8")
+    cfg = load_config(p)
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    names = {t.name for t in loopmod._tool_definitions(d, mode="ask")}  # pyright: ignore[reportPrivateUsage]
+    assert ReadFileInput.TOOL_NAME in names  # can read
+    assert RunCommandInput.TOOL_NAME in names  # can run commands to investigate
+    assert ApplyEditInput.TOOL_NAME not in names  # but not edit
+    assert ApplyPatchInput.TOOL_NAME not in names
+    assert FinishRunInput.TOOL_NAME not in names
+    assert FinishPlanningInput.TOOL_NAME not in names
+    assert DagAddTaskInput.TOOL_NAME not in names
+
+
+def test_dispatcher_refuses_mutations_in_ask_mode(tmp_path: Path) -> None:
+    cfg = _config(tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg, mode="ask")
+    with pytest.raises(ToolError, match="ask mode"):
+        d.dispatch(
+            "apply_edit",
+            {"path": "f.py", "edits": [{"kind": "create", "old_string": "", "new_string": "x\n"}]},
+        )
+    with pytest.raises(ToolError, match="ask mode"):
+        d.dispatch("apply_patch", {"patch": "--- a\n+++ b\n"})
 
 
 # --- Workflow plan-mode validation --------------------------------------

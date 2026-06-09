@@ -139,6 +139,16 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             mode="plan",
             budget_overrides=_BudgetOverrides.from_args(args),
         )
+    if args.command == "ask":
+        if not args.task:
+            print("ERROR: 'ask' needs a question argument (in quotes).", file=sys.stderr)
+            return 2
+        return _cmd_run(
+            args.config,
+            args.task,
+            mode="ask",
+            budget_overrides=_BudgetOverrides.from_args(args),
+        )
     if args.command == "watch":
         return _cmd_watch(args.run_id, plain=args.plain, since=args.since)
     if args.command == "resume":

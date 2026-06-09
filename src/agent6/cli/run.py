@@ -105,6 +105,21 @@ def _run_exit_code(result: RunResult) -> int:
     return 1
 
 
+def _eprint(msg: str) -> None:
+    """Loop logger that writes to stderr (used for `ask`, whose stdout is the
+    answer and must stay clean for piping)."""
+    print(msg, file=sys.stderr)
+
+
+def _save_ask_transcript(layout: RunLayout, *, question: str, answer: str) -> None:
+    """Write the human-readable `ask` transcript (question + markdown answer)."""
+    out = layout.run_dir / "transcript.md"
+    out.write_text(
+        f"# agent6 ask\n\n## Question\n\n{question}\n\n## Answer\n\n{answer}\n",
+        encoding="utf-8",
+    )
+
+
 def _default_stdin_approver(prompt: str) -> bool:
     """Plain TTY fallback for tool approval (used when no TUI is live)."""
     try:
@@ -622,7 +637,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     run_id: str = "",
     interactive: bool = False,
     no_tui: bool = False,
-    mode: Literal["run", "plan"] = "run",
+    mode: Literal["run", "plan", "ask"] = "run",
     budget_overrides: _BudgetOverrides | None = None,
 ) -> int:
     """Single-loop agent: one provider, one LLM driving via tool
@@ -685,34 +700,45 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         email=cfg.git.commit.email,
         coauthor=cfg.git.commit.coauthor,
     )
-    try:
-        verify_git_identity(cwd, identity)
-    except GitError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 2
+    # ask is read-only and may run outside a git repo (e.g. agent6 self-help),
+    # so it skips the commit-oriented git pre-flight entirely.
+    base_sha = ""
+    base_branch = ""
+    if mode != "ask":
+        try:
+            verify_git_identity(cwd, identity)
+        except GitError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
 
-    # Capture base sha + branch BEFORE we (optionally) cut a run branch
-    # so `agent6 diff <run-id>` knows where the run started.
-    try:
-        pre_status = git_status(cwd)
-    except GitError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 2
-    base_sha = pre_status.head_sha
-    base_branch = pre_status.branch
+        # Capture base sha + branch BEFORE we (optionally) cut a run branch
+        # so `agent6 diff <run-id>` knows where the run started.
+        try:
+            pre_status = git_status(cwd)
+        except GitError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
+        base_sha = pre_status.head_sha
+        base_branch = pre_status.branch
 
-    # Layout: standard run-dir scaffolding for transcripts + logs.
+    # Layout: standard run-dir scaffolding for transcripts + logs. ask sessions
+    # live under .agent6/asks/ to stay separate from real runs.
     effective_run_id = run_id or new_friendly_id()
     agent6_dir = _agent6_dir(cwd)
-    layout = RunLayout(state_dir=agent6_dir, run_id=effective_run_id)
-    _ensure_agent6_gitignored(cwd, agent6_dir=agent6_dir, identity=identity)
+    layout = RunLayout(
+        state_dir=agent6_dir,
+        run_id=effective_run_id,
+        subdir="asks" if mode == "ask" else "runs",
+    )
+    if mode != "ask":
+        _ensure_agent6_gitignored(cwd, agent6_dir=agent6_dir, identity=identity)
     layout.ensure()
 
     # Optionally cut a fresh branch for the run so the human can later
     # `git diff <base_branch>..agent6/...` or just delete the branch to
     # discard everything the agent did. Skipped silently when disabled.
     run_branch: str | None = None
-    if cfg.git.branch_per_run:
+    if cfg.git.branch_per_run and mode != "ask":
         run_branch = make_run_branch_name(task_slug=slugify(task))
         try:
             create_branch(cwd, run_branch)
@@ -842,7 +868,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                 config=cfg,
                 provider=provider,
                 dispatcher=dispatcher,
-                logger=print,
+                logger=_eprint if mode == "ask" else print,
                 events=events,
                 graph_client=graph_client,
                 steer_requested=steer_state.requested,
@@ -907,6 +933,15 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         return 130
     if result is None:
         return 1
+
+    if mode == "ask":
+        # The answer IS result.summary (kept whole in ask mode). stdout gets
+        # just the answer (clean for piping); cost + saved-path go to stderr.
+        print(result.summary)
+        _save_ask_transcript(layout, question=task, answer=result.summary)
+        print(f"\n[agent6] answer saved to {layout.run_dir / 'transcript.md'}", file=sys.stderr)
+        print(budget.format_summary(), file=sys.stderr)
+        return 0 if result.completed else 1
 
     print()
     print(

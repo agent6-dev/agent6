@@ -144,6 +144,31 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     _add_budget_flags(plan_p)
 
+    ask_p = sub.add_parser(
+        "ask",
+        help=(
+            "Read-only Q&A: investigate the repo and answer a question in prose"
+            " (no edits/commits). Brainstorm, rubber-duck, or ask how to do"
+            " something."
+        ),
+    )
+    ask_p.add_argument(
+        "task",
+        nargs="?",
+        default="",
+        help='Question (in quotes), e.g. "why does the broker drop large requests?".',
+    )
+    ask_p.add_argument(
+        "--config",
+        type=Path,
+        # SUPPRESS so a top-level `agent6 --config F ask` is not clobbered; see
+        # the run/plan --config notes above.
+        default=argparse.SUPPRESS,
+        metavar="FILE",
+        help="Explicit config file (layered over global + repo configs).",
+    )
+    _add_budget_flags(ask_p)
+
     watch_p = sub.add_parser(
         "watch",
         help="Read-only live view of a run (defaults to most recent under .agent6/runs).",

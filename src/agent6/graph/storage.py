@@ -55,10 +55,13 @@ class RunLayout:
 
     state_dir: Path
     run_id: str
+    # Top-level bucket under state_dir. "runs" for `agent6 run`/`plan`; "asks"
+    # for `agent6 ask` so read-only Q&A sessions stay separate from real runs.
+    subdir: str = "runs"
 
     @property
     def run_dir(self) -> Path:
-        return self.state_dir / "runs" / self.run_id
+        return self.state_dir / self.subdir / self.run_id
 
     @property
     def manifest_path(self) -> Path:
