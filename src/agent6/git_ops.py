@@ -99,6 +99,19 @@ def _git() -> str:
     return git
 
 
+# Neutralize repo-config keys that would otherwise run a repo-controlled command
+# on the HOST (outside the jail) during agent6's own git operations. `-c` has the
+# highest precedence, overriding `.git/config`. `core.fsmonitor` fires a command
+# on every index refresh (status/add/commit); `diff.external` fires one on
+# `git diff` (review/diff). Both are pure overrides with no correctness cost
+# (fsmonitor is a perf cache; an empty diff.external uses git's builtin diff).
+# Defense-in-depth: the edit tools already refuse writes into `.git` under
+# protect_git, but a repo cloned with a pre-poisoned `.git/config` would
+# otherwise execute its payload the first time agent6 ran git here. (Hooks under
+# `.git/hooks/` are a separate, deliberate policy question -- left to run.)
+_GIT_HARDENING: tuple[str, ...] = ("-c", "core.fsmonitor=false", "-c", "diff.external=")
+
+
 def _run(
     cwd: Path,
     *args: str,
@@ -109,7 +122,7 @@ def _run(
     if env_extra:
         env = {**os.environ, **env_extra}
     proc = subprocess.run(
-        [_git(), *args],
+        [_git(), *_GIT_HARDENING, *args],
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -117,7 +130,7 @@ def _run(
         env=env,
     )
     result = CommandResult(
-        argv=(_git(), *args),
+        argv=(_git(), *_GIT_HARDENING, *args),
         returncode=proc.returncode,
         stdout=proc.stdout,
         stderr=proc.stderr,

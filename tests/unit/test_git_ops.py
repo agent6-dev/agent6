@@ -15,6 +15,7 @@ from agent6.git_ops import (
     GitSafetyError,
     commit_all,
     create_branch,
+    diff_since,
     is_git_repo,
     make_run_branch_name,
     recent_log,
@@ -35,6 +36,35 @@ def _init_repo(path: Path) -> None:
     (path / "README.md").write_text("hi\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(path), "commit", "-q", "-m", "init"], check=True)
+
+
+def test_git_ops_neutralizes_repo_fsmonitor(tmp_path: Path) -> None:
+    """A repo-controlled core.fsmonitor must NOT execute on the host when agent6
+    runs git. Defense-in-depth against a cloned/poisoned `.git/config` firing on
+    the harness's own status/commit."""
+    _init_repo(tmp_path)
+    marker = tmp_path / "PWNED"
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "config", "core.fsmonitor", f"touch {marker}"],
+        check=True,
+    )
+    (tmp_path / "new.txt").write_text("x\n", encoding="utf-8")
+    # Index-refreshing op through agent6's hardened _run.
+    status(tmp_path)
+    commit_all(tmp_path, "msg")
+    assert not marker.exists(), "repo core.fsmonitor command executed on the host"
+
+
+def test_git_ops_neutralizes_repo_diff_external(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    marker = tmp_path / "PWNED_DIFF"
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "config", "diff.external", f"touch {marker} ;"],
+        check=True,
+    )
+    (tmp_path / "README.md").write_text("changed\n", encoding="utf-8")
+    diff_since(tmp_path, "HEAD")
+    assert not marker.exists(), "repo diff.external command executed on the host"
 
 
 def test_slugify_basic() -> None:
