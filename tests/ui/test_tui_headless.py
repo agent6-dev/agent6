@@ -28,13 +28,19 @@ def test_render_and_modals(tmp_path: Path) -> None:
     async def scenario() -> None:
         app = Agent6TUI(tmp_path)
         async with app.run_test() as pilot:
-            # Render with bracket-laden (markup-hostile) content must not crash.
+            # Render with bracket-laden (markup-hostile) content must not crash —
+            # exercises the header, the plan TREE (step titles), the tool TABLE
+            # (names/args), the stream pane and the diff pane, all of which carry
+            # model output that would otherwise be parsed as Rich markup.
             for ev in (
                 _ev(type="run.start", user_task="do [a] thing", mode="run"),
+                _ev(type="plan.ready", steps=["fix [the] bug", "add [/close] tag"]),
+                _ev(type="step.start", index=1),
                 _ev(type="role.call", role="worker", model="kimi-k2.6"),
                 _ev(type="role.thinking_delta", role="worker", text="let me [check]"),
                 _ev(type="role.text_delta", role="worker", text="answer is [x]"),
-                _ev(type="tool.call", name="read_file", args={"path": "a.py"}),
+                _ev(type="tool.call", name="grep", args={"pattern": "[a-z]+", "path": "x.py"}),
+                _ev(type="tool.result", name="grep", ok=True, summary="3 matches in [src]"),
                 _ev(type="diff.updated", index=1, patch="--- a\n+++ b\n@@ [x] @@"),
             ):
                 app._handle_event(ev)

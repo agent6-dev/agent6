@@ -99,7 +99,9 @@ class _ApprovalModal(ModalScreen[bool]):
         Binding("left", "focus_previous", "◀", show=False),
         Binding("right", "focus_next", "▶", show=False),
         Binding("y", "approve", "Allow", show=True),
+        Binding("Y", "approve", "Allow", show=False),
         Binding("n", "deny", "Deny", show=True),
+        Binding("N", "deny", "Deny", show=False),
         Binding("escape", "deny", "Deny", show=False),
     ]
 
@@ -418,7 +420,9 @@ class Agent6TUI(App[int]):
         tree.clear()
         for sv in s.steps:
             icon = _STEP_ICONS.get(sv.status, "·")
-            tree.root.add_leaf(f"{icon} {sv.index}. {sv.title}")
+            # Text (not str): step titles are model output and may contain
+            # Rich markup metacharacters ('[...]') that would crash add_leaf.
+            tree.root.add_leaf(Text(f"{icon} {sv.index}. {sv.title}"))
         tree.root.expand()
 
         # Budget
@@ -439,7 +443,11 @@ class Agent6TUI(App[int]):
         table.clear()
         for tc in s.tool_calls[-20:]:
             ok = "…" if tc.ok is None else ("✓" if tc.ok else "✗")
-            table.add_row(tc.name, tc.args_preview[:60], ok, tc.result_summary[:60])
+            # Text cells: tool names/args/summaries are model output and would
+            # otherwise be parsed as Rich markup (crash on stray brackets).
+            table.add_row(
+                Text(tc.name), Text(tc.args_preview[:60]), ok, Text(tc.result_summary[:60])
+            )
 
         # Log. Diff on the monotonic log_count, not len(log_tail): log_tail is a
         # sliding window, so once it saturates its length stops growing and a

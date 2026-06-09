@@ -88,38 +88,38 @@ def _complete_model_provider(
 
 def _complete_run_ids(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: run ids (directory names under .agent6/runs/)."""
-    runs = _runs_dir(Path.cwd())
-    if not runs.is_dir():
-        return []
     try:
+        runs = _runs_dir(Path.cwd())
+        if not runs.is_dir():
+            return []
         return sorted(p.name for p in runs.iterdir() if p.is_dir() and p.name.startswith(prefix))
-    except OSError:
+    except (OSError, ConfigError):
         return []
 
 
 def _complete_plan_run_ids(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: run ids that hold a plan.md (for --from-plan / plan --show/--edit)."""
-    runs = _runs_dir(Path.cwd())
-    if not runs.is_dir():
-        return []
     try:
+        runs = _runs_dir(Path.cwd())
+        if not runs.is_dir():
+            return []
         return sorted(
             p.name
             for p in runs.iterdir()
             if p.is_dir() and p.name.startswith(prefix) and (p / "plan.md").is_file()
         )
-    except OSError:
+    except (OSError, ConfigError):
         return []
 
 
 def _complete_machine_ids(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: live machine instance ids (dirs under .agent6/machines/)."""
-    base = _machines_dir(Path.cwd())
-    if not base.is_dir():
-        return []
     try:
+        base = _machines_dir(Path.cwd())
+        if not base.is_dir():
+            return []
         return sorted(p.name for p in base.iterdir() if p.is_dir() and p.name.startswith(prefix))
-    except OSError:
+    except (OSError, ConfigError):
         return []
 
 

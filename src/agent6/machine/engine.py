@@ -112,10 +112,11 @@ class AgentRequest:
     max_usd: float | None = None
     max_input_tokens: int | None = None
     max_output_tokens: int | None = None
-    # Workflow mode for the nested loop: "run" for real `agent` states (they
-    # edit/verify), "machine" for the `machine create` authoring agent (read-only
-    # navigation + finish_run, authoring system prompt — no edit/verify noise).
-    mode: str = "run"
+    # Workflow mode for the nested loop: "agent" (default) for a machine
+    # `agent` state — a read-only structured-output judge; "run" for an agent
+    # state that opted into coding work; "machine" for the `machine create`
+    # authoring agent. machine_agent maps anything else to "run".
+    mode: str = "agent"
 
 
 @dataclass(frozen=True, slots=True)
@@ -440,10 +441,9 @@ def _execute(
                 max_usd=state.max_usd,
                 max_input_tokens=state.max_input_tokens,
                 max_output_tokens=state.max_output_tokens,
-                # A machine `agent` state is a structured-output judge, not a
-                # coding session: the agent system prompt + read-only tools keep
-                # it returning a `finish_run` result instead of editing the repo.
-                mode="agent",
+                # Per-state: "agent" (default) is a read-only structured-output
+                # judge; "run" lets the state do real coding work (opt-in).
+                mode=state.mode,
             )
         )
         outcome = _agent_outcome(spec, state, result)

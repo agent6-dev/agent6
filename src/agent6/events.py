@@ -23,20 +23,25 @@ import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from threading import Lock
+from threading import RLock
 from typing import Any
 
 
 @dataclass(slots=True)
 class EventSink:
-    """Append structured JSON events to a JSONL file. Thread-safe."""
+    """Append structured JSON events to a JSONL file. Thread-safe.
+
+    Uses a *reentrant* lock so emitting from a SIGINT handler (the Ctrl-C steer
+    path emits ``run.steer_requested``) cannot deadlock against the main thread
+    being mid-``emit`` — the handler runs in the same thread and re-acquires.
+    """
 
     path: Path
-    _lock: Lock
+    _lock: RLock
 
     def __init__(self, path: Path) -> None:
         self.path = path
-        self._lock = Lock()
+        self._lock = RLock()
 
     def emit(self, event_type: str, /, **fields: Any) -> None:
         payload: dict[str, Any] = {
@@ -83,11 +88,11 @@ class UserInputSink:
     """
 
     path: Path
-    _lock: Lock
+    _lock: RLock
 
     def __init__(self, path: Path) -> None:
         self.path = path
-        self._lock = Lock()
+        self._lock = RLock()
 
     def record(
         self,

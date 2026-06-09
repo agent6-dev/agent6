@@ -228,6 +228,10 @@ class AgentState(BaseModel):
     # the #1 way an LLM-authored machine passed `machine check` but died at run
     # time. Set an explicit provider/model only to pin a specific one.
     model: str = Field(default="inherit", min_length=1)
+    # "agent" (default): a read-only structured-output judge — classify/score/
+    # decide and return a finish_run result; cannot edit the repo. Set "run" for
+    # an agent state that must do real coding work (edit/verify/commit tools).
+    mode: Literal["agent", "run"] = "agent"
     prompt: str = Field(min_length=1)
     output_schema: str = Field(min_length=1)
     capture: Capture

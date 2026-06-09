@@ -135,7 +135,11 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
                 )
                 return 2
             plan_path = _runs_dir(Path.cwd()) / last_plan / "plan.md"
-            plan_md = plan_path.read_text(encoding="utf-8")
+            try:
+                plan_md = plan_path.read_text(encoding="utf-8")
+            except OSError as exc:
+                print(f"ERROR: could not read {plan_path}: {exc}", file=sys.stderr)
+                return 2
             title = _first_markdown_line(plan_md)
             if not sys.stdin.isatty():
                 print(

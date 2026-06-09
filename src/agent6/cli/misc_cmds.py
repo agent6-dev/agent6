@@ -210,8 +210,9 @@ def _offer_git_setup(root: Path, created: tuple[Path, ...], *, interactive: bool
         print(f"  git init failed: {exc}")
         return
     print("  created: .git/  (git init)")
-    # Only commit the trackable scaffold — the just-written .gitignore covers the
-    # per-repo config under the agent6 dir, so don't fight it with `add -f`.
+    # Commit only the scaffold git will actually track — when the (default)
+    # .gitignore was written it covers the per-repo config under the agent6 dir,
+    # so unignored() drops it; we never `add -f` around the user's .gitignore.
     rel = unignored(root, tuple(str(p.relative_to(root)) for p in created if p.exists()))
     if not rel:
         print("  (nothing to commit — the created files are all gitignored)")

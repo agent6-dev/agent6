@@ -768,8 +768,16 @@ def _install_steer_sigint(events: EventSink, run_dir: Path) -> _SteerState:
 
     def _handler(_signum: int, _frame: Any) -> None:
         now = time.monotonic()
-        if state["requested"] and (now - state["last_ts"]) < window_s:
-            raise KeyboardInterrupt
+        if state["requested"]:
+            # Second Ctrl-C aborts: within the 2s window always, or any time a
+            # steer is still pending in TUI mode (no terminal feedback there to
+            # re-arm against). Otherwise just refresh the timestamp — crucially
+            # WITHOUT re-clearing the answer file, which the TUI may have just
+            # written (re-clearing it would strand read_steer_answer for 600s).
+            if (now - state["last_ts"]) < window_s or tui_is_live(run_dir):
+                raise KeyboardInterrupt
+            state["last_ts"] = now
+            return
         state["requested"] = True
         state["last_ts"] = now
         clear_steer_answer(run_dir)
@@ -779,7 +787,7 @@ def _install_steer_sigint(events: EventSink, run_dir: Path) -> _SteerState:
         if not tui_is_live(run_dir):
             _tty_message(
                 "\n[agent6] steer requested — finishing current step, then will"
-                " prompt. Press Ctrl-C again within 2s to abort.\n"
+                " prompt. Press Ctrl-C again to abort.\n"
             )
 
     previous = signal.signal(signal.SIGINT, _handler)
@@ -1362,6 +1370,11 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
         )
         return 2
 
+    # Friendly no-repo guard BEFORE any git-touching resume-diff (which would
+    # otherwise print zeroed-out heads first, then the real error).
+    if not _require_git_repo(cwd):
+        return 2
+
     # Safety check: refuse on snapshot-commit divergence unless --force-resume.
     curator = GraphCurator(layout)
     diff = curator.compute_resume_diff(run_id, cwd)
@@ -1414,8 +1427,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
         email=cfg.git.commit.email,
         coauthor=cfg.git.commit.coauthor,
     )
-    if not _require_git_repo(cwd):
-        return 2
+    # (no-repo guard already ran above, before compute_resume_diff)
     try:
         verify_git_identity(cwd, identity)
     except GitError as exc:

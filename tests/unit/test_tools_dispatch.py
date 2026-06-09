@@ -864,6 +864,19 @@ def test_dispatcher_refuses_mutations_in_plan_mode(tmp_path: Path) -> None:
         d.dispatch("apply_patch", {"patch": "--- a\n+++ b\n"})
 
 
+def test_machine_mode_blocks_edits_and_commands(tmp_path: Path) -> None:
+    # machine-authoring + agent-state loops are read-only: the dispatcher refuses
+    # edits AND run_command/run_verify (unlike ask, which allows run_command).
+    cfg = _config_with_run_commands(tmp_path, "yes")
+    d = ToolDispatcher(root=tmp_path, config=cfg, mode="machine")
+    with pytest.raises(ToolError, match="machine mode"):
+        d.dispatch("run_command", {"argv": ["ls"]})
+    with pytest.raises(ToolError, match="machine mode"):
+        d.dispatch("run_verify_command", {})
+    with pytest.raises(ToolError, match="machine mode"):
+        d.dispatch("apply_patch", {"patch": "--- a\n+++ b\n"})
+
+
 def test_agent6_docs_tool_lists_and_reads(tmp_path: Path) -> None:
     # agent6_docs reads agent6's own bundled docs (for "how do I use agent6").
     cfg = _config(tmp_path)

@@ -238,8 +238,9 @@ def unignored(path: Path, candidates: tuple[str, ...]) -> tuple[str, ...]:
     if not candidates:
         return ()
     # check-ignore prints the ignored inputs (one per line) and exits 1 when
-    # none match — both are fine, we only read stdout.
-    res = _run(path, "check-ignore", *candidates, check=False)
+    # none match — both are fine, we only read stdout. The "--" stops a path
+    # that begins with "-" from being parsed as a git flag.
+    res = _run(path, "check-ignore", "--", *candidates, check=False)
     ignored = {line.strip() for line in res.stdout.splitlines() if line.strip()}
     return tuple(c for c in candidates if c not in ignored)
 

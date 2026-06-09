@@ -126,10 +126,11 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
             if (rp := Path(p).resolve()).is_relative_to(root_r)
         )
         # "machine" (the `machine create` authoring agent) and "agent" (a
-        # running machine's `agent` state) are both read-only structured-output
-        # loops: the dispatcher refuses edits (defense in depth alongside the
-        # read-only tool list) and the loop uses a finish_run-focused prompt.
-        mode = r.get("mode", "run")
+        # running machine's `agent` state, unless it opted into mode="run") are
+        # read-only structured-output loops: the dispatcher refuses edits AND
+        # run_command/run_verify (defense in depth alongside the read-only tool
+        # list) and the loop uses a finish_run-focused prompt.
+        mode = r.get("mode", "agent")
         read_only = mode in ("machine", "agent")
         dispatcher = ToolDispatcher(
             root=root,
@@ -141,7 +142,7 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
             run_root_node_id=None,
             mcp_manager=None,
             extra_protect_paths=protect,
-            mode="ask" if read_only else "run",
+            mode="machine" if read_only else "run",
         )
         wf = Workflow(
             root=root,

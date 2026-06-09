@@ -520,12 +520,13 @@ class OpenAIProvider:
                     if not isinstance(delta, dict):
                         continue
                     content = delta.get("content")
-                    if isinstance(content, str) and content and text_delta_callback is not None:
+                    if isinstance(content, str) and content:
+                        # Accumulation is unconditional; the callback is optional
+                        # (streaming may be triggered by thinking_delta alone).
                         text_parts.append(content)
-                        with contextlib.suppress(Exception):
-                            text_delta_callback(content)
-                    elif isinstance(content, str) and content:
-                        text_parts.append(content)
+                        if text_delta_callback is not None:
+                            with contextlib.suppress(Exception):
+                                text_delta_callback(content)
                     reasoning = delta.get("reasoning_content") or delta.get("reasoning")
                     if isinstance(reasoning, str) and reasoning:
                         reasoning_parts.append(reasoning)
