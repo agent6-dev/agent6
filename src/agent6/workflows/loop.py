@@ -1809,6 +1809,43 @@ class Workflow:
                         elif critique is not None:
                             self._log("  critic approved silent_finish")
                             consecutive_critic_rejections = 0
+                    # metric-run early-finish guard, mirroring the finish_run
+                    # path: a silent finish on an optimisation run with budget to
+                    # spare should be nudged to keep optimising rather than
+                    # accepted. Without this, dropping tool_use was a way to skip
+                    # the plateau/early-finish policy entirely.
+                    if (
+                        self.mode == "run"
+                        and _metric_goal(self.config.workflow.metric) is not None
+                        and not self._metric_at_ceiling(metric_history)
+                    ):
+                        finish_budget_remaining = self._budget_fraction_remaining()
+                        has_runway = (
+                            finish_budget_remaining is not None
+                            and finish_budget_remaining > _METRIC_PLATEAU_STOP_BELOW_BUDGET
+                        )
+                        if has_runway and metric_finish_nudges_used < _METRIC_EARLY_FINISH_PATIENCE:
+                            assert finish_budget_remaining is not None
+                            metric_finish_nudges_used += 1
+                            messages.append(
+                                {
+                                    "role": "user",
+                                    "content": [{"type": "text", "text": _METRIC_FINISH_NUDGE}],
+                                }
+                            )
+                            self._log(
+                                f"  metric early-finish (silent) rejected"
+                                f" #{metric_finish_nudges_used} at iter {iteration}"
+                                f" (budget {finish_budget_remaining:.0%} left)"
+                            )
+                            self._emit(
+                                "loop.metric_early_finish.rejected",
+                                iteration=iteration,
+                                nudges_used=metric_finish_nudges_used,
+                                budget_remaining=finish_budget_remaining,
+                                trigger="silent_finish",
+                            )
+                            continue
                     self._log(
                         f"LOOP: silent_finish at iter {iteration} - "
                         f"agent emitted text but no tool_use"
