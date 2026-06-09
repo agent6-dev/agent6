@@ -16,6 +16,7 @@ from agent6.git_ops import (
     commit_all,
     create_branch,
     diff_since,
+    init_repo,
     is_git_repo,
     make_run_branch_name,
     recent_log,
@@ -26,6 +27,7 @@ from agent6.git_ops import (
     set_repo_hook_policy,
     slugify,
     status,
+    unignored,
     verify_git_identity,
 )
 
@@ -113,6 +115,24 @@ def test_make_run_branch_name_format() -> None:
 
 def test_is_git_repo_false_for_tmp(tmp_path: Path) -> None:
     assert is_git_repo(tmp_path) is False
+
+
+def test_init_repo_creates_repository(tmp_path: Path) -> None:
+    assert is_git_repo(tmp_path) is False
+    init_repo(tmp_path)
+    assert is_git_repo(tmp_path) is True
+
+
+def test_unignored_filters_gitignored_paths(tmp_path: Path) -> None:
+    init_repo(tmp_path)
+    (tmp_path / ".gitignore").write_text(".agent6/\n", encoding="utf-8")
+    (tmp_path / ".agent6").mkdir()
+    (tmp_path / ".agent6" / "config.toml").write_text("x", encoding="utf-8")
+    (tmp_path / "AGENTS.md").write_text("y", encoding="utf-8")
+    keep = unignored(tmp_path, (".agent6/config.toml", "AGENTS.md", ".gitignore"))
+    assert ".agent6/config.toml" not in keep  # gitignored
+    assert "AGENTS.md" in keep
+    assert ".gitignore" in keep
 
 
 def test_status_clean_repo(tmp_path: Path) -> None:

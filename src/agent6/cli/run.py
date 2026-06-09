@@ -64,6 +64,7 @@ from agent6.git_ops import (
     CommitIdentity,
     GitError,
     create_branch,
+    is_git_repo,
     revert_head,
     set_repo_hook_policy,
     verify_git_identity,
@@ -116,6 +117,27 @@ def _eprint(msg: str) -> None:
     """Loop logger that writes to stderr (used for `ask`, whose stdout is the
     answer and must stay clean for piping)."""
     print(msg, file=sys.stderr)
+
+
+def _require_git_repo(cwd: Path) -> bool:
+    """Print a friendly error and return False when *cwd* is not a git repo.
+
+    A clean early exit instead of the misleading "Git identity not configured"
+    error (when there's no global identity) or an ugly failure deeper in the
+    run. agent6 needs git to branch, commit per step, and let the user
+    review/revert what the agent did.
+    """
+    if is_git_repo(cwd):
+        return True
+    print(
+        f"ERROR: {cwd} is not a git repository.\n"
+        "agent6 needs git here to create a run branch, commit each step, and let"
+        " you review or revert what the agent did.\n"
+        "  Fix: run `agent6 init` (it offers to set up git for you), or\n"
+        '       `git init && git add -A && git commit -m "initial commit"`.',
+        file=sys.stderr,
+    )
+    return False
 
 
 def _ask_question_snippet(transcript: str) -> str:
@@ -987,6 +1009,8 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     base_sha = ""
     base_branch = ""
     if mode != "ask":
+        if not _require_git_repo(cwd):
+            return 2
         try:
             verify_git_identity(cwd, identity)
         except GitError as exc:
@@ -1390,6 +1414,8 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
         email=cfg.git.commit.email,
         coauthor=cfg.git.commit.coauthor,
     )
+    if not _require_git_repo(cwd):
+        return 2
     try:
         verify_git_identity(cwd, identity)
     except GitError as exc:

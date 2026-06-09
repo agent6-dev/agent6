@@ -223,6 +223,27 @@ def create_branch(path: Path, name: str) -> None:
         _run(path, "checkout", "-b", name)
 
 
+def init_repo(path: Path) -> None:
+    """`git init` a new repository at *path*. Creating a repo is not a push /
+    force / history-rewrite, so it is outside the refusal set."""
+    _run(path, "init")
+
+
+def unignored(path: Path, candidates: tuple[str, ...]) -> tuple[str, ...]:
+    """Return the subset of repo-relative *candidates* that git does NOT ignore.
+
+    Used so the `init` git-setup offer commits only the trackable scaffold
+    (AGENTS.md, .gitignore) and not files the just-written .gitignore covers
+    (e.g. the per-repo config under the ignored agent6 dir)."""
+    if not candidates:
+        return ()
+    # check-ignore prints the ignored inputs (one per line) and exits 1 when
+    # none match — both are fine, we only read stdout.
+    res = _run(path, "check-ignore", *candidates, check=False)
+    ignored = {line.strip() for line in res.stdout.splitlines() if line.strip()}
+    return tuple(c for c in candidates if c not in ignored)
+
+
 def commit_all(
     path: Path,
     message: str,
