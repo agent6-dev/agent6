@@ -87,6 +87,7 @@ class RunState:
     budget: BudgetView = field(default_factory=BudgetView)
     pending_approvals: tuple[ApprovalPrompt, ...] = ()
     log_tail: tuple[str, ...] = ()  # most-recent-last, bounded
+    log_count: int = 0  # monotonic total log lines ever (log_tail is windowed)
     finished: bool = False
     all_passed: bool | None = None
     diffs: dict[int, str] = field(default_factory=dict)  # step_index -> patch text
@@ -105,7 +106,10 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
     etype = event.get("type", "")
     log_line = _format_log_line(event)
     new_log = _push_bounded(state.log_tail, log_line, _MAX_LOG_TAIL)
-    state = replace(state, log_tail=new_log)
+    # log_count is monotonic; log_tail is a sliding window. A live viewer must
+    # diff on the count (which keeps growing) -- diffing on len(log_tail) freezes
+    # the panel once the window saturates at _MAX_LOG_TAIL.
+    state = replace(state, log_tail=new_log, log_count=state.log_count + 1)
 
     match etype:
         case "run.start":

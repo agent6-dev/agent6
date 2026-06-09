@@ -225,3 +225,17 @@ def test_full_run_trace_replay() -> None:
     assert s.steps[1].notes == "boom"
     assert s.diffs[1] == "+ added"
     assert s.budget.input_total == 50
+
+
+def test_log_count_is_monotonic_past_window_cap() -> None:
+    # log_tail is a sliding window (_MAX_LOG_TAIL); log_count must keep growing
+    # so a live viewer can diff on it. A length-based diff freezes once the
+    # window saturates -- this is the bug log_count fixes.
+    from agent6.ui.state import _MAX_LOG_TAIL  # pyright: ignore[reportPrivateUsage]
+
+    s = initial_state()
+    n = _MAX_LOG_TAIL + 50
+    for i in range(n):
+        s = apply_event(s, {"type": "loop.note", "msg": f"line {i}"})
+    assert len(s.log_tail) == _MAX_LOG_TAIL  # window stays capped
+    assert s.log_count == n  # but the count keeps climbing

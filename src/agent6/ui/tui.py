@@ -197,7 +197,7 @@ class Agent6TUI(App[int]):
 
     # --- rendering ---------------------------------------------------
 
-    def _render(self) -> None:  # noqa: PLR0915
+    def _render(self) -> None:  # noqa: PLR0912, PLR0915
         s = self.state
         # Top header
         role = s.last_role
@@ -268,14 +268,17 @@ class Agent6TUI(App[int]):
             ok = "…" if tc.ok is None else ("✓" if tc.ok else "✗")
             table.add_row(tc.name, tc.args_preview[:60], ok, tc.result_summary[:60])
 
-        # Log
+        # Log. Diff on the monotonic log_count, not len(log_tail): log_tail is a
+        # sliding window, so once it saturates its length stops growing and a
+        # length-based diff would silently freeze the panel.
         log = self.query_one("#log", RichLog)
-        if not hasattr(self, "_last_log_len"):
-            self._last_log_len = 0
-        new = s.log_tail[self._last_log_len :]
-        for line in new:
-            log.write(line)
-        self._last_log_len = len(s.log_tail)
+        if not hasattr(self, "_last_log_count"):
+            self._last_log_count = 0
+        n_new = min(s.log_count - self._last_log_count, len(s.log_tail))
+        if n_new > 0:
+            for line in s.log_tail[-n_new:]:
+                log.write(line)
+        self._last_log_count = s.log_count
 
         # Diff (latest) or verify output. When a verify is
         # running or just finished, surface its exit code and tail in
