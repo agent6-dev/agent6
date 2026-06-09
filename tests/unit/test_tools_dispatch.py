@@ -208,6 +208,28 @@ def test_apply_edit_allows_git_write_when_protect_git_false(tmp_path: Path) -> N
     assert (tmp_path / ".git" / "description").read_text(encoding="utf-8") == "ok\n"
 
 
+def test_apply_edit_rejects_create_combined_with_other_edits(tmp_path: Path) -> None:
+    # A `create` after a `replace` used to skip the file-exists guard (which
+    # only fired for the first edit) and silently overwrite the whole file.
+    # The schema now requires create to be the sole edit.
+    cfg = _config(tmp_path)
+    (tmp_path / "f.py").write_text("keep me\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(ToolError, match="create"):
+        d.dispatch(
+            "apply_edit",
+            {
+                "path": "f.py",
+                "edits": [
+                    {"kind": "replace", "old_string": "keep me", "new_string": "edited"},
+                    {"kind": "create", "old_string": "", "new_string": "OVERWRITE\n"},
+                ],
+            },
+        )
+    # File untouched (the call was rejected before any write).
+    assert (tmp_path / "f.py").read_text(encoding="utf-8") == "keep me\n"
+
+
 def test_apply_edit_create_and_replace(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     d = ToolDispatcher(root=tmp_path, config=cfg)

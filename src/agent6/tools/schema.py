@@ -76,7 +76,8 @@ class ApplyEditInput(_ToolInput):
         " is not found, the on-disk file content likely differs from what"
         " you expect - re-read with `read_file` before retrying. Set"
         " kind='create' (with empty `old_string`) to create a new file;"
-        " `new_string` is then the full file content."
+        " `new_string` is then the full file content and MUST be the only"
+        " edit in the array."
         " Pass `preview=true` for a dry-run: the unified diff and hunk"
         " count of the would-be change are returned WITHOUT touching disk."
         " Use this to sanity-check large or risky multi-edit calls before"
@@ -86,6 +87,21 @@ class ApplyEditInput(_ToolInput):
     path: str = Field(min_length=1)
     edits: tuple[EditPair, ...] = Field(min_length=1)
     preview: bool = False
+
+    @model_validator(mode="after")
+    def _check_create_is_sole(self) -> ApplyEditInput:
+        # `create` writes the whole file from `new_string`, so combining it
+        # with other edits is nonsensical: the dispatcher's create branch only
+        # guards "file already exists" for the FIRST edit, so a `create` placed
+        # after a `replace` would skip that guard and silently overwrite the
+        # file (discarding the prior edits). Require create to be the sole edit
+        # and fail loud at the trust boundary instead.
+        if len(self.edits) > 1 and any(e.kind == "create" for e in self.edits):
+            raise ValueError(
+                "kind='create' must be the only edit (it writes the entire file);"
+                " do not combine it with other edits"
+            )
+        return self
 
 
 class ApplyPatchInput(_ToolInput):
