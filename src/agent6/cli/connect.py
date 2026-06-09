@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import getpass
+import re
 import sys
 from pathlib import Path
 
@@ -73,6 +74,32 @@ def _prompt_base_url(default_url: str) -> str:
     return url
 
 
+def _resolve_provider_name(provider: str) -> str | None:
+    """Resolve + validate the provider name; print an error and return None if bad.
+
+    The name becomes a TOML table key ``[providers.<name>]``; a non-bare-key
+    name (space, dot, bracket, …) would be written verbatim and corrupt the
+    whole config file, which ``connect`` -- unlike ``model``/``config set`` --
+    does not re-validate after writing. So reject it before any write.
+    """
+    name = provider.strip()
+    if not name:
+        print("Known presets: " + ", ".join(sorted(_CONNECT_PRESETS)) + " (or any custom name).")
+        try:
+            name = input("Provider name [anthropic]: ").strip() or "anthropic"
+        except EOFError:
+            print("ERROR: no input.", file=sys.stderr)
+            return None
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", name):
+        print(
+            f"ERROR: provider name {name!r} is not a valid TOML bare key"
+            " (use only letters, digits, '-', '_').",
+            file=sys.stderr,
+        )
+        return None
+    return name
+
+
 def _cmd_connect(*, provider: str, to_repo: bool) -> int:
     """Interactively add a provider + API key.
 
@@ -82,14 +109,9 @@ def _cmd_connect(*, provider: str, to_repo: bool) -> int:
     minimal ``[providers.<name>]`` block.
     """
     print("agent6 connect — add a provider + API key.\n")
-    name = provider.strip()
-    if not name:
-        print("Known presets: " + ", ".join(sorted(_CONNECT_PRESETS)) + " (or any custom name).")
-        try:
-            name = input("Provider name [anthropic]: ").strip() or "anthropic"
-        except EOFError:
-            print("ERROR: no input.", file=sys.stderr)
-            return 2
+    name = _resolve_provider_name(provider)
+    if name is None:
+        return 2
     preset = _CONNECT_PRESETS.get(name)
     kind = preset["kind"] if preset else ""
     if not kind:

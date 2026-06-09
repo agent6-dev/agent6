@@ -45,6 +45,20 @@ def test_connect_stores_key_and_provider_and_never_execs(
     assert calls == []
 
 
+def test_connect_rejects_non_bare_key_provider_name(
+    iso: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A name with a space would corrupt `[providers.<name>]` in the TOML; reject
+    # it before writing anything (connect doesn't re-validate the file).
+    rc = main(["connect", "--provider", "my provider"])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "not a valid TOML bare key" in err
+    # Nothing was written.
+    assert not (tmp_path / "g" / "config.toml").exists()
+    assert not (tmp_path / "g" / "secrets.toml").exists()
+
+
 def test_connect_prints_post_entry_key_summary(
     iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
