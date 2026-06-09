@@ -56,11 +56,16 @@ class RealUser:
     via_sudo: bool
 
 
-def _passwd_home(uid: int) -> Path | None:
+def _passwd_entry(uid: int) -> pwd.struct_passwd | None:
     try:
-        return Path(pwd.getpwuid(uid).pw_dir)
+        return pwd.getpwuid(uid)
     except KeyError:
         return None
+
+
+def _passwd_home(uid: int) -> Path | None:
+    entry = _passwd_entry(uid)
+    return Path(entry.pw_dir) if entry else None
 
 
 def effective_user() -> RealUser:
@@ -75,10 +80,11 @@ def effective_user() -> RealUser:
         uid = int(sudo_uid)
         gid_raw = os.environ.get("SUDO_GID", "")
         gid = int(gid_raw) if gid_raw.isdigit() else uid
-        name = os.environ.get("SUDO_USER", "") or (
-            pwd.getpwuid(uid).pw_name if _passwd_home(uid) else str(uid)
-        )
-        home = _passwd_home(uid) or Path(os.environ.get("HOME", "/")).resolve()
+        # One passwd lookup, not three; and use the entry's existence (not "does
+        # its home dir resolve") to decide whether we have a real name/home.
+        entry = _passwd_entry(uid)
+        name = os.environ.get("SUDO_USER", "") or (entry.pw_name if entry else str(uid))
+        home = Path(entry.pw_dir) if entry else Path(os.environ.get("HOME", "/")).resolve()
         return RealUser(uid=uid, gid=gid, name=name, home=home, via_sudo=True)
     uid = os.getuid()
     gid = os.getgid()

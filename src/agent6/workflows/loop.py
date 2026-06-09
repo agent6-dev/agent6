@@ -186,6 +186,10 @@ def _compact_old_tool_results(
         current = item.get("content")
         if isinstance(current, str) and current.startswith("<elided by context compaction"):
             continue
+        if size <= len(_ELISION_PLACEHOLDER):
+            # Replacing content already smaller than the placeholder would GROW
+            # the total, defeating the point; skip it.
+            continue
         item["content"] = _ELISION_PLACEHOLDER
         total -= size - len(_ELISION_PLACEHOLDER)
         elided_count += 1

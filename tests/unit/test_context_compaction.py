@@ -44,6 +44,23 @@ def _user_msg_with_tool_results(*contents: str) -> dict[str, Any]:
     }
 
 
+def test_compact_skips_tool_result_smaller_than_placeholder() -> None:
+    # Eliding a tool_result already smaller than the 201-char placeholder would
+    # GROW cumulative size, not shrink it. Such blocks must be left intact.
+    from agent6.workflows.loop import (
+        _ELISION_PLACEHOLDER as PLACEHOLDER,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    tiny = "x" * 50  # < len(placeholder) == 201
+    big = "y" * 5000
+    # Oldest-first within one message; keep_recent=2 keeps the last two.
+    msgs: list[dict[str, Any]] = [_user_msg_with_tool_results(tiny, big, big, big)]
+    compact_old_tool_results(msgs, max_total_bytes=100, keep_recent=2)
+    # The oldest (tiny) block is eligible but must be skipped, not ballooned.
+    assert msgs[0]["content"][0]["content"] == tiny
+    assert len(PLACEHOLDER) == 201
+
+
 def test_compact_noop_when_under_threshold() -> None:
     msgs: list[dict[str, Any]] = [_user_msg_with_tool_results("small")]
     elided = compact_old_tool_results(msgs, max_total_bytes=1000)

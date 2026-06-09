@@ -56,7 +56,11 @@ def code_review(
     """Ask the reviewer model to critique *diff*. Returns markdown text."""
     parts: list[str] = []
     if agents_md.strip():
-        parts.append(f"AGENTS.md:\n{agents_md.strip()[:4000]}")
+        # AGENTS.md holds the conventions the reviewer is told to check, so the
+        # old 4000-char cap silently dropped most of them. Use a generous bound
+        # (the diff itself is allowed 60k) that fits any realistic AGENTS.md
+        # while still guarding against a pathologically huge one.
+        parts.append(f"AGENTS.md:\n{agents_md.strip()[:16000]}")
     if recent_log.strip():
         parts.append(f"RECENT COMMITS:\n{recent_log.strip()[:2000]}")
     if extra_context.strip():

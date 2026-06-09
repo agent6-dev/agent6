@@ -221,6 +221,11 @@ def apply_agent_landlock(
         raise LandlockNotSupportedError("Landlock is not available on this kernel (ABI 0).")
 
     handled_fs = _FS_ALL_BITS
+    # NET_BIND_TCP is declared "handled" but NEVER granted below (only CONNECT
+    # rules are added). That is deliberate, not an omission: marking it handled
+    # makes Landlock DENY all TCP bind()/listen() for the agent process, which
+    # is exactly "no agent-owned network surface" (SECURITY.md §7). Removing it
+    # from the handled set would instead leave bind UNrestricted.
     handled_net = (
         _LANDLOCK_ACCESS_NET_CONNECT_TCP | _LANDLOCK_ACCESS_NET_BIND_TCP if abi >= 4 else 0
     )
