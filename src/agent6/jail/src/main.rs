@@ -111,7 +111,7 @@ fn run_strict(policy: &Policy) -> ! {
             if let Err(e) = setup_rootfs(policy) {
                 die(format!("rootfs setup failed: {e}"));
             }
-            if let Err(e) = apply_landlock_strict() {
+            if let Err(e) = apply_landlock_strict(policy) {
                 die(format!("landlock failed: {e}"));
             }
             if let Err(e) = apply_seccomp() {
@@ -423,7 +423,7 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
     Ok(())
 }
 
-fn apply_landlock_strict() -> io::Result<()> {
+fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
     // Strict profile runs inside the pivoted rootfs; /workspace is the writable
     // mount and /usr /bin /lib /lib64 /etc /tmp /dev are read-only bind mounts.
     let access_all = AccessFs::from_all(ABI::V1);
@@ -460,6 +460,27 @@ fn apply_landlock_strict() -> io::Result<()> {
         if let Ok(fd) = PathFd::new(&p) {
             ruleset = ruleset
                 .add_rule(PathBeneath::new(fd, AccessFs::WriteFile))
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("rule {p}: {e}")))?;
+        }
+    }
+    // Extra paths are bind-mounted by setup_rootfs at /ro<src> (read-only) and
+    // /rw<src> (read-write), OUTSIDE /workspace. Without a matching Landlock
+    // rule the child would get EACCES on them despite the mount, so grant the
+    // access here too. Paths that didn't exist on the host were skipped at
+    // mount time, so PathFd::new simply fails and is ignored.
+    for ro in &policy.extra_ro_paths {
+        let p = format!("/ro{}", ro.display());
+        if let Ok(fd) = PathFd::new(&p) {
+            ruleset = ruleset
+                .add_rule(PathBeneath::new(fd, access_read_exec))
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("rule {p}: {e}")))?;
+        }
+    }
+    for rw in &policy.extra_rw_paths {
+        let p = format!("/rw{}", rw.display());
+        if let Ok(fd) = PathFd::new(&p) {
+            ruleset = ruleset
+                .add_rule(PathBeneath::new(fd, access_all))
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("rule {p}: {e}")))?;
         }
     }
