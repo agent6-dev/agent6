@@ -458,7 +458,7 @@ def _execute(
 # --------------------------------------------------------------------------
 
 
-def drive(  # noqa: PLR0912
+def drive(  # noqa: PLR0911, PLR0912
     spec: MachineSpec,
     journal: MachineJournal,
     world: World | None,
@@ -487,6 +487,7 @@ def drive(  # noqa: PLR0912
     blackboard = initial_blackboard(spec)
     state = spec.initial
     transitions = 0
+    spent_usd = 0.0
 
     if not events and live:
         journal.ensure_dirs()
@@ -497,6 +498,8 @@ def drive(  # noqa: PLR0912
         if not isinstance(event, StepEvent):
             continue
         blackboard = reduce(spec.states[state], event.fact, blackboard)
+        if isinstance(event.fact, AgentFact):
+            spent_usd += event.fact.usd
         state = event.goto
         transitions = event.seq + 1
 
@@ -537,6 +540,18 @@ def drive(  # noqa: PLR0912
                 )
             )
             return MachineResult("failed", reason, state, transitions)
+        if spent_usd >= spec.budget.max_usd:
+            reason = f"max_usd (${spec.budget.max_usd}) exceeded (spent ~${spent_usd:.4f})"
+            journal.append(
+                MachineEnd(
+                    ts=_now_iso(),
+                    status="failed",
+                    reason=reason,
+                    state=state,
+                    transitions=transitions,
+                )
+            )
+            return MachineResult("failed", reason, state, transitions)
 
         if exit_on_wait and isinstance(current, WaitState):
             fired = _fire_persisted_wait(current, blackboard, journal, world, state)
@@ -560,6 +575,8 @@ def drive(  # noqa: PLR0912
             )
         )
         blackboard = reduce(current, fact, blackboard)
+        if isinstance(fact, AgentFact):
+            spent_usd += fact.usd
         transitions += 1
         journal.write_snapshot(Snapshot(seq=transitions, state=goto, blackboard=blackboard))
         state = goto

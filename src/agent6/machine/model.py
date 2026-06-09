@@ -1030,6 +1030,14 @@ def _validate_wait(
             f"state {name!r}: a `wait` must declare exactly one of `every_secs`, `until`,"
             f" or `cron` (found: {timings or 'none'})"
         )
+    if state.cron is not None:
+        # `cron` is parsed but the v1 runtime cannot fire it -- `machine run`
+        # would raise mid-run. Reject it at load so `machine check`/`test`
+        # catch it up front instead of failing only when the wait is reached.
+        problems.append(
+            f"state {name!r}: `cron` wait timing is not yet implemented"
+            " (reserved for a future persisted-wake runtime); use `every_secs` or `until`"
+        )
     for timing, value in (
         ("every_secs", state.every_secs),
         ("until", state.until),

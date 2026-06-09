@@ -592,6 +592,51 @@ def test_agent_timeout_label(tmp_path: Path) -> None:
     assert result.reason == "timeout"
 
 
+_SPENDER = """
+machine = "spender"
+version = 1
+initial = "work"
+
+[budget]
+max_usd = 0.05
+max_transitions = 100
+
+[schemas.r]
+ok = "bool"
+
+[vars.agent]
+out = { type = "r", default = {} }
+
+[states.work]
+kind = "agent"
+model = "m"
+prompt = "do"
+output_schema = "r"
+capture = { finish_json = "out" }
+timeout_secs = 60
+on = { ok = "work", failed = "stop_fail", budget_exhausted = "stop_fail", timeout = "stop_fail" }
+
+[states.stop_fail]
+kind = "terminal"
+status = "failed"
+reason = "fail"
+"""
+
+
+def test_machine_stops_when_cumulative_max_usd_exceeded(tmp_path: Path) -> None:
+    # Each agent step costs $0.10 > the $0.05 machine budget and loops on ok.
+    # The engine must stop on the budget guard, not run unbounded.
+    journal, f = _load(tmp_path, _SPENDER)
+    spec = load_machine(f)
+    world = FakeWorld(
+        {}, agent_results=[AgentExecResult(reason="finish_run", payload={"ok": True}, usd=0.10)]
+    )
+    result = drive(spec, journal, world, live=True)
+    assert result.status == "failed"
+    assert "max_usd" in result.reason
+    assert len(world.agent_calls) == 1  # one step ran, then the budget guard fired
+
+
 def test_agent_spend_threaded_into_fact(tmp_path: Path) -> None:
     journal, f = _load(tmp_path, REVIEWER)
     spec = load_machine(f)
