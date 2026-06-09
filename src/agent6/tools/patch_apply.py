@@ -111,12 +111,12 @@ def parse_patch(text: str) -> ParsedPatch:  # noqa: PLR0912, PLR0915
     if not target_path or target_path == "/dev/null":
         raise PatchError(f"Invalid target path in `+++` header: {plus_header!r}")
 
-    # Reject multi-file patches: a second `--- ` header anywhere below means
-    # the caller stuffed multiple files into one payload.
-    for j in range(i, len(lines)):
-        if lines[j].startswith("--- "):
-            raise PatchError("Multi-file patches are not supported; submit one file at a time")
-
+    # NOTE: multi-file patches are rejected structurally, where a hunk header
+    # is expected (see the `_HUNK_RE` miss below). We must NOT pre-scan raw
+    # lines for `--- ` here: a removal line whose *content* begins with `-- `
+    # (a SQL/Lua/Haskell/Ada comment, say) is encoded as `-` + `-- foo` =
+    # `--- foo` inside a hunk body, and a raw scan would wrongly reject the
+    # legitimate single-file patch as multi-file.
     hunks: list[_Hunk] = []
     while i < len(lines):
         line = lines[i]
@@ -146,6 +146,11 @@ def parse_patch(text: str) -> ParsedPatch:  # noqa: PLR0912, PLR0915
             continue
         m = _HUNK_RE.match(line)
         if not m:
+            # A `--- ` line where a hunk header is expected is a real second
+            # file's header (vs a `-`-removal of `-- ...` content, which is
+            # consumed inside a hunk body above and never reaches here).
+            if line.startswith("--- "):
+                raise PatchError("Multi-file patches are not supported; submit one file at a time")
             raise PatchError(f"Expected hunk header `@@ -L,N +L,N @@`, got: {line!r}")
         old_start = int(m.group("old_start"))
         old_count = int(m.group("old_count")) if m.group("old_count") is not None else 1

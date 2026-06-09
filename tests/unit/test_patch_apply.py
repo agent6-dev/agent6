@@ -116,6 +116,17 @@ def test_multi_file_patch_rejected() -> None:
         apply_patch_text(patch, "a\n")
 
 
+def test_single_file_patch_removing_dash_dash_comment_not_multifile() -> None:
+    # Regression: a `-`-removal of a line whose content begins with `-- ` (a
+    # SQL/Lua/Haskell comment) encodes as `--- ...`. The old raw `--- ` pre-scan
+    # wrongly rejected this legitimate single-file patch as multi-file.
+    original = "SELECT 1;\n-- a comment\n"
+    patch = "--- a/x.sql\n+++ b/x.sql\n@@ -1,2 +1,1 @@\n SELECT 1;\n--- a comment\n"
+    path, new = apply_patch_text(patch, original)
+    assert path == "x.sql"
+    assert new == "SELECT 1;\n"
+
+
 def test_hunk_header_count_mismatch_rejected() -> None:
     # Header says 3 old lines but body only supplies 2.
     patch = "--- a/f.py\n+++ b/f.py\n@@ -1,3 +1,3 @@\n a\n-b\n+B\n"
