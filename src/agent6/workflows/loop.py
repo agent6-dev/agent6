@@ -121,6 +121,31 @@ def _cap_tool_result(content: str, *, tool_name: str) -> str:
     )
 
 
+def _context_chars(messages: list[dict[str, Any]]) -> int:
+    """Approximate the full character size of the conversation context.
+
+    Sums string content plus, for structured content blocks, their text,
+    tool_result content, and tool_use inputs -- i.e. everything that grows the
+    context and is sent back to the model each turn, not just tool_result bytes.
+    Used as the tier-2 (summarise-and-restart) trigger, which must measure
+    something tier-1 elision does not already cap.
+    """
+    total = 0
+    for msg in messages:
+        content = msg.get("content")
+        if isinstance(content, str):
+            total += len(content)
+        elif isinstance(content, list):
+            for item in content:
+                if not isinstance(item, dict):
+                    continue
+                total += len(str(item.get("text", "") or ""))
+                total += len(str(item.get("content", "") or ""))
+                if item.get("type") == "tool_use":
+                    total += len(str(item.get("input", "") or ""))
+    return total
+
+
 def _compact_old_tool_results(
     messages: list[dict[str, Any]],
     *,
@@ -2678,12 +2703,14 @@ class Workflow:
         Tier 1 (cheap): drop old tool_result blocks once cumulative content
         exceeds ``compact_drop_at_chars``.
 
-        Tier 2 (expensive): once cumulative tool_result content crosses
-        ``compact_summarise_at_chars``, summarise the elided history into a
-        compact progress block and restart the message list from (original
-        task + summary). Fail-safe: if summarisation errors or returns
-        nothing, the message list is left untouched (tier-1 elision already
-        ran) and the run continues.
+        Tier 2 (expensive): once the WHOLE post-elision context (text +
+        tool_use inputs + surviving tool_results, via ``_context_chars``)
+        crosses ``compact_summarise_at_chars``, summarise the elided history
+        into a compact progress block and restart the message list from
+        (original task + summary). Measuring only tool_results here -- which
+        tier 1 just capped -- left tier 2 unreachable. Fail-safe: if
+        summarisation errors or returns nothing, the message list is left
+        untouched (tier-1 elision already ran) and the run continues.
         """
         n_dropped = _compact_old_tool_results(
             messages, max_total_bytes=self.compact_drop_at_chars, keep_recent=2
@@ -2691,13 +2718,14 @@ class Workflow:
         if n_dropped:
             self._log(f"LOOP: compaction elided {n_dropped} old tool_result blocks")
             self._emit("loop.compact.dropped", n=n_dropped)
-        total = sum(
-            len(item.get("content", "") or "")
-            for msg in messages
-            if isinstance(msg.get("content"), list)
-            for item in msg["content"]
-            if isinstance(item, dict) and item.get("type") == "tool_result"
-        )
+        # Tier 2 must measure something tier 1 does NOT already bound. Tier 1
+        # just capped tool_result bytes to ``compact_drop_at_chars``, so
+        # re-measuring only tool_results here could never exceed the (larger)
+        # tier-2 threshold -- tier 2 was unreachable. Measure the WHOLE post-
+        # elision context (text + tool_use inputs + surviving tool_results),
+        # which keeps growing across a long run from assistant prose and
+        # tool-call args even after old tool_results are dropped.
+        total = _context_chars(messages)
         # Tier 2 needs at least an original-task message plus enough history
         # to be worth summarising; below that a restart would lose more than
         # it saves.

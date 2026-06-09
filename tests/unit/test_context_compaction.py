@@ -9,6 +9,29 @@ from typing import Any
 from agent6.workflows.loop import (
     _compact_old_tool_results as compact_old_tool_results,  # pyright: ignore[reportPrivateUsage]
 )
+from agent6.workflows.loop import (
+    _context_chars as context_chars,  # pyright: ignore[reportPrivateUsage]
+)
+
+
+def test_context_chars_counts_text_tool_use_and_tool_results() -> None:
+    # tier-2's trigger must see content tier-1 does NOT cap (assistant prose,
+    # tool_use inputs), not just tool_result bytes.
+    msgs: list[dict[str, Any]] = [
+        {"role": "user", "content": "abcd"},  # 4
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "hello"},  # 5
+                {"type": "tool_use", "name": "grep", "input": {"q": "x"}},  # len(str(dict))
+            ],
+        },
+        {"role": "user", "content": [{"type": "tool_result", "content": "RESULT"}]},  # 6
+    ]
+    total = context_chars(msgs)
+    # 4 + 5 + 6 + len(str({"q": "x"})) -- well above just the 6 tool_result bytes.
+    assert total == 4 + 5 + 6 + len(str({"q": "x"}))
+    assert total > 6
 
 
 def _user_msg_with_tool_results(*contents: str) -> dict[str, Any]:

@@ -425,13 +425,15 @@ class WorkflowConfig(BaseModel):
     # Setting too low for slow legitimate tests will cause false-positive
     # failures, so leave at 600 unless the verify is reliably fast.
     verify_timeout_s: float = Field(gt=0.0, default=600.0)
-    # Tiered context-compaction thresholds (approximate chars of cumulative
-    # message content; tokens ~= chars/4). When the running input grows past
+    # Tiered context-compaction thresholds (approximate chars; tokens ~=
+    # chars/4). When cumulative *tool_result* content grows past
     # ``compact_drop_at_chars`` the oldest tool_results are replaced by a
-    # short placeholder (the worker can re-call the tool to refetch). Past
-    # ``compact_summarise_at_chars`` the conversation is summarized and
-    # restarted (the durable task DAG survives; the restart notice points the
-    # worker at ``dag_list_tasks`` to recover task-level state).
+    # short placeholder (the worker can re-call the tool to refetch). When the
+    # *whole* context (text + tool_use inputs + surviving tool_results) grows
+    # past ``compact_summarise_at_chars`` -- which must be > drop, so tier-2
+    # escalates above tier-1 -- the conversation is summarized and restarted
+    # (the durable task DAG survives; the restart notice points the worker at
+    # ``dag_list_tasks`` to recover task-level state).
     # ``context_summary_max_tokens`` caps the summarizer's output. Raise the
     # thresholds for big-context models; lower them to compact sooner.
     compact_drop_at_chars: int = Field(gt=0, default=256_000)
@@ -456,6 +458,20 @@ class WorkflowConfig(BaseModel):
     # any other provider call. Default off keeps crisp prompts/frontier-model
     # runs on the old path.
     revise_prompt: Literal["off", "auto", "interactive"] = "off"
+
+    @model_validator(mode="after")
+    def _check_compaction_thresholds(self) -> WorkflowConfig:
+        # Tier 2 (summarise + restart) must escalate ABOVE tier 1 (drop old
+        # tool_results). If summarise <= drop, tier 2 fires at or before tier 1
+        # -- the inverted ordering that historically left tier 2 unreachable.
+        if self.compact_summarise_at_chars <= self.compact_drop_at_chars:
+            raise ValueError(
+                "workflow.compact_summarise_at_chars"
+                f" ({self.compact_summarise_at_chars}) must be greater than"
+                f" compact_drop_at_chars ({self.compact_drop_at_chars}): tier-2"
+                " summarise must escalate above tier-1 elision."
+            )
+        return self
 
 
 class BudgetConfig(BaseModel):

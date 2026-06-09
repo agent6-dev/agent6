@@ -457,6 +457,20 @@ def test_compaction_threshold_must_be_positive(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
+def test_compaction_summarise_must_exceed_drop(tmp_path: Path) -> None:
+    # Inverted ordering (tier-2 <= tier-1) is the misconfiguration that made
+    # tier-2 unreachable; the loader must reject it.
+    body = _VALID_TOML.replace(
+        'verify_command = ["true"]',
+        'verify_command = ["true"]\n'
+        "compact_drop_at_chars = 300000\n"
+        "compact_summarise_at_chars = 200000",
+    )
+    with pytest.raises(ConfigError) as exc:
+        load_config(_write(tmp_path, body))
+    assert "must be greater than" in str(exc.value)
+
+
 def test_with_budget_overrides(tmp_path: Path) -> None:
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     out = cfg.with_budget_overrides(max_input_tokens=5, max_output_tokens=7)
