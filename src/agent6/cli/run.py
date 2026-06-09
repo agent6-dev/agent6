@@ -85,7 +85,21 @@ from agent6.providers import (
 from agent6.run_id import RunIdError, new_friendly_id, resolve_run_id
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.mcp_client import MCPManager
-from agent6.workflows.loop import ResumeError, Workflow
+from agent6.workflows.loop import ResumeError, RunResult, Workflow
+
+# Distinct exit code for a budget-exhausted run so automation can tell "raise
+# the cap and `agent6 resume`" apart from a genuine failure. Documented in
+# CONFIG.md ([budget]); a budget-stopped run is resumable from its snapshot.
+_EXIT_BUDGET_EXHAUSTED = 3
+
+
+def _run_exit_code(result: RunResult) -> int:
+    """Map a finished run to its process exit code (0 ok / 3 budget / 1 else)."""
+    if result.completed:
+        return 0
+    if result.reason == "budget_exhausted":
+        return _EXIT_BUDGET_EXHAUSTED
+    return 1
 
 
 def _default_stdin_approver(prompt: str) -> bool:
@@ -794,7 +808,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         ok=result.completed,
         reason=result.reason,
     )
-    return 0 if result.completed else 1
+    return _run_exit_code(result)
 
 
 def _fire_notify_hook(
@@ -1075,4 +1089,4 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
         ok=result.completed,
         reason=result.reason,
     )
-    return 0 if result.completed else 1
+    return _run_exit_code(result)
