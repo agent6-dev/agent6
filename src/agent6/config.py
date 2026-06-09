@@ -466,13 +466,12 @@ class BudgetConfig(BaseModel):
     # per-repo or use `max_usd` for a dollar cap.
     max_input_tokens: int = Field(gt=0, default=2_000_000)
     max_output_tokens: int = Field(gt=0, default=200_000)
-    # Optional: operator-friendly USD cap. When set AND the token
-    # ceilings are zero / unset / lower than the converted-from-USD
-    # values, the loader replaces them with the converted ceilings
-    # using the worker model's pricing. This is a config-time
-    # convenience; the runtime ceiling is still per-token. Set 0 to
-    # disable. See `agent6.budget.usd_budget_to_tokens` for the
-    # conversion math.
+    # Optional: operator-friendly USD cap. When set, the loader converts it to
+    # token ceilings (worker-model pricing) and lowers max_input/output_tokens
+    # to them, AND the runtime additionally enforces an exact dollar ceiling
+    # that counts cache_read/cache_creation cost (which the token caps do not),
+    # so a heavily-cached run cannot blow past it. Set 0 to disable. See
+    # `agent6.budget.usd_budget_to_tokens` for the conversion math.
     max_usd: float = Field(ge=0.0, default=0.0)
 
 

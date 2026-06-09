@@ -136,7 +136,7 @@ Hard stops; on hit the run aborts (exit 3) and is resumable (raise the limit and
 |---|---|---|
 | `max_input_tokens` | `2000000` | Input-token ceiling. |
 | `max_output_tokens` | `200000` | Output-token ceiling. |
-| `max_usd` | `0.0` (off) | Optional USD ceiling; converted to token caps using the worker model's pricing at load. |
+| `max_usd` | `0.0` (off) | Optional USD ceiling; converted to token caps at load (worker-model pricing) **and** enforced at runtime as an exact dollar ceiling that includes cache_read/cache_creation cost (which the token caps omit). |
 
 Override per-run from the CLI without editing config: `agent6 run --max-usd 5`,
 `--max-input-tokens`, `--max-output-tokens` (on `run`, `plan`, `resume`).

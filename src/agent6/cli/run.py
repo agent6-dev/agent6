@@ -756,6 +756,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     budget = BudgetTracker(
         max_input_tokens=cfg.budget.max_input_tokens,
         max_output_tokens=cfg.budget.max_output_tokens,
+        max_usd=cfg.budget.max_usd,
     )
 
     # Workflow uses ONE provider for everything (the worker role, or the
@@ -1080,6 +1081,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     budget = BudgetTracker(
         max_input_tokens=cfg.budget.max_input_tokens,
         max_output_tokens=cfg.budget.max_output_tokens,
+        max_usd=cfg.budget.max_usd,
     )
 
     worker_inner = _build_role_provider(

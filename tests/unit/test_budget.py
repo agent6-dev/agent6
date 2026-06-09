@@ -13,6 +13,38 @@ def _t(*, input_max: int = 100, output_max: int = 100) -> BudgetTracker:
     return BudgetTracker(max_input_tokens=input_max, max_output_tokens=output_max)
 
 
+def test_usd_ceiling_counts_cache_tokens_token_caps_would_miss() -> None:
+    # Token caps huge (never fire) + fresh input ~0, but cache_creation alone
+    # costs > $1: the USD ceiling must catch the overspend the token caps miss.
+    t = BudgetTracker(max_input_tokens=10_000_000, max_output_tokens=10_000_000, max_usd=1.0)
+    # sonnet-4 input $3/M; cache_creation surcharge 1.25x -> $3.75/M.
+    # 300k * 3.75/1e6 = $1.125 > $1.
+    t.record(
+        model="claude-sonnet-4-20250514",
+        input_tokens=10,
+        output_tokens=10,
+        cache_read_tokens=0,
+        cache_creation_tokens=300_000,
+    )
+    with pytest.raises(BudgetExceeded) as exc:
+        t.check()
+    assert "USD budget" in str(exc.value)
+
+
+def test_usd_ceiling_off_when_max_usd_zero() -> None:
+    # max_usd defaults to 0 (disabled) -- the same heavy-cache call does not trip
+    # any ceiling, so token-capped runs (e.g. benches) are unaffected.
+    t = BudgetTracker(max_input_tokens=10_000_000, max_output_tokens=10_000_000)
+    t.record(
+        model="claude-sonnet-4-20250514",
+        input_tokens=10,
+        output_tokens=10,
+        cache_read_tokens=0,
+        cache_creation_tokens=300_000,
+    )
+    t.check()  # no raise
+
+
 def test_record_accumulates() -> None:
     t = _t()
     t.record(

@@ -167,6 +167,13 @@ class BudgetTracker:
 
     max_input_tokens: int
     max_output_tokens: int
+    # Exact dollar ceiling (0 = off). Set from `[budget] max_usd`. Unlike the
+    # token caps -- which `usd_budget_to_tokens` sizes against full *fresh*-input
+    # price and which `record` thresholds on fresh input only -- this bounds the
+    # estimated spend INCLUDING cache_read/cache_creation tokens, which cost real
+    # money but never count toward the token caps. Without it, a heavily-cached
+    # run can blow well past `max_usd`.
+    max_usd: float = 0.0
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _per_model: dict[str, _ModelTotals] = field(default_factory=dict)
     _input_total: int = 0
@@ -215,6 +222,13 @@ class BudgetTracker:
                     f"output token budget exhausted: "
                     f"{self._output_total} >= {self.max_output_tokens}"
                 )
+            elif self.max_usd > 0.0:
+                cost, _ = self._estimate_usd_locked()
+                if cost >= self.max_usd:
+                    self._exceeded_reason = (
+                        f"USD budget exhausted: ~${cost:.4f} >= ${self.max_usd:.2f}"
+                        " (includes cache_read/cache_creation cost)"
+                    )
 
     def check(self) -> None:
         """Raise `BudgetExceeded` if a prior `record()` crossed a ceiling."""
@@ -281,25 +295,29 @@ class BudgetTracker:
         True iff at least one model in the per-model breakdown is missing
         from the pricing table (so the figure is a lower bound).
 
-        Shared between the end-of-run text summary and the live TUI cost
-        meter so both quote the same number from the same arithmetic.
+        Shared between the end-of-run text summary, the live TUI cost
+        meter, and the in-record USD ceiling so they all quote the same
+        number from the same arithmetic.
         """
-        snap = self.snapshot()
-        per_model = snap["per_model"]
-        assert isinstance(per_model, dict)
+        with self._lock:
+            return self._estimate_usd_locked()
+
+    def _estimate_usd_locked(self) -> tuple[float, bool]:
+        """Cost estimate computed directly from ``self._per_model``.
+
+        Assumes ``self._lock`` is already held (called from both ``record`` --
+        under the lock -- and ``estimate_usd``), so it never re-acquires it.
+        """
         total_usd = 0.0
         any_unknown = False
-        for model, totals in per_model.items():
-            # When the provider returned an authoritative
-            # ``usage.cost`` for EVERY call to this model, prefer that
-            # sum over the price-table estimate. If even one call lacked
-            # the field (mixed-route, transient OpenRouter quirk, etc.)
-            # we fall back to the table for the whole model so the
-            # numbers are consistent rather than partially-mixed.
-            reported = float(totals.get("reported_cost_usd", 0.0))
-            reported_calls = int(totals.get("reported_calls", 0))
-            if reported > 0.0 and reported_calls == int(totals["calls"]):
-                total_usd += reported
+        for model, t in self._per_model.items():
+            # When the provider returned an authoritative ``usage.cost`` for
+            # EVERY call to this model, prefer that sum over the price-table
+            # estimate. If even one call lacked the field (mixed-route, transient
+            # OpenRouter quirk, etc.) we fall back to the table for the whole
+            # model so the numbers are consistent rather than partially-mixed.
+            if t.reported_cost_usd > 0.0 and t.reported_calls == t.calls:
+                total_usd += t.reported_cost_usd
                 continue
             price = _PRICE_PER_MTOK_USD.get(model)
             if price is None:
@@ -314,10 +332,10 @@ class BudgetTracker:
             # cache_creation_tokens=0 since the chat-completions usage
             # block has no separate write-surcharge field, so the 1.25x
             # branch is a no-op for them.
-            in_usd = totals["input_tokens"] * price[0] / 1e6
-            cache_creation_usd = totals["cache_creation_tokens"] * (price[0] * 1.25) / 1e6
-            cache_read_usd = totals["cache_read_tokens"] * (price[0] * 0.1) / 1e6
-            out_usd = totals["output_tokens"] * price[1] / 1e6
+            in_usd = t.input_tokens * price[0] / 1e6
+            cache_creation_usd = t.cache_creation_tokens * (price[0] * 1.25) / 1e6
+            cache_read_usd = t.cache_read_tokens * (price[0] * 0.1) / 1e6
+            out_usd = t.output_tokens * price[1] / 1e6
             total_usd += in_usd + cache_creation_usd + cache_read_usd + out_usd
         return total_usd, any_unknown
 
