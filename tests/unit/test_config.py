@@ -106,6 +106,17 @@ def test_tool_network_allow_requires_agent_open(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
+def test_agent_network_local_refuses_allow_urls(tmp_path: Path) -> None:
+    # The docstring promises `local` refuses allow_urls; it must be enforced,
+    # not silently ignored (there is nothing external to allow-list offline).
+    body = _VALID_TOML.replace(
+        'agent_network = "providers"',
+        'agent_network = "local"\nallow_urls = ["example.com:443"]',
+    )
+    with pytest.raises(ConfigError, match="agent_network = 'local'"):
+        load_config(_write(tmp_path, body))
+
+
 def test_tool_network_explicit_states_ok_with_confined_agent(tmp_path: Path) -> None:
     # only_explicit_states is exempt: machine tool states are jailed by the
     # host-netns engine, not the confined agent.

@@ -25,7 +25,12 @@ from pathlib import Path
 from typing import Any, Literal
 
 from agent6.config import Config, ConfigError, validate_config
-from agent6.paths import agent6_dir, global_config_path, repo_config_path
+from agent6.paths import (
+    agent6_dir,
+    global_config_path,
+    repo_config_path,
+    validate_workspace_subdir,
+)
 
 LayerName = Literal["default", "global", "repo", "flag", "machine"]
 
@@ -80,7 +85,15 @@ def _global_workspace_subdir() -> str | None:
     if isinstance(section, dict):
         sub = section.get("workspace_subdir")
         if isinstance(sub, str):
-            return sub
+            # This raw pre-model read locates the per-repo config dir, so it runs
+            # BEFORE the Config model (which also validates workspace_subdir).
+            # Apply the same check here so a separator / `..` / absolute path in
+            # the GLOBAL config can't point run state outside the repo
+            # (`repo_root / "/abs"` becomes `/abs`); fail loudly, don't drift.
+            try:
+                return validate_workspace_subdir(sub)
+            except ValueError as exc:
+                raise ConfigError(f"[agent6].workspace_subdir in {gpath}: {exc}") from exc
     return None
 
 

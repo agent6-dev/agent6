@@ -336,6 +336,16 @@ class SandboxConfig(BaseModel):
                 " 'only_explicit_states' for audited per-tool egress, or set"
                 " agent_network = 'open'."
             )
+        if self.agent_network == "local" and self.allow_urls:
+            # The docstring promises `local` refuses allow_urls; enforce it rather
+            # than silently ignoring the list. `local` confines egress to loopback
+            # providers, so an external allow-list can never take effect.
+            raise ValueError(
+                "sandbox.agent_network = 'local' (loopback providers only) cannot"
+                " be combined with sandbox.allow_urls — there is nothing external"
+                " to allow-list when offline. Remove allow_urls, or use"
+                " agent_network = 'providers'."
+            )
         return self
 
 

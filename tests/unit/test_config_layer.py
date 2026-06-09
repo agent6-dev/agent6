@@ -142,6 +142,26 @@ def test_overlay_forbids_workspace_subdir(repo: Path) -> None:
         load_effective_with_overlay(repo, overlay)
 
 
+@pytest.mark.parametrize("bad", ["../escape", "/abs/path", "a/b", "..", "."])
+def test_global_workspace_subdir_rejects_traversal(repo: Path, bad: str) -> None:
+    # The raw pre-model read of the GLOBAL config must reject a separator / ..
+    # / absolute workspace_subdir so run state can't be pointed outside the repo.
+    from agent6.config_layer import _global_workspace_subdir  # pyright: ignore[reportPrivateUsage]
+
+    gpath = repo.parent / "g" / "config.toml"
+    gpath.write_text(f'[agent6]\nworkspace_subdir = "{bad}"\n', encoding="utf-8")
+    with pytest.raises(ConfigError, match="workspace_subdir"):
+        _global_workspace_subdir()
+
+
+def test_global_workspace_subdir_accepts_plain_segment(repo: Path) -> None:
+    from agent6.config_layer import _global_workspace_subdir  # pyright: ignore[reportPrivateUsage]
+
+    gpath = repo.parent / "g" / "config.toml"
+    gpath.write_text('[agent6]\nworkspace_subdir = ".myagent"\n', encoding="utf-8")
+    assert _global_workspace_subdir() == ".myagent"
+
+
 def test_materialize_roundtrips(repo: Path, tmp_path: Path) -> None:
     eff = load_effective(repo)
     text = materialize(eff.config)
