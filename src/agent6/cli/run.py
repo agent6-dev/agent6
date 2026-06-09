@@ -87,7 +87,12 @@ from agent6.providers import (
 from agent6.run_id import RunIdError, new_friendly_id, resolve_run_id
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.mcp_client import MCPManager
-from agent6.ui.approval import read_answer, tui_is_live
+from agent6.ui.approval import (
+    clear_steer_answer,
+    read_answer,
+    read_steer_answer,
+    tui_is_live,
+)
 from agent6.workflows.loop import ResumeError, RunResult, Workflow
 
 # Distinct exit code for a budget-exhausted run so automation can tell "raise
@@ -696,11 +701,43 @@ def _select_revised_prompt(
         print("[agent6] choose accept, original, edit, or quit.", file=sys.stderr)
 
 
-def _install_steer_sigint(events: EventSink) -> _SteerState:
+def _tty_message(text: str) -> None:
+    """Print to the controlling terminal directly, bypassing any stdout/stderr
+    redirection (the TUI redirects the run's std streams to a log file)."""
+    try:
+        with open("/dev/tty", "w", encoding="utf-8") as tty:  # noqa: PTH123
+            tty.write(text)
+            tty.flush()
+            return
+    except OSError:
+        with contextlib.suppress(Exception):
+            print(text, file=sys.stderr, flush=True)
+
+
+def _tty_prompt(text: str) -> str | None:
+    """Prompt on the controlling terminal directly (see ``_tty_message``).
+    Falls back to stdin when /dev/tty is unavailable."""
+    try:
+        with open("/dev/tty", "r+", encoding="utf-8") as tty:  # noqa: PTH123
+            tty.write(text)
+            tty.flush()
+            line = tty.readline()
+            return line.rstrip("\n") if line else None
+    except OSError:
+        try:
+            return input(text)
+        except (EOFError, KeyboardInterrupt):
+            return None
+
+
+def _install_steer_sigint(events: EventSink, run_dir: Path) -> _SteerState:
     """Install a SIGINT handler that asks the workflow to steer.
 
-    * 1st SIGINT — set the "steer requested" flag. The workflow notices at
-      its next safe boundary (between steps) and prompts on stdin.
+    * 1st SIGINT — set the "steer requested" flag and emit
+      ``run.steer_requested``. The workflow notices at its next safe boundary
+      (between steps) and prompts: through a TUI modal when the TUI is live,
+      otherwise on the controlling terminal (``/dev/tty``, so the prompt is
+      visible even when the TUI has redirected the run's std streams to a log).
     * 2nd SIGINT within 2 s — raise KeyboardInterrupt to abort the run.
 
     Returns callables for the workflow plus a ``restore`` hook to put the
@@ -715,13 +752,14 @@ def _install_steer_sigint(events: EventSink) -> _SteerState:
             raise KeyboardInterrupt
         state["requested"] = True
         state["last_ts"] = now
+        clear_steer_answer(run_dir)
         events.emit("run.steer_requested", source="sigint")
-        with contextlib.suppress(Exception):
-            print(
-                "\n[agent6] steer requested — finishing current step, then will prompt. "
-                "Press Ctrl-C again within 2s to abort.",
-                file=sys.stderr,
-                flush=True,
+        # With the TUI up, the steer prompt is a modal — don't scribble on the
+        # terminal it owns. Otherwise tell the user a prompt is coming.
+        if not tui_is_live(run_dir):
+            _tty_message(
+                "\n[agent6] steer requested — finishing current step, then will"
+                " prompt. Press Ctrl-C again within 2s to abort.\n"
             )
 
     previous = signal.signal(signal.SIGINT, _handler)
@@ -731,12 +769,13 @@ def _install_steer_sigint(events: EventSink) -> _SteerState:
 
     def clear() -> None:
         state["requested"] = False
+        clear_steer_answer(run_dir)
 
     def prompt() -> str | None:
-        try:
-            return input("[agent6] steer (blank=continue, 'abort'=stop, else=instruction): ")
-        except (EOFError, KeyboardInterrupt):
-            return None
+        # TUI live: the user answers a modal; read its file-bridge result.
+        if tui_is_live(run_dir):
+            return read_steer_answer(run_dir)
+        return _tty_prompt("[agent6] steer (blank=continue, 'abort'=stop, else=instruction): ")
 
     def restore() -> None:
         with contextlib.suppress(Exception):
@@ -745,14 +784,25 @@ def _install_steer_sigint(events: EventSink) -> _SteerState:
     return _SteerState(requested=requested, clear=clear, prompt=prompt, restore=restore)
 
 
-# Steering is a stdin feature; when the TUI owns the terminal we install no
-# SIGINT handler (default Ctrl-C aborts the run cleanly) and use this no-op.
+# Used when there is no controlling terminal at all (fully non-interactive):
+# no SIGINT handler, default Ctrl-C behaviour.
 _NULL_STEER = _SteerState(
     requested=lambda: False,
     clear=lambda: None,
     prompt=lambda: None,
     restore=lambda: None,
 )
+
+
+def _make_steer_state(events: EventSink, run_dir: Path) -> _SteerState:
+    """Install the steer SIGINT handler when a controlling terminal exists
+    (covers run/plan/ask with or without the TUI); else a no-op."""
+    try:
+        with open("/dev/tty", encoding="utf-8"):  # noqa: PTH123
+            pass
+    except OSError:
+        return _NULL_STEER
+    return _install_steer_sigint(events, run_dir)
 
 
 # inline-resolved file references in user task strings.
@@ -1034,6 +1084,12 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     # heartbeats during long requests, which corrupt the non-streaming
     # response body (resp.json() blows up with JSONDecodeError).
     stream_text = sys.stderr.isatty() or os.environ.get("AGENT6_FORCE_STREAM") == "1"
+    tui_enabled = _should_spawn_tui(no_tui=no_tui, interactive=interactive, mode=mode)
+    # Echo the model's reasoning + answer to stderr live whenever the TUI is
+    # NOT owning the terminal (plan / ask / machine create / --no-tui). With the
+    # TUI up it renders the same deltas from the event stream, so console echo
+    # would just fight it for the terminal.
+    console_stream = stream_text and not tui_enabled
     provider: Provider = _InstrumentedProvider(
         inner=worker_inner,
         role=role,
@@ -1042,6 +1098,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         events=events,
         budget=budget,
         stream_text=stream_text,
+        console_stream=console_stream,
     )
 
     critic_provider = _build_critic_provider(
@@ -1076,11 +1133,10 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     # owns its subprocesses; we close it in the finally block.
     mcp_manager = _start_mcp_manager_if_enabled(cfg)
 
-    tui_enabled = _should_spawn_tui(no_tui=no_tui, interactive=interactive, mode=mode)
     # Steering (mid-run Ctrl-C -> a stdin prompt) needs the terminal; skip it
     # when the TUI owns it (then default Ctrl-C aborts cleanly). Double-Ctrl-C
     # within 2s still raises KeyboardInterrupt for the hard-abort path below.
-    steer_state = _NULL_STEER if tui_enabled else _install_steer_sigint(events)
+    steer_state = _make_steer_state(events, layout.run_dir)
 
     result = None
     interrupted = False
@@ -1369,6 +1425,8 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     # Streaming gated on stderr TTY (matches _cmd_run);
     # AGENT6_FORCE_STREAM=1 forces it on for bench/CI.
     stream_text = sys.stderr.isatty() or os.environ.get("AGENT6_FORCE_STREAM") == "1"
+    tui_enabled = _should_spawn_tui(no_tui=no_tui, interactive=False, mode="run")
+    console_stream = stream_text and not tui_enabled
     provider: Provider = _InstrumentedProvider(
         inner=worker_inner,
         role="worker",
@@ -1377,6 +1435,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
         events=events,
         budget=budget,
         stream_text=stream_text,
+        console_stream=console_stream,
     )
 
     critic_provider = _build_critic_provider(
@@ -1397,8 +1456,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
 
     mcp_manager = _start_mcp_manager_if_enabled(cfg)
 
-    tui_enabled = _should_spawn_tui(no_tui=no_tui, interactive=False, mode="run")
-    steer_state = _NULL_STEER if tui_enabled else _install_steer_sigint(events)
+    steer_state = _make_steer_state(events, layout.run_dir)
 
     result = None
     interrupted = False

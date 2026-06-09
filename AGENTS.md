@@ -63,9 +63,12 @@ here once; do not re-justify them per-command in code comments or docs.
   exception classes for each subsystem.
 - **No new runtime dependencies** without explicit discussion. The
   `pyproject.toml` dep list is intentionally small: `pydantic`, `httpx`,
-  `argcomplete`, and the `tree-sitter` pair (`tree-sitter` +
-  `tree-sitter-language-pack`) that backs the symbol-navigation tools.
-  `textual` is an optional `[tui]` extra. Build dep is `hatchling`.
+  `argcomplete`, the `tree-sitter` pair (`tree-sitter` +
+  `tree-sitter-language-pack`) that backs the symbol-navigation tools, and
+  `textual` (the live dashboard, shipped by default — ~9 well-vetted
+  pure-Python packages with `rich`). The empty `[tui]` extra is kept only so
+  the documented `agent6[tui]` install keeps resolving. Build dep is
+  `hatchling`.
 - **Comments / docstrings**: don't add them to code you didn't change.
   When you do comment, one line on the non-obvious — never restate the
   code. Don't add type annotations to functions you didn't modify. Don't refactor

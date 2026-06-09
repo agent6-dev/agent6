@@ -64,6 +64,10 @@ class RoleCall:
     # Live SSE text accumulator. Reset on every role.call,
     # appended-to on each role.text_delta, frozen on role.result.
     streamed_text: str = ""
+    # Live reasoning accumulator, fed by role.thinking_delta. Same
+    # lifecycle as streamed_text; shown in the TUI's "thinking" view so a
+    # long reasoning burst reads as progress rather than a hang.
+    streamed_thinking: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +95,9 @@ class RunState:
     finished: bool = False
     all_passed: bool | None = None
     diffs: dict[int, str] = field(default_factory=dict)  # step_index -> patch text
+    # Monotonic count of mid-run steer requests (Ctrl-C). The TUI compares it
+    # against its own "seen" count to pop a steer modal exactly once per press.
+    steer_requests: int = 0
 
 
 def initial_state() -> RunState:
@@ -165,6 +172,7 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
                     model=str(event.get("model", "")),
                     in_flight=True,
                     streamed_text="",
+                    streamed_thinking="",
                 ),
             )
 
@@ -179,6 +187,19 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
             return replace(
                 state,
                 last_role=replace(last, streamed_text=last.streamed_text + piece),
+            )
+
+        case "role.thinking_delta":
+            # Append a reasoning delta to the in-flight RoleCall.
+            last = state.last_role
+            if last is None or not last.in_flight:
+                return state
+            piece = str(event.get("text", ""))
+            if not piece:
+                return state
+            return replace(
+                state,
+                last_role=replace(last, streamed_thinking=last.streamed_thinking + piece),
             )
 
         case "role.result":
@@ -265,6 +286,9 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
                 for a in state.pending_approvals
             )
             return replace(state, pending_approvals=new)
+
+        case "run.steer_requested":
+            return replace(state, steer_requests=state.steer_requests + 1)
 
         case "run.end":
             return replace(

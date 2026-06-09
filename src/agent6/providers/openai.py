@@ -198,6 +198,7 @@ class OpenAIProvider:
         extended_thinking: dict[str, Any] | None = None,
         reasoning_effort: str | None = None,
         text_delta_callback: Callable[[str], None] | None = None,
+        thinking_delta_callback: Callable[[str], None] | None = None,
     ) -> ProviderResponse:
         # extended_thinking is Anthropic-shaped (`budget_tokens`).
         # OpenAI reasoning models use `reasoning_effort` instead; no
@@ -326,11 +327,12 @@ class OpenAIProvider:
         # via AGENT6_FORCE_STREAM=1 (the CLI translates that into a
         # no-op callback so we exercise the streaming code path even
         # when stderr is redirected).
-        if text_delta_callback is not None:
+        if text_delta_callback is not None or thinking_delta_callback is not None:
             return self._call_streaming(
                 headers=headers,
                 body=body,
                 text_delta_callback=text_delta_callback,
+                thinking_delta_callback=thinking_delta_callback,
                 tool_names=tool_names,
             )
 
@@ -387,7 +389,8 @@ class OpenAIProvider:
         *,
         headers: dict[str, str],
         body: dict[str, Any],
-        text_delta_callback: Callable[[str], None],
+        text_delta_callback: Callable[[str], None] | None = None,
+        thinking_delta_callback: Callable[[str], None] | None = None,
         tool_names: frozenset[str] = frozenset(),
     ) -> ProviderResponse:
         """SSE streaming variant of the OpenAI Chat Completions call.
@@ -517,13 +520,18 @@ class OpenAIProvider:
                     if not isinstance(delta, dict):
                         continue
                     content = delta.get("content")
-                    if isinstance(content, str) and content:
+                    if isinstance(content, str) and content and text_delta_callback is not None:
                         text_parts.append(content)
                         with contextlib.suppress(Exception):
                             text_delta_callback(content)
+                    elif isinstance(content, str) and content:
+                        text_parts.append(content)
                     reasoning = delta.get("reasoning_content") or delta.get("reasoning")
                     if isinstance(reasoning, str) and reasoning:
                         reasoning_parts.append(reasoning)
+                        if thinking_delta_callback is not None:
+                            with contextlib.suppress(Exception):
+                                thinking_delta_callback(reasoning)
                     raw_tc = delta.get("tool_calls") or []
                     if not isinstance(raw_tc, list):
                         continue

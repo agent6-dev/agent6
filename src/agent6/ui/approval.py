@@ -28,6 +28,7 @@ from pathlib import Path
 
 APPROVAL_DIR_NAME = "approvals"
 TUI_PID_FILE = "tui.pid"
+STEER_ANSWER_FILE = "steer.answer"
 
 
 def approvals_dir(run_dir: Path) -> Path:
@@ -83,6 +84,46 @@ def read_answer(
         if target.exists():
             txt = target.read_text(encoding="utf-8").strip().lower()
             return txt in {"yes", "y", "true", "1"}
+        if not tui_is_live(run_dir):
+            return None
+        time.sleep(poll_s)
+    return None
+
+
+# --- mid-run steering bridge (Ctrl-C while the TUI owns the terminal) --------
+# Single-slot: only one steer prompt is ever outstanding (the SIGINT handler
+# sets a flag the loop drains at its next boundary). The run process triggers a
+# steer by emitting `run.steer_requested`; the TUI shows a modal and writes the
+# answer here; the run process reads it. The answer is a free string:
+# "" = continue, "abort" = stop, anything else = a steering instruction.
+
+
+def write_steer_answer(run_dir: Path, answer: str) -> None:
+    """Called by the TUI when the user answers the steer modal."""
+    (run_dir / STEER_ANSWER_FILE).write_text(answer, encoding="utf-8")
+
+
+def clear_steer_answer(run_dir: Path) -> None:
+    with contextlib.suppress(FileNotFoundError):
+        (run_dir / STEER_ANSWER_FILE).unlink()
+
+
+def read_steer_answer(
+    run_dir: Path,
+    *,
+    timeout_s: float = 600.0,
+    poll_s: float = 0.2,
+) -> str | None:
+    """Called by the workflow when the TUI is live. Returns the answer string
+    (consuming the file) or None if the TUI died / timed out before answering."""
+    target = run_dir / STEER_ANSWER_FILE
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if target.exists():
+            txt = target.read_text(encoding="utf-8")
+            with contextlib.suppress(FileNotFoundError):
+                target.unlink()
+            return txt
         if not tui_is_live(run_dir):
             return None
         time.sleep(poll_s)

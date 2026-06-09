@@ -34,10 +34,10 @@ class Provider(Protocol):
     are dispatched in Python via `ToolDispatcher` — so the `tools`
     parameter exists for forward-compatibility only.
 
-    ``text_delta_callback`` is an opt-in SSE streaming hook.
-    When set, providers MAY stream text deltas to the callback as they
-    arrive. When ``None`` (default), providers use the non-streaming
-    code path.
+    ``text_delta_callback`` / ``thinking_delta_callback`` are opt-in SSE
+    streaming hooks. When either is set, providers MAY stream visible
+    text / reasoning deltas to the matching callback as they arrive. When
+    both are ``None`` (default), providers use the non-streaming code path.
     """
 
     def call(
@@ -50,6 +50,7 @@ class Provider(Protocol):
         temperature: float | None = ...,
         reasoning_effort: str | None = ...,
         text_delta_callback: Callable[[str], None] | None = ...,
+        thinking_delta_callback: Callable[[str], None] | None = ...,
     ) -> ProviderResponse: ...
 
 

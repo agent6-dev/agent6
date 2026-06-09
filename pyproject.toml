@@ -13,12 +13,18 @@ dependencies = [
     "argcomplete>=3,<4",
     "tree-sitter==0.25.2",
     "tree-sitter-language-pack==1.8.1",
+    # The live dashboard (`agent6 run`/`watch`/`plan`/`machine create`) ships by
+    # default — textual + ~8 well-vetted pure-Python deps (rich, pygments,
+    # markdown-it-py, …). A headless install can still drop it: `pip install
+    # --no-deps` or strip it from a vendored build; the CLI degrades to the
+    # plain `--plain` tail + line logger when textual is absent.
+    "textual>=0.86",
 ]
 
 [project.optional-dependencies]
-tui = [
-    "textual>=0.86",
-]
+# textual now ships in the base install (above). This extra is kept as an empty
+# alias so the documented `pip install 'agent6[tui]'` keeps working.
+tui = []
 
 [project.scripts]
 agent6 = "agent6.cli:main"
@@ -120,14 +126,6 @@ ignore = [
 
 [tool.pyright]
 include = ["src", "tests"]
-exclude = [
-    # The textual TUI is an optional dependency. We don't install textual in
-    # the dev/CI env (it adds ~50 transitive deps), so pyright can't resolve
-    # its imports here. The module is installed by `pip install 'agent6[tui]'`
-    # and exercised end-to-end by humans; the pure-Python sibling modules
-    # (state.py, tail.py, approval.py) carry the unit-test coverage.
-    "src/agent6/ui/tui.py",
-]
 pythonVersion = "3.12"
 typeCheckingMode = "strict"
 reportMissingTypeStubs = false
@@ -146,6 +144,14 @@ root = "src/agent6/cli"
 reportPrivateUsage = false
 reportUnusedFunction = false
 reportUnusedClass = false
+
+# The headless TUI tests drive the app through its internal event-fold + timer
+# seams (`_handle_event`, `_tick`) — the same surface a human exercises by
+# hand. Poking those underscored methods is the point of the test, so silence
+# the private-usage check here only.
+[[tool.pyright.executionEnvironments]]
+root = "tests/ui"
+reportPrivateUsage = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

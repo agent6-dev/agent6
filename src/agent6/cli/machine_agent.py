@@ -30,7 +30,7 @@ from agent6.cli.egress import (
     _maybe_start_egress,
     _stop_egress,
 )
-from agent6.cli.providers import _build_role_provider
+from agent6.cli.providers import _build_role_provider, _InstrumentedProvider
 from agent6.config_layer import load_effective_with_overlay
 from agent6.detect import detect
 from agent6.git_ops import set_repo_hook_policy
@@ -98,8 +98,23 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
             max_output_tokens=cfg.budget.max_output_tokens,
             max_usd=cfg.budget.max_usd,
         )
-        provider = _build_role_provider(
+        inner_provider = _build_role_provider(
             cfg, "worker", transcript_sink=TranscriptSink(transcript_dir), budget=budget
+        )
+        # No EventSink here (a machine agent state has no logs.jsonl), but echo
+        # the model's reasoning + answer to our inherited stderr at a TTY so
+        # `machine create` and live `agent` states are watchable instead of
+        # silent. Streaming is also the robust path on OpenRouter-style
+        # gateways (avoids SSE-heartbeat body corruption).
+        rm = cfg.models.resolve("worker")
+        provider = _InstrumentedProvider(
+            inner=inner_provider,
+            role=r.get("role_label", "agent"),
+            model=rm.model if rm is not None else "",
+            provider_name=rm.provider if rm is not None else "",
+            events=None,
+            budget=budget,
+            console_stream=sys.stderr.isatty(),
         )
         # Re-confirm the cwd-containment invariant at the subprocess boundary
         # (defense in depth — the engine already filtered these).

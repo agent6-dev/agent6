@@ -191,6 +191,7 @@ class AnthropicProvider:
         temperature: float | None = None,
         reasoning_effort: str | None = None,
         text_delta_callback: Callable[[str], None] | None = None,
+        thinking_delta_callback: Callable[[str], None] | None = None,
     ) -> ProviderResponse:
         # ``reasoning_effort`` is the OpenAI-reasoning-model knob; Anthropic
         # extended thinking uses a different shape and is configured on the
@@ -252,11 +253,12 @@ class AnthropicProvider:
         # ProviderResponse identical in shape to the non-streaming path
         # at message_stop. Non-streaming is the default to keep bench
         # runs and the existing test suite on the audited code path.
-        if text_delta_callback is not None:
+        if text_delta_callback is not None or thinking_delta_callback is not None:
             return self._call_streaming(
                 headers=headers,
                 body=body,
                 text_delta_callback=text_delta_callback,
+                thinking_delta_callback=thinking_delta_callback,
             )
 
         try:
@@ -311,12 +313,13 @@ class AnthropicProvider:
         *,
         headers: dict[str, str],
         body: dict[str, Any],
-        text_delta_callback: Callable[[str], None],
+        text_delta_callback: Callable[[str], None] | None = None,
+        thinking_delta_callback: Callable[[str], None] | None = None,
     ) -> ProviderResponse:
         """SSE streaming variant.
 
-        Iterates the Anthropic Messages SSE stream, fans text_delta
-        deltas to ``text_delta_callback`` as they arrive, and at
+        Iterates the Anthropic Messages SSE stream, fans text_delta and
+        thinking_delta deltas to their callbacks as they arrive, and at
         message_stop returns a ProviderResponse whose .raw is shaped
         identically to a non-streaming response so callers (Workflow,
         transcript replay) don't need a streaming-aware code path.
@@ -423,13 +426,17 @@ class AnthropicProvider:
                         if dt == "text_delta":
                             piece = str(d.get("text", ""))
                             text_acc.setdefault(idx, []).append(piece)
-                            if piece:
+                            if piece and text_delta_callback is not None:
                                 # Callback failure must never break the
                                 # stream — cosmetic surface.
                                 with contextlib.suppress(Exception):
                                     text_delta_callback(piece)
                         elif dt == "thinking_delta":
-                            thinking_acc.setdefault(idx, []).append(str(d.get("thinking", "")))
+                            piece = str(d.get("thinking", ""))
+                            thinking_acc.setdefault(idx, []).append(piece)
+                            if piece and thinking_delta_callback is not None:
+                                with contextlib.suppress(Exception):
+                                    thinking_delta_callback(piece)
                         elif dt == "signature_delta":
                             signature_acc.setdefault(idx, []).append(str(d.get("signature", "")))
                         elif dt == "input_json_delta":

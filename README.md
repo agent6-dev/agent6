@@ -81,15 +81,14 @@ on `PATH`. The hatch build hook invokes `cargo build` to compile
 Install from [PyPI](https://pypi.org/project/agent6/) with [uv](https://docs.astral.sh/uv/getting-started/installation/) or [pipx](https://pipx.pypa.io/stable/how-to/install-pipx/).
 
 ```bash
-uv tool install "agent6[tui]"
-pipx install "agent6[tui]"
+uv tool install agent6
+pipx install agent6
 ```
 
-The `tui` extra pulls in `textual` for the live dashboard; drop it
-(`agent6`) for a headless install. Both tools drop the `agent6` entry
-point in a user bin directory (`~/.local/bin`); if it isn't on your
-`PATH` yet, run `uv tool update-shell` or `pipx ensurepath` (then restart
-your shell).
+The live dashboard (`textual`) ships by default. Both tools drop the
+`agent6` entry point in a user bin directory (`~/.local/bin`); if it isn't
+on your `PATH` yet, run `uv tool update-shell` or `pipx ensurepath` (then
+restart your shell). (`agent6[tui]` still resolves — the extra is now empty.)
 
 From source:
 
@@ -355,14 +354,18 @@ ceilings in your config hard-stop the run; a stopped run is resumable.
 
 ## Live view
 
-With the `tui` extra installed and stdout a TTY, `agent6 run` auto-spawns
-a textual dashboard (task DAG, budget bar, tool table, log tail, latest
+With stdout a TTY, `agent6 run` auto-spawns a textual dashboard (task DAG,
+budget bar, tool table, **live reasoning/response pane**, log tail, latest
 diff) that owns the terminal for the run and closes when the run ends;
-`--no-tui` (and `-i`, the stdin REPL) opt out. A `run_command` approval
-prompt appears as an Allow/Deny modal in the dashboard (it falls back to a
-stdin `[y/N]` prompt when no TUI is present). Attach to a running or
-finished run from another shell with `agent6 watch [<run-id>]`; `agent6
-watch --plain` is a no-deps text tail for headless terminals. The
+`--no-tui` (and `-i`, the stdin REPL) opt out. The approval and Ctrl-C
+"steer" prompts appear as keyboard-navigable modals (arrow keys + Enter,
+`y`/`n` shortcuts); both fall back to a `/dev/tty` prompt when no TUI is
+present. The slower, non-dashboard commands — `agent6 plan`, `agent6 ask`,
+and `agent6 machine create` — stream the model's reasoning and answer to
+the terminal live (dimmed reasoning, then the response) so you can watch
+progress and Ctrl-C to steer or abort. Attach to a running or finished run
+from another shell with `agent6 watch [<run-id>]`; `agent6 watch --plain`
+is a no-deps text tail for headless terminals. The
 dashboard folds a structured JSONL event stream
 (`.agent6/runs/<run-id>/logs.jsonl`) that is also the contract for any
 external viewer — the event vocabulary is in

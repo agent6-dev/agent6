@@ -181,6 +181,8 @@ any external viewer (the fold to UI state lives in
 | `verify.start` / `.end`     | `cmd`, `exit_code`, `duration_s`, `*_tail`  |
 | `role.call` / `.result`     | `role`, `model`, `tokens_in`, `tokens_out`  |
 | `role.text_delta`           | streamed assistant text chunk               |
+| `role.thinking_delta`       | streamed reasoning chunk (TUI "thinking" pane) |
+| `run.steer_requested`       | `source` (`"sigint"`) — mid-run Ctrl-C      |
 | `budget.update`             | totals + caps for input/output tokens       |
 | `approval.prompt`/`.answer` | `id`, `prompt`, `approved`, `source` (`tui`/`stdin`) |
 | `loop.*`                    | agent progress: `loop.auto_commit`, `loop.compact.*`, `loop.critic.*`, `loop.metric.*`, `loop.steer.*` |
