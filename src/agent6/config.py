@@ -368,6 +368,16 @@ class GitConfig(BaseModel):
     auto_stash: bool = False
     branch_per_run: bool = True
     commit_strategy: Literal["per_step", "squash", "stage", "none"] = "per_step"
+    # Whether the repo's own git hooks (`.git/hooks/*`) run during agent6's
+    # OWN git operations (notably the per-step auto-commit). Default false:
+    # secure-by-default (a hook is repo-controlled code that would execute on
+    # the HOST, outside the jail, when agent6 commits -- a host-RCE vector for
+    # an adversarial repo) and also avoids re-running a slow pre-commit hook on
+    # every micro-commit. The verify_command is agent6's real success gate, not
+    # git hooks. Set true to honor the repo's hooks (trust the repo). Either
+    # way `core.fsmonitor`/`diff.external` stay neutralized (those fire on
+    # status/diff and have no legitimate use here).
+    run_repo_hooks: bool = False
     # Security-sensitive: default to the safe (disabled) value. agent6's
     # git_ops layer refuses push / force / history rewrite unconditionally
     # regardless of these toggles; they exist for the few workflows that

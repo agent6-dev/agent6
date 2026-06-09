@@ -65,6 +65,7 @@ from agent6.git_ops import (
     create_branch,
     make_run_branch_name,
     revert_head,
+    set_repo_hook_policy,
     slugify,
     verify_git_identity,
 )
@@ -528,6 +529,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     """
     try:
         cfg = load_effective(Path.cwd(), config_path).config
+        set_repo_hook_policy(cfg.git.run_repo_hooks)
         if budget_overrides is not None:
             cfg = budget_overrides.apply(cfg)
     except ConfigError as exc:
@@ -906,6 +908,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
 
     try:
         cfg = load_effective(Path.cwd(), config_path).config
+        set_repo_hook_policy(cfg.git.run_repo_hooks)
         if budget_overrides is not None:
             cfg = budget_overrides.apply(cfg)
         cfg.require_runnable("worker")

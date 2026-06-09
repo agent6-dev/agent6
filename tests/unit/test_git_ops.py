@@ -23,6 +23,7 @@ from agent6.git_ops import (
     refuse_history_rewrite,
     refuse_push,
     reset_to,
+    set_repo_hook_policy,
     slugify,
     status,
     verify_git_identity,
@@ -53,6 +54,37 @@ def test_git_ops_neutralizes_repo_fsmonitor(tmp_path: Path) -> None:
     status(tmp_path)
     commit_all(tmp_path, "msg")
     assert not marker.exists(), "repo core.fsmonitor command executed on the host"
+
+
+def _add_pre_commit_hook(repo: Path, marker: Path) -> None:
+    hook = repo / ".git" / "hooks" / "pre-commit"
+    hook.parent.mkdir(parents=True, exist_ok=True)
+    hook.write_text(f"#!/bin/sh\ntouch {marker}\n", encoding="utf-8")
+    hook.chmod(0o755)
+
+
+def test_git_ops_skips_repo_hooks_by_default(tmp_path: Path) -> None:
+    # Secure default: agent6's own commit must NOT fire a repo `.git/hooks/*`.
+    _init_repo(tmp_path)
+    marker = tmp_path / "HOOK_FIRED"
+    _add_pre_commit_hook(tmp_path, marker)
+    (tmp_path / "n.txt").write_text("x\n", encoding="utf-8")
+    set_repo_hook_policy(False)
+    commit_all(tmp_path, "c")
+    assert not marker.exists()
+
+
+def test_git_ops_runs_repo_hooks_when_enabled(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    marker = tmp_path / "HOOK_FIRED"
+    _add_pre_commit_hook(tmp_path, marker)
+    (tmp_path / "n.txt").write_text("x\n", encoding="utf-8")
+    try:
+        set_repo_hook_policy(True)  # git.run_repo_hooks = true
+        commit_all(tmp_path, "c")
+        assert marker.exists()
+    finally:
+        set_repo_hook_policy(False)  # reset process-wide policy for other tests
 
 
 def test_git_ops_neutralizes_repo_diff_external(tmp_path: Path) -> None:

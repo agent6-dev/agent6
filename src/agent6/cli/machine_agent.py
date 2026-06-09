@@ -33,6 +33,7 @@ from agent6.cli.egress import (
 from agent6.cli.providers import _build_role_provider
 from agent6.config_layer import load_effective_with_overlay
 from agent6.detect import detect
+from agent6.git_ops import set_repo_hook_policy
 from agent6.providers import TranscriptSink
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.types import SandboxProfile
@@ -74,6 +75,7 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
         max_input_tokens=r["max_input_tokens"],
         max_output_tokens=r["max_output_tokens"],
     )
+    set_repo_hook_policy(cfg.git.run_repo_hooks)
     # Confine THIS process's egress per sandbox.agent_network (single-threaded
     # here, as required by unshare). The engine already validated the combo, but
     # re-check defensively and fail closed.

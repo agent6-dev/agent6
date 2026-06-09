@@ -99,17 +99,36 @@ def _git() -> str:
     return git
 
 
-# Neutralize repo-config keys that would otherwise run a repo-controlled command
-# on the HOST (outside the jail) during agent6's own git operations. `-c` has the
-# highest precedence, overriding `.git/config`. `core.fsmonitor` fires a command
-# on every index refresh (status/add/commit); `diff.external` fires one on
-# `git diff` (review/diff). Both are pure overrides with no correctness cost
-# (fsmonitor is a perf cache; an empty diff.external uses git's builtin diff).
-# Defense-in-depth: the edit tools already refuse writes into `.git` under
-# protect_git, but a repo cloned with a pre-poisoned `.git/config` would
-# otherwise execute its payload the first time agent6 ran git here. (Hooks under
-# `.git/hooks/` are a separate, deliberate policy question -- left to run.)
-_GIT_HARDENING: tuple[str, ...] = ("-c", "core.fsmonitor=false", "-c", "diff.external=")
+# Always-on hardening: neutralize repo-config keys that would otherwise run a
+# repo-controlled command on the HOST (outside the jail) during agent6's own git
+# operations. `-c` has the highest precedence, overriding `.git/config`.
+# `core.fsmonitor` fires a command on every index refresh (status/add/commit);
+# `diff.external` fires one on `git diff` (review/diff). Both are pure overrides
+# with no correctness cost (fsmonitor is a perf cache; an empty diff.external
+# uses git's builtin diff). The edit tools already refuse writes into `.git`
+# under protect_git, but a repo cloned with a pre-poisoned `.git/config` would
+# otherwise execute its payload the first time agent6 ran git here.
+_GIT_EGRESS_HARDENING: tuple[str, ...] = ("-c", "core.fsmonitor=false", "-c", "diff.external=")
+
+# Whether the repo's own `.git/hooks/*` run during agent6's git ops (notably the
+# per-step auto-commit). Default false -- a repo hook is repo-controlled HOST
+# code, so honoring it on agent6's commit is a host-RCE vector for an adversarial
+# repo. Set once from `git.run_repo_hooks` at run/review startup. A module-level
+# dict (mutated, not rebound) keeps the process-wide policy without a `global`
+# statement -- same shape as providers.egress._BROKER_ROUTES.
+_hook_policy: dict[str, bool] = {"honor_repo_hooks": False}
+
+
+def set_repo_hook_policy(honor: bool) -> None:
+    """Configure whether agent6's own git ops fire the repo's `.git/hooks/*`."""
+    _hook_policy["honor_repo_hooks"] = honor
+
+
+def _git_hardening() -> tuple[str, ...]:
+    if _hook_policy["honor_repo_hooks"]:
+        return _GIT_EGRESS_HARDENING
+    # /dev/null is not a directory, so git finds (and runs) no hooks there.
+    return (*_GIT_EGRESS_HARDENING, "-c", "core.hooksPath=/dev/null")
 
 
 def _run(
@@ -121,8 +140,9 @@ def _run(
     env = None
     if env_extra:
         env = {**os.environ, **env_extra}
+    hardening = _git_hardening()
     proc = subprocess.run(
-        [_git(), *_GIT_HARDENING, *args],
+        [_git(), *hardening, *args],
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -130,7 +150,7 @@ def _run(
         env=env,
     )
     result = CommandResult(
-        argv=(_git(), *_GIT_HARDENING, *args),
+        argv=(_git(), *hardening, *args),
         returncode=proc.returncode,
         stdout=proc.stdout,
         stderr=proc.stderr,

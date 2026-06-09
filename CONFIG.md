@@ -93,6 +93,7 @@ The security boundary. Profiles and the network model are specified in
 | `auto_stash` | `false` | Stash before, restore after the run. |
 | `branch_per_run` | `true` | Cut a fresh `agent6/<slug>` branch off HEAD (else stay on the current branch and remember the starting sha). |
 | `commit_strategy` | `"per_step"` | End-of-run finalization: `per_step` (keep N commits) / `squash` (one combined commit) / `stage` (leave staged) / `none` (leave unstaged). All strategies commit per-step *during* the run. |
+| `run_repo_hooks` | `false` | Whether the repo's own `.git/hooks/*` run during agent6's git ops (notably the per-step auto-commit). Default off: a repo hook is repo-controlled code that runs on the **host** (outside the jail), so honoring it on agent6's commit is a host-RCE vector for an untrusted repo — and the `verify_command` is agent6's real success gate. Set true to honor the repo's hooks (you trust the repo). `core.fsmonitor`/`diff.external` are always neutralized regardless. |
 | `allow_push` / `allow_force` / `allow_history_rewrite` | `false` | Reserved. `git_ops.py` refuses push / `--force` / history rewrite / `reset --hard` **unconditionally** regardless of these (SECURITY §5). |
 
 ### `[git.commit]`

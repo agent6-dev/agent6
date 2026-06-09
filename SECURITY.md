@@ -223,6 +223,16 @@ the agent6 config exist for forward compatibility but are currently
 ignored — they will stay ignored until there is a concrete review of what
 a "safe push" would look like.
 
+Every `git_ops` invocation is also hardened against **repo-controlled host
+code execution**: a cloned/poisoned `.git/config` can otherwise run a
+command on the host (outside the jail) the moment agent6 runs git in it.
+`core.fsmonitor` (fires on index refresh) and `diff.external` (fires on
+`git diff`) are always overridden off; the repo's `.git/hooks/*` run only
+when `git.run_repo_hooks = true` (default false — `core.hooksPath` is
+pointed away from the repo so a `pre-commit` hook can't fire on agent6's
+own auto-commit). This complements `protect_git`, which stops the worker
+from *writing* into `.git` in the first place.
+
 ### 5b. Secrets, `connect`, and running as root
 
 - **Secrets at rest.** Provider API keys live in
