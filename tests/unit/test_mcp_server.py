@@ -400,3 +400,22 @@ def test_apply_patch_surfaces_tool_error(tmp_path: Path, monkeypatch: pytest.Mon
 
 def test_deny_approver_always_returns_false() -> None:
     assert _deny_approver("Allow this?") is False
+
+
+def test_most_recent_run_id_uses_mtime_not_name(tmp_path: Path) -> None:
+    # Run ids start with a random adjective-noun, so a name sort is not
+    # chronological. The alphabetically-LATER name with the OLDER mtime must
+    # NOT win; the newest dir (by mtime) must.
+    import os
+
+    from agent6.mcp_server import _most_recent_run_id  # pyright: ignore[reportPrivateUsage]
+
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    older = runs / "zzz-older-AAA111"  # alphabetically last
+    newer = runs / "aaa-newer-BBB222"  # alphabetically first
+    older.mkdir()
+    newer.mkdir()
+    os.utime(older, (1000, 1000))
+    os.utime(newer, (2000, 2000))  # newer mtime
+    assert _most_recent_run_id(tmp_path) == "aaa-newer-BBB222"

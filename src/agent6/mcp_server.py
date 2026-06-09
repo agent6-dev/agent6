@@ -90,11 +90,26 @@ def _runs_root(agent6_dir: Path) -> Path:
     return agent6_dir / "runs"
 
 
+def _run_dirs_newest_first(runs: Path) -> list[Path]:
+    """Run dirs sorted newest-first by mtime.
+
+    Run ids are NOT chronologically sortable -- they start with a random
+    ``<adjective>-<noun>`` and the embedded ms timestamp rolls over -- so a
+    name sort picks the alphabetically-last run, not the latest. Sort by
+    directory mtime instead.
+    """
+    return sorted(
+        (d for d in runs.iterdir() if d.is_dir()),
+        key=lambda d: d.stat().st_mtime,
+        reverse=True,
+    )
+
+
 def _most_recent_run_id(agent6_dir: Path) -> str | None:
     runs = _runs_root(agent6_dir)
     if not runs.is_dir():
         return None
-    candidates = sorted((d for d in runs.iterdir() if d.is_dir()), reverse=True)
+    candidates = _run_dirs_newest_first(runs)
     return candidates[0].name if candidates else None
 
 
@@ -353,7 +368,7 @@ class MCPServer:
         if not runs.is_dir():
             return {"runs": []}
         entries: list[dict[str, Any]] = []
-        for d in sorted((p for p in runs.iterdir() if p.is_dir()), reverse=True):
+        for d in _run_dirs_newest_first(runs):
             summary: dict[str, Any] = {"run_id": d.name}
             manifest = d / "manifest.json"
             if manifest.is_file():
