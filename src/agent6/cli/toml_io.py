@@ -9,6 +9,8 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
+from agent6.config import ConfigError
+
 
 def _toml_value(value: str | bool) -> str:
     if isinstance(value, bool):
@@ -158,10 +160,19 @@ def _remove_toml_leaf(path: Path, dotted_key: str) -> bool:
 
 
 def _read_toml_file(path: Path) -> dict[str, Any]:
-    """Parse *path* as TOML, or return an empty dict if it does not exist."""
+    """Parse *path* as TOML, or return an empty dict if it does not exist.
+
+    Wrap a parse error in ``ConfigError`` (matching ``config_layer._read_toml``)
+    so the ``config ... --machine FILE`` commands surface a clean message
+    instead of letting a raw ``TOMLDecodeError`` traceback escape -- and, for
+    ``set``/``add``, so the malformed file is reported before it is rewritten.
+    """
     if not path.is_file():
         return {}
-    return tomllib.loads(path.read_text(encoding="utf-8"))
+    try:
+        return tomllib.loads(path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"{path}: invalid TOML: {exc}") from exc
 
 
 def _read_toml_leaf(data: dict[str, Any], dotted_key: str) -> object:

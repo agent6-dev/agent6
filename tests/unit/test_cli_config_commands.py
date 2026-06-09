@@ -79,6 +79,18 @@ def test_get_unknown_key_errors(iso: Path) -> None:
     assert _run(["config", "get", "sandbox.nope"]) == 2
 
 
+def test_machine_get_on_malformed_toml_is_clean_error(
+    iso: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A malformed --machine file must produce a clean CONFIG ERROR (exit 2),
+    # not an uncaught TOMLDecodeError traceback.
+    bad = tmp_path / "broken.asm.toml"
+    bad.write_text("this is = not valid [[[\n", encoding="utf-8")
+    assert _run(["config", "get", "git.commit_strategy", "--machine", str(bad)]) == 2
+    err = capsys.readouterr().err
+    assert "invalid TOML" in err
+
+
 def test_unset_reverts_to_default(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
     _run(["config", "set", "sandbox.protect_git", "false"])
     assert _run(["config", "unset", "sandbox.protect_git"]) == 0
