@@ -49,9 +49,11 @@ exclude = ["src/agent6/jail"]
 # self-contained install — no separate `cargo build` step required. The
 # hook degrades gracefully when cargo is not on PATH (the resulting wheel
 # is pure-Python and `agent6 check sandbox` tells the user to build the
-# binary themselves). For PyPI distribution, run the build inside a
-# manylinux container (e.g. cibuildwheel) so the bundled binary links
-# against an old enough glibc.
+# binary themselves). For PyPI distribution, set
+# AGENT6_JAIL_TARGET=x86_64-unknown-linux-musl so the bundled binary is a
+# fully static musl binary with no glibc dependency (runs on any Linux); CI
+# does this. Building host-native against a newer glibc would otherwise fail
+# on older systems with `GLIBC_x.yz not found`.
 [tool.hatch.build.targets.wheel.hooks.custom]
 path = "hatch_build.py"
 

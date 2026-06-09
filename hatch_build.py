@@ -13,11 +13,18 @@ package at runtime.
 Because the embedded binary is platform-specific, a wheel built by this
 hook is also platform-specific: `pure_python` is set to False and
 `infer_tag` to True, which makes hatchling stamp the wheel with the
-current interpreter + ABI + platform tag. For PyPI distribution this hook
-should be run inside a manylinux container (e.g. via cibuildwheel) so the
-binary links against an old enough glibc to satisfy `manylinux_2_28` or
-similar. The binary is Linux-only (Landlock + seccomp + namespaces are
-Linux kernel features), so no macOS/Windows wheels are produced.
+current interpreter + ABI + platform tag.
+
+For PUBLISHED wheels the binary must be portable across glibc versions.
+A plain `cargo build` on, say, Ubuntu 24.04 links against that host's glibc
+(2.39) and then fails on older systems (Debian 12 / glibc 2.36) with
+``version `GLIBC_2.39' not found``. To avoid that, set
+``AGENT6_JAIL_TARGET=x86_64-unknown-linux-musl``: the jail crate is pure
+Rust (libc/nix/landlock/seccompiler — no C deps), so it links into a fully
+STATIC musl binary with no glibc dependency at all, which runs on every
+Linux. CI sets this; local `uv sync` leaves it unset and builds host-native
+(fine for a dev's own machine). The binary is Linux-only (Landlock + seccomp
++ namespaces are Linux kernel features), so no macOS/Windows wheels.
 
 The hook is deliberately tolerant:
 
@@ -80,13 +87,21 @@ class JailBuildHook(BuildHookInterface):
             self._maybe_mark_platform_wheel(build_data, dest)
             return
 
-        print("[hatch_build] cargo build --release --locked", file=sys.stderr)
-        subprocess.run(
-            [cargo, "build", "--release", "--locked", "--manifest-path", str(manifest)],
-            check=True,
-        )
+        # Optional cross/target build (CI sets x86_64-unknown-linux-musl for a
+        # portable static binary; unset = host-native for local dev).
+        target = os.environ.get("AGENT6_JAIL_TARGET", "").strip()
+        cmd = [cargo, "build", "--release", "--locked", "--manifest-path", str(manifest)]
+        if target:
+            cmd += ["--target", target]
+        print(f"[hatch_build] {' '.join(cmd[1:])}", file=sys.stderr)
+        subprocess.run(cmd, check=True)
 
-        built = root / "src" / "agent6" / "jail" / "target" / "release" / _BIN_NAME
+        target_dir = root / "src" / "agent6" / "jail" / "target"
+        built = (
+            (target_dir / target / "release" / _BIN_NAME)
+            if target
+            else (target_dir / "release" / _BIN_NAME)
+        )
         if not built.is_file():
             print(
                 f"[hatch_build] cargo build succeeded but {built} is missing",
@@ -110,8 +125,9 @@ class JailBuildHook(BuildHookInterface):
         `py3-none-linux_x86_64` tag — the only native artifact is the bundled
         `agent6-jail` binary, which does not depend on the Python ABI, so a
         single wheel covers every interpreter satisfying `requires-python`
-        (3.12, 3.13, 3.14, …). The CI workflow then retags `linux_*` to
-        `manylinux_2_34_*` for PyPI.
+        (3.12, 3.13, 3.14, …). The CI workflow then retags `linux_*` to the
+        publishable manylinux/musllinux tags for PyPI (honest because the
+        static musl binary has no glibc dependency).
         """
         if dest.is_file():
             build_data["pure_python"] = False

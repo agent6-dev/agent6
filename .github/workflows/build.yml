@@ -43,23 +43,35 @@ jobs:
           cargo --version
           rustc --version
 
+      - name: Add the static-musl Rust target
+        # The jail crate is pure Rust (no C deps), so it links into a fully
+        # static musl binary with NO glibc dependency. Building host-native on
+        # ubuntu-24.04 (glibc 2.39) instead would make the wheel fail on older
+        # systems (e.g. Debian 12 / glibc 2.36) with `GLIBC_2.39 not found`.
+        run: rustup target add x86_64-unknown-linux-musl
+
       - name: Build wheel + sdist (hatch hook compiles + bundles agent6-jail)
+        # AGENT6_JAIL_TARGET tells hatch_build.py to build the static musl
+        # binary instead of a host-glibc one.
+        env:
+          AGENT6_JAIL_TARGET: x86_64-unknown-linux-musl
         run: uv build --wheel --sdist --out-dir dist/
 
-      - name: Re-tag wheel for PyPI (linux_x86_64 -> manylinux_2_34_x86_64)
-        # `uv build` tags the wheel as `py3-none-linux_x86_64` (set
-        # explicitly by `hatch_build.py`: the only native artifact is the
-        # bundled `agent6-jail` binary, which is independent of the Python
-        # ABI — one wheel covers every interpreter that satisfies
-        # `requires-python = ">=3.12"`). PyPI refuses unqualified `linux_*`
-        # tags. The runner is `ubuntu-24.04` (glibc 2.39), so the bundled
-        # binary is compatible with glibc >= 2.34. Re-tagging is purely
-        # metadata: `wheel tags` rewrites the filename and the WHEEL
-        # metadata in-place; `--remove` deletes the old wheel so `dist/`
-        # only contains the publishable artifact.
+      - name: Re-tag wheel for PyPI
+        # `uv build` tags the wheel `py3-none-linux_x86_64` (set by
+        # hatch_build.py: the only native artifact is the bundled agent6-jail
+        # binary, independent of the Python ABI — one wheel covers every
+        # interpreter satisfying `requires-python = ">=3.12"`). PyPI refuses
+        # unqualified `linux_*` tags. The bundled binary is STATIC musl with no
+        # glibc dependency, so it runs on any manylinux (down to 2_17) AND on
+        # musl systems (Alpine); we advertise both. Re-tagging is pure metadata
+        # (`wheel tags` rewrites the filename + WHEEL metadata in place;
+        # `--remove` drops the old file).
+        # One compressed (dot-joined) platform tag so the wheel advertises BOTH;
+        # passing --platform-tag twice would keep only the last.
         run: |
           uv tool run --from wheel wheel tags \
-            --platform-tag manylinux_2_34_x86_64 \
+            --platform-tag manylinux_2_17_x86_64.musllinux_1_2_x86_64 \
             --remove \
             dist/agent6-*-linux_x86_64.whl
           ls -la dist/
