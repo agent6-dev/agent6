@@ -67,7 +67,8 @@ here once; do not re-justify them per-command in code comments or docs.
   `tree-sitter-language-pack`) that backs the symbol-navigation tools.
   `textual` is an optional `[tui]` extra. Build dep is `hatchling`.
 - **Comments / docstrings**: don't add them to code you didn't change.
-  Don't add type annotations to functions you didn't modify. Don't refactor
+  When you do comment, one line on the non-obvious — never restate the
+  code. Don't add type annotations to functions you didn't modify. Don't refactor
   surrounding code "while you're there." Scope creep is a review-blocker.
 - **Module boundaries** are enforced by [tach](https://docs.gauge.sh/).
   `cli → workflows → agents → tools → sandbox`. Workflows never import
@@ -140,6 +141,8 @@ All five must pass; keep the suite green.
   `feat(scope):`, `fix(scope):`, `ci:`, `docs:`, `bench:`, etc. The
   scope (e.g. `review`, `sandbox`, `graph`) matches a directory under
   `src/agent6/` or a top-level area.
+- Keep messages concise: imperative subject; a body only for non-obvious
+  *why*, in point form not prose. No `Co-Authored-By` lines.
 - Security-relevant commits include a `Security review note:` paragraph
   explaining what surface changed.
 - Do not push. `git.allow_push = false` is the user-side enforcement;
