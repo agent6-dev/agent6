@@ -600,7 +600,8 @@ def _cmd_machine_create(  # noqa: PLR0911, PLR0912, PLR0915
             task, attempt=attempt, prior_toml=prior_toml, diagnostics=diagnostics
         )
         print(f"machine create: attempt {attempt}/{max_attempts}...", file=sys.stderr)
-        result = runner(AgentRequest(model="", prompt=prompt, timeout_s=_CREATE_TIMEOUT_S))
+        # model omitted (=None): inherit the operator's effective worker model.
+        result = runner(AgentRequest(prompt=prompt, timeout_s=_CREATE_TIMEOUT_S))
         total_usd += result.usd
         candidate = extract_toml(result.payload)
         if candidate is None:

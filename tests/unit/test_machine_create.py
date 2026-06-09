@@ -136,6 +136,33 @@ def _stub_runner(monkeypatch: pytest.MonkeyPatch, results: Iterable[AgentExecRes
     monkeypatch.setattr(cli, "_build_machine_agent_runner", fake_build)
 
 
+def test_create_inherits_worker_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The authoring agent must INHERIT the worker model (model=None), not get
+    an empty-string override. `model=""` overwrote the worker model with "" and
+    failed min_length validation, making every `machine create` attempt error
+    out -- a path the request-ignoring stub runner never exercised."""
+    monkeypatch.chdir(tmp_path)
+    _stub_preflight(monkeypatch)
+    captured: list[AgentRequest] = []
+
+    def fake_build(
+        cfg: object, root: Path, profile: object, transcript_dir: Path
+    ) -> Callable[[AgentRequest], AgentExecResult]:
+        def run(request: AgentRequest) -> AgentExecResult:
+            captured.append(request)
+            return AgentExecResult(
+                reason="finish_run", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0
+            )
+
+        return run
+
+    monkeypatch.setattr(cli, "_build_machine_agent_runner", fake_build)
+    code = main(["machine", "create", "Greet the user"])
+    assert code == 0
+    assert captured, "runner was never invoked"
+    assert captured[0].model is None  # inherit, not "" (which would fail to validate)
+
+
 def test_create_writes_default_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

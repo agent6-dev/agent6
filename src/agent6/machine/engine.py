@@ -96,11 +96,16 @@ class ToolExecResult:
 class AgentRequest:
     """What the engine asks the world to run for one `agent` state."""
 
-    model: str
     prompt: str
     timeout_s: float
     # Optional per-state overrides mirrored from ``AgentState``. ``None``
     # means "fall back to the effective config" in the world implementation.
+    # `model` is optional too: a `machine run` agent state always sets it
+    # (AgentState.model is min_length=1), but `machine create`'s authoring
+    # agent has no state and must INHERIT the operator's worker model -- an
+    # empty-string override there overwrote the worker model with "" and failed
+    # min_length validation, breaking the command outright.
+    model: str | None = None
     provider: str | None = None
     thinking: str | None = None
     temperature: float | None = None
