@@ -282,14 +282,21 @@ class _MCPServer:
         stream = proc.stdout
         while not self._reader_stop.is_set():
             try:
-                raw = stream.readline()
+                # Bound the read: an unbounded readline() would buffer an entire
+                # multi-GiB line from a runaway/malicious server into memory
+                # BEFORE any size check, OOM'ing the agent. Cap at the limit + 1
+                # so we can detect (and drain) an oversized line.
+                raw = stream.readline(_MAX_LINE_BYTES + 1)
             except (OSError, ValueError):
                 break
             if not raw:
                 break  # EOF
             if len(raw) > _MAX_LINE_BYTES:
-                # Drop oversized payloads; refusing to parse is safer
-                # than OOM'ing the agent on a runaway server.
+                # Oversized: drain the rest of this line (up to its newline) in
+                # bounded chunks, discarding, then drop the whole payload.
+                # Refusing to parse is safer than OOM on a runaway server.
+                while raw and not raw.endswith(b"\n"):
+                    raw = stream.readline(_MAX_LINE_BYTES + 1)
                 continue
             try:
                 msg = json.loads(raw.decode("utf-8", errors="replace"))
