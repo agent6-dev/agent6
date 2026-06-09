@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from agent6.cli.toml_io import _upsert_toml_table
+from agent6.config import _validate_base_url
 from agent6.config_layer import (
     repo_config_path_for,
 )
@@ -55,6 +56,23 @@ def _prompt_api_key(name: str) -> str:
     return api_key
 
 
+def _prompt_base_url(default_url: str) -> str:
+    """Prompt for an OpenAI-compatible base URL and validate it.
+
+    Validates before any secret/config write so a scheme-less value (e.g. an
+    API key pasted into the wrong prompt) is rejected up front rather than
+    persisted and surfaced later as an opaque HTTP error. Raises ``ValueError``
+    on an invalid URL (same check as the ``OpenAIProviderEntry.base_url``
+    validator).
+    """
+    try:
+        url = input(f"Base URL [{default_url}]: ").strip() or default_url
+    except EOFError:
+        url = default_url
+    _validate_base_url(url)
+    return url
+
+
 def _cmd_connect(*, provider: str, to_repo: bool) -> int:
     """Interactively add a provider + API key.
 
@@ -87,11 +105,11 @@ def _cmd_connect(*, provider: str, to_repo: bool) -> int:
         return 2
     base_url = (preset or {}).get("base_url", "")
     if kind == "openai":
-        default_url = base_url or "https://api.openai.com/v1"
         try:
-            base_url = input(f"Base URL [{default_url}]: ").strip() or default_url
-        except EOFError:
-            base_url = default_url
+            base_url = _prompt_base_url(base_url or "https://api.openai.com/v1")
+        except ValueError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
 
     try:
         api_key = _prompt_api_key(name)

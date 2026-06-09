@@ -56,6 +56,29 @@ RoleName = Literal["worker", "reviewer", "planner"]
 ThinkingLevel = Literal["off", "low", "medium", "high"]
 
 
+def _validate_base_url(url: str) -> None:
+    """Reject a ``[providers.*].base_url`` that is not an http(s) URL with a host.
+
+    Unlike ``sandbox.allow_urls`` (which accepts a bare ``host``), a
+    ``kind = "openai"`` ``base_url`` is the full endpoint the HTTP client posts
+    to (``base_url + "/chat/completions"``), so it must carry an explicit
+    ``http://`` / ``https://`` scheme and a host. The common paste error this
+    catches is dropping an API key (or a bare host) into the field, which would
+    otherwise be accepted and only fail much later as an opaque HTTP error.
+    """
+    try:
+        parts = urlsplit(url)
+        port = parts.port  # urlsplit raises ValueError on an out-of-range port
+    except ValueError as exc:
+        raise ValueError(f"invalid base_url {url!r}: {exc}") from exc
+    if parts.scheme not in ("http", "https"):
+        raise ValueError(f"base_url {url!r} must start with http:// or https://")
+    if not parts.hostname:
+        raise ValueError(f"base_url {url!r} has no host")
+    if port is not None and not (1 <= port <= 65535):
+        raise ValueError(f"base_url {url!r} has an invalid port")
+
+
 def _validate_allow_url(entry: str) -> None:
     """Reject a `sandbox.allow_urls` entry that has no usable host:port.
 
@@ -133,6 +156,13 @@ class OpenAIProviderEntry(BaseModel):
         min_length=1,
         description="Base URL of an OpenAI Chat Completions-compatible endpoint.",
     )
+
+    @field_validator("base_url")
+    @classmethod
+    def _check_base_url(cls, v: str) -> str:
+        _validate_base_url(v)
+        return v
+
     extra_headers: dict[str, str] = Field(
         default_factory=dict,
         description="Extra HTTP headers to attach to every request (e.g. OpenRouter's).",

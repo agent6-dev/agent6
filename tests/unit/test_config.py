@@ -146,6 +146,34 @@ def test_allow_urls_rejects_bad_port(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
+def test_openai_base_url_accepts_http_and_https(tmp_path: Path) -> None:
+    body = _VALID_TOML.replace(
+        "[models.worker]",
+        '[providers.local]\nkind = "openai"\nbase_url = "http://localhost:11434/v1"\n\n[models.worker]',
+    )
+    cfg = load_config(_write(tmp_path, body))
+    assert cfg.providers["local"].base_url == "http://localhost:11434/v1"  # type: ignore[union-attr]
+
+
+def test_openai_base_url_rejects_schemeless(tmp_path: Path) -> None:
+    # The classic paste error: an API key dropped into the base_url field.
+    body = _VALID_TOML.replace(
+        "[models.worker]",
+        '[providers.bad]\nkind = "openai"\nbase_url = "sk-or-v1-not-a-url"\n\n[models.worker]',
+    )
+    with pytest.raises(ConfigError, match=r"base_url"):
+        load_config(_write(tmp_path, body))
+
+
+def test_openai_base_url_rejects_hostless(tmp_path: Path) -> None:
+    body = _VALID_TOML.replace(
+        "[models.worker]",
+        '[providers.bad]\nkind = "openai"\nbase_url = "https://"\n\n[models.worker]',
+    )
+    with pytest.raises(ConfigError, match=r"base_url"):
+        load_config(_write(tmp_path, body))
+
+
 def test_role_temperature_defaults_to_zero(tmp_path: Path) -> None:
     # Finding C / Amp 2: agent6's tool-use loop is a feedback loop;
     # default temperature is pinned to 0.0 so OpenRouter-routed models
