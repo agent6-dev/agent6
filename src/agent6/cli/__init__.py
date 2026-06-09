@@ -50,6 +50,7 @@ from agent6.cli.plan_watch import (
     _cmd_plan_edit,
     _cmd_plan_show,
     _cmd_watch,
+    _most_recent_plan_run_id,
     _most_recent_run_id,
     _resolve_plan_run_id,
 )
@@ -60,6 +61,15 @@ from agent6.cli.run import (
     _cmd_run,
     _seed_files,
 )
+
+
+def _first_markdown_line(text: str, max_len: int = 80) -> str:
+    """First non-empty line of a markdown doc (a plan title), `#`/bullet stripped."""
+    for raw in text.splitlines():
+        line = raw.strip().lstrip("#").lstrip("-*").strip()
+        if line:
+            return line[:max_len]
+    return "(untitled plan)"
 
 
 def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR0915
@@ -111,10 +121,42 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
                 f"The following plan was prepared by a planning pass at {resolved}."
                 f" Execute it.\n\n{plan_md}"
             )
-        else:
-            if not args.task:
-                print("ERROR: 'run' needs a task argument (or --continue).", file=sys.stderr)
+        elif not args.task:
+            # No task: fall back to the most recent plan run — the common
+            # "I just ran `agent6 plan`, now execute it" flow. At a TTY,
+            # confirm before editing; non-interactively, refuse (a bare
+            # `run` in a script should not silently start mutating).
+            last_plan = _most_recent_plan_run_id(_runs_dir(Path.cwd()))
+            if last_plan is None:
+                print(
+                    "ERROR: 'run' needs a task (or --from-plan <id> / --continue);"
+                    " no prior plan found to execute.",
+                    file=sys.stderr,
+                )
                 return 2
+            plan_path = _runs_dir(Path.cwd()) / last_plan / "plan.md"
+            plan_md = plan_path.read_text(encoding="utf-8")
+            title = _first_markdown_line(plan_md)
+            if not sys.stdin.isatty():
+                print(
+                    f"ERROR: 'run' needs a task. Most recent plan is {last_plan}"
+                    f" ({title}); execute it with: agent6 run --from-plan {last_plan}",
+                    file=sys.stderr,
+                )
+                return 2
+            print(f"[agent6] No task given. Most recent plan: {last_plan}  ({title})")
+            try:
+                ans = input("Execute it now? [Y/n]: ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                ans = "n"
+            if ans in ("n", "no"):
+                print(f"Aborted. Run it later: agent6 run --from-plan {last_plan}")
+                return 0
+            task = (
+                f"The following plan was prepared by a planning pass at {last_plan}."
+                f" Execute it.\n\n{plan_md}"
+            )
+        else:
             task = args.task
         return _cmd_run(
             args.config,

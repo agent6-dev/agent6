@@ -64,10 +64,8 @@ from agent6.git_ops import (
     CommitIdentity,
     GitError,
     create_branch,
-    make_run_branch_name,
     revert_head,
     set_repo_hook_policy,
-    slugify,
     verify_git_identity,
 )
 from agent6.git_ops import (
@@ -879,6 +877,7 @@ def _write_run_manifest(
     base_branch: str,
     run_branch: str | None,
     cfg: Config,
+    mode: str = "run",
 ) -> None:
     """Write the canonical manifest.json for a run.
 
@@ -892,6 +891,7 @@ def _write_run_manifest(
         "version": 1,
         "agent6_version": __version__,
         "run_id": run_id,
+        "mode": mode,  # run | plan (ask runs live under asks/, not here)
         "start_ts": _dt.datetime.now(tz=_dt.UTC).isoformat(timespec="microseconds"),
         "user_task": user_task[:4000],
         "base_sha": base_sha,
@@ -1016,12 +1016,16 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         _ensure_agent6_gitignored(cwd, agent6_dir=agent6_dir, identity=identity)
     layout.ensure()
 
-    # Optionally cut a fresh branch for the run so the human can later
-    # `git diff <base_branch>..agent6/...` or just delete the branch to
-    # discard everything the agent did. Skipped silently when disabled.
+    # Cut a fresh branch named after the run id so it is 1:1 with the run
+    # (find it from any run id, `agent6 diff <id>`, or just delete the
+    # branch to discard everything the agent did). The name is the unique
+    # run id — never a timestamp+task-slug that collides into a pile of
+    # near-duplicate `agent6/<ts>-<same-task>` branches on re-runs. Only real
+    # `run` mode branches: `plan`/`ask` make no commits, so a branch for them
+    # is pure litter. create_branch is idempotent (reuses an existing branch).
     run_branch: str | None = None
-    if cfg.git.branch_per_run and mode != "ask":
-        run_branch = make_run_branch_name(task_slug=slugify(task))
+    if cfg.git.branch_per_run and mode == "run":
+        run_branch = f"agent6/{effective_run_id}"
         try:
             create_branch(cwd, run_branch)
         except GitError as exc:
@@ -1040,6 +1044,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         base_branch=base_branch,
         run_branch=run_branch,
         cfg=cfg,
+        mode=mode,
     )
 
     transcript_sink = TranscriptSink(layout.transcripts_dir)

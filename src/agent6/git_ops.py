@@ -212,8 +212,15 @@ def stash_all(path: Path, message: str) -> None:
 
 
 def create_branch(path: Path, name: str) -> None:
-    """Create and check out *name* from HEAD."""
-    _run(path, "checkout", "-b", name)
+    """Create *name* from HEAD and check it out — or just check it out if it
+    already exists. Idempotent so re-running/resuming a run reuses the run's
+    branch instead of cutting a near-duplicate (no `branch -D` needed, which we
+    refuse anyway)."""
+    existing = _run(path, "branch", "--list", name, check=False)
+    if existing.ok and existing.stdout.strip():
+        _run(path, "checkout", name)
+    else:
+        _run(path, "checkout", "-b", name)
 
 
 def commit_all(

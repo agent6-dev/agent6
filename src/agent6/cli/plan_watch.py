@@ -105,6 +105,21 @@ def _most_recent_run_id(runs_dir: Path) -> str | None:
     return candidates[0].name
 
 
+def _most_recent_plan_run_id(runs_dir: Path) -> str | None:
+    """Most recently mtime'd run dir that holds a ``plan.md`` (a plan run).
+
+    Used by bare `agent6 run` (no task) to offer the latest plan for execution.
+    """
+    if not runs_dir.is_dir():
+        return None
+    candidates = sorted(
+        (p for p in runs_dir.iterdir() if p.is_dir() and (p / "plan.md").is_file()),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    return candidates[0].name if candidates else None
+
+
 def _cmd_watch(run_id: str, *, plain: bool = False, since: int = 0) -> int:  # noqa: PLR0911
     """Read-only live view of a run directory.
 

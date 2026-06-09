@@ -81,4 +81,23 @@ def test_run_without_task_or_continue_errors(
     (tmp_path / "agent6.toml").write_text("# placeholder\n", encoding="utf-8")
     rc = main(["run"])
     assert rc == 2
-    assert "needs a task argument" in capsys.readouterr().err
+    # With no task AND no prior plan to fall back to, `run` still errors.
+    assert "needs a task" in capsys.readouterr().err
+
+
+def test_run_no_task_points_at_most_recent_plan(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # No task given but a prior plan exists: non-interactively (pytest stdin is
+    # not a TTY) refuse, but point the user at the plan + the --from-plan form.
+    monkeypatch.chdir(tmp_path)
+    run_dir = tmp_path / ".agent6" / "runs" / "tidy-otter-AB12CD"
+    run_dir.mkdir(parents=True)
+    (run_dir / "plan.md").write_text("# Plan: wire up the thing\n", encoding="utf-8")
+    rc = main(["run"])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "tidy-otter-AB12CD" in err
+    assert "--from-plan" in err

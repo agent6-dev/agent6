@@ -7,7 +7,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from agent6.cli._common import _machines_dir
+from agent6.cli._common import _machines_dir, _runs_dir
 from agent6.cli.connect import _CONNECT_PRESETS
 from agent6.cli.model import _connected_providers, _models_for
 from agent6.config import (
@@ -68,6 +68,59 @@ def _complete_config_values(
     """argcomplete: the Literal choices for the config key already typed."""
     key = getattr(parsed_args, "key", "") or ""
     return [v for v in _CONFIG_ENUM_CHOICES.get(key, ()) if v.startswith(prefix)]
+
+
+def _complete_model_provider(
+    prefix: str, parsed_args: argparse.Namespace | None = None, **_kw: object
+) -> list[str]:
+    """argcomplete for ``agent6 model <role> <provider>``.
+
+    Only offer provider names once a valid role has been typed. argcomplete
+    bleeds every nargs='?' positional's completer into the first slot, so
+    without this gate `agent6 model <TAB>` would mix provider names into the
+    role choices (and `agent6 model openrouter` then fails the role validator).
+    """
+    role = getattr(parsed_args, "role", None)
+    if role not in ("planner", "worker", "reviewer"):
+        return []
+    return _complete_providers(prefix)
+
+
+def _complete_run_ids(prefix: str, **_kw: object) -> list[str]:
+    """argcomplete: run ids (directory names under .agent6/runs/)."""
+    runs = _runs_dir(Path.cwd())
+    if not runs.is_dir():
+        return []
+    try:
+        return sorted(p.name for p in runs.iterdir() if p.is_dir() and p.name.startswith(prefix))
+    except OSError:
+        return []
+
+
+def _complete_plan_run_ids(prefix: str, **_kw: object) -> list[str]:
+    """argcomplete: run ids that hold a plan.md (for --from-plan / plan --show/--edit)."""
+    runs = _runs_dir(Path.cwd())
+    if not runs.is_dir():
+        return []
+    try:
+        return sorted(
+            p.name
+            for p in runs.iterdir()
+            if p.is_dir() and p.name.startswith(prefix) and (p / "plan.md").is_file()
+        )
+    except OSError:
+        return []
+
+
+def _complete_machine_ids(prefix: str, **_kw: object) -> list[str]:
+    """argcomplete: live machine instance ids (dirs under .agent6/machines/)."""
+    base = _machines_dir(Path.cwd())
+    if not base.is_dir():
+        return []
+    try:
+        return sorted(p.name for p in base.iterdir() if p.is_dir() and p.name.startswith(prefix))
+    except OSError:
+        return []
 
 
 def _complete_machine_files(prefix: str, **_kw: object) -> list[str]:

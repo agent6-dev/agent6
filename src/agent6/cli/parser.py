@@ -13,8 +13,12 @@ from agent6.cli.completers import (
     _complete_config_keys,
     _complete_config_values,
     _complete_machine_files,
+    _complete_machine_ids,
+    _complete_model_provider,
     _complete_models,
+    _complete_plan_run_ids,
     _complete_providers,
+    _complete_run_ids,
 )
 
 
@@ -92,7 +96,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
             " TTY; this opts out (always implied by -i and on non-TTY runs)."
         ),
     )
-    run_p.add_argument(
+    run_from_plan = run_p.add_argument(
         "--from-plan",
         default="",
         metavar="RUN_ID",
@@ -102,6 +106,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
             " task description. Mutually exclusive with a positional task."
         ),
     )
+    run_from_plan.completer = _complete_plan_run_ids  # type: ignore[attr-defined]
     _add_budget_flags(run_p)
 
     plan_p = sub.add_parser(
@@ -130,18 +135,20 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         metavar="FILE",
         help="Explicit config file (layered over global + repo configs).",
     )
-    plan_p.add_argument(
+    plan_show = plan_p.add_argument(
         "--show",
         default="",
         metavar="RUN_ID",
         help="Print the plan.md for a prior plan run and exit.",
     )
-    plan_p.add_argument(
+    plan_show.completer = _complete_plan_run_ids  # type: ignore[attr-defined]
+    plan_edit = plan_p.add_argument(
         "--edit",
         default="",
         metavar="RUN_ID",
         help="Open the plan.md for a prior plan run in $EDITOR (default: vi) and exit.",
     )
+    plan_edit.completer = _complete_plan_run_ids  # type: ignore[attr-defined]
     _add_budget_flags(plan_p)
 
     ask_p = sub.add_parser(
@@ -167,7 +174,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         metavar="FILE",
         help="Explicit config file (layered over global + repo configs).",
     )
-    ask_p.add_argument(
+    ask_run = ask_p.add_argument(
         "--run",
         dest="ask_run",
         default="",
@@ -177,6 +184,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
             " from .agent6/runs/<id>/ (exact id or unambiguous prefix)."
         ),
     )
+    ask_run.completer = _complete_run_ids  # type: ignore[attr-defined]
     ask_p.add_argument(
         "--continue",
         dest="ask_continue",
@@ -213,12 +221,13 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "watch",
         help="Read-only live view of a run (defaults to most recent under .agent6/runs).",
     )
-    watch_p.add_argument(
+    watch_run = watch_p.add_argument(
         "run_id",
         nargs="?",
         default="",
         help="Run id under .agent6/runs/ (omit for the most recent run).",
     )
+    watch_run.completer = _complete_run_ids  # type: ignore[attr-defined]
     watch_p.add_argument(
         "--plain",
         action="store_true",
@@ -241,7 +250,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
 
     resume_p = sub.add_parser("resume", help="Resume a paused run from its snapshot.")
-    resume_p.add_argument("run_id", help="Run id under .agent6/runs/.")
+    resume_run = resume_p.add_argument("run_id", help="Run id under .agent6/runs/.")
+    resume_run.completer = _complete_run_ids  # type: ignore[attr-defined]
     resume_p.add_argument(
         "--config",
         type=Path,
@@ -407,7 +417,9 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         default="",
         help="Provider name for the role (prompted from connected providers if omitted).",
     )
-    model_provider.completer = _complete_providers  # type: ignore[attr-defined]
+    # Role-gated (not _complete_providers) so the provider list doesn't bleed
+    # into the first positional (role) — see _complete_model_provider.
+    model_provider.completer = _complete_model_provider  # type: ignore[attr-defined]
     model_model = model_p.add_argument(
         "model",
         nargs="?",
@@ -455,20 +467,22 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     hist_search.add_argument(
         "--regex", action="store_true", help="Interpret query as a regex instead of fixed string."
     )
-    hist_search.add_argument(
+    hist_search_run = hist_search.add_argument(
         "--run", default="", help="Restrict to a single run id (default: all runs)."
     )
+    hist_search_run.completer = _complete_run_ids  # type: ignore[attr-defined]
 
     hist_graph = hist_sub.add_parser(
         "graph",
         help="Render the persisted task graph for a run as a DFS tree.",
     )
-    hist_graph.add_argument(
+    hist_graph_run = hist_graph.add_argument(
         "run",
         nargs="?",
         default="",
         help="Run id (or unambiguous prefix). Defaults to the most recent run.",
     )
+    hist_graph_run.completer = _complete_run_ids  # type: ignore[attr-defined]
 
     init_p = sub.add_parser(
         "init",
@@ -531,12 +545,13 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "diff",
         help="Print the git diff produced by a run (manifest.base_sha -> HEAD of run branch).",
     )
-    diff_p.add_argument(
+    diff_run = diff_p.add_argument(
         "run_id",
         nargs="?",
         default="",
         help="Run id (or unique prefix). Omit to diff the most recent run.",
     )
+    diff_run.completer = _complete_run_ids  # type: ignore[attr-defined]
     diff_p.add_argument(
         "--stat",
         action="store_true",
@@ -631,21 +646,26 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "status",
         help="Report a machine instance's current state, spend, and next wake. Read-only.",
     )
-    machine_status.add_argument(
+    machine_status_id = machine_status.add_argument(
         "machine_id", help="Machine id (directory under .agent6/machines/)."
     )
+    machine_status_id.completer = _complete_machine_ids  # type: ignore[attr-defined]
     machine_poke = machine_sub.add_parser(
         "poke",
         help="Signal a waiting machine to wake on its next check (drops a signal file).",
     )
-    machine_poke.add_argument("machine_id", help="Machine id (directory under .agent6/machines/).")
+    machine_poke_id = machine_poke.add_argument(
+        "machine_id", help="Machine id (directory under .agent6/machines/)."
+    )
+    machine_poke_id.completer = _complete_machine_ids  # type: ignore[attr-defined]
     machine_replay = machine_sub.add_parser(
         "replay",
         help="Deterministically replay a machine's journal offline (no world I/O).",
     )
-    machine_replay.add_argument(
+    machine_replay_id = machine_replay.add_argument(
         "machine_id", help="Machine id (directory under .agent6/machines/)."
     )
+    machine_replay_id.completer = _complete_machine_ids  # type: ignore[attr-defined]
 
     machine_create = machine_sub.add_parser(
         "create",
