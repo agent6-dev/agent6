@@ -1384,11 +1384,17 @@ class Workflow:
     # Tiered context compaction thresholds (chars).
     compact_drop_at_chars: int = _DROP_BLOCKS_AT_CHARS
     compact_summarise_at_chars: int = _SUMMARISE_AT_CHARS
-    # Retry the provider call once on transient ProviderError before aborting
-    # the run. Common cases: Anthropic 529 overload, OpenRouter 502, brief
-    # socket timeouts. Off by default (0) is no-retry. -era
-    # audit finding #5 - cheap insurance against single-flake aborts.
-    provider_retry_count: int = 1
+    # Retry the provider call on transient ProviderError before aborting the
+    # run. Common cases: Anthropic 529 overload, Anthropic "Server disconnected
+    # without sending a response" (httpx RemoteProtocolError, no HTTP status),
+    # OpenRouter 502, brief socket timeouts. Such a disconnect can flap for a
+    # few seconds, so a single retry (the previous default) was too weak: one
+    # bad blip aborted a long, expensive run that is otherwise fully
+    # resumable. With exponential backoff (2s/4s/8s/16s, full-jittered, capped
+    # at provider_retry_max_delay_s) four retries ride out a multi-second flap;
+    # permanent statuses (401/402/403/404/422) and BudgetExceeded still fail
+    # fast. Set to 0 to disable retrying.
+    provider_retry_count: int = 4
     provider_retry_delay_s: float = 2.0
     provider_retry_max_delay_s: float = 30.0
     # Steering interrupt callbacks . Polled

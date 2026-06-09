@@ -111,6 +111,19 @@ def test_call_with_retry_reraises_after_retries_exhausted() -> None:
     assert provider.call.call_count == 2
 
 
+def test_call_with_retry_default_rides_out_multiple_flaps() -> None:
+    """The default retry budget survives more than one consecutive transient
+    disconnect. Regression: a single retry (the old default) aborted long,
+    expensive runs on a multi-second Anthropic 'Server disconnected' flap."""
+    provider = MagicMock()
+    disconnect = ProviderError("Server disconnected without sending a response")
+    provider.call.side_effect = [disconnect, disconnect, disconnect, _resp("recovered")]
+    wf = _wf(provider=provider)  # uses the default provider_retry_count
+    out = wf._call_with_retry(system="s", messages=[], tools=[])  # pyright: ignore[reportPrivateUsage]
+    assert out.text == "recovered"
+    assert provider.call.call_count == 4
+
+
 def test_call_with_retry_zero_retries_no_retry() -> None:
     """provider_retry_count=0 -> single attempt, no retry on error."""
     provider = MagicMock()
