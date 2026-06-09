@@ -196,11 +196,19 @@ def test_list_runs_empty(tmp_path: Path) -> None:
 
 
 def test_list_runs_reads_manifests(tmp_path: Path) -> None:
+    import os
+
     runs = tmp_path / ".agent6" / "runs"
     (runs / "run-a").mkdir(parents=True)
     (runs / "run-b").mkdir(parents=True)
     (runs / "run-a" / "manifest.json").write_text(json.dumps({"task": "alpha"}), encoding="utf-8")
-    # run-b has no manifest -> entry without one
+    # run-b has no manifest -> entry without one. Pin the dir mtimes so the
+    # newest-first ordering is deterministic regardless of the filesystem's
+    # mtime granularity: writing run-a's manifest bumps run-a's dir mtime, so
+    # without this run-a can sort first on a fine-grained fs (and the tie-break
+    # is iterdir order on a coarse one) -- which made this flaky in CI.
+    os.utime(runs / "run-a", (1000, 1000))
+    os.utime(runs / "run-b", (2000, 2000))  # run-b is newest
     server = _server(tmp_path)
     resps = _roundtrip(
         server,
