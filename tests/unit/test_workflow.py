@@ -1337,3 +1337,160 @@ def test_crash_mid_run_then_resume_continues_from_snapshot(tmp_path: Path) -> No
     result = wf2.resume()
     assert result.completed is True
     assert result.reason == "silent_finish"
+
+
+# --- tier-2 summarise-and-restart compaction -------------------------------
+# Synthetic exercise driving context past compact_summarise_at_chars to confirm
+# tier-2 actually summarises-and-restarts (the path that was unreachable before
+# it measured the whole context via _context_chars).
+
+
+def _ctx_chars(messages: list[dict[str, Any]]) -> int:
+    from agent6.workflows.loop import _context_chars  # pyright: ignore[reportPrivateUsage]
+
+    return _context_chars(messages)
+
+
+def _big_text_history(task: str, *, blocks: int, block_chars: int) -> list[dict[str, Any]]:
+    # Assistant TEXT accumulates across a long run and tier-1 never elides it
+    # (it only drops tool_results), so this is exactly what tier-2 must catch.
+    big = "x" * block_chars
+    msgs: list[dict[str, Any]] = [{"role": "user", "content": [{"type": "text", "text": task}]}]
+    for _ in range(blocks):
+        msgs.append({"role": "assistant", "content": [{"type": "text", "text": big}]})
+        msgs.append({"role": "user", "content": [{"type": "text", "text": "keep going"}]})
+    return msgs
+
+
+def test_tier2_summarise_fires_and_restarts_past_threshold(tmp_path: Path) -> None:
+    class SummariserStub:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            del kwargs
+            self.calls += 1
+            return _resp("PROGRESS SUMMARY: explored modules, applied 3 patches.")
+
+    summ = SummariserStub()
+    wf = _wf(
+        root=tmp_path,
+        summariser_provider=summ,
+        compact_drop_at_chars=256_000,
+        compact_summarise_at_chars=500_000,
+    )
+    messages = _big_text_history("TASK: optimize the kernel", blocks=8, block_chars=100_000)
+    assert _ctx_chars(messages) > 500_000  # over the tier-2 threshold
+
+    wf._maybe_compact(messages)  # pyright: ignore[reportPrivateUsage]
+
+    assert summ.calls == 1  # tier-2 summariser ran
+    assert len(messages) == 2  # restarted to [original task, restart+summary]
+    assert messages[0]["content"][0]["text"] == "TASK: optimize the kernel"
+    assert "PROGRESS SUMMARY" in messages[1]["content"][0]["text"]
+    assert _ctx_chars(messages) < 500_000  # context actually shrank
+
+
+def test_tier2_summarise_failsafe_keeps_context_on_empty_summary(tmp_path: Path) -> None:
+    class EmptySummariser:
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            del kwargs
+            return _resp("")  # empty -> fail-safe: keep the (tier-1-elided) context
+
+    wf = _wf(
+        root=tmp_path,
+        summariser_provider=EmptySummariser(),
+        compact_summarise_at_chars=500_000,
+    )
+    messages = _big_text_history("TASK", blocks=8, block_chars=100_000)
+    n_before = len(messages)
+
+    wf._maybe_compact(messages)  # pyright: ignore[reportPrivateUsage]
+
+    assert len(messages) == n_before  # unchanged; the run continues on tier-1 elision
+
+
+def test_drive_loop_summarises_midrun_then_completes(tmp_path: Path) -> None:
+    import json
+
+    from agent6.events import EventSink
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            del kwargs
+            self.calls += 1
+            if self.calls >= 6:
+                return _tool_resp("finish_run", {"summary": "done"}, tool_id=f"f{self.calls}")
+            # Large assistant text accumulates each turn; tier-1 can't elide it.
+            big = "y" * 3000
+            tid = f"t{self.calls}"
+            return ProviderResponse(
+                text=big,
+                tool_uses=({"id": tid, "name": "noop", "input": {}},),
+                stop_reason="tool_use",
+                input_tokens=1,
+                output_tokens=1,
+                cache_read_tokens=0,
+                cache_creation_tokens=0,
+                raw={
+                    "content": [
+                        {"type": "text", "text": big},
+                        {"type": "tool_use", "id": tid, "name": "noop", "input": {}},
+                    ]
+                },
+            )
+
+    class SummariserStub:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            del kwargs
+            self.calls += 1
+            return _resp("SUMMARY of progress so far")
+
+    class DispatcherStub:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+            if name == "finish_run":
+                return {"acknowledged": True, "summary": raw_input.get("summary", "")}
+            return {"ok": True}
+
+    events = EventSink(tmp_path / "logs.jsonl")
+    summ = SummariserStub()
+    config = SimpleNamespace(workflow=SimpleNamespace(metric=None))
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        provider=ProviderStub(),
+        dispatcher=DispatcherStub(),
+        summariser_provider=summ,
+        events=events,
+        compact_drop_at_chars=256_000,
+        compact_summarise_at_chars=5_000,  # low so it fires mid-run
+        budget=None,
+        max_iterations=30,
+        loop_guard_kill_threshold=0,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK: optimize"}]}]
+
+    with patch("agent6.workflows.loop.commit_all", return_value="abc1234567890"):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="system",
+            messages=messages,
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+        )
+
+    assert result.completed is True
+    assert result.reason == "finish_run"
+    assert summ.calls >= 1  # tier-2 fired mid-run
+    types = [
+        json.loads(line)["type"]
+        for line in (tmp_path / "logs.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert "loop.compact.summarise.done" in types  # summarise-and-restart happened cleanly
