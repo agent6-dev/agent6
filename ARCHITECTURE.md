@@ -182,13 +182,16 @@ any external viewer (the fold to UI state lives in
 | `role.call` / `.result`     | `role`, `model`, `tokens_in`, `tokens_out`  |
 | `role.text_delta`           | streamed assistant text chunk               |
 | `budget.update`             | totals + caps for input/output tokens       |
+| `approval.prompt`/`.answer` | `id`, `prompt`, `approved`, `source` (`tui`/`stdin`) |
 | `loop.*`                    | agent progress: `loop.auto_commit`, `loop.compact.*`, `loop.critic.*`, `loop.metric.*`, `loop.steer.*` |
 | `run.end`                   | `summary`                                   |
 
-The task DAG is **not** in this stream — it is curator-owned and lives in
-`graph.jsonl` (read via `agent6 history graph`). `run_command` approvals
-are answered at the `agent6 run` terminal (a stdin prompt), not through
-an event.
+A `run_command` approval is published as `approval.prompt`; the dashboard
+TUI shows an Allow/Deny modal and writes `approvals/<id>.answer`, which the
+workflow reads (falling back to a stdin prompt with no TUI), then records
+`approval.answer`. The task DAG is **not** in this stream — it is
+curator-owned and lives in `graph.jsonl` (read via `agent6 history
+graph`).
 
 ## Where things live
 

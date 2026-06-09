@@ -84,6 +84,15 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
     run_p.add_argument(
+        "--no-tui",
+        action="store_true",
+        help=(
+            "Do not auto-spawn the textual dashboard. The TUI is launched"
+            " automatically when the `tui` extra is installed and stdout is a"
+            " TTY; this opts out (always implied by -i and on non-TTY runs)."
+        ),
+    )
+    run_p.add_argument(
         "--from-plan",
         default="",
         metavar="RUN_ID",
@@ -149,7 +158,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "--plain",
         action="store_true",
         help=(
-            "Plain text tail of events.jsonl (no textual TUI). Useful when"
+            "Plain text tail of logs.jsonl (no textual TUI). Useful when"
             " textual is not installed or in headless terminals. Streams each"
             " event as a single line `<elapsed> <type> <key=val ...>` and"
             " follows the file like `tail -f`."
@@ -184,6 +193,11 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "--force-resume",
         action="store_true",
         help="Resume even if snapshot commit is missing or worktree has diverged.",
+    )
+    resume_p.add_argument(
+        "--no-tui",
+        action="store_true",
+        help="Do not auto-spawn the textual dashboard (see `agent6 run --no-tui`).",
     )
     _add_budget_flags(resume_p)
 

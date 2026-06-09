@@ -341,14 +341,17 @@ ceilings in your config hard-stop the run; a stopped run is resumable.
 
 ## Live view
 
-With the `tui` extra installed, `agent6 watch [<run-id>]` opens a
-separate, read-only textual dashboard (task DAG, budget bar, tool table,
-log tail, latest diff) over a running or finished run; `agent6 watch
---plain` is a no-deps text tail for headless terminals. `run_command`
-approvals are answered at the `agent6 run` terminal itself (a stdin
-`[y/N]` prompt), not in the watch view. The dashboard folds a structured
-JSONL event stream (`.agent6/runs/<run-id>/logs.jsonl`) that is also the
-contract for any external viewer — the event vocabulary is in
+With the `tui` extra installed and stdout a TTY, `agent6 run` auto-spawns
+a textual dashboard (task DAG, budget bar, tool table, log tail, latest
+diff) that owns the terminal for the run and closes when the run ends;
+`--no-tui` (and `-i`, the stdin REPL) opt out. A `run_command` approval
+prompt appears as an Allow/Deny modal in the dashboard (it falls back to a
+stdin `[y/N]` prompt when no TUI is present). Attach to a running or
+finished run from another shell with `agent6 watch [<run-id>]`; `agent6
+watch --plain` is a no-deps text tail for headless terminals. The
+dashboard folds a structured JSONL event stream
+(`.agent6/runs/<run-id>/logs.jsonl`) that is also the contract for any
+external viewer — the event vocabulary is in
 [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Persistence

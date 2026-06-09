@@ -84,7 +84,11 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
                 return 2
             print(f"[agent6] --continue: resuming {target}", file=sys.stderr)
             return _cmd_resume(
-                args.config, target, force=False, budget_overrides=_BudgetOverrides.from_args(args)
+                args.config,
+                target,
+                force=False,
+                no_tui=args.no_tui,
+                budget_overrides=_BudgetOverrides.from_args(args),
             )
         if args.from_plan:
             if args.task:
@@ -111,6 +115,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             task,
             run_id=args.run_id,
             interactive=args.interactive,
+            no_tui=args.no_tui,
             budget_overrides=_BudgetOverrides.from_args(args),
         )
     if args.command == "plan":
@@ -141,6 +146,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             args.config,
             args.run_id,
             force=args.force_resume,
+            no_tui=args.no_tui,
             budget_overrides=_BudgetOverrides.from_args(args),
         )
     if args.command == "config":

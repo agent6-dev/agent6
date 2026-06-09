@@ -1,0 +1,141 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Eric Lesiuta
+"""run_command approver bridge + TUI auto-spawn gating.
+
+The textual TUI was fully built (modal, writes `approvals/<id>.answer`) but the
+workflow side never read those answers and never auto-spawned the dashboard.
+These cover the wiring that fixes that.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from agent6.cli import run as runmod
+from agent6.events import EventSink
+
+
+def _events_of(log: Path, type_: str) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for line in log.read_text(encoding="utf-8").splitlines():
+        obj = json.loads(line)
+        if obj.get("type") == type_:
+            out.append(obj)
+    return out
+
+
+def _live(_d: object) -> bool:
+    return True
+
+
+def _dead(_d: object) -> bool:
+    return False
+
+
+def _ans_yes(_d: object, _pid: object, **_k: object) -> bool:
+    return True
+
+
+def _ans_none(_d: object, _pid: object, **_k: object) -> bool | None:
+    return None
+
+
+def _stdin_no(_p: object) -> bool:
+    return False
+
+
+def _stdin_yes(_p: object) -> bool:
+    return True
+
+
+def _stdin_forbidden(_p: object) -> bool:
+    pytest.fail("stdin approver must not be used")
+
+
+def test_approver_uses_tui_answer_when_live(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = tmp_path / "logs.jsonl"
+    events = EventSink(log)
+    monkeypatch.setattr(runmod, "tui_is_live", _live)
+    monkeypatch.setattr(runmod, "read_answer", _ans_yes)
+    monkeypatch.setattr(runmod, "_default_stdin_approver", _stdin_forbidden)
+    approve = runmod._build_approver(tmp_path, events)  # pyright: ignore[reportPrivateUsage]
+    assert approve("run `ls`?") is True
+    assert _events_of(log, "approval.prompt")
+    ans = _events_of(log, "approval.answer")[0]
+    assert ans["approved"] is True
+    assert ans["source"] == "tui"
+
+
+def test_approver_falls_back_to_stdin_without_tui(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = tmp_path / "logs.jsonl"
+    events = EventSink(log)
+    monkeypatch.setattr(runmod, "tui_is_live", _dead)
+    monkeypatch.setattr(runmod, "_default_stdin_approver", _stdin_no)
+    approve = runmod._build_approver(tmp_path, events)  # pyright: ignore[reportPrivateUsage]
+    assert approve("x") is False
+    assert _events_of(log, "approval.answer")[0]["source"] == "stdin"
+
+
+def test_approver_tui_timeout_falls_back_to_stdin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = tmp_path / "logs.jsonl"
+    events = EventSink(log)
+    monkeypatch.setattr(runmod, "tui_is_live", _live)
+    monkeypatch.setattr(runmod, "read_answer", _ans_none)  # TUI died / timed out
+    monkeypatch.setattr(runmod, "_default_stdin_approver", _stdin_yes)
+    approve = runmod._build_approver(tmp_path, events)  # pyright: ignore[reportPrivateUsage]
+    assert approve("x") is True
+    assert _events_of(log, "approval.answer")[0]["source"] == "stdin"
+
+
+class _FakeStdout:
+    def __init__(self, *, tty: bool) -> None:
+        self._tty = tty
+
+    def isatty(self) -> bool:
+        return self._tty
+
+
+def _yes() -> bool:
+    return True
+
+
+def _no() -> bool:
+    return False
+
+
+def test_should_spawn_tui_gating(monkeypatch: pytest.MonkeyPatch) -> None:
+    def should(**kw: Any) -> bool:
+        return runmod._should_spawn_tui(**kw)  # pyright: ignore[reportPrivateUsage]
+
+    monkeypatch.setattr(runmod, "_tui_available", _yes)
+    monkeypatch.setattr(runmod.sys, "stdout", _FakeStdout(tty=True))
+    # Default: TTY + textual + run mode + not no-tui/-i -> spawn.
+    assert should(no_tui=False, interactive=False, mode="run") is True
+    # Opt-outs.
+    assert should(no_tui=True, interactive=False, mode="run") is False
+    assert should(no_tui=False, interactive=True, mode="run") is False
+    assert should(no_tui=False, interactive=False, mode="plan") is False
+    # textual not installed.
+    monkeypatch.setattr(runmod, "_tui_available", _no)
+    assert should(no_tui=False, interactive=False, mode="run") is False
+    # non-TTY (benches / CI / pipes).
+    monkeypatch.setattr(runmod, "_tui_available", _yes)
+    monkeypatch.setattr(runmod.sys, "stdout", _FakeStdout(tty=False))
+    assert should(no_tui=False, interactive=False, mode="run") is False
+
+
+def test_tui_session_disabled_is_noop(tmp_path: Path) -> None:
+    # enabled=False must not spawn anything or touch stdout.
+    with runmod._tui_session(tmp_path, enabled=False):  # pyright: ignore[reportPrivateUsage]
+        pass
+    assert not (tmp_path / "tui_console.log").exists()

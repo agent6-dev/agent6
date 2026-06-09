@@ -15,7 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -86,6 +86,7 @@ from agent6.providers import (
 from agent6.run_id import RunIdError, new_friendly_id, resolve_run_id
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.mcp_client import MCPManager
+from agent6.ui.approval import read_answer, tui_is_live
 from agent6.workflows.loop import ResumeError, RunResult, Workflow
 
 # Distinct exit code for a budget-exhausted run so automation can tell "raise
@@ -110,6 +111,103 @@ def _default_stdin_approver(prompt: str) -> bool:
     except (EOFError, KeyboardInterrupt):
         return False
     return ans.strip().lower() in {"y", "yes"}
+
+
+def _build_approver(run_dir: Path, events: EventSink) -> Callable[[str], bool]:
+    """Build the `run_command` approver, bridged to a live TUI when present.
+
+    Emits an `approval.prompt` event; if a TUI is live (it wrote `tui.pid`) the
+    answer comes from its Allow/Deny modal via the file bridge
+    (`approvals/<id>.answer`), otherwise -- or if the TUI dies / times out -- it
+    falls back to the stdin `[y/N]` prompt. Emits `approval.answer` either way.
+    This is what actually wires the watch/auto-spawn TUI to run_command approval
+    (previously the modal's answer was written but never read)."""
+    counter = {"n": 0}
+
+    def approve(prompt: str) -> bool:
+        counter["n"] += 1
+        prompt_id = f"approval-{counter['n']}"
+        events.emit("approval.prompt", id=prompt_id, prompt=prompt)
+        approved: bool | None = None
+        source = "stdin"
+        if tui_is_live(run_dir):
+            approved = read_answer(run_dir, prompt_id)
+            if approved is not None:
+                source = "tui"
+        if approved is None:
+            approved = _default_stdin_approver(prompt)
+        events.emit("approval.answer", id=prompt_id, approved=approved, source=source)
+        return approved
+
+    return approve
+
+
+def _tui_available() -> bool:
+    import importlib.util  # noqa: PLC0415
+
+    return importlib.util.find_spec("textual") is not None
+
+
+def _should_spawn_tui(*, no_tui: bool, interactive: bool, mode: str) -> bool:
+    """Whether `agent6 run`/`resume` auto-spawns the dashboard TUI.
+
+    Default yes when the `tui` extra is installed and stdout is a real TTY.
+    `--no-tui` opts out; `-i` (the stdin REPL) is mutually exclusive with the
+    full-screen TUI, so it wins; `plan` stays a plain text pass."""
+    return (
+        not no_tui
+        and not interactive
+        and mode == "run"
+        and sys.stdout.isatty()
+        and _tui_available()
+    )
+
+
+@contextlib.contextmanager
+def _tui_session(run_dir: Path, *, enabled: bool) -> Generator[None]:
+    """Run the dashboard TUI as a co-process that owns the terminal.
+
+    While it is up, this process's own console chatter is redirected to
+    `<run_dir>/tui_console.log` so it doesn't fight the TUI for the terminal;
+    progress still flows through `logs.jsonl`, which the TUI tails, and approvals
+    go through the file bridge. The TUI quits itself on the `run.end` event; we
+    reap it on the way out (terminating if it lingers). A spawn failure degrades
+    gracefully to a normal (TUI-less) run rather than aborting."""
+    if not enabled:
+        yield
+        return
+    try:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "agent6.ui", "--watch", str(run_dir), "--exit-on-end"]
+        )
+    except OSError as exc:
+        print(f"[agent6] could not start TUI ({exc}); continuing without it.", file=sys.stderr)
+        yield
+        return
+    orig_out, orig_err = sys.stdout, sys.stderr
+    log_fh = (run_dir / "tui_console.log").open("w", encoding="utf-8")
+    sys.stdout = log_fh
+    sys.stderr = log_fh
+    try:
+        yield
+    finally:
+        # The TUI closes itself on the run.end event. If the run ended without
+        # one (a crash), nudge it with SIGINT first -- textual restores the
+        # terminal cleanly -- and only hard-terminate as a last resort. Keep our
+        # own output redirected until it's gone so nothing scribbles its screen.
+        try:
+            proc.wait(timeout=8)
+        except subprocess.TimeoutExpired:
+            proc.send_signal(signal.SIGINT)
+            try:
+                proc.wait(timeout=4)
+            except subprocess.TimeoutExpired:
+                proc.terminate()
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    proc.wait(timeout=3)
+        sys.stdout, sys.stderr = orig_out, orig_err
+        with contextlib.suppress(Exception):
+            log_fh.close()
 
 
 _REPL_HELP = (
@@ -399,6 +497,16 @@ def _install_steer_sigint(events: EventSink) -> _SteerState:
     return _SteerState(requested=requested, clear=clear, prompt=prompt, restore=restore)
 
 
+# Steering is a stdin feature; when the TUI owns the terminal we install no
+# SIGINT handler (default Ctrl-C aborts the run cleanly) and use this no-op.
+_NULL_STEER = _SteerState(
+    requested=lambda: False,
+    clear=lambda: None,
+    prompt=lambda: None,
+    restore=lambda: None,
+)
+
+
 # inline-resolved file references in user task strings.
 #
 # A token of the form `@PATH` that resolves to a regular file inside `root`
@@ -512,6 +620,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     *,
     run_id: str = "",
     interactive: bool = False,
+    no_tui: bool = False,
     mode: Literal["run", "plan"] = "run",
     budget_overrides: _BudgetOverrides | None = None,
 ) -> int:
@@ -704,11 +813,11 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     # owns its subprocesses; we close it in the finally block.
     mcp_manager = _start_mcp_manager_if_enabled(cfg)
 
-    # audit finding: install the same steering SIGINT
-    # handler installed in `_cmd_run`, so mid-run Ctrl-C drops a steering prompt
-    # rather than aborting immediately. Double-Ctrl-C within 2s still
-    # raises KeyboardInterrupt for the hard-abort path below.
-    steer_state = _install_steer_sigint(events)
+    tui_enabled = _should_spawn_tui(no_tui=no_tui, interactive=interactive, mode=mode)
+    # Steering (mid-run Ctrl-C -> a stdin prompt) needs the terminal; skip it
+    # when the TUI owns it (then default Ctrl-C aborts cleanly). Double-Ctrl-C
+    # within 2s still raises KeyboardInterrupt for the hard-abort path below.
+    steer_state = _NULL_STEER if tui_enabled else _install_steer_sigint(events)
 
     result = None
     interrupted = False
@@ -719,7 +828,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                 root=cwd,
                 config=cfg,
                 sandbox_profile=selected_profile,
-                approver=_default_stdin_approver,
+                approver=_build_approver(layout.run_dir, events),
                 events=events,
                 graph_client=graph_client,
                 run_root_node_id=None,  # Workflow seeds the root + calls set_run_root_node_id
@@ -767,7 +876,8 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                 context_summary_max_tokens=cfg.workflow.context_summary_max_tokens,
             )
             try:
-                result = wf.run(task)
+                with _tui_session(layout.run_dir, enabled=tui_enabled):
+                    result = wf.run(task)
             except KeyboardInterrupt:
                 interrupted = True
                 print("\n[agent6] run interrupted", file=sys.stderr)
@@ -850,6 +960,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     run_id: str,
     *,
     force: bool,
+    no_tui: bool = False,
     budget_overrides: _BudgetOverrides | None = None,
 ) -> int:
     """Resume a paused/crashed run from its snapshot.
@@ -1006,7 +1117,8 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
 
     mcp_manager = _start_mcp_manager_if_enabled(cfg)
 
-    steer_state = _install_steer_sigint(events)
+    tui_enabled = _should_spawn_tui(no_tui=no_tui, interactive=False, mode="run")
+    steer_state = _NULL_STEER if tui_enabled else _install_steer_sigint(events)
 
     result = None
     interrupted = False
@@ -1017,7 +1129,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
                 root=cwd,
                 config=cfg,
                 sandbox_profile=selected_profile,
-                approver=_default_stdin_approver,
+                approver=_build_approver(layout.run_dir, events),
                 events=events,
                 graph_client=graph_client,
                 run_root_node_id=None,
@@ -1047,7 +1159,8 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
                 context_summary_max_tokens=cfg.workflow.context_summary_max_tokens,
             )
             try:
-                result = wf.resume()
+                with _tui_session(layout.run_dir, enabled=tui_enabled):
+                    result = wf.resume()
             except ResumeError as exc:
                 print(f"ERROR: {exc}", file=sys.stderr)
                 return 1

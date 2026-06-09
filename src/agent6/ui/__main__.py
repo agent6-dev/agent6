@@ -12,6 +12,11 @@ from pathlib import Path
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m agent6.ui")
     parser.add_argument("--watch", required=True, help="Run directory to tail (.agent6/runs/<id>)")
+    parser.add_argument(
+        "--exit-on-end",
+        action="store_true",
+        help="Close the dashboard when the run ends (used by `agent6 run`'s auto-spawn).",
+    )
     args = parser.parse_args(argv)
 
     run_dir = Path(args.watch).expanduser().resolve()
@@ -24,7 +29,7 @@ def main(argv: list[str] | None = None) -> int:
     except ImportError as e:
         print(f"agent6 ui: {e}", file=sys.stderr)
         return 3
-    return run_tui(run_dir)
+    return run_tui(run_dir, exit_on_end=args.exit_on_end)
 
 
 if __name__ == "__main__":

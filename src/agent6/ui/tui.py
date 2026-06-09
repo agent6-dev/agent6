@@ -115,13 +115,18 @@ class Agent6TUI(App[int]):
         Binding("n", "answer_no", "Deny", show=False),
     ]
 
-    def __init__(self, run_dir: Path) -> None:
+    def __init__(self, run_dir: Path, *, exit_on_end: bool = False) -> None:
         super().__init__()
         self.run_dir = run_dir
         self.logs_path = run_dir / "logs.jsonl"
         self.state: RunState = initial_state()
         self._seen_approval_ids: set[str] = set()
         self._stop = threading.Event()
+        # When True (the auto-spawned co-process of `agent6 run`), close the
+        # dashboard once the run ends so the parent command returns; `agent6
+        # watch` leaves this False and keeps following.
+        self.exit_on_end = exit_on_end
+        self._run_ended = False
 
     # --- layout -------------------------------------------------------
 
@@ -144,6 +149,12 @@ class Agent6TUI(App[int]):
         table = self.query_one("#tools", DataTable)
         table.add_columns("tool", "args", "ok", "summary")
         self.query_one("#plan", Tree).root.expand()
+        # Auto-spawn close: the reader thread sets `_run_ended` on `run.end`; we
+        # poll it from a timer in the app's OWN loop and exit there. Exit()
+        # scheduled from inside a call_from_thread callback does not take effect,
+        # but exiting from a timer callback does.
+        if self.exit_on_end:
+            self.set_interval(0.2, self._check_run_ended)
         self._thread = threading.Thread(target=self._reader_loop, daemon=True)
         self._thread.start()
 
@@ -154,7 +165,7 @@ class Agent6TUI(App[int]):
     # --- reader thread -----------------------------------------------
 
     def _reader_loop(self) -> None:
-        for event in tail_events(self.logs_path, follow=True, stop_when_finished=False):
+        for event in tail_events(self.logs_path, follow=True, stop_when_finished=self.exit_on_end):
             if self._stop.is_set():
                 return
             self.call_from_thread(self._handle_event, event)
@@ -162,6 +173,14 @@ class Agent6TUI(App[int]):
     def _handle_event(self, event: dict[str, object]) -> None:
         self.state = apply_event(self.state, event)
         self._render()
+        # Auto-spawned dashboard (exit_on_end): flag the run as ended; the
+        # on_mount timer (running in the app's own loop) sees it and exits.
+        if self.exit_on_end and event.get("type") == "run.end":
+            self._run_ended = True
+
+    def _check_run_ended(self) -> None:
+        if self._run_ended:
+            self.exit()
         # Pop approval modal if new pending approval appeared.
         for ap in self.state.pending_approvals:
             if not ap.answered and ap.id not in self._seen_approval_ids:
@@ -291,5 +310,5 @@ class Agent6TUI(App[int]):
         pass  # handled in modal
 
 
-def run_tui(run_dir: Path) -> int:
-    return Agent6TUI(run_dir).run() or 0
+def run_tui(run_dir: Path, *, exit_on_end: bool = False) -> int:
+    return Agent6TUI(run_dir, exit_on_end=exit_on_end).run() or 0
