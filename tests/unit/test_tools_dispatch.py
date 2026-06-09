@@ -586,14 +586,30 @@ def test_grep_finds_match(tmp_path: Path) -> None:
     assert out["hits"][0]["text"] == "hello world"
 
 
+def test_grep_skips_dotdirs_by_default_but_searches_explicit_ones(tmp_path: Path) -> None:
+    cfg = _config(tmp_path)
+    (tmp_path / ".github").mkdir()
+    (tmp_path / ".github" / "ci.yml").write_text("needle: here\n", encoding="utf-8")
+    (tmp_path / "plain.txt").write_text("needle\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    # Default recursive search from root skips the dot-dir.
+    root_hits = d.dispatch("grep", {"pattern": "needle", "path": "."})["hits"]
+    assert [h["path"] for h in root_hits] == ["plain.txt"]
+    # Explicitly targeting the dot-dir searches inside it.
+    dot_hits = d.dispatch("grep", {"pattern": "needle", "path": ".github"})["hits"]
+    assert any(h["path"].endswith("ci.yml") for h in dot_hits)
+
+
 def test_list_dir(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "x").mkdir()
     (tmp_path / "y.txt").write_text("y", encoding="utf-8")
+    (tmp_path / ".hidden").write_text("h", encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=cfg)
     out = d.dispatch("list_dir", {"path": "."})
     assert "x/" in out["entries"]
     assert "y.txt" in out["entries"]
+    assert ".hidden" in out["entries"]  # hidden entries are included (per the description)
 
 
 def test_passthrough_env_is_fixed_allowlist() -> None:

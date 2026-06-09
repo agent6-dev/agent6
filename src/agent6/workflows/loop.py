@@ -71,10 +71,11 @@ _ELISION_PLACEHOLDER = (
 _TOOL_RESULT_CHAR_CAP = 60_000
 
 # HTTP statuses that will never succeed on a blind retry of the same request.
-# 401/403 auth, 402 insufficient credits, 404 bad model/endpoint, 422 malformed
-# body. Retrying these only burns wall-time (observed live: a 402 "Insufficient
-# credits" was retried on every turn for the rest of the run). 408/409/429 and
-# all 5xx remain retryable and fall through to the normal backoff.
+# 400 bad request, 401/403 auth, 402 insufficient credits, 404 bad
+# model/endpoint, 422 malformed body. Retrying these only burns wall-time
+# (observed live: a 402 "Insufficient credits" was retried on every turn for the
+# rest of the run). 408/409/429 and all 5xx remain retryable and fall through to
+# the normal backoff.
 _NON_RETRYABLE_HTTP_STATUSES = frozenset({400, 401, 402, 403, 404, 422})
 
 
@@ -1632,7 +1633,9 @@ class Workflow:
             self.dispatcher.set_run_root_node_id(snapshot.root_task_id)
             self._log(f"LOOP: DAG root task restored: {snapshot.root_task_id}")
 
-        tools = _tool_definitions(self.dispatcher)
+        # Honour self.mode: resuming a plan run must not hand the worker the
+        # mutating run-mode tools (run() builds its list the same way).
+        tools = _tool_definitions(self.dispatcher, mode=self.mode)
         return self._drive_loop(
             system=snapshot.system,
             messages=snapshot.messages,

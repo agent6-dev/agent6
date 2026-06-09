@@ -445,12 +445,21 @@ class ToolDispatcher:
             raise ToolError(f"Invalid regex: {exc}") from exc
         hits: list[dict[str, Any]] = []
         targets: list[Path]
+        # Skip hidden files/dirs (.git, .agent6, ...) only when they are BELOW
+        # the requested path, so an explicit `grep <pat> .github/` (or a hidden
+        # file named directly) is still searched. `skip_base` is the requested
+        # directory; for an explicitly-named file there is nothing to skip.
+        skip_base: Path | None
         if sp.abs_path.is_file():
             targets = [sp.abs_path]
+            skip_base = None
         else:
             targets = [p for p in sp.abs_path.rglob("*") if p.is_file()]
+            skip_base = sp.abs_path
         for path in targets:
-            if any(part.startswith(".") for part in path.relative_to(self._root).parts):
+            if skip_base is not None and any(
+                part.startswith(".") for part in path.relative_to(skip_base).parts
+            ):
                 continue
             try:
                 for lineno, line in enumerate(
@@ -832,9 +841,8 @@ class ToolDispatcher:
     def _run_metric(self, _raw: dict[str, Any]) -> dict[str, Any]:
         """Run ``cfg.workflow.metric.command`` in the jail.
 
-        Workflow-internal at first; exposes it to the
-        agent so the loop can decide when to verify.
-        the agent loop so the LLM can call it directly between edits.
+        Exposed to the agent loop so the LLM can call it directly between
+        edits to check its optimisation progress.
         Raises ToolError if no metric is configured.
 
         Return shape mirrors `_run_argv_in_jail` (returncode / stdout /

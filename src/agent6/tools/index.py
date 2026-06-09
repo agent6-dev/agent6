@@ -234,9 +234,9 @@ class SymbolIndex:
 
         Cheap planner prior: knowing that "build_kernel" is referenced
         across 4 files lets the planner enumerate those files in
-        relevant_paths up-front, the same payoff shape as 's
-        co-change pairs but driven by static analysis instead of git
-        history. Works on fresh repos (no history needed).
+        relevant_paths up-front, the same payoff shape as co-change
+        pairs but driven by static analysis instead of git history.
+        Works on fresh repos (no history needed).
         """
         self._ensure_fresh()
         files_per_name: defaultdict[str, set[Path]] = defaultdict(set)

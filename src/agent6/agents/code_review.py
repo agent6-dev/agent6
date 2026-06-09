@@ -2,10 +2,10 @@
 # Copyright 2026 Eric Lesiuta
 """Standalone code-review sub-agent.
 
-Used by `agent6 review`. Unlike `reviewer.reviewer_review`, this one is
-freeform (no Step / acceptance criterion) and emits markdown text instead of
-a structured Review verdict. It's intentionally read-only: the agent gets a
-diff plus optional context and returns a human-readable review.
+Used by `agent6 review`. It is freeform (no Step / acceptance criterion) and
+emits markdown text rather than a structured verdict. It's intentionally
+read-only: the agent gets a diff plus optional context and returns a
+human-readable review.
 """
 
 from __future__ import annotations

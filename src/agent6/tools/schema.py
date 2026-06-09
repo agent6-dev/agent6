@@ -38,7 +38,7 @@ class ListDirInput(_ToolInput):
     TOOL_DESCRIPTION: ClassVar[str] = (
         "List immediate entries in a directory (non-recursive). `path` is "
         "repo-root-relative; defaults to '.'. Hidden entries (starting with "
-        "'.') are excluded. Returns names with a trailing '/' for directories. "
+        "'.') are included. Returns names with a trailing '/' for directories. "
         "For recursive listing, use `grep` with a permissive pattern instead."
     )
 
@@ -49,7 +49,9 @@ class GrepInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "grep"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Search for a Python-flavor regex `pattern` in files under `path` "
-        "(repo-root-relative, defaults to '.'). Recursive. Returns matching "
+        "(repo-root-relative, defaults to '.'). Recursive. Hidden files and "
+        "directories (starting with '.', e.g. .git) are skipped UNLESS `path` "
+        "names one explicitly. Returns matching "
         "lines prefixed by file:line. The pattern is matched per line; use "
         "`^` / `$` for line anchors. Common usage: `pattern='def foo'` to "
         "find function definitions across the repo; `pattern='import "
