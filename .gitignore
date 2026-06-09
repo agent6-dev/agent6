@@ -27,4 +27,3 @@ src/agent6/sandbox/_bin/
 # agent6 runtime
 .agent6/
 .agent6-self-review/
-agent6.toml
