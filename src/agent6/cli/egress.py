@@ -148,13 +148,18 @@ def _maybe_start_egress(
     else:  # providers
         endpoints = _provider_endpoints(cfg) | _allow_url_endpoints(cfg)
     sock_dir = Path(tempfile.mkdtemp(prefix="agent6-egress-"))
+    broker: BrokerHandle | None = None
     try:
         broker = start_egress_broker(endpoints, sock_dir=sock_dir)
         enter_network_isolation()
     except (EgressBrokerError, OSError) as exc:
         # OSError covers a socket bind/listen failure inside start_egress_broker
-        # (resource exhaustion, permissions). Fail closed: clean up the socket
-        # dir and refuse the run rather than leak it or run unconfined.
+        # (resource exhaustion, permissions) AND a failure of
+        # enter_network_isolation AFTER the broker child has been forked. Fail
+        # closed: reap the broker if it started, clean up the socket dir, and
+        # refuse the run rather than leak a process/dir or run unconfined.
+        if broker is not None:
+            broker.close()
         shutil.rmtree(sock_dir, ignore_errors=True)
         return None, None, f"could not establish agent-network confinement: {exc}"
     for ep in endpoints:

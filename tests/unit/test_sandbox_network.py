@@ -121,6 +121,34 @@ def test_egress_local_refuses_non_local_provider() -> None:
     assert err is not None and "loopback" in err and "openrouter.ai" in err
 
 
+def test_egress_reaps_broker_when_isolation_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    # If enter_network_isolation() fails AFTER the broker child is forked, the
+    # broker must be reaped (not leaked) and the run refused.
+    from agent6.cli import egress as eg
+
+    closed = {"n": 0}
+
+    class _FakeBroker:
+        def close(self) -> None:
+            closed["n"] += 1
+
+        def uds_for(self, _h: str, _p: int) -> None:
+            return None
+
+    def _fake_start(endpoints: object, *, sock_dir: object) -> _FakeBroker:
+        return _FakeBroker()
+
+    def _boom() -> None:
+        raise OSError("isolation failed")
+
+    monkeypatch.setattr(eg, "start_egress_broker", _fake_start)
+    monkeypatch.setattr(eg, "enter_network_isolation", _boom)
+    broker, sock_dir, err = _maybe_start_egress(_cfg("providers", "block"), "strict")
+    assert broker is None and sock_dir is None
+    assert err is not None and "confinement" in err
+    assert closed["n"] == 1  # the forked broker was closed, not leaked
+
+
 # --- supervisor subprocess: machine_agent._run_one -------------------------
 
 
