@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from collections.abc import Generator, Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -437,4 +438,11 @@ def iter_journal(layout: RunLayout) -> Iterable[dict[str, object]]:
         stripped = raw.strip()
         if not stripped:
             continue
-        yield json.loads(stripped)
+        try:
+            yield json.loads(stripped)
+        except json.JSONDecodeError:
+            # Tolerate a torn final line from a crash mid-append; the node .md
+            # files are the source of truth, so a corrupt journal entry must not
+            # crash readers (history graph, curator startup).
+            sys.stderr.write(f"agent6: skipping malformed journal line: {stripped[:80]!r}\n")
+            continue

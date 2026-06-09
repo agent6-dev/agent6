@@ -34,6 +34,7 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -420,7 +421,17 @@ class GraphCurator:
             stripped = raw.strip()
             if not stripped:
                 continue
-            entries.append(json.loads(stripped))
+            try:
+                entries.append(json.loads(stripped))
+            except json.JSONDecodeError:
+                # A crash mid-append can leave a torn final line. The node .md
+                # files are the source of truth (read atomically by load_graph)
+                # and graph_version is a self-healing monotonic counter, so skip
+                # the corrupt line rather than crashing curator startup -- which
+                # would otherwise make the whole run unresumable.
+                sys.stderr.write(
+                    f"agent6-curator: skipping malformed journal line: {stripped[:80]!r}\n"
+                )
         return entries
 
     def _would_introduce_cycle(self, src: str, new_dep: str) -> bool:

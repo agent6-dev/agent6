@@ -30,6 +30,20 @@ def _draft(title: str = "do thing", deps: tuple[str, ...] = ()) -> TaskNodeDraft
     return TaskNodeDraft(title=title, depends_on=deps, created_by="planner")
 
 
+def test_curator_startup_tolerates_torn_journal_line(tmp_path: Path) -> None:
+    # Build a real graph, then simulate a crash mid-append by tacking a torn
+    # (invalid JSON) line onto graph.jsonl. Curator startup must NOT crash --
+    # otherwise the run is permanently unresumable.
+    layout = _layout(tmp_path)
+    c = GraphCurator(layout)
+    c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft("root")))
+    with layout.journal_path.open("a", encoding="utf-8") as fh:
+        fh.write('{"op": "add_subtask", "graph_v')  # torn: no newline, invalid JSON
+    reopened = GraphCurator(layout)  # must not raise
+    assert reopened.graph_version >= 1
+    assert len(reopened.nodes()) == 1
+
+
 def test_add_subtask_with_no_parent_creates_root(tmp_path: Path) -> None:
     c = GraphCurator(_layout(tmp_path))
     n = c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft("root")))
