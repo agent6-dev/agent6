@@ -148,8 +148,13 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
     if args.command == "ask":
         if args.ask_list:
             return _cmd_ask_list()
-        if not args.task:
-            print("ERROR: 'ask' needs a question argument (in quotes).", file=sys.stderr)
+        # REPL when -i is given, or no question + an interactive stdin.
+        repl = args.interactive or (not args.task and sys.stdin.isatty())
+        if not args.task and not repl:
+            print(
+                "ERROR: 'ask' needs a question (in quotes), or -i for the REPL.",
+                file=sys.stderr,
+            )
             return 2
         question = args.task
         prefix: list[str] = []
@@ -163,11 +168,12 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             if seeds:
                 prefix.append(seeds)
         if prefix:
-            question = "\n\n".join([*prefix, question])
+            question = "\n\n".join([*prefix, question]) if question else "\n\n".join(prefix)
         return _cmd_run(
             args.config,
             question,
             mode="ask",
+            interactive=repl,
             budget_overrides=_BudgetOverrides.from_args(args),
         )
     if args.command == "watch":

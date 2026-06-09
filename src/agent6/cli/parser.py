@@ -197,6 +197,16 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         action="store_true",
         help="List saved asks under .agent6/asks/ (newest first) and exit.",
     )
+    ask_p.add_argument(
+        "-i",
+        "--interactive",
+        action="store_true",
+        help=(
+            "Interactive REPL: keep asking follow-ups in one session (the prior"
+            " Q&A is carried as context). /cost, /reset, /quit. Also the default"
+            " when no question is given and stdin is a TTY."
+        ),
+    )
     _add_budget_flags(ask_p)
 
     watch_p = sub.add_parser(

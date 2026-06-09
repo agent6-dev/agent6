@@ -288,6 +288,70 @@ def _save_ask_transcript(layout: RunLayout, *, question: str, answer: str) -> No
     )
 
 
+def _save_ask_repl_transcript(layout: RunLayout, conversation: list[tuple[str, str]]) -> None:
+    """Write the cumulative transcript for an interactive ask session."""
+    parts = ["# agent6 ask (interactive)\n"]
+    for i, (q, a) in enumerate(conversation, 1):
+        parts.append(f"## Q{i}\n\n{q}\n\n## A{i}\n\n{a}\n")
+    (layout.run_dir / "transcript.md").write_text("\n".join(parts), encoding="utf-8")
+
+
+def _run_ask_repl(
+    wf: Workflow, budget: BudgetTracker, layout: RunLayout, *, first_question: str
+) -> RunResult:
+    """Interactive multi-turn ask. Each follow-up re-enters the loop with the
+    prior Q&A carried as context, reusing the one provider/jail/budget setup.
+    The agent re-reads what it needs per turn (prompt-cached); the conversation
+    text is what gives continuity."""
+    print(
+        "[agent6] ask REPL — follow-up, /cost, /reset, or /quit (Ctrl-D exits).",
+        file=sys.stderr,
+    )
+    conversation: list[tuple[str, str]] = []
+    pending = first_question.strip()
+    result: RunResult | None = None
+    while True:
+        if pending:
+            question = pending
+            pending = ""
+        else:
+            try:
+                question = input("\nask> ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print(file=sys.stderr)
+                break
+        if not question:
+            continue
+        if question in ("/quit", "/q", "/exit"):
+            break
+        if question == "/cost":
+            print(budget.format_summary(), file=sys.stderr)
+            continue
+        if question == "/reset":
+            conversation = []
+            print("[agent6] conversation reset.", file=sys.stderr)
+            continue
+        if conversation:
+            ctx = "\n\n".join(f"Q: {q}\nA: {a}" for q, a in conversation)
+            augmented = (
+                f"<conversation-so-far>\n{ctx}\n</conversation-so-far>\n\nFollow-up: {question}"
+            )
+        else:
+            augmented = question
+        result = wf.run(augmented)
+        print(result.summary)
+        conversation.append((question, result.summary))
+        _save_ask_repl_transcript(layout, conversation)
+        if budget.is_exhausted():
+            print("[agent6] budget exhausted; ending the REPL.", file=sys.stderr)
+            break
+    if result is None:
+        return RunResult(
+            completed=True, reason="ask_repl_empty", summary="", iterations=0, tool_calls=0
+        )
+    return result
+
+
 def _default_stdin_approver(prompt: str) -> bool:
     """Plain TTY fallback for tool approval (used when no TUI is live)."""
     try:
@@ -1077,7 +1141,10 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
             )
             try:
                 with _tui_session(layout.run_dir, enabled=tui_enabled):
-                    result = wf.run(task)
+                    if mode == "ask" and interactive:
+                        result = _run_ask_repl(wf, budget, layout, first_question=task)
+                    else:
+                        result = wf.run(task)
             except KeyboardInterrupt:
                 interrupted = True
                 print("\n[agent6] run interrupted", file=sys.stderr)
@@ -1108,9 +1175,12 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     if mode == "ask":
         # The answer IS result.summary (kept whole in ask mode). stdout gets
         # just the answer (clean for piping); cost + saved-path go to stderr.
-        print(result.summary)
-        _save_ask_transcript(layout, question=task, answer=result.summary)
-        print(f"\n[agent6] answer saved to {layout.run_dir / 'transcript.md'}", file=sys.stderr)
+        # The REPL already printed + saved each turn, so only the one-shot path
+        # prints/saves here.
+        if not interactive:
+            print(result.summary)
+            _save_ask_transcript(layout, question=task, answer=result.summary)
+            print(f"\n[agent6] answer saved to {layout.run_dir / 'transcript.md'}", file=sys.stderr)
         print(budget.format_summary(), file=sys.stderr)
         return 0 if result.completed else 1
 

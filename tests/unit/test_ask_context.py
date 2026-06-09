@@ -111,3 +111,55 @@ def test_ask_question_snippet_skips_digest_tags() -> None:
     assert _ask_question_snippet("## Question\n\nwhat does fib do?\n\n## Answer\n") == (
         "what does fib do?"
     )
+
+
+def test_ask_repl_multi_turn_carries_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+
+    from agent6.cli.run import _run_ask_repl  # pyright: ignore[reportPrivateUsage]
+    from agent6.graph.storage import RunLayout
+    from agent6.workflows.loop import RunResult
+
+    class _FakeWf:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def run(self, q: str) -> RunResult:
+            self.calls.append(q)
+            return RunResult(
+                completed=True,
+                reason="silent_finish",
+                summary=f"answer-{len(self.calls)}",
+                iterations=1,
+                tool_calls=0,
+            )
+
+    class _FakeBudget:
+        def is_exhausted(self) -> bool:
+            return False
+
+        def format_summary(self) -> str:
+            return "cost: $0.00"
+
+    layout = RunLayout(state_dir=tmp_path / ".agent6", run_id="x", subdir="asks")
+    layout.run_dir.mkdir(parents=True)
+    wf = _FakeWf()
+    inputs = iter(["a follow-up", "/quit"])
+
+    def _fake_input(*_a: object) -> str:
+        return next(inputs)
+
+    monkeypatch.setattr("builtins.input", _fake_input)
+
+    result = _run_ask_repl(wf, _FakeBudget(), layout, first_question="first question")  # type: ignore[arg-type]
+
+    assert wf.calls[0] == "first question"  # turn 1 verbatim
+    # turn 2 carried the prior Q&A as context
+    assert "a follow-up" in wf.calls[1]
+    assert "answer-1" in wf.calls[1]
+    out = capsys.readouterr().out
+    assert "answer-1" in out and "answer-2" in out
+    assert result.summary == "answer-2"
+    # cumulative transcript written
+    assert "## Q2" in (layout.run_dir / "transcript.md").read_text(encoding="utf-8")
