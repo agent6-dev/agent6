@@ -27,7 +27,17 @@ _STARTER_TOML = """\
 
 [workflow]
 # What "a step succeeded" means in this repo. EDIT THIS to your real pipeline.
-verify_command = ["uv", "run", "pytest", "-x"]
+#
+# IMPORTANT: this runs INSIDE the sandbox, not your shell. The jailed command
+# sees PATH=/usr/bin:/bin plus this repo directory only -- no $HOME, no
+# network. So a toolchain installed under your home (uv, cargo, nvm-managed
+# node) and a uv-created `.venv/bin/python` (a symlink into ~/.local/share/uv)
+# will NOT resolve. Point this at a jail-visible interpreter: a stdlib
+# `python -m venv .venv` (whose .venv/bin/python links into /usr) or
+# /usr/bin/python3 directly. Examples:
+#   [".venv/bin/python", "-m", "pytest", "-x"]    # stdlib venv (the default)
+#   ["/usr/bin/python3", "-m", "pytest", "-x"]
+verify_command = [".venv/bin/python", "-m", "pytest", "-x"]
 
 # Providers, models, and API keys usually live in your GLOBAL config:
 #   agent6 connect                       # add a provider + API key
@@ -44,15 +54,24 @@ verify_command = ["uv", "run", "pytest", "-x"]
 # across profiles; profiles are deliberately a tiny convenience, not a
 # divergence point.
 _PROFILE_VERIFY_COMMANDS: dict[str, list[str]] = {
-    "py": ["uv", "run", "pytest", "-x"],
+    "py": [".venv/bin/python", "-m", "pytest", "-x"],
     "rust": ["cargo", "test", "--quiet"],
     "node": ["npm", "test", "--silent"],
 }
 
 _PROFILE_AGENTS_HINTS: dict[str, str] = {
-    "py": "uv run pytest -x",
+    "py": ".venv/bin/python -m pytest -x",
     "rust": "cargo test --quiet",
     "node": "npm test --silent",
+}
+
+# Build artifacts that the verify command can drop into the workspace; agent6
+# commits the whole worktree per step, so without these in .gitignore the test
+# run's bytecode/output gets committed alongside the agent's edits.
+_PROFILE_GITIGNORE: dict[str, tuple[str, ...]] = {
+    "py": ("__pycache__/", "*.pyc", ".pytest_cache/"),
+    "rust": ("target/",),
+    "node": ("node_modules/",),
 }
 
 
@@ -63,15 +82,15 @@ def _render_starter_toml(profile: str) -> str:
         raise ValueError(f"unknown init profile: {profile!r}")
     rendered = ", ".join(f'"{p}"' for p in cmd)
     return _STARTER_TOML.replace(
-        'verify_command = ["uv", "run", "pytest", "-x"]',
+        'verify_command = [".venv/bin/python", "-m", "pytest", "-x"]',
         f"verify_command = [{rendered}]",
     )
 
 
 def _render_starter_agents_md(profile: str) -> str:
-    hint = _PROFILE_AGENTS_HINTS.get(profile, "uv run pytest -x")
+    hint = _PROFILE_AGENTS_HINTS.get(profile, ".venv/bin/python -m pytest -x")
     return _STARTER_AGENTS_MD.replace(
-        "# EDIT: replace with your actual verify pipeline.\nuv run pytest -x",
+        "# EDIT: replace with your actual verify pipeline.\n.venv/bin/python -m pytest -x",
         f"# EDIT: replace with your actual verify pipeline.\n{hint}",
     )
 
@@ -94,7 +113,7 @@ the `verify_command` in `.agent6/config.toml`.
 
 ```bash
 # EDIT: replace with your actual verify pipeline.
-uv run pytest -x
+.venv/bin/python -m pytest -x
 ```
 
 ## Security invariants (do not weaken)
@@ -137,14 +156,17 @@ def _write_or_suggest(path: Path, content: str, *, force: bool) -> str:
     return f"  {verb}: {path.name}"
 
 
-def _update_gitignore(root: Path, agent6_dir_name: str) -> str:
+def _update_gitignore(root: Path, agent6_dir_name: str, *, profile: str = "py") -> str:
     """Append any missing entries from `_GITIGNORE_ENTRIES` to `.gitignore`.
 
     Idempotent: if the file already contains every entry (line-equal match
     after strip), no write happens. Existing content is never reordered or
     removed. ``agent6_dir_name`` is the (possibly renamed) agent6 dir.
+    ``profile`` adds that ecosystem's build artifacts (e.g. ``__pycache__/``)
+    so the verify command's bytecode/output is not swept into agent6's commits.
     """
-    entries = tuple(f"{agent6_dir_name}/" if e == ".agent6/" else e for e in _GITIGNORE_ENTRIES)
+    base = (*_GITIGNORE_ENTRIES, *_PROFILE_GITIGNORE.get(profile, ()))
+    entries = tuple(f"{agent6_dir_name}/" if e == ".agent6/" else e for e in base)
     gi = root / ".gitignore"
     existing_lines: set[str] = set()
     existing_text = ""
@@ -220,13 +242,13 @@ def init_workspace(
             print(_write_or_suggest(agents, starter_agents_md, force=force))
         # 3. .gitignore: always offered (create or amend; idempotent).
         if _ask(f"Add agent6 entries (incl. {agent6_dir_name}/) to .gitignore?", default=True):
-            print(_update_gitignore(root, agent6_dir_name))
+            print(_update_gitignore(root, agent6_dir_name, profile=profile))
         else:
             print("  skipped .gitignore (note: run state must be ignored to keep a clean tree)")
     else:
         print(_write_or_suggest(cfg_path, starter_toml, force=force))
         print(_write_or_suggest(root / "AGENTS.md", starter_agents_md, force=force))
-        print(_update_gitignore(root, agent6_dir_name))
+        print(_update_gitignore(root, agent6_dir_name, profile=profile))
 
     print()
     print("Next:")

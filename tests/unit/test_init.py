@@ -19,6 +19,36 @@ def test_init_creates_files_in_empty_dir(tmp_path: Path) -> None:
         assert entry in gi
 
 
+def test_init_py_verify_command_is_jail_compatible(tmp_path: Path) -> None:
+    """The py default must run inside the jail: no `uv` (it lives under $HOME,
+    invisible to the sandbox), and the scaffold must explain the constraint."""
+    init_workspace(tmp_path, force=False, profile="py")
+    cfg = (tmp_path / ".agent6" / "config.toml").read_text(encoding="utf-8")
+    assert 'verify_command = [".venv/bin/python", "-m", "pytest", "-x"]' in cfg
+    assert '"uv"' not in cfg
+    assert "INSIDE the sandbox" in cfg  # the jail-execution warning is present
+
+
+def test_init_py_gitignores_build_artifacts(tmp_path: Path) -> None:
+    """The py profile ignores bytecode so the verify run's __pycache__ is not
+    swept into agent6's per-step commits."""
+    init_workspace(tmp_path, force=False, profile="py")
+    gi = (tmp_path / ".gitignore").read_text(encoding="utf-8")
+    assert "__pycache__/" in gi
+    assert "*.pyc" in gi
+
+
+def test_init_profiles_gitignore_their_ecosystem(tmp_path: Path) -> None:
+    rust = tmp_path / "r"
+    rust.mkdir()
+    init_workspace(rust, force=False, profile="rust")
+    assert "target/" in (rust / ".gitignore").read_text(encoding="utf-8")
+    node = tmp_path / "n"
+    node.mkdir()
+    init_workspace(node, force=False, profile="node")
+    assert "node_modules/" in (node / ".gitignore").read_text(encoding="utf-8")
+
+
 def test_init_refuses_to_overwrite_without_force(tmp_path: Path) -> None:
     (tmp_path / ".agent6").mkdir()
     (tmp_path / ".agent6" / "config.toml").write_text("# mine\n", encoding="utf-8")
