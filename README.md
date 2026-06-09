@@ -155,6 +155,14 @@ Other commands:
   (defaults to the most recent).
 - `agent6 plan "<task>"` — read-only planning pass (uses the `planner`
   model, falls back to `worker`); execute with `agent6 run --from-plan`.
+- `agent6 ask "<question>"` — read-only Q&A over the repo. Investigates
+  (read tools + jailed `run_command`, never edits/commits) and prints a
+  markdown answer to stdout; the transcript is saved under
+  `.agent6/asks/<id>/`. Seed context with `@path`/`--file`, ask about a
+  prior run with `--run <id>`/`--continue`, or ask how to use agent6 itself
+  (it consults its own bundled docs). `--list` shows past asks. Read-only,
+  so it works even outside a git repo. Defaults to a $0.50 budget cap
+  (override with `--max-usd`).
 - `agent6 memory` — manage persistent agent memory under
   `.agent6/memories/`.
 - `agent6 history search <query>` — ripgrep-backed search over

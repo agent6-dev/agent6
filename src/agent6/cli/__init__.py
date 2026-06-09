@@ -55,6 +55,7 @@ from agent6.cli.plan_watch import (
 )
 from agent6.cli.run import (
     _build_ask_run_digest,
+    _cmd_ask_list,
     _cmd_resume,
     _cmd_run,
     _seed_files,
@@ -145,6 +146,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             budget_overrides=_BudgetOverrides.from_args(args),
         )
     if args.command == "ask":
+        if args.ask_list:
+            return _cmd_ask_list()
         if not args.task:
             print("ERROR: 'ask' needs a question argument (in quotes).", file=sys.stderr)
             return 2

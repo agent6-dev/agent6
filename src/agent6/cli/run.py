@@ -95,6 +95,10 @@ from agent6.workflows.loop import ResumeError, RunResult, Workflow
 # CONFIG.md ([budget]); a budget-stopped run is resumable from its snapshot.
 _EXIT_BUDGET_EXHAUSTED = 3
 
+# Default USD ceiling for `agent6 ask` when no budget is configured, so an
+# exploratory question can't quietly run up a bill.
+_ASK_DEFAULT_MAX_USD = 0.50
+
 
 def _run_exit_code(result: RunResult) -> int:
     """Map a finished run to its process exit code (0 ok / 3 budget / 1 else)."""
@@ -109,6 +113,47 @@ def _eprint(msg: str) -> None:
     """Loop logger that writes to stderr (used for `ask`, whose stdout is the
     answer and must stay clean for piping)."""
     print(msg, file=sys.stderr)
+
+
+def _ask_question_snippet(transcript: str) -> str:
+    """First non-tag line of the `## Question` section of an ask transcript."""
+    lines = transcript.splitlines()
+    try:
+        start = lines.index("## Question") + 1
+    except ValueError:
+        return "(no question)"
+    for line in lines[start:]:
+        s = line.strip()
+        if s == "## Answer":
+            break
+        if s and not s.startswith("<"):  # skip blank lines + digest/file tags
+            return s
+    return "(question)"
+
+
+def _cmd_ask_list() -> int:
+    """`agent6 ask --list`: enumerate saved asks under .agent6/asks/."""
+    asks_dir = _agent6_dir(Path.cwd()) / "asks"
+    if not asks_dir.is_dir():
+        print("No asks yet (.agent6/asks/ does not exist).")
+        return 0
+    dirs = sorted(
+        (d for d in asks_dir.iterdir() if d.is_dir()),
+        key=lambda d: d.stat().st_mtime,
+        reverse=True,
+    )
+    if not dirs:
+        print("No asks yet.")
+        return 0
+    for d in dirs:
+        tp = d / "transcript.md"
+        snippet = (
+            _ask_question_snippet(tp.read_text(encoding="utf-8", errors="replace"))
+            if tp.is_file()
+            else "(no transcript)"
+        )
+        print(f"{d.name}  {snippet[:90]}")
+    return 0
 
 
 def _summarize_run_log(logs_path: Path) -> str:
@@ -902,10 +947,13 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         print(f"REFUSING: {landlock_err}", file=sys.stderr)
         return 2
 
+    # ask gets a small default USD ceiling so an exploratory question can't run
+    # away; an explicit [budget].max_usd or --max-usd overrides it.
+    ask_max_usd = cfg.budget.max_usd or (_ASK_DEFAULT_MAX_USD if mode == "ask" else 0.0)
     budget = BudgetTracker(
         max_input_tokens=cfg.budget.max_input_tokens,
         max_output_tokens=cfg.budget.max_output_tokens,
-        max_usd=cfg.budget.max_usd,
+        max_usd=ask_max_usd,
     )
 
     # Workflow uses ONE provider for everything (the worker role, or the

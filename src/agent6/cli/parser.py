@@ -191,6 +191,12 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         metavar="PATH",
         help="Seed a file's contents into the question (repeatable; like an inline @path).",
     )
+    ask_p.add_argument(
+        "--list",
+        dest="ask_list",
+        action="store_true",
+        help="List saved asks under .agent6/asks/ (newest first) and exit.",
+    )
     _add_budget_flags(ask_p)
 
     watch_p = sub.add_parser(

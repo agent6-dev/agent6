@@ -96,3 +96,18 @@ def test_seed_files_wraps_and_skips_missing(tmp_path: Path) -> None:
     assert '<file path="a.py">' in out
     assert "print('a')" in out
     assert "missing" not in out  # missing file skipped, not crashed
+
+
+def test_ask_question_snippet_skips_digest_tags() -> None:
+    from agent6.cli.run import _ask_question_snippet  # pyright: ignore[reportPrivateUsage]
+
+    t = (
+        "# agent6 ask\n\n## Question\n\n"
+        '<prior-run id="x">stuff</prior-run>\n\nwhy is the broker slow?\n\n'
+        "## Answer\n\nbecause\n"
+    )
+    assert _ask_question_snippet(t) == "why is the broker slow?"
+    # plain question (no tags)
+    assert _ask_question_snippet("## Question\n\nwhat does fib do?\n\n## Answer\n") == (
+        "what does fib do?"
+    )
