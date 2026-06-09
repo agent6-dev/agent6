@@ -223,7 +223,11 @@ class AgentState(BaseModel):
     model_config = _MODEL_CONFIG
 
     kind: Literal["agent"]
-    model: str = Field(min_length=1)
+    # "inherit" (the default) uses the operator's effective worker model, so a
+    # machine need not hardcode a model the operator may not have configured —
+    # the #1 way an LLM-authored machine passed `machine check` but died at run
+    # time. Set an explicit provider/model only to pin a specific one.
+    model: str = Field(default="inherit", min_length=1)
     prompt: str = Field(min_length=1)
     output_schema: str = Field(min_length=1)
     capture: Capture

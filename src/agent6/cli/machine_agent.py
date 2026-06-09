@@ -19,6 +19,7 @@ timeout by killing this process, which gives true mid-call cancellation.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -114,7 +115,7 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
             provider_name=rm.provider if rm is not None else "",
             events=None,
             budget=budget,
-            console_stream=sys.stderr.isatty(),
+            console_stream=sys.stderr.isatty() or os.environ.get("AGENT6_FORCE_STREAM") == "1",
         )
         # Re-confirm the cwd-containment invariant at the subprocess boundary
         # (defense in depth — the engine already filtered these).
@@ -124,6 +125,12 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
             for p in req.get("protect_paths", [])
             if (rp := Path(p).resolve()).is_relative_to(root_r)
         )
+        # "machine" (the `machine create` authoring agent) and "agent" (a
+        # running machine's `agent` state) are both read-only structured-output
+        # loops: the dispatcher refuses edits (defense in depth alongside the
+        # read-only tool list) and the loop uses a finish_run-focused prompt.
+        mode = r.get("mode", "run")
+        read_only = mode in ("machine", "agent")
         dispatcher = ToolDispatcher(
             root=root,
             config=cfg,
@@ -134,6 +141,7 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
             run_root_node_id=None,
             mcp_manager=None,
             extra_protect_paths=protect,
+            mode="ask" if read_only else "run",
         )
         wf = Workflow(
             root=root,
@@ -141,6 +149,7 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
             provider=provider,
             dispatcher=dispatcher,
             logger=lambda msg: print(msg, file=sys.stderr),
+            mode=mode if mode in ("machine", "agent") else "run",
             compact_drop_at_chars=cfg.workflow.compact_drop_at_chars,
             compact_summarise_at_chars=cfg.workflow.compact_summarise_at_chars,
             context_summary_max_tokens=cfg.workflow.context_summary_max_tokens,

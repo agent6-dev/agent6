@@ -112,6 +112,10 @@ class AgentRequest:
     max_usd: float | None = None
     max_input_tokens: int | None = None
     max_output_tokens: int | None = None
+    # Workflow mode for the nested loop: "run" for real `agent` states (they
+    # edit/verify), "machine" for the `machine create` authoring agent (read-only
+    # navigation + finish_run, authoring system prompt — no edit/verify noise).
+    mode: str = "run"
 
 
 @dataclass(frozen=True, slots=True)
@@ -425,7 +429,9 @@ def _execute(
         prompt = render_string(parse_template(state.prompt), blackboard, where="agent prompt")
         result = world.run_agent(
             AgentRequest(
-                model=state.model,
+                # "inherit" -> no override (None), so the world uses the
+                # operator's effective worker model.
+                model=None if state.model == "inherit" else state.model,
                 prompt=prompt,
                 timeout_s=float(state.timeout_secs),
                 provider=state.provider,
@@ -434,6 +440,10 @@ def _execute(
                 max_usd=state.max_usd,
                 max_input_tokens=state.max_input_tokens,
                 max_output_tokens=state.max_output_tokens,
+                # A machine `agent` state is a structured-output judge, not a
+                # coding session: the agent system prompt + read-only tools keep
+                # it returning a `finish_run` result instead of editing the repo.
+                mode="agent",
             )
         )
         outcome = _agent_outcome(spec, state, result)

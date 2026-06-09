@@ -100,7 +100,9 @@ grammar. Terminal states end the machine.
 ### agent — run a nested agent6 loop
     [states.review]
     kind = "agent"
-    model = "claude-sonnet-4-5"
+    # model defaults to "inherit" (the operator's effective worker model).
+    # OMIT it unless you must pin a specific one — a hardcoded model the
+    # operator hasn't configured passes `machine check` but dies at run time.
     prompt = "Review the change and return a verdict."
     output_schema = "verdict"                # finish_run payload validated against this
     capture = { finish_json = "verdict" }    # whole payload -> a [vars.agent] var
@@ -151,6 +153,95 @@ string (target must be `str`).
   - `tool`  states may write only `[vars.code]`.
   - `agent` states may write only `[vars.agent]`.
   - `[vars.operator]` is read-only; `branch`/`wait`/`terminal` never write.
+
+## Accumulating records across iterations (e.g. a paper-trade log)
+
+The machine JOURNAL (`.agent6/machines/<id>/journal.jsonl`) already records
+every transition with its fact — each `tool` stdout and each `agent` payload —
+so it IS your durable, replayable audit log of everything that happened. You do
+not need to write your own file to "remember" past iterations.
+
+For values you branch on or template later, capture them into the blackboard:
+keep counters / latest values (the blackboard has NO `list[record]` type —
+`list[<scalar>]` elements must be scalars; use a `json` var for an opaque blob).
+A `tool` or `agent` state should EMIT its record as stdout/`finish_run` JSON and
+let `capture` store it — do NOT have a tool script write its own data file:
+a tool's jail is READ-ONLY on the `hardened` profile (file writes only work
+under `strict`), so a script that appends to a file will fail there. The
+journal + blackboard capture is the portable, auditable pattern.
+
+## Worked example — poll a value, record when it crosses a threshold
+
+A complete, valid machine. The `tool` states call small auditable scripts you
+ship alongside the `.asm.toml` (here under `scripts/`); each prints a JSON
+object on stdout that the schema types and `capture` reads. The scripts only
+READ + print (no file writes) so they work on every sandbox profile; the buy
+record itself lives in the journal + blackboard.
+
+    machine = "price-watch"
+    version = 1
+    initial = "wait_tick"
+
+    [budget]
+    max_usd = 1.0
+    max_transitions = 1000
+
+    [vars.operator]
+    interval_secs = { type = "int", value = 15 }
+    threshold = { type = "float", value = 100.0 }
+
+    [vars.code]
+    price = { type = "float", default = 0.0 }
+    recorded = { type = "int", default = 0 }
+
+    [schemas.price_result]
+    price = "float"
+
+    [schemas.record_result]
+    recorded = "int"
+
+    [states.wait_tick]
+    kind = "wait"
+    every_secs = "{{ interval_secs }}"
+    on = { tick = "fetch_price", signal = "fetch_price" }
+
+    [states.fetch_price]
+    kind = "tool"
+    command = ["python3", "scripts/fetch_price.py"]
+    output_schema = "price_result"          # types `result` so result.price works
+    capture = { set = { price = "{{ result.price }}" } }
+    timeout_secs = 10
+    on = { ok = "decide", nonzero = "wait_tick", timeout = "wait_tick" }
+
+    [states.decide]
+    kind = "branch"
+    when = [
+      { if = "price >= threshold", goto = "record_buy" },
+      { else = true, goto = "wait_tick" },
+    ]
+
+    [states.record_buy]
+    kind = "tool"
+    # record_buy.py just prints {"recorded": N} on stdout (the journal is the
+    # durable log; no file write, so it works on hardened too).
+    command = ["python3", "scripts/record_buy.py", "{{ price }}"]
+    output_schema = "record_result"
+    capture = { set = { recorded = "{{ result.recorded }}" } }
+    timeout_secs = 10
+    on = { ok = "wait_tick", nonzero = "wait_tick", timeout = "wait_tick" }
+
+## Common mistakes (each fails `machine check` or silently misbehaves)
+  - Hardcoding `model = "..."` on an `agent` state — omit it (defaults to
+    "inherit" = the worker model) unless pinning one on purpose.
+  - `list[record]` / `list[{...}]` types — unsupported. Append records to a
+    file from a tool script and keep a counter in the blackboard (see above).
+  - A `tool` script that prints to stderr or exits non-zero — capture fires
+    ONLY on exit 0 with non-empty stdout JSON; empty stdout silently leaves the
+    var at its default. Always print your JSON to STDOUT and exit 0 on success.
+  - A `tool` script that writes a file — fails on the `hardened` profile (tool
+    jails are read-only there). Print results to stdout and let the journal +
+    blackboard persist them instead.
+  - A non-total `branch` — the last clause MUST be `{ else = true, goto = ... }`.
 
 ## Validity requirements (the file must pass `machine check`)
   - Every `on`/`goto`/`initial` target names an existing state.

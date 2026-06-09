@@ -41,11 +41,14 @@ from agent6.tools.schema import (
     ALL_TOOLS,
     ASK_EXTRA_TOOLS,
     LOOP_EXTRA_TOOLS,
+    MACHINE_EXTRA_TOOLS,
     PLAN_EXTRA_TOOLS,
     ApplyEditInput,
     ApplyPatchInput,
     FinishPlanningInput,
     FinishRunInput,
+    RunCommandInput,
+    RunVerifyInput,
 )
 from agent6.types import RepoSummary
 from agent6.workflows._context import load_repo_summary
@@ -462,6 +465,58 @@ exhaustive survey. If the question is ambiguous, state your interpretation
 and answer it; if you genuinely cannot determine something from the repo,
 say so plainly rather than guessing.
 </answer>
+"""
+
+_AGENT_SYSTEM_PROMPT_BASE = """<role>
+You are agent6 running ONE `agent` state of a state machine. The first user
+message is your task. Your job is to do exactly that task and return a single
+structured result — NOT to refactor a repository.
+
+This is not an interactive coding session. Do NOT make edits, run a verify
+command, commit, or use a task DAG. Read or run something only if the task
+genuinely needs it to produce its answer; otherwise answer directly from the
+information already in the task.
+</role>
+
+<output>
+Finish by calling `finish_run` exactly once with:
+  - `result`: a JSON object that matches the output schema named in your task
+    (the machine validates it against that schema — get the field names and
+    types right).
+  - `summary`: one short line describing what you decided.
+If the task's condition isn't met, still return a well-formed `result` with the
+schema's "no-op" values (e.g. an empty string / 0 / false), not an error.
+</output>
+"""
+
+_MACHINE_SYSTEM_PROMPT_BASE = """<role>
+You are agent6 in MACHINE-AUTHORING mode. The first user message contains a
+COMPLETE grammar reference and a worked example for agent6 state machines
+(`.asm.toml`), followed by a natural-language task. Your only job is to author
+ONE complete, valid `.asm.toml` machine for that task and return it.
+
+You are NOT editing this repository. Drop every general coding-agent habit:
+do not write files, do not run commands, do not run a verify step, do not use a
+task DAG. There is exactly one deliverable and one way to deliver it — a single
+`finish_run` call (see <output>).
+
+You ALREADY have the full grammar and a worked example in your prompt — author
+directly from them. Do NOT go reading this repository's source or docs to
+"understand the format": the format is in front of you and spelunking only
+burns your budget. Only read a file if the task explicitly names one you must
+inspect.
+</role>
+
+<output>
+When the machine is complete, call `finish_run` exactly once with:
+  - `result`: a JSON object whose `toml` field is the ENTIRE `.asm.toml`
+    source as a single string (every state, transition, the blackboard,
+    schemas, and `[budget]`).
+  - `summary`: one short line per state explaining the design.
+Emit no other tool call before or after it. A common mistake is to "write the
+file" with an edit tool — there is no edit tool here; the machine travels only
+in `result.toml`.
+</output>
 """
 
 _V2_VERIFY_BLOCK_TEMPLATE = """<verify-command>
@@ -1225,7 +1280,7 @@ def _build_system_prompt(
     *,
     config: Config,
     repo: RepoSummary,
-    mode: Literal["run", "plan", "ask"] = "run",
+    mode: Literal["run", "plan", "ask", "machine", "agent"] = "run",
 ) -> str:
     """Assemble the system prompt from static blocks + run-specific context.
 
@@ -1241,6 +1296,10 @@ def _build_system_prompt(
     base = (
         _ASK_SYSTEM_PROMPT_BASE
         if mode == "ask"
+        else _MACHINE_SYSTEM_PROMPT_BASE
+        if mode == "machine"
+        else _AGENT_SYSTEM_PROMPT_BASE
+        if mode == "agent"
         else _PLAN_SYSTEM_PROMPT_BASE
         if mode == "plan"
         else _SYSTEM_PROMPT_BASE
@@ -1262,6 +1321,19 @@ def _build_system_prompt(
             "`--- /dev/null` as the source side).\n"
             "</patch-only-mode>\n"
         )
+
+    # Machine-authoring and machine `agent`-state modes have no verify/metric/
+    # repo context: those blocks reference tools they aren't given (run_verify /
+    # run_metric) and the repo prior only tempts them to spelunk. They just need
+    # the budget cap + their base prompt.
+    if mode in ("machine", "agent"):
+        parts.append(
+            _V2_BUDGET_BLOCK_TEMPLATE.format(
+                in_cap=config.budget.max_input_tokens,
+                out_cap=config.budget.max_output_tokens,
+            )
+        )
+        return "\n".join(parts)
 
     verify_argv = list(config.workflow.verify_command)
     parts.append(
@@ -1345,7 +1417,7 @@ def _build_system_prompt(
 def _tool_definitions(
     dispatcher: ToolDispatcher,
     *,
-    mode: Literal["run", "plan", "ask"] = "run",
+    mode: Literal["run", "plan", "ask", "machine", "agent"] = "run",
 ) -> list[ToolDefinition]:
     """Build the tool list exposed to the loop. Filters by what the
     dispatcher actually allows (e.g. run_command may be disabled).
@@ -1354,6 +1426,8 @@ def _tool_definitions(
     (``apply_edit``/``apply_patch``) out of ``ALL_TOOLS`` and swaps
     ``LOOP_EXTRA_TOOLS`` for ``PLAN_EXTRA_TOOLS`` (drops
     ``finish_run``/``run_metric_command``, adds ``finish_planning``).
+    ``mode="machine"`` (machine authoring) keeps only read-only navigation +
+    ``finish_run`` so the agent's one job is to emit a `.asm.toml`.
     """
     available = set(dispatcher.available_tool_names())
     extras: tuple[type[Any], ...]
@@ -1361,6 +1435,8 @@ def _tool_definitions(
         extras = PLAN_EXTRA_TOOLS
     elif mode == "ask":
         extras = ASK_EXTRA_TOOLS
+    elif mode in ("machine", "agent"):
+        extras = MACHINE_EXTRA_TOOLS
     else:
         extras = LOOP_EXTRA_TOOLS
     base_tools: tuple[type[Any], ...] = ALL_TOOLS
@@ -1369,6 +1445,18 @@ def _tool_definitions(
         # dispatcher would otherwise allow them (the dispatcher's own
         # mode guard is the second line of defence).
         blocked = {ApplyEditInput.TOOL_NAME, ApplyPatchInput.TOOL_NAME}
+        base_tools = tuple(cls for cls in ALL_TOOLS if cls.TOOL_NAME not in blocked)
+    elif mode in ("machine", "agent"):
+        # Authoring / machine agent-state: read-only navigation + finish_run
+        # only — no edit/patch/verify/run_command. The deliverable is the
+        # finish_run payload, not a file edit or a command run, and weak models
+        # otherwise wander off editing the repo (observed live on Kimi K2.6).
+        blocked = {
+            ApplyEditInput.TOOL_NAME,
+            ApplyPatchInput.TOOL_NAME,
+            RunVerifyInput.TOOL_NAME,
+            RunCommandInput.TOOL_NAME,
+        }
         base_tools = tuple(cls for cls in ALL_TOOLS if cls.TOOL_NAME not in blocked)
     out: list[ToolDefinition] = []
     for cls in (*base_tools, *extras):
@@ -1543,7 +1631,7 @@ class Workflow:
     # commit-on-verify-pass, and on finish_planning writes the
     # ``plan_markdown`` argument to ``plan_output_path`` before exiting.
     # ``plan_output_path`` is required when ``mode="plan"``.
-    mode: Literal["run", "plan", "ask"] = "run"
+    mode: Literal["run", "plan", "ask", "machine", "agent"] = "run"
     plan_output_path: Path | None = None
     # weak-model resilience. Open-weights models (observed live
     # with Kimi K2.6) sometimes emit a single empty assistant turn
@@ -1625,6 +1713,19 @@ class Workflow:
                 "Begin planning. Use the read-only tools to gather what you"
                 " need, then call `finish_planning` exactly once with the"
                 " plan markdown."
+            )
+        elif self.mode == "machine":
+            instructions = (
+                "Author the machine now and return it via a single"
+                " `finish_run` call (the complete `.asm.toml` in `result.toml`)."
+                " Do not edit files or run anything."
+            )
+        elif self.mode == "agent":
+            instructions = (
+                "Do the task above, then call `finish_run` exactly once with a"
+                " `result` object matching the schema named in the task. This is"
+                " ONE step of a state machine, not a coding session — read only"
+                " what the task needs and do NOT edit the repo or run verify."
             )
         else:
             instructions = (

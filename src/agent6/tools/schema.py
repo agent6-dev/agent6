@@ -452,6 +452,13 @@ PLAN_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
 # DOES add `agent6_docs` so it can answer "how do I use agent6" questions.
 ASK_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (Agent6DocsInput,)
 
+# Tool list for machine-authoring mode (`agent6 machine create`). The agent's
+# only deliverable is a `.asm.toml` returned via `finish_run`'s `result.toml`,
+# so it gets read-only navigation (in case the task references existing files)
+# plus `finish_run` — no edit/patch/verify/run_command/DAG/metric tools, which
+# only tempt a weak model into writing the file or spelunking the repo.
+MACHINE_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (FinishRunInput,)
+
 
 def schemas_as_provider_tools() -> list[dict[str, Any]]:
     """Emit Anthropic-API-shape tool descriptors. (kept dict-typed to avoid circular import)"""

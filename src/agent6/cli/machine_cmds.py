@@ -267,6 +267,7 @@ def _build_machine_agent_runner(
                 "max_usd": request.max_usd,
                 "max_input_tokens": request.max_input_tokens,
                 "max_output_tokens": request.max_output_tokens,
+                "mode": request.mode,
             },
         }
         with tempfile.TemporaryDirectory(prefix="agent6-machine-agent-") as td:
@@ -601,7 +602,8 @@ def _cmd_machine_create(  # noqa: PLR0911, PLR0912, PLR0915
         )
         print(f"machine create: attempt {attempt}/{max_attempts}...", file=sys.stderr)
         # model omitted (=None): inherit the operator's effective worker model.
-        result = runner(AgentRequest(prompt=prompt, timeout_s=_CREATE_TIMEOUT_S))
+        # mode="machine": authoring system prompt + read-only tools (see loop.py).
+        result = runner(AgentRequest(prompt=prompt, timeout_s=_CREATE_TIMEOUT_S, mode="machine"))
         total_usd += result.usd
         candidate = extract_toml(result.payload)
         if candidate is None:

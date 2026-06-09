@@ -216,6 +216,43 @@ def test_tool_definitions_run_mode_includes_edit_tools(tmp_path: Path) -> None:
     assert FinishPlanningInput.TOOL_NAME not in names
 
 
+def test_tool_definitions_machine_and_agent_modes_are_read_only_finish(tmp_path: Path) -> None:
+    # machine authoring + machine agent-state: read-only navigation + finish_run,
+    # NO edit/patch/verify/run_command/DAG (the deliverable is a finish_run result).
+    p = tmp_path / "agent6.toml"
+    p.write_text(_VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"'), "utf-8")
+    cfg = load_config(p)
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    for mode in ("machine", "agent"):
+        names = {t.name for t in loopmod._tool_definitions(d, mode=mode)}  # pyright: ignore[reportPrivateUsage]
+        assert ReadFileInput.TOOL_NAME in names, mode
+        assert FinishRunInput.TOOL_NAME in names, mode
+        assert ApplyEditInput.TOOL_NAME not in names, mode
+        assert ApplyPatchInput.TOOL_NAME not in names, mode
+        assert RunCommandInput.TOOL_NAME not in names, mode
+        assert DagAddTaskInput.TOOL_NAME not in names, mode
+        assert FinishPlanningInput.TOOL_NAME not in names, mode
+
+
+def test_build_system_prompt_machine_and_agent_modes(tmp_path: Path) -> None:
+    cfg = _config(tmp_path)
+    repo = RepoSummary(
+        root=tmp_path,
+        branch="main",
+        head_sha="0" * 40,
+        file_count=0,
+        top_level=(),
+        agents_md="",
+        recent_log="",
+    )
+    machine = loopmod._build_system_prompt(config=cfg, repo=repo, mode="machine")  # pyright: ignore[reportPrivateUsage]
+    assert "MACHINE-AUTHORING" in machine
+    assert "run_verify_command" not in machine  # no verify block in authoring mode
+    agent = loopmod._build_system_prompt(config=cfg, repo=repo, mode="agent")  # pyright: ignore[reportPrivateUsage]
+    assert "state of a state machine" in agent
+    assert "run_verify_command" not in agent
+
+
 def test_tool_definitions_ask_mode_is_read_only_with_commands(tmp_path: Path) -> None:
     # ask: read tools + run_command (when the config allows it), but NO edits and
     # NO control tools (no finish_run/finish_planning/DAG) -- it silent-finishes.

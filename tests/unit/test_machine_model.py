@@ -116,9 +116,15 @@ def test_valid_machine_loads(tmp_path: Path) -> None:
     }
 
 
-def test_missing_file(tmp_path: Path) -> None:
-    problems = _problems(tmp_path, "")  # empty -> not even `machine` key
-    assert problems
+def test_agent_state_model_defaults_to_inherit(tmp_path: Path) -> None:
+    # Omitting `model` on an agent state is valid and defaults to "inherit"
+    # (the operator's worker model) — so an LLM-authored machine need not
+    # hardcode a model the operator may not have configured.
+    body = VALID_MACHINE.replace('\nmodel = "claude-sonnet-4-5"', "")
+    spec = load_machine(_write(tmp_path, body))
+    classify = spec.states["classify"]
+    assert isinstance(classify, AgentState)
+    assert classify.model == "inherit"
 
 
 def test_bad_toml(tmp_path: Path) -> None:
