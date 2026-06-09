@@ -29,6 +29,7 @@ from agent6.cli._common import (
     _ensure_agent6_gitignored,
     _runs_dir,
     _start_mcp_manager_if_enabled,
+    detect_env,
 )
 from agent6.cli.egress import (
     _check_network_profile,
@@ -57,7 +58,7 @@ from agent6.config_layer import (
     load_effective,
     repo_config_path_for,
 )
-from agent6.detect import detect, select_profile
+from agent6.detect import select_profile
 from agent6.events import EventSink
 from agent6.git_ops import (
     CommitIdentity,
@@ -656,7 +657,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     # described in @notes.md" and have those files inlined verbatim.
     task = _expand_task_file_refs(task, Path.cwd())
 
-    env = detect()
+    env = detect_env()
     try:
         selected_profile = select_profile(cfg.sandbox.profile, env)
     except RuntimeError as exc:
@@ -1027,7 +1028,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
         print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
         return 2
 
-    env = detect()
+    env = detect_env()
     try:
         selected_profile = select_profile(cfg.sandbox.profile, env)
     except RuntimeError as exc:

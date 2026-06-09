@@ -38,7 +38,8 @@ def stub_jail(monkeypatch: pytest.MonkeyPatch) -> list[JailPolicy]:
 
 
 def _force_profile(monkeypatch: pytest.MonkeyPatch, profile: str) -> None:
-    monkeypatch.setattr(check_cmds, "detect", object)  # returns a throwaway env stub
+    monkeypatch.setattr(check_cmds, "detect_env", object)  # returns a throwaway env stub
+    monkeypatch.setattr(check_cmds, "apparmor_userns_restricted", lambda: False)  # no advisory
 
     def fake_select(_req: str, _env: object) -> str:
         return profile

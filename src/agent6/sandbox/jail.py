@@ -11,10 +11,12 @@ opts in via `cwd-only-mode` — otherwise raises JailUnavailableError. This keep
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import shutil
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 
@@ -101,6 +103,36 @@ def _run_unsandboxed(policy: JailPolicy) -> CommandResult:
         stderr=proc.stderr,
         duration_s=duration,
     )
+
+
+@functools.lru_cache(maxsize=1)
+def strict_namespaces_work() -> bool:
+    """Return True iff the jail binary can actually set up a `strict` namespace.
+
+    The cheap ``unshare -U -r true`` probe in ``detect.probe_userns_supported``
+    under-reports on an AppArmor-restricted host (Ubuntu 24.04+ with
+    ``kernel.apparmor_restrict_unprivileged_userns=1``) where a profile grants
+    the *agent6-jail* binary userns but not ``/usr/bin/unshare``. This runs the
+    real jail binary with a trivial `strict` policy to get the authoritative
+    answer. Cached for the process lifetime; the kernel/profile state does not
+    change mid-run. Returns False if the jail binary is missing.
+    """
+    if not Path("/usr/bin/true").exists():
+        return False
+    probe_cwd = Path(tempfile.gettempdir())
+    try:
+        res = run_in_jail(
+            JailPolicy(
+                cwd=probe_cwd,
+                argv=("/usr/bin/true",),
+                profile="strict",
+                allow_network=False,
+                timeout_s=10.0,
+            )
+        )
+    except JailUnavailableError:
+        return False
+    return res.returncode == 0
 
 
 def run_in_jail(policy: JailPolicy) -> CommandResult:

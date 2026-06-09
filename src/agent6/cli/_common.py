@@ -7,7 +7,7 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from agent6.config import (
@@ -17,6 +17,7 @@ from agent6.config import (
 from agent6.config_layer import (
     resolved_agent6_dir,
 )
+from agent6.detect import Environment, detect
 from agent6.git_ops import (
     CommitIdentity,
     GitError,
@@ -28,8 +29,25 @@ from agent6.paths import (
     is_root,
     root_optin_enabled,
 )
+from agent6.sandbox import strict_namespaces_work
 from agent6.secrets import SecretsError, load_secrets, resolve_api_key
 from agent6.tools.mcp_client import MCPManager
+
+
+def detect_env() -> Environment:
+    """`detect()` with an authoritative userns re-check via the jail binary.
+
+    `detect.probe_userns_supported` uses `unshare -U -r true`, which
+    under-reports on an AppArmor-restricted host (Ubuntu 24.04+) where a profile
+    grants the *agent6-jail* binary userns but not `/usr/bin/unshare`. When the
+    cheap probe says "no" on a Linux host, confirm with the real jail binary so
+    a correctly-profiled host gets `strict` instead of silently dropping to
+    `hardened`. Every CLI profile-selection path uses this instead of `detect()`.
+    """
+    env = detect()
+    if env.sandbox_available and not env.userns_supported and strict_namespaces_work():
+        return replace(env, userns_supported=True)
+    return env
 
 
 def _add_budget_flags(parser: argparse.ArgumentParser) -> None:

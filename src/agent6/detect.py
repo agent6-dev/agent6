@@ -129,6 +129,25 @@ def probe_userns_supported() -> bool:
     return result.returncode == 0
 
 
+def apparmor_userns_restricted() -> bool:
+    """True iff the kernel restricts unprivileged user namespaces via AppArmor.
+
+    Ubuntu 23.10+/24.04+ ship ``kernel.apparmor_restrict_unprivileged_userns=1``:
+    an unprivileged process can then create a user namespace only with an
+    AppArmor profile granting ``userns``. This is why ``strict`` can be
+    unavailable even when ``kernel.unprivileged_userns_clone = 1`` -- the fix is
+    to install the agent6-jail AppArmor profile (packaging/apparmor/) or set the
+    sysctl to 0. Reads the proc file directly; absent on non-AppArmor kernels.
+    """
+    try:
+        raw = Path("/proc/sys/kernel/apparmor_restrict_unprivileged_userns").read_text(
+            encoding="utf-8"
+        )
+    except OSError:
+        return False
+    return raw.strip() == "1"
+
+
 def sandbox_available() -> bool:
     """Return True iff the Linux kernel sandbox can be used on this host.
 

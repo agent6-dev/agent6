@@ -381,6 +381,16 @@ not to bound what an attacker can do.
 - **User namespaces** must be enabled
   (`kernel.unprivileged_userns_clone = 1`). Some distros disable this
   by default; agent6 detects that and refuses to run `strict`.
+- **AppArmor userns restriction** (Ubuntu 24.04+:
+  `kernel.apparmor_restrict_unprivileged_userns = 1`) blocks unprivileged
+  userns unless the process has an AppArmor profile granting `userns`.
+  agent6 ships such a profile, scoped to just the launcher binary, in
+  [packaging/apparmor/agent6-jail](packaging/apparmor/agent6-jail) — the
+  surgical fix (preferred over disabling the sysctl host-wide). agent6's
+  profile detection probes the *real launcher binary* (not
+  `/usr/bin/unshare`), so once the profile is installed it correctly
+  selects `strict`; without it, it uses `hardened` and `agent6 check
+  sandbox` prints how to enable `strict`.
 - **seccomp** is required by the jail; on rare hardened kernels that
   block seccomp from unprivileged callers, the jail fails closed.
 - **Devcontainers**: the jail's `hardened` profile is what you get

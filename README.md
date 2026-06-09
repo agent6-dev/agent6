@@ -63,6 +63,12 @@ quoting numbers.
 - `kernel.unprivileged_userns_clone = 1` (default on Ubuntu, Debian,
   and most cloud images). Required for the `strict` sandbox profile;
   without it the agent falls back to `hardened`.
+- On Ubuntu 24.04+ (and any kernel with
+  `kernel.apparmor_restrict_unprivileged_userns = 1`), `strict` also needs
+  an AppArmor profile granting the launcher userns — install the bundled
+  one (`packaging/apparmor/agent6-jail`; `agent6 check sandbox` prints the
+  exact commands) or set that sysctl to 0. Without either, agent6 uses
+  `hardened`.
 - Python ≥ 3.12.
 - An Anthropic and/or OpenAI-compatible API key.
 

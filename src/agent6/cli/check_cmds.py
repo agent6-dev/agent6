@@ -8,7 +8,11 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent6.cli._common import _check_provider_keys, _start_mcp_manager_if_enabled
+from agent6.cli._common import (
+    _check_provider_keys,
+    _start_mcp_manager_if_enabled,
+    detect_env,
+)
 from agent6.config import (
     Config,
     ConfigError,
@@ -16,7 +20,7 @@ from agent6.config import (
 from agent6.config_layer import (
     load_effective,
 )
-from agent6.detect import detect, select_profile
+from agent6.detect import apparmor_userns_restricted, select_profile
 from agent6.sandbox import (
     JailUnavailableError,
     landlock_abi,
@@ -48,8 +52,19 @@ def _cmd_check_sandbox() -> int:
         )
     )
 
-    profile = select_profile("auto", detect())
+    profile = select_profile("auto", detect_env())
     print(f"  effective profile (auto): {profile}")
+    if profile == "hardened" and apparmor_userns_restricted():
+        print(
+            "  NOTE: strict is unavailable because unprivileged user namespaces are\n"
+            "  blocked by kernel.apparmor_restrict_unprivileged_userns=1 (Ubuntu 24.04+\n"
+            "  default). For the stronger strict profile, install the agent6-jail\n"
+            "  AppArmor profile (grants userns to just that binary):\n"
+            "    sudo cp packaging/apparmor/agent6-jail /etc/apparmor.d/agent6-jail\n"
+            "    sudo apparmor_parser -r /etc/apparmor.d/agent6-jail\n"
+            "  (or, less surgically, set the sysctl to 0). hardened is still real,\n"
+            "  kernel-enforced isolation."
+        )
     if profile == "none":
         # Non-Linux host: there is no kernel sandbox to test, and running the
         # boundary probes unconfined would let the /etc-write probe actually
@@ -205,7 +220,7 @@ def _cmd_check(config_path: Path | None, *, section: str) -> int:
 
 def _check_config_section(cfg: Config) -> list[_DoctorCheck]:
     """Environment detection + profile selection + static config checks."""
-    env = detect()
+    env = detect_env()
     print(f"  kernel: {env.kernel.raw} (Landlock TCP: {env.kernel.supports_landlock_tcp})")
     print(f"  userns supported: {env.userns_supported}")
     print(f"  sandbox available: {env.sandbox_available}")

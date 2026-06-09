@@ -17,7 +17,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
-from agent6.cli._common import _agent6_dir, _check_provider_keys, _machines_dir
+from agent6.cli._common import _agent6_dir, _check_provider_keys, _machines_dir, detect_env
 from agent6.cli.egress import _check_network_profile, _warn_if_unsandboxed
 from agent6.config import (
     Config,
@@ -27,7 +27,7 @@ from agent6.config_layer import (
     load_effective,
     load_effective_with_overlay,
 )
-from agent6.detect import detect, select_profile
+from agent6.detect import select_profile
 from agent6.machine import (
     TOML_PAYLOAD_KEY,
     AgentExecResult,
@@ -376,7 +376,7 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
     tool_states = [s for s in states if isinstance(s, ToolState)]
     agent_runner: Callable[[AgentRequest], AgentExecResult] | None = None
     # Default profile for confinement-free machines: resolve from the host.
-    profile: SandboxProfile = detect().detected_profile
+    profile: SandboxProfile = detect_env().detected_profile
     # The running machine's own file + scripts bundle are read-only in every
     # run jail, so a tool/agent can't rewrite its own logic or audited scripts.
     protect_paths = _machine_protect_paths(path, cwd)
@@ -391,7 +391,7 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
             print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
             return 2
         try:
-            profile = select_profile(cfg.sandbox.profile, detect())
+            profile = select_profile(cfg.sandbox.profile, detect_env())
         except RuntimeError as exc:
             print(f"REFUSING: {exc}", file=sys.stderr)
             return 2
@@ -575,7 +575,7 @@ def _cmd_machine_create(  # noqa: PLR0911, PLR0912, PLR0915
         print(missing, file=sys.stderr)
         return 2
     try:
-        profile = select_profile(cfg.sandbox.profile, detect())
+        profile = select_profile(cfg.sandbox.profile, detect_env())
     except RuntimeError as exc:
         print(f"REFUSING: {exc}", file=sys.stderr)
         return 2

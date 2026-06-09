@@ -11,7 +11,7 @@ from agent6.sandbox.broker import (
     enter_network_isolation,
     start_egress_broker,
 )
-from agent6.sandbox.jail import JailUnavailableError, run_in_jail
+from agent6.sandbox.jail import JailUnavailableError, run_in_jail, strict_namespaces_work
 from agent6.sandbox.landlock import (
     LandlockError,
     LandlockNotSupportedError,
@@ -31,4 +31,5 @@ __all__ = [
     "landlock_abi",
     "run_in_jail",
     "start_egress_broker",
+    "strict_namespaces_work",
 ]

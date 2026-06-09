@@ -1,0 +1,39 @@
+# AppArmor profile for the agent6-jail sandbox launcher.
+#
+# On Ubuntu 24.04+ (and any kernel with
+# kernel.apparmor_restrict_unprivileged_userns=1) an unprivileged process can
+# create the user namespace that agent6's `strict` profile needs ONLY if it has
+# an AppArmor profile granting `userns`. Without this, agent6 silently falls
+# back to the (weaker, namespace-less) `hardened` profile -- still real
+# kernel-enforced isolation, but without per-command network/mount namespaces.
+#
+# This is the recommended fix on AppArmor distros: it is more surgical than
+# disabling the restriction system-wide
+# (`sysctl kernel.apparmor_restrict_unprivileged_userns=0`), since it grants the
+# capability to ONLY the agent6-jail binary.
+#
+# agent6-jail does its OWN sandboxing inside the child it launches
+# (user/mount/pid/ipc/uts/net namespaces, pivot_root, Landlock, seccomp,
+# capset(0), NO_NEW_PRIVS). This profile therefore adds NO AppArmor confinement
+# on top of that -- flags=(unconfined), because AppArmor FS/mount rules would
+# fight the launcher's own pivot_root/mount; it exists solely to lift the
+# unprivileged user-namespace restriction for the launcher binary.
+#
+# Install (root):
+#   sudo cp packaging/apparmor/agent6-jail /etc/apparmor.d/agent6-jail
+#   sudo apparmor_parser -r /etc/apparmor.d/agent6-jail
+# then re-check with `agent6 check sandbox` (it should now report `strict`).
+#
+# The attachment glob matches the bundled launcher wherever pip / uv / pipx put
+# it (.../agent6/sandbox/_bin/agent6-jail). If you point AGENT6_JAIL_BIN at a
+# binary elsewhere (e.g. a dev `cargo build` under
+# src/agent6/jail/target/release/agent6-jail), add that path to the header, e.g.
+#   profile agent6-jail /{**/agent6/sandbox/_bin,**/jail/target/release}/agent6-jail flags=(unconfined) {
+abi <abi/4.0>,
+include <tunables/global>
+
+profile agent6-jail /**/agent6/sandbox/_bin/agent6-jail flags=(unconfined) {
+  userns,
+
+  include if exists <local/agent6-jail>
+}
