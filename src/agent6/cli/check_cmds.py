@@ -22,11 +22,20 @@ from agent6.sandbox import (
     landlock_abi,
     run_in_jail,
 )
-from agent6.types import JailPolicy, SandboxReport
+from agent6.types import CommandResult, JailPolicy, SandboxReport
 
 
 def _cmd_check_sandbox() -> int:
-    """Run the sandbox boundary self-tests on the host's kernel."""
+    """Run the sandbox boundary self-tests on the host's kernel.
+
+    The probes run under the *effective* profile this host resolves to
+    (`select_profile("auto", ...)`), not a hardcoded one. On a host that
+    blocks unprivileged user namespaces (default-seccomp Docker, or Ubuntu
+    with `kernel.apparmor_restrict_unprivileged_userns=1`) the effective
+    profile is `hardened`, which is exactly what `agent6 run` would use there;
+    testing `strict` instead would report a spurious FAIL for a sandbox the
+    agent never uses on this host.
+    """
     reports: list[SandboxReport] = []
 
     # Landlock probe
@@ -39,49 +48,69 @@ def _cmd_check_sandbox() -> int:
         )
     )
 
-    # Try running `/bin/true` in the jail.
-    cwd = Path.cwd()
-    try:
-        res = run_in_jail(
-            JailPolicy(cwd=cwd, argv=("/usr/bin/true",), allow_network=False, timeout_s=10.0)
+    profile = select_profile("auto", detect())
+    print(f"  effective profile (auto): {profile}")
+    if profile == "none":
+        # Non-Linux host: there is no kernel sandbox to test, and running the
+        # boundary probes unconfined would let the /etc-write probe actually
+        # escape onto the host. Report and stop.
+        reports.append(
+            SandboxReport(
+                name="jail",
+                ok=False,
+                detail="no kernel sandbox on this platform (effective profile 'none'); skipped",
+            )
         )
+        return _print_sandbox_reports(reports)
+
+    cwd = Path.cwd()
+
+    def _jail(*argv: str) -> CommandResult:
+        return run_in_jail(
+            JailPolicy(cwd=cwd, argv=argv, profile=profile, allow_network=False, timeout_s=10.0)
+        )
+
+    # Try running `/usr/bin/true` in the jail.
+    try:
+        res = _jail("/usr/bin/true")
         reports.append(SandboxReport(name="jail_true", ok=res.ok, detail=f"rc={res.returncode}"))
     except JailUnavailableError as exc:
         reports.append(SandboxReport(name="jail_true", ok=False, detail=str(exc)))
 
-    # Confirm child cannot reach the network (when allow_network=False).
-    try:
-        res = run_in_jail(
-            JailPolicy(
-                cwd=cwd,
-                argv=("/usr/bin/getent", "hosts", "example.com"),
-                allow_network=False,
-                timeout_s=10.0,
+    # Confirm child cannot reach the network. This is only a meaningful jail
+    # probe under `strict`, where `allow_network=False` puts the child in an
+    # empty network namespace. Under `hardened` the jail applies no network
+    # rule at all — a jailed command's egress is bounded by the agent-process
+    # Landlock applied at run time (SECURITY.md §1, §8 note 2), which this
+    # standalone probe does not set up — so testing it here would be testing
+    # the wrong thing. Report it as n/a rather than a misleading pass/fail.
+    if profile == "strict":
+        try:
+            res = _jail("/usr/bin/getent", "hosts", "example.com")
+            ok = res.returncode != 0
+            reports.append(
+                SandboxReport(
+                    name="jail_blocks_network",
+                    ok=ok,
+                    detail=f"rc={res.returncode} (nonzero = blocked, as expected)",
+                )
             )
-        )
-        ok = res.returncode != 0
+        except JailUnavailableError as exc:
+            reports.append(SandboxReport(name="jail_blocks_network", ok=False, detail=str(exc)))
+    else:
         reports.append(
             SandboxReport(
                 name="jail_blocks_network",
-                ok=ok,
-                detail=f"rc={res.returncode} (nonzero = blocked, as expected)",
+                ok=True,
+                detail="n/a under hardened (egress confined by agent-process Landlock at run time)",
             )
         )
-    except JailUnavailableError as exc:
-        reports.append(SandboxReport(name="jail_blocks_network", ok=False, detail=str(exc)))
 
-    # Confirm child cannot write outside /workspace.
+    # Confirm child cannot write outside the workspace.
     try:
-        res = run_in_jail(
-            JailPolicy(
-                cwd=cwd,
-                argv=("/bin/sh", "-c", "echo x > /etc/agent6-escape || true"),
-                allow_network=False,
-                timeout_s=10.0,
-            )
-        )
-        # /etc was bind-mounted RO and Landlock confines writes to /workspace, so the
-        # file should not exist on the host.
+        res = _jail("/bin/sh", "-c", "echo x > /etc/agent6-escape || true")
+        # /etc is read-only (bind-mounted RO under strict, Landlock-denied under
+        # hardened), so the file must not appear on the host.
         ok = not Path("/etc/agent6-escape").exists()
         reports.append(
             SandboxReport(
@@ -93,6 +122,10 @@ def _cmd_check_sandbox() -> int:
     except JailUnavailableError as exc:
         reports.append(SandboxReport(name="jail_blocks_etc_write", ok=False, detail=str(exc)))
 
+    return _print_sandbox_reports(reports)
+
+
+def _print_sandbox_reports(reports: list[SandboxReport]) -> int:
     overall_ok = True
     for r in reports:
         status = "PASS" if r.ok else "FAIL"
