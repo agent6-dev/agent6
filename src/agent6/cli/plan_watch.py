@@ -10,10 +10,29 @@ import os
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 from agent6.cli._common import _runs_dir
 from agent6.run_id import RunIdError, resolve_run_id
+
+
+def _event_epoch(value: object) -> float | None:
+    """Parse an event ``ts`` to epoch seconds, or None if unparseable.
+
+    EventSink writes ``ts`` as an ISO-8601 string (``datetime.isoformat``),
+    so the elapsed-time anchor must parse that, not only bare numbers.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value).timestamp()
+        except ValueError:
+            return None
+    return None
 
 
 def _resolve_plan_run_id(run_id: str) -> str | None:
@@ -90,7 +109,7 @@ def _cmd_watch(run_id: str, *, plain: bool = False, since: int = 0) -> int:  # n
     """Read-only live view of a run directory.
 
     Default is the textual TUI viewer. ``--plain`` switches to a no-deps
-    line tail of ``events.jsonl``; useful in headless terminals
+    line tail of ``logs.jsonl``; useful in headless terminals
     or when ``textual`` isn't installed.
     """
     runs_dir = _runs_dir(Path.cwd())
@@ -125,7 +144,7 @@ def _cmd_watch(run_id: str, *, plain: bool = False, since: int = 0) -> int:  # n
     except ImportError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         print(
-            "HINT: pass --plain for a no-deps text tail of events.jsonl.",
+            "HINT: pass --plain for a no-deps text tail of logs.jsonl.",
             file=sys.stderr,
         )
         return 3
@@ -133,7 +152,7 @@ def _cmd_watch(run_id: str, *, plain: bool = False, since: int = 0) -> int:  # n
 
 
 def _format_plain_event(line: str, *, run_start_ts: float | None) -> str:
-    """Pretty-print one events.jsonl line as `<elapsed> <type> key=val ...`.
+    """Pretty-print one logs.jsonl line as `<elapsed> <type> key=val ...`.
 
     Falls back to the raw line on parse error so a corrupt event doesn't
     abort the tail. ``run_start_ts`` is the wall-clock timestamp of the
@@ -146,10 +165,10 @@ def _format_plain_event(line: str, *, run_start_ts: float | None) -> str:
         return raw
     if not isinstance(obj, dict):
         return raw
-    ts = obj.get("ts")
+    ts = _event_epoch(obj.get("ts"))
     event = obj.get("event") or obj.get("type") or "?"
-    if isinstance(ts, (int, float)) and run_start_ts is not None:
-        elapsed = max(0.0, float(ts) - run_start_ts)
+    if ts is not None and run_start_ts is not None:
+        elapsed = max(0.0, ts - run_start_ts)
         ts_str = f"+{elapsed:7.1f}s"
     else:
         ts_str = "        "
@@ -171,15 +190,15 @@ def _format_plain_event(line: str, *, run_start_ts: float | None) -> str:
 
 
 def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0912, PLR0915
-    """Tail ``events.jsonl`` line-by-line with no extra deps.
+    """Tail ``logs.jsonl`` line-by-line with no extra deps.
 
     Polls the file with 0.25s sleeps; rotates when the inode changes.
     Pretty-prints each event with the type and key fields. Returns 0 on
     EOF (run dir gone) or KeyboardInterrupt.
     """
-    events_path = target / "events.jsonl"
+    events_path = target / "logs.jsonl"
     if not events_path.is_file():
-        print(f"ERROR: no events.jsonl in {target}", file=sys.stderr)
+        print(f"ERROR: no logs.jsonl in {target}", file=sys.stderr)
         return 2
 
     # Read the first event for the elapsed-time anchor.
@@ -189,8 +208,8 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0912, PLR0
             first = fh.readline()
         if first:
             obj0 = json.loads(first)
-            if isinstance(obj0, dict) and isinstance(obj0.get("ts"), (int, float)):
-                run_start_ts = float(obj0["ts"])
+            if isinstance(obj0, dict):
+                run_start_ts = _event_epoch(obj0.get("ts"))
     except (OSError, json.JSONDecodeError):
         run_start_ts = None
 

@@ -38,7 +38,7 @@ from agent6.cli.egress import (
     _warn_if_unsandboxed,
 )
 from agent6.cli.misc_cmds import _cmd_diff
-from agent6.cli.plan_watch import _format_plain_event
+from agent6.cli.plan_watch import _event_epoch, _format_plain_event
 from agent6.cli.providers import (
     _build_critic_provider,
     _build_prompt_reviser_provider,
@@ -198,7 +198,7 @@ def _repl_run_diff(run_id: str) -> None:
 
 
 def _repl_show_recent_events(root: Path, run_id: str, *, n: int) -> None:
-    """REPL /watch: snapshot the last n events from this run's events.jsonl.
+    """REPL /watch: snapshot the last n events from this run's logs.jsonl.
 
     Intentionally NOT a live tail - the REPL is between turns of the
     agent loop; a tail would block the next iteration. Operators who
@@ -207,9 +207,9 @@ def _repl_show_recent_events(root: Path, run_id: str, *, n: int) -> None:
     if not run_id:
         print("[agent6] /watch: no run id available", file=sys.stderr)
         return
-    events_path = _runs_dir(root) / run_id / "events.jsonl"
+    events_path = _runs_dir(root) / run_id / "logs.jsonl"
     if not events_path.is_file():
-        print(f"[agent6] /watch: no events.jsonl at {events_path}", file=sys.stderr)
+        print(f"[agent6] /watch: no logs.jsonl at {events_path}", file=sys.stderr)
         return
     try:
         lines = events_path.read_text(encoding="utf-8").splitlines()
@@ -220,8 +220,8 @@ def _repl_show_recent_events(root: Path, run_id: str, *, n: int) -> None:
     if lines:
         try:
             obj0 = json.loads(lines[0])
-            if isinstance(obj0, dict) and isinstance(obj0.get("ts"), (int, float)):
-                run_start_ts = float(obj0["ts"])
+            if isinstance(obj0, dict):
+                run_start_ts = _event_epoch(obj0.get("ts"))
         except json.JSONDecodeError:
             run_start_ts = None
     tail = lines[-n:]

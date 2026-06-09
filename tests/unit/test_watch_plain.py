@@ -1,12 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for the plain events.jsonl formatter."""
+"""Tests for the plain logs.jsonl formatter."""
 
 from __future__ import annotations
 
 import json
 
-from agent6.cli.plan_watch import _format_plain_event  # pyright: ignore[reportPrivateUsage]
+from agent6.cli.plan_watch import (
+    _event_epoch,  # pyright: ignore[reportPrivateUsage]
+    _format_plain_event,  # pyright: ignore[reportPrivateUsage]
+)
 
 
 def test_format_plain_event_renders_known_fields() -> None:
@@ -36,3 +39,25 @@ def test_format_plain_event_no_ts_anchor() -> None:
     raw = json.dumps({"event": "ping"})
     out = _format_plain_event(raw, run_start_ts=None)
     assert "ping" in out
+
+
+def test_event_epoch_parses_iso_and_numbers() -> None:
+    # EventSink writes ISO-8601 strings; the anchor must parse those.
+    assert _event_epoch("2026-06-08T05:41:39.762404+00:00") is not None
+    assert _event_epoch(1100.0) == 1100.0
+    assert _event_epoch("not-a-timestamp") is None
+    assert _event_epoch(None) is None
+    assert _event_epoch(True) is None  # bool is not a usable epoch
+
+
+def test_format_plain_event_renders_elapsed_for_iso_ts() -> None:
+    # Regression: ts is an ISO string (events.py), not a number; the elapsed
+    # column must still render rather than always blanking.
+    start = "2026-06-08T05:41:39+00:00"
+    later = "2026-06-08T05:42:39+00:00"  # +60s
+    anchor = _event_epoch(start)
+    out = _format_plain_event(
+        json.dumps({"ts": later, "type": "loop.auto_commit"}), run_start_ts=anchor
+    )
+    assert "+   60.0s" in out
+    assert "loop.auto_commit" in out
