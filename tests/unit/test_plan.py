@@ -231,6 +231,7 @@ def test_tool_definitions_ask_mode_is_read_only_with_commands(tmp_path: Path) ->
     assert FinishRunInput.TOOL_NAME not in names
     assert FinishPlanningInput.TOOL_NAME not in names
     assert DagAddTaskInput.TOOL_NAME not in names
+    assert "agent6_docs" in names  # self-help is available in ask mode
 
 
 def test_dispatcher_refuses_mutations_in_ask_mode(tmp_path: Path) -> None:

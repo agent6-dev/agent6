@@ -19,6 +19,7 @@ src/agent6/jail/target/
 # Build-hook output: bundled jail binary copied into the package tree by
 # hatch_build.py during `uv sync` / `uv build`.
 src/agent6/sandbox/_bin/
+src/agent6/_docs/
 
 # Editor
 .vscode/*.log

@@ -37,7 +37,7 @@ packages = ["src/agent6"]
 # The compiled jail binary is dropped here by hatch_build.py during the
 # wheel build. It lives in .gitignore, so we have to list it explicitly
 # as an artifact for hatchling to include it in the wheel.
-artifacts = ["src/agent6/sandbox/_bin/agent6-jail"]
+artifacts = ["src/agent6/sandbox/_bin/agent6-jail", "src/agent6/_docs/*.md"]
 # The Rust crate source + its build dir live inside the package tree
 # (src/agent6/jail) but must never ship in the wheel — the runtime only
 # needs the compiled binary bundled under sandbox/_bin.
@@ -68,6 +68,7 @@ include = [
     "SECURITY.md",
     "AGENTS.md",
     "CONFIG.md",
+    "ARCHITECTURE.md",
     "tach.toml",
     "LICENSE",
 ]

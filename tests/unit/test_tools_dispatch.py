@@ -862,3 +862,16 @@ def test_dispatcher_refuses_mutations_in_plan_mode(tmp_path: Path) -> None:
         )
     with pytest.raises(ToolError, match="plan mode"):
         d.dispatch("apply_patch", {"patch": "--- a\n+++ b\n"})
+
+
+def test_agent6_docs_tool_lists_and_reads(tmp_path: Path) -> None:
+    # agent6_docs reads agent6's own bundled docs (for "how do I use agent6").
+    cfg = _config(tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    listing = d.dispatch("agent6_docs", {})
+    assert "CONFIG" in listing["available"]
+    assert "README" in listing["available"]
+    doc = d.dispatch("agent6_docs", {"name": "CONFIG"})
+    assert "content" in doc and len(doc["content"]) > 100
+    with pytest.raises(ToolError, match="unknown agent6 doc"):
+        d.dispatch("agent6_docs", {"name": "NOPE"})

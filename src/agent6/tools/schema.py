@@ -33,6 +33,19 @@ class ReadFileInput(_ToolInput):
     limit: int | None = Field(default=None, gt=0)
 
 
+class Agent6DocsInput(_ToolInput):
+    TOOL_NAME: ClassVar[str] = "agent6_docs"
+    TOOL_DESCRIPTION: ClassVar[str] = (
+        "Read agent6's OWN documentation to answer questions about how to USE "
+        "agent6 (configuring providers/models, sandbox profiles, machines, the "
+        "CLI, budgets, etc.). Call with an empty `name` to list the available "
+        "docs, or set `name` to one of them (e.g. README, CONFIG, SECURITY, "
+        "AGENTS, ARCHITECTURE) to read its markdown."
+    )
+
+    name: str = Field(default="")
+
+
 class ListDirInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "list_dir"
     TOOL_DESCRIPTION: ClassVar[str] = (
@@ -433,10 +446,11 @@ PLAN_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
 )
 
 # Tool list for ask mode (`agent6 ask`). Read-only Q&A: like plan it filters
-# `apply_edit`/`apply_patch` out of `ALL_TOOLS` at the workflow layer, but it
-# exposes NO control tools at all -- no DAG, no finish_planning, no finish_run.
-# The agent answers by emitting its final message as prose (a "silent finish").
-ASK_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = ()
+# `apply_edit`/`apply_patch` out of `ALL_TOOLS` at the workflow layer, and it
+# exposes NO control tools (no DAG, no finish_planning, no finish_run -- the
+# agent answers by emitting its final message as prose, a "silent finish"). It
+# DOES add `agent6_docs` so it can answer "how do I use agent6" questions.
+ASK_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (Agent6DocsInput,)
 
 
 def schemas_as_provider_tools() -> list[dict[str, Any]]:

@@ -33,6 +33,7 @@ from agent6.tools.mcp_client import MCP_TOOL_PREFIX, MCPError, MCPManager
 from agent6.tools.patch_apply import PatchError, apply_patch_text
 from agent6.tools.schema import (
     ALL_TOOLS,
+    Agent6DocsInput,
     ApplyEditInput,
     ApplyPatchInput,
     DagAddTaskInput,
@@ -58,6 +59,37 @@ from agent6.types import CommandResult, JailPolicy, SandboxProfile
 
 class ToolError(Exception):
     """The LLM tried something the tool layer refused."""
+
+
+# agent6's own docs, for the `agent6_docs` ask tool. Bundled into the wheel at
+# agent6/_docs/ (hatch_build copies them); in a source checkout they're read
+# straight from the repo root.
+_AGENT6_DOC_FILES = ("README.md", "CONFIG.md", "SECURITY.md", "AGENTS.md", "ARCHITECTURE.md")
+
+
+def _agent6_docs_dirs() -> list[Path]:
+    base = Path(__file__).resolve()  # .../agent6/tools/dispatch.py
+    return [base.parents[1] / "_docs", base.parents[3]]  # bundled, then dev repo-root
+
+
+def _list_agent6_docs() -> list[str]:
+    for d in _agent6_docs_dirs():
+        if d.is_dir():
+            found = [n[:-3] for n in _AGENT6_DOC_FILES if (d / n).is_file()]
+            if found:
+                return found
+    return []
+
+
+def _read_agent6_doc(name: str) -> str | None:
+    fname = name if name.endswith(".md") else f"{name}.md"
+    if fname not in _AGENT6_DOC_FILES:
+        return None
+    for d in _agent6_docs_dirs():
+        p = d / fname
+        if p.is_file():
+            return p.read_text(encoding="utf-8", errors="replace")
+    return None
 
 
 _GIT_MUTATING_SUBCOMMANDS = frozenset(
@@ -311,6 +343,7 @@ class ToolDispatcher:
         # guard and the jail protect-paths so both track the configured name.
         self._agent6_dir_name = _agent6_dir_path(self._root, config.agent6.workspace_subdir).name
         self._handlers: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
+            Agent6DocsInput.TOOL_NAME: self._agent6_docs,
             ReadFileInput.TOOL_NAME: self._read_file,
             ListDirInput.TOOL_NAME: self._list_dir,
             GrepInput.TOOL_NAME: self._grep,
@@ -440,6 +473,23 @@ class ToolDispatcher:
             self._events.emit(event_type, **fields)
 
     # ----- handlers -----
+
+    def _agent6_docs(self, raw: dict[str, Any]) -> dict[str, Any]:
+        args = Agent6DocsInput.model_validate(raw)
+        available = _list_agent6_docs()
+        if not args.name:
+            return {"available": available}
+        content = _read_agent6_doc(args.name)
+        if content is None:
+            raise ToolError(
+                f"unknown agent6 doc {args.name!r}; available: {', '.join(available) or '(none)'}"
+            )
+        cap = 60_000
+        return {
+            "name": args.name,
+            "content": content[:cap],
+            "truncated": len(content) > cap,
+        }
 
     def _read_file(self, raw: dict[str, Any]) -> dict[str, Any]:
         args = ReadFileInput.model_validate(raw)
