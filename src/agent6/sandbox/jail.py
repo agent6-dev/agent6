@@ -86,15 +86,33 @@ def _run_unsandboxed(policy: JailPolicy) -> CommandResult:
     env = {**os.environ, **{k: v for k, v in policy.env}}
     start = time.monotonic()
     # Unsandboxed escape hatch (non-Linux only); see run_in_jail docstring.
-    proc = subprocess.run(
-        list(policy.argv),
-        cwd=str(policy.cwd),
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=policy.timeout_s,
-    )
+    try:
+        proc = subprocess.run(
+            list(policy.argv),
+            cwd=str(policy.cwd),
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=policy.timeout_s,
+        )
+    except subprocess.TimeoutExpired as exc:
+        # Match the jailed profiles' contract: a timeout is an rc=124 result, not
+        # a raised exception the caller would have to special-case. (text=True
+        # makes the partial output str at runtime; the stub still types it bytes,
+        # so coerce defensively.)
+        def _text(v: object) -> str:
+            if isinstance(v, bytes):
+                return v.decode(errors="replace")
+            return v if isinstance(v, str) else ""
+
+        return CommandResult(
+            argv=tuple(policy.argv),
+            returncode=124,
+            stdout=_text(exc.stdout),
+            stderr=_text(exc.stderr),
+            duration_s=time.monotonic() - start,
+        )
     duration = time.monotonic() - start
     return CommandResult(
         argv=tuple(policy.argv),

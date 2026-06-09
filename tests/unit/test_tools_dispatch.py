@@ -546,6 +546,10 @@ def test_run_command_disabled_when_no(tmp_path: Path) -> None:
         ["/usr/bin/git", "reset", "--hard"],
         ["git", "-C", ".", "restore", "src/foo.py"],
         ["git", "--no-pager", "stash", "push"],
+        # `env` wrapper must not slip a mutating git command past the refusal.
+        ["env", "git", "clean", "-fdx"],
+        ["env", "FOO=bar", "git", "reset", "--hard"],
+        ["/usr/bin/env", "-u", "GIT_DIR", "git", "checkout", "x.py"],
     ],
 )
 def test_run_command_refuses_mutating_git_commands(tmp_path: Path, argv: list[str]) -> None:

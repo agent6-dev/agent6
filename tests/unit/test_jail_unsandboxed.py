@@ -66,3 +66,17 @@ def test_none_profile_overlays_policy_env(tmp_path: Path) -> None:
     )
     assert res.returncode == 0
     assert "set-by-policy" in res.stdout
+
+
+def test_none_profile_timeout_returns_124_not_exception(tmp_path: Path) -> None:
+    # The jailed profiles surface a timeout as rc=124; the `none` path used to
+    # leak subprocess.TimeoutExpired instead. It must match the contract.
+    res = run_in_jail(
+        JailPolicy(
+            cwd=tmp_path,
+            argv=(sys.executable, "-c", "import time; time.sleep(10)"),
+            profile="none",
+            timeout_s=0.5,
+        )
+    )
+    assert res.returncode == 124

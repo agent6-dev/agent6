@@ -97,7 +97,33 @@ _GIT_GLOBAL_OPTIONS_WITH_VALUE_PREFIXES = tuple(
 )
 
 
+def _strip_env_wrapper(argv: tuple[str, ...]) -> tuple[str, ...]:
+    """Peel a leading ``env [-i] [-u NAME] [NAME=VALUE...]`` wrapper.
+
+    Best-effort: ``env git clean -fdx`` is the common way to slip a mutating git
+    command past the argv[0]=="git" check; strip the wrapper so the refusal
+    still applies. Does not (and cannot) catch every wrapper (sh -c, sudo, ...);
+    the real protection is the jail RO-binding .git -- this just closes the
+    obvious hole.
+    """
+    if not argv or Path(argv[0]).name != "env":
+        return argv
+    idx = 1
+    while idx < len(argv):
+        arg = argv[idx]
+        if arg in ("-i", "--ignore-environment"):
+            idx += 1
+        elif arg in ("-u", "--unset"):
+            idx += 2  # takes a NAME argument
+        elif "=" in arg and not arg.startswith("-"):
+            idx += 1  # NAME=VALUE assignment
+        else:
+            break
+    return argv[idx:]
+
+
 def _git_subcommand(argv: tuple[str, ...]) -> str | None:
+    argv = _strip_env_wrapper(argv)
     if not argv or Path(argv[0]).name != "git":
         return None
     idx = 1
