@@ -146,8 +146,17 @@ def discover_layers(repo_root: Path, explicit_path: Path | None) -> list[Layer]:
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     out = dict(base)
     for key, val in override.items():
-        if isinstance(val, dict) and isinstance(out.get(key), dict):
-            out[key] = _deep_merge(out[key], val)
+        existing = out.get(key)
+        if isinstance(val, dict) and isinstance(existing, dict):
+            # A discriminated dict (e.g. a [providers.<name>] entry) whose `kind`
+            # changes between layers must REPLACE, not deep-merge: the lower
+            # layer's kind-specific keys (an anthropic api_key_env, say) are
+            # invalid under the new kind and would otherwise survive the merge
+            # and surface as a confusing extra_forbidden validation error.
+            if val.get("kind") != existing.get("kind") and "kind" in val and "kind" in existing:
+                out[key] = val
+            else:
+                out[key] = _deep_merge(existing, val)
         else:
             out[key] = val
     return out

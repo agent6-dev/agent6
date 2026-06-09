@@ -162,6 +162,26 @@ def test_global_workspace_subdir_accepts_plain_segment(repo: Path) -> None:
     assert _global_workspace_subdir() == ".myagent"
 
 
+def test_deep_merge_replaces_provider_when_kind_changes() -> None:
+    # A lower layer's kind-specific keys must not survive a kind change, or they
+    # surface as a confusing extra_forbidden error under the new kind.
+    from agent6.config_layer import _deep_merge  # pyright: ignore[reportPrivateUsage]
+
+    base = {"providers": {"p": {"kind": "anthropic", "api_key_env": "X"}}}
+    override = {"providers": {"p": {"kind": "openai", "base_url": "Y"}}}
+    merged = _deep_merge(base, override)
+    assert merged["providers"]["p"] == {"kind": "openai", "base_url": "Y"}
+
+
+def test_deep_merge_still_merges_when_kind_unchanged() -> None:
+    from agent6.config_layer import _deep_merge  # pyright: ignore[reportPrivateUsage]
+
+    base = {"providers": {"p": {"kind": "openai", "base_url": "Y", "api_key_env": "X"}}}
+    override = {"providers": {"p": {"base_url": "Z"}}}
+    merged = _deep_merge(base, override)
+    assert merged["providers"]["p"] == {"kind": "openai", "base_url": "Z", "api_key_env": "X"}
+
+
 def test_materialize_roundtrips(repo: Path, tmp_path: Path) -> None:
     eff = load_effective(repo)
     text = materialize(eff.config)

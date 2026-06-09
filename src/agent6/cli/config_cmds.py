@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 from pathlib import Path
 
 from agent6.cli.toml_io import (
@@ -26,6 +27,7 @@ from agent6.config_layer import (
     render_show,
     repo_config_path_for,
 )
+from agent6.machine import MachineError, load_machine
 from agent6.paths import (
     chown_to_real_user,
     effective_user,
@@ -113,24 +115,55 @@ def _reject_machine_protected(key: str, machine: Path | None) -> str | None:
     return None
 
 
+def _machine_is_valid(text: str | None) -> bool:
+    """True iff *text* parses as a complete, valid machine spec.
+
+    Used to decide whether a `config set --machine` edit BROKE a working machine
+    (block + roll back) versus merely touched an already-incomplete one (allow).
+    """
+    if text is None:
+        return False
+    with tempfile.NamedTemporaryFile("w", suffix=".asm.toml", delete=True, encoding="utf-8") as tf:
+        tf.write(text)
+        tf.flush()
+        try:
+            load_machine(Path(tf.name))
+        except MachineError:
+            return False
+    return True
+
+
 def _revalidate_config(target: Path, prior_text: str | None, *, machine: Path | None) -> str | None:
     """Re-validate the config after a write; restore *prior_text* on failure.
 
     Returns a ready-to-print error message when the edit produced an invalid
     config (so the caller fails loud and the file is left untouched), else None.
     """
+    err: str | None = None
     try:
         if machine is not None:
-            overlay = _read_toml_file(target).get("config", {})
+            data = _read_toml_file(target)
+            overlay = data.get("config", {})
             load_effective_with_overlay(Path.cwd(), overlay if isinstance(overlay, dict) else {})
+            # Validate the WHOLE machine spec too (not just the [config] overlay)
+            # so `config set --machine` can't BREAK a runnable machine. We only
+            # block when the edit made a previously-VALID machine invalid -- a
+            # machine that was already invalid (or a brand-new stub) is left for
+            # the author to finish; `machine check` is the gate for runnability.
+            if "states" in data and _machine_is_valid(prior_text):
+                load_machine(target)
         else:
             load_effective(Path.cwd(), None)
     except ConfigError as exc:
+        err = str(exc)
+    except MachineError as exc:
+        err = "; ".join(exc.problems)
+    if err is not None:
         if prior_text is None:
             target.unlink(missing_ok=True)
         else:
             target.write_text(prior_text, encoding="utf-8")
-        return str(exc)
+        return err
     return None
 
 

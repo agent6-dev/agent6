@@ -109,9 +109,7 @@ def test_tool_network_allow_requires_agent_open(tmp_path: Path) -> None:
 def test_mcp_server_name_rejects_double_underscore(tmp_path: Path) -> None:
     # `__` separates server from tool in the LLM-visible mcp__<server>__<tool>;
     # a server name containing it would break routing, so it's rejected at load.
-    body = _VALID_TOML + (
-        '\n[[mcp.servers]]\nname = "bad__name"\ncommand = ["true"]\n'
-    )
+    body = _VALID_TOML + ('\n[[mcp.servers]]\nname = "bad__name"\ncommand = ["true"]\n')
     with pytest.raises(ConfigError, match="__"):
         load_config(_write(tmp_path, body))
 
