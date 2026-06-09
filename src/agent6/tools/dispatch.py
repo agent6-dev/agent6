@@ -164,28 +164,34 @@ def _resolve_in_root(root: Path, candidate: str) -> _SafePath:
     return _SafePath(abs_path=abs_path, rel_path=rel)
 
 
-def _refuse_agent6_write(candidate: str, dir_name: str, resolved: _SafePath | None = None) -> None:
-    """Writes under the agent6 dir corrupt the harness's own observability
-    and resume state. The DAG curator writes ``graph.jsonl`` there, the event
-    sink writes ``log.jsonl``, the transcript sink writes ``transcripts/*``.
-    A stray ``apply_edit`` / ``apply_patch`` from the LLM into any of those
-    would silently break the resumable-DAG moat. Reads are still allowed (the
-    agent may legitimately want to inspect its own prior transcript on resume).
+def _refuse_protected_write(
+    candidate: str, dir_name: str, *, why: str, resolved: _SafePath | None = None
+) -> None:
+    """Refuse an in-process ``apply_edit`` / ``apply_patch`` into a protected
+    top-level directory.
 
-    ``dir_name`` is the agent6 dir's name (``.agent6`` by default, or whatever
-    ``[agent6].workspace_subdir`` renamed it to). Checks both the raw
-    candidate string AND the post-symlink-resolution relative path, so a
-    symlink ``./decoy -> .agent6`` can't be used to launder a write through
-    the prefix check.
+    Two dirs are protected. ``.agent6`` (or whatever ``[agent6].workspace_subdir``
+    renamed it to): the DAG curator writes ``graph.jsonl`` there, the event sink
+    ``logs.jsonl``, the transcript sink ``transcripts/*`` -- a stray write would
+    break the resumable-DAG moat. ``.git`` (when ``protect_git``): the edit tools
+    write **in-process, outside the jail**, so without this an LLM could create
+    or rewrite ``.git/hooks/*`` or ``.git/config`` (e.g. ``core.fsmonitor``) and
+    get code executed outside the sandbox on the next ``git`` invocation, or
+    corrupt git history -- defeating ``protect_git`` entirely (the jail's RO bind
+    of ``.git`` never covers these in-process writes). Reads stay allowed.
+
+    Checks both the raw candidate string AND the post-symlink-resolution relative
+    path, so a symlink ``./decoy -> .git`` can't launder a write past the prefix
+    check.
     """
     parts = Path(candidate).parts
     if parts and parts[0] == dir_name:
-        raise ToolError(f"Refusing to write under {dir_name}/ (agent6 run state): {candidate!r}")
+        raise ToolError(f"Refusing to write under {dir_name}/ ({why}): {candidate!r}")
     if resolved is not None:
         rel_parts = resolved.rel_path.parts
         if rel_parts and rel_parts[0] == dir_name:
             raise ToolError(
-                f"Refusing to write under {dir_name}/ via symlink: {candidate!r} "
+                f"Refusing to write under {dir_name}/ ({why}) via symlink: {candidate!r} "
                 f"resolves to {resolved.rel_path!s}"
             )
 
@@ -465,11 +471,19 @@ class ToolDispatcher:
                 continue
         return {"hits": hits, "truncated": False}
 
+    def _refuse_protected_writes(self, path: str, resolved: _SafePath | None = None) -> None:
+        """Apply every protected-dir write guard for an in-process edit."""
+        _refuse_protected_write(
+            path, self._agent6_dir_name, why="agent6 run state", resolved=resolved
+        )
+        if self._config.sandbox.protect_git:
+            _refuse_protected_write(path, ".git", why="git history/metadata", resolved=resolved)
+
     def _apply_edit(self, raw: dict[str, Any]) -> dict[str, Any]:
         args = ApplyEditInput.model_validate(raw)
-        _refuse_agent6_write(args.path, self._agent6_dir_name)
+        self._refuse_protected_writes(args.path)
         sp = _resolve_in_root(self._root, args.path)
-        _refuse_agent6_write(args.path, self._agent6_dir_name, sp)
+        self._refuse_protected_writes(args.path, sp)
         # Write-outside-cwd is enforced by _resolve_in_root already (root == cwd).
         applied: list[str] = []
         existing = sp.abs_path.read_text(encoding="utf-8") if sp.abs_path.exists() else None
@@ -536,9 +550,9 @@ class ToolDispatcher:
 
     def _apply_patch(self, raw: dict[str, Any]) -> dict[str, Any]:
         args = ApplyPatchInput.model_validate(raw)
-        _refuse_agent6_write(args.path, self._agent6_dir_name)
+        self._refuse_protected_writes(args.path)
         sp = _resolve_in_root(self._root, args.path)
-        _refuse_agent6_write(args.path, self._agent6_dir_name, sp)
+        self._refuse_protected_writes(args.path, sp)
         existing = sp.abs_path.read_text(encoding="utf-8") if sp.abs_path.exists() else None
         try:
             target_path, new_content = apply_patch_text(args.patch, existing)

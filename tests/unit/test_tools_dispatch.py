@@ -145,6 +145,69 @@ def test_apply_edit_refuses_agent6_via_symlink(tmp_path: Path) -> None:
         )
 
 
+def test_apply_edit_refuses_git_dir(tmp_path: Path) -> None:
+    # apply_edit writes in-process (outside the jail), so without a guard the
+    # LLM could plant a .git/hooks/pre-commit or rewrite .git/config and get
+    # code run outside the sandbox on the next commit -- bypassing protect_git.
+    cfg = _config(tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(ToolError, match=r"\.git"):
+        d.dispatch(
+            "apply_edit",
+            {
+                "path": ".git/hooks/pre-commit",
+                "edits": [{"kind": "create", "old_string": "", "new_string": "#!/bin/sh\nid\n"}],
+            },
+        )
+
+
+def test_apply_patch_refuses_git_config(tmp_path: Path) -> None:
+    cfg = _config(tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(ToolError, match=r"\.git"):
+        d.dispatch(
+            "apply_patch",
+            {
+                "path": ".git/config",
+                "patch": "--- /dev/null\n+++ .git/config\n@@ -0,0 +1 @@\n+[core]\n",
+            },
+        )
+
+
+def test_apply_edit_refuses_git_via_symlink(tmp_path: Path) -> None:
+    cfg = _config(tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "decoy").symlink_to(".git", target_is_directory=True)
+    with pytest.raises(ToolError, match=r"\.git.*symlink"):
+        d.dispatch(
+            "apply_edit",
+            {
+                "path": "decoy/hooks/pre-commit",
+                "edits": [{"kind": "create", "old_string": "", "new_string": "x"}],
+            },
+        )
+
+
+def test_apply_edit_allows_git_write_when_protect_git_false(tmp_path: Path) -> None:
+    # Opting out of protect_git lifts the guard (consistent with the jail,
+    # which also stops RO-binding .git when protect_git is false).
+    from agent6.config import load_config
+
+    p = tmp_path / "agent6-nogit.toml"
+    p.write_text(_VALID_TOML.replace("protect_git = true", "protect_git = false"), encoding="utf-8")
+    cfg = load_config(p)
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d.dispatch(
+        "apply_edit",
+        {
+            "path": ".git/description",
+            "edits": [{"kind": "create", "old_string": "", "new_string": "ok\n"}],
+        },
+    )
+    assert (tmp_path / ".git" / "description").read_text(encoding="utf-8") == "ok\n"
+
+
 def test_apply_edit_create_and_replace(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     d = ToolDispatcher(root=tmp_path, config=cfg)
