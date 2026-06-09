@@ -164,9 +164,15 @@ def flock(path: Path) -> Generator[None]:
 
 
 def _yaml_quote(s: str) -> str:
-    """Quote a scalar so it round-trips through `_parse_yaml_scalar`."""
-    # Always double-quote to keep round-trip simple; escape backslash and quotes.
-    escaped = s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+    """Quote a scalar so it round-trips through `_yaml_unquote`."""
+    # Always double-quote to keep round-trip simple; escape backslash, quotes,
+    # and BOTH newline chars. `\r` must be escaped too: the parser splits on
+    # "\n" only, but an un-escaped `\r` would otherwise be emitted literally and
+    # an adversarial title/notes value could smuggle one in. Other Unicode line
+    # separators (U+2028/2029, \v, \f, NEL, …) survive because the parser no
+    # longer treats them as line breaks (it uses str.split("\n"), not
+    # str.splitlines()).
+    escaped = s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
     return f'"{escaped}"'
 
 
@@ -182,6 +188,8 @@ def _yaml_unquote(s: str) -> str:
                 nxt = body[i + 1]
                 if nxt == "n":
                     out.append("\n")
+                elif nxt == "r":
+                    out.append("\r")
                 elif nxt == '"':
                     out.append('"')
                 elif nxt == "\\":
@@ -226,7 +234,12 @@ def _dump_frontmatter(node: TaskNode) -> str:
 
 def _parse_frontmatter(text: str) -> TaskNode:
     """Parse the YAML frontmatter back into a TaskNode. Strict."""
-    lines = text.splitlines()
+    # Split on "\n" only (the exact inverse of `_dump_frontmatter`'s
+    # "\n".join). str.splitlines() additionally breaks on \r, \v, \f, NEL,
+    # U+2028/2029, \x1c-\x1e — so a scalar containing any of those (which an
+    # adversarial LLM can put in a task title via add_task) would be read back
+    # as two physical lines and crash the parser, permanently bricking resume.
+    lines = text.split("\n")
     if not lines or lines[0].rstrip() != "---":
         raise ValueError("missing leading '---'")
     fm: dict[str, str | list[str] | None] = {}

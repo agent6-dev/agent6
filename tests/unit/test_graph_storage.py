@@ -7,8 +7,16 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from agent6.graph.models import TaskNode
-from agent6.graph.storage import RunLayout, load_graph, write_node
+from agent6.graph.storage import (
+    RunLayout,
+    _dump_frontmatter,  # pyright: ignore[reportPrivateUsage]
+    _parse_frontmatter,  # pyright: ignore[reportPrivateUsage]
+    load_graph,
+    write_node,
+)
 
 
 def _mk_node(
@@ -35,6 +43,35 @@ def _mk_node(
         updated_at=now,
         created_by="planner",
     )
+
+
+@pytest.mark.parametrize(
+    "evil",
+    [
+        "carriage\rreturn",
+        "line\u2028sep",
+        "para\u2029sep",
+        "vtab\x0bhere",
+        "formfeed\x0chere",
+        "nel\x85here",
+        "filesep\x1chere",
+        "recordsep\x1ehere",
+        "crlf\r\nmix",
+        "trailing\r",
+        'quote"and\\back',
+        "newline\nhere",
+    ],
+)
+def test_frontmatter_round_trips_adversarial_scalars(evil: str) -> None:
+    """An LLM-chosen task title with line-separator chars must not break the
+    frontmatter round-trip (it used to crash _parse_frontmatter on resume --
+    a denial-of-resume from the untrusted worker)."""
+    node = _mk_node("0" * 25 + "A", title=evil, rationale=evil)
+    node = node.model_copy(update={"acceptance": evil})
+    rt = _parse_frontmatter(_dump_frontmatter(node))  # must not raise
+    assert rt.title == evil
+    assert rt.rationale == evil
+    assert rt.acceptance == evil
 
 
 def test_layout_ensure_creates_dirs(tmp_path: Path) -> None:
