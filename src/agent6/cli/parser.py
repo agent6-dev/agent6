@@ -167,6 +167,30 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         metavar="FILE",
         help="Explicit config file (layered over global + repo configs).",
     )
+    ask_p.add_argument(
+        "--run",
+        dest="ask_run",
+        default="",
+        metavar="RUN_ID",
+        help=(
+            "Ask about a prior run: seed its task, outcome, diff, and key events"
+            " from .agent6/runs/<id>/ (exact id or unambiguous prefix)."
+        ),
+    )
+    ask_p.add_argument(
+        "--continue",
+        dest="ask_continue",
+        action="store_true",
+        help="Like --run, but use the most recent run under .agent6/runs/.",
+    )
+    ask_p.add_argument(
+        "--file",
+        dest="ask_files",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="Seed a file's contents into the question (repeatable; like an inline @path).",
+    )
     _add_budget_flags(ask_p)
 
     watch_p = sub.add_parser(

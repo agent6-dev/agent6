@@ -53,7 +53,12 @@ from agent6.cli.plan_watch import (
     _most_recent_run_id,
     _resolve_plan_run_id,
 )
-from agent6.cli.run import _cmd_resume, _cmd_run
+from agent6.cli.run import (
+    _build_ask_run_digest,
+    _cmd_resume,
+    _cmd_run,
+    _seed_files,
+)
 
 
 def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR0915
@@ -143,9 +148,22 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
         if not args.task:
             print("ERROR: 'ask' needs a question argument (in quotes).", file=sys.stderr)
             return 2
+        question = args.task
+        prefix: list[str] = []
+        if args.ask_continue or args.ask_run:
+            digest = _build_ask_run_digest(Path.cwd(), args.ask_run, latest=args.ask_continue)
+            if digest is None:
+                return 2
+            prefix.append(digest)
+        if args.ask_files:
+            seeds = _seed_files(Path.cwd(), args.ask_files)
+            if seeds:
+                prefix.append(seeds)
+        if prefix:
+            question = "\n\n".join([*prefix, question])
         return _cmd_run(
             args.config,
-            args.task,
+            question,
             mode="ask",
             budget_overrides=_BudgetOverrides.from_args(args),
         )

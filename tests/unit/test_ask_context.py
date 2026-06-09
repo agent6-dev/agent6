@@ -1,0 +1,98 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Eric Lesiuta
+"""`agent6 ask --run/--continue` digest + `--file` seed helpers."""
+
+from __future__ import annotations
+
+import json
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from agent6.cli.run import (
+    _build_ask_run_digest,  # pyright: ignore[reportPrivateUsage]
+    _seed_files,  # pyright: ignore[reportPrivateUsage]
+)
+
+
+def _git(cwd: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", *args], cwd=cwd, capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+
+def _make_run(tmp_path: Path) -> str:
+    # A repo with a base commit + a run branch that changed a file, plus a
+    # synthetic .agent6/runs/<id>/ manifest + logs.jsonl.
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "m.py").write_text("x = 1\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "base")
+    base_sha = _git(tmp_path, "rev-parse", "HEAD")
+    _git(tmp_path, "checkout", "-qb", "agent6/run")
+    (tmp_path / "m.py").write_text("x = 2  # changed by the run\n", encoding="utf-8")
+    _git(tmp_path, "commit", "-aqm", "run change")
+    rid = "sunny-otter-AAA111"
+    run_dir = tmp_path / ".agent6" / "runs" / rid
+    run_dir.mkdir(parents=True)
+    (run_dir / "manifest.json").write_text(
+        json.dumps(
+            {"user_task": "make x equal 2", "base_sha": base_sha, "run_branch": "agent6/run"}
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "logs.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps({"type": "run.start", "user_task": "make x equal 2"}),
+                json.dumps({"type": "tool.call", "name": "apply_edit", "args": "m.py"}),
+                json.dumps({"type": "verify.end", "exit_code": 0}),
+                json.dumps({"type": "run.end", "reason": "finish_run", "iterations": 3}),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return rid
+
+
+def test_ask_run_digest_includes_task_diff_and_outcome(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rid = _make_run(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    digest = _build_ask_run_digest(tmp_path, rid, latest=False)
+    assert digest is not None
+    assert "make x equal 2" in digest  # the run's task
+    assert "changed by the run" in digest  # the diff
+    assert "reason=finish_run" in digest  # the outcome
+    assert rid in digest  # points at the run dir
+    assert ".agent6/runs/" in digest
+
+
+def test_ask_run_digest_continue_picks_a_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _make_run(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    digest = _build_ask_run_digest(tmp_path, "", latest=True)
+    assert digest is not None and "make x equal 2" in digest
+
+
+def test_ask_run_digest_unknown_run_returns_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / ".agent6" / "runs").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+    assert _build_ask_run_digest(tmp_path, "nope", latest=False) is None
+
+
+def test_seed_files_wraps_and_skips_missing(tmp_path: Path) -> None:
+    (tmp_path / "a.py").write_text("print('a')\n", encoding="utf-8")
+    out = _seed_files(tmp_path, ["a.py", "missing.py"])
+    assert '<file path="a.py">' in out
+    assert "print('a')" in out
+    assert "missing" not in out  # missing file skipped, not crashed

@@ -39,7 +39,7 @@ from agent6.cli.egress import (
     _warn_if_unsandboxed,
 )
 from agent6.cli.misc_cmds import _cmd_diff
-from agent6.cli.plan_watch import _event_epoch, _format_plain_event
+from agent6.cli.plan_watch import _event_epoch, _format_plain_event, _most_recent_run_id
 from agent6.cli.providers import (
     _build_critic_provider,
     _build_prompt_reviser_provider,
@@ -109,6 +109,129 @@ def _eprint(msg: str) -> None:
     """Loop logger that writes to stderr (used for `ask`, whose stdout is the
     answer and must stay clean for piping)."""
     print(msg, file=sys.stderr)
+
+
+def _summarize_run_log(logs_path: Path) -> str:
+    """Compact prose summary of a run's logs.jsonl: outcome + event counts +
+    recent notable events. Used to seed `agent6 ask --run`."""
+    if not logs_path.is_file():
+        return "(no logs.jsonl for this run)"
+    events: list[dict[str, Any]] = []
+    for line in logs_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict):
+            events.append(obj)
+    if not events:
+        return "(empty log)"
+    counts: dict[str, int] = {}
+    for e in events:
+        counts[str(e.get("type", ""))] = counts.get(str(e.get("type", "")), 0) + 1
+    out: list[str] = []
+    end = next((e for e in reversed(events) if e.get("type") == "run.end"), None)
+    if end is not None:
+        out.append(f"Ended: reason={end.get('reason')!r} iterations={end.get('iterations')}")
+    top = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:8]
+    out.append("Event counts: " + ", ".join(f"{t}={n}" for t, n in top))
+    notable_types = {"tool.call", "verify.end", "run.end", "loop.auto_commit", "loop.metric.sample"}
+    notable = [e for e in events if e.get("type") in notable_types][-15:]
+    if notable:
+        out.append("Recent notable events:")
+        out.extend(f"  - {_fmt_run_event(e)}" for e in notable)
+    return "\n".join(out)
+
+
+def _fmt_run_event(e: dict[str, Any]) -> str:
+    """One-line summary of a logs.jsonl event for the ask `--run` digest."""
+    t = str(e.get("type", ""))
+    if t == "tool.call":
+        return f"tool.call {e.get('name', '')} {str(e.get('args', ''))[:80]}".rstrip()
+    if t == "verify.end":
+        return f"verify.end exit={e.get('exit_code')}"
+    if t == "run.end":
+        return f"run.end reason={e.get('reason')}"
+    if t == "loop.metric.sample":
+        return f"loop.metric.sample score={e.get('score')}"
+    return t
+
+
+def _build_ask_run_digest(cwd: Path, run_id: str, *, latest: bool) -> str | None:
+    """Markdown digest of a prior run to seed an `ask`, or None (after printing
+    an error) when the run can't be resolved."""
+    runs_dir = _runs_dir(cwd)
+    if not runs_dir.is_dir():
+        print(f"ERROR: no runs directory at {runs_dir}", file=sys.stderr)
+        return None
+    if latest:
+        target = _most_recent_run_id(runs_dir)
+        if target is None:
+            print(f"ERROR: --continue: no runs under {runs_dir}", file=sys.stderr)
+            return None
+    else:
+        try:
+            target = resolve_run_id(runs_dir, run_id)
+        except RunIdError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return None
+    layout = RunLayout(state_dir=_agent6_dir(cwd), run_id=target)
+    if not layout.manifest_path.is_file():
+        print(f"ERROR: run {target} has no manifest.json", file=sys.stderr)
+        return None
+    try:
+        manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"ERROR: could not read manifest for {target}: {exc}", file=sys.stderr)
+        return None
+    base_sha = str(manifest.get("base_sha") or "")
+    run_branch = manifest.get("run_branch")
+    head_ref = str(run_branch) if run_branch else "HEAD"
+    diff = ""
+    if base_sha:
+        # operator-controlled argv, no LLM input (same as `agent6 diff`).
+        proc = subprocess.run(
+            ["git", "diff", f"{base_sha}..{head_ref}"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        diff = proc.stdout
+    cap = 8000
+    diff_excerpt = diff[:cap]
+    if len(diff) > cap:
+        diff_excerpt += "\n... (diff truncated; read more with git)"
+    try:
+        rel = layout.run_dir.relative_to(cwd)
+    except ValueError:
+        rel = layout.run_dir
+    return (
+        f'<prior-run id="{target}">\n'
+        f"This question is about a PRIOR agent6 run. Its files live under `{rel}/` --"
+        f" read `{rel}/logs.jsonl` or `{rel}/transcripts/` with `read_file` if you"
+        f" need more than this digest.\n\n"
+        f"## Run task\n{manifest.get('user_task', '')}\n\n"
+        f"## Outcome / key events\n{_summarize_run_log(layout.logs_path)}\n\n"
+        f"## Diff base_sha..{head_ref} (truncated)\n```diff\n{diff_excerpt}\n```\n"
+        f"</prior-run>"
+    )
+
+
+def _seed_files(cwd: Path, files: list[str]) -> str:
+    """Wrap explicit --file seeds for an `ask` (a non-fatal, capped read)."""
+    parts: list[str] = []
+    for f in files:
+        try:
+            content = (cwd / f).read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            print(f"WARNING: --file {f}: {exc}", file=sys.stderr)
+            continue
+        cap = 64 * 1024
+        if len(content) > cap:
+            content = content[:cap] + "\n... (truncated)"
+        parts.append(f'<file path="{f}">\n{content}\n</file>')
+    return "\n".join(parts)
 
 
 def _save_ask_transcript(layout: RunLayout, *, question: str, answer: str) -> None:
