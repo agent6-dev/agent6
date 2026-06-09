@@ -14,8 +14,12 @@ corrupt the project's git history.
   llama.cpp, LM Studio).
 - **Per-step git commits**, snapshot-resumable runs, USD/token
   budgets with hard stops, read-only code-review subcommand.
-- **Small footprint.** Two runtime dependencies (`pydantic`, `httpx`).
-  No telemetry, no auto-update, no plugin system.
+- **Small footprint.** Five runtime dependencies (`pydantic`, `httpx`,
+  `argcomplete`, and the `tree-sitter` pair that backs the `outline` /
+  `find_definition` / `find_references` tools). No telemetry, no
+  auto-update. The LLM tool surface is fixed and audited; the only
+  opt-in extension point is operator-configured MCP servers
+  (`[mcp]`, off by default) — there is no in-process plugin loading.
 
 ## Status
 
@@ -150,6 +154,11 @@ Other commands:
 - `agent6 history search <query>` — ripgrep-backed search over
   persisted transcripts.
 - `agent6 history graph [<run-id>]` — render the persisted task graph.
+- `agent6 diff [<run-id>]` — print the git diff a run produced
+  (`manifest.base_sha` → HEAD of the run branch).
+- `agent6 machine ...` — author and run agent6 state machines
+  (`.asm.toml`); see [STATE_MACHINES.md](STATE_MACHINES.md).
+- `agent6 mcp serve` — expose agent6's own tools over MCP (stdio).
 - `agent6 config fill` — materialize every effective value into one
   explicit config file (global by default, `--repo` for the repo).
 - `agent6 config get/set/unset/add/remove <key> [value]` — read or edit a
@@ -332,13 +341,14 @@ ceilings in your config hard-stop the run; a stopped run is resumable.
 
 ## Live view
 
-When installed with the `tui` extra and stdout is a TTY, `agent6 run`
-spawns a separate, read-only textual dashboard (task DAG, budget bar,
-tool table, log tail, latest diff); attach later with `agent6 watch`.
-The only thing the TUI writes is an approval answer when you Allow/Deny a
-`run_command` prompt. It folds a structured JSONL event stream
-(`.agent6/runs/<run-id>/logs.jsonl`) that is also the stable contract for
-any external viewer — the event vocabulary is in
+With the `tui` extra installed, `agent6 watch [<run-id>]` opens a
+separate, read-only textual dashboard (task DAG, budget bar, tool table,
+log tail, latest diff) over a running or finished run; `agent6 watch
+--plain` is a no-deps text tail for headless terminals. `run_command`
+approvals are answered at the `agent6 run` terminal itself (a stdin
+`[y/N]` prompt), not in the watch view. The dashboard folds a structured
+JSONL event stream (`.agent6/runs/<run-id>/logs.jsonl`) that is also the
+contract for any external viewer — the event vocabulary is in
 [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Persistence

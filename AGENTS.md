@@ -62,8 +62,10 @@ here once; do not re-justify them per-command in code comments or docs.
 - **Errors**: fail loudly. No bare `except:`. No swallowed errors. Custom
   exception classes for each subsystem.
 - **No new runtime dependencies** without explicit discussion. The
-  `pyproject.toml` dep list is intentionally tiny (`pydantic`, `httpx`,
-  nothing else). Build dep is `hatchling`.
+  `pyproject.toml` dep list is intentionally small: `pydantic`, `httpx`,
+  `argcomplete`, and the `tree-sitter` pair (`tree-sitter` +
+  `tree-sitter-language-pack`) that backs the symbol-navigation tools.
+  `textual` is an optional `[tui]` extra. Build dep is `hatchling`.
 - **Comments / docstrings**: don't add them to code you didn't change.
   Don't add type annotations to functions you didn't modify. Don't refactor
   surrounding code "while you're there." Scope creep is a review-blocker.

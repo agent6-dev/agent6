@@ -180,10 +180,15 @@ any external viewer (the fold to UI state lives in
 | `tool.call` / `.result`     | `name`, `args` (preview), `ok`, `summary`   |
 | `verify.start` / `.end`     | `cmd`, `exit_code`, `duration_s`, `*_tail`  |
 | `role.call` / `.result`     | `role`, `model`, `tokens_in`, `tokens_out`  |
+| `role.text_delta`           | streamed assistant text chunk               |
 | `budget.update`             | totals + caps for input/output tokens       |
-| `approval.prompt`/`.answer` | `id`, `prompt`, `approved`, `source`        |
-| `dag.*`                     | task add / update / cursor moves            |
+| `loop.*`                    | agent progress: `loop.auto_commit`, `loop.compact.*`, `loop.critic.*`, `loop.metric.*`, `loop.steer.*` |
 | `run.end`                   | `summary`                                   |
+
+The task DAG is **not** in this stream — it is curator-owned and lives in
+`graph.jsonl` (read via `agent6 history graph`). `run_command` approvals
+are answered at the `agent6 run` terminal (a stdin prompt), not through
+an event.
 
 ## Where things live
 
