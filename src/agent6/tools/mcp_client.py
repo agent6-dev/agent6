@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import re
 import subprocess
 import threading
 import time
@@ -64,6 +65,13 @@ _MAX_LINE_BYTES = 8 * 1024 * 1024
 # 64-128 chars; double-underscore segmentation keeps the prefix human-
 # parseable in transcripts.
 MCP_TOOL_PREFIX = "mcp__"
+
+# A server-advertised tool name is spliced into the LLM-visible
+# ``mcp__<server>__<tool>``; the provider tool-name grammar is
+# ``[A-Za-z0-9_-]{1,64}``. A name with whitespace/dots/other chars would make
+# the qualified name an invalid tool definition (rejected by the API) or shadow
+# a built-in, so tools whose names don't match are skipped at registration.
+_VALID_MCP_TOOL_NAME = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 class MCPError(RuntimeError):
@@ -160,6 +168,12 @@ class _MCPServer:
                 continue
             tname = entry.get("name")
             if not isinstance(tname, str) or not tname:
+                continue
+            if not _VALID_MCP_TOOL_NAME.match(tname):
+                # Skip tools whose names can't form a valid provider tool name
+                # (mcp__<server>__<tool> must be [A-Za-z0-9_-]); advertising one
+                # would break the whole tools array at call time. Silently skip,
+                # consistent with the non-string-name skip just above.
                 continue
             desc = entry.get("description")
             schema = entry.get("inputSchema")

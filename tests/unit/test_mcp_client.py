@@ -21,7 +21,9 @@ from agent6.tools.mcp_client import (
 )
 
 
-def _fake_server_argv(*, hang: bool = False, crash_after_init: bool = False) -> tuple[str, ...]:
+def _fake_server_argv(
+    *, hang: bool = False, crash_after_init: bool = False, bad_tool: bool = False
+) -> tuple[str, ...]:
     """Return argv that runs a tiny Python MCP server inline.
 
     The server speaks line-delimited JSON-RPC 2.0 over stdio:
@@ -38,6 +40,7 @@ def _fake_server_argv(*, hang: bool = False, crash_after_init: bool = False) -> 
         import json, sys
         HANG = {hang!r}
         CRASH = {crash_after_init!r}
+        BAD_TOOL = {bad_tool!r}
         def reply(req_id, result):
             sys.stdout.write(json.dumps({{
                 "jsonrpc": "2.0", "id": req_id, "result": result,
@@ -63,14 +66,18 @@ def _fake_server_argv(*, hang: bool = False, crash_after_init: bool = False) -> 
                     sys.exit(0)
                 continue
             if method == "tools/list":
-                reply(msg["id"], {{"tools": [
+                tools = [
                     {{"name": "echo", "description": "echo the input",
                       "inputSchema": {{"type": "object",
                                        "properties": {{"text": {{"type": "string"}}}}}}}},
                     {{"name": "shout", "description": "upper-case echo",
                       "inputSchema": {{"type": "object",
                                        "properties": {{"text": {{"type": "string"}}}}}}}},
-                ]}})
+                ]
+                if BAD_TOOL:
+                    tools.append({{"name": "has a space", "description": "invalid",
+                                   "inputSchema": {{"type": "object"}}}})
+                reply(msg["id"], {{"tools": tools}})
                 continue
             if method == "tools/call":
                 args = msg["params"].get("arguments", {{}})
@@ -102,6 +109,17 @@ def test_manager_starts_and_discovers_tools() -> None:
         ]
         for d in descs:
             assert d.input_schema.get("type") == "object"
+    finally:
+        mgr.close()
+
+
+def test_manager_skips_tools_with_invalid_names() -> None:
+    # A server-advertised tool whose name isn't [A-Za-z0-9_-] can't form a valid
+    # provider tool name; it must be skipped, not poison the whole tools array.
+    mgr = MCPManager.start([("fake", _fake_server_argv(bad_tool=True), 5.0, 5.0)])
+    try:
+        names = sorted(d.qualified_name for d in mgr.descriptors())
+        assert names == [f"{MCP_TOOL_PREFIX}fake__echo", f"{MCP_TOOL_PREFIX}fake__shout"]
     finally:
         mgr.close()
 

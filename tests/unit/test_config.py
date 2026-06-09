@@ -106,6 +106,16 @@ def test_tool_network_allow_requires_agent_open(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
+def test_mcp_server_name_rejects_double_underscore(tmp_path: Path) -> None:
+    # `__` separates server from tool in the LLM-visible mcp__<server>__<tool>;
+    # a server name containing it would break routing, so it's rejected at load.
+    body = _VALID_TOML + (
+        '\n[[mcp.servers]]\nname = "bad__name"\ncommand = ["true"]\n'
+    )
+    with pytest.raises(ConfigError, match="__"):
+        load_config(_write(tmp_path, body))
+
+
 def test_agent_network_local_refuses_allow_urls(tmp_path: Path) -> None:
     # The docstring promises `local` refuses allow_urls; it must be enforced,
     # not silently ignored (there is nothing external to allow-list offline).

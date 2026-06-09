@@ -575,6 +575,21 @@ class MCPServerEntry(BaseModel):
     # failure (ToolError) if exceeded.
     call_timeout_s: float = Field(gt=0.0, default=60.0)
 
+    @field_validator("name")
+    @classmethod
+    def _no_double_underscore(cls, v: str) -> str:
+        # The LLM-visible tool name is ``mcp__<name>__<tool>`` and routing
+        # recovers the server by splitting on the FIRST ``__`` after the prefix.
+        # A ``__`` inside the server name makes that split ambiguous and routes
+        # to the wrong (or no) server. (pydantic v2 patterns use a regex engine
+        # without lookahead, so this is a validator rather than a pattern.)
+        if "__" in v:
+            raise ValueError(
+                f"[mcp] server name must not contain '__' (it separates server"
+                f" from tool in mcp__<server>__<tool>): {v!r}"
+            )
+        return v
+
 
 class MCPConfig(BaseModel):
     """``[mcp]`` section. Empty / absent / ``enabled = false`` means no
