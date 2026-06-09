@@ -64,17 +64,32 @@ def _find_ty_argv() -> list[str] | None:
 
 
 def _symbol_position(text: str, symbol: str) -> tuple[int, int] | None:
-    """Return (line, character) of the first whole-word occurrence.
+    """Return (line, character) of the best whole-word occurrence to anchor on.
 
-    Both are 0-based (LSP convention). Returns None when the symbol
-    does not appear as an identifier in the file.
+    Both are 0-based (LSP convention). The LSP server only resolves
+    definition/references for an identifier *use* in code, so a match in a
+    comment, an import, or an inline `# ...` comment is a poor anchor. Prefer
+    the first match in a code line; fall back to the very first match (better
+    to anchor somewhere than return None). The ty server is Python-only, so the
+    Python comment/import heuristics are appropriate. Returns None only when the
+    symbol does not appear as an identifier at all.
     """
     pat = re.compile(rf"\b{re.escape(symbol)}\b")
+    fallback: tuple[int, int] | None = None
     for line_idx, line in enumerate(text.splitlines()):
         m = pat.search(line)
-        if m is not None:
-            return line_idx, m.start()
-    return None
+        if m is None:
+            continue
+        if fallback is None:
+            fallback = (line_idx, m.start())
+        stripped = line.lstrip()
+        if stripped.startswith("#") or stripped.startswith(("import ", "from ")):
+            continue  # whole-line comment or import: not a definition/use site
+        hash_idx = line.find("#")
+        if hash_idx != -1 and m.start() > hash_idx:
+            continue  # match sits in an inline comment
+        return line_idx, m.start()
+    return fallback
 
 
 def _uri_to_path(uri: str) -> Path:

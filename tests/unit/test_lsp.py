@@ -89,6 +89,24 @@ def test_symbol_position_missing() -> None:
     assert _symbol_position("nothing here\n", "absent") is None
 
 
+def test_symbol_position_prefers_code_over_comment_and_import() -> None:
+    # First textual hits are a comment + an import; the code use on line 3 is
+    # the right anchor for an LSP definition/reference request.
+    text = "# foo is great\nfrom mod import foo\nfoo()\n"
+    assert _symbol_position(text, "foo") == (2, 0)
+
+
+def test_symbol_position_skips_inline_comment_match() -> None:
+    text = "y = 1  # foo here\nfoo = 2\n"
+    assert _symbol_position(text, "foo") == (1, 0)
+
+
+def test_symbol_position_falls_back_to_comment_only_match() -> None:
+    # If the symbol appears ONLY in a comment, still anchor there (better than
+    # None) rather than silently failing.
+    assert _symbol_position("# mentions foo only\n", "foo") == (0, 11)
+
+
 def test_path_to_uri_and_back(tmp_path: Path) -> None:
     p = tmp_path / "x.py"
     p.write_text("", encoding="utf-8")

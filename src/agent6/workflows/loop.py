@@ -1600,6 +1600,7 @@ class Workflow:
             tool_calls=0,
             start_iteration=1,
             root_task_id=root_id,
+            original_task=effective_task,
         )
 
     def resume(self) -> RunResult:
@@ -1658,6 +1659,7 @@ class Workflow:
         tool_calls: int,
         start_iteration: int,
         root_task_id: str | None,
+        original_task: str | None = None,
     ) -> RunResult:
         """Shared loop body for both fresh ``run()`` and ``resume()``.
 
@@ -1666,9 +1668,12 @@ class Workflow:
         crash mid-call can be resumed from the same point.
         """
         # Cache the original task for in-loop critic calls.
-        # Works for both fresh run() (messages[0] has the task) and
-        # resume() (snapshot persists the same messages list).
-        original_task = _extract_initial_task(messages)
+        # Prefer the task passed straight from run() (exact, never truncated);
+        # fall back to recovering it from messages[0] for resume(), where only
+        # the snapshotted messages list is available. The fallback splits on the
+        # first blank line, so a multi-paragraph task survives intact only via
+        # the passed-in value -- which is why run() threads it explicitly.
+        original_task = original_task or _extract_initial_task(messages)
         # Track consecutive before_finish rejections so a
         # stubborn worker can't burn the budget bouncing off the critic.
         consecutive_critic_rejections = 0
