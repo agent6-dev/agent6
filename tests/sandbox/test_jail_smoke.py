@@ -174,6 +174,45 @@ def test_jail_protect_paths_block_writes_to_file(jail_bin: Path, tmp_path: Path)
     assert cfg.read_text(encoding="utf-8") == "original\n"
 
 
+def test_jail_hardened_symlink_escaping_cwd_gets_no_rw(jail_bin: Path, tmp_path: Path) -> None:
+    """A top-level symlink whose target escapes cwd must not receive RW.
+
+    Under hardened the per-top-level-entry RW carve-out used PathFd::new (which
+    follows symlinks), so a symlink like ``./escape -> /outside`` got a
+    recursive RW Landlock rule on the *outside* inode, letting the child write
+    beyond the workspace. The target is placed under ``/dev/shm`` -- outside cwd
+    and NOT under ``/tmp`` (which the jail grants RW), so /dev (read+exec only)
+    is the governing rule unless the symlink wrongly widens it.
+    """
+    import shutil as _shutil
+    import uuid as _uuid
+
+    shm = Path("/dev/shm")
+    if not shm.is_dir() or not os.access(shm, os.W_OK):
+        pytest.skip("/dev/shm not usable for the out-of-cwd target")
+    outside = shm / f"agent6-jail-escape-{_uuid.uuid4().hex}"
+    outside.mkdir()
+    try:
+        (tmp_path / ".git").mkdir()  # a protect path so the carve-out loop runs
+        (tmp_path / "src").mkdir()
+        (tmp_path / "escape").symlink_to(outside, target_is_directory=True)
+        res = run_in_jail(
+            JailPolicy(
+                cwd=tmp_path,
+                argv=("/bin/sh", "-c", "echo ok > src/x.txt; echo pwned > escape/sentinel; true"),
+                profile="hardened",
+                extra_protect_paths=(tmp_path / ".git",),
+                timeout_s=10.0,
+            )
+        )
+        # In-cwd sibling write still works; the escaping write is denied.
+        assert (tmp_path / "src" / "x.txt").read_text(encoding="utf-8").strip() == "ok"
+        escaped = (outside / "sentinel").exists()
+        assert not escaped, f"escaped write succeeded; stderr={res.stderr!r}"
+    finally:
+        _shutil.rmtree(outside, ignore_errors=True)
+
+
 def test_jail_hardened_protect_paths_block_writes(jail_bin: Path, tmp_path: Path) -> None:
     """Hardened profile blocks writes to protect_paths via Landlock carve-out.
 

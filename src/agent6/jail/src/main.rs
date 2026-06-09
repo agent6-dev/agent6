@@ -514,6 +514,7 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
             })?;
         }
         // RW only on non-protected top-level entries.
+        let canon_cwd = policy.cwd.canonicalize().unwrap_or_else(|_| policy.cwd.clone());
         let entries = match fs::read_dir(&policy.cwd) {
             Ok(it) => it,
             Err(e) => {
@@ -527,6 +528,20 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
             let p = entry.path();
             let canon = p.canonicalize().unwrap_or_else(|_| p.clone());
             if protect_set.contains(&canon) || protect_set.contains(&p) {
+                continue;
+            }
+            // A top-level symlink whose real target escapes cwd would otherwise
+            // get a recursive RW rule on that outside inode (PathFd::new follows
+            // symlinks; Landlock attaches to the resolved inode), letting the
+            // child write outside the workspace and defeating cwd confinement
+            // under the hardened profile. Skip any entry that does not resolve
+            // inside cwd. Mirrors the strip_prefix(cwd) check in setup_rootfs.
+            if !canon.starts_with(&canon_cwd) {
+                eprintln!(
+                    "agent6-jail: hardened: skipping rw grant on {} (resolves outside cwd to {})",
+                    p.display(),
+                    canon.display()
+                );
                 continue;
             }
             if let Ok(fd) = PathFd::new(&p) {
