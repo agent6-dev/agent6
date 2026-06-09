@@ -848,3 +848,17 @@ def test_disable_apply_edit_unset_leaves_tool_available(tmp_path: Path) -> None:
     names = d.available_tool_names()
     assert "apply_edit" in names
     assert "apply_patch" in names
+
+
+def test_dispatcher_refuses_mutations_in_plan_mode(tmp_path: Path) -> None:
+    # Defense-in-depth: even if a mutation tool reaches dispatch() in plan mode
+    # (the LLM's tool list already omits them), the dispatcher must refuse.
+    cfg = _config(tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg, mode="plan")
+    with pytest.raises(ToolError, match="plan mode"):
+        d.dispatch(
+            "apply_edit",
+            {"path": "f.py", "edits": [{"kind": "create", "old_string": "", "new_string": "x\n"}]},
+        )
+    with pytest.raises(ToolError, match="plan mode"):
+        d.dispatch("apply_patch", {"patch": "--- a\n+++ b\n"})

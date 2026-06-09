@@ -835,6 +835,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                 graph_client=graph_client,
                 run_root_node_id=None,  # Workflow seeds the root + calls set_run_root_node_id
                 mcp_manager=mcp_manager,
+                mode=mode,
             )
             wf = Workflow(
                 root=cwd,

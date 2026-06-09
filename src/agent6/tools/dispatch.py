@@ -15,7 +15,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from agent6.config import Config
 from agent6.events import EventSink
@@ -278,10 +278,15 @@ class ToolDispatcher:
         run_root_node_id: str | None = None,
         mcp_manager: MCPManager | None = None,
         extra_protect_paths: tuple[Path, ...] = (),
+        mode: Literal["run", "plan"] = "run",
     ) -> None:
         self._root = root.resolve()
         self._config = config
         self._sandbox_profile: SandboxProfile = sandbox_profile
+        # In plan mode the LLM's tool list already omits apply_edit/apply_patch;
+        # this is the defense-in-depth backstop so the dispatcher itself refuses
+        # a source mutation even if something dispatched one directly.
+        self._mode: Literal["run", "plan"] = mode
         # Extra read-only paths layered into every run_command jail on top of
         # protect_git/protect_agent6 (e.g. a running machine's own .asm.toml +
         # scripts bundle, so an agent state can't rewrite them mid-run).
@@ -411,6 +416,10 @@ class ToolDispatcher:
             raise ToolError(
                 f"{name} is disabled (AGENT6_DISABLE_APPLY_EDIT=1); use apply_patch instead"
             )
+        if self._mode == "plan" and name in {ApplyEditInput.TOOL_NAME, ApplyPatchInput.TOOL_NAME}:
+            # Backstop the plan-mode "read-only" guarantee at the dispatcher, not
+            # just by omitting these from the LLM's tool list.
+            raise ToolError(f"{name} is not available in plan mode (plan runs are read-only)")
         self._emit("tool.call", name=name, args=_truncate_args(raw_input))
         try:
             result = self._handlers[name](raw_input)
