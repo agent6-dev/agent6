@@ -276,6 +276,45 @@ def _cmd_mcp_serve(config_path: Path | None) -> int:
     return _mcp_run_server(config_path)
 
 
+def _collect_review_diff(
+    git: str,
+    root: Path,
+    *,
+    base: str,
+    head: str,
+    paths: tuple[str, ...],
+) -> subprocess.CompletedProcess[str]:
+    """Collect the diff `agent6 review` reviews, leaving the index untouched.
+
+    With ``base``: a plain ``git diff base..head`` (read-only). Without it:
+    working tree vs HEAD *including untracked files*. To make untracked files
+    show up, git needs intent-to-add (``git add -N``) entries — but review is
+    documented read-only, so we register ONLY the currently-untracked paths and
+    ``git reset`` them afterward (in a ``finally``), restoring the index exactly
+    as we found it. Staged/tracked changes are never touched.
+    """
+    if base:
+        diff_args = [git, "diff", f"{base}..{head}"]
+        if paths:
+            diff_args.extend(["--", *paths])
+        return subprocess.run(diff_args, cwd=root, capture_output=True, text=True, check=False)
+
+    status = subprocess.run(
+        [git, "status", "--porcelain", "-z"], cwd=root, capture_output=True, text=True, check=False
+    )
+    untracked = [entry[3:] for entry in status.stdout.split("\0") if entry.startswith("?? ")]
+    if untracked:
+        subprocess.run([git, "add", "-N", "--", *untracked], cwd=root, check=False)
+    try:
+        diff_args = [git, "diff", "HEAD"]
+        if paths:
+            diff_args.extend(["--", *paths])
+        return subprocess.run(diff_args, cwd=root, capture_output=True, text=True, check=False)
+    finally:
+        if untracked:
+            subprocess.run([git, "reset", "-q", "--", *untracked], cwd=root, check=False)
+
+
 def _cmd_review(  # noqa: PLR0911
     config_path: Path | None,
     *,
@@ -303,15 +342,7 @@ def _cmd_review(  # noqa: PLR0911
         print("ERROR: git not found on PATH.", file=sys.stderr)
         return 2
 
-    if base:
-        diff_args = [git, "diff", f"{base}..{head}"]
-    else:
-        # Working tree vs HEAD, including untracked files (intent-to-add).
-        subprocess.run([git, "add", "-N", "--", "."], cwd=root, check=False)
-        diff_args = [git, "diff", "HEAD"]
-    if paths:
-        diff_args.extend(["--", *paths])
-    diff_proc = subprocess.run(diff_args, cwd=root, capture_output=True, text=True, check=False)
+    diff_proc = _collect_review_diff(git, root, base=base, head=head, paths=paths)
     if diff_proc.returncode != 0:
         print(f"ERROR: git diff failed: {diff_proc.stderr.strip()}", file=sys.stderr)
         return 2
