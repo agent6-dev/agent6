@@ -80,7 +80,8 @@ fi)
 
 [sandbox]
 profile = "auto"
-network = "provider_only"
+agent_network = "providers"
+tool_network = "block"
 run_commands = "yes"
 protect_git = true
 protect_agent6 = true

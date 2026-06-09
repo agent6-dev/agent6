@@ -96,11 +96,11 @@ A single head-to-head pass over the 11 tasks (worker model
 | agent6       | 11 / 11 pass | ~$2.60    | —       |
 | claude-code  | 11 / 11 pass | $3.96     | 1443.5s |
 
-### agent6 across worker models (`network = "provider_only"`, N = 1)
+### agent6 across worker models (`agent_network = "providers"`, N = 1)
 
 Two further single passes of the same 11 tasks driven entirely through
 agent6, varying only the worker model. Both ran under
-`[sandbox] network = "provider_only"` (strict profile), so every task
+`[sandbox] agent_network = "providers"` (strict profile), so every task
 also exercised the rootless egress broker end-to-end:
 
 | worker model         | verify       | total cost | wall      |
