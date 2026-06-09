@@ -219,6 +219,16 @@ def _handle_connection(client: socket.socket, endpoint: Endpoint) -> None:  # pr
     except OSError:
         client.close()
         return
+    # `create_connection` leaves its connect-timeout on the returned socket, so
+    # without this reset every subsequent recv() inherits a 30s deadline. The
+    # splice must block for as long as the transfer needs: a large request can
+    # spend >30s prefilling before the first streamed token arrives, and a 30s
+    # recv timeout there raises socket.timeout, tears the connection down, and
+    # surfaces to the agent as "Server disconnected without sending a response"
+    # -- aborting otherwise-healthy runs on the default provider-only egress
+    # path. The real end-to-end deadline is the agent's httpx http_timeout_s.
+    upstream.settimeout(None)
+    client.settimeout(None)
     try:
         _splice_bidirectional(client, upstream)
     finally:
