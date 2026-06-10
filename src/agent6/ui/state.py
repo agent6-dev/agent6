@@ -83,6 +83,18 @@ class ApprovalPrompt:
 
 
 @dataclass(frozen=True, slots=True)
+class QuestionPrompt:
+    """An agent->user question (the `ask_user` tool). `options` are selectable
+    presets; the user may also type a free-text answer."""
+
+    id: str
+    question: str
+    options: tuple[str, ...] = ()
+    answered: bool = False
+    answer: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class RunState:
     run_id: str = ""
     user_task: str = ""
@@ -93,11 +105,12 @@ class RunState:
     last_verify: VerifyView | None = None
     budget: BudgetView = field(default_factory=BudgetView)
     pending_approvals: tuple[ApprovalPrompt, ...] = ()
+    pending_questions: tuple[QuestionPrompt, ...] = ()
     log_tail: tuple[str, ...] = ()  # most-recent-last, bounded
     log_count: int = 0  # monotonic total log lines ever (log_tail is windowed)
     finished: bool = False
     all_passed: bool | None = None
-    diffs: dict[int, str] = field(default_factory=dict)  # step_index -> patch text
+    latest_diff: str = ""  # patch of the most recent auto-commit (diff.updated)
     # Monotonic count of mid-run steer requests (Ctrl-C). The TUI compares it
     # against its own "seen" count to pop a steer modal exactly once per press.
     steer_requests: int = 0
@@ -111,7 +124,7 @@ _MAX_TOOL_HISTORY = 50
 _MAX_LOG_TAIL = 400
 
 
-def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PLR0911, PLR0912
+def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PLR0911, PLR0912, PLR0915
     """Fold one event into the run state. Pure function."""
     etype = event.get("type", "")
     log_line = _format_log_line(event)
@@ -134,11 +147,8 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
                 cursor_task_id=cursor if isinstance(cursor, str) else None,
             )
 
-        case "step.diff":
-            idx = int(event.get("index", 0))
-            new_diffs = dict(state.diffs)
-            new_diffs[idx] = str(event.get("patch", ""))
-            return replace(state, diffs=new_diffs)
+        case "diff.updated":
+            return replace(state, latest_diff=str(event.get("patch", "")))
 
         case "role.call":
             return replace(
@@ -263,6 +273,25 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
             )
             return replace(state, pending_approvals=new)
 
+        case "question.prompt":
+            opts = event.get("options", ()) or ()
+            qp = QuestionPrompt(
+                id=str(event.get("id", "")),
+                question=str(event.get("question", "")),
+                options=tuple(str(o) for o in opts) if isinstance(opts, (list, tuple)) else (),
+            )
+            return replace(state, pending_questions=(*state.pending_questions, qp))
+
+        case "question.answer":
+            wanted = str(event.get("id", ""))
+            new_q = tuple(
+                replace(q, answered=True, answer=str(event.get("answer", "")))
+                if q.id == wanted
+                else q
+                for q in state.pending_questions
+            )
+            return replace(state, pending_questions=new_q)
+
         case "run.steer_requested":
             return replace(state, steer_requests=state.steer_requests + 1)
 
@@ -334,17 +363,17 @@ def _render_args(args: dict[str, Any]) -> str:
     return ", ".join(pairs)
 
 
-def _format_log_line(event: dict[str, Any]) -> str:
+def _format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912
     ts = str(event.get("ts", ""))
     etype = str(event.get("type", "?"))
     # Compact one-line representation: timestamp, type, salient field.
     salient = ""
     match etype:
-        case "step.start" | "step.end":
-            idx = event.get("index")
-            title = event.get("title", "")
-            status = event.get("status", "")
-            salient = f"#{idx} {title} {status}".strip()
+        case "graph.update":
+            nodes = event.get("nodes", {})
+            salient = f"{len(nodes)} tasks" if isinstance(nodes, dict) else ""
+        case "diff.updated":
+            salient = f"{len(str(event.get('patch', '')).splitlines())} lines"
         case "tool.call":
             salient = f"{event.get('name', '')}({_render_args(event.get('args', {}) or {})})"
         case "tool.result":
@@ -362,6 +391,10 @@ def _format_log_line(event: dict[str, Any]) -> str:
             salient = str(event.get("prompt", ""))[:80]
         case "approval.answer":
             salient = f"id={event.get('id')} approved={event.get('approved')}"
+        case "question.prompt":
+            salient = str(event.get("question", ""))[:80]
+        case "question.answer":
+            salient = f"id={event.get('id')} answer={str(event.get('answer', ''))[:40]}"
         case "run.end":
             salient = f"all_passed={event.get('all_passed')}"
         case _:

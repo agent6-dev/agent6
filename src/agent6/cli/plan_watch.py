@@ -155,7 +155,7 @@ def _cmd_watch(run_id: str, *, plain: bool = False, since: int = 0) -> int:  # n
     if plain:
         return _cmd_watch_plain(target, since=since)
     try:
-        from agent6.ui.tui import run_tui  # noqa: PLC0415 - lazy: textual is optional
+        from agent6.ui.app import run_tui  # noqa: PLC0415 - lazy: textual is optional
     except ImportError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         print(
@@ -164,6 +164,25 @@ def _cmd_watch(run_id: str, *, plain: bool = False, since: int = 0) -> int:  # n
         )
         return 3
     return run_tui(target)
+
+
+def _cmd_tui() -> int:
+    """The TUI hub (`agent6 tui`): browse runs and start new work. Loops between
+    the home screen and the dashboard — opening a run watches it, then returns
+    here on close."""
+    try:
+        from agent6.ui.app import run_tui  # noqa: PLC0415 - lazy: textual is optional
+        from agent6.ui.home import run_home  # noqa: PLC0415
+    except ImportError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        print("HINT: the TUI needs 'textual' (part of the base install).", file=sys.stderr)
+        return 3
+    agent6_dir = _runs_dir(Path.cwd()).parent
+    while True:
+        run_dir = run_home(agent6_dir)
+        if run_dir is None:
+            return 0
+        run_tui(run_dir)
 
 
 def _format_plain_event(line: str, *, run_start_ts: float | None) -> str:

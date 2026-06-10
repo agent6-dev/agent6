@@ -87,8 +87,10 @@ from agent6.run_id import RunIdError, new_friendly_id, resolve_run_id
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.mcp_client import MCPManager
 from agent6.ui.approval import (
+    clear_pending_answers,
     clear_steer_answer,
     read_answer,
+    read_question_answer,
     read_steer_answer,
     tui_is_live,
 )
@@ -413,6 +415,48 @@ def _build_approver(run_dir: Path, events: EventSink) -> Callable[[str], bool]:
         return approved
 
     return approve
+
+
+def _build_questioner(run_dir: Path, events: EventSink) -> Callable[[str, tuple[str, ...]], str]:
+    """Build the `ask_user` questioner, bridged to a live TUI when present.
+
+    Emits a `question.prompt` event; if a TUI is live the answer comes from its
+    question modal via `questions/<id>.answer`, otherwise (or if the TUI dies /
+    times out) it falls back to a numbered stdin prompt. A headless run (no TUI,
+    no TTY) gets an empty answer rather than hanging. Emits `question.answer`."""
+    counter = {"n": 0}
+
+    def ask(question: str, options: tuple[str, ...]) -> str:
+        counter["n"] += 1
+        question_id = f"question-{counter['n']}"
+        events.emit("question.prompt", id=question_id, question=question, options=list(options))
+        answer: str | None = None
+        source = "stdin"
+        if tui_is_live(run_dir):
+            answer = read_question_answer(run_dir, question_id)
+            if answer is not None:
+                source = "tui"
+        if answer is None:
+            answer = _default_stdin_questioner(question, options)
+        events.emit("question.answer", id=question_id, answer=answer, source=source)
+        return answer
+
+    return ask
+
+
+def _default_stdin_questioner(question: str, options: tuple[str, ...]) -> str:
+    """Numbered stdin prompt; headless (no TTY / EOF) returns "" so a run never
+    hangs waiting on an operator that isn't there."""
+    if not sys.stdin.isatty():
+        return ""
+    lines = [question, *(f"  {i}) {opt}" for i, opt in enumerate(options, start=1))]
+    try:
+        ans = input("\n".join(lines) + "\n> ").strip()
+    except EOFError:
+        return ""
+    if ans.isdigit() and 1 <= int(ans) <= len(options):
+        return options[int(ans) - 1]
+    return ans
 
 
 def _tui_available() -> bool:
@@ -1047,6 +1091,10 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     if mode != "ask":
         _ensure_agent6_gitignored(cwd, agent6_dir=agent6_dir, identity=identity)
     layout.ensure()
+    # Drop stale approve/ask/steer answers + tui.pid from a prior session (the
+    # id counters reset on resume, so an old answer must not be read instead of
+    # re-prompting; a stale tui.pid would otherwise stall the answer-poll).
+    clear_pending_answers(layout.run_dir)
 
     # Cut a fresh branch named after the run id so it is 1:1 with the run
     # (find it from any run id, `agent6 diff <id>`, or just delete the
@@ -1185,6 +1233,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                 config=cfg,
                 sandbox_profile=selected_profile,
                 approver=_build_approver(layout.run_dir, events),
+                questioner=_build_questioner(layout.run_dir, events),
                 events=events,
                 graph_client=graph_client,
                 run_root_node_id=None,  # Workflow seeds the root + calls set_run_root_node_id
@@ -1361,6 +1410,9 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     if not layout.run_dir.is_dir():
         print(f"ERROR: no such run dir: {layout.run_dir}", file=sys.stderr)
         return 2
+    # Drop a prior session's stale answer files + tui.pid (the id counters reset
+    # on resume — an old answer must not be read instead of re-prompting).
+    clear_pending_answers(layout.run_dir)
 
     snapshot_path = layout.run_dir / "loop_state.json"
     if not snapshot_path.is_file():
@@ -1511,6 +1563,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
                 config=cfg,
                 sandbox_profile=selected_profile,
                 approver=_build_approver(layout.run_dir, events),
+                questioner=_build_questioner(layout.run_dir, events),
                 events=events,
                 graph_client=graph_client,
                 run_root_node_id=None,

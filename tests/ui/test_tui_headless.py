@@ -15,7 +15,8 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-from agent6.ui.tui import Agent6TUI, _ApprovalModal, _SteerModal
+from agent6.ui.app import Agent6TUI
+from agent6.ui.modals import ApprovalModal, QuestionModal, SteerModal
 
 
 def _ev(**fields: Any) -> dict[str, object]:
@@ -66,7 +67,7 @@ def test_render_and_modals(tmp_path: Path) -> None:
             app._handle_event(_ev(type="approval.prompt", id="ap1", prompt="run_command(['ls'])"))
             app._tick()
             await pilot.pause()
-            assert isinstance(app.screen, _ApprovalModal)
+            assert isinstance(app.screen, ApprovalModal)
             await pilot.press("y")
             await pilot.pause()
             assert (tmp_path / "approvals" / "ap1.answer").read_text(encoding="utf-8") == "yes"
@@ -83,7 +84,7 @@ def test_render_and_modals(tmp_path: Path) -> None:
             app._handle_event(_ev(type="run.steer_requested", source="sigint"))
             app._tick()
             await pilot.pause()
-            assert isinstance(app.screen, _SteerModal)
+            assert isinstance(app.screen, SteerModal)
             await pilot.press("f", "i", "x")
             await pilot.press("enter")
             await pilot.pause()
@@ -96,5 +97,31 @@ def test_render_and_modals(tmp_path: Path) -> None:
             await pilot.press("escape")
             await pilot.pause()
             assert (tmp_path / "steer.answer").read_text(encoding="utf-8") == ""
+
+            # Question modal (ask_user): markup-hostile options render, and a
+            # number key selects the matching option -> bridge file written.
+            app._handle_event(
+                _ev(
+                    type="question.prompt",
+                    id="q1",
+                    question="which [approach]?",
+                    options=["use [A]", "use [B]"],
+                )
+            )
+            app._tick()
+            await pilot.pause()
+            assert isinstance(app.screen, QuestionModal)
+            await pilot.press("2")
+            await pilot.pause()
+            assert (tmp_path / "questions" / "q1.answer").read_text(encoding="utf-8") == "use [B]"
+
+            # Question modal: a typed free-text answer is sent verbatim.
+            app._handle_event(_ev(type="question.prompt", id="q2", question="name?", options=[]))
+            app._tick()
+            await pilot.pause()
+            await pilot.press("z", "z")
+            await pilot.press("enter")
+            await pilot.pause()
+            assert (tmp_path / "questions" / "q2.answer").read_text(encoding="utf-8") == "zz"
 
     asyncio.run(scenario())

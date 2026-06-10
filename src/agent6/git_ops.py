@@ -406,6 +406,18 @@ def diff_since(path: Path, base_sha: str) -> str:
     return res.stdout if res.ok else ""
 
 
+def commit_diff(path: Path, sha: str, *, max_bytes: int = 16384) -> str:
+    """The patch a single commit introduced (``git show <sha>``), or "" on error.
+
+    Read-only — used to surface "what the worker just changed" to a live viewer.
+    ``--format=`` keeps it to just the diff (no commit message). Truncated to
+    ``max_bytes`` here so callers don't materialize an unbounded diff in memory."""
+    res = _run(path, "show", "--format=", "--no-color", sha, "--", ".", check=False)
+    if not res.ok:
+        return ""
+    return res.stdout[:max_bytes]
+
+
 def reset_to(path: Path, sha: str, *, mode: str) -> None:
     """Move HEAD (and optionally the index) to *sha* on the current branch.
 

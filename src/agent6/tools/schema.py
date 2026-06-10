@@ -400,6 +400,22 @@ class FindReferencesLspInput(_ToolInput):
     symbol: str = Field(min_length=1)
 
 
+class AskUserInput(_ToolInput):
+    TOOL_NAME: ClassVar[str] = "ask_user"
+    TOOL_DESCRIPTION: ClassVar[str] = (
+        "Ask the operator a question and wait for their answer. Use SPARINGLY —"
+        " only for a genuine decision you cannot make from the repo + task (e.g."
+        " a product choice, an ambiguous requirement). Provide 2-4 `options` when"
+        " the answer is a choice; the user can also type a free-text reply."
+        ' Returns {"answer": <string>}. In a non-interactive/headless run there'
+        " is no operator, so this returns an empty answer immediately — never"
+        " block waiting on it for steps you could decide yourself."
+    )
+
+    question: str = Field(min_length=1)
+    options: tuple[str, ...] = ()
+
+
 ApplyEditInput.model_rebuild()
 
 ALL_TOOLS: tuple[type[_ToolInput], ...] = (
@@ -426,6 +442,7 @@ ALL_TOOLS: tuple[type[_ToolInput], ...] = (
 LOOP_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     RunMetricInput,
     FinishRunInput,
+    AskUserInput,
     DagAddTaskInput,
     DagUpdateTaskInput,
     DagSetCursorInput,

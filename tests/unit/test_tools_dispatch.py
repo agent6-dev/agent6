@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
@@ -71,6 +72,37 @@ def test_read_file_ok(tmp_path: Path) -> None:
     d = ToolDispatcher(root=tmp_path, config=cfg)
     out = d.dispatch("read_file", {"path": "hello.txt"})
     assert out["content"] == "hi"
+
+
+def test_ask_user_routes_to_questioner(tmp_path: Path) -> None:
+    cfg = _config(tmp_path)
+    seen: dict[str, object] = {}
+
+    def questioner(question: str, options: tuple[str, ...]) -> str:
+        seen["question"], seen["options"] = question, options
+        return options[1] if options else "typed"
+
+    d = ToolDispatcher(root=tmp_path, config=cfg, questioner=questioner)
+    out = d.dispatch("ask_user", {"question": "which?", "options": ["a", "b"]})
+    assert out == {"answer": "b"}
+    assert seen == {"question": "which?", "options": ("a", "b")}
+
+
+def test_default_questioner_headless_returns_empty(tmp_path: Path) -> None:
+    # No injected questioner + EOF on stdin (headless) -> empty answer, no hang.
+    from agent6.tools.dispatch import _default_questioner  # pyright: ignore[reportPrivateUsage]
+
+    with mock.patch("builtins.input", side_effect=EOFError):
+        assert _default_questioner("q?", ("a", "b")) == ""
+
+
+def test_ask_user_refused_outside_run_mode(tmp_path: Path) -> None:
+    # ask_user is a run-mode tool; the dispatcher backstops it in other modes
+    # so a tool-list regression can't pause a plan/ask/machine loop.
+    cfg = _config(tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg, mode="plan", questioner=lambda q, o: "x")
+    with pytest.raises(ToolError, match="not available in plan mode"):
+        d.dispatch("ask_user", {"question": "q?"})
 
 
 def test_absolute_path_rejected(tmp_path: Path) -> None:

@@ -249,6 +249,11 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
 
+    sub.add_parser(
+        "tui",
+        help="Open the TUI hub: browse runs and start a new run/plan/ask.",
+    )
+
     resume_p = sub.add_parser("resume", help="Resume a paused run from its snapshot.")
     resume_run = resume_p.add_argument("run_id", help="Run id under .agent6/runs/.")
     resume_run.completer = _complete_run_ids  # type: ignore[attr-defined]

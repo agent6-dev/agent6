@@ -12,14 +12,14 @@ Layout:
                  contract a VS Code extension (or any other viewer) can
                  mirror in its own language.
     tail.py      stdlib JSONL file tailer.
-    approval.py  file-based approval bridge (workflow <-> TUI).
-    tui.py       Textual app. `textual` ships in the base install;
-                 importing this module raises a clear error if it's missing.
+    approval.py  file-based bridges (approve / ask_user / steer) workflow<->TUI.
+    modals.py    textual modal screens (approve / steer / question).
+    app.py       the run dashboard (Agent6TUI + run_tui).
+    home.py      the `agent6 tui` hub: list runs + launch run/plan/ask.
 
-The TUI is launched out-of-process by `agent6 run` (when stdout is a TTY
-and textual is installed) so the workflow process stays exactly as it is
-today — the TUI only reads files. `agent6 watch <run-id>` is a
-standalone read-only viewer.
+Everything is launched out-of-process and only reads `logs.jsonl` + writes the
+small answer files the workflow polls, so the core loop is untouched and any
+other front-end (VS Code, web, desktop) can mirror the same file contract.
 """
 
 from __future__ import annotations

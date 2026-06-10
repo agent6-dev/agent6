@@ -27,6 +27,7 @@ import time
 from pathlib import Path
 
 APPROVAL_DIR_NAME = "approvals"
+QUESTION_DIR_NAME = "questions"
 TUI_PID_FILE = "tui.pid"
 STEER_ANSWER_FILE = "steer.answer"
 
@@ -35,6 +36,21 @@ def approvals_dir(run_dir: Path) -> Path:
     p = run_dir / APPROVAL_DIR_NAME
     p.mkdir(parents=True, exist_ok=True)
     return p
+
+
+def clear_pending_answers(run_dir: Path) -> None:
+    """Drop stale bridge state at run/resume START: leftover `*.answer` files
+    from a prior session (the id counters reset, so an old answer would be read
+    instead of prompting) and a stale `tui.pid` from a hard-killed TUI (which
+    would otherwise make the answer-poll block until timeout). Best-effort."""
+    for sub in (APPROVAL_DIR_NAME, QUESTION_DIR_NAME):
+        d = run_dir / sub
+        if d.is_dir():
+            for f in d.glob("*.answer"):
+                with contextlib.suppress(OSError):
+                    f.unlink()
+    clear_steer_answer(run_dir)
+    clear_tui_pid(run_dir)
 
 
 def write_tui_pid(run_dir: Path, pid: int) -> None:
@@ -83,7 +99,50 @@ def read_answer(
     while time.monotonic() < deadline:
         if target.exists():
             txt = target.read_text(encoding="utf-8").strip().lower()
+            with contextlib.suppress(FileNotFoundError):
+                target.unlink()  # consume: never re-read on a later prompt/resume
             return txt in {"yes", "y", "true", "1"}
+        if not tui_is_live(run_dir):
+            return None
+        time.sleep(poll_s)
+    return None
+
+
+# --- agent->user question bridge (the `ask_user` tool) -----------------------
+# Same shape as approvals, but the answer is a free string (a selected option or
+# typed text). The workflow emits `question.prompt`, polls for the answer file;
+# the TUI shows a modal and writes it. Falls back to stdin (then a default) when
+# no TUI is live, so headless runs never hang.
+
+
+def questions_dir(run_dir: Path) -> Path:
+    p = run_dir / QUESTION_DIR_NAME
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def write_question_answer(run_dir: Path, question_id: str, answer: str) -> None:
+    """Called by the TUI when the user answers the question modal."""
+    (questions_dir(run_dir) / f"{question_id}.answer").write_text(answer, encoding="utf-8")
+
+
+def read_question_answer(
+    run_dir: Path,
+    question_id: str,
+    *,
+    timeout_s: float = 600.0,
+    poll_s: float = 0.2,
+) -> str | None:
+    """Called by the workflow. Returns the answer string or None if the TUI
+    died / timed out before answering."""
+    target = questions_dir(run_dir) / f"{question_id}.answer"
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if target.exists():
+            txt = target.read_text(encoding="utf-8")
+            with contextlib.suppress(FileNotFoundError):
+                target.unlink()  # consume: never re-read on a later prompt/resume
+            return txt
         if not tui_is_live(run_dir):
             return None
         time.sleep(poll_s)

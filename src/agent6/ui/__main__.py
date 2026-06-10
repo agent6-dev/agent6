@@ -25,7 +25,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
-        from agent6.ui.tui import run_tui  # noqa: PLC0415 - lazy: textual is optional
+        from agent6.ui.app import run_tui  # noqa: PLC0415 - lazy: textual is optional
     except ImportError as e:
         print(f"agent6 ui: {e}", file=sys.stderr)
         return 3

@@ -174,12 +174,12 @@ def test_approval_prompt_then_answer() -> None:
     assert s.pending_approvals[0].approved is True
 
 
-def test_step_diff_stored_by_index() -> None:
-    s = apply_event(
-        initial_state(),
-        {"type": "step.diff", "index": 2, "commit_sha": "abc", "patch": "diff text"},
-    )
-    assert s.diffs == {2: "diff text"}
+def test_diff_updated_stores_latest_patch() -> None:
+    s = apply_event(initial_state(), {"type": "diff.updated", "sha": "abc", "patch": "diff text"})
+    assert s.latest_diff == "diff text"
+    # a newer diff replaces the prior one
+    s = apply_event(s, {"type": "diff.updated", "sha": "def", "patch": "newer"})
+    assert s.latest_diff == "newer"
 
 
 def test_run_end_marks_finished() -> None:
@@ -223,7 +223,7 @@ def test_full_run_trace_replay() -> None:
             "input_cap": 1000,
             "output_cap": 1000,
         },
-        {"type": "step.diff", "index": 1, "commit_sha": "abc", "patch": "+ added"},
+        {"type": "diff.updated", "sha": "abc", "patch": "+ added"},
         {"type": "run.end", "all_passed": False},
     ]
     s = initial_state()
@@ -234,7 +234,7 @@ def test_full_run_trace_replay() -> None:
     assert s.tasks[0].status == "passed"
     assert s.tasks[1].status == "failed"
     assert s.cursor_task_id == "two"
-    assert s.diffs[1] == "+ added"
+    assert s.latest_diff == "+ added"
     assert s.budget.input_total == 50
 
 

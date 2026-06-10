@@ -1,18 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Textual TUI app for `agent6 run` / `agent6 watch`.
+"""The agent6 run dashboard (`agent6 run` / `agent6 watch` / `agent6 tui`).
 
-`textual` ships in the base install; importing this module fails clearly
-if it has been stripped out. Nothing else in `agent6/ui/` imports this
-module at import-time; the CLI does a lazy `importlib.import_module`.
+`textual` ships in the base install; importing this module fails clearly if it
+has been stripped out. The CLI imports it lazily.
 
 Architecture:
 - main thread: textual event loop.
 - background thread: tail_events(logs.jsonl) -> apply_event -> call_from_thread.
 
-The TUI is read-only on the log stream and only writes to
-`<run_dir>/approvals/<id>.answer` (approval modal) and
-`<run_dir>/steer.answer` (steer modal) when the user answers.
+The dashboard is READ-ONLY on the log stream and only writes the answer files
+the workflow polls: `<run_dir>/approvals/<id>.answer` (approve), `.../questions/
+<id>.answer` (ask_user), and `<run_dir>/steer.answer` (Ctrl-C steer). Any other
+front-end can mirror this contract.
 """
 
 from __future__ import annotations
@@ -29,14 +29,11 @@ try:
     from textual.app import App, ComposeResult
     from textual.binding import Binding
     from textual.command import DiscoveryHit, Hit, Hits, Provider
-    from textual.containers import Container, Horizontal, Vertical
-    from textual.screen import ModalScreen
+    from textual.containers import Horizontal, Vertical
     from textual.widgets import (
-        Button,
         DataTable,
         Footer,
         Header,
-        Input,
         ProgressBar,
         RichLog,
         Static,
@@ -51,11 +48,14 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 from agent6.ui.approval import (
     clear_tui_pid,
     write_answer,
+    write_question_answer,
     write_steer_answer,
     write_tui_pid,
 )
+from agent6.ui.modals import ApprovalModal, QuestionModal, SteerModal
 from agent6.ui.state import (
     ApprovalPrompt,
+    QuestionPrompt,
     RunState,
     apply_event,
     initial_state,
@@ -70,148 +70,6 @@ _TASK_ICONS = {
     "obsolete": "⊘",
     "pending": "·",
 }
-
-
-class _ApprovalModal(ModalScreen[bool]):
-    DEFAULT_CSS = """
-    _ApprovalModal {
-        align: center middle;
-    }
-    #approval-box {
-        width: 80%;
-        max-width: 100;
-        height: auto;
-        border: thick $warning;
-        padding: 1 2;
-        background: $surface;
-    }
-    #approval-buttons {
-        height: auto;
-        align: center middle;
-        margin-top: 1;
-    }
-    #approval-buttons Button {
-        margin: 0 2;
-        min-width: 16;
-    }
-    #approval-buttons Button:focus {
-        text-style: bold reverse;
-    }
-    """
-
-    # Keys handled on the MODAL (not the app) so they reach the focused button.
-    # Left/right move the highlight; Enter/Space activate the focused button
-    # (textual Button default); y/n are shortcuts; Esc denies.
-    BINDINGS: ClassVar = [
-        Binding("left", "focus_previous", "◀", show=False),
-        Binding("right", "focus_next", "▶", show=False),
-        Binding("y", "approve", "Allow", show=True),
-        Binding("Y", "approve", "Allow", show=False),
-        Binding("n", "deny", "Deny", show=True),
-        Binding("N", "deny", "Deny", show=False),
-        Binding("escape", "deny", "Deny", show=False),
-    ]
-
-    def __init__(self, prompt_id: str, prompt: str) -> None:
-        super().__init__()
-        self.prompt_id = prompt_id
-        self.prompt_text = prompt
-
-    def compose(self) -> ComposeResult:
-        with Container(id="approval-box"):
-            body = Text()
-            body.append("Approval requested\n\n", style="bold")
-            body.append(self.prompt_text)  # plain append: never parsed as markup
-            yield Static(body)
-            with Horizontal(id="approval-buttons"):
-                yield Button("Allow (y)", id="yes", variant="success")
-                yield Button("Deny (n)", id="no", variant="error")
-
-    def on_mount(self) -> None:
-        # Focus Allow so arrow keys + Enter work immediately and the user sees
-        # which choice is active.
-        self.query_one("#yes", Button).focus()
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        self.dismiss(event.button.id == "yes")
-
-    def action_approve(self) -> None:
-        self.dismiss(True)
-
-    def action_deny(self) -> None:
-        self.dismiss(False)
-
-
-class _SteerModal(ModalScreen[str]):
-    """Mid-run Ctrl-C prompt: continue, abort, or inject a steering instruction.
-
-    Result string: "" = continue, "abort" = stop, anything else = instruction.
-    """
-
-    DEFAULT_CSS = """
-    _SteerModal {
-        align: center middle;
-    }
-    #steer-box {
-        width: 80%;
-        max-width: 100;
-        height: auto;
-        border: thick $accent;
-        padding: 1 2;
-        background: $surface;
-    }
-    #steer-input {
-        margin-top: 1;
-    }
-    #steer-buttons {
-        height: auto;
-        align: center middle;
-        margin-top: 1;
-    }
-    #steer-buttons Button {
-        margin: 0 2;
-        min-width: 14;
-    }
-    #steer-buttons Button:focus {
-        text-style: bold reverse;
-    }
-    """
-
-    BINDINGS: ClassVar = [
-        Binding("left", "focus_previous", "◀", show=False),
-        Binding("right", "focus_next", "▶", show=False),
-        Binding("escape", "cont", "Continue", show=False),
-    ]
-
-    def compose(self) -> ComposeResult:
-        with Container(id="steer-box"):
-            body = Text()
-            body.append("Run interrupted\n\n", style="bold")
-            body.append("Continue, abort, or type a steering instruction below.")
-            yield Static(body)
-            yield Input(placeholder="instruction (blank = continue)", id="steer-input")
-            with Horizontal(id="steer-buttons"):
-                yield Button("Continue", id="continue", variant="success")
-                yield Button("Send", id="send", variant="primary")
-                yield Button("Abort", id="abort", variant="error")
-
-    def on_mount(self) -> None:
-        self.query_one("#steer-input", Input).focus()
-
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        # Enter in the field: blank continues, text steers.
-        self.dismiss(event.value)
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "abort":
-            self.dismiss("abort")
-        elif event.button.id == "send":
-            self.dismiss(self.query_one("#steer-input", Input).value)
-        else:
-            self.dismiss("")
-
-    def action_cont(self) -> None:
-        self.dismiss("")
 
 
 class _Agent6Commands(Provider):
@@ -267,6 +125,7 @@ class Agent6TUI(App[int]):
         self.logs_path = run_dir / "logs.jsonl"
         self.state: RunState = initial_state()
         self._seen_approval_ids: set[str] = set()
+        self._seen_question_ids: set[str] = set()
         self._seen_steer = 0
         self._steer_open = False
         self._last_log_count = 0
@@ -284,7 +143,7 @@ class Agent6TUI(App[int]):
         yield Static("", id="top")
         with Horizontal(id="mid"):
             with Vertical(id="left"):
-                yield Tree("plan", id="plan")
+                yield Tree("tasks", id="plan")
                 yield ProgressBar(id="budget", total=100, show_eta=False)
             with Vertical(id="right"):
                 yield Static("", id="stream")
@@ -305,7 +164,7 @@ class Agent6TUI(App[int]):
         # poll it from a timer in the app's OWN loop and exit there. Exit()
         # scheduled from inside a call_from_thread callback does not take effect,
         # but exiting from a timer callback does. The same timer also drives the
-        # approval + steer modals.
+        # approval / question / steer modals.
         self.set_interval(0.2, self._tick)
         self._thread = threading.Thread(target=self._reader_loop, daemon=True)
         self._thread.start()
@@ -325,37 +184,45 @@ class Agent6TUI(App[int]):
     def _handle_event(self, event: dict[str, object]) -> None:
         self.state = apply_event(self.state, event)
         self._render()
-        # Auto-spawned dashboard (exit_on_end): flag the run as ended; the
-        # on_mount timer (running in the app's own loop) sees it and exits.
         if self.exit_on_end and event.get("type") == "run.end":
             self._run_ended = True
 
     def _tick(self) -> None:
-        # Pop an approval modal for any new pending approval.
         for ap in self.state.pending_approvals:
             if not ap.answered and ap.id not in self._seen_approval_ids:
                 self._seen_approval_ids.add(ap.id)
-                self.push_screen(_ApprovalModal(ap.id, ap.prompt), self._on_approval(ap))
+                self.push_screen(ApprovalModal(ap.id, ap.prompt), self._on_approval(ap))
+        for qp in self.state.pending_questions:
+            if not qp.answered and qp.id not in self._seen_question_ids:
+                self._seen_question_ids.add(qp.id)
+                self.push_screen(
+                    QuestionModal(qp.id, qp.question, qp.options), self._on_question(qp)
+                )
         # Pop a steer modal once per Ctrl-C (steer_requests is monotonic).
         if self.state.steer_requests > self._seen_steer and not self._steer_open:
             self._seen_steer = self.state.steer_requests
             self._steer_open = True
-            self.push_screen(_SteerModal(), self._on_steer)
+            self.push_screen(SteerModal(), self._on_steer)
         # Exit only once the run ended AND nothing is still awaiting an answer,
-        # so a final approval/steer isn't dropped on the way out.
+        # so a final approval/question/steer isn't dropped on the way out.
         if (
             self.exit_on_end
             and self._run_ended
             and not self._steer_open
             and all(ap.answered for ap in self.state.pending_approvals)
+            and all(q.answered for q in self.state.pending_questions)
         ):
             self.exit()
 
     def _on_approval(self, ap: ApprovalPrompt):  # type: ignore[no-untyped-def]
         def cb(approved: bool | None) -> None:
-            if approved is None:
-                approved = False
-            write_answer(self.run_dir, ap.id, approved=approved)
+            write_answer(self.run_dir, ap.id, approved=bool(approved))
+
+        return cb
+
+    def _on_question(self, qp: QuestionPrompt):  # type: ignore[no-untyped-def]
+        def cb(answer: str | None) -> None:
+            write_question_answer(self.run_dir, qp.id, answer or "")
 
         return cb
 
@@ -378,7 +245,6 @@ class Agent6TUI(App[int]):
 
     def _render(self) -> None:  # noqa: PLR0912, PLR0915
         s = self.state
-        # Top header
         role = s.last_role
         role_line = (
             f"{role.role} / {role.model} {'…' if role.in_flight else ''}" if role else "(idle)"
@@ -390,8 +256,6 @@ class Agent6TUI(App[int]):
             if s.finished and s.all_passed
             else ("[b red]done (failed)[/]" if s.finished else "")
         )
-        # Live cost meter. "~" prefix flags some models weren't in the pricing
-        # table so the figure is a lower bound.
         cost_prefix = "~" if s.budget.usd_partial else ""
         cost = f"[b]{cost_prefix}${s.budget.usd_total:.4f}[/]"
         self.query_one("#top", Static).update(
@@ -399,10 +263,8 @@ class Agent6TUI(App[int]):
             f"task: {escape(s.user_task[:120])}"
         )
 
-        # Live reasoning / response pane. The "watch it think" window: show the
-        # tail of the in-flight reasoning (dim) and visible answer so a long
-        # call reads as progress. Built as rich Text so model output never gets
-        # parsed as markup.
+        # Live reasoning / response pane. Built as rich Text so model output is
+        # never parsed as markup.
         stream = self.query_one("#stream", Static)
         st = Text()
         if role is not None and role.in_flight:
@@ -419,20 +281,17 @@ class Agent6TUI(App[int]):
             st.append("(waiting for the model…)", style="dim")
         stream.update(st)
 
-        # Task DAG. The worker's live `add_task`/`update_task` breakdown, emitted
-        # as `graph.update` snapshots; indented by depth, cursor marked.
+        # Task DAG: the worker's live add_task/update_task breakdown (graph.update
+        # snapshots), indented by depth, cursor marked.
         tree = self.query_one("#plan", Tree)
         tree.clear()
         for tv in s.tasks:
             icon = _TASK_ICONS.get(tv.status, "·")
             indent = "  " * tv.depth
             marker = "▸ " if tv.is_cursor else ""
-            # Text (not str): titles are model output and may contain Rich markup
-            # metacharacters ('[...]') that would crash add_leaf.
             tree.root.add_leaf(Text(f"{indent}{marker}{icon} {tv.title}"))
         tree.root.expand()
 
-        # Budget
         bar = self.query_one("#budget", ProgressBar)
         used = s.budget.input_total + s.budget.output_total
         cap = s.budget.input_cap + s.budget.output_cap
@@ -445,20 +304,16 @@ class Agent6TUI(App[int]):
             f"{'~' if s.budget.usd_partial else ''}${s.budget.usd_total:.4f}"
         )
 
-        # Tool table
         table = self.query_one("#tools", DataTable)
         table.clear()
         for tc in s.tool_calls[-20:]:
             ok = "…" if tc.ok is None else ("✓" if tc.ok else "✗")
-            # Text cells: tool names/args/summaries are model output and would
-            # otherwise be parsed as Rich markup (crash on stray brackets).
             table.add_row(
                 Text(tc.name), Text(tc.args_preview[:60]), ok, Text(tc.result_summary[:60])
             )
 
         # Log. Diff on the monotonic log_count, not len(log_tail): log_tail is a
-        # sliding window, so once it saturates its length stops growing and a
-        # length-based diff would silently freeze the panel.
+        # sliding window, so a length-based diff freezes once it saturates.
         log = self.query_one("#log", RichLog)
         n_new = min(s.log_count - self._last_log_count, len(s.log_tail))
         if n_new > 0:
@@ -466,29 +321,45 @@ class Agent6TUI(App[int]):
                 log.write(line)
         self._last_log_count = s.log_count
 
-        # Diff (latest) or verify output. Built as rich Text to avoid markup
-        # parsing of diff/verify bodies (which contain brackets).
+        # Diff (the latest auto-commit) or live verify output. Built as rich Text
+        # to avoid markup parsing of diff/verify bodies (which contain brackets).
         diff_widget = self.query_one("#diff", Static)
         verify = s.last_verify
         dt = Text()
-        if verify is not None and (verify.exit_code is None or not s.diffs):
-            if verify.exit_code is None:
-                dt.append("verify running: ", style="bold")
-                dt.append(" ".join(verify.cmd)[:200] + "\n")
-                dt.append("…", style="dim")
-            else:
-                colour = "green" if verify.exit_code == 0 else "red"
-                dt.append(f"verify exit={verify.exit_code} ", style=f"bold {colour}")
-                dt.append(f"({verify.duration_s:.1f}s)  {' '.join(verify.cmd)[:160]}\n")
-                dt.append((verify.stderr_tail or verify.stdout_tail)[:2000] or "(no output)")
+        # A RUNNING or FAILED verify takes precedence so a failure is never
+        # hidden behind a stale passing diff. A passed verify yields to the diff.
+        if verify is not None and verify.exit_code is None:
+            dt.append("verify running: ", style="bold")
+            dt.append(" ".join(verify.cmd)[:200] + "\n")
+            dt.append("…", style="dim")
             diff_widget.update(dt)
-        elif s.diffs:
-            latest_idx = max(s.diffs.keys())
-            dt.append(f"diff for step #{latest_idx}\n", style="bold")
-            dt.append(s.diffs[latest_idx][:2000])
+        elif verify is not None and verify.exit_code != 0:
+            dt.append(f"verify exit={verify.exit_code} ", style="bold red")
+            dt.append(f"({verify.duration_s:.1f}s)  {' '.join(verify.cmd)[:160]}\n")
+            dt.append((verify.stderr_tail or verify.stdout_tail)[:2000] or "(no output)")
+            diff_widget.update(dt)
+        elif s.latest_diff:
+            dt.append("latest commit diff\n", style="bold")
+            _append_colored_diff(dt, s.latest_diff[:2000])
+            diff_widget.update(dt)
+        elif verify is not None:
+            dt.append(f"verify passed ({verify.duration_s:.1f}s)", style="bold green")
             diff_widget.update(dt)
         else:
             diff_widget.update(Text("(no diffs yet)", style="dim"))
+
+
+def _append_colored_diff(dt: Text, patch: str) -> None:
+    """Append a unified diff with +/- line coloring (no markup parsing)."""
+    for line in patch.splitlines():
+        if line.startswith("+") and not line.startswith("+++"):
+            dt.append(line + "\n", style="green")
+        elif line.startswith("-") and not line.startswith("---"):
+            dt.append(line + "\n", style="red")
+        elif line.startswith("@@"):
+            dt.append(line + "\n", style="cyan")
+        else:
+            dt.append(line + "\n")
 
 
 def run_tui(run_dir: Path, *, exit_on_end: bool = False) -> int:

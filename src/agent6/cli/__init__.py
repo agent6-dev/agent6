@@ -49,6 +49,7 @@ from agent6.cli.parser import build_parser
 from agent6.cli.plan_watch import (
     _cmd_plan_edit,
     _cmd_plan_show,
+    _cmd_tui,
     _cmd_watch,
     _most_recent_plan_run_id,
     _most_recent_run_id,
@@ -224,6 +225,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
         )
     if args.command == "watch":
         return _cmd_watch(args.run_id, plain=args.plain, since=args.since)
+    if args.command == "tui":
+        return _cmd_tui()
     if args.command == "resume":
         return _cmd_resume(
             args.config,

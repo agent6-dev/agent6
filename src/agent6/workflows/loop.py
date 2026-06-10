@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from agent6.budget import BudgetExceeded, BudgetTracker
 from agent6.config import Config
-from agent6.git_ops import GitError, commit_all
+from agent6.git_ops import GitError, commit_all, commit_diff
 from agent6.git_ops import co_change_pairs as git_co_change_pairs
 from agent6.git_ops import status as git_status
 from agent6.graph.client import CuratorClientError, GraphClient
@@ -2383,6 +2383,14 @@ class Workflow:
                     self._log(f"  auto-commit: {sha[:12]}")
                     self._emit("loop.auto_commit", iteration=iteration, sha=sha)
                     committed_this_iter = bool(sha)
+                    if sha:
+                        # Surface "what the worker just changed" to a live viewer
+                        # (the TUI diff panel). Capped; best-effort.
+                        self._emit(
+                            "diff.updated",
+                            sha=sha,
+                            patch=commit_diff(self.root, sha, max_bytes=8000),
+                        )
                 except (GitError, OSError) as exc:
                     msg = str(exc).lower()
                     # "nothing to commit" can arrive in either

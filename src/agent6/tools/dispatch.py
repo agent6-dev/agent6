@@ -12,6 +12,7 @@ from __future__ import annotations
 import difflib
 import os
 import re
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,6 +37,7 @@ from agent6.tools.schema import (
     Agent6DocsInput,
     ApplyEditInput,
     ApplyPatchInput,
+    AskUserInput,
     DagAddTaskInput,
     DagListTasksInput,
     DagSetCursorInput,
@@ -201,6 +203,28 @@ def _default_approver(prompt: str) -> bool:  # pragma: no cover — interactive
     return ans in {"y", "yes"}
 
 
+class _Questioner(Protocol):
+    def __call__(self, question: str, options: tuple[str, ...], /) -> str: ...
+
+
+def _default_questioner(  # pragma: no cover — interactive
+    question: str, options: tuple[str, ...]
+) -> str:
+    """Fallback for `ask_user` when no TUI/CLI bridge is wired: a numbered stdin
+    prompt. A non-TTY/headless stdin returns "" immediately so a run never hangs
+    (mirrors run.py's _default_stdin_questioner)."""
+    if not sys.stdin.isatty():
+        return ""
+    lines = [question, *(f"  {i}) {opt}" for i, opt in enumerate(options, start=1))]
+    try:
+        ans = input("\n".join(lines) + "\n> ").strip()
+    except EOFError:
+        return ""
+    if ans.isdigit() and 1 <= int(ans) <= len(options):
+        return options[int(ans) - 1]
+    return ans
+
+
 @dataclass(frozen=True, slots=True)
 class _SafePath:
     abs_path: Path
@@ -305,6 +329,7 @@ class ToolDispatcher:
         config: Config,
         sandbox_profile: SandboxProfile = "strict",
         approver: _Approver | None = None,
+        questioner: _Questioner | None = None,
         events: EventSink | None = None,
         graph_client: object | None = None,
         run_root_node_id: str | None = None,
@@ -324,6 +349,7 @@ class ToolDispatcher:
         # scripts bundle, so an agent state can't rewrite them mid-run).
         self._extra_protect_paths = extra_protect_paths
         self._approver: _Approver = approver or _default_approver
+        self._questioner: _Questioner = questioner or _default_questioner
         self._events = events
         # Optional GraphClient + root-task id for the DAG-as-tool
         # surface. When wired, the dispatcher exposes add_task /
@@ -365,6 +391,7 @@ class ToolDispatcher:
             # in resp.tool_uses and terminates after dispatching it.
             FinishRunInput.TOOL_NAME: self._finish_run,
             FinishPlanningInput.TOOL_NAME: self._finish_planning,
+            AskUserInput.TOOL_NAME: self._ask_user,
             # DAG-as-tool. Handlers raise ToolError if no graph_client was
             # wired (so standalone tests can omit it).
             DagAddTaskInput.TOOL_NAME: self._dag_add_task,
@@ -463,6 +490,10 @@ class ToolDispatcher:
             # machine-authoring + machine agent-state loops never run commands
             # (unlike `ask`, which allows read-only run_command investigation).
             raise ToolError(f"{name} is not available in {self._mode} mode (read-only)")
+        if self._mode != "run" and name == AskUserInput.TOOL_NAME:
+            # ask_user is a run-mode tool (LOOP_EXTRA_TOOLS only); backstop it so
+            # a future tool-list regression can't pause a plan/ask/machine loop.
+            raise ToolError(f"{name} is not available in {self._mode} mode")
         self._emit("tool.call", name=name, args=_truncate_args(raw_input))
         try:
             result = self._handlers[name](raw_input)
@@ -846,6 +877,14 @@ class ToolDispatcher:
             if not ok:
                 raise ToolError("run_command denied by user")
         return self._run_argv_in_jail(args.argv, label="run_command")
+
+    def _ask_user(self, raw: dict[str, Any]) -> dict[str, Any]:
+        """Pose a question to the operator and return their answer. The injected
+        questioner does the actual prompting (TUI modal / stdin / headless skip)
+        and owns the question.prompt/answer events; this handler just validates."""
+        args = AskUserInput.model_validate(raw)
+        answer = self._questioner(args.question, args.options)
+        return {"answer": answer}
 
     def _finish_run(self, raw: dict[str, Any]) -> dict[str, Any]:
         """Signal the workflow to terminate. The workflow checks
