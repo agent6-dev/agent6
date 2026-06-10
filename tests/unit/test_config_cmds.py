@@ -17,6 +17,25 @@ def _noop_overlay(*_a: object, **_k: object) -> None:
     return None
 
 
+def test_extra_body_value_completer_offers_routing_presets() -> None:
+    # TAB after `config set providers.<name>.extra_body` suggests the routing
+    # presets for any provider name (matched by suffix).
+    import argparse
+
+    from agent6.cli.completers import _complete_config_values  # pyright: ignore[reportPrivateUsage]
+
+    args = argparse.Namespace(key="providers.openrouter.extra_body")
+    out = _complete_config_values("", args)  # pyright: ignore[reportPrivateUsage]
+    assert '{ provider = { sort = "throughput" } }' in out
+    # a non-extra_body key is unaffected
+    enum_args = argparse.Namespace(key="sandbox.profile")
+    assert _complete_config_values("", enum_args) == [  # pyright: ignore[reportPrivateUsage]
+        "auto",
+        "strict",
+        "hardened",
+    ]
+
+
 _GOOD = (
     'machine = "m"\nversion = 1\ninitial = "s"\n'
     "[budget]\nmax_usd = 1.0\nmax_transitions = 10\n"

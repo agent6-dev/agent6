@@ -56,8 +56,8 @@ def _upsert_toml_table(path: Path, table: str, fields: dict[str, str | bool | No
     path.write_text("\n".join(new_lines).rstrip("\n") + "\n", encoding="utf-8")
 
 
-def _toml_repr(value: object) -> str:
-    """Serialize a scalar or list-of-scalars to its TOML literal form."""
+def _toml_repr(value: object) -> str:  # noqa: PLR0911
+    """Serialize a scalar, list, or (inline-table) dict to its TOML literal form."""
     if isinstance(value, bool):  # bool first: it is a subclass of int
         return "true" if value else "false"
     if isinstance(value, int):
@@ -68,7 +68,22 @@ def _toml_repr(value: object) -> str:
         return _toml_value(value)
     if isinstance(value, (list, tuple)):
         return "[" + ", ".join(_toml_repr(v) for v in value) + "]"
+    if isinstance(value, dict):
+        # Inline table, e.g. an OpenRouter routing value:
+        #   extra_body = { provider = { sort = "throughput" } }
+        # Written on one line so the existing leaf-line surgery can replace it
+        # wholesale (a nested `[table]` would collide with the inline parent).
+        if not value:
+            return "{}"
+        items = ", ".join(f"{_toml_key(k)} = {_toml_repr(v)}" for k, v in value.items())
+        return "{ " + items + " }"
     raise ValueError(f"cannot serialize {value!r} to TOML")
+
+
+def _toml_key(key: object) -> str:
+    """A TOML key: bare if it is a simple identifier, else a quoted string."""
+    k = str(key)
+    return k if re.fullmatch(r"[A-Za-z0-9_-]+", k) else _toml_value(k)
 
 
 def _parse_cli_value(value: str) -> object:

@@ -62,12 +62,25 @@ def _complete_config_keys(prefix: str, **_kw: object) -> list[str]:
     return sorted(k for k in keys if k.startswith(prefix))
 
 
+# Presets offered for any `providers.<name>.extra_body` value (the provider name
+# varies, so this is matched by suffix, not in _CONFIG_ENUM_CHOICES). The first
+# is the recommended OpenRouter routing — a fast, prefix-caching backend.
+_EXTRA_BODY_PRESETS: tuple[str, ...] = (
+    '{ provider = { sort = "throughput" } }',
+    '{ provider = { sort = "latency" } }',
+    '{ provider = { sort = "price" } }',
+)
+
+
 def _complete_config_values(
     prefix: str, parsed_args: argparse.Namespace | None = None, **_kw: object
 ) -> list[str]:
     """argcomplete: the Literal choices for the config key already typed."""
     key = getattr(parsed_args, "key", "") or ""
-    return [v for v in _CONFIG_ENUM_CHOICES.get(key, ()) if v.startswith(prefix)]
+    choices = list(_CONFIG_ENUM_CHOICES.get(key, ()))
+    if key.endswith(".extra_body"):
+        choices += list(_EXTRA_BODY_PRESETS)
+    return [v for v in choices if v.startswith(prefix)]
 
 
 def _complete_model_provider(

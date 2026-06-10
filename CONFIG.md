@@ -75,6 +75,13 @@ extra_body = { provider = { sort = "throughput" } }
 #               cap price               { max_price = { prompt = 1, completion = 2 } }
 ```
 
+Set it without hand-editing — it's a table value, so pass the whole thing (the
+CLI completes common presets after `extra_body`):
+
+```bash
+agent6 config set providers.openrouter.extra_body '{ provider = { sort = "throughput" } }'
+```
+
 This is the lever to **pay for a faster/caching backend**. Caching matters more
 than payload size: the large per-call input is the same prefix every turn, so a
 caching backend makes it cheap without trimming anything. Watch `cache_r` in the
