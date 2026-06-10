@@ -610,6 +610,95 @@ def test_drive_loop_plan_finish_nudge_fires_on_low_budget(
     assert provider.nudged_on == [1]
 
 
+def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: Path) -> None:
+    """A run-mode worker that keeps spinning after verify already passed (no new
+    commit, no edit) gets one finish nudge, then the loop stops it with
+    reason='verify_settled' — the positive completion signal a non-metric run
+    otherwise lacks (Kimi K2.6 observed running 128 iters when done at ~45)."""
+    from agent6.workflows.loop import _VERIFY_SETTLED_NUDGE  # pyright: ignore[reportPrivateUsage]
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.saw_nudge = False
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            if _VERIFY_SETTLED_NUDGE[:24] in str(kwargs["messages"][-1]):
+                self.saw_nudge = True
+            if self.calls == 1:
+                return _tool_resp("run_verify_command", tool_id="v1")  # -> verify passes
+            # then spin on read-only commands forever (no edit, no commit)
+            return _tool_resp("run_command", {"cmd": f"ls {self.calls}"}, tool_id=f"c{self.calls}")
+
+    class DispatcherStub:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+            return {"returncode": 0, "stdout": "ok", "stderr": "", "duration_s": 0.1}
+
+    provider = ProviderStub()
+    config = SimpleNamespace(workflow=SimpleNamespace(metric=SimpleNamespace(goal=None)))
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        mode="run",
+        provider=provider,
+        dispatcher=DispatcherStub(),
+        max_iterations=30,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
+    with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            messages=messages,
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+        )
+    assert provider.saw_nudge is True
+    assert result.reason == "verify_settled"
+    assert result.completed is True
+
+
+def test_drive_loop_verify_settled_does_not_fire_before_first_verify(tmp_path: Path) -> None:
+    """The settled detector must stay dormant until verify has passed at least
+    once — a worker still reading toward its first green build must not be
+    stopped early."""
+    from agent6.workflows.loop import _VERIFY_SETTLED_NUDGE  # pyright: ignore[reportPrivateUsage]
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.saw_nudge = False
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            if _VERIFY_SETTLED_NUDGE[:24] in str(kwargs["messages"][-1]):
+                self.saw_nudge = True
+            if self.calls >= 6:
+                return _tool_resp("finish_run", {"summary": "done"}, tool_id="fin")
+            return _tool_resp("read_file", {"path": f"f{self.calls}.py"}, tool_id=f"r{self.calls}")
+
+    class DispatcherStub:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+            if name == "finish_run":
+                return {"acknowledged": True, "summary": raw_input["summary"]}
+            return {"content": "..."}
+
+    provider = ProviderStub()
+    config = SimpleNamespace(workflow=SimpleNamespace(metric=SimpleNamespace(goal=None)))
+    wf = _wf(
+        root=tmp_path, config=config, mode="run", provider=provider, dispatcher=DispatcherStub()
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
+    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        system="s", messages=messages, tools=[], tool_calls=0, start_iteration=1, root_task_id=None
+    )
+    # never verified -> never nudged/stopped by the settled detector
+    assert provider.saw_nudge is False
+    assert result.reason == "finish_run"
+
+
 def test_metric_plateau_nudge_escalates_with_budget_pressure() -> None:
     from agent6.workflows.loop import (
         _METRIC_PLATEAU_NUDGE_EXPLORE,  # pyright: ignore[reportPrivateUsage]

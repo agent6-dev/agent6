@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from tests.unit.test_critic import (
     _finish_tool_use,  # pyright: ignore[reportPrivateUsage]
@@ -53,14 +53,17 @@ def test_periodic_critic_fires_every_n_iterations() -> None:
     messages: list[dict[str, Any]] = [
         {"role": "user", "content": [{"type": "text", "text": "TASK:\ngo\n\nBegin."}]}
     ]
-    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
-        system="S",
-        messages=messages,
-        tools=[],
-        tool_calls=0,
-        start_iteration=1,
-        root_task_id=None,
-    )
+    # Each verify pass commits real progress (the normal success path), so the
+    # verify-settled detector stays dormant and all 5 iterations run.
+    with patch("agent6.workflows.loop.commit_all", return_value="sha"):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="S",
+            messages=messages,
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+        )
     assert result.iterations == 5
     assert result.reason == "finish_run"
     # iters 2 and 4 trigger periodic critic. iter 5 is finish_run which

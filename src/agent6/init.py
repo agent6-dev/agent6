@@ -27,6 +27,9 @@ _STARTER_TOML = """\
 
 [workflow]
 # What "a step succeeded" means in this repo. EDIT THIS to your real pipeline.
+# Make it a REAL pass/fail (build + tests), not a syntax check: the harness uses
+# a green verify as a completion cue — once it passes and the worker stops making
+# changes, agent6 wraps the run up instead of letting it spin.
 #
 # IMPORTANT: this runs INSIDE the sandbox, not your shell. The jailed command
 # sees PATH=/usr/bin:/bin plus this repo directory only -- no $HOME, no

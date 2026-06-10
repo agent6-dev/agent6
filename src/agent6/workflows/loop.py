@@ -1183,6 +1183,23 @@ _PLAN_NUDGE_AFTER_ITERS = 12
 # (graph.update event) so a live viewer can render the worker's task breakdown.
 _DAG_MUTATING_TOOLS = frozenset({"add_task", "update_task", "set_cursor"})
 
+# verify-settled completion (run mode). A non-metric run has no positive "done"
+# signal — clean exit depends on the worker volunteering finish_run, and a weak
+# worker keeps re-running read-only commands after success (Kimi K2.6 observed:
+# 128 iters when done at ~45). Once verify has passed, count iterations that
+# make no progress (no new commit + no edit): nudge to finish at the first
+# threshold, hard-stop at the second. NOT "green verify = instant stop" — verify
+# fires per-edit and is often lenient, so green-but-still-editing must continue.
+_VERIFY_SETTLED_NUDGE_AFTER = 2
+_VERIFY_SETTLED_STOP_AFTER = 4
+
+_VERIFY_SETTLED_NUDGE = (
+    "[harness verify-settled] Your verify command is passing and your last turns"
+    " made no new changes (no commit, no edit). If the task is complete, call"
+    " finish_run now with a short summary. If not, make a concrete edit toward"
+    " what remains — do not keep re-running read-only commands."
+)
+
 _PLAN_BUDGET_NUDGE = (
     "[harness budget] You are running low on token budget and have NOT yet"
     " called finish_planning. Stop reading and reasoning now and call"
@@ -1890,6 +1907,15 @@ class Workflow:
         # a resume starts a fresh segment and may nudge again — benign (one extra
         # harmless directive); the turn count is measured from start_iteration.
         plan_finish_nudged = False
+        # verify-settled completion (run mode). Once verify has passed at least
+        # once, count consecutive iterations that make no progress (no new
+        # commit + no edit). After a couple, nudge the worker to finish_run;
+        # if it keeps spinning, stop. This is the positive completion signal a
+        # non-metric run otherwise lacks — a weak worker (Kimi K2.6 observed:
+        # 128 iters when done at ~45) keeps re-running commands after success.
+        verify_ever_passed = False
+        verify_settled_idle = 0
+        verify_settled_nudged = False
         for iteration in range(start_iteration, self.max_iterations + 1):
             self._maybe_compact(messages)
 
@@ -2216,6 +2242,8 @@ class Workflow:
             tool_results: list[dict[str, Any]] = []
             verify_just_passed = False
             verify_just_failed = False
+            edited_this_iter = False
+            committed_this_iter = False
             metric_called_after_verify_pass = False
             metric_feedback_text: str | None = None
             metric_plateau_finish: str | None = None
@@ -2270,6 +2298,8 @@ class Workflow:
                         )
                         if verify_just_passed:
                             metric_plateau_finish = self._metric_plateau_summary(metric_history)
+                    if name in ("apply_edit", "apply_patch"):
+                        edited_this_iter = True
                     if name in _DAG_MUTATING_TOOLS:
                         self._emit_graph_snapshot()
                 except ToolError as exc:
@@ -2343,6 +2373,7 @@ class Workflow:
                     )
                     self._log(f"  auto-commit: {sha[:12]}")
                     self._emit("loop.auto_commit", iteration=iteration, sha=sha)
+                    committed_this_iter = bool(sha)
                 except (GitError, OSError) as exc:
                     msg = str(exc).lower()
                     # "nothing to commit" can arrive in either
@@ -2628,7 +2659,50 @@ class Workflow:
                         budget_remaining=budget_remaining,
                     )
 
+            # verify-settled completion bookkeeping (run mode). Track no-progress
+            # iterations after the first green verify; nudge once, then stop.
+            if verify_just_passed:
+                verify_ever_passed = True
+            if verify_ever_passed:
+                if committed_this_iter or edited_this_iter:
+                    verify_settled_idle = 0
+                    verify_settled_nudged = False  # a fresh idle streak may re-nudge
+                else:
+                    verify_settled_idle += 1
+            verify_settled_stop = (
+                self.mode == "run"
+                and finish_signal is None
+                and verify_ever_passed
+                and verify_settled_idle >= _VERIFY_SETTLED_STOP_AFTER
+            )
+            if (
+                self.mode == "run"
+                and finish_signal is None
+                and not verify_settled_stop
+                and verify_ever_passed
+                and verify_settled_idle >= _VERIFY_SETTLED_NUDGE_AFTER
+                and not verify_settled_nudged
+            ):
+                verify_settled_nudged = True
+                tool_results.append({"type": "text", "text": _VERIFY_SETTLED_NUDGE})
+                self._emit(
+                    "loop.verify_settled.nudge", iteration=iteration, idle=verify_settled_idle
+                )
+
             messages.append({"role": "user", "content": tool_results})
+
+            if verify_settled_stop:
+                self._log(f"LOOP: verify_settled at iter {iteration} (idle {verify_settled_idle})")
+                self._emit(
+                    "run.end", reason="verify_settled", iterations=iteration, all_passed=True
+                )
+                return RunResult(
+                    completed=True,
+                    reason="verify_settled",
+                    summary="verify passed and the worker stopped making changes",
+                    iterations=iteration,
+                    tool_calls=tool_calls,
+                )
 
             if plateau_should_stop:
                 assert metric_plateau_finish is not None
