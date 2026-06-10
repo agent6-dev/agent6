@@ -67,6 +67,28 @@ def test_agent_landlock_applied_on_hardened(monkeypatch: pytest.MonkeyPatch) -> 
     assert calls[0]["tcp_connect_ports"] == (443,)
 
 
+def test_agent_landlock_read_roots_include_python_install(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+
+    calls: list[dict[str, Any]] = []
+
+    def _rec(**kwargs: Any) -> LandlockReport:
+        calls.append(kwargs)
+        return _report()
+
+    monkeypatch.setattr(cli, "apply_agent_landlock", _rec)
+    cli._maybe_apply_agent_landlock(  # pyright: ignore[reportPrivateUsage]
+        _cfg(), "hardened", _env(major=6, minor=14)
+    )
+    reads = calls[0]["read_paths"]
+    # The agent (and the curator subprocess it re-execs) must read its own
+    # Python install + source, or running from an unrelated cwd fails.
+    assert Path(sys.prefix) in reads
+    assert Path(cli.__file__).resolve().parents[2] in reads  # the agent6 source root
+
+
 def test_agent_landlock_open_network_imposes_no_tcp_rule(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[dict[str, Any]] = []
 

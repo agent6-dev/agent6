@@ -213,6 +213,25 @@ def _maybe_apply_agent_landlock(
     )
     run_paths = (Path("/run"),) if Path("/run").exists() else ()
     proc_paths = (Path("/proc"),) if Path("/proc").exists() else ()
+    # The agent process (and the curator subprocess it re-execs) must be able to
+    # READ its own Python install for lazy imports. A `uv tool` install lives
+    # under $HOME (already covered), but a venv outside $HOME — a dev checkout,
+    # /opt, a system venv — would otherwise fail when agent6 is run from an
+    # unrelated cwd (PermissionError importing e.g. a pydantic submodule).
+    py_paths = tuple(
+        p
+        for p in {
+            Path(sys.prefix),
+            Path(sys.base_prefix),
+            Path(sys.executable).resolve().parent,
+            # The directory that CONTAINS the agent6 package (the sys.path entry
+            # the import finder scandir()s). For an editable/dev install this is
+            # the source root (e.g. <repo>/src), outside the venv, which the
+            # curator subprocess (-m agent6.graph.server) must read to import.
+            Path(__file__).resolve().parents[2],
+        }
+        if p.exists()
+    )
     read_paths = (
         cwd,
         Path.home(),
@@ -222,6 +241,7 @@ def _maybe_apply_agent_landlock(
         *dev_files,
         *run_paths,
         *proc_paths,
+        *py_paths,
     )
     write_paths = (cwd, tmp, *dev_files, *proc_paths)
     # Hardened can't run the broker, so we fall back to Landlock TCP-connect
