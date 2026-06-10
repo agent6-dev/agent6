@@ -153,6 +153,32 @@ def test_liveworld_non_network_tool_is_isolated(
     assert seen[-1].allow_network is False
 
 
+def test_liveworld_grants_data_dir_rw_and_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A machine's data dir is RW in every tool jail + exported as
+    # $AGENT6_MACHINE_DATA_DIR, so a tool script can persist on hardened too.
+    seen = _patch_jail(monkeypatch)
+    data = tmp_path / "i" / "data"
+    world = LiveWorld(
+        cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), profile="hardened", data_dir=data
+    )
+    world.run_tool(("true",), 5.0, allow_network=False)
+    policy = seen[-1]
+    assert data in policy.extra_rw_paths
+    assert ("AGENT6_MACHINE_DATA_DIR", str(data)) in policy.env
+
+
+def test_liveworld_no_data_dir_grants_no_extra_rw(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen = _patch_jail(monkeypatch)
+    world = LiveWorld(cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), profile="hardened")
+    world.run_tool(("true",), 5.0, allow_network=False)
+    assert seen[-1].extra_rw_paths == ()
+    assert all(k != "AGENT6_MACHINE_DATA_DIR" for k, _ in seen[-1].env)
+
+
 def test_liveworld_passes_protect_paths_to_jail(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

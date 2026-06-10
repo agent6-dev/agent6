@@ -179,6 +179,11 @@ class LiveWorld:
     # `.asm.toml` + `scripts/` bundle, so a tool can't rewrite its own machine
     # logic or audited scripts mid-run (set by the CLI).
     protect_paths: tuple[Path, ...] = ()
+    # The machine's persistent, writable scratch dir (the only writable spot a
+    # `tool` script gets on the `hardened` profile, where new top-level files in
+    # cwd are read-only). Granted RW in every tool jail and surfaced to scripts
+    # as $AGENT6_MACHINE_DATA_DIR. Set by the CLI to <instance>/data.
+    data_dir: Path | None = None
 
     def run_tool(
         self, argv: tuple[str, ...], timeout_s: float, *, allow_network: bool = False
@@ -188,14 +193,22 @@ class LiveWorld:
         # tool gets a fresh empty netns. Whether opt-in is permitted at all is
         # gated by the CLI at startup (sandbox.tool_network), so by the time we
         # run, `allow_network` is authoritative.
-        env = tuple((key, os.environ[key]) for key in _SAFE_ENV_KEYS if key in os.environ)
+        env_list = [(key, os.environ[key]) for key in _SAFE_ENV_KEYS if key in os.environ]
+        extra_rw: tuple[Path, ...] = ()
+        if self.data_dir is not None:
+            # Grant RW on the data dir + tell the script where it is. This is the
+            # portable way to persist across iterations (hardened tool jails are
+            # otherwise read-only); the journal still records every transition.
+            env_list.append(("AGENT6_MACHINE_DATA_DIR", str(self.data_dir)))
+            extra_rw = (self.data_dir,)
         policy = JailPolicy(
             cwd=self.cwd,
             argv=argv,
             profile=self.profile,
-            env=env,
+            env=tuple(env_list),
             allow_network=allow_network,
             extra_protect_paths=self.protect_paths,
+            extra_rw_paths=extra_rw,
             timeout_s=float(timeout_s),
         )
         try:

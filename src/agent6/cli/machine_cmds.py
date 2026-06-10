@@ -414,9 +414,12 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
     _warn_if_unsandboxed(profile)
     root = _machines_dir(cwd) / spec.machine
     journal = MachineJournal(root)
+    # Persistent, writable scratch for tool scripts (see LiveWorld.data_dir).
+    data_dir = root / "data"
     try:
         with machine_lock(root):
             journal.ensure_dirs()
+            data_dir.mkdir(parents=True, exist_ok=True)
             if not journal.exists():
                 write_source(root, path.read_text(encoding="utf-8"))
             world = LiveWorld(
@@ -425,6 +428,7 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
                 agent_runner=agent_runner,
                 profile=profile,
                 protect_paths=protect_paths,
+                data_dir=data_dir,
             )
             result = drive(spec, journal, world, live=True, exit_on_wait=exit_on_wait)
     except (JournalError, EngineError) as exc:

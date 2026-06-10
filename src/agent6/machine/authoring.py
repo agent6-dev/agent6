@@ -160,27 +160,28 @@ string (target must be `str`).
 
 ## Accumulating records across iterations (e.g. a paper-trade log)
 
-The machine JOURNAL (`.agent6/machines/<id>/journal.jsonl`) already records
-every transition with its fact — each `tool` stdout and each `agent` payload —
-so it IS your durable, replayable audit log of everything that happened. You do
-not need to write your own file to "remember" past iterations.
+Two durable stores, both available on every sandbox profile:
+
+  - The JOURNAL (`.agent6/machines/<id>/journal.jsonl`) already records every
+    transition with its fact (each `tool` stdout, each `agent` payload), so it
+    IS a replayable audit log of everything that happened — for free.
+  - `$AGENT6_MACHINE_DATA_DIR` is a persistent, WRITABLE directory every `tool`
+    script may write to (the one writable spot under `hardened`, where new
+    top-level files in the workspace are read-only). Append your own records
+    there: `open(os.environ["AGENT6_MACHINE_DATA_DIR"] + "/trades.jsonl", "a")`.
 
 For values you branch on or template later, capture them into the blackboard:
 keep counters / latest values (the blackboard has NO `list[record]` type —
 `list[<scalar>]` elements must be scalars; use a `json` var for an opaque blob).
-A `tool` or `agent` state should EMIT its record as stdout/`finish_run` JSON and
-let `capture` store it — do NOT have a tool script write its own data file:
-a tool's jail is READ-ONLY on the `hardened` profile (file writes only work
-under `strict`), so a script that appends to a file will fail there. The
-journal + blackboard capture is the portable, auditable pattern.
+Don't try to grow an unbounded list of records IN the blackboard — write it to
+the data dir (or rely on the journal) and keep just a count/latest in a var.
 
 ## Worked example — poll a value, record when it crosses a threshold
 
 A complete, valid machine. The `tool` states call small auditable scripts you
 ship alongside the `.asm.toml` (here under `scripts/`); each prints a JSON
-object on stdout that the schema types and `capture` reads. The scripts only
-READ + print (no file writes) so they work on every sandbox profile; the buy
-record itself lives in the journal + blackboard.
+object on stdout that the schema types and `capture` reads, and may append its
+own record to `$AGENT6_MACHINE_DATA_DIR`.
 
     machine = "price-watch"
     version = 1
@@ -226,8 +227,8 @@ record itself lives in the journal + blackboard.
 
     [states.record_buy]
     kind = "tool"
-    # record_buy.py just prints {"recorded": N} on stdout (the journal is the
-    # durable log; no file write, so it works on hardened too).
+    # record_buy.py appends {price, ts} to $AGENT6_MACHINE_DATA_DIR/trades.jsonl
+    # and prints {"recorded": N} on stdout.
     command = ["python3", "scripts/record_buy.py", "{{ price }}"]
     output_schema = "record_result"
     capture = { set = { recorded = "{{ result.recorded }}" } }
@@ -242,9 +243,9 @@ record itself lives in the journal + blackboard.
   - A `tool` script that prints to stderr or exits non-zero — capture fires
     ONLY on exit 0 with non-empty stdout JSON; empty stdout silently leaves the
     var at its default. Always print your JSON to STDOUT and exit 0 on success.
-  - A `tool` script that writes a file — fails on the `hardened` profile (tool
-    jails are read-only there). Print results to stdout and let the journal +
-    blackboard persist them instead.
+  - A `tool` script that writes outside `$AGENT6_MACHINE_DATA_DIR` — on
+    `hardened` the rest of the workspace is read-only to tool jails (new
+    top-level files are denied). Write to the data dir (or print to stdout).
   - A non-total `branch` — the last clause MUST be `{ else = true, goto = ... }`.
 
 ## Validity requirements (the file must pass `machine check`)

@@ -332,6 +332,12 @@ reference must exist and stay inside the bundle. During a run the bundle (the
 `.asm.toml` + `scripts/`) is **read-only in every jail**, so a tool or agent
 cannot rewrite its own machine logic or audited scripts mid-run.
 
+A `tool` script that needs to persist data across iterations writes to
+`$AGENT6_MACHINE_DATA_DIR` — a per-machine writable directory
+(`.agent6/machines/<id>/data/`) granted RW in every tool jail. It is the only
+writable spot on the `hardened` profile (where new top-level files in the
+workspace are read-only); the journal still records every transition either way.
+
 #### `wait`
 
 ```toml
