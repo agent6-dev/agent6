@@ -1190,8 +1190,11 @@ _DAG_MUTATING_TOOLS = frozenset({"add_task", "update_task", "set_cursor"})
 # make no progress (no new commit + no edit): nudge to finish at the first
 # threshold, hard-stop at the second. NOT "green verify = instant stop" — verify
 # fires per-edit and is often lenient, so green-but-still-editing must continue.
-_VERIFY_SETTLED_NUDGE_AFTER = 2
-_VERIFY_SETTLED_STOP_AFTER = 4
+# Thresholds are deliberately generous: the failure mode is only a little wasted
+# budget on an already-done run, whereas a too-tight window could cut off a
+# worker still reading toward its next edit in a big multi-file change.
+_VERIFY_SETTLED_NUDGE_AFTER = 3
+_VERIFY_SETTLED_STOP_AFTER = 6
 
 _VERIFY_SETTLED_NUDGE = (
     "[harness verify-settled] Your verify command is passing and your last turns"
@@ -2244,6 +2247,7 @@ class Workflow:
             verify_just_failed = False
             edited_this_iter = False
             committed_this_iter = False
+            dag_mutated_this_iter = False
             metric_called_after_verify_pass = False
             metric_feedback_text: str | None = None
             metric_plateau_finish: str | None = None
@@ -2301,7 +2305,7 @@ class Workflow:
                     if name in ("apply_edit", "apply_patch"):
                         edited_this_iter = True
                     if name in _DAG_MUTATING_TOOLS:
-                        self._emit_graph_snapshot()
+                        dag_mutated_this_iter = True  # snapshot once after the turn
                 except ToolError as exc:
                     content = json.dumps({"error": str(exc)})
                     self._log(f"  tool_error: {name}: {exc}")
@@ -2355,6 +2359,11 @@ class Workflow:
                                 path=str(self.plan_output_path),
                                 error=str(exc),
                             )
+
+            # One task-DAG snapshot per turn (not per mutation), so several
+            # add_task/update_task calls in a turn collapse to a single event.
+            if dag_mutated_this_iter:
+                self._emit_graph_snapshot()
 
             # Auto-commit on verify pass, AFTER the tool_results so the
             # commit message reflects the iteration number. Best-effort:
@@ -2669,14 +2678,22 @@ class Workflow:
                     verify_settled_nudged = False  # a fresh idle streak may re-nudge
                 else:
                     verify_settled_idle += 1
+            # Only governs PLAIN runs. A metric/optimisation run is also
+            # mode=="run" but its completion is owned by the metric early-finish
+            # guard + plateau/ceiling logic (which deliberately keep going while
+            # budget remains); measure/analyse/read iterations there legitimately
+            # make no commit, so the settled detector must defer to them.
+            non_metric_run = (
+                self.mode == "run" and _metric_goal(self.config.workflow.metric) is None
+            )
             verify_settled_stop = (
-                self.mode == "run"
+                non_metric_run
                 and finish_signal is None
                 and verify_ever_passed
                 and verify_settled_idle >= _VERIFY_SETTLED_STOP_AFTER
             )
             if (
-                self.mode == "run"
+                non_metric_run
                 and finish_signal is None
                 and not verify_settled_stop
                 and verify_ever_passed
@@ -2850,7 +2867,11 @@ class Workflow:
     def _emit_graph_snapshot(self) -> None:
         """Emit the current task DAG so a live viewer (the TUI) can render it.
         The worker's add_task/update_task tree lives in the curator, not the
-        event log, so we snapshot it after each mutation. Best-effort — a curator
+        event log, so we snapshot it (once per turn, see the call site).
+
+        Project to ONLY the fields the viewer renders — a full node dump carries
+        unbounded model-authored text (rationale/acceptance/notes/paths) that
+        bloats the fsync'd event log for no benefit. Best-effort: a curator
         hiccup must never break the run."""
         if self.graph_client is None:
             return
@@ -2858,9 +2879,20 @@ class Workflow:
             state = self.graph_client.get_state()
         except CuratorClientError:
             return
-        nodes = state.get("nodes", {})
-        if isinstance(nodes, dict):
-            self._emit("graph.update", nodes=nodes, cursor=state.get("cursor"))
+        raw = state.get("nodes", {})
+        if not isinstance(raw, dict):
+            return
+        nodes = {
+            nid: {
+                "title": n.get("title", ""),
+                "status": n.get("status", "pending"),
+                "parent_id": n.get("parent_id"),
+                "children": n.get("children", ()),
+            }
+            for nid, n in raw.items()
+            if isinstance(n, dict)
+        }
+        self._emit("graph.update", nodes=nodes, cursor=state.get("cursor"))
 
     def _load_repo_summary(self) -> RepoSummary:
         """Reuse the shared `load_repo_summary` and extend with structural priors

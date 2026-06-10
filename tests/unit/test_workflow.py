@@ -699,6 +699,50 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(tmp_path: P
     assert result.reason == "finish_run"
 
 
+def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: Path) -> None:
+    """On a metric run, post-verify measure/analyse/read iterations legitimately
+    make no commit; completion is owned by the metric early-finish + plateau
+    logic, so the verify-settled detector must NOT hard-stop them."""
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            if self.calls == 1:
+                return _tool_resp("run_verify_command", tool_id="v1")  # verify passes
+            return _tool_resp("run_command", {"cmd": f"ls {self.calls}"}, tool_id=f"c{self.calls}")
+
+    class DispatcherStub:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+            return {"returncode": 0, "stdout": "ok", "stderr": "", "duration_s": 0.1}
+
+    provider = ProviderStub()
+    # goal set -> this is a metric run (still mode=="run")
+    config = SimpleNamespace(workflow=SimpleNamespace(metric=SimpleNamespace(goal="minimize")))
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        mode="run",
+        provider=provider,
+        dispatcher=DispatcherStub(),
+        max_iterations=8,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
+    with patch("agent6.workflows.loop.commit_all", return_value=""):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            messages=messages,
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+        )
+    # would have been killed at idle 6 without the metric gate
+    assert result.reason != "verify_settled"
+
+
 def test_metric_plateau_nudge_escalates_with_budget_pressure() -> None:
     from agent6.workflows.loop import (
         _METRIC_PLATEAU_NUDGE_EXPLORE,  # pyright: ignore[reportPrivateUsage]

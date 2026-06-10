@@ -287,7 +287,9 @@ def _build_task_tree(nodes: dict[str, Any], cursor: str | None) -> tuple[TaskNod
 
     def visit(nid: str, depth: int) -> None:
         node = nodes.get(nid)
-        if node is None or nid in seen:
+        # isinstance (not `is None`) so a malformed non-dict value is skipped
+        # rather than crashing .get() — consistent with the roots filter below.
+        if not isinstance(node, dict) or nid in seen:
             return
         seen.add(nid)
         out.append(
