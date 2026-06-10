@@ -1179,6 +1179,10 @@ _METRIC_EARLY_FINISH_PATIENCE = 3
 _PLAN_BUDGET_NUDGE_BELOW = 0.35
 _PLAN_NUDGE_AFTER_ITERS = 12
 
+# Tool names that mutate the task DAG; after one runs we re-snapshot the graph
+# (graph.update event) so a live viewer can render the worker's task breakdown.
+_DAG_MUTATING_TOOLS = frozenset({"add_task", "update_task", "set_cursor"})
+
 _PLAN_BUDGET_NUDGE = (
     "[harness budget] You are running low on token budget and have NOT yet"
     " called finish_planning. Stop reading and reasoning now and call"
@@ -1720,6 +1724,7 @@ class Workflow:
         if root_id is not None:
             self.dispatcher.set_run_root_node_id(root_id)
             self._log(f"LOOP: DAG root task seeded: {root_id}")
+            self._emit_graph_snapshot()  # show the root in the live task view
 
         tools = _tool_definitions(self.dispatcher, mode=self.mode)
         self._log(
@@ -2265,6 +2270,8 @@ class Workflow:
                         )
                         if verify_just_passed:
                             metric_plateau_finish = self._metric_plateau_summary(metric_history)
+                    if name in _DAG_MUTATING_TOOLS:
+                        self._emit_graph_snapshot()
                 except ToolError as exc:
                     content = json.dumps({"error": str(exc)})
                     self._log(f"  tool_error: {name}: {exc}")
@@ -2765,6 +2772,21 @@ class Workflow:
         except CuratorClientError as exc:
             self._log(f"LOOP: failed to seed root task: {exc}")
             return None
+
+    def _emit_graph_snapshot(self) -> None:
+        """Emit the current task DAG so a live viewer (the TUI) can render it.
+        The worker's add_task/update_task tree lives in the curator, not the
+        event log, so we snapshot it after each mutation. Best-effort — a curator
+        hiccup must never break the run."""
+        if self.graph_client is None:
+            return
+        try:
+            state = self.graph_client.get_state()
+        except CuratorClientError:
+            return
+        nodes = state.get("nodes", {})
+        if isinstance(nodes, dict):
+            self._emit("graph.update", nodes=nodes, cursor=state.get("cursor"))
 
     def _load_repo_summary(self) -> RepoSummary:
         """Reuse the shared `load_repo_summary` and extend with structural priors

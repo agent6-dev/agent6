@@ -14,18 +14,22 @@ function that returns a new `RunState` (frozen so the TUI can rely on
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
-StepStatus = Literal["pending", "running", "passed", "failed", "skipped"]
+NodeStatus = Literal["pending", "in_progress", "passed", "failed", "skipped", "obsolete"]
 
 
 @dataclass(frozen=True, slots=True)
-class StepView:
-    index: int
+class TaskNodeView:
+    """One node of the live task DAG, flattened (DFS pre-order) with a depth for
+    tree rendering. Mirrors graph.models.TaskNode; fed by the `graph.update`
+    snapshot the worker emits whenever it mutates its task breakdown."""
+
+    id: str
     title: str
-    status: StepStatus = "pending"
-    commit_sha: str = ""
-    notes: str = ""
+    status: NodeStatus = "pending"
+    depth: int = 0
+    is_cursor: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,9 +86,8 @@ class ApprovalPrompt:
 class RunState:
     run_id: str = ""
     user_task: str = ""
-    plan_summary: str = ""
-    steps: tuple[StepView, ...] = ()
-    current_step_index: int | None = None
+    tasks: tuple[TaskNodeView, ...] = ()  # live task DAG, DFS pre-order
+    cursor_task_id: str | None = None
     last_role: RoleCall | None = None
     tool_calls: tuple[ToolCallView, ...] = ()  # most-recent-last, bounded
     last_verify: VerifyView | None = None
@@ -108,7 +111,7 @@ _MAX_TOOL_HISTORY = 50
 _MAX_LOG_TAIL = 400
 
 
-def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PLR0911, PLR0912, PLR0915
+def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PLR0911, PLR0912
     """Fold one event into the run state. Pure function."""
     etype = event.get("type", "")
     log_line = _format_log_line(event)
@@ -122,41 +125,14 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
         case "run.start":
             return replace(state, user_task=str(event.get("user_task", "")))
 
-        case "plan.ready":
-            steps_raw = event.get("steps", []) or []
-            steps = tuple(StepView(index=i + 1, title=str(t)) for i, t in enumerate(steps_raw))
+        case "graph.update":
+            nodes = event.get("nodes", {}) or {}
+            cursor = event.get("cursor")
             return replace(
                 state,
-                plan_summary=str(event.get("summary", "")),
-                steps=steps,
+                tasks=_build_task_tree(nodes, cursor if isinstance(cursor, str) else None),
+                cursor_task_id=cursor if isinstance(cursor, str) else None,
             )
-
-        case "step.start":
-            idx = int(event.get("index", 0))
-            updated = _update_step(state.steps, idx, status="running")
-            return replace(state, steps=updated, current_step_index=idx)
-
-        case "step.end":
-            idx = int(event.get("index", 0))
-            status_raw = str(event.get("status", "failed"))
-            valid_statuses: set[str] = {
-                "pending",
-                "running",
-                "passed",
-                "failed",
-                "skipped",
-            }
-            status: StepStatus = (
-                cast("StepStatus", status_raw) if status_raw in valid_statuses else "failed"
-            )
-            updated = _update_step(
-                state.steps,
-                idx,
-                status=status,
-                commit_sha=str(event.get("commit_sha", "")),
-                notes=str(event.get("notes", "")),
-            )
-            return replace(state, steps=updated)
 
         case "step.diff":
             idx = int(event.get("index", 0))
@@ -301,8 +277,42 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
             return state
 
 
-def _update_step(steps: tuple[StepView, ...], index: int, **changes: Any) -> tuple[StepView, ...]:
-    return tuple(replace(s, **changes) if s.index == index else s for s in steps)
+def _build_task_tree(nodes: dict[str, Any], cursor: str | None) -> tuple[TaskNodeView, ...]:
+    """Flatten the curator's node map into a DFS pre-order list with depths, so
+    the TUI can render the DAG as an indented tree. Roots are nodes with no
+    parent (or whose parent is missing); children follow their parent's recorded
+    order. Cycles/dupes are guarded by a visited set."""
+    out: list[TaskNodeView] = []
+    seen: set[str] = set()
+
+    def visit(nid: str, depth: int) -> None:
+        node = nodes.get(nid)
+        if node is None or nid in seen:
+            return
+        seen.add(nid)
+        out.append(
+            TaskNodeView(
+                id=nid,
+                title=str(node.get("title", "")),
+                status=node.get("status", "pending"),
+                depth=depth,
+                is_cursor=(nid == cursor),
+            )
+        )
+        for child in node.get("children", ()) or ():
+            visit(str(child), depth + 1)
+
+    roots = [
+        nid
+        for nid, n in nodes.items()
+        if not isinstance(n, dict) or n.get("parent_id") is None or n.get("parent_id") not in nodes
+    ]
+    for nid in roots:
+        visit(nid, 0)
+    # Any node not reachable from a root (shouldn't happen) still gets shown.
+    for nid in nodes:
+        visit(nid, 0)
+    return tuple(out)
 
 
 def _push_bounded[T](existing: tuple[T, ...], item: T, cap: int) -> tuple[T, ...]:

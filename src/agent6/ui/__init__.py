@@ -28,13 +28,13 @@ from agent6.ui.approval import (
     APPROVAL_DIR_NAME,
     write_answer,
 )
-from agent6.ui.state import RunState, StepView, apply_event, initial_state
+from agent6.ui.state import RunState, TaskNodeView, apply_event, initial_state
 from agent6.ui.tail import tail_events
 
 __all__ = [
     "APPROVAL_DIR_NAME",
     "RunState",
-    "StepView",
+    "TaskNodeView",
     "apply_event",
     "initial_state",
     "tail_events",

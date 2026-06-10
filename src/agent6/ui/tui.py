@@ -62,7 +62,14 @@ from agent6.ui.state import (
 )
 from agent6.ui.tail import tail_events
 
-_STEP_ICONS = {"passed": "✓", "failed": "✗", "running": "▶", "skipped": "—", "pending": "·"}
+_TASK_ICONS = {
+    "passed": "✓",
+    "failed": "✗",
+    "in_progress": "▶",
+    "skipped": "—",
+    "obsolete": "⊘",
+    "pending": "·",
+}
 
 
 class _ApprovalModal(ModalScreen[bool]):
@@ -376,11 +383,8 @@ class Agent6TUI(App[int]):
         role_line = (
             f"{role.role} / {role.model} {'…' if role.in_flight else ''}" if role else "(idle)"
         )
-        step = (
-            f"step {s.current_step_index}/{len(s.steps)}"
-            if s.current_step_index
-            else f"steps: {len(s.steps)}"
-        )
+        done_n = sum(1 for t in s.tasks if t.status in ("passed", "skipped"))
+        step = f"tasks: {done_n}/{len(s.tasks)}" if s.tasks else "tasks: —"
         finished = (
             "[b green]done[/]"
             if s.finished and s.all_passed
@@ -415,14 +419,17 @@ class Agent6TUI(App[int]):
             st.append("(waiting for the model…)", style="dim")
         stream.update(st)
 
-        # Plan tree
+        # Task DAG. The worker's live `add_task`/`update_task` breakdown, emitted
+        # as `graph.update` snapshots; indented by depth, cursor marked.
         tree = self.query_one("#plan", Tree)
         tree.clear()
-        for sv in s.steps:
-            icon = _STEP_ICONS.get(sv.status, "·")
-            # Text (not str): step titles are model output and may contain
-            # Rich markup metacharacters ('[...]') that would crash add_leaf.
-            tree.root.add_leaf(Text(f"{icon} {sv.index}. {sv.title}"))
+        for tv in s.tasks:
+            icon = _TASK_ICONS.get(tv.status, "·")
+            indent = "  " * tv.depth
+            marker = "▸ " if tv.is_cursor else ""
+            # Text (not str): titles are model output and may contain Rich markup
+            # metacharacters ('[...]') that would crash add_leaf.
+            tree.root.add_leaf(Text(f"{indent}{marker}{icon} {tv.title}"))
         tree.root.expand()
 
         # Budget

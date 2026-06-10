@@ -4,20 +4,26 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from agent6.ui.state import (
     ApprovalPrompt,
     BudgetView,
     RunState,
-    StepView,
+    TaskNodeView,
     apply_event,
     initial_state,
 )
 
 
+def _graph_event(nodes: dict[str, Any], cursor: str | None = None) -> dict[str, Any]:
+    return {"type": "graph.update", "nodes": nodes, "cursor": cursor}
+
+
 def test_initial_state_is_empty() -> None:
     s = initial_state()
     assert s == RunState()
-    assert s.steps == ()
+    assert s.tasks == ()
     assert s.budget == BudgetView()
 
 
@@ -26,41 +32,46 @@ def test_run_start_records_task() -> None:
     assert s.user_task == "fix bug"
 
 
-def test_plan_ready_populates_steps() -> None:
-    s = apply_event(
-        initial_state(),
-        {"type": "plan.ready", "summary": "do things", "steps": ["a", "b", "c"]},
-    )
-    assert s.plan_summary == "do things"
-    assert len(s.steps) == 3
-    assert s.steps[0] == StepView(index=1, title="a")
-    assert s.steps[2] == StepView(index=3, title="c")
-
-
-def test_step_start_then_end_updates_status() -> None:
-    s = apply_event(initial_state(), {"type": "plan.ready", "steps": ["a", "b"]})
-    s = apply_event(s, {"type": "step.start", "index": 1, "title": "a"})
-    assert s.current_step_index == 1
-    assert s.steps[0].status == "running"
-    s = apply_event(
-        s,
-        {
-            "type": "step.end",
-            "index": 1,
-            "title": "a",
-            "status": "passed",
-            "commit_sha": "abc1234",
-            "notes": "",
+def test_graph_update_builds_task_tree_dfs_with_depth() -> None:
+    # root -> (a -> a1), b  (children order preserved, DFS pre-order, depths)
+    nodes = {
+        "root": {
+            "title": "root",
+            "parent_id": None,
+            "status": "in_progress",
+            "children": ["a", "b"],
         },
+        "a": {"title": "task a", "parent_id": "root", "status": "passed", "children": ["a1"]},
+        "a1": {"title": "task a1", "parent_id": "a", "status": "pending", "children": []},
+        "b": {"title": "task b", "parent_id": "root", "status": "failed", "children": []},
+    }
+    s = apply_event(initial_state(), _graph_event(nodes, cursor="a1"))
+    assert s.cursor_task_id == "a1"
+    assert s.tasks == (
+        TaskNodeView(id="root", title="root", status="in_progress", depth=0),
+        TaskNodeView(id="a", title="task a", status="passed", depth=1),
+        TaskNodeView(id="a1", title="task a1", status="pending", depth=2, is_cursor=True),
+        TaskNodeView(id="b", title="task b", status="failed", depth=1),
     )
-    assert s.steps[0].status == "passed"
-    assert s.steps[0].commit_sha == "abc1234"
 
 
-def test_step_end_unknown_status_defaults_to_failed() -> None:
-    s = apply_event(initial_state(), {"type": "plan.ready", "steps": ["a"]})
-    s = apply_event(s, {"type": "step.end", "index": 1, "status": "weird"})
-    assert s.steps[0].status == "failed"
+def test_graph_update_latest_snapshot_replaces_prior() -> None:
+    s = apply_event(
+        initial_state(), _graph_event({"r": {"title": "r", "parent_id": None, "children": []}})
+    )
+    assert len(s.tasks) == 1
+    s = apply_event(s, _graph_event({"r2": {"title": "r2", "parent_id": None, "children": []}}))
+    assert tuple(t.id for t in s.tasks) == ("r2",)
+
+
+def test_graph_update_guards_cycles() -> None:
+    # a -> b -> a (cycle) must not infinite-loop; each node appears once.
+    nodes = {
+        "a": {"title": "a", "parent_id": None, "status": "pending", "children": ["b"]},
+        "b": {"title": "b", "parent_id": "a", "status": "pending", "children": ["a"]},
+    }
+    s = apply_event(initial_state(), _graph_event(nodes))
+    assert tuple(t.id for t in s.tasks) == ("a", "b")
 
 
 def test_tool_call_then_result_pairs_up() -> None:
@@ -181,7 +192,7 @@ def test_unknown_event_type_still_appends_to_log() -> None:
     s = apply_event(initial_state(), {"type": "totally.new", "x": 1})
     # Unknown events should not change RunState identity-relevant fields
     # but DO go into the log tail.
-    assert s.steps == ()
+    assert s.tasks == ()
     assert len(s.log_tail) == 1
 
 
@@ -194,10 +205,13 @@ def test_tool_history_is_bounded() -> None:
 
 def test_full_run_trace_replay() -> None:
     """End-to-end: feed a plausible event sequence and assert final state."""
+    tasks = {
+        "one": {"title": "one", "parent_id": None, "status": "passed", "children": []},
+        "two": {"title": "two", "parent_id": None, "status": "failed", "children": []},
+    }
     events = [
         {"type": "run.start", "user_task": "do thing"},
-        {"type": "plan.ready", "summary": "a plan", "steps": ["one", "two"]},
-        {"type": "step.start", "index": 1, "title": "one"},
+        {"type": "graph.update", "nodes": tasks, "cursor": "two"},
         {"type": "role.call", "role": "worker", "model": "gpt-5"},
         {"type": "tool.call", "name": "apply_patch", "args": {"path": "x.py"}},
         {"type": "tool.result", "name": "apply_patch", "ok": True, "summary": "applied=1"},
@@ -210,9 +224,6 @@ def test_full_run_trace_replay() -> None:
             "output_cap": 1000,
         },
         {"type": "step.diff", "index": 1, "commit_sha": "abc", "patch": "+ added"},
-        {"type": "step.end", "index": 1, "status": "passed", "commit_sha": "abc", "notes": ""},
-        {"type": "step.start", "index": 2, "title": "two"},
-        {"type": "step.end", "index": 2, "status": "failed", "notes": "boom"},
         {"type": "run.end", "all_passed": False},
     ]
     s = initial_state()
@@ -220,9 +231,9 @@ def test_full_run_trace_replay() -> None:
         s = apply_event(s, e)
     assert s.finished is True
     assert s.all_passed is False
-    assert s.steps[0].status == "passed"
-    assert s.steps[1].status == "failed"
-    assert s.steps[1].notes == "boom"
+    assert s.tasks[0].status == "passed"
+    assert s.tasks[1].status == "failed"
+    assert s.cursor_task_id == "two"
     assert s.diffs[1] == "+ added"
     assert s.budget.input_total == 50
 
