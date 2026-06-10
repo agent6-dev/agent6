@@ -88,14 +88,14 @@ pipx install agent6
 The live dashboard (`textual`) ships by default. Both tools drop the
 `agent6` entry point in a user bin directory (`~/.local/bin`); if it isn't
 on your `PATH` yet, run `uv tool update-shell` or `pipx ensurepath` (then
-restart your shell). (`agent6[tui]` still resolves — the extra is now empty.)
+restart your shell).
 
 From source:
 
 ```bash
 git clone https://github.com/elesiuta/agent6
 cd agent6
-uv sync --extra tui
+uv sync
 uv run agent6 --help
 ```
 

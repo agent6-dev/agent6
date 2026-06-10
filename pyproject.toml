@@ -13,18 +13,10 @@ dependencies = [
     "argcomplete>=3,<4",
     "tree-sitter==0.25.2",
     "tree-sitter-language-pack==1.8.1",
-    # The live dashboard (`agent6 run`/`watch`/`plan`/`machine create`) ships by
-    # default — textual + ~8 well-vetted pure-Python deps (rich, pygments,
-    # markdown-it-py, …). A headless install can still drop it: `pip install
-    # --no-deps` or strip it from a vendored build; the CLI degrades to the
-    # plain `--plain` tail + line logger when textual is absent.
+    # The live dashboard (`agent6 run`/`watch`/`plan`/`machine create`). The CLI
+    # degrades to the `--plain` tail + line logger if textual is stripped out.
     "textual>=0.86",
 ]
-
-[project.optional-dependencies]
-# textual now ships in the base install (above). This extra is kept as an empty
-# alias so the documented `pip install 'agent6[tui]'` keeps working.
-tui = []
 
 [project.scripts]
 agent6 = "agent6.cli:main"

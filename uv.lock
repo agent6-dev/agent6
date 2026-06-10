@@ -32,7 +32,6 @@ requires-dist = [
     { name = "tree-sitter", specifier = "==0.25.2" },
     { name = "tree-sitter-language-pack", specifier = "==1.8.1" },
 ]
-provides-extras = ["tui"]
 
 [package.metadata.requires-dev]
 dev = [

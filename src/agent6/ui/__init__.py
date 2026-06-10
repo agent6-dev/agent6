@@ -13,9 +13,8 @@ Layout:
                  mirror in its own language.
     tail.py      stdlib JSONL file tailer.
     approval.py  file-based approval bridge (workflow <-> TUI).
-    tui.py       Textual app. `textual` is an optional dependency
-                 (`pip install 'agent6[tui]'`); importing this module
-                 raises a clear error if textual is missing.
+    tui.py       Textual app. `textual` ships in the base install;
+                 importing this module raises a clear error if it's missing.
 
 The TUI is launched out-of-process by `agent6 run` (when stdout is a TTY
 and textual is installed) so the workflow process stays exactly as it is

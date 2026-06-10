@@ -427,6 +427,19 @@ operator must resolve before execution. Leave the `**A:**` lines blank
 Call `finish_planning` exactly once when the plan is complete. Do not
 call any other tools after `finish_planning`.
 </plan-output>
+
+<be-decisive>
+A plan is a CONCISE GUIDE for an executor, not the implementation. Read only
+the few files you need to name the concrete change points (files + functions),
+then WRITE THE PLAN AND FINISH. Do NOT:
+- write the final code, or reason line-by-line through every edge case (the
+  executor, `agent6 run --from-plan`, resolves details and writes the code);
+- re-read files you have already seen or second-guess a sound approach.
+Bias hard toward finishing: a good-enough plan you actually deliver is worth far
+more than an exhaustive one you never emit. When the approach is clear — usually
+after a handful of reads — call `finish_planning`. If your token budget is
+running low, STOP and call `finish_planning` immediately with what you have.
+</be-decisive>
 """
 
 _ASK_SYSTEM_PROMPT_BASE = """<role>
@@ -1158,6 +1171,22 @@ _METRIC_FINISH_NUDGE = (
 # that genuinely has nothing left to try can still stop cleanly.
 _METRIC_EARLY_FINISH_PATIENCE = 3
 
+# A `plan` run injects a one-shot "finish now" directive once its token budget
+# drops below this fraction OR it has taken `_PLAN_NUDGE_AFTER_ITERS` turns.
+# Verbose reasoning models (Kimi K2.6 observed live) otherwise read forever —
+# cheaply, under prompt caching — and never call finish_planning, yielding NO
+# plan at all. A plan rarely needs more than a handful of reads.
+_PLAN_BUDGET_NUDGE_BELOW = 0.35
+_PLAN_NUDGE_AFTER_ITERS = 12
+
+_PLAN_BUDGET_NUDGE = (
+    "[harness budget] You are running low on token budget and have NOT yet"
+    " called finish_planning. Stop reading and reasoning now and call"
+    " finish_planning immediately with the best plan you have — a concise, even"
+    " rough, plan that is actually delivered is far more useful than an"
+    " exhaustive one you never emit. Do not call any other tool first."
+)
+
 
 def _metric_plateau_nudge(budget_remaining: float | None) -> str:
     """Select a plateau nudge whose intensity scales with budget pressure.
@@ -1850,8 +1879,33 @@ class Workflow:
         # metric-run early-finish rejection counter. See
         # `_METRIC_EARLY_FINISH_PATIENCE`.
         metric_finish_nudges_used: int = 0
+        # plan-mode finish nudge: fire once when a verbose planner (Kimi K2.6
+        # observed live) keeps reading without ever calling finish_planning.
+        plan_finish_nudged = False
         for iteration in range(start_iteration, self.max_iterations + 1):
             self._maybe_compact(messages)
+
+            # Force a verbose planner to land a plan. Trigger on EITHER a low
+            # token budget OR too many planning turns — with prompt caching a
+            # planner can take many cheap turns, so an iteration cap is the
+            # reliable lever for the "reads forever" failure mode. A rough
+            # delivered plan beats an exhaustive one that never gets emitted.
+            if self.mode == "plan" and not plan_finish_nudged:
+                remaining = self._budget_fraction_remaining()
+                low_budget = remaining is not None and remaining <= _PLAN_BUDGET_NUDGE_BELOW
+                too_many_turns = iteration - start_iteration + 1 >= _PLAN_NUDGE_AFTER_ITERS
+                if low_budget or too_many_turns:
+                    plan_finish_nudged = True
+                    messages.append(
+                        {"role": "user", "content": [{"type": "text", "text": _PLAN_BUDGET_NUDGE}]}
+                    )
+                    self._log(
+                        f"LOOP: plan finish-nudge at iter {iteration}"
+                        f" (turns={too_many_turns}, low_budget={low_budget})"
+                    )
+                    self._emit(
+                        "loop.plan_finish.nudge", iteration=iteration, budget_remaining=remaining
+                    )
 
             # Snapshot BEFORE the LLM call. After this write, a
             # crash anywhere up to the next iteration's snapshot can be
