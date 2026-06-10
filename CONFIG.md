@@ -51,9 +51,34 @@ One backend per block; `<name>` is yours to pick and is referenced from
 | `prompt_caching` | `true` | anthropic | Enable Anthropic prompt caching. |
 | `base_url` | `https://api.openai.com/v1` | openai | Endpoint base URL (e.g. `https://openrouter.ai/api/v1`, `http://localhost:11434/v1`). |
 | `extra_headers` | `{}` | openai | Extra HTTP headers sent on every request (e.g. OpenRouter's `HTTP-Referer` / `X-Title`). |
+| `extra_body` | `{}` | openai | Provider-specific JSON merged into every request body (keys override computed fields). See below. |
 
 Each endpoint gets its own block, so OpenAI and OpenRouter run side-by-side
 under different `<name>`s.
+
+### OpenRouter routing & caching (`extra_body`)
+
+OpenRouter fans a model across multiple backends whose **speed and prompt
+caching differ a lot** — and its default routing is not deterministic, so the
+re-sent system prompt may or may not be cached call-to-call. Pin the behaviour
+with `extra_body.provider` ([OpenRouter routing docs](https://openrouter.ai/docs/features/provider-routing)):
+
+```toml
+[providers.openrouter]
+kind = "openai"
+base_url = "https://openrouter.ai/api/v1"
+# Prefer the fastest backend; for kimi-k2.6 this lands on one that caches the
+# prompt prefix, so the re-sent system prompt is near-free (cache_r in the cost
+# summary jumps from ~0 to most of the input). Recommended.
+extra_body = { provider = { sort = "throughput" } }
+# Alternatives: pin a specific backend  { order = ["DeepInfra"], allow_fallbacks = true }
+#               cap price               { max_price = { prompt = 1, completion = 2 } }
+```
+
+This is the lever to **pay for a faster/caching backend**. Caching matters more
+than payload size: the large per-call input is the same prefix every turn, so a
+caching backend makes it cheap without trimming anything. Watch `cache_r` in the
+run's cost summary to confirm it's engaging.
 
 ## `[models.<role>]`
 

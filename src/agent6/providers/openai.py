@@ -52,7 +52,7 @@ import re
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
@@ -149,6 +149,10 @@ class OpenAIProvider:
     model: str
     base_url: str = OPENAI_DEFAULT_BASE_URL
     extra_headers: tuple[tuple[str, str], ...] = ()
+    # Provider-specific JSON merged into every request body (e.g. OpenRouter
+    # `provider` routing — see config OpenAIProviderEntry.extra_body). Keys here
+    # override computed body fields.
+    extra_body: dict[str, Any] = field(default_factory=dict)
     timeout_s: float = 120.0
     transcript_sink: TranscriptSink | None = None
     budget: BudgetTracker | None = None
@@ -187,7 +191,7 @@ class OpenAIProvider:
             budget=budget,
         )
 
-    def call(  # noqa: PLR0912
+    def call(  # noqa: PLR0912, PLR0915
         self,
         *,
         system: str,
@@ -307,6 +311,10 @@ class OpenAIProvider:
             body["temperature"] = temperature
         if tools:
             body["tools"] = tools_to_openai(tools)
+        # Operator-supplied body extras win (e.g. OpenRouter `provider` routing
+        # to pin a caching/fast backend). Last so it can override computed keys.
+        if self.extra_body:
+            body.update(self.extra_body)
         # Names of the tools actually offered this turn. Used purely as
         # a guard for the text-embedded-tool-call recovery in
         # `_parse_response`: we only ever coerce a text blob into a

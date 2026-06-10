@@ -75,6 +75,7 @@ def _build_role_provider(
         model=model,
         base_url=entry.base_url,
         extra_headers=tuple(sorted(entry.extra_headers.items())),
+        extra_body=dict(entry.extra_body),
         timeout_s=entry.http_timeout_s,
         transcript_sink=transcript_sink,
         budget=budget,

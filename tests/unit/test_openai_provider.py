@@ -69,6 +69,28 @@ def test_call_translates_messages_and_parses_usage() -> None:
     assert resp.cache_read_tokens == 40
 
 
+def test_call_merges_extra_body() -> None:
+    # extra_body (e.g. OpenRouter `provider` routing) is merged into the request
+    # body, last, so an operator can pin a caching/fast backend.
+    provider = OpenAIProvider(
+        api_key="sk-test",
+        model="kimi",
+        extra_body={"provider": {"sort": "throughput"}},
+    )
+    captured: dict[str, Any] = {}
+
+    def fake_post(*_a: Any, **kw: Any) -> httpx.Response:
+        captured["body"] = json.loads(kw["content"])
+        return _fake_response(
+            {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}], "usage": {}}
+        )
+
+    with mock.patch("httpx.post", side_effect=fake_post):
+        provider.call(system="s", messages=[{"role": "user", "content": "x"}])
+
+    assert captured["body"]["provider"] == {"sort": "throughput"}
+
+
 def test_call_clamps_negative_fresh_input_to_zero() -> None:
     """Defensive: a misbehaving upstream reporting cached > prompt must not
     produce a negative `input_tokens` (which would corrupt the BudgetTracker

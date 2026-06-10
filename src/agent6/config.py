@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
 
 from pydantic import (
@@ -166,6 +166,16 @@ class OpenAIProviderEntry(BaseModel):
     extra_headers: dict[str, str] = Field(
         default_factory=dict,
         description="Extra HTTP headers to attach to every request (e.g. OpenRouter's).",
+    )
+    extra_body: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Extra JSON merged into every request body (keys override computed"
+            " fields). Provider-specific — e.g. OpenRouter routing: set"
+            ' extra_body = { provider = { sort = "throughput" } } to prefer the'
+            " fastest backend, pin one with { order = [...] }, or cap price with"
+            " { max_price = { ... } }. Pay-for-speed lives here."
+        ),
     )
     # per-HTTP-call timeout in seconds. See AnthropicProviderEntry
     # for the rationale. OpenRouter heartbeats are handled at the streaming
