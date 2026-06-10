@@ -1879,8 +1879,11 @@ class Workflow:
         # metric-run early-finish rejection counter. See
         # `_METRIC_EARLY_FINISH_PATIENCE`.
         metric_finish_nudges_used: int = 0
-        # plan-mode finish nudge: fire once when a verbose planner (Kimi K2.6
-        # observed live) keeps reading without ever calling finish_planning.
+        # plan-mode finish nudge: fire once per loop segment when a verbose
+        # planner (Kimi K2.6 observed live) keeps reading without ever calling
+        # finish_planning. Like the sibling nudge counters this is loop-local, so
+        # a resume starts a fresh segment and may nudge again — benign (one extra
+        # harmless directive); the turn count is measured from start_iteration.
         plan_finish_nudged = False
         for iteration in range(start_iteration, self.max_iterations + 1):
             self._maybe_compact(messages)

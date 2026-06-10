@@ -171,7 +171,8 @@ class OpenAIProviderEntry(BaseModel):
         default_factory=dict,
         description=(
             "Extra JSON merged into every request body (keys override computed"
-            " fields). Provider-specific — e.g. OpenRouter routing: set"
+            " fields, except the load-bearing messages/model/stream which are"
+            " filtered). Provider-specific — e.g. OpenRouter routing: set"
             ' extra_body = { provider = { sort = "throughput" } } to prefer the'
             " fastest backend, pin one with { order = [...] }, or cap price with"
             " { max_price = { ... } }. Pay-for-speed lives here."

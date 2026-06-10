@@ -522,6 +522,94 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: Path) -> None:
     assert result.reason == "finish_run"
 
 
+def test_drive_loop_plan_finish_nudge_fires_once_at_iter_cap(tmp_path: Path) -> None:
+    """A verbose planner that never calls finish_planning gets a single harness
+    'finish now' nudge once it hits the plan turn cap -- not before, not again.
+    This is the lever that makes Kimi K2.6 actually land a plan; pins the
+    off-by-one (iteration - start + 1 >= cap) and the one-shot latch."""
+    from agent6.workflows.loop import (
+        _PLAN_BUDGET_NUDGE,  # pyright: ignore[reportPrivateUsage]
+        _PLAN_NUDGE_AFTER_ITERS,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.nudged_on: list[int] = []
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            if _PLAN_BUDGET_NUDGE[:24] in str(kwargs["messages"][-1]):
+                self.nudged_on.append(self.calls)
+            # never finish on our own -> the loop must force the issue
+            return _tool_resp("read_file", {"path": f"f{self.calls}.py"}, tool_id=f"r-{self.calls}")
+
+    class DispatcherStub:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+            assert name == "read_file"
+            return {"content": "..."}
+
+    provider = ProviderStub()
+    wf = _wf(
+        root=tmp_path,
+        mode="plan",
+        provider=provider,
+        dispatcher=DispatcherStub(),
+        max_iterations=_PLAN_NUDGE_AFTER_ITERS + 3,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nplan a feature"}]}]
+    wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        system="s", messages=messages, tools=[], tool_calls=0, start_iteration=1, root_task_id=None
+    )
+    # Injected exactly once, on the turn-cap iteration (mode stays "plan" on
+    # every later turn, so the latch is what keeps it to one).
+    assert provider.nudged_on == [_PLAN_NUDGE_AFTER_ITERS]
+
+
+def test_drive_loop_plan_finish_nudge_fires_on_low_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The nudge also fires early when the token budget runs low (not only on
+    the turn cap) -- e.g. a planner reading large files burns budget fast."""
+    from agent6.workflows import loop as loopmod
+    from agent6.workflows.loop import _PLAN_BUDGET_NUDGE  # pyright: ignore[reportPrivateUsage]
+
+    def _low_budget(_self: object) -> float:
+        return 0.2
+
+    monkeypatch.setattr(loopmod.Workflow, "_budget_fraction_remaining", _low_budget)
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.nudged_on: list[int] = []
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            if _PLAN_BUDGET_NUDGE[:24] in str(kwargs["messages"][-1]):
+                self.nudged_on.append(self.calls)
+            return _tool_resp("read_file", {"path": f"f{self.calls}.py"}, tool_id=f"r-{self.calls}")
+
+    class DispatcherStub:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+            return {"content": "..."}
+
+    provider = ProviderStub()
+    wf = _wf(
+        root=tmp_path,
+        mode="plan",
+        provider=provider,
+        dispatcher=DispatcherStub(),
+        max_iterations=5,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nplan"}]}]
+    wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        system="s", messages=messages, tools=[], tool_calls=0, start_iteration=1, root_task_id=None
+    )
+    # Budget already below the threshold -> nudge on the very first turn, once.
+    assert provider.nudged_on == [1]
+
+
 def test_metric_plateau_nudge_escalates_with_budget_pressure() -> None:
     from agent6.workflows.loop import (
         _METRIC_PLATEAU_NUDGE_EXPLORE,  # pyright: ignore[reportPrivateUsage]

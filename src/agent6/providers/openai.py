@@ -151,7 +151,8 @@ class OpenAIProvider:
     extra_headers: tuple[tuple[str, str], ...] = ()
     # Provider-specific JSON merged into every request body (e.g. OpenRouter
     # `provider` routing — see config OpenAIProviderEntry.extra_body). Keys here
-    # override computed body fields.
+    # override computed body fields, EXCEPT the load-bearing
+    # messages/model/stream/stream_options (filtered in `call`).
     extra_body: dict[str, Any] = field(default_factory=dict)
     timeout_s: float = 120.0
     transcript_sink: TranscriptSink | None = None
@@ -311,10 +312,15 @@ class OpenAIProvider:
             body["temperature"] = temperature
         if tools:
             body["tools"] = tools_to_openai(tools)
-        # Operator-supplied body extras win (e.g. OpenRouter `provider` routing
-        # to pin a caching/fast backend). Last so it can override computed keys.
+        # Operator-supplied body extras (e.g. OpenRouter `provider` routing to
+        # pin a caching/fast backend). Merged last so it can override computed
+        # tuning keys — but NEVER the load-bearing request shape: replacing
+        # `messages`/`model` would silently send a different request, and
+        # flipping `stream` would make the non-streaming path get an SSE body
+        # that `resp.json()` can't parse. Those are filtered out.
         if self.extra_body:
-            body.update(self.extra_body)
+            reserved = {"messages", "model", "stream", "stream_options"}
+            body.update({k: v for k, v in self.extra_body.items() if k not in reserved})
         # Names of the tools actually offered this turn. Used purely as
         # a guard for the text-embedded-tool-call recovery in
         # `_parse_response`: we only ever coerce a text blob into a
