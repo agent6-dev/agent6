@@ -699,6 +699,46 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(tmp_path: P
     assert result.reason == "finish_run"
 
 
+def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: Path) -> None:
+    """Re-running verify on an already-green tree (which the prompt encourages
+    between reads) is active work, not idle — it must NOT accrue toward the
+    verify-settled hard-stop, or a legit run gets truncated."""
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            return _tool_resp("run_verify_command", tool_id=f"v{self.calls}")  # always re-verify
+
+    class DispatcherStub:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+            return {"returncode": 0, "stdout": "ok", "stderr": "", "duration_s": 0.1}
+
+    provider = ProviderStub()
+    config = SimpleNamespace(workflow=SimpleNamespace(metric=SimpleNamespace(goal=None)))
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        mode="run",
+        provider=provider,
+        dispatcher=DispatcherStub(),
+        max_iterations=10,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
+    with patch("agent6.workflows.loop.commit_all", return_value=""):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            messages=messages,
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+        )
+    assert result.reason != "verify_settled"
+
+
 def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: Path) -> None:
     """On a metric run, post-verify measure/analyse/read iterations legitimately
     make no commit; completion is owned by the metric early-finish + plateau

@@ -117,6 +117,21 @@ agent6's best run (26.1×) edged out claude-code's single run (25.3×).
 ² Runnable on consumer hardware (30B, 3B active MoE — fits a 24GB GPU
 at 4-bit).
 
+> **Update (per-call output cap, 32768 → 65536).** Three fresh kimi-k2.6
+> runs all landed at 1.0× — but two distinct failure modes, both
+> diagnosed turn-by-turn:
+> - At the old 32768 metric cap, ~30% of turns ended `stop_reason="length"`:
+>   kimi's reasoning ate the whole per-call budget and the turn closed
+>   *before* it could emit a tool call. The run made **1 edit** total.
+> - Raising `metric_task_max_tokens` to 65536 fixed that (truncation
+>   30% → 5%, **15 edits**), so kimi now actually attempts the optimization
+>   — but its edits *broke correctness* (0 passing verifies → nothing kept).
+>
+> So the cap bump is a real fix for the truncation waste (worth keeping for
+> any reason-heavy worker), but kimi's *capability* on this kernel is the
+> next wall, and it's high-variance — the 14389 above remains its best
+> sample, not a number any single run reproduces.
+
 Takeaways, with the **small-N / high-variance** caveat firmly attached:
 
 - **The frontier gap is large.** Sonnet-4.5 reaches 7–26× and

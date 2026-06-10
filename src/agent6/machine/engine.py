@@ -199,7 +199,17 @@ class LiveWorld:
             # Grant RW on the data dir + tell the script where it is. This is the
             # portable way to persist across iterations (hardened tool jails are
             # otherwise read-only); the journal still records every transition.
-            env_list.append(("AGENT6_MACHINE_DATA_DIR", str(self.data_dir)))
+            #
+            # Export the data dir RELATIVE to cwd, not the host abspath: under
+            # `strict` the jail pivots cwd to /workspace, so the host abspath
+            # doesn't exist inside the jail, but the relative path resolves
+            # against the (jail-set) cwd on every profile. Fall back to abspath
+            # if it somehow isn't under cwd.
+            try:
+                data_value = str(self.data_dir.relative_to(self.cwd))
+            except ValueError:
+                data_value = str(self.data_dir)
+            env_list.append(("AGENT6_MACHINE_DATA_DIR", data_value))
             extra_rw = (self.data_dir,)
         policy = JailPolicy(
             cwd=self.cwd,

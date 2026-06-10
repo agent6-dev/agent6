@@ -1592,7 +1592,13 @@ class Workflow:
     # against the 16k default, wasting the whole turn. Lifting the ceiling
     # only when a metric goal is present keeps ordinary feature/bugfix runs
     # (where giant turns mostly mean a confused model) on the tighter cap.
-    metric_task_max_tokens: int = 32768
+    #
+    # Bumped 32768 -> 65536: a heavy reasoner (Kimi K2.6, perf-takehome) was
+    # *still* hitting the 32k cap with stop_reason="length" — its reasoning ate
+    # the whole budget and the turn ended before it could emit a tool call, so
+    # ~30% of turns were pure waste and the run made no progress. The bigger
+    # ceiling lets a reason-heavy turn finish and actually apply its edit.
+    metric_task_max_tokens: int = 65536
     # Sampling temperature pinned for every provider
     # call (worker and critic). agent6 was previously passing
     # `temperature: None` through every call, meaning each provider
@@ -2678,22 +2684,33 @@ class Workflow:
 
             # verify-settled completion bookkeeping (run mode). Track no-progress
             # iterations after the first green verify; nudge once, then stop.
+            # "progress" is any forward motion the prompt encourages, so a
+            # legitimately-working run is never truncated:
+            #   - an apply_edit/apply_patch, or a new commit, or
+            #   - an uncommitted worktree change (an edit made via run_command),
+            #   - a verify RUN itself (re-verifying between reads is active work,
+            #     not idle) — held neutral so it neither resets nor accrues.
+            # Only the pathology — spinning on read-only commands with a clean,
+            # already-committed tree — accrues idle.
             if verify_just_passed:
                 verify_ever_passed = True
-            if verify_ever_passed:
-                if committed_this_iter or edited_this_iter:
-                    verify_settled_idle = 0
-                    verify_settled_nudged = False  # a fresh idle streak may re-nudge
-                else:
-                    verify_settled_idle += 1
             # Only governs PLAIN runs. A metric/optimisation run is also
             # mode=="run" but its completion is owned by the metric early-finish
             # guard + plateau/ceiling logic (which deliberately keep going while
             # budget remains); measure/analyse/read iterations there legitimately
-            # make no commit, so the settled detector must defer to them.
+            # make no commit, so the settled detector must defer to them. (Gating
+            # the bookkeeping here also keeps the worktree-dirty git check off the
+            # metric hot path.)
             non_metric_run = (
                 self.mode == "run" and _metric_goal(self.config.workflow.metric) is None
             )
+            if non_metric_run and verify_ever_passed:
+                made_progress = committed_this_iter or edited_this_iter or self._worktree_dirty()
+                if made_progress:
+                    verify_settled_idle = 0
+                    verify_settled_nudged = False  # a fresh idle streak may re-nudge
+                elif not (verify_just_passed or verify_just_failed):
+                    verify_settled_idle += 1
             verify_settled_stop = (
                 non_metric_run
                 and finish_signal is None
@@ -2872,6 +2889,16 @@ class Workflow:
             self._log(f"LOOP: failed to seed root task: {exc}")
             return None
 
+    def _worktree_dirty(self) -> bool:
+        """True if the repo has uncommitted changes — e.g. an edit a worker made
+        via run_command that the verify-pass auto-commit hasn't captured yet. The
+        verify-settled detector treats that as in-progress work. Best-effort:
+        any git error reports clean, so a hiccup can't wedge the detector."""
+        try:
+            return not git_status(self.root).is_clean
+        except (GitError, OSError):
+            return False
+
     def _emit_graph_snapshot(self) -> None:
         """Emit the current task DAG so a live viewer (the TUI) can render it.
         The worker's add_task/update_task tree lives in the curator, not the
@@ -2885,7 +2912,11 @@ class Workflow:
             return
         try:
             state = self.graph_client.get_state()
-        except CuratorClientError:
+        except Exception as exc:
+            # (CuratorClientError, IpcError, OSError/BrokenPipeError on a dead
+            # socket) must never break an otherwise-healthy run. Matches the
+            # convention at tools/dispatch.py's get_state() call site.
+            self._log(f"LOOP: graph snapshot skipped: {exc}")
             return
         raw = state.get("nodes", {})
         if not isinstance(raw, dict):
