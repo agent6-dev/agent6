@@ -610,6 +610,51 @@ def test_drive_loop_plan_finish_nudge_fires_on_low_budget(
     assert provider.nudged_on == [1]
 
 
+def test_drive_loop_run_budget_nudge_forces_verify_and_finish(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A non-metric `run` gets a one-shot wrap-up nudge when budget runs low.
+    Observed live: the worker solves the task but never re-verifies or calls
+    finish_run, so the budget dies on read-only commands."""
+    from agent6.workflows import loop as loopmod
+    from agent6.workflows.loop import _RUN_BUDGET_NUDGE  # pyright: ignore[reportPrivateUsage]
+
+    def _low_budget(_self: object) -> float:
+        return 0.2
+
+    monkeypatch.setattr(loopmod.Workflow, "_budget_fraction_remaining", _low_budget)
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.nudged_on: list[int] = []
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            if _RUN_BUDGET_NUDGE[:24] in str(kwargs["messages"][-1]):
+                self.nudged_on.append(self.calls)
+            return _tool_resp("list_dir", {"path": "."}, tool_id=f"l-{self.calls}")
+
+    class DispatcherStub:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+            return {"content": "..."}
+
+    provider = ProviderStub()
+    wf = _wf(
+        root=tmp_path,
+        mode="run",
+        provider=provider,
+        dispatcher=DispatcherStub(),
+        max_iterations=4,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
+    wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        system="s", messages=messages, tools=[], tool_calls=0, start_iteration=1, root_task_id=None
+    )
+    # fires once, on the first turn at/below the threshold, and only once.
+    assert provider.nudged_on == [1]
+
+
 def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: Path) -> None:
     """A run-mode worker that keeps spinning after verify already passed (no new
     commit, no edit) gets one finish nudge, then the loop stops it with

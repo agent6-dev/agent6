@@ -310,6 +310,13 @@ the loop will halt if you exceed it.
   environment reasons (missing tool, unwritable path), do not probe the
   sandbox with diagnostic commands; use `run_verify_command` and read its
   output.
+- On the hardened sandbox profile, jailed commands cannot CREATE new
+  top-level files or directories in the workspace root (existing entries
+  are writable as normal). If a build tool needs a new top-level entry
+  (e.g. `Cargo.lock`, `target/`, `go.sum`), create it first with
+  `write_file` (which runs outside the jail): the file itself for a file,
+  or a placeholder like `target/.keep` for a directory. Then rerun the
+  command.
 - If an edit fails verify and you need to revert it, do NOT call
     `git checkout`, `git reset`, or other history-mutating git commands
     through `run_command`: `.git/` is protected inside the jail and those
@@ -1209,6 +1216,19 @@ _VERIFY_SETTLED_NUDGE = (
     " what remains — do not keep re-running read-only commands."
 )
 
+# A non-metric `run` injects a one-shot wrap-up directive when the budget gets
+# low. Observed live (Kimi K2.6): the worker solves the task, never re-runs
+# verify, never calls finish_run, and burns the remaining budget on read-only
+# commands; the verify-settled detector cannot engage without a green verify.
+_RUN_BUDGET_NUDGE_BELOW = 0.25
+
+_RUN_BUDGET_NUDGE = (
+    "[harness budget] You are running low on budget. Run `run_verify_command`"
+    " NOW. If it passes, call finish_run immediately with a short summary. If"
+    " it fails, fix ONLY the smallest blocking issue, re-verify, and finish."
+    " Do not run any other commands."
+)
+
 _PLAN_BUDGET_NUDGE = (
     "[harness budget] You are running low on token budget and have NOT yet"
     " called finish_planning. Stop reading and reasoning now and call"
@@ -1931,6 +1951,7 @@ class Workflow:
         verify_ever_passed = False
         verify_settled_idle = 0
         verify_settled_nudged = False
+        run_budget_nudged = False
         for iteration in range(start_iteration, self.max_iterations + 1):
             self._maybe_compact(messages)
 
@@ -1954,6 +1975,24 @@ class Workflow:
                     )
                     self._emit(
                         "loop.plan_finish.nudge", iteration=iteration, budget_remaining=remaining
+                    )
+
+            # Same lever for a non-metric coding run: force a verify + finish
+            # before the budget dies (metric runs have their own end-game).
+            if (
+                self.mode == "run"
+                and not run_budget_nudged
+                and _metric_goal(self.config.workflow.metric) is None
+            ):
+                remaining = self._budget_fraction_remaining()
+                if remaining is not None and remaining <= _RUN_BUDGET_NUDGE_BELOW:
+                    run_budget_nudged = True
+                    messages.append(
+                        {"role": "user", "content": [{"type": "text", "text": _RUN_BUDGET_NUDGE}]}
+                    )
+                    self._log(f"LOOP: run budget-nudge at iter {iteration}")
+                    self._emit(
+                        "loop.run_budget.nudge", iteration=iteration, budget_remaining=remaining
                     )
 
             # Snapshot BEFORE the LLM call. After this write, a

@@ -351,7 +351,9 @@ class BudgetTracker:
             f"cost~${total_usd:.4f}"
         )
         if any_unknown:
-            budget_line += " (some models unpriced)"
+            # The figure is a lower bound; at least one model has no cached
+            # provider price (see agent6.pricing: no static fallback).
+            budget_line += "+ (some models unpriced; figure is a lower bound)"
         lines.append(budget_line)
         if snap["exhausted"]:
             lines.append(f"  STATUS: BUDGET EXCEEDED — {snap['exhausted_reason']}")
