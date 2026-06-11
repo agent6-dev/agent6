@@ -304,6 +304,12 @@ the loop will halt if you exceed it.
 - After every meaningful edit run `run_verify_command` to check
   correctness. Don't chain many edits without a verify pass; each
   uncommitted-but-broken edit cost compounds.
+- Run the project's tests ONLY via `run_verify_command` (the operator's
+  configured command with the right environment), never by reconstructing
+  test invocations through `run_command`. If a command fails for
+  environment reasons (missing tool, unwritable path), do not probe the
+  sandbox with diagnostic commands; use `run_verify_command` and read its
+  output.
 - If an edit fails verify and you need to revert it, do NOT call
     `git checkout`, `git reset`, or other history-mutating git commands
     through `run_command`: `.git/` is protected inside the jail and those

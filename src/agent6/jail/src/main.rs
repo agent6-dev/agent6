@@ -426,8 +426,15 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
 fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
     // Strict profile runs inside the pivoted rootfs; /workspace is the writable
     // mount and /usr /bin /lib /lib64 /etc /tmp /dev are read-only bind mounts.
-    let access_all = AccessFs::from_all(ABI::V1);
-    let access_read = AccessFs::from_read(ABI::V1);
+    // ABI::V2 (not V1): V2 adds LANDLOCK_ACCESS_FS_REFER. A ruleset that
+    // does not handle REFER keeps ABI-1 semantics where EVERY cross-directory
+    // rename/hardlink fails with EXDEV, which breaks `cargo` (hardlinks build
+    // artifacts between target/ subdirs), `mv` across dirs, and similar tools
+    // even inside fully-writable paths. Granting REFER on rw paths only allows
+    // re-parenting within hierarchies the child can already write; the crate's
+    // best-effort mode degrades gracefully on ABI-1 kernels.
+    let access_all = AccessFs::from_all(ABI::V2);
+    let access_read = AccessFs::from_read(ABI::V2);
     // from_read excludes EXECUTE; system paths must be read+execute so spawned
     // binaries can actually run (otherwise execve EACCES).
     let access_read_exec = access_read | AccessFs::Execute;
@@ -495,8 +502,8 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
     // listing exactly the paths the child may read or write — its own cwd
     // (read+write), the extra_rw_paths, /tmp (write), and the system dirs
     // (read+execute only).
-    let access_all = AccessFs::from_all(ABI::V1);
-    let access_read = AccessFs::from_read(ABI::V1);
+    let access_all = AccessFs::from_all(ABI::V2);
+    let access_read = AccessFs::from_read(ABI::V2);
     let access_read_exec = access_read | AccessFs::Execute;
     let ruleset = Ruleset::default()
         .handle_access(access_all)
@@ -722,7 +729,11 @@ fn run_child(policy: &Policy, cwd: &Path) -> io::Result<()> {
     }
     // Minimal PATH so basic tools work inside the jail.
     cmd.env("PATH", "/usr/bin:/bin");
-    cmd.env("HOME", "/home");
+    // HOME default; the policy may override it (e.g. a writable /tmp path so
+    // toolchain caches like go-build work). Policy env is operator-side input.
+    if !policy.env.iter().any(|(k, _)| k == "HOME") {
+        cmd.env("HOME", "/home");
+    }
     cmd.stdin(Stdio::null());
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());

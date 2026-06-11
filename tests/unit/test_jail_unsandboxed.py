@@ -11,6 +11,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 from agent6.sandbox.jail import run_in_jail
 from agent6.types import JailPolicy
 
@@ -80,3 +82,31 @@ def test_none_profile_timeout_returns_124_not_exception(tmp_path: Path) -> None:
         )
     )
     assert res.returncode == 124
+
+
+def test_child_exec_failure_is_command_error_not_jail_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A bad argv path (model guessed /usr/local/go/bin/go) means the JAIL
+    worked and the COMMAND failed. Reporting it as 'jail unavailable' tells
+    the model the sandbox is broken; report a shell-style 127 instead."""
+    import subprocess
+    from types import SimpleNamespace
+
+    from agent6.sandbox import jail as jail_mod
+
+    monkeypatch.setattr(jail_mod, "_locate_jail_binary", lambda: Path("/fake/agent6-jail"))
+
+    def fake_run(*a: object, **k: object) -> SimpleNamespace:
+        return SimpleNamespace(
+            returncode=2,
+            stdout="",
+            stderr="agent6-jail: child execution failed: No such file or directory (os error 2)",
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    res = run_in_jail(
+        JailPolicy(cwd=tmp_path, argv=("/usr/local/go/bin/go", "test"), profile="hardened")
+    )
+    assert res.returncode == 127
+    assert "not found or not executable" in res.stderr

@@ -193,11 +193,22 @@ def run_in_jail(policy: JailPolicy) -> CommandResult:
     )
     duration = time.monotonic() - start
     # The launcher prints a single JSON line on stdout describing the child's result,
-    # then exits 0 itself. Anything else means setup failed.
+    # then exits 0 itself. Anything else means setup failed, with one exception:
+    # a child that could not be EXECUTED at all (bad path, missing interpreter)
+    # also surfaces as a launcher error, but the jail itself worked fine. Report
+    # that as an ordinary failed command (shell-style 127) so the model fixes
+    # its argv instead of concluding the sandbox is broken.
     if proc.returncode != 0:
-        raise JailUnavailableError(
-            f"agent6-jail launcher exited {proc.returncode}: {proc.stderr.strip()}"
-        )
+        stderr = proc.stderr.strip()
+        if "child execution failed" in stderr:
+            return CommandResult(
+                argv=tuple(policy.argv),
+                returncode=127,
+                stdout="",
+                stderr=f"{policy.argv[0]}: command not found or not executable ({stderr})",
+                duration_s=duration,
+            )
+        raise JailUnavailableError(f"agent6-jail launcher exited {proc.returncode}: {stderr}")
     try:
         result_json = json.loads(proc.stdout.strip().splitlines()[-1])
     except (ValueError, IndexError) as exc:

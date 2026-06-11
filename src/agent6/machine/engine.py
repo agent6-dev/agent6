@@ -194,6 +194,9 @@ class LiveWorld:
         # gated by the CLI at startup (sandbox.tool_network), so by the time we
         # run, `allow_network` is authoritative.
         env_list = [(key, os.environ[key]) for key in _SAFE_ENV_KEYS if key in os.environ]
+        # Writable HOME for toolchain caches (go/cargo/pip); the jail's /tmp is
+        # writable on both profiles. Mirrors the run_command jail env.
+        env_list.append(("HOME", "/tmp/agent6-home"))  # noqa: S108 - resolved inside the jail
         extra_rw: tuple[Path, ...] = ()
         if self.data_dir is not None:
             # Grant RW on the data dir + tell the script where it is. This is the

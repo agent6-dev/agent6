@@ -1031,11 +1031,18 @@ class ToolDispatcher:
         policy_kwargs: dict[str, Any] = {}
         if timeout_s is not None:
             policy_kwargs["timeout_s"] = timeout_s
+        env = _passthrough_env()
+        # Toolchains need a writable cache root (go test -> $HOME/.cache/go-build,
+        # cargo -> $CARGO_HOME or $HOME/.cargo, pip/uv likewise). The jail's /tmp
+        # is writable on both profiles (fresh tmpfs on strict, Landlock rw grant
+        # on hardened), so point HOME there. Without it `go test` fails outright
+        # and models burn whole budgets probing the sandbox for a writable spot.
+        env.setdefault("HOME", "/tmp/agent6-home")  # noqa: S108 - resolved inside the jail
         policy = JailPolicy(
             cwd=self._root,
             argv=argv,
             profile=self._sandbox_profile,
-            env=tuple(sorted(_passthrough_env().items())),
+            env=tuple(sorted(env.items())),
             allow_network=allow_network,
             extra_protect_paths=tuple(protect_paths),
             **policy_kwargs,
