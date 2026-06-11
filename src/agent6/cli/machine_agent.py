@@ -97,7 +97,7 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
         budget = BudgetTracker(
             max_input_tokens=cfg.budget.max_input_tokens,
             max_output_tokens=cfg.budget.max_output_tokens,
-            max_usd=cfg.budget.max_usd,
+            max_usd=cfg.budget.best_effort_usd_limit,
         )
         inner_provider = _build_role_provider(
             cfg, "worker", transcript_sink=TranscriptSink(transcript_dir), budget=budget

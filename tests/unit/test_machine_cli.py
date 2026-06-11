@@ -108,3 +108,113 @@ def test_poke_missing_instance_errors(
     code = main(["machine", "poke", "nope"])
     assert code == 1
     assert "no machine instance" in capsys.readouterr().err
+
+
+AGENT_MACHINE_HARD = """
+machine = "hard-usd"
+version = 1
+initial = "judge"
+
+[budget]
+max_usd = 1.0
+max_transitions = 10
+
+[schemas.r]
+ok = "bool"
+
+[vars.agent]
+out = { type = "r", default = {} }
+
+[states.judge]
+kind = "agent"
+prompt = "judge"
+output_schema = "r"
+capture = { finish_json = "out" }
+timeout_secs = 60
+on = { ok = "done", failed = "done", budget_exhausted = "done", timeout = "done" }
+
+[states.done]
+kind = "terminal"
+status = "ok"
+reason = "done"
+"""
+
+
+def _hard_usd_cfg(model: str):
+    from agent6.config import Config
+
+    return Config.model_validate(
+        {
+            "providers": {"p": {"kind": "openai", "base_url": "http://localhost:1"}},
+            "models": {"worker": {"provider": "p", "model": model}},
+        }
+    )
+
+
+def _load_spec(tmp_path: Path, body: str):
+    from agent6.machine import load_machine
+
+    f = tmp_path / "m.asm.toml"
+    f.write_text(body, encoding="utf-8")
+    return load_machine(f)
+
+
+def test_hard_usd_preflight_refuses_unpriced(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # [budget].max_usd is a hard promise; an unpriced inherited worker model
+    # cannot honor it, so machine run must refuse up front.
+    from agent6.cli.machine_cmds import (
+        _hard_usd_preflight_error,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "empty-cache"))
+    spec = _load_spec(tmp_path, AGENT_MACHINE_HARD)
+    err = _hard_usd_preflight_error(spec, _hard_usd_cfg("nobody/unpriced"))
+    assert err is not None
+    assert "max_usd" in err and "nobody/unpriced" in err and "judge" in err
+
+
+def test_hard_usd_preflight_passes_best_effort_and_priced(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import json as _json
+
+    from agent6.cli.machine_cmds import (
+        _hard_usd_preflight_error,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    # best_effort_usd_limit never refuses, priced or not.
+    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "empty-cache"))
+    soft = AGENT_MACHINE_HARD.replace("max_usd = 1.0", "best_effort_usd_limit = 1.0")
+    spec = _load_spec(tmp_path, soft)
+    assert _hard_usd_preflight_error(spec, _hard_usd_cfg("nobody/unpriced")) is None
+
+    # max_usd passes once the model has price data.
+    cache = tmp_path / "cache"
+    (cache / "models").mkdir(parents=True)
+    (cache / "models" / "p.json").write_text(
+        _json.dumps({"models": ["priced/m"], "pricing": {"priced/m": [1.0, 2.0]}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENT6_CACHE_HOME", str(cache))
+    spec_hard = _load_spec(tmp_path, AGENT_MACHINE_HARD)
+    assert _hard_usd_preflight_error(spec_hard, _hard_usd_cfg("priced/m")) is None
+
+
+def test_hard_usd_preflight_checks_per_state_cap(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A soft machine budget with a hard per-state max_usd still requires price
+    # data for that state's model.
+    from agent6.cli.machine_cmds import (
+        _hard_usd_preflight_error,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "empty-cache"))
+    body = AGENT_MACHINE_HARD.replace("max_usd = 1.0", "best_effort_usd_limit = 1.0").replace(
+        'kind = "agent"', 'kind = "agent"\nmax_usd = 0.5\nmodel = "pinned/unpriced"', 1
+    )
+    spec = _load_spec(tmp_path, body)
+    err = _hard_usd_preflight_error(spec, _hard_usd_cfg("priced/m"))
+    assert err is not None and "pinned/unpriced" in err

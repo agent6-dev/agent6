@@ -411,7 +411,7 @@ def _cmd_review(  # noqa: PLR0911
     budget = BudgetTracker(
         max_input_tokens=cfg.budget.max_input_tokens,
         max_output_tokens=cfg.budget.max_output_tokens,
-        max_usd=cfg.budget.max_usd,
+        max_usd=cfg.budget.best_effort_usd_limit,
     )
     layout_root = _agent6_dir(root) / "reviews"
     layout_root.mkdir(parents=True, exist_ok=True)

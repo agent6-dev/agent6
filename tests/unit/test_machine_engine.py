@@ -716,3 +716,27 @@ def test_agent_without_runner_raises(tmp_path: Path) -> None:
     world = LiveWorld(cwd=tmp_path, journal=journal, agent_runner=None)
     with pytest.raises(EngineError, match="no agent runner"):
         drive(spec, journal, world, live=True)
+
+
+def test_machine_stops_on_best_effort_usd_limit(tmp_path: Path) -> None:
+    # Same guard as max_usd; only the run-start price preflight differs.
+    body = _SPENDER.replace("max_usd = 0.05", "best_effort_usd_limit = 0.05")
+    journal, f = _load(tmp_path, body)
+    spec = load_machine(f)
+    world = FakeWorld(
+        {}, agent_results=[AgentExecResult(reason="finish_run", payload={"ok": True}, usd=0.10)]
+    )
+    result = drive(spec, journal, world, live=True)
+    assert result.status == "failed"
+    assert "best_effort_usd_limit" in result.reason
+
+
+def test_agent_state_best_effort_limit_flows_to_request(tmp_path: Path) -> None:
+    body = _SPENDER.replace('kind = "agent"', 'kind = "agent"\nbest_effort_usd_limit = 1.25', 1)
+    journal, f = _load(tmp_path, body)
+    spec = load_machine(f)
+    world = FakeWorld(
+        {}, agent_results=[AgentExecResult(reason="finish_run", payload={"ok": True}, usd=0.10)]
+    )
+    drive(spec, journal, world, live=True)
+    assert world.agent_calls[0].max_usd == 1.25

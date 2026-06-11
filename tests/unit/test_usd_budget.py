@@ -1,17 +1,52 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Unit tests for the USD-to-tokens budget converter (~budget.py)."""
+"""Unit tests for the USD-to-tokens budget converter (~budget.py).
+
+Pricing has no static table: it comes from the provider-fetched models cache
+(agent6.pricing reads $AGENT6_CACHE_HOME/models/*.json). Tests inject prices
+by writing a real cache file, exercising the same path production uses.
+"""
 
 from __future__ import annotations
+
+import json
+from pathlib import Path
 
 import pytest
 
 from agent6.budget import INPUT_TO_OUTPUT_RATIO_FOR_USD_BUDGET, usd_budget_to_tokens
 
+# $3/M in, $15/M out: the worked example in the usd_budget_to_tokens docstring.
+PRICED_MODEL = "test/priced-model"
+CHEAP_MODEL = "test/cheap-model"
 
-def test_usd_converter_sonnet_known_model() -> None:
-    """Sonnet 4.5 at $3/M input + $15/M output, $5 budget."""
-    max_in, max_out = usd_budget_to_tokens(5.0, worker_model="claude-sonnet-4-5")
+
+@pytest.fixture
+def price_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    cache = tmp_path / "cache"
+    (cache / "models").mkdir(parents=True)
+    (cache / "models" / "testprovider.json").write_text(
+        json.dumps(
+            {
+                "models": [PRICED_MODEL, CHEAP_MODEL],
+                "pricing": {PRICED_MODEL: [3.0, 15.0], CHEAP_MODEL: [0.27, 1.10]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENT6_CACHE_HOME", str(cache))
+    return cache
+
+
+def _convert(max_usd: float, model: str) -> tuple[int, int]:
+    converted = usd_budget_to_tokens(max_usd, worker_model=model)
+    assert converted is not None
+    return converted
+
+
+def test_usd_converter_priced_model(price_cache: Path) -> None:
+    """$3/M input + $15/M output, $5 budget."""
+    max_in, max_out = _convert(5.0, PRICED_MODEL)
     # Ratio of 5 input:output value means input gets 5/6 of the budget,
     # output gets 1/6.
     expected_in_usd = 5.0 * 5 / 6  # ~$4.17
@@ -20,40 +55,29 @@ def test_usd_converter_sonnet_known_model() -> None:
     assert abs(max_out - int(expected_out_usd * 1_000_000 / 15.0)) <= 1
 
 
-def test_usd_converter_unknown_model_uses_fallback() -> None:
-    """Unknown OpenRouter / Kimi / etc model falls back to sonnet rates."""
-    max_in_known, max_out_known = usd_budget_to_tokens(5.0, worker_model="claude-sonnet-4-5")
-    max_in_unk, max_out_unk = usd_budget_to_tokens(5.0, worker_model="kimi/k2.5-preview")
-    # Same fallback (sonnet) -> same numbers.
-    assert max_in_unk == max_in_known
-    assert max_out_unk == max_out_known
+def test_usd_converter_unknown_model_returns_none(price_cache: Path) -> None:
+    """No cached price means NO conversion: unknown beats a wrong fallback."""
+    assert usd_budget_to_tokens(5.0, worker_model="nobody/unpriced-model") is None
 
 
-def test_usd_converter_custom_fallback_for_cheap_model() -> None:
-    """Operator can override fallback rates for cheap third-party models."""
-    # DeepSeek-class pricing: $0.27/M in, $1.10/M out (illustrative).
-    max_in, _max_out = usd_budget_to_tokens(
-        1.0,
-        worker_model="deepseek/v3.2",
-        fallback_input_per_mtok=0.27,
-        fallback_output_per_mtok=1.10,
-    )
-    # Same $1 budget buys 11x more input tokens vs sonnet ($3/M).
-    sonnet_in, _ = usd_budget_to_tokens(1.0, worker_model="claude-sonnet-4-5")
-    assert max_in > 10 * sonnet_in
+def test_usd_converter_cheap_model_buys_more_tokens(price_cache: Path) -> None:
+    # Same $1 budget buys 11x more input tokens at $0.27/M vs $3/M.
+    cheap_in, _ = _convert(1.0, CHEAP_MODEL)
+    priced_in, _ = _convert(1.0, PRICED_MODEL)
+    assert cheap_in > 10 * priced_in
 
 
-def test_usd_converter_rejects_zero_or_negative() -> None:
+def test_usd_converter_rejects_zero_or_negative(price_cache: Path) -> None:
     with pytest.raises(ValueError):
-        usd_budget_to_tokens(0.0, worker_model="claude-sonnet-4-5")
+        usd_budget_to_tokens(0.0, worker_model=PRICED_MODEL)
     with pytest.raises(ValueError):
-        usd_budget_to_tokens(-1.0, worker_model="claude-sonnet-4-5")
+        usd_budget_to_tokens(-1.0, worker_model=PRICED_MODEL)
 
 
-def test_usd_converter_scale_linearity() -> None:
+def test_usd_converter_scale_linearity(price_cache: Path) -> None:
     """Doubling the budget doubles both token ceilings (within rounding)."""
-    in_5, out_5 = usd_budget_to_tokens(5.0, worker_model="claude-sonnet-4-5")
-    in_10, out_10 = usd_budget_to_tokens(10.0, worker_model="claude-sonnet-4-5")
+    in_5, out_5 = _convert(5.0, PRICED_MODEL)
+    in_10, out_10 = _convert(10.0, PRICED_MODEL)
     assert abs((in_10 / in_5) - 2.0) < 0.01
     assert abs((out_10 / out_5) - 2.0) < 0.01
 
@@ -62,3 +86,42 @@ def test_usd_converter_ratio_constant_value() -> None:
     """The hard-coded input:output ratio constant is what we documented
     (5.0). Trip wire so changing it requires updating the docstring."""
     assert INPUT_TO_OUTPUT_RATIO_FOR_USD_BUDGET == 5.0
+
+
+def test_explicit_usd_flag_refused_when_unpriced(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # An explicit --max-usd is a promise for the run; with no price data for
+    # the worker model it cannot be kept, so the CLI refuses to start.
+    from agent6.cli._common import (
+        _explicit_usd_flag_error,  # pyright: ignore[reportPrivateUsage]
+    )
+    from agent6.config import Config
+
+    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "empty-cache"))
+    cfg = Config.model_validate(
+        {
+            "providers": {"p": {"kind": "openai", "base_url": "http://localhost:1"}},
+            "models": {"worker": {"provider": "p", "model": "nobody/unpriced"}},
+        }
+    )
+    err = _explicit_usd_flag_error(2.5, cfg)
+    assert err is not None and "no price data" in err
+    # no flag, or a priced model, passes
+    assert _explicit_usd_flag_error(None, cfg) is None
+    assert _explicit_usd_flag_error(0, cfg) is None
+
+
+def test_explicit_usd_flag_ok_when_priced(price_cache: Path) -> None:
+    from agent6.cli._common import (
+        _explicit_usd_flag_error,  # pyright: ignore[reportPrivateUsage]
+    )
+    from agent6.config import Config
+
+    cfg = Config.model_validate(
+        {
+            "providers": {"p": {"kind": "openai", "base_url": "http://localhost:1"}},
+            "models": {"worker": {"provider": "p", "model": PRICED_MODEL}},
+        }
+    )
+    assert _explicit_usd_flag_error(2.5, cfg) is None

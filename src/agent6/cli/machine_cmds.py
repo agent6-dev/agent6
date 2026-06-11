@@ -38,6 +38,7 @@ from agent6.machine import (
     AgentExecResult,
     AgentFact,
     AgentRequest,
+    AgentState,
     DryRunReport,
     EngineError,
     JournalError,
@@ -58,6 +59,7 @@ from agent6.machine import (
     write_source,
 )
 from agent6.paths import chown_to_real_user
+from agent6.pricing import lookup_price
 from agent6.run_id import new_friendly_id
 from agent6.types import SandboxProfile
 
@@ -344,6 +346,36 @@ def _machine_protect_paths(machine_path: Path, cwd: Path) -> tuple[Path, ...]:
     return tuple(out)
 
 
+def _hard_usd_preflight_error(spec: MachineSpec, cfg: Config) -> str | None:
+    """Refusal message when a hard `max_usd` cannot be honored.
+
+    `max_usd` (machine-level or per agent state) promises a real dollar
+    ceiling, so every model it covers must have price data; without it the
+    cap only binds if the provider happens to report per-call cost.
+    `best_effort_usd_limit` never refuses. Called after _check_provider_keys
+    so the models cache (which carries pricing) has been refreshed.
+    """
+    worker = cfg.models.resolve("worker")
+    unpriced: list[str] = []
+    for name, state in spec.states.items():
+        if not isinstance(state, AgentState):
+            continue
+        hard = spec.budget.max_usd is not None or state.max_usd is not None
+        if not hard:
+            continue
+        model = worker.model if state.model == "inherit" and worker else state.model
+        if lookup_price(model) is None and f"{model!r} (state {name!r})" not in unpriced:
+            unpriced.append(f"{model!r} (state {name!r})")
+    if not unpriced:
+        return None
+    return (
+        "[budget] max_usd is a hard cap but there is no price data for "
+        + ", ".join(unpriced)
+        + ". Switch to best_effort_usd_limit, pin a priced model, or tighten"
+        " max_transitions and per-state token caps."
+    )
+
+
 def _machine_network_refusal(
     cfg: Config, profile: SandboxProfile, tool_states: list[ToolState]
 ) -> str | None:
@@ -518,6 +550,11 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
             missing = _check_provider_keys(cfg)
             if missing is not None:
                 print(missing, file=sys.stderr)
+                return 2
+            # After _check_provider_keys so the price cache has been refreshed.
+            usd_err = _hard_usd_preflight_error(spec, cfg)
+            if usd_err is not None:
+                print(f"REFUSING: {usd_err}", file=sys.stderr)
                 return 2
             root = _machines_dir(cwd) / spec.machine
             # The engine is a host-netns supervisor; each agent state confines

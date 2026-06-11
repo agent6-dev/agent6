@@ -516,7 +516,7 @@ def test_with_machine_agent_overrides(tmp_path: Path) -> None:
     assert out.models.worker.model == "claude-y"
     assert out.models.worker.thinking == "high"
     assert out.models.worker.temperature == 0.5
-    assert out.budget.max_usd == 2.0
+    assert out.budget.best_effort_usd_limit == 2.0
     # Provider name untouched when not overridden.
     assert out.models.worker.provider == "anthropic"
 

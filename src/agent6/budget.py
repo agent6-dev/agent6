@@ -23,15 +23,16 @@ provider call raises `BudgetExceeded`; the workflow drains and the
 process exits with a distinct exit code so resume tooling can
 recognise the condition.
 
-USD budgets: configure `[budget].max_usd` in your config to specify a
+USD budgets: configure `[budget].best_effort_usd_limit` to specify a
 dollar cap; the config loader converts it to token ceilings at load
 time using the worker model's pricing (see `usd_budget_to_tokens` in
 this module). Tokens stay the authoritative ceiling because token
 counts are exact and provider-returned; the USD cap is a more
 operator-friendly knob that translates once at startup.
 
-This module is pure stdlib + dataclasses; the AnthropicProvider wires
-it in via constructor.
+This module is import-light (stdlib + agent6.pricing, which is itself
+stdlib + cache-file reads); the AnthropicProvider wires it in via
+constructor.
 """
 
 from __future__ import annotations
@@ -39,41 +40,13 @@ from __future__ import annotations
 import threading
 from dataclasses import dataclass, field
 
-# Per-1M-token USD price table. Best-effort, used only for the end-of-run
-# human-facing report. Unknown models render as "$? (unknown price)".
-# Update as Anthropic changes pricing; this is informational only.
-_PRICE_PER_MTOK_USD: dict[str, tuple[float, float]] = {
-    # Claude Opus 4.x family (input, output)
-    "claude-opus-4-5": (15.0, 75.0),
-    "claude-opus-4-5-20250929": (15.0, 75.0),
-    "claude-opus-4-20250514": (15.0, 75.0),
-    # Sonnet 4.x
-    "claude-sonnet-4-5": (3.0, 15.0),
-    "claude-sonnet-4-5-20250929": (3.0, 15.0),
-    "claude-sonnet-4-20250514": (3.0, 15.0),
-    # Haiku 4.x
-    "claude-haiku-4-5": (1.0, 5.0),
-    "claude-haiku-4-5-20251001": (1.0, 5.0),
-    # Kimi family via OpenRouter (prices as of 2026-05; check OpenRouter
-    # /v1/models endpoint for current rates). Cache_read priced same as
-    # input here; OpenRouter rebills cache hits at provider rates which
-    # vary - leave the conservative estimate.
-    "moonshotai/kimi-k2.6": (0.68, 3.42),
-    "moonshotai/kimi-k2.5": (0.40, 1.90),
-    "moonshotai/kimi-k2-thinking": (0.60, 2.50),
-    "moonshotai/kimi-k2-0905": (0.60, 2.50),
-    "moonshotai/kimi-k2": (0.57, 2.30),
-    "moonshotai/kimi-latest": (0.73, 3.49),
-    # Other open-weights via OpenRouter (smoke).
-    # Prices fetched live from openrouter.ai/api/v1/models on 2026-06-02.
-    "z-ai/glm-4.6": (0.43, 1.74),
-    "minimax/minimax-m2.7": (0.279, 1.20),
-    "minimax/minimax-m2": (0.255, 1.00),
-    "deepseek/deepseek-v3.2-exp": (0.27, 0.41),
-    "deepseek/deepseek-v3.2": (0.23, 0.34),
-    "qwen/qwen3-coder": (0.22, 1.80),
-    "qwen/qwen3-coder-30b-a3b-instruct": (0.07, 0.27),
-}
+from agent6.pricing import lookup_price
+
+# There is NO static price table. Prices come from the provider's own models
+# endpoint, fetched + cached by agent6.models_cache and read back through
+# agent6.pricing.lookup_price. A model without a published price is reported
+# as "$? (unknown price)" and the USD->token budget conversion does not apply
+# to it: an unknown price is honest, an outdated hardcoded one is wrong.
 
 
 INPUT_TO_OUTPUT_RATIO_FOR_USD_BUDGET = 5.0
@@ -91,39 +64,35 @@ def usd_budget_to_tokens(
     max_usd: float,
     *,
     worker_model: str,
-    fallback_input_per_mtok: float = 3.0,
-    fallback_output_per_mtok: float = 15.0,
-) -> tuple[int, int]:
+) -> tuple[int, int] | None:
     """Convert an operator-friendly USD cap into (max_input_tokens,
     max_output_tokens) for a given worker model's pricing.
 
-    Uses `_PRICE_PER_MTOK_USD` if the model is listed (current Anthropic
-    Claude family). Falls back to the sonnet-4.5 rate ($3/M in, $15/M
-    out) when the model is unknown - typically OpenRouter / Kimi /
-    deepseek where listed pricing varies. Operators can override the
-    fallback rates per-call.
+    Pricing comes from the provider-fetched cache (agent6.pricing). Returns
+    None when the model has no known price: the USD->token tightening simply
+    does not apply, the operator token ceilings stand as configured, and the
+    runtime `max_usd` ceiling still enforces wherever the provider reports
+    per-call cost (OpenRouter `usage.cost`) or a cached price exists.
 
     Returns (input_tokens, output_tokens) sized so that hitting BOTH
     ceilings simultaneously costs approximately `max_usd`. The runtime
     enforcement is still per-ceiling (input_total >= max_input_tokens
     triggers BudgetExceeded regardless of output usage), so the actual
     spend ceiling is roughly `max_usd` when the workload's I/O ratio
-    matches `_INPUT_TO_OUTPUT_RATIO_FOR_USD_BUDGET`, less when the
+    matches `INPUT_TO_OUTPUT_RATIO_FOR_USD_BUDGET`, less when the
     workload spends one bucket but not the other.
 
-    Example: usd_budget_to_tokens(5.0, worker_model="claude-sonnet-4-5")
+    Example: at $3/M in, $15/M out, usd_budget_to_tokens(5.0, ...)
     returns (max_input=1_388_888, max_output=277_777) - 5x more input
     headroom than output, sized so that hitting both at the same time
     is ~$5.
     """
     if max_usd <= 0:
         raise ValueError(f"max_usd must be positive, got {max_usd}")
-    price = _PRICE_PER_MTOK_USD.get(worker_model)
+    price = lookup_price(worker_model)
     if price is None:
-        in_per_mtok = fallback_input_per_mtok
-        out_per_mtok = fallback_output_per_mtok
-    else:
-        in_per_mtok, out_per_mtok = price
+        return None
+    in_per_mtok, out_per_mtok = price
     ratio = INPUT_TO_OUTPUT_RATIO_FOR_USD_BUDGET
     # Solve: input_usd + output_usd = max_usd
     #        input_usd = ratio * output_usd  (by ratio of tokens at their
@@ -167,7 +136,8 @@ class BudgetTracker:
 
     max_input_tokens: int
     max_output_tokens: int
-    # Exact dollar ceiling (0 = off). Set from `[budget] max_usd`. Unlike the
+    # Estimated-dollar ceiling (0 = off). Set from `[budget]
+    # best_effort_usd_limit`. Unlike the
     # token caps -- which `usd_budget_to_tokens` sizes against full *fresh*-input
     # price and which `record` thresholds on fresh input only -- this bounds the
     # estimated spend INCLUDING cache_read/cache_creation tokens, which cost real
@@ -319,7 +289,7 @@ class BudgetTracker:
             if t.reported_cost_usd > 0.0 and t.reported_calls == t.calls:
                 total_usd += t.reported_cost_usd
                 continue
-            price = _PRICE_PER_MTOK_USD.get(model)
+            price = lookup_price(model)
             if price is None:
                 any_unknown = True
                 continue
@@ -348,7 +318,7 @@ class BudgetTracker:
         total_usd = 0.0
         any_unknown = False
         for model, totals in per_model.items():
-            price = _PRICE_PER_MTOK_USD.get(model)
+            price = lookup_price(model)
             cost_str: str
             reported = float(totals.get("reported_cost_usd", 0.0))
             reported_calls = int(totals.get("reported_calls", 0))

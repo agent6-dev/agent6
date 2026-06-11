@@ -47,6 +47,7 @@ from agent6.machine.journal import (
     write_source,
 )
 from agent6.machine.model import (
+    AgentState,
     MachineError,
     MachineSpec,
     ToolState,
@@ -61,6 +62,7 @@ __all__ = [
     "AgentExecResult",
     "AgentFact",
     "AgentRequest",
+    "AgentState",
     "BranchCheck",
     "DryRunReport",
     "EngineError",

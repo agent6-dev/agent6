@@ -27,6 +27,7 @@ from agent6.cli._common import (
     _BudgetOverrides,
     _check_provider_keys,
     _ensure_agent6_gitignored,
+    _explicit_usd_flag_error,
     _runs_dir,
     _start_mcp_manager_if_enabled,
     detect_env,
@@ -1042,6 +1043,10 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         return 2
 
     missing = _check_provider_keys(cfg)
+    usd_err = _explicit_usd_flag_error(budget_overrides.max_usd if budget_overrides else None, cfg)
+    if usd_err is not None:
+        print(f"REFUSING: {usd_err}", file=sys.stderr)
+        return 2
     if missing is not None:
         print(missing, file=sys.stderr)
         return 2
@@ -1147,8 +1152,9 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         return 2
 
     # ask gets a small default USD ceiling so an exploratory question can't run
-    # away; an explicit [budget].max_usd or --max-usd overrides it.
-    ask_max_usd = cfg.budget.max_usd or (_ASK_DEFAULT_MAX_USD if mode == "ask" else 0.0)
+    # away; an explicit [budget].best_effort_usd_limit or --max-usd overrides it.
+    usd_limit = cfg.budget.best_effort_usd_limit
+    ask_max_usd = usd_limit or (_ASK_DEFAULT_MAX_USD if mode == "ask" else 0.0)
     budget = BudgetTracker(
         max_input_tokens=cfg.budget.max_input_tokens,
         max_output_tokens=cfg.budget.max_output_tokens,
@@ -1470,6 +1476,10 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
         return 2
 
     missing = _check_provider_keys(cfg)
+    usd_err = _explicit_usd_flag_error(budget_overrides.max_usd if budget_overrides else None, cfg)
+    if usd_err is not None:
+        print(f"REFUSING: {usd_err}", file=sys.stderr)
+        return 2
     if missing is not None:
         print(missing, file=sys.stderr)
         return 2
@@ -1509,7 +1519,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     budget = BudgetTracker(
         max_input_tokens=cfg.budget.max_input_tokens,
         max_output_tokens=cfg.budget.max_output_tokens,
-        max_usd=cfg.budget.max_usd,
+        max_usd=cfg.budget.best_effort_usd_limit,
     )
 
     worker_inner = _build_role_provider(

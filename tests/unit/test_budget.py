@@ -4,9 +4,31 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from agent6.budget import BudgetExceeded, BudgetTracker
+
+
+@pytest.fixture(autouse=True)
+def price_cache(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Inject prices via a real models-cache file (there is no static table)."""
+    cache = tmp_path_factory.mktemp("price-cache")
+    (cache / "models").mkdir()
+    (cache / "models" / "testprovider.json").write_text(
+        json.dumps(
+            {
+                "models": [],
+                "pricing": {
+                    "claude-sonnet-4-5": [3.0, 15.0],
+                    "claude-sonnet-4-20250514": [3.0, 15.0],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENT6_CACHE_HOME", str(cache))
 
 
 def _t(*, input_max: int = 100, output_max: int = 100) -> BudgetTracker:

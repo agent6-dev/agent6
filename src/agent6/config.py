@@ -500,16 +500,19 @@ class BudgetConfig(BaseModel):
 
     # Hard stops on token spend. Defaults are generous safety ceilings (the
     # run is resumable from the persistent task graph if hit); tighten them
-    # per-repo or use `max_usd` for a dollar cap.
+    # per-repo or use `best_effort_usd_limit` for a dollar-denominated bound.
     max_input_tokens: int = Field(gt=0, default=2_000_000)
     max_output_tokens: int = Field(gt=0, default=200_000)
-    # Optional: operator-friendly USD cap. When set, the loader converts it to
-    # token ceilings (worker-model pricing) and lowers max_input/output_tokens
-    # to them, AND the runtime additionally enforces an exact dollar ceiling
-    # that counts cache_read/cache_creation cost (which the token caps do not),
-    # so a heavily-cached run cannot blow past it. Set 0 to disable. See
-    # `agent6.budget.usd_budget_to_tokens` for the conversion math.
-    max_usd: float = Field(ge=0.0, default=0.0)
+    # Optional best-effort dollar limit (0 = off). The token ceilings above are
+    # the authoritative constraint; this field sizes and bounds them when price
+    # data exists. At load it converts to token ceilings (worker-model pricing,
+    # the lower of the two wins per axis); at runtime it stops the run when the
+    # ESTIMATED spend (provider-reported cost, else price x tokens, including
+    # cache cost the token caps omit) crosses it. With no price data and no
+    # reported cost it does nothing, hence best effort. The `--max-usd` flag
+    # writes this field and, because an explicit flag is a promise, refuses to
+    # start when the worker model has no price data.
+    best_effort_usd_limit: float = Field(ge=0.0, default=0.0)
 
 
 class Agent6Section(BaseModel):
@@ -642,7 +645,7 @@ class Config(BaseModel):
 
     @model_validator(mode="after")
     def _apply_usd_budget_override(self) -> Config:
-        """When `[budget].max_usd > 0`, convert to token ceilings via the
+        """When `[budget].best_effort_usd_limit > 0`, convert to token ceilings via the
         worker model's pricing and apply as a TIGHTER upper bound on top
         of any explicit `max_input_tokens` / `max_output_tokens`. The
         smaller of (operator-set, USD-converted) wins per axis - both
@@ -650,14 +653,23 @@ class Config(BaseModel):
         Operators who want USD only can set the token ceilings to large
         placeholder values (e.g. 999_999_999) and the USD conversion
         will dominate."""
-        if self.budget.max_usd <= 0:
+        if self.budget.best_effort_usd_limit <= 0:
             return self
         worker = self.models.resolve("worker")
         if worker is None:
             # No worker model to price against yet; the conversion is
             # applied once a runnable config is assembled.
             return self
-        usd_in, usd_out = usd_budget_to_tokens(self.budget.max_usd, worker_model=worker.model)
+        converted = usd_budget_to_tokens(
+            self.budget.best_effort_usd_limit, worker_model=worker.model
+        )
+        if converted is None:
+            # No cached price for the worker model (pricing comes from the
+            # provider's models endpoint; anthropic publishes none). The
+            # operator token ceilings stand; the runtime estimated-USD ceiling
+            # still applies where per-call cost is reported or priced.
+            return self
+        usd_in, usd_out = converted
         new_in = min(self.budget.max_input_tokens, usd_in)
         new_out = min(self.budget.max_output_tokens, usd_out)
         if new_in == self.budget.max_input_tokens and new_out == self.budget.max_output_tokens:
@@ -665,7 +677,7 @@ class Config(BaseModel):
         new_budget = BudgetConfig(
             max_input_tokens=new_in,
             max_output_tokens=new_out,
-            max_usd=self.budget.max_usd,
+            best_effort_usd_limit=self.budget.best_effort_usd_limit,
         )
         return self.model_copy(update={"budget": new_budget})
 
@@ -687,7 +699,7 @@ class Config(BaseModel):
         data = self.model_dump(mode="python")
         budget = data.setdefault("budget", {})
         if max_usd is not None:
-            budget["max_usd"] = max_usd
+            budget["best_effort_usd_limit"] = max_usd
         if max_input_tokens is not None:
             budget["max_input_tokens"] = max_input_tokens
         if max_output_tokens is not None:
@@ -727,7 +739,7 @@ class Config(BaseModel):
             worker["temperature"] = temperature
         budget = data.setdefault("budget", {})
         if max_usd is not None:
-            budget["max_usd"] = max_usd
+            budget["best_effort_usd_limit"] = max_usd
         if max_input_tokens is not None:
             budget["max_input_tokens"] = max_input_tokens
         if max_output_tokens is not None:

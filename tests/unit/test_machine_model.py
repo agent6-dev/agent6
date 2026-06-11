@@ -409,12 +409,12 @@ def test_machine_config_overlay_parses(tmp_path: Path) -> None:
 critic = "on_verify_fail"
 
 [config.budget]
-max_usd = 50.0
+best_effort_usd_limit = 50.0
 """
     )
     spec = load_machine(_write(tmp_path, body))
     assert spec.config["workflow"]["critic"] == "on_verify_fail"
-    assert spec.config["budget"]["max_usd"] == 50.0
+    assert spec.config["budget"]["best_effort_usd_limit"] == 50.0
 
 
 def test_machine_config_overlay_rejects_providers(tmp_path: Path) -> None:
@@ -442,3 +442,35 @@ tool_network = "allow"
     )
     problems = _problems(tmp_path, body)
     assert any("sandbox" in p for p in problems)
+
+
+def test_budget_usd_field_optional_at_most_one(tmp_path: Path) -> None:
+    # No USD limit is valid; max_transitions is the always-on runaway guard.
+    neither = VALID_MACHINE.replace("max_usd         = 25.0", "")
+    spec = load_machine(_write(tmp_path, neither))
+    assert spec.budget.usd_limit is None
+    both = VALID_MACHINE.replace(
+        "max_usd         = 25.0",
+        "max_usd = 25.0\nbest_effort_usd_limit = 25.0",
+    )
+    with pytest.raises(MachineError, match="at most one"):
+        load_machine(_write(tmp_path, both))
+
+
+def test_budget_best_effort_usd_limit_accepted(tmp_path: Path) -> None:
+    body = VALID_MACHINE.replace("max_usd         = 25.0", "best_effort_usd_limit = 25.0")
+    spec = load_machine(_write(tmp_path, body))
+    assert spec.budget.best_effort_usd_limit == 25.0
+    assert spec.budget.max_usd is None
+    assert spec.budget.usd_limit == 25.0
+    assert spec.budget.usd_field_name == "best_effort_usd_limit"
+
+
+def test_agent_state_at_most_one_usd_field(tmp_path: Path) -> None:
+    body = VALID_MACHINE.replace(
+        'kind  = "agent"',
+        'kind  = "agent"\nmax_usd = 1.0\nbest_effort_usd_limit = 1.0',
+        1,
+    )
+    with pytest.raises(MachineError, match="at most one"):
+        load_machine(_write(tmp_path, body))

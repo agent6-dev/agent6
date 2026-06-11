@@ -461,7 +461,7 @@ def _execute(
                 provider=state.provider,
                 thinking=state.thinking,
                 temperature=state.temperature,
-                max_usd=state.max_usd,
+                max_usd=state.usd_limit,
                 max_input_tokens=state.max_input_tokens,
                 max_output_tokens=state.max_output_tokens,
                 # Per-state: "agent" (default) is a read-only structured-output
@@ -573,8 +573,11 @@ def drive(  # noqa: PLR0911, PLR0912
                 )
             )
             return MachineResult("failed", reason, state, transitions)
-        if spent_usd >= spec.budget.max_usd:
-            reason = f"max_usd (${spec.budget.max_usd}) exceeded (spent ~${spent_usd:.4f})"
+        usd_limit = spec.budget.usd_limit
+        if usd_limit is not None and spent_usd >= usd_limit:
+            reason = (
+                f"{spec.budget.usd_field_name} (${usd_limit}) exceeded (spent ~${spent_usd:.4f})"
+            )
             journal.append(
                 MachineEnd(
                     ts=_now_iso(),

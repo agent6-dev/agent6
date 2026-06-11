@@ -60,12 +60,21 @@ def _read_cache(path: Path | None) -> list[str] | None:
     return None
 
 
-def _write_cache(path: Path | None, models: list[str]) -> None:
+def _write_cache(
+    path: Path | None, models: list[str], pricing: dict[str, tuple[float, float]]
+) -> None:
     if path is None:
         return
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"models": models}), encoding="utf-8")
+        body: dict[str, object] = {"models": models}
+        if pricing:
+            # Consumed by agent6.pricing.lookup_price (USD per 1M tokens,
+            # [input, output]). Only providers that publish pricing on their
+            # models endpoint (OpenRouter does, Anthropic does not) get this
+            # key; there is deliberately no static fallback anywhere.
+            body["pricing"] = {m: [p[0], p[1]] for m, p in pricing.items()}
+        path.write_text(json.dumps(body), encoding="utf-8")
     except OSError:
         pass  # cache is throwaway; a write failure must not break completion
 
@@ -83,7 +92,36 @@ def _parse_models(payload: object) -> list[str]:
     return out
 
 
-def _fetch(entry: ProviderEntry, api_key: str | None, timeout_s: float) -> list[str]:
+def _parse_pricing(payload: object) -> dict[str, tuple[float, float]]:
+    """Extract per-model pricing from an OpenRouter-style ``{"data": [...]}`` body.
+
+    OpenRouter reports ``pricing.prompt``/``pricing.completion`` as USD per
+    TOKEN strings; normalize to USD per 1M tokens. Models without a usable
+    pair are simply absent (unknown beats wrong)."""
+    data = payload.get("data") if isinstance(payload, dict) else None
+    out: dict[str, tuple[float, float]] = {}
+    if not isinstance(data, list):
+        return out
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        mid = item.get("id")
+        pricing = item.get("pricing")
+        if not (isinstance(mid, str) and mid and isinstance(pricing, dict)):
+            continue
+        try:
+            in_mtok = float(pricing.get("prompt", "")) * 1_000_000
+            out_mtok = float(pricing.get("completion", "")) * 1_000_000
+        except (TypeError, ValueError):
+            continue
+        if in_mtok >= 0 and out_mtok >= 0:
+            out[mid] = (in_mtok, out_mtok)
+    return out
+
+
+def _fetch(
+    entry: ProviderEntry, api_key: str | None, timeout_s: float
+) -> tuple[list[str], dict[str, tuple[float, float]]]:
     if isinstance(entry, AnthropicProviderEntry):
         url = _ANTHROPIC_MODELS_URL
         headers = {"anthropic-version": _ANTHROPIC_VERSION}
@@ -96,7 +134,8 @@ def _fetch(entry: ProviderEntry, api_key: str | None, timeout_s: float) -> list[
             headers["authorization"] = f"Bearer {api_key}"
     resp = httpx.get(url, headers=headers, timeout=timeout_s)
     resp.raise_for_status()
-    return _parse_models(resp.json())
+    payload = resp.json()
+    return _parse_models(payload), _parse_pricing(payload)
 
 
 def list_models(
@@ -122,10 +161,10 @@ def list_models(
     if cached is not None and age < ttl_s:
         return cached
     try:
-        models = _fetch(entry, api_key, timeout_s)
+        models, pricing = _fetch(entry, api_key, timeout_s)
     except (httpx.HTTPError, ValueError, OSError):
         return cached or []
     if models:
-        _write_cache(path, models)
+        _write_cache(path, models, pricing)
         return models
     return cached or []
