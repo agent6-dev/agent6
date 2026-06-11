@@ -14,8 +14,10 @@ from __future__ import annotations
 
 from agent6.machine.authoring import (
     MACHINE_AUTHOR_GUIDE,
+    SCRIPTS_PAYLOAD_KEY,
     TOML_PAYLOAD_KEY,
     build_authoring_prompt,
+    extract_scripts,
     extract_toml,
 )
 from agent6.machine.dryrun import BranchCheck, DryRunReport, StateCheck, dry_run
@@ -54,6 +56,7 @@ from agent6.machine.model import (
 
 __all__ = [
     "MACHINE_AUTHOR_GUIDE",
+    "SCRIPTS_PAYLOAD_KEY",
     "TOML_PAYLOAD_KEY",
     "AgentExecResult",
     "AgentFact",
@@ -81,6 +84,7 @@ __all__ = [
     "build_authoring_prompt",
     "drive",
     "dry_run",
+    "extract_scripts",
     "extract_toml",
     "load_machine",
     "machine_lock",

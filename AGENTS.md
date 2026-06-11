@@ -101,10 +101,13 @@ All five must pass; keep the suite green.
   `detect.py`, `graph/curator.py`, `graph/client.py`, `sandbox/jail.py`
   (the launcher itself), and a small set of `cli/` helpers (TUI spawn,
   `$EDITOR` for plan editing, `git diff/log` for the review subcommand,
-  `rg` for history search, and the `machine run` supervisor that spawns
-  each agent state as a fixed-argv `python -m agent6.cli.machine_agent`
-  subprocess — its request, including the prompt, travels in a temp file,
-  never on argv). Audit with `rg 'subprocess\.(run|Popen)' src/agent6/`.
+  `rg` for history search, the `cli/scriptcheck.py` validator that runs
+  `ruff`/`ty` with fixed argv to STATICALLY read — never execute — the scripts
+  `machine create` generates (those scripts only ever EXECUTE via `run_in_jail`),
+  and the `machine run` supervisor that spawns each agent state as a fixed-argv
+  `python -m agent6.cli.machine_agent` subprocess — its request, including the
+  prompt, travels in a temp file, never on argv). Audit with
+  `rg 'subprocess\.(run|Popen)' src/agent6/`.
 - `src/agent6/git_ops.py` refuses `push`, `--force`, history rewrite,
   `reset --hard`, and `branch -D` unconditionally. Do not add overrides.
 - Config is **secure by default**: every field has a default, and

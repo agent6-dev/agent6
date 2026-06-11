@@ -135,6 +135,29 @@ def test_branch_fixture_steers_routing(tmp_path: Path) -> None:
     assert check.predicate == "approved"
 
 
+def test_branch_on_empty_record_default_synthesizes_fields(tmp_path: Path) -> None:
+    # The realistic shape: an agent verdict var with the required `default = {}`
+    # routed by a branch reading `verdict.field`. The dry-run must synthesize
+    # the schema-zero record so the predicate evaluates instead of erroring on
+    # a missing field (which made every such machine fail `machine test`).
+    text = DEMO.replace(
+        'verdict = { type = "review", default = { label = "low", score = 0 } }',
+        'verdict = { type = "review", default = {} }',
+    ).replace(
+        '{ if = "approved", goto = "judge" }',
+        '{ if = "verdict.score > 0", goto = "judge" }',
+    )
+    spec = load_machine(_write(tmp_path, text))
+    report = dry_run(spec)
+    check = next(b for b in report.branches if b.name == "check")
+    assert check.ok, check.detail
+    assert check.goto == "stop_ok"  # zero score -> else
+    # A fixture still wins over the synthesized record.
+    report2 = dry_run(spec, {"verdict": {"label": "high", "score": 5}})
+    check2 = next(b for b in report2.branches if b.name == "check")
+    assert check2.goto == "judge"
+
+
 # --- CLI surface ------------------------------------------------------------
 
 

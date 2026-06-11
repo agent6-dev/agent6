@@ -409,12 +409,19 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     # choices gives both argparse validation and argcomplete tab-completion for
     # free. default=None (not "") so the omitted case isn't checked against
     # choices — argparse validates choices against a string default otherwise.
+    # metavar="role" shows `role` in usage (not the noisy `{planner,...}`); the
+    # choices stay listed in the help text. "all" is a pseudo-role (no config
+    # field of that name) that sets every role at once — see _cmd_model.
     model_p.add_argument(
         "role",
         nargs="?",
-        choices=("planner", "worker", "reviewer"),
+        choices=("planner", "worker", "reviewer", "all"),
         default=None,
-        help="Role to set. Omit to print the current assignments.",
+        metavar="role",
+        help=(
+            "Role to set: planner, worker, reviewer, or all (sets every role at"
+            " once). Omit to print the current assignments."
+        ),
     )
     model_provider = model_p.add_argument(
         "provider",
@@ -604,15 +611,19 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     machine_sub = machine_p.add_subparsers(dest="machine_command", required=True)
     machine_check = machine_sub.add_parser(
         "check",
-        help="Validate a .asm.toml machine file (parse, type-check, reachability). Pure.",
+        help=(
+            "Validate a .asm.toml machine file: parse, type-check, reachability,"
+            " bundle paths, and static script lint/types (ruff + ty). No execution."
+        ),
     )
     machine_check.add_argument("file", type=Path, help="Path to the .asm.toml machine file.")
     machine_test = machine_sub.add_parser(
         "test",
         help=(
-            "Dry-run a machine without I/O: synthesize each state's success fact"
-            " (per-state) and evaluate branch predicates against a fixture"
-            " (per-branch). Pure — no jail/network/provider calls."
+            "Simulate a machine offline: everything `check` does, plus run the"
+            " bundle's scripts/*_test.py mocks in a no-network jail, plus a pure"
+            " dry-run (synthesized facts, branch routing against a fixture)."
+            " No provider calls, no real network."
         ),
     )
     machine_test.add_argument("file", type=Path, help="Path to the .asm.toml machine file.")

@@ -211,6 +211,14 @@ def dry_run(spec: MachineSpec, blackboard_fixture: dict[str, Any] | None = None)
     branch predicates and capture templates without any real execution.
     """
     base = initial_blackboard(spec)
+    # Record vars are REQUIRED to default to {} (4.2), but a branch that reads
+    # `verdict.field` cannot evaluate against an empty record, so the realistic
+    # agent-verdict -> branch machine would always fail here without a fixture.
+    # Synthesize the schema-zero record (bool=False, str="", ...) instead; the
+    # fixture below still overrides it.
+    for name, var in (*spec.vars.code.items(), *spec.vars.agent.items()):
+        if var.type in spec.schemas and base.get(name) == {}:
+            base[name] = synthesize_record(spec, var.type)
     if blackboard_fixture:
         base.update(blackboard_fixture)
     states: list[StateCheck] = []

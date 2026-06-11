@@ -41,6 +41,19 @@ def _init_repo(path: Path) -> None:
     subprocess.run(["git", "-C", str(path), "commit", "-q", "-m", "init"], check=True)
 
 
+def test_status_handles_unborn_head(tmp_path: Path) -> None:
+    """A freshly `git init`'d repo (no commits, unborn HEAD) must not crash
+    status() — every agent6 entry point loads the repo summary first, so an
+    unborn HEAD used to crash `machine create`/`run` in a brand-new repo."""
+    subprocess.run(["git", "init", "-q", "-b", "main", str(tmp_path)], check=True)
+    (tmp_path / "a.txt").write_text("x\n", encoding="utf-8")
+    st = status(tmp_path)
+    assert st.branch == "main"
+    assert st.head_sha == ""
+    assert not st.is_clean
+    assert st.untracked_count == 1
+
+
 def test_git_ops_neutralizes_repo_fsmonitor(tmp_path: Path) -> None:
     """A repo-controlled core.fsmonitor must NOT execute on the host when agent6
     runs git. Defense-in-depth against a cloned/poisoned `.git/config` firing on

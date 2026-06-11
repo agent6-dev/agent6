@@ -187,7 +187,15 @@ def is_git_repo(path: Path) -> bool:
 def status(path: Path) -> GitStatus:
     if not is_git_repo(path):
         raise GitError(f"Not a git repository: {path}")
-    branch_res = _run(path, "rev-parse", "--abbrev-ref", "HEAD")
+    branch_res = _run(path, "rev-parse", "--abbrev-ref", "HEAD", check=False)
+    if branch_res.ok:
+        branch = branch_res.stdout.strip()
+    else:
+        # Unborn HEAD (freshly `git init`, no commits yet): `rev-parse HEAD`
+        # fails, but `branch --show-current` still reports the checked-out branch
+        # name. Without this, every agent6 entry point that loads the repo
+        # summary crashes in a brand-new repo.
+        branch = _run(path, "branch", "--show-current", check=False).stdout.strip()
     head_res = _run(path, "rev-parse", "HEAD", check=False)
     head_sha = head_res.stdout.strip() if head_res.ok else ""
     porcelain = _run(path, "status", "--porcelain=v1", "--untracked-files=all").stdout
@@ -199,7 +207,7 @@ def status(path: Path) -> GitStatus:
         elif line.strip():
             modified += 1
     return GitStatus(
-        branch=branch_res.stdout.strip(),
+        branch=branch,
         head_sha=head_sha,
         is_clean=(untracked == 0 and modified == 0),
         untracked_count=untracked,

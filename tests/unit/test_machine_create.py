@@ -13,10 +13,12 @@ import pytest
 from agent6.cli import machine_cmds as cli  # create + its preflight helpers live here now
 from agent6.cli import main
 from agent6.machine import (
+    SCRIPTS_PAYLOAD_KEY,
     TOML_PAYLOAD_KEY,
     AgentExecResult,
     AgentRequest,
     build_authoring_prompt,
+    extract_scripts,
     extract_toml,
 )
 
@@ -95,6 +97,25 @@ def test_build_authoring_prompt_retry_includes_diagnostics() -> None:
     assert "Attempt 2: fix the previous draft" in prompt
     assert "initial 'nowhere' names no state" in prompt
     assert "machine = 'bad'" in prompt
+
+
+def test_build_authoring_prompt_retry_includes_prior_scripts() -> None:
+    # A retry must show the failing scripts, not just the toml. Without them
+    # the model regenerates every file blind to fix a one-line lint error.
+    prompt = build_authoring_prompt(
+        "Poll a queue",
+        attempt=2,
+        prior_toml="machine = 'x'",
+        diagnostics=["ruff (lint) found problems: scripts/run.py:1:1: F401"],
+        prior_scripts={"scripts/run.py": "import os\nprint(1)", "scripts/go.sh": "echo hi"},
+    )
+    assert "`scripts/run.py`:" in prompt
+    assert "import os" in prompt
+    assert "`scripts/go.sh`:" in prompt
+    assert "Change ONLY what the diagnostics name" in prompt
+    # .py gets a python fence, others a plain fence
+    assert "```python\nimport os" in prompt
+    assert "```\necho hi" in prompt
 
 
 # --- CLI flow --------------------------------------------------------------
@@ -300,3 +321,239 @@ def test_create_rejects_bad_max_attempts(
     code = main(["machine", "create", "Greet the user", "--max-attempts", "0"])
     assert code == 2
     assert "--max-attempts must be >= 1" in capsys.readouterr().err
+
+
+def test_create_output_flag_creates_parent_dirs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # -o into a directory that does not exist yet must not crash.
+    monkeypatch.chdir(tmp_path)
+    _stub_preflight(monkeypatch)
+    _stub_runner(
+        monkeypatch,
+        [AgentExecResult(reason="finish_run", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0)],
+    )
+    target = tmp_path / "new" / "deep" / "m.asm.toml"
+    code = main(["machine", "create", "Greet the user", "-o", str(target)])
+    assert code == 0
+    assert target.read_text(encoding="utf-8").startswith('machine = "greeter"')
+
+
+def test_create_retry_prompt_carries_prior_scripts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # When a draft fails the script gate, the NEXT attempt's prompt must show
+    # the prior script source so the model patches instead of regenerating.
+    from agent6.cli import scriptcheck
+
+    if "ruff" not in scriptcheck.available_tools():
+        pytest.skip("ruff not installed")
+    monkeypatch.chdir(tmp_path)
+    _stub_preflight(monkeypatch)
+    prompts: list[str] = []
+    bad = "print(undefined_name)\n"  # F821
+    good = "import json\nprint(json.dumps({}))\n"
+    responses = iter(
+        [
+            AgentExecResult(
+                reason="finish_run",
+                payload={
+                    TOML_PAYLOAD_KEY: SCRIPT_MACHINE,
+                    SCRIPTS_PAYLOAD_KEY: {"scripts/run.py": bad},
+                },
+                usd=0.01,
+            ),
+            AgentExecResult(
+                reason="finish_run",
+                payload={
+                    TOML_PAYLOAD_KEY: SCRIPT_MACHINE,
+                    SCRIPTS_PAYLOAD_KEY: {"scripts/run.py": good},
+                },
+                usd=0.01,
+            ),
+        ]
+    )
+
+    def fake_build(
+        cfg: object, root: Path, profile: object, transcript_dir: Path
+    ) -> Callable[[AgentRequest], AgentExecResult]:
+        def run(request: AgentRequest) -> AgentExecResult:
+            prompts.append(request.prompt)
+            return next(responses)
+
+        return run
+
+    monkeypatch.setattr(cli, "_build_machine_agent_runner", fake_build)
+    code = main(["machine", "create", "Run a script"])
+    assert code == 0
+    assert len(prompts) == 2
+    assert "undefined_name" not in prompts[0]
+    assert "`scripts/run.py`:" in prompts[1]
+    assert "print(undefined_name)" in prompts[1]
+
+
+# --- script bundle: the agent emits helper scripts alongside the .asm.toml ---
+
+SCRIPT_MACHINE = """\
+machine = "scripted"
+version = 1
+initial = "go"
+
+[budget]
+max_usd = 1.0
+max_transitions = 10
+
+[states.go]
+kind = "tool"
+command = ["python3", "scripts/run.py"]
+timeout_secs = 5
+on = { ok = "done", nonzero = "fail", timeout = "fail" }
+
+[states.done]
+kind = "terminal"
+status = "ok"
+reason = "ran"
+
+[states.fail]
+kind = "terminal"
+status = "failed"
+reason = "failed"
+"""
+SCRIPT_BODY = "import json\nprint(json.dumps({}))"
+
+
+def test_extract_scripts_keeps_safe_entries_only() -> None:
+    got = extract_scripts(
+        {
+            SCRIPTS_PAYLOAD_KEY: {
+                "scripts/run.py": "x = 1",
+                "./scripts/lib/util.py": "y = 2",  # normalized
+                "scripts/../etc/passwd": "escape",  # dropped (..)
+                "/abs/scripts/run.py": "abs",  # dropped (absolute)
+                "notes.txt": "outside scripts/",  # dropped (not under scripts/)
+                "scripts/x.py": 7,  # dropped (non-str content)
+            }
+        }
+    )
+    assert got == {"scripts/run.py": "x = 1", "scripts/lib/util.py": "y = 2"}
+
+
+@pytest.mark.parametrize("payload", [None, {}, {SCRIPTS_PAYLOAD_KEY: "not-a-map"}])
+def test_extract_scripts_empty(payload: dict[str, object] | None) -> None:
+    assert extract_scripts(payload) == {}  # type: ignore[arg-type]
+
+
+def test_create_writes_script_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _stub_preflight(monkeypatch)
+    _stub_runner(
+        monkeypatch,
+        [
+            AgentExecResult(
+                reason="finish_run",
+                payload={
+                    TOML_PAYLOAD_KEY: SCRIPT_MACHINE,
+                    SCRIPTS_PAYLOAD_KEY: {"scripts/run.py": SCRIPT_BODY},
+                },
+                usd=0.02,
+            )
+        ],
+    )
+    code = main(["machine", "create", "Run a script"])
+    assert code == 0
+    out = capsys.readouterr()
+    assert (tmp_path / "scripted.asm.toml").exists()
+    script = tmp_path / "scripts" / "run.py"
+    assert script.exists()
+    assert script.read_text(encoding="utf-8") == SCRIPT_BODY + "\n"
+    assert "1 script(s)" in out.err
+
+
+def test_create_rejects_missing_script_then_succeeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A TOML that runs scripts/run.py but ships no scripts must fail bundle
+    validation (the user's bug), then succeed once the agent supplies it."""
+    monkeypatch.chdir(tmp_path)
+    _stub_preflight(monkeypatch)
+    _stub_runner(
+        monkeypatch,
+        [
+            # attempt 1: references the script but omits it -> rejected.
+            AgentExecResult(
+                reason="finish_run", payload={TOML_PAYLOAD_KEY: SCRIPT_MACHINE}, usd=0.01
+            ),
+            # attempt 2: now ships it -> accepted.
+            AgentExecResult(
+                reason="finish_run",
+                payload={
+                    TOML_PAYLOAD_KEY: SCRIPT_MACHINE,
+                    SCRIPTS_PAYLOAD_KEY: {"scripts/run.py": SCRIPT_BODY},
+                },
+                usd=0.02,
+            ),
+        ],
+    )
+    code = main(["machine", "create", "Run a script"])
+    assert code == 0
+    out = capsys.readouterr()
+    assert (tmp_path / "scripts" / "run.py").exists()
+    assert "attempt 2/3" in out.err
+
+
+def test_create_rejects_lint_bad_script(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A structurally-valid machine whose script has a lint error must NOT be
+    written — ruff/ty run in the create loop and the failure is a diagnostic."""
+    from agent6.cli import scriptcheck
+
+    if "ruff" not in scriptcheck.available_tools():
+        pytest.skip("ruff not installed")
+    monkeypatch.chdir(tmp_path)
+    _stub_preflight(monkeypatch)
+    bad = "import json\nprint(undefined_name)\n"  # F821 undefined name
+    _stub_runner(
+        monkeypatch,
+        [
+            AgentExecResult(
+                reason="finish_run",
+                payload={
+                    TOML_PAYLOAD_KEY: SCRIPT_MACHINE,
+                    SCRIPTS_PAYLOAD_KEY: {"scripts/run.py": bad},
+                },
+                usd=0.01,
+            )
+        ],
+    )
+    code = main(["machine", "create", "Run a script", "--max-attempts", "1"])
+    assert code == 1
+    out = capsys.readouterr()
+    assert "ruff" in out.err
+    assert not (tmp_path / "scripted.asm.toml").exists()
+
+
+def test_create_never_ships_script_exits_1(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _stub_preflight(monkeypatch)
+    _stub_runner(
+        monkeypatch,
+        [
+            AgentExecResult(
+                reason="finish_run", payload={TOML_PAYLOAD_KEY: SCRIPT_MACHINE}, usd=0.01
+            )
+        ],
+    )
+    code = main(["machine", "create", "Run a script", "--max-attempts", "1"])
+    assert code == 1
+    out = capsys.readouterr()
+    assert "not found in bundle" in out.err
+    # the diagnostic steers the agent to the right payload field.
+    assert SCRIPTS_PAYLOAD_KEY in out.err
+    # no half-written bundle left behind.
+    assert not (tmp_path / "scripted.asm.toml").exists()
+    assert not (tmp_path / "scripts").exists()

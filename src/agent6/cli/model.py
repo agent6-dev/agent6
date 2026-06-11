@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import cast
 
 from agent6.cli.toml_io import _upsert_toml_table
 from agent6.config import (
@@ -131,7 +132,8 @@ def _cmd_model(
             " [--thinking low|medium|high]  (provider/model are prompted if omitted)"
         )
         return 0
-    # `role` is validated by argparse `choices`, so it is one of the three here.
+    # `role` is validated by argparse `choices`: planner/worker/reviewer or the
+    # pseudo-role "all" (no config field of that name — it expands to all three).
     # Positional provider/model are optional: prompt interactively when blank,
     # prefilling the provider list from connected providers and the model list
     # from that provider's live/configured catalog.
@@ -150,7 +152,11 @@ def _cmd_model(
     fields: dict[str, str | bool | None] = {"provider": provider, "model": model}
     if thinking:
         fields["thinking"] = thinking
-    _upsert_toml_table(target, f"models.{role}", fields)
+    roles: tuple[RoleName, ...] = (
+        ("planner", "worker", "reviewer") if role == "all" else (cast("RoleName", role),)
+    )
+    for r in roles:
+        _upsert_toml_table(target, f"models.{r}", fields)
     chown_to_real_user(target.parent)
     chown_to_real_user(target)
     # Re-validate so a bad combination is caught immediately.
@@ -159,8 +165,9 @@ def _cmd_model(
     except ConfigError as exc:
         print(f"Wrote {target}, but the config no longer validates:\n{exc}", file=sys.stderr)
         return 2
+    where = "[models.*] (all roles)" if role == "all" else f"[models.{role}]"
     print(
-        f"Set [models.{role}] = {provider}/{model}"
+        f"Set {where} = {provider}/{model}"
         f"{f' (thinking={thinking})' if thinking else ''} in {target}."
     )
     return 0

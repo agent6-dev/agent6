@@ -8,6 +8,7 @@ import contextlib
 import datetime as _dt
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -19,6 +20,8 @@ from typing import Any, Literal
 
 from agent6.cli._common import _agent6_dir, _check_provider_keys, _machines_dir, detect_env
 from agent6.cli.egress import _check_network_profile, _warn_if_unsandboxed
+from agent6.cli.scriptcheck import lint_and_typecheck, run_offline_tests
+from agent6.cli.toml_io import _upsert_toml_leaf
 from agent6.config import (
     Config,
     ConfigError,
@@ -26,9 +29,11 @@ from agent6.config import (
 from agent6.config_layer import (
     load_effective,
     load_effective_with_overlay,
+    repo_config_path_for,
 )
 from agent6.detect import select_profile
 from agent6.machine import (
+    SCRIPTS_PAYLOAD_KEY,
     TOML_PAYLOAD_KEY,
     AgentExecResult,
     AgentFact,
@@ -45,12 +50,14 @@ from agent6.machine import (
     build_authoring_prompt,
     drive,
     dry_run,
+    extract_scripts,
     extract_toml,
     load_machine,
     machine_lock,
     render,
     write_source,
 )
+from agent6.paths import chown_to_real_user
 from agent6.run_id import new_friendly_id
 from agent6.types import SandboxProfile
 
@@ -142,40 +149,55 @@ def _validate_bundle(spec: MachineSpec, machine_path: Path) -> list[str]:
     return problems
 
 
-def _cmd_machine_check(path: Path) -> int:
+def _fail(path: Path, problems: list[str], label: str = "") -> int:
+    """Print a FAIL header + problem bullets to stderr; always returns 1."""
+    suffix = f" ({label})" if label else ""
+    print(f"FAIL: {path}{suffix}", file=sys.stderr)
+    for problem in problems:
+        print(f"  - {problem}", file=sys.stderr)
+    return 1
+
+
+def _load_validated(path: Path) -> tuple[MachineSpec | None, list[str], str]:
+    """Shared `check`/`test` front half: load + structural bundle validation.
+
+    Returns (spec, problems, label). spec is None when validation failed;
+    label names the failing stage for the FAIL header.
+    """
     try:
         spec = load_machine(path)
     except MachineError as exc:
-        print(f"FAIL: {path}", file=sys.stderr)
-        for problem in exc.problems:
-            print(f"  - {problem}", file=sys.stderr)
-        return 1
+        return None, list(exc.problems), ""
     bundle_problems = _validate_bundle(spec, path)
     if bundle_problems:
-        print(f"FAIL: {path} (bundle)", file=sys.stderr)
-        for problem in bundle_problems:
-            print(f"  - {problem}", file=sys.stderr)
-        return 1
+        return None, bundle_problems, "bundle"
+    return spec, [], ""
+
+
+def _cmd_machine_check(path: Path) -> int:
+    spec, problems, label = _load_validated(path)
+    if spec is None:
+        return _fail(path, problems, label)
+    script_problems = lint_and_typecheck(path.parent / "scripts")
+    if script_problems:
+        return _fail(path, script_problems, "scripts")
     print(f"OK: {path} ({spec.machine}, {len(spec.states)} states)")
     return 0
 
 
 def _cmd_machine_test(path: Path, *, blackboard: Path | None) -> int:
-    # `machine test` is `machine check` plus a pure dry-run; reuse the same
-    # load + bundle validation so a malformed machine fails the same way.
-    try:
-        spec = load_machine(path)
-    except MachineError as exc:
-        print(f"FAIL: {path}", file=sys.stderr)
-        for problem in exc.problems:
-            print(f"  - {problem}", file=sys.stderr)
-        return 1
-    bundle_problems = _validate_bundle(spec, path)
-    if bundle_problems:
-        print(f"FAIL: {path} (bundle)", file=sys.stderr)
-        for problem in bundle_problems:
-            print(f"  - {problem}", file=sys.stderr)
-        return 1
+    # `machine test` is the offline simulation: `machine check`'s structural +
+    # bundle validation, plus running the bundle's `*_test.py` mocks in a jail
+    # (no network), plus a pure dry-run. Reuse the same load + bundle validation
+    # so a malformed machine fails the same way.
+    spec, problems, label = _load_validated(path)
+    if spec is None:
+        return _fail(path, problems, label)
+    # Static (lint + types) then the offline mock tests in a no-network jail.
+    script_problems = lint_and_typecheck(path.parent / "scripts")
+    script_problems.extend(run_offline_tests(path.parent, detect_env().detected_profile))
+    if script_problems:
+        return _fail(path, script_problems, "scripts")
     fixture: dict[str, Any] | None = None
     if blackboard is not None:
         if not blackboard.is_file():
@@ -363,7 +385,95 @@ def _machine_network_refusal(
     return None
 
 
-def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa: PLR0911
+def _safe_input(prompt: str) -> str | None:
+    """``input`` that returns None on EOF / non-interactive stdin instead of raising."""
+    try:
+        return input(prompt)
+    except (EOFError, KeyboardInterrupt):
+        return None
+
+
+def _suggested_network_fix(
+    cfg: Config, profile: SandboxProfile, tool_states: list[ToolState]
+) -> dict[str, str] | None:
+    """The minimal sandbox-config change that lets this machine's tools reach the
+    network ON THIS PROFILE, or None if no config change can (a tool requiring
+    REQUIRED isolation needs `strict`, which config can't conjure). Targets the
+    common case: a tool that opted in (`allow_network = "allow"`) under a config
+    that blocks egress."""
+    has_allow = any(s.allow_network == "allow" for s in tool_states)
+    has_block = any(s.allow_network == "block" for s in tool_states)
+    if has_block or not has_allow:
+        return None
+    if profile == "strict":
+        return {"sandbox.tool_network": "only_explicit_states"}
+    if profile == "hardened":
+        # hardened can't isolate one tool's netns, so tools share the host
+        # network; the combo validator then requires agent_network = "open".
+        return {"sandbox.tool_network": "allow", "sandbox.agent_network": "open"}
+    return None
+
+
+def _resolve_network_refusal(  # noqa: PLR0911
+    path: Path,
+    refusal: str,
+    cfg: Config,
+    profile: SandboxProfile,
+    tool_states: list[ToolState],
+    cwd: Path,
+    overlay: dict[str, Any],
+) -> int | tuple[Config, SandboxProfile]:
+    """A hard network refusal becomes a choice, not a dead end: explain it, then
+    (interactively) offer to apply the minimal config fix and continue, simulate
+    the machine offline, or stop. Headless prints the exact fix + simulate
+    command and exits non-zero — it never relaxes a sandbox setting unattended.
+    Returns the new ``(cfg, profile)`` when the fix applied and re-validates
+    clear, else an exit code."""
+    print(f"REFUSING: {refusal}", file=sys.stderr)
+    fix = _suggested_network_fix(cfg, profile, tool_states)
+    if fix is None:
+        print(
+            f"  No sandbox-config change fixes this on the '{profile}' profile"
+            " (a tool needs isolation only 'strict' provides).",
+            file=sys.stderr,
+        )
+        print(f"  Simulate it offline instead:  agent6 machine test {path}", file=sys.stderr)
+        return 2
+    if not sys.stdin.isatty():
+        print("  To allow it, apply this to .agent6/config.toml and re-run:", file=sys.stderr)
+        for key, value in fix.items():
+            print(f"    agent6 config set {key} {value} --repo", file=sys.stderr)
+        print(f"  Or simulate it offline now:    agent6 machine test {path}", file=sys.stderr)
+        return 2
+    print("  agent6 can apply the minimal fix now (writes .agent6/config.toml):", file=sys.stderr)
+    for key, value in fix.items():
+        print(f"    {key} = {value}", file=sys.stderr)
+    choice = (_safe_input("  [a]pply & run, [s]imulate offline, or [Q]uit? ") or "").strip().lower()
+    if choice == "s":
+        return _cmd_machine_test(path, blackboard=None)
+    if choice != "a":
+        print("Stopped; nothing changed.", file=sys.stderr)
+        return 2
+    target = repo_config_path_for(cwd)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    for key, value in fix.items():
+        _upsert_toml_leaf(target, key, value)
+    chown_to_real_user(target.parent)
+    chown_to_real_user(target)
+    try:
+        new_cfg = load_effective_with_overlay(cwd, overlay).config
+        new_profile = select_profile(new_cfg.sandbox.profile, detect_env())
+    except (ConfigError, RuntimeError) as exc:
+        print(f"  Applied, but the config no longer validates: {exc}", file=sys.stderr)
+        return 2
+    if _machine_network_refusal(new_cfg, new_profile, tool_states) is not None:
+        print("  Applied, but a conflict remains — review .agent6/config.toml.", file=sys.stderr)
+        return 2
+    print(f"  Applied to {target}. Continuing the run.", file=sys.stderr)
+    return new_cfg, new_profile
+
+
+def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa: PLR0911, PLR0912, PLR0915
     try:
         spec = load_machine(path)
     except MachineError as exc:
@@ -398,8 +508,12 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
             return 2
         refusal = _machine_network_refusal(cfg, profile, tool_states)
         if refusal is not None:
-            print(f"REFUSING: {refusal}", file=sys.stderr)
-            return 2
+            outcome = _resolve_network_refusal(
+                path, refusal, cfg, profile, tool_states, cwd, spec.config
+            )
+            if isinstance(outcome, int):
+                return outcome
+            cfg, profile = outcome  # fix applied + re-validated clear; continue
         if has_agent_state:
             missing = _check_provider_keys(cfg)
             if missing is not None:
@@ -547,18 +661,43 @@ _CREATE_STOP_REASONS = frozenset(
 )
 
 
-def _check_machine_text(text: str, scratch: Path) -> tuple[MachineSpec | None, list[str]]:
-    """Validate a candidate `.asm.toml` source by parsing it through `load_machine`.
+def _write_scripts(base_dir: Path, scripts: dict[str, str]) -> None:
+    """Write the bundle's helper scripts (keys are bundle-relative, already
+    validated by extract_scripts to live under scripts/ with no `..`).
 
-    Returns the parsed spec and an empty problem list on success, or `(None,
-    problems)` when the source is invalid.
+    Defense-in-depth: unlink a pre-existing symlink at the target before writing
+    so a planted `scripts/<name>` -> elsewhere link can't redirect the write out
+    of the bundle. `_validate_bundle` (run by check/run before any execution) is
+    the comprehensive backstop for symlinks anywhere in the tree."""
+    for rel, content in scripts.items():
+        p = base_dir / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        if p.is_symlink():
+            p.unlink()
+        p.write_text(content if content.endswith("\n") else content + "\n", encoding="utf-8")
+
+
+def _check_machine_text(
+    text: str, scripts: dict[str, str], scratch: Path
+) -> tuple[MachineSpec | None, list[str]]:
+    """Validate a candidate `.asm.toml` + its scripts via `load_machine`.
+
+    The scripts are written into the scratch bundle first so the missing-script
+    check resolves against this attempt's files only (stale scripts from a prior
+    attempt are cleared). Returns the parsed spec + empty problems on success, or
+    `(None, problems)` when the source or its script bundle is invalid.
     """
     candidate_path = scratch / "candidate.asm.toml"
     candidate_path.write_text(text, encoding="utf-8")
+    shutil.rmtree(scratch / "scripts", ignore_errors=True)
+    _write_scripts(scratch, scripts)
     try:
         spec = load_machine(candidate_path)
     except MachineError as exc:
         return None, list(exc.problems)
+    bundle_problems = _validate_bundle(spec, candidate_path)
+    if bundle_problems:
+        return None, bundle_problems
     return spec, []
 
 
@@ -596,13 +735,19 @@ def _cmd_machine_create(  # noqa: PLR0911, PLR0912, PLR0915
     runner = _build_machine_agent_runner({}, cwd, profile, scratch / "agent_transcripts")
 
     prior_toml: str | None = None
+    prior_scripts: dict[str, str] = {}
     diagnostics: list[str] | None = None
     spec: MachineSpec | None = None
     valid_toml: str | None = None
+    valid_scripts: dict[str, str] = {}
     total_usd = 0.0
     for attempt in range(1, max_attempts + 1):
         prompt = build_authoring_prompt(
-            task, attempt=attempt, prior_toml=prior_toml, diagnostics=diagnostics
+            task,
+            attempt=attempt,
+            prior_toml=prior_toml,
+            diagnostics=diagnostics,
+            prior_scripts=prior_scripts,
         )
         print(f"machine create: attempt {attempt}/{max_attempts}...", file=sys.stderr)
         # model omitted (=None): inherit the operator's effective worker model.
@@ -617,15 +762,44 @@ def _cmd_machine_create(  # noqa: PLR0911, PLR0912, PLR0915
                 f" (agent loop reason: {result.reason})"
             ]
             prior_toml = None
+            prior_scripts = {}
             if result.reason in _CREATE_STOP_REASONS:
                 break
             continue
-        candidate_spec, problems = _check_machine_text(candidate, scratch)
-        if candidate_spec is not None:
-            spec = candidate_spec
-            valid_toml = candidate
-            break
+        candidate_scripts = extract_scripts(result.payload)
+        candidate_spec, problems = _check_machine_text(candidate, candidate_scripts, scratch)
+        if candidate_spec is None:
+            # Structural / bundle failure. A missing-script problem (only produced
+            # here, never by the lint/test pass below) gets an extra hint pointing
+            # the agent at result.scripts.
+            if any("not found in bundle" in p for p in problems):
+                hint = (
+                    f"Return each missing scripts/... file in finish_run"
+                    f" result.{SCRIPTS_PAYLOAD_KEY} (a map of the path to its complete source)."
+                )
+                problems = [*problems, hint]
+        else:
+            # Structurally valid. Now make it production-ready: lint + type-check
+            # the scripts, run their offline `*_test.py` mocks in a jail, and
+            # dry-run the routing (synthesized facts through the real reducer;
+            # catches e.g. a branch reading a field the schema doesn't declare).
+            # Any failure becomes a retry diagnostic so the agent fixes it itself.
+            print("machine create: linting + offline-testing scripts...", file=sys.stderr)
+            problems = lint_and_typecheck(scratch / "scripts")
+            problems.extend(run_offline_tests(scratch, profile))
+            report = dry_run(candidate_spec, None)
+            problems.extend(
+                f"dry-run state {c.name!r}: {c.detail}"
+                for c in (*report.states, *report.branches)
+                if not c.ok
+            )
+            if not problems:
+                spec = candidate_spec
+                valid_toml = candidate
+                valid_scripts = candidate_scripts
+                break
         prior_toml = candidate
+        prior_scripts = candidate_scripts
         diagnostics = problems
         if result.reason in _CREATE_STOP_REASONS:
             break
@@ -644,32 +818,32 @@ def _cmd_machine_create(  # noqa: PLR0911, PLR0912, PLR0915
         return 1
 
     payload = valid_toml if valid_toml.endswith("\n") else valid_toml + "\n"
-    if output is not None:
-        output.write_text(payload, encoding="utf-8")
-        print(
-            f"OK: wrote draft to {output} ({spec.machine}, {len(spec.states)} states).",
-            file=sys.stderr,
-        )
-        print(
-            "Review and commit it; `machine run` only accepts committed machines.",
-            file=sys.stderr,
-        )
-        return 0
-
-    default_path = cwd / f"{spec.machine}.asm.toml"
-    if default_path.exists():
-        print(f"REFUSING to overwrite existing {default_path}.", file=sys.stderr)
+    target = output if output is not None else cwd / f"{spec.machine}.asm.toml"
+    if output is None and target.exists():
+        print(f"REFUSING to overwrite existing {target}.", file=sys.stderr)
         print(
             "The validated draft is on stdout; redirect it or re-run with -o <file>.",
             file=sys.stderr,
         )
         print(payload, end="")
         return 1
-    default_path.write_text(payload, encoding="utf-8")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(payload, encoding="utf-8")
+    _write_scripts(target.parent, valid_scripts)
+    scripts_note = f" + {len(valid_scripts)} script(s)" if valid_scripts else ""
     print(
-        f"OK: wrote draft to {default_path} ({spec.machine}, {len(spec.states)} states).",
+        f"OK: wrote draft to {target} ({spec.machine}, {len(spec.states)} states){scripts_note}.",
         file=sys.stderr,
     )
+    # The scratch validation ran against a clean copy; re-run the STRUCTURAL
+    # bundle check on the output dir, which can differ from scratch (e.g. a
+    # pre-existing symlink under scripts/). Lint/types are NOT re-run: the
+    # written files are byte-identical to the scratch copy that just passed.
+    out_problems = _validate_bundle(spec, target)
+    if out_problems:
+        print("WARNING: the written bundle has problems and won't run yet:", file=sys.stderr)
+        for problem in out_problems:
+            print(f"  - {problem}", file=sys.stderr)
     print(
         "Review and commit it; `machine run` only accepts committed machines.",
         file=sys.stderr,

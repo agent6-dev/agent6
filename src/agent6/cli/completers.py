@@ -94,7 +94,7 @@ def _complete_model_provider(
     role choices (and `agent6 model openrouter` then fails the role validator).
     """
     role = getattr(parsed_args, "role", None)
-    if role not in ("planner", "worker", "reviewer"):
+    if role not in ("planner", "worker", "reviewer", "all"):
         return []
     return _complete_providers(prefix)
 

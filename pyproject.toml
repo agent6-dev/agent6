@@ -16,6 +16,12 @@ dependencies = [
     # The live dashboard (`agent6 run`/`watch`/`plan`/`machine create`). The CLI
     # degrades to the `--plain` tail + line logger if textual is stripped out.
     "textual>=0.86",
+    # Lint + typecheck the helper scripts `machine create` generates (and that
+    # `machine check`/`test` re-validate). Bundled at runtime, unlike pyright
+    # (dev-only): both are self-contained wheels, ty especially so. The CLI
+    # degrades gracefully (skips the check) if they're stripped from an install.
+    "ruff>=0.6,<1",
+    "ty>=0.0.46,<0.1",
 ]
 
 [project.scripts]
@@ -80,7 +86,7 @@ exclude = [
 [dependency-groups]
 dev = [
     "pyright>=1.1.380",
-    "ruff>=0.6",
+    "ruff>=0.6,<1",
     "tach>=0.20",
     "pytest>=8",
     "pytest-cov>=5",

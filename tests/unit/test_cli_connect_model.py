@@ -138,6 +138,20 @@ def test_model_set_and_show(iso: Path, tmp_path: Path, capsys: pytest.CaptureFix
     assert "claude-x" in out
 
 
+def test_model_all_sets_every_role(
+    iso: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # "all" is a pseudo-role: one command writes planner/worker/reviewer alike.
+    rc = main(["model", "all", "anthropic", "claude-x"])
+    assert rc == 0
+    gc = (tmp_path / "g" / "config.toml").read_text(encoding="utf-8")
+    assert "[models.planner]" in gc
+    assert "[models.worker]" in gc
+    assert "[models.reviewer]" in gc
+    assert gc.count("claude-x") == 3
+    assert "all roles" in capsys.readouterr().out
+
+
 def test_model_rejects_unknown_role(iso: Path) -> None:
     # argparse `choices` validates the role positional (and feeds argcomplete).
     with pytest.raises(SystemExit) as exc:
@@ -173,6 +187,36 @@ def test_model_interactive_prefill(
     gc = (tmp_path / "g" / "config.toml").read_text(encoding="utf-8")
     assert "[models.worker]" in gc
     assert "claude-b" in gc
+
+
+def test_model_all_interactive_prompts_once(
+    iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # "all" prompts ONCE for provider/model (not per role), then applies to each.
+    (tmp_path / "g").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "g" / "config.toml").write_text(
+        '[providers.anthropic]\nkind = "anthropic"\n', encoding="utf-8"
+    )
+
+    def _models(*_a: object, **_k: object) -> list[str]:
+        return ["claude-a", "claude-b"]
+
+    monkeypatch.setattr("agent6.cli.model.list_models", _models)
+    calls = {"n": 0}
+    answers = iter(["", "2"])  # provider default, model #2 — once, not 3x
+
+    def _input(prompt: str = "") -> str:
+        calls["n"] += 1
+        return next(answers)
+
+    monkeypatch.setattr("builtins.input", _input)
+    rc = main(["model", "all"])
+    assert rc == 0
+    assert calls["n"] == 2  # one provider prompt + one model prompt, total
+    gc = (tmp_path / "g" / "config.toml").read_text(encoding="utf-8")
+    for role in ("planner", "worker", "reviewer"):
+        assert f"[models.{role}]" in gc
+    assert gc.count("claude-b") == 3
 
 
 def test_model_repo_scope_writes_repo(iso: Path, tmp_path: Path) -> None:

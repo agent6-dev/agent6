@@ -646,6 +646,15 @@ Mirrors the existing per-run layout under `.agent6/`:
   machine.lock           # single-writer guard (one process per machine)
 ```
 
+Sizing for long-running machines: both the journal and snapshots grow
+monotonically, roughly one journal line (~200 B) plus one snapshot (a few
+KB) per transition. A 10-minute-interval machine makes ~150k transitions
+a year (3 per tick on the idle path), on the order of tens of MB of
+journal and a few hundred MB of snapshots. There is no automatic
+rotation in v1; archive or delete an instance directory once its history
+is no longer needed for replay, and size `[budget] max_transitions` as
+the primary runaway guard.
+
 ### 5.4 Idempotency and crash recovery
 
 Each *side-effecting* state execution gets a deterministic step id
@@ -681,9 +690,9 @@ discipline the rest of agent6 already follows).
 
 | command                                   | effect                                            |
 |-------------------------------------------|---------------------------------------------------|
-| `agent6 machine create <task> [-o <file>] [--max-attempts N]`| **LLM-drafted** machine. Runs an ordinary jailed agent6 loop whose job is to draft a `.asm.toml` from a natural-language description, then `machine check`s it and loops the diagnostics back to the model (up to `--max-attempts`, default 3) until it validates. Writes a *draft* the operator reviews, edits, and commits — running it still requires the operator (see §9). |
-| `agent6 machine check <file>`             | validate: parse, type-check vars, verify every edge target exists, every state reachable, every `branch` total, every variable name unique across owners and owned by a subtable (no bare `vars.*`), every reference resolving to a declared variable, every `capture` writing a var owned by the writing state kind (`tool` → `[vars.code]`, `agent` → `[vars.agent]`, `[vars.operator]` read-only), and the script bundle (`scripts/` entries + static `scripts/...` command refs stay inside the bundle). Pure, no side effects. |
-| `agent6 machine test <file> [--blackboard FIXTURE.toml]` | `machine check` plus a pure dry-run with **no** I/O (no jail/network/provider/clock). Per state: synthesize the success fact it would emit (a tool's `output_schema`-shaped JSON / an agent's `finish_run` payload), push it through the real `reduce`, and confirm the capture binds and the produced label routes to a declared state. Per `branch`: evaluate each `when` clause against the declared defaults overlaid with `--blackboard` and print the winning `goto`. Validates plumbing/schema/routing without running the real script, model, or wall-clock. |
+| `agent6 machine create <task> [-o <file>] [--max-attempts N]`| **LLM-drafted** machine bundle: the `.asm.toml` plus every `scripts/...` file its tool states run, plus a `scripts/<name>_test.py` mock test per script with an external seam (network/clock/files). Each draft is gated before acceptance: `machine check` validation, ruff lint, ty type check, and the mock tests executed in a no-network jail; failures loop back to the model with the failing source (up to `--max-attempts`, default 3). Writes a *draft* the operator reviews, edits, and commits — running it still requires the operator (see §9). |
+| `agent6 machine check <file>`             | validate: parse, type-check vars, verify every edge target exists, every state reachable, every `branch` total, every variable name unique across owners and owned by a subtable (no bare `vars.*`), every reference resolving to a declared variable, every `capture` writing a var owned by the writing state kind (`tool` → `[vars.code]`, `agent` → `[vars.agent]`, `[vars.operator]` read-only), the script bundle (`scripts/` entries + static `scripts/...` command refs stay inside the bundle), and static script health (ruff lint + ty type check). No execution, no network. |
+| `agent6 machine test <file> [--blackboard FIXTURE.toml]` | everything `check` does, plus the bundle's `scripts/*_test.py` mock tests executed in a **no-network jail**, plus a pure dry-run (no provider/clock): per state, synthesize the success fact it would emit (a tool's `output_schema`-shaped JSON / an agent's `finish_run` payload), push it through the real `reduce`, and confirm the capture binds and the produced label routes to a declared state; per `branch`, evaluate each `when` clause against the declared defaults overlaid with `--blackboard` and print the winning `goto`. The full offline simulation: plumbing, schema, routing, and script behavior with every seam mocked — no real network, no model calls. |
 | `agent6 machine graph <file> [--format mermaid\|dot]` | emit the machine as a diagram. `mermaid` (default) prints `stateDiagram-v2`; `dot` prints Graphviz DOT for `dot -Tsvg`/`dot -Tpng` and the broader Graphviz/`xdot` ecosystem. Reachability is already computed at load, so both are pure renders of the same validated graph. |
 | `agent6 machine run <file> [--exit-on-wait]` | start (or resume) a machine. Acquires the lock, drives the loop. With `--exit-on-wait`, persist the next wake and exit 0 (status `waiting`) at the first not-ready `wait`, for an external scheduler (systemd timer / cron) to resume. |
 | `agent6 machine status <id>`              | current state, blackboard, spend, next wake. Read-only. |
@@ -698,24 +707,29 @@ true, goto = ... }`).
 
 `machine create` lets the operator describe a loop in plain language —
 *"poll this location, classify new items, take a step on high
-confidence"* — and get a first-cut `.asm.toml` back instead of authoring
-the graph by hand. It is an ordinary jailed agent6 loop with a
+confidence"* — and get a first-cut machine bundle back instead of
+authoring it by hand. It is an ordinary jailed agent6 loop with a
 specialized prompt: the model is handed this document's grammar (state
 kinds, the three-owner blackboard
 (`[vars.operator]`/`[vars.code]`/`[vars.agent]`), the total-branch rule)
-and the task, and is told to return one complete machine source by
-calling `finish_run` with a `result.toml` field holding the entire
-`.asm.toml` — **no new tool and no file-writing capability is granted**.
-The CLI extracts that source, runs the same `machine check` validation
-over it, and loops the diagnostics back to the model — up to
-`--max-attempts` (default 3) — until the draft validates.
+and the task, and is told to return one complete machine by calling
+`finish_run` with a `result.toml` field holding the entire `.asm.toml`
+and a `result.scripts` map holding every `scripts/...` file the tool
+states run (plus a `scripts/<name>_test.py` mock test per script with an
+external seam) — **no new tool and no file-writing capability is
+granted**. The CLI extracts the bundle and gates it: the same
+`machine check` validation, ruff lint, ty type check, and the mock tests
+executed in a no-network jail. Failures (with the failing source) loop
+back to the model — up to `--max-attempts` (default 3) — until the
+bundle passes. Retries include the prior draft AND its scripts so the
+model patches the named problem instead of regenerating from scratch.
 
-On success the validated source is written as a draft: with `-o <file>`
-it is written there (overwriting freely); otherwise to
+On success the validated bundle is written as a draft: with `-o <file>`
+the `.asm.toml` is written there (overwriting freely); otherwise to
 `<machine-name>.asm.toml` in the working directory, which is never
 overwritten (on a name collision the validated draft is printed to
-stdout and the command exits non-zero so nothing is clobbered). The
-validated `.asm.toml` always goes to stdout; status, spend, and notes go
+stdout and the command exits non-zero so nothing is clobbered). Scripts
+land in `scripts/` next to the machine file. Status, spend, and notes go
 to stderr.
 
 Crucially this does **not** weaken the "machines are operator artifacts"

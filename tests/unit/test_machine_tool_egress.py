@@ -13,8 +13,11 @@ import pytest
 
 from agent6.cli.machine_cmds import (
     _machine_protect_paths,  # pyright: ignore[reportPrivateUsage]
+    _resolve_network_refusal,  # pyright: ignore[reportPrivateUsage]
+    _suggested_network_fix,  # pyright: ignore[reportPrivateUsage]
     _validate_bundle,  # pyright: ignore[reportPrivateUsage]
 )
+from agent6.config import Config
 from agent6.machine import MachineJournal, ToolState, drive, load_machine
 from agent6.machine.engine import LiveWorld, ToolExecResult
 
@@ -302,3 +305,77 @@ def test_machine_check_passes_with_valid_bundle(
     (tmp_path / "scripts" / "fetch.sh").write_text("#!/bin/sh\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     assert main(["machine", "check", str(f)]) == 0
+
+
+# --- sandbox-conflict UX (suggest a fix, don't dead-end) --------------------
+
+
+def _allow_tool(tmp_path: Path) -> ToolState:
+    spec = load_machine(_write(tmp_path, NET_MACHINE))  # fetch sets allow_network="allow"
+    fetch = spec.states["fetch"]
+    assert isinstance(fetch, ToolState)
+    return fetch
+
+
+def test_suggested_network_fix_hardened(tmp_path: Path) -> None:
+    # hardened can't isolate per-tool, so tools share the host net (+ agent open).
+    fix = _suggested_network_fix(Config.model_validate({}), "hardened", [_allow_tool(tmp_path)])
+    assert fix == {"sandbox.tool_network": "allow", "sandbox.agent_network": "open"}
+
+
+def test_suggested_network_fix_strict(tmp_path: Path) -> None:
+    # strict can single one tool out: audited per-tool egress is the safe fix.
+    fix = _suggested_network_fix(Config.model_validate({}), "strict", [_allow_tool(tmp_path)])
+    assert fix == {"sandbox.tool_network": "only_explicit_states"}
+
+
+def test_suggested_network_fix_block_is_unfixable(tmp_path: Path) -> None:
+    # allow_network="block" REQUIRES isolation only strict provides -> no config fix.
+    text = NET_MACHINE.replace('allow_network = "allow"', 'allow_network = "block"')
+    spec = load_machine(_write(tmp_path, text))
+    fetch = spec.states["fetch"]
+    assert isinstance(fetch, ToolState)
+    assert _suggested_network_fix(Config.model_validate({}), "hardened", [fetch]) is None
+
+
+def test_resolve_network_refusal_headless_prints_fix(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Non-interactive stdin (pytest): print the exact fix + simulate command,
+    # exit 2, and NEVER relax a sandbox setting unattended.
+    code = _resolve_network_refusal(
+        tmp_path / "m.asm.toml",
+        "a tool needs the network",
+        Config.model_validate({}),
+        "hardened",
+        [_allow_tool(tmp_path)],
+        tmp_path,
+        {},
+    )
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "config set sandbox.tool_network allow" in err
+    assert "config set sandbox.agent_network open" in err
+    assert "machine test" in err
+    # nothing was written
+    assert not (tmp_path / ".agent6" / "config.toml").exists()
+
+
+def test_resolve_network_refusal_unfixable_points_to_simulate(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    text = NET_MACHINE.replace('allow_network = "allow"', 'allow_network = "block"')
+    spec = load_machine(_write(tmp_path, text))
+    fetch = spec.states["fetch"]
+    assert isinstance(fetch, ToolState)
+    code = _resolve_network_refusal(
+        tmp_path / "m.asm.toml",
+        "needs strict",
+        Config.model_validate({}),
+        "hardened",
+        [fetch],
+        tmp_path,
+        {},
+    )
+    assert code == 2
+    assert "machine test" in capsys.readouterr().err

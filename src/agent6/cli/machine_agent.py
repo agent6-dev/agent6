@@ -102,11 +102,14 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
         inner_provider = _build_role_provider(
             cfg, "worker", transcript_sink=TranscriptSink(transcript_dir), budget=budget
         )
-        # No EventSink here (a machine agent state has no logs.jsonl), but echo
-        # the model's reasoning + answer to our inherited stderr at a TTY so
-        # `machine create` and live `agent` states are watchable instead of
-        # silent. Streaming is also the robust path on OpenRouter-style
-        # gateways (avoids SSE-heartbeat body corruption).
+        # No EventSink here (a machine agent state has no logs.jsonl).
+        # stream_text: ALWAYS use the streaming transport. Machine agents run
+        # headless (cron / nohup) and produce long generations; the
+        # non-streaming path drops the connection mid-body on OpenRouter-style
+        # gateways (SSE heartbeats corrupt it, observed as "incomplete chunked
+        # read" on ~14k-token authoring calls).
+        # console_stream: additionally echo reasoning + answer to stderr at a
+        # TTY so `machine create` and live `agent` states are watchable.
         rm = cfg.models.resolve("worker")
         provider = _InstrumentedProvider(
             inner=inner_provider,
@@ -115,6 +118,7 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
             provider_name=rm.provider if rm is not None else "",
             events=None,
             budget=budget,
+            stream_text=True,
             console_stream=sys.stderr.isatty() or os.environ.get("AGENT6_FORCE_STREAM") == "1",
         )
         # Re-confirm the cwd-containment invariant at the subprocess boundary
