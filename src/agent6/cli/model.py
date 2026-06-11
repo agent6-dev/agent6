@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 model` — show/set role models, with interactive prefill."""
+"""`agent6 model`, show/set role models, with interactive prefill."""
 
 from __future__ import annotations
 
@@ -133,7 +133,7 @@ def _cmd_model(
         )
         return 0
     # `role` is validated by argparse `choices`: planner/worker/reviewer or the
-    # pseudo-role "all" (no config field of that name — it expands to all three).
+    # pseudo-role "all" (no config field of that name, it expands to all three).
     # Positional provider/model are optional: prompt interactively when blank,
     # prefilling the provider list from connected providers and the model list
     # from that provider's live/configured catalog.

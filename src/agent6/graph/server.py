@@ -3,7 +3,7 @@
 """UDS server that hosts a single `GraphCurator` for one run id.
 
 This is what the `agent6-curator` console script invokes. It is *not* meant to
-be used directly from agent6 application code — application code goes through
+be used directly from agent6 application code, application code goes through
 `agent6.graph.client.GraphClient`, which speaks the same wire protocol.
 
 The server is single-threaded by design: every mutation already takes an

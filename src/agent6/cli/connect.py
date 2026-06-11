@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 connect` — add a provider + API key."""
+"""`agent6 connect`, add a provider + API key."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ def _prompt_api_key(name: str) -> str:
     """Prompt for an API key without leaking it.
 
     On Python 3.14+ ``getpass`` accepts ``echo_char`` so we mask each
-    keystroke with ``*`` — live feedback that the paste landed, without ever
+    keystroke with ``*``, live feedback that the paste landed, without ever
     revealing the key. On 3.12/3.13 input stays fully hidden and we print a
     post-entry summary (length + last four chars) so the operator can still
     tell a partial/garbled paste from a clean one. The key itself is never
@@ -104,7 +104,7 @@ def _cmd_connect(*, provider: str, to_repo: bool) -> int:
     """Interactively add a provider + API key.
 
     Security: this command NEVER executes anything supplied by a remote. It
-    only prompts locally (key via getpass — hidden, or masked with ``*`` on
+    only prompts locally (key via getpass, hidden, or masked with ``*`` on
     Python 3.14+), stores the key in the 0600 secrets file, and writes a
     minimal ``[providers.<name>]`` block.
     """

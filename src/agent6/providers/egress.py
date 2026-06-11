@@ -11,7 +11,7 @@ in the host network namespace.
 
 This module is the transport seam. The provider call sites ask it to
 issue every request; if an endpoint has a broker socket registered, the
-request is dialled over that unix-domain socket (TLS stays end-to-end —
+request is dialled over that unix-domain socket (TLS stays end-to-end,
 the broker only ever splices ciphertext). If no socket is registered the
 request falls through to a plain ``httpx`` call, byte-for-byte identical
 to the un-sandboxed path, so runs without it are unaffected.
@@ -19,7 +19,7 @@ to the un-sandboxed path, so runs without it are unaffected.
 Fail-closed: the kernel network namespace is the actual security
 boundary. If the registry is empty or wrong while the process is
 isolated, a provider call simply fails to connect (no route in the empty
-netns) — it can never silently leak to an unexpected host.
+netns), it can never silently leak to an unexpected host.
 
 The registry holds plain strings (host, port, socket path) and imports
 nothing from ``agent6``; it lives in the providers package only so the

@@ -48,7 +48,7 @@ def _allow_url_endpoints(cfg: Config) -> set[Endpoint]:
 
     Each entry is already validated by ``SandboxConfig`` as a host, host:port,
     or URL. We normalize a missing scheme to ``https://`` (so a bare host
-    defaults to 443) — kept in lock-step with ``config._validate_allow_url`` —
+    defaults to 443), kept in lock-step with ``config._validate_allow_url``,
     then reuse ``parse_endpoint``. Folded into the provider-only egress
     allow-list alongside the provider endpoints (union); the winning config
     tier already decided which ``allow_urls`` list applies.
@@ -120,7 +120,7 @@ def _maybe_start_egress(
 
     Returns ``(broker, sock_dir, error)``. ``error`` non-None ⇒ the caller must
     refuse the run. Only acts on the ``strict`` profile under
-    ``agent_network ∈ {providers, local}`` — on ``open`` nothing is confined,
+    ``agent_network ∈ {providers, local}``, on ``open`` nothing is confined,
     and on ``hardened`` the agent-process Landlock (see
     :func:`_maybe_apply_agent_landlock`) provides port-level confinement
     instead. ``local`` restricts to loopback provider endpoints and refuses any
@@ -215,8 +215,8 @@ def _maybe_apply_agent_landlock(
     proc_paths = (Path("/proc"),) if Path("/proc").exists() else ()
     # The agent process (and the curator subprocess it re-execs) must be able to
     # READ its own Python install for lazy imports. A `uv tool` install lives
-    # under $HOME (already covered), but a venv outside $HOME — a dev checkout,
-    # /opt, a system venv — would otherwise fail when agent6 is run from an
+    # under $HOME (already covered), but a venv outside $HOME, a dev checkout,
+    # /opt, a system venv, would otherwise fail when agent6 is run from an
     # unrelated cwd (PermissionError importing e.g. a pydantic submodule).
     py_paths = tuple(
         p

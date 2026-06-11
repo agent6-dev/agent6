@@ -5,7 +5,7 @@
 Serializes a JailPolicy to JSON on stdin and reads child stdout/stderr/return code
 from the launcher's output. If the launcher is not available, falls back to a
 plain (un-sandboxed) subprocess invocation only when the policy explicitly
-opts in via `cwd-only-mode` — otherwise raises JailUnavailableError. This keeps
+opts in via `cwd-only-mode`, otherwise raises JailUnavailableError. This keeps
 "silently weaker" failure modes out of the system.
 """
 
@@ -81,7 +81,7 @@ def _run_unsandboxed(policy: JailPolicy) -> CommandResult:
     Used only for the `none` profile on non-Linux hosts. Inherits the parent
     environment (so `PATH` etc. resolve normally) overlaid with `policy.env`;
     runs in `policy.cwd`. The sandbox-only knobs (network, ro/rw/protect paths)
-    have no effect here — there is no kernel mechanism to enforce them.
+    have no effect here, there is no kernel mechanism to enforce them.
     """
     env = {**os.environ, **{k: v for k, v in policy.env}}
     start = time.monotonic()
@@ -161,11 +161,11 @@ def run_in_jail(policy: JailPolicy) -> CommandResult:
     The `none` profile is the unsandboxed path used on non-Linux hosts (see
     `agent6.detect.select_profile`): the command runs as a plain subprocess
     with no kernel confinement. This is never reached on Linux and never from
-    config — `select_profile` only returns `none` when `profile = "auto"` on a
+    config, `select_profile` only returns `none` when `profile = "auto"` on a
     platform without the Linux sandbox, and the CLI prints a prominent warning
     before any such run.
 
-    Security review note: this is the single, audited place where an
+    Security review note: this is the single place where an
     LLM-influenced argv runs without the jail. It exists solely so agent6 is
     usable on platforms (macOS) where the Landlock/seccomp/namespace sandbox
     does not exist. All real-isolation profiles still go through the Rust

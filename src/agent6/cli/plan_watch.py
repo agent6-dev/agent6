@@ -168,7 +168,7 @@ def _cmd_watch(run_id: str, *, plain: bool = False, since: int = 0) -> int:  # n
 
 def _cmd_tui() -> int:
     """The TUI hub (`agent6 tui`): browse runs and start new work. Loops between
-    the home screen and the dashboard — opening a run watches it, then returns
+    the home screen and the dashboard, opening a run watches it, then returns
     here on close."""
     try:
         from agent6.ui.app import run_tui  # noqa: PLC0415 - lazy: textual is optional

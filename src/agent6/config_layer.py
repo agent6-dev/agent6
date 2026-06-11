@@ -4,14 +4,14 @@
 
 Config is assembled from up to four layers, lowest precedence first:
 
-1. ``default`` — the secure defaults baked into the pydantic model,
-2. ``global``  — ``$XDG_CONFIG_HOME/agent6/config.toml`` (user-wide),
-3. ``repo``    — ``./.agent6/config.toml`` (this repository),
-4. ``flag``    — an explicit ``--config FILE`` (power users / CI).
+1. ``default``, the secure defaults baked into the pydantic model,
+2. ``global`` , ``$XDG_CONFIG_HOME/agent6/config.toml`` (user-wide),
+3. ``repo``   , ``./.agent6/config.toml`` (this repository),
+4. ``flag``   , an explicit ``--config FILE`` (power users / CI).
 
 Raw TOML dicts are deep-merged in that order and validated **once**, so a
 repo can override a single field without restating the rest. Every leaf
-remembers which layer last set it, which powers ``agent6 config show`` —
+remembers which layer last set it, which powers ``agent6 config show``,
 the audit surface that makes the effective config and its provenance
 obvious at a glance.
 """
@@ -165,7 +165,7 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
 def _flatten(data: dict[str, Any], prefix: str = "") -> dict[str, Any]:
     """Flatten nested dicts to dotted leaf paths.
 
-    Lists (incl. arrays of tables) are treated as leaves — their provenance
+    Lists (incl. arrays of tables) are treated as leaves, their provenance
     is the whole array, not individual elements.
     """
     out: dict[str, Any] = {}
@@ -269,7 +269,7 @@ def render_show(eff: EffectiveConfig, *, as_json: bool = False) -> str:
 
     Plain mode is a section-grouped, fixed-width 3-column table
     (key / value / source) with a leading ``*`` on rows that override the
-    default — no box drawing, so it never wraps badly. ``*`` rows are the
+    default, no box drawing, so it never wraps badly. ``*`` rows are the
     ones to eyeball. JSON mode emits ``{leaf: {value, source}}``.
     """
     leaves = _flatten(eff.config.model_dump(mode="python"))
@@ -338,7 +338,7 @@ def _toml_scalar(value: Any) -> str:
 def _emit_table(path: str, data: dict[str, Any], lines: list[str]) -> None:
     """Emit one TOML table (and recurse into sub-tables / arrays of tables).
 
-    ``None`` values are skipped — an unset optional field materializes as
+    ``None`` values are skipped, an unset optional field materializes as
     absent, i.e. "use the default".
     """
     scalars = {

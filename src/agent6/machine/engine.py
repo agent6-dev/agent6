@@ -7,13 +7,13 @@ The engine executes one state at a time. The *only* impure step is
 result is written to the journal as a fact before the blackboard is reduced.
 ``reduce`` and ``next_state`` are pure, so:
 
-* **Crash recovery** — on restart, recorded facts are replayed through the
+* **Crash recovery**, on restart, recorded facts are replayed through the
   same pure reducer to rebuild the blackboard and position, then execution
   continues live from the last completed step.
-* **Replay** — the identical reconstruction runs with ``live=False`` and no
+* **Replay**, the identical reconstruction runs with ``live=False`` and no
   ``World`` at all, reproducing the recorded path offline for backtesting.
 
-Phase 2 implements the four deterministic state kinds — ``tool``, ``branch``,
+Phase 2 implements the four deterministic state kinds, ``tool``, ``branch``,
 ``wait``, ``terminal``. Phase 3 adds the ``agent`` kind, which runs a normal
 agent6 loop through an injected :class:`World.run_agent` and captures the
 schema-validated ``finish_run`` payload into the blackboard.
@@ -79,7 +79,7 @@ def _now_iso() -> str:
 
 
 # --------------------------------------------------------------------------
-# The world boundary — the only impure surface.
+# The world boundary, the only impure surface.
 # --------------------------------------------------------------------------
 
 
@@ -113,7 +113,7 @@ class AgentRequest:
     max_input_tokens: int | None = None
     max_output_tokens: int | None = None
     # Workflow mode for the nested loop: "agent" (default) for a machine
-    # `agent` state — a read-only structured-output judge; "run" for an agent
+    # `agent` state, a read-only structured-output judge; "run" for an agent
     # state that opted into coding work; "machine" for the `machine create`
     # authoring agent. machine_agent maps anything else to "run".
     mode: str = "agent"
@@ -175,9 +175,9 @@ class LiveWorld:
     agent_runner: Callable[[AgentRequest], AgentExecResult] | None = None
     poll_interval_s: float = 0.5
     profile: SandboxProfile = "strict"
-    # Paths made read-only in every tool jail — the running machine's own
+    # Paths made read-only in every tool jail, the running machine's own
     # `.asm.toml` + `scripts/` bundle, so a tool can't rewrite its own machine
-    # logic or audited scripts mid-run (set by the CLI).
+    # logic or bundled scripts mid-run (set by the CLI).
     protect_paths: tuple[Path, ...] = ()
     # The machine's persistent, writable scratch dir (the only writable spot a
     # `tool` script gets on the `hardened` profile, where new top-level files in
@@ -512,7 +512,7 @@ def drive(  # noqa: PLR0911, PLR0912
     With ``exit_on_wait=True`` (``machine run --exit-on-wait``) the engine makes
     all the progress it can, but the first time it reaches a ``wait`` that is
     not yet ready it persists the absolute wake instant and returns a
-    ``"waiting"`` result instead of blocking — for an external scheduler
+    ``"waiting"`` result instead of blocking, for an external scheduler
     (systemd timer / cron) to re-invoke and resume (§6).
     """
     events = journal.read()

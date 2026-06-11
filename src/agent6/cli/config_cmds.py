@@ -100,7 +100,7 @@ def _reject_machine_protected(key: str, machine: Path | None) -> str | None:
 
     Mirrors ``MachineSpec._forbid_protected_overlay_tables``: a machine
     ``[config]`` overlay must not carry ``providers.*`` (endpoints/secrets) or
-    ``sandbox.*`` (jail policy — network egress incl. allow_urls, run_commands,
+    ``sandbox.*`` (jail policy, network egress incl. allow_urls, run_commands,
     .git/.agent6 protection). Those are operator decisions, set in the
     global/repo config, never in a (possibly untrusted) machine file.
     """

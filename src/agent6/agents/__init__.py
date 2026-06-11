@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Sub-agents — each a typed function calling a Provider with a validated output.
+"""Sub-agents, each a typed function calling a Provider with a validated output.
 
 : only ``code_review`` remains (used by ``agent6 review``). The
 legacy sub-agent cascade (planner/critic/architect/editor/reviewer/triage/

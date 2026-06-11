@@ -1,94 +1,58 @@
 # agent6
 
-A sandboxed coding agent for Linux. The LLM is treated as adversarial:
-it runs inside a custom Rust launcher (`agent6-jail`) that combines
+A sandboxed coding agent for Linux. The LLM is treated as adversarial: every
+command it spawns runs inside a custom Rust launcher (`agent6-jail`) built on
 user namespaces, Landlock, seccomp, `pivot_root`, `capset(0)`, and
-`NO_NEW_PRIVS`, so a misbehaving or compromised model cannot escape
-the workspace, reach the network beyond the provider endpoint, or
-corrupt the project's git history.
+`NO_NEW_PRIVS`, so a misbehaving model cannot escape the workspace, reach the
+network beyond the provider endpoint, or corrupt git history.
 
-- **Sandbox-first.** Every child process the model can spawn (verify
-  commands, metric commands, optional shell) goes through the jail.
-- **Provider-agnostic.** Native HTTP clients for Anthropic and any
-  OpenAI-compatible endpoint (OpenAI, OpenRouter, Ollama, vLLM,
-  llama.cpp, LM Studio).
-- **Per-step git commits**, snapshot-resumable runs, USD/token
-  budgets with hard stops, read-only code-review subcommand.
-- **Small footprint.** Five runtime dependencies (`pydantic`, `httpx`,
-  `argcomplete`, and the `tree-sitter` pair that backs the `outline` /
-  `find_definition` / `find_references` tools). No telemetry, no
-  auto-update. The LLM tool surface is fixed and audited; the only
-  opt-in extension point is operator-configured MCP servers
-  (`[mcp]`, off by default) — there is no in-process plugin loading.
+Features:
 
-## Status
-
-Pre-1.0. Public shapes — config TOML, CLI flags,
-on-disk run state, IPC frames — may change without backward-compatible
-shims. See [AGENTS.md](AGENTS.md) for the stability policy.
-
-## Benchmarks
-
-Reproducible harnesses live under [bench/](bench/). All numbers below use
-`claude-sonnet-4-5` as the worker, scored by independent post-hoc
-verification (fresh verify + metric re-runs on the real-world side). A
-perf optimization harness also lives under [bench/perf/](bench/perf/) for
-local experimentation, but its single-run cycle counts are too noisy to
-quote meaningfully here.
-
-**Real-world suite** ([bench/realworld/](bench/realworld/)) — 11
-SWE-bench-Lite-style tasks across real libraries (click, csv/RFC 4180,
-werkzeug safe-join, URL RFC 3986, tinydb, …). Each task is scored by a
-fresh sandboxed verify on hidden tests, $1/task cap. Run head-to-head
-against `claude-code` on the same worker model (`claude-sonnet-4-5`):
-
-- **Both solve all 11 tasks** (11/11 verify pass).
-- Single end-to-end run of the suite: agent6 ≈ $2.60 total, claude-code
-  ≈ $3.96 total.
-
-These are **single runs (N = 1)** — not an average or median, and we have
-not measured variance. The worker is stochastic and per-task cost swings
-widely run-to-run, so treat the totals as rough directional guidance that
-agent6 is cost-competitive at equal task outcomes, not as a precise
-benchmark. Re-run both harnesses yourself under [bench/](bench/) before
-quoting numbers.
+- Sandboxed execution for every LLM-chosen child process (verify commands,
+  metric commands, optional shell)
+- Works with Anthropic and any OpenAI-compatible endpoint (OpenAI,
+  OpenRouter, Ollama, vLLM, llama.cpp, LM Studio), tuned to stay effective
+  on cheap open-weights models
+- Per-step git commits, snapshot-resumable runs, USD and token budgets with
+  hard stops
+- Plan, run, review, and ask modes; a live terminal dashboard; persistent
+  transcripts and a searchable run history
+- State machines (`agent6 machine`) for long-running automated tasks:
+  LLM-drafted, operator-reviewed, journaled, and replayable
+- Small, fixed LLM tool surface; the only extension point is
+  operator-configured MCP servers, off by default
+- Eight runtime dependencies, no telemetry, no auto-update
 
 ## Requirements
 
-- Linux. The sandbox relies on Linux-only kernel APIs (Landlock,
-  seccomp-bpf, user/mount namespaces, `pivot_root`). macOS and Windows
-  are not supported.
-- Linux kernel ≥ 6.7 for full Landlock TCP-connect rules. Older kernels
-  fall back to filesystem-only Landlock with a warning.
-- `kernel.unprivileged_userns_clone = 1` (default on Ubuntu, Debian,
-  and most cloud images). Required for the `strict` sandbox profile;
-  without it the agent falls back to `hardened`.
-- On Ubuntu 24.04+ (and any kernel with
-  `kernel.apparmor_restrict_unprivileged_userns = 1`), `strict` also needs
-  an AppArmor profile granting the launcher userns — install the bundled
-  one (`packaging/apparmor/agent6-jail`; `agent6 check sandbox` prints the
-  exact commands) or set that sysctl to 0. Without either, agent6 uses
-  `hardened`.
-- Python ≥ 3.12.
-- An Anthropic and/or OpenAI-compatible API key.
-
-If installing from source, a Rust toolchain (`cargo`, `rustc`) must be
-on `PATH`. The hatch build hook invokes `cargo build` to compile
-`agent6-jail`. PyPI wheels bundle a prebuilt `agent6-jail`.
+- Linux. The sandbox uses Linux-only kernel APIs; macOS and Windows are not
+  supported.
+- Kernel 6.7 or newer for Landlock TCP rules. Older kernels fall back to
+  filesystem-only Landlock with a warning.
+- `kernel.unprivileged_userns_clone = 1` for the `strict` profile (default
+  on Ubuntu, Debian, and most cloud images); without it agent6 falls back
+  to `hardened`. On Ubuntu 24.04+ with
+  `kernel.apparmor_restrict_unprivileged_userns = 1`, install the bundled
+  AppArmor profile (`packaging/apparmor/agent6-jail`; `agent6 check sandbox`
+  prints the commands) or set that sysctl to 0.
+- Python 3.12 or newer, plus an API key for at least one provider.
+- Building from source needs a Rust toolchain on `PATH`; PyPI wheels bundle
+  a prebuilt `agent6-jail`.
 
 ## Install
 
-Install from [PyPI](https://pypi.org/project/agent6/) with [uv](https://docs.astral.sh/uv/getting-started/installation/) or [pipx](https://pipx.pypa.io/stable/how-to/install-pipx/).
+From [PyPI](https://pypi.org/project/agent6/) with
+[uv](https://docs.astral.sh/uv/getting-started/installation/) or
+[pipx](https://pipx.pypa.io/stable/how-to/install-pipx/):
 
 ```bash
 uv tool install agent6
 pipx install agent6
 ```
 
-The live dashboard (`textual`) ships by default. Both tools drop the
-`agent6` entry point in a user bin directory (`~/.local/bin`); if it isn't
-on your `PATH` yet, run `uv tool update-shell` or `pipx ensurepath` (then
-restart your shell).
+Both drop the `agent6` entry point in `~/.local/bin`; if that is not on your
+`PATH`, run `uv tool update-shell` or `pipx ensurepath` and restart your
+shell.
 
 From source:
 
@@ -99,12 +63,11 @@ uv sync
 uv run agent6 --help
 ```
 
-To override the bundled jail binary, set
-`AGENT6_JAIL_BIN=/path/to/agent6-jail`.
+`AGENT6_JAIL_BIN=/path/to/agent6-jail` overrides the bundled jail binary.
 
-### Shell tab-completion
+## Shell tab-completion
 
-Tab-completion is provided via [argcomplete](https://kislyuk.github.io/argcomplete/):
+Via [argcomplete](https://kislyuk.github.io/argcomplete/):
 
 ```bash
 # Bash / Zsh
@@ -122,11 +85,10 @@ register-python-argcomplete --shell fish agent6 > ~/.config/fish/completions/age
 agent6 connect                # interactive: pick provider, paste API key
 agent6 model worker anthropic claude-sonnet-4-5
 
-# In a project: scaffold .agent6/config.toml + AGENTS.md and gitignore .agent6/.
+# In a project: scaffold .agent6/config.toml + AGENTS.md.
 agent6 init
 
-# Audit the effective config: every value + where it came from
-# (default / global / repo). `*` marks values that override the default.
+# Audit the effective config: every value and where it came from.
 agent6 config show
 
 # Pre-flight: sandbox + config + provider keys + verify_command.
@@ -142,107 +104,53 @@ agent6 resume <run-id>
 agent6 review --base origin/main --head HEAD
 ```
 
-Config is layered: built-in **secure defaults** < global
-`~/.config/agent6/config.toml` < per-repo `.agent6/config.toml` < an
-explicit `--config FILE`. A repo can be zero-config when the global
-config supplies a provider + model; the one thing a repo always needs is
+Config is layered: built-in secure defaults, then the global
+`~/.config/agent6/config.toml`, then the per-repo `.agent6/config.toml`,
+then an explicit `--config FILE`. A repo can be zero-config when the global
+config supplies a provider and model; the one thing a repo always needs is
 its `verify_command`.
 
 Other commands:
 
-- `agent6 watch [<run-id>]` — attach the live TUI to an existing run
-  (defaults to the most recent).
-- `agent6 plan "<task>"` — read-only planning pass (uses the `planner`
-  model, falls back to `worker`); execute with `agent6 run --from-plan`.
-- `agent6 ask "<question>"` — read-only Q&A over the repo. Investigates
-  (read tools + jailed `run_command`, never edits/commits) and prints a
-  markdown answer to stdout; the transcript is saved under
-  `.agent6/asks/<id>/`. Seed context with `@path`/`--file`, ask about a
-  prior run with `--run <id>`/`--continue`, or ask how to use agent6 itself
-  (it consults its own bundled docs). `--list` shows past asks. Read-only,
-  so it works even outside a git repo. Defaults to a $0.50 budget cap
-  (override with `--max-usd`).
-- `agent6 memory` — manage persistent agent memory under
-  `.agent6/memories/`.
-- `agent6 history search <query>` — ripgrep-backed search over
-  persisted transcripts.
-- `agent6 history graph [<run-id>]` — render the persisted task graph.
-- `agent6 diff [<run-id>]` — print the git diff a run produced
-  (`manifest.base_sha` → HEAD of the run branch).
-- `agent6 machine ...` — author and run agent6 state machines
-  (`.asm.toml`); see [STATE_MACHINES.md](STATE_MACHINES.md).
-- `agent6 mcp serve` — expose agent6's own tools over MCP (stdio).
-- `agent6 config fill` — materialize every effective value into one
-  explicit config file (global by default, `--repo` for the repo).
-- `agent6 config get/set/unset/add/remove <key> [value]` — read or edit a
-  single dotted leaf (e.g. `sandbox.agent_network`). Writes go to the global
-  config by default, `--repo` for the repo, or `--machine FILE` for a
-  machine's `[config]` overlay (`providers.*` is forbidden there). `add`/
-  `remove` edit list fields such as `sandbox.allow_urls`. Every edit is
-  re-validated and rolled back if it would produce an invalid config.
-
-## How it works
-
-agent6 is a single-loop agent: one provider, one model, one message
-history. The model drives the run by calling tools; the workflow
-dispatches them, snapshots state before every LLM call (so any run is
-resumable), commits when `verify_command` passes, and tracks budget with
-hard stops. Module boundaries (`cli → workflows → agents → tools →
-sandbox`) are enforced by [tach](https://docs.gauge.sh/).
-
-See **[ARCHITECTURE.md](ARCHITECTURE.md)** for the run/review loops, the
-curator subprocess, on-disk run state, and where each concern lives.
-
-## Security
-
-The worker LLM is treated as adversarial — it cannot write or read
-outside the workspace, reach the network beyond the configured provider
-endpoints, corrupt git history or its own run state, or leave processes
-running after the run. This is enforced *structurally*: every LLM-chosen
-child command runs in the `agent6-jail` sandbox (namespaces + `pivot_root`
-+ Landlock + seccomp), the agent's own egress is broker-confined to the
-provider endpoints, and `git_ops.py` refuses `push` / `--force` /
-history-rewrite unconditionally. Defaults are safe
-(`sandbox.agent_network = "providers"`, `sandbox.tool_network = "block"`,
-`sandbox.run_commands = "ask"`, `sandbox.protect_* = true`,
-`git.allow_* = false`).
-
-See **[SECURITY.md](SECURITY.md)** for the threat model, the per-layer
-breakdown, and the sandbox profiles.
+- `agent6 watch [<run-id>]`: attach the live TUI to an existing run.
+- `agent6 plan "<task>"`: read-only planning pass; execute with
+  `agent6 run --from-plan`.
+- `agent6 ask "<question>"`: read-only Q&A over the repo, including
+  questions about agent6 itself (it consults its bundled docs). Seed
+  context with `@path` or `--file`; `--run <id>` asks about a prior run.
+- `agent6 memory`: persistent agent memory under `.agent6/memories/`.
+- `agent6 history search <query>`: search persisted transcripts.
+- `agent6 history graph [<run-id>]`: render the persisted task graph.
+- `agent6 diff [<run-id>]`: print the git diff a run produced.
+- `agent6 machine ...`: author and run state machines (`.asm.toml`); see
+  [STATE_MACHINES.md](STATE_MACHINES.md).
+- `agent6 mcp serve`: expose agent6's tools over MCP (stdio).
+- `agent6 config fill`: materialize every effective value into one file.
+- `agent6 config get/set/unset/add/remove <key> [value]`: edit a single
+  dotted leaf. Writes go to the global config by default, `--repo` for the
+  repo, `--machine FILE` for a machine overlay. Every edit is re-validated
+  and rolled back if invalid.
 
 ## Configuration
 
-agent6 is **secure by default**: every field has a default, and
-security-sensitive ones default to the safe value. The full field
-reference is [CONFIG.md](CONFIG.md); the sandbox profiles and security
-model are explained in [SECURITY.md](SECURITY.md).
-Get started with `agent6 connect` + `agent6 model` (global) and
-`agent6 init` (per-repo). `agent6 config show` audits every effective
-value and where it came from; `agent6 check` validates without running.
+Every field has a default, and security-sensitive fields default to the
+safe value. The full reference is [CONFIG.md](CONFIG.md); sandbox profiles
+are explained in [SECURITY.md](SECURITY.md).
 
 ```toml
-[agent6]
-# Optional, GLOBAL config only: rename the in-repo agent6 directory
-# (config + run state) from ".agent6" to a name of your choosing.
-# workspace_subdir = ".agent6"
-
 [sandbox]
 profile = "auto"              # auto | strict | hardened
 agent_network = "providers"   # providers | local | open  (agent's LLM egress)
 tool_network = "block"        # block | only_explicit_states | allow  (jailed commands)
-allow_urls = []               # extra agent egress hosts under "providers"
 run_commands = "ask"          # yes | no | ask
 protect_git = true
 protect_agent6 = true
 
 [git]
 require_clean_worktree = true
-auto_stash = false
 branch_per_run = true
 commit_strategy = "per_step"  # per_step | squash | stage | none
 allow_push = false
-allow_force = false
-allow_history_rewrite = false
 
 [workflow]
 verify_command = ["uv", "run", "pytest", "-x"]
@@ -250,161 +158,140 @@ verify_command = ["uv", "run", "pytest", "-x"]
 [budget]
 max_input_tokens  = 2000000
 max_output_tokens = 200000
-# max_usd = 10.0               # optional; converted to token caps at load
+# best_effort_usd_limit = 10.0  # optional; see CONFIG.md
 
 [providers.anthropic]
 kind = "anthropic"
-base_url = "https://api.anthropic.com"
 api_key_env = "ANTHROPIC_API_KEY"
 
 [models.worker]
 provider = "anthropic"
 model = "claude-sonnet-4-5"
-
-[models.reviewer]
-provider = "anthropic"
-model = "claude-opus-4-5"
 ```
 
-Budget ceilings can be overridden per-run from the CLI without touching
-config: `agent6 run --max-usd 5 "..."`, or
-`--max-input-tokens` / `--max-output-tokens` on `run`, `plan`, and
+Budget ceilings can be overridden per run: `agent6 run --max-usd 5 "..."`,
+or `--max-input-tokens` / `--max-output-tokens` on `run`, `plan`, and
 `resume`.
 
 ### Providers and models
 
-Declare any number of providers as `[providers.<name>]` blocks. Each
-sets `kind = "anthropic"` or `kind = "openai"` and has its own
-`base_url` and `api_key_env`. Multiple providers (e.g. OpenAI plus
-OpenRouter plus a local Ollama) coexist under whatever names you pick.
-Per-provider `http_timeout_s` (default `600.0`) caps each HTTP call —
-raise it for slow reasoning models, lower it to fail fast on a stuck
-endpoint.
+Declare any number of `[providers.<name>]` blocks, each with
+`kind = "anthropic"` or `kind = "openai"`, its own `base_url`, and
+`api_key_env`. Per-provider `http_timeout_s` (default 600) caps each HTTP
+call.
 
 agent6 uses three model roles:
 
-| Role       | Routed by             | Used by                                                                          |
-| ---------- | --------------------- | -------------------------------------------------------------------------------- |
-| `worker`   | `[models.worker]`     | `agent6 run` and `agent6 resume`. Also drives the USD↔token budget conversion.   |
-| `reviewer` | `[models.reviewer]`   | `agent6 review` (read-only diff review) and the optional in-loop critic.         |
-| `planner`  | `[models.planner]`    | `agent6 plan` (read-only planning pass). Falls back to `worker` when unset.      |
+| Role       | Routed by           | Used by                                                  |
+| ---------- | ------------------- | -------------------------------------------------------- |
+| `worker`   | `[models.worker]`   | `agent6 run` / `resume`; drives USD-to-token conversion. |
+| `reviewer` | `[models.reviewer]` | `agent6 review` and the optional in-loop critic.         |
+| `planner`  | `[models.planner]`  | `agent6 plan`. Falls back to `worker` when unset.        |
 
-Each role takes an optional `thinking` level (`off`/`low`/`medium`/`high`).
-OpenAI-compatible reasoning models receive a reasoning-effort knob; Anthropic
-models map it onto an extended-thinking token budget (low/medium/high ≈
-4k/8k/16k thinking tokens, with `max_tokens` lifted above the budget
-automatically).
-
+`agent6 model all <provider> <model>` sets every role at once. Each role
+takes an optional `thinking` level (`off`/`low`/`medium`/`high`).
 
 ## Tool surface
 
-The set of tools given to the LLM is fixed and audited in
-[src/agent6/tools/schema.py](src/agent6/tools/schema.py) (see
-[SECURITY.md](SECURITY.md) §4 for why this surface is the security
-boundary). Adding a tool requires a security review note in the commit
-message.
+The tools given to the LLM are fixed and declared in one place,
+[src/agent6/tools/schema.py](src/agent6/tools/schema.py); adding one
+requires a security review note in the commit message.
 
-Read-only navigation:
+- Read-only: `read_file`, `list_dir`, `grep`, `outline`,
+  `find_definition`, `find_references`
+- Edits: `apply_edit` (structured blocks), `apply_patch` (unified diff)
+- Execution with operator-fixed argv: `run_verify_command`,
+  `run_metric_command`
+- Control: `finish_run`, plus `dag_*` task-notepad tools backed by the
+  curator subprocess
+- Conditional: `run_command(argv)`, only exposed when
+  `sandbox.run_commands` allows it, and always jailed
 
-- `read_file(path, start_line?, end_line?)`
-- `list_dir(path)`
-- `grep(pattern, path?, glob?)`
-- `outline(path)` — top-level symbol outline via tree-sitter.
-- `find_definition(symbol)` / `find_references(symbol)` — symbol index.
+There is no `write_file`, `shell`, or `web_fetch`.
 
-Edits:
+## How it works
 
-- `apply_edit(path, edits)` — structured replace/create blocks.
-- `apply_patch(diff)` — unified-diff application for multi-file changes.
+agent6 is a single-loop agent: one provider, one model, one message
+history. The model drives the run by calling tools; the workflow dispatches
+them, snapshots state before every LLM call (so any run is resumable),
+commits when `verify_command` passes, and hard-stops on budget. Module
+boundaries (`cli -> workflows -> agents -> tools -> sandbox`) are enforced
+by [tach](https://docs.gauge.sh/). See
+[ARCHITECTURE.md](ARCHITECTURE.md) for the run/review loops, the curator
+subprocess, and the on-disk layout.
 
-Execution (operator-fixed argv only):
+For security details (threat model, per-layer breakdown, sandbox
+profiles), see [SECURITY.md](SECURITY.md). Defaults are safe:
+`agent_network = "providers"`, `tool_network = "block"`,
+`run_commands = "ask"`, `protect_* = true`, `git.allow_* = false`, and
+`git_ops.py` refuses `push`, `--force`, and history rewrites
+unconditionally.
 
-- `run_verify_command()` — runs `workflow.verify_command`.
-- `run_metric_command()` — runs `workflow.metric.command` if configured
-  and parses its metric value out of stdout.
+## Benchmarks
 
-Control:
+Reproducible harnesses live under [bench/](bench/):
 
-- `finish_run(summary)` — terminal tool that ends the run.
-- `dag_add_task` / `dag_update_task` / `dag_set_cursor` /
-  `dag_list_tasks` — side-store notepad backed by the curator
-  subprocess; the worker can plan and replan mid-flight.
-
-Conditional:
-
-- `run_command(argv)` — only exposed when `sandbox.run_commands ∈
-  {"yes", "ask"}`. The only tool that can spawn an LLM-chosen
-  subprocess. Runs inside the jail.
-
-There is no `write_file`, no `shell`, no `web_fetch`.
+- [bench/realworld/](bench/realworld/): 11 SWE-bench-Lite-style tasks
+  scored by fresh sandboxed verifies on hidden tests. Latest recorded run:
+  agent6 and claude-code both solve 11/11 on the same worker model
+  (`claude-sonnet-4-5`); agent6 at about $2.60 total, claude-code at about
+  $3.96. Single runs, no variance measured; re-run before quoting.
+- [bench/agents/](bench/agents/): head-to-head against Claude Code,
+  opencode, and aider on Go and Rust tasks with cheap models.
+- [bench/machine/](bench/machine/): `machine create` attempts, cost, and
+  validation results.
+- [bench/perf/](bench/perf/): a perf-optimization harness for local
+  experimentation; single-run numbers are too noisy to quote.
 
 ## Cost accounting
 
-Every run prints a per-model token and cost summary at the end:
-
-```
-Token + cost summary:
-  claude-sonnet-4-5:  in=8884  out=1171 cache_r=0 cache_c=0 calls=4 $0.0442
-  TOTAL: in=8884/2000000 out=1171/200000 cost~$0.0442
-```
-
-Pricing lives in [src/agent6/budget.py](src/agent6/budget.py) and is
-updated by hand from the providers' public pricing pages. The `[budget]`
-ceilings in your config hard-stop the run; a stopped run is resumable.
+Every run ends with a per-model token and cost summary. Model prices are
+fetched from the provider's models endpoint and cached (OpenRouter
+publishes them; Anthropic does not, so its models report an unknown
+price). Where the provider reports per-call cost, that figure is used
+directly. The `[budget]` ceilings hard-stop the run; a stopped run is
+resumable.
 
 ## Live view
 
-With stdout a TTY, `agent6 run` auto-spawns a textual dashboard (task DAG,
-budget bar, tool table, **live reasoning/response pane**, log tail, latest
-diff) that owns the terminal for the run and closes when the run ends;
-`--no-tui` (and `-i`, the stdin REPL) opt out. The approval and Ctrl-C
-"steer" prompts appear as keyboard-navigable modals (arrow keys + Enter,
-`y`/`n` shortcuts); both fall back to a `/dev/tty` prompt when no TUI is
-present. The slower, non-dashboard commands — `agent6 plan`, `agent6 ask`,
-and `agent6 machine create` — stream the model's reasoning and answer to
-the terminal live (dimmed reasoning, then the response) so you can watch
-progress and Ctrl-C to steer or abort. Attach to a running or finished run
-from another shell with `agent6 watch [<run-id>]`; `agent6 watch --plain`
-is a no-deps text tail for headless terminals. The
-dashboard folds a structured JSONL event stream
-(`.agent6/runs/<run-id>/logs.jsonl`) that is also the contract for any
-external viewer — the event vocabulary is in
-[ARCHITECTURE.md](ARCHITECTURE.md).
+With stdout a TTY, `agent6 run` opens a terminal dashboard (task DAG,
+budget bar, tool table, live reasoning pane, log tail, latest diff);
+`--no-tui` and `-i` (stdin REPL) opt out. Approval and Ctrl-C steer
+prompts appear as modals, with a `/dev/tty` fallback when no TUI is
+present. `agent6 plan`, `agent6 ask`, and `agent6 machine create` stream
+reasoning and answers to the terminal. Attach from another shell with
+`agent6 watch [<run-id>]`; `agent6 watch --plain` is a plain-text tail.
+The dashboard renders the JSONL event stream at
+`.agent6/runs/<run-id>/logs.jsonl`, which is also the contract for
+external viewers (vocabulary in [ARCHITECTURE.md](ARCHITECTURE.md)).
 
 ## Persistence
 
-Each run's state lives under `.agent6/runs/<run-id>/` (append-only task
+Each run's state lives under `.agent6/runs/<run-id>/`: append-only task
 graph, per-call snapshots that drive `agent6 resume`, full transcripts,
-and the event log). It is written *exclusively* by a sandboxed
-`agent6-curator` subprocess over a pydantic-validated IPC channel, so a
-bug in the agent can't scribble the run directory. See
-[ARCHITECTURE.md](ARCHITECTURE.md) for the on-disk layout and the curator.
+and the event log. It is written exclusively by a sandboxed
+`agent6-curator` subprocess over a validated IPC channel, so a bug in the
+agent cannot scribble the run directory.
 
 ## End-of-run notify hook
 
-Optional. If `[notify]` declares `on_complete = [...]`, agent6 runs
-that argv after every `agent6 run` / `agent6 resume`, with these env
-vars set: `AGENT6_RUN_ID`, `AGENT6_RUN_DIR`, `AGENT6_RUN_OK`
-(`"1"`/`"0"`), `AGENT6_RUN_REASON`. The hook runs OUTSIDE the jail as
-your user; the argv is operator-controlled (never derived from LLM
-output). Typical use: a `notify-send` desktop popup, a Slack curl, or
-piping the run-dir into `agent6 review`.
+If `[notify]` declares `on_complete = [...]`, agent6 runs that argv after
+every `agent6 run` / `resume` with `AGENT6_RUN_ID`, `AGENT6_RUN_DIR`,
+`AGENT6_RUN_OK`, and `AGENT6_RUN_REASON` set. The hook runs outside the
+jail as your user; the argv is operator-controlled.
 
 ## Contributing
 
-Read [AGENTS.md](AGENTS.md) before sending a PR. The repo's
-`verify_command` is the single source of truth for "is this PR
-landable":
+Read [AGENTS.md](AGENTS.md) first. The repo's verify command decides
+whether a PR is landable:
 
 ```bash
 uv run ruff check && uv run ruff format --check && \
   uv run pyright && uv run tach check && uv run pytest
 ```
 
-Security-sensitive changes — anything under `sandbox/`, `tools/`,
-`git_ops.py`, `providers/`, or `graph/curator` — must include a
-security review note in the commit message describing what surface
-changed.
+Changes under `sandbox/`, `tools/`, `git_ops.py`, `providers/`, or
+`graph/curator` must include a security review note in the commit message.
 
 ## License
 

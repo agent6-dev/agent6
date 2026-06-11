@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""agent6 state machines — declarative, replayable mini-agents.
+"""agent6 state machines, declarative, replayable mini-agents.
 
 Phase 1: load + validate a `.asm.toml` file (`model`) and render it as a
 diagram (`graph`). Phase 2: execute it deterministically (`engine`) over an

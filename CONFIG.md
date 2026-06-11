@@ -3,7 +3,7 @@
 agent6 is **secure by default**: every field has a default (security-sensitive
 ones default to the safe value), so you only set what you want to change. This
 is the field reference; for the security model behind the `[sandbox]` and `[git]`
-fields see **[SECURITY.md](SECURITY.md)**.
+fields see [SECURITY.md](SECURITY.md).
 
 ## Where config lives (layered, lowest precedence first)
 
@@ -19,15 +19,15 @@ model; the one thing a repo always needs is its `workflow.verify_command`.
 
 ## Creating & inspecting
 
-- `agent6 connect` — add a provider + API key (stored `0600`), global.
+- `agent6 connect`: add a provider + API key (stored `0600`), global.
 - `agent6 model <role> <provider> <model> [--thinking off|low|medium|high]`.
-- `agent6 init` — scaffold `.agent6/config.toml` + `AGENTS.md` in a repo.
-- `agent6 config show` — every effective value and which layer set it.
-- `agent6 config get|set|unset|add|remove <dotted.key> [value]` — edit one leaf
+- `agent6 init`: scaffold `.agent6/config.toml` + `AGENTS.md` in a repo.
+- `agent6 config show`: every effective value and which layer set it.
+- `agent6 config get|set|unset|add|remove <dotted.key> [value]`: edit one leaf
   (`--repo`, or `--machine FILE` for a machine `[config]` overlay). Every edit is
   re-validated and rolled back if it would produce an invalid config.
-- `agent6 config fill [--repo]` — materialize every resolved value into one file.
-- `agent6 check` — validate config + sandbox + provider keys without running.
+- `agent6 config fill [--repo]`: materialize every resolved value into one file.
+- `agent6 check`: validate config + sandbox + provider keys without running.
 
 ---
 
@@ -36,7 +36,7 @@ model; the one thing a repo always needs is its `workflow.verify_command`.
 | Field | Default | Meaning |
 |---|---|---|
 | `config_version` | `1` | Config schema version (must be `1`). |
-| `workspace_subdir` | `".agent6"` | In-repo directory for config + run state (`config.toml`, `runs/`, `machines/`, `memories/`). **Global-config only** (a repo can't rename the directory it lives in); a bare name — no slashes, `..`, or absolute paths. |
+| `workspace_subdir` | `".agent6"` | In-repo directory for config + run state (`config.toml`, `runs/`, `machines/`, `memories/`). **Global-config only** (a repo can't rename the directory it lives in); a bare name (no slashes, `..`, or absolute paths). |
 
 ## `[providers.<name>]`
 
@@ -58,8 +58,8 @@ under different `<name>`s.
 
 ### OpenRouter routing & caching (`extra_body`)
 
-OpenRouter fans a model across multiple backends whose **speed and prompt
-caching differ a lot** — and its default routing is not deterministic, so the
+OpenRouter fans a model across multiple backends whose speed and prompt
+caching differ a lot. Its default routing is not deterministic, so the
 re-sent system prompt may or may not be cached call-to-call. Pin the behaviour
 with `extra_body.provider` ([OpenRouter routing docs](https://openrouter.ai/docs/features/provider-routing)):
 
@@ -75,14 +75,14 @@ extra_body = { provider = { sort = "throughput" } }
 #               cap price               { max_price = { prompt = 1, completion = 2 } }
 ```
 
-Set it without hand-editing — it's a table value, so pass the whole thing (the
+Set it without hand-editing: it's a table value, so pass the whole thing (the
 CLI completes common presets after `extra_body`):
 
 ```bash
 agent6 config set providers.openrouter.extra_body '{ provider = { sort = "throughput" } }'
 ```
 
-This is the lever to **pay for a faster/caching backend**. Caching matters more
+This is the lever to pay for a faster/caching backend. Caching matters more
 than payload size: the large per-call input is the same prefix every turn, so a
 caching backend makes it cheap without trimming anything. Watch `cache_r` in the
 run's cost summary to confirm it's engaging.
@@ -105,7 +105,7 @@ provider may serve any role (cross-vendor mixes are fine).
 ## `[sandbox]`
 
 The security boundary. Profiles and the network model are specified in
-**[SECURITY.md](SECURITY.md)** (§3 profiles, §1b/§8 network); this is a summary.
+[SECURITY.md](SECURITY.md) (§3 profiles, §1b/§8 network); this is a summary.
 
 | Field | Default | Meaning |
 |---|---|---|
@@ -125,8 +125,8 @@ The security boundary. Profiles and the network model are specified in
 | `auto_stash` | `false` | Stash before, restore after the run. |
 | `branch_per_run` | `true` | Cut a fresh `agent6/<slug>` branch off HEAD (else stay on the current branch and remember the starting sha). |
 | `commit_strategy` | `"per_step"` | End-of-run finalization: `per_step` (keep N commits) / `squash` (one combined commit) / `stage` (leave staged) / `none` (leave unstaged). All strategies commit per-step *during* the run. |
-| `run_repo_hooks` | `false` | Whether the repo's own `.git/hooks/*` run during agent6's git ops (notably the per-step auto-commit). Default off: a repo hook is repo-controlled code that runs on the **host** (outside the jail), so honoring it on agent6's commit is a host-RCE vector for an untrusted repo — and the `verify_command` is agent6's real success gate. Set true to honor the repo's hooks (you trust the repo). `core.fsmonitor`/`diff.external` are always neutralized regardless. |
-| `allow_push` / `allow_force` / `allow_history_rewrite` | `false` | Reserved. `git_ops.py` refuses push / `--force` / history rewrite / `reset --hard` **unconditionally** regardless of these (SECURITY §5). |
+| `run_repo_hooks` | `false` | Whether the repo's own `.git/hooks/*` run during agent6's git ops (notably the per-step auto-commit). Default off: a repo hook is repo-controlled code that runs on the host (outside the jail), so honoring it on agent6's commit is a host-RCE vector for an untrusted repo, and the `verify_command` is agent6's real success gate. Set true to honor the repo's hooks (you trust the repo). `core.fsmonitor`/`diff.external` are always neutralized regardless. |
+| `allow_push` / `allow_force` / `allow_history_rewrite` | `false` | Reserved. `git_ops.py` refuses push / `--force` / history rewrite / `reset --hard` unconditionally regardless of these (SECURITY §5). |
 
 ### `[git.commit]`
 
@@ -166,12 +166,20 @@ Hard stops; on hit the run aborts (exit 3) and is resumable (raise the limit and
 
 | Field | Default | Meaning |
 |---|---|---|
-| `max_input_tokens` | `2000000` | Input-token ceiling. |
-| `max_output_tokens` | `200000` | Output-token ceiling. |
-| `max_usd` | `0.0` (off) | Optional USD ceiling; converted to token caps at load (worker-model pricing) **and** enforced at runtime as an exact dollar ceiling that includes cache_read/cache_creation cost (which the token caps omit). |
+| `max_input_tokens` | `2000000` | Input-token ceiling. Exact and always enforced. |
+| `max_output_tokens` | `200000` | Output-token ceiling. Exact and always enforced. |
+| `best_effort_usd_limit` | `0.0` (off) | Dollar-denominated bound, enforced where price data exists. |
+
+Token ceilings are the authoritative constraint. When the worker model's
+price is cached, `best_effort_usd_limit` converts to token ceilings at load
+(the lower wins per axis); at runtime the run also stops when estimated
+spend (reported cost, else price times tokens, cache included) crosses it.
+With no price and no reported cost it does nothing, hence best effort.
 
 Override per-run from the CLI without editing config: `agent6 run --max-usd 5`,
 `--max-input-tokens`, `--max-output-tokens` (on `run`, `plan`, `resume`).
+Passing `--max-usd` explicitly refuses to start when the worker model has no
+price data, since the flag could not be honored.
 
 ## `[machine]`
 
@@ -184,7 +192,7 @@ State-machine runtime knobs (`agent6 machine run`).
 ## `[notify]` (optional)
 
 Runs an operator-controlled argv after `agent6 run` / `resume` (success or
-failure), **outside the jail** as your user, with `AGENT6_RUN_ID`,
+failure), outside the jail as your user, with `AGENT6_RUN_ID`,
 `AGENT6_RUN_DIR`, `AGENT6_RUN_OK` (`1`/`0`), `AGENT6_RUN_REASON` set.
 
 | Field | Default | Meaning |
@@ -195,7 +203,7 @@ failure), **outside the jail** as your user, with `AGENT6_RUN_ID`,
 ## `[mcp]` + `[[mcp.servers]]` (optional)
 
 Spawn Model Context Protocol servers at run start; their tools appear to the LLM
-as `mcp__<name>__<tool>`. Each server runs **as your user, outside the jail**
+as `mcp__<name>__<tool>`. Each server runs as your user, outside the jail
 (the `command` is operator-controlled, never LLM-influenced); the LLM *can*
 influence the arguments it passes, so audit each server like a `run_command`
 allow-list.

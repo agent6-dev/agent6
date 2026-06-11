@@ -22,7 +22,7 @@ The curator additionally holds an fcntl flock on `.lock` for the full duration
 of a mutation, so concurrent intents serialize cleanly even though we never
 expect more than one curator process per run.
 
-YAML is parsed by hand (no PyYAML dep) — the frontmatter we emit is restricted
+YAML is parsed by hand (no PyYAML dep), the frontmatter we emit is restricted
 to a single-level mapping of scalars and lists-of-strings, which is trivial to
 serialize and parse deterministically.
 """
@@ -240,7 +240,7 @@ def _parse_frontmatter(text: str) -> TaskNode:
     """Parse the YAML frontmatter back into a TaskNode. Strict."""
     # Split on "\n" only (the exact inverse of `_dump_frontmatter`'s
     # "\n".join). str.splitlines() additionally breaks on \r, \v, \f, NEL,
-    # U+2028/2029, \x1c-\x1e — so a scalar containing any of those (which an
+    # U+2028/2029, \x1c-\x1e, so a scalar containing any of those (which an
     # adversarial LLM can put in a task title via add_task) would be read back
     # as two physical lines and crash the parser, permanently bricking resume.
     lines = text.split("\n")

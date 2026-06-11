@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""UI subtree for agent6 — read-only viewers over the JSONL event stream.
+"""UI subtree for agent6, read-only viewers over the JSONL event stream.
 
 Everything in this package is **optional, side-effect-free, and consumes
 `.agent6/runs/<id>/logs.jsonl` from disk**. Nothing in here is part of the

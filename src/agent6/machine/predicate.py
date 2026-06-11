@@ -4,8 +4,8 @@
 
 A predicate is parsed with :func:`ast.parse` in ``mode="eval"`` and then
 walked against a strict allow-list of node types. Anything outside the
-allow-list — function calls beyond a tiny fixed set, Python attribute
-access, comprehensions, lambdas, arithmetic — is rejected at
+allow-list, function calls beyond a tiny fixed set, Python attribute
+access, comprehensions, lambdas, arithmetic, is rejected at
 ``machine check`` time. The evaluator never ``eval``/``exec``s, never
 calls ``getattr``, and never resolves arbitrary Python names: an
 ``Attribute`` chain is reinterpreted as *data* navigation into a record
@@ -84,7 +84,7 @@ def parse_predicate(source: str) -> Predicate:
     """Parse and allow-list-validate *source*.
 
     Raises :class:`PredicateError` on a syntax error or any node outside
-    the allow-list. Does not type-check references — that is the caller's
+    the allow-list. Does not type-check references, that is the caller's
     job, since types live in the machine model.
     """
     try:

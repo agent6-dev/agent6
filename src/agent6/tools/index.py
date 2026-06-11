@@ -13,7 +13,7 @@ the caller marks files changed via `mark_changed(path)` / `mark_deleted(path)`.
 Re-parses happen in batch on the next query, so a worker can call `apply_edit`
 many times and pay the parse cost only when it next asks for symbol info.
 
-Language support is intentionally limited to a small audited set:
+Language support is intentionally limited to a small set:
 
     .py            -> python
     .rs            -> rust
@@ -23,7 +23,7 @@ Other extensions are silently ignored. Adding a language is mechanical:
 extend `_LANG_TABLE` with the tree-sitter language name and a definitions
 query in the grammar's syntax. References use a generic identifier query
 per language; cross-file reference *resolution* (which `foo` is the same
-symbol?) is out of scope and requires a real LSP — for our purposes,
+symbol?) is out of scope and requires a real LSP, for our purposes,
 identifier-level grep filtered through tree-sitter is vastly better than
 plain text grep because it never matches inside strings or comments.
 
@@ -44,7 +44,7 @@ from tree_sitter_language_pack import get_language
 
 
 class IndexError(RuntimeError):
-    """Raised on unrecoverable index errors. Currently unused — individual
+    """Raised on unrecoverable index errors. Currently unused, individual
     file failures are absorbed silently so one bad file does not poison
     the whole index."""
 

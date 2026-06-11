@@ -3,8 +3,8 @@
 """Append-only journal, blackboard snapshots, and the single-writer lock.
 
 The journal is the source of truth (§5.1): every impure observation a state
-makes — a tool's exit code and stdout, a wait's resolved wake instant, a
-branch's chosen clause — is appended as a fact *before* the blackboard is
+makes, a tool's exit code and stdout, a wait's resolved wake instant, a
+branch's chosen clause, is appended as a fact *before* the blackboard is
 reduced. Replaying the journal therefore reproduces the exact path, because
 the pure reducer reads recorded facts instead of re-touching the world.
 
@@ -67,7 +67,7 @@ def _now_iso() -> str:
 
 
 # --------------------------------------------------------------------------
-# Facts — the impure observation a single state execution produced.
+# Facts, the impure observation a single state execution produced.
 # --------------------------------------------------------------------------
 
 
@@ -111,7 +111,7 @@ Fact = Annotated[ToolFact | WaitFact | BranchFact | AgentFact, Field(discriminat
 
 
 # --------------------------------------------------------------------------
-# Events — one journal line each.
+# Events, one journal line each.
 # --------------------------------------------------------------------------
 
 
@@ -153,7 +153,7 @@ _EVENT_ADAPTER: TypeAdapter[Any] = TypeAdapter(JournalEvent)
 
 
 # --------------------------------------------------------------------------
-# Snapshot — blackboard + position, written after every transition.
+# Snapshot, blackboard + position, written after every transition.
 # --------------------------------------------------------------------------
 
 

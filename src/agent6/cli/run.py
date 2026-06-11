@@ -798,12 +798,12 @@ def _tty_prompt(text: str) -> str | None:
 def _install_steer_sigint(events: EventSink, run_dir: Path) -> _SteerState:
     """Install a SIGINT handler that asks the workflow to steer.
 
-    * 1st SIGINT — set the "steer requested" flag and emit
+    * 1st SIGINT, set the "steer requested" flag and emit
       ``run.steer_requested``. The workflow notices at its next safe boundary
       (between steps) and prompts: through a TUI modal when the TUI is live,
       otherwise on the controlling terminal (``/dev/tty``, so the prompt is
       visible even when the TUI has redirected the run's std streams to a log).
-    * 2nd SIGINT within 2 s — raise KeyboardInterrupt to abort the run.
+    * 2nd SIGINT within 2 s, raise KeyboardInterrupt to abort the run.
 
     Returns callables for the workflow plus a ``restore`` hook to put the
     previous handler back when the run is done.
@@ -816,7 +816,7 @@ def _install_steer_sigint(events: EventSink, run_dir: Path) -> _SteerState:
         if state["requested"]:
             # Second Ctrl-C aborts: within the 2s window always, or any time a
             # steer is still pending in TUI mode (no terminal feedback there to
-            # re-arm against). Otherwise just refresh the timestamp — crucially
+            # re-arm against). Otherwise just refresh the timestamp, crucially
             # WITHOUT re-clearing the answer file, which the TUI may have just
             # written (re-clearing it would strand read_steer_answer for 600s).
             if (now - state["last_ts"]) < window_s or tui_is_live(run_dir):
@@ -827,7 +827,7 @@ def _install_steer_sigint(events: EventSink, run_dir: Path) -> _SteerState:
         state["last_ts"] = now
         clear_steer_answer(run_dir)
         events.emit("run.steer_requested", source="sigint")
-        # With the TUI up, the steer prompt is a modal — don't scribble on the
+        # With the TUI up, the steer prompt is a modal, don't scribble on the
         # terminal it owns. Otherwise tell the user a prompt is coming.
         if not tui_is_live(run_dir):
             _tty_message(
@@ -998,7 +998,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     budget_overrides: _BudgetOverrides | None = None,
 ) -> int:
     """Single-loop agent: one provider, one LLM driving via tool
-    calls over the audited tool surface, deterministic harness (jail +
+    calls over the fixed tool surface, deterministic harness (jail +
     budget + verify timeout + DAG curator for persistence/resume).
     Sole ``agent6 run`` path.
 
@@ -1104,7 +1104,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     # Cut a fresh branch named after the run id so it is 1:1 with the run
     # (find it from any run id, `agent6 diff <id>`, or just delete the
     # branch to discard everything the agent did). The name is the unique
-    # run id — never a timestamp+task-slug that collides into a pile of
+    # run id, never a timestamp+task-slug that collides into a pile of
     # near-duplicate `agent6/<ts>-<same-task>` branches on re-runs. Only real
     # `run` mode branches: `plan`/`ask` make no commits, so a branch for them
     # is pure litter. create_branch is idempotent (reuses an existing branch).
@@ -1170,7 +1170,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     # Enable SSE streaming when stderr is a TTY (covers TUI
     # and interactive shell use). Bench/CI runs pipe stderr, so they
     # stay on the audited non-streaming code path UNLESS the operator
-    # sets AGENT6_FORCE_STREAM=1 — the Kimi/OpenRouter bench needs
+    # sets AGENT6_FORCE_STREAM=1, the Kimi/OpenRouter bench needs
     # streaming on because the gateway emits SSE keep-alive comment
     # heartbeats during long requests, which corrupt the non-streaming
     # response body (resp.json() blows up with JSONDecodeError).
@@ -1360,8 +1360,8 @@ def _fire_notify_hook(
 ) -> None:
     """Run the operator-configured post-completion hook.
 
-    The argv comes from `[notify].on_complete` in your config — operator-
-    controlled, not LLM-controlled — so it does not go through the jail.
+    The argv comes from `[notify].on_complete` in your config, operator-
+    controlled, not LLM-controlled, so it does not go through the jail.
     Failures are logged to stderr and do not change the agent6 exit code.
     """
     if not notify.on_complete:
@@ -1417,7 +1417,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
         print(f"ERROR: no such run dir: {layout.run_dir}", file=sys.stderr)
         return 2
     # Drop a prior session's stale answer files + tui.pid (the id counters reset
-    # on resume — an old answer must not be read instead of re-prompting).
+    # on resume, an old answer must not be read instead of re-prompting).
     clear_pending_answers(layout.run_dir)
 
     snapshot_path = layout.run_dir / "loop_state.json"

@@ -7,7 +7,7 @@ to give external tools (and the planned VS Code extension) a stable, tail-able
 view of an agent run without parsing the freeform `print` log.
 
 Design notes:
-- Write-only and append-only. No reads, no rotation, no schema validation —
+- Write-only and append-only. No reads, no rotation, no schema validation,
   consumers should be defensive.
 - Each call opens, writes one line, fsyncs, closes. Cheap enough at our event
   rate (a handful per step) and removes any "did the buffer flush" worry for
@@ -33,7 +33,7 @@ class EventSink:
 
     Uses a *reentrant* lock so emitting from a SIGINT handler (the Ctrl-C steer
     path emits ``run.steer_requested``) cannot deadlock against the main thread
-    being mid-``emit`` — the handler runs in the same thread and re-acquires.
+    being mid-``emit``, the handler runs in the same thread and re-acquires.
     """
 
     path: Path
@@ -78,13 +78,13 @@ def _json_default(value: Any) -> Any:
 class UserInputSink:
     """Append a structured audit record per interactive prompt.
 
-    Separate from :class:`EventSink` (which carries machine telemetry) so
-    the human-decision trail lives in its own readable JSONL file at
-    ``.agent6/runs/<id>/user_inputs.jsonl``. Each line has a fixed shape
-    — ``ts``, ``kind``, ``prompt``, ``answer``, ``source`` — plus any
-    extra fields the caller passes. The strict schema is the point: a
-    reviewer reading the file can answer "what did the operator decide
-    and when" without grepping past unrelated events.
+     Separate from :class:`EventSink` (which carries machine telemetry) so
+     the human-decision trail lives in its own readable JSONL file at
+     ``.agent6/runs/<id>/user_inputs.jsonl``. Each line has a fixed shape
+    , ``ts``, ``kind``, ``prompt``, ``answer``, ``source``, plus any
+     extra fields the caller passes. The strict schema is the point: a
+     reviewer reading the file can answer "what did the operator decide
+     and when" without grepping past unrelated events.
     """
 
     path: Path
@@ -110,7 +110,7 @@ class UserInputSink:
             "answer": answer,
             "source": source,
         }
-        # Reserved keys win — caller cannot shadow the schema.
+        # Reserved keys win, caller cannot shadow the schema.
         for k, v in extra.items():
             if k not in payload:
                 payload[k] = v

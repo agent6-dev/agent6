@@ -123,7 +123,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
                 f" Execute it.\n\n{plan_md}"
             )
         elif not args.task:
-            # No task: fall back to the most recent plan run — the common
+            # No task: fall back to the most recent plan run, the common
             # "I just ran `agent6 plan`, now execute it" flow. At a TTY,
             # confirm before editing; non-interactively, refuse (a bare
             # `run` in a script should not silently start mutating).

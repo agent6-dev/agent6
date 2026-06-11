@@ -210,7 +210,7 @@ def _offer_git_setup(root: Path, created: tuple[Path, ...], *, interactive: bool
         print(f"  git init failed: {exc}")
         return
     print("  created: .git/  (git init)")
-    # Commit only the scaffold git will actually track — when the (default)
+    # Commit only the scaffold git will actually track, when the (default)
     # .gitignore was written it covers the per-repo config under the agent6 dir,
     # so unignored() drops it; we never `add -f` around the user's .gitignore.
     rel = unignored(root, tuple(str(p.relative_to(root)) for p in created if p.exists()))
@@ -224,7 +224,7 @@ def _offer_git_setup(root: Path, created: tuple[Path, ...], *, interactive: bool
         commit_paths(root, "chore: scaffold agent6 config", rel)
         print(f"  committed the agent6 scaffold ({', '.join(rel)})")
     except GitError as exc:
-        # Most likely a missing git identity — actionable, not fatal.
+        # Most likely a missing git identity, actionable, not fatal.
         print(f"  commit skipped: {exc}")
         print("  Set git user.name / user.email, then: git add -A && git commit")
 
@@ -335,7 +335,7 @@ def _collect_review_diff(
 
     With ``base``: a plain ``git diff base..head`` (read-only). Without it:
     working tree vs HEAD *including untracked files*. To make untracked files
-    show up, git needs intent-to-add (``git add -N``) entries — but review is
+    show up, git needs intent-to-add (``git add -N``) entries, but review is
     documented read-only, so we register ONLY the currently-untracked paths and
     ``git reset`` them afterward (in a ``finally``), restoring the index exactly
     as we found it. Staged/tracked changes are never touched.

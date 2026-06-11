@@ -4,7 +4,7 @@ These tasks run agent6 against shallow clones of real OSS projects at
 fixed commits. The methodology is SWE-bench-Lite style: a small piece
 of working code is "gutted" (its body replaced with `raise
 NotImplementedError`), and agent6 is asked to restore the
-implementation. Scoring is automatic — the project's own test suite
+implementation. Scoring is automatic: the project's own test suite
 gives ground truth.
 
 We pin commits and use `--depth 200` clones (enough git
@@ -84,9 +84,9 @@ bench/realworld/summarize.py /tmp/rw-config-a /tmp/rw-config-b
 - The candidate sees only TASK.md and the (broken) repository. It does
   not see the original implementation diff.
 - The verify command is identical to the project's CI suite for the
-  targeted tests — no special-casing.
+  targeted tests, with no special-casing.
 
-## Recent results (guidance only — N = 1)
+## Recent results (guidance only: N = 1)
 
 A single head-to-head pass over the 11 tasks (worker model
 `claude-sonnet-4-5` on both sides; per-task budget cap $1.00):
@@ -114,11 +114,11 @@ per-task profile, while these two passes let each task optimise toward
 the per-task cap. The open-weights Kimi run is much cheaper per token and,
 since agent6 now stops optimising a metric once it reaches a provable
 ceiling (e.g. a grader that prints `SCORE: 27/27`), no longer burns wall
-time re-deriving solved tasks — its slowest task is now `tinydb-search`
+time re-deriving solved tasks; its slowest task is now `tinydb-search`
 (~1351s), a genuine search over the project. Per-task breakdowns land in
 `$BENCH_ROOT/results_index.md` for each run.
 
-These are all **single runs (N = 1)** — not an average or median, and we
+These are all single runs (N = 1), not an average or median, and we
 have not measured variance. Per-task cost on a stochastic worker swings
 widely run-to-run, so treat this only as directional ("all of them solve
 the suite"). The claude-code per-task breakdown lives in

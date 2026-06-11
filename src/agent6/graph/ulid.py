@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tiny ULID generator — Crockford-base32 26-char sortable IDs.
+"""Tiny ULID generator, Crockford-base32 26-char sortable IDs.
 
 We use ULIDs (rather than uuid4) because they are time-sortable in lexicographic
 order, which makes the on-disk graph trivially diff-friendly: nodes created

@@ -39,7 +39,7 @@ NodeActor = Literal[
 
 
 class TaskNodeDraft(BaseModel):
-    """A new-node payload — id is assigned by the curator on insert."""
+    """A new-node payload, id is assigned by the curator on insert."""
 
     model_config = _MODEL_CONFIG
 

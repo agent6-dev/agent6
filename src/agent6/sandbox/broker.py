@@ -6,7 +6,7 @@ Implements the host-level egress allow-list promised by
 ``[sandbox] agent_network = "providers"`` without root, nftables, or any
 external package.
 
-Design (strict profile only — requires unprivileged user namespaces):
+Design (strict profile only, requires unprivileged user namespaces):
 
 1. While still in the host network namespace, the agent process binds
    one listening ``AF_UNIX`` socket per allow-listed provider endpoint,
@@ -15,7 +15,7 @@ Design (strict profile only — requires unprivileged user namespaces):
    dials the single fixed ``host:port`` that socket represents and
    blind-splices bytes in both directions. The target is bound to the
    socket, never chosen by the (untrusted) agent at connect time, so the
-   agent can reach *only* the pre-approved endpoints — the allow-list is
+   agent can reach *only* the pre-approved endpoints, the allow-list is
    enforced structurally, not by parsing what the agent sends.
 
 2. The parent (agent) then ``unshare(CLONE_NEWUSER | CLONE_NEWNET)``s

@@ -11,7 +11,7 @@ writes to `.agent6/` so this is a kernel-enforced invariant, not a convention.
 Submodules:
   - `models`:   pydantic models for nodes, intents, snapshots, resume diffs.
   - `ulid`:     tiny self-contained ULID generator (no new dep).
-  - `storage`:  on-disk format — markdown+YAML-frontmatter per node, jsonl
+  - `storage`:  on-disk format, markdown+YAML-frontmatter per node, jsonl
                 journal, dot generation, atomic writes via fcntl flock +
                 tmp-then-rename.
   - `curator`:  in-process `GraphCurator` (the same logic the subprocess uses;

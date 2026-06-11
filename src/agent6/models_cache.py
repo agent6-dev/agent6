@@ -6,13 +6,13 @@ Model catalogs change constantly (new OpenRouter routes, new Claude/GPT
 snapshots), so agent6 never ships a curated static list that would go stale.
 Instead it queries each provider's list endpoint on demand and caches the
 result under ``$XDG_CACHE_HOME/agent6/models/<provider>.json`` for a short
-TTL — long enough that tab-completion does not hammer the network on every
+TTL, long enough that tab-completion does not hammer the network on every
 keystroke, short enough that a freshly-released model shows up within minutes
 without the operator hunting for a cache to clear.
 
 This runs in the operator's own shell process (completion / interactive
 `agent6 model`), never inside a run sandbox, so a direct HTTP call is fine.
-Everything here is best-effort: :func:`list_models` NEVER raises — on a cache
+Everything here is best-effort: :func:`list_models` NEVER raises, on a cache
 miss + network failure it falls back to the stale cache, then to an empty
 list, so completion degrades to free-text rather than breaking the shell.
 """

@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 init` — write a starter per-repo config, AGENTS.md, and .gitignore.
+"""`agent6 init`, write a starter per-repo config, AGENTS.md, and .gitignore.
 
 Writes ``.agent6/config.toml`` (the per-repo override, layered on top of the
 global ``~/.config/agent6/config.toml`` and secure built-in defaults),
 ``AGENTS.md``, and appends agent6 entries to ``.gitignore``. Never overwrites
 existing files: if a target exists, write a ``.suggested`` sibling and tell
-the user to diff. Templates are deliberately short — providers, models, and
+the user to diff. Templates are deliberately short, providers, models, and
 API keys normally live in the global config (set via ``agent6 connect`` /
 ``agent6 model``), so a repo only needs its ``verify_command``.
 """
@@ -28,7 +28,7 @@ _STARTER_TOML = """\
 [workflow]
 # What "a step succeeded" means in this repo. EDIT THIS to your real pipeline.
 # Make it a REAL pass/fail (build + tests), not a syntax check: the harness uses
-# a green verify as a completion cue — once it passes and the worker stops making
+# a green verify as a completion cue, once it passes and the worker stops making
 # changes, agent6 wraps the run up instead of letting it spin.
 #
 # IMPORTANT: this runs INSIDE the sandbox, not your shell. The jailed command
@@ -224,7 +224,7 @@ def init_workspace(
     starter_agents_md = _render_starter_agents_md(profile)
 
     if interactive and not force:
-        # 1. Config scope: a repo config is optional — providers/models/keys
+        # 1. Config scope: a repo config is optional, providers/models/keys
         #    usually live in the global config (agent6 connect / agent6 model).
         if _ask(
             f"Write a starter repo config at {cfg_path.relative_to(root)}?"

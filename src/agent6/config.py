@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Config loading — TOML to pydantic.
+"""Config loading, TOML to pydantic.
 
 This is a trust boundary (untrusted text -> structured types), so we use
 pydantic and surface field-pointing errors.
@@ -15,8 +15,8 @@ defaults, per-repo ``./.agent6/config.toml`` overrides) and a repo can be
 zero-config when the global config supplies providers + models. Use
 ``agent6 config show`` to audit the *effective* value of every field and
 exactly where it came from (default / global / repo / flag). The few
-things a run genuinely cannot guess — a provider+key and the repo's
-``verify_command`` — are checked by :meth:`Config.require_runnable` with a
+things a run genuinely cannot guess, a provider+key and the repo's
+``verify_command``, are checked by :meth:`Config.require_runnable` with a
 friendly pointer to ``agent6 connect`` / ``agent6 init`` rather than a
 load-time failure, so ``config show`` always works.
 """
@@ -85,7 +85,7 @@ def _validate_allow_url(entry: str) -> None:
     Accepts a bare ``host``, ``host:port``, or full URL; a missing scheme
     implies ``https://``. Only the host:port is meaningful for the egress
     broker, so the body/path is ignored. Kept in lock-step with the egress
-    folding in ``cli._allow_url_endpoints`` — both prepend ``https://`` when
+    folding in ``cli._allow_url_endpoints``, both prepend ``https://`` when
     the entry omits a scheme, then parse with ``urlsplit``.
     """
     if not entry or not entry.strip():
@@ -103,9 +103,9 @@ def _validate_allow_url(entry: str) -> None:
 
 
 class AnthropicProviderEntry(BaseModel):
-    """`kind = "anthropic"` — the Anthropic Messages endpoint.
+    """`kind = "anthropic"`, the Anthropic Messages endpoint.
 
-    Model names live in `[models.<role>]`, not here — this block only
+    Model names live in `[models.<role>]`, not here, this block only
     carries auth and Anthropic-specific knobs.
     """
 
@@ -127,7 +127,7 @@ class AnthropicProviderEntry(BaseModel):
 
 
 class OpenAIProviderEntry(BaseModel):
-    """`kind = "openai"` — any OpenAI Chat Completions-compatible endpoint.
+    """`kind = "openai"`, any OpenAI Chat Completions-compatible endpoint.
 
     Works against OpenAI itself, OpenRouter, Ollama (`/v1`), vLLM, LM
     Studio, llama.cpp's server, etc. Each [providers.<name>] block is one
@@ -137,7 +137,7 @@ class OpenAIProviderEntry(BaseModel):
 
     `api_key_env` is optional: leave it unset (or point at an unset env var)
     for unauthenticated local endpoints like Ollama. `extra_headers` is
-    forwarded verbatim — OpenRouter, for example, asks for `HTTP-Referer`
+    forwarded verbatim, OpenRouter, for example, asks for `HTTP-Referer`
     and `X-Title`. Header names are sent lowercased by httpx.
     """
 
@@ -196,7 +196,7 @@ class RoleModel(BaseModel):
     `provider` is the name (TOML table key) of an entry in `[providers.*]`.
 
     `temperature` is the sampling temperature agent6 will pin on every
-    call for this role. Defaults to ``0.0`` — agent6's tool-use loop is a
+    call for this role. Defaults to ``0.0``, agent6's tool-use loop is a
     search-and-act feedback loop and high-temperature sampling causes
     observable degeneration on some open-weights models (caught
     Kimi K2.6 emitting 15997 literal ``\\n`` escapes in a single
@@ -205,7 +205,7 @@ class RoleModel(BaseModel):
     temperature; OpenRouter routes to provider defaults that vary by
     model, so pinning is the only way to make benches reproducible.
     Set to ``null`` (TOML: omit-and-rely-on-default doesn't apply here;
-    use ``temperature = nan`` is invalid — explicitly write the value)
+    use ``temperature = nan`` is invalid, explicitly write the value)
     only if you specifically want the provider's default behaviour.
     """
 
@@ -276,7 +276,7 @@ class SandboxConfig(BaseModel):
     profile: Literal["auto", "strict", "hardened"] = "auto"
     # Where the agent PROCESS (its own LLM/provider HTTP) may connect:
     #  - `providers`: only the configured `[providers.*]` endpoints, plus any
-    #    `allow_urls`. On `strict` this is structural — a trusted broker (see
+    #    `allow_urls`. On `strict` this is structural, a trusted broker (see
     #    agent6.sandbox.broker) confines the agent to an empty netns whose only
     #    routes are per-endpoint unix sockets; on `hardened` it is Landlock
     #    TCP-port confinement to the provider ports.
@@ -291,7 +291,7 @@ class SandboxConfig(BaseModel):
     #  - `block`: no jailed command gets the network.
     #  - `only_explicit_states`: blocked, EXCEPT machine `tool` states that opt
     #    in with `allow_network = "allow"` (audited, deterministic commands);
-    #    `run_command` stays blocked. `strict`-only — singling one tool out needs
+    #    `run_command` stays blocked. `strict`-only, singling one tool out needs
     #    a per-child network namespace, which only `strict` provides.
     #  - `allow`: `run_command` reaches the network too. Because `run_command`
     #    runs inside the (possibly confined) agent process, this requires
@@ -316,7 +316,7 @@ class SandboxConfig(BaseModel):
     # `agent_network = "providers"`, on top of the configured provider
     # endpoints. Each entry is a `host`, `host:port`, or full URL (a missing
     # scheme implies https / port 443); only the host:port is used to open a
-    # broker socket. Secure default empty — no destination beyond the
+    # broker socket. Secure default empty, no destination beyond the
     # providers is reachable. MERGE: last-overlay-wins (the most-specific tier
     # that sets the key replaces it wholesale, like every other list field);
     # provider endpoints always UNION in regardless of tier. Effective egress
@@ -366,7 +366,7 @@ class GitCommitConfig(BaseModel):
     All three fields default to None, meaning "use whatever the project's
     `git config user.name` / `user.email` already resolves to". The startup
     check in `agent6 run` refuses to proceed if neither an override nor a
-    resolvable git-config identity is present — we will not silently commit
+    resolvable git-config identity is present, we will not silently commit
     as `(no author) <(none)>`.
 
     Set `name` / `email` to override the identity on commits made by this
@@ -552,14 +552,14 @@ class NotifyConfig(BaseModel):
 
     When ``on_complete`` is set, agent6 runs the argv tuple after the
     workflow returns (``agent6 run`` or ``agent6 resume``). The argv is
-    operator-controlled — it never includes LLM output — and runs in the
+    operator-controlled, it never includes LLM output, and runs in the
     user's shell environment, NOT in the jail, with these env vars:
 
-    - ``AGENT6_RUN_ID``       — run id under ``.agent6/runs/``
-    - ``AGENT6_RUN_OK``       — ``1`` if the workflow finished cleanly, ``0`` otherwise
-    - ``AGENT6_RUN_REASON``   — workflow termination reason (e.g. ``finish_run``,
+    - ``AGENT6_RUN_ID``      , run id under ``.agent6/runs/``
+    - ``AGENT6_RUN_OK``      , ``1`` if the workflow finished cleanly, ``0`` otherwise
+    - ``AGENT6_RUN_REASON``  , workflow termination reason (e.g. ``finish_run``,
                                  ``budget_exhausted``, ``provider_error``)
-    - ``AGENT6_RUN_DIR``      — absolute path to the run dir
+    - ``AGENT6_RUN_DIR``     , absolute path to the run dir
 
     Use cases: desktop notification (``notify-send``), shell-bell, ssh
     push notification, mailx, etc. A failure of the notify command is
@@ -764,7 +764,7 @@ class Config(BaseModel):
         """Raise ConfigError unless *role* can actually run.
 
         Checks (in order) that a provider is configured, the role resolves
-        to a model whose provider exists, and — for execution roles — that
+        to a model whose provider exists, and, for execution roles, that
         ``verify_command`` is set. Messages point at the command that fixes
         the gap so a fresh user is never stuck.
         """

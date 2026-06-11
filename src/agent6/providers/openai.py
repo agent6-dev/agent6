@@ -9,7 +9,7 @@ OpenRouter. Any sub-agent role (planner, worker, critic, reviewer,
 summarizer) can be routed through this provider via
 `[models.<role>]` in your config.
 
-Single audited HTTP call site, same shape as
+Single HTTP call site, same shape as
 `agent6.providers.anthropic`. Uses httpx directly (no SDK) for a
 smaller audit surface.
 
@@ -150,7 +150,7 @@ class OpenAIProvider:
     base_url: str = OPENAI_DEFAULT_BASE_URL
     extra_headers: tuple[tuple[str, str], ...] = ()
     # Provider-specific JSON merged into every request body (e.g. OpenRouter
-    # `provider` routing — see config OpenAIProviderEntry.extra_body). Keys here
+    # `provider` routing, see config OpenAIProviderEntry.extra_body). Keys here
     # override computed body fields, EXCEPT the load-bearing
     # messages/model/stream/stream_options (filtered in `call`).
     extra_body: dict[str, Any] = field(default_factory=dict)
@@ -314,7 +314,7 @@ class OpenAIProvider:
             body["tools"] = tools_to_openai(tools)
         # Operator-supplied body extras (e.g. OpenRouter `provider` routing to
         # pin a caching/fast backend). Merged last so it can override computed
-        # tuning keys — but NEVER the load-bearing request shape: replacing
+        # tuning keys, but NEVER the load-bearing request shape: replacing
         # `messages`/`model` would silently send a different request, and
         # flipping `stream` would make the non-streaming path get an SSE body
         # that `resp.json()` can't parse. Those are filtered out.
@@ -740,9 +740,9 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
             # immediately follow the assistant turn whose `tool_calls`
             # it answers. we emitted text_chunks FIRST then
             # tool_results, which (a) inserted a user message between
-            # the assistant's tool_calls and the tool replies — most
+            # the assistant's tool_calls and the tool replies, most
             # OpenAI-compatible gateways tolerate this but it is
-            # technically malformed — and (b) made injected
+            # technically malformed, and (b) made injected
             # "[loop-guard]" / "[harness]" / "[critic]" notices arrive
             # before the tool result they were commenting on, so weak
             # models lost the causal link entirely. Tool results first,
@@ -772,7 +772,7 @@ def tools_to_openai(tools: list[ToolDefinition]) -> list[dict[str, Any]]:
 # Some OpenAI-compatible servers (notably certain Ollama / llama.cpp
 # chat templates for Qwen, Hermes, and other small local models) do NOT
 # parse the model's tool call into the native ``tool_calls`` array.
-# Instead the call leaks into the assistant ``content`` as plain text —
+# Instead the call leaks into the assistant ``content`` as plain text,
 # either a bare JSON object ``{"name": ..., "arguments": {...}}``, the
 # same wrapped in a ```json fence, or Hermes/Qwen ``<tool_call>...
 # </tool_call>`` tags. Without recovery the run loop sees text + no
@@ -780,7 +780,7 @@ def tools_to_openai(tools: list[ToolDefinition]) -> list[dict[str, Any]]:
 # tool_uses, but ONLY as a fallback: see `_parse_response` for the
 # guards (no native tool_calls present AND the recovered name matches a
 # tool that was actually offered). Flagship models that emit native
-# tool_calls — and any model that legitimately answers with JSON — never
+# tool_calls, and any model that legitimately answers with JSON, never
 # hit this path.
 _TOOL_CALL_TAG_RE = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
 _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
@@ -894,7 +894,7 @@ def _parse_response(  # noqa: PLR0912, PLR0915
             # with Kimi K2.6 looping on `\\n\\n\\n...` until hitting the
             # completion_tokens cap), the raw blob ends up echoed in the
             # subsequent tool_error message and re-enters the model's
-            # context window — priming the same degeneration on the next
+            # context window, priming the same degeneration on the next
             # turn. Cap the diagnostic string at 500 chars so the
             # repetition doesn't survive the round-trip.
             _RAW_ARGS_CAP = 500
@@ -938,7 +938,7 @@ def _parse_response(  # noqa: PLR0912, PLR0915
     # CRITICAL provider-format asymmetry: Anthropic's `input_tokens`
     # already EXCLUDES cache-read tokens (they're surfaced separately under
     # `cache_read_input_tokens`). OpenAI's `prompt_tokens`, by contrast, is
-    # the TOTAL prompt size — cached + fresh. We normalise to Anthropic's
+    # the TOTAL prompt size, cached + fresh. We normalise to Anthropic's
     # semantics here so `ProviderResponse.input_tokens` consistently means
     # "fresh, non-cached input" across providers. Without this, the
     # BudgetTracker would charge cached tokens against the input-token cap

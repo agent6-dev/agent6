@@ -5,8 +5,8 @@ breakdown of how that assumption is enforced and what the known limits are.
 
 ## Reporting
 
-For now: open a GitHub issue prefixed `[security]`, or — for embargoed
-issues — email the maintainer listed in `pyproject.toml`. Once agent6 has
+For now: open a GitHub issue prefixed `[security]`, or, for embargoed
+issues, email the maintainer listed in `pyproject.toml`. Once agent6 has
 a stable distribution, this will move to a private channel + GitHub
 Security Advisories.
 
@@ -49,7 +49,7 @@ Under that adversary, agent6 aims to make the following true:
    (default `"block"`); see Defense Layer 1b and §8.
 4. No `git push`, no `--force`, no history rewrite, no `reset --hard`.
 5. No persistence after the run terminates (no daemon, no cron, no
-   `.bashrc` mutation — the jail's mount namespace is the
+   `.bashrc` mutation; the jail's mount namespace is the
    only place children can write to anyway).
 
 ## Defense layers
@@ -70,18 +70,18 @@ every child it spawns):
 |---|---|
 | FS read | cwd, `$HOME`, `/usr`, `/etc`, `/tmp`, the common `/dev` char devices, and `/run` + `/proc` when present |
 | FS write | cwd, `/tmp`, the `/dev` char devices, and `/proc` when present |
-| TCP connect (kernel ≥ 6.7) | the *ports* of configured providers — `443` for each `anthropic` entry, the `base_url` port for each `openai` entry (default `443`) |
+| TCP connect (kernel ≥ 6.7) | the *ports* of configured providers: `443` for each `anthropic` entry, the `base_url` port for each `openai` entry (default `443`) |
 
 Landlock's network hook filters by destination **port only** (it has no
 host/IP primitive), so it blocks connections on other ports but does **not**
-pin egress to a specific host — for that use `sandbox.agent_network = "providers"`
+pin egress to a specific host; for that use `sandbox.agent_network = "providers"`
 (Defense Layer 1b). On older kernels (no TCP rules) agent6 warns and runs
 FS-only Landlock; don't run there on a host whose UID can read credentials the
 agent could exfiltrate.
 
 ### 1b. Provider-only egress broker (`sandbox.agent_network = "providers"`)
 
-When enabled (strict profile only — it relies on unprivileged user
+When enabled (strict profile only; it relies on unprivileged user
 namespaces), `agent6 run` confines its own process to host-level egress:
 
 1. While still in the host network namespace (netns) and single-threaded, the
@@ -92,7 +92,7 @@ namespaces), `agent6 run` confines its own process to host-level egress:
    per-connect, so the allow-list is robust to CDN IP rotation) and
    splices bytes. TLS is end-to-end: the broker only ever sees ciphertext.
 2. The agent then `unshare(CLONE_NEWUSER | CLONE_NEWNET)` into a fresh,
-   **empty** network namespace (loopback only — no veth, no default
+   empty network namespace (loopback only: no veth, no default
    route). Its sole path off-host is the set of unix sockets, each of
    which is hard-wired to one provider endpoint chosen by the operator,
    never by the (untrusted) LLM at connect time.
@@ -102,7 +102,7 @@ boundary. A missing route means no connectivity (the agent cannot connect
 at all), never a silent leak. Because the upstream of each socket is fixed
 at bind time, the egress allow-list is structural rather than a filter the
 agent could be tricked into widening. On hosts that only support the
-hardened profile agent6 **refuses to run** rather than execute unconfined.
+hardened profile agent6 refuses to run rather than execute unconfined.
 
 `sandbox.agent_network = "local"` uses the same broker but pins it to *loopback*
 provider endpoints only (local models such as Ollama) and refuses a non-local
@@ -118,19 +118,19 @@ deliberate limitation, not a bug.
 
 **`sandbox.allow_urls` (operator-controlled egress additions).** The
 allow-list above is, by default, exactly the configured provider
-endpoints. An operator may widen it with `sandbox.allow_urls` — a set of
+endpoints. An operator may widen it with `sandbox.allow_urls`: a set of
 `host` / `host:port` / URL entries that get their own broker sockets
 alongside the providers (effective egress = union of provider endpoints
 and `allow_urls`). Security properties are unchanged: each added socket is
 still hard-wired at bind time to one operator-chosen `host:port`, resolved
-per-connect, and the LLM cannot add, widen, or redirect an entry — it is a
+per-connect, and the LLM cannot add, widen, or redirect an entry: it is a
 static config field, never written from model output. The default is empty
 (secure by default), entries are validated at config-load time, and the
 field is only consulted under `sandbox.agent_network = "providers"` (ignored
 under `local`/`open`). It widens only the agent path, never a jailed command.
 Merge is last-overlay-wins: the most-specific config tier that sets
 `allow_urls` replaces it wholesale, so a repo or machine overlay cannot
-silently *append* to a narrower global allow-list — it must restate the
+silently *append* to a narrower global allow-list; it must restate the
 full set, keeping the effective allow-list auditable via `config show`.
 
 
@@ -145,11 +145,11 @@ Every `apply_edit` is in-process, but every `run_verify_command` and
   `pivot_root`s into it. The working directory is the only writable
   mount; everything else is `ro,nosuid,nodev`.
 - Bind-mounts a curated subset of `/dev`: `null`, `zero`, `urandom`,
-  `random`, `full`. `/dev/tty` is **not** exposed — TTY access lets a
+  `random`, `full`. `/dev/tty` is not exposed: TTY access lets a
   child write escape sequences to the controlling terminal of the parent.
 - Mounts a fresh `proc` (private to the new PID namespace). If that
   fails on the host kernel, `/proc` is left empty inside the jail rather
-  than bind-mounting the host `/proc` — the latter would expose host
+  than bind-mounting the host `/proc`; the latter would expose host
   process info to the child.
 - Applies Landlock (FS + net rules).
 - Installs a seccomp filter that allows the syscalls a Linux process
@@ -166,7 +166,7 @@ strict schema and refuses on any unknown field.
 ### 3. Profile selection
 
 You *set* the `sandbox.profile` field; it resolves against the host to an
-*effective profile* — what actually runs. There is no `none` value (you cannot
+*effective profile*: what actually runs. There is no `none` value (you cannot
 ask for it) and no `auto` effective profile (it is resolved away). No silent
 downgrade: an explicit request the host can't satisfy is refused, not weakened.
 
@@ -182,13 +182,13 @@ downgrade: an explicit request the host can't satisfy is refused, not weakened.
 
 The three effective profiles:
 
-- **strict** — full namespaces (user/mount/pid/ipc/uts/net) + `pivot_root` +
+- **strict**: full namespaces (user/mount/pid/ipc/uts/net) + `pivot_root` +
   Landlock + seccomp + `capset(0)` + rlimits + `NO_NEW_PRIVS`.
-- **hardened** — Landlock + seccomp + `capset(0)` + rlimits + `NO_NEW_PRIVS`,
-  but **no namespaces** (so it works inside default-seccomp Docker, where the
+- **hardened**: Landlock + seccomp + `capset(0)` + rlimits + `NO_NEW_PRIVS`,
+  but no namespaces (so it works inside default-seccomp Docker, where the
   container blocks the inner `clone(CLONE_NEW*)`; the container is the blast
   radius).
-- **none** — *unsandboxed*: child commands run as plain subprocesses with no
+- **none**: *unsandboxed*. Child commands run as plain subprocesses with no
   kernel-enforced confinement; always with a loud warning.
 
 CI should set `profile = "strict"` to fail loudly if the sandbox is weaker than
@@ -196,14 +196,14 @@ expected. "User namespaces available" means `unshare -U -r true` succeeds.
 
 ### 4. Fixed tool surface
 
-The LLM only ever sees the fixed, audited set declared in
+The LLM only ever sees the fixed set declared in
 `src/agent6/tools/schema.py` (enumerated in the README): structured
 edits, read-only navigation, fixed-argv verify/metric commands, a
 terminal `finish_run`, a curator-backed task notepad, and the
 capability-gated `run_command`. There is no `shell`, no `write_file`
 (writes go through `apply_edit`, an in-process rewriter that refuses
 paths outside cwd), no `web_fetch`, and no `eval`. Adding a tool requires
-a security review note in the commit message — see [AGENTS.md](AGENTS.md).
+a security review note in the commit message; see [AGENTS.md](AGENTS.md).
 
 ### 5. Git invariants
 
@@ -220,7 +220,7 @@ diff, branch creation, checkout) and refuses, by construction, to call:
 
 `git.allow_push`, `git.allow_force`, and `git.allow_history_rewrite` in
 the agent6 config exist for forward compatibility but are currently
-ignored — they will stay ignored until there is a concrete review of what
+ignored; they will stay ignored until there is a concrete review of what
 a "safe push" would look like.
 
 Every `git_ops` invocation is also hardened against **repo-controlled host
@@ -228,7 +228,7 @@ code execution**: a cloned/poisoned `.git/config` can otherwise run a
 command on the host (outside the jail) the moment agent6 runs git in it.
 `core.fsmonitor` (fires on index refresh) and `diff.external` (fires on
 `git diff`) are always overridden off; the repo's `.git/hooks/*` run only
-when `git.run_repo_hooks = true` (default false — `core.hooksPath` is
+when `git.run_repo_hooks = true` (default false; `core.hooksPath` is
 pointed away from the repo so a `pre-commit` hook can't fire on agent6's
 own auto-commit). This complements `protect_git`, which stops the worker
 from *writing* into `.git` in the first place.
@@ -238,16 +238,16 @@ from *writing* into `.git` in the first place.
 - **Secrets at rest.** Provider API keys live in
   `$XDG_CONFIG_HOME/agent6/secrets.toml`, created and enforced `0600`
   (owner read/write only). agent6 refuses to read the file if it is
-  group/other-accessible or owned by another user — the same posture as
+  group/other-accessible or owned by another user, the same posture as
   an SSH private key. Keys may alternatively come from an environment
   variable named by `[providers.<name>].api_key_env`; the env var takes
   precedence. Keys are never written to transcripts, never printed by
-  `agent6 config show` (redacted), and never mounted into the jail —
+  `agent6 config show` (redacted), and never mounted into the jail;
   provider calls happen in agent6's own process, outside the sandbox.
 - **`agent6 connect` never executes remote input.** The connect flow only
-  prompts locally (key via `getpass` — hidden, or masked with `*` on Python
+  prompts locally (key via `getpass`: hidden, or masked with `*` on Python
   3.14+) and writes config/secrets. It does not run any command, URL, or
-  script returned by a provider or any remote — by construction. This is a
+  script returned by a provider or any remote, by construction. This is a
   deliberate guard against the class of bug where a login flow runs an
   attacker-supplied shell command.
   agent6 also opens no listening network socket of any kind (MCP is
@@ -260,8 +260,8 @@ from *writing* into `.git` in the first place.
   `chown`s anything it writes under the repo's `.agent6/` back to them so
   no root-owned files are left behind. agent6 does not drop privileges
   in-process: under `sudo` the worker's verify/run commands are expected
-  to need root and run as root inside the jail, so the jail — not the
-  process uid — is the security boundary.
+  to need root and run as root inside the jail, so the jail, not the
+  process uid, is the security boundary.
 
 ### 6. Curator subprocess
 
@@ -292,16 +292,16 @@ network namespace and makes no network calls itself. Each `agent` state runs in
 its own subprocess that confines its egress per `sandbox.agent_network` (the
 broker, §1b); each `tool` state is jailed by the engine, so a per-tool
 `allow_network` decides its netns independently of the agent. This is what lets
-a machine confine its agents to the provider API while letting one **audited,
-deterministic** tool reach the network — a `tool` command is fixed/operator-
-reviewed (unlike `run_command`, whose argv the LLM chooses), so a networked
-audited tool is not a free exfiltration channel.
+a machine confine its agents to the provider API while letting one
+deterministic tool reach the network: a `tool` command is fixed and
+operator-reviewed (unlike `run_command`, whose argv the LLM chooses), so a
+networked tool is not a free exfiltration channel.
 
 Egress is set by `sandbox.agent_network`, `sandbox.tool_network`, and a per-tool
 `allow_network`; the effective profile (§3) decides what is *enforceable*. The
 tables cover every case; "offline" = no egress.
 
-**Agent-process egress** — the agent's own LLM/provider HTTP, by `sandbox.agent_network`:
+**Agent-process egress** (the agent's own LLM/provider HTTP), by `sandbox.agent_network`:
 
 | `sandbox.agent_network` | `strict` | `hardened` | `none` |
 |---|---|---|---|
@@ -309,7 +309,7 @@ tables cover every case; "offline" = no egress.
 | `local` | loopback providers only, broker-pinned (refuse to run if any provider isn't loopback) | ⛔ refuse to run | unconfined ⚠ |
 | `open` | unconfined | unconfined | unconfined ⚠ |
 
-**Jailed-command egress** — `run_command` and machine `tool` states, by
+**Jailed-command egress** (`run_command` and machine `tool` states), by
 `sandbox.tool_network` (columns; cells are the `strict` profile):
 
 | jailed command | `block` *(def)* | `only_explicit_states` | `allow` |
@@ -318,7 +318,7 @@ tables cover every case; "offline" = no egress.
 | `tool`, `allow_network = "auto"` (def) / `"block"` | offline | offline | offline |
 | `tool`, `allow_network = "allow"` | ⛔ refuse to run | host network | host network |
 
-**Refusals** — these configurations **refuse to run** (fail-closed):
+**Refusals**: these configurations refuse to run (fail-closed):
 
 | Configuration | When |
 |---|---|
@@ -328,19 +328,19 @@ tables cover every case; "offline" = no egress.
 | a machine with `tool` states under `sandbox.tool_network = "block"`, or a `tool` with `allow_network = "block"` | machine start, `hardened` ² |
 
 - ⚠ `none` (non-Linux) is **unsandboxed**: nothing above is enforced and nothing
-  is refused — the run proceeds with a loud warning.
+  is refused; the run proceeds with a loud warning.
 - ¹ `run_command` runs inside the agent process, so it can't reach the network
-  while the agent is confined — hence `sandbox.tool_network = "allow"` needs
+  while the agent is confined; hence `sandbox.tool_network = "allow"` needs
   `sandbox.agent_network = "open"`.
 - ² `sandbox.tool_network`'s per-command isolation needs a network namespace, so
-  it is **`strict`-only**. On `hardened` (no namespaces) a jailed child instead
+  it is `strict`-only. On `hardened` (no namespaces) a jailed child instead
   inherits the agent's Landlock and follows `sandbox.agent_network`; the cases
   that would need real per-command isolation are refused rather than mis-confined.
 
 Every surface fails closed:
 
 - **Operator-gated, machine-declared.** `sandbox.agent_network`/
-  `sandbox.tool_network` are read only from the operator's global/repo config — a
+  `sandbox.tool_network` are read only from the operator's global/repo config; a
   machine's `[config]` overlay (possibly LLM-drafted or shared) is rejected at
   load if it declares `[providers.*]` or `[sandbox.*]`. A `tool` merely
   *declares* `allow_network`; whether `"allow"` is honored is the operator's call
@@ -356,9 +356,9 @@ Every surface fails closed:
   directory. Scripts are drafted at authoring time and reviewed/committed
   by the operator, never fetched or generated from untrusted model output
   at run time. And during a run, the machine's own `.asm.toml` + `scripts/`
-  are made **read-only in every jail** (alongside `.git`/`.agent6`), so a
+  are made read-only in every jail (alongside `.git`/`.agent6`), so a
   tool or agent state cannot rewrite its own logic, add an `allow_network`
-  flag, or alter an audited script mid-run or for a future run.
+  flag, or alter a bundled script mid-run or for a future run.
 
 ## Prompt-injection resilience
 
@@ -369,7 +369,7 @@ file content, does not attempt out-of-policy tool calls, and does not
 follow embedded instructions to weaken its own constraints.
 
 This is a smoke test, not a proof. The structural defenses above
-(sandbox, fixed tool surface, git invariants) are the real mitigation —
+(sandbox, fixed tool surface, git invariants) are the real mitigation;
 prompt-injection corpus tests exist to catch regressions in the prompts,
 not to bound what an attacker can do.
 
@@ -385,7 +385,7 @@ not to bound what an attacker can do.
   `kernel.apparmor_restrict_unprivileged_userns = 1`) blocks unprivileged
   userns unless the process has an AppArmor profile granting `userns`.
   agent6 ships such a profile, scoped to just the launcher binary, in
-  [packaging/apparmor/agent6-jail](packaging/apparmor/agent6-jail) — the
+  [packaging/apparmor/agent6-jail](packaging/apparmor/agent6-jail), the
   surgical fix (preferred over disabling the sysctl host-wide). agent6's
   profile detection probes the *real launcher binary* (not
   `/usr/bin/unshare`), so once the profile is installed it correctly

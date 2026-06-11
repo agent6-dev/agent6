@@ -11,7 +11,7 @@ Entries are append-only. "Invalidation" is non-destructive: an extra
 header line marks the entry as superseded but the body remains so the
 audit trail stays intact.
 
-File format — one entry per `### <id>` h3, deterministic so ripgrep
+File format, one entry per `### <id>` h3, deterministic so ripgrep
 can search and we can parse without YAML:
 
     ## facts
@@ -121,7 +121,7 @@ def _parse_file(path: Path, scope: MemoryScope) -> list[MemoryEntry]:
             if km is not None:
                 meta[km.group(1)] = km.group(2)
                 continue
-            # not a meta line — treat the rest as body
+            # not a meta line, treat the rest as body
             in_meta = False
             body_lines.append(raw)
         else:

@@ -8,7 +8,7 @@ the pure, dependency-free pieces of that flow: the grammar reference handed
 to the model, the prompt assembled for each draft→check→fix attempt, and the
 extractor that pulls the drafted source out of the `finish_run` payload.
 
-It deliberately imports nothing from the workflow stack — the orchestration
+It deliberately imports nothing from the workflow stack, the orchestration
 (running the agent loop, validating with `load_machine`, writing the draft)
 lives in the CLI, which already depends on both `agent6.machine` and
 `agent6.workflows`. Keeping this module pure keeps the tach graph acyclic.
@@ -98,7 +98,7 @@ type via a schema. Opaque `json` cannot be dotted.
 Each state is `[states.<name>]` with a `kind`. Names match the identifier
 grammar. Terminal states end the machine.
 
-### tool — run a sandboxed command
+### tool: run a sandboxed command
     [states.scan]
     kind = "tool"
     command = ["scan", "{{ threshold }}"]   # argv; see templating below
@@ -109,11 +109,11 @@ grammar. Terminal states end the machine.
 
   tool labels are exactly: ok, nonzero, timeout.
 
-### agent — run a nested agent6 loop
+### agent: run a nested agent6 loop
     [states.review]
     kind = "agent"
     # model defaults to "inherit" (the operator's effective worker model).
-    # OMIT it unless you must pin a specific one — a hardcoded model the
+    # OMIT it unless you must pin a specific one, a hardcoded model the
     # operator hasn't configured passes `machine check` but dies at run time.
     prompt = "Review the change and return a verdict."
     output_schema = "verdict"                # finish_run payload validated against this
@@ -129,7 +129,7 @@ grammar. Terminal states end the machine.
   that must do real coding work, add `mode = "run"` to give it the full edit /
   verify / commit tool set.
 
-### branch — route on predicates (MUST be total)
+### branch: route on predicates (MUST be total)
     [states.check]
     kind = "branch"
     when = [
@@ -141,7 +141,7 @@ grammar. Terminal states end the machine.
   `in`, `len(x)`, record navigation `x.field`, and literals. NO arbitrary
   function calls, attribute method calls, or comprehensions.
 
-### wait — pause until an instant or a poke
+### wait: pause until an instant or a poke
     [states.poll]
     kind = "wait"
     every_secs = "{{ interval }}"   # OR  until = "2026-01-01T00:00:00Z"
@@ -150,7 +150,7 @@ grammar. Terminal states end the machine.
   wait labels are exactly: tick, signal. `cron` is NOT supported by the v1
   runtime — use `every_secs` or `until`.
 
-### terminal — stop
+### terminal: stop
     [states.stop_ok]
     kind = "terminal"
     status = "ok"        # "ok" or "failed"
@@ -247,7 +247,7 @@ labels, and your wiring decides whether one bad tick kills the machine:
     printing fabricated JSON, so a bad tick is a visible `nonzero`, not silent
     garbage captured into the blackboard.
 
-## Worked example — watch a live price feed, record when it crosses a threshold
+## Worked example: watch a live price feed, record a threshold crossing
 
 A complete, valid, PRODUCTION machine: `fetch_price` makes a real HTTP call
 (hence `allow_network = "allow"`); `record_buy` appends to the data dir. Each

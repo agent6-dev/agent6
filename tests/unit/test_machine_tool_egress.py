@@ -324,7 +324,7 @@ def test_suggested_network_fix_hardened(tmp_path: Path) -> None:
 
 
 def test_suggested_network_fix_strict(tmp_path: Path) -> None:
-    # strict can single one tool out: audited per-tool egress is the safe fix.
+    # strict can single one tool out: explicit per-tool egress is the safe fix.
     fix = _suggested_network_fix(Config.model_validate({}), "strict", [_allow_tool(tmp_path)])
     assert fix == {"sandbox.tool_network": "only_explicit_states"}
 

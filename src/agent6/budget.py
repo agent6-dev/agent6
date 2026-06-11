@@ -216,7 +216,7 @@ class BudgetTracker:
 
         Computed against whichever ceiling is closer to exhaustion (the
         input or output bucket), so a run that has burned 90% of its
-        output ceiling but only 10% of its input ceiling reports 0.10 —
+        output ceiling but only 10% of its input ceiling reports 0.10,
         the conservative, decision-relevant figure. Used by the workflow
         to decide whether a metric plateau is worth quitting on or
         whether enough budget remains to keep pivoting.

@@ -5,9 +5,9 @@
 A machine run's engine is a thin supervisor that stays in the host network
 namespace and makes no network calls itself. Each `agent` state runs *here*, in
 its own fresh process, so it can confine its OWN egress per
-`sandbox.agent_network` (the broker on `strict`, Landlock on `hardened`) —
+`sandbox.agent_network` (the broker on `strict`, Landlock on `hardened`),
 independently of the engine and of sibling `tool` states. That is what lets a
-machine run a broker-confined agent alongside an audited, network-carved-out
+machine run a broker-confined agent alongside an operator-reviewed, network-carved-out
 tool in the same run.
 
 Invoked as ``python -m agent6.cli.machine_agent <request.json> <result.json>``.
@@ -122,7 +122,7 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
             console_stream=sys.stderr.isatty() or os.environ.get("AGENT6_FORCE_STREAM") == "1",
         )
         # Re-confirm the cwd-containment invariant at the subprocess boundary
-        # (defense in depth — the engine already filtered these).
+        # (defense in depth, the engine already filtered these).
         root_r = root.resolve()
         protect = tuple(
             rp

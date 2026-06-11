@@ -11,7 +11,7 @@ logic without spinning up a UDS server.
 Mutations are validated structurally, then applied as:
 
   1. mutate in-memory graph state
-  2. append entry to `graph.jsonl` (the journal — append-only audit log)
+  2. append entry to `graph.jsonl` (the journal, append-only audit log)
   3. atomically rewrite the affected node's `.md` file
   4. (if topology changed) atomically regenerate `graph.dot`
   5. bump `graph_version`

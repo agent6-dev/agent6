@@ -1,4 +1,4 @@
-# `bench/perf/` — Anthropic perf-takehome head-to-head
+# bench/perf: Anthropic perf-takehome head-to-head
 
 A $5-budget head-to-head between agent6 and claude-code on Anthropic's
 open-source [original_performance_takehome](https://github.com/anthropics/original_performance_takehome).
@@ -59,7 +59,7 @@ AGENT6_OR_MODEL=qwen/qwen3-max OPENROUTER_API_KEY=... \
 #   perf_{agent6,claude}/       worktrees the agents edited
 ```
 
-The runners are independent — you can run them serially or in
+The runners are independent: you can run them serially or in
 parallel (each gets its own `$BENCH_ROOT/perf_{agent6,claude}/` worktree).
 
 `run_perf_openrouter.sh` is model-agnostic: pick the model with
@@ -78,7 +78,7 @@ ends the run via the `BudgetExceeded` exit-3 path.
 
 ## Why both agents will spend the full budget
 
-- claude-code is open-ended by design — it iterates until the budget cap.
+- claude-code is open-ended by design: it iterates until the budget cap.
 - agent6's `verify_command` is `python tests/submission_tests.py`. That
   exits 0 only when ALL speed tiers (including the < 1363 tier) pass,
   which is effectively unreachable, so agent6's per-step retry loop
@@ -86,9 +86,9 @@ ends the run via the `BudgetExceeded` exit-3 path.
   fires. This is intentional: the comparison is "given $5, how good a
   cycle count can you get".
 
-## Recent results (guidance only — small N, high variance)
+## Recent results (guidance only: small N, high variance)
 
-Baseline is **147734 cycles**; lower is better. "Speedup" is
+Baseline is 147734 cycles; lower is better. "Speedup" is
 baseline ÷ final cycles. All runs are valid (anti-cheat checks passed).
 
 **agent6 + claude-sonnet-4-5 vs claude-code** (~$5 budget):
@@ -98,13 +98,13 @@ baseline ÷ final cycles. All runs are valid (anti-cheat checks passed).
 | agent6 · sonnet-4.5       | 3    | 5664 (26.1×) | 20016 (7.4×) | $4.9–5.1 |
 | claude-code · sonnet-4.5  | 1    | 5829 (25.3×) | —     | $2.42       |
 
-The three agent6 runs are on byte-identical code: **5664 / 8256 / 20016
-cycles** (7.4×–26.1×). The spread is the worker's stochastic search
-path, not a code change — so we quote a *range*, not a headline number.
+The three agent6 runs are on byte-identical code: 5664 / 8256 / 20016
+cycles (7.4×–26.1×). The spread is the worker's stochastic search
+path, not a code change, so we quote a *range*, not a headline number.
 agent6's best run (26.1×) edged out claude-code's single run (25.3×).
 
 **agent6 + open-weights models via OpenRouter** (single run, equal
-**$5 dollar** budget each via `AGENT6_PERF_MAX_USD=5`):
+$5 budget each via `AGENT6_PERF_MAX_USD=5`):
 
 | model (OpenRouter slug)              | final  | speedup | spent | notes                              |
 |--------------------------------------|--------|---------|-------|------------------------------------|
@@ -114,25 +114,25 @@ agent6's best run (26.1×) edged out claude-code's single run (25.3×).
 | moonshotai/kimi-k2-thinking          | 147734 | 1.0×    | $1.04 | no usable optimization             |
 | qwen/qwen3-coder-30b-a3b-instruct ²  | 147734 | 1.0×    | $0.21 | consumer-grade; no improvement     |
 
-² Runnable on consumer hardware (30B, 3B active MoE — fits a 24GB GPU
+² Runnable on consumer hardware (30B, 3B active MoE; fits a 24GB GPU
 at 4-bit).
 
 > **Update (per-call output cap, 32768 → 65536).** Three fresh kimi-k2.6
-> runs all landed at 1.0× — but two distinct failure modes, both
+> runs all landed at 1.0×, but with two distinct failure modes, both
 > diagnosed turn-by-turn:
 > - At the old 32768 metric cap, ~30% of turns ended `stop_reason="length"`:
 >   kimi's reasoning ate the whole per-call budget and the turn closed
->   *before* it could emit a tool call. The run made **1 edit** total.
+>   *before* it could emit a tool call. The run made 1 edit total.
 > - Raising `metric_task_max_tokens` to 65536 fixed that (truncation
->   30% → 5%, **15 edits**), so kimi now actually attempts the optimization
->   — but its edits *broke correctness* (0 passing verifies → nothing kept).
+>   30% → 5%, 15 edits), so kimi now actually attempts the optimization,
+>   but its edits *broke correctness* (0 passing verifies → nothing kept).
 >
 > So the cap bump is a real fix for the truncation waste (worth keeping for
 > any reason-heavy worker), but kimi's *capability* on this kernel is the
-> next wall, and it's high-variance — the 14389 above remains its best
+> next wall, and it's high-variance: the 14389 above remains its best
 > sample, not a number any single run reproduces.
 
-Takeaways, with the **small-N / high-variance** caveat firmly attached:
+Takeaways, with the small-N / high-variance caveat firmly attached:
 
 - **The frontier gap is large.** Sonnet-4.5 reaches 7–26× and
   claude-code 25×; the best open-weights model (Kimi K2.6) managed
@@ -146,7 +146,7 @@ Takeaways, with the **small-N / high-variance** caveat firmly attached:
 - **Reasoning-heavy models need an output-weighted budget.** Kimi is
   output-heavy, so the default 5:1 input:output split (see
   `INPUT_TO_OUTPUT_RATIO_FOR_USD_BUDGET` in `src/agent6/budget.py`)
-  starved it — it hit the output ceiling at ~$1 with little progress.
+  starved it: it hit the output ceiling at ~$1 with little progress.
   The 10.3× figure above is a re-run with output-weighted token caps
   (`AGENT6_PERF_MAX_IN=1500000 AGENT6_PERF_MAX_OUT=1150000`,
   `AGENT6_PERF_MAX_USD=0`) so it could actually use the compute.

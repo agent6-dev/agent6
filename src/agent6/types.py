@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Internal value types — frozen dataclasses, constructed by us only.
+"""Internal value types, frozen dataclasses, constructed by us only.
 
 Compare with `agent6.models` which holds pydantic models at LLM/config boundaries.
 """

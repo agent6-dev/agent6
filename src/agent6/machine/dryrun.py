@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Author-time dry-run for `agent6 machine test` (§5.1, §4.5).
 
-Pure validation of a loaded :class:`MachineSpec` with **no** real-world I/O —
+Pure validation of a loaded :class:`MachineSpec` with **no** real-world I/O,
 no jail, no network, no provider calls, no clock. Two passes:
 
 - **Per-state**: synthesize the success fact each non-branch state would emit
@@ -15,7 +15,7 @@ no jail, no network, no provider calls, no clock. Two passes:
 
 Everything reuses the engine/predicate/model code paths the live runner uses,
 so a green ``machine test`` means the plumbing, schemas, captures, and routing
-are sound — only the actual tool output / agent judgement / wall-clock differ
+are sound, only the actual tool output / agent judgement / wall-clock differ
 at run time.
 """
 

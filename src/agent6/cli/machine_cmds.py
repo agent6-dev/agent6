@@ -136,7 +136,7 @@ def _validate_bundle(spec: MachineSpec, machine_path: Path) -> list[str]:
     INSIDE the bundle (rejects symlinks that escape via ``..``/absolute), and
     every static tool-command element that references a bundled script must
     exist and stay inside the bundle. Dynamic (templated) command elements are
-    skipped — they cannot be resolved without a blackboard.
+    skipped, they cannot be resolved without a blackboard.
     """
     try:
         bundle = machine_path.parent.resolve()
@@ -266,7 +266,7 @@ def _build_machine_agent_runner(
 
     The machine engine is a host-netns supervisor; each `agent` state runs in
     its OWN subprocess (`agent6.cli.machine_agent`) which confines its egress
-    per `sandbox.agent_network` before running the loop — independently of the
+    per `sandbox.agent_network` before running the loop, independently of the
     engine and of sibling `tool` states. The subprocess is spawned with a fixed
     argv (no LLM-derived content) and handed the request via a temp file; the
     operator-authored prompt travels in that file, never on the command line.
@@ -384,8 +384,8 @@ def _machine_network_refusal(
 
     Layers machine-specific rules on top of `_check_network_profile` (which
     handles agent_network=local / tool_network=only_explicit_states on
-    `hardened`). On `hardened` per-tool isolation is impossible, so we refuse —
-    rather than silently mis-confine — whenever isolation is *required*: by the
+    `hardened`). On `hardened` per-tool isolation is impossible, so we refuse,
+    rather than silently mis-confine, whenever isolation is *required*: by the
     operator (`tool_network = "block"`) or by a state (`allow_network = "block"`).
     A networked state under `tool_network = "block"` is a config conflict and is
     refused on any profile. Returns None when fine.
@@ -400,7 +400,7 @@ def _machine_network_refusal(
         return (
             'a tool state sets allow_network = "allow" but sandbox.tool_network ='
             " 'block'. Set sandbox.tool_network = 'only_explicit_states' for"
-            " audited per-tool egress."
+            " explicit per-tool egress."
         )
     if tool_states and tn == "block" and profile == "hardened":
         return (
@@ -459,7 +459,7 @@ def _resolve_network_refusal(  # noqa: PLR0911
     """A hard network refusal becomes a choice, not a dead end: explain it, then
     (interactively) offer to apply the minimal config fix and continue, simulate
     the machine offline, or stop. Headless prints the exact fix + simulate
-    command and exits non-zero — it never relaxes a sandbox setting unattended.
+    command and exits non-zero, it never relaxes a sandbox setting unattended.
     Returns the new ``(cfg, profile)`` when the fix applied and re-validates
     clear, else an exit code."""
     print(f"REFUSING: {refusal}", file=sys.stderr)
@@ -522,7 +522,7 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
     # Default profile for confinement-free machines: resolve from the host.
     profile: SandboxProfile = detect_env().detected_profile
     # The running machine's own file + scripts bundle are read-only in every
-    # run jail, so a tool/agent can't rewrite its own logic or audited scripts.
+    # run jail, so a tool/agent can't rewrite its own logic or bundled scripts.
     protect_paths = _machine_protect_paths(path, cwd)
     # Load the effective config when an `agent` state needs it, or when there
     # are any tool states (we need sandbox.tool_network/profile to gate egress).

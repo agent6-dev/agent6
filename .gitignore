@@ -28,3 +28,4 @@ src/agent6/_docs/
 # agent6 runtime
 .agent6/
 .agent6-self-review/
+.claude/

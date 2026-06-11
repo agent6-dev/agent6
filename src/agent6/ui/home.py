@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The `agent6 tui` hub: a home screen to browse recent runs and start new work.
 
-CLI-first by design — the hub never reimplements the workflow. "Start a run /
+CLI-first by design, the hub never reimplements the workflow. "Start a run /
 plan / ask" simply spawns the normal `agent6` CLI as a detached subprocess
 (whose non-TTY stdout means it won't try to open its own TUI) and then opens the
 read-only dashboard on the run directory it creates. So everything here is a
@@ -62,7 +62,7 @@ def _run_summary(run_dir: Path) -> dict[str, str]:
                 elif etype == "run.end":
                     status = "ok" if ev.get("all_passed") else "done"
         # A "running" run whose log has been quiet for a while is almost
-        # certainly a crashed/killed process, not active work — say so rather
+        # certainly a crashed/killed process, not active work, say so rather
         # than showing "running" forever.
         if status == "running" and (time.time() - logs.stat().st_mtime) > _STALE_AFTER_S:
             status = "stale"
@@ -227,7 +227,7 @@ def _spawn_and_locate(agent6_dir: Path, mode: str, task: str) -> tuple[Path | No
             if found is not None:
                 return found, ""
             if proc.poll() is not None:
-                # Child exited without a run dir — surface why (recheck once in
+                # Child exited without a run dir, surface why (recheck once in
                 # case the dir landed in the same instant the process exited).
                 found = _located_run(agent6_dir, before)
                 if found is not None:

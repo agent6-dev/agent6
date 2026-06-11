@@ -193,7 +193,7 @@ def _enforce_root_policy(allow_root: bool) -> int | None:
     ``--allow-root`` / ``AGENT6_ALLOW_ROOT=1``; returns None to proceed. When
     proceeding as root it prints a loud banner. We deliberately do NOT drop
     privileges: under sudo the LLM's verify/run commands need to run as root
-    inside the jail, so the jail — not the process uid — is the boundary.
+    inside the jail, so the jail, not the process uid, is the boundary.
     """
     if not is_root():
         return None
@@ -228,7 +228,7 @@ def _ensure_agent6_gitignored(
     `agent6 run` and `agent6 plan` create ``<agent6-dir>/runs/<id>/`` early in
     startup (transcripts, run log). If the project's `.gitignore` doesn't
     already exclude the agent6 dir, those files become untracked content and
-    the `require_clean_worktree` pre-flight check then refuses to proceed — a
+    the `require_clean_worktree` pre-flight check then refuses to proceed, a
     self-DoS that confuses first-time users.
 
     Append the entry, then commit `.gitignore` immediately so the worktree

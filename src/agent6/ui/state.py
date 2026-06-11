@@ -6,7 +6,7 @@ Mirroring this in TypeScript (for the VS Code extension) is the intended
 extension path. The shape of `RunState` IS the data contract for any
 external viewer; keep field names stable.
 
-No I/O, no textual, no async — just dataclasses and a `apply_event`
+No I/O, no textual, no async, just dataclasses and a `apply_event`
 function that returns a new `RunState` (frozen so the TUI can rely on
 "if state is state_prev, nothing changed").
 """
@@ -317,7 +317,7 @@ def _build_task_tree(nodes: dict[str, Any], cursor: str | None) -> tuple[TaskNod
     def visit(nid: str, depth: int) -> None:
         node = nodes.get(nid)
         # isinstance (not `is None`) so a malformed non-dict value is skipped
-        # rather than crashing .get() — consistent with the roots filter below.
+        # rather than crashing .get(), consistent with the roots filter below.
         if not isinstance(node, dict) or nid in seen:
             return
         seen.add(nid)

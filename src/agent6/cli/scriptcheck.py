@@ -5,19 +5,19 @@ is production-ready: lint-clean, typed, and proven to *simulate* offline.
 
 Two layers, matching their risk:
 
-* :func:`lint_and_typecheck` — STATIC analysis only (ruff + ty read the files,
+* :func:`lint_and_typecheck`, STATIC analysis only (ruff + ty read the files,
   they never run them), so it shells out directly with a fixed argv on a private
   temp copy. ``ruff --isolated`` ignores any repo config (the scratch bundle
   lives under the user's repo, whose ruleset must not bleed in); ty checks the
-  real scripts only — mock-heavy ``*_test.py`` files trip ty on
+  real scripts only, mock-heavy ``*_test.py`` files trip ty on
   ``unittest.mock`` internals, so they are gated by *execution* instead.
-* :func:`run_offline_tests` — EXECUTES each ``*_test.py``. Because that runs
+* :func:`run_offline_tests`, EXECUTES each ``*_test.py``. Because that runs
   model-authored code, it goes through :func:`run_in_jail` (no network, the same
   confinement a tool state gets), never a bare subprocess.
 
 A missing ruff/ty is skipped silently (a stripped install still produces a
 bundle). An unavailable jail is different: it surfaces a diagnostic rather than
-silently dropping the offline-test gate — except on profile ``none``, where
+silently dropping the offline-test gate, except on profile ``none``, where
 there is no jail to run model-authored code in and execution is skipped.
 """
 
@@ -73,7 +73,7 @@ def _trim(text: str) -> str:
 def _run_static(argv: list[str], cwd: Path, label: str) -> str | None:
     """Run a static checker; return a problem string on failure, else None."""
     # Fixed argv (an operator-installed tool + flags); the only LLM-derived input
-    # is the *files* it statically reads — it never executes them. See AGENTS.md.
+    # is the *files* it statically reads, it never executes them. See AGENTS.md.
     try:
         res = subprocess.run(
             argv, capture_output=True, text=True, timeout=180, cwd=cwd, check=False
@@ -132,7 +132,7 @@ def run_offline_tests(
     """Execute every ``scripts/**/*_test.py`` in a no-network jail (the bundle's
     offline simulation). Returns failures (empty = all green / nothing to run).
 
-    Skipped on profile ``none`` (no jail to confine model-authored code in) —
+    Skipped on profile ``none`` (no jail to confine model-authored code in),
     the static checks still apply. Each test gets a fresh writable
     ``$AGENT6_MACHINE_DATA_DIR`` so record-style scripts can be exercised."""
     scripts_dir = bundle_dir / "scripts"

@@ -1,13 +1,13 @@
 # agent6 state machines
 
 agent6 state machines are a declarative, human-editable, machine-parseable
-layer on top of agent6 that lets operators compose *mini-agents* — small,
+layer on top of agent6 that lets operators compose *mini-agents*: small,
 reliable, deterministic programs whose building blocks are agent6 runs,
 sandboxed tool calls, timed waits, and branches.
 
 This document is the specification and reference for the format and its
 runtime. The feature is implemented end-to-end under `src/agent6/machine/`
-and exposed through the `agent6 machine` subcommands — `create`, `check`,
+and exposed through the `agent6 machine` subcommands: `create`, `check`,
 `graph`, `run`, `status`, `poke`, and `replay` (§7). It does not change
 the security model, the tool surface, or the stability policy in
 [AGENTS.md](AGENTS.md); §9 records how each invariant is preserved.
@@ -16,19 +16,19 @@ the security model, the tool surface, or the stability policy in
 
 ## 1. Motivation
 
-agent6's two workflows ([ARCHITECTURE.md](ARCHITECTURE.md)) — `run` (the
-agent loop) and `review` (a read-only diff pass) — are both *single-shot*:
+agent6's two workflows ([ARCHITECTURE.md](ARCHITECTURE.md)), `run` (the
+agent loop) and `review` (a read-only diff pass), are both *single-shot*:
 you start them, they finish. There is no first-class way to express a
 program that runs indefinitely, reacting to the clock or to external
 signals, branching, looping, and occasionally invoking an agent run as
 one step among many.
 
 "Always-on" autonomous agents target this, but tend to put the LLM in the
-driver's seat of the *control flow*, not just the *work* — so the same
+driver's seat of the *control flow*, not just the *work*, so the same
 inputs produce different paths, crashes lose state, and runs can't be
 replayed. agent6 can do better because the `run` workflow is already a
 deterministic, snapshot-and-replay state machine internally. State
-machines **lift that pattern up one layer**: the operator authors the
+machines lift that pattern up one layer: the operator authors the
 control flow as a static graph, and the LLM stays confined to the work
 *inside* a state.
 
@@ -66,7 +66,7 @@ what state machines make first-class.
 ### Non-goals
 
 - Not a general programming language. The branch/predicate grammar is
-  intentionally **non-Turing-complete** (no loops *inside* a predicate,
+  intentionally non-Turing-complete (no loops *inside* a predicate,
   no arbitrary code). Loops exist only as graph edges.
 - Not a distributed scheduler. One machine = one OS process (systemd /
   cron-friendly), restartable. No clustering in v1.
@@ -82,7 +82,7 @@ what state machines make first-class.
   model-owned.** The graph of states/edges is fixed at author time. What
   happens *inside* an `agent` state is the usual agent6 loop.
 - **Everything nondeterministic is journaled as a fact.** Wall-clock
-  reads, tool stdout, agent outputs — each is appended to an immutable
+  reads, tool stdout, agent outputs: each is appended to an immutable
   event log the moment it is observed. The engine is a pure reducer over
   `(machine, blackboard, event) → blackboard'`. Replay reads the journal
   instead of re-observing the world.
@@ -101,12 +101,12 @@ what state machines make first-class.
 
 A machine is a single TOML file, suffix `.asm.toml` ("agent6 state
 machine"). TOML because the project already standardizes on it, it is
-parsed by `tomllib` (stdlib — **no new dependency**), and it is
+parsed by `tomllib` (stdlib, no new dependency), and it is
 comfortable to hand-edit and diff. The parsed document is validated by a
 pydantic v2 model at the trust boundary (`extra="forbid", frozen=True`),
 exactly like `Config`.
 
-> **Naming.** The suffix is `.asm.toml` ("agent state machine" —
+> **Naming.** The suffix is `.asm.toml` ("agent state machine";
 > deliberately vendor-neutral like `AGENTS.md`, so other tools can adopt
 > it). `.a6m.toml` is a documented fallback if the assembly-language
 > `.asm` clash ever bites; the parser keys off the doubled extension.
@@ -144,12 +144,12 @@ verdict = { type = "classification", default = {} }  # a [schemas.*] record type
 
 ### 4.2 The blackboard: three owners
 
-The key/value store is split into three subtables, **named by who may
-write each variable**. Provenance is the single organizing axis, and the
+The key/value store is split into three subtables, named by who may
+write each variable. Provenance is the single organizing axis, and the
 subtable header carries it, so there is no redundant per-entry `writer`/
 `owner` field. *Who may write a value* is therefore a
 statically-checkable, fail-loud property of which table a variable lives
-in — not a runtime convention.
+in, not a runtime convention.
 
 | subtable          | written by                                        | mutability        | declared with | example |
 |-------------------|---------------------------------------------------|-------------------|---------------|---------|
@@ -162,14 +162,14 @@ Only `tool` states (into `[vars.code]`) and `agent` states (into
 only route, sleep, or end.
 
 - **`[vars.operator]`** are the machine's parameters: set once when the
-  operator authors/commits the file and **never** written by any state.
+  operator authors/commits the file and never written by any state.
   Declared with a concrete `value` (not a `default`). Any `capture`/`set`
   that targets an operator var is a *load-time* error. The names above
-  are illustrative — an operator var may be any JSON-serializable value.
+  are illustrative; an operator var may be any JSON-serializable value.
 - **`[vars.code]`** change only as a pure function of journaled tool
-  output — this is what keeps the path deterministic and replayable.
+  output; this is what keeps the path deterministic and replayable.
 - **`[vars.agent]`** change only through the single validated structured
-  output of one `agent` state — the LLM's one sanctioned channel into
+  output of one `agent` state: the LLM's one sanctioned channel into
   the blackboard.
 
 At `machine check` time the validator enforces the ownership wall: a
@@ -181,20 +181,20 @@ LLM-owned variable, and an agent cannot overwrite a deterministic one.
 Allowed types (all three subtables): `str`, `int`, `float`, `bool`,
 `list[<scalar>]`, `json`, and any **named record type** declared in
 `[schemas.*]` (§4.6). The two structured types differ on exactly one
-axis — **navigability**:
+axis, **navigability**:
 
 - `json` is an **opaque** blob: read or written *wholesale* only. It may
   be passed to a tool/agent (`{{ x | json }}`) or captured as a whole,
-  but it **may not be dotted**. `x.key` where `x` is `json` is a
+  but it may not be dotted. `x.key` where `x` is `json` is a
   *load-time* error. Use `json` only when the machine never inspects the
   value's internals.
 - A **record type** (e.g. `classification`) is **navigable**: every
   `.field` read in a predicate or template is checked against the
-  schema at `machine check` time — a misspelled field is a load error,
+  schema at `machine check` time; a misspelled field is a load error,
   not a silent misroute.
 
-Declaring types up front is what makes branch predicates **statically
-type-checkable**: scalars by their declared type, record fields by their
+Declaring types up front is what makes branch predicates statically
+type-checkable: scalars by their declared type, record fields by their
 schema, and `json` simply forbidden from being dotted at all.
 
 The blackboard (all three subtables) is the *only* state that flows
@@ -212,15 +212,15 @@ Every state has a `kind`. There are five.
 | `tool`     | one sandboxed command via `run_in_jail`                   | `ok` · `nonzero` · `timeout`         |
 | `wait`     | sleeps until a wall-clock tick or an external signal      | `tick` · `signal`                    |
 | `branch`   | pure predicate over the blackboard → next state           | (chooses a `goto` directly)          |
-| `terminal` | ends the machine                                          | (none — absorbing)                   |
+| `terminal` | ends the machine                                          | (none; absorbing)                    |
 
-The outcome labels are a **fixed enum per kind**, produced by the
+The outcome labels are a fixed enum per kind, produced by the
 state executor deterministically. A non-terminal, non-branch state
-**must** declare an `on = { ... }` table mapping *every* label its kind
+must declare an `on = { ... }` table mapping *every* label its kind
 can emit to a target state name. Omitting a label is a load error.
 
 This is the key to determinism: the edge taken is a pure function of a
-small, closed set of executor-produced labels — never of free-form LLM
+small, closed set of executor-produced labels, never of free-form LLM
 text.
 
 #### `agent`
@@ -252,7 +252,7 @@ An `agent` state spins up a normal agent6 `run` with its own snapshot
 dir, transcript, budget slice, and jail. The *only* control-flow signal
 it returns is the outcome label; its structured product is whatever
 `finish_run` emitted, validated against `output_schema`, captured into
-the blackboard. The LLM cannot pick the next state — it can only
+the blackboard. The LLM cannot pick the next state; it can only
 populate variables that a downstream `branch` reads.
 
 The optional per-state knobs above tune *how* that loop runs: `provider`
@@ -260,7 +260,7 @@ The optional per-state knobs above tune *how* that loop runs: `provider`
 `max_usd` / `best_effort_usd_limit` / `max_input_tokens` /
 `max_output_tokens` caps bound this one agent slice. Each falls back to the effective config (machine `[config]`
 overlay < repo < global < defaults; §4.7) when omitted. Connection
-secrets are never expressed here — only a `provider` *name* that must
+secrets are never expressed here, only a `provider` *name* that must
 already exist in the effective config.
 
 #### `tool`
@@ -280,10 +280,10 @@ existing `run_in_jail`. `nonzero` is any non-zero exit. A `tool`'s
 stdout is parsed as JSON and bound to the capture-scope name `result`
 (§4.5). Its capture has two modes, and a state uses at most one:
 
-- **Opaque whole-capture** — `capture = { stdout_json = "<var>" }` binds
+- **Opaque whole-capture**: `capture = { stdout_json = "<var>" }` binds
   the entire parsed stdout to one variable. No `output_schema` is
   needed; `result` is then opaque and may not be dotted.
-- **Typed field-capture** — declare `output_schema = "<record>"` (a
+- **Typed field-capture**: declare `output_schema = "<record>"` (a
   `[schemas.*]` type, §4.6) to type `result`, then pull fields with
   `set = { <var> = "{{ result.<field> }}" }`. Because `result` is typed,
   every `result.<field>` is statically checked, mirroring how an
@@ -291,16 +291,16 @@ stdout is parsed as JSON and bound to the capture-scope name `result`
 
 A `list`-typed variable spliced as a bare argv element
 (`"{{ pending }}"`) expands in place to one argument per element (§4.4).
-`scan-inbox` here is an illustrative stand-in — a `tool` state runs
+`scan-inbox` here is an illustrative stand-in; a `tool` state runs
 whatever audited command the operator names.
 
 **Network (opt-in, default off).** A `tool`'s `allow_network` is one of
-`"auto"` (default — no network), `"allow"` (wants the host network), or
-`"block"` (no network, *required* — refuses to run on `hardened`, which can't
+`"auto"` (default, no network), `"allow"` (wants the host network), or
+`"block"` (no network, *required*; refuses to run on `hardened`, which can't
 isolate a single tool). A tool reaches the network only when it sets `allow_network =
 "allow"`. Because the machine engine is a host-netns *supervisor* (each `agent`
 state confines itself in its own subprocess; see §9), an opt-in `tool` can reach
-the host network even while the agents stay confined to the provider API — a
+the host network even while the agents stay confined to the provider API. A
 `tool` command is fixed and operator-reviewed, so it is not a free exfiltration
 channel the way a networked `run_command` would be. Whether the opt-in is
 honored is the operator's call via `sandbox.tool_network` (read from the
@@ -313,7 +313,7 @@ global/repo config, never the machine overlay):
 | `local` | `only_explicit_states` | loopback providers only | **host network** |
 | `open` | `allow` | unconfined | host network (and `run_command`) |
 
-So the headline setup — confined agents + one audited networked tool — is
+So the headline setup (confined agents + one operator-reviewed networked tool) is
 `sandbox.agent_network = "providers"`, `sandbox.tool_network =
 "only_explicit_states"`, and `allow_network = "allow"` on that one state.
 `only_explicit_states` (and `local`) need the `strict` profile; a networked tool
@@ -330,11 +330,11 @@ run `agent6` from. `machine check` validates the bundle: every entry under
 `scripts/` must resolve *inside* the bundle (symlinks that escape via
 `..`/absolute are rejected) and every static `scripts/...` command
 reference must exist and stay inside the bundle. During a run the bundle (the
-`.asm.toml` + `scripts/`) is **read-only in every jail**, so a tool or agent
-cannot rewrite its own machine logic or audited scripts mid-run.
+`.asm.toml` + `scripts/`) is read-only in every jail, so a tool or agent
+cannot rewrite its own machine logic or bundled scripts mid-run.
 
 A `tool` script that needs to persist data across iterations writes to
-`$AGENT6_MACHINE_DATA_DIR` — a per-machine writable directory
+`$AGENT6_MACHINE_DATA_DIR`, a per-machine writable directory
 (`.agent6/machines/<id>/data/`) granted RW in every tool jail. It is the only
 writable spot on the `hardened` profile (where new top-level files in the
 workspace are read-only); the journal still records every transition either way.
@@ -349,16 +349,16 @@ on = { tick = "scan", signal = "scan" }
 ```
 
 `wait` is what makes a machine long-running without burning CPU or
-tokens. A state declares **exactly one** of `every_secs`, `until` (an
+tokens. A state declares exactly one of `every_secs`, `until` (an
 absolute ISO-8601 instant), or `cron` (a 5-field expression); zero or
-two-or-more is a load error. On entry the engine computes the **absolute
-next-wake instant** and journals it as a fact *before* sleeping, so a
+two-or-more is a load error. On entry the engine computes the absolute
+next-wake instant and journals it as a fact *before* sleeping, so a
 replay re-reads that instant and never actually sleeps. In v1 the
 process simply blocks in-process until the instant (or an external
-`signal` — a file/IPC poke — arrives first); because the wake is
+`signal`, a file/IPC poke, arrives first); because the wake is
 journaled absolutely, the `--exit-on-wait` persisted-wake driver (§6)
 runs the identical file with no format change. (`cron` is accepted by
-the parser but not yet evaluated by the v1 runtime — use `every_secs` or
+the parser but not yet evaluated by the v1 runtime: use `every_secs` or
 `until`; a `cron` wait raises at run time.)
 
 #### `branch`
@@ -373,9 +373,9 @@ when = [
 ```
 
 `when` is an ordered list; the first matching `if` wins; a final
-`else = true` is **required** (total function — no "stuck" state). The
-predicate grammar is a **restricted, non-Turing-complete expression
-language** (see §5.2): comparisons, `and`/`or`/`not`, membership,
+`else = true` is required (total function, no "stuck" state). The
+predicate grammar is a restricted, non-Turing-complete expression
+language (see §5.2): comparisons, `and`/`or`/`not`, membership,
 `len()`, numeric/string literals, and blackboard references (§4.5). No
 function calls beyond a tiny fixed allow-list, no Python attribute
 access, no `eval`. Dotted references like `verdict.confidence` are
@@ -399,33 +399,33 @@ A machine may have many terminal states (success and failure variants).
 ### 4.4 Templating and list-splicing
 
 Strings may contain `{{ ... }}` interpolations. The contents of an
-interpolation are **one reference (§4.5) plus an optional single
-filter**, nothing more. No arbitrary expressions, no chained filters, no
+interpolation are one reference (§4.5) plus an optional single
+filter, nothing more. No arbitrary expressions, no chained filters, no
 method calls. Anything richer belongs in a `branch` predicate, which is
 itself restricted. This keeps both author-time validation and replay
 simple and keeps the format from quietly becoming a scripting language.
 
-There are exactly **two** filters, both zero-argument:
+There are exactly two filters, both zero-argument:
 
 | filter | applies to | result |
 |--------|------------|--------|
 | `len`  | `str`, `list`, or a `json`/record container | the integer length |
 | `json` | any value | compact JSON, object keys sorted (deterministic) |
 
-There is deliberately **no `join` filter** — building a delimited string
+There is deliberately no `join` filter: building a delimited string
 that a downstream command must re-split is fragile and injection-prone.
 Lists reach a command's argv by **splicing** instead (below).
 
-An interpolation always produces a **string**. A bare `{{ x }}` is legal
+An interpolation always produces a string. A bare `{{ x }}` is legal
 only when `x` resolves to a scalar (`str`/`int`/`float`/`bool`); a bare
-reference to a `list`, `json`, or record value is a *load error* — apply
+reference to a `list`, `json`, or record value is a *load error*: apply
 `json` (or, for a list in argv, splice it) so the rendering is explicit
 rather than a surprising Python `repr`.
 
 **List-splicing (argv only).** Inside a `tool` state's `command` array,
-an element that is *exactly* the string `"{{ listvar }}"` — a lone
-reference to a `list[...]` variable, no filter, no surrounding text —
-expands **in place** to one argv element per list item, each rendered as
+an element that is *exactly* the string `"{{ listvar }}"` (a lone
+reference to a `list[...]` variable, no filter, no surrounding text)
+expands in place to one argv element per list item, each rendered as
 a scalar. This is the only way a list crosses into a command, and it is
 injection-safe because each element stays a distinct argument that is
 never re-parsed by a shell. Two load errors guard it: splicing a
@@ -450,24 +450,22 @@ could not be one.
 
 **Three owners, one flat reference namespace.** The `[vars.operator]`,
 `[vars.code]`, and `[vars.agent]` subtables decide *who may write* a
-variable. They do **not** create three separate read namespaces. Every
-variable is referenced everywhere — templates and predicates alike — by
-its **bare name only**: `positions`, never `vars.code.positions` and
+variable. They do not create three separate read namespaces. Every
+variable is referenced everywhere (templates and predicates alike) by
+its bare name only: `positions`, never `vars.code.positions` and
 never `code.positions`. The owner prefix never appears in a reference.
-This is the single answer to "how do code and the agent reference vars":
-always the bare name, identically, regardless of owner.
 
 Three consequences, each a `machine check` error:
 
 - **Global uniqueness across owners.** A name may be declared in exactly
   one of the three subtables. Declaring `positions` in both
-  `[vars.code]` and `[vars.agent]` is rejected — *"variable `positions`
+  `[vars.code]` and `[vars.agent]` is rejected: *"variable `positions`
   declared in both `[vars.code]` and `[vars.agent]`; the three owner
   subtables share one read namespace"*. Because a bare reference would
   otherwise be ambiguous, this is forbidden, not resolved by precedence.
 - **No bare top-level vars.** Every variable must live under one of the
   three owner subtables. A key written directly under `[vars]` (i.e.
-  `vars.positions`) has no declared owner and is rejected — *"`vars.positions`
+  `vars.positions`) has no declared owner and is rejected: *"`vars.positions`
   has no owner subtable; put it in `[vars.operator]`, `[vars.code]`, or
   `[vars.agent]`"*. It is never silently ignored.
 - **Reserved names.** The bare names `vars`, `operator`, `code`,
@@ -481,28 +479,28 @@ templates).**
 ```
 ref  := name ("." key)*
 name := an identifier declared in exactly one [vars.*] subtable
-key  := an identifier — a declared field of a record type
+key  := an identifier (a declared field of a record type)
 ```
 
 The first segment is always a declared variable; the validator checks it
-exists. Any further `.key` segments navigate **into** a record value as
-data — they are ordered dictionary lookups performed by agent6's own
-evaluator, **not** Python attribute access and never `getattr`. The
+exists. Any further `.key` segments navigate into a record value as
+data: they are ordered dictionary lookups performed by agent6's own
+evaluator, not Python attribute access and never `getattr`. The
 worked example's `verdict.confidence` means "the `confidence` field of
 the `classification` record `verdict`", not a Python attribute. A `.key`
-segment is legal **only** when the value it navigates is a record type
+segment is legal only when the value it navigates is a record type
 (§4.6): each segment is checked against the schema at load, so a
-misspelled field is a load error. **Dotting an opaque `json` value, or a
-scalar, is a load error** — `json` is wholesale-only by construction
+misspelled field is a load error. Dotting an opaque `json` value, or a
+scalar, is a load error: `json` is wholesale-only by construction
 (§4.2), which is what keeps every navigable path statically checkable.
 
 **Capture scope and `result`.** Inside a state's `capture` table the
 reserved name `result` denotes the structured output the state just
 produced, and is visible *only* there. `result` is not a blackboard
 variable, cannot be declared, and is invisible outside the capturing
-state. Whether `result` is **navigable** follows the same one rule as
+state. Whether `result` is navigable follows the same one rule as
 every other value (§4.2): it may be dotted only when it is typed by an
-`output_schema` record — for an `agent` state that schema is mandatory,
+`output_schema` record; for an `agent` state that schema is mandatory,
 for a `tool` state it is optional (declare it to read fields; omit it
 and `result` is opaque and whole-capture only). A `capture` has two
 forms of target:
@@ -535,8 +533,8 @@ A **record type** is a named, field-typed structure declared once under
 boundary). One mechanism serves both, so there is exactly one way to
 describe structured data in a machine.
 
-The schema language is intentionally tiny — inline TOML, **no JSON
-Schema, no new dependency** (`tomllib` + `pydantic` only). Each entry is
+The schema language is intentionally tiny: inline TOML, no JSON
+Schema, no new dependency (`tomllib` + `pydantic` only). Each entry is
 `field = "<type>"` or `field = { type = "<type>", ... }`:
 
 ```toml
@@ -550,7 +548,7 @@ Rules (all enforced at `machine check`):
 
 | Rule | Behavior |
 |---|---|
-| **Field types** | `str`, `int`, `float`, `bool`, `list[<scalar>]`, another **schema name** (recursive; cycles are a load error), or `json` (opaque escape hatch — itself not dottable, §4.2) |
+| **Field types** | `str`, `int`, `float`, `bool`, `list[<scalar>]`, another **schema name** (recursive; cycles are a load error), or `json` (opaque escape hatch; itself not dottable, §4.2) |
 | **Required by default** | every field must be present in a validated payload unless `optional = true` (mirrors `Config`'s `extra="forbid"`); unknown fields are rejected |
 | **`enum`** | string fields only; constrains a `str` to a fixed literal list, checked at the `finish_run`/capture boundary (earlier than a `branch` would re-check it) |
 | **Dotting** | a `.field` in a predicate/template is type-checked against the schema (field must exist); a `list`/`json`/non-record field may not be dotted further |
@@ -560,8 +558,8 @@ Rules (all enforced at `machine check`):
 A machine file may carry an optional top-level `[config]` table: an
 ordinary agent6 config fragment that layers on top of the effective
 repo/global/default config for the duration of the machine run. It is
-the **highest-precedence** config layer (`machine[config]` < `--config`
-is *not* applicable here — the machine overlay wins over repo and
+the highest-precedence config layer (`machine[config]` < `--config`
+is *not* applicable here; the machine overlay wins over repo and
 global), and every knob `agent6 config show` lists is valid inside it.
 
 ```toml
@@ -611,7 +609,7 @@ loop:
 `execute` is the only place the outside world is touched (run an agent,
 run a tool, read the clock). Its result is written to the journal as a
 fact *before* the blackboard is updated. `reduce` and `next_state` are
-pure. Therefore **replaying the journal reproduces the exact path** —
+pure. Therefore replaying the journal reproduces the exact path,
 including which branch was taken, because the captured outputs that the
 branch reads are in the journal.
 
@@ -621,11 +619,11 @@ branch reads are in the journal.
   pure function of journaled events. No branch ever depends on un-logged
   state.
 - The predicate evaluator is a hand-written recursive evaluator over a
-  small AST (parsed with `ast.parse(..., mode="eval")` then **walked
-  against a strict allow-list of node types** — `Compare`, `BoolOp`,
+  small AST (parsed with `ast.parse(..., mode="eval")` then walked
+  against a strict allow-list of node types: `Compare`, `BoolOp`,
   `UnaryOp`, `Name`, `Constant`, a fixed-name `Call` allow-list, and
-  `Attribute` nodes **reinterpreted as record data-field navigation**
-  (§4.5, §4.6) — never as Python attribute access. Anything outside the
+  `Attribute` nodes reinterpreted as record data-field navigation
+  (§4.5, §4.6), never as Python attribute access. Anything outside the
   allow-list raises at `machine check` time. The evaluator parses but
   never `eval`/`exec`s, never calls `getattr`, and never resolves
   arbitrary Python names: an `Attribute` chain is walked against the
@@ -661,10 +659,10 @@ the primary runaway guard.
 Each *side-effecting* state execution gets a deterministic step id
 `(<state>, <transition-count>)`. On restart the engine reads the journal:
 if the last line is an in-progress `state.begin` with no matching
-`state.end`, the step is **re-attempted only if it is known-idempotent**
+`state.end`, the step is re-attempted only if it is known-idempotent
 (tool/agent reads), otherwise it surfaces for operator decision. The
 default posture is *at-least-once for reads, never-silently-twice for
-writes* — destructive tools must be authored to be idempotent (the same
+writes*: destructive tools must be authored to be idempotent (the same
 discipline the rest of agent6 already follows).
 
 ---
@@ -692,24 +690,24 @@ discipline the rest of agent6 already follows).
 
 | command                                   | effect                                            |
 |-------------------------------------------|---------------------------------------------------|
-| `agent6 machine create <task> [-o <file>] [--max-attempts N]`| **LLM-drafted** machine bundle: the `.asm.toml` plus every `scripts/...` file its tool states run, plus a `scripts/<name>_test.py` mock test per script with an external seam (network/clock/files). Each draft is gated before acceptance: `machine check` validation, ruff lint, ty type check, and the mock tests executed in a no-network jail; failures loop back to the model with the failing source (up to `--max-attempts`, default 3). Writes a *draft* the operator reviews, edits, and commits — running it still requires the operator (see §9). |
+| `agent6 machine create <task> [-o <file>] [--max-attempts N]`| **LLM-drafted** machine bundle: the `.asm.toml` plus every `scripts/...` file its tool states run, plus a `scripts/<name>_test.py` mock test per script with an external seam (network/clock/files). Each draft is gated before acceptance: `machine check` validation, ruff lint, ty type check, and the mock tests executed in a no-network jail; failures loop back to the model with the failing source (up to `--max-attempts`, default 3). Writes a *draft* the operator reviews, edits, and commits; running it still requires the operator (see §9). |
 | `agent6 machine check <file>`             | validate: parse, type-check vars, verify every edge target exists, every state reachable, every `branch` total, every variable name unique across owners and owned by a subtable (no bare `vars.*`), every reference resolving to a declared variable, every `capture` writing a var owned by the writing state kind (`tool` → `[vars.code]`, `agent` → `[vars.agent]`, `[vars.operator]` read-only), the script bundle (`scripts/` entries + static `scripts/...` command refs stay inside the bundle), and static script health (ruff lint + ty type check). No execution, no network. |
-| `agent6 machine test <file> [--blackboard FIXTURE.toml]` | everything `check` does, plus the bundle's `scripts/*_test.py` mock tests executed in a **no-network jail**, plus a pure dry-run (no provider/clock): per state, synthesize the success fact it would emit (a tool's `output_schema`-shaped JSON / an agent's `finish_run` payload), push it through the real `reduce`, and confirm the capture binds and the produced label routes to a declared state; per `branch`, evaluate each `when` clause against the declared defaults overlaid with `--blackboard` and print the winning `goto`. The full offline simulation: plumbing, schema, routing, and script behavior with every seam mocked — no real network, no model calls. |
+| `agent6 machine test <file> [--blackboard FIXTURE.toml]` | everything `check` does, plus the bundle's `scripts/*_test.py` mock tests executed in a **no-network jail**, plus a pure dry-run (no provider/clock): per state, synthesize the success fact it would emit (a tool's `output_schema`-shaped JSON / an agent's `finish_run` payload), push it through the real `reduce`, and confirm the capture binds and the produced label routes to a declared state; per `branch`, evaluate each `when` clause against the declared defaults overlaid with `--blackboard` and print the winning `goto`. The full offline simulation: plumbing, schema, routing, and script behavior with every seam mocked (no real network, no model calls). |
 | `agent6 machine graph <file> [--format mermaid\|dot]` | emit the machine as a diagram. `mermaid` (default) prints `stateDiagram-v2`; `dot` prints Graphviz DOT for `dot -Tsvg`/`dot -Tpng` and the broader Graphviz/`xdot` ecosystem. Reachability is already computed at load, so both are pure renders of the same validated graph. |
 | `agent6 machine run <file> [--exit-on-wait]` | start (or resume) a machine. Acquires the lock, drives the loop. With `--exit-on-wait`, persist the next wake and exit 0 (status `waiting`) at the first not-ready `wait`, for an external scheduler (systemd timer / cron) to resume. |
 | `agent6 machine status <id>`              | current state, blackboard, spend, next wake. Read-only. |
 | `agent6 machine poke <id>`                | signal a waiting instance to wake on its next check. |
-| `agent6 machine replay <id>`              | deterministic replay from the journal (no world I/O) — backtesting. |
+| `agent6 machine replay <id>`              | deterministic replay from the journal (no world I/O); backtesting. |
 
 `machine check` is the human-editability payoff: precise, fail-loud
 diagnostics (`state "act": branch is not total (no else); add { else =
 true, goto = ... }`).
 
-### 7.1 `machine create` — LLM drafts, operator owns
+### 7.1 `machine create`: LLM drafts, operator owns
 
-`machine create` lets the operator describe a loop in plain language —
-*"poll this location, classify new items, take a step on high
-confidence"* — and get a first-cut machine bundle back instead of
+`machine create` lets the operator describe a loop in plain language
+(*"poll this location, classify new items, take a step on high
+confidence"*) and get a first-cut machine bundle back instead of
 authoring it by hand. It is an ordinary jailed agent6 loop with a
 specialized prompt: the model is handed this document's grammar (state
 kinds, the three-owner blackboard
@@ -718,11 +716,11 @@ and the task, and is told to return one complete machine by calling
 `finish_run` with a `result.toml` field holding the entire `.asm.toml`
 and a `result.scripts` map holding every `scripts/...` file the tool
 states run (plus a `scripts/<name>_test.py` mock test per script with an
-external seam) — **no new tool and no file-writing capability is
-granted**. The CLI extracts the bundle and gates it: the same
+external seam); no new tool and no file-writing capability is
+granted. The CLI extracts the bundle and gates it: the same
 `machine check` validation, ruff lint, ty type check, and the mock tests
 executed in a no-network jail. Failures (with the failing source) loop
-back to the model — up to `--max-attempts` (default 3) — until the
+back to the model, up to `--max-attempts` (default 3), until the
 bundle passes. Retries include the prior draft AND its scripts so the
 model patches the named problem instead of regenerating from scratch.
 
@@ -734,7 +732,7 @@ stdout and the command exits non-zero so nothing is clobbered). Scripts
 land in `scripts/` next to the machine file. Status, spend, and notes go
 to stderr.
 
-Crucially this does **not** weaken the "machines are operator artifacts"
+Crucially this does not weaken the "machines are operator artifacts"
 invariant (§9): `create` only ever *drafts* a file into the working tree.
 The operator reviews it, fine-tunes the constants/prompts, and commits
 it; `machine run` still refuses anything the operator has not committed.
@@ -745,16 +743,16 @@ Drafting is assistance; authorization stays human.
 ## 8. Where it lives (module boundaries)
 
 The tach DAG is `cli → machine → workflows → agents → tools → sandbox`,
-and **workflows never import each other**. An `agent` state needs to
+and workflows never import each other. An `agent` state needs to
 *invoke* the `loop` workflow, so the engine cannot itself be a `workflow`
 without breaking that rule.
 
 `agent6.machine` is a top-level package the CLI depends on. The key
-boundary decision: the **engine does not import the workflow stack**.
+boundary decision: the engine does not import the workflow stack.
 Rather than constructing a `Workflow` itself, `engine.drive` runs an
 `agent` state through an injected `agent_runner` callable
-(`Callable[[AgentRequest], AgentExecResult]`). The CLI — which already
-depends on both `agent6.machine` and `agent6.workflows` — builds that
+(`Callable[[AgentRequest], AgentExecResult]`). The CLI, which already
+depends on both `agent6.machine` and `agent6.workflows`, builds that
 runner and the orchestration around `machine create`/`run`, so
 `agent6.machine` never gains an edge into `agent6.workflows` and the tach
 graph stays acyclic.
@@ -763,16 +761,16 @@ Files (all `from __future__ import annotations`, strict pyright, pydantic
 only at the parse boundary, `@dataclass(frozen=True, slots=True)` for the
 internal value types):
 
-- `machine/model.py` — pydantic `MachineSpec`/state/var specs, semantic
+- `machine/model.py`: pydantic `MachineSpec`/state/var specs, semantic
   validation, and `finish_run` payload validation.
-- `machine/predicate.py` — the allow-list AST predicate evaluator.
-- `machine/template.py` — the single interpolation/splicing engine
+- `machine/predicate.py`: the allow-list AST predicate evaluator.
+- `machine/template.py`: the single interpolation/splicing engine
   shared by the validator and the runtime.
-- `machine/graph.py` — the mermaid/DOT renderers.
-- `machine/journal.py` — append-only event log, snapshots, locking, and
+- `machine/graph.py`: the mermaid/DOT renderers.
+- `machine/journal.py`: append-only event log, snapshots, locking, and
   persisted-wake state.
-- `machine/engine.py` — the deterministic reducer loop.
-- `machine/authoring.py` — the dependency-free prompt scaffolding for
+- `machine/engine.py`: the deterministic reducer loop.
+- `machine/authoring.py`: the dependency-free prompt scaffolding for
   `machine create` (grammar guide, per-attempt prompt builder, draft
   extractor).
 
@@ -782,11 +780,11 @@ No new runtime dependency (`tomllib` + `pydantic` + stdlib `ast`).
 
 ## 9. Security considerations (must not weaken anything in AGENTS.md)
 
-- **No new LLM tool surface.** The fixed audited set in
+- **No new LLM tool surface.** The fixed set in
   `tools/schema.py` is unchanged. Machines orchestrate *existing*
   capabilities; the LLM inside an `agent` state sees the same tools it
   always did. `machine create` is no exception: the drafting agent runs
-  the same audited toolset and returns its `.asm.toml` through the
+  the same fixed toolset and returns its `.asm.toml` through the
   existing `finish_run` payload, not a new file-writing tool.
 - **No arbitrary code execution from a file.** Predicates and templates
   are parsed-then-walked against an allow-list; never `eval`/`exec`,
@@ -807,8 +805,8 @@ No new runtime dependency (`tomllib` + `pydantic` + stdlib `ast`).
   cached price times tokens.
 - **Machines are operator artifacts, never LLM-authored.** The threat
   model assumes the file is written by the operator and reviewed like
-  code. An LLM proposing a machine is fine — `agent6 machine create`
-  (§7.1) explicitly *drafts* one — but running one requires the
+  code. An LLM proposing a machine is fine, and `agent6 machine create`
+  (§7.1) explicitly *drafts* one, but running one requires the
   operator to review and commit it. `machine create` writes only into
   the working tree and never auto-runs; `machine run` operates on
   committed files. Drafting is assistance; authorization stays human.
@@ -827,7 +825,7 @@ confirmation that no new network endpoint or LLM tool was added.
 ## 10. Worked example (full)
 
 ```toml
-# item-classifier.asm.toml — ILLUSTRATIVE. scan-inbox/archive-item are
+# item-classifier.asm.toml (ILLUSTRATIVE). scan-inbox/archive-item are
 # stand-in audited tools, not part of agent6; they only show the *shape*.
 machine = "item-classifier"
 version = 1
@@ -943,21 +941,21 @@ per-agent spend), and `machine create` are covered by unit tests.
 
 Settled design choices, recorded so the rationale travels with the spec:
 
-- **`wait` runtime** — the format journals an absolute next-wake instant;
+- **`wait` runtime**: the format journals an absolute next-wake instant;
   the v1 runtime is plain in-process blocking (§4.3, §6). A
   persisted-wake/systemd driver can run the identical file later.
-- **Schema language** — inline `[schemas.*]` TOML (§4.6), not JSON Schema:
+- **Schema language**: inline `[schemas.*]` TOML (§4.6), not JSON Schema;
   no new dependency, human-editable, one mechanism for both
   `output_schema` validation and navigable record vars.
-- **`agent` writes** — exactly one validated `finish_run` payload per
+- **`agent` writes**: exactly one validated `finish_run` payload per
   `agent` state is the LLM's only write channel (§4.2); multiple outputs
   are fields of one record.
-- **Concurrency** — strictly sequential (one active state, no fork/join);
+- **Concurrency**: strictly sequential (one active state, no fork/join);
   compose by running independent machines. `fork`/`join` may come later.
-- **`json` navigability** — opaque `json` is wholesale-only; anything
+- **`json` navigability**: opaque `json` is wholesale-only; anything
   navigated with `.field` must be a declared record type (§4.6), so every
   path is statically checkable.
-- **List → argv** — no `join` filter; a lone `"{{ listvar }}"` argv
+- **List → argv**: no `join` filter; a lone `"{{ listvar }}"` argv
   element is spliced to one element per item (§4.4).
-- **Naming** — subcommand `machine`; suffix `.asm.toml` (`.a6m.toml`
+- **Naming**: subcommand `machine`; suffix `.asm.toml` (`.a6m.toml`
   fallback, §4).

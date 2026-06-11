@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 check` — sandbox + config + MCP + verify pre-flight."""
+"""`agent6 check`, sandbox + config + MCP + verify pre-flight."""
 
 from __future__ import annotations
 
@@ -95,9 +95,9 @@ def _cmd_check_sandbox() -> int:
     # Confirm child cannot reach the network. This is only a meaningful jail
     # probe under `strict`, where `allow_network=False` puts the child in an
     # empty network namespace. Under `hardened` the jail applies no network
-    # rule at all — a jailed command's egress is bounded by the agent-process
+    # rule at all, a jailed command's egress is bounded by the agent-process
     # Landlock applied at run time (SECURITY.md §1, §8 note 2), which this
-    # standalone probe does not set up — so testing it here would be testing
+    # standalone probe does not set up, so testing it here would be testing
     # the wrong thing. Report it as n/a rather than a misleading pass/fail.
     if profile == "strict":
         try:
@@ -284,7 +284,7 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
 def _doctor_check_verify(cfg: Config) -> list[_DoctorCheck]:
     """Verify command sanity: argv non-empty and the head executable resolves.
 
-    Does NOT execute the verify command — that would run an arbitrary
+    Does NOT execute the verify command, that would run an arbitrary
     test suite on every doctor call. Operators can do
     ``./$(verify_command)`` themselves when they want a live run.
     """

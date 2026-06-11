@@ -1186,8 +1186,8 @@ _METRIC_EARLY_FINISH_PATIENCE = 3
 
 # A `plan` run injects a one-shot "finish now" directive once its token budget
 # drops below this fraction OR it has taken `_PLAN_NUDGE_AFTER_ITERS` turns.
-# Verbose reasoning models (Kimi K2.6 observed live) otherwise read forever —
-# cheaply, under prompt caching — and never call finish_planning, yielding NO
+# Verbose reasoning models (Kimi K2.6 observed live) otherwise read forever,
+# cheaply, under prompt caching, and never call finish_planning, yielding NO
 # plan at all. A plan rarely needs more than a handful of reads.
 _PLAN_BUDGET_NUDGE_BELOW = 0.35
 _PLAN_NUDGE_AFTER_ITERS = 12
@@ -1197,11 +1197,11 @@ _PLAN_NUDGE_AFTER_ITERS = 12
 _DAG_MUTATING_TOOLS = frozenset({"add_task", "update_task", "set_cursor"})
 
 # verify-settled completion (run mode). A non-metric run has no positive "done"
-# signal — clean exit depends on the worker volunteering finish_run, and a weak
+# signal, clean exit depends on the worker volunteering finish_run, and a weak
 # worker keeps re-running read-only commands after success (Kimi K2.6 observed:
 # 128 iters when done at ~45). Once verify has passed, count iterations that
 # make no progress (no new commit + no edit): nudge to finish at the first
-# threshold, hard-stop at the second. NOT "green verify = instant stop" — verify
+# threshold, hard-stop at the second. NOT "green verify = instant stop", verify
 # fires per-edit and is often lenient, so green-but-still-editing must continue.
 # Thresholds are deliberately generous: the failure mode is only a little wasted
 # budget on an already-done run, whereas a too-tight window could cut off a
@@ -1527,7 +1527,7 @@ def _tool_definitions(
         base_tools = tuple(cls for cls in ALL_TOOLS if cls.TOOL_NAME not in blocked)
     elif mode in ("machine", "agent"):
         # Authoring / machine agent-state: read-only navigation + finish_run
-        # only — no edit/patch/verify/run_command. The deliverable is the
+        # only, no edit/patch/verify/run_command. The deliverable is the
         # finish_run payload, not a file edit or a command run, and weak models
         # otherwise wander off editing the repo (observed live on Kimi K2.6).
         blocked = {
@@ -1613,14 +1613,14 @@ class Workflow:
     per_call_max_tokens: int = 16384
     # Per-call output cap for the worker on metric-optimization runs (mode
     # "run" with a configured continuous metric). Those tasks reward large
-    # single-turn edits — rewriting a hot function wholesale beats nibbling
-    # at it across turns — and the worker routinely truncated mid-apply_patch
+    # single-turn edits, rewriting a hot function wholesale beats nibbling
+    # at it across turns, and the worker routinely truncated mid-apply_patch
     # against the 16k default, wasting the whole turn. Lifting the ceiling
     # only when a metric goal is present keeps ordinary feature/bugfix runs
     # (where giant turns mostly mean a confused model) on the tighter cap.
     #
     # Bumped 32768 -> 65536: a heavy reasoner (Kimi K2.6, perf-takehome) was
-    # *still* hitting the 32k cap with stop_reason="length" — its reasoning ate
+    # *still* hitting the 32k cap with stop_reason="length", its reasoning ate
     # the whole budget and the turn ended before it could emit a tool call, so
     # ~30% of turns were pure waste and the run made no progress. The bigger
     # ceiling lets a reason-heavy turn finish and actually apply its edit.
@@ -1939,14 +1939,14 @@ class Workflow:
         # plan-mode finish nudge: fire once per loop segment when a verbose
         # planner (Kimi K2.6 observed live) keeps reading without ever calling
         # finish_planning. Like the sibling nudge counters this is loop-local, so
-        # a resume starts a fresh segment and may nudge again — benign (one extra
+        # a resume starts a fresh segment and may nudge again, benign (one extra
         # harmless directive); the turn count is measured from start_iteration.
         plan_finish_nudged = False
         # verify-settled completion (run mode). Once verify has passed at least
         # once, count consecutive iterations that make no progress (no new
         # commit + no edit). After a couple, nudge the worker to finish_run;
         # if it keeps spinning, stop. This is the positive completion signal a
-        # non-metric run otherwise lacks — a weak worker (Kimi K2.6 observed:
+        # non-metric run otherwise lacks, a weak worker (Kimi K2.6 observed:
         # 128 iters when done at ~45) keeps re-running commands after success.
         verify_ever_passed = False
         verify_settled_idle = 0
@@ -1956,7 +1956,7 @@ class Workflow:
             self._maybe_compact(messages)
 
             # Force a verbose planner to land a plan. Trigger on EITHER a low
-            # token budget OR too many planning turns — with prompt caching a
+            # token budget OR too many planning turns, with prompt caching a
             # planner can take many cheap turns, so an iteration cap is the
             # reliable lever for the "reads forever" failure mode. A rough
             # delivered plan beats an exhaustive one that never gets emitted.
@@ -2734,9 +2734,9 @@ class Workflow:
             #   - an apply_edit/apply_patch, or a new commit, or
             #   - an uncommitted worktree change (an edit made via run_command),
             #   - a verify RUN itself (re-verifying between reads is active work,
-            #     not idle) — held neutral so it neither resets nor accrues.
-            # Only the pathology — spinning on read-only commands with a clean,
-            # already-committed tree — accrues idle.
+            #     not idle), held neutral so it neither resets nor accrues.
+            # Only the pathology, spinning on read-only commands with a clean,
+            # already-committed tree, accrues idle.
             if verify_just_passed:
                 verify_ever_passed = True
             # Only governs PLAIN runs. A metric/optimisation run is also
@@ -2935,7 +2935,7 @@ class Workflow:
             return None
 
     def _worktree_dirty(self) -> bool:
-        """True if the repo has uncommitted changes — e.g. an edit a worker made
+        """True if the repo has uncommitted changes, e.g. an edit a worker made
         via run_command that the verify-pass auto-commit hasn't captured yet. The
         verify-settled detector treats that as in-progress work. Best-effort:
         any git error reports clean, so a hiccup can't wedge the detector."""
@@ -2949,7 +2949,7 @@ class Workflow:
         The worker's add_task/update_task tree lives in the curator, not the
         event log, so we snapshot it (once per turn, see the call site).
 
-        Project to ONLY the fields the viewer renders — a full node dump carries
+        Project to ONLY the fields the viewer renders, a full node dump carries
         unbounded model-authored text (rationale/acceptance/notes/paths) that
         bloats the fsync'd event log for no benefit. Best-effort: a curator
         hiccup must never break the run."""

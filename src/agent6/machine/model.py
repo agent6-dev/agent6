@@ -4,9 +4,9 @@
 
 The parse boundary is pydantic v2 (`extra="forbid", frozen=True`),
 exactly like `agent6.config`. Structural shape is caught by pydantic;
-the cross-cutting rules from the spec (§4.5) — global name uniqueness
+the cross-cutting rules from the spec (§4.5), global name uniqueness
 across owner subtables, the ownership wall, reference/field type-checking,
-total branches, reachability — are enforced by :func:`validate_semantics`.
+total branches, reachability, are enforced by :func:`validate_semantics`.
 
 Every violation is a *load-time* error, aggregated into
 :class:`MachineError` so `agent6 machine check` can print them all at once.
@@ -252,11 +252,11 @@ class AgentState(BaseModel):
 
     kind: Literal["agent"]
     # "inherit" (the default) uses the operator's effective worker model, so a
-    # machine need not hardcode a model the operator may not have configured —
+    # machine need not hardcode a model the operator may not have configured,
     # the #1 way an LLM-authored machine passed `machine check` but died at run
     # time. Set an explicit provider/model only to pin a specific one.
     model: str = Field(default="inherit", min_length=1)
-    # "agent" (default): a read-only structured-output judge — classify/score/
+    # "agent" (default): a read-only structured-output judge, classify/score/
     # decide and return a finish_run result; cannot edit the repo. Set "run" for
     # an agent state that must do real coding work (edit/verify/commit tools).
     mode: Literal["agent", "run"] = "agent"
@@ -270,7 +270,7 @@ class AgentState(BaseModel):
     # overlay < repo < global < defaults). ``provider`` selects which
     # ``[providers.*]`` entry backs the call; ``thinking`` and ``temperature``
     # tune reasoning/sampling; the budget caps bound this single agent slice.
-    # Secrets/connection keys are never expressed here — only the provider
+    # Secrets/connection keys are never expressed here, only the provider
     # *name*, which must already exist in the effective config.
     provider: str | None = None
     thinking: Literal["off", "low", "medium", "high"] | None = None
@@ -308,13 +308,13 @@ class ToolState(BaseModel):
     # This tool's network stance for its jailed subprocess:
     #  - ``auto`` (default): no network; isolated (empty netns) where the profile
     #    can (``strict``), tolerant where it can't (``hardened`` shares the host
-    #    netns) — the deterministic, offline default that runs anywhere.
+    #    netns), the deterministic, offline default that runs anywhere.
     #  - ``allow``: wants the host network. Granted only if the operator permits
     #    it via ``sandbox.tool_network`` (``only_explicit_states`` or ``allow``);
     #    under ``block`` the run is refused naming this state. Enforceable because
     #    the machine engine is a host-netns supervisor: the tool's jail can reach
     #    the network while the agent states stay confined to the provider API.
-    #  - ``block``: no network, REQUIRED — refuse on ``hardened`` (which can't
+    #  - ``block``: no network, REQUIRED, refuse on ``hardened`` (which can't
     #    guarantee per-tool isolation), unlike ``auto`` which tolerates it.
     # The tool only *declares*; whether ``allow`` is granted is the operator's
     # call (``sandbox.tool_network``, read from global/repo config, never a
@@ -366,8 +366,8 @@ class MachineSpec(BaseModel):
     # Machine-level agent6 config overlay. Anything set here layers on top of
     # the effective repo/global/default config for the duration of the
     # machine run (``machine[config]`` is the highest-precedence layer). It is
-    # an ordinary agent6 config fragment — most knobs ``agent6 config show``
-    # lists are valid — but it MUST NOT carry operator-only security policy
+    # an ordinary agent6 config fragment, most knobs ``agent6 config show``
+    # lists are valid, but it MUST NOT carry operator-only security policy
     # (see ``_forbid_protected_overlay_tables``): ``[providers.*]`` (endpoints
     # + api-key env names + secrets) and ``[sandbox.*]`` (the jail: network
     # egress incl. allow_urls, run_commands, .git/.agent6 protection) are read
@@ -381,7 +381,7 @@ class MachineSpec(BaseModel):
         # otherwise untrusted, yet its `[config]` overlay is the highest
         # config layer at run time. So it must not carry operator-only
         # security policy: `[providers.*]` (endpoints + api-key env names) or
-        # `[sandbox.*]` (the jail itself — network egress incl. allow_urls,
+        # `[sandbox.*]` (the jail itself, network egress incl. allow_urls,
         # run_commands, and .git/.agent6 protection). Those are read only from
         # the global/repo config; an overlay that sets them is rejected at load
         # so a machine can never weaken the sandbox the operator chose.
@@ -629,7 +629,7 @@ def _check_value(
     if isinstance(t, JsonT):
         return _check_json(value, label)
     # RecordT: a default/value is a placeholder (the example uses `{}` for a
-    # required-field record), so we do not require presence — but any field
+    # required-field record), so we do not require presence, but any field
     # that *is* present must be known and well-typed.
     if not isinstance(value, dict):
         return [f"{label}: expected object for record {t.name!r}, got {_py_type(value)}"]

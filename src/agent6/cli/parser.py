@@ -408,10 +408,10 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     # choices gives both argparse validation and argcomplete tab-completion for
     # free. default=None (not "") so the omitted case isn't checked against
-    # choices — argparse validates choices against a string default otherwise.
+    # choices, argparse validates choices against a string default otherwise.
     # metavar="role" shows `role` in usage (not the noisy `{planner,...}`); the
     # choices stay listed in the help text. "all" is a pseudo-role (no config
-    # field of that name) that sets every role at once — see _cmd_model.
+    # field of that name) that sets every role at once, see _cmd_model.
     model_p.add_argument(
         "role",
         nargs="?",
@@ -430,7 +430,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Provider name for the role (prompted from connected providers if omitted).",
     )
     # Role-gated (not _complete_providers) so the provider list doesn't bleed
-    # into the first positional (role) — see _complete_model_provider.
+    # into the first positional (role), see _complete_model_provider.
     model_provider.completer = _complete_model_provider  # type: ignore[attr-defined]
     model_model = model_p.add_argument(
         "model",

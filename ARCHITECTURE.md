@@ -3,7 +3,7 @@
 This document is a map of how agent6 runs end-to-end. The diagrams
 are mermaid (`mermaid` fenced blocks render natively on GitHub). For
 per-file conventions and stability rules see [AGENTS.md](AGENTS.md).
-For the security model — threat model, defense layers, sandbox profiles —
+For the security model (threat model, defense layers, sandbox profiles),
 see [SECURITY.md](SECURITY.md).
 
 ## Layering
@@ -19,26 +19,26 @@ Boundaries are enforced by [tach](https://docs.gauge.sh/) (see
 import workflows or the CLI. Crossing a boundary is almost always a
 sign of the wrong design.
 
-- **cli** ([src/agent6/cli/](src/agent6/cli/)) — argument parsing,
+- **cli** ([src/agent6/cli/](src/agent6/cli/)): argument parsing,
   optional TUI spawn, top-level dispatch. Picks a workflow. Config is
   resolved by [config_layer.py](src/agent6/config_layer.py) (built-in
   secure defaults < global `~/.config/agent6/config.toml` < per-repo
   `.agent6/config.toml` < `--config FILE`), with paths + sudo/root
   resolution in [paths.py](src/agent6/paths.py) and API keys in
   [secrets.py](src/agent6/secrets.py). The in-repo directory name
-  (`.agent6` by default — config and run state together) is settable via
+  (`.agent6` by default; config and run state together) is settable via
   the global-only `[agent6].workspace_subdir`. Roles: `worker` drives
   `run`/`resume`, `planner` drives `plan` (falls back to `worker`),
   `reviewer` drives `review` + the in-loop critic.
-- **workflows** ([src/agent6/workflows/](src/agent6/workflows/)) — two
-  exist: `loop` (the agent loop driving `agent6 run` / `agent6 resume`)
+- **workflows** ([src/agent6/workflows/](src/agent6/workflows/)): two
+  exist, `loop` (the agent loop driving `agent6 run` / `agent6 resume`)
   and `review` (the read-only review pass driving `agent6 review`).
-- **agents** ([src/agent6/agents/](src/agent6/agents/)) — single-turn
+- **agents** ([src/agent6/agents/](src/agent6/agents/)): single-turn
   LLM call shapes. The only one is `code_review`; the agent loop makes
   its own provider calls inline.
-- **tools** ([src/agent6/tools/](src/agent6/tools/)) — the fixed,
-  audited tool surface the LLM sees, plus dispatch.
-- **sandbox** ([src/agent6/sandbox/](src/agent6/sandbox/)) — Landlock
+- **tools** ([src/agent6/tools/](src/agent6/tools/)): the fixed
+  tool surface the LLM sees, plus dispatch.
+- **sandbox** ([src/agent6/sandbox/](src/agent6/sandbox/)): Landlock
   on the agent process, `agent6-jail` for children.
 
 ## Workflow: `run`
@@ -127,9 +127,7 @@ flowchart TD
     Workflow -. blocks .-> Push[push / --force / reset --hard]
 ```
 
-Two things are worth calling out:
-
-- `git_ops.py` runs **outside** the jail (the agent's own process), so
+- `git_ops.py` runs outside the jail (the agent's own process), so
   the RO bind of `.git` does not stop the workflow from committing. It
   stops the worker.
 - `protect_git` / `protect_agent6` work in both profiles. Strict uses
@@ -163,14 +161,14 @@ against a pydantic schema before applying it.
 
 Each run's directory `.agent6/runs/<run-id>/` holds:
 
-- `graph.jsonl` — append-only journal of every task-graph mutation.
-- `graph.dot` — current task graph, regenerated atomically.
-- `nodes/*.md` — one markdown file per task node, rewritten atomically.
-- `logs.jsonl` — the structured event stream (below).
-- `snapshots/` — per-tool-call JSON snapshots that drive `agent6 resume`.
-- `transcripts/` — full provider request/response pairs for replay.
+- `graph.jsonl`: append-only journal of every task-graph mutation.
+- `graph.dot`: current task graph, regenerated atomically.
+- `nodes/*.md`: one markdown file per task node, rewritten atomically.
+- `logs.jsonl`: the structured event stream (below).
+- `snapshots/`: per-tool-call JSON snapshots that drive `agent6 resume`.
+- `transcripts/`: full provider request/response pairs for replay.
 
-The `logs.jsonl` vocabulary is small and stable — the data contract for
+The `logs.jsonl` vocabulary is small and stable: the data contract for
 any external viewer (the fold to UI state lives in
 [src/agent6/ui/state.py](src/agent6/ui/state.py) as a pure function):
 
@@ -182,7 +180,7 @@ any external viewer (the fold to UI state lives in
 | `role.call` / `.result`     | `role`, `model`, `tokens_in`, `tokens_out`  |
 | `role.text_delta`           | streamed assistant text chunk               |
 | `role.thinking_delta`       | streamed reasoning chunk (TUI "thinking" pane) |
-| `run.steer_requested`       | `source` (`"sigint"`) — mid-run Ctrl-C      |
+| `run.steer_requested`       | `source` (`"sigint"`): mid-run Ctrl-C       |
 | `budget.update`             | totals + caps for input/output tokens       |
 | `approval.prompt`/`.answer` | `id`, `prompt`, `approved`, `source` (`tui`/`stdin`) |
 | `loop.*`                    | agent progress: `loop.auto_commit`, `loop.compact.*`, `loop.critic.*`, `loop.metric.*`, `loop.steer.*` |
@@ -191,7 +189,7 @@ any external viewer (the fold to UI state lives in
 A `run_command` approval is published as `approval.prompt`; the dashboard
 TUI shows an Allow/Deny modal and writes `approvals/<id>.answer`, which the
 workflow reads (falling back to a stdin prompt with no TUI), then records
-`approval.answer`. The task DAG is **not** in this stream — it is
+`approval.answer`. The task DAG is not in this stream; it is
 curator-owned and lives in `graph.jsonl` (read via `agent6 history
 graph`).
 

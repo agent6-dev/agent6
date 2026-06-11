@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Anthropic provider.
 
-Single audited HTTP call site. Uses httpx directly (no SDK) for a smaller
+Single HTTP call site. Uses httpx directly (no SDK) for a smaller
 audit surface and pinned URL. Supports prompt caching via the
 `cache_control` block field on system / tool entries.
 """
@@ -134,7 +134,7 @@ class ProviderResponse:
     # populated only by the OpenAI-compatible provider when the upstream
     # gateway returns ``usage.cost`` (OpenRouter does; OpenAI direct does
     # not; Anthropic does not). Zero means "no authoritative figure was
-    # supplied" — callers fall back to the price-table estimate in
+    # supplied", callers fall back to the price-table estimate in
     # ``BudgetTracker.estimate_usd``.
     cost_usd: float = 0.0
     raw: dict[str, Any] = field(default_factory=dict)
@@ -221,7 +221,7 @@ class AnthropicProvider:
                     "description": t.description,
                     "input_schema": t.input_schema,
                 }
-                # Cache the last tool entry too — anthropic caches up to that block.
+                # Cache the last tool entry too, anthropic caches up to that block.
                 if self.prompt_caching and i == len(tools) - 1:
                     block["cache_control"] = {"type": "ephemeral"}
                 tool_payload.append(block)
@@ -252,7 +252,7 @@ class AnthropicProvider:
         # deltas to the callback as they arrive, then synthesise a
         # ProviderResponse identical in shape to the non-streaming path
         # at message_stop. Non-streaming is the default to keep bench
-        # runs and the existing test suite on the audited code path.
+        # runs and the existing test suite on the same code path.
         if text_delta_callback is not None or thinking_delta_callback is not None:
             return self._call_streaming(
                 headers=headers,
@@ -407,7 +407,7 @@ class AnthropicProvider:
                             thinking_acc[idx] = [str(cb.get("thinking", ""))]
                             signature_acc[idx] = [str(cb.get("signature", ""))]
                         elif btype == "redacted_thinking":
-                            # Opaque encrypted block — pass straight through.
+                            # Opaque encrypted block, pass straight through.
                             content_blocks.append(
                                 {"type": "redacted_thinking", "data": cb.get("data", "")}
                             )
@@ -428,7 +428,7 @@ class AnthropicProvider:
                             text_acc.setdefault(idx, []).append(piece)
                             if piece and text_delta_callback is not None:
                                 # Callback failure must never break the
-                                # stream — cosmetic surface.
+                                # stream, cosmetic surface.
                                 with contextlib.suppress(Exception):
                                     text_delta_callback(piece)
                         elif dt == "thinking_delta":

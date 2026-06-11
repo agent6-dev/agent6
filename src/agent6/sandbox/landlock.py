@@ -3,7 +3,7 @@
 """Minimal ctypes wrapper for the Linux Landlock LSM.
 
 Applied to the agent process at startup. Once applied, the restrictions are
-irrevocable — even root cannot remove them. This is intentional: a compromised
+irrevocable, even root cannot remove them. This is intentional: a compromised
 Python interpreter can't undo it.
 
 References:
@@ -22,7 +22,7 @@ import struct
 from dataclasses import dataclass
 from pathlib import Path
 
-# syscall numbers (x86_64 / aarch64 — Linux added these uniformly)
+# syscall numbers (x86_64 / aarch64, Linux added these uniformly)
 _SYS_landlock_create_ruleset = 444
 _SYS_landlock_add_rule = 445
 _SYS_landlock_restrict_self = 446

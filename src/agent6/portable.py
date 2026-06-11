@@ -3,7 +3,7 @@
 """Cross-platform primitives for the few places agent6 touches POSIX-only APIs.
 
 Pure stdlib, no agent6 imports. Keeps the Windows/Unix split contained in one
-audited spot instead of scattering ``sys.platform`` checks through the graph and
+spot instead of scattering ``sys.platform`` checks through the graph and
 machine journals. The sandbox itself remains Linux-only (see
 ``agent6.detect.sandbox_available``); this module only covers the platform-neutral
 plumbing (file locks, durable renames) that must keep working everywhere so the

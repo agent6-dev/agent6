@@ -3,7 +3,7 @@
 """Modal screens for the agent6 TUI: approval (y/n), steer (free text), and
 question (selectable options + free text).
 
-These are pure textual widgets — they take a prompt and `dismiss()` a result.
+These are pure textual widgets, they take a prompt and `dismiss()` a result.
 The app wires the result back through the file bridge (see ui.approval); nothing
 here touches the workflow, so any other front-end can drop them in or replace
 them.

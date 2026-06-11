@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tool input schemas — pydantic models converted to JSON Schema for Anthropic."""
+"""Tool input schemas, pydantic models converted to JSON Schema for Anthropic."""
 
 from __future__ import annotations
 
@@ -472,7 +472,7 @@ ASK_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (Agent6DocsInput,)
 # Tool list for machine-authoring mode (`agent6 machine create`). The agent's
 # only deliverable is a `.asm.toml` returned via `finish_run`'s `result.toml`,
 # so it gets read-only navigation (in case the task references existing files)
-# plus `finish_run` — no edit/patch/verify/run_command/DAG/metric tools, which
+# plus `finish_run`, no edit/patch/verify/run_command/DAG/metric tools, which
 # only tempt a weak model into writing the file or spelunking the repo.
 MACHINE_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (FinishRunInput,)
 

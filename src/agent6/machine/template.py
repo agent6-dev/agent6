@@ -7,7 +7,7 @@ author-time validator (`agent6.machine.model`) and the runtime engine
 The grammar is intentionally tiny (§4.4): an interpolation is exactly one
 reference (§4.5) plus an optional single zero-argument filter (`len` or
 `json`). There are no arbitrary expressions, no chained filters, and no
-method calls — anything richer belongs in a `branch` predicate, which is
+method calls, anything richer belongs in a `branch` predicate, which is
 itself restricted (`agent6.machine.predicate`).
 
 Parsing is pure and dependency-free; rendering navigates a *blackboard*
@@ -106,7 +106,7 @@ def _parse_interp(body: str, whole: str) -> Interp:
 # Runtime rendering (engine side). The author-time validator in
 # `agent6.machine.model` has already proven every reference resolves and
 # every filter applies, so the failures here only fire on genuinely
-# malformed blackboard data — which we surface loudly via TemplateError.
+# malformed blackboard data, which we surface loudly via TemplateError.
 # ---------------------------------------------------------------------------
 
 

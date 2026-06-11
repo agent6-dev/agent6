@@ -64,7 +64,7 @@ def _complete_config_keys(prefix: str, **_kw: object) -> list[str]:
 
 # Presets offered for any `providers.<name>.extra_body` value (the provider name
 # varies, so this is matched by suffix, not in _CONFIG_ENUM_CHOICES). The first
-# is the recommended OpenRouter routing — a fast, prefix-caching backend.
+# is the recommended OpenRouter routing, a fast, prefix-caching backend.
 _EXTRA_BODY_PRESETS: tuple[str, ...] = (
     '{ provider = { sort = "throughput" } }',
     '{ provider = { sort = "latency" } }',

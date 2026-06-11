@@ -220,7 +220,7 @@ def stash_all(path: Path, message: str) -> None:
 
 
 def create_branch(path: Path, name: str) -> None:
-    """Create *name* from HEAD and check it out — or just check it out if it
+    """Create *name* from HEAD and check it out, or just check it out if it
     already exists. Idempotent so re-running/resuming a run reuses the run's
     branch instead of cutting a near-duplicate (no `branch -D` needed, which we
     refuse anyway)."""
@@ -246,7 +246,7 @@ def unignored(path: Path, candidates: tuple[str, ...]) -> tuple[str, ...]:
     if not candidates:
         return ()
     # check-ignore prints the ignored inputs (one per line) and exits 1 when
-    # none match — both are fine, we only read stdout. The "--" stops a path
+    # none match, both are fine, we only read stdout. The "--" stops a path
     # that begins with "-" from being parsed as a git flag.
     res = _run(path, "check-ignore", "--", *candidates, check=False)
     ignored = {line.strip() for line in res.stdout.splitlines() if line.strip()}
@@ -264,7 +264,7 @@ def commit_all(
 
     `identity` lets the caller override the author/committer name+email and
     append a `Co-authored-by:` trailer. When `identity` is None the commit
-    uses the project's existing git config identity — callers should have
+    uses the project's existing git config identity, callers should have
     already validated that via `verify_git_identity` at startup.
     """
     _run(path, "add", "-A")
@@ -417,7 +417,7 @@ def diff_since(path: Path, base_sha: str) -> str:
 def commit_diff(path: Path, sha: str, *, max_bytes: int = 16384) -> str:
     """The patch a single commit introduced (``git show <sha>``), or "" on error.
 
-    Read-only — used to surface "what the worker just changed" to a live viewer.
+    Read-only, used to surface "what the worker just changed" to a live viewer.
     ``--format=`` keeps it to just the diff (no commit message). Truncated to
     ``max_bytes`` here so callers don't materialize an unbounded diff in memory."""
     res = _run(path, "show", "--format=", "--no-color", sha, "--", ".", check=False)
@@ -455,7 +455,7 @@ def rollback_to_known_good(path: Path, sha: str) -> None:
     leaving the worktree alone; the follow-up ``git checkout -- .``
     then snaps the worktree back to the index (i.e. to *sha*'s tree).
     Two steps rather than ``reset --hard`` so we stay within the
-    "no destructive resets" invariant — anything orphaned is still in
+    "no destructive resets" invariant, anything orphaned is still in
     the reflog and ``git_ops`` callers never get a primitive that
     unconditionally clobbers uncommitted work.
     """
@@ -491,7 +491,7 @@ def show_commit(path: Path, sha: str, *, max_bytes: int = 16_384) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Refusals — operations agent6 will not perform under any circumstances.
+# Refusals, operations agent6 will not perform under any circumstances.
 # ---------------------------------------------------------------------------
 
 

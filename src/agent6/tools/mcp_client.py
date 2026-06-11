@@ -14,7 +14,7 @@ the protocol we actually need:
 
 Anything else the server might send (``logging/*``, ``prompts/*``,
 ``resources/*``, server-side ``ping``) is silently dropped on the
-client side — we do not advertise the corresponding capabilities.
+client side, we do not advertise the corresponding capabilities.
 
 Threat model
 ============
@@ -28,7 +28,7 @@ authority, no sandboxing.
 
 What the LLM *can* influence is the *arguments* to ``tools/call`` once
 a server is connected. The MCP server is responsible for validating
-those — agent6 forwards them verbatim. Operators should treat each MCP
+those, agent6 forwards them verbatim. Operators should treat each MCP
 server as a tool surface as serious as any agent6 built-in tool.
 
 A misbehaving server (crash, hang, malformed JSON, oversized reply)

@@ -165,7 +165,7 @@ def parse_patch(text: str) -> ParsedPatch:  # noqa: PLR0912, PLR0915
         while i < len(lines) and (seen_old < old_count or seen_new < new_count):
             ln = lines[i]
             if ln.startswith("\\ "):
-                # "\ No newline at end of file" — applies to the immediately
+                # "\ No newline at end of file", applies to the immediately
                 # preceding line. Determine which side based on its prefix.
                 if not body:
                     raise PatchError("`\\ No newline` marker has no preceding line")
@@ -237,7 +237,7 @@ def _split_lines_keepends(text: str) -> tuple[list[str], bool]:
     has_trailing = text.endswith("\n")
     lines = text.split("\n")
     if has_trailing:
-        # Final element after split is "" — drop it.
+        # Final element after split is "", drop it.
         lines.pop()
     return lines, has_trailing
 
@@ -321,7 +321,7 @@ def apply_parsed_patch(patch: ParsedPatch, original: str | None) -> str:  # noqa
             result_has_trailing = not hunk.new_no_newline
 
     if not buf:
-        # Empty file — write empty string regardless of trailing-newline state.
+        # Empty file, write empty string regardless of trailing-newline state.
         return ""
     out = "\n".join(buf)
     if result_has_trailing:
