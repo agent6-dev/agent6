@@ -173,6 +173,14 @@ Hard stops; on hit the run aborts (exit 3) and is resumable (raise the limit and
 Override per-run from the CLI without editing config: `agent6 run --max-usd 5`,
 `--max-input-tokens`, `--max-output-tokens` (on `run`, `plan`, `resume`).
 
+## `[machine]`
+
+State-machine runtime knobs (`agent6 machine run`).
+
+| Field | Default | Meaning |
+|---|---|---|
+| `snapshot_keep` | `5` | Recent blackboard snapshots retained per machine instance. Recovery reads only the latest and `machine replay` rebuilds from the journal, so older snapshots are an audit convenience. `0` keeps every snapshot (one file per transition; budget disk for long-running machines). |
+
 ## `[notify]` (optional)
 
 Runs an operator-controlled argv after `agent6 run` / `resume` (success or

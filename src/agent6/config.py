@@ -515,6 +515,19 @@ class BudgetConfig(BaseModel):
     best_effort_usd_limit: float = Field(ge=0.0, default=0.0)
 
 
+class MachineConfig(BaseModel):
+    """State-machine runtime knobs (`agent6 machine run`)."""
+
+    model_config = _BASE_MODEL_CONFIG
+
+    # How many recent blackboard snapshots to keep per machine instance.
+    # Recovery only reads the latest and `machine replay` rebuilds from the
+    # journal, so old snapshots are an audit convenience, not state. 0 keeps
+    # every snapshot (one file per transition; budget disk accordingly for
+    # long-running machines).
+    snapshot_keep: int = Field(ge=0, default=5)
+
+
 class Agent6Section(BaseModel):
     model_config = _BASE_MODEL_CONFIG
 
@@ -625,6 +638,7 @@ class Config(BaseModel):
     git: GitConfig = Field(default_factory=GitConfig)
     workflow: WorkflowConfig = Field(default_factory=WorkflowConfig)
     budget: BudgetConfig = Field(default_factory=BudgetConfig)
+    machine: MachineConfig = Field(default_factory=MachineConfig)
     notify: NotifyConfig = Field(default_factory=NotifyConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
 

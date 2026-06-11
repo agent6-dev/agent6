@@ -162,6 +162,27 @@ def test_latest_snapshot_none_when_empty(tmp_path: Path) -> None:
     assert _journal(tmp_path).latest_snapshot() is None
 
 
+def test_snapshot_pruning_keeps_configured_tail(tmp_path: Path) -> None:
+    # Only latest_snapshot is ever read; old snapshots get pruned per the
+    # [machine] snapshot_keep config (default 5) so a long-running machine
+    # does not accumulate one file per transition.
+    j = _journal(tmp_path)
+    for seq in range(20):
+        j.write_snapshot(Snapshot(seq=seq, state="s", blackboard={"n": seq}))
+    kept = sorted(int(p.stem) for p in j.snapshots_dir.glob("*.json"))
+    assert kept == [15, 16, 17, 18, 19]
+    latest = j.latest_snapshot()
+    assert latest is not None and latest.seq == 19
+
+
+def test_snapshot_keep_zero_disables_pruning(tmp_path: Path) -> None:
+    j = MachineJournal(tmp_path / "inst", snapshot_keep=0)
+    j.ensure_dirs()
+    for seq in range(10):
+        j.write_snapshot(Snapshot(seq=seq, state="s", blackboard={}))
+    assert len(list(j.snapshots_dir.glob("*.json"))) == 10
+
+
 def test_take_signal_consumes_file(tmp_path: Path) -> None:
     j = _journal(tmp_path)
     assert j.take_signal() is False

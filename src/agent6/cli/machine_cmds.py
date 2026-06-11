@@ -25,6 +25,7 @@ from agent6.cli.toml_io import _upsert_toml_leaf
 from agent6.config import (
     Config,
     ConfigError,
+    MachineConfig,
 )
 from agent6.config_layer import (
     load_effective,
@@ -525,6 +526,7 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
     protect_paths = _machine_protect_paths(path, cwd)
     # Load the effective config when an `agent` state needs it, or when there
     # are any tool states (we need sandbox.tool_network/profile to gate egress).
+    snapshot_keep = MachineConfig().snapshot_keep  # config default; refined below
     if has_agent_state or tool_states:
         try:
             cfg = load_effective_with_overlay(cwd, spec.config).config
@@ -538,6 +540,7 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
         except RuntimeError as exc:
             print(f"REFUSING: {exc}", file=sys.stderr)
             return 2
+        snapshot_keep = cfg.machine.snapshot_keep
         refusal = _machine_network_refusal(cfg, profile, tool_states)
         if refusal is not None:
             outcome = _resolve_network_refusal(
@@ -564,7 +567,7 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
             )
     _warn_if_unsandboxed(profile)
     root = _machines_dir(cwd) / spec.machine
-    journal = MachineJournal(root)
+    journal = MachineJournal(root, snapshot_keep=snapshot_keep)
     # Persistent, writable scratch for tool scripts (see LiveWorld.data_dir).
     data_dir = root / "data"
     try:

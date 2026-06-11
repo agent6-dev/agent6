@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Generator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -188,7 +188,10 @@ class PendingWait(BaseModel):
 class MachineJournal:
     """Append-only event log plus snapshots for one machine instance."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, snapshot_keep: int = 5) -> None:
+        # Number of recent snapshots to retain (0 = keep all); see
+        # `[machine] snapshot_keep` in the config.
+        self.snapshot_keep = snapshot_keep
         self.root = root
         self.journal_path = root / "journal.jsonl"
         self.snapshots_dir = root / "snapshots"
@@ -233,7 +236,13 @@ class MachineJournal:
         return events
 
     def write_snapshot(self, snapshot: Snapshot) -> None:
-        """Write a snapshot atomically (temp file + rename)."""
+        """Write a snapshot atomically (temp file + rename), pruning old ones.
+
+        Recovery only ever reads ``latest_snapshot`` and replay rebuilds from
+        the journal, so old snapshots are dead weight: a 10-minute-loop machine
+        would otherwise accumulate ~150k files a year. Keep a short fixed tail
+        (paranoia against a corrupt latest) and delete the rest.
+        """
         self.snapshots_dir.mkdir(parents=True, exist_ok=True)
         dest = self.snapshots_dir / f"{snapshot.seq}.json"
         tmp = dest.with_suffix(".json.tmp")
@@ -241,6 +250,17 @@ class MachineJournal:
         with tmp.open("r", encoding="utf-8") as fh:
             os.fsync(fh.fileno())
         tmp.rename(dest)
+        if self.snapshot_keep <= 0:
+            return
+        with suppress(OSError):
+            for entry in self.snapshots_dir.iterdir():
+                if (
+                    entry.suffix == ".json"
+                    and entry.stem.isdigit()
+                    and int(entry.stem) <= snapshot.seq - self.snapshot_keep
+                ):
+                    with suppress(OSError):
+                        entry.unlink()
 
     def latest_snapshot(self) -> Snapshot | None:
         if not self.snapshots_dir.is_dir():
