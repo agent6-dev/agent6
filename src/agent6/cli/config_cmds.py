@@ -8,6 +8,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from agent6 import models_cache
 from agent6.cli.toml_io import (
     _parse_cli_value,
     _read_toml_file,
@@ -16,6 +17,7 @@ from agent6.cli.toml_io import (
     _upsert_toml_leaf,
 )
 from agent6.config import (
+    Config,
     ConfigError,
 )
 from agent6.config_layer import (
@@ -36,13 +38,34 @@ from agent6.paths import (
 )
 
 
+def _resolved_adaptive_values(cfg: Config) -> dict[str, object]:
+    """Settings whose effective value is resolved at runtime, so `config show`
+    can display the real number rather than the unset/adaptive placeholder.
+    Currently the adaptive compaction thresholds, sized from the worker model's
+    context window (empty when no worker model is configured)."""
+    rm = cfg.models.resolve("worker")
+    if rm is None:
+        return {}
+    drop, summarise = models_cache.compaction_thresholds(
+        rm.provider,
+        rm.model,
+        drop_override=cfg.workflow.compact_drop_at_chars,
+        summarise_override=cfg.workflow.compact_summarise_at_chars,
+    )
+    return {
+        "workflow.compact_drop_at_chars": drop,
+        "workflow.compact_summarise_at_chars": summarise,
+    }
+
+
 def _cmd_config_show(config_path: Path | None, *, as_json: bool) -> int:
     try:
         eff = load_effective(Path.cwd(), config_path)
     except ConfigError as exc:
         print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
         return 2
-    print(render_show(eff, as_json=as_json), end="")
+    resolved = _resolved_adaptive_values(eff.config)
+    print(render_show(eff, as_json=as_json, resolved=resolved), end="")
     return 0
 
 

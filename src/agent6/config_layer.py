@@ -21,9 +21,13 @@ from __future__ import annotations
 
 import json
 import tomllib
+import types
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Union, get_args, get_origin
+
+from pydantic import BaseModel
+from pydantic_core import PydanticUndefined
 
 from agent6.config import Config, ConfigError, validate_config
 from agent6.paths import (
@@ -240,6 +244,161 @@ def format_value(val: Any) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Schema introspection + the UI-agnostic view-model
+# ---------------------------------------------------------------------------
+#
+# `config show` (CLI), the TUI config page, and a future web UI all render the
+# SAME ConfigView, so config logic (provenance, defaults, enum choices, adaptive
+# resolution) lives here once and the renderers stay thin -- the same split that
+# keeps `ui.state` (a pure event-fold) independent of any widget toolkit.
+
+
+@dataclass(frozen=True, slots=True)
+class ConfigSetting:
+    """One config leaf, fully described for display + editing."""
+
+    key: str  # dotted leaf path, e.g. "sandbox.run_commands"
+    section: str  # top-level section, e.g. "sandbox"
+    value: Any  # raw effective value (None for an unset/adaptive setting)
+    effective_value: Any  # resolved value; == value unless a caller resolves it
+    default: Any  # the built-in default (None if unknown / no static default)
+    source: str  # layer that set it: default/global/repo/flag/machine
+    modified: bool  # a layer set it (source != "default")
+    is_adaptive: bool  # effective_value was resolved away from the raw value
+    py_type: str  # str | int | bool | float | choice | list | table
+    choices: tuple[str, ...] | None  # enum options for a dropdown, else None
+
+
+@dataclass(frozen=True, slots=True)
+class ConfigView:
+    """The whole effective config as a flat, section-ordered list of settings,
+    plus the contributing layers for a provenance legend. The one structure
+    every UI renders."""
+
+    settings: tuple[ConfigSetting, ...]
+    sections: tuple[str, ...]
+    layers: tuple[Layer, ...]
+
+
+def _unwrap_optional(ann: Any) -> Any:
+    """``X | None`` -> ``X``; leave a genuine multi-member union (e.g. the
+    provider-entry union) untouched."""
+    if get_origin(ann) in (Union, types.UnionType):
+        non_none = [a for a in get_args(ann) if a is not type(None)]
+        if len(non_none) == 1:
+            return non_none[0]
+    return ann
+
+
+def _literal_choices(ann: Any) -> tuple[str, ...] | None:
+    ann = _unwrap_optional(ann)
+    if get_origin(ann) is Literal:
+        return tuple(str(a) for a in get_args(ann))
+    return None
+
+
+def _nested_model(ann: Any) -> type[BaseModel] | None:
+    ann = _unwrap_optional(ann)
+    if isinstance(ann, type) and issubclass(ann, BaseModel):
+        return ann
+    return None
+
+
+def _dict_value_model(ann: Any) -> type[BaseModel] | None:
+    ann = _unwrap_optional(ann)
+    if get_origin(ann) is dict:
+        args = get_args(ann)
+        if len(args) == 2:
+            return _nested_model(args[1])
+    return None
+
+
+def _type_label(ann: Any) -> str:
+    ann = _unwrap_optional(ann)
+    origin = get_origin(ann)
+    if origin is Literal:
+        return "choice"
+    if origin in (list, tuple):
+        return "list"
+    if origin is dict:
+        return "table"
+    if isinstance(ann, type):
+        return ann.__name__
+    return "str"
+
+
+def _field_schema(
+    model_cls: type[BaseModel], parts: list[str]
+) -> tuple[str, tuple[str, ...] | None, Any] | None:
+    """Walk *model_cls* down the dotted *parts* to a leaf field and return
+    ``(py_type, choices, default)``, or None if the path can't be resolved
+    (e.g. a dynamic provider key whose value model is a discriminated union)."""
+    name = parts[0]
+    fi = getattr(model_cls, "model_fields", {}).get(name)
+    if fi is None:
+        return None
+    ann = fi.annotation
+    if len(parts) == 1:
+        default = fi.default
+        if default is PydanticUndefined:
+            default = fi.default_factory() if fi.default_factory is not None else None
+        return _type_label(ann), _literal_choices(ann), default
+    nested = _nested_model(ann)
+    if nested is not None:
+        return _field_schema(nested, parts[1:])
+    val_model = _dict_value_model(ann)
+    if val_model is not None and len(parts) >= 3:
+        return _field_schema(val_model, parts[2:])  # skip the dynamic dict key
+    return None
+
+
+def build_config_view(
+    eff: EffectiveConfig, *, resolved: dict[str, Any] | None = None
+) -> ConfigView:
+    """Combine the effective config, its provenance, the schema (types + enum
+    choices + defaults), and any caller-resolved values into the flat
+    ConfigView every UI renders.
+
+    *resolved* maps a dotted key to its resolved value for settings whose raw
+    value is a placeholder for runtime resolution (compaction left unset ->
+    adaptive, sized from the model's context window). It never changes
+    provenance or the modified flag -- it only fills ``effective_value`` /
+    ``is_adaptive`` so a UI can show the real number.
+    """
+    resolved = resolved or {}
+    leaves = _flatten(eff.config.model_dump(mode="python"))
+    by_section: dict[str, list[str]] = {}
+    for leaf in leaves:
+        by_section.setdefault(leaf.split(".", 1)[0], []).append(leaf)
+    ordered = [s for s in _SECTION_ORDER if s in by_section]
+    ordered += [s for s in by_section if s not in _SECTION_ORDER]
+
+    settings: list[ConfigSetting] = []
+    for section in ordered:
+        for leaf in by_section[section]:
+            value = leaves[leaf]
+            source = eff.sources.get(leaf, "default")
+            schema = _field_schema(eff.config.__class__, leaf.split("."))
+            py_type, choices, default = schema if schema is not None else ("str", None, None)
+            eff_val = resolved.get(leaf, value)
+            settings.append(
+                ConfigSetting(
+                    key=leaf,
+                    section=section,
+                    value=value,
+                    effective_value=eff_val,
+                    default=default,
+                    source=source,
+                    modified=source != "default",
+                    is_adaptive=leaf in resolved and eff_val != value,
+                    py_type=py_type,
+                    choices=choices,
+                )
+            )
+    return ConfigView(settings=tuple(settings), sections=tuple(ordered), layers=eff.layers)
+
+
+# ---------------------------------------------------------------------------
 # Rendering: `config show`
 # ---------------------------------------------------------------------------
 
@@ -266,51 +425,61 @@ def _truncate(text: str, width: int) -> str:
     return text[: width - 1] + "\u2026"
 
 
-def render_show(eff: EffectiveConfig, *, as_json: bool = False) -> str:
-    """Render the effective config + provenance.
+def render_show(
+    eff: EffectiveConfig, *, as_json: bool = False, resolved: dict[str, Any] | None = None
+) -> str:
+    """Render the effective config + provenance from the shared ConfigView.
 
     Plain mode is a section-grouped, fixed-width 3-column table
     (key / value / source) with a leading ``*`` on rows that override the
     default, no box drawing, so it never wraps badly. ``*`` rows are the
-    ones to eyeball. JSON mode emits ``{leaf: {value, source}}``.
+    ones to eyeball; settings whose value is resolved at runtime (compaction
+    left adaptive) show their resolved value tagged ``(adaptive)``. JSON mode
+    emits the full per-leaf view (value, effective, default, source, modified,
+    adaptive, type, choices) -- the complete machine-readable picture.
+
+    *resolved* maps dotted keys to their resolved values (e.g. adaptive
+    compaction sized from the worker model); the caller computes it.
     """
-    leaves = _flatten(eff.config.model_dump(mode="python"))
+    view = build_config_view(eff, resolved=resolved)
     if as_json:
         payload = {
-            leaf: {"value": leaves[leaf], "source": eff.sources.get(leaf, "default")}
-            for leaf in leaves
+            s.key: {
+                "value": s.value,
+                "effective": s.effective_value,
+                "default": s.default,
+                "source": s.source,
+                "modified": s.modified,
+                "adaptive": s.is_adaptive,
+                "type": s.py_type,
+                "choices": list(s.choices) if s.choices is not None else None,
+            }
+            for s in view.settings
         }
         return json.dumps(payload, indent=2, sort_keys=True, default=str)
 
-    # Group leaves by top-level section, preserving a friendly order.
-    by_section: dict[str, list[str]] = {}
-    for leaf in leaves:
-        section = leaf.split(".", 1)[0]
-        by_section.setdefault(section, []).append(leaf)
-    ordered_sections = [s for s in _SECTION_ORDER if s in by_section]
-    ordered_sections += [s for s in by_section if s not in _SECTION_ORDER]
+    by_section: dict[str, list[ConfigSetting]] = {}
+    for s in view.settings:
+        by_section.setdefault(s.section, []).append(s)
 
     # Column widths (capped to avoid wide-terminal sprawl / narrow wrap).
-    key_w = min(max((len(leaf) for leaf in leaves), default=10) + 1, 40)
+    key_w = min(max((len(s.key) for s in view.settings), default=10) + 1, 40)
     val_w = 40
     lines: list[str] = []
-    sources_seen: set[str] = set()
-    for section in ordered_sections:
-        section_leaves = by_section[section]
-        if not section_leaves:
-            continue
+    for section in view.sections:
         lines.append(f"[{section}]")
-        for leaf in section_leaves:
-            value = _fmt_value(leaves[leaf])
-            source = eff.sources.get(leaf, "default")
-            sources_seen.add(source)
-            mark = " " if source == "default" else "*"
-            short_key = _truncate(leaf, key_w)
+        for s in by_section[section]:
+            if s.is_adaptive:
+                value = f"{_fmt_value(s.effective_value)}  (adaptive)"
+            else:
+                value = _fmt_value(s.value)
+            mark = "*" if s.modified else " "
+            short_key = _truncate(s.key, key_w)
             short_val = _truncate(value, val_w)
-            lines.append(f"{mark} {short_key:<{key_w}} {short_val:<{val_w}} {source}")
+            lines.append(f"{mark} {short_key:<{key_w}} {short_val:<{val_w}} {s.source}")
         lines.append("")
     legend_layers = ", ".join(
-        f"{lyr.name}={lyr.path}" for lyr in eff.layers if lyr.path is not None
+        f"{lyr.name}={lyr.path}" for lyr in view.layers if lyr.path is not None
     )
     lines.append("source: default | " + (legend_layers or "(no config files; all defaults)"))
     lines.append("* = overrides the built-in default")

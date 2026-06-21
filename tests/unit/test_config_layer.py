@@ -10,6 +10,9 @@ import pytest
 
 from agent6.config import ConfigError, load_config
 from agent6.config_layer import (
+    ConfigSetting,
+    ConfigView,
+    build_config_view,
     load_effective,
     materialize,
     render_show,
@@ -109,6 +112,58 @@ def test_render_show_json(repo: Path) -> None:
 
     data = json.loads(render_show(eff, as_json=True))
     assert data["workflow.verify_command"]["source"] == "repo"
+
+
+# --- the UI-agnostic config view-model (shared by config show / TUI / web) ---
+
+
+def _by_key(view: ConfigView) -> dict[str, ConfigSetting]:
+    return {s.key: s for s in view.settings}
+
+
+def test_build_config_view_provenance_type_choices(repo: Path) -> None:
+    settings = _by_key(build_config_view(load_effective(repo)))
+    rc = settings["sandbox.run_commands"]
+    assert rc.source == "repo" and rc.modified is True
+    # enum field -> a dropdown's worth of choices, typed "choice"
+    assert rc.py_type == "choice" and rc.choices is not None and "yes" in rc.choices
+    ap = settings["git.allow_push"]
+    assert ap.source == "default" and ap.modified is False
+    assert ap.py_type == "bool" and ap.default is False
+
+
+def test_build_config_view_adaptive_resolution(repo: Path) -> None:
+    view = build_config_view(
+        load_effective(repo), resolved={"workflow.compact_drop_at_chars": 999_999}
+    )
+    s = _by_key(view)["workflow.compact_drop_at_chars"]
+    assert s.value is None  # raw: unset -> adaptive
+    assert s.effective_value == 999_999
+    assert s.is_adaptive is True
+    assert s.modified is False  # an adaptive default is not a user modification
+
+
+def test_render_show_json_is_full_view(repo: Path) -> None:
+    import json
+
+    data = json.loads(render_show(load_effective(repo), as_json=True))
+    entry = data["sandbox.run_commands"]
+    assert set(entry) >= {
+        "value",
+        "effective",
+        "default",
+        "source",
+        "modified",
+        "adaptive",
+        "type",
+        "choices",
+    }
+    assert entry["type"] == "choice" and "yes" in entry["choices"]
+
+
+def test_render_show_text_marks_adaptive(repo: Path) -> None:
+    text = render_show(load_effective(repo), resolved={"workflow.compact_drop_at_chars": 471859})
+    assert "(adaptive)" in text and "471859" in text
 
 
 def test_flag_layer_wins(repo: Path, tmp_path: Path) -> None:
