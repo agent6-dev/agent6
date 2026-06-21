@@ -608,9 +608,10 @@ def test_passthrough_env_is_fixed_allowlist() -> None:
     is defense-in-depth — but if someone ever widens the allowlist without
     auditing, this test fails loudly.
     """
+    from agent6.tools import _result_format
     from agent6.tools import dispatch as _disp
 
-    passthrough_keys: tuple[str, ...] = _disp._PASSTHROUGH_ENV_KEYS  # pyright: ignore[reportPrivateUsage]
+    passthrough_keys: tuple[str, ...] = _result_format.PASSTHROUGH_ENV_KEYS
 
     forbidden_prefixes = ("LD_", "DYLD_", "PYTHON")
     for key in passthrough_keys:
