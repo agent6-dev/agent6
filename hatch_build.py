@@ -59,9 +59,7 @@ class JailBuildHook(BuildHookInterface):
     def initialize(self, version: str, build_data: dict[str, Any]) -> None:
         root = Path(self.root)
         dest = root / _BUNDLE_REL
-        # Docs are bundled regardless of whether the Rust jail builds (the
-        # agent6_docs tool wants them even on a Rust-less, binary-less install).
-        self._bundle_docs(root)
+        # Docs ship in the wheel via force-include in pyproject; nothing to do here.
 
         if os.environ.get("AGENT6_SKIP_JAIL_BUILD") == "1":
             print(
@@ -118,20 +116,6 @@ class JailBuildHook(BuildHookInterface):
         dest.chmod(0o755)
         print(f"[hatch_build] bundled {dest.relative_to(root)}", file=sys.stderr)
         self._maybe_mark_platform_wheel(build_data, dest)
-
-    @staticmethod
-    def _bundle_docs(root: Path) -> None:
-        """Copy agent6's own markdown docs into the package tree so the
-        `agent6_docs` ask tool can read them from an installed wheel (in a source
-        checkout it falls back to these same files at the repo root)."""
-        docs = ("README.md", "CONFIG.md", "SECURITY.md", "AGENTS.md", "ARCHITECTURE.md")
-        dest_dir = root / "src" / "agent6" / "_docs"
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        for name in docs:
-            src = root / name
-            if src.is_file():
-                shutil.copy2(src, dest_dir / name)
-        print(f"[hatch_build] bundled docs -> {dest_dir.relative_to(root)}", file=sys.stderr)
 
     @staticmethod
     def _maybe_mark_platform_wheel(build_data: dict[str, Any], dest: Path) -> None:
