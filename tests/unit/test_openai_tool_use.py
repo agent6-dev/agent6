@@ -635,3 +635,164 @@ def test_text_coercion_disabled_when_no_tools_offered(
     resp = _call_with_text_content(monkeypatch, content, tools=[])
     assert resp.tool_uses == ()
     assert resp.text == content
+
+
+# --- Qwen-Coder `<function=...><parameter=...>` XML tool form --------------
+# Distinct from the Hermes `<tool_call>{json}</tool_call>` shape: the body is
+# NOT JSON. Observed live with qwen3-coder-30b via OpenRouter (Novita), which
+# returns finish_reason="stop" + this XML in `content` and an empty
+# `tool_calls`, silently killing the run before this recovery existed.
+
+_APPLY_EDIT_TOOL = ToolDefinition(
+    name="apply_edit",
+    description="Edit a file",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "edits": {"type": "array"},
+            "offset": {"type": "integer"},
+        },
+    },
+)
+
+
+def test_qwen_function_xml_tool_call_is_recovered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The exact qwen3-coder leakage: `<function=NAME><parameter=KEY>` plus a
+    stray unmatched `</tool_call>`, with prose before it."""
+    content = (
+        "I'll start by reading the file.\n\n"
+        "<function=read_file>\n<parameter=path>\ninterp.py\n</parameter>\n</function>\n</tool_call>"
+    )
+    resp = _call_with_text_content(monkeypatch, content)
+    assert len(resp.tool_uses) == 1
+    assert resp.tool_uses[0]["name"] == "read_file"
+    assert resp.tool_uses[0]["input"] == {"path": "interp.py"}
+    assert resp.text == "I'll start by reading the file."
+
+
+def test_qwen_function_xml_structured_param_is_typed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An `array`-typed parameter value is JSON-parsed per the tool schema."""
+    edits = '[{"kind": "replace", "old_string": "a", "new_string": "b"}]'
+    content = (
+        "<function=apply_edit>\n<parameter=path>\nf.py\n</parameter>\n"
+        f"<parameter=edits>\n{edits}\n</parameter>\n</function>"
+    )
+    resp = _call_with_text_content(monkeypatch, content, tools=[_APPLY_EDIT_TOOL])
+    assert resp.tool_uses[0]["input"]["path"] == "f.py"
+    assert resp.tool_uses[0]["input"]["edits"] == [
+        {"kind": "replace", "old_string": "a", "new_string": "b"}
+    ]
+
+
+def test_qwen_function_xml_string_param_not_mangled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A string-typed code param whose value happens to be JSON-shaped stays a
+    byte-exact string (schema type wins over JSON-parsing)."""
+    edits = json.dumps([{"kind": "create", "old_string": "", "new_string": '{"a": 1}'}])
+    content = (
+        "<function=apply_edit>\n<parameter=path>\nf.py\n</parameter>\n"
+        f"<parameter=edits>\n{edits}\n</parameter>\n</function>"
+    )
+    resp = _call_with_text_content(monkeypatch, content, tools=[_APPLY_EDIT_TOOL])
+    assert resp.tool_uses[0]["input"]["edits"][0]["new_string"] == '{"a": 1}'
+
+
+def test_qwen_function_xml_prose_mentioning_tool_is_not_a_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Prose that names a tool but has no `<function=...>` block stays text."""
+    resp = _call_with_text_content(
+        monkeypatch, "I will use read_file next, but first let me think."
+    )
+    assert resp.tool_uses == ()
+
+
+# --- blank-name native tool_call (poisons strict backends with a 400) -------
+
+
+def test_blank_name_native_tool_call_is_dropped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A native tool_call with an empty `function.name` (observed live with
+    qwen3-coder-30b) is dropped; valid calls in the same turn survive."""
+
+    def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
+        return _FakeResponse(
+            status_code=200,
+            payload={
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "ok",
+                            "tool_calls": [
+                                {
+                                    "id": "c1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "read_file",
+                                        "arguments": '{"path": "a.py"}',
+                                    },
+                                },
+                                {
+                                    "id": "c2",
+                                    "type": "function",
+                                    "function": {"name": "", "arguments": "{}"},
+                                },
+                            ],
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+            },
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    provider = OpenAIProvider(api_key="k", model="qwen3-coder-30b")
+    resp = provider.call(
+        system="s",
+        messages=[{"role": "user", "content": "go"}],
+        tools=[_READ_FILE_TOOL],
+    )
+    assert [tu["name"] for tu in resp.tool_uses] == ["read_file"]
+
+
+def test_blank_name_tool_use_and_orphan_result_dropped_in_translation() -> None:
+    """Serialization defense: a blank-name assistant tool_use already in
+    history (e.g. a resumed snapshot) and its orphaned tool_result are both
+    dropped so the request stays well-formed for strict backends."""
+    from agent6.providers.openai import anthropic_to_openai_messages
+
+    history = [
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "ok"},
+                {"type": "tool_use", "id": "c1", "name": "read_file", "input": {"path": "a.py"}},
+                {"type": "tool_use", "id": "c2", "name": "", "input": {}},
+            ],
+        },
+        {
+            "role": "user",
+            "content": [
+                {"type": "tool_result", "tool_use_id": "c1", "content": "{}"},
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "c2",
+                    "content": '{"error": "Unknown tool: "}',
+                },
+            ],
+        },
+    ]
+    msgs = anthropic_to_openai_messages("sys", history)
+    asst = next(m for m in msgs if m["role"] == "assistant")
+    tool_msgs = [m for m in msgs if m["role"] == "tool"]
+    assert [tc["function"]["name"] for tc in asst["tool_calls"]] == ["read_file"]
+    assert [m["tool_call_id"] for m in tool_msgs] == ["c1"]

@@ -349,6 +349,11 @@ class OpenAIProvider:
         # well-behaved models (native tool_calls) and models that happen
         # to answer with JSON are never affected.
         tool_names = frozenset(t.name for t in tools) if tools else frozenset()
+        # Per-tool input JSON Schemas, keyed by name. Used by the
+        # text-embedded-tool-call recovery to coerce a `<parameter>` string
+        # value to its declared type (array/object/integer/...) so a leaked
+        # Qwen-style XML call rebuilds correctly. Empty when no tools.
+        tool_schemas = {t.name: t.input_schema for t in tools} if tools else {}
 
         # SSE streaming. When the caller supplies a
         # text_delta_callback we POST with `stream: true` (and
@@ -387,6 +392,7 @@ class OpenAIProvider:
                         text_delta_callback=text_delta_callback,
                         thinking_delta_callback=thinking_delta_callback,
                         tool_names=tool_names,
+                        tool_schemas=tool_schemas,
                     )
                 except ProviderError as exc:
                     if (
@@ -440,7 +446,7 @@ class OpenAIProvider:
                     response_status=resp.status_code,
                     response_body=data,
                 )
-            parsed = _parse_response(data, tool_names=tool_names)
+            parsed = _parse_response(data, tool_names=tool_names, tool_schemas=tool_schemas)
             if self.budget is not None:
                 self.budget.record(
                     model=self.model,
@@ -462,6 +468,7 @@ class OpenAIProvider:
         text_delta_callback: Callable[[str], None] | None = None,
         thinking_delta_callback: Callable[[str], None] | None = None,
         tool_names: frozenset[str] = frozenset(),
+        tool_schemas: dict[str, dict[str, Any]] | None = None,
     ) -> ProviderResponse:
         """SSE streaming variant of the OpenAI Chat Completions call.
 
@@ -697,7 +704,7 @@ class OpenAIProvider:
                 response_status=200,
                 response_body=synthesised,
             )
-        parsed = _parse_response(synthesised, tool_names=tool_names)
+        parsed = _parse_response(synthesised, tool_names=tool_names, tool_schemas=tool_schemas)
         if self.budget is not None:
             self.budget.record(
                 model=self.model,
@@ -729,6 +736,12 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
       own role.
     """
     out: list[dict[str, Any]] = [{"role": "system", "content": system}]
+    # Ids of assistant tool_use blocks dropped for a blank name (see
+    # `_parse_response`). Their paired tool_result must be dropped too, else
+    # the request carries a role=tool message with no matching tool_call and
+    # strict backends reject it. Defense-in-depth for resumed runs whose
+    # snapshot history predates the parse-time filter.
+    dropped_tool_use_ids: set[str] = set()
     for msg in anthropic_msgs:
         role = str(msg.get("role", "user"))
         content = msg.get("content", "")
@@ -750,6 +763,11 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
             if btype == "text":
                 text_chunks.append(str(block.get("text", "")))
             elif btype == "tool_use" and role == "assistant":
+                if not str(block.get("name") or "").strip():
+                    # Blank-name tool_use: drop it and remember its id so its
+                    # paired tool_result is dropped below.
+                    dropped_tool_use_ids.add(str(block.get("id", "")))
+                    continue
                 tool_calls.append(
                     {
                         "id": str(block.get("id", "")),
@@ -763,6 +781,10 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
                     }
                 )
             elif btype == "tool_result":
+                if str(block.get("tool_use_id", "")) in dropped_tool_use_ids:
+                    # Orphaned result for a dropped blank-name tool_use. Skip it
+                    # so the request stays well-formed.
+                    continue
                 # Tool results become separate role=tool messages.
                 # `content` field may be a string or a list of text
                 # blocks; OpenAI accepts either string or its own
@@ -830,20 +852,112 @@ def tools_to_openai(tools: list[ToolDefinition]) -> list[dict[str, Any]]:
 
 
 # Some OpenAI-compatible servers (notably certain Ollama / llama.cpp
-# chat templates for Qwen, Hermes, and other small local models) do NOT
-# parse the model's tool call into the native ``tool_calls`` array.
-# Instead the call leaks into the assistant ``content`` as plain text,
-# either a bare JSON object ``{"name": ..., "arguments": {...}}``, the
-# same wrapped in a ```json fence, or Hermes/Qwen ``<tool_call>...
-# </tool_call>`` tags. Without recovery the run loop sees text + no
-# tool_use and stalls ("went quiet"). We recover these into real
-# tool_uses, but ONLY as a fallback: see `_parse_response` for the
-# guards (no native tool_calls present AND the recovered name matches a
-# tool that was actually offered). Flagship models that emit native
-# tool_calls, and any model that legitimately answers with JSON, never
-# hit this path.
+# chat templates for Qwen, Hermes, and other small local models, and some
+# OpenRouter upstream backends) do NOT parse the model's tool call into the
+# native ``tool_calls`` array. Instead the call leaks into the assistant
+# ``content`` as plain text, in one of several shapes:
+#   - a bare JSON object ``{"name": ..., "arguments": {...}}``,
+#   - the same wrapped in a ```json fence,
+#   - Hermes/Qwen ``<tool_call>{json}</tool_call>`` tags, or
+#   - the Qwen-Coder XML form ``<function=NAME><parameter=KEY>VALUE
+#     </parameter>...</function>`` (string-valued params, NOT JSON).
+# Without recovery the run loop sees text + no tool_use and stalls
+# ("went quiet" / "silent_finish"), which kills an entire family of
+# open-weight coding models (qwen3-coder, hermes, devstral, ...). We
+# recover these into real tool_uses, but ONLY as a fallback: see
+# `_parse_response` for the guards (no native tool_calls present AND the
+# recovered name matches a tool that was actually offered). Flagship
+# models that emit native tool_calls, and any model that legitimately
+# answers with JSON, never hit this path.
 _TOOL_CALL_TAG_RE = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
 _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+# Qwen-Coder XML tool form. The closing ``</function>`` is sometimes
+# missing (truncation) or mis-spelled ``</tool_call>``; capture the name
+# and a lenient body, then mine ``<parameter=...>`` pairs out of it.
+_FUNCTION_CALL_RE = re.compile(
+    r"<function\s*=\s*([^>\s]+?)\s*>(.*?)(?:</function>|</tool_call>|<function\s*=|\Z)",
+    re.DOTALL,
+)
+_PARAMETER_RE = re.compile(
+    r"<parameter\s*=\s*([^>\s]+?)\s*>(.*?)(?:</parameter>|<parameter\s*=|\Z)",
+    re.DOTALL,
+)
+# Leftover scaffolding to scrub from the visible text once calls are mined.
+_TOOL_SCAFFOLD_RE = re.compile(r"</?tool_call>|</?function[^>]*>|</?parameter[^>]*>")
+
+
+def _coerce_param_value(value: str, declared_type: str | None) -> Any:  # noqa: PLR0911
+    """Coerce a Qwen-XML ``<parameter>`` string to its schema-declared type.
+
+    The Qwen-Coder template emits each parameter value as raw text framed by
+    newlines, e.g. ``<parameter=path>\\ninterp.py\\n</parameter>``. Strip the
+    framing newlines, then coerce by the tool's declared JSON-Schema type so
+    structured params (``array``/``object``) and scalars rebuild correctly
+    while string params (code in ``new_string``/``old_string``) are left byte-
+    exact. Unknown type: parse only if it looks like JSON array/object, else
+    keep the string.
+    """
+    # Strip the single leading/trailing newline the template adds without
+    # touching interior or leading-space indentation that code params need.
+    v = value
+    if v.startswith("\n"):
+        v = v[1:]
+    if v.endswith("\n"):
+        v = v[:-1]
+    if declared_type == "string":
+        return v
+    if declared_type in ("array", "object"):
+        try:
+            return json.loads(v.strip())
+        except (json.JSONDecodeError, TypeError):
+            return v  # let pydantic surface a clear validation error
+    if declared_type == "integer":
+        try:
+            return int(v.strip())
+        except ValueError:
+            return v
+    if declared_type == "number":
+        try:
+            return float(v.strip())
+        except ValueError:
+            return v
+    if declared_type == "boolean":
+        return v.strip().lower() in ("true", "1", "yes")
+    # Unknown / absent schema: only auto-parse clearly-structured JSON so a
+    # plain string value is never silently turned into a number or dict.
+    stripped = v.strip()
+    if stripped[:1] in ("[", "{"):
+        try:
+            return json.loads(stripped)
+        except (json.JSONDecodeError, TypeError):
+            return v
+    return v
+
+
+def _extract_function_xml_calls(
+    text: str,
+    tool_names: frozenset[str],
+    tool_schemas: dict[str, dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """Mine Qwen-Coder ``<function=NAME><parameter=KEY>VALUE</parameter>``
+    calls from leaked content text. Returns ``[{"name", "input"}, ...]`` for
+    every block whose name matches an offered tool; empty if none match."""
+    out: list[dict[str, Any]] = []
+    for fmatch in _FUNCTION_CALL_RE.finditer(text):
+        name = fmatch.group(1).strip()
+        if name not in tool_names:
+            continue
+        body = fmatch.group(2)
+        schema = (tool_schemas or {}).get(name) or {}
+        props = schema.get("properties") or {}
+        args: dict[str, Any] = {}
+        for pmatch in _PARAMETER_RE.finditer(body):
+            key = pmatch.group(1).strip()
+            decl = props.get(key) or {}
+            decl_type = decl.get("type") if isinstance(decl, dict) else None
+            args[key] = _coerce_param_value(pmatch.group(2), decl_type)
+        out.append({"name": name, "input": args})
+    return out
 
 
 def _extract_tool_call_obj(  # noqa: PLR0911
@@ -883,18 +997,29 @@ def _extract_tool_call_obj(  # noqa: PLR0911
 
 
 def _coerce_text_tool_calls(
-    text: str, tool_names: frozenset[str]
+    text: str,
+    tool_names: frozenset[str],
+    tool_schemas: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], str]:
     """Best-effort recovery of tool calls a local model emitted as text.
 
     Returns ``(tool_uses, remaining_text)``. ``tool_uses`` is empty when
     nothing tool-call-shaped is found, in which case ``remaining_text``
     equals the original ``text``. The parsing is deliberately strict
-    (exact JSON, a single fenced JSON object, or ``<tool_call>`` tags) so
-    prose that merely mentions a tool name is never misread as a call.
+    (exact JSON, a single fenced JSON object, ``<tool_call>`` tags, or the
+    ``<function=...>`` XML form) so prose that merely mentions a tool name is
+    never misread as a call.
     """
     if not text or not tool_names:
         return [], text
+    # 0) Qwen-Coder ``<function=NAME><parameter=KEY>VALUE</parameter></function>``
+    # XML. Checked first: it is self-delimiting and unambiguous, and the
+    # inner body is NOT JSON so the JSON-shaped branches below cannot parse it.
+    if "<function=" in text:
+        xml_calls = _extract_function_xml_calls(text, tool_names, tool_schemas)
+        if xml_calls:
+            remaining = _TOOL_SCAFFOLD_RE.sub("", _FUNCTION_CALL_RE.sub("", text)).strip()
+            return xml_calls, remaining
     # 1) Hermes / Qwen ``<tool_call>...</tool_call>`` wrappers (≥1).
     tag_matches = list(_TOOL_CALL_TAG_RE.finditer(text))
     if tag_matches:
@@ -920,7 +1045,10 @@ def _coerce_text_tool_calls(
 
 
 def _parse_response(  # noqa: PLR0912, PLR0915
-    data: dict[str, Any], *, tool_names: frozenset[str] = frozenset()
+    data: dict[str, Any],
+    *,
+    tool_names: frozenset[str] = frozenset(),
+    tool_schemas: dict[str, dict[str, Any]] | None = None,
 ) -> ProviderResponse:
     choices = data.get("choices") or []
     text = ""
@@ -943,6 +1071,16 @@ def _parse_response(  # noqa: PLR0912, PLR0915
             if not isinstance(call, dict):
                 continue
             func = call.get("function") or {}
+            # Small open-weight models (observed live: qwen3-coder-30b via the
+            # Novita backend) sometimes emit a NATIVE tool_call with a blank
+            # `function.name`. Dispatching it yields "Unknown tool: " and, worse,
+            # echoing the blank-name call back in the next request makes strict
+            # backends reject the whole conversation with a 400
+            # invalid_request_error, killing the run. Drop the malformed call
+            # here so it never enters history; valid calls in the same turn
+            # still proceed.
+            if not str(func.get("name") or "").strip():
+                continue
             args_raw = func.get("arguments", "")
             # OpenAI returns arguments as a JSON string. Convert to dict
             # for the Anthropic-shape input field. Malformed JSON
@@ -984,7 +1122,7 @@ def _parse_response(  # noqa: PLR0912, PLR0915
         # offered and never for flagship models (which populate
         # tool_calls) or models legitimately answering with JSON.
         if not tool_uses and tool_names:
-            recovered, remaining_text = _coerce_text_tool_calls(text, tool_names)
+            recovered, remaining_text = _coerce_text_tool_calls(text, tool_names, tool_schemas)
             if recovered:
                 tool_uses = tuple(
                     {"id": f"call_text_{i}", "name": r["name"], "input": r["input"]}
