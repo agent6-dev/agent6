@@ -50,7 +50,7 @@ config_version = 1
 
 $(if [[ "$MODEL" == moonshotai/* || -n "${AGENT6_REALWORLD_OPENROUTER:-}" ]]; then cat <<PROV
 [providers.openrouter]
-kind = "openai"
+api_format = "openai"
 api_key_env = "OPENROUTER_API_KEY"
 base_url = "https://openrouter.ai/api/v1"
 
@@ -64,7 +64,7 @@ model = "$MODEL"
 PROV
 else cat <<PROV
 [providers.anthropic]
-kind = "anthropic"
+api_format = "anthropic"
 api_key_env = "ANTHROPIC_API_KEY"
 prompt_caching = true
 
@@ -84,7 +84,6 @@ agent_network = "providers"
 tool_network = "block"
 run_commands = "yes"
 protect_git = true
-protect_agent6 = true
 
 [git]
 require_clean_worktree = true

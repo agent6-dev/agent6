@@ -27,7 +27,7 @@ common_toml() {
 config_version = 1
 
 [providers.anthropic]
-kind = "anthropic"
+api_format = "anthropic"
 api_key_env = "ANTHROPIC_API_KEY"
 prompt_caching = true
 
@@ -45,7 +45,6 @@ agent_network = "providers"
 tool_network = "block"
 run_commands = "yes"
 protect_git = true
-protect_agent6 = true
 
 [git]
 require_clean_worktree = true

@@ -143,7 +143,7 @@ cat > "$WORKDIR/agent6.toml" <<EOF
 config_version = 1
 
 [providers.openrouter]
-kind = "openai"
+api_format = "openai"
 api_key_env = "OPENROUTER_API_KEY"
 base_url = "https://openrouter.ai/api/v1"
 extra_headers = { "HTTP-Referer" = "https://github.com/elesiuta/agent6", "X-Title" = "agent6-bench" }
@@ -162,7 +162,6 @@ agent_network = "providers"
 tool_network = "block"
 run_commands = "yes"
 protect_git = true
-protect_agent6 = true
 
 [git]
 require_clean_worktree = true
@@ -190,7 +189,7 @@ goal = "minimize"
 [budget]
 max_input_tokens = $MAX_INPUT_TOKENS
 max_output_tokens = $MAX_OUTPUT_TOKENS
-max_usd = $MAX_USD
+best_effort_usd_limit = $MAX_USD
 EOF
 
 {
