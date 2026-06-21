@@ -48,6 +48,30 @@ here once; do not re-justify them per command in code comments or docs.
   code around it stays small. A field that can never be half-set belongs
   in one frozen type, not two parallel dicts. When code keeps converting
   between shapes, fix the shape instead of adding a converter.
+- **Decompose proactively; don't let debt accumulate.** When a module
+  grows past ~1000 lines or a method past a few hundred, split it before
+  it ossifies, rather than threading one more local or piling on another
+  branch. The patterns we use (see `workflows/loop.py` + its `_prompts` /
+  `_metric` / `_compaction` / `_critic` / `_symbol_outline` siblings, the
+  `cli/_steer|_ask|_repl` split of `run.py`, the `tools/_edit_diag` /
+  `_agent6_docs` / `_result_format` split of `dispatch.py`, and
+  `machine/model.py` -> `_semantics.py`):
+  - Lift cohesive pure-helper / constant groups into sibling `_name.py`
+    modules. Move verbatim; give the moved symbols public names (drop the
+    leading underscore) and import them back aliased (`foo as _foo`) so call
+    sites and behaviour don't change. A pure mechanical move with the test
+    suite green is the proof there's no regression.
+  - For a large stateful method (the agent loop), give its cross-iteration
+    bookkeeping ONE mutable state dataclass (`workflows.loop._LoopState`) so
+    each phase becomes a method taking `state`. Never a 9-parameter helper
+    or a multi-value tuple return — that is the spaghetti we are avoiding.
+  - Record the new edge in `tach.toml` when an extraction crosses a module
+    boundary (tach is guidance, so update it; don't contort the code).
+  - pyright `reportPrivateUsage` allows importing `_name` only from a
+    `_`-prefixed module; when a symbol must be shared across a non-private
+    module boundary, make it public.
+  - One source module decomposed is one commit. A different module
+    decomposed is a separate commit.
 - **Secure by default.** Every new knob ships with the safe value as its
   default and stays visible through `agent6 config show`. Widening a
   security boundary is opt-in and carries a security review note in the
