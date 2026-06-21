@@ -19,9 +19,11 @@ from __future__ import annotations
 
 import json
 
-from agent6.workflows.loop import (
-    _TOOL_RESULT_CHAR_CAP,  # pyright: ignore[reportPrivateUsage]
-    _cap_tool_result,  # pyright: ignore[reportPrivateUsage]
+from agent6.workflows._compaction import (
+    TOOL_RESULT_CHAR_CAP as _TOOL_RESULT_CHAR_CAP,
+)
+from agent6.workflows._compaction import (
+    cap_tool_result as _cap_tool_result,
 )
 
 

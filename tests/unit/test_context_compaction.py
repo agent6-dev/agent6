@@ -6,11 +6,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent6.workflows.loop import (
-    _compact_old_tool_results as compact_old_tool_results,  # pyright: ignore[reportPrivateUsage]
-)
-from agent6.workflows.loop import (
-    _context_chars as context_chars,  # pyright: ignore[reportPrivateUsage]
+from agent6.workflows._compaction import (
+    compact_old_tool_results,
+    context_chars,
 )
 
 
@@ -47,8 +45,8 @@ def _user_msg_with_tool_results(*contents: str) -> dict[str, Any]:
 def test_compact_skips_tool_result_smaller_than_placeholder() -> None:
     # Eliding a tool_result already smaller than the 201-char placeholder would
     # GROW cumulative size, not shrink it. Such blocks must be left intact.
-    from agent6.workflows.loop import (
-        _ELISION_PLACEHOLDER as PLACEHOLDER,  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._compaction import (
+        ELISION_PLACEHOLDER as PLACEHOLDER,
     )
 
     tiny = "x" * 50  # < len(placeholder) == 201
@@ -131,8 +129,8 @@ def test_compact_skips_non_tool_result_blocks() -> None:
 def test_restart_notice_is_dag_aware() -> None:
     """The tier-2 summarise-and-restart notice must point the worker at its
     durable task DAG so cross-compaction task state is recovered."""
-    from agent6.workflows.loop import (
-        _CONTEXT_RESTART_NOTICE as notice,  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._prompts import (
+        CONTEXT_RESTART_NOTICE as notice,
     )
 
     assert "dag_list_tasks" in notice

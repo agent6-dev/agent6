@@ -7,10 +7,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from agent6.tools.index import Symbol
-from agent6.workflows.loop import (
-    _SYMBOL_OUTLINE_MAX_FILES,  # pyright: ignore[reportPrivateUsage]
-    _SYMBOL_OUTLINE_MAX_PER_FILE,  # pyright: ignore[reportPrivateUsage]
-    _build_symbol_outline_block,  # pyright: ignore[reportPrivateUsage]
+from agent6.workflows._symbol_outline import (
+    SYMBOL_OUTLINE_MAX_FILES as _SYMBOL_OUTLINE_MAX_FILES,
+)
+from agent6.workflows._symbol_outline import (
+    SYMBOL_OUTLINE_MAX_PER_FILE as _SYMBOL_OUTLINE_MAX_PER_FILE,
+)
+from agent6.workflows._symbol_outline import (
+    build_symbol_outline_block as _build_symbol_outline_block,
 )
 
 

@@ -1,0 +1,159 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Eric Lesiuta
+"""Context-window management for the agent loop.
+
+Two tiers keep a long run inside the model's context window:
+
+- tier 1 (`compact_old_tool_results`): at `DROP_BLOCKS_AT_CHARS` the oldest
+  tool_result blocks are replaced by `ELISION_PLACEHOLDER`.
+- tier 2 (`context_chars` vs `SUMMARISE_AT_CHARS`): the elided history is
+  summarised and the conversation restarts from (task + summary).
+
+`cap_tool_result` separately bounds a single tool_result so one huge payload
+cannot blow the budget on the turn it arrives. All three are pure functions of
+the message list; the loop owns the policy of when to call them.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+ELISION_PLACEHOLDER = (
+    "<elided by context compaction: this tool_result has been replaced "
+    "with this short marker to keep the loop's cumulative input bounded. "
+    "Re-call the tool with the same args if you still need the content.>"
+)
+
+# per-tool-result cap. was a hard 20_000 char slice
+# applied mid-JSON, which produced a malformed result the model could
+# not parse. Weak models (Kimi K2.6 observed live) then concluded the
+# tool result was "cut off" and re-called `read_file` repeatedly trying
+# to see the rest, latching the loop-guard. The fix: lift the cap to
+# 60_000 chars (~15k tokens, comfortably fits most source files) AND
+# when truncation is unavoidable, wrap the result in a fresh,
+# well-formed JSON object that explicitly tells the model what
+# happened and how to get the rest.
+TOOL_RESULT_CHAR_CAP = 60_000
+
+# compaction thresholds (chars, not tokens - approximate; tokens
+# are roughly chars/4 for English-shaped content).
+DROP_BLOCKS_AT_CHARS = 256_000  # ~64k tokens of tool_result content
+SUMMARISE_AT_CHARS = 768_000  # ~192k tokens: full context restart
+
+
+def cap_tool_result(content: str, *, tool_name: str) -> str:
+    """Cap a serialized tool_result payload at ``TOOL_RESULT_CHAR_CAP``
+    chars without producing malformed JSON. If the payload is over the
+    cap, wrap it in a new JSON envelope that tells the model:
+    (a) the result was truncated, (b) how many chars were shown vs
+    total, (c) the head of the original content, (d) actionable next
+    steps. This prevents weak models from inferring "the tool itself
+    returned a partial result, let me call it again"."""
+    if len(content) <= TOOL_RESULT_CHAR_CAP:
+        return content
+    head_budget = TOOL_RESULT_CHAR_CAP - 1_000  # reserve room for envelope
+    head = content[:head_budget]
+    if tool_name == "read_file":
+        guidance = (
+            "Use `read_file` again with `offset` and `limit` to read the rest"
+            " of the file in chunks. Do NOT re-call with identical arguments"
+            " expecting a different result - you will get the same truncated"
+            " head and waste budget."
+        )
+    elif tool_name in ("run_command", "run_verify_command"):
+        guidance = (
+            "Re-run with a narrower scope (e.g. a single test, smaller grep"
+            " pattern, head/tail) to get a result that fits. Do NOT re-call"
+            " with identical arguments expecting different output."
+        )
+    else:
+        guidance = (
+            "Re-call with arguments that produce less output. Do NOT re-call"
+            " with identical arguments expecting different output."
+        )
+    return json.dumps(
+        {
+            "_tool_result_truncated": True,
+            "tool": tool_name,
+            "shown_chars": len(head),
+            "total_chars": len(content),
+            "head": head,
+            "guidance": guidance,
+        },
+        ensure_ascii=False,
+    )
+
+
+def context_chars(messages: list[dict[str, Any]]) -> int:
+    """Approximate the full character size of the conversation context.
+
+    Sums string content plus, for structured content blocks, their text,
+    tool_result content, and tool_use inputs -- i.e. everything that grows the
+    context and is sent back to the model each turn, not just tool_result bytes.
+    Used as the tier-2 (summarise-and-restart) trigger, which must measure
+    something tier-1 elision does not already cap.
+    """
+    total = 0
+    for msg in messages:
+        content = msg.get("content")
+        if isinstance(content, str):
+            total += len(content)
+        elif isinstance(content, list):
+            for item in content:
+                if not isinstance(item, dict):
+                    continue
+                total += len(str(item.get("text", "") or ""))
+                total += len(str(item.get("content", "") or ""))
+                if item.get("type") == "tool_use":
+                    total += len(str(item.get("input", "") or ""))
+    return total
+
+
+def compact_old_tool_results(
+    messages: list[dict[str, Any]],
+    *,
+    max_total_bytes: int,
+    keep_recent: int = 2,
+) -> int:
+    """Elide old tool_result blocks once cumulative content exceeds the
+    threshold. Walks messages oldest-first, replaces each tool_result's
+    ``content`` with a short placeholder, stops once total size is back
+    under ``max_total_bytes``. The most recent ``keep_recent`` are always
+    preserved. Idempotent on already-elided entries. Returns the number
+    of entries elided (for telemetry).
+    """
+    pointers: list[tuple[int, int, int]] = []  # (msg_idx, item_idx, size)
+    total = 0
+    for msg_idx, msg in enumerate(messages):
+        content = msg.get("content")
+        if not isinstance(content, list):
+            continue
+        for item_idx, item in enumerate(content):
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") != "tool_result":
+                continue
+            raw_content = item.get("content")
+            size = len(raw_content) if isinstance(raw_content, str) else len(str(raw_content))
+            pointers.append((msg_idx, item_idx, size))
+            total += size
+
+    if total <= max_total_bytes or len(pointers) <= keep_recent:
+        return 0
+    elided_count = 0
+    for msg_idx, item_idx, size in pointers[:-keep_recent]:
+        if total <= max_total_bytes:
+            break
+        item = messages[msg_idx]["content"][item_idx]
+        current = item.get("content")
+        if isinstance(current, str) and current.startswith("<elided by context compaction"):
+            continue
+        if size <= len(ELISION_PLACEHOLDER):
+            # Replacing content already smaller than the placeholder would GROW
+            # the total, defeating the point; skip it.
+            continue
+        item["content"] = ELISION_PLACEHOLDER
+        total -= size - len(ELISION_PLACEHOLDER)
+        elided_count += 1
+    return elided_count

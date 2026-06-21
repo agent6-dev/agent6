@@ -20,7 +20,6 @@ from __future__ import annotations
 import json
 import os
 import random
-import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -36,7 +35,6 @@ from agent6.graph.client import CuratorClientError, GraphClient
 from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft
 from agent6.providers import Provider, ProviderError, ToolDefinition
 from agent6.tools.dispatch import ToolDispatcher, ToolError
-from agent6.tools.index import Symbol
 from agent6.tools.schema import (
     ALL_TOOLS,
     ASK_EXTRA_TOOLS,
@@ -51,28 +49,113 @@ from agent6.tools.schema import (
     RunVerifyInput,
 )
 from agent6.types import RepoSummary
+from agent6.workflows._compaction import (
+    DROP_BLOCKS_AT_CHARS as _DROP_BLOCKS_AT_CHARS,
+)
+from agent6.workflows._compaction import (
+    SUMMARISE_AT_CHARS as _SUMMARISE_AT_CHARS,
+)
+from agent6.workflows._compaction import (
+    cap_tool_result as _cap_tool_result,
+)
+from agent6.workflows._compaction import (
+    compact_old_tool_results as _compact_old_tool_results,
+)
+from agent6.workflows._compaction import (
+    context_chars as _context_chars,
+)
 from agent6.workflows._context import load_repo_summary
+from agent6.workflows._critic import (
+    CritiqueResult as _CritiqueResult,
+)
+from agent6.workflows._critic import (
+    format_messages_tail_for_critic as _format_messages_tail_for_critic,
+)
+from agent6.workflows._critic import (
+    parse_critic_verdict as _parse_critic_verdict,
+)
+from agent6.workflows._metric import (
+    METRIC_EARLY_FINISH_PATIENCE as _METRIC_EARLY_FINISH_PATIENCE,
+)
+from agent6.workflows._metric import (
+    METRIC_FINISH_NUDGE as _METRIC_FINISH_NUDGE,
+)
+from agent6.workflows._metric import (
+    METRIC_PLATEAU_PATIENCE as _METRIC_PLATEAU_PATIENCE,
+)
+from agent6.workflows._metric import (
+    METRIC_PLATEAU_STOP_BELOW_BUDGET as _METRIC_PLATEAU_STOP_BELOW_BUDGET,
+)
+from agent6.workflows._metric import (
+    MetricSample as _MetricSample,
+)
+from agent6.workflows._metric import (
+    coerce_metric_score as _coerce_metric_score,
+)
+from agent6.workflows._metric import (
+    extract_metric_targets as _extract_metric_targets,
+)
+from agent6.workflows._metric import (
+    format_metric_feedback as _format_metric_feedback,
+)
+from agent6.workflows._metric import (
+    metric_at_fraction_ceiling as _metric_at_fraction_ceiling,
+)
+from agent6.workflows._metric import (
+    metric_goal as _metric_goal,
+)
+from agent6.workflows._metric import (
+    metric_plateau_nudge as _metric_plateau_nudge,
+)
+from agent6.workflows._metric import (
+    metric_plateau_summary as _metric_plateau_summary,
+)
+from agent6.workflows._prompts import (
+    AGENT_SYSTEM_PROMPT_BASE as _AGENT_SYSTEM_PROMPT_BASE,
+)
+from agent6.workflows._prompts import (
+    ASK_SYSTEM_PROMPT_BASE as _ASK_SYSTEM_PROMPT_BASE,
+)
+from agent6.workflows._prompts import (
+    CONTEXT_RESTART_NOTICE as _CONTEXT_RESTART_NOTICE,
+)
+from agent6.workflows._prompts import (
+    CONTEXT_SUMMARY_SYSTEM_PROMPT as _CONTEXT_SUMMARY_SYSTEM_PROMPT,
+)
+from agent6.workflows._prompts import (
+    CRITIC_SYSTEM_PROMPT as _CRITIC_SYSTEM_PROMPT,
+)
+from agent6.workflows._prompts import (
+    MACHINE_SYSTEM_PROMPT_BASE as _MACHINE_SYSTEM_PROMPT_BASE,
+)
+from agent6.workflows._prompts import (
+    PLAN_SYSTEM_PROMPT_BASE as _PLAN_SYSTEM_PROMPT_BASE,
+)
+from agent6.workflows._prompts import (
+    PROMPT_REVISION_SYSTEM_PROMPT as _PROMPT_REVISION_SYSTEM_PROMPT,
+)
+from agent6.workflows._prompts import (
+    SYSTEM_PROMPT_BASE as _SYSTEM_PROMPT_BASE,
+)
+from agent6.workflows._prompts import (
+    V2_BUDGET_BLOCK_TEMPLATE as _V2_BUDGET_BLOCK_TEMPLATE,
+)
+from agent6.workflows._prompts import (
+    V2_METRIC_BLOCK_TEMPLATE as _V2_METRIC_BLOCK_TEMPLATE,
+)
+from agent6.workflows._prompts import (
+    V2_REPO_BLOCK_TEMPLATE as _V2_REPO_BLOCK_TEMPLATE,
+)
+from agent6.workflows._prompts import (
+    V2_VERIFY_BLOCK_TEMPLATE as _V2_VERIFY_BLOCK_TEMPLATE,
+)
+from agent6.workflows._symbol_outline import (
+    build_symbol_outline_block as _build_symbol_outline_block,
+)
 
 if TYPE_CHECKING:
     from agent6.events import EventSink
 
-
-_ELISION_PLACEHOLDER = (
-    "<elided by context compaction: this tool_result has been replaced "
-    "with this short marker to keep the loop's cumulative input bounded. "
-    "Re-call the tool with the same args if you still need the content.>"
-)
-
-# per-tool-result cap. was a hard 20_000 char slice
-# applied mid-JSON, which produced a malformed result the model could
-# not parse. Weak models (Kimi K2.6 observed live) then concluded the
-# tool result was "cut off" and re-called `read_file` repeatedly trying
-# to see the rest, latching the loop-guard. The fix: lift the cap to
-# 60_000 chars (~15k tokens, comfortably fits most source files) AND
-# when truncation is unavoidable, wrap the result in a fresh,
-# well-formed JSON object that explicitly tells the model what
-# happened and how to get the rest.
-_TOOL_RESULT_CHAR_CAP = 60_000
 
 # HTTP statuses that will never succeed on a blind retry of the same request.
 # 400 bad request, 401/403 auth, 402 insufficient credits, 404 bad
@@ -82,132 +165,9 @@ _TOOL_RESULT_CHAR_CAP = 60_000
 # the normal backoff.
 _NON_RETRYABLE_HTTP_STATUSES = frozenset({400, 401, 402, 403, 404, 422})
 
-
-def _cap_tool_result(content: str, *, tool_name: str) -> str:
-    """Cap a serialized tool_result payload at ``_TOOL_RESULT_CHAR_CAP``
-    chars without producing malformed JSON. If the payload is over the
-    cap, wrap it in a new JSON envelope that tells the model:
-    (a) the result was truncated, (b) how many chars were shown vs
-    total, (c) the head of the original content, (d) actionable next
-    steps. This prevents weak models from inferring "the tool itself
-    returned a partial result, let me call it again"."""
-    if len(content) <= _TOOL_RESULT_CHAR_CAP:
-        return content
-    head_budget = _TOOL_RESULT_CHAR_CAP - 1_000  # reserve room for envelope
-    head = content[:head_budget]
-    if tool_name == "read_file":
-        guidance = (
-            "Use `read_file` again with `offset` and `limit` to read the rest"
-            " of the file in chunks. Do NOT re-call with identical arguments"
-            " expecting a different result - you will get the same truncated"
-            " head and waste budget."
-        )
-    elif tool_name in ("run_command", "run_verify_command"):
-        guidance = (
-            "Re-run with a narrower scope (e.g. a single test, smaller grep"
-            " pattern, head/tail) to get a result that fits. Do NOT re-call"
-            " with identical arguments expecting different output."
-        )
-    else:
-        guidance = (
-            "Re-call with arguments that produce less output. Do NOT re-call"
-            " with identical arguments expecting different output."
-        )
-    return json.dumps(
-        {
-            "_tool_result_truncated": True,
-            "tool": tool_name,
-            "shown_chars": len(head),
-            "total_chars": len(content),
-            "head": head,
-            "guidance": guidance,
-        },
-        ensure_ascii=False,
-    )
-
-
-def _context_chars(messages: list[dict[str, Any]]) -> int:
-    """Approximate the full character size of the conversation context.
-
-    Sums string content plus, for structured content blocks, their text,
-    tool_result content, and tool_use inputs -- i.e. everything that grows the
-    context and is sent back to the model each turn, not just tool_result bytes.
-    Used as the tier-2 (summarise-and-restart) trigger, which must measure
-    something tier-1 elision does not already cap.
-    """
-    total = 0
-    for msg in messages:
-        content = msg.get("content")
-        if isinstance(content, str):
-            total += len(content)
-        elif isinstance(content, list):
-            for item in content:
-                if not isinstance(item, dict):
-                    continue
-                total += len(str(item.get("text", "") or ""))
-                total += len(str(item.get("content", "") or ""))
-                if item.get("type") == "tool_use":
-                    total += len(str(item.get("input", "") or ""))
-    return total
-
-
-def _compact_old_tool_results(
-    messages: list[dict[str, Any]],
-    *,
-    max_total_bytes: int,
-    keep_recent: int = 2,
-) -> int:
-    """Elide old tool_result blocks once cumulative content exceeds the
-    threshold. Walks messages oldest-first, replaces each tool_result's
-    ``content`` with a short placeholder, stops once total size is back
-    under ``max_total_bytes``. The most recent ``keep_recent`` are always
-    preserved. Idempotent on already-elided entries. Returns the number
-    of entries elided (for telemetry).
-    """
-    pointers: list[tuple[int, int, int]] = []  # (msg_idx, item_idx, size)
-    total = 0
-    for msg_idx, msg in enumerate(messages):
-        content = msg.get("content")
-        if not isinstance(content, list):
-            continue
-        for item_idx, item in enumerate(content):
-            if not isinstance(item, dict):
-                continue
-            if item.get("type") != "tool_result":
-                continue
-            raw_content = item.get("content")
-            size = len(raw_content) if isinstance(raw_content, str) else len(str(raw_content))
-            pointers.append((msg_idx, item_idx, size))
-            total += size
-
-    if total <= max_total_bytes or len(pointers) <= keep_recent:
-        return 0
-    elided_count = 0
-    for msg_idx, item_idx, size in pointers[:-keep_recent]:
-        if total <= max_total_bytes:
-            break
-        item = messages[msg_idx]["content"][item_idx]
-        current = item.get("content")
-        if isinstance(current, str) and current.startswith("<elided by context compaction"):
-            continue
-        if size <= len(_ELISION_PLACEHOLDER):
-            # Replacing content already smaller than the placeholder would GROW
-            # the total, defeating the point; skip it.
-            continue
-        item["content"] = _ELISION_PLACEHOLDER
-        total -= size - len(_ELISION_PLACEHOLDER)
-        elided_count += 1
-    return elided_count
-
-
 # cache_control marker on the initial user message
 # so the system + initial context get cached across the loop's turns.
 _CACHE_CONTROL_EPHEMERAL: dict[str, str] = {"type": "ephemeral"}
-
-# compaction thresholds (chars, not tokens - approximate; tokens
-# are roughly chars/4 for English-shaped content).
-_DROP_BLOCKS_AT_CHARS = 256_000  # ~64k tokens of tool_result content
-_SUMMARISE_AT_CHARS = 768_000  # ~192k tokens: full context restart
 
 
 @dataclass(frozen=True, slots=True)
@@ -273,422 +233,6 @@ def _load_resume_snapshot(path: Path) -> _ResumeSnapshot:
     )
 
 
-_SYSTEM_PROMPT_BASE = """<role>
-You are agent6, a sandboxed coding agent. You receive a task in the
-first user message, plan and execute changes in this repository, verify
-them, and finish when done or when your compute budget runs out.
-
-Your harness gives you tools to read, search, edit, run commands, run
-the verify command, and (if configured) measure a continuous-score
-metric. The harness is also tracking your spend against a hard budget;
-the loop will halt if you exceed it.
-</role>
-
-<edit-rules>
-- `apply_edit`: each edit's `old_string` MUST occur EXACTLY ONCE in the
-  file (whitespace, indentation byte-for-byte). Use `kind="create"` for
-  new files (empty `old_string`, full content in `new_string`).
-- `apply_patch`: standard unified-diff (`--- a/PATH`, `+++ b/PATH`,
-  `@@ -L,N +L,N @@` hunks). Use this for multi-hunk edits to one file -
-  cheaper than several `apply_edit` calls.
-- Stay inside the files the task asks you to change. Drive-by refactors
-  and "while I'm here" cleanups produce review failures and waste budget.
-- NEVER leave TODOs, "implement this later" comments, ellipses, or stub
-  bodies (`pass`, `raise NotImplementedError`) in place of real code.
-</edit-rules>
-
-<tool-use-rules>
-- Anchor reads: prefer `outline` to see file shape before `read_file`.
-- For symbol queries prefer `find_definition` / `find_references` over
-  plain `grep` (those exclude strings/comments).
-- After every meaningful edit run `run_verify_command` to check
-  correctness. Don't chain many edits without a verify pass; each
-  uncommitted-but-broken edit cost compounds.
-- Run the project's tests ONLY via `run_verify_command` (the operator's
-  configured command with the right environment), never by reconstructing
-  test invocations through `run_command`. If a command fails for
-  environment reasons (missing tool, unwritable path), do not probe the
-  sandbox with diagnostic commands; use `run_verify_command` and read its
-  output.
-- On the hardened sandbox profile, jailed commands cannot CREATE new
-  top-level files or directories in the workspace root (existing entries
-  are writable as normal). If a build tool needs a new top-level entry
-  (e.g. `Cargo.lock`, `target/`, `go.sum`), create it first with
-  `write_file` (which runs outside the jail): the file itself for a file,
-  or a placeholder like `target/.keep` for a directory. Then rerun the
-  command.
-- If an edit fails verify and you need to revert it, do NOT call
-    `git checkout`, `git reset`, or other history-mutating git commands
-    through `run_command`: `.git/` is protected inside the jail and those
-    calls will fail. Instead read the previous content with a read-only
-    command such as `git show HEAD:path/to/file` and use `apply_patch` /
-    `apply_edit` to restore the file, or manually undo the bad hunk.
-- The harness AUTO-COMMITS after every verify-pass. You don't need to
-  `git commit` manually - score is computed against the latest commit
-  on this branch and the workflow's git-history rescue picks the
-  best-scoring commit at the end. If you DO want a specific commit
-  message you can still call `run_command` with `git commit`, but
-  it's optional.
-- `finish_run` is the only way to terminate cleanly. Call it when the
-  task is done, when the metric plateaued, or when you are blocked.
-</tool-use-rules>
-
-<dag-rules>
-The DAG-as-tool surface (`add_task`, `update_task`, `set_cursor`,
-`list_tasks`) maintains a persistent task breakdown. OPTIONAL - skip
-it entirely for one-shot fixes, single-file edits, or perf-takehome-
-style "make this number smaller" runs. Use it ONLY when the task
-naturally decomposes into 3+ subtasks worth tracking and humans
-watching the TUI benefit from seeing the breakdown.
-
-When you do use it: `add_task(title, parent_id?)` returns an id;
-`update_task(id, status="in_progress")` when you start a subtask;
-`update_task(id, status="passed")` only after verify confirms it.
-`set_cursor(id)` is cosmetic - it updates the TUI's "current task"
-pointer; it is NOT the resume mechanism (the workflow snapshots its
-own state independently before each LLM call).
-</dag-rules>
-
-<scope-and-style>
-Project conventions live in AGENTS.md (read it if present). Defaults:
-minimum-necessary edits matching the file's existing style. Tests are
-the authoritative behavioural specification - if a test says X must
-happen, match that behaviour even if a docstring says otherwise.
-
-When the task is to ADD behaviour (not fix a regression in code that
-already had a test), prefer the TDD loop: write or extend a test that
-encodes the desired behaviour FIRST, run `run_verify_command` to
-confirm it fails for the right reason, THEN implement the change and
-re-run verify. This catches "fixed the symptom but not the bug" and
-gives the harness a concrete signal to commit against. Skip this only
-when the existing test suite already exercises the change point or
-when no test framework is in scope (one-shot script edits, perf
-takehomes that already ship a metric).
-</scope-and-style>
-"""
-
-# Alternate base system prompt used by `agent6 plan`. Replaces
-# the edit-/verify-/dag-/style-rules blocks with planning-mode rules.
-# The verify and metric blocks below are still appended unchanged so the
-# planner can call `run_verify_command` to confirm the verify chain is
-# wired and `run_metric_command` (when configured) to baseline a score.
-_PLAN_SYSTEM_PROMPT_BASE = """<role>
-You are agent6 in PLAN mode, a sandboxed planning agent. You receive a
-task in the first user message; your job is to PLAN how to execute it,
-not to execute it. You will read what you need, optionally run commands
-to confirm assumptions (verify chain, dependency probes, etc.), and
-then emit a written plan via `finish_planning`.
-
-You CANNOT edit files in this mode: `apply_edit`, `apply_patch`, and
-any commit-related tools are not exposed. If the planning task seems
-to require a small write to confirm an assumption, note the assumption
-in the plan and leave verification for the execution pass.
-</role>
-
-<tool-use-rules>
-- Anchor reads: prefer `outline` to see file shape before `read_file`.
-- For symbol queries prefer `find_definition` / `find_references` over
-  plain `grep` (those exclude strings/comments).
-- `run_verify_command` is allowed and encouraged: a baseline verify run
-  proves the chain works and surfaces existing failures the executor
-  should not be blamed for.
-- `run_command` is allowed for read-only probes (`ls`, `cat`, `git log`,
-  dependency-version checks, etc.). Do not invoke anything that mutates
-  the working tree.
-- The DAG-as-tool surface (`add_task`, `update_task`, `set_cursor`,
-  `list_tasks`) is exposed and useful as a scratchpad while you plan,
-  but the FINAL deliverable is the markdown you pass to
-  `finish_planning` - not the DAG. The execution run started later via
-  `agent6 run --from-plan` will build its own DAG from the plan text.
-</tool-use-rules>
-
-<plan-output>
-The plan you pass to `finish_planning(plan_markdown=...)` is the single
-artefact this whole pass produces. It is written to
-`<run-dir>/plan.md` and consumed verbatim by
-`agent6 run --from-plan <run-id>` (which feeds it as the new run's
-task description). Suggested skeleton:
-
-```
-# Plan: <one-line title>
-
-## Original task
-<the user's task verbatim>
-
-## Context discovered
-<short prose: relevant files, existing patterns, constraints>
-
-## Tasks
-1. <imperative title>
-   - Files: <paths>
-   - Acceptance: <verifiable condition>
-2. <imperative title>
-   - ...
-
-## Open questions
-> **Q:** <question for the operator>
-> **A:**
-
-## Verification approach
-<which verify commands / metric calls confirm success>
-```
-
-Include `## Open questions` only when there are real ambiguities the
-operator must resolve before execution. Leave the `**A:**` lines blank
-- the operator fills them in via `agent6 plan --edit <run-id>`.
-
-Call `finish_planning` exactly once when the plan is complete. Do not
-call any other tools after `finish_planning`.
-</plan-output>
-
-<be-decisive>
-A plan is a CONCISE GUIDE for an executor, not the implementation. Read only
-the few files you need to name the concrete change points (files + functions),
-then WRITE THE PLAN AND FINISH. Do NOT:
-- write the final code, or reason line-by-line through every edge case (the
-  executor, `agent6 run --from-plan`, resolves details and writes the code);
-- re-read files you have already seen or second-guess a sound approach.
-Bias hard toward finishing: a good-enough plan you actually deliver is worth far
-more than an exhaustive one you never emit. When the approach is clear — usually
-after a handful of reads — call `finish_planning`. If your token budget is
-running low, STOP and call `finish_planning` immediately with what you have.
-</be-decisive>
-"""
-
-_ASK_SYSTEM_PROMPT_BASE = """<role>
-You are agent6 in ASK mode, a sandboxed read-only assistant. The first
-user message is a QUESTION (about this codebase, a specific file, how to
-do something, a design idea to brainstorm, a bug to reason through, or how
-to use agent6 itself). Your job is to INVESTIGATE and ANSWER -- not to
-implement.
-
-You CANNOT change anything: `apply_edit`, `apply_patch`, commit tools, and
-the task-DAG tools are not exposed. You CAN read the repo and run commands
-to investigate (run a test to see output, check a value, `git log`,
-dependency versions, a quick `python -c` probe). Commands run jailed and
-confined to the workspace; do NOT use them to make changes you intend to
-keep -- if the answer requires an edit, describe the edit, don't apply it.
-</role>
-
-<tool-use-rules>
-- Anchor reads: prefer `outline` to see a file's shape before `read_file`.
-- For symbol queries prefer `find_definition` / `find_references` over
-  plain `grep` (those exclude strings/comments).
-- `run_command` is for investigation only (read-only probes, running a
-  test/script to observe behaviour). It is gated by the operator's
-  `run_commands` policy and may prompt for approval or be disabled.
-- Investigate only as much as the question needs; don't spelunk the whole
-  repo for a question a couple of reads can answer.
-</tool-use-rules>
-
-<answer>
-When you have enough to answer, write the answer as your final message --
-clear, well-structured GitHub-flavoured markdown -- and stop (emit no tool
-call on that turn). That final message IS the answer shown to the user.
-Be direct and concrete: cite file:line where relevant, show short code
-snippets, and when the question is open-ended give a recommendation, not an
-exhaustive survey. If the question is ambiguous, state your interpretation
-and answer it; if you genuinely cannot determine something from the repo,
-say so plainly rather than guessing.
-</answer>
-"""
-
-_AGENT_SYSTEM_PROMPT_BASE = """<role>
-You are agent6 running ONE `agent` state of a state machine. The first user
-message is your task. Your job is to do exactly that task and return a single
-structured result — NOT to refactor a repository.
-
-This is not an interactive coding session. Do NOT make edits, run a verify
-command, commit, or use a task DAG. Read or run something only if the task
-genuinely needs it to produce its answer; otherwise answer directly from the
-information already in the task.
-</role>
-
-<output>
-Finish by calling `finish_run` exactly once with:
-  - `result`: a JSON object that matches the output schema named in your task
-    (the machine validates it against that schema — get the field names and
-    types right).
-  - `summary`: one short line describing what you decided.
-If the task's condition isn't met, still return a well-formed `result` with the
-schema's "no-op" values (e.g. an empty string / 0 / false), not an error.
-</output>
-"""
-
-_MACHINE_SYSTEM_PROMPT_BASE = """<role>
-You are agent6 in MACHINE-AUTHORING mode. The first user message contains a
-COMPLETE grammar reference and a worked example for agent6 state machines
-(`.asm.toml`), followed by a natural-language task. Your only job is to author
-ONE complete, valid `.asm.toml` machine for that task and return it.
-
-You are NOT editing this repository. Drop every general coding-agent habit:
-do not write files, do not run commands, do not run a verify step, do not use a
-task DAG. There is exactly one deliverable and one way to deliver it — a single
-`finish_run` call (see <output>).
-
-You ALREADY have the full grammar and a worked example in your prompt — author
-directly from them. Do NOT go reading this repository's source or docs to
-"understand the format": the format is in front of you and spelunking only
-burns your budget. Only read a file if the task explicitly names one you must
-inspect.
-</role>
-
-<output>
-When the machine is complete, call `finish_run` exactly once with:
-  - `result`: a JSON object whose `toml` field is the ENTIRE `.asm.toml`
-    source as a single string (every state, transition, the blackboard,
-    schemas, and `[budget]`).
-  - `summary`: one short line per state explaining the design.
-Emit no other tool call before or after it. A common mistake is to "write the
-file" with an edit tool — there is no edit tool here; the machine travels only
-in `result.toml`.
-</output>
-"""
-
-_V2_VERIFY_BLOCK_TEMPLATE = """<verify-command>
-This run's verify_command (call via `run_verify_command`):
-  argv: {argv}
-  timeout: {timeout_s}s
-
-Returncode 0 means the change passes verify. Non-zero means the change
-broke something - either revert it or fix the regression before
-proceeding. The timeout is set to catch infinite-loop / quadratic edits
-early; if verify legitimately needs longer, the operator misconfigured
-the timeout.
-</verify-command>
-"""
-
-_V2_METRIC_BLOCK_TEMPLATE = """<metric-command>
-This run has a continuous-score metric (call via `run_metric_command`):
-  argv: {argv}
-  pattern: {pattern}
-  goal: {goal}
-
-After every verify-passing edit, the harness automatically runs this
-metric command and injects a compact `[harness metric]` block into the
-next turn with latest score, best score, trajectory, and a verdict. You
-may also call `run_metric_command` manually when probing a specific idea.
-After enough metric samples, a verified edit that only ties the existing
-best may finish the run automatically to preserve performance per dollar.
-
-Metric work discipline: keep changes that improve the score AND preserve
-correctness; revert anything that doesn't. Prefer cheap local experiments
-and measured edits over long speculation. When the `[harness metric]`
-verdict says the latest edit is flat/worse, restore the prior best or
-pivot to a different bottleneck instead of polishing the same approach.
-When the score plateaus despite several distinct edits, call `finish_run`.
-</metric-command>
-"""
-
-_V2_BUDGET_BLOCK_TEMPLATE = """<budget-awareness>
-Hard caps: max_input_tokens={in_cap}, max_output_tokens={out_cap}.
-The loop will halt if either is exceeded. Track your spend - tool
-results contribute to input on every subsequent turn (they get
-re-sent in the conversation), so prefer narrow `read_file` ranges
-and specific `grep` patterns over broad reads.
-</budget-awareness>
-"""
-
-_V2_REPO_BLOCK_TEMPLATE = """<repo-priors>
-Repository: branch={branch}, head={head_sha}, files={file_count}
-Top-level: {top_level}
-
-{repo_map_block}{symbol_outline_block}AGENTS.md (project conventions):
-{agents_md}
-
-{co_change_block}{hot_symbols_block}Recent commits:
-{recent_log}
-</repo-priors>
-"""
-
-
-_SYMBOL_OUTLINE_MAX_CHARS = 8000
-_SYMBOL_OUTLINE_MAX_FILES = 120
-_SYMBOL_OUTLINE_MAX_PER_FILE = 12
-_SYMBOL_OUTLINE_KIND_PRIORITY: tuple[str, ...] = (
-    "class",
-    "struct",
-    "enum",
-    "trait",
-    "interface",
-    "function",
-    "method",
-)
-
-
-def _build_symbol_outline_block(
-    outlines: dict[Path, list[Symbol]],
-    *,
-    root: Path,
-) -> str:
-    """Format the per-file symbol outline into a compact prompt block.
-
-    Layout::
-
-        path/to/file.py:
-          class Foo:12
-          function bar:30
-          ...
-        path/to/other.rs:
-          struct Bar:5
-
-    Hard caps keep the block bounded:
-      - At most ``_SYMBOL_OUTLINE_MAX_PER_FILE`` rows per file (truncated
-        with a ``... (+N more)`` line).
-      - At most ``_SYMBOL_OUTLINE_MAX_FILES`` files (overflow summarised).
-      - At most ``_SYMBOL_OUTLINE_MAX_CHARS`` characters total; we stop
-        emitting files as soon as the budget would be exceeded.
-
-    Returns an empty string when ``outlines`` is empty.
-    """
-    if not outlines:
-        return ""
-    root_resolved = root.resolve()
-    rel_entries: list[tuple[str, list[Symbol]]] = []
-    for path, syms in outlines.items():
-        if not syms:
-            continue
-        try:
-            rel = path.resolve().relative_to(root_resolved)
-            rel_str = str(rel)
-        except ValueError:
-            continue
-        rel_entries.append((rel_str, syms))
-    rel_entries.sort(key=lambda t: t[0])
-
-    rows: list[str] = []
-    total = 0
-    files_emitted = 0
-    for files_emitted, (rel_str, syms) in enumerate(rel_entries):
-        if files_emitted >= _SYMBOL_OUTLINE_MAX_FILES:
-            remaining = len(rel_entries) - files_emitted
-            rows.append(f"... ({remaining} more files)")
-            break
-        kept = sorted(
-            syms,
-            key=lambda s: (
-                _SYMBOL_OUTLINE_KIND_PRIORITY.index(s.kind)
-                if s.kind in _SYMBOL_OUTLINE_KIND_PRIORITY
-                else len(_SYMBOL_OUTLINE_KIND_PRIORITY),
-                s.line,
-            ),
-        )[:_SYMBOL_OUTLINE_MAX_PER_FILE]
-        kept.sort(key=lambda s: s.line)
-        header = f"{rel_str}:"
-        body_lines = [f"  {s.kind} {s.name}:{s.line + 1}" for s in kept]
-        if len(syms) > _SYMBOL_OUTLINE_MAX_PER_FILE:
-            body_lines.append(f"  ... (+{len(syms) - _SYMBOL_OUTLINE_MAX_PER_FILE} more)")
-        chunk = "\n".join([header, *body_lines])
-        added = len(chunk) + 1
-        if total + added > _SYMBOL_OUTLINE_MAX_CHARS and rows:
-            remaining = len(rel_entries) - files_emitted
-            rows.append(f"... ({remaining} more files; outline budget exhausted)")
-            break
-        rows.append(chunk)
-        total += added
-    return "\n".join(rows)
-
-
 def _summarise_assistant_text_for_commit(text: str, iteration: int) -> str:
     """Build a one-line commit subject from the LLM's most recent prose.
 
@@ -726,107 +270,10 @@ def _summarise_assistant_text_for_commit(text: str, iteration: int) -> str:
     return f"agent6 iter {iteration}: {subject_body}"
 
 
-_CRITIC_SYSTEM_PROMPT = (
-    "You are a strict reviewing critic embedded inside an autonomous coding"
-    " agent's loop. The worker agent is editing a real repository to satisfy"
-    " a user task. You see (a) the task, (b) a short tail of the worker's"
-    " recent assistant messages and tool calls, and (c) the trigger that"
-    " summoned you.\n\n"
-    "Your job is to point out concrete problems the worker is likely to miss:"
-    " mis-stated requirements, off-by-one logic, missing edge cases, broken"
-    " invariants, security regressions, test coverage gaps, anything that"
-    " suggests the work is not actually done.\n\n"
-    "Be terse. Bullet points. If everything looks fine, say so. End your"
-    " response with exactly one of these verdict lines on its own line:\n"
-    "    VERDICT: SATISFIED\n"
-    "    VERDICT: NEEDS_WORK\n"
-    "Anything else in the last line is treated as NEEDS_WORK."
-)
-
-_PROMPT_REVISION_SYSTEM_PROMPT = """\
-You revise raw coding-agent tasks before the main worker loop starts.
-
-Goal: transform a terse, vague, or under-specified task into a clear task
-specification the worker can act on immediately. Preserve every explicit
-constraint from the raw task. Do not invent requirements. Use repo context only
-to name likely files, conventions, verification commands, and success criteria.
-
-If the raw task is already crisp, still restate it compactly rather than adding
-new scope. If important ambiguity remains, list at most 3 clarifying questions;
-the downstream worker may have to proceed under conservative assumptions, so the
-revised task must remain actionable without answers.
-
-Output exactly this shape, with no preamble:
-<revised_task>
-...plain text revised task...
-</revised_task>
-<clarifying_questions>
-- question, or "none"
-</clarifying_questions>
-"""
-
-
-_CONTEXT_SUMMARY_SYSTEM_PROMPT = (
-    "You are compacting a long autonomous-coding-agent transcript so the agent"
-    " can keep working with a smaller context window. Produce a dense, factual"
-    " progress summary that lets the agent resume WITHOUT re-reading the"
-    " elided history. Cover, in order:\n"
-    "1. The goal, in one line.\n"
-    "2. What has been tried and the outcome of each attempt — which edits were"
-    " kept, which were reverted, and which directions turned out to be dead"
-    " ends (so the agent does not repeat them).\n"
-    "3. The current state: files changed so far, the best result/score"
-    " achieved, and the latest verified commit sha.\n"
-    "4. The concrete next steps the agent intended to take.\n"
-    "Be specific about file paths, function names, numbers, and commit shas."
-    " Do not include pleasantries or meta-commentary. Output only the summary."
-)
-
-# Prepended to the post-compaction restart message so the worker knows the
-# history was summarised rather than lost, and continues rather than restarting.
-_CONTEXT_RESTART_NOTICE = (
-    "[harness context restart] The earlier conversation was compacted to free"
-    " up context. Everything you had done up to this point is captured in the"
-    " progress summary below — trust it for prior results and continue the task"
-    " from here. Do NOT start over.\n\n"
-    "Your task DAG is durable curator-owned state and was NOT compacted: call"
-    " `dag_list_tasks` to recover the full task breakdown, each task's status,"
-    " and the current cursor, then resume from the first unfinished task."
-    " Treat the DAG as the authoritative record of what is done vs. pending —"
-    " the summary below is only a narrative supplement.\n\nPROGRESS SUMMARY:\n"
-)
-
-
-@dataclass(frozen=True, slots=True)
-class _CritiqueResult:
-    text: str
-    satisfied: bool
-
-
 @dataclass(frozen=True, slots=True)
 class _PromptRevision:
     revised_task: str
     clarifying_questions: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
-class _MetricSample:
-    label: str
-    score: float | None
-    returncode: int | None
-    sha: str = ""
-    error: str = ""
-    stdout_tail: str = ""
-    stderr_tail: str = ""
-    # Comparison thresholds parsed from the metric command output (e.g.
-    # ``assert cycles() < 1487`` lines). Used to point the worker at the
-    # next unmet target rather than a vague "go faster". See
-    # ``_extract_metric_targets``.
-    targets: tuple[float, ...] = ()
-    # True when the grader reported the score as a maxed-out fraction
-    # (``SCORE: 27/27``): the metric is at its provable ceiling and cannot
-    # be improved. See ``_metric_at_fraction_ceiling``.
-    at_ceiling: bool = False
 
 
 class _PromptRevisionError(Exception):
@@ -910,280 +357,6 @@ def _format_effective_task(raw_task: str, revision: _PromptRevision) -> str:
     return "\n\n".join(pieces)
 
 
-def _coerce_metric_score(value: Any) -> float | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int | float):
-        return float(value)
-    return None
-
-
-# A comparison operator followed by a numeric literal, e.g. the
-# ``< 1487`` in ``assert cycles() < 1487``. Underscores in the literal
-# (Python int separators) are tolerated and stripped.
-_METRIC_TARGET_RE = re.compile(r"(<=|>=|<|>)\s*([0-9][0-9_]*(?:\.[0-9]+)?)")
-
-
-def _extract_metric_targets(
-    text: str,
-    *,
-    goal: Literal["minimize", "maximize"],
-) -> tuple[float, ...]:
-    """Pull threshold numbers out of metric-command output.
-
-    For ``goal="minimize"`` we want upper bounds the score must get
-    *under* (``<`` / ``<=`` thresholds); for ``"maximize"`` we want lower
-    bounds it must get *over* (``>`` / ``>=``). Benchmarks commonly print
-    these as ``assert <expr> < N`` lines (one per unmet speed tier), so
-    extracting them turns "go faster" into a concrete next target.
-    Order-preserving and de-duplicated.
-    """
-    wanted = {"<", "<="} if goal == "minimize" else {">", ">="}
-    seen: set[float] = set()
-    out: list[float] = []
-    for op, num in _METRIC_TARGET_RE.findall(text):
-        if op not in wanted:
-            continue
-        try:
-            value = float(num.replace("_", ""))
-        except ValueError:
-            continue
-        if value not in seen:
-            seen.add(value)
-            out.append(value)
-    return tuple(out)
-
-
-def _next_metric_target(
-    targets: tuple[float, ...],
-    current: float | None,
-    goal: Literal["minimize", "maximize"],
-) -> float | None:
-    """The nearest threshold the current score has not yet met: the
-    largest ``<`` bound still above the score (minimize) or the smallest
-    ``>`` bound still below it (maximize). None when all are met or there
-    is nothing to aim at."""
-    if not targets or current is None:
-        return None
-    if goal == "minimize":
-        unmet = [t for t in targets if t < current]
-        return max(unmet) if unmet else None
-    unmet = [t for t in targets if t > current]
-    return min(unmet) if unmet else None
-
-
-# A fraction in metric output, e.g. the ``27/27`` in ``SCORE: 27/27``. A
-# maxed-out fraction means the metric is at its provable ceiling. See
-# ``_metric_at_fraction_ceiling``.
-_METRIC_FRACTION_RE = re.compile(r"([0-9]+(?:\.[0-9]+)?)\s*/\s*([0-9]+(?:\.[0-9]+)?)")
-
-
-def _metric_at_fraction_ceiling(text: str, score: float) -> bool:
-    """True if ``text`` reports ``score`` as a maxed-out ``X/Y`` fraction.
-
-    Many graders print a bounded score as ``X/Y`` (``SCORE: 27/27``,
-    ``passed 27/27``). When the numerator equals both the parsed score and
-    the denominator, the metric is provably at its ceiling: no further edit
-    can push it higher. Detecting this lets a ``maximize`` run stop cleanly
-    instead of treating the unbeatable plateau as a local optimum worth
-    spending the rest of the budget pivoting away from. Conservative: only
-    fires on an exact ``score/score`` match, so partial scores (``26/27``)
-    and unbounded metrics (raw cycle counts, which never print a
-    denominator) are unaffected.
-    """
-    for num_s, den_s in _METRIC_FRACTION_RE.findall(text):
-        try:
-            num = float(num_s)
-            den = float(den_s)
-        except ValueError:  # pragma: no cover - regex already constrains digits
-            continue
-        if num == score and num == den:
-            return True
-    return False
-
-
-def _metric_is_better(
-    candidate: float,
-    incumbent: float,
-    goal: Literal["minimize", "maximize"],
-) -> bool:
-    if goal == "minimize":
-        return candidate < incumbent
-    return candidate > incumbent
-
-
-def _best_metric_sample(
-    samples: list[_MetricSample],
-    *,
-    goal: Literal["minimize", "maximize"],
-) -> _MetricSample | None:
-    parsed = [sample for sample in samples if sample.score is not None]
-    if not parsed:
-        return None
-    best = parsed[0]
-    for sample in parsed[1:]:
-        assert sample.score is not None
-        assert best.score is not None
-        if _metric_is_better(sample.score, best.score, goal):
-            best = sample
-    return best
-
-
-def _format_score(score: float | None) -> str:
-    if score is None:
-        return "unparsed"
-    return f"{score:g}"
-
-
-def _format_metric_sample(sample: _MetricSample) -> str:
-    parts = [f"{sample.label}: score={_format_score(sample.score)}"]
-    if sample.returncode is not None:
-        parts.append(f"exit={sample.returncode}")
-    if sample.sha:
-        parts.append(f"sha={sample.sha[:12]}")
-    if sample.error:
-        parts.append(f"error={sample.error[:200]}")
-    return ", ".join(parts)
-
-
-def _metric_goal(metric_cfg: Any) -> Literal["minimize", "maximize"] | None:
-    goal = getattr(metric_cfg, "goal", None)
-    if goal in ("minimize", "maximize"):
-        return goal
-    return None
-
-
-def _format_metric_feedback(
-    history: list[_MetricSample],
-    *,
-    goal: Literal["minimize", "maximize"],
-) -> str:
-    latest = history[-1]
-    best = _best_metric_sample(history, goal=goal)
-    previous_best = _best_metric_sample(history[:-1], goal=goal)
-    best_line = _format_metric_sample(best) if best is not None else "none parsed yet"
-
-    if latest.score is None:
-        verdict = "latest metric score was not parsed; inspect output before trusting this edit"
-    elif previous_best is None:
-        verdict = "first parsed metric sample"
-    else:
-        assert previous_best.score is not None
-        verdict = (
-            "new best; continue from this commit"
-            if _metric_is_better(latest.score, previous_best.score, goal)
-            else "not a new best; revert this edit or pivot unless it was purely enabling"
-        )
-
-    lines = [
-        "[harness metric]",
-        f"goal: {goal} ({'lower' if goal == 'minimize' else 'higher'} is better)",
-        f"latest: {_format_metric_sample(latest)}",
-        f"best: {best_line}",
-        f"verdict: {verdict}",
-        "trajectory (last 5):",
-    ]
-    lines.extend(f"- {_format_metric_sample(sample)}" for sample in history[-5:])
-    next_target = _next_metric_target(latest.targets, latest.score, goal)
-    if next_target is not None and latest.score is not None:
-        direction = "below" if goal == "minimize" else "above"
-        lines.append(
-            f"next target: drive the metric {direction} {next_target:g}"
-            f" (current {latest.score:g}) — the nearest threshold you have not"
-            f" cleared yet; aim edits at crossing it."
-        )
-    if latest.score is None:
-        if latest.stdout_tail:
-            lines.append(f"stdout tail: {latest.stdout_tail[-500:]}")
-        if latest.stderr_tail:
-            lines.append(f"stderr tail: {latest.stderr_tail[-500:]}")
-    lines.append(
-        "next: keep verify-passing edits that improve the metric; for flat/worse results, "
-        "restore the prior best or change strategy instead of polishing the same approach."
-    )
-    return "\n".join(lines)
-
-
-# How many times a detected metric plateau is met with a "pivot strategy"
-# nudge before the loop actually stops. The plateau detector is eager (it
-# fires the first time a verified metric merely ties the prior best), and on
-# optimisation tasks the remaining budget often still hides large gains that
-# only a fundamentally different approach unlocks. Rather than quit at the
-# first stall, nudge the worker to change strategy a few times; only stop if
-# it still cannot beat its best after that.
-_METRIC_PLATEAU_PATIENCE = 3
-
-# A metric plateau only becomes a terminal condition once the run has
-# entered its final budget slice. While more than this fraction of the
-# token budget remains, a plateau is treated as a local optimum worth
-# pivoting away from rather than a reason to quit: stopping with most of
-# the budget unspent leaves measurable gains (and money) on the table.
-# Only consulted when a real BudgetTracker is wired in; with no budget
-# signal the loop falls back to the fixed `_METRIC_PLATEAU_PATIENCE`.
-_METRIC_PLATEAU_STOP_BELOW_BUDGET = 0.25
-
-# Plateau nudges escalate with budget pressure. A stall means the worker has
-# hit a local optimum; how aggressively we push it off that optimum scales
-# with how much runway is left. With most of the budget intact a plateau is
-# cheap to explore around, so we invite a bold experiment we can afford to
-# throw away. As the budget drains the ask narrows from "try another angle"
-# to "spend your remaining budget on the single highest-value structural bet
-# you can make". Selected by `_metric_plateau_nudge`; the shared
-# "[harness plateau]" prefix keeps the signal greppable across tiers.
-_METRIC_PLATEAU_NUDGE_EXPLORE = (
-    "[harness plateau] Your recent verified edits have stopped improving the"
-    " metric \u2014 you have hit a local optimum. You still have most of your"
-    " budget left, so you can afford to explore boldly. Do NOT call finish_run"
-    " yet. Keep the current best commit, then run an experiment you have not"
-    " tried: a structurally different algorithm, a different data layout, or a"
-    " property of the problem you have not exploited. A failed experiment is"
-    " cheap right now \u2014 a wasted budget is not. Be ambitious."
-)
-_METRIC_PLATEAU_NUDGE_PIVOT = (
-    "[harness plateau] Your recent verified edits have stopped improving the"
-    " metric \u2014 you are polishing the same approach and have hit a local"
-    " optimum. About half your budget is gone and micro-tuning is no longer"
-    " paying off. Do NOT call finish_run yet. Pivot decisively to a"
-    " fundamentally different strategy: re-read the problem for a structurally"
-    " better algorithm (vectorise/batch the hot loop, change the data layout,"
-    " eliminate redundant work) rather than nibbling at what you already have."
-    " Keep the current best commit, then commit to a genuinely new direction."
-)
-_METRIC_PLATEAU_NUDGE_FINAL = (
-    "[harness plateau] Your recent verified edits have stopped improving the"
-    " metric and your budget is nearly spent \u2014 this is your last chance to"
-    " move the number. Do NOT fritter the remainder on micro-tuning. Identify"
-    " the single change with the highest expected payoff (the biggest"
-    " structural rewrite you are confident you can land and verify) and spend"
-    " what is left on landing it. Keep the current best commit as a floor, then"
-    " make your one best bet count."
-)
-
-# Budget fraction above which a plateau is treated as cheap to explore.
-_METRIC_PLATEAU_NUDGE_EXPLORE_ABOVE = 0.5
-
-# Nudge injected when the worker calls finish_run on an optimisation run while
-# real budget still remains. On metric runs the task explicitly asks the worker
-# to keep optimising up to the cap, but workers routinely call finish_run with
-# most of the budget unspent \u2014 leaving measurable gains (and money) on the
-# table. This is a worker-initiated early stop, distinct from a metric plateau,
-# so it carries its own "[harness budget]" prefix to stay greppable.
-_METRIC_FINISH_NUDGE = (
-    "[harness budget] You called finish_run, but this is an optimisation run"
-    " and a large share of your budget is still unspent. Stopping now leaves"
-    " measurable gains on the table \u2014 the task asks you to keep optimising"
-    " right up to the budget cap. Do NOT finish yet. Keep your current best"
-    " commit as a floor, then make another concrete attempt to move the metric:"
-    " profile the hot path again, try a structurally different approach, or"
-    " exploit a property of the problem you have not used. You may call"
-    " finish_run once your budget is nearly spent."
-)
-
-# How many times an early finish_run on a metric run is rejected (with a
-# keep-going nudge) before the loop honours it. Bounds the nudging so a worker
-# that genuinely has nothing left to try can still stop cleanly.
-_METRIC_EARLY_FINISH_PATIENCE = 3
-
 # A `plan` run injects a one-shot "finish now" directive once its token budget
 # drops below this fraction OR it has taken `_PLAN_NUDGE_AFTER_ITERS` turns.
 # Verbose reasoning models (Kimi K2.6 observed live) otherwise read forever,
@@ -1236,96 +409,6 @@ _PLAN_BUDGET_NUDGE = (
     " rough, plan that is actually delivered is far more useful than an"
     " exhaustive one you never emit. Do not call any other tool first."
 )
-
-
-def _metric_plateau_nudge(budget_remaining: float | None) -> str:
-    """Select a plateau nudge whose intensity scales with budget pressure.
-
-    With no budget signal (tests / MCP) we default to the explore tier so the
-    worker is encouraged to keep trying new directions rather than quit.
-    """
-    if budget_remaining is None or budget_remaining > _METRIC_PLATEAU_NUDGE_EXPLORE_ABOVE:
-        return _METRIC_PLATEAU_NUDGE_EXPLORE
-    if budget_remaining > _METRIC_PLATEAU_STOP_BELOW_BUDGET:
-        return _METRIC_PLATEAU_NUDGE_PIVOT
-    return _METRIC_PLATEAU_NUDGE_FINAL
-
-
-def _metric_plateau_summary(
-    history: list[_MetricSample],
-    *,
-    goal: Literal["minimize", "maximize"],
-    min_parsed_samples: int = 5,
-) -> str | None:
-    parsed = [sample for sample in history if sample.score is not None]
-    if len(parsed) < min_parsed_samples:
-        return None
-    latest = parsed[-1]
-    previous_best = _best_metric_sample(parsed[:-1], goal=goal)
-    if previous_best is None or latest.score is None or previous_best.score is None:
-        return None
-    if latest.score != previous_best.score:
-        return None
-    best = _format_metric_sample(previous_best)
-    latest_text = _format_metric_sample(latest)
-    return (
-        "metric plateau: latest verified metric tied the prior best after "
-        f"{len(parsed)} parsed samples; stopping to preserve performance per dollar. "
-        f"latest={latest_text}; best={best}"
-    )
-
-
-def _format_messages_tail_for_critic(
-    messages: list[dict[str, Any]], *, max_messages: int = 6, max_chars: int = 6000
-) -> str:
-    """Render the last few messages as a plain-text transcript for the
-    critic. Tool calls / results are shown as compact summaries; long
-    payloads are truncated so the critic call stays cheap.
-    """
-    tail = messages[-max_messages:]
-    parts: list[str] = []
-    for msg in tail:
-        role = str(msg.get("role", "?"))
-        content = msg.get("content", "")
-        if isinstance(content, str):
-            parts.append(f"[{role}] {content[:1500]}")
-            continue
-        if not isinstance(content, list):
-            parts.append(f"[{role}] {str(content)[:1500]}")
-            continue
-        for block in content:
-            if not isinstance(block, dict):
-                continue
-            btype = block.get("type")
-            if btype == "text":
-                parts.append(f"[{role}:text] {str(block.get('text', ''))[:1500]}")
-            elif btype == "tool_use":
-                inp = json.dumps(block.get("input") or {}, ensure_ascii=False)
-                parts.append(f"[{role}:tool_use {block.get('name', '')}] {inp[:800]}")
-            elif btype == "tool_result":
-                body = block.get("content", "")
-                if not isinstance(body, str):
-                    body = json.dumps(body, ensure_ascii=False)
-                parts.append(f"[{role}:tool_result] {body[:800]}")
-            elif btype == "thinking":
-                # Skip reasoning blocks - the critic doesn't need them.
-                continue
-    joined = "\n".join(parts)
-    if len(joined) > max_chars:
-        joined = joined[-max_chars:]
-    return joined
-
-
-def _parse_critic_verdict(text: str) -> bool:
-    """Return True iff the critic's last non-empty line is ``VERDICT:
-    SATISFIED``. Anything else is treated as NEEDS_WORK."""
-    last = ""
-    for raw in reversed(text.splitlines()):
-        line = raw.strip()
-        if line:
-            last = line
-            break
-    return last.upper() == "VERDICT: SATISFIED"
 
 
 def _extract_initial_task(messages: list[dict[str, Any]]) -> str:

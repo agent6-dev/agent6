@@ -829,11 +829,17 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: Path) -> Non
 
 
 def test_metric_plateau_nudge_escalates_with_budget_pressure() -> None:
-    from agent6.workflows.loop import (
-        _METRIC_PLATEAU_NUDGE_EXPLORE,  # pyright: ignore[reportPrivateUsage]
-        _METRIC_PLATEAU_NUDGE_FINAL,  # pyright: ignore[reportPrivateUsage]
-        _METRIC_PLATEAU_NUDGE_PIVOT,  # pyright: ignore[reportPrivateUsage]
-        _metric_plateau_nudge,  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._metric import (
+        METRIC_PLATEAU_NUDGE_EXPLORE as _METRIC_PLATEAU_NUDGE_EXPLORE,
+    )
+    from agent6.workflows._metric import (
+        METRIC_PLATEAU_NUDGE_FINAL as _METRIC_PLATEAU_NUDGE_FINAL,
+    )
+    from agent6.workflows._metric import (
+        METRIC_PLATEAU_NUDGE_PIVOT as _METRIC_PLATEAU_NUDGE_PIVOT,
+    )
+    from agent6.workflows._metric import (
+        metric_plateau_nudge as _metric_plateau_nudge,
     )
 
     # No budget signal -> explore tier (keep trying new directions).
@@ -1044,8 +1050,8 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: Path) -> None:
 
 
 def test_metric_at_fraction_ceiling_detects_maxed_score() -> None:
-    from agent6.workflows.loop import (
-        _metric_at_fraction_ceiling,  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._metric import (
+        metric_at_fraction_ceiling as _metric_at_fraction_ceiling,
     )
 
     # Maxed-out fraction: numerator == score == denominator.
@@ -1143,8 +1149,8 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
 
 
 def test_extract_metric_targets_minimize_picks_upper_bounds() -> None:
-    from agent6.workflows.loop import (
-        _extract_metric_targets,  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._metric import (
+        extract_metric_targets as _extract_metric_targets,
     )
 
     text = (
@@ -1159,8 +1165,8 @@ def test_extract_metric_targets_minimize_picks_upper_bounds() -> None:
 
 
 def test_extract_metric_targets_maximize_picks_lower_bounds() -> None:
-    from agent6.workflows.loop import (
-        _extract_metric_targets,  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._metric import (
+        extract_metric_targets as _extract_metric_targets,
     )
 
     text = "assert score > 0.80\nassert score >= 0.95\nassert other < 5\n"
@@ -1169,7 +1175,7 @@ def test_extract_metric_targets_maximize_picks_lower_bounds() -> None:
 
 
 def test_next_metric_target_minimize_returns_nearest_unmet() -> None:
-    from agent6.workflows.loop import _next_metric_target  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._metric import next_metric_target as _next_metric_target
 
     targets = (147734.0, 18532.0, 1579.0, 1487.0)
     # At 8256 we've cleared 18532/147734; nearest unmet is the largest
@@ -1180,7 +1186,7 @@ def test_next_metric_target_minimize_returns_nearest_unmet() -> None:
 
 
 def test_next_metric_target_maximize_returns_nearest_unmet() -> None:
-    from agent6.workflows.loop import _next_metric_target  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._metric import next_metric_target as _next_metric_target
 
     targets = (0.50, 0.80, 0.95)
     assert _next_metric_target(targets, 0.83, "maximize") == 0.95
@@ -1188,9 +1194,11 @@ def test_next_metric_target_maximize_returns_nearest_unmet() -> None:
 
 
 def test_format_metric_feedback_shows_next_target() -> None:
-    from agent6.workflows.loop import (
-        _format_metric_feedback,  # pyright: ignore[reportPrivateUsage]
-        _MetricSample,  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._metric import (
+        MetricSample as _MetricSample,
+    )
+    from agent6.workflows._metric import (
+        format_metric_feedback as _format_metric_feedback,
     )
 
     history = [
@@ -1652,9 +1660,9 @@ def test_crash_mid_run_then_resume_continues_from_snapshot(tmp_path: Path) -> No
 
 
 def _ctx_chars(messages: list[dict[str, Any]]) -> int:
-    from agent6.workflows.loop import _context_chars  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._compaction import context_chars
 
-    return _context_chars(messages)
+    return context_chars(messages)
 
 
 def _big_text_history(task: str, *, blocks: int, block_chars: int) -> list[dict[str, Any]]:
