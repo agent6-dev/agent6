@@ -20,6 +20,7 @@ from typing import Any, Literal, Protocol
 
 from agent6.config import Config
 from agent6.events import EventSink
+from agent6.graph.client import GraphClient
 from agent6.graph.models import (
     AddSubtaskIntent,
     SetCursorIntent,
@@ -425,7 +426,7 @@ class ToolDispatcher:
         approver: _Approver | None = None,
         questioner: _Questioner | None = None,
         events: EventSink | None = None,
-        graph_client: object | None = None,
+        graph_client: GraphClient | None = None,
         run_root_node_id: str | None = None,
         mcp_manager: MCPManager | None = None,
         extra_protect_paths: tuple[Path, ...] = (),
@@ -448,10 +449,7 @@ class ToolDispatcher:
         self._events = events
         # Optional GraphClient + root-task id for the DAG-as-tool
         # surface. When wired, the dispatcher exposes add_task /
-        # update_task / set_cursor / list_tasks. Typed as `object` to
-        # avoid a circular import (agent6.graph.client depends on
-        # agent6.graph.models which is upstream of dispatch in the tach
-        # graph).
+        # update_task / set_cursor / list_tasks.
         self._graph_client = graph_client
         self._run_root_node_id = run_root_node_id
         # Optional MCP (Model Context Protocol) manager. When
@@ -998,7 +996,7 @@ class ToolDispatcher:
             created_by="worker",
         )
         intent = AddSubtaskIntent(parent_id=parent_id, draft=draft)
-        node = self._graph_client.add_subtask(intent)  # type: ignore[attr-defined]
+        node = self._graph_client.add_subtask(intent)
         return {
             "id": node.id,
             "parent_id": node.parent_id,
@@ -1015,22 +1013,22 @@ class ToolDispatcher:
             new_status=args.status,  # type: ignore[arg-type]  # pydantic validates the literal
             note=args.note,
         )
-        node = self._graph_client.update_status(intent)  # type: ignore[attr-defined]
+        node = self._graph_client.update_status(intent)
         return {"id": node.id, "status": node.status, "title": node.title}
 
     def _dag_set_cursor(self, raw: dict[str, Any]) -> dict[str, Any]:
         if self._graph_client is None:
             raise ToolError("set_cursor: DAG curator not available in this run")
         args = DagSetCursorInput.model_validate(raw)
-        self._graph_client.set_cursor(SetCursorIntent(id=args.id))  # type: ignore[attr-defined]
+        self._graph_client.set_cursor(SetCursorIntent(id=args.id))
         return {"acknowledged": True, "cursor": args.id}
 
     def _dag_list_tasks(self, raw: dict[str, Any]) -> dict[str, Any]:
         if self._graph_client is None:
             raise ToolError("list_tasks: DAG curator not available in this run")
         args = DagListTasksInput.model_validate(raw)
-        state = self._graph_client.get_state()  # type: ignore[attr-defined]
-        nodes = state.get("nodes", {}) if isinstance(state, dict) else {}
+        state = self._graph_client.get_state()
+        nodes = state.get("nodes", {})
         out: list[dict[str, Any]] = []
         for node_id, raw_node in nodes.items():
             if not isinstance(raw_node, dict):

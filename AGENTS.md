@@ -97,10 +97,16 @@ output, run summaries, and review feedback.
 - **Touch only what the task needs.** Do not add comments or annotations to
   code you did not change, and do not refactor surrounding code in
   passing. Scope creep is a review blocker.
-- **Module boundaries** are enforced by [tach](https://docs.gauge.sh/):
-  `cli -> workflows -> agents -> tools -> sandbox`. Workflows never import
-  each other; agents never import workflows or the CLI. Needing to reach
-  across a boundary usually means the design is wrong.
+- **Module boundaries.** The intended layering is
+  `cli -> workflows -> agents -> tools -> sandbox`; workflows never import
+  each other, and agents never import workflows or the CLI.
+  [tach](https://docs.gauge.sh/) (`tach.toml`) checks this, but it is
+  guidance to encourage good design, not a lock. Pre-1.0 the architecture
+  is liquid: when a new feature legitimately needs a new edge, UPDATE
+  `tach.toml` to record it rather than contorting the code (or wedging in an
+  indirection) to satisfy the old graph. Do not let tach, or strict pyright,
+  push you toward a worse design than the feature warrants. A boundary you
+  keep fighting is a signal the design is wrong, not that the feature is.
 
 ## Verify command
 

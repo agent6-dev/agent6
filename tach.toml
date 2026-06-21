@@ -94,9 +94,10 @@ depends_on = [ "agent6.types"]
 
 [[modules]]
 path = "agent6.tools"
-# Dispatch.py uses graph.models intent types for the
-# DAG-as-tool handlers (add_task / update_task / set_cursor).
-depends_on = ["agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.config", "agent6.events", "agent6.graph.models"]
+# Dispatch.py drives the curator over a GraphClient (graph.client) using the
+# graph.models intent types, for the DAG-as-tool handlers (add_task /
+# update_task / set_cursor / list_tasks).
+depends_on = ["agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.config", "agent6.events", "agent6.graph.client", "agent6.graph.models"]
 
 [[modules]]
 path = "agent6.tools.schema"
