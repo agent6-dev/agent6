@@ -10,9 +10,11 @@ from pathlib import Path
 
 import pytest
 
-from agent6.cli.run import (
-    _build_ask_run_digest,  # pyright: ignore[reportPrivateUsage]
-    _seed_files,  # pyright: ignore[reportPrivateUsage]
+from agent6.cli._ask import (
+    build_ask_run_digest as _build_ask_run_digest,
+)
+from agent6.cli._ask import (
+    seed_files as _seed_files,
 )
 from agent6.config_layer import resolved_state_dir
 
@@ -102,7 +104,7 @@ def test_seed_files_wraps_and_skips_missing(tmp_path: Path) -> None:
 
 
 def test_ask_question_snippet_skips_digest_tags() -> None:
-    from agent6.cli.run import _ask_question_snippet  # pyright: ignore[reportPrivateUsage]
+    from agent6.cli._ask import ask_question_snippet as _ask_question_snippet
 
     t = (
         "# agent6 ask\n\n## Question\n\n"
@@ -120,7 +122,7 @@ def test_ask_repl_multi_turn_carries_context(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
 
-    from agent6.cli.run import _run_ask_repl  # pyright: ignore[reportPrivateUsage]
+    from agent6.cli._ask import run_ask_repl as _run_ask_repl
     from agent6.graph.storage import RunLayout
     from agent6.workflows.loop import RunResult
 

@@ -14,22 +14,32 @@ import signal
 import subprocess
 import sys
 import tempfile
-import time
 from collections.abc import Callable, Generator
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
 from agent6 import __version__
 from agent6.budget import BudgetTracker
+from agent6.cli._ask import (
+    run_ask_repl as _run_ask_repl,
+)
+from agent6.cli._ask import (
+    save_ask_transcript as _save_ask_transcript,
+)
 from agent6.cli._common import (
     _BudgetOverrides,
     _check_provider_keys,
     _explicit_usd_flag_error,
-    _runs_dir,
     _start_mcp_manager_if_enabled,
     _state_dir,
     detect_env,
+)
+from agent6.cli._repl import build_repl_hook as _build_repl_hook
+from agent6.cli._steer import (
+    make_steer_state as _make_steer_state,
+)
+from agent6.cli._steer import (
+    select_revised_prompt as _select_revised_prompt,
 )
 from agent6.cli.egress import (
     _check_network_profile,
@@ -38,8 +48,6 @@ from agent6.cli.egress import (
     _stop_egress,
     _warn_if_unsandboxed,
 )
-from agent6.cli.misc_cmds import _cmd_diff
-from agent6.cli.plan_watch import _event_epoch, _format_plain_event, _most_recent_run_id
 from agent6.cli.providers import (
     _build_critic_provider,
     _build_prompt_reviser_provider,
@@ -56,7 +64,6 @@ from agent6.config import (
 )
 from agent6.config_layer import (
     load_effective,
-    repo_config_path_for,
 )
 from agent6.detect import select_profile
 from agent6.events import EventSink
@@ -65,7 +72,6 @@ from agent6.git_ops import (
     GitError,
     create_branch,
     is_git_repo,
-    revert_head,
     set_repo_hook_policy,
     verify_git_identity,
 )
@@ -75,7 +81,6 @@ from agent6.git_ops import (
 from agent6.graph.client import GraphClient, spawn_curator
 from agent6.graph.curator import GraphCurator
 from agent6.graph.storage import RunLayout
-from agent6.init import init_workspace
 from agent6.paths import (
     chown_to_real_user,
 )
@@ -85,13 +90,10 @@ from agent6.providers import (
 )
 from agent6.run_id import RunIdError, new_friendly_id, resolve_run_id
 from agent6.tools.dispatch import ToolDispatcher
-from agent6.tools.mcp_client import MCPManager
 from agent6.ui.approval import (
     clear_pending_answers,
-    clear_steer_answer,
     read_answer,
     read_question_answer,
-    read_steer_answer,
     tui_is_live,
 )
 from agent6.workflows.loop import ResumeError, RunResult, Workflow
@@ -140,239 +142,6 @@ def _require_git_repo(cwd: Path) -> bool:
         file=sys.stderr,
     )
     return False
-
-
-def _ask_question_snippet(transcript: str) -> str:
-    """First non-tag line of the `## Question` section of an ask transcript."""
-    lines = transcript.splitlines()
-    try:
-        start = lines.index("## Question") + 1
-    except ValueError:
-        return "(no question)"
-    for line in lines[start:]:
-        s = line.strip()
-        if s == "## Answer":
-            break
-        if s and not s.startswith("<"):  # skip blank lines + digest/file tags
-            return s
-    return "(question)"
-
-
-def _cmd_ask_list() -> int:
-    """`agent6 ask --list`: enumerate saved asks under the per-repo state dir (asks subdir)."""
-    asks_dir = _state_dir(Path.cwd()) / "asks"
-    if not asks_dir.is_dir():
-        print("No asks yet (the asks subdir under the per-repo state dir does not exist).")
-        return 0
-    dirs = sorted(
-        (d for d in asks_dir.iterdir() if d.is_dir()),
-        key=lambda d: d.stat().st_mtime,
-        reverse=True,
-    )
-    if not dirs:
-        print("No asks yet.")
-        return 0
-    for d in dirs:
-        tp = d / "transcript.md"
-        snippet = (
-            _ask_question_snippet(tp.read_text(encoding="utf-8", errors="replace"))
-            if tp.is_file()
-            else "(no transcript)"
-        )
-        print(f"{d.name}  {snippet[:90]}")
-    return 0
-
-
-def _summarize_run_log(logs_path: Path) -> str:
-    """Compact prose summary of a run's logs.jsonl: outcome + event counts +
-    recent notable events. Used to seed `agent6 ask --run`."""
-    if not logs_path.is_file():
-        return "(no logs.jsonl for this run)"
-    events: list[dict[str, Any]] = []
-    for line in logs_path.read_text(encoding="utf-8", errors="replace").splitlines():
-        try:
-            obj = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(obj, dict):
-            events.append(obj)
-    if not events:
-        return "(empty log)"
-    counts: dict[str, int] = {}
-    for e in events:
-        counts[str(e.get("type", ""))] = counts.get(str(e.get("type", "")), 0) + 1
-    out: list[str] = []
-    end = next((e for e in reversed(events) if e.get("type") == "run.end"), None)
-    if end is not None:
-        out.append(f"Ended: reason={end.get('reason')!r} iterations={end.get('iterations')}")
-    top = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:8]
-    out.append("Event counts: " + ", ".join(f"{t}={n}" for t, n in top))
-    notable_types = {"tool.call", "verify.end", "run.end", "loop.auto_commit", "loop.metric.sample"}
-    notable = [e for e in events if e.get("type") in notable_types][-15:]
-    if notable:
-        out.append("Recent notable events:")
-        out.extend(f"  - {_fmt_run_event(e)}" for e in notable)
-    return "\n".join(out)
-
-
-def _fmt_run_event(e: dict[str, Any]) -> str:
-    """One-line summary of a logs.jsonl event for the ask `--run` digest."""
-    t = str(e.get("type", ""))
-    if t == "tool.call":
-        return f"tool.call {e.get('name', '')} {str(e.get('args', ''))[:80]}".rstrip()
-    if t == "verify.end":
-        return f"verify.end exit={e.get('exit_code')}"
-    if t == "run.end":
-        return f"run.end reason={e.get('reason')}"
-    if t == "loop.metric.sample":
-        return f"loop.metric.sample score={e.get('score')}"
-    return t
-
-
-def _build_ask_run_digest(cwd: Path, run_id: str, *, latest: bool) -> str | None:
-    """Markdown digest of a prior run to seed an `ask`, or None (after printing
-    an error) when the run can't be resolved."""
-    runs_dir = _runs_dir(cwd)
-    if not runs_dir.is_dir():
-        print(f"ERROR: no runs directory at {runs_dir}", file=sys.stderr)
-        return None
-    if latest:
-        target = _most_recent_run_id(runs_dir)
-        if target is None:
-            print(f"ERROR: --continue: no runs under {runs_dir}", file=sys.stderr)
-            return None
-    else:
-        try:
-            target = resolve_run_id(runs_dir, run_id)
-        except RunIdError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
-            return None
-    layout = RunLayout(state_dir=_state_dir(cwd), run_id=target)
-    if not layout.manifest_path.is_file():
-        print(f"ERROR: run {target} has no manifest.json", file=sys.stderr)
-        return None
-    try:
-        manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        print(f"ERROR: could not read manifest for {target}: {exc}", file=sys.stderr)
-        return None
-    base_sha = str(manifest.get("base_sha") or "")
-    run_branch = manifest.get("run_branch")
-    head_ref = str(run_branch) if run_branch else "HEAD"
-    diff = ""
-    if base_sha:
-        # operator-controlled argv, no LLM input (same as `agent6 diff`).
-        proc = subprocess.run(
-            ["git", "diff", f"{base_sha}..{head_ref}"],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        diff = proc.stdout
-    cap = 8000
-    diff_excerpt = diff[:cap]
-    if len(diff) > cap:
-        diff_excerpt += "\n... (diff truncated; read more with git)"
-    return (
-        f'<prior-run id="{target}">\n'
-        "This question is about a PRIOR agent6 run. Its run state lives outside the"
-        " workspace and is not reachable with read_file, so everything you have"
-        " about it is in this digest.\n\n"
-        f"## Run task\n{manifest.get('user_task', '')}\n\n"
-        f"## Outcome / key events\n{_summarize_run_log(layout.logs_path)}\n\n"
-        f"## Diff base_sha..{head_ref} (truncated)\n```diff\n{diff_excerpt}\n```\n"
-        f"</prior-run>"
-    )
-
-
-def _seed_files(cwd: Path, files: list[str]) -> str:
-    """Wrap explicit --file seeds for an `ask` (a non-fatal, capped read)."""
-    parts: list[str] = []
-    for f in files:
-        try:
-            content = (cwd / f).read_text(encoding="utf-8", errors="replace")
-        except OSError as exc:
-            print(f"WARNING: --file {f}: {exc}", file=sys.stderr)
-            continue
-        cap = 64 * 1024
-        if len(content) > cap:
-            content = content[:cap] + "\n... (truncated)"
-        parts.append(f'<file path="{f}">\n{content}\n</file>')
-    return "\n".join(parts)
-
-
-def _save_ask_transcript(layout: RunLayout, *, question: str, answer: str) -> None:
-    """Write the human-readable `ask` transcript (question + markdown answer)."""
-    out = layout.run_dir / "transcript.md"
-    out.write_text(
-        f"# agent6 ask\n\n## Question\n\n{question}\n\n## Answer\n\n{answer}\n",
-        encoding="utf-8",
-    )
-
-
-def _save_ask_repl_transcript(layout: RunLayout, conversation: list[tuple[str, str]]) -> None:
-    """Write the cumulative transcript for an interactive ask session."""
-    parts = ["# agent6 ask (interactive)\n"]
-    for i, (q, a) in enumerate(conversation, 1):
-        parts.append(f"## Q{i}\n\n{q}\n\n## A{i}\n\n{a}\n")
-    (layout.run_dir / "transcript.md").write_text("\n".join(parts), encoding="utf-8")
-
-
-def _run_ask_repl(
-    wf: Workflow, budget: BudgetTracker, layout: RunLayout, *, first_question: str
-) -> RunResult:
-    """Interactive multi-turn ask. Each follow-up re-enters the loop with the
-    prior Q&A carried as context, reusing the one provider/jail/budget setup.
-    The agent re-reads what it needs per turn (prompt-cached); the conversation
-    text is what gives continuity."""
-    print(
-        "[agent6] ask REPL — follow-up, /cost, /reset, or /quit (Ctrl-D exits).",
-        file=sys.stderr,
-    )
-    conversation: list[tuple[str, str]] = []
-    pending = first_question.strip()
-    result: RunResult | None = None
-    while True:
-        if pending:
-            question = pending
-            pending = ""
-        else:
-            try:
-                question = input("\nask> ").strip()
-            except (EOFError, KeyboardInterrupt):
-                print(file=sys.stderr)
-                break
-        if not question:
-            continue
-        if question in ("/quit", "/q", "/exit"):
-            break
-        if question == "/cost":
-            print(budget.format_summary(), file=sys.stderr)
-            continue
-        if question == "/reset":
-            conversation = []
-            print("[agent6] conversation reset.", file=sys.stderr)
-            continue
-        if conversation:
-            ctx = "\n\n".join(f"Q: {q}\nA: {a}" for q, a in conversation)
-            augmented = (
-                f"<conversation-so-far>\n{ctx}\n</conversation-so-far>\n\nFollow-up: {question}"
-            )
-        else:
-            augmented = question
-        result = wf.run(augmented)
-        print(result.summary)
-        conversation.append((question, result.summary))
-        _save_ask_repl_transcript(layout, conversation)
-        if budget.is_exhausted():
-            print("[agent6] budget exhausted; ending the REPL.", file=sys.stderr)
-            break
-    if result is None:
-        return RunResult(
-            completed=True, reason="ask_repl_empty", summary="", iterations=0, tool_calls=0
-        )
-    return result
 
 
 def _default_stdin_approver(prompt: str) -> bool:
@@ -523,363 +292,6 @@ def _tui_session(run_dir: Path, *, enabled: bool) -> Generator[None]:
             log_fh.close()
 
 
-_REPL_HELP = (
-    "  /continue  (empty enter) - let the agent take another iteration\n"
-    "  /cost                    - print the running token + USD summary\n"
-    "  /diff                    - git diff: base_sha -> this run's HEAD\n"
-    "                              (read-only; same as `agent6 diff`)\n"
-    "  /watch                   - print the last 20 events from this run\n"
-    "                              (snapshot; not a live tail)\n"
-    "  /mcp                     - list MCP servers + tools currently wired\n"
-    "                              into the agent's tool surface\n"
-    "  /init                    - run `agent6 init` in the current cwd to\n"
-    "                              (re)write per-repo config + AGENTS.md scaffolds\n"
-    "  /undo                    - git revert HEAD (forward revert of the\n"
-    "                              last auto-commit; safe under git policy).\n"
-    "                              History is preserved: a NEW commit is\n"
-    "                              added that inverts the last one. Nothing\n"
-    "                              is destroyed; ``git reset --hard`` is\n"
-    "                              forbidden by agent6's git policy.\n"
-    "  /help                    - show this help\n"
-    "  /quit                    - stop the agent cleanly after this commit\n"
-)
-
-
-def _build_repl_hook(
-    root: Path,
-    budget: BudgetTracker,
-    *,
-    run_id: str = "",
-    mcp_manager: MCPManager | None = None,
-) -> Callable[[int, str], Literal["continue", "stop"]]:
-    """Build the after_auto_commit hook for ``agent6 run -i``.
-
-    Captures the budget tracker (for ``/cost``), the repo root (for
-    ``/undo`` and ``/diff``), the current run id (for ``/diff`` and
-    ``/watch``), and the live MCP manager (for ``/mcp``) in a closure
-    so Workflow stays agnostic of the CLI's extra state.
-    extends with /diff, /watch, /mcp, /init.
-    """
-
-    def hook(iteration: int, sha: str) -> Literal["continue", "stop"]:
-        print(
-            f"\n[agent6] iter {iteration} committed {sha[:12]}. "
-            f"REPL: /continue /cost /diff /watch /mcp /init /undo /help /quit",
-            file=sys.stderr,
-        )
-        while True:
-            try:
-                raw = input("agent6> ").strip()
-            except (EOFError, KeyboardInterrupt):
-                print("[agent6] EOF - stopping interactively.", file=sys.stderr)
-                return "stop"
-            cmd = raw.lower()
-            if cmd in {"", "/continue", "/c"}:
-                return "continue"
-            if cmd in {"/quit", "/q", "/stop"}:
-                return "stop"
-            if cmd in {"/help", "/h", "?"}:
-                print(_REPL_HELP, file=sys.stderr)
-                continue
-            if cmd == "/cost":
-                print(budget.format_summary(), file=sys.stderr)
-                continue
-            if cmd == "/diff":
-                _repl_run_diff(run_id)
-                continue
-            if cmd == "/watch":
-                _repl_show_recent_events(root, run_id, n=20)
-                continue
-            if cmd == "/mcp":
-                _repl_list_mcp(mcp_manager)
-                continue
-            if cmd == "/init":
-                _repl_run_init(root)
-                continue
-            if cmd == "/undo":
-                try:
-                    revert_sha = revert_head(root)
-                except GitError as exc:
-                    print(f"[agent6] /undo failed: {exc}", file=sys.stderr)
-                    continue
-                print(
-                    f"[agent6] /undo: reverted {sha[:12]} via new commit {revert_sha[:12]}",
-                    file=sys.stderr,
-                )
-                continue
-            print(
-                f"[agent6] unknown command {raw!r}; try /help",
-                file=sys.stderr,
-            )
-
-    return hook
-
-
-def _repl_run_diff(run_id: str) -> None:
-    """REPL /diff: print `git diff base_sha..HEAD` for the live run."""
-    try:
-        _cmd_diff(run_id=run_id, stat=False, paths=())
-    except Exception as exc:
-        print(f"[agent6] /diff failed: {exc}", file=sys.stderr)
-
-
-def _repl_show_recent_events(root: Path, run_id: str, *, n: int) -> None:
-    """REPL /watch: snapshot the last n events from this run's logs.jsonl.
-
-    Intentionally NOT a live tail - the REPL is between turns of the
-    agent loop; a tail would block the next iteration. Operators who
-    want continuous tail use ``agent6 watch --plain`` in another shell.
-    """
-    if not run_id:
-        print("[agent6] /watch: no run id available", file=sys.stderr)
-        return
-    events_path = _runs_dir(root) / run_id / "logs.jsonl"
-    if not events_path.is_file():
-        print(f"[agent6] /watch: no logs.jsonl at {events_path}", file=sys.stderr)
-        return
-    try:
-        lines = events_path.read_text(encoding="utf-8").splitlines()
-    except OSError as exc:
-        print(f"[agent6] /watch failed: {exc}", file=sys.stderr)
-        return
-    run_start_ts: float | None = None
-    if lines:
-        try:
-            obj0 = json.loads(lines[0])
-            if isinstance(obj0, dict):
-                run_start_ts = _event_epoch(obj0.get("ts"))
-        except json.JSONDecodeError:
-            run_start_ts = None
-    tail = lines[-n:]
-    print(f"[agent6] /watch: last {len(tail)} events from {run_id}", file=sys.stderr)
-    for raw in tail:
-        print(_format_plain_event(raw, run_start_ts=run_start_ts))
-
-
-def _repl_list_mcp(mcp_manager: MCPManager | None) -> None:
-    """REPL /mcp: print configured MCP servers + their tool surface."""
-    if mcp_manager is None:
-        print(
-            "[agent6] /mcp: no MCP servers configured (set [mcp] in your config)",
-            file=sys.stderr,
-        )
-        return
-    descriptors = mcp_manager.descriptors()
-    if not descriptors:
-        print("[agent6] /mcp: 0 tools (servers started but exposed nothing)", file=sys.stderr)
-        return
-    by_server: dict[str, list[str]] = {}
-    for d in descriptors:
-        by_server.setdefault(d.server_name, []).append(d.tool_name)
-    print(f"[agent6] /mcp: {len(descriptors)} tools across {len(by_server)} server(s)")
-    for server, tools in sorted(by_server.items()):
-        print(f"  {server}: {len(tools)} tool(s)")
-        for t in sorted(tools):
-            print(f"    - {t}")
-
-
-def _repl_run_init(root: Path) -> None:
-    """REPL /init: run init_workspace (non-destructive without --force)."""
-    try:
-        rc = init_workspace(
-            root, force=False, profile="py", repo_config_target=repo_config_path_for(root)
-        )
-    except Exception as exc:
-        print(f"[agent6] /init failed: {exc}", file=sys.stderr)
-        return
-    if rc == 0:
-        print("[agent6] /init: ok", file=sys.stderr)
-    else:
-        print(f"[agent6] /init: exit {rc} (existing files left in place)", file=sys.stderr)
-
-
-@dataclass
-class _SteerState:
-    requested: Callable[[], bool]
-    clear: Callable[[], None]
-    prompt: Callable[[], str | None]
-    restore: Callable[[], None]
-
-
-def _select_revised_prompt(
-    original: str,
-    revised: str,
-    questions: tuple[str, ...],
-) -> str | None:
-    """Interactive accept/edit/skip prompt for workflow.revise_prompt."""
-    print("\n[agent6] prompt revision proposed:", file=sys.stderr)
-    print("\n--- revised ---", file=sys.stderr)
-    print(revised, file=sys.stderr)
-    if questions:
-        print("\n--- clarifying questions ---", file=sys.stderr)
-        for question in questions:
-            print(f"- {question}", file=sys.stderr)
-    print("\n--- original ---", file=sys.stderr)
-    print(original, file=sys.stderr)
-    while True:
-        try:
-            choice = (
-                input("[agent6] revise_prompt: [a]ccept, [o]riginal, [e]dit, [q]uit? ")
-                .strip()
-                .lower()
-            )
-        except (EOFError, KeyboardInterrupt):
-            return None
-        if choice in {"", "a", "accept", "y", "yes"}:
-            return revised
-        if choice in {"o", "orig", "original", "s", "skip"}:
-            return original
-        if choice in {"q", "quit", "abort"}:
-            return None
-        if choice in {"e", "edit"}:
-            editor = os.environ.get("EDITOR", "vi")
-            with tempfile.NamedTemporaryFile(
-                "w",
-                encoding="utf-8",
-                prefix="agent6-revised-task-",
-                suffix=".md",
-                delete=False,
-            ) as tmp:
-                tmp_path = Path(tmp.name)
-                tmp.write(revised.rstrip() + "\n")
-            try:
-                result = subprocess.run([editor, str(tmp_path)], check=False)
-                if result.returncode != 0:
-                    print(
-                        f"[agent6] editor exited {result.returncode}; choose again.",
-                        file=sys.stderr,
-                    )
-                    continue
-                edited = tmp_path.read_text(encoding="utf-8").strip()
-            finally:
-                with contextlib.suppress(OSError):
-                    tmp_path.unlink()
-            if edited:
-                return edited
-            print("[agent6] edited prompt was empty; choose again.", file=sys.stderr)
-            continue
-        print("[agent6] choose accept, original, edit, or quit.", file=sys.stderr)
-
-
-def _tty_message(text: str) -> None:
-    """Print to the controlling terminal directly, bypassing any stdout/stderr
-    redirection (the TUI redirects the run's std streams to a log file)."""
-    try:
-        with open("/dev/tty", "w", encoding="utf-8") as tty:  # noqa: PTH123
-            tty.write(text)
-            tty.flush()
-            return
-    except OSError:
-        with contextlib.suppress(Exception):
-            print(text, file=sys.stderr, flush=True)
-
-
-def _tty_prompt(text: str) -> str | None:
-    """Prompt on the controlling terminal directly (see ``_tty_message``).
-    Falls back to stdin when /dev/tty is unavailable."""
-    try:
-        with open("/dev/tty", "r+", encoding="utf-8") as tty:  # noqa: PTH123
-            tty.write(text)
-            tty.flush()
-            line = tty.readline()
-            return line.rstrip("\n") if line else None
-    except OSError:
-        try:
-            return input(text)
-        except (EOFError, KeyboardInterrupt):
-            return None
-
-
-def _install_steer_sigint(events: EventSink, run_dir: Path) -> _SteerState:
-    """Install a SIGINT handler that asks the workflow to steer.
-
-    * 1st SIGINT, set the "steer requested" flag and emit
-      ``run.steer_requested``. The workflow notices at its next safe boundary
-      (between steps) and prompts: through a TUI modal when the TUI is live,
-      otherwise on the controlling terminal (``/dev/tty``, so the prompt is
-      visible even when the TUI has redirected the run's std streams to a log).
-    * 2nd SIGINT within 2 s, raise KeyboardInterrupt to abort the run.
-
-    Returns callables for the workflow plus a ``restore`` hook to put the
-    previous handler back when the run is done.
-    """
-    state: dict[str, Any] = {"requested": False, "last_ts": 0.0}
-    window_s = 2.0
-
-    def _handler(_signum: int, _frame: Any) -> None:
-        now = time.monotonic()
-        if state["requested"]:
-            # Second Ctrl-C aborts: within the 2s window always, or any time a
-            # steer is still pending in TUI mode (no terminal feedback there to
-            # re-arm against). Otherwise just refresh the timestamp, crucially
-            # WITHOUT re-clearing the answer file, which the TUI may have just
-            # written (re-clearing it would strand read_steer_answer for 600s).
-            if (now - state["last_ts"]) < window_s or tui_is_live(run_dir):
-                raise KeyboardInterrupt
-            state["last_ts"] = now
-            return
-        state["requested"] = True
-        state["last_ts"] = now
-        clear_steer_answer(run_dir)
-        events.emit("run.steer_requested", source="sigint")
-        # With the TUI up, the steer prompt is a modal, don't scribble on the
-        # terminal it owns. Otherwise tell the user a prompt is coming.
-        if not tui_is_live(run_dir):
-            _tty_message(
-                "\n[agent6] steer requested — finishing current step, then will"
-                " prompt. Press Ctrl-C again to abort.\n"
-            )
-
-    previous = signal.signal(signal.SIGINT, _handler)
-
-    def requested() -> bool:
-        return bool(state["requested"])
-
-    def clear() -> None:
-        state["requested"] = False
-        clear_steer_answer(run_dir)
-
-    def prompt() -> str | None:
-        # TUI live: the user answers a modal; read its file-bridge result.
-        if tui_is_live(run_dir):
-            return read_steer_answer(run_dir)
-        return _tty_prompt("[agent6] steer (blank=continue, 'abort'=stop, else=instruction): ")
-
-    def restore() -> None:
-        with contextlib.suppress(Exception):
-            signal.signal(signal.SIGINT, previous)
-
-    return _SteerState(requested=requested, clear=clear, prompt=prompt, restore=restore)
-
-
-# Used when there is no controlling terminal at all (fully non-interactive):
-# no SIGINT handler, default Ctrl-C behaviour.
-_NULL_STEER = _SteerState(
-    requested=lambda: False,
-    clear=lambda: None,
-    prompt=lambda: None,
-    restore=lambda: None,
-)
-
-
-def _make_steer_state(events: EventSink, run_dir: Path) -> _SteerState:
-    """Install the steer SIGINT handler when a controlling terminal exists
-    (covers run/plan/ask with or without the TUI); else a no-op."""
-    try:
-        with open("/dev/tty", encoding="utf-8"):  # noqa: PTH123
-            pass
-    except OSError:
-        return _NULL_STEER
-    return _install_steer_sigint(events, run_dir)
-
-
-# inline-resolved file references in user task strings.
-#
-# A token of the form `@PATH` that resolves to a regular file inside `root`
-# is replaced with the file's contents wrapped in a `<file path=...>` block.
-# Anything that doesn't match (missing files, paths that escape root, email
-# addresses, decorators copied from code, etc.) is left untouched so the
-# transformation never corrupts a hand-written task string.
 _TASK_FILE_REF_RE = re.compile(r"(?<![\w@/])@([A-Za-z0-9_./\-]+)")
 
 
