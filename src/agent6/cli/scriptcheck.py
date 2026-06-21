@@ -96,9 +96,9 @@ def lint_and_typecheck(scripts_dir: Path) -> list[str]:
         return []
     problems: list[str] = []
     # The temp copy exists for ty: it has no config-isolation flag and walks up
-    # from the checked files to the nearest pyproject.toml, which would be the
-    # user's repo (the scratch bundle lives under .agent6/). ruff is isolated by
-    # its --isolated flag; it just shares the copy.
+    # from the checked files to the nearest pyproject.toml, which could pull in a
+    # stray config (the scratch bundle lives under the per-repo state dir). ruff
+    # is isolated by its --isolated flag; it just shares the copy.
     work = Path(tempfile.mkdtemp(prefix="agent6-scriptcheck-"))
     try:
         dst = work / "scripts"

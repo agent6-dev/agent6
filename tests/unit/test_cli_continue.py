@@ -13,6 +13,7 @@ from agent6.cli import main
 from agent6.cli.plan_watch import (
     _most_recent_run_id,  # pyright: ignore[reportPrivateUsage]
 )
+from agent6.config_layer import resolved_state_dir
 
 
 def test_most_recent_run_id_none_outside_workspace(tmp_path: Path) -> None:
@@ -20,12 +21,12 @@ def test_most_recent_run_id_none_outside_workspace(tmp_path: Path) -> None:
 
 
 def test_most_recent_run_id_none_when_empty(tmp_path: Path) -> None:
-    (tmp_path / ".agent6" / "runs").mkdir(parents=True)
-    assert _most_recent_run_id(tmp_path / ".agent6" / "runs") is None
+    (resolved_state_dir(tmp_path) / "runs").mkdir(parents=True)
+    assert _most_recent_run_id(resolved_state_dir(tmp_path) / "runs") is None
 
 
 def test_most_recent_run_id_picks_newest_mtime(tmp_path: Path) -> None:
-    runs = tmp_path / ".agent6" / "runs"
+    runs = resolved_state_dir(tmp_path) / "runs"
     runs.mkdir(parents=True)
     older = runs / "alpha-bravo-charlie"
     newer = runs / "delta-echo-foxtrot"
@@ -93,7 +94,7 @@ def test_run_no_task_points_at_most_recent_plan(
     # No task given but a prior plan exists: non-interactively (pytest stdin is
     # not a TTY) refuse, but point the user at the plan + the --from-plan form.
     monkeypatch.chdir(tmp_path)
-    run_dir = tmp_path / ".agent6" / "runs" / "tidy-otter-AB12CD"
+    run_dir = resolved_state_dir(tmp_path) / "runs" / "tidy-otter-AB12CD"
     run_dir.mkdir(parents=True)
     (run_dir / "plan.md").write_text("# Plan: wire up the thing\n", encoding="utf-8")
     rc = main(["run"])

@@ -138,10 +138,11 @@ All five must pass; keep the suite green.
 - Config is secure by default: every field has a default, and
   security-sensitive fields default to the safe value
   (`sandbox.agent_network = "providers"`, `sandbox.tool_network = "block"`,
-  `sandbox.run_commands = "ask"`, `sandbox.protect_* = true`,
+  `sandbox.run_commands = "ask"`, `sandbox.protect_git = true`,
   `git.allow_* = false`). Config is layered (built-in defaults < global
-  `$XDG_CONFIG_HOME/agent6/config.toml` < per-repo `.agent6/config.toml`
-  < `--config FILE`) and every leaf is auditable via `agent6 config show`.
+  `$XDG_CONFIG_HOME/agent6/config.toml` < per-repo config under
+  `$XDG_STATE_HOME/agent6/<repo-id>/config.toml` < `--config FILE`) and
+  every leaf is auditable via `agent6 config show`.
   `Config` stays `extra="forbid", frozen=True`; loosening a security
   default requires the same scrutiny as adding a tool.
 - Secrets (provider API keys) live in
@@ -151,8 +152,8 @@ All five must pass; keep the suite green.
   never execute anything a remote returns (OAuth/paste only).
 - Running as root requires explicit opt-in (`--allow-root` /
   `AGENT6_ALLOW_ROOT=1`); under sudo, agent6 reads the real user's
-  config/secrets and chowns new `.agent6/` files back to them. It does not
-  drop privileges in-process; the jail is the boundary.
+  config/secrets and chowns new per-repo state-dir files back to them. It
+  does not drop privileges in-process; the jail is the boundary.
 - Configured `[providers.*]` endpoints are the only network destinations
   the agent may talk to. New providers go through the same Landlock + jail
   audit; do not bypass.

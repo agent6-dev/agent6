@@ -29,8 +29,33 @@ def test_global_config_dir_uses_xdg_when_not_sudo(
     assert paths.global_config_dir() == tmp_path / "xdg" / "agent6"
 
 
-def test_repo_config_path() -> None:
-    assert paths.repo_config_path(Path("/repo")) == Path("/repo/.agent6/config.toml")
+def test_state_dir_and_repo_config_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    base = tmp_path / "state"
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(base))
+    repo = tmp_path / "myrepo"
+    repo.mkdir()
+    rid = paths.repo_id(repo)
+    assert rid.startswith("myrepo-")
+    assert paths.repo_id(repo) == rid  # deterministic
+    assert paths.state_dir(repo) == base / rid
+    assert paths.repo_config_path(repo) == base / rid / "config.toml"
+    # An explicit base override appends the same repo id.
+    assert paths.state_dir(repo, base_override="/custom") == Path("/custom") / rid
+
+
+def test_repo_id_distinguishes_paths(tmp_path: Path) -> None:
+    a = tmp_path / "a"
+    b = tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
+    assert paths.repo_id(a) != paths.repo_id(b)
+
+
+def test_state_base_uses_xdg_when_not_sudo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("AGENT6_STATE_HOME", raising=False)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setattr(os, "geteuid", lambda: 1000)
+    assert paths.state_base() == tmp_path / "xdg" / "agent6"
 
 
 def test_effective_user_resolves_sudo(monkeypatch: pytest.MonkeyPatch) -> None:

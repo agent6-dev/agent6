@@ -32,7 +32,6 @@ profile = "auto"
 agent_network = "providers"
 run_commands = "ask"
 protect_git = true
-protect_agent6 = true
 
 [git]
 require_clean_worktree = true
@@ -144,22 +143,22 @@ def test_allow_urls_defaults_empty(tmp_path: Path) -> None:
 
 def test_allow_urls_accepts_host_hostport_and_url(tmp_path: Path) -> None:
     body = _VALID_TOML.replace(
-        "protect_agent6 = true",
-        'protect_agent6 = true\nallow_urls = ["example.com", "h.com:8443", "https://api.x.com/v1"]',
+        "protect_git = true",
+        'protect_git = true\nallow_urls = ["example.com", "h.com:8443", "https://api.x.com/v1"]',
     )
     cfg = load_config(_write(tmp_path, body))
     assert cfg.sandbox.allow_urls == ("example.com", "h.com:8443", "https://api.x.com/v1")
 
 
 def test_allow_urls_rejects_portless_garbage(tmp_path: Path) -> None:
-    body = _VALID_TOML.replace("protect_agent6 = true", 'protect_agent6 = true\nallow_urls = [""]')
+    body = _VALID_TOML.replace("protect_git = true", 'protect_git = true\nallow_urls = [""]')
     with pytest.raises(ConfigError, match=r"allow_urls"):
         load_config(_write(tmp_path, body))
 
 
 def test_allow_urls_rejects_bad_port(tmp_path: Path) -> None:
     body = _VALID_TOML.replace(
-        "protect_agent6 = true", 'protect_agent6 = true\nallow_urls = ["h.com:99999"]'
+        "protect_git = true", 'protect_git = true\nallow_urls = ["h.com:99999"]'
     )
     with pytest.raises(ConfigError, match=r"allow_urls"):
         load_config(_write(tmp_path, body))
@@ -416,7 +415,6 @@ profile = "auto"
 agent_network = "providers"
 run_commands = "ask"
 protect_git = true
-protect_agent6 = true
 
 [git]
 allow_push = false

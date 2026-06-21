@@ -147,9 +147,12 @@ class Agent6HomeApp(App[Path | None]):
         Binding("q", "quit", "Quit"),
     ]
 
-    def __init__(self, agent6_dir: Path) -> None:
+    def __init__(self, agent6_dir: Path, repo_cwd: Path) -> None:
         super().__init__()
         self.agent6_dir = agent6_dir
+        # The repo to launch new runs in. The state dir is out of the workspace,
+        # so it can't be derived from agent6_dir; the caller passes it.
+        self.repo_cwd = repo_cwd
         self._runs: list[Path] = []
 
     def compose(self) -> ComposeResult:
@@ -190,20 +193,22 @@ class Agent6HomeApp(App[Path | None]):
     def _on_new_work(self, result: tuple[str, str] | None) -> None:
         if result is None:
             return
-        run_dir, error = _spawn_and_locate(self.agent6_dir, *result)
+        run_dir, error = _spawn_and_locate(self.agent6_dir, self.repo_cwd, *result)
         if run_dir is not None:
             self.exit(run_dir)
         else:
             self.notify(error or "Could not start the run.", severity="error", timeout=8.0)
 
 
-def _spawn_and_locate(agent6_dir: Path, mode: str, task: str) -> tuple[Path | None, str]:
+def _spawn_and_locate(
+    agent6_dir: Path, repo_cwd: Path, mode: str, task: str
+) -> tuple[Path | None, str]:
     """Spawn `agent6 <mode> <task>` detached (non-TTY stdout → no nested TUI) and
     return (run_dir, ""). On failure returns (None, diagnostic). The dir is found
     by snapshotting existing runs and polling for a NEW one; if the child exits
     before producing a run dir (no git repo, bad config, …) its stderr tail is
     surfaced instead of silently waiting out the timeout."""
-    cwd = agent6_dir.parent
+    cwd = repo_cwd
     argv = [_agent6_exe(), mode, task]
     before = set(_list_runs(agent6_dir))
     err = tempfile.NamedTemporaryFile(  # noqa: SIM115 - closed in finally
@@ -261,5 +266,5 @@ def _agent6_exe() -> str:
     return shutil.which("agent6") or "agent6"
 
 
-def run_home(agent6_dir: Path) -> Path | None:
-    return Agent6HomeApp(agent6_dir).run()
+def run_home(agent6_dir: Path, repo_cwd: Path) -> Path | None:
+    return Agent6HomeApp(agent6_dir, repo_cwd).run()

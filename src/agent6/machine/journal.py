@@ -13,7 +13,7 @@ re-validated by pydantic (`extra="forbid", frozen=True`), exactly like the
 machine spec itself. Snapshots are an optimisation for human inspection and
 fast status; correctness depends only on the journal.
 
-Layout under ``.agent6/machines/<id>/`` (§5.3)::
+Layout under the per-repo state dir (``machines/<id>/``) (§5.3)::
 
     machine.asm.toml     # the exact source the run was started from (for replay)
     journal.jsonl        # append-only, fsync'd, one event per line

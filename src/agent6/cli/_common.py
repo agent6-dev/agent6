@@ -1,12 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Cross-cutting CLI helpers: run dirs, budget flags, key/root/gitignore checks."""
+"""Cross-cutting CLI helpers: run dirs, budget flags, key/root checks."""
 
 from __future__ import annotations
 
 import argparse
 import sys
-from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -15,15 +14,9 @@ from agent6.config import (
     Config,
 )
 from agent6.config_layer import (
-    resolved_agent6_dir,
+    resolved_state_dir,
 )
 from agent6.detect import Environment, detect
-from agent6.git_ops import (
-    CommitIdentity,
-    GitError,
-    commit_paths,
-    is_git_repo,
-)
 from agent6.models_cache import list_models
 from agent6.paths import (
     effective_user,
@@ -105,25 +98,25 @@ class _BudgetOverrides:
         )
 
 
-def _agent6_dir(repo_root: Path) -> Path:
-    """The in-repo agent6 dir (config + run state), honoring the global rename.
+def _state_dir(repo_root: Path) -> Path:
+    """The per-repo agent6 state dir (config + run state), out of the workspace.
 
-    The directory name comes solely from the global config's
-    ``[agent6].workspace_subdir`` (default ``.agent6``), so this is cheap and
-    works for read-only commands (``watch``/``history``/...) without a full
-    config merge.
+    Resolved from the global ``[agent6].state_dir`` base (default
+    ``$XDG_STATE_HOME/agent6``) plus a per-repo id, so this is cheap and works
+    for read-only commands (``watch``/``history``/...) without a full config
+    merge.
     """
-    return resolved_agent6_dir(repo_root)
+    return resolved_state_dir(repo_root)
 
 
 def _runs_dir(repo_root: Path) -> Path:
-    """The ``runs/`` directory under the resolved agent6 dir."""
-    return _agent6_dir(repo_root) / "runs"
+    """The ``runs/`` directory under the per-repo state dir."""
+    return _state_dir(repo_root) / "runs"
 
 
 def _machines_dir(repo_root: Path) -> Path:
-    """The ``machines/`` directory under the resolved agent6 dir."""
-    return _agent6_dir(repo_root) / "machines"
+    """The ``machines/`` directory under the per-repo state dir."""
+    return _state_dir(repo_root) / "machines"
 
 
 def _check_provider_keys(cfg: Config) -> str | None:
@@ -214,57 +207,6 @@ def _enforce_root_policy(allow_root: bool) -> int | None:
         file=sys.stderr,
     )
     return None
-
-
-def _ensure_agent6_gitignored(
-    root: Path,
-    *,
-    agent6_dir: Path,
-    identity: CommitIdentity | None = None,
-    logger: Callable[[str], None] = print,
-) -> None:
-    """Make sure the agent6 dir is in `.gitignore` before we write under it.
-
-    `agent6 run` and `agent6 plan` create ``<agent6-dir>/runs/<id>/`` early in
-    startup (transcripts, run log). If the project's `.gitignore` doesn't
-    already exclude the agent6 dir, those files become untracked content and
-    the `require_clean_worktree` pre-flight check then refuses to proceed, a
-    self-DoS that confuses first-time users.
-
-    Append the entry, then commit `.gitignore` immediately so the worktree
-    stays clean for the subsequent dirty-tree check. We commit on the user's
-    current branch *before* `branch_per_run` cuts the agent's working branch,
-    so this single housekeeping commit lands on the parent branch where it
-    belongs.
-    """
-    gitignore = root / ".gitignore"
-    name = agent6_dir.name
-    entry = f"{name}/"
-    existing = gitignore.read_text(encoding="utf-8") if gitignore.is_file() else ""
-    if any(line.strip() in {entry, f"/{entry}", name} for line in existing.splitlines()):
-        return
-    suffix = "" if existing.endswith("\n") or not existing else "\n"
-    gitignore.write_text(
-        existing + suffix + "# agent6 run state (transcripts, run logs, graph)\n" + entry + "\n",
-        encoding="utf-8",
-    )
-    # Commit on the current branch only if we are inside a git repo; otherwise
-    # writing the file is enough (the workflow's git pre-flight will refuse
-    # to proceed anyway, with a clearer error than "dirty worktree").
-    try:
-        if is_git_repo(root):
-            commit_paths(
-                root,
-                "chore: ignore .agent6/ run state (added by agent6)",
-                (".gitignore",),
-                identity=identity,
-            )
-            logger(f"[agent6] added {entry!r} to {gitignore.name} (committed)")
-            return
-    except GitError as exc:
-        logger(f"[agent6] WARNING: wrote {entry!r} to .gitignore but commit failed: {exc}")
-        return
-    logger(f"[agent6] added {entry!r} to {gitignore.name}")
 
 
 def _start_mcp_manager_if_enabled(cfg: Config) -> MCPManager | None:

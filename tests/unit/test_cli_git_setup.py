@@ -49,14 +49,19 @@ def test_offer_git_setup_interactive_inits_and_commits(
         monkeypatch.setenv(k, "Test")
     for k in ("GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"):
         monkeypatch.setenv(k, "t@t.t")
-    (tmp_path / ".gitignore").write_text(".agent6/\n", encoding="utf-8")
+    (tmp_path / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
     (tmp_path / "AGENTS.md").write_text("# AGENTS\n", encoding="utf-8")
-    (tmp_path / ".agent6").mkdir()
-    cfg = tmp_path / ".agent6" / "config.toml"
-    cfg.write_text("# cfg\n", encoding="utf-8")
+    # The per-repo config lives OUT of the workspace. Passing such a path must
+    # not crash _offer_git_setup (it filters to paths under the repo) and it is
+    # never committed.
+    out_of_repo_cfg = tmp_path.parent / "a6-state" / "config.toml"
+    out_of_repo_cfg.parent.mkdir(parents=True, exist_ok=True)
+    out_of_repo_cfg.write_text("# cfg\n", encoding="utf-8")
 
     _offer_git_setup(
-        tmp_path, (cfg, tmp_path / "AGENTS.md", tmp_path / ".gitignore"), interactive=True
+        tmp_path,
+        (out_of_repo_cfg, tmp_path / "AGENTS.md", tmp_path / ".gitignore"),
+        interactive=True,
     )
 
     assert is_git_repo(tmp_path) is True
@@ -65,4 +70,4 @@ def test_offer_git_setup_interactive_inits_and_commits(
     ).stdout.split()
     assert "AGENTS.md" in tracked
     assert ".gitignore" in tracked
-    assert ".agent6/config.toml" not in tracked  # gitignored, intentionally not committed
+    assert "config.toml" not in tracked  # out-of-repo config is never committed

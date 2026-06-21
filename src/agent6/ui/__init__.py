@@ -3,7 +3,7 @@
 """UI subtree for agent6, read-only viewers over the JSONL event stream.
 
 Everything in this package is **optional, side-effect-free, and consumes
-`.agent6/runs/<id>/logs.jsonl` from disk**. Nothing in here is part of the
+`<run-dir>/logs.jsonl` from disk**. Nothing in here is part of the
 core agent loop; reviewers can skip this directory and still understand
 how agent6 actually plans and edits code.
 

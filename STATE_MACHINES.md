@@ -114,7 +114,7 @@ exactly like `Config`.
 ### 4.1 Top-level shape
 
 ```toml
-machine = "item-classifier"                # stable id, used in .agent6/machines/<id>/
+machine = "item-classifier"                # stable id, used in <state-dir>/<repo-id>/machines/<id>/
 version = 1                                # schema version; bumped only on real shape changes
 initial = "poll"                           # name of the entry state
 
@@ -329,15 +329,18 @@ mounted cwd at run time, so keep the bundle at (or under) the directory you
 run `agent6` from. `machine check` validates the bundle: every entry under
 `scripts/` must resolve *inside* the bundle (symlinks that escape via
 `..`/absolute are rejected) and every static `scripts/...` command
-reference must exist and stay inside the bundle. During a run the bundle (the
-`.asm.toml` + `scripts/`) is read-only in every jail, so a tool or agent
-cannot rewrite its own machine logic or bundled scripts mid-run.
+reference must exist and stay inside the bundle. On the strict profile the
+bundle (the `.asm.toml` + `scripts/`) is RO-bound in every jail, so a tool or
+agent cannot rewrite its own machine logic or bundled scripts mid-run. On
+hardened the cwd is blanket read-write (no mount namespace to carve), so the
+bundle is writable there; the surrounding container is the blast radius.
 
 A `tool` script that needs to persist data across iterations writes to
-`$AGENT6_MACHINE_DATA_DIR`, a per-machine writable directory
-(`.agent6/machines/<id>/data/`) granted RW in every tool jail. It is the only
-writable spot on the `hardened` profile (where new top-level files in the
-workspace are read-only); the journal still records every transition either way.
+`$AGENT6_MACHINE_DATA_DIR`, a per-machine writable directory under the
+per-repo state dir (`<state-dir>/<repo-id>/machines/<id>/data/`, out of the
+workspace) granted RW in every tool jail. On the `hardened` profile the repo
+cwd is also blanket read-write, so the persisted-data dir is just the durable
+home for cross-iteration state; the journal records every transition either way.
 
 #### `wait`
 
@@ -578,7 +581,7 @@ states what it wants to change. Two hard rules:
   or `[config.sandbox.*]` block is a *load-time* error. Provider endpoints,
   api-key env names, and secret values live in the global config / secrets
   store; sandbox policy (network egress incl. `allow_urls`, `run_commands`,
-  `.git`/`.agent6` protection) is an operator decision in the global/repo
+  `.git` protection) is an operator decision in the global/repo
   config. A machine file may be LLM-drafted or shared, so it must not be able
   to widen its own egress or weaken its jail through the overlay. The overlay
   can only *route to* a provider name that already exists in the effective
@@ -635,10 +638,11 @@ branch reads are in the journal.
 
 ### 5.3 Persistence layout
 
-Mirrors the existing per-run layout under `.agent6/`:
+Mirrors the existing per-run layout under the per-repo state dir, out of
+the workspace:
 
 ```
-.agent6/machines/<machine-id>/
+<state-dir>/<repo-id>/machines/<machine-id>/
   journal.jsonl          # append-only, fsync'd, one event per line
   snapshots/<n>.json     # blackboard + current state, atomic temp+rename
   agents/<state>/<n>/    # nested agent6 run dirs (snapshots, transcripts)

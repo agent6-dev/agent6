@@ -6,7 +6,7 @@ The canonical form is one markdown file per node with a YAML frontmatter header
 holding the structured fields. Files are laid out to mirror the parent→child
 tree: a node with children has a sibling directory of the same id.
 
-    .agent6/runs/<run-id>/
+    <run-dir>/
       manifest.json
       graph/<root>.md
       graph/<root>/<child>.md
@@ -48,9 +48,9 @@ from agent6.portable import fsync_dir, lock_exclusive, unlock
 class RunLayout:
     """Filesystem layout for one `agent6 run`.
 
-    ``state_dir`` is the resolved run-state base (``<repo>/.agent6`` by
-    default, or wherever ``[agent6].state_dir`` points). See
-    ``agent6.paths.state_dir``.
+    ``state_dir`` is the resolved run-state base
+    (``$XDG_STATE_HOME/agent6/<repo-id>`` by default, or wherever
+    ``[agent6].state_dir`` points). See ``agent6.paths.state_dir``.
     """
 
     state_dir: Path

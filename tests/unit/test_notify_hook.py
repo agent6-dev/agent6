@@ -117,7 +117,6 @@ profile = "auto"
 agent_network = "providers"
 run_commands = "ask"
 protect_git = true
-protect_agent6 = true
 
 [git]
 allow_push = false

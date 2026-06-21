@@ -230,8 +230,15 @@ command on the host (outside the jail) the moment agent6 runs git in it.
 `git diff`) are always overridden off; the repo's `.git/hooks/*` run only
 when `git.run_repo_hooks = true` (default false; `core.hooksPath` is
 pointed away from the repo so a `pre-commit` hook can't fire on agent6's
-own auto-commit). This complements `protect_git`, which stops the worker
-from *writing* into `.git` in the first place.
+own auto-commit). On strict this complements `protect_git`, which
+RO-binds `.git` to stop the worker from *writing* into it. On hardened
+the cwd is blanket read-write (no mount namespace to carve, and carving
+`.git` read-only would also deny new top-level entries and break
+toolchains like cargo/pytest that create `target/` or `.pytest_cache/`),
+so `.git` is writable by jailed commands there. That is acceptable: it is
+gated by `run_commands` (default `ask`), recoverable (branch-per-run,
+commits go through `git_ops`), and the surrounding container is the blast
+radius.
 
 ### 5b. Secrets, `connect`, and running as root
 
@@ -257,21 +264,28 @@ from *writing* into `.git` in the first place.
   `AGENT6_ALLOW_ROOT=1`), and prints a loud banner. When invoked through
   `sudo`, agent6 resolves the *real* user from `SUDO_UID`/`SUDO_GID`/
   `SUDO_USER`, reads that user's config + secrets (not root's), and
-  `chown`s anything it writes under the repo's `.agent6/` back to them so
+  `chown`s anything it writes under the per-repo state dir back to them so
   no root-owned files are left behind. agent6 does not drop privileges
   in-process: under `sudo` the worker's verify/run commands are expected
   to need root and run as root inside the jail, so the jail, not the
   process uid, is the security boundary.
 
-### 6. Curator subprocess
+### 6. Curator subprocess and run-state location
 
-All writes to `.agent6/runs/<run-id>/` go through a separate
-`agent6-curator` subprocess with its own jail policy that allows writes
-only to that directory. The main agent process talks to it over a
-Unix domain socket inside the run directory and never writes graph data
-directly. This means a bug in the worker / planner cannot corrupt the
-on-disk task graph, and the curator's append-only `graph.jsonl` is the
-durable source of truth.
+The task graph is written by a separate `agent6-curator` subprocess. The
+main agent process talks to it over a Unix domain socket inside the run
+directory and never writes graph data directly, so a bug in the worker /
+planner cannot corrupt the on-disk graph; the curator's append-only
+`graph.jsonl` is the durable source of truth. The main process writes the
+rest of the run state in-process: the resume snapshot (`loop_state.json`),
+the event log (`logs.jsonl`), and transcripts.
+
+What keeps the whole run directory safe from jailed commands is its
+**location**, not any single writer. Per-repo state (config + run state)
+lives out of the workspace under `$XDG_STATE_HOME/agent6/<repo-id>/`
+(override with `[agent6].state_dir` or `AGENT6_STATE_HOME`). Jailed
+commands run on the repo cwd, and the state dir is outside it, so they
+cannot reach it.
 
 ### 7. No agent-owned network surface
 
@@ -279,11 +293,11 @@ agent6 does not run an HTTP server, gRPC server, or any other accept-side
 socket. The only sockets it opens are:
 
 - outbound HTTPS to the LLM provider,
-- a per-run Unix domain socket under `.agent6/runs/<run-id>/` with mode
-  `0600` for talking to its own curator.
+- a per-run Unix domain socket under the run directory
+  (`<state-dir>/<repo-id>/runs/<run-id>/`) with mode `0600` for talking to
+  its own curator.
 
-There is no telemetry, no auto-update, no remote control plane, and no
-shared state outside the project directory.
+There is no telemetry, no auto-update, and no remote control plane.
 
 ### 8. State-machine egress (the supervisor model) + script bundles
 
@@ -356,7 +370,8 @@ Every surface fails closed:
   directory. Scripts are drafted at authoring time and reviewed/committed
   by the operator, never fetched or generated from untrusted model output
   at run time. And during a run, the machine's own `.asm.toml` + `scripts/`
-  are made read-only in every jail (alongside `.git`/`.agent6`), so a
+  are made read-only in every jail (the same mechanism that RO-binds
+  `.git` on strict), so a
   tool or agent state cannot rewrite its own logic, add an `allow_network`
   flag, or alter a bundled script mid-run or for a future run.
 
@@ -396,7 +411,10 @@ not to bound what an attacker can do.
 - **Devcontainers**: the jail's `hardened` profile is what you get
   inside Docker / VS Code dev containers. The container itself becomes
   the FS blast radius. Network restrictions still apply via the
-  agent-process Landlock when the kernel supports it.
+  agent-process Landlock when the kernel supports it. The XDG state base
+  is inside the container and ephemeral (lost on rebuild), so to persist
+  run state mount a volume at the state dir or set `[agent6].state_dir` /
+  `AGENT6_STATE_HOME` to a persisted out-of-cwd path.
 - **Side channels**: agent6 makes no claim about timing, cache, or
   speculative-execution side channels. If your threat model includes
   Spectre-class attacks, do not co-locate agent6 on a host with secrets.

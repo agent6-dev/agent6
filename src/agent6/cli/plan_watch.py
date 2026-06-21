@@ -36,7 +36,7 @@ def _event_epoch(value: object) -> float | None:
 
 
 def _resolve_plan_run_id(run_id: str) -> str | None:
-    """Resolve a (possibly prefix) run-id under .agent6/runs/.
+    """Resolve a (possibly prefix) run-id under the per-repo run-state dir.
 
     Prints an error and returns None on failure. Used by ``run --from-plan``,
     ``plan --show``, and ``plan --edit``.
@@ -90,8 +90,8 @@ def _most_recent_run_id(runs_dir: Path) -> str | None:
     """Return the directory name (= run id) of the most recently mtime'd run.
 
     Used by `agent6 watch` (no arg), `agent6 run --continue`, and the
-    history-graph subcommand. Returns None outside an initialised workspace
-    (no `.agent6/runs/`) or when the directory exists but is empty.
+    history-graph subcommand. Returns None when there are no runs yet (the
+    per-repo run-state dir is missing) or when the directory exists but is empty.
     """
     if not runs_dir.is_dir():
         return None
@@ -177,9 +177,10 @@ def _cmd_tui() -> int:
         print(f"ERROR: {e}", file=sys.stderr)
         print("HINT: the TUI needs 'textual' (part of the base install).", file=sys.stderr)
         return 3
-    agent6_dir = _runs_dir(Path.cwd()).parent
+    cwd = Path.cwd()
+    agent6_dir = _runs_dir(cwd).parent
     while True:
-        run_dir = run_home(agent6_dir)
+        run_dir = run_home(agent6_dir, cwd)
         if run_dir is None:
             return 0
         run_tui(run_dir)

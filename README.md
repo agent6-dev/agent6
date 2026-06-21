@@ -25,8 +25,11 @@ Features:
 
 ## Requirements
 
-- Linux. The sandbox uses Linux-only kernel APIs; macOS and Windows are not
-  supported.
+- Linux for the sandbox. It uses Linux-only kernel APIs (Landlock, seccomp,
+  user namespaces). macOS and Windows run unsandboxed: the default
+  `profile = "auto"` resolves to `none`, child commands run as plain
+  subprocesses behind a startup warning, and an explicit `profile = "strict"`
+  or `"hardened"` is refused. Run on Linux for kernel-enforced isolation.
 - Kernel 6.7 or newer for Landlock TCP rules. Older kernels fall back to
   filesystem-only Landlock with a warning.
 - `kernel.unprivileged_userns_clone = 1` for the `strict` profile (default
@@ -85,7 +88,7 @@ register-python-argcomplete --shell fish agent6 > ~/.config/fish/completions/age
 agent6 connect                # interactive: pick provider, paste API key
 agent6 model worker anthropic claude-sonnet-4-5
 
-# In a project: scaffold .agent6/config.toml + AGENTS.md.
+# In a project: scaffold the per-repo config + AGENTS.md.
 agent6 init
 
 # Audit the effective config: every value and where it came from.
@@ -105,10 +108,12 @@ agent6 review --base origin/main --head HEAD
 ```
 
 Config is layered: built-in secure defaults, then the global
-`~/.config/agent6/config.toml`, then the per-repo `.agent6/config.toml`,
-then an explicit `--config FILE`. A repo can be zero-config when the global
-config supplies a provider and model; the one thing a repo always needs is
-its `verify_command`.
+`~/.config/agent6/config.toml`, then the per-repo config (out of the
+workspace under `$XDG_STATE_HOME/agent6/<repo-id>/config.toml`), then an
+explicit `--config FILE`. The per-repo config is per-machine, not committed.
+A repo can be zero-config when the global config supplies a provider and
+model; the one thing a repo always needs is its `verify_command`, which
+`agent6 init` scaffolds per checkout.
 
 Other commands:
 
@@ -118,7 +123,8 @@ Other commands:
 - `agent6 ask "<question>"`: read-only Q&A over the repo, including
   questions about agent6 itself (it consults its bundled docs). Seed
   context with `@path` or `--file`; `--run <id>` asks about a prior run.
-- `agent6 memory`: persistent agent memory under `.agent6/memories/`.
+- `agent6 memory`: persistent agent memory under the per-repo state dir
+  (`<state-dir>/<repo-id>/memories/`).
 - `agent6 history search <query>`: search persisted transcripts.
 - `agent6 history graph [<run-id>]`: render the persisted task graph.
 - `agent6 diff [<run-id>]`: print the git diff a run produced.
@@ -143,8 +149,7 @@ profile = "auto"              # auto | strict | hardened
 agent_network = "providers"   # providers | local | open  (agent's LLM egress)
 tool_network = "block"        # block | only_explicit_states | allow  (jailed commands)
 run_commands = "ask"          # yes | no | ask
-protect_git = true
-protect_agent6 = true
+protect_git = true            # strict only: re-bind .git read-only in the jail
 
 [git]
 require_clean_worktree = true
@@ -223,7 +228,7 @@ subprocess, and the on-disk layout.
 For security details (threat model, per-layer breakdown, sandbox
 profiles), see [SECURITY.md](SECURITY.md). Defaults are safe:
 `agent_network = "providers"`, `tool_network = "block"`,
-`run_commands = "ask"`, `protect_* = true`, `git.allow_* = false`, and
+`run_commands = "ask"`, `protect_git = true`, `git.allow_* = false`, and
 `git_ops.py` refuses `push`, `--force`, and history rewrites
 unconditionally.
 
@@ -262,16 +267,19 @@ present. `agent6 plan`, `agent6 ask`, and `agent6 machine create` stream
 reasoning and answers to the terminal. Attach from another shell with
 `agent6 watch [<run-id>]`; `agent6 watch --plain` is a plain-text tail.
 The dashboard renders the JSONL event stream at
-`.agent6/runs/<run-id>/logs.jsonl`, which is also the contract for
-external viewers (vocabulary in [ARCHITECTURE.md](ARCHITECTURE.md)).
+`<state-dir>/<repo-id>/runs/<run-id>/logs.jsonl`, which is also the contract
+for external viewers (vocabulary in [ARCHITECTURE.md](ARCHITECTURE.md)).
 
 ## Persistence
 
-Each run's state lives under `.agent6/runs/<run-id>/`: append-only task
-graph, per-call snapshots that drive `agent6 resume`, full transcripts,
-and the event log. It is written exclusively by a sandboxed
-`agent6-curator` subprocess over a validated IPC channel, so a bug in the
-agent cannot scribble the run directory.
+Per-repo state lives out of the workspace under `$XDG_STATE_HOME/agent6/<repo-id>/`
+(override with `[agent6].state_dir` or `AGENT6_STATE_HOME`). Each run's state
+sits under `runs/<run-id>/`: the append-only task graph, per-call snapshots
+that drive `agent6 resume`, full transcripts, and the event log. The
+`agent6-curator` subprocess owns the task graph; the main process writes the
+resume snapshots, transcripts, and event log in-process. The run directory is
+safe from jailed commands because it lives outside the repo cwd they run on,
+not because of any single writer.
 
 ## End-of-run notify hook
 

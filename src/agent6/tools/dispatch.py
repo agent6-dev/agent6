@@ -26,7 +26,6 @@ from agent6.graph.models import (
     TaskNodeDraft,
     UpdateStatusIntent,
 )
-from agent6.paths import agent6_dir as _agent6_dir_path
 from agent6.sandbox.jail import JailUnavailableError, run_in_jail
 from agent6.tools.index import Symbol, SymbolIndex
 from agent6.tools.lsp import LspClient, LspError
@@ -252,15 +251,13 @@ def _refuse_protected_write(
     """Refuse an in-process ``apply_edit`` / ``apply_patch`` into a protected
     top-level directory.
 
-    Two dirs are protected. ``.agent6`` (or whatever ``[agent6].workspace_subdir``
-    renamed it to): the DAG curator writes ``graph.jsonl`` there, the event sink
-    ``logs.jsonl``, the transcript sink ``transcripts/*`` -- a stray write would
-    break the resumable-DAG moat. ``.git`` (when ``protect_git``): the edit tools
-    write **in-process, outside the jail**, so without this an LLM could create
-    or rewrite ``.git/hooks/*`` or ``.git/config`` (e.g. ``core.fsmonitor``) and
-    get code executed outside the sandbox on the next ``git`` invocation, or
-    corrupt git history -- defeating ``protect_git`` entirely (the jail's RO bind
-    of ``.git`` never covers these in-process writes). Reads stay allowed.
+    ``.git`` (when ``protect_git``): the edit tools write **in-process, outside
+    the jail**, so without this an LLM could create or rewrite ``.git/hooks/*``
+    or ``.git/config`` (e.g. ``core.fsmonitor``) and get code executed outside
+    the sandbox on the next ``git`` invocation, or corrupt git history --
+    defeating ``protect_git`` entirely (the strict jail's RO bind of ``.git``
+    never covers these in-process writes). Reads stay allowed. (Run state lives
+    out of the workspace, so it is unreachable by edits and needs no guard.)
 
     Checks both the raw candidate string AND the post-symlink-resolution relative
     path, so a symlink ``./decoy -> .git`` can't launder a write past the prefix
@@ -345,8 +342,9 @@ class ToolDispatcher:
         # a source mutation even if something dispatched one directly.
         self._mode: Literal["run", "plan", "ask", "machine"] = mode
         # Extra read-only paths layered into every run_command jail on top of
-        # protect_git/protect_agent6 (e.g. a running machine's own .asm.toml +
-        # scripts bundle, so an agent state can't rewrite them mid-run).
+        # the strict-profile protect_git bind (e.g. a running machine's own
+        # .asm.toml + scripts bundle, so an agent state can't rewrite them
+        # mid-run).
         self._extra_protect_paths = extra_protect_paths
         self._approver: _Approver = approver or _default_approver
         self._questioner: _Questioner = questioner or _default_questioner
@@ -364,10 +362,6 @@ class ToolDispatcher:
         # prefix to the manager. Discovered tool names are also added
         # to ``available_tool_names()`` so the workflow exposes them.
         self._mcp_manager = mcp_manager
-        # Name of the in-repo agent6 dir (``.agent6`` or the
-        # ``[agent6].workspace_subdir`` rename). Used by the write-refusal
-        # guard and the jail protect-paths so both track the configured name.
-        self._agent6_dir_name = _agent6_dir_path(self._root, config.agent6.workspace_subdir).name
         self._handlers: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
             Agent6DocsInput.TOOL_NAME: self._agent6_docs,
             ReadFileInput.TOOL_NAME: self._read_file,
@@ -571,7 +565,7 @@ class ToolDispatcher:
             raise ToolError(f"Invalid regex: {exc}") from exc
         hits: list[dict[str, Any]] = []
         targets: list[Path]
-        # Skip hidden files/dirs (.git, .agent6, ...) only when they are BELOW
+        # Skip hidden files/dirs (.git, ...) only when they are BELOW
         # the requested path, so an explicit `grep <pat> .github/` (or a hidden
         # file named directly) is still searched. `skip_base` is the requested
         # directory; for an explicitly-named file there is nothing to skip.
@@ -607,10 +601,7 @@ class ToolDispatcher:
         return {"hits": hits, "truncated": False}
 
     def _refuse_protected_writes(self, path: str, resolved: _SafePath | None = None) -> None:
-        """Apply every protected-dir write guard for an in-process edit."""
-        _refuse_protected_write(
-            path, self._agent6_dir_name, why="agent6 run state", resolved=resolved
-        )
+        """Refuse an in-process edit into ``.git`` (it bypasses the jail entirely)."""
         if self._config.sandbox.protect_git:
             _refuse_protected_write(path, ".git", why="git history/metadata", resolved=resolved)
 
@@ -1020,10 +1011,14 @@ class ToolDispatcher:
         # Resolve symlinks so the launcher's strip_prefix(cwd) check sees
         # canonical paths; the Rust side canonicalizes too as a backstop.
         protect_paths: list[Path] = []
-        if self._config.sandbox.protect_git:
+        # protect_paths are read-only bind-remounts, which only the strict
+        # profile (mount namespace) can apply. On hardened the cwd is blanket
+        # read-write -- there is no way to carve .git read-only without also
+        # denying new top-level entries (breaking toolchains), so .git is
+        # writable there. It is recoverable, gated by run_commands, and run
+        # state lives out of the workspace, so nothing sensitive is exposed.
+        if self._sandbox_profile == "strict" and self._config.sandbox.protect_git:
             protect_paths.append((self._root / ".git").resolve())
-        if self._config.sandbox.protect_agent6:
-            protect_paths.append((self._root / self._agent6_dir_name).resolve())
         protect_paths.extend(self._extra_protect_paths)
         # caller-provided timeout overrides the JailPolicy default
         # (600s). Used by verify_command + metric_command for fast failure

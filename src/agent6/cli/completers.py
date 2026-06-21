@@ -100,7 +100,7 @@ def _complete_model_provider(
 
 
 def _complete_run_ids(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: run ids (directory names under .agent6/runs/)."""
+    """argcomplete: run ids (directory names under the per-repo run-state dir)."""
     try:
         runs = _runs_dir(Path.cwd())
         if not runs.is_dir():
@@ -126,7 +126,7 @@ def _complete_plan_run_ids(prefix: str, **_kw: object) -> list[str]:
 
 
 def _complete_machine_ids(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: live machine instance ids (dirs under .agent6/machines/)."""
+    """argcomplete: live machine instance ids (dirs under the per-repo state dir's machines/)."""
     try:
         base = _machines_dir(Path.cwd())
         if not base.is_dir():

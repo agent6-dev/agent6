@@ -2,11 +2,15 @@
 # Copyright 2026 Eric Lesiuta
 """Task-graph package.
 
-The graph is the persistent representation of a single `agent6 run`. It lives at
-`.agent6/runs/<run-id>/` and is owned exclusively by the curator subprocess. All
-mutations from worker / planner / critic / alignment-guard agents go through the
-curator over a Unix-domain socket; the worker pool's landlock policy denies
-writes to `.agent6/` so this is a kernel-enforced invariant, not a convention.
+The graph is the persistent representation of a single `agent6 run`. It lives in
+the run dir (under the per-repo state dir). The curator owns the task GRAPH files
+(graph.jsonl, graph/*.md, snapshots); mutations from worker / planner / critic /
+alignment-guard agents go through the curator over a Unix-domain socket. The main
+agent process writes the resume snapshot (loop_state.json), the event log
+(logs.jsonl), and transcripts in-process. The run dir stays safe from jailed
+commands because it lives OUT of the workspace: jailed commands run on the repo
+cwd and the state dir is outside it, so safety comes from the out-of-tree
+location, not from curator-exclusivity or a single-writer invariant.
 
 Submodules:
   - `models`:   pydantic models for nodes, intents, snapshots, resume diffs.

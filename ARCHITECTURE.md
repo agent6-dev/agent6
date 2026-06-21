@@ -23,11 +23,13 @@ sign of the wrong design.
   optional TUI spawn, top-level dispatch. Picks a workflow. Config is
   resolved by [config_layer.py](src/agent6/config_layer.py) (built-in
   secure defaults < global `~/.config/agent6/config.toml` < per-repo
-  `.agent6/config.toml` < `--config FILE`), with paths + sudo/root
+  config < `--config FILE`), with paths + sudo/root
   resolution in [paths.py](src/agent6/paths.py) and API keys in
-  [secrets.py](src/agent6/secrets.py). The in-repo directory name
-  (`.agent6` by default; config and run state together) is settable via
-  the global-only `[agent6].workspace_subdir`. Roles: `worker` drives
+  [secrets.py](src/agent6/secrets.py). Per-repo state (config and run
+  state together) lives out of the workspace under
+  `$XDG_STATE_HOME/agent6/<repo-id>/`; the base is settable via the
+  global-only `[agent6].state_dir` or the `AGENT6_STATE_HOME` env var.
+  Roles: `worker` drives
   `run`/`resume`, `planner` drives `plan` (falls back to `worker`),
   `reviewer` drives `review` + the in-loop critic.
 - **workflows** ([src/agent6/workflows/](src/agent6/workflows/)): two
@@ -65,7 +67,8 @@ Notes:
   critic step, no separate reviewer agent. Multi-step work is the
   model calling the next tool in the same conversation.
 - **Snapshot before every LLM call.** A `snapshots/<step>.json` is
-  written to `.agent6/runs/<run-id>/` before each provider request.
+  written to the run directory (`<state-dir>/<repo-id>/runs/<run-id>/`,
+  out of the workspace) before each provider request.
   `agent6 resume <run-id>` rehydrates from the latest snapshot;
   combined with the per-tool transcripts under `transcripts/`, any
   interrupted run can be replayed deterministically up to the model
@@ -115,7 +118,7 @@ flowchart TD
     Tools -->|run_verify_command, run_metric_command, run_command| Jail[agent6-jail]
     Jail --> NS[user/mount/pid/ipc/uts/net NS]
     Jail --> Pivot[pivot_root into minimal rootfs]
-    Jail --> ROBinds[RO binds: .git, .agent6/ config + run state]
+    Jail --> ROBinds[strict only: RO bind .git]
     Jail --> Land[Landlock V1 rules]
     Jail --> Sec[seccomp filter]
     Jail --> Caps[capset 0 + NO_NEW_PRIVS]
@@ -130,43 +133,54 @@ flowchart TD
 - `git_ops.py` runs outside the jail (the agent's own process), so
   the RO bind of `.git` does not stop the workflow from committing. It
   stops the worker.
-- `protect_git` / `protect_agent6` work in both profiles. Strict uses
-  a bind-remount-RO on top of the workspace mount. Hardened (no
-  mount namespace) switches its Landlock setup from "RW on cwd" to
-  "R on cwd + RW on each top-level entry except the protect set".
-  Same end result for paths present at jail-launch time; hardened
-  additionally denies writes to *new* top-level entries created at
-  the cwd root (anything inside an existing top-level dir is
-  unaffected by the carve-out).
+- `protect_git` is strict-only. On strict the jail read-only
+  bind-remounts `.git` on top of the workspace mount. The hardened
+  profile (no mount namespace to carve with) grants blanket read-write
+  on the repo cwd, so `.git` is writable by jailed commands there.
+  Carving `.git` read-only on hardened would also deny new top-level
+  entries and break toolchains like cargo/pytest that create `target/`
+  or `.pytest_cache/`. The writable `.git` on hardened is acceptable:
+  it is gated by `run_commands` (default `ask`), recoverable
+  (branch-per-run, commits go through `git_ops`), and the surrounding
+  container is the blast radius.
+- Run state is safe from jailed commands because it lives out of the
+  workspace (`<state-dir>/<repo-id>/`), unreachable from the repo cwd
+  that jailed commands run on.
 
 ## Curator subprocess
 
-Run state (graph + transcripts + logs) is owned by a separate
-`agent6-curator` subprocess, not by the main agent process.
+The task graph is owned by a separate `agent6-curator` subprocess. The
+main agent process writes the rest of the run state (resume snapshot,
+event log, transcripts) in-process.
 
 ```mermaid
 flowchart LR
     Agent[agent6 run<br/>main process] -->|UDS JSON IPC| Curator[agent6-curator<br/>subprocess]
-    Curator -->|sole writer| RunDir[(.agent6/runs/&lt;run-id&gt;/)]
-    Curator -. own jail policy .-> JailC[agent6-jail<br/>RW only on .agent6/]
+    Curator -->|task graph| Graph[(graph.jsonl, graph/*.md, graph snapshots)]
+    Agent -->|in-process| Rest[(loop_state.json, logs.jsonl, transcripts)]
 ```
 
 The agent talks to the curator over a Unix domain socket. The curator
-runs under its own jail policy that allows writes only to `.agent6/`.
-This means even a bug in the agent process cannot scribble over the
-run directory in an unsafe way; the curator validates every IPC frame
-against a pydantic schema before applying it.
+validates every IPC frame against a pydantic schema before applying it,
+so the on-disk graph stays consistent. What keeps the whole run
+directory safe from jailed commands is its location: it lives out of the
+workspace (`<state-dir>/<repo-id>/`), unreachable from the repo cwd that
+jailed commands run on.
 
 ## Run state on disk
 
-Each run's directory `.agent6/runs/<run-id>/` holds:
+Each run's directory `<state-dir>/<repo-id>/runs/<run-id>/` holds:
 
-- `graph.jsonl`: append-only journal of every task-graph mutation.
-- `graph.dot`: current task graph, regenerated atomically.
-- `nodes/*.md`: one markdown file per task node, rewritten atomically.
-- `logs.jsonl`: the structured event stream (below).
-- `snapshots/`: per-tool-call JSON snapshots that drive `agent6 resume`.
-- `transcripts/`: full provider request/response pairs for replay.
+- `graph.jsonl`: append-only journal of every task-graph mutation
+  (curator-owned).
+- `graph/*.md`: one markdown file per task node, rewritten atomically
+  (curator-owned).
+- `logs.jsonl`: the structured event stream (below), written by the
+  main process.
+- `loop_state.json`: the resume snapshot that drives `agent6 resume`,
+  written by the main process.
+- `transcripts/`: full provider request/response pairs for replay,
+  written by the main process.
 
 The `logs.jsonl` vocabulary is small and stable: the data contract for
 any external viewer (the fold to UI state lives in
@@ -209,7 +223,7 @@ graph`).
 | Provider clients                 | [src/agent6/providers/](src/agent6/providers/)                        |
 | Knowledge graph (curator)        | [src/agent6/graph/](src/agent6/graph/)                                |
 | Event log + UI fold              | [src/agent6/events.py](src/agent6/events.py), [src/agent6/ui/](src/agent6/ui/) |
-| Run state on disk                | `.agent6/runs/<run-id>/`                                              |
+| Run state on disk                | `<state-dir>/<repo-id>/runs/<run-id>/` (out of the workspace)         |
 
 ## Pre-1.0 stability
 

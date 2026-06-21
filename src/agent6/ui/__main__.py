@@ -11,7 +11,7 @@ from pathlib import Path
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m agent6.ui")
-    parser.add_argument("--watch", required=True, help="Run directory to tail (.agent6/runs/<id>)")
+    parser.add_argument("--watch", required=True, help="Run directory to tail (<run-dir>)")
     parser.add_argument(
         "--exit-on-end",
         action="store_true",

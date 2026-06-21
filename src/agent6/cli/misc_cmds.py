@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 from agent6.budget import BudgetExceeded, BudgetTracker
-from agent6.cli._common import _agent6_dir, _check_provider_keys, _runs_dir
+from agent6.cli._common import _check_provider_keys, _runs_dir, _state_dir
 from agent6.cli.plan_watch import _most_recent_run_id
 from agent6.cli.providers import _build_role_provider
 from agent6.config import (
@@ -54,7 +54,7 @@ from agent6.workflows.review import CodeReviewError, run_review
 
 def _cmd_memory_add(scope: MemoryScope, body: str) -> int:
     try:
-        entry = memory_add(_agent6_dir(Path.cwd()), scope, body)
+        entry = memory_add(_state_dir(Path.cwd()), scope, body)
     except Agent6MemoryError as exc:
         print(f"MEMORY ERROR: {exc}", file=sys.stderr)
         return 2
@@ -64,7 +64,7 @@ def _cmd_memory_add(scope: MemoryScope, body: str) -> int:
 
 def _cmd_memory_list(scope: MemoryScope | None, *, include_invalidated: bool) -> int:
     try:
-        entries = memory_list(_agent6_dir(Path.cwd()), scope)
+        entries = memory_list(_state_dir(Path.cwd()), scope)
     except Agent6MemoryError as exc:
         print(f"MEMORY ERROR: {exc}", file=sys.stderr)
         return 2
@@ -86,7 +86,7 @@ def _cmd_memory_list(scope: MemoryScope | None, *, include_invalidated: bool) ->
 
 def _cmd_memory_invalidate(memory_id: str, reason: str) -> int:
     try:
-        entry = memory_invalidate(_agent6_dir(Path.cwd()), memory_id, reason)
+        entry = memory_invalidate(_state_dir(Path.cwd()), memory_id, reason)
     except Agent6MemoryError as exc:
         print(f"MEMORY ERROR: {exc}", file=sys.stderr)
         return 2
@@ -155,7 +155,7 @@ def _cmd_history_graph(run_id: str) -> int:
         target_id = candidates[0].name
         print(f"[agent6] showing graph for most recent run: {target_id}", file=sys.stderr)
 
-    layout = RunLayout(state_dir=_agent6_dir(Path.cwd()), run_id=target_id)
+    layout = RunLayout(state_dir=_state_dir(Path.cwd()), run_id=target_id)
     nodes = load_graph(layout)
     if not nodes:
         print(f"ERROR: run {target_id} has no persisted graph nodes", file=sys.stderr)
@@ -210,10 +210,16 @@ def _offer_git_setup(root: Path, created: tuple[Path, ...], *, interactive: bool
         print(f"  git init failed: {exc}")
         return
     print("  created: .git/  (git init)")
-    # Commit only the scaffold git will actually track, when the (default)
-    # .gitignore was written it covers the per-repo config under the agent6 dir,
-    # so unignored() drops it; we never `add -f` around the user's .gitignore.
-    rel = unignored(root, tuple(str(p.relative_to(root)) for p in created if p.exists()))
+    # Commit only the scaffold git tracks (AGENTS.md, .gitignore). The per-repo
+    # config lives out of the workspace under the state dir, so it is never a
+    # candidate here; filter to paths under root defensively, then unignored()
+    # drops anything the just-written .gitignore covers so we never `add -f`.
+    rel = unignored(
+        root,
+        tuple(
+            str(p.relative_to(root)) for p in created if p.exists() and root in p.resolve().parents
+        ),
+    )
     if not rel:
         print("  (nothing to commit — the created files are all gitignored)")
         return
@@ -241,9 +247,11 @@ def _cmd_init(*, force: bool, profile: str, assume_yes: bool = False) -> int:
         interactive=interactive,
     )
     if rc == 0:
+        # Only the repo-tracked scaffold; the per-repo config is out of the
+        # workspace (under the state dir) and never committed.
         _offer_git_setup(
             cwd,
-            (target, cwd / "AGENTS.md", cwd / ".gitignore"),
+            (cwd / "AGENTS.md", cwd / ".gitignore"),
             interactive=interactive,
         )
     # Don't leave root-owned scaffolding in the user's repo (sudo case).
@@ -279,7 +287,7 @@ def _cmd_diff(*, run_id: str, stat: bool, paths: tuple[str, ...]) -> int:  # noq
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
 
-    layout = RunLayout(state_dir=_agent6_dir(cwd), run_id=target_id)
+    layout = RunLayout(state_dir=_state_dir(cwd), run_id=target_id)
     if not layout.manifest_path.is_file():
         print(
             f"ERROR: run {target_id} has no manifest.json "
@@ -413,7 +421,7 @@ def _cmd_review(  # noqa: PLR0911
         max_output_tokens=cfg.budget.max_output_tokens,
         max_usd=cfg.budget.best_effort_usd_limit,
     )
-    layout_root = _agent6_dir(root) / "reviews"
+    layout_root = _state_dir(root) / "reviews"
     layout_root.mkdir(parents=True, exist_ok=True)
     transcript_sink = TranscriptSink(layout_root)
 

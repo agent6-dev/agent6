@@ -8,7 +8,7 @@ timestamp tail followed by two random. Example: ``sunny-otter-K4Q7B2``.
 
 The leading 4 chars of the suffix encode the low 20 bits of the
 current millisecond timestamp and are lexicographically sortable, so
-directory listings under ``.agent6/runs/`` are mostly chronological
+directory listings under the per-repo run-state dir are mostly chronological
 within the same ``<adjective>-<noun>`` pair (the timestamp rolls over
 roughly every 17 minutes, which is fine for the typical dev session
 listing). The trailing 2 chars supply 10 bits of entropy to keep IDs

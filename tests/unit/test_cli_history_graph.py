@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from agent6.cli import main
+from agent6.config_layer import resolved_state_dir
 from agent6.graph.models import TaskNode
 from agent6.graph.storage import RunLayout, write_node
 
@@ -51,7 +52,7 @@ def _seed_tree(tmp_path: Path, run_id: str) -> None:
         sub1b
       step2 (failed)
     """
-    layout = RunLayout(state_dir=tmp_path / ".agent6", run_id=run_id)
+    layout = RunLayout(state_dir=resolved_state_dir(tmp_path), run_id=run_id)
     layout.ensure()
     root_id = "0" * 25 + "R"
     s1_id = "0" * 25 + "1"
@@ -101,7 +102,7 @@ def test_history_graph_uses_most_recent_when_no_arg(
     _seed_tree(tmp_path, "older-run-AAAA11")
     _seed_tree(tmp_path, "newer-run-BBBB22")
     # Touch the newer run to make sure mtime ordering picks it.
-    (tmp_path / ".agent6" / "runs" / "newer-run-BBBB22").touch()
+    (resolved_state_dir(tmp_path) / "runs" / "newer-run-BBBB22").touch()
     rc = main(["history", "graph"])
     out = capsys.readouterr().out
     assert rc == 0
@@ -122,7 +123,7 @@ def test_history_graph_empty_graph_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    layout = RunLayout(state_dir=tmp_path / ".agent6", run_id="empty-run-CCCC33")
+    layout = RunLayout(state_dir=resolved_state_dir(tmp_path), run_id="empty-run-CCCC33")
     layout.ensure()
     rc = main(["history", "graph", "empty-run-CCCC33"])
     err = capsys.readouterr().err

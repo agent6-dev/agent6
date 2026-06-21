@@ -14,6 +14,7 @@ from agent6.cli.egress import (
     _provider_endpoints,  # pyright: ignore[reportPrivateUsage]
 )
 from agent6.config import SandboxConfig, validate_config
+from agent6.config_layer import resolved_state_dir
 from agent6.sandbox.broker import Endpoint
 
 
@@ -116,7 +117,7 @@ def test_set_preserves_sibling_keys(iso: Path) -> None:
 
 def test_set_repo_writes_repo_config(iso: Path) -> None:
     assert _run(["config", "set", "sandbox.agent_network", "open", "--repo"]) == 0
-    repo_cfg = (iso / ".agent6" / "config.toml").read_text(encoding="utf-8")
+    repo_cfg = (resolved_state_dir(iso) / "config.toml").read_text(encoding="utf-8")
     assert "[sandbox]" in repo_cfg
     assert 'agent_network = "open"' in repo_cfg
     assert not (iso / "g" / "config.toml").is_file()

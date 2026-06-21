@@ -125,7 +125,6 @@ _LANG_TABLE: Final[dict[str, tuple[str, str]]] = {
 # Directories never indexed. Hard-coded; we are not parsing .gitignore here.
 _DEFAULT_EXCLUDES: Final[tuple[str, ...]] = (
     ".git",
-    ".agent6",
     ".venv",
     "venv",
     "node_modules",

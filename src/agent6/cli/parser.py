@@ -32,8 +32,9 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         metavar="FILE",
         help=(
             "Explicit config file, layered on top of the global"
-            " (~/.config/agent6/config.toml) and per-repo (.agent6/config.toml)"
-            " configs. Default: use only those two layers + built-in defaults."
+            " (~/.config/agent6/config.toml) and the per-repo config"
+            " (out of the workspace, under the state dir). Default: use only"
+            " those two layers + built-in defaults."
         ),
     )
     parser.add_argument(
@@ -72,7 +73,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         dest="continue_run",
         action="store_true",
         help=(
-            "Resume the most recent run under .agent6/runs/ for this cwd"
+            "Resume the most recent run for this cwd"
             " instead of starting a new one. Mutually exclusive with a"
             " task argument."
         ),
@@ -102,7 +103,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         metavar="RUN_ID",
         help=(
             "Use the plan.md from a prior `agent6 plan` run (resolved"
-            " under .agent6/runs/, exact or unambiguous prefix) as the"
+            " under the per-repo run-state dir, exact or unambiguous prefix) as the"
             " task description. Mutually exclusive with a positional task."
         ),
     )
@@ -181,7 +182,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         metavar="RUN_ID",
         help=(
             "Ask about a prior run: seed its task, outcome, diff, and key events"
-            " from .agent6/runs/<id>/ (exact id or unambiguous prefix)."
+            " from the run dir (exact id or unambiguous prefix)."
         ),
     )
     ask_run.completer = _complete_run_ids  # type: ignore[attr-defined]
@@ -189,7 +190,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "--continue",
         dest="ask_continue",
         action="store_true",
-        help="Like --run, but use the most recent run under .agent6/runs/.",
+        help="Like --run, but use the most recent run.",
     )
     ask_p.add_argument(
         "--file",
@@ -203,7 +204,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "--list",
         dest="ask_list",
         action="store_true",
-        help="List saved asks under .agent6/asks/ (newest first) and exit.",
+        help="List saved asks under the per-repo state dir (asks subdir, newest first) and exit.",
     )
     ask_p.add_argument(
         "-i",
@@ -219,13 +220,13 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
 
     watch_p = sub.add_parser(
         "watch",
-        help="Read-only live view of a run (defaults to most recent under .agent6/runs).",
+        help="Read-only live view of a run (defaults to the most recent run).",
     )
     watch_run = watch_p.add_argument(
         "run_id",
         nargs="?",
         default="",
-        help="Run id under .agent6/runs/ (omit for the most recent run).",
+        help="Run id (omit for the most recent run).",
     )
     watch_run.completer = _complete_run_ids  # type: ignore[attr-defined]
     watch_p.add_argument(
@@ -255,7 +256,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
 
     resume_p = sub.add_parser("resume", help="Resume a paused run from its snapshot.")
-    resume_run = resume_p.add_argument("run_id", help="Run id under .agent6/runs/.")
+    resume_run = resume_p.add_argument("run_id", help="Run id under the per-repo run-state dir.")
     resume_run.completer = _complete_run_ids  # type: ignore[attr-defined]
     resume_p.add_argument(
         "--config",
@@ -308,7 +309,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     config_fill.add_argument(
         "--repo",
         action="store_true",
-        help="Write .agent6/config.toml instead of the global config.",
+        help="Write the per-repo config instead of the global config.",
     )
     config_fill.add_argument(
         "--force", action="store_true", help="Overwrite the target file if it already exists."
@@ -345,7 +346,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         p.add_argument(
             "--repo",
             action="store_true",
-            help="Write .agent6/config.toml instead of the global config.",
+            help="Write the per-repo config instead of the global config.",
         )
         machine_arg = p.add_argument(
             "--machine",
@@ -399,7 +400,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     connect_p.add_argument(
         "--repo",
         action="store_true",
-        help="Write the [providers.*] block to .agent6/config.toml instead of the global config.",
+        help="Write the [providers.*] block to the per-repo config instead of the global config.",
     )
 
     model_p = sub.add_parser(
@@ -448,7 +449,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     model_p.add_argument(
         "--repo",
         action="store_true",
-        help="Write to .agent6/config.toml instead of the global config.",
+        help="Write to the per-repo config instead of the global config.",
     )
 
     mem_p = sub.add_parser("memory", help="Manage persistent agent memories.")
@@ -498,7 +499,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
 
     init_p = sub.add_parser(
         "init",
-        help="Scaffold the per-repo config (.agent6/config.toml), AGENTS.md, and .gitignore.",
+        help="Scaffold the per-repo config, AGENTS.md, and .gitignore.",
     )
     init_p.add_argument(
         "--force",
@@ -516,8 +517,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         default="py",
         help=(
             "Pick a starter verify_command for your language. "
-            "py (default): `uv run pytest -x`. "
-            "rust: `cargo test`. "
+            "py (default): `.venv/bin/python -m pytest -x`. "
+            "rust: `cargo test --quiet`. "
             "node: `npm test --silent`. "
             "Edit the config afterward to match your real pipeline."
         ),
@@ -663,7 +664,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Report a machine instance's current state, spend, and next wake. Read-only.",
     )
     machine_status_id = machine_status.add_argument(
-        "machine_id", help="Machine id (directory under .agent6/machines/)."
+        "machine_id", help="Machine id (directory under the per-repo state dir, machines subdir)."
     )
     machine_status_id.completer = _complete_machine_ids  # type: ignore[attr-defined]
     machine_poke = machine_sub.add_parser(
@@ -671,7 +672,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Signal a waiting machine to wake on its next check (drops a signal file).",
     )
     machine_poke_id = machine_poke.add_argument(
-        "machine_id", help="Machine id (directory under .agent6/machines/)."
+        "machine_id", help="Machine id (directory under the per-repo state dir, machines subdir)."
     )
     machine_poke_id.completer = _complete_machine_ids  # type: ignore[attr-defined]
     machine_replay = machine_sub.add_parser(
@@ -679,7 +680,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Deterministically replay a machine's journal offline (no world I/O).",
     )
     machine_replay_id = machine_replay.add_argument(
-        "machine_id", help="Machine id (directory under .agent6/machines/)."
+        "machine_id", help="Machine id (directory under the per-repo state dir, machines subdir)."
     )
     machine_replay_id.completer = _complete_machine_ids  # type: ignore[attr-defined]
 

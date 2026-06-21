@@ -95,7 +95,7 @@ def test_home_app_lists_runs_and_opens_new_work_modal(tmp_path: Path) -> None:
     _write_run(a6, "runs", "r1", [{"type": "run.start", "mode": "run", "user_task": "do [x]"}])
 
     async def scenario() -> None:
-        app = Agent6HomeApp(a6)
+        app = Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             from textual.widgets import DataTable
 

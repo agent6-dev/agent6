@@ -23,13 +23,12 @@ from typing import Any, Literal
 from agent6 import __version__
 from agent6.budget import BudgetTracker
 from agent6.cli._common import (
-    _agent6_dir,
     _BudgetOverrides,
     _check_provider_keys,
-    _ensure_agent6_gitignored,
     _explicit_usd_flag_error,
     _runs_dir,
     _start_mcp_manager_if_enabled,
+    _state_dir,
     detect_env,
 )
 from agent6.cli.egress import (
@@ -160,10 +159,10 @@ def _ask_question_snippet(transcript: str) -> str:
 
 
 def _cmd_ask_list() -> int:
-    """`agent6 ask --list`: enumerate saved asks under .agent6/asks/."""
-    asks_dir = _agent6_dir(Path.cwd()) / "asks"
+    """`agent6 ask --list`: enumerate saved asks under the per-repo state dir (asks subdir)."""
+    asks_dir = _state_dir(Path.cwd()) / "asks"
     if not asks_dir.is_dir():
-        print("No asks yet (.agent6/asks/ does not exist).")
+        print("No asks yet (the asks subdir under the per-repo state dir does not exist).")
         return 0
     dirs = sorted(
         (d for d in asks_dir.iterdir() if d.is_dir()),
@@ -248,7 +247,7 @@ def _build_ask_run_digest(cwd: Path, run_id: str, *, latest: bool) -> str | None
         except RunIdError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             return None
-    layout = RunLayout(state_dir=_agent6_dir(cwd), run_id=target)
+    layout = RunLayout(state_dir=_state_dir(cwd), run_id=target)
     if not layout.manifest_path.is_file():
         print(f"ERROR: run {target} has no manifest.json", file=sys.stderr)
         return None
@@ -275,15 +274,11 @@ def _build_ask_run_digest(cwd: Path, run_id: str, *, latest: bool) -> str | None
     diff_excerpt = diff[:cap]
     if len(diff) > cap:
         diff_excerpt += "\n... (diff truncated; read more with git)"
-    try:
-        rel = layout.run_dir.relative_to(cwd)
-    except ValueError:
-        rel = layout.run_dir
     return (
         f'<prior-run id="{target}">\n'
-        f"This question is about a PRIOR agent6 run. Its files live under `{rel}/` --"
-        f" read `{rel}/logs.jsonl` or `{rel}/transcripts/` with `read_file` if you"
-        f" need more than this digest.\n\n"
+        "This question is about a PRIOR agent6 run. Its run state lives outside the"
+        " workspace and is not reachable with read_file, so everything you have"
+        " about it is in this digest.\n\n"
         f"## Run task\n{manifest.get('user_task', '')}\n\n"
         f"## Outcome / key events\n{_summarize_run_log(layout.logs_path)}\n\n"
         f"## Diff base_sha..{head_ref} (truncated)\n```diff\n{diff_excerpt}\n```\n"
@@ -538,7 +533,7 @@ _REPL_HELP = (
     "  /mcp                     - list MCP servers + tools currently wired\n"
     "                              into the agent's tool surface\n"
     "  /init                    - run `agent6 init` in the current cwd to\n"
-    "                              (re)write .agent6/config.toml + AGENTS.md scaffolds\n"
+    "                              (re)write per-repo config + AGENTS.md scaffolds\n"
     "  /undo                    - git revert HEAD (forward revert of the\n"
     "                              last auto-commit; safe under git policy).\n"
     "                              History is preserved: a NEW commit is\n"
@@ -1051,7 +1046,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         print(missing, file=sys.stderr)
         return 2
 
-    # Git pre-flight (verify identity, ignore .agent6/).
+    # Git pre-flight (verify identity).
     # The auto-commit-on-verify-pass behaviour requires a clean working tree,
     # so the same git assumptions apply. Skipping these left first-time runs
     # crashing on dirty-tree or missing-identity errors deep into a paid run.
@@ -1085,16 +1080,14 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         base_branch = pre_status.branch
 
     # Layout: standard run-dir scaffolding for transcripts + logs. ask sessions
-    # live under .agent6/asks/ to stay separate from real runs.
+    # live under the per-repo state dir (asks subdir) to stay separate from real runs.
     effective_run_id = run_id or new_friendly_id()
-    agent6_dir = _agent6_dir(cwd)
+    state_dir = _state_dir(cwd)
     layout = RunLayout(
-        state_dir=agent6_dir,
+        state_dir=state_dir,
         run_id=effective_run_id,
         subdir="asks" if mode == "ask" else "runs",
     )
-    if mode != "ask":
-        _ensure_agent6_gitignored(cwd, agent6_dir=agent6_dir, identity=identity)
     layout.ensure()
     # Drop stale approve/ask/steer answers + tui.pid from a prior session (the
     # id counters reset on resume, so an old answer must not be read instead of
@@ -1216,7 +1209,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     with contextlib.suppress(FileNotFoundError):
         sock_link.unlink()
     sock_link.symlink_to(sock_path)
-    curator_proc = spawn_curator(agent6_dir, effective_run_id, sock_path)
+    curator_proc = spawn_curator(state_dir, effective_run_id, sock_path)
     print(f"[agent6] run id: {effective_run_id}", file=sys.stderr)
 
     # Spawn any configured MCP servers BEFORE the workflow
@@ -1313,7 +1306,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
             mcp_manager.close()
         _stop_egress(egress_broker, egress_sock_dir)
         # Never leave root-owned run state in the user's repo (sudo case).
-        chown_to_real_user(agent6_dir)
+        chown_to_real_user(state_dir)
 
     if interrupted:
         return 130
@@ -1404,15 +1397,15 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     invocation runaway-cost circuit breaker.
     """
     cwd = Path.cwd()
-    agent6_dir = _agent6_dir(cwd)
-    runs_dir = agent6_dir / "runs"
+    state_dir = _state_dir(cwd)
+    runs_dir = state_dir / "runs"
     try:
         resolved = resolve_run_id(runs_dir, run_id)
     except RunIdError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     run_id = resolved
-    layout = RunLayout(state_dir=agent6_dir, run_id=run_id)
+    layout = RunLayout(state_dir=state_dir, run_id=run_id)
     if not layout.run_dir.is_dir():
         print(f"ERROR: no such run dir: {layout.run_dir}", file=sys.stderr)
         return 2
@@ -1495,7 +1488,6 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     except GitError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
-    _ensure_agent6_gitignored(cwd, agent6_dir=agent6_dir, identity=identity)
 
     transcript_sink = TranscriptSink(layout.transcripts_dir)
     events = EventSink(layout.logs_path)
@@ -1556,7 +1548,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     with contextlib.suppress(FileNotFoundError):
         sock_link.unlink()
     sock_link.symlink_to(sock_path)
-    curator_proc = spawn_curator(agent6_dir, run_id, sock_path)
+    curator_proc = spawn_curator(state_dir, run_id, sock_path)
     print(f"[agent6] resume run id: {run_id}", file=sys.stderr)
 
     mcp_manager = _start_mcp_manager_if_enabled(cfg)
@@ -1627,7 +1619,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
             mcp_manager.close()
         _stop_egress(egress_broker, egress_sock_dir)
         # Never leave root-owned run state in the user's repo (sudo case).
-        chown_to_real_user(agent6_dir)
+        chown_to_real_user(state_dir)
 
     if interrupted:
         return 130

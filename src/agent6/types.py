@@ -49,8 +49,8 @@ class JailPolicy:
     # child's view. Strict re-binds them RO on top of the workspace mount;
     # hardened switches its Landlock rules from "RW on cwd" to "R on cwd
     # + RW on each top-level entry except these". Used to keep an
-    # LLM-driven ``run_command`` from rewriting ``.git`` or ``.agent6/``
-    # (config + run state) even though those live inside the project root.
+    # LLM-driven ``run_command`` from rewriting ``.git`` even though it
+    # lives inside the project root.
     extra_protect_paths: tuple[Path, ...] = ()
     timeout_s: float = 600.0
 

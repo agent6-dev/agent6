@@ -14,6 +14,7 @@ from agent6.cli.run import (
     _build_ask_run_digest,  # pyright: ignore[reportPrivateUsage]
     _seed_files,  # pyright: ignore[reportPrivateUsage]
 )
+from agent6.config_layer import resolved_state_dir
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -24,7 +25,7 @@ def _git(cwd: Path, *args: str) -> str:
 
 def _make_run(tmp_path: Path) -> str:
     # A repo with a base commit + a run branch that changed a file, plus a
-    # synthetic .agent6/runs/<id>/ manifest + logs.jsonl.
+    # synthetic runs/<id>/ manifest + logs.jsonl under the out-of-tree state dir.
     _git(tmp_path, "init", "-q")
     _git(tmp_path, "config", "user.email", "t@t")
     _git(tmp_path, "config", "user.name", "t")
@@ -36,7 +37,7 @@ def _make_run(tmp_path: Path) -> str:
     (tmp_path / "m.py").write_text("x = 2  # changed by the run\n", encoding="utf-8")
     _git(tmp_path, "commit", "-aqm", "run change")
     rid = "sunny-otter-AAA111"
-    run_dir = tmp_path / ".agent6" / "runs" / rid
+    run_dir = resolved_state_dir(tmp_path) / "runs" / rid
     run_dir.mkdir(parents=True)
     (run_dir / "manifest.json").write_text(
         json.dumps(
@@ -69,8 +70,10 @@ def test_ask_run_digest_includes_task_diff_and_outcome(
     assert "make x equal 2" in digest  # the run's task
     assert "changed by the run" in digest  # the diff
     assert "reason=finish_run" in digest  # the outcome
-    assert rid in digest  # points at the run dir
-    assert ".agent6/runs/" in digest
+    assert rid in digest  # identifies the prior run
+    # Run state is out of the workspace; the digest says so rather than pointing
+    # the jailed worker at unreachable paths.
+    assert "outside the workspace" in digest
 
 
 def test_ask_run_digest_continue_picks_a_run(
@@ -85,7 +88,7 @@ def test_ask_run_digest_continue_picks_a_run(
 def test_ask_run_digest_unknown_run_returns_none(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (tmp_path / ".agent6" / "runs").mkdir(parents=True)
+    (resolved_state_dir(tmp_path) / "runs").mkdir(parents=True)
     monkeypatch.chdir(tmp_path)
     assert _build_ask_run_digest(tmp_path, "nope", latest=False) is None
 
@@ -142,7 +145,7 @@ def test_ask_repl_multi_turn_carries_context(
         def format_summary(self) -> str:
             return "cost: $0.00"
 
-    layout = RunLayout(state_dir=tmp_path / ".agent6", run_id="x", subdir="asks")
+    layout = RunLayout(state_dir=resolved_state_dir(tmp_path), run_id="x", subdir="asks")
     layout.run_dir.mkdir(parents=True)
     wf = _FakeWf()
     inputs = iter(["a follow-up", "/quit"])

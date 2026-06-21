@@ -405,7 +405,7 @@ in the plan and leave verification for the execution pass.
 <plan-output>
 The plan you pass to `finish_planning(plan_markdown=...)` is the single
 artefact this whole pass produces. It is written to
-`.agent6/runs/<run-id>/plan.md` and consumed verbatim by
+`<run-dir>/plan.md` and consumed verbatim by
 `agent6 run --from-plan <run-id>` (which feeds it as the new run's
 task description). Suggested skeleton:
 
@@ -1592,7 +1592,7 @@ class Workflow:
     # DAG-as-tool handlers raise ToolError and the loop runs without DAG
     # persistence (still usable for bench / one-off tasks). When wired,
     # Workflow.run() seeds a root task and the agent can add subtasks
-    # and update statuses; survives crashes via .agent6/runs/<id>/graph.jsonl.
+    # and update statuses; survives crashes via <run-dir>/graph.jsonl.
     graph_client: GraphClient | None = None
     # Per-invocation token budget tracker (the same instance wired into
     # the provider). When present the loop can read how much budget

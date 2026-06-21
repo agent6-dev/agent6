@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from agent6.cli import main
+from agent6.config_layer import resolved_state_dir
 from agent6.machine import MachineJournal
 
 WAITER_DELAYED = """
@@ -56,7 +57,7 @@ def test_run_exit_on_wait_yields_waiting(
     out = capsys.readouterr().out
     assert "WAITING" in out
     # The wait was armed and persisted.
-    root = tmp_path / ".agent6" / "machines" / "waiter_delayed"
+    root = resolved_state_dir(tmp_path) / "machines" / "waiter_delayed"
     pending = MachineJournal(root).read_pending_wait()
     assert pending is not None
     assert pending.state == "poll"
@@ -97,7 +98,7 @@ def test_poke_drops_signal_for_waiting_machine(
     assert code == 0
     assert "poked" in capsys.readouterr().out
     # The signal is now pending for the next take_signal().
-    root = tmp_path / ".agent6" / "machines" / "waiter_delayed"
+    root = resolved_state_dir(tmp_path) / "machines" / "waiter_delayed"
     assert MachineJournal(root).take_signal() is True
 
 

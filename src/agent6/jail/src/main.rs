@@ -54,7 +54,7 @@ struct Policy {
     /// these" — same end result for files that exist at jail-launch time,
     /// at the cost of denying writes to new top-level entries created
     /// after the jail starts. Used to keep an LLM-driven `run_command`
-    /// from rewriting `.git` or `.agent6/`. Each entry
+    /// from rewriting `.git`. Each entry
     /// must be absolute; entries that don't exist on disk are skipped.
     #[serde(default)]
     extra_protect_paths: Vec<PathBuf>,
@@ -266,7 +266,7 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
     .map_err(io_err)?;
     // Re-bind each protect path RO on top of the workspace mount. Subdirs
     // and individual files are both supported; non-existent entries are
-    // skipped silently so a project without (e.g.) a `.agent6/` dir is not
+    // skipped silently so a project without (e.g.) a `.git` dir is not
     // a fatal config error.
     for src in &policy.extra_protect_paths {
         // Canonicalize so a symlink at .git/ can't trick us into bind-mounting
@@ -424,8 +424,9 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
 }
 
 fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
-    // Strict profile runs inside the pivoted rootfs; /workspace is the writable
-    // mount and /usr /bin /lib /lib64 /etc /tmp /dev are read-only bind mounts.
+    // Strict profile runs inside the pivoted rootfs; /workspace (the cwd bind)
+    // and /tmp (a fresh private tmpfs, see setup_rootfs) are writable, and
+    // /usr /bin /lib /lib64 /etc /dev are read-only bind mounts.
     // ABI::V2 (not V1): V2 adds LANDLOCK_ACCESS_FS_REFER. A ruleset that
     // does not handle REFER keeps ABI-1 semantics where EVERY cross-directory
     // rename/hardlink fails with EXDEV, which breaks `cargo` (hardlinks build
@@ -449,7 +450,17 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
             .add_rule(PathBeneath::new(fd, access_all))
             .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("rule /workspace: {e}")))?;
     }
-    for ro in ["/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/tmp", "/dev"] {
+    // /tmp is a fresh private tmpfs in this jail's own mount namespace (mounted
+    // in setup_rootfs), discarded when the jail exits. Grant it RW so toolchain
+    // caches that key off $HOME or TMPDIR work (go-build, cargo, pip/uv); the
+    // tmpfs is isolated, so RW here cannot reach the host. Mirrors the hardened
+    // profile, which already grants /tmp RW.
+    if let Ok(fd) = PathFd::new("/tmp") {
+        ruleset = ruleset
+            .add_rule(PathBeneath::new(fd, access_all))
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("rule /tmp: {e}")))?;
+    }
+    for ro in ["/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/dev"] {
         if let Ok(fd) = PathFd::new(ro) {
             ruleset = ruleset
                 .add_rule(PathBeneath::new(fd, access_read_exec))

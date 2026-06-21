@@ -20,8 +20,8 @@ Tool surface:
     run_verify              - run the configured verify command in jail.
     run_in_sandbox          - run arbitrary argv in jail (gated).
     apply_patch_in_sandbox  - apply a unified diff + re-run verify.
-    query_dag               - load .agent6/runs/<run>/graph/*.md as nodes.
-    list_runs               - enumerate .agent6/runs/ with manifest summary.
+    query_dag               - load <run-dir>/graph/*.md as nodes.
+    list_runs               - enumerate runs (per-repo run-state dir) with manifest summary.
 """
 
 from __future__ import annotations
@@ -35,9 +35,8 @@ from typing import IO, Any
 
 from agent6 import __version__
 from agent6.config import Config
-from agent6.config_layer import load_effective
+from agent6.config_layer import load_effective, resolved_state_dir
 from agent6.graph.storage import RunLayout, load_graph
-from agent6.paths import agent6_dir
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 
 _PROTOCOL_VERSION = "2024-11-05"
@@ -132,7 +131,7 @@ class MCPServer:
     ) -> None:
         self._root = root.resolve()
         self._config = config
-        self._agent6_dir = agent6_dir(self._root, config.agent6.workspace_subdir)
+        self._agent6_dir = resolved_state_dir(self._root)
         self._stdin = stdin
         self._stdout = stdout
         self._dispatcher = ToolDispatcher(
@@ -238,7 +237,7 @@ class MCPServer:
             _ToolSpec(
                 name="list_runs",
                 description=(
-                    "Enumerate runs under .agent6/runs/ (most-recent first) with"
+                    "Enumerate runs under the per-repo run-state dir (most-recent first) with"
                     " their manifest summary (task, base_sha, models, ...)."
                 ),
                 input_schema={

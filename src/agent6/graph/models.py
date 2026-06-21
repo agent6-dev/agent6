@@ -84,7 +84,7 @@ class TouchedFile(BaseModel):
 
 
 class NodeSnapshot(BaseModel):
-    """`.agent6/runs/<id>/snapshots/<node-id>.json` content."""
+    """`<run-dir>/snapshots/<node-id>.json` content."""
 
     model_config = _MODEL_CONFIG
 

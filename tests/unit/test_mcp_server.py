@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 
 from agent6.config import Config, load_config
+from agent6.config_layer import resolved_state_dir
 from agent6.graph.models import TaskNode
 from agent6.graph.storage import RunLayout, write_node
 from agent6.mcp_server import MCPServer, _deny_approver  # pyright: ignore[reportPrivateUsage]
@@ -36,7 +37,6 @@ profile = "auto"
 agent_network = "open"
 run_commands = "no"
 protect_git = true
-protect_agent6 = true
 [git]
 require_clean_worktree = true
 auto_stash = false
@@ -198,7 +198,7 @@ def test_list_runs_empty(tmp_path: Path) -> None:
 def test_list_runs_reads_manifests(tmp_path: Path) -> None:
     import os
 
-    runs = tmp_path / ".agent6" / "runs"
+    runs = resolved_state_dir(tmp_path) / "runs"
     (runs / "run-a").mkdir(parents=True)
     (runs / "run-b").mkdir(parents=True)
     (runs / "run-a" / "manifest.json").write_text(json.dumps({"task": "alpha"}), encoding="utf-8")
@@ -245,7 +245,7 @@ def test_query_dag_missing_run_returns_tool_error(tmp_path: Path) -> None:
 
 
 def test_query_dag_reads_persisted_nodes(tmp_path: Path) -> None:
-    layout = RunLayout(state_dir=tmp_path / ".agent6", run_id="r1")
+    layout = RunLayout(state_dir=resolved_state_dir(tmp_path), run_id="r1")
     layout.ensure()
     node = TaskNode(
         id="01ARZ3NDEKTSV4RRFFQ69G5FAV",

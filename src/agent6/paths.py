@@ -6,9 +6,9 @@ Single source of truth for:
 
 - the global (user-level) config + secrets directory under XDG
   (``$XDG_CONFIG_HOME/agent6`` or ``~/.config/agent6``),
-- the per-repo config path (``./.agent6/config.toml``),
-- the run-state directory (``./.agent6`` by default, overridable from the
-  global config), and
+- the per-repo config path (``<state_dir>/config.toml``, out of the repo),
+- the run-state directory (``$XDG_STATE_HOME/agent6/<repo-id>`` by default,
+  overridable from the global config), and
 - the *real* operator when agent6 is invoked through ``sudo``, so we read
   the user's config/secrets (not root's) and never leave root-owned files
   scattered in their repository.
@@ -30,6 +30,7 @@ Security model (see SECURITY.md):
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import os
 import pwd
 from dataclasses import dataclass
@@ -145,47 +146,55 @@ def cache_dir(user: RealUser | None = None) -> Path:
     return user.home / ".cache" / "agent6"
 
 
-# Default name of the in-repo agent6 directory (config + run state). The
-# operator can rename it via ``[agent6].workspace_subdir`` in the GLOBAL
-# config only (the per-repo config lives inside this dir, so it cannot name
-# the dir that contains it).
-DEFAULT_WORKSPACE_SUBDIR = ".agent6"
+# Per-repo agent6 state lives OUT of the workspace, under an XDG state base,
+# namespaced by a per-repo id. Nothing the agent runs (a jailed command on its
+# own cwd) can reach it, and a checkout never carries an `.agent6/` dir.
+_STATE_DIR_ENV = "AGENT6_STATE_HOME"  # points at the agent6 state BASE dir itself
 
 
-def validate_workspace_subdir(name: str) -> str:
-    """Validate a ``[agent6].workspace_subdir`` value.
+def state_base(user: RealUser | None = None) -> Path:
+    """The agent6 state BASE directory (per-repo config + run state).
 
-    Must be a bare directory name living directly under the repo root: no
-    path separators, no ``.``/``..``, not absolute. Returns the name on
-    success; raises ``ValueError`` otherwise.
+    Precedence: ``AGENT6_STATE_HOME`` > ``$XDG_STATE_HOME/agent6`` (only when
+    not running through sudo, where root's XDG would be wrong) >
+    ``<real-user-home>/.local/state/agent6``. Each repo gets ``<base>/<repo-id>/``.
     """
-    if not name or name in (".", ".."):
-        raise ValueError("workspace_subdir must be a non-empty directory name")
-    if "/" in name or "\\" in name or (os.altsep and os.altsep in name):
-        raise ValueError(
-            f"workspace_subdir must be a bare directory name (no path separators): {name!r}"
-        )
-    if Path(name).is_absolute():
-        raise ValueError(f"workspace_subdir must be relative to the repo, not absolute: {name!r}")
-    return name
+    override = os.environ.get(_STATE_DIR_ENV)
+    if override:
+        return Path(override).expanduser()
+    user = user or effective_user()
+    if not user.via_sudo:
+        xdg = os.environ.get("XDG_STATE_HOME")
+        if xdg:
+            return Path(xdg) / "agent6"
+    return user.home / ".local" / "state" / "agent6"
 
 
-def agent6_dir(repo_root: Path, workspace_subdir: str | None = None) -> Path:
-    """The in-repo agent6 directory holding config + run state.
+def repo_id(repo_root: Path) -> str:
+    """Stable per-repo id: ``<folder>-<12 hex of sha256(canonical path)>``.
 
-    ``<repo_root>/.agent6`` by default, or ``<repo_root>/<workspace_subdir>``
-    when the global config renames it.
+    Keyed on the resolved path, so two checkouts at different paths get
+    separate state and never collide. Moving or renaming a checkout changes
+    its id: its prior runs are simply not found from the new path.
     """
-    return repo_root / (workspace_subdir or DEFAULT_WORKSPACE_SUBDIR)
+    real = repo_root.resolve()
+    return f"{real.name}-{hashlib.sha256(str(real).encode('utf-8')).hexdigest()[:12]}"
 
 
-def repo_config_path(repo_root: Path, workspace_subdir: str | None = None) -> Path:
-    """The per-repo config file (``<repo>/<agent6-dir>/config.toml``).
+def state_dir(repo_root: Path, base_override: str | None = None) -> Path:
+    """The per-repo agent6 state directory (``<base>/<repo-id>``).
 
-    The config lives inside the (possibly renamed) agent6 dir; the dir name
-    itself comes from the global config (see ``config_layer``).
+    ``base_override`` is the global ``[agent6].state_dir`` (an absolute base
+    path); when set it replaces the XDG base. ``repo_id`` is always appended,
+    so one global base namespaces every repo without collision.
     """
-    return agent6_dir(repo_root, workspace_subdir) / "config.toml"
+    base = Path(base_override).expanduser() if base_override else state_base()
+    return base / repo_id(repo_root)
+
+
+def repo_config_path(repo_root: Path, base_override: str | None = None) -> Path:
+    """The per-repo config file (``<state_dir>/config.toml``), out of the repo."""
+    return state_dir(repo_root, base_override) / "config.toml"
 
 
 def is_root() -> bool:

@@ -2,13 +2,16 @@
 # Copyright 2026 Eric Lesiuta
 """`agent6 init`, write a starter per-repo config, AGENTS.md, and .gitignore.
 
-Writes ``.agent6/config.toml`` (the per-repo override, layered on top of the
-global ``~/.config/agent6/config.toml`` and secure built-in defaults),
-``AGENTS.md``, and appends agent6 entries to ``.gitignore``. Never overwrites
-existing files: if a target exists, write a ``.suggested`` sibling and tell
-the user to diff. Templates are deliberately short, providers, models, and
-API keys normally live in the global config (set via ``agent6 connect`` /
-``agent6 model``), so a repo only needs its ``verify_command``.
+Writes the per-repo config (the per-repo override, out of the workspace under
+the state dir, layered on top of the global ``~/.config/agent6/config.toml``
+and secure built-in defaults), ``AGENTS.md`` in the repo, and appends
+build-artifact + secret entries to the repo ``.gitignore`` (so a verify
+command's output is not swept into agent6's per-step commits). Never
+overwrites existing files: if a target exists, write a ``.suggested`` sibling
+and tell the user to diff. Templates are deliberately short, providers,
+models, and API keys normally live in the global config (set via
+``agent6 connect`` / ``agent6 model``), so a repo only needs its
+``verify_command``.
 """
 
 from __future__ import annotations
@@ -18,7 +21,8 @@ from pathlib import Path
 from agent6.paths import repo_config_path
 
 _STARTER_TOML = """\
-# agent6 per-repo config (.agent6/config.toml).
+# agent6 per-repo config (per-machine, stored under your state dir, NOT in the
+# repo). Run `agent6 config show` to see its path.
 #
 # Layered on top of: built-in secure defaults < your global config
 # (~/.config/agent6/config.toml) < this file. Run `agent6 config show` to see
@@ -112,7 +116,7 @@ change a project convention, build command, dependency, or security invariant.
 ## Verify command
 
 The command agent6 runs to decide whether a step "succeeded". Must match
-the `verify_command` in `.agent6/config.toml`.
+the `verify_command` in your per-repo agent6 config.
 
 ```bash
 # EDIT: replace with your actual verify pipeline.
@@ -139,7 +143,6 @@ _GITIGNORE_ENTRIES = (
     "secrets/",
     "*.pem",
     "*.key",
-    ".agent6/",
 )
 
 
@@ -159,17 +162,17 @@ def _write_or_suggest(path: Path, content: str, *, force: bool) -> str:
     return f"  {verb}: {path.name}"
 
 
-def _update_gitignore(root: Path, agent6_dir_name: str, *, profile: str = "py") -> str:
-    """Append any missing entries from `_GITIGNORE_ENTRIES` to `.gitignore`.
+def _update_gitignore(root: Path, *, profile: str = "py") -> str:
+    """Append any missing secret + build-artifact entries to `.gitignore`.
 
     Idempotent: if the file already contains every entry (line-equal match
     after strip), no write happens. Existing content is never reordered or
-    removed. ``agent6_dir_name`` is the (possibly renamed) agent6 dir.
-    ``profile`` adds that ecosystem's build artifacts (e.g. ``__pycache__/``)
-    so the verify command's bytecode/output is not swept into agent6's commits.
+    removed. ``profile`` adds that ecosystem's build artifacts (e.g.
+    ``__pycache__/``) so the verify command's bytecode/output is not swept
+    into agent6's per-step commits. (Run state lives out of the workspace, so
+    there is nothing agent6-specific to ignore.)
     """
-    base = (*_GITIGNORE_ENTRIES, *_PROFILE_GITIGNORE.get(profile, ()))
-    entries = tuple(f"{agent6_dir_name}/" if e == ".agent6/" else e for e in base)
+    entries = (*_GITIGNORE_ENTRIES, *_PROFILE_GITIGNORE.get(profile, ()))
     gi = root / ".gitignore"
     existing_lines: set[str] = set()
     existing_text = ""
@@ -211,14 +214,13 @@ def init_workspace(
 ) -> int:
     """Write starter files into `root`. Returns a CLI exit code.
 
-    ``repo_config_target`` is the per-repo config path to write (honors the
-    global ``workspace_subdir`` rename); defaults to ``<root>/.agent6/config.toml``.
-    When ``interactive`` and stdin is a TTY, prompt before writing the config
-    (global vs repo) and before amending an existing AGENTS.md / .gitignore.
+    ``repo_config_target`` is the per-repo config path to write; defaults to
+    the per-repo config under the state dir (out of the workspace). When
+    ``interactive`` and stdin is a TTY, prompt before writing the config and
+    before amending an existing AGENTS.md / .gitignore.
     """
     root = root.resolve()
     cfg_path = repo_config_target or repo_config_path(root)
-    agent6_dir_name = cfg_path.parent.name
     print(f"agent6 init: {root}  (profile={profile})")
     starter_toml = _render_starter_toml(profile)
     starter_agents_md = _render_starter_agents_md(profile)
@@ -227,8 +229,8 @@ def init_workspace(
         # 1. Config scope: a repo config is optional, providers/models/keys
         #    usually live in the global config (agent6 connect / agent6 model).
         if _ask(
-            f"Write a starter repo config at {cfg_path.relative_to(root)}?"
-            " (providers/keys usually live in your global config)",
+            f"Write a starter repo config at {cfg_path}?"
+            " (out of the repo; providers/keys usually live in your global config)",
             default=True,
         ):
             print(_write_or_suggest(cfg_path, starter_toml, force=force))
@@ -244,14 +246,14 @@ def init_workspace(
         else:
             print(_write_or_suggest(agents, starter_agents_md, force=force))
         # 3. .gitignore: always offered (create or amend; idempotent).
-        if _ask(f"Add agent6 entries (incl. {agent6_dir_name}/) to .gitignore?", default=True):
-            print(_update_gitignore(root, agent6_dir_name, profile=profile))
+        if _ask("Add secret + build-artifact entries to .gitignore?", default=True):
+            print(_update_gitignore(root, profile=profile))
         else:
-            print("  skipped .gitignore (note: run state must be ignored to keep a clean tree)")
+            print("  skipped .gitignore")
     else:
         print(_write_or_suggest(cfg_path, starter_toml, force=force))
         print(_write_or_suggest(root / "AGENTS.md", starter_agents_md, force=force))
-        print(_update_gitignore(root, agent6_dir_name, profile=profile))
+        print(_update_gitignore(root, profile=profile))
 
     print()
     print("Next:")
@@ -259,7 +261,7 @@ def init_workspace(
     print(
         "  2. agent6 model worker <provider> <model> # pick your worker model (or set it globally)"
     )
-    print(f"  3. Edit {cfg_path.relative_to(root)}: set `verify_command` for this repo.")
+    print(f"  3. Edit {cfg_path}: set `verify_command` for this repo.")
     print("  4. agent6 config show             # audit the effective config")
     print("  5. agent6 check                   # sandbox + config pre-flight")
     print('  6. agent6 run "<task>"')

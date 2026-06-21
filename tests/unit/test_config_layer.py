@@ -9,7 +9,12 @@ from pathlib import Path
 import pytest
 
 from agent6.config import ConfigError, load_config
-from agent6.config_layer import load_effective, materialize, render_show
+from agent6.config_layer import (
+    load_effective,
+    materialize,
+    render_show,
+    repo_config_path_for,
+)
 
 _GLOBAL = """\
 [providers.anthropic]
@@ -39,8 +44,10 @@ def repo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     (gdir / "config.toml").write_text(_GLOBAL, encoding="utf-8")
     monkeypatch.setenv("AGENT6_CONFIG_HOME", str(gdir))
     repo_root = tmp_path / "repo"
-    (repo_root / ".agent6").mkdir(parents=True)
-    (repo_root / ".agent6" / "config.toml").write_text(_REPO, encoding="utf-8")
+    repo_root.mkdir(parents=True)
+    rcfg = repo_config_path_for(repo_root)  # out of the workspace, under the state base
+    rcfg.parent.mkdir(parents=True, exist_ok=True)
+    rcfg.write_text(_REPO, encoding="utf-8")
     return repo_root
 
 
@@ -75,7 +82,7 @@ def test_allow_urls_last_overlay_wins(repo: Path) -> None:
         ),
         encoding="utf-8",
     )
-    rpath = repo / ".agent6" / "config.toml"
+    rpath = repo_config_path_for(repo)
     rpath.write_text(
         rpath.read_text(encoding="utf-8").replace(
             'run_commands = "yes"', 'run_commands = "yes"\nallow_urls = ["r.com"]'
@@ -134,32 +141,32 @@ def test_empty_overlay_matches_load_effective(repo: Path) -> None:
     assert eff.config.sandbox.run_commands == "yes"
 
 
-def test_overlay_forbids_workspace_subdir(repo: Path) -> None:
+def test_overlay_forbids_state_dir(repo: Path) -> None:
     from agent6.config_layer import load_effective_with_overlay
 
-    overlay = {"agent6": {"workspace_subdir": ".other"}}
-    with pytest.raises(ConfigError, match="workspace_subdir"):
+    overlay = {"agent6": {"state_dir": "/other"}}
+    with pytest.raises(ConfigError, match="state_dir"):
         load_effective_with_overlay(repo, overlay)
 
 
-@pytest.mark.parametrize("bad", ["../escape", "/abs/path", "a/b", "..", "."])
-def test_global_workspace_subdir_rejects_traversal(repo: Path, bad: str) -> None:
-    # The raw pre-model read of the GLOBAL config must reject a separator / ..
-    # / absolute workspace_subdir so run state can't be pointed outside the repo.
-    from agent6.config_layer import _global_workspace_subdir  # pyright: ignore[reportPrivateUsage]
+@pytest.mark.parametrize("bad", ["relative/path", "also-relative", "."])
+def test_global_state_dir_rejects_relative(repo: Path, bad: str) -> None:
+    # The raw pre-model read of the GLOBAL config must reject a non-absolute
+    # state_dir (it is the base the per-repo config + run state live under).
+    from agent6.config_layer import _global_state_dir  # pyright: ignore[reportPrivateUsage]
 
     gpath = repo.parent / "g" / "config.toml"
-    gpath.write_text(f'[agent6]\nworkspace_subdir = "{bad}"\n', encoding="utf-8")
-    with pytest.raises(ConfigError, match="workspace_subdir"):
-        _global_workspace_subdir()
+    gpath.write_text(f'[agent6]\nstate_dir = "{bad}"\n', encoding="utf-8")
+    with pytest.raises(ConfigError, match="state_dir"):
+        _global_state_dir()
 
 
-def test_global_workspace_subdir_accepts_plain_segment(repo: Path) -> None:
-    from agent6.config_layer import _global_workspace_subdir  # pyright: ignore[reportPrivateUsage]
+def test_global_state_dir_accepts_absolute(repo: Path) -> None:
+    from agent6.config_layer import _global_state_dir  # pyright: ignore[reportPrivateUsage]
 
     gpath = repo.parent / "g" / "config.toml"
-    gpath.write_text('[agent6]\nworkspace_subdir = ".myagent"\n', encoding="utf-8")
-    assert _global_workspace_subdir() == ".myagent"
+    gpath.write_text('[agent6]\nstate_dir = "/srv/agent6-state"\n', encoding="utf-8")
+    assert _global_state_dir() == "/srv/agent6-state"
 
 
 def test_deep_merge_replaces_provider_when_kind_changes() -> None:

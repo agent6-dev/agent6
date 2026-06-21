@@ -370,7 +370,7 @@ class MachineSpec(BaseModel):
     # lists are valid, but it MUST NOT carry operator-only security policy
     # (see ``_forbid_protected_overlay_tables``): ``[providers.*]`` (endpoints
     # + api-key env names + secrets) and ``[sandbox.*]`` (the jail: network
-    # egress incl. allow_urls, run_commands, .git/.agent6 protection) are read
+    # egress incl. allow_urls, run_commands, .git protection) are read
     # only from the global/repo config, never a (possibly untrusted) machine
     # file. Unset keys simply read through to the lower layers.
     config: dict[str, Any] = Field(default_factory=dict)
@@ -382,7 +382,7 @@ class MachineSpec(BaseModel):
         # config layer at run time. So it must not carry operator-only
         # security policy: `[providers.*]` (endpoints + api-key env names) or
         # `[sandbox.*]` (the jail itself, network egress incl. allow_urls,
-        # run_commands, and .git/.agent6 protection). Those are read only from
+        # run_commands, and .git protection). Those are read only from
         # the global/repo config; an overlay that sets them is rejected at load
         # so a machine can never weaken the sandbox the operator chose.
         for table in ("providers", "sandbox"):

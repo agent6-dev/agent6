@@ -95,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             target = _most_recent_run_id(_runs_dir(Path.cwd()))
             if target is None:
                 print(
-                    "ERROR: --continue: no prior runs under .agent6/runs/ in this cwd.",
+                    "ERROR: --continue: no prior runs for this cwd.",
                     file=sys.stderr,
                 )
                 return 2

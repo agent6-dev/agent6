@@ -3,10 +3,11 @@
 """Authoritative in-process graph mutator.
 
 `GraphCurator` is the single source of truth for one run's task graph. The
-production deployment runs it inside the `agent6-curator` subprocess (with its
-own landlock policy allowing writes to `.agent6/`), but the class itself is
-process-agnostic: unit tests instantiate it directly to exercise the mutation
-logic without spinning up a UDS server.
+production deployment runs it inside the `agent6-curator` subprocess, which is a
+plain subprocess (no jail of its own) that inherits the agent process's
+confinement and writes the run's graph under the out-of-tree per-repo state dir.
+The class itself is process-agnostic: unit tests instantiate it directly to
+exercise the mutation logic without spinning up a UDS server.
 
 Mutations are validated structurally, then applied as:
 

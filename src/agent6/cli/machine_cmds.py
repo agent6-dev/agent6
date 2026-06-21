@@ -18,7 +18,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
-from agent6.cli._common import _agent6_dir, _check_provider_keys, _machines_dir, detect_env
+from agent6.cli._common import _check_provider_keys, _machines_dir, _state_dir, detect_env
 from agent6.cli.egress import _check_network_profile, _warn_if_unsandboxed
 from agent6.cli.scriptcheck import lint_and_typecheck, run_offline_tests
 from agent6.cli.toml_io import _upsert_toml_leaf
@@ -473,12 +473,12 @@ def _resolve_network_refusal(  # noqa: PLR0911
         print(f"  Simulate it offline instead:  agent6 machine test {path}", file=sys.stderr)
         return 2
     if not sys.stdin.isatty():
-        print("  To allow it, apply this to .agent6/config.toml and re-run:", file=sys.stderr)
+        print("  To allow it, apply this to the per-repo config and re-run:", file=sys.stderr)
         for key, value in fix.items():
             print(f"    agent6 config set {key} {value} --repo", file=sys.stderr)
         print(f"  Or simulate it offline now:    agent6 machine test {path}", file=sys.stderr)
         return 2
-    print("  agent6 can apply the minimal fix now (writes .agent6/config.toml):", file=sys.stderr)
+    print("  agent6 can apply the minimal fix now (writes the per-repo config):", file=sys.stderr)
     for key, value in fix.items():
         print(f"    {key} = {value}", file=sys.stderr)
     choice = (_safe_input("  [a]pply & run, [s]imulate offline, or [Q]uit? ") or "").strip().lower()
@@ -500,7 +500,7 @@ def _resolve_network_refusal(  # noqa: PLR0911
         print(f"  Applied, but the config no longer validates: {exc}", file=sys.stderr)
         return 2
     if _machine_network_refusal(new_cfg, new_profile, tool_states) is not None:
-        print("  Applied, but a conflict remains — review .agent6/config.toml.", file=sys.stderr)
+        print("  Applied, but a conflict remains; review the per-repo config.", file=sys.stderr)
         return 2
     print(f"  Applied to {target}. Continuing the run.", file=sys.stderr)
     return new_cfg, new_profile
@@ -769,7 +769,7 @@ def _cmd_machine_create(  # noqa: PLR0911, PLR0912, PLR0915
         return 2
     _warn_if_unsandboxed(profile)
 
-    scratch = _agent6_dir(cwd) / "machine-drafts" / new_friendly_id()
+    scratch = _state_dir(cwd) / "machine-drafts" / new_friendly_id()
     scratch.mkdir(parents=True, exist_ok=True)
     # Authoring drafts a machine; it has no machine [config] overlay of its own.
     runner = _build_machine_agent_runner({}, cwd, profile, scratch / "agent_transcripts")

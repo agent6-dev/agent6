@@ -6,7 +6,8 @@ Config is assembled from up to four layers, lowest precedence first:
 
 1. ``default``, the secure defaults baked into the pydantic model,
 2. ``global`` , ``$XDG_CONFIG_HOME/agent6/config.toml`` (user-wide),
-3. ``repo``   , ``./.agent6/config.toml`` (this repository),
+3. ``repo``   , the per-repo config under the state dir (out of the workspace,
+   ``<state-base>/<repo-id>/config.toml``; see ``agent6.paths.state_dir``),
 4. ``flag``   , an explicit ``--config FILE`` (power users / CI).
 
 Raw TOML dicts are deep-merged in that order and validated **once**, so a
@@ -26,10 +27,9 @@ from typing import Any, Literal
 
 from agent6.config import Config, ConfigError, validate_config
 from agent6.paths import (
-    agent6_dir,
     global_config_path,
     repo_config_path,
-    validate_workspace_subdir,
+    state_dir,
 )
 
 LayerName = Literal["default", "global", "repo", "flag", "machine"]
@@ -69,13 +69,12 @@ def _read_toml(path: Path) -> dict[str, Any]:
         raise ConfigError(f"Config file is not valid TOML ({path}): {exc}") from exc
 
 
-def _global_workspace_subdir() -> str | None:
-    """Read ``[agent6].workspace_subdir`` from the GLOBAL config only.
+def _global_state_dir() -> str | None:
+    """Read ``[agent6].state_dir`` (the state BASE) from the GLOBAL config only.
 
-    This is the one setting that must be resolved *before* the layered merge,
-    because it names the in-repo directory where the per-repo config lives.
-    It is honored only from the global config; ``_forbid_repo_subdir`` rejects
-    it anywhere else.
+    Resolved *before* the layered merge because it locates the directory the
+    per-repo config lives in. Honored only from the global config;
+    ``_forbid_repo_state_dir`` rejects it in any other layer.
     """
     gpath = global_config_path()
     if not gpath.is_file():
@@ -83,62 +82,61 @@ def _global_workspace_subdir() -> str | None:
     data = _read_toml(gpath)
     section = data.get("agent6")
     if isinstance(section, dict):
-        sub = section.get("workspace_subdir")
-        if isinstance(sub, str):
-            # This raw pre-model read locates the per-repo config dir, so it runs
-            # BEFORE the Config model (which also validates workspace_subdir).
-            # Apply the same check here so a separator / `..` / absolute path in
-            # the GLOBAL config can't point run state outside the repo
-            # (`repo_root / "/abs"` becomes `/abs`); fail loudly, don't drift.
-            try:
-                return validate_workspace_subdir(sub)
-            except ValueError as exc:
-                raise ConfigError(f"[agent6].workspace_subdir in {gpath}: {exc}") from exc
+        sd = section.get("state_dir")
+        if isinstance(sd, str):
+            # Raw pre-model read locating the per-repo config dir, so it runs
+            # BEFORE the Config model (which also validates state_dir). Apply
+            # the same absolute-path check here; fail loudly, don't drift.
+            if not Path(sd).expanduser().is_absolute():
+                raise ConfigError(
+                    f"[agent6].state_dir in {gpath} must be an absolute path, got {sd!r}"
+                )
+            return sd
     return None
 
 
-def _forbid_repo_subdir(layer_name: str, data: dict[str, Any]) -> None:
-    """Refuse ``workspace_subdir`` in a repo/flag layer (global-only setting)."""
+def _forbid_repo_state_dir(layer_name: str, data: dict[str, Any]) -> None:
+    """Refuse ``state_dir`` in a repo/flag/overlay layer (global-only setting)."""
     section = data.get("agent6")
-    if isinstance(section, dict) and "workspace_subdir" in section:
+    if isinstance(section, dict) and "state_dir" in section:
         raise ConfigError(
-            f"[agent6].workspace_subdir may only be set in the global config"
-            f" ({global_config_path()}), not in the {layer_name} config — the"
-            " per-repo config lives inside the directory it would name."
+            f"[agent6].state_dir may only be set in the global config"
+            f" ({global_config_path()}), not in the {layer_name} config — it"
+            " locates the directory the per-repo config itself lives in."
         )
 
 
-def resolved_agent6_dir(repo_root: Path) -> Path:
-    """The in-repo agent6 dir for *repo_root*, honoring the global rename."""
-    return agent6_dir(repo_root, _global_workspace_subdir())
+def resolved_state_dir(repo_root: Path) -> Path:
+    """The per-repo state dir for *repo_root*, honoring the global base override."""
+    return state_dir(repo_root, _global_state_dir())
 
 
 def repo_config_path_for(repo_root: Path) -> Path:
-    """The per-repo config path for *repo_root*, honoring the global rename."""
-    return repo_config_path(repo_root, _global_workspace_subdir())
+    """The per-repo config path for *repo_root* (out of the workspace)."""
+    return repo_config_path(repo_root, _global_state_dir())
 
 
 def discover_layers(repo_root: Path, explicit_path: Path | None) -> list[Layer]:
     """The config layers that exist, in precedence order (low -> high).
 
-    The repo config is located under the (possibly renamed) agent6 dir, whose
-    name comes from the global config's ``[agent6].workspace_subdir``.
+    The repo config lives out of the workspace under the state dir, whose base
+    comes from the global config's ``[agent6].state_dir`` (or the XDG default).
     """
     layers: list[Layer] = []
     gpath = global_config_path()
     if gpath.is_file():
         layers.append(Layer("global", gpath, _read_toml(gpath)))
-    subdir = _global_workspace_subdir()
-    rpath = repo_config_path(repo_root, subdir)
+    base = _global_state_dir()
+    rpath = repo_config_path(repo_root, base)
     if rpath.is_file():
         data = _read_toml(rpath)
-        _forbid_repo_subdir("repo", data)
+        _forbid_repo_state_dir("repo", data)
         layers.append(Layer("repo", rpath, data))
     if explicit_path is not None:
         if not explicit_path.is_file():
             raise ConfigError(f"--config file not found: {explicit_path}")
         data = _read_toml(explicit_path)
-        _forbid_repo_subdir("--config", data)
+        _forbid_repo_state_dir("--config", data)
         layers.append(Layer("flag", explicit_path, data))
     return layers
 
@@ -210,7 +208,7 @@ def load_effective_with_overlay(repo_root: Path, overlay: dict[str, Any]) -> Eff
     """
     layers = discover_layers(repo_root, None)
     if overlay:
-        _forbid_repo_subdir("machine overlay", overlay)
+        _forbid_repo_state_dir("machine overlay", overlay)
         layers = [*layers, Layer("machine", None, overlay)]
     return _effective_from_layers(layers, source="(merged config layers + machine overlay)")
 
@@ -382,12 +380,12 @@ def materialize(config: Config, *, for_repo: bool = False) -> str:
 
     Used by ``agent6 config fill`` to snapshot every effective value into
     one explicit file (handy before tightening defaults or for an audit).
-    When ``for_repo`` is set, the global-only ``[agent6].workspace_subdir``
+    When ``for_repo`` is set, the global-only ``[agent6].state_dir``
     is dropped (it is invalid in a per-repo config).
     """
     data = config.model_dump(mode="python")
     if for_repo and isinstance(data.get("agent6"), dict):
-        data["agent6"].pop("workspace_subdir", None)
+        data["agent6"].pop("state_dir", None)
     lines: list[str] = [
         "# agent6 effective config, materialized by `agent6 config fill`.",
         "# Every value below is explicit; edit freely.",

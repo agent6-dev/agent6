@@ -44,7 +44,6 @@ profile = "auto"
 agent_network = "open"
 run_commands = "no"
 protect_git = true
-protect_agent6 = true
 [git]
 require_clean_worktree = true
 auto_stash = false

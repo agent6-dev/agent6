@@ -30,7 +30,6 @@ profile = "auto"
 agent_network = "open"
 run_commands = "no"
 protect_git = true
-protect_agent6 = true
 [git]
 require_clean_worktree = true
 auto_stash = false
@@ -119,62 +118,16 @@ def test_parent_traversal_rejected(tmp_path: Path) -> None:
         d.dispatch("read_file", {"path": "../outside.txt"})
 
 
-def test_apply_edit_refuses_agent6_dir(tmp_path: Path) -> None:
-    # Writes under .agent6/ would corrupt the harness's own
-    # observability + resume state (graph.jsonl, log.jsonl, transcripts/).
+def test_read_file_allows_nested_dotdir(tmp_path: Path) -> None:
+    # A leading-dot path component does not block reads; .agent6/ is no longer
+    # special (run state lives out of the repo).
     cfg = _config(tmp_path)
     d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match=r"\.agent6"):
-        d.dispatch(
-            "apply_edit",
-            {
-                "path": ".agent6/runs/foo/graph.jsonl",
-                "edits": [{"kind": "create", "old_string": "", "new_string": "hax"}],
-            },
-        )
-
-
-def test_apply_patch_refuses_agent6_dir(tmp_path: Path) -> None:
-    cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match=r"\.agent6"):
-        d.dispatch(
-            "apply_patch",
-            {
-                "path": ".agent6/runs/foo/log.jsonl",
-                "patch": "--- /dev/null\n+++ .agent6/runs/foo/log.jsonl\n@@ -0,0 +1 @@\n+hax\n",
-            },
-        )
-
-
-def test_read_file_allowed_under_agent6(tmp_path: Path) -> None:
-    # Reads under .agent6/ are still allowed (resume may want to inspect
-    # the prior transcript).
-    cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    target = tmp_path / ".agent6" / "runs" / "foo"
+    target = tmp_path / ".cache" / "foo"
     target.mkdir(parents=True)
-    (target / "transcript.jsonl").write_text("{}\n", encoding="utf-8")
-    out = d.dispatch("read_file", {"path": ".agent6/runs/foo/transcript.jsonl"})
+    (target / "x.jsonl").write_text("{}\n", encoding="utf-8")
+    out = d.dispatch("read_file", {"path": ".cache/foo/x.jsonl"})
     assert out["content"] == "{}\n"
-
-
-def test_apply_edit_refuses_agent6_via_symlink(tmp_path: Path) -> None:
-    # A symlink under the repo pointing at .agent6/ must not
-    # launder a write through the prefix check; the post-resolution
-    # check catches it.
-    cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    (tmp_path / ".agent6").mkdir()
-    (tmp_path / "decoy").symlink_to(".agent6", target_is_directory=True)
-    with pytest.raises(ToolError, match=r"\.agent6.*symlink"):
-        d.dispatch(
-            "apply_edit",
-            {
-                "path": "decoy/graph.jsonl",
-                "edits": [{"kind": "create", "old_string": "", "new_string": "hax"}],
-            },
-        )
 
 
 def test_apply_edit_refuses_git_dir(tmp_path: Path) -> None:

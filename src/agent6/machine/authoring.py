@@ -174,7 +174,7 @@ string (target must be `str`).
 
 Two durable stores, both available on every sandbox profile:
 
-  - The JOURNAL (`.agent6/machines/<id>/journal.jsonl`) already records every
+  - The JOURNAL (`machines/<id>/journal.jsonl` under the per-repo state dir) already records every
     transition with its fact (each `tool` stdout, each `agent` payload), so it
     IS a replayable audit log of everything that happened — for free.
   - `$AGENT6_MACHINE_DATA_DIR` is a persistent, WRITABLE directory every `tool`

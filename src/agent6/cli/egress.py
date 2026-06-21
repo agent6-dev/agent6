@@ -13,6 +13,7 @@ from agent6.config import (
     AnthropicProviderEntry,
     Config,
 )
+from agent6.config_layer import resolved_state_dir
 from agent6.detect import Environment
 from agent6.providers.anthropic import ANTHROPIC_URL
 from agent6.providers.egress import clear_routes, parse_endpoint, register_route
@@ -25,6 +26,7 @@ from agent6.sandbox import (
     enter_network_isolation,
     start_egress_broker,
 )
+from agent6.sandbox.jail import _locate_jail_binary
 from agent6.types import SandboxProfile
 
 
@@ -197,6 +199,17 @@ def _maybe_apply_agent_landlock(
     if selected_profile != "hardened" or not env.kernel.supports_landlock_fs:
         return None
     cwd = Path.cwd().resolve()
+    # The agent (and the curator subprocess) persist run state OUT of the
+    # workspace, under the per-repo state dir; grant it read+write so they can
+    # write transcripts, snapshots, and the graph. Created here so the Landlock
+    # O_PATH open below finds it. Because state lives OUT of cwd by default,
+    # jailed children (whose hardened ruleset grants RW only recursively under
+    # cwd) do not get this path, so the agent's grant does not leak to them
+    # (Landlock rulesets intersect). Caveat: an operator who points
+    # [agent6].state_dir at an absolute path nested under the repo would bring it
+    # inside the child's cwd grant; the validator enforces absoluteness only.
+    state = resolved_state_dir(cwd)
+    state.mkdir(parents=True, exist_ok=True)
     # Landlock allow-root, not a temp file we create: children (git, the jail
     # launcher, the curator socket dir) legitimately read and write under /tmp.
     tmp = Path("/tmp")  # noqa: S108
@@ -232,8 +245,16 @@ def _maybe_apply_agent_landlock(
         }
         if p.exists()
     )
+    # The jailed-command launcher itself: run_in_jail execs it from THIS
+    # (Landlocked) process, so its directory must be in the read+exec set or the
+    # jail cannot start. py_paths cover the bundled (venv) and dev-checkout
+    # binaries; an AGENT6_JAIL_BIN override to an out-of-tree path would
+    # otherwise EACCES under the agent-process Landlock.
+    jail_bin = _locate_jail_binary()
+    jail_paths = (jail_bin.resolve().parent,) if jail_bin is not None else ()
     read_paths = (
         cwd,
+        state,
         Path.home(),
         Path("/usr"),
         Path("/etc"),
@@ -242,8 +263,9 @@ def _maybe_apply_agent_landlock(
         *run_paths,
         *proc_paths,
         *py_paths,
+        *jail_paths,
     )
-    write_paths = (cwd, tmp, *dev_files, *proc_paths)
+    write_paths = (cwd, state, tmp, *dev_files, *proc_paths)
     # Hardened can't run the broker, so we fall back to Landlock TCP-connect
     # rules: under `providers` confine to the provider ports (host-level, weaker
     # than the broker but the best hardened offers); under `open` impose no TCP

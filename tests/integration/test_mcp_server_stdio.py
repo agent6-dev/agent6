@@ -14,6 +14,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from agent6.config_layer import resolved_state_dir
+
 _VALID_TOML = """
 [agent6]
 config_version = 1
@@ -32,7 +34,6 @@ profile = "auto"
 agent_network = "open"
 run_commands = "no"
 protect_git = true
-protect_agent6 = true
 [git]
 require_clean_worktree = true
 auto_stash = false
@@ -67,8 +68,8 @@ def test_mcp_serve_roundtrip(tmp_path: Path) -> None:
     cfg_path = tmp_path / "agent6.toml"
     cfg_path.write_text(_VALID_TOML, encoding="utf-8")
     # Seed a run dir so list_runs has something to enumerate.
-    (tmp_path / ".agent6" / "runs" / "demo").mkdir(parents=True)
-    (tmp_path / ".agent6" / "runs" / "demo" / "manifest.json").write_text(
+    (resolved_state_dir(tmp_path) / "runs" / "demo").mkdir(parents=True)
+    (resolved_state_dir(tmp_path) / "runs" / "demo" / "manifest.json").write_text(
         json.dumps({"task": "demo-task"}), encoding="utf-8"
     )
 

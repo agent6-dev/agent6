@@ -11,17 +11,22 @@ fields see [SECURITY.md](SECURITY.md).
 |---|---|---|
 | built-in defaults | — | (secure defaults, always present) |
 | global *(default location)* | `$XDG_CONFIG_HOME/agent6/config.toml` (default `~/.config/agent6/config.toml`; or set `AGENT6_CONFIG_HOME`) | `agent6 connect`, `agent6 model` |
-| per-repo *(override)* | `./.agent6/config.toml` | `agent6 init`, `agent6 config set --repo` |
+| per-repo *(override)* | `<state-dir>/<repo-id>/config.toml` | `agent6 init`, `agent6 config set --repo` |
 | explicit | `--config FILE` | `agent6 run --config FILE` |
 
-A per-repo config can be empty when the global config supplies a provider +
-model; the one thing a repo always needs is its `workflow.verify_command`.
+The per-repo config lives in the per-repo state dir out of the workspace
+(`$XDG_STATE_HOME/agent6/<repo-id>/`; see `[agent6].state_dir` below), so it
+is per-machine and not committed or shared. It can be empty when the global
+config supplies a provider + model; the one thing a repo always needs is its
+`workflow.verify_command`, which `agent6 init` scaffolds per checkout (it can
+detect the project type).
 
 ## Creating & inspecting
 
 - `agent6 connect`: add a provider + API key (stored `0600`), global.
 - `agent6 model <role> <provider> <model> [--thinking off|low|medium|high]`.
-- `agent6 init`: scaffold `.agent6/config.toml` + `AGENTS.md` in a repo.
+- `agent6 init`: scaffold the per-repo `config.toml` (in the state dir) +
+  `AGENTS.md` in a repo, detecting the project type to set `verify_command`.
 - `agent6 config show`: every effective value and which layer set it.
 - `agent6 config get|set|unset|add|remove <dotted.key> [value]`: edit one leaf
   (`--repo`, or `--machine FILE` for a machine `[config]` overlay). Every edit is
@@ -36,7 +41,7 @@ model; the one thing a repo always needs is its `workflow.verify_command`.
 | Field | Default | Meaning |
 |---|---|---|
 | `config_version` | `1` | Config schema version (must be `1`). |
-| `workspace_subdir` | `".agent6"` | In-repo directory for config + run state (`config.toml`, `runs/`, `machines/`, `memories/`). **Global-config only** (a repo can't rename the directory it lives in); a bare name (no slashes, `..`, or absolute paths). |
+| `state_dir` | `"$XDG_STATE_HOME/agent6"` | Absolute base path for all per-repo state, out of the workspace. Each repo gets `<state_dir>/<repo-id>/` (`<repo-id>` = `<folder>-<short hash of the repo's canonical path>`) holding `config.toml`, `runs/`, `machines/`, `memories/`. **Global-config only** (it locates the per-repo config). Override with the `AGENT6_STATE_HOME` env var. Devcontainer tip: the XDG state base is inside the container and ephemeral, so mount a volume at the state dir or set this to a persisted out-of-cwd path to keep run state across rebuilds. |
 
 ## `[providers.<name>]`
 
@@ -114,8 +119,7 @@ The security boundary. Profiles and the network model are specified in
 | `tool_network` | `"block"` | Jailed-command egress: `block` / `only_explicit_states` / `allow` (SECURITY §8). |
 | `allow_urls` | `[]` | Extra agent egress hosts under `agent_network = "providers"` (`host`, `host:port`, or URL). Edit with `agent6 config add/remove sandbox.allow_urls <host>`. |
 | `run_commands` | `"ask"` | Whether the LLM gets `run_command`: `yes` / `no` / `ask`. |
-| `protect_git` | `true` | Re-bind `.git/` read-only in every jail. |
-| `protect_agent6` | `true` | Re-bind the `.agent6/` directory (config + run state) read-only in every jail. |
+| `protect_git` | `true` | Strict only: re-bind `.git/` read-only in the jail. On the hardened profile the cwd is blanket read-write (no mount namespace to carve), so `.git` is writable by jailed commands there; that is gated by `run_commands`, recoverable (branch-per-run, commits through git_ops), and bounded by the surrounding container. |
 
 ## `[git]`
 

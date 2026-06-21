@@ -179,10 +179,12 @@ class LiveWorld:
     # `.asm.toml` + `scripts/` bundle, so a tool can't rewrite its own machine
     # logic or bundled scripts mid-run (set by the CLI).
     protect_paths: tuple[Path, ...] = ()
-    # The machine's persistent, writable scratch dir (the only writable spot a
-    # `tool` script gets on the `hardened` profile, where new top-level files in
-    # cwd are read-only). Granted RW in every tool jail and surfaced to scripts
-    # as $AGENT6_MACHINE_DATA_DIR. Set by the CLI to <instance>/data.
+    # The machine's persistent, writable scratch dir: granted RW in every tool
+    # jail and surfaced to scripts as $AGENT6_MACHINE_DATA_DIR. It lives out of
+    # the workspace (under the per-repo state dir) and persists across
+    # iterations, so it is where a `tool` keeps DURABLE state (a built venv,
+    # caches). cwd is writable too, but it is the repo, not durable machine
+    # state. Set by the CLI to <instance>/data.
     data_dir: Path | None = None
 
     def run_tool(

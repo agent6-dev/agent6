@@ -2,9 +2,9 @@
 # Copyright 2026 Eric Lesiuta
 """Structured JSONL event sink.
 
-Emits one JSON object per line to a path under `.agent6/runs/<id>/logs.jsonl`,
-to give external tools (and the planned VS Code extension) a stable, tail-able
-view of an agent run without parsing the freeform `print` log.
+Emits one JSON object per line to `<run-dir>/logs.jsonl` (the run dir under the
+per-repo state dir), to give external tools (and the planned VS Code extension)
+a stable, tail-able view of an agent run without parsing the freeform `print` log.
 
 Design notes:
 - Write-only and append-only. No reads, no rotation, no schema validation,
@@ -80,7 +80,7 @@ class UserInputSink:
 
      Separate from :class:`EventSink` (which carries machine telemetry) so
      the human-decision trail lives in its own readable JSONL file at
-     ``.agent6/runs/<id>/user_inputs.jsonl``. Each line has a fixed shape
+     ``<run-dir>/user_inputs.jsonl``. Each line has a fixed shape
     , ``ts``, ``kind``, ``prompt``, ``answer``, ``source``, plus any
      extra fields the caller passes. The strict schema is the point: a
      reviewer reading the file can answer "what did the operator decide

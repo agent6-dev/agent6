@@ -9,9 +9,10 @@ Field policy: **secure by default, fully auditable**. Every field has a
 default, and security-sensitive fields default to the *safe* value
 (``sandbox.agent_network = "providers"``, ``sandbox.tool_network = "block"``,
 ``sandbox.run_commands = "ask"``,
-``sandbox.protect_* = true``, ``git.allow_push/force/history_rewrite =
+``sandbox.protect_git = true``, ``git.allow_push/force/history_rewrite =
 false``). This means a config can be layered (global ``$XDG_CONFIG_HOME``
-defaults, per-repo ``./.agent6/config.toml`` overrides) and a repo can be
+defaults, per-repo config (out of the workspace, under the state dir) overrides)
+and a repo can be
 zero-config when the global config supplies providers + models. Use
 ``agent6 config show`` to audit the *effective* value of every field and
 exactly where it came from (default / global / repo / flag). The few
@@ -39,7 +40,6 @@ from pydantic import (
 )
 
 from agent6.budget import usd_budget_to_tokens
-from agent6.paths import validate_workspace_subdir
 
 
 class ConfigError(Exception):
@@ -303,15 +303,12 @@ class SandboxConfig(BaseModel):
     # `rm -rf .git`, rewrite history, or otherwise corrupt the repository
     # from inside a child process. The workflow's own commits go through
     # `git_ops.py` from the agent process (outside the jail) and are
-    # unaffected. Strict re-binds it RO; hardened switches Landlock from
-    # "RW on cwd" to "R on cwd + RW on each top-level entry except the
-    # protect set". Hardened-mode side effect: writes to NEW top-level
-    # entries created at the cwd root after launch are denied.
+    # unaffected. STRICT-ONLY: it is a read-only bind-remount, which needs a
+    # mount namespace. On hardened the cwd is blanket read-write (no namespace
+    # to carve with, and carving .git read-only would also deny new top-level
+    # entries and break toolchains), so .git is writable there: recoverable,
+    # gated by run_commands, and run state lives out of the workspace.
     protect_git: bool = True
-    # Same idea, for the `.agent6/` directory (config + run state: transcripts,
-    # graph, logs). The curator subprocess has its own jail policy that does
-    # grant `.agent6/` write access; worker children do not.
-    protect_agent6: bool = True
     # Extra egress destinations the AGENT process may reach under
     # `agent_network = "providers"`, on top of the configured provider
     # endpoints. Each entry is a `host`, `host:port`, or full URL (a missing
@@ -532,19 +529,23 @@ class Agent6Section(BaseModel):
     model_config = _BASE_MODEL_CONFIG
 
     config_version: int = Field(ge=1, le=1, default=1)
-    # Rename the in-repo agent6 directory (default ``.agent6``) that holds
-    # this config + run state. A BARE directory name only (no path
-    # separators, no ``..``, not absolute). Can ONLY be set in the GLOBAL
-    # config: the per-repo config lives inside this dir, so it cannot name
-    # the dir that contains it. Setting it in a repo/flag config is an error.
-    workspace_subdir: str | None = None
+    # Absolute base directory for per-repo agent6 state (this per-repo config +
+    # all run state), which lives OUT of the workspace under ``<base>/<repo-id>/``
+    # (default ``$XDG_STATE_HOME/agent6``; see ``agent6.paths.state_base``). Can
+    # ONLY be set in the GLOBAL config: it locates the per-repo config, so a
+    # per-repo/flag value would be chicken-and-egg. Must be absolute. Point it
+    # at a persisted, out-of-cwd path (e.g. a mounted volume) to keep run state
+    # across devcontainer rebuilds.
+    state_dir: str | None = None
 
-    @field_validator("workspace_subdir")
+    @field_validator("state_dir")
     @classmethod
-    def _check_workspace_subdir(cls, v: str | None) -> str | None:
+    def _check_state_dir(cls, v: str | None) -> str | None:
         if v is None:
             return v
-        return validate_workspace_subdir(v)
+        if not Path(v).expanduser().is_absolute():
+            raise ValueError(f"[agent6].state_dir must be an absolute path, got {v!r}")
+        return v
 
 
 class NotifyConfig(BaseModel):
@@ -555,7 +556,7 @@ class NotifyConfig(BaseModel):
     operator-controlled, it never includes LLM output, and runs in the
     user's shell environment, NOT in the jail, with these env vars:
 
-    - ``AGENT6_RUN_ID``      , run id under ``.agent6/runs/``
+    - ``AGENT6_RUN_ID``      , run id under the per-repo run-state dir
     - ``AGENT6_RUN_OK``      , ``1`` if the workflow finished cleanly, ``0`` otherwise
     - ``AGENT6_RUN_REASON``  , workflow termination reason (e.g. ``finish_run``,
                                  ``budget_exhausted``, ``provider_error``)
@@ -772,7 +773,7 @@ class Config(BaseModel):
             raise ConfigError(
                 "No providers configured. Run `agent6 connect` to add one"
                 " (stored in your global config), or add a [providers.*]"
-                " block to .agent6/config.toml."
+                " block to the per-repo config."
             )
         rm = self.models.resolve(role)
         if rm is None:
@@ -791,7 +792,7 @@ class Config(BaseModel):
                 "workflow.verify_command is empty — agent6 needs to know what"
                 " 'a step succeeded' means in this repo. Run `agent6 init` (it"
                 " writes a starter) or set workflow.verify_command in"
-                " .agent6/config.toml."
+                " the per-repo config."
             )
 
 

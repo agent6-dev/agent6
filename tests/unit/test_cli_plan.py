@@ -9,10 +9,11 @@ from pathlib import Path
 import pytest
 
 from agent6.cli import main
+from agent6.config_layer import resolved_state_dir
 
 
 def _seed_plan(tmp_path: Path, run_id: str, body: str) -> Path:
-    plan_dir = tmp_path / ".agent6" / "runs" / run_id
+    plan_dir = resolved_state_dir(tmp_path) / "runs" / run_id
     plan_dir.mkdir(parents=True)
     plan = plan_dir / "plan.md"
     plan.write_text(body, encoding="utf-8")
@@ -49,7 +50,7 @@ def test_plan_show_missing_run_errors(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    (tmp_path / ".agent6" / "runs").mkdir(parents=True)
+    (resolved_state_dir(tmp_path) / "runs").mkdir(parents=True)
     rc = main(["plan", "--show", "nonexistent"])
     assert rc == 2
     assert "ERROR" in capsys.readouterr().err
@@ -61,7 +62,7 @@ def test_plan_show_no_plan_md_errors(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    (tmp_path / ".agent6" / "runs" / "happy-tree-abcd").mkdir(parents=True)
+    (resolved_state_dir(tmp_path) / "runs" / "happy-tree-abcd").mkdir(parents=True)
     rc = main(["plan", "--show", "happy-tree-abcd"])
     assert rc == 2
     err = capsys.readouterr().err

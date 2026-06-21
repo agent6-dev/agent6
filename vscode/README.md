@@ -1,7 +1,8 @@
 # agent6: tail run
 
 Minimal VS Code extension that follows an agent6 run's structured event log
-(`.agent6/runs/<id>/logs.jsonl`) in a VS Code output channel.
+(`<state-dir>/<repo-id>/runs/<id>/logs.jsonl`, out of the workspace) in a VS
+Code output channel.
 
 It is intentionally tiny:
 
