@@ -873,3 +873,75 @@ def test_agent6_docs_tool_lists_and_reads(tmp_path: Path) -> None:
     assert "content" in doc and len(doc["content"]) > 100
     with pytest.raises(ToolError, match="unknown agent6 doc"):
         d.dispatch("agent6_docs", {"name": "NOPE"})
+
+
+# --- small-model edit ergonomics: kind default + closest-match diagnostics ---
+
+
+def test_apply_edit_kind_defaults_to_replace(tmp_path: Path) -> None:
+    """Small models routinely omit the `kind` discriminator. A bare
+    {old_string, new_string} edit must apply as a replace, not 400."""
+    cfg = _config(tmp_path)
+    (tmp_path / "f.py").write_text("x = 1\ny = 2\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    out = d.dispatch(
+        "apply_edit",
+        {"path": "f.py", "edits": [{"old_string": "x = 1", "new_string": "x = 9"}]},
+    )
+    assert out["applied"] == ["replace"]
+    assert (tmp_path / "f.py").read_text(encoding="utf-8") == "x = 9\ny = 2\n"
+
+
+def test_apply_edit_create_still_explicit(tmp_path: Path) -> None:
+    """`create` is unaffected by the replace default and still needs an empty
+    old_string."""
+    cfg = _config(tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d.dispatch(
+        "apply_edit",
+        {"path": "new.py", "edits": [{"kind": "create", "new_string": "print(1)\n"}]},
+    )
+    assert (tmp_path / "new.py").read_text(encoding="utf-8") == "print(1)\n"
+
+
+def test_apply_edit_mismatch_hands_back_exact_region(tmp_path: Path) -> None:
+    """A whitespace-only mismatch returns the verbatim on-disk text and tells
+    the model to retry without re-reading."""
+    cfg = _config(tmp_path)
+    body = (
+        "class C:\n"
+        "    def run(self):\n"
+        "        for t in xs:\n"
+        "            if t == 'dup':\n"
+        "                x = self.pop()\n"
+        "                self.push(x)\n"
+    )
+    (tmp_path / "interp.py").write_text(body, encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    # old_string with wrong (too-shallow) indentation
+    bad = "        x = self.pop()\n        self.push(x)"
+    with pytest.raises(ToolError) as exc:
+        d.dispatch(
+            "apply_edit", {"path": "interp.py", "edits": [{"old_string": bad, "new_string": "y"}]}
+        )
+    msg = str(exc.value)
+    assert "do NOT call read_file" in msg
+    assert "whitespace/indentation" in msg
+    # the verbatim correct text is present so the model can copy it
+    assert "                x = self.pop()\n                self.push(x)" in msg
+
+
+def test_apply_edit_mismatch_unrelated_falls_back_to_shape(tmp_path: Path) -> None:
+    """An old_string with no similar region gets file shape (no copyable body
+    to plagiarise) and is told to re-read."""
+    cfg = _config(tmp_path)
+    (tmp_path / "f.py").write_text("alpha\nbeta\ngamma\ndelta\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(ToolError) as exc:
+        d.dispatch(
+            "apply_edit",
+            {"path": "f.py", "edits": [{"old_string": "zzz\nqqq\nwww\nvvv", "new_string": "y"}]},
+        )
+    msg = str(exc.value)
+    assert "File shape" in msg
+    assert "Re-read" in msg

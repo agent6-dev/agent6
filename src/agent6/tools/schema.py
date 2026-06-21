@@ -82,9 +82,10 @@ class ApplyEditInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "apply_edit"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Apply substring edits to one file. `edits` MUST be an ARRAY of"
-        " objects (NOT a JSON-encoded string), each with three string"
-        ' fields: {"kind": "replace"|"create", "old_string": "...",'
-        ' "new_string": "..."}. Each edit\'s `old_string` MUST occur'
+        " objects (NOT a JSON-encoded string), each with string fields"
+        ' {"old_string": "...", "new_string": "..."} and an OPTIONAL'
+        ' "kind" that defaults to "replace" (set kind="create" only to'
+        " make a new file). Each edit's `old_string` MUST occur"
         " EXACTLY ONCE in the file (whitespace, indentation, and line"
         " endings must match byte-for-byte). If `old_string` is not"
         " unique, expand it with more surrounding context. If `old_string`"
@@ -142,8 +143,13 @@ class ApplyPatchInput(_ToolInput):
 class EditPair(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    kind: str = Field(pattern="^(replace|create)$")
-    old_string: str
+    # Default to "replace": small models routinely omit the discriminator and
+    # send a bare {old_string, new_string}, which pydantic otherwise rejects
+    # with "Field required: kind" (observed live with qwen3-coder-30b). Replace
+    # is the overwhelming-majority case; `create` must still be set explicitly
+    # and `_check_shape` enforces its empty-old_string contract.
+    kind: str = Field(default="replace", pattern="^(replace|create)$")
+    old_string: str = ""
     new_string: str
 
     @model_validator(mode="after")

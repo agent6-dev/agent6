@@ -316,6 +316,97 @@ def _preview_result(
     return result
 
 
+# Cap the closest-match scan so a failed edit on a very large file does not turn
+# into a quadratic diff. Above this the diagnostic falls back to file shape.
+_CLOSEST_MATCH_MAX_LINES = 6000
+
+
+def _closest_on_disk_region(file_text: str, old_string: str) -> tuple[int, str, float] | None:
+    """Find the file region most similar to a not-found ``old_string``.
+
+    Returns ``(1-based start line, region text, similarity ratio)`` for the best
+    contiguous window with the same line count as ``old_string``, or None when
+    the scan is skipped (empty or oversized file). This lets a failed
+    ``apply_edit`` hand the model the EXACT on-disk text to retry with, instead
+    of telling it to re-read the whole file (the dominant small-model time sink).
+    """
+    file_lines = file_text.splitlines()
+    if not file_lines or len(file_lines) > _CLOSEST_MATCH_MAX_LINES:
+        return None
+    old_lines = old_string.splitlines() or [old_string]
+    n = max(1, min(len(old_lines), len(file_lines)))
+    matcher = difflib.SequenceMatcher(autojunk=False)
+    matcher.set_seq2(old_string)
+    best_ratio = -1.0
+    best_idx = 0
+    for i in range(0, len(file_lines) - n + 1):
+        window = "\n".join(file_lines[i : i + n])
+        matcher.set_seq1(window)
+        # quick_ratio is a cheap upper bound; skip windows that cannot win.
+        if matcher.quick_ratio() <= best_ratio:
+            continue
+        r = matcher.ratio()
+        if r > best_ratio:
+            best_ratio = r
+            best_idx = i
+    region = "\n".join(file_lines[best_idx : best_idx + n])
+    return best_idx + 1, region, best_ratio
+
+
+def _edit_mismatch_error(path: str, edit_index: int, file_text: str, old_string: str) -> str:
+    """Build the not-found error for ``apply_edit``. Prefers a copy-paste-able
+    closest on-disk region so the model retries directly; falls back to file
+    shape only when no region is similar enough to be useful."""
+    region_info = _closest_on_disk_region(file_text, old_string)
+    if region_info is not None and region_info[2] >= 0.5:
+        start_line, region, ratio = region_info
+        end_line = start_line + len(region.splitlines()) - 1
+        diff = "\n".join(
+            difflib.unified_diff(
+                old_string.splitlines(),
+                region.splitlines(),
+                fromfile="your_old_string",
+                tofile=f"on_disk_lines_{start_line}-{end_line}",
+                lineterm="",
+                n=1,
+            )
+        )
+        whitespace_only = [ln.strip() for ln in old_string.splitlines()] == [
+            ln.strip() for ln in region.splitlines()
+        ]
+        why = (
+            "It matches your old_string except for whitespace/indentation."
+            if whitespace_only
+            else f"It is the closest region on disk ({ratio:.0%} similar)."
+        )
+        return (
+            f"old_string not found in {path} (edit #{edit_index}). {why} Retry"
+            f" apply_edit using the EXACT on-disk text below as old_string — do"
+            f" NOT call read_file first; this IS the current content of lines"
+            f" {start_line}-{end_line}.\n"
+            f"<<<ON_DISK (copy this verbatim, without these <<< >>> markers)\n"
+            f"{region}\n"
+            f">>>ON_DISK\n"
+            f"difference (- your old_string, + on disk):\n{diff}"
+        )
+    # No region similar enough: orient with file shape only (no body to copy,
+    # so the model cannot plagiarise a wrong anchor).
+    lines = file_text.splitlines()
+    head = "\n".join(lines[:5])
+    tail = "\n".join(lines[-5:]) if len(lines) > 10 else ""
+    snippet = f"file size: {len(file_text)} bytes, {len(lines)} lines\nfirst 5 lines:\n{head}"
+    if tail:
+        snippet += f"\n...\nlast 5 lines:\n{tail}"
+    return (
+        f"old_string not found in {path} (edit #{edit_index}). Your old_string"
+        f" does not match the file content byte-for-byte and no close region"
+        f" exists, so it likely targets the wrong file or a stale expectation."
+        f" Re-read with read_file, then retry with a shorter, uniquely-anchored"
+        f" old_string. File shape (orientation only, do NOT use as old_string"
+        f" verbatim):\n{snippet}"
+    )
+
+
 class ToolDispatcher:
     """Runtime tool dispatcher. Constructed once per workflow run."""
 
@@ -625,36 +716,13 @@ class ToolDispatcher:
                     raise ToolError(f"replace requested but file does not exist: {args.path}")
                 occurrences = new_content.count(edit.old_string)
                 if occurrences == 0:
-                    # The previous error format wrapped the
-                    # full file body in literal `---BEGIN <path>---` /
-                    # `---END <path>---` markers. Models that degenerate on
-                    # repetitive content (observed live with Kimi K2.6) end
-                    # up copying those scaffolding markers verbatim into the
-                    # next `old_string` payload, which then guarantees another
-                    # mismatch and feeds an infinite hallucination loop. The
-                    # new format is "shape only": file size + line count +
-                    # head/tail snippet, with NO wrapping markers and an
-                    # explicit instruction to re-read for the full body. Keeps
-                    # the worker honest about what's actually on disk without
-                    # giving it text it can plagiarise.
-                    lines = new_content.splitlines()
-                    head = "\n".join(lines[:5])
-                    tail = "\n".join(lines[-5:]) if len(lines) > 10 else ""
-                    snippet = (
-                        f"file size: {len(new_content)} bytes, "
-                        f"{len(lines)} lines\n"
-                        f"first 5 lines:\n{head}"
-                    )
-                    if tail:
-                        snippet += f"\n...\nlast 5 lines:\n{tail}"
+                    # Prefer handing the model the exact closest on-disk text so
+                    # it retries directly. Re-reading the whole file is the
+                    # dominant small-model time sink on a botched edit; the
+                    # shape-only fallback (no copyable body) is used only when
+                    # nothing on disk is similar enough to anchor on.
                     raise ToolError(
-                        f"old_string not found in {args.path} (edit #{i}). "
-                        f"Your old_string does not match the actual file "
-                        f"content byte-for-byte. Re-read the file with "
-                        f"read_file to get the current full content, then "
-                        f"retry with a shorter, uniquely-anchored old_string. "
-                        f"File shape (for orientation only — do NOT use as "
-                        f"old_string verbatim):\n{snippet}"
+                        _edit_mismatch_error(args.path, i, new_content, edit.old_string)
                     )
                 if occurrences > 1:
                     raise ToolError(
