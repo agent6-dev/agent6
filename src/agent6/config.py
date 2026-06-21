@@ -519,10 +519,17 @@ class WorkflowConfig(BaseModel):
     # escalates above tier-1 -- the conversation is summarized and restarted
     # (the durable task DAG survives; the restart notice points the worker at
     # ``dag_list_tasks`` to recover task-level state).
-    # ``context_summary_max_tokens`` caps the summarizer's output. Raise the
-    # thresholds for big-context models; lower them to compact sooner.
-    compact_drop_at_chars: int = Field(gt=0, default=256_000)
-    compact_summarise_at_chars: int = Field(gt=0, default=768_000)
+    # ``context_summary_max_tokens`` caps the summarizer's output.
+    #
+    # Default ``None`` == ADAPTIVE: agent6 sizes both thresholds from the worker
+    # model's context window (tier-1 at ~45%, tier-2 at ~80% of it), resolving
+    # the window from a bundled table of tested models + the live model cache
+    # (see ``models_cache.compaction_thresholds``). Pin them by setting BOTH
+    # explicitly (e.g. a self-hosted model agent6 can't size); leave BOTH unset
+    # to stay adaptive. When the window is unknown the historical 256k/768k
+    # fixed defaults apply.
+    compact_drop_at_chars: int | None = Field(default=None, gt=0)
+    compact_summarise_at_chars: int | None = Field(default=None, gt=0)
     context_summary_max_tokens: int = Field(gt=0, default=2048)
     # Optional. None means "no metric; ``run_metric_command`` is unavailable".
     metric: MetricConfig | None = None
@@ -546,14 +553,23 @@ class WorkflowConfig(BaseModel):
 
     @model_validator(mode="after")
     def _check_compaction_thresholds(self) -> WorkflowConfig:
+        drop, summarise = self.compact_drop_at_chars, self.compact_summarise_at_chars
+        # Both-or-neither: a lone value is ambiguous (is the other adaptive or
+        # fixed?). Neither set == adaptive from the model's context window.
+        if (drop is None) != (summarise is None):
+            raise ValueError(
+                "set BOTH workflow.compact_drop_at_chars and"
+                " compact_summarise_at_chars, or NEITHER (neither == adaptive,"
+                " sized from the worker model's context window)."
+            )
         # Tier 2 (summarise + restart) must escalate ABOVE tier 1 (drop old
         # tool_results). If summarise <= drop, tier 2 fires at or before tier 1
         # -- the inverted ordering that historically left tier 2 unreachable.
-        if self.compact_summarise_at_chars <= self.compact_drop_at_chars:
+        if drop is not None and summarise is not None and summarise <= drop:
             raise ValueError(
                 "workflow.compact_summarise_at_chars"
-                f" ({self.compact_summarise_at_chars}) must be greater than"
-                f" compact_drop_at_chars ({self.compact_drop_at_chars}): tier-2"
+                f" ({summarise}) must be greater than"
+                f" compact_drop_at_chars ({drop}): tier-2"
                 " summarise must escalate above tier-1 elision."
             )
         return self

@@ -110,3 +110,66 @@ def test_unsafe_provider_name_still_fetches(
     entry = OpenAIProviderEntry(api_format="openai", base_url="https://api.openai.com/v1")
     assert models_cache.list_models("../evil", entry, "sk") == ["m1"]
     assert not (cache_home / "models").exists()  # nothing written outside
+
+
+# --- context window + adaptive compaction sizing --------------------------
+
+
+def _ok_full(models: list[dict[str, object]]) -> object:
+    def _get(url: str, headers: dict[str, str], timeout: float) -> httpx.Response:
+        return httpx.Response(200, json={"data": models}, request=httpx.Request("GET", url))
+
+    return _get
+
+
+def test_caches_context_length_and_reads_it_back(
+    cache_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        httpx,
+        "get",
+        _ok_full(
+            [
+                {"id": "vendor/big", "context_length": 200000},
+                {"id": "vendor/small", "context_length": 8192},
+                {"id": "vendor/nocontext"},  # missing -> absent (unknown beats wrong)
+            ]
+        ),
+    )
+    entry = OpenAIProviderEntry(api_format="openai", base_url="https://x/v1")
+    models_cache.list_models("vendorx", entry, "k")
+    cached = json.loads((cache_home / "models" / "vendorx.json").read_text())
+    assert cached["context"] == {"vendor/big": 200000, "vendor/small": 8192}
+    # context_window reads the cache (no network), for a model not in the table
+    assert models_cache.context_window("vendorx", "vendor/big") == 200000
+    assert models_cache.context_window("vendorx", "vendor/nocontext") is None
+
+
+def test_context_window_bundled_and_normalized(cache_home: Path) -> None:
+    # Bundled table: exact + a dated/tagged id normalised to the canonical key.
+    assert models_cache.context_window("anthropic", "claude-sonnet-4-6") == 200_000
+    assert models_cache.context_window("anthropic", "claude-haiku-4-5-20251001") == 200_000
+    assert models_cache.context_window("openrouter", "qwen/qwen3-coder:free") == 1_048_576
+    assert models_cache.context_window("openrouter", "vendor/totally-unknown") is None
+
+
+def test_compaction_thresholds_explicit_override_wins(cache_home: Path) -> None:
+    assert models_cache.compaction_thresholds(
+        "openrouter", "moonshotai/kimi-k2.6", drop_override=111, summarise_override=222
+    ) == (111, 222)
+
+
+def test_compaction_thresholds_adaptive_from_window(cache_home: Path) -> None:
+    drop, summarise = models_cache.compaction_thresholds(
+        "openrouter", "moonshotai/kimi-k2.6", drop_override=None, summarise_override=None
+    )
+    assert drop == int(262_144 * 4 * 0.45)
+    assert summarise == int(262_144 * 4 * 0.80)
+    assert drop < summarise  # tier-2 escalates above tier-1
+
+
+def test_compaction_thresholds_fixed_fallback_when_unknown(cache_home: Path) -> None:
+    # No bundled entry, empty cache -> historical 256k/768k (behaviour preserved).
+    assert models_cache.compaction_thresholds(
+        "openrouter", "vendor/totally-unknown", drop_override=None, summarise_override=None
+    ) == (256_000, 768_000)

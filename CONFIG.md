@@ -214,8 +214,8 @@ The security boundary. Profiles and the network model are specified in
 | `critic` | `"off"` | In-loop critic (runs the `reviewer` model): `off` / `on_verify_fail` / `before_finish` / `periodic`. |
 | `critic_period` | `10` | Iterations between critiques when `critic = "periodic"`. |
 | `revise_prompt` | `"off"` | One-shot task-prompt revision before the loop: `off` / `auto` / `interactive`. |
-| `compact_drop_at_chars` | `256000` | Tier-1 compaction: replace oldest tool-results with a placeholder. |
-| `compact_summarise_at_chars` | `768000` | Tier-2 compaction: summarise elided history + restart (the task DAG survives). |
+| `compact_drop_at_chars` | _adaptive_ | Tier-1 compaction: replace oldest tool-results with a placeholder. Default (unset) sizes from the worker model's context window (~45% of it); set BOTH `compact_*` to pin. |
+| `compact_summarise_at_chars` | _adaptive_ | Tier-2 compaction: summarise elided history + restart (the task DAG survives). Default (unset) ~80% of the model's context window; the historical 256k/768k apply when the window is unknown. |
 | `context_summary_max_tokens` | `2048` | Cap on the tier-2 summary. |
 
 ### `[workflow.metric]` (optional)

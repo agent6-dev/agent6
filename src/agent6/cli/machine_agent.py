@@ -31,7 +31,11 @@ from agent6.cli.egress import (
     _maybe_start_egress,
     _stop_egress,
 )
-from agent6.cli.providers import _build_role_provider, _InstrumentedProvider
+from agent6.cli.providers import (
+    _build_role_provider,
+    _InstrumentedProvider,
+    resolve_compaction_thresholds,
+)
 from agent6.config_layer import load_effective_with_overlay
 from agent6.detect import detect
 from agent6.git_ops import set_repo_hook_policy
@@ -148,6 +152,9 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
             extra_protect_paths=protect,
             mode="machine" if read_only else "run",
         )
+        compact_drop, compact_summarise = resolve_compaction_thresholds(
+            cfg, rm, log=lambda msg: print(msg, file=sys.stderr)
+        )
         wf = Workflow(
             root=root,
             config=cfg,
@@ -155,8 +162,8 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
             dispatcher=dispatcher,
             logger=lambda msg: print(msg, file=sys.stderr),
             mode=mode if mode in ("machine", "agent") else "run",
-            compact_drop_at_chars=cfg.workflow.compact_drop_at_chars,
-            compact_summarise_at_chars=cfg.workflow.compact_summarise_at_chars,
+            compact_drop_at_chars=compact_drop,
+            compact_summarise_at_chars=compact_summarise,
             context_summary_max_tokens=cfg.workflow.context_summary_max_tokens,
         )
         result = wf.run(r["prompt"])

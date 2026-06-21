@@ -9,10 +9,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from agent6 import models_cache
 from agent6.budget import BudgetTracker
 from agent6.config import (
     AnthropicProviderEntry,
     Config,
+    RoleModel,
     RoleName,
 )
 from agent6.events import EventSink
@@ -27,6 +29,36 @@ from agent6.providers import (
     TranscriptSink,
 )
 from agent6.secrets import resolve_api_key
+
+
+def resolve_compaction_thresholds(
+    cfg: Config, rm: RoleModel | None, *, log: Callable[[str], None] | None = None
+) -> tuple[int, int]:
+    """Effective ``(compact_drop_at_chars, compact_summarise_at_chars)`` for the
+    model *rm* drives the loop with: the explicit config values if set, else
+    sized from the model's context window (bundled table + live model cache),
+    else the historical fixed defaults. Logs the choice when adaptive so the
+    operator can see what was picked. ``rm is None`` (model unresolved) falls
+    through to explicit-or-fixed-default."""
+    drop_override = cfg.workflow.compact_drop_at_chars
+    summarise_override = cfg.workflow.compact_summarise_at_chars
+    provider = rm.provider if rm is not None else ""
+    model = rm.model if rm is not None else ""
+    drop, summarise = models_cache.compaction_thresholds(
+        provider,
+        model,
+        drop_override=drop_override,
+        summarise_override=summarise_override,
+    )
+    if log is not None and drop_override is None:
+        ctx = models_cache.context_window(provider, model) if model else None
+        src = (
+            f"adaptive from {model} (context {ctx:,} tok)"
+            if ctx
+            else "fixed default (context window unknown)"
+        )
+        log(f"compaction: drop={drop:,} summarise={summarise:,} chars [{src}]")
+    return drop, summarise
 
 
 def _build_role_provider(

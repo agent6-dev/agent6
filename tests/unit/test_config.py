@@ -446,10 +446,24 @@ max_output_tokens = 10000
 
 
 def test_compaction_defaults(tmp_path: Path) -> None:
+    # Default is now None == adaptive (sized from the worker model's context
+    # window at run construction; see models_cache.compaction_thresholds).
     cfg = load_config(_write(tmp_path, _VALID_TOML))
-    assert cfg.workflow.compact_drop_at_chars == 256_000
-    assert cfg.workflow.compact_summarise_at_chars == 768_000
+    assert cfg.workflow.compact_drop_at_chars is None
+    assert cfg.workflow.compact_summarise_at_chars is None
     assert cfg.workflow.context_summary_max_tokens == 2048
+
+
+def test_compaction_both_or_neither(tmp_path: Path) -> None:
+    # A lone threshold is ambiguous (is the other adaptive or fixed?); the
+    # loader must reject setting only one.
+    body = _VALID_TOML.replace(
+        'verify_command = ["true"]',
+        'verify_command = ["true"]\ncompact_drop_at_chars = 100000',
+    )
+    with pytest.raises(ConfigError) as exc:
+        load_config(_write(tmp_path, body))
+    assert "BOTH" in str(exc.value) or "NEITHER" in str(exc.value)
 
 
 def test_compaction_thresholds_overridable(tmp_path: Path) -> None:

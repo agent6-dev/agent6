@@ -55,6 +55,7 @@ from agent6.cli.providers import (
     _build_summariser_provider,
     _InstrumentedProvider,
     _role_temperature,
+    resolve_compaction_thresholds,
 )
 from agent6.config import (
     Config,
@@ -651,6 +652,9 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                 mcp_manager=mcp_manager,
                 mode=mode,
             )
+            compact_drop, compact_summarise = resolve_compaction_thresholds(
+                cfg, rm_worker, log=_eprint if mode == "ask" else print
+            )
             wf = Workflow(
                 root=cwd,
                 config=cfg,
@@ -688,8 +692,8 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                     _select_revised_prompt if cfg.workflow.revise_prompt == "interactive" else None
                 ),
                 summariser_provider=summariser_provider,
-                compact_drop_at_chars=cfg.workflow.compact_drop_at_chars,
-                compact_summarise_at_chars=cfg.workflow.compact_summarise_at_chars,
+                compact_drop_at_chars=compact_drop,
+                compact_summarise_at_chars=compact_summarise,
                 context_summary_max_tokens=cfg.workflow.context_summary_max_tokens,
             )
             try:
@@ -983,6 +987,9 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
                 run_root_node_id=None,
                 mcp_manager=mcp_manager,
             )
+            compact_drop, compact_summarise = resolve_compaction_thresholds(
+                cfg, rm_worker, log=print
+            )
             wf = Workflow(
                 root=cwd,
                 config=cfg,
@@ -1002,8 +1009,8 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
                 temperature=_role_temperature(cfg, "worker"),
                 critic_temperature=_role_temperature(cfg, "reviewer"),
                 summariser_provider=summariser_provider,
-                compact_drop_at_chars=cfg.workflow.compact_drop_at_chars,
-                compact_summarise_at_chars=cfg.workflow.compact_summarise_at_chars,
+                compact_drop_at_chars=compact_drop,
+                compact_summarise_at_chars=compact_summarise,
                 context_summary_max_tokens=cfg.workflow.context_summary_max_tokens,
             )
             try:
