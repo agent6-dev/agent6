@@ -18,6 +18,7 @@ depends_on = []
 path = "agent6.cli"
 depends_on = [
   "agent6.config",
+  "agent6.config_io",
   "agent6.config_layer",
   "agent6.models_cache",
   "agent6.paths",
@@ -120,8 +121,12 @@ path = "agent6.secrets"
 depends_on = ["agent6.paths"]
 
 [[modules]]
+path = "agent6.config_io"
+depends_on = ["agent6.config"]
+
+[[modules]]
 path = "agent6.config_layer"
-depends_on = ["agent6.config", "agent6.paths"]
+depends_on = ["agent6.config", "agent6.config_io", "agent6.paths"]
 
 [[modules]]
 path = "agent6.models_cache"

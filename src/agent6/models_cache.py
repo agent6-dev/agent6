@@ -27,11 +27,11 @@ from pathlib import Path
 
 import httpx
 
-from agent6.config import AnthropicProviderEntry, ProviderEntry
+from agent6.config import AnthropicProviderEntry, Config, ProviderEntry
 from agent6.paths import cache_dir
 from agent6.providers.wire import auth_header
 
-__all__ = ["compaction_thresholds", "context_window", "list_models"]
+__all__ = ["compaction_thresholds", "context_window", "list_models", "resolved_adaptive_values"]
 
 _ANTHROPIC_VERSION = "2023-06-01"
 _CACHE_TTL_S = 600  # 10 minutes
@@ -308,3 +308,24 @@ def compaction_thresholds(
     drop = int(ctx * _CHARS_PER_TOKEN * _DROP_FRACTION)
     summarise = int(ctx * _CHARS_PER_TOKEN * _SUMMARISE_FRACTION)
     return drop, summarise
+
+
+def resolved_adaptive_values(cfg: Config) -> dict[str, object]:
+    """Config settings whose effective value is resolved at runtime, so a UI
+    (`config show`, the TUI/web config page) can display the real number rather
+    than the unset/adaptive placeholder. Currently the adaptive compaction
+    thresholds, sized from the worker model's context window; empty when no
+    worker model is configured."""
+    rm = cfg.models.resolve("worker")
+    if rm is None:
+        return {}
+    drop, summarise = compaction_thresholds(
+        rm.provider,
+        rm.model,
+        drop_override=cfg.workflow.compact_drop_at_chars,
+        summarise_override=cfg.workflow.compact_summarise_at_chars,
+    )
+    return {
+        "workflow.compact_drop_at_chars": drop,
+        "workflow.compact_summarise_at_chars": summarise,
+    }

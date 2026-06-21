@@ -17,6 +17,8 @@ from agent6.config_layer import (
     materialize,
     render_show,
     repo_config_path_for,
+    set_config_value,
+    unset_config_value,
 )
 
 _GLOBAL = """\
@@ -164,6 +166,28 @@ def test_render_show_json_is_full_view(repo: Path) -> None:
 def test_render_show_text_marks_adaptive(repo: Path) -> None:
     text = render_show(load_effective(repo), resolved={"workflow.compact_drop_at_chars": 471859})
     assert "(adaptive)" in text and "471859" in text
+
+
+# --- shared edit path (the CLI + TUI/web editors write through this) ---
+
+
+def test_set_then_unset_config_value(repo: Path) -> None:
+    # repo config starts with run_commands="yes"; global has "ask".
+    err = set_config_value(repo, "sandbox.run_commands", "no", to_repo=True)
+    assert err is None
+    eff = load_effective(repo)
+    assert eff.config.sandbox.run_commands == "no"
+    assert eff.sources["sandbox.run_commands"] == "repo"
+    # unset removes the repo override -> falls through to the global "ask".
+    assert unset_config_value(repo, "sandbox.run_commands", to_repo=True) is None
+    assert load_effective(repo).config.sandbox.run_commands == "ask"
+
+
+def test_set_config_value_invalid_rolls_back(repo: Path) -> None:
+    err = set_config_value(repo, "sandbox.run_commands", "bogus_value", to_repo=True)
+    assert err is not None  # invalid enum -> rejected
+    # the repo file was rolled back to its prior contents (run_commands="yes").
+    assert load_effective(repo).config.sandbox.run_commands == "yes"
 
 
 def test_flag_layer_wins(repo: Path, tmp_path: Path) -> None:

@@ -9,16 +9,15 @@ import tempfile
 from pathlib import Path
 
 from agent6 import models_cache
-from agent6.cli.toml_io import (
-    _parse_cli_value,
-    _read_toml_file,
-    _read_toml_leaf,
-    _remove_toml_leaf,
-    _upsert_toml_leaf,
-)
 from agent6.config import (
-    Config,
     ConfigError,
+)
+from agent6.config_io import (
+    parse_cli_value,
+    read_toml_file,
+    read_toml_leaf,
+    remove_toml_leaf,
+    upsert_toml_leaf,
 )
 from agent6.config_layer import (
     effective_leaf,
@@ -38,33 +37,13 @@ from agent6.paths import (
 )
 
 
-def _resolved_adaptive_values(cfg: Config) -> dict[str, object]:
-    """Settings whose effective value is resolved at runtime, so `config show`
-    can display the real number rather than the unset/adaptive placeholder.
-    Currently the adaptive compaction thresholds, sized from the worker model's
-    context window (empty when no worker model is configured)."""
-    rm = cfg.models.resolve("worker")
-    if rm is None:
-        return {}
-    drop, summarise = models_cache.compaction_thresholds(
-        rm.provider,
-        rm.model,
-        drop_override=cfg.workflow.compact_drop_at_chars,
-        summarise_override=cfg.workflow.compact_summarise_at_chars,
-    )
-    return {
-        "workflow.compact_drop_at_chars": drop,
-        "workflow.compact_summarise_at_chars": summarise,
-    }
-
-
 def _cmd_config_show(config_path: Path | None, *, as_json: bool) -> int:
     try:
         eff = load_effective(Path.cwd(), config_path)
     except ConfigError as exc:
         print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
         return 2
-    resolved = _resolved_adaptive_values(eff.config)
+    resolved = models_cache.resolved_adaptive_values(eff.config)
     print(render_show(eff, as_json=as_json, resolved=resolved), end="")
     return 0
 
@@ -165,7 +144,7 @@ def _revalidate_config(target: Path, prior_text: str | None, *, machine: Path | 
     err: str | None = None
     try:
         if machine is not None:
-            data = _read_toml_file(target)
+            data = read_toml_file(target)
             overlay = data.get("config", {})
             load_effective_with_overlay(Path.cwd(), overlay if isinstance(overlay, dict) else {})
             # Validate the WHOLE machine spec too (not just the [config] overlay)
@@ -194,7 +173,7 @@ def _cmd_config_get(key: str, *, machine: Path | None) -> int:
     """Print a leaf's effective value + the layer that set it."""
     try:
         if machine is not None:
-            overlay = _read_toml_file(machine).get("config", {})
+            overlay = read_toml_file(machine).get("config", {})
             eff = load_effective_with_overlay(
                 Path.cwd(), overlay if isinstance(overlay, dict) else {}
             )
@@ -224,9 +203,9 @@ def _cmd_config_set(key: str, value: str, *, repo: bool, machine: Path | None) -
         return 2
     target.parent.mkdir(parents=True, exist_ok=True)
     prior = target.read_text(encoding="utf-8") if target.is_file() else None
-    parsed = _parse_cli_value(value)
+    parsed = parse_cli_value(value)
     try:
-        _upsert_toml_leaf(target, prefix + key, parsed)
+        upsert_toml_leaf(target, prefix + key, parsed)
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
@@ -254,7 +233,7 @@ def _cmd_config_unset(key: str, *, repo: bool, machine: Path | None) -> int:  # 
         return 2
     prior = target.read_text(encoding="utf-8")
     try:
-        removed = _remove_toml_leaf(target, prefix + key)
+        removed = remove_toml_leaf(target, prefix + key)
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
@@ -281,13 +260,13 @@ def _config_list_edit(  # noqa: PLR0911
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
-    current = _read_toml_leaf(_read_toml_file(target), prefix + key)
+    current = read_toml_leaf(read_toml_file(target), prefix + key)
     if current is None:
         current = []
     if not isinstance(current, list):
         print(f"ERROR: {key} is not a list field in {target}.", file=sys.stderr)
         return 2
-    parsed = _parse_cli_value(value)
+    parsed = parse_cli_value(value)
     items = list(current)
     if add:
         if parsed in items:
@@ -302,7 +281,7 @@ def _config_list_edit(  # noqa: PLR0911
     target.parent.mkdir(parents=True, exist_ok=True)
     prior = target.read_text(encoding="utf-8") if target.is_file() else None
     try:
-        _upsert_toml_leaf(target, prefix + key, items)
+        upsert_toml_leaf(target, prefix + key, items)
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2

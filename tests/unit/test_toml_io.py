@@ -1,16 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for agent6.cli.toml_io scalar/table serialization + leaf surgery."""
+"""Tests for agent6.config_io scalar/table serialization + leaf surgery."""
 
 from __future__ import annotations
 
 import tomllib
 from pathlib import Path
 
-from agent6.cli.toml_io import (
-    _parse_cli_value,  # pyright: ignore[reportPrivateUsage]
+from agent6.config_io import (
     _toml_repr,  # pyright: ignore[reportPrivateUsage]
-    _upsert_toml_leaf,  # pyright: ignore[reportPrivateUsage]
+    parse_cli_value,  # pyright: ignore[reportPrivateUsage]
+    upsert_toml_leaf,  # pyright: ignore[reportPrivateUsage]
 )
 
 
@@ -37,8 +37,8 @@ def test_config_set_whole_extra_body_value_round_trips(tmp_path: Path) -> None:
         'extra_body = { provider = { sort = "throughput" } }\n',
         encoding="utf-8",
     )
-    value = _parse_cli_value('{ provider = { sort = "latency" } }')  # pyright: ignore[reportPrivateUsage]
-    _upsert_toml_leaf(  # pyright: ignore[reportPrivateUsage]
+    value = parse_cli_value('{ provider = { sort = "latency" } }')  # pyright: ignore[reportPrivateUsage]
+    upsert_toml_leaf(  # pyright: ignore[reportPrivateUsage]
         cfg, "providers.openrouter.extra_body", value
     )
     parsed = tomllib.loads(cfg.read_text(encoding="utf-8"))

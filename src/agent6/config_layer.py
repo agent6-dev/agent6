@@ -30,7 +30,13 @@ from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
 from agent6.config import Config, ConfigError, validate_config
+from agent6.config_io import (
+    parse_cli_value,
+    remove_toml_leaf,
+    upsert_toml_leaf,
+)
 from agent6.paths import (
+    chown_to_real_user,
     global_config_path,
     repo_config_path,
     state_dir,
@@ -580,3 +586,74 @@ def materialize(config: Config, *, for_repo: bool = False) -> str:
                         lines.append(f"{k2} = {_toml_scalar(v2)}")
                 lines.append("")
     return "\n".join(lines).rstrip("\n") + "\n"
+
+
+# ---------------------------------------------------------------------------
+# Shared edit path: the `config` CLI and the TUI/web config editors write
+# through these, so a value set from any UI is parsed, persisted (comment-
+# preserving), re-validated, and rolled back on failure identically.
+# ---------------------------------------------------------------------------
+
+
+def _write_target(repo_root: Path, *, to_repo: bool) -> Path:
+    return repo_config_path_for(repo_root) if to_repo else global_config_path()
+
+
+def _revalidate(repo_root: Path, target: Path, prior: str | None) -> str | None:
+    """Re-load the merged config after an edit; restore *prior* (or delete a
+    freshly-created file) and return the error string if the edit is invalid."""
+    try:
+        load_effective(repo_root, None)
+    except ConfigError as exc:
+        if prior is None:
+            target.unlink(missing_ok=True)
+        else:
+            target.write_text(prior, encoding="utf-8")
+        return str(exc)
+    return None
+
+
+def set_config_value(
+    repo_root: Path, dotted_key: str, raw_value: str, *, to_repo: bool = False
+) -> str | None:
+    """Set one leaf in the global (or, with *to_repo*, the repo) config.
+
+    *raw_value* is interpreted exactly as ``config set`` interprets a CLI value
+    (``true``/numbers/arrays parse; a bare word stays a string). Returns an
+    error string when the edit produced an invalid config (the file is rolled
+    back and left as it was), else None.
+    """
+    target = _write_target(repo_root, to_repo=to_repo)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    prior = target.read_text(encoding="utf-8") if target.is_file() else None
+    try:
+        upsert_toml_leaf(target, dotted_key, parse_cli_value(raw_value))
+    except ValueError as exc:
+        return str(exc)
+    err = _revalidate(repo_root, target, prior)
+    if err is None:
+        chown_to_real_user(target.parent)
+        chown_to_real_user(target)
+    return err
+
+
+def unset_config_value(repo_root: Path, dotted_key: str, *, to_repo: bool = False) -> str | None:
+    """Remove one leaf so it reverts to the next layer / built-in default.
+
+    Re-validates and rolls back on failure. Returns None on success, including
+    the no-op case where the key was not set in the target file.
+    """
+    target = _write_target(repo_root, to_repo=to_repo)
+    if not target.is_file():
+        return None
+    prior = target.read_text(encoding="utf-8")
+    try:
+        removed = remove_toml_leaf(target, dotted_key)
+    except ValueError as exc:
+        return str(exc)
+    if not removed:
+        return None
+    err = _revalidate(repo_root, target, prior)
+    if err is None:
+        chown_to_real_user(target)
+    return err

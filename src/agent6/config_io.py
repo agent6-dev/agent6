@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Comment-preserving TOML read/write helpers for the CLI config writers."""
+"""Comment-preserving TOML read/write surgery for config writers.
+
+Low-level, UI-agnostic: used by the `config` CLI subcommands, by
+`config_layer`'s shared edit path, and (through it) by the TUI/web config
+editors, so every writer preserves comments + siblings identically."""
 
 from __future__ import annotations
 
@@ -19,7 +23,7 @@ def _toml_value(value: str | bool) -> str:
     return f'"{escaped}"'
 
 
-def _upsert_toml_table(path: Path, table: str, fields: dict[str, str | bool | None]) -> None:
+def upsert_toml_table(path: Path, table: str, fields: dict[str, str | bool | None]) -> None:
     """Insert or replace a single ``[table]`` block in *path*, preserving the
     rest of the file (other tables and their comments).
 
@@ -86,7 +90,7 @@ def _toml_key(key: object) -> str:
     return k if re.fullmatch(r"[A-Za-z0-9_-]+", k) else _toml_value(k)
 
 
-def _parse_cli_value(value: str) -> object:
+def parse_cli_value(value: str) -> object:
     """Interpret a CLI-supplied value the way TOML would.
 
     ``true``/``false`` become bools, numbers become int/float, quoted or
@@ -115,10 +119,10 @@ def _split_dotted_key(dotted_key: str) -> tuple[str, str]:
     return ".".join(parts[:-1]), parts[-1]
 
 
-def _upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
+def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
     """Set a single ``table.leaf`` key in *path*, preserving the rest verbatim.
 
-    Like :func:`_upsert_toml_table` this is deliberate line surgery rather than
+    Like :func:`upsert_toml_table` this is deliberate line surgery rather than
     a full serializer round-trip, so comments and sibling keys/tables survive.
     Creates the ``[table]`` block if it is absent.
     """
@@ -150,7 +154,7 @@ def _upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
     path.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
 
 
-def _remove_toml_leaf(path: Path, dotted_key: str) -> bool:
+def remove_toml_leaf(path: Path, dotted_key: str) -> bool:
     """Delete a single ``table.leaf`` line from *path*. Returns True if removed."""
     table, leaf = _split_dotted_key(dotted_key)
     if not path.is_file():
@@ -174,7 +178,7 @@ def _remove_toml_leaf(path: Path, dotted_key: str) -> bool:
     return False
 
 
-def _read_toml_file(path: Path) -> dict[str, Any]:
+def read_toml_file(path: Path) -> dict[str, Any]:
     """Parse *path* as TOML, or return an empty dict if it does not exist.
 
     Wrap a parse error in ``ConfigError`` (matching ``config_layer._read_toml``)
@@ -190,7 +194,7 @@ def _read_toml_file(path: Path) -> dict[str, Any]:
         raise ConfigError(f"{path}: invalid TOML: {exc}") from exc
 
 
-def _read_toml_leaf(data: dict[str, Any], dotted_key: str) -> object:
+def read_toml_leaf(data: dict[str, Any], dotted_key: str) -> object:
     """Walk *data* by the dotted key, returning the value or None if absent."""
     cur: object = data
     for part in dotted_key.split("."):

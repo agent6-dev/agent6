@@ -21,12 +21,12 @@ from typing import Any, Literal
 from agent6.cli._common import _check_provider_keys, _machines_dir, _state_dir, detect_env
 from agent6.cli.egress import _check_network_profile, _warn_if_unsandboxed
 from agent6.cli.scriptcheck import lint_and_typecheck, run_offline_tests
-from agent6.cli.toml_io import _upsert_toml_leaf
 from agent6.config import (
     Config,
     ConfigError,
     MachineConfig,
 )
+from agent6.config_io import upsert_toml_leaf
 from agent6.config_layer import (
     load_effective,
     load_effective_with_overlay,
@@ -495,7 +495,7 @@ def _resolve_network_refusal(  # noqa: PLR0911
     target = repo_config_path_for(cwd)
     target.parent.mkdir(parents=True, exist_ok=True)
     for key, value in fix.items():
-        _upsert_toml_leaf(target, key, value)
+        upsert_toml_leaf(target, key, value)
     chown_to_real_user(target.parent)
     chown_to_real_user(target)
     try:

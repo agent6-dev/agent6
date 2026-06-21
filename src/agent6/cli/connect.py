@@ -9,8 +9,8 @@ import re
 import sys
 from pathlib import Path
 
-from agent6.cli.toml_io import _upsert_toml_table
 from agent6.config import _validate_base_url
+from agent6.config_io import upsert_toml_table
 from agent6.config_layer import (
     repo_config_path_for,
 )
@@ -157,7 +157,7 @@ def _cmd_connect(*, provider: str, to_repo: bool) -> int:
     fields: dict[str, str | bool | None] = {"api_format": api_format}
     if api_format == "openai" and base_url and base_url != "https://api.openai.com/v1":
         fields["base_url"] = base_url
-    _upsert_toml_table(target, f"providers.{name}", fields)
+    upsert_toml_table(target, f"providers.{name}", fields)
     chown_to_real_user(target.parent)
     chown_to_real_user(target)
     print(f"Wrote [providers.{name}] to {target}.")

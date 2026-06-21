@@ -8,12 +8,12 @@ import sys
 from pathlib import Path
 from typing import cast
 
-from agent6.cli.toml_io import _upsert_toml_table
 from agent6.config import (
     Config,
     ConfigError,
     RoleName,
 )
+from agent6.config_io import upsert_toml_table
 from agent6.config_layer import (
     load_effective,
     repo_config_path_for,
@@ -156,7 +156,7 @@ def _cmd_model(
         ("planner", "worker", "reviewer") if role == "all" else (cast("RoleName", role),)
     )
     for r in roles:
-        _upsert_toml_table(target, f"models.{r}", fields)
+        upsert_toml_table(target, f"models.{r}", fields)
     chown_to_real_user(target.parent)
     chown_to_real_user(target)
     # Re-validate so a bad combination is caught immediately.
