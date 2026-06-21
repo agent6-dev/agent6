@@ -1,12 +1,13 @@
 name: ci
 
-# Lints, type-checks, and tests against the EXACT wheel produced by
-# build.yml (which has agent6-jail bundled inside it), so CI never tests
-# a freshly-rebuilt-from-source variant.
+# Lints + type-checks once, then runs the test suite against the EXACT wheels
+# produced by build.yml (agent6-jail bundled inside) across every supported
+# Python (3.12–3.14) on BOTH amd64 and arm64 — so a version- or arch-specific
+# break can't slip through a single-target run.
 
 on:
   push:
-    branches: [master, main]
+    branches: [master]
   pull_request:
 
 permissions:
@@ -16,9 +17,9 @@ jobs:
   build:
     uses: ./.github/workflows/build.yml
 
-  verify:
-    name: ruff + pyright + tach + pytest
-    needs: build
+  lint:
+    name: ruff + pyright + tach
+    # Arch- and version-independent static checks: run once.
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6.0.2
@@ -31,37 +32,69 @@ jobs:
       - name: Sync dev environment
         run: uv sync --all-extras --dev
 
-      - name: Download built wheel
-        uses: actions/download-artifact@v8.0.1
-        with:
-          name: ${{ needs.build.outputs.wheel_artifact }}
-          path: dist/
-
-      - name: Install the built wheel into the env
-        run: |
-          wheel=$(ls dist/agent6-*.whl)
-          uv pip install --reinstall "$wheel"
-
       - run: uv run ruff check
       - run: uv run ruff format --check
       - run: uv run pyright
       - run: uv run tach check
+
+  test:
+    name: pytest (${{ matrix.platform.arch }}, py${{ matrix.python }})
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13", "3.14"]
+        platform:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.platform.runner }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Install uv + Python ${{ matrix.python }}
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python }}
+
+      - name: Sync dev environment
+        run: uv sync --all-extras --dev
+
+      - name: Download the built wheel for this arch
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: agent6-dist-${{ matrix.platform.arch }}
+          path: dist/
+
+      - name: Install the built wheel into the env
+        # py3-none-<plat>: one wheel covers every supported interpreter, so the
+        # same arch wheel is exercised on 3.12, 3.13, and 3.14.
+        run: |
+          wheel=$(ls dist/agent6-*.whl)
+          uv pip install --reinstall "$wheel"
+
       - run: uv run pytest -ra
 
   sandbox-smoke:
-    name: agent6 check sandbox
+    name: agent6 check sandbox (${{ matrix.platform.arch }})
     needs: build
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.platform.runner }}
     steps:
       - uses: actions/checkout@v6.0.2
 
       - name: Install uv
         uses: astral-sh/setup-uv@v8.1.0
 
-      - name: Download built wheel
+      - name: Download the built wheel for this arch
         uses: actions/download-artifact@v8.0.1
         with:
-          name: ${{ needs.build.outputs.wheel_artifact }}
+          name: agent6-dist-${{ matrix.platform.arch }}
           path: dist/
 
       - name: Install the wheel as a CLI tool
@@ -70,12 +103,11 @@ jobs:
           uv tool install "$wheel"
 
       - name: Allow unprivileged user namespaces (Ubuntu 24.04 AppArmor)
-        # Since Ubuntu 23.10 the default AppArmor policy blocks
-        # unprivileged userns creation, which makes agent6's `strict`
-        # sandbox profile fail with `uid_map: Operation not permitted`.
-        # The GitHub Actions ubuntu-24.04 runner image carries this
-        # restriction; relax it so check sandbox can actually exercise
-        # the strict path the rest of the world will use.
+        # Since Ubuntu 23.10 the default AppArmor policy blocks unprivileged
+        # userns creation, which makes agent6's `strict` sandbox profile fail
+        # with `uid_map: Operation not permitted`. The GitHub Actions
+        # ubuntu-24.04 images (amd64 + arm64) carry this; relax it so check
+        # sandbox can exercise the strict path the rest of the world will use.
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
       - name: agent6 check sandbox

@@ -1,7 +1,8 @@
 name: pypi
 
 # Publishes to PyPI via Trusted Publishing (OpenID Connect) on release.
-# Reuses the wheel + sdist built by build.yml. No API tokens stored.
+# Reuses the amd64 + arm64 wheels + the sdist built by build.yml. No API
+# tokens stored.
 #
 # One-time PyPI setup: configure a Trusted Publisher for the `agent6`
 # project pointing at this repository + workflow + environment "pypi".
@@ -27,16 +28,19 @@ jobs:
     permissions:
       id-token: write  # required for OIDC token exchange
     steps:
-      - name: Download wheel + sdist
+      - name: Download every arch's wheel + the sdist
+        # build.yml uploads one artifact per arch (agent6-dist-amd64 /
+        # agent6-dist-arm64); merge them into a single dist/ for upload.
         uses: actions/download-artifact@v8.0.1
         with:
-          name: ${{ needs.build.outputs.wheel_artifact }}
+          pattern: agent6-dist-*
+          merge-multiple: true
           path: dist/
 
-      - name: Sanity-check artifacts
+      - name: Sanity-check artifacts (both arch wheels + the sdist)
         run: |
           ls -la dist/
-          test -n "$(ls dist/agent6-*.whl 2>/dev/null)"
+          test "$(ls dist/agent6-*.whl 2>/dev/null | wc -l)" -ge 2
           test -n "$(ls dist/agent6-*.tar.gz 2>/dev/null)"
 
       - name: Publish to PyPI

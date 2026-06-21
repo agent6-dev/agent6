@@ -1,35 +1,46 @@
 name: build
 
-# Builds the Python wheel + sdist. The hatch hook (hatch_build.py) runs
-# `cargo build --release --locked` against src/agent6/jail/Cargo.toml as part of the
-# wheel build and bundles the resulting agent6-jail binary inside the
-# wheel under agent6/sandbox/_bin/.
+# Builds the Python wheel(s) + sdist for BOTH amd64 and arm64. The hatch hook
+# (hatch_build.py) runs `cargo build --release --locked` against
+# src/agent6/jail/Cargo.toml as part of each wheel build and bundles the
+# resulting agent6-jail binary inside the wheel under agent6/sandbox/_bin/.
+#
+# Each arch builds NATIVELY on its own runner (ubuntu-24.04 / ubuntu-24.04-arm),
+# so the jail binary is the host arch and no cross-linker is needed. The sdist
+# is architecture-independent, so it is built once (on amd64).
 #
 # Only actions from `actions/*`, `astral-sh/*`, and `pypa/*` are used and
-# pinned to the latest immutable tag. Rust comes pre-installed on the
-# `ubuntu-24.04` runner image, so no third-party toolchain or cache action
-# is needed.
+# pinned to the latest immutable tag. Rust comes pre-installed on both runner
+# images, so no third-party toolchain or cache action is needed.
 
 on:
   push:
-    branches: [master, main]
+    branches: [master]
     tags: ["v*"]
   pull_request:
   workflow_call:
-    outputs:
-      wheel_artifact:
-        description: Name of the uploaded wheel/sdist artifact.
-        value: ${{ jobs.build.outputs.wheel_artifact }}
 
 permissions:
   contents: read
 
 jobs:
   build:
-    name: build wheel + sdist (jail bundled by hatch hook)
-    runs-on: ubuntu-24.04
-    outputs:
-      wheel_artifact: ${{ steps.names.outputs.wheel }}
+    name: build ${{ matrix.arch }} wheel (jail bundled by hatch hook)
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            rust_target: x86_64-unknown-linux-musl
+            plat_tag: manylinux_2_17_x86_64.musllinux_1_2_x86_64
+            sdist: true
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            rust_target: aarch64-unknown-linux-musl
+            plat_tag: manylinux_2_17_aarch64.musllinux_1_2_aarch64
+            sdist: false
     steps:
       - uses: actions/checkout@v6.0.2
 
@@ -45,20 +56,23 @@ jobs:
 
       - name: Add the static-musl Rust target
         # The jail crate is pure Rust (no C deps), so it links into a fully
-        # static musl binary with NO glibc dependency. Building host-native on
-        # ubuntu-24.04 (glibc 2.39) instead would make the wheel fail on older
-        # systems (e.g. Debian 12 / glibc 2.36) with `GLIBC_2.39 not found`.
-        run: rustup target add x86_64-unknown-linux-musl
+        # static musl binary with NO glibc dependency. Building host-glibc
+        # instead would make the wheel fail on older systems (e.g. Debian 12 /
+        # glibc 2.36) with `GLIBC_x.y not found`. Each runner is the wheel's own
+        # arch, so this is a NATIVE (not cross) build — no cross-linker needed.
+        run: rustup target add ${{ matrix.rust_target }}
 
       - name: Build wheel + sdist (hatch hook compiles + bundles agent6-jail)
         # AGENT6_JAIL_TARGET tells hatch_build.py to build the static musl
-        # binary instead of a host-glibc one.
+        # binary instead of a host-glibc one. --sdist is added on amd64 only
+        # (it is arch-independent); arm64 builds the wheel alone. uv builds the
+        # sdist first (from the clean tree), so it never bundles the binary.
         env:
-          AGENT6_JAIL_TARGET: x86_64-unknown-linux-musl
-        run: uv build --wheel --sdist --out-dir dist/
+          AGENT6_JAIL_TARGET: ${{ matrix.rust_target }}
+        run: uv build --wheel ${{ matrix.sdist && '--sdist' || '' }} --out-dir dist/
 
       - name: Re-tag wheel for PyPI
-        # `uv build` tags the wheel `py3-none-linux_x86_64` (set by
+        # `uv build` tags the wheel `py3-none-linux_<arch>` (set by
         # hatch_build.py: the only native artifact is the bundled agent6-jail
         # binary, independent of the Python ABI — one wheel covers every
         # interpreter satisfying `requires-python = ">=3.12"`). PyPI refuses
@@ -66,25 +80,21 @@ jobs:
         # glibc dependency, so it runs on any manylinux (down to 2_17) AND on
         # musl systems (Alpine); we advertise both. Re-tagging is pure metadata
         # (`wheel tags` rewrites the filename + WHEEL metadata in place;
-        # `--remove` drops the old file).
-        # One compressed (dot-joined) platform tag so the wheel advertises BOTH;
-        # passing --platform-tag twice would keep only the last.
+        # `--remove` drops the old file). One compressed (dot-joined) platform
+        # tag advertises BOTH; passing --platform-tag twice keeps only the last.
         run: |
           uv tool run --from wheel wheel tags \
-            --platform-tag manylinux_2_17_x86_64.musllinux_1_2_x86_64 \
+            --platform-tag ${{ matrix.plat_tag }} \
             --remove \
-            dist/agent6-*-linux_x86_64.whl
+            dist/agent6-*-linux_*.whl
           ls -la dist/
 
       - name: Verify wheel metadata
         run: uv tool run --from twine twine check dist/*
 
-      - id: names
-        run: echo "wheel=agent6-dist" >> "$GITHUB_OUTPUT"
-
       - uses: actions/upload-artifact@v7.0.1
         with:
-          name: agent6-dist
+          name: agent6-dist-${{ matrix.arch }}
           path: dist/
           if-no-files-found: error
           retention-days: 14
