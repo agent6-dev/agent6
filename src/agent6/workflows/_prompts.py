@@ -12,6 +12,13 @@ own the assembly.
 
 from __future__ import annotations
 
+import json
+import os
+from typing import Literal
+
+from agent6.config import Config
+from agent6.types import RepoSummary
+
 SYSTEM_PROMPT_BASE = """<role>
 You are agent6, a sandboxed coding agent. You receive a task in the
 first user message, plan and execute changes in this repository, verify
@@ -410,3 +417,141 @@ CONTEXT_RESTART_NOTICE = (
     " Treat the DAG as the authoritative record of what is done vs. pending —"
     " the summary below is only a narrative supplement.\n\nPROGRESS SUMMARY:\n"
 )
+
+
+def build_system_prompt(
+    *,
+    config: Config,
+    repo: RepoSummary,
+    mode: Literal["run", "plan", "ask", "machine", "agent"] = "run",
+) -> str:
+    """Assemble the system prompt from static blocks + run-specific context.
+
+    The whole system prompt is sent on every turn but gets cached by the
+    Anthropic prompt-caching machinery (lineage). Per-turn cost
+    after the first call is ~10% of full input rate for the cached prefix.
+
+    ``mode="plan"`` swaps the base block for the planning-mode
+    prompt; the verify/metric/repo/co-change/hot-symbols blocks below
+    are appended unchanged so the planner sees the same project context
+    an executor would.
+    """
+    base = (
+        ASK_SYSTEM_PROMPT_BASE
+        if mode == "ask"
+        else MACHINE_SYSTEM_PROMPT_BASE
+        if mode == "machine"
+        else AGENT_SYSTEM_PROMPT_BASE
+        if mode == "agent"
+        else PLAN_SYSTEM_PROMPT_BASE
+        if mode == "plan"
+        else SYSTEM_PROMPT_BASE
+    )
+    parts = [base]
+
+    # When the bench harness sets
+    # `AGENT6_DISABLE_APPLY_EDIT=1`, apply_edit is filtered out of the
+    # tool list. Tell the model so it doesn't try to call a tool that's
+    # been removed and waste turns on the resulting `Unknown tool` errors.
+    # Plan mode already filters both apply_edit and apply_patch, so the
+    # patch-only banner does not apply.
+    if mode == "run" and os.environ.get("AGENT6_DISABLE_APPLY_EDIT") == "1":
+        parts.append(
+            "<patch-only-mode>\n"
+            "`apply_edit` has been disabled for this run. The only edit\n"
+            "primitive available is `apply_patch` (unified diff). Use it\n"
+            "for every change, including file creation (emit a diff with\n"
+            "`--- /dev/null` as the source side).\n"
+            "</patch-only-mode>\n"
+        )
+
+    # Machine-authoring and machine `agent`-state modes have no verify/metric/
+    # repo context: those blocks reference tools they aren't given (run_verify /
+    # run_metric) and the repo prior only tempts them to spelunk. They just need
+    # the budget cap + their base prompt.
+    if mode in ("machine", "agent"):
+        parts.append(
+            V2_BUDGET_BLOCK_TEMPLATE.format(
+                in_cap=config.budget.max_input_tokens,
+                out_cap=config.budget.max_output_tokens,
+            )
+        )
+        return "\n".join(parts)
+
+    verify_argv = list(config.workflow.verify_command)
+    parts.append(
+        V2_VERIFY_BLOCK_TEMPLATE.format(
+            argv=json.dumps(verify_argv),
+            timeout_s=config.workflow.verify_timeout_s,
+        )
+    )
+
+    if config.workflow.metric is not None:
+        m = config.workflow.metric
+        parts.append(
+            V2_METRIC_BLOCK_TEMPLATE.format(
+                argv=json.dumps(list(m.command)),
+                pattern=m.pattern,
+                goal=m.goal,
+            )
+        )
+
+    parts.append(
+        V2_BUDGET_BLOCK_TEMPLATE.format(
+            in_cap=config.budget.max_input_tokens,
+            out_cap=config.budget.max_output_tokens,
+        )
+    )
+
+    # Structural priors injected directly.
+    co_change_block = ""
+    if repo.co_change_pairs:
+        lines = "\n".join(
+            f"  {a} <-> {b}  (changed together {c} times)" for a, b, c in repo.co_change_pairs[:20]
+        )
+        co_change_block = (
+            "Git co-change pairs (files that historically change together;"
+            " consider when editing one of these):\n"
+            f"{lines}\n\n"
+        )
+
+    hot_symbols_block = ""
+    if repo.hot_symbols:
+        lines = "\n".join(
+            f"  {name} ({kind}) at {path}:{line + 1}, referenced across {n_files} files"
+            for name, kind, path, line, n_files in repo.hot_symbols[:15]
+        )
+        hot_symbols_block = (
+            "Hot symbols (cross-file reference hot spots from static analysis;"
+            " changing one of these forces edits across the listed file count):\n"
+            f"{lines}\n\n"
+        )
+
+    repo_map_block = ""
+    if repo.repo_map:
+        repo_map_block = f"Repo map (tracked files grouped by directory):\n{repo.repo_map}\n\n"
+
+    symbol_outline_block = ""
+    if repo.symbol_outline:
+        symbol_outline_block = (
+            "Symbol outline (top-level defs per file from the tree-sitter index;"
+            " line numbers are 1-based):\n"
+            f"{repo.symbol_outline}\n\n"
+        )
+
+    parts.append(
+        V2_REPO_BLOCK_TEMPLATE.format(
+            branch=repo.branch,
+            head_sha=repo.head_sha[:12] or "(no commits yet)",
+            file_count=repo.file_count,
+            top_level=", ".join(repo.top_level),
+            agents_md=repo.agents_md or "(empty)",
+            repo_map_block=repo_map_block,
+            symbol_outline_block=symbol_outline_block,
+            co_change_block=co_change_block,
+            hot_symbols_block=hot_symbols_block,
+            recent_log=repo.recent_log or "(none)",
+        )
+    )
+
+    return "\n".join(parts)

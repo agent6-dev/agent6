@@ -110,11 +110,23 @@ from agent6.workflows._metric import (
 from agent6.workflows._metric import (
     metric_plateau_summary as _metric_plateau_summary,
 )
-from agent6.workflows._prompts import (
-    AGENT_SYSTEM_PROMPT_BASE as _AGENT_SYSTEM_PROMPT_BASE,
+from agent6.workflows._prompt_revision import (
+    PromptRevision as _PromptRevision,
 )
-from agent6.workflows._prompts import (
-    ASK_SYSTEM_PROMPT_BASE as _ASK_SYSTEM_PROMPT_BASE,
+from agent6.workflows._prompt_revision import (
+    PromptRevisionError as _PromptRevisionError,
+)
+from agent6.workflows._prompt_revision import (
+    clip_text as _clip_text,
+)
+from agent6.workflows._prompt_revision import (
+    format_effective_task as _format_effective_task,
+)
+from agent6.workflows._prompt_revision import (
+    format_prompt_revision_context as _format_prompt_revision_context,
+)
+from agent6.workflows._prompt_revision import (
+    parse_prompt_revision as _parse_prompt_revision,
 )
 from agent6.workflows._prompts import (
     CONTEXT_RESTART_NOTICE as _CONTEXT_RESTART_NOTICE,
@@ -126,29 +138,9 @@ from agent6.workflows._prompts import (
     CRITIC_SYSTEM_PROMPT as _CRITIC_SYSTEM_PROMPT,
 )
 from agent6.workflows._prompts import (
-    MACHINE_SYSTEM_PROMPT_BASE as _MACHINE_SYSTEM_PROMPT_BASE,
-)
-from agent6.workflows._prompts import (
-    PLAN_SYSTEM_PROMPT_BASE as _PLAN_SYSTEM_PROMPT_BASE,
-)
-from agent6.workflows._prompts import (
     PROMPT_REVISION_SYSTEM_PROMPT as _PROMPT_REVISION_SYSTEM_PROMPT,
 )
-from agent6.workflows._prompts import (
-    SYSTEM_PROMPT_BASE as _SYSTEM_PROMPT_BASE,
-)
-from agent6.workflows._prompts import (
-    V2_BUDGET_BLOCK_TEMPLATE as _V2_BUDGET_BLOCK_TEMPLATE,
-)
-from agent6.workflows._prompts import (
-    V2_METRIC_BLOCK_TEMPLATE as _V2_METRIC_BLOCK_TEMPLATE,
-)
-from agent6.workflows._prompts import (
-    V2_REPO_BLOCK_TEMPLATE as _V2_REPO_BLOCK_TEMPLATE,
-)
-from agent6.workflows._prompts import (
-    V2_VERIFY_BLOCK_TEMPLATE as _V2_VERIFY_BLOCK_TEMPLATE,
-)
+from agent6.workflows._prompts import build_system_prompt as _build_system_prompt
 from agent6.workflows._symbol_outline import (
     build_symbol_outline_block as _build_symbol_outline_block,
 )
@@ -270,97 +262,6 @@ def _summarise_assistant_text_for_commit(text: str, iteration: int) -> str:
     return f"agent6 iter {iteration}: {subject_body}"
 
 
-@dataclass(frozen=True, slots=True)
-class _PromptRevision:
-    revised_task: str
-    clarifying_questions: tuple[str, ...] = ()
-
-
-class _PromptRevisionError(Exception):
-    """Raised when the optional prompt-revision pass cannot produce a task."""
-
-
-def _clip_text(text: str, max_chars: int) -> str:
-    if len(text) <= max_chars:
-        return text
-    return text[: max(0, max_chars - 40)].rstrip() + "\n...[truncated for prompt revision]"
-
-
-def _tag_body(text: str, tag: str) -> str:
-    start_tag = f"<{tag}>"
-    end_tag = f"</{tag}>"
-    start = text.find(start_tag)
-    if start == -1:
-        return ""
-    start += len(start_tag)
-    end = text.find(end_tag, start)
-    if end == -1:
-        return ""
-    return text[start:end].strip()
-
-
-def _parse_prompt_revision(text: str) -> _PromptRevision:
-    revised = _tag_body(text, "revised_task") if "<revised_task>" in text else text.strip()
-    questions_raw = _tag_body(text, "clarifying_questions")
-    questions: list[str] = []
-    for raw_line in questions_raw.splitlines():
-        line = raw_line.strip().lstrip("-*0123456789. ").strip()
-        if not line or line.lower() in {"none", "n/a", "no questions"}:
-            continue
-        questions.append(line)
-    return _PromptRevision(revised_task=revised.strip(), clarifying_questions=tuple(questions[:3]))
-
-
-def _format_prompt_revision_context(repo: RepoSummary) -> str:
-    parts = [
-        f"Repository: branch={repo.branch}, head={repo.head_sha[:12]}, files={repo.file_count}",
-        f"Top-level: {', '.join(repo.top_level)}",
-    ]
-    if repo.agents_md:
-        parts.append("AGENTS.md:\n" + _clip_text(repo.agents_md, 5000))
-    if repo.repo_map:
-        parts.append("Repo map:\n" + _clip_text(repo.repo_map, 4000))
-    if repo.symbol_outline:
-        parts.append("Symbol outline:\n" + _clip_text(repo.symbol_outline, 5000))
-    if repo.co_change_pairs:
-        lines = "\n".join(f"  {a} <-> {b} ({count})" for a, b, count in repo.co_change_pairs[:15])
-        parts.append("Git co-change pairs:\n" + lines)
-    if repo.hot_symbols:
-        lines = "\n".join(
-            f"  {name} ({kind}) at {path}:{line + 1}, {n_files} files"
-            for name, kind, path, line, n_files in repo.hot_symbols[:12]
-        )
-        parts.append("Hot symbols:\n" + lines)
-    if repo.recent_log:
-        parts.append("Recent commits:\n" + _clip_text(repo.recent_log, 2000))
-    return _clip_text("\n\n".join(parts), 20_000)
-
-
-def _format_effective_task(raw_task: str, revision: _PromptRevision) -> str:
-    pieces = [
-        "Revised task prompt:",
-        revision.revised_task,
-        "Original user task (authoritative if anything conflicts):",
-        raw_task,
-    ]
-    if revision.clarifying_questions:
-        pieces.extend(
-            [
-                "Clarifying questions raised by the revision pass:",
-                "\n".join(f"- {q}" for q in revision.clarifying_questions),
-                (
-                    "Proceed under conservative assumptions if these cannot be answered from"
-                    " repository context; do not stop solely because questions exist."
-                ),
-            ]
-        )
-    return "\n\n".join(pieces)
-
-
-# A `plan` run injects a one-shot "finish now" directive once its token budget
-# drops below this fraction OR it has taken `_PLAN_NUDGE_AFTER_ITERS` turns.
-# Verbose reasoning models (Kimi K2.6 observed live) otherwise read forever,
-# cheaply, under prompt caching, and never call finish_planning, yielding NO
 # plan at all. A plan rarely needs more than a handful of reads.
 _PLAN_BUDGET_NUDGE_BELOW = 0.35
 _PLAN_NUDGE_AFTER_ITERS = 12
@@ -436,144 +337,6 @@ def _extract_initial_task(messages: list[dict[str, Any]]) -> str:
     if end == -1:
         return body[:2000]
     return body[:end][:2000]
-
-
-def _build_system_prompt(
-    *,
-    config: Config,
-    repo: RepoSummary,
-    mode: Literal["run", "plan", "ask", "machine", "agent"] = "run",
-) -> str:
-    """Assemble the system prompt from static blocks + run-specific context.
-
-    The whole system prompt is sent on every turn but gets cached by the
-    Anthropic prompt-caching machinery (lineage). Per-turn cost
-    after the first call is ~10% of full input rate for the cached prefix.
-
-    ``mode="plan"`` swaps the base block for the planning-mode
-    prompt; the verify/metric/repo/co-change/hot-symbols blocks below
-    are appended unchanged so the planner sees the same project context
-    an executor would.
-    """
-    base = (
-        _ASK_SYSTEM_PROMPT_BASE
-        if mode == "ask"
-        else _MACHINE_SYSTEM_PROMPT_BASE
-        if mode == "machine"
-        else _AGENT_SYSTEM_PROMPT_BASE
-        if mode == "agent"
-        else _PLAN_SYSTEM_PROMPT_BASE
-        if mode == "plan"
-        else _SYSTEM_PROMPT_BASE
-    )
-    parts = [base]
-
-    # When the bench harness sets
-    # `AGENT6_DISABLE_APPLY_EDIT=1`, apply_edit is filtered out of the
-    # tool list. Tell the model so it doesn't try to call a tool that's
-    # been removed and waste turns on the resulting `Unknown tool` errors.
-    # Plan mode already filters both apply_edit and apply_patch, so the
-    # patch-only banner does not apply.
-    if mode == "run" and os.environ.get("AGENT6_DISABLE_APPLY_EDIT") == "1":
-        parts.append(
-            "<patch-only-mode>\n"
-            "`apply_edit` has been disabled for this run. The only edit\n"
-            "primitive available is `apply_patch` (unified diff). Use it\n"
-            "for every change, including file creation (emit a diff with\n"
-            "`--- /dev/null` as the source side).\n"
-            "</patch-only-mode>\n"
-        )
-
-    # Machine-authoring and machine `agent`-state modes have no verify/metric/
-    # repo context: those blocks reference tools they aren't given (run_verify /
-    # run_metric) and the repo prior only tempts them to spelunk. They just need
-    # the budget cap + their base prompt.
-    if mode in ("machine", "agent"):
-        parts.append(
-            _V2_BUDGET_BLOCK_TEMPLATE.format(
-                in_cap=config.budget.max_input_tokens,
-                out_cap=config.budget.max_output_tokens,
-            )
-        )
-        return "\n".join(parts)
-
-    verify_argv = list(config.workflow.verify_command)
-    parts.append(
-        _V2_VERIFY_BLOCK_TEMPLATE.format(
-            argv=json.dumps(verify_argv),
-            timeout_s=config.workflow.verify_timeout_s,
-        )
-    )
-
-    if config.workflow.metric is not None:
-        m = config.workflow.metric
-        parts.append(
-            _V2_METRIC_BLOCK_TEMPLATE.format(
-                argv=json.dumps(list(m.command)),
-                pattern=m.pattern,
-                goal=m.goal,
-            )
-        )
-
-    parts.append(
-        _V2_BUDGET_BLOCK_TEMPLATE.format(
-            in_cap=config.budget.max_input_tokens,
-            out_cap=config.budget.max_output_tokens,
-        )
-    )
-
-    # Structural priors injected directly.
-    co_change_block = ""
-    if repo.co_change_pairs:
-        lines = "\n".join(
-            f"  {a} <-> {b}  (changed together {c} times)" for a, b, c in repo.co_change_pairs[:20]
-        )
-        co_change_block = (
-            "Git co-change pairs (files that historically change together;"
-            " consider when editing one of these):\n"
-            f"{lines}\n\n"
-        )
-
-    hot_symbols_block = ""
-    if repo.hot_symbols:
-        lines = "\n".join(
-            f"  {name} ({kind}) at {path}:{line + 1}, referenced across {n_files} files"
-            for name, kind, path, line, n_files in repo.hot_symbols[:15]
-        )
-        hot_symbols_block = (
-            "Hot symbols (cross-file reference hot spots from static analysis;"
-            " changing one of these forces edits across the listed file count):\n"
-            f"{lines}\n\n"
-        )
-
-    repo_map_block = ""
-    if repo.repo_map:
-        repo_map_block = f"Repo map (tracked files grouped by directory):\n{repo.repo_map}\n\n"
-
-    symbol_outline_block = ""
-    if repo.symbol_outline:
-        symbol_outline_block = (
-            "Symbol outline (top-level defs per file from the tree-sitter index;"
-            " line numbers are 1-based):\n"
-            f"{repo.symbol_outline}\n\n"
-        )
-
-    parts.append(
-        _V2_REPO_BLOCK_TEMPLATE.format(
-            branch=repo.branch,
-            head_sha=repo.head_sha[:12] or "(no commits yet)",
-            file_count=repo.file_count,
-            top_level=", ".join(repo.top_level),
-            agents_md=repo.agents_md or "(empty)",
-            repo_map_block=repo_map_block,
-            symbol_outline_block=symbol_outline_block,
-            co_change_block=co_change_block,
-            hot_symbols_block=hot_symbols_block,
-            recent_log=repo.recent_log or "(none)",
-        )
-    )
-
-    return "\n".join(parts)
 
 
 def _tool_definitions(
