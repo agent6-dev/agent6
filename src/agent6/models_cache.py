@@ -199,6 +199,13 @@ def list_models(
     return cached or []
 
 
+def cached_models(provider_name: str) -> list[str]:
+    """Model ids from the on-disk cache only (no network). ``[]`` if nothing has
+    been cached for *provider_name* yet. For instant typeahead suggestions; pair
+    with :func:`list_models` (in a worker) to refresh from the live listing."""
+    return _read_cache(_cache_path(provider_name)) or []
+
+
 # --- context window + adaptive compaction sizing --------------------------
 
 # Curated context windows (TOKENS) for models we have tested or that are

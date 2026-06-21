@@ -26,11 +26,14 @@ class ApprovalModal(ModalScreen[bool]):
     ApprovalModal { align: center middle; }
     #approval-box {
         width: 80%; max-width: 100; height: auto;
-        border: thick $warning; padding: 1 2; background: $surface;
+        border: round $accent; padding: 1 2; background: $surface;
     }
     #approval-buttons { height: auto; align: center middle; margin-top: 1; }
-    #approval-buttons Button { margin: 0 2; min-width: 16; }
-    #approval-buttons Button:focus { text-style: bold reverse; }
+    #approval-buttons Button {
+        margin: 0 2; min-width: 16; height: 1; border: none;
+        background: transparent; color: $accent;
+    }
+    #approval-buttons Button:focus { background: $primary; color: $text; text-style: bold; }
     """
 
     # Keys handled on the MODAL (not the app) so they reach the focused button.
@@ -82,12 +85,15 @@ class SteerModal(ModalScreen[str]):
     SteerModal { align: center middle; }
     #steer-box {
         width: 80%; max-width: 100; height: auto;
-        border: thick $accent; padding: 1 2; background: $surface;
+        border: round $accent; padding: 1 2; background: $surface;
     }
     #steer-input { margin-top: 1; }
     #steer-buttons { height: auto; align: center middle; margin-top: 1; }
-    #steer-buttons Button { margin: 0 2; min-width: 14; }
-    #steer-buttons Button:focus { text-style: bold reverse; }
+    #steer-buttons Button {
+        margin: 0 2; min-width: 14; height: 1; border: none;
+        background: transparent; color: $accent;
+    }
+    #steer-buttons Button:focus { background: $primary; color: $text; text-style: bold; }
     """
 
     BINDINGS: ClassVar = [
@@ -135,13 +141,14 @@ class QuestionModal(ModalScreen[str]):
     QuestionModal { align: center middle; }
     #question-box {
         width: 80%; max-width: 100; height: auto; max-height: 80%;
-        border: thick $primary; padding: 1 2; background: $surface;
+        border: round $accent; padding: 1 2; background: $surface;
     }
     #question-options { height: auto; }
     #question-options Button {
-        width: 100%; margin-top: 1; text-align: left;
+        width: 100%; height: 1; margin-top: 1; text-align: left;
+        border: none; background: transparent; color: $accent;
     }
-    #question-options Button:focus { text-style: bold reverse; }
+    #question-options Button:focus { background: $primary; color: $text; text-style: bold; }
     #question-input { margin-top: 1; }
     """
 

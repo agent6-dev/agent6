@@ -125,3 +125,22 @@ def test_render_and_modals(tmp_path: Path) -> None:
             assert (tmp_path / "questions" / "q2.answer").read_text(encoding="utf-8") == "zz"
 
     asyncio.run(scenario())
+
+
+def test_dashboard_back_vs_quit(tmp_path: Path) -> None:
+    """In the hub loop, Esc returns to the hub (exit 0) while q quits it
+    (QUIT_HUB_CODE); standalone, both just close (0)."""
+    from agent6.ui.app import QUIT_HUB_CODE
+
+    async def press(from_hub: bool, key: str) -> int | None:
+        (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+        app = Agent6TUI(tmp_path, from_hub=from_hub)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            await pilot.press(key)
+            await pilot.pause()
+        return app.return_value
+
+    assert asyncio.run(press(True, "escape")) == 0  # back to the hub
+    assert asyncio.run(press(True, "q")) == QUIT_HUB_CODE  # quit the hub
+    assert asyncio.run(press(False, "q")) == 0  # standalone: just close

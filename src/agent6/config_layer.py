@@ -24,16 +24,24 @@ import tomllib
 import types
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Union, get_args, get_origin
+from typing import Annotated, Any, Literal, Union, get_args, get_origin
 
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
-from agent6.config import Config, ConfigError, validate_config
+from agent6.config import (
+    AnthropicProviderEntry,
+    Config,
+    ConfigError,
+    Deployment,
+    OpenAIProviderEntry,
+    validate_config,
+)
 from agent6.config_io import (
     parse_cli_value,
     remove_toml_leaf,
     upsert_toml_leaf,
+    upsert_toml_table,
 )
 from agent6.paths import (
     chown_to_real_user,
@@ -310,13 +318,43 @@ def _nested_model(ann: Any) -> type[BaseModel] | None:
     return None
 
 
-def _dict_value_model(ann: Any) -> type[BaseModel] | None:
+def _value_models(ann: Any) -> tuple[type[BaseModel], ...]:
+    """The model(s) a ``dict`` field maps to: one for a plain model value, or
+    several for a discriminated union (e.g. ``providers`` ->
+    Anthropic|OpenAI entry). Returns () when the value isn't model-shaped."""
     ann = _unwrap_optional(ann)
-    if get_origin(ann) is dict:
-        args = get_args(ann)
-        if len(args) == 2:
-            return _nested_model(args[1])
-    return None
+    if get_origin(ann) is not dict:
+        return ()
+    val = get_args(ann)[1]
+    if get_origin(val) is Annotated:  # Annotated[Union[...], Discriminator(...)]
+        val = get_args(val)[0]
+    if get_origin(val) in (Union, types.UnionType):
+        return tuple(m for m in get_args(val) if _nested_model(m) is not None)
+    model = _nested_model(val)
+    return (model,) if model is not None else ()
+
+
+def _merge_field_schema(
+    models: tuple[type[BaseModel], ...], parts: list[str]
+) -> tuple[str, tuple[str, ...] | None, Any] | None:
+    """Resolve a field across discriminated-union members, merging choices: a
+    field shared by every member (e.g. ``auth_style``) keeps its choices; the
+    discriminator itself (``api_format``: Literal['anthropic'] in one member,
+    Literal['openai'] in the other) becomes the union of both."""
+    results = [r for m in models if (r := _field_schema(m, parts)) is not None]
+    if not results:
+        return None
+    if len(results) == 1:
+        return results[0]
+    choices: list[str] = []
+    for _, member_choices, _default in results:
+        for c in member_choices or ():
+            if c not in choices:
+                choices.append(c)
+    merged = tuple(choices) or None
+    py_type = "choice" if merged else results[0][0]
+    default = next((d for _, _, d in results if d is not None), results[0][2])
+    return py_type, merged, default
 
 
 def _type_label(ann: Any) -> str:
@@ -352,9 +390,9 @@ def _field_schema(
     nested = _nested_model(ann)
     if nested is not None:
         return _field_schema(nested, parts[1:])
-    val_model = _dict_value_model(ann)
-    if val_model is not None and len(parts) >= 3:
-        return _field_schema(val_model, parts[2:])  # skip the dynamic dict key
+    models = _value_models(ann)
+    if models and len(parts) >= 3:
+        return _merge_field_schema(models, parts[2:])  # skip the dynamic dict key
     return None
 
 
@@ -635,6 +673,41 @@ def set_config_value(
         chown_to_real_user(target.parent)
         chown_to_real_user(target)
     return err
+
+
+def set_config_table(
+    repo_root: Path,
+    table: str,
+    fields: dict[str, str | bool | None],
+    *,
+    to_repo: bool = False,
+) -> str | None:
+    """Insert/replace a whole ``[table]`` block in one shot (e.g. a new
+    ``[providers.<name>]`` entry from the TUI's add-provider form). Revalidates
+    the merged config and rolls the file back on failure. Returns an error string
+    on invalid config, else None. ``None`` field values are omitted."""
+    target = _write_target(repo_root, to_repo=to_repo)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    prior = target.read_text(encoding="utf-8") if target.is_file() else None
+    try:
+        upsert_toml_table(target, table, fields)
+    except ValueError as exc:
+        return str(exc)
+    err = _revalidate(repo_root, target, prior)
+    if err is None:
+        chown_to_real_user(target.parent)
+        chown_to_real_user(target)
+    return err
+
+
+def provider_choices() -> dict[str, list[str]]:
+    """Fixed-choice fields for the add-provider form, read from the schema so
+    they never drift: the api_format discriminator (per provider subclass) and
+    the deployment profiles."""
+    formats: list[str] = []
+    for model in (AnthropicProviderEntry, OpenAIProviderEntry):
+        formats.extend(get_args(model.model_fields["api_format"].annotation))
+    return {"api_format": formats, "deployment": list(get_args(Deployment))}
 
 
 def unset_config_value(repo_root: Path, dotted_key: str, *, to_repo: bool = False) -> str | None:

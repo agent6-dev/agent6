@@ -1,0 +1,6 @@
+# Generated media — we commit the .tape scripts, never the screenshots/GIFs.
+out/
+*.gif
+*.png
+*.webm
+*.mp4

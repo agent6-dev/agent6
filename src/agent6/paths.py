@@ -124,6 +124,16 @@ def secrets_path(user: RealUser | None = None) -> Path:
     return global_config_dir(user) / "secrets.toml"
 
 
+def ui_settings_path(user: RealUser | None = None) -> Path:
+    """UI-only preferences (theme, etc.), a sibling of ``config.toml``.
+
+    Kept separate from the agent config on purpose: a theme is a machine-wide
+    viewer preference, not agent behavior, so it never goes through the config
+    schema or into the (shareable, per-repo) config layers.
+    """
+    return global_config_dir(user) / "ui.toml"
+
+
 _CACHE_DIR_ENV = "AGENT6_CACHE_HOME"  # points at the agent6 cache dir itself
 
 

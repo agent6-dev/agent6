@@ -17,23 +17,24 @@ front-end can mirror this contract.
 
 from __future__ import annotations
 
+import inspect
 import os
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any, ClassVar
 
 try:
     from rich.markup import escape
     from rich.text import Text
-    from textual.app import App, ComposeResult
+    from textual.app import App, ComposeResult, SystemCommand
     from textual.binding import Binding
     from textual.command import DiscoveryHit, Hit, Hits, Provider
     from textual.containers import Horizontal, Vertical
+    from textual.screen import Screen
     from textual.widgets import (
         DataTable,
         Footer,
-        Header,
         ProgressBar,
         RichLog,
         Static,
@@ -52,6 +53,7 @@ from agent6.ui.approval import (
     write_steer_answer,
     write_tui_pid,
 )
+from agent6.ui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.modals import ApprovalModal, QuestionModal, SteerModal
 from agent6.ui.state import (
     ApprovalPrompt,
@@ -61,6 +63,7 @@ from agent6.ui.state import (
     initial_state,
 )
 from agent6.ui.tail import tail_events
+from agent6.ui.theme import PALETTE_CSS, open_theme_picker, setup_theme
 
 _TASK_ICONS = {
     "passed": "✓",
@@ -94,34 +97,77 @@ class _Agent6Commands(Provider):
                 yield Hit(score, matcher.highlight(name), runnable, help=help_text)
 
 
+# Dashboard exit code meaning "quit the whole hub" (vs 0 == back to the hub).
+QUIT_HUB_CODE = 99
+
+
 class Agent6TUI(App[int]):
-    CSS = """
+    TITLE = "agent6"
+    CSS = (
+        PALETTE_CSS
+        + """
+    Screen { layers: base dropdown; }
     #top { height: 4; padding: 0 1; }
     #mid { height: 1fr; }
     #left { width: 38%; }
+    /* Uniform resting border (matches the home table + config card); the focused
+       panel goes $accent. (Standardized -- was per-panel colour-coded.) */
     #plan { height: 1fr; border: round $primary; }
-    #budget { height: 3; border: round $secondary; padding: 0 1; }
+    #budget { height: 3; border: round $primary; padding: 0 1; }
     #right { width: 1fr; }
-    #stream { height: 28%; border: round $success; padding: 0 1; }
+    #stream { height: 28%; border: round $primary; padding: 0 1; }
     #tools { height: 24%; border: round $primary; }
     #log { height: 1fr; border: round $primary; }
-    #diff { height: 26%; border: round $accent; padding: 0 1; }
+    #diff { height: 26%; border: round $primary; padding: 0 1; }
     /* Highlight whichever panel currently has keyboard focus. */
     #plan:focus, #tools:focus, #log:focus { border: round $accent; }
     """
+    )
 
     COMMANDS: ClassVar = App.COMMANDS | {_Agent6Commands}
 
+    MENUS: ClassVar = (
+        Menu(
+            "File",
+            (MenuItem("Back to hub", "to_hub", "Esc"), MenuItem("Quit", "quit_hub", "q")),
+        ),
+        Menu(
+            "View",
+            (
+                MenuItem("Next pane", "focus_next", "Tab"),
+                MenuItem("Log → end", "scroll_log_end", "g"),
+                MenuItem("Theme…", "choose_theme"),
+            ),
+        ),
+        Menu(
+            "Help",
+            (
+                MenuItem("Keys & actions", "help", "question_mark"),
+                MenuItem("Command palette", "command_palette", "ctrl+p"),
+            ),
+        ),
+    )
     BINDINGS: ClassVar = [
-        Binding("q", "quit", "Quit"),
+        # Footer order: page action, then meta (Help, Back, Quit, Menu) -- matching
+        # the home + config footers. Esc backs out to the hub (consistent with the
+        # config screen); q quits the whole hub; Ctrl+Q is the hard quit. (Esc on an
+        # open modal cancels it first -- the modal consumes the key.)
+        Binding("g", "scroll_log_end", "Log→end", show=True),
+        Binding("question_mark", "help", "Help"),
+        Binding("escape", "to_hub", "Back"),
+        Binding("q", "quit_hub", "Quit"),
+        Binding("ctrl+q", "quit_hub", "Quit", show=False),
         Binding("tab", "focus_next", "Next pane", show=False),
         Binding("shift+tab", "focus_previous", "Prev pane", show=False),
-        Binding("g", "scroll_log_end", "Log→end", show=True),
+        *menu_bindings(MENUS),
     ]
 
-    def __init__(self, run_dir: Path, *, exit_on_end: bool = False) -> None:
+    def __init__(self, run_dir: Path, *, exit_on_end: bool = False, from_hub: bool = False) -> None:
         super().__init__()
         self.run_dir = run_dir
+        # When launched from the hub loop, Esc returns to it and q quits the hub
+        # (signalled by the exit code); standalone, both just close the dashboard.
+        self.from_hub = from_hub
         self.logs_path = run_dir / "logs.jsonl"
         self.state: RunState = initial_state()
         self._seen_approval_ids: set[str] = set()
@@ -139,7 +185,7 @@ class Agent6TUI(App[int]):
     # --- layout -------------------------------------------------------
 
     def compose(self) -> ComposeResult:
-        yield Header(show_clock=True)
+        yield MenuBar(self.MENUS)  # the top row: menus + "agent6 — <run>"
         yield Static("", id="top")
         with Horizontal(id="mid"):
             with Vertical(id="left"):
@@ -155,7 +201,9 @@ class Agent6TUI(App[int]):
         yield Footer()
 
     def on_mount(self) -> None:
+        setup_theme(self)  # apply the saved theme before the first paint
         write_tui_pid(self.run_dir, os.getpid())
+        self.sub_title = f"run · {self.run_dir.name}"  # menu-bar title context
         table = self.query_one("#tools", DataTable)
         table.add_columns("tool", "args", "ok", "summary")
         self.query_one("#plan", Tree).root.expand()
@@ -233,13 +281,57 @@ class Agent6TUI(App[int]):
     # --- command palette ---------------------------------------------
 
     def palette_commands(self) -> list[tuple[str, Callable[[], Any], str]]:
-        return [
-            ("Scroll log to end", self.action_scroll_log_end, "Jump the log to the newest line"),
-            ("Quit dashboard", self.action_quit, "Close the agent6 dashboard"),
-        ]
+        """(label, runnable, help) per menu action -- the Ctrl+P palette source, from
+        the same MENUS registry as the menu bar, footer, and key bindings, so the
+        surfaces never drift (same pattern as the home hub). Skips the palette opener
+        itself (textual provides it)."""
+        cmds: list[tuple[str, Callable[[], Any], str]] = []
+        for menu in self.MENUS:
+            for item in menu.items:
+                if item.action == "command_palette":
+                    continue
+                handler = getattr(self, f"action_{item.action}", None)
+                if handler is not None:
+                    cmds.append((item.label, handler, menu.title))
+        return cmds
+
+    def action_to_hub(self) -> None:
+        self.exit(0)  # back to the hub loop (or just close, standalone)
+
+    def action_quit_hub(self) -> None:
+        # In the hub loop, signal "quit the hub" via the exit code; standalone,
+        # there's nothing to return to, so a plain close (0) is the same thing.
+        self.exit(QUIT_HUB_CODE if self.from_hub else 0)
 
     def action_scroll_log_end(self) -> None:
         self.query_one("#log", RichLog).scroll_end(animate=False)
+
+    def action_menu(self, mnemonic: str) -> None:
+        self.query_one(MenuBar).open(mnemonic)
+
+    def action_help(self) -> None:
+        self.push_screen(HelpScreen(self.MENUS, title="agent6 — keys & actions"))
+
+    def action_choose_theme(self) -> None:
+        open_theme_picker(self)
+
+    async def on_menu_bar_selected(self, event: MenuBar.Selected) -> None:
+        # action_quit (and other built-ins) are coroutines, so await results.
+        handler = getattr(self, f"action_{event.action}", None)
+        if handler is not None:
+            result = handler()
+            if inspect.isawaitable(result):
+                await result
+
+    def get_system_commands(self, screen: Screen[object]) -> Iterable[SystemCommand]:
+        # Drop textual's "Keys" panel (our Help page replaces it), "Screenshot" (an
+        # unused default whose SVG export is broken in our terminals), "Theme"
+        # (replaced by our live-preview Theme… picker), and "Quit" (its plain exit()
+        # returns the wrong code here -- our File menu's Back to hub / Quit do). All
+        # of these are provided by MENUS via palette_commands, so nothing's added.
+        for cmd in super().get_system_commands(screen):
+            if cmd.title not in ("Keys", "Screenshot", "Theme", "Quit"):
+                yield cmd
 
     # --- rendering ---------------------------------------------------
 
@@ -362,5 +454,5 @@ def _append_colored_diff(dt: Text, patch: str) -> None:
             dt.append(line + "\n")
 
 
-def run_tui(run_dir: Path, *, exit_on_end: bool = False) -> int:
-    return Agent6TUI(run_dir, exit_on_end=exit_on_end).run() or 0
+def run_tui(run_dir: Path, *, exit_on_end: bool = False, from_hub: bool = False) -> int:
+    return Agent6TUI(run_dir, exit_on_end=exit_on_end, from_hub=from_hub).run() or 0

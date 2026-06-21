@@ -75,7 +75,7 @@ depends_on = []
 
 [[modules]]
 path = "agent6.ui"
-depends_on = []
+depends_on = ["agent6.config_layer", "agent6.models_cache", "agent6.paths", "agent6.secrets"]
 
 [[modules]]
 path = "agent6.init"

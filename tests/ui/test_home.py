@@ -99,7 +99,11 @@ def test_home_app_lists_runs_and_opens_new_work_modal(tmp_path: Path) -> None:
         async with app.run_test() as pilot:
             from textual.widgets import DataTable
 
-            table = app.query_one("#runs", DataTable)
+            from agent6.ui.home import HomeScreen
+
+            await pilot.pause()  # let on_mount push the HomeScreen
+            assert isinstance(app.screen, HomeScreen)  # hub lives on its own screen
+            table = app.screen.query_one("#runs", DataTable)
             assert table.row_count == 1  # the one run is listed
             # 'n' opens the new-work modal; Esc closes it without starting work.
             await pilot.press("n")
@@ -108,5 +112,66 @@ def test_home_app_lists_runs_and_opens_new_work_modal(tmp_path: Path) -> None:
             await pilot.press("escape")
             await pilot.pause()
             assert not isinstance(app.screen, _NewWorkModal)
+
+    asyncio.run(scenario())
+
+
+def test_new_work_modal_is_multiline_and_starts_chosen_mode(tmp_path: Path) -> None:
+    import asyncio
+
+    from textual.widgets import TextArea
+
+    from agent6.ui.home import Agent6HomeApp, _NewWorkModal
+
+    a6 = tmp_path / ".agent6"
+    _write_run(a6, "runs", "r1", [{"type": "run.start", "mode": "run", "user_task": "x"}])
+
+    async def scenario() -> None:
+        app = Agent6HomeApp(a6, tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            result: list[object] = []
+            app.push_screen(_NewWorkModal(), result.append)
+            await pilot.pause()
+            ta = app.screen.query_one(TextArea)
+            # Enter is a NEWLINE here (multiline task), not a submit.
+            await pilot.press("a")
+            await pilot.press("enter")
+            await pilot.press("b")
+            await pilot.pause()
+            assert ta.text == "a\nb"
+            assert isinstance(app.screen, _NewWorkModal)  # Enter did not dismiss
+            # ↓ past the last line moves to the buttons; →,Enter starts 'plan'.
+            await pilot.press("down")
+            await pilot.press("right")
+            await pilot.press("enter")
+            await pilot.pause()
+            assert result == [("plan", "a\nb")]  # chosen mode + the multiline task
+
+    asyncio.run(scenario())
+
+
+def test_home_open_run_returns_its_dir(tmp_path: Path) -> None:
+    """Selecting a run on the hub (Enter on the row) opens it: the app exits
+    returning that run directory for the dashboard to watch."""
+    import asyncio
+
+    from textual.widgets import DataTable
+
+    from agent6.ui.home import Agent6HomeApp
+
+    a6 = tmp_path / ".agent6"
+    rd = _write_run(a6, "runs", "r1", [{"type": "run.start", "mode": "run", "user_task": "x"}])
+
+    async def scenario() -> None:
+        app = Agent6HomeApp(a6, tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            tbl = app.screen.query_one("#runs", DataTable)
+            tbl.focus()
+            tbl.move_cursor(row=0)
+            await pilot.press("enter")
+            await pilot.pause()
+        assert app.return_value == rd  # opened the selected run
 
     asyncio.run(scenario())

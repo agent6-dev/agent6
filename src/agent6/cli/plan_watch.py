@@ -171,7 +171,7 @@ def _cmd_tui() -> int:
     the home screen and the dashboard, opening a run watches it, then returns
     here on close."""
     try:
-        from agent6.ui.app import run_tui  # noqa: PLC0415 - lazy: textual is optional
+        from agent6.ui.app import QUIT_HUB_CODE, run_tui  # noqa: PLC0415 - lazy: textual optional
         from agent6.ui.home import run_home  # noqa: PLC0415
     except ImportError as e:
         print(f"ERROR: {e}", file=sys.stderr)
@@ -183,7 +183,9 @@ def _cmd_tui() -> int:
         run_dir = run_home(agent6_dir, cwd)
         if run_dir is None:
             return 0
-        run_tui(run_dir)
+        # Esc in the dashboard returns here (reopen home); q quits the hub.
+        if run_tui(run_dir, from_hub=True) == QUIT_HUB_CODE:
+            return 0
 
 
 def _format_plain_event(line: str, *, run_start_ts: float | None) -> str:
