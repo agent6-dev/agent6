@@ -653,6 +653,43 @@ def _tool_definitions(
     return out
 
 
+@dataclass(slots=True)
+class _LoopState:
+    """Mutable per-run bookkeeping threaded through the agent loop.
+
+    The loop accumulates cross-iteration state: how often each intervention
+    (critic rejection, went-quiet / plateau / early-finish nudge, plan/run
+    budget nudge) has fired against its cap, the degenerate-repeat-call guard,
+    and verify-settled completion tracking. Holding it in one object lets the
+    loop's phases be methods that take ``state`` rather than a long parameter
+    list, so adding an intervention is a one-field change, not another local
+    threaded by hand.
+    """
+
+    original_task: str
+    tool_calls: int
+    metric_history: list[_MetricSample] = field(default_factory=list)
+    # Consecutive before_finish critic rejections, so a stubborn worker can't
+    # burn the budget bouncing off the critic.
+    consecutive_critic_rejections: int = 0
+    # Degenerate-loop guard: a back-to-back streak of the same (tool, args)
+    # signature. Reset on any change so a normal re-read after edits is fine.
+    last_tool_signature: str | None = None
+    repeat_streak: int = 0
+    repeat_warning_emitted_at: int = 0
+    # Intervention nudge counters (each capped by a module-level patience const).
+    went_quiet_nudges_used: int = 0
+    plateau_nudges_used: int = 0
+    metric_finish_nudges_used: int = 0
+    plan_finish_nudged: bool = False
+    # verify-settled completion (run mode): once verify has passed, count
+    # no-progress iterations; nudge then stop a worker that spins after success.
+    verify_ever_passed: bool = False
+    verify_settled_idle: int = 0
+    verify_settled_nudged: bool = False
+    run_budget_nudged: bool = False
+
+
 @dataclass
 class Workflow:
     """Single-loop agent workflow.
@@ -996,95 +1033,19 @@ class Workflow:
         # first blank line, so a multi-paragraph task survives intact only via
         # the passed-in value -- which is why run() threads it explicitly.
         original_task = original_task or _extract_initial_task(messages)
-        # Track consecutive before_finish rejections so a
-        # stubborn worker can't burn the budget bouncing off the critic.
-        consecutive_critic_rejections = 0
-        metric_history: list[_MetricSample] = []
-        # degenerate-loop guard. Some open-weights models (observed
-        # with Kimi K2.6 on the perf takehome) latch onto the same tool
-        # call with identical arguments and re-issue it dozens of times
-        # in a row, getting byte-identical results and emitting only
-        # whitespace deltas between turns. We detect a back-to-back
-        # streak of the same (tool_name, args) signature and inject a
-        # one-shot text block into the next user turn telling the worker
-        # the result has not changed and to pivot. Reset on any signature
-        # change, so a normal re-read after edits does not trigger.
-        last_tool_signature: str | None = None
-        repeat_streak: int = 0
-        repeat_warning_emitted_at: int = 0
-        # went_quiet nudge counter. See `went_quiet_max_nudges`.
-        went_quiet_nudges_used: int = 0
-        # metric-plateau pivot-nudge counter. See `_METRIC_PLATEAU_PATIENCE`.
-        plateau_nudges_used: int = 0
-        # metric-run early-finish rejection counter. See
-        # `_METRIC_EARLY_FINISH_PATIENCE`.
-        metric_finish_nudges_used: int = 0
-        # plan-mode finish nudge: fire once per loop segment when a verbose
-        # planner (Kimi K2.6 observed live) keeps reading without ever calling
-        # finish_planning. Like the sibling nudge counters this is loop-local, so
-        # a resume starts a fresh segment and may nudge again, benign (one extra
-        # harmless directive); the turn count is measured from start_iteration.
-        plan_finish_nudged = False
-        # verify-settled completion (run mode). Once verify has passed at least
-        # once, count consecutive iterations that make no progress (no new
-        # commit + no edit). After a couple, nudge the worker to finish_run;
-        # if it keeps spinning, stop. This is the positive completion signal a
-        # non-metric run otherwise lacks, a weak worker (Kimi K2.6 observed:
-        # 128 iters when done at ~45) keeps re-running commands after success.
-        verify_ever_passed = False
-        verify_settled_idle = 0
-        verify_settled_nudged = False
-        run_budget_nudged = False
+        state = _LoopState(original_task=original_task, tool_calls=tool_calls)
         for iteration in range(start_iteration, self.max_iterations + 1):
             self._maybe_compact(messages)
-
-            # Force a verbose planner to land a plan. Trigger on EITHER a low
-            # token budget OR too many planning turns, with prompt caching a
-            # planner can take many cheap turns, so an iteration cap is the
-            # reliable lever for the "reads forever" failure mode. A rough
-            # delivered plan beats an exhaustive one that never gets emitted.
-            if self.mode == "plan" and not plan_finish_nudged:
-                remaining = self._budget_fraction_remaining()
-                low_budget = remaining is not None and remaining <= _PLAN_BUDGET_NUDGE_BELOW
-                too_many_turns = iteration - start_iteration + 1 >= _PLAN_NUDGE_AFTER_ITERS
-                if low_budget or too_many_turns:
-                    plan_finish_nudged = True
-                    messages.append(
-                        {"role": "user", "content": [{"type": "text", "text": _PLAN_BUDGET_NUDGE}]}
-                    )
-                    self._log(
-                        f"LOOP: plan finish-nudge at iter {iteration}"
-                        f" (turns={too_many_turns}, low_budget={low_budget})"
-                    )
-                    self._emit(
-                        "loop.plan_finish.nudge", iteration=iteration, budget_remaining=remaining
-                    )
-
-            # Same lever for a non-metric coding run: force a verify + finish
-            # before the budget dies (metric runs have their own end-game).
-            if (
-                self.mode == "run"
-                and not run_budget_nudged
-                and _metric_goal(self.config.workflow.metric) is None
-            ):
-                remaining = self._budget_fraction_remaining()
-                if remaining is not None and remaining <= _RUN_BUDGET_NUDGE_BELOW:
-                    run_budget_nudged = True
-                    messages.append(
-                        {"role": "user", "content": [{"type": "text", "text": _RUN_BUDGET_NUDGE}]}
-                    )
-                    self._log(f"LOOP: run budget-nudge at iter {iteration}")
-                    self._emit(
-                        "loop.run_budget.nudge", iteration=iteration, budget_remaining=remaining
-                    )
-
+            self._maybe_pre_call_nudges(
+                messages, state, iteration=iteration, start_iteration=start_iteration
+            )
             # Snapshot BEFORE the LLM call. After this write, a
             # crash anywhere up to the next iteration's snapshot can be
             # resumed by re-running this same call.
             self._save_resume_snapshot(
                 system=system,
                 messages=messages,
-                tool_calls=tool_calls,
+                tool_calls=state.tool_calls,
                 next_iteration=iteration,
                 root_task_id=root_task_id,
             )
@@ -1108,7 +1069,7 @@ class Workflow:
                     reason="budget_exhausted",
                     summary=f"budget exhausted at iter {iteration}: {exc}",
                     iterations=iteration,
-                    tool_calls=tool_calls,
+                    tool_calls=state.tool_calls,
                 )
             except ProviderError as exc:
                 self._log(f"LOOP: provider error at iter {iteration}: {exc}")
@@ -1123,7 +1084,7 @@ class Workflow:
                     reason="provider_error",
                     summary=f"provider error at iter {iteration}: {exc}",
                     iterations=iteration,
-                    tool_calls=tool_calls,
+                    tool_calls=state.tool_calls,
                 )
 
             # Reconstruct the assistant message exactly from the response
@@ -1132,246 +1093,10 @@ class Workflow:
             messages.append({"role": "assistant", "content": assistant_blocks})
 
             if not resp.tool_uses:
-                # Agent emitted no tool_use. audit finding:
-                # distinguish "agent talked then stopped" (likely an
-                # implicit finish - user gets the text as summary) from
-                # "agent emitted nothing" (likely went-quiet failure -
-                # provider returned an empty response, or the agent got
-                # confused; bench scoring should NOT treat this as
-                # success).
-                text = resp.text.strip() if resp.text else ""
-                if text:
-                    # silent_finish goes through the same
-                    # before_finish critic gate as an explicit
-                    # finish_run tool_use. Without this, an agent that
-                    # stops emitting tool calls bypasses critic review
-                    # entirely. Rejection cap is shared with the
-                    # tool_use path so a stubborn worker can't bounce
-                    # the loop forever.
-                    if self.critic_mode == "before_finish" and self.critic_provider is not None:
-                        critique = self._run_critic(
-                            task=original_task,
-                            messages=messages,
-                            trigger="before_finish",
-                            iteration=iteration,
-                        )
-                        cap = self.max_consecutive_critic_rejections
-                        cap_reached = cap > 0 and consecutive_critic_rejections >= cap
-                        if critique is not None and not critique.satisfied and not cap_reached:
-                            self._log(f"  critic rejected silent_finish at iter {iteration}")
-                            self._emit(
-                                "loop.critic.rejected_silent_finish",
-                                iteration=iteration,
-                            )
-                            consecutive_critic_rejections += 1
-                            messages.append(
-                                {
-                                    "role": "user",
-                                    "content": [
-                                        {
-                                            "type": "text",
-                                            "text": (
-                                                "[critic]\nThe critic"
-                                                " rejected your"
-                                                " silent finish (no"
-                                                " tool_use, just"
-                                                " text). Address the"
-                                                " issues below and"
-                                                " continue the task.\n\n" + critique.text
-                                            ),
-                                        }
-                                    ],
-                                }
-                            )
-                            continue
-                        if critique is not None and not critique.satisfied and cap_reached:
-                            self._log(
-                                f"  critic rejected silent_finish at"
-                                f" iter {iteration} but rejection cap"
-                                f" ({cap}) reached - accepting finish"
-                            )
-                            self._emit(
-                                "loop.critic.rejection_cap_reached",
-                                iteration=iteration,
-                                rejections=consecutive_critic_rejections,
-                            )
-                            consecutive_critic_rejections = 0
-                        elif critique is not None:
-                            self._log("  critic approved silent_finish")
-                            consecutive_critic_rejections = 0
-                    # metric-run early-finish guard, mirroring the finish_run
-                    # path: a silent finish on an optimisation run with budget to
-                    # spare should be nudged to keep optimising rather than
-                    # accepted. Without this, dropping tool_use was a way to skip
-                    # the plateau/early-finish policy entirely.
-                    if (
-                        self.mode == "run"
-                        and _metric_goal(self.config.workflow.metric) is not None
-                        and not self._metric_at_ceiling(metric_history)
-                    ):
-                        finish_budget_remaining = self._budget_fraction_remaining()
-                        has_runway = (
-                            finish_budget_remaining is not None
-                            and finish_budget_remaining > _METRIC_PLATEAU_STOP_BELOW_BUDGET
-                        )
-                        if has_runway and metric_finish_nudges_used < _METRIC_EARLY_FINISH_PATIENCE:
-                            assert finish_budget_remaining is not None
-                            metric_finish_nudges_used += 1
-                            messages.append(
-                                {
-                                    "role": "user",
-                                    "content": [{"type": "text", "text": _METRIC_FINISH_NUDGE}],
-                                }
-                            )
-                            self._log(
-                                f"  metric early-finish (silent) rejected"
-                                f" #{metric_finish_nudges_used} at iter {iteration}"
-                                f" (budget {finish_budget_remaining:.0%} left)"
-                            )
-                            self._emit(
-                                "loop.metric_early_finish.rejected",
-                                iteration=iteration,
-                                nudges_used=metric_finish_nudges_used,
-                                budget_remaining=finish_budget_remaining,
-                                trigger="silent_finish",
-                            )
-                            continue
-                    self._log(
-                        f"LOOP: silent_finish at iter {iteration} - "
-                        f"agent emitted text but no tool_use"
-                    )
-                    self._emit(
-                        "run.end",
-                        reason="silent_finish",
-                        iterations=iteration,
-                        all_passed=True,
-                    )
-                    return RunResult(
-                        completed=True,
-                        reason="silent_finish",
-                        # In ask mode the final prose IS the answer the caller
-                        # prints, so keep it whole; run/plan only need a short
-                        # summary line.
-                        summary=text if self.mode == "ask" else text[:1000],
-                        iterations=iteration,
-                        tool_calls=tool_calls,
-                    )
-                # reasoning-starvation trip-wire. When a model
-                # spends its entire output budget on reasoning_content
-                # and emits nothing user-visible, the provider returns
-                # stop_reason="length" with empty text + no tool_uses.
-                # Without this breadcrumb the failure mode is
-                # indistinguishable from a model that genuinely gave up,
-                # and the only way to diagnose it is to read raw
-                # transcripts (took ~7 minutes per case
-                # forensics). Surface it explicitly so the next
-                # undetected reasoning model is one log line away.
-                reasoning_chars = 0
-                raw_content = (resp.raw or {}).get("content") or []
-                if isinstance(raw_content, list):
-                    for block in raw_content:
-                        if isinstance(block, dict) and block.get("type") == "thinking":
-                            reasoning_chars = len(str(block.get("thinking") or ""))
-                            break
-                starved = (
-                    resp.stop_reason == "length" and reasoning_chars > 0 and resp.output_tokens > 0
-                )
-                if starved:
-                    self._log(
-                        f"LOOP: reasoning_starvation at iter {iteration}"
-                        f" - stop_reason=length, reasoning_chars={reasoning_chars},"
-                        f" output_tokens={resp.output_tokens}; the model spent"
-                        f" its entire output budget on reasoning_content."
-                        f" Add this model to _REASONING_MODEL_HINTS in"
-                        f" providers/openai.py if it isn't already."
-                    )
-                    self._emit(
-                        "loop.reasoning_starvation",
-                        iteration=iteration,
-                        reasoning_chars=reasoning_chars,
-                        output_tokens=resp.output_tokens,
-                        stop_reason=resp.stop_reason,
-                    )
-                self._log(
-                    f"LOOP: went_quiet at iter {iteration} - agent emitted no text and no tool_use"
-                )
-                # nudge-and-retry instead of immediate exit.
-                # Weak open-weights models occasionally emit a single
-                # empty assistant turn mid-run; a one-line synthetic
-                # user prompt almost always gets them back on track,
-                # and costs ~50 input tokens vs aborting the entire run.
-                # AGENT6_WENT_QUIET_MAX_NUDGES env override.
-                env_max = os.environ.get("AGENT6_WENT_QUIET_MAX_NUDGES", "").strip()
-                if env_max.isdigit():
-                    effective_max_nudges = int(env_max)
-                else:
-                    effective_max_nudges = self.went_quiet_max_nudges
-                if went_quiet_nudges_used < effective_max_nudges:
-                    went_quiet_nudges_used += 1
-                    # Drop the empty assistant turn we appended at the
-                    # top of this iteration. An assistant message with
-                    # empty content is rejected by Anthropic
-                    # ("messages.N.content: Input should be a valid
-                    # list") and is wasted context everywhere else.
-                    # The nudge becomes a normal user turn appended to
-                    # the prior assistant turn.
-                    if messages and messages[-1].get("role") == "assistant":
-                        last_content = messages[-1].get("content") or []
-                        if not last_content:
-                            messages.pop()
-                    # starvation-specific nudge. When the previous
-                    # turn ended with stop_reason=length AND reasoning_content
-                    # ate the entire budget, the generic "your turn was empty"
-                    # message gives the model no actionable feedback and it
-                    # repeats the same reasoning loop next turn. Tell it
-                    # explicitly to stop thinking and commit to a tool call.
-                    if starved:
-                        nudge_text = (
-                            "[harness] Your previous turn spent its entire"
-                            f" output budget ({resp.output_tokens} tokens) on"
-                            " reasoning_content with no visible content and"
-                            " no tool_use. STOP REASONING. On this next turn,"
-                            " emit a tool_use IMMEDIATELY — do not think"
-                            " further. If you genuinely don't know what to do"
-                            " next, call `read_file` on the most relevant"
-                            " source file to ground your next decision, or"
-                            " call `finish_run` if the task is complete. Any"
-                            " response that is not a tool_use will waste the"
-                            " entire run."
-                        )
-                    else:
-                        nudge_text = (
-                            "[harness] Your previous turn was empty: no text"
-                            " content and no tool_use. This is a synthetic"
-                            " prompt from the agent6 harness. Either call a"
-                            " tool to make progress, or call `finish_run`"
-                            " with a summary if the task is complete. Do"
-                            " not reply with another empty turn."
-                        )
-                    messages.append(
-                        {"role": "user", "content": [{"type": "text", "text": nudge_text}]}
-                    )
-                    self._emit(
-                        "loop.went_quiet.nudge",
-                        iteration=iteration,
-                        nudges_used=went_quiet_nudges_used,
-                        nudges_max=effective_max_nudges,
-                    )
-                    continue
-                self._emit(
-                    "run.end",
-                    reason="went_quiet",
-                    iterations=iteration,
-                    all_passed=False,
-                )
-                return RunResult(
-                    completed=False,
-                    reason="went_quiet",
-                    summary="(agent emitted no text and no tool_use)",
-                    iterations=iteration,
-                    tool_calls=tool_calls,
-                )
-
+                result = self._handle_no_tool_use(resp, messages, state, iteration=iteration)
+                if result is not None:
+                    return result
+                continue
             # Dispatch each tool_use, append tool_result to the user message.
             finish_signal: str | None = None
             finish_payload: dict[str, Any] | None = None
@@ -1387,25 +1112,25 @@ class Workflow:
             metric_plateau_finish: str | None = None
             # This iteration produced tool_uses, so the went_quiet
             # nudge budget refills (failures are per-streak, not per-run).
-            went_quiet_nudges_used = 0
+            state.went_quiet_nudges_used = 0
             for tu in resp.tool_uses:
-                tool_calls += 1
+                state.tool_calls += 1
                 name = tu.get("name", "")
                 tool_input = tu.get("input", {})
                 tu_id = tu.get("id", "")
                 # degenerate-loop signature tracking. Stable
                 # JSON so dict key order does not break equality. Same
                 # (name, args) back-to-back across iterations increments
-                # `repeat_streak`; anything else resets it.
+                # `state.repeat_streak`; anything else resets it.
                 try:
                     sig = f"{name}:{json.dumps(tool_input, sort_keys=True, ensure_ascii=False)}"
                 except (TypeError, ValueError):
                     sig = f"{name}:<unhashable>"
-                if sig == last_tool_signature:
-                    repeat_streak += 1
+                if sig == state.last_tool_signature:
+                    state.repeat_streak += 1
                 else:
-                    last_tool_signature = sig
-                    repeat_streak = 1
+                    state.last_tool_signature = sig
+                    state.repeat_streak = 1
                 self._emit("loop.tool.call", name=name, iteration=iteration)
                 try:
                     result = self.dispatcher.dispatch(name, tool_input)
@@ -1428,14 +1153,16 @@ class Workflow:
                         if verify_just_passed:
                             metric_called_after_verify_pass = True
                         metric_feedback_text = self._record_metric_result(
-                            metric_history,
+                            state.metric_history,
                             result,
                             iteration=iteration,
                             label=f"manual iter {iteration}",
                             sha="",
                         )
                         if verify_just_passed:
-                            metric_plateau_finish = self._metric_plateau_summary(metric_history)
+                            metric_plateau_finish = self._metric_plateau_summary(
+                                state.metric_history
+                            )
                     if name in ("apply_edit", "apply_patch"):
                         edited_this_iter = True
                     if name in _DAG_MUTATING_TOOLS:
@@ -1581,15 +1308,15 @@ class Workflow:
                             reason="interactive_stop",
                             summary=f"stopped interactively after iter {iteration}",
                             iterations=iteration,
-                            tool_calls=tool_calls,
+                            tool_calls=state.tool_calls,
                         )
                 if not metric_called_after_verify_pass:
                     metric_feedback_text = self._auto_metric_feedback(
-                        metric_history,
+                        state.metric_history,
                         iteration=iteration,
                         sha=sha,
                     )
-                    metric_plateau_finish = self._metric_plateau_summary(metric_history)
+                    metric_plateau_finish = self._metric_plateau_summary(state.metric_history)
 
             # critic-in-loop triggers.
             #   on_verify_fail - the verify just failed; surface a
@@ -1606,7 +1333,7 @@ class Workflow:
                 and self.critic_provider is not None
             ):
                 critique = self._run_critic(
-                    task=original_task,
+                    task=state.original_task,
                     messages=messages,
                     trigger="verify_failed",
                     iteration=iteration,
@@ -1619,7 +1346,7 @@ class Workflow:
                 and iteration % max(1, self.critic_period) == 0
             ):
                 critique = self._run_critic(
-                    task=original_task,
+                    task=state.original_task,
                     messages=messages,
                     trigger="periodic",
                     iteration=iteration,
@@ -1642,19 +1369,19 @@ class Workflow:
                 and self.critic_provider is not None
             ):
                 critique = self._run_critic(
-                    task=original_task,
+                    task=state.original_task,
                     messages=messages,
                     trigger="before_finish",
                     iteration=iteration,
                 )
                 cap = self.max_consecutive_critic_rejections
-                cap_reached = cap > 0 and consecutive_critic_rejections >= cap
+                cap_reached = cap > 0 and state.consecutive_critic_rejections >= cap
                 if critique is not None and not critique.satisfied and not cap_reached:
                     self._log(f"  critic rejected finish_run at iter {iteration}")
                     self._emit("loop.critic.rejected_finish", iteration=iteration)
                     finish_signal = None
                     finish_payload = None
-                    consecutive_critic_rejections += 1
+                    state.consecutive_critic_rejections += 1
                     critic_text = (
                         "The critic rejected your finish_run call. Address the"
                         " issues below before calling finish_run again.\n\n" + critique.text
@@ -1667,16 +1394,16 @@ class Workflow:
                     self._emit(
                         "loop.critic.rejection_cap_reached",
                         iteration=iteration,
-                        rejections=consecutive_critic_rejections,
+                        rejections=state.consecutive_critic_rejections,
                     )
                     critic_text = (
                         "The critic flagged issues but the rejection cap was"
                         " reached; finish_run will be accepted. Critique:\n\n" + critique.text
                     )
-                    consecutive_critic_rejections = 0
+                    state.consecutive_critic_rejections = 0
                 elif critique is not None:
                     self._log("  critic approved finish_run")
-                    consecutive_critic_rejections = 0
+                    state.consecutive_critic_rejections = 0
 
             # metric-run early-finish guard. On optimisation runs the worker
             # often calls finish_run with most of its budget unspent, even
@@ -1692,27 +1419,27 @@ class Workflow:
                 and finish_kind == "finish_run"
                 and self.mode == "run"
                 and _metric_goal(self.config.workflow.metric) is not None
-                and not self._metric_at_ceiling(metric_history)
+                and not self._metric_at_ceiling(state.metric_history)
             ):
                 finish_budget_remaining = self._budget_fraction_remaining()
                 has_runway = (
                     finish_budget_remaining is not None
                     and finish_budget_remaining > _METRIC_PLATEAU_STOP_BELOW_BUDGET
                 )
-                if has_runway and metric_finish_nudges_used < _METRIC_EARLY_FINISH_PATIENCE:
+                if has_runway and state.metric_finish_nudges_used < _METRIC_EARLY_FINISH_PATIENCE:
                     assert finish_budget_remaining is not None
-                    metric_finish_nudges_used += 1
+                    state.metric_finish_nudges_used += 1
                     finish_signal = None
                     finish_payload = None
                     tool_results.append({"type": "text", "text": _METRIC_FINISH_NUDGE})
                     self._log(
-                        f"  metric early-finish rejected #{metric_finish_nudges_used}"
+                        f"  metric early-finish rejected #{state.metric_finish_nudges_used}"
                         f" at iter {iteration} (budget {finish_budget_remaining:.0%} left)"
                     )
                     self._emit(
                         "loop.metric_early_finish.rejected",
                         iteration=iteration,
-                        nudges_used=metric_finish_nudges_used,
+                        nudges_used=state.metric_finish_nudges_used,
                         budget_remaining=finish_budget_remaining,
                     )
 
@@ -1743,12 +1470,15 @@ class Workflow:
             # signature, so a normal re-read after an edit does not
             # trigger.
             repeat_threshold = 3
-            if repeat_streak >= repeat_threshold and repeat_warning_emitted_at < iteration - 1:
+            if (
+                state.repeat_streak >= repeat_threshold
+                and state.repeat_warning_emitted_at < iteration - 1
+            ):
                 # Strip the args-JSON suffix for the user-facing text.
-                latched_name = (last_tool_signature or "").split(":", 1)[0] or "<unknown>"
+                latched_name = (state.last_tool_signature or "").split(":", 1)[0] or "<unknown>"
                 notice = (
                     f"[loop-guard] You have called `{latched_name}` with"
-                    f" identical arguments {repeat_streak} times in a row."
+                    f" identical arguments {state.repeat_streak} times in a row."
                     " The tool result has not changed. Re-issuing the same"
                     " call again will not yield new information. Change"
                     " your approach: try different arguments, a different"
@@ -1760,13 +1490,13 @@ class Workflow:
                     "loop.loop_guard.triggered",
                     iteration=iteration,
                     tool=latched_name,
-                    streak=repeat_streak,
+                    streak=state.repeat_streak,
                 )
                 self._log(
                     f"  loop-guard: {latched_name} called"
-                    f" {repeat_streak}x in a row - injecting notice"
+                    f" {state.repeat_streak}x in a row - injecting notice"
                 )
-                repeat_warning_emitted_at = iteration
+                state.repeat_warning_emitted_at = iteration
 
             # metric-plateau handling. When a verified metric merely ties the
             # prior best, the plateau detector fires. Rather than quit at the
@@ -1787,13 +1517,13 @@ class Workflow:
                     budget_remaining is None
                     or budget_remaining <= _METRIC_PLATEAU_STOP_BELOW_BUDGET
                 )
-                if self._metric_at_ceiling(metric_history):
+                if self._metric_at_ceiling(state.metric_history):
                     plateau_should_stop = True
                     self._emit("loop.metric_ceiling.stop", iteration=iteration)
-                elif in_final_slice and plateau_nudges_used >= _METRIC_PLATEAU_PATIENCE:
+                elif in_final_slice and state.plateau_nudges_used >= _METRIC_PLATEAU_PATIENCE:
                     plateau_should_stop = True
                 else:
-                    plateau_nudges_used += 1
+                    state.plateau_nudges_used += 1
                     nudge_text = _metric_plateau_nudge(budget_remaining)
                     tool_results.append({"type": "text", "text": nudge_text})
                     budget_note = (
@@ -1801,12 +1531,12 @@ class Workflow:
                     )
                     self._log(
                         "  metric_plateau pivot-nudge"
-                        f" #{plateau_nudges_used} at iter {iteration} (budget {budget_note})"
+                        f" #{state.plateau_nudges_used} at iter {iteration} (budget {budget_note})"
                     )
                     self._emit(
                         "loop.metric_plateau.nudge",
                         iteration=iteration,
-                        nudges_used=plateau_nudges_used,
+                        nudges_used=state.plateau_nudges_used,
                         budget_remaining=budget_remaining,
                     )
 
@@ -1821,7 +1551,7 @@ class Workflow:
             # Only the pathology, spinning on read-only commands with a clean,
             # already-committed tree, accrues idle.
             if verify_just_passed:
-                verify_ever_passed = True
+                state.verify_ever_passed = True
             # Only governs PLAIN runs. A metric/optimisation run is also
             # mode=="run" but its completion is owned by the metric early-finish
             # guard + plateau/ceiling logic (which deliberately keep going while
@@ -1832,37 +1562,39 @@ class Workflow:
             non_metric_run = (
                 self.mode == "run" and _metric_goal(self.config.workflow.metric) is None
             )
-            if non_metric_run and verify_ever_passed:
+            if non_metric_run and state.verify_ever_passed:
                 made_progress = committed_this_iter or edited_this_iter or self._worktree_dirty()
                 if made_progress:
-                    verify_settled_idle = 0
-                    verify_settled_nudged = False  # a fresh idle streak may re-nudge
+                    state.verify_settled_idle = 0
+                    state.verify_settled_nudged = False  # a fresh idle streak may re-nudge
                 elif not (verify_just_passed or verify_just_failed):
-                    verify_settled_idle += 1
+                    state.verify_settled_idle += 1
             verify_settled_stop = (
                 non_metric_run
                 and finish_signal is None
-                and verify_ever_passed
-                and verify_settled_idle >= _VERIFY_SETTLED_STOP_AFTER
+                and state.verify_ever_passed
+                and state.verify_settled_idle >= _VERIFY_SETTLED_STOP_AFTER
             )
             if (
                 non_metric_run
                 and finish_signal is None
                 and not verify_settled_stop
-                and verify_ever_passed
-                and verify_settled_idle >= _VERIFY_SETTLED_NUDGE_AFTER
-                and not verify_settled_nudged
+                and state.verify_ever_passed
+                and state.verify_settled_idle >= _VERIFY_SETTLED_NUDGE_AFTER
+                and not state.verify_settled_nudged
             ):
-                verify_settled_nudged = True
+                state.verify_settled_nudged = True
                 tool_results.append({"type": "text", "text": _VERIFY_SETTLED_NUDGE})
                 self._emit(
-                    "loop.verify_settled.nudge", iteration=iteration, idle=verify_settled_idle
+                    "loop.verify_settled.nudge", iteration=iteration, idle=state.verify_settled_idle
                 )
 
             messages.append({"role": "user", "content": tool_results})
 
             if verify_settled_stop:
-                self._log(f"LOOP: verify_settled at iter {iteration} (idle {verify_settled_idle})")
+                self._log(
+                    f"LOOP: verify_settled at iter {iteration} (idle {state.verify_settled_idle})"
+                )
                 self._emit(
                     "run.end", reason="verify_settled", iterations=iteration, all_passed=True
                 )
@@ -1871,7 +1603,7 @@ class Workflow:
                     reason="verify_settled",
                     summary="verify passed and the worker stopped making changes",
                     iterations=iteration,
-                    tool_calls=tool_calls,
+                    tool_calls=state.tool_calls,
                 )
 
             if plateau_should_stop:
@@ -1888,7 +1620,7 @@ class Workflow:
                     reason="metric_plateau",
                     summary=metric_plateau_finish,
                     iterations=iteration,
-                    tool_calls=tool_calls,
+                    tool_calls=state.tool_calls,
                 )
 
             # loop-guard escalation. The notice above is
@@ -1901,12 +1633,12 @@ class Workflow:
             # essential when triaging "why did my run die at iter N".
             if (
                 self.loop_guard_kill_threshold > 0
-                and repeat_streak >= self.loop_guard_kill_threshold
+                and state.repeat_streak >= self.loop_guard_kill_threshold
             ):
-                latched_name = (last_tool_signature or "").split(":", 1)[0] or "<unknown>"
+                latched_name = (state.last_tool_signature or "").split(":", 1)[0] or "<unknown>"
                 self._log(
                     f"LOOP: loop_guard_killed at iter {iteration} -"
-                    f" {latched_name} called {repeat_streak}x in a row"
+                    f" {latched_name} called {state.repeat_streak}x in a row"
                     f" (threshold={self.loop_guard_kill_threshold})"
                 )
                 self._emit(
@@ -1915,19 +1647,19 @@ class Workflow:
                     iterations=iteration,
                     all_passed=False,
                     tool=latched_name,
-                    streak=repeat_streak,
+                    streak=state.repeat_streak,
                 )
                 return RunResult(
                     completed=False,
                     reason="loop_guard_killed",
                     summary=(
                         f"loop-guard killed run: `{latched_name}`"
-                        f" called {repeat_streak}x in a row with"
+                        f" called {state.repeat_streak}x in a row with"
                         f" identical arguments (threshold"
                         f" {self.loop_guard_kill_threshold})"
                     ),
                     iterations=iteration,
-                    tool_calls=tool_calls,
+                    tool_calls=state.tool_calls,
                 )
 
             if finish_signal is not None:
@@ -1943,7 +1675,7 @@ class Workflow:
                     reason=finish_kind,
                     summary=finish_signal,
                     iterations=iteration,
-                    tool_calls=tool_calls,
+                    tool_calls=state.tool_calls,
                     finish_payload=finish_payload,
                 )
 
@@ -1967,7 +1699,7 @@ class Workflow:
                     reason="steer_abort",
                     summary=f"operator aborted at iter {iteration} via steering prompt",
                     iterations=iteration,
-                    tool_calls=tool_calls,
+                    tool_calls=state.tool_calls,
                 )
 
         self._log(f"LOOP: max_iterations={self.max_iterations} reached")
@@ -1982,7 +1714,294 @@ class Workflow:
             reason="max_iterations",
             summary=f"max_iterations={self.max_iterations} reached without finish_run",
             iterations=self.max_iterations,
-            tool_calls=tool_calls,
+            tool_calls=state.tool_calls,
+        )
+
+    def _maybe_pre_call_nudges(
+        self,
+        messages: list[dict[str, Any]],
+        state: _LoopState,
+        *,
+        iteration: int,
+        start_iteration: int,
+    ) -> None:
+        """Before the LLM call, inject a one-shot finish directive when a
+        verbose planner or a non-metric run is reading forever without
+        landing a plan / verify+finish before the budget dies."""
+        # Force a verbose planner to land a plan. Trigger on EITHER a low
+        # token budget OR too many planning turns, with prompt caching a
+        # planner can take many cheap turns, so an iteration cap is the
+        # reliable lever for the "reads forever" failure mode. A rough
+        # delivered plan beats an exhaustive one that never gets emitted.
+        if self.mode == "plan" and not state.plan_finish_nudged:
+            remaining = self._budget_fraction_remaining()
+            low_budget = remaining is not None and remaining <= _PLAN_BUDGET_NUDGE_BELOW
+            too_many_turns = iteration - start_iteration + 1 >= _PLAN_NUDGE_AFTER_ITERS
+            if low_budget or too_many_turns:
+                state.plan_finish_nudged = True
+                messages.append(
+                    {"role": "user", "content": [{"type": "text", "text": _PLAN_BUDGET_NUDGE}]}
+                )
+                self._log(
+                    f"LOOP: plan finish-nudge at iter {iteration}"
+                    f" (turns={too_many_turns}, low_budget={low_budget})"
+                )
+                self._emit(
+                    "loop.plan_finish.nudge", iteration=iteration, budget_remaining=remaining
+                )
+
+        # Same lever for a non-metric coding run: force a verify + finish
+        # before the budget dies (metric runs have their own end-game).
+        if (
+            self.mode == "run"
+            and not state.run_budget_nudged
+            and _metric_goal(self.config.workflow.metric) is None
+        ):
+            remaining = self._budget_fraction_remaining()
+            if remaining is not None and remaining <= _RUN_BUDGET_NUDGE_BELOW:
+                state.run_budget_nudged = True
+                messages.append(
+                    {"role": "user", "content": [{"type": "text", "text": _RUN_BUDGET_NUDGE}]}
+                )
+                self._log(f"LOOP: run budget-nudge at iter {iteration}")
+                self._emit("loop.run_budget.nudge", iteration=iteration, budget_remaining=remaining)
+
+    def _handle_no_tool_use(  # noqa: PLR0912, PLR0915
+        self, resp: Any, messages: list[dict[str, Any]], state: _LoopState, *, iteration: int
+    ) -> RunResult | None:
+        """Handle a turn with no tool_use. Either a silent finish (the agent
+        emitted text; gated by the before_finish critic and the metric
+        early-finish guard) or went-quiet (an empty turn; nudged up to a cap).
+        Returns a terminal RunResult, or None to continue the loop after
+        appending a nudge."""
+        # Agent emitted no tool_use. audit finding:
+        # distinguish "agent talked then stopped" (likely an
+        # implicit finish - user gets the text as summary) from
+        # "agent emitted nothing" (likely went-quiet failure -
+        # provider returned an empty response, or the agent got
+        # confused; bench scoring should NOT treat this as
+        # success).
+        text = resp.text.strip() if resp.text else ""
+        if text:
+            # silent_finish goes through the same
+            # before_finish critic gate as an explicit
+            # finish_run tool_use. Without this, an agent that
+            # stops emitting tool calls bypasses critic review
+            # entirely. Rejection cap is shared with the
+            # tool_use path so a stubborn worker can't bounce
+            # the loop forever.
+            if self.critic_mode == "before_finish" and self.critic_provider is not None:
+                critique = self._run_critic(
+                    task=state.original_task,
+                    messages=messages,
+                    trigger="before_finish",
+                    iteration=iteration,
+                )
+                cap = self.max_consecutive_critic_rejections
+                cap_reached = cap > 0 and state.consecutive_critic_rejections >= cap
+                if critique is not None and not critique.satisfied and not cap_reached:
+                    self._log(f"  critic rejected silent_finish at iter {iteration}")
+                    self._emit(
+                        "loop.critic.rejected_silent_finish",
+                        iteration=iteration,
+                    )
+                    state.consecutive_critic_rejections += 1
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": (
+                                        "[critic]\nThe critic"
+                                        " rejected your"
+                                        " silent finish (no"
+                                        " tool_use, just"
+                                        " text). Address the"
+                                        " issues below and"
+                                        " continue the task.\n\n" + critique.text
+                                    ),
+                                }
+                            ],
+                        }
+                    )
+                    return None
+                if critique is not None and not critique.satisfied and cap_reached:
+                    self._log(
+                        f"  critic rejected silent_finish at"
+                        f" iter {iteration} but rejection cap"
+                        f" ({cap}) reached - accepting finish"
+                    )
+                    self._emit(
+                        "loop.critic.rejection_cap_reached",
+                        iteration=iteration,
+                        rejections=state.consecutive_critic_rejections,
+                    )
+                    state.consecutive_critic_rejections = 0
+                elif critique is not None:
+                    self._log("  critic approved silent_finish")
+                    state.consecutive_critic_rejections = 0
+            # metric-run early-finish guard, mirroring the finish_run
+            # path: a silent finish on an optimisation run with budget to
+            # spare should be nudged to keep optimising rather than
+            # accepted. Without this, dropping tool_use was a way to skip
+            # the plateau/early-finish policy entirely.
+            if (
+                self.mode == "run"
+                and _metric_goal(self.config.workflow.metric) is not None
+                and not self._metric_at_ceiling(state.metric_history)
+            ):
+                finish_budget_remaining = self._budget_fraction_remaining()
+                has_runway = (
+                    finish_budget_remaining is not None
+                    and finish_budget_remaining > _METRIC_PLATEAU_STOP_BELOW_BUDGET
+                )
+                if has_runway and state.metric_finish_nudges_used < _METRIC_EARLY_FINISH_PATIENCE:
+                    assert finish_budget_remaining is not None
+                    state.metric_finish_nudges_used += 1
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": [{"type": "text", "text": _METRIC_FINISH_NUDGE}],
+                        }
+                    )
+                    self._log(
+                        f"  metric early-finish (silent) rejected"
+                        f" #{state.metric_finish_nudges_used} at iter {iteration}"
+                        f" (budget {finish_budget_remaining:.0%} left)"
+                    )
+                    self._emit(
+                        "loop.metric_early_finish.rejected",
+                        iteration=iteration,
+                        nudges_used=state.metric_finish_nudges_used,
+                        budget_remaining=finish_budget_remaining,
+                        trigger="silent_finish",
+                    )
+                    return None
+            self._log(
+                f"LOOP: silent_finish at iter {iteration} - agent emitted text but no tool_use"
+            )
+            self._emit(
+                "run.end",
+                reason="silent_finish",
+                iterations=iteration,
+                all_passed=True,
+            )
+            return RunResult(
+                completed=True,
+                reason="silent_finish",
+                # In ask mode the final prose IS the answer the caller
+                # prints, so keep it whole; run/plan only need a short
+                # summary line.
+                summary=text if self.mode == "ask" else text[:1000],
+                iterations=iteration,
+                tool_calls=state.tool_calls,
+            )
+        # reasoning-starvation trip-wire. When a model
+        # spends its entire output budget on reasoning_content
+        # and emits nothing user-visible, the provider returns
+        # stop_reason="length" with empty text + no tool_uses.
+        # Without this breadcrumb the failure mode is
+        # indistinguishable from a model that genuinely gave up,
+        # and the only way to diagnose it is to read raw
+        # transcripts (took ~7 minutes per case
+        # forensics). Surface it explicitly so the next
+        # undetected reasoning model is one log line away.
+        reasoning_chars = 0
+        raw_content = (resp.raw or {}).get("content") or []
+        if isinstance(raw_content, list):
+            for block in raw_content:
+                if isinstance(block, dict) and block.get("type") == "thinking":
+                    reasoning_chars = len(str(block.get("thinking") or ""))
+                    break
+        starved = resp.stop_reason == "length" and reasoning_chars > 0 and resp.output_tokens > 0
+        if starved:
+            self._log(
+                f"LOOP: reasoning_starvation at iter {iteration}"
+                f" - stop_reason=length, reasoning_chars={reasoning_chars},"
+                f" output_tokens={resp.output_tokens}; the model spent"
+                f" its entire output budget on reasoning_content."
+                f" Add this model to _REASONING_MODEL_HINTS in"
+                f" providers/openai.py if it isn't already."
+            )
+            self._emit(
+                "loop.reasoning_starvation",
+                iteration=iteration,
+                reasoning_chars=reasoning_chars,
+                output_tokens=resp.output_tokens,
+                stop_reason=resp.stop_reason,
+            )
+        self._log(f"LOOP: went_quiet at iter {iteration} - agent emitted no text and no tool_use")
+        # nudge-and-retry instead of immediate exit.
+        # Weak open-weights models occasionally emit a single
+        # empty assistant turn mid-run; a one-line synthetic
+        # user prompt almost always gets them back on track,
+        # and costs ~50 input tokens vs aborting the entire run.
+        # AGENT6_WENT_QUIET_MAX_NUDGES env override.
+        env_max = os.environ.get("AGENT6_WENT_QUIET_MAX_NUDGES", "").strip()
+        effective_max_nudges = int(env_max) if env_max.isdigit() else self.went_quiet_max_nudges
+        if state.went_quiet_nudges_used < effective_max_nudges:
+            state.went_quiet_nudges_used += 1
+            # Drop the empty assistant turn we appended at the
+            # top of this iteration. An assistant message with
+            # empty content is rejected by Anthropic
+            # ("messages.N.content: Input should be a valid
+            # list") and is wasted context everywhere else.
+            # The nudge becomes a normal user turn appended to
+            # the prior assistant turn.
+            if messages and messages[-1].get("role") == "assistant":
+                last_content = messages[-1].get("content") or []
+                if not last_content:
+                    messages.pop()
+            # starvation-specific nudge. When the previous
+            # turn ended with stop_reason=length AND reasoning_content
+            # ate the entire budget, the generic "your turn was empty"
+            # message gives the model no actionable feedback and it
+            # repeats the same reasoning loop next turn. Tell it
+            # explicitly to stop thinking and commit to a tool call.
+            if starved:
+                nudge_text = (
+                    "[harness] Your previous turn spent its entire"
+                    f" output budget ({resp.output_tokens} tokens) on"
+                    " reasoning_content with no visible content and"
+                    " no tool_use. STOP REASONING. On this next turn,"
+                    " emit a tool_use IMMEDIATELY — do not think"
+                    " further. If you genuinely don't know what to do"
+                    " next, call `read_file` on the most relevant"
+                    " source file to ground your next decision, or"
+                    " call `finish_run` if the task is complete. Any"
+                    " response that is not a tool_use will waste the"
+                    " entire run."
+                )
+            else:
+                nudge_text = (
+                    "[harness] Your previous turn was empty: no text"
+                    " content and no tool_use. This is a synthetic"
+                    " prompt from the agent6 harness. Either call a"
+                    " tool to make progress, or call `finish_run`"
+                    " with a summary if the task is complete. Do"
+                    " not reply with another empty turn."
+                )
+            messages.append({"role": "user", "content": [{"type": "text", "text": nudge_text}]})
+            self._emit(
+                "loop.went_quiet.nudge",
+                iteration=iteration,
+                nudges_used=state.went_quiet_nudges_used,
+                nudges_max=effective_max_nudges,
+            )
+            return None
+        self._emit(
+            "run.end",
+            reason="went_quiet",
+            iterations=iteration,
+            all_passed=False,
+        )
+        return RunResult(
+            completed=False,
+            reason="went_quiet",
+            summary="(agent emitted no text and no tool_use)",
+            iterations=iteration,
+            tool_calls=state.tool_calls,
         )
 
     def _seed_root_task(self, user_task: str) -> str | None:
