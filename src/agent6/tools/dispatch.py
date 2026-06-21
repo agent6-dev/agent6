@@ -30,7 +30,13 @@ from agent6.sandbox.jail import JailUnavailableError, run_in_jail
 from agent6.tools.index import Symbol, SymbolIndex
 from agent6.tools.lsp import LspClient, LspError
 from agent6.tools.mcp_client import MCP_TOOL_PREFIX, MCPError, MCPManager
-from agent6.tools.patch_apply import PatchError, apply_patch_text
+from agent6.tools.patch_apply import (
+    PatchError,
+    apply_patch_text,
+    apply_v4a_text,
+    is_v4a_patch,
+    patch_target_path,
+)
 from agent6.tools.schema import (
     ALL_TOOLS,
     Agent6DocsInput,
@@ -744,25 +750,37 @@ class ToolDispatcher:
 
     def _apply_patch(self, raw: dict[str, Any]) -> dict[str, Any]:
         args = ApplyPatchInput.model_validate(raw)
-        self._refuse_protected_writes(args.path)
-        sp = _resolve_in_root(self._root, args.path)
-        self._refuse_protected_writes(args.path, sp)
+        v4a = is_v4a_patch(args.patch)
+        # The write location: the explicit `path` arg if given, else derived from
+        # the patch headers (V4A always embeds it; GPT-family models omit `path`).
+        # Either way it is resolved + protected-path-checked below, so deriving it
+        # from the patch never widens where a write can land.
+        try:
+            derived_path = patch_target_path(args.patch)
+        except PatchError as exc:
+            raise ToolError(f"apply_patch failed for {args.path or '<unknown>'}: {exc}") from exc
+        target = args.path or derived_path
+        # Security checks on the write location come first (absolute path, repo
+        # escape, protected dirs), before the lower-priority model-confusion
+        # check that an explicit `path` matches the patch header.
+        self._refuse_protected_writes(target)
+        sp = _resolve_in_root(self._root, target)
+        self._refuse_protected_writes(target, sp)
+        if args.path and args.path != derived_path:
+            raise ToolError(
+                f"apply_patch: `path` argument {args.path!r} disagrees with the patch "
+                f"header path {derived_path!r}; emit them consistently or omit `path`"
+            )
         existing = sp.abs_path.read_text(encoding="utf-8") if sp.abs_path.exists() else None
         try:
-            target_path, new_content = apply_patch_text(args.patch, existing)
+            if v4a:
+                _, new_content = apply_v4a_text(args.patch, existing)
+            else:
+                _, new_content = apply_patch_text(args.patch, existing)
         except PatchError as exc:
-            raise ToolError(f"apply_patch failed for {args.path}: {exc}") from exc
-        # The patch's `+++` header path must agree with the explicit `path` arg.
-        # We trust `path` (the caller-supplied, schema-validated value) for the
-        # write location; the header path is advisory but mismatches are a sign
-        # the model is confused, so we surface them as an error.
-        if target_path and target_path != args.path:
-            raise ToolError(
-                f"apply_patch: `path` argument {args.path!r} disagrees with patch "
-                f"`+++` header {target_path!r}; emit them consistently"
-            )
+            raise ToolError(f"apply_patch failed for {target}: {exc}") from exc
         if args.preview:
-            return _preview_result(args.path, existing, new_content)
+            return _preview_result(target, existing, new_content)
         sp.abs_path.parent.mkdir(parents=True, exist_ok=True)
         sp.abs_path.write_text(new_content, encoding="utf-8")
         if self._index is not None:

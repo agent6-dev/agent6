@@ -945,3 +945,69 @@ def test_apply_edit_mismatch_unrelated_falls_back_to_shape(tmp_path: Path) -> No
     msg = str(exc.value)
     assert "File shape" in msg
     assert "Re-read" in msg
+
+
+# --- OpenAI V4A "*** Begin Patch" format (GPT / gpt-oss family) ---------------
+
+
+def test_apply_patch_v4a_update_without_path_arg(tmp_path: Path) -> None:
+    """GPT-family models emit the V4A format and omit `path` (it is in the
+    patch). agent6 must parse it, derive the path, and apply the hunk."""
+    cfg = _config(tmp_path)
+    (tmp_path / "m.py").write_text("def f():\n    x = 1\n    return x\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    patch = (
+        "*** Begin Patch\n"
+        "*** Update File: m.py\n"
+        "@@ def f():\n"
+        "     x = 1\n"
+        "-    return x\n"
+        "+    return x + 1\n"
+        "*** End Patch"
+    )
+    out = d.dispatch("apply_patch", {"patch": patch})
+    assert out["path"] == "m.py"
+    assert (tmp_path / "m.py").read_text(
+        encoding="utf-8"
+    ) == "def f():\n    x = 1\n    return x + 1\n"
+
+
+def test_apply_patch_v4a_add_file(tmp_path: Path) -> None:
+    cfg = _config(tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    patch = "*** Begin Patch\n*** Add File: new.py\n+print(1)\n+print(2)\n*** End Patch"
+    d.dispatch("apply_patch", {"patch": patch})
+    assert (tmp_path / "new.py").read_text(encoding="utf-8") == "print(1)\nprint(2)\n"
+
+
+def test_apply_patch_v4a_path_into_git_still_refused(tmp_path: Path) -> None:
+    """Deriving the path from the patch never bypasses the protected-path guard:
+    a V4A patch targeting .git is refused like any other write."""
+    cfg = _config(tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    patch = "*** Begin Patch\n*** Add File: .git/hooks/pre-commit\n+#!/bin/sh\n+id\n*** End Patch"
+    with pytest.raises(ToolError, match=r"\.git"):
+        d.dispatch("apply_patch", {"patch": patch})
+
+
+def test_apply_patch_v4a_multi_file_rejected(tmp_path: Path) -> None:
+    cfg = _config(tmp_path)
+    (tmp_path / "a.py").write_text("x\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    patch = (
+        "*** Begin Patch\n*** Update File: a.py\n@@\n-x\n+y\n"
+        "*** Update File: b.py\n@@\n-p\n+q\n*** End Patch"
+    )
+    with pytest.raises(ToolError, match="one file at a time"):
+        d.dispatch("apply_patch", {"patch": patch})
+
+
+def test_apply_patch_unified_still_works_and_path_optional(tmp_path: Path) -> None:
+    """The unified-diff path is unchanged and also accepts an omitted `path`
+    (derived from the `+++` header)."""
+    cfg = _config(tmp_path)
+    (tmp_path / "x.py").write_text("a\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    out = d.dispatch("apply_patch", {"patch": "--- a/x.py\n+++ b/x.py\n@@ -1 +1 @@\n-a\n+A\n"})
+    assert out["path"] == "x.py"
+    assert (tmp_path / "x.py").read_text(encoding="utf-8") == "A\n"

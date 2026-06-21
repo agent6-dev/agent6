@@ -182,3 +182,67 @@ def test_bare_path_header_no_a_b_prefix() -> None:
     path, new = apply_patch_text(patch, "a\n")
     assert path == "f.py"
     assert new == "A\n"
+
+
+# --- OpenAI V4A "*** Begin Patch" parser/applier ----------------------------
+
+from agent6.tools.patch_apply import apply_v4a_text, is_v4a_patch, patch_target_path  # noqa: E402
+
+
+def test_v4a_detect_and_target_path() -> None:
+    patch = "*** Begin Patch\n*** Update File: pkg/m.py\n@@\n-a\n+b\n*** End Patch"
+    assert is_v4a_patch(patch)
+    assert patch_target_path(patch) == "pkg/m.py"
+
+
+def test_v4a_update_context_hunk() -> None:
+    orig = "def f():\n    x = 1\n    return x\n"
+    patch = (
+        "*** Begin Patch\n*** Update File: m.py\n@@ def f():\n"
+        "     x = 1\n-    return x\n+    return x + 1\n*** End Patch"
+    )
+    path, new = apply_v4a_text(patch, orig)
+    assert path == "m.py"
+    assert new == "def f():\n    x = 1\n    return x + 1\n"
+
+
+def test_v4a_multi_hunk() -> None:
+    orig = "a = 1\nb = 2\nc = 3\nd = 4\ne = 5\n"
+    patch = (
+        "*** Begin Patch\n*** Update File: x.py\n"
+        "@@\n a = 1\n-b = 2\n+b = 20\n@@\n d = 4\n-e = 5\n+e = 50\n*** End Patch"
+    )
+    _, new = apply_v4a_text(patch, orig)
+    assert new == "a = 1\nb = 20\nc = 3\nd = 4\ne = 50\n"
+
+
+def test_v4a_add_file() -> None:
+    patch = "*** Begin Patch\n*** Add File: n.py\n+print(1)\n+print(2)\n*** End Patch"
+    path, new = apply_v4a_text(patch, None)
+    assert path == "n.py" and new == "print(1)\nprint(2)\n"
+
+
+def test_v4a_ambiguous_context_rejected() -> None:
+    patch = "*** Begin Patch\n*** Update File: a.py\n@@\n-x = 1\n+x = 2\n*** End Patch"
+    with pytest.raises(PatchError, match="ambiguous"):
+        apply_v4a_text(patch, "x = 1\nx = 1\n")
+
+
+def test_v4a_context_not_found_rejected() -> None:
+    patch = "*** Begin Patch\n*** Update File: a.py\n@@\n-missing\n+x\n*** End Patch"
+    with pytest.raises(PatchError, match="not found"):
+        apply_v4a_text(patch, "different\n")
+
+
+def test_v4a_multi_file_rejected() -> None:
+    patch = (
+        "*** Begin Patch\n*** Update File: a.py\n@@\n-x\n+y\n"
+        "*** Update File: b.py\n@@\n-p\n+q\n*** End Patch"
+    )
+    with pytest.raises(PatchError, match="one file at a time"):
+        apply_v4a_text(patch, "x\n")
+
+
+def test_v4a_delete_rejected() -> None:
+    with pytest.raises(PatchError, match="deletion"):
+        apply_v4a_text("*** Begin Patch\n*** Delete File: a.py\n*** End Patch", "x\n")

@@ -123,19 +123,18 @@ class ApplyEditInput(_ToolInput):
 class ApplyPatchInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "apply_patch"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Apply a unified-diff patch to one file. Format: standard `diff -u` output"
-        " beginning with `--- a/PATH` and `+++ b/PATH` headers followed by"
-        " `@@ -L,N +L,N @@` hunks with ` `, `-`, `+` line prefixes. Context lines"
-        " must match the on-disk file exactly (no fuzzy match). For multi-hunk"
-        " changes to one file this is cheaper than several `apply_edit` calls"
-        " because hunks are anchored by line number, not by unique substrings."
-        " To create a new file use `--- /dev/null` as the source header."
-        " File deletion is not supported. One file per call."
-        " Pass `preview=true` for a dry-run: the diff and hunk count are"
-        " echoed back WITHOUT writing to disk; defaults to false."
+        "Apply a patch to one file. Two formats are accepted: (1) standard"
+        " unified diff (`--- a/PATH`, `+++ b/PATH`, `@@ -L,N +L,N @@` hunks with"
+        " ` `, `-`, `+` line prefixes; `--- /dev/null` to create a file), or (2)"
+        " OpenAI's `*** Begin Patch` / `*** Update File: PATH` / `*** End Patch`"
+        " format (context-anchored hunks, no line numbers). Context lines must"
+        " match the on-disk file exactly (no fuzzy match). `path` is optional:"
+        " when omitted it is taken from the patch headers. File deletion is not"
+        " supported. One file per call. Pass `preview=true` for a dry-run: the"
+        " diff and hunk count are echoed back WITHOUT writing to disk."
     )
 
-    path: str = Field(min_length=1)
+    path: str = ""
     patch: str = Field(min_length=1)
     preview: bool = False
 

@@ -340,3 +340,160 @@ def apply_patch_text(patch_text: str, original: str | None) -> tuple[str, str]:
     patch = parse_patch(patch_text)
     new_content = apply_parsed_patch(patch, original)
     return patch.target_path, new_content
+
+
+# ---------- OpenAI "*** Begin Patch" (V4A) format ----------
+#
+# GPT / gpt-oss models emit patches in OpenAI's apply_patch format, NOT unified
+# diff: `*** Begin Patch` / `*** End Patch` wrap one or more file directives
+# (`*** Add File:` / `*** Update File:` / `*** Delete File:`); inside an Update,
+# hunks use ` `/`-`/`+` line prefixes with optional `@@ <hint>` section markers
+# and NO `@@ -L,N +L,N @@` line numbers (matching is by context, not position).
+# Without this, every apply_patch from a GPT-family model fails ("got: '@@'")
+# and the model death-spirals on re-reads. We map each context hunk onto the
+# same safe unique-substring replacement apply_edit uses: zero fuzz, all-or-
+# nothing, and a clear error when context is missing or ambiguous.
+
+
+def is_v4a_patch(text: str) -> bool:
+    """True if *text* looks like an OpenAI `*** Begin Patch` envelope."""
+    return text.lstrip().startswith("*** Begin Patch")
+
+
+def patch_target_path(text: str) -> str:
+    """Extract the single target path from a patch (either format) without
+    applying it. Raises ``PatchError`` if no path header is present."""
+    if is_v4a_patch(text):
+        for ln in text.splitlines():
+            d = _v4a_file_directive(ln)
+            if d is not None:
+                return d[1]
+        raise PatchError("V4A patch has no `*** Add/Update/Delete File:` directive")
+    for ln in text.splitlines():
+        if ln.startswith("+++ "):
+            header = ln[4:].strip()
+            if header == "/dev/null":
+                raise PatchError("File deletion (`+++ /dev/null`) is not supported")
+            return _strip_ab_prefix(header)
+    raise PatchError("patch has no `+++ ` header to take a path from")
+
+
+def _v4a_file_directive(line: str) -> tuple[str, str] | None:
+    """Parse a `*** <Verb> File: <path>` directive into (verb, path), else None."""
+    for verb in ("Add", "Update", "Delete"):
+        prefix = f"*** {verb} File:"
+        if line.startswith(prefix):
+            return verb, line[len(prefix) :].strip()
+    return None
+
+
+def apply_v4a_text(patch_text: str, original: str | None) -> tuple[str, str]:  # noqa: PLR0912
+    """Parse and apply a single-file OpenAI V4A patch.
+
+    Returns ``(target_path, new_content)``. Raises ``PatchError`` on a malformed
+    envelope, a multi-file patch, a missing/ambiguous context, or a file
+    create/update mismatch. All-or-nothing: the caller writes the returned text.
+    """
+    raw = patch_text.strip().splitlines()
+    if not raw or raw[0].strip() != "*** Begin Patch":
+        raise PatchError("V4A patch must start with `*** Begin Patch`")
+    if raw[-1].strip() != "*** End Patch":
+        raise PatchError("V4A patch must end with `*** End Patch`")
+    body = raw[1:-1]
+
+    # Locate the single file directive. Multiple are rejected (one file per call,
+    # same as the unified-diff applier).
+    directives = [(i, _v4a_file_directive(ln)) for i, ln in enumerate(body)]
+    file_starts = [(i, d) for i, d in directives if d is not None]
+    if not file_starts:
+        raise PatchError("V4A patch has no `*** Add/Update/Delete File:` directive")
+    if len(file_starts) > 1:
+        raise PatchError("Multi-file V4A patches are not supported; submit one file at a time")
+    start_idx, (verb, path) = file_starts[0]
+    if not path:
+        raise PatchError("V4A file directive is missing a path")
+    if verb == "Delete":
+        raise PatchError("V4A file deletion (`*** Delete File:`) is not supported")
+    section = body[start_idx + 1 :]
+    # Drop a `*** Move to:` line (rename); we only honour the content change at
+    # the original path and leave any rename to the caller's explicit tools.
+    section = [ln for ln in section if not ln.startswith("*** Move to:")]
+
+    if verb == "Add":
+        if original is not None:
+            raise PatchError(f"V4A `*** Add File: {path}` but the file already exists")
+        added: list[str] = []
+        for ln in section:
+            if ln.startswith("+"):
+                added.append(ln[1:])
+            elif ln.strip() == "":
+                added.append("")
+            else:
+                raise PatchError(f"V4A Add File body must be all `+` lines, got: {ln!r}")
+        return path, ("\n".join(added) + "\n" if added else "")
+
+    # Update File.
+    if original is None:
+        raise PatchError(f"V4A `*** Update File: {path}` but the file does not exist")
+    hunks = _v4a_split_hunks(section)
+    if not hunks:
+        raise PatchError(f"V4A `*** Update File: {path}` has no hunks")
+    content = original
+    for old_block, new_block in hunks:
+        if old_block == "":
+            raise PatchError(
+                f"V4A hunk for {path!r} has no context/removed lines to anchor on; "
+                "include the surrounding lines so the change can be located"
+            )
+        count = content.count(old_block)
+        if count == 0:
+            raise PatchError(
+                f"V4A hunk context not found in {path!r}. The ` `/`-` lines must match "
+                f"the file byte-for-byte. Closest-anchor failed; re-read and retry.\n"
+                f"Expected block:\n{_render_lines(old_block.split(chr(10)))}"
+            )
+        if count > 1:
+            raise PatchError(
+                f"V4A hunk context is ambiguous in {path!r} ({count} matches); include "
+                "more surrounding context lines so it is unique"
+            )
+        content = content.replace(old_block, new_block, 1)
+    return path, content
+
+
+def _v4a_split_hunks(section: list[str]) -> list[tuple[str, str]]:
+    """Split a V4A Update body into (old_block, new_block) string pairs.
+
+    `@@`-prefixed section markers start a new hunk and are dropped (they are
+    locator hints, not matched content). Within a hunk, ` `/`-` lines build the
+    old block and ` `/`+` lines build the new block.
+    """
+    hunks: list[tuple[list[str], list[str]]] = []
+    cur_old: list[str] = []
+    cur_new: list[str] = []
+    started = False
+
+    def flush() -> None:
+        nonlocal cur_old, cur_new, started
+        if started and (cur_old or cur_new):
+            hunks.append((cur_old, cur_new))
+        cur_old, cur_new = [], []
+
+    for ln in section:
+        if ln.startswith("@@"):
+            flush()
+            started = True
+            continue
+        started = True
+        if ln == "" or ln.startswith(" "):
+            text = ln[1:] if ln.startswith(" ") else ""
+            cur_old.append(text)
+            cur_new.append(text)
+        elif ln.startswith("-"):
+            cur_old.append(ln[1:])
+        elif ln.startswith("+"):
+            cur_new.append(ln[1:])
+        else:
+            raise PatchError(f"Unexpected V4A hunk line (expected ` `, `-`, `+`, `@@`): {ln!r}")
+    flush()
+    return [("\n".join(o), "\n".join(n)) for o, n in hunks]
