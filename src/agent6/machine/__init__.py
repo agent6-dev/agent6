@@ -12,6 +12,7 @@ Phase 4 adds 24/7 ergonomics: `machine status`/`poke` and an external-scheduler
 
 from __future__ import annotations
 
+from agent6.machine._semantics import load_machine, validate_semantics
 from agent6.machine.authoring import (
     MACHINE_AUTHOR_GUIDE,
     SCRIPTS_PAYLOAD_KEY,
@@ -51,8 +52,6 @@ from agent6.machine.model import (
     MachineError,
     MachineSpec,
     ToolState,
-    load_machine,
-    validate_semantics,
 )
 
 __all__ = [

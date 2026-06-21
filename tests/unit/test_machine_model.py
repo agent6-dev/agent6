@@ -8,7 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from agent6.machine.model import AgentState, MachineError, load_machine
+from agent6.machine._semantics import load_machine
+from agent6.machine.model import AgentState, MachineError
 
 # The worked example from STATE_MACHINES.md §10. The canonical
 # happy path; error-case tests mutate a copy of this.

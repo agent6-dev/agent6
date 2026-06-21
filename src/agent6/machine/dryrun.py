@@ -26,6 +26,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from agent6.machine._semantics import validate_finish_payload
 from agent6.machine.engine import EngineError, initial_blackboard, reduce
 from agent6.machine.journal import AgentFact, ToolFact
 from agent6.machine.model import (
@@ -35,7 +36,6 @@ from agent6.machine.model import (
     TerminalState,
     ToolState,
     WaitState,
-    validate_finish_payload,
 )
 from agent6.machine.predicate import PredicateError, evaluate, parse_predicate
 from agent6.machine.template import TemplateError

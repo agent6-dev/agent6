@@ -10,6 +10,7 @@ from typing import Any, Literal
 
 import pytest
 
+from agent6.machine._semantics import load_machine
 from agent6.machine.engine import (
     AgentExecResult,
     AgentRequest,
@@ -26,7 +27,6 @@ from agent6.machine.journal import (
     StepEvent,
     ToolFact,
 )
-from agent6.machine.model import load_machine
 
 # A minimal tool/branch/terminal machine: scan -> (branch on items) -> record -> stop.
 COUNTER = """

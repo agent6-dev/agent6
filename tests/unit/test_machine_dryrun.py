@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 
 from agent6.machine import dry_run, load_machine
+from agent6.machine._semantics import validate_finish_payload
 from agent6.machine.dryrun import synthesize_record
-from agent6.machine.model import validate_finish_payload
 
 # tool -> branch -> (agent | tool) -> terminal, with a typed capture + an enum.
 DEMO = """

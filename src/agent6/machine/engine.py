@@ -31,6 +31,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
+from agent6.machine._semantics import validate_finish_payload
 from agent6.machine.journal import (
     AgentFact,
     BranchFact,
@@ -51,7 +52,6 @@ from agent6.machine.model import (
     TerminalState,
     ToolState,
     WaitState,
-    validate_finish_payload,
 )
 from agent6.machine.predicate import evaluate, parse_predicate
 from agent6.machine.template import parse_template, render_command, render_string, render_value

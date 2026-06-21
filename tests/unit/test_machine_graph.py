@@ -6,8 +6,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from agent6.machine._semantics import load_machine
 from agent6.machine.graph import render_dot, render_mermaid
-from agent6.machine.model import load_machine
 from tests.unit.test_machine_model import VALID_MACHINE
 
 
