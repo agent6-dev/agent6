@@ -18,6 +18,7 @@ from agent6.config import (
 from agent6.events import EventSink
 from agent6.providers import (
     AnthropicProvider,
+    CommandToken,
     OpenAIProvider,
     Provider,
     ProviderError,
@@ -55,31 +56,52 @@ def _build_role_provider(
             f"models.{role}.provider = {rm.provider!r} but [providers.{rm.provider}] missing"
         )
     key = resolve_api_key(rm.provider, entry.api_key_env)
+    credential = (
+        CommandToken(entry.token_command, ttl_s=entry.token_command_ttl_s)
+        if entry.token_command
+        else None
+    )
+    extra_headers = tuple(sorted(entry.extra_headers.items()))
+    extra_body = dict(entry.extra_body)
+    extra_query = dict(entry.extra_query)
     if isinstance(entry, AnthropicProviderEntry):
-        if not key:
+        # Anthropic requires explicit auth (a missing key is a 401, not a local
+        # endpoint); a token_command credential or `auth_style = "none"` satisfies it.
+        if not key and credential is None and entry.auth_style != "none":
             raise ProviderError(
                 f"No API key for provider {rm.provider!r}. Run `agent6 connect`"
                 f" to store one, or set the {entry.api_key_env or 'provider'} env var."
             )
         return AnthropicProvider(
-            api_key=key,
+            api_key=key or "",
             model=model,
+            base_url=entry.base_url,
+            deployment=entry.deployment,
+            auth_style=entry.auth_style,
             prompt_caching=entry.prompt_caching,
             timeout_s=entry.http_timeout_s,
             transcript_sink=transcript_sink,
             budget=budget,
             thinking=rm.thinking,
+            extra_headers=extra_headers,
+            extra_body=extra_body,
+            extra_query=extra_query,
+            credential=credential,
         )
     return OpenAIProvider(
         api_key=key or "",
         model=model,
         base_url=entry.base_url,
-        extra_headers=tuple(sorted(entry.extra_headers.items())),
-        extra_body=dict(entry.extra_body),
+        deployment=entry.deployment,
+        auth_style=entry.auth_style,
+        extra_headers=extra_headers,
+        extra_body=extra_body,
+        extra_query=extra_query,
         timeout_s=entry.http_timeout_s,
         transcript_sink=transcript_sink,
         budget=budget,
         reasoning_effort=rm.thinking,
+        credential=credential,
     )
 
 

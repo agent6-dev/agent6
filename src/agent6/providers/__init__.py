@@ -23,6 +23,7 @@ from agent6.providers.anthropic import (
     TranscriptSink,
 )
 from agent6.providers.openai import OpenAIProvider
+from agent6.providers.token_command import CommandToken
 
 
 @runtime_checkable
@@ -56,6 +57,7 @@ class Provider(Protocol):
 
 __all__ = [
     "AnthropicProvider",
+    "CommandToken",
     "OpenAIProvider",
     "Provider",
     "ProviderError",

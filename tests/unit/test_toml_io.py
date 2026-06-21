@@ -33,7 +33,7 @@ def test_config_set_whole_extra_body_value_round_trips(tmp_path: Path) -> None:
     # TOML even when the section already has the key.
     cfg = tmp_path / "config.toml"
     cfg.write_text(
-        '[providers.openrouter]\nkind = "openai"\n'
+        '[providers.openrouter]\napi_format = "openai"\n'
         'extra_body = { provider = { sort = "throughput" } }\n',
         encoding="utf-8",
     )
@@ -44,4 +44,4 @@ def test_config_set_whole_extra_body_value_round_trips(tmp_path: Path) -> None:
     parsed = tomllib.loads(cfg.read_text(encoding="utf-8"))
     assert parsed["providers"]["openrouter"]["extra_body"] == {"provider": {"sort": "latency"}}
     # the sibling key survived the surgery
-    assert parsed["providers"]["openrouter"]["kind"] == "openai"
+    assert parsed["providers"]["openrouter"]["api_format"] == "openai"

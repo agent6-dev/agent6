@@ -46,20 +46,67 @@ detect the project type).
 ## `[providers.<name>]`
 
 One backend per block; `<name>` is yours to pick and is referenced from
-`[models.<role>]`. At least one provider is required.
+`[models.<role>]`. At least one provider is required. Three orthogonal choices
+describe any backend:
 
-| Field | Default | `kind` | Meaning |
-|---|---|---|---|
-| `kind` | *(required)* | — | `"anthropic"` (Anthropic Messages) or `"openai"` (any OpenAI Chat-Completions-compatible endpoint: OpenAI, OpenRouter, Ollama, vLLM, LM Studio, llama.cpp). |
-| `api_key_env` | none | both | Env var holding the API key. Omit to use the key stored by `agent6 connect`, or for unauthenticated local endpoints. The env var (when set) takes precedence. |
-| `http_timeout_s` | `600.0` | both | Per-HTTP-call timeout (connect + read), seconds. Lower it to fail fast on a stuck endpoint. |
-| `prompt_caching` | `true` | anthropic | Enable Anthropic prompt caching. |
-| `base_url` | `https://api.openai.com/v1` | openai | Endpoint base URL (e.g. `https://openrouter.ai/api/v1`, `http://localhost:11434/v1`). |
-| `extra_headers` | `{}` | openai | Extra HTTP headers sent on every request (e.g. OpenRouter's `HTTP-Referer` / `X-Title`). |
-| `extra_body` | `{}` | openai | Provider-specific JSON merged into every request body (keys override computed fields). See below. |
+- **`api_format`** — the wire dialect (the only field that selects code).
+- **`deployment`** — a named profile for the URL / model-placement / version
+  quirks of *where* that format is hosted.
+- **auth** — `auth_style` plus a static `api_key_env` or a refreshable
+  `token_command`.
+
+So Claude-on-Vertex and Gemini-on-Vertex differ only in `api_format` (both
+`deployment = "vertex"`). A minimal block is just `api_format` (plus `base_url`
+for a non-default host); everything else defaults.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `api_format` | *(required)* | `"anthropic"` (Anthropic Messages) or `"openai"` (OpenAI Chat Completions: OpenAI, OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint, …). |
+| `deployment` | `"direct"` | `"direct"`, `"vertex"` (Vertex AI), or `"azure"` (Azure OpenAI; `openai` only). Selects the URL shape + model/version placement. |
+| `base_url` | per (format, deployment) | Endpoint host+path prefix. Defaults to the official endpoint for `direct`; **required** for vertex/azure (it carries project/resource/region). Its host is the only network destination the confined agent may dial. |
+| `auth_style` | per (format, deployment) | `"x_api_key"` (Anthropic header), `"bearer"` (`Authorization: Bearer`), `"api_key_header"` (Azure's `api-key`), or `"none"` (local). Defaulted from format+deployment, so you rarely set it. |
+| `api_key_env` | none | Env var holding the key. Omit to use the key stored by `agent6 connect` (secrets.toml), or for unauthenticated local endpoints. The env var (when set) takes precedence. |
+| `token_command` | none | Command (argv) run to mint a short-lived bearer (printed to stdout) instead of a static key. Re-run on a TTL and once on a `401`/`403`. Takes precedence over `api_key_env`. See below. |
+| `token_command_ttl_s` | `300.0` | Seconds to cache `token_command` output before re-running it. |
+| `extra_headers` | `{}` | Extra HTTP headers on every request (e.g. OpenRouter's `HTTP-Referer` / `X-Title`). Not for secrets — use the auth fields. |
+| `extra_body` | `{}` | Provider-specific JSON merged into every request body (load-bearing keys filtered). See below. |
+| `extra_query` | `{}` | Extra URL query params (e.g. Azure's `api-version`). No secrets here. |
+| `prompt_caching` | `true` | (`anthropic`) Enable Anthropic prompt caching. |
+| `http_timeout_s` | `600.0` | Per-HTTP-call timeout (connect + read), seconds. Lower it to fail fast on a stuck endpoint. |
 
 Each endpoint gets its own block, so OpenAI and OpenRouter run side-by-side
 under different `<name>`s.
+
+### Deployments
+
+```toml
+# Anthropic direct (default) — equivalent to a bare api_format = "anthropic"
+[providers.anthropic]
+api_format = "anthropic"
+
+# Gemini on Vertex (OpenAI-compatible endpoint)
+[providers.vertex-gemini]
+api_format = "openai"
+deployment = "vertex"
+base_url = "https://LOCATION-aiplatform.googleapis.com/v1/projects/PROJ/locations/LOCATION/endpoints/openapi"
+token_command = ["gcloud", "auth", "print-access-token"]
+
+# Claude on Vertex (Anthropic Messages over Vertex: model goes in the URL,
+# anthropic_version in the body — handled for you by deployment = "vertex")
+[providers.vertex-claude]
+api_format = "anthropic"
+deployment = "vertex"
+base_url = "https://LOCATION-aiplatform.googleapis.com/v1/projects/PROJ/locations/LOCATION/publishers/anthropic/models"
+token_command = ["gcloud", "auth", "print-access-token"]
+
+# Azure OpenAI (the model id IS the deployment name; api-version is required)
+[providers.azure]
+api_format = "openai"
+deployment = "azure"
+base_url = "https://RESOURCE.openai.azure.com"
+api_key_env = "AZURE_OPENAI_API_KEY"
+extra_query = { "api-version" = "2024-06-01" }
+```
 
 ### OpenRouter routing & caching (`extra_body`)
 
@@ -70,7 +117,7 @@ with `extra_body.provider` ([OpenRouter routing docs](https://openrouter.ai/docs
 
 ```toml
 [providers.openrouter]
-kind = "openai"
+api_format = "openai"
 base_url = "https://openrouter.ai/api/v1"
 # Prefer the fastest backend; for kimi-k2.6 this lands on one that caches the
 # prompt prefix, so the re-sent system prompt is near-free (cache_r in the cost
@@ -91,6 +138,25 @@ This is the lever to pay for a faster/caching backend. Caching matters more
 than payload size: the large per-call input is the same prefix every turn, so a
 caching backend makes it cheap without trimming anything. Watch `cache_r` in the
 run's cost summary to confirm it's engaging.
+
+### Short-lived bearer tokens (`token_command`)
+
+Some endpoints authenticate with a short-lived bearer that has to be refreshed
+rather than a static key (Vertex's Google OAuth access token, internal OIDC/STS
+gateways). Point `token_command` at any command that prints a current token to
+stdout — e.g. `["gcloud", "auth", "print-access-token"]`, or for Azure AD
+`["az", "account", "get-access-token", "--query", "accessToken", "-o", "tsv"]`.
+agent6 runs it, caches the token for `token_command_ttl_s`, re-runs it when that
+elapses, and re-runs it once more on a `401`/`403` so an expired token
+self-heals. It works for either `api_format` (the Deployments examples above use
+it for Vertex). `token_command` takes precedence over `api_key_env`.
+
+The command runs in agent6's own process (outside any run sandbox) with your
+environment, the same trust level as an `[[mcp.servers]]` command, so it is an
+operator-only knob. Whatever it prints to stdout is sent as the auth header
+(`Authorization: Bearer <token>` for `auth_style = "bearer"`); a non-zero exit,
+a timeout, or empty output surfaces as a
+provider error.
 
 ## `[models.<role>]`
 

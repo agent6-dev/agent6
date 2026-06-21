@@ -48,7 +48,9 @@ class ConfigError(Exception):
 
 _BASE_MODEL_CONFIG = ConfigDict(extra="forbid", frozen=True)
 
-ProviderKind = Literal["anthropic", "openai"]
+ApiFormat = Literal["anthropic", "openai"]
+Deployment = Literal["direct", "vertex", "azure"]
+AuthStyle = Literal["x_api_key", "bearer", "api_key_header", "none"]
 # The three live roles. ``planner`` drives ``agent6 plan`` and ``reviewer``
 # drives ``agent6 review`` + the in-loop critic; both fall back to
 # ``worker`` when unset (see ModelsConfig.resolve).
@@ -59,9 +61,10 @@ ThinkingLevel = Literal["off", "low", "medium", "high"]
 def _validate_base_url(url: str) -> None:
     """Reject a ``[providers.*].base_url`` that is not an http(s) URL with a host.
 
-    Unlike ``sandbox.allow_urls`` (which accepts a bare ``host``), a
-    ``kind = "openai"`` ``base_url`` is the full endpoint the HTTP client posts
-    to (``base_url + "/chat/completions"``), so it must carry an explicit
+    Unlike ``sandbox.allow_urls`` (which accepts a bare ``host``), a provider's
+    ``base_url`` is the host+path prefix the HTTP client posts to (the
+    deployment profile appends ``/chat/completions``, ``/messages``, etc.), so
+    it must carry an explicit
     ``http://`` / ``https://`` scheme and a host. The common paste error this
     catches is dropping an API key (or a bare host) into the field, which would
     otherwise be accepted and only fail much later as an opaque HTTP error.
@@ -102,91 +105,155 @@ def _validate_allow_url(entry: str) -> None:
         raise ValueError(f"sandbox.allow_urls entry {entry!r} has an invalid port")
 
 
-class AnthropicProviderEntry(BaseModel):
-    """`kind = "anthropic"`, the Anthropic Messages endpoint.
+_ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
+_OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1"
 
-    Model names live in `[models.<role>]`, not here, this block only
-    carries auth and Anthropic-specific knobs.
+
+def _default_base_url(api_format: str, deployment: str) -> str | None:
+    """Default ``base_url`` for a (format, deployment), or None if required.
+
+    Only the ``direct`` deployment has a sensible fixed endpoint; vertex/azure
+    (and future bedrock) carry project/resource/region in the URL, so the
+    operator must supply ``base_url``.
+    """
+    if deployment != "direct":
+        return None
+    return _ANTHROPIC_DEFAULT_BASE_URL if api_format == "anthropic" else _OPENAI_DEFAULT_BASE_URL
+
+
+def _default_auth_style(api_format: str, deployment: str) -> str:
+    """Default ``auth_style`` for a (format, deployment)."""
+    if deployment == "azure":
+        return "api_key_header"
+    if deployment == "vertex":
+        return "bearer"
+    return "x_api_key" if api_format == "anthropic" else "bearer"
+
+
+class _ProviderBase(BaseModel):
+    """Transport + auth fields shared by every provider, independent of format.
+
+    Three orthogonal concerns: ``api_format`` (the discriminator, on each
+    subclass) selects the wire dialect; ``deployment`` selects the URL /
+    model-placement profile; and the auth fields (``auth_style`` + a static
+    ``api_key_env`` or a refreshable ``token_command``) select the credential.
+    They compose freely -- e.g. Claude-on-Vertex and Gemini-on-Vertex differ
+    only in ``api_format`` (both ``deployment = "vertex"``). ``base_url`` and
+    ``auth_style`` default from (api_format, deployment) in ``_fill_defaults`` so
+    a minimal entry behaves exactly like the old fixed providers. Each block is
+    one endpoint; configure as many as you like under any names and reference
+    them from ``[models.*]``.
     """
 
     model_config = _BASE_MODEL_CONFIG
 
-    kind: Literal["anthropic"]
-    # Name of the env var holding the API key. Optional: leave it unset to
-    # let `agent6 connect` store the key in secrets.toml instead. Either
-    # source works; the env var (when set and non-empty) takes precedence.
+    deployment: Deployment = "direct"
+    # Resolved by _fill_defaults from (api_format, deployment) when omitted;
+    # never empty post-validation. The host also feeds the egress allow-list.
+    base_url: str = ""
+    # Auth header style; defaults from (api_format, deployment) in _fill_defaults.
+    auth_style: AuthStyle = "bearer"
+    # Static key: env var name (falls back to secrets.toml by provider name).
+    # Secrets live here, never in base_url/extra_headers/extra_query.
     api_key_env: str | None = Field(default=None, min_length=1)
-    prompt_caching: bool = True
-    # per-HTTP-call timeout (connect + read) for this provider in
-    # seconds. Default 600s is generous enough for a slow provider streaming
-    # a long response but tight enough that a stuck connection fails fast
-    # rather than burning the whole budget window. Reasoning models on
-    # OpenRouter have been observed to stall for >10min before erroring;
-    # set this lower on benches that should fail fast.
-    http_timeout_s: float = Field(gt=0.0, default=600.0)
-
-
-class OpenAIProviderEntry(BaseModel):
-    """`kind = "openai"`, any OpenAI Chat Completions-compatible endpoint.
-
-    Works against OpenAI itself, OpenRouter, Ollama (`/v1`), vLLM, LM
-    Studio, llama.cpp's server, etc. Each [providers.<name>] block is one
-    endpoint; configure as many as you want under whatever names you like
-    (e.g. `[providers.openai]`, `[providers.openrouter]`,
-    `[providers.ollama]`) and reference them by name from `[models.<role>]`.
-
-    `api_key_env` is optional: leave it unset (or point at an unset env var)
-    for unauthenticated local endpoints like Ollama. `extra_headers` is
-    forwarded verbatim, OpenRouter, for example, asks for `HTTP-Referer`
-    and `X-Title`. Header names are sent lowercased by httpx.
-    """
-
-    model_config = _BASE_MODEL_CONFIG
-
-    kind: Literal["openai"]
-    api_key_env: str | None = Field(
+    token_command: list[str] | None = Field(
         default=None,
         description=(
-            "Env var holding the API key. Set to None / omit for unauthenticated"
-            " local endpoints (Ollama, llama.cpp)."
+            "Command (argv) whose stdout is a bearer token, run instead of a"
+            " static key for endpoints behind a short-lived, refreshable token"
+            " (cloud OAuth access tokens, OIDC/STS gateways). Cached on a TTL"
+            " and re-minted on a 401/403; takes precedence over api_key_env."
         ),
     )
-    base_url: str = Field(
-        default="https://api.openai.com/v1",
-        min_length=1,
-        description="Base URL of an OpenAI Chat Completions-compatible endpoint.",
+    token_command_ttl_s: float = Field(
+        gt=0.0,
+        default=300.0,
+        description="Seconds to cache token_command output before re-running it.",
     )
-
-    @field_validator("base_url")
-    @classmethod
-    def _check_base_url(cls, v: str) -> str:
-        _validate_base_url(v)
-        return v
-
     extra_headers: dict[str, str] = Field(
         default_factory=dict,
-        description="Extra HTTP headers to attach to every request (e.g. OpenRouter's).",
+        description="Extra HTTP headers attached to every request (e.g. OpenRouter's).",
     )
     extra_body: dict[str, Any] = Field(
         default_factory=dict,
         description=(
-            "Extra JSON merged into every request body (keys override computed"
-            " fields, except the load-bearing messages/model/stream which are"
-            " filtered). Provider-specific — e.g. OpenRouter routing: set"
-            ' extra_body = { provider = { sort = "throughput" } } to prefer the'
-            " fastest backend, pin one with { order = [...] }, or cap price with"
-            " { max_price = { ... } }. Pay-for-speed lives here."
+            "Extra JSON merged into every request body (load-bearing"
+            " messages/model/stream keys are filtered). E.g. OpenRouter routing:"
+            ' extra_body = { provider = { sort = "throughput" } }.'
         ),
     )
-    # per-HTTP-call timeout in seconds. See AnthropicProviderEntry
-    # for the rationale. OpenRouter heartbeats are handled at the streaming
-    # SSE layer; this timeout is the underlying httpx ceiling.
+    extra_query: dict[str, str] = Field(
+        default_factory=dict,
+        description="Extra URL query params (e.g. Azure's api-version). No secrets here.",
+    )
+    # per-HTTP-call timeout (connect + read) in seconds. Default 600s streams a
+    # long response yet fails a stuck connection before it burns the budget
+    # window; lower it on benches that should fail fast.
     http_timeout_s: float = Field(gt=0.0, default=600.0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _fill_defaults(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        fmt = data.get("api_format")
+        dep = data.get("deployment", "direct")
+        if fmt == "anthropic" and dep == "azure":
+            raise ValueError("deployment 'azure' requires api_format 'openai'")
+        if not data.get("base_url"):
+            default = _default_base_url(fmt, dep) if isinstance(fmt, str) else None
+            if default is None:
+                raise ValueError(f"base_url is required for deployment {dep!r}")
+            data["base_url"] = default
+        if not data.get("auth_style") and isinstance(fmt, str):
+            data["auth_style"] = _default_auth_style(fmt, dep)
+        if dep == "azure" and "api-version" not in (data.get("extra_query") or {}):
+            raise ValueError("deployment 'azure' requires extra_query['api-version']")
+        return data
+
+    @field_validator("base_url")
+    @classmethod
+    def _check_base_url(cls, v: str) -> str:
+        if v:
+            _validate_base_url(v)
+        return v
+
+    @field_validator("token_command")
+    @classmethod
+    def _check_token_command(cls, v: list[str] | None) -> list[str] | None:
+        if v is not None and (not v or any(not arg.strip() for arg in v)):
+            raise ValueError("token_command must be a non-empty argv of non-empty strings")
+        return v
+
+
+class AnthropicProviderEntry(_ProviderBase):
+    """``api_format = "anthropic"`` -- the Anthropic Messages wire format.
+
+    ``deployment = "direct"`` (default) hits api.anthropic.com; ``"vertex"``
+    is Claude-on-Vertex (model id in the URL, ``anthropic_version`` in the body,
+    a Google-OAuth bearer via ``token_command``).
+    """
+
+    api_format: Literal["anthropic"]
+    prompt_caching: bool = True
+
+
+class OpenAIProviderEntry(_ProviderBase):
+    """``api_format = "openai"`` -- any OpenAI Chat Completions wire format.
+
+    ``deployment = "direct"`` works against OpenAI, OpenRouter, Ollama, vLLM,
+    LM Studio, llama.cpp, Gemini's OpenAI-compatible endpoint, GitHub Copilot,
+    etc.; ``"vertex"`` is Gemini's Vertex OpenAPI endpoint; ``"azure"`` is Azure
+    OpenAI (deployment-name in the URL, api-version query param, ``api-key``
+    header).
+    """
+
+    api_format: Literal["openai"]
 
 
 ProviderEntry = Annotated[
     AnthropicProviderEntry | OpenAIProviderEntry,
-    Discriminator("kind"),
+    Discriminator("api_format"),
 ]
 
 

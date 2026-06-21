@@ -18,7 +18,7 @@ _VALID_TOML = """
 [agent6]
 config_version = 1
 [providers.anthropic]
-kind = "anthropic"
+api_format = "anthropic"
 api_key_env = "ANTHROPIC_API_KEY"
 prompt_caching = true
 [models.worker]

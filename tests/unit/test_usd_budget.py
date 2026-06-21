@@ -101,7 +101,7 @@ def test_explicit_usd_flag_refused_when_unpriced(
     monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "empty-cache"))
     cfg = Config.model_validate(
         {
-            "providers": {"p": {"kind": "openai", "base_url": "http://localhost:1"}},
+            "providers": {"p": {"api_format": "openai", "base_url": "http://localhost:1"}},
             "models": {"worker": {"provider": "p", "model": "nobody/unpriced"}},
         }
     )
@@ -120,7 +120,7 @@ def test_explicit_usd_flag_ok_when_priced(price_cache: Path) -> None:
 
     cfg = Config.model_validate(
         {
-            "providers": {"p": {"kind": "openai", "base_url": "http://localhost:1"}},
+            "providers": {"p": {"api_format": "openai", "base_url": "http://localhost:1"}},
             "models": {"worker": {"provider": "p", "model": PRICED_MODEL}},
         }
     )

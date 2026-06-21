@@ -18,7 +18,7 @@ from agent6.config_layer import (
 
 _GLOBAL = """\
 [providers.anthropic]
-kind = "anthropic"
+api_format = "anthropic"
 
 [models.worker]
 provider = "anthropic"
@@ -174,19 +174,19 @@ def test_deep_merge_replaces_provider_when_kind_changes() -> None:
     # surface as a confusing extra_forbidden error under the new kind.
     from agent6.config_layer import _deep_merge  # pyright: ignore[reportPrivateUsage]
 
-    base = {"providers": {"p": {"kind": "anthropic", "api_key_env": "X"}}}
-    override = {"providers": {"p": {"kind": "openai", "base_url": "Y"}}}
+    base = {"providers": {"p": {"api_format": "anthropic", "api_key_env": "X"}}}
+    override = {"providers": {"p": {"api_format": "openai", "base_url": "Y"}}}
     merged = _deep_merge(base, override)
-    assert merged["providers"]["p"] == {"kind": "openai", "base_url": "Y"}
+    assert merged["providers"]["p"] == {"api_format": "openai", "base_url": "Y"}
 
 
 def test_deep_merge_still_merges_when_kind_unchanged() -> None:
     from agent6.config_layer import _deep_merge  # pyright: ignore[reportPrivateUsage]
 
-    base = {"providers": {"p": {"kind": "openai", "base_url": "Y", "api_key_env": "X"}}}
+    base = {"providers": {"p": {"api_format": "openai", "base_url": "Y", "api_key_env": "X"}}}
     override = {"providers": {"p": {"base_url": "Z"}}}
     merged = _deep_merge(base, override)
-    assert merged["providers"]["p"] == {"kind": "openai", "base_url": "Z", "api_key_env": "X"}
+    assert merged["providers"]["p"] == {"api_format": "openai", "base_url": "Z", "api_key_env": "X"}
 
 
 def test_materialize_roundtrips(repo: Path, tmp_path: Path) -> None:
@@ -198,7 +198,7 @@ def test_materialize_roundtrips(repo: Path, tmp_path: Path) -> None:
     reloaded = load_config(out)
     assert reloaded.workflow.verify_command == ("pytest", "-q")
     assert reloaded.sandbox.run_commands == "yes"
-    assert reloaded.providers["anthropic"].kind == "anthropic"
+    assert reloaded.providers["anthropic"].api_format == "anthropic"
 
 
 def test_missing_flag_file_errors(repo: Path, tmp_path: Path) -> None:

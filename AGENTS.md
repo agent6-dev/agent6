@@ -125,7 +125,9 @@ All five must pass; keep the suite green.
   argv depending only on operator input may call `subprocess.run`
   / `subprocess.Popen` directly: `git_ops.py`, `detect.py`,
   `graph/curator.py`, `graph/client.py`, `sandbox/jail.py` (the launcher
-  itself), and a small set of `cli/` helpers (TUI spawn, `$EDITOR` for
+  itself), `providers/token_command.py` (the operator-configured
+  `[providers.*].token_command` that mints a provider bearer; argv comes
+  from config, never from LLM output), and a small set of `cli/` helpers (TUI spawn, `$EDITOR` for
   plan editing, `git diff/log` for the review subcommand, `rg` for history
   search, `cli/scriptcheck.py` running ruff/ty with fixed argv to
   statically read generated scripts, which only ever execute via
@@ -155,8 +157,13 @@ All five must pass; keep the suite green.
   config/secrets and chowns new per-repo state-dir files back to them. It
   does not drop privileges in-process; the jail is the boundary.
 - Configured `[providers.*]` endpoints are the only network destinations
-  the agent may talk to. New providers go through the same Landlock + jail
-  audit; do not bypass.
+  the agent may talk to. The egress allow-list is derived uniformly from each
+  provider's effective `base_url` host (every `api_format` and `deployment`
+  carries the dialled host there; the deployment profile only appends
+  path/model) — see `cli/egress.py:_provider_endpoints`. `base_url` is
+  operator-controlled config for both api_formats, so an operator chooses the
+  destinations and the credential sent there; do not add a code path that dials
+  a host not derived from a provider's `base_url`.
 - The `agent6-jail` Rust binary is part of the security boundary. Changes
   to `src/agent6/jail/src/main.rs` need at minimum a review note covering:
   what mount points changed, what Landlock rules changed, what seccomp

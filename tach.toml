@@ -124,7 +124,7 @@ depends_on = ["agent6.config", "agent6.paths"]
 
 [[modules]]
 path = "agent6.models_cache"
-depends_on = ["agent6.config", "agent6.paths"]
+depends_on = ["agent6.config", "agent6.paths", "agent6.providers"]
 
 [[modules]]
 path = "agent6.detect"

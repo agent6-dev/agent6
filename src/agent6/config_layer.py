@@ -146,12 +146,16 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
     for key, val in override.items():
         existing = out.get(key)
         if isinstance(val, dict) and isinstance(existing, dict):
-            # A discriminated dict (e.g. a [providers.<name>] entry) whose `kind`
-            # changes between layers must REPLACE, not deep-merge: the lower
-            # layer's kind-specific keys (an anthropic api_key_env, say) are
-            # invalid under the new kind and would otherwise survive the merge
-            # and surface as a confusing extra_forbidden validation error.
-            if val.get("kind") != existing.get("kind") and "kind" in val and "kind" in existing:
+            # A discriminated dict (e.g. a [providers.<name>] entry) whose
+            # `api_format` changes between layers must REPLACE, not deep-merge:
+            # the lower layer's format-specific keys (an anthropic prompt_caching,
+            # say) are invalid under the new format and would otherwise survive
+            # the merge and surface as a confusing extra_forbidden error.
+            if (
+                "api_format" in val
+                and "api_format" in existing
+                and val.get("api_format") != existing.get("api_format")
+            ):
                 out[key] = val
             else:
                 out[key] = _deep_merge(existing, val)

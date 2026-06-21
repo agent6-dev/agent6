@@ -28,10 +28,10 @@ import httpx
 
 from agent6.config import AnthropicProviderEntry, ProviderEntry
 from agent6.paths import cache_dir
+from agent6.providers.wire import auth_header
 
 __all__ = ["list_models"]
 
-_ANTHROPIC_MODELS_URL = "https://api.anthropic.com/v1/models"
 _ANTHROPIC_VERSION = "2023-06-01"
 _CACHE_TTL_S = 600  # 10 minutes
 _FETCH_TIMEOUT_S = 1.5  # keep tab-completion snappy
@@ -122,16 +122,16 @@ def _parse_pricing(payload: object) -> dict[str, tuple[float, float]]:
 def _fetch(
     entry: ProviderEntry, api_key: str | None, timeout_s: float
 ) -> tuple[list[str], dict[str, tuple[float, float]]]:
-    if isinstance(entry, AnthropicProviderEntry):
-        url = _ANTHROPIC_MODELS_URL
-        headers = {"anthropic-version": _ANTHROPIC_VERSION}
-        if api_key:
-            headers["x-api-key"] = api_key
-    else:
-        url = entry.base_url.rstrip("/") + "/models"
-        headers = dict(entry.extra_headers)
-        if api_key:
-            headers["authorization"] = f"Bearer {api_key}"
+    url = entry.base_url.rstrip("/") + "/models"
+    headers = dict(entry.extra_headers)
+    # Anthropic's direct /models needs the version header; Vertex/Azure have no
+    # uniform /models endpoint, so listing there is best-effort (the caller
+    # swallows the failure). Auth uses the same style the call path uses.
+    if isinstance(entry, AnthropicProviderEntry) and entry.deployment == "direct":
+        headers["anthropic-version"] = _ANTHROPIC_VERSION
+    authed = auth_header(entry.auth_style, api_key or "")
+    if authed is not None:
+        headers[authed[0]] = authed[1]
     resp = httpx.get(url, headers=headers, timeout=timeout_s)
     resp.raise_for_status()
     payload = resp.json()

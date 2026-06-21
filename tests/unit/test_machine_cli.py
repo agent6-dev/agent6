@@ -146,7 +146,7 @@ def _hard_usd_cfg(model: str):
 
     return Config.model_validate(
         {
-            "providers": {"p": {"kind": "openai", "base_url": "http://localhost:1"}},
+            "providers": {"p": {"api_format": "openai", "base_url": "http://localhost:1"}},
             "models": {"worker": {"provider": "p", "model": model}},
         }
     )

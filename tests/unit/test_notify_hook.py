@@ -100,7 +100,7 @@ def test_notify_in_config_loads(tmp_path: Path) -> None:
 config_version = 1
 
 [providers.anthropic]
-kind = "anthropic"
+api_format = "anthropic"
 api_key_env = "ANTHROPIC_API_KEY"
 prompt_caching = true
 

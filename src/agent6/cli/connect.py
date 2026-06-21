@@ -20,14 +20,17 @@ from agent6.paths import (
 )
 from agent6.secrets import SecretsError, save_secret
 
-# Known provider presets for `agent6 connect`. kind + default base_url; the
-# table key (provider name) is what [models.<role>].provider references and
-# what the key is stored under in secrets.toml.
+# Known provider presets for `agent6 connect`. api_format + default base_url;
+# the table key (provider name) is what [models.<role>].provider references and
+# what the key is stored under in secrets.toml. connect handles the common
+# `direct` deployment with a stored key; auth.style and deployment default from
+# api_format (see config), and advanced deployments (vertex/azure/token_command)
+# are documented in CONFIG.md for hand-editing.
 _CONNECT_PRESETS: dict[str, dict[str, str]] = {
-    "anthropic": {"kind": "anthropic"},
-    "openai": {"kind": "openai", "base_url": "https://api.openai.com/v1"},
-    "openrouter": {"kind": "openai", "base_url": "https://openrouter.ai/api/v1"},
-    "ollama": {"kind": "openai", "base_url": "http://localhost:11434/v1"},
+    "anthropic": {"api_format": "anthropic"},
+    "openai": {"api_format": "openai", "base_url": "https://api.openai.com/v1"},
+    "openrouter": {"api_format": "openai", "base_url": "https://openrouter.ai/api/v1"},
+    "ollama": {"api_format": "openai", "base_url": "http://localhost:11434/v1"},
 }
 
 
@@ -113,20 +116,22 @@ def _cmd_connect(*, provider: str, to_repo: bool) -> int:
     if name is None:
         return 2
     preset = _CONNECT_PRESETS.get(name)
-    kind = preset["kind"] if preset else ""
-    if not kind:
+    api_format = preset["api_format"] if preset else ""
+    if not api_format:
         try:
-            kind = input(f"Provider kind for {name!r} [anthropic/openai]: ").strip() or "anthropic"
+            api_format = (
+                input(f"API format for {name!r} [anthropic/openai]: ").strip() or "anthropic"
+            )
         except EOFError:
             return 2
-    if kind not in ("anthropic", "openai"):
+    if api_format not in ("anthropic", "openai"):
         print(
-            f"ERROR: unknown provider kind {kind!r} (expected anthropic or openai).",
+            f"ERROR: unknown api_format {api_format!r} (expected anthropic or openai).",
             file=sys.stderr,
         )
         return 2
     base_url = (preset or {}).get("base_url", "")
-    if kind == "openai":
+    if api_format == "openai":
         try:
             base_url = _prompt_base_url(base_url or "https://api.openai.com/v1")
         except ValueError as exc:
@@ -149,8 +154,8 @@ def _cmd_connect(*, provider: str, to_repo: bool) -> int:
 
     target = repo_config_path_for(Path.cwd()) if to_repo else global_config_path()
     target.parent.mkdir(parents=True, exist_ok=True)
-    fields: dict[str, str | bool | None] = {"kind": kind}
-    if kind == "openai" and base_url and base_url != "https://api.openai.com/v1":
+    fields: dict[str, str | bool | None] = {"api_format": api_format}
+    if api_format == "openai" and base_url and base_url != "https://api.openai.com/v1":
         fields["base_url"] = base_url
     _upsert_toml_table(target, f"providers.{name}", fields)
     chown_to_real_user(target.parent)

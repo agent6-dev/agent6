@@ -174,7 +174,7 @@ def test_model_interactive_prefill(
     # operator picks the provider by default and the model by number.
     (tmp_path / "g").mkdir(parents=True, exist_ok=True)
     (tmp_path / "g" / "config.toml").write_text(
-        '[providers.anthropic]\nkind = "anthropic"\n', encoding="utf-8"
+        '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
 
     def fake_list_models(*a: object, **k: object) -> list[str]:
@@ -196,7 +196,7 @@ def test_model_all_interactive_prompts_once(
     # "all" prompts ONCE for provider/model (not per role), then applies to each.
     (tmp_path / "g").mkdir(parents=True, exist_ok=True)
     (tmp_path / "g" / "config.toml").write_text(
-        '[providers.anthropic]\nkind = "anthropic"\n', encoding="utf-8"
+        '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
 
     def _models(*_a: object, **_k: object) -> list[str]:

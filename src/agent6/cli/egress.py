@@ -9,13 +9,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-from agent6.config import (
-    AnthropicProviderEntry,
-    Config,
-)
+from agent6.config import Config
 from agent6.config_layer import resolved_state_dir
 from agent6.detect import Environment
-from agent6.providers.anthropic import ANTHROPIC_URL
 from agent6.providers.egress import clear_routes, parse_endpoint, register_route
 from agent6.sandbox import (
     BrokerHandle,
@@ -33,14 +29,16 @@ from agent6.types import SandboxProfile
 def _provider_endpoints(cfg: Config) -> set[Endpoint]:
     """The set of ``host:port`` endpoints every configured provider dials.
 
-    Used to build the provider-only egress allow-list: one broker socket
-    per endpoint. Anthropic's endpoint is fixed; OpenAI-compatible
-    providers carry it in ``base_url``.
+    Used to build the provider-only egress allow-list: one broker socket per
+    endpoint. Every provider (both api_formats, every deployment) carries its
+    effective endpoint host in ``base_url`` -- which is exactly the host the
+    provider dials -- so the allow-list is derived uniformly from it. The
+    deployment profile only appends path/model to that host, so the host:port
+    is unchanged by it.
     """
     eps: set[Endpoint] = set()
     for entry in cfg.providers.values():
-        url = ANTHROPIC_URL if isinstance(entry, AnthropicProviderEntry) else entry.base_url
-        host, port = parse_endpoint(url)
+        host, port = parse_endpoint(entry.base_url)
         eps.add(Endpoint(host=host, port=port))
     return eps
 

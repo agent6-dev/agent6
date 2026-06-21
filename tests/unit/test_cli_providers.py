@@ -21,7 +21,7 @@ def test_build_role_provider_forwards_extra_body_and_headers() -> None:
     cfg = Config(
         providers={
             "openrouter": OpenAIProviderEntry(
-                kind="openai",
+                api_format="openai",
                 base_url="https://openrouter.ai/api/v1",
                 extra_headers={"X-Title": "agent6"},
                 extra_body={"provider": {"sort": "throughput"}},

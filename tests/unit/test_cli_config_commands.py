@@ -219,7 +219,7 @@ def test_allow_url_endpoints_empty_by_default() -> None:
 def test_effective_egress_unions_providers_and_allow_urls() -> None:
     cfg = validate_config(
         {
-            "providers": {"anthropic": {"kind": "anthropic"}},
+            "providers": {"anthropic": {"api_format": "anthropic"}},
             "sandbox": {"allow_urls": ["extra.com:9000"]},
         }
     )

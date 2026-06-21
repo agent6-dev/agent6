@@ -111,7 +111,7 @@ def test_egress_local_refuses_non_local_provider() -> None:
     cfg = validate_config(
         {
             "providers": {
-                "openrouter": {"kind": "openai", "base_url": "https://openrouter.ai/api/v1"}
+                "openrouter": {"api_format": "openai", "base_url": "https://openrouter.ai/api/v1"}
             },
             "sandbox": {"agent_network": "local"},
         }
@@ -157,7 +157,7 @@ def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     gdir = tmp_path / "g"
     gdir.mkdir()
     (gdir / "config.toml").write_text(
-        '[providers.anthropic]\nkind = "anthropic"\n'
+        '[providers.anthropic]\napi_format = "anthropic"\n'
         '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\n',
         encoding="utf-8",
     )
@@ -297,7 +297,7 @@ def test_egress_fails_closed_and_cleans_up_on_socket_error(
     monkeypatch.setattr(eg, "start_egress_broker", _boom)
     cfg = validate_config(
         {
-            "providers": {"anthropic": {"kind": "anthropic"}},
+            "providers": {"anthropic": {"api_format": "anthropic"}},
             "sandbox": {"agent_network": "providers"},
         }
     )

@@ -144,6 +144,9 @@ def _check_provider_keys(cfg: Config) -> str | None:
             # in this cache, fetched from the provider's models endpoint.
             list_models(name, entry, key)
             continue
+        if entry.token_command or entry.auth_style == "none":
+            # Auth is minted by a command (checked at call time) or not required.
+            continue
         if isinstance(entry, AnthropicProviderEntry):
             return (
                 f"no API key for [providers.{name}] (Anthropic). Run"

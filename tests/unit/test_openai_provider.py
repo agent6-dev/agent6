@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 from unittest import mock
 
@@ -13,6 +14,7 @@ import pytest
 
 from agent6.providers import ProviderError
 from agent6.providers.openai import OpenAIProvider
+from agent6.providers.token_command import CommandToken
 
 
 def _fake_response(body: dict[str, Any], status: int = 200) -> httpx.Response:
@@ -368,3 +370,71 @@ def test_call_captures_deepseek_reasoning_field() -> None:
         b.get("type") == "thinking" and b.get("thinking") == "thinking out loud"
         for b in resp.raw["content"]
     )
+
+
+def _counter_argv(tmp_path: Path) -> list[str]:
+    counter = tmp_path / "counter"
+    script = (
+        f'n=$(cat "{counter}" 2>/dev/null || echo 0); '
+        f'n=$((n + 1)); printf %s "$n" > "{counter}"; printf "tok%s" "$n"'
+    )
+    return ["sh", "-c", script]
+
+
+def test_credential_overrides_static_key_in_auth_header() -> None:
+    # A token_command credential mints the bearer; the static api_key is ignored.
+    provider = OpenAIProvider(
+        api_key="static-key", model="m", credential=CommandToken(["printf", "minted-tok"])
+    )
+    captured: dict[str, Any] = {}
+
+    def fake_post(*_a: Any, **kw: Any) -> httpx.Response:
+        captured["auth"] = kw["headers"].get("authorization")
+        return _fake_response(
+            {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}
+        )
+
+    with mock.patch("httpx.post", side_effect=fake_post):
+        resp = provider.call(system="s", messages=[{"role": "user", "content": "hi"}])
+
+    assert captured["auth"] == "Bearer minted-tok"
+    assert resp.text == "ok"
+
+
+def test_401_refreshes_token_command_and_retries(tmp_path: Path) -> None:
+    # First attempt 401s; the credential is invalidated and the retry carries a
+    # freshly-minted token (tok2), then succeeds.
+    provider = OpenAIProvider(
+        api_key="", model="m", credential=CommandToken(_counter_argv(tmp_path), ttl_s=1000.0)
+    )
+    seen: list[str | None] = []
+    responses = [
+        _fake_response({}, status=401),
+        _fake_response(
+            {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}, status=200
+        ),
+    ]
+
+    def fake_post(*_a: Any, **kw: Any) -> httpx.Response:
+        seen.append(kw["headers"].get("authorization"))
+        return responses[len(seen) - 1]
+
+    with mock.patch("httpx.post", side_effect=fake_post):
+        resp = provider.call(system="s", messages=[{"role": "user", "content": "hi"}])
+
+    assert seen == ["Bearer tok1", "Bearer tok2"]
+    assert resp.text == "ok"
+
+
+def test_401_without_credential_is_not_retried() -> None:
+    # No credential -> single attempt, the 401 surfaces immediately (no loop).
+    provider = OpenAIProvider(api_key="static", model="m")
+    calls = {"n": 0}
+
+    def fake_post(*_a: Any, **_kw: Any) -> httpx.Response:
+        calls["n"] += 1
+        return _fake_response({}, status=401)
+
+    with mock.patch("httpx.post", side_effect=fake_post), pytest.raises(ProviderError):
+        provider.call(system="s", messages=[{"role": "user", "content": "hi"}])
+    assert calls["n"] == 1

@@ -63,7 +63,7 @@ def _models_for(config_path: Path | None, provider: str) -> list[str]:
     options = set(_configured_models_for(eff.config, provider))
     entry = eff.config.providers.get(provider)
     if entry is not None:
-        api_key = resolve_api_key(provider, getattr(entry, "api_key_env", None))
+        api_key = resolve_api_key(provider, entry.api_key_env)
         options.update(list_models(provider, entry, api_key))
     return sorted(options)
 

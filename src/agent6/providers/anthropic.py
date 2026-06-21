@@ -17,16 +17,38 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from agent6.budget import BudgetTracker
 from agent6.providers.egress import http_post, http_stream
+from agent6.providers.wire import AuthStyle, Deployment, auth_header, request_url
 
-ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
+if TYPE_CHECKING:
+    # Imported only for typing: token_command imports ProviderError from this
+    # module, so a runtime import here would be circular.
+    from agent6.providers.token_command import CommandToken
+
+ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
 ANTHROPIC_VERSION = "2023-06-01"
+# Vertex carries the protocol version in the request body (not a header) under
+# a Vertex-specific value; see _anthropic_version.
+ANTHROPIC_VERTEX_VERSION = "vertex-2023-10-16"
 DEFAULT_MAX_TOKENS = 8192
+
+
+def _anthropic_version(deployment: str) -> tuple[str, str]:
+    """Return ``(placement, value)`` for the Anthropic protocol version.
+
+    Direct sends it as the ``anthropic-version`` HEADER; Vertex (and future
+    Bedrock) send it as an ``anthropic_version`` BODY field with a
+    deployment-specific value.
+    """
+    if deployment == "vertex":
+        return ("body", ANTHROPIC_VERTEX_VERSION)
+    return ("header", ANTHROPIC_VERSION)
+
 
 # Maps the cross-provider ``thinking`` level (off/low/medium/high) onto an
 # Anthropic extended-thinking ``budget_tokens`` value. Anthropic requires
@@ -39,7 +61,7 @@ _THINKING_BUDGET_TOKENS: dict[str, int] = {
     "high": 16384,
 }
 
-_REDACT_HEADER_NAMES = frozenset({"x-api-key", "authorization", "proxy-authorization"})
+_REDACT_HEADER_NAMES = frozenset({"x-api-key", "authorization", "proxy-authorization", "api-key"})
 _REDACTED = "<REDACTED>"
 
 
@@ -81,6 +103,7 @@ class TranscriptSink:
     def record(
         self,
         *,
+        url: str = "",
         request_headers: dict[str, str],
         request_body: dict[str, Any],
         response_status: int,
@@ -95,7 +118,7 @@ class TranscriptSink:
             "ts": ts,
             "seq": seq,
             "request": {
-                "url": ANTHROPIC_URL,
+                "url": url,
                 "headers": _redact_headers(request_headers),
                 "body": request_body,
             },
@@ -146,6 +169,11 @@ class AnthropicProvider:
 
     api_key: str
     model: str
+    base_url: str = ANTHROPIC_DEFAULT_BASE_URL
+    deployment: Deployment = "direct"
+    # Auth header style (config AuthConfig.style). "x_api_key" for direct
+    # Anthropic, "bearer" for Vertex (Google OAuth via token_command).
+    auth_style: AuthStyle = "x_api_key"
     prompt_caching: bool = True
     timeout_s: float = 120.0
     transcript_sink: TranscriptSink | None = None
@@ -155,6 +183,13 @@ class AnthropicProvider:
     # ``_THINKING_BUDGET_TOKENS`` and drops ``temperature`` (Anthropic
     # rejects temperature overrides while thinking is enabled).
     thinking: str | None = None
+    extra_headers: tuple[tuple[str, str], ...] = ()
+    extra_body: dict[str, Any] = field(default_factory=dict)
+    extra_query: dict[str, str] = field(default_factory=dict)
+    # Short-lived bearer source (config auth.token_command). When set it mints
+    # the auth token per call instead of api_key, and a 401/403 triggers one
+    # refresh + retry. Internally mutable (cache), hence held by reference.
+    credential: CommandToken | None = None
 
     @classmethod
     def from_env(
@@ -181,7 +216,7 @@ class AnthropicProvider:
             thinking=thinking,
         )
 
-    def call(  # noqa: PLR0912
+    def call(  # noqa: PLR0912, PLR0915
         self,
         *,
         system: str,
@@ -201,13 +236,16 @@ class AnthropicProvider:
         # Hard-stop: refuse the call up front if we're already over budget.
         if self.budget is not None:
             self.budget.check()
-        headers = {
-            "x-api-key": self.api_key,
-            "anthropic-version": ANTHROPIC_VERSION,
-            "content-type": "application/json",
-        }
-        if self.prompt_caching:
-            headers["anthropic-beta"] = "prompt-caching-2024-07-31"
+        streaming = text_delta_callback is not None or thinking_delta_callback is not None
+        url, model_in_body = request_url(
+            api_format="anthropic",
+            deployment=self.deployment,
+            base_url=self.base_url,
+            model=self.model,
+            streaming=streaming,
+            extra_query=self.extra_query,
+        )
+        version_placement, version_value = _anthropic_version(self.deployment)
 
         system_blocks: list[dict[str, Any]] = [{"type": "text", "text": system}]
         if self.prompt_caching:
@@ -233,11 +271,16 @@ class AnthropicProvider:
             max_tokens = max(max_tokens, thinking_budget + DEFAULT_MAX_TOKENS)
 
         body: dict[str, Any] = {
-            "model": self.model,
             "max_tokens": max_tokens,
             "system": system_blocks,
             "messages": messages,
         }
+        # Direct carries the model in the body; Vertex carries it in the URL
+        # path and moves the protocol version into the body.
+        if model_in_body:
+            body["model"] = self.model
+        if version_placement == "body":
+            body["anthropic_version"] = version_value
         if thinking_budget is not None:
             # Extended thinking is incompatible with temperature overrides,
             # so only pass temperature when thinking is disabled.
@@ -246,71 +289,106 @@ class AnthropicProvider:
             body["temperature"] = temperature
         if tool_payload:
             body["tools"] = tool_payload
+        if self.extra_body:
+            reserved = {"system", "messages", "model", "stream", "anthropic_version"}
+            body.update({k: v for k, v in self.extra_body.items() if k not in reserved})
 
-        # opt-in SSE streaming. When the caller passes a
-        # text_delta_callback we POST with `stream: true` and feed text
-        # deltas to the callback as they arrive, then synthesise a
-        # ProviderResponse identical in shape to the non-streaming path
-        # at message_stop. Non-streaming is the default to keep bench
-        # runs and the existing test suite on the same code path.
-        if text_delta_callback is not None or thinking_delta_callback is not None:
-            return self._call_streaming(
-                headers=headers,
-                body=body,
-                text_delta_callback=text_delta_callback,
-                thinking_delta_callback=thinking_delta_callback,
-            )
+        # Auth header is (re)built per attempt: a token_command credential mints
+        # a short-lived bearer (Vertex Google OAuth); on a 401/403 we refresh it
+        # once and retry. Without a credential there is exactly one attempt.
+        cred = self.credential
+        max_attempts = 2 if cred is not None else 1
+        for attempt in range(max_attempts):
+            headers: dict[str, str] = {"content-type": "application/json"}
+            token = cred.token() if cred is not None else self.api_key
+            authed = auth_header(self.auth_style, token)
+            if authed is not None:
+                headers[authed[0]] = authed[1]
+            if version_placement == "header":
+                headers["anthropic-version"] = version_value
+            if self.prompt_caching:
+                headers["anthropic-beta"] = "prompt-caching-2024-07-31"
+            for k, v in self.extra_headers:
+                headers[k.lower()] = v
 
-        try:
-            resp = http_post(
-                ANTHROPIC_URL,
-                headers=headers,
-                content=json.dumps(body).encode("utf-8"),
-                timeout=self.timeout_s,
-            )
-        except httpx.HTTPError as exc:
-            if self.transcript_sink is not None:
-                self.transcript_sink.record(
-                    request_headers=headers,
-                    request_body=body,
-                    response_status=0,
-                    response_body=f"HTTPError: {exc}",
+            # opt-in SSE streaming; otherwise the non-streaming POST below.
+            if streaming:
+                try:
+                    return self._call_streaming(
+                        url=url,
+                        headers=headers,
+                        body=body,
+                        text_delta_callback=text_delta_callback,
+                        thinking_delta_callback=thinking_delta_callback,
+                    )
+                except ProviderError as exc:
+                    if (
+                        cred is not None
+                        and attempt + 1 < max_attempts
+                        and exc.status_code in (401, 403)
+                    ):
+                        cred.invalidate()
+                        continue
+                    raise
+
+            try:
+                resp = http_post(
+                    url,
+                    headers=headers,
+                    content=json.dumps(body).encode("utf-8"),
+                    timeout=self.timeout_s,
                 )
-            raise ProviderError(f"HTTP error calling Anthropic: {exc}") from exc
-        if resp.status_code >= 400:
+            except httpx.HTTPError as exc:
+                if self.transcript_sink is not None:
+                    self.transcript_sink.record(
+                        url=url,
+                        request_headers=headers,
+                        request_body=body,
+                        response_status=0,
+                        response_body=f"HTTPError: {exc}",
+                    )
+                raise ProviderError(f"HTTP error calling Anthropic: {exc}") from exc
+            if cred is not None and attempt + 1 < max_attempts and resp.status_code in (401, 403):
+                cred.invalidate()
+                continue
+            if resp.status_code >= 400:
+                if self.transcript_sink is not None:
+                    self.transcript_sink.record(
+                        url=url,
+                        request_headers=headers,
+                        request_body=body,
+                        response_status=resp.status_code,
+                        response_body=resp.text[:8192],
+                    )
+                raise ProviderError(
+                    f"Anthropic API error {resp.status_code}: {resp.text[:500]}",
+                    status_code=resp.status_code,
+                )
+            data: dict[str, Any] = resp.json()
             if self.transcript_sink is not None:
                 self.transcript_sink.record(
+                    url=url,
                     request_headers=headers,
                     request_body=body,
                     response_status=resp.status_code,
-                    response_body=resp.text[:8192],
+                    response_body=data,
                 )
-            raise ProviderError(
-                f"Anthropic API error {resp.status_code}: {resp.text[:500]}",
-                status_code=resp.status_code,
-            )
-        data: dict[str, Any] = resp.json()
-        if self.transcript_sink is not None:
-            self.transcript_sink.record(
-                request_headers=headers,
-                request_body=body,
-                response_status=resp.status_code,
-                response_body=data,
-            )
-        parsed = _parse_response(data)
-        if self.budget is not None:
-            self.budget.record(
-                model=self.model,
-                input_tokens=parsed.input_tokens,
-                output_tokens=parsed.output_tokens,
-                cache_read_tokens=parsed.cache_read_tokens,
-                cache_creation_tokens=parsed.cache_creation_tokens,
-            )
-        return parsed
+            parsed = _parse_response(data)
+            if self.budget is not None:
+                self.budget.record(
+                    model=self.model,
+                    input_tokens=parsed.input_tokens,
+                    output_tokens=parsed.output_tokens,
+                    cache_read_tokens=parsed.cache_read_tokens,
+                    cache_creation_tokens=parsed.cache_creation_tokens,
+                )
+            return parsed
+        raise ProviderError("Anthropic auth retry exhausted")  # pragma: no cover
 
     def _call_streaming(  # noqa: PLR0912, PLR0915
         self,
         *,
+        url: str,
         headers: dict[str, str],
         body: dict[str, Any],
         text_delta_callback: Callable[[str], None] | None = None,
@@ -325,7 +403,11 @@ class AnthropicProvider:
         transcript replay) don't need a streaming-aware code path.
         """
         body = dict(body)
-        body["stream"] = True
+        # Direct enables streaming with a body flag; Vertex selects it via the
+        # `:streamRawPredict` URL suffix (already baked into `url`) and rejects
+        # a `stream` body field.
+        if self.deployment == "direct":
+            body["stream"] = True
         stream_headers = dict(headers)
         stream_headers["accept"] = "text/event-stream"
 
@@ -353,7 +435,7 @@ class AnthropicProvider:
         try:
             with http_stream(
                 "POST",
-                ANTHROPIC_URL,
+                url,
                 headers=stream_headers,
                 content=json.dumps(body).encode("utf-8"),
                 timeout=self.timeout_s,
@@ -362,13 +444,15 @@ class AnthropicProvider:
                     error_body = resp.read().decode("utf-8", errors="replace")[:8192]
                     if self.transcript_sink is not None:
                         self.transcript_sink.record(
+                            url=url,
                             request_headers=stream_headers,
                             request_body=body,
                             response_status=resp.status_code,
                             response_body=error_body,
                         )
                     raise ProviderError(
-                        f"Anthropic API error {resp.status_code}: {error_body[:500]}"
+                        f"Anthropic API error {resp.status_code}: {error_body[:500]}",
+                        status_code=resp.status_code,
                     )
                 event_type: str = ""
                 for line in resp.iter_lines():
@@ -488,6 +572,7 @@ class AnthropicProvider:
         except httpx.HTTPError as exc:
             if self.transcript_sink is not None:
                 self.transcript_sink.record(
+                    url=url,
                     request_headers=stream_headers,
                     request_body=body,
                     response_status=0,
@@ -513,6 +598,7 @@ class AnthropicProvider:
         }
         if self.transcript_sink is not None:
             self.transcript_sink.record(
+                url=url,
                 request_headers=stream_headers,
                 request_body=body,
                 response_status=200,

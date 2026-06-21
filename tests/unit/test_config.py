@@ -15,7 +15,7 @@ _VALID_TOML = """
 config_version = 1
 
 [providers.anthropic]
-kind = "anthropic"
+api_format = "anthropic"
 api_key_env = "ANTHROPIC_API_KEY"
 prompt_caching = true
 
@@ -167,7 +167,7 @@ def test_allow_urls_rejects_bad_port(tmp_path: Path) -> None:
 def test_openai_base_url_accepts_http_and_https(tmp_path: Path) -> None:
     body = _VALID_TOML.replace(
         "[models.worker]",
-        '[providers.local]\nkind = "openai"\nbase_url = "http://localhost:11434/v1"\n\n[models.worker]',
+        '[providers.local]\napi_format = "openai"\nbase_url = "http://localhost:11434/v1"\n\n[models.worker]',
     )
     cfg = load_config(_write(tmp_path, body))
     assert cfg.providers["local"].base_url == "http://localhost:11434/v1"  # type: ignore[union-attr]
@@ -177,7 +177,8 @@ def test_openai_base_url_rejects_schemeless(tmp_path: Path) -> None:
     # The classic paste error: an API key dropped into the base_url field.
     body = _VALID_TOML.replace(
         "[models.worker]",
-        '[providers.bad]\nkind = "openai"\nbase_url = "sk-or-v1-not-a-url"\n\n[models.worker]',
+        '[providers.bad]\napi_format = "openai"\nbase_url = "sk-or-v1-not-a-url"\n'
+        "\n[models.worker]",
     )
     with pytest.raises(ConfigError, match=r"base_url"):
         load_config(_write(tmp_path, body))
@@ -186,7 +187,7 @@ def test_openai_base_url_rejects_schemeless(tmp_path: Path) -> None:
 def test_openai_base_url_rejects_hostless(tmp_path: Path) -> None:
     body = _VALID_TOML.replace(
         "[models.worker]",
-        '[providers.bad]\nkind = "openai"\nbase_url = "https://"\n\n[models.worker]',
+        '[providers.bad]\napi_format = "openai"\nbase_url = "https://"\n\n[models.worker]',
     )
     with pytest.raises(ConfigError, match=r"base_url"):
         load_config(_write(tmp_path, body))
@@ -311,7 +312,7 @@ def test_no_providers_loads_but_not_runnable(tmp_path: Path) -> None:
     # Secure-by-default: a config with no providers is valid (a global config
     # may define them); require_runnable refuses to start without one.
     body = _VALID_TOML.replace(
-        '[providers.anthropic]\nkind = "anthropic"\n'
+        '[providers.anthropic]\napi_format = "anthropic"\n'
         'api_key_env = "ANTHROPIC_API_KEY"\nprompt_caching = true\n',
         "",
     )
@@ -324,9 +325,9 @@ def test_no_providers_loads_but_not_runnable(tmp_path: Path) -> None:
 def test_openai_provider_with_no_api_key_env_loads(tmp_path: Path) -> None:
     """Ollama-style local endpoint: api_key_env is omitted entirely."""
     body = _VALID_TOML.replace(
-        '[providers.anthropic]\nkind = "anthropic"\n'
+        '[providers.anthropic]\napi_format = "anthropic"\n'
         'api_key_env = "ANTHROPIC_API_KEY"\nprompt_caching = true\n',
-        '[providers.ollama]\nkind = "openai"\nbase_url = "http://localhost:11434/v1"\n',
+        '[providers.ollama]\napi_format = "openai"\nbase_url = "http://localhost:11434/v1"\n',
     )
     # Re-route every role to the ollama provider since anthropic is now gone.
     body = body.replace('provider = "anthropic"', 'provider = "ollama"')
@@ -341,12 +342,12 @@ def test_openai_provider_with_no_api_key_env_loads(tmp_path: Path) -> None:
 def test_multiple_openai_providers_load(tmp_path: Path) -> None:
     """Both OpenAI and OpenRouter side-by-side, distinct keys, routed per role."""
     body = _VALID_TOML.replace(
-        '[providers.anthropic]\nkind = "anthropic"\n'
+        '[providers.anthropic]\napi_format = "anthropic"\n'
         'api_key_env = "ANTHROPIC_API_KEY"\nprompt_caching = true\n',
         (
-            '[providers.openai]\nkind = "openai"\n'
+            '[providers.openai]\napi_format = "openai"\n'
             'api_key_env = "OPENAI_API_KEY"\n\n'
-            '[providers.openrouter]\nkind = "openai"\n'
+            '[providers.openrouter]\napi_format = "openai"\n'
             'api_key_env = "OPENROUTER_API_KEY"\n'
             'base_url = "https://openrouter.ai/api/v1"\n'
         ),
@@ -399,7 +400,7 @@ def test_operational_fields_have_defaults(tmp_path: Path) -> None:
     """
     body = """
 [providers.anthropic]
-kind = "anthropic"
+api_format = "anthropic"
 api_key_env = "ANTHROPIC_API_KEY"
 
 [models.worker]
@@ -525,3 +526,118 @@ def test_with_machine_agent_overrides_provider(tmp_path: Path) -> None:
     assert out.models.worker is not None
     assert out.models.worker.provider == "anthropic"
     assert out.models.worker.model == "claude-z"
+
+
+def _with_openai_provider(block: str) -> str:
+    return _VALID_TOML.replace("[models.worker]", f"{block}\n\n[models.worker]")
+
+
+def test_token_command_parses(tmp_path: Path) -> None:
+    body = _with_openai_provider(
+        '[providers.gw]\napi_format = "openai"\nbase_url = "https://gw.example.com/v1"\n'
+        'token_command = ["mint-token", "--json"]\ntoken_command_ttl_s = 60.0'
+    )
+    cfg = load_config(_write(tmp_path, body))
+    entry = cfg.providers["gw"]
+    assert entry.token_command == ["mint-token", "--json"]  # type: ignore[union-attr]
+    assert entry.token_command_ttl_s == 60.0  # type: ignore[union-attr]
+
+
+def test_token_command_ttl_defaults_to_300(tmp_path: Path) -> None:
+    body = _with_openai_provider(
+        '[providers.gw]\napi_format = "openai"\ntoken_command = ["mint-token"]'
+    )
+    cfg = load_config(_write(tmp_path, body))
+    assert cfg.providers["gw"].token_command_ttl_s == 300.0  # type: ignore[union-attr]
+
+
+def test_token_command_rejects_empty_list(tmp_path: Path) -> None:
+    body = _with_openai_provider('[providers.gw]\napi_format = "openai"\ntoken_command = []')
+    with pytest.raises(ConfigError, match="token_command"):
+        load_config(_write(tmp_path, body))
+
+
+def test_token_command_rejects_blank_arg(tmp_path: Path) -> None:
+    body = _with_openai_provider(
+        '[providers.gw]\napi_format = "openai"\ntoken_command = ["mint", "  "]'
+    )
+    with pytest.raises(ConfigError, match="token_command"):
+        load_config(_write(tmp_path, body))
+
+
+def test_token_command_ttl_must_be_positive(tmp_path: Path) -> None:
+    body = _with_openai_provider(
+        '[providers.gw]\napi_format = "openai"\ntoken_command = ["mint"]\ntoken_command_ttl_s = 0'
+    )
+    with pytest.raises(ConfigError, match="token_command_ttl_s"):
+        load_config(_write(tmp_path, body))
+
+
+_VERTEX_CLAUDE = (
+    "https://us-east5-aiplatform.googleapis.com/v1/projects/p/locations/us-east5"
+    "/publishers/anthropic/models"
+)
+
+
+def test_deployment_and_auth_defaults(tmp_path: Path) -> None:
+    cfg = load_config(_write(tmp_path, _VALID_TOML))
+    a = cfg.providers["anthropic"]
+    assert a.deployment == "direct"
+    assert a.auth_style == "x_api_key"  # type: ignore[union-attr]
+    assert a.base_url == "https://api.anthropic.com/v1"  # type: ignore[union-attr]
+
+
+def test_vertex_anthropic_defaults_bearer(tmp_path: Path) -> None:
+    body = _with_openai_provider(
+        '[providers.v]\napi_format = "anthropic"\ndeployment = "vertex"\n'
+        f'base_url = "{_VERTEX_CLAUDE}"'
+    )
+    cfg = load_config(_write(tmp_path, body))
+    assert cfg.providers["v"].deployment == "vertex"
+    assert cfg.providers["v"].auth_style == "bearer"  # type: ignore[union-attr]
+
+
+def test_non_direct_deployment_requires_base_url(tmp_path: Path) -> None:
+    body = _with_openai_provider('[providers.v]\napi_format = "anthropic"\ndeployment = "vertex"')
+    with pytest.raises(ConfigError, match="base_url is required"):
+        load_config(_write(tmp_path, body))
+
+
+def test_azure_requires_openai_format(tmp_path: Path) -> None:
+    body = _with_openai_provider(
+        '[providers.a]\napi_format = "anthropic"\ndeployment = "azure"\n'
+        'base_url = "https://r.openai.azure.com"\nextra_query = { "api-version" = "2024-06-01" }'
+    )
+    with pytest.raises(ConfigError, match="api_format 'openai'"):
+        load_config(_write(tmp_path, body))
+
+
+def test_azure_requires_api_version_query(tmp_path: Path) -> None:
+    body = _with_openai_provider(
+        '[providers.a]\napi_format = "openai"\ndeployment = "azure"\nbase_url = "https://r.openai.azure.com"'
+    )
+    with pytest.raises(ConfigError, match="extra_query"):
+        load_config(_write(tmp_path, body))
+
+
+def test_azure_defaults_api_key_header(tmp_path: Path) -> None:
+    body = _with_openai_provider(
+        '[providers.a]\napi_format = "openai"\ndeployment = "azure"\n'
+        'base_url = "https://r.openai.azure.com"\nextra_query = { "api-version" = "2024-06-01" }'
+    )
+    cfg = load_config(_write(tmp_path, body))
+    assert cfg.providers["a"].auth_style == "api_key_header"  # type: ignore[union-attr]
+
+
+def test_unknown_deployment_rejected(tmp_path: Path) -> None:
+    body = _with_openai_provider(
+        '[providers.x]\napi_format = "openai"\ndeployment = "bedrock"\nbase_url = "https://x.example.com"'
+    )
+    with pytest.raises(ConfigError, match="deployment"):
+        load_config(_write(tmp_path, body))
+
+
+def test_explicit_auth_style_preserved(tmp_path: Path) -> None:
+    body = _with_openai_provider('[providers.x]\napi_format = "openai"\nauth_style = "none"')
+    cfg = load_config(_write(tmp_path, body))
+    assert cfg.providers["x"].auth_style == "none"  # type: ignore[union-attr]

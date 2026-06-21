@@ -422,7 +422,7 @@ def test_machine_config_overlay_rejects_providers(tmp_path: Path) -> None:
         VALID_MACHINE
         + """
 [config.providers.anthropic]
-kind = "anthropic"
+api_format = "anthropic"
 """
     )
     problems = _problems(tmp_path, body)

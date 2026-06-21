@@ -23,6 +23,7 @@ import httpx
 import pytest
 
 from agent6.providers import AnthropicProvider, ProviderError, TranscriptSink
+from agent6.providers.token_command import CommandToken
 
 
 class _FakeStreamResponse:
@@ -340,3 +341,47 @@ def test_non_streaming_path_unchanged_when_callback_is_none(
     resp = provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     assert resp.text == "ok"
     assert stream_called is False
+
+
+def test_streaming_refreshes_token_command_on_401(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Regression: a Vertex-Anthropic (token_command) stream whose bearer expired
+    # must refresh + retry once on a 401, not die. Requires the streaming 401
+    # raise to carry status_code so the retry guard fires.
+    counter = tmp_path / "n"
+    script = (
+        f'n=$(cat "{counter}" 2>/dev/null || echo 0); '
+        f'n=$((n + 1)); printf %s "$n" > "{counter}"; printf "tok%s" "$n"'
+    )
+    base = (
+        "https://us-east5-aiplatform.googleapis.com/v1/projects/p/locations/us-east5"
+        "/publishers/anthropic/models"
+    )
+    provider = AnthropicProvider(
+        api_key="",
+        model="claude-x",
+        base_url=base,
+        deployment="vertex",
+        auth_style="bearer",
+        prompt_caching=False,
+        credential=CommandToken(["sh", "-c", script], ttl_s=1000.0),
+    )
+    seen_auth: list[str | None] = []
+    responses = [
+        _FakeStreamResponse(status_code=401, lines=[], error_body='{"error":"expired"}'),
+        _FakeStreamResponse(status_code=200, lines=_basic_text_stream()),
+    ]
+
+    def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
+        seen_auth.append(kwargs["headers"].get("authorization"))
+        return responses[len(seen_auth) - 1]
+
+    monkeypatch.setattr(httpx, "stream", fake_stream)
+    resp = provider.call(
+        system="sys",
+        messages=[{"role": "user", "content": "x"}],
+        text_delta_callback=lambda _p: None,
+    )
+    assert seen_auth == ["Bearer tok1", "Bearer tok2"]  # refreshed bearer on retry
+    assert "hello" in resp.text
