@@ -234,6 +234,7 @@ def test_is_reasoning_model_detects_thinking_models() -> None:
     assert _is_reasoning_model("moonshotai/kimi-k2.5")
     assert _is_reasoning_model("minimax/minimax-m2.7")
     assert _is_reasoning_model("minimax/minimax-m2")
+    assert _is_reasoning_model("nvidia/nemotron-3-nano-30b-a3b")
     assert not _is_reasoning_model("gpt-4o")
     assert not _is_reasoning_model("claude-3-5-sonnet")
     assert not _is_reasoning_model("llama-3-70b")

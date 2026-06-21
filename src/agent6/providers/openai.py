@@ -127,8 +127,13 @@ _REASONING_MODEL_HINTS: tuple[str, ...] = (
     #   - minimax-m2: minimax-m2 / minimax-m2.7 (and presumably future
     #                 m2.x). Same pattern observed on click-short-help
     #                 and werkzeug-safe-join (19k reasoning tokens).
+    #   - nemotron:   NVIDIA Nemotron-3 nano (e.g. nemotron-3-nano-30b-a3b)
+    #                 streams reasoning_content even on the non-"reasoning"
+    #                 variant; observed starving (loop.reasoning_starvation)
+    #                 at the 16k default on the synthetic edit tasks.
     "kimi-k2",
     "minimax-m2",
+    "nemotron",
 )
 
 
