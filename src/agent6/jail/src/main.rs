@@ -681,6 +681,13 @@ fn apply_seccomp() -> io::Result<()> {
     // Default-allow with explicit deny of the worst offenders. We are inside
     // user-ns + landlock already; seccomp here is a third layer to block obvious
     // foot-guns: ptrace, mount, setns, unshare, kexec, bpf, perf, keyctl, etc.
+    // libc (0.2.x) doesn't define SYS_kexec_file_load for the musl aarch64 target
+    // even though the syscall exists there (arm64 #294), so name it explicitly —
+    // otherwise the sandbox would silently stop blocking a new-kernel load on arm64.
+    #[cfg(target_arch = "aarch64")]
+    const SYS_KEXEC_FILE_LOAD: i64 = 294;
+    #[cfg(not(target_arch = "aarch64"))]
+    const SYS_KEXEC_FILE_LOAD: i64 = libc::SYS_kexec_file_load;
     let denied: &[i64] = &[
         libc::SYS_ptrace,
         libc::SYS_process_vm_readv,
@@ -692,7 +699,7 @@ fn apply_seccomp() -> io::Result<()> {
         libc::SYS_setns,
         libc::SYS_unshare,
         libc::SYS_kexec_load,
-        libc::SYS_kexec_file_load,
+        SYS_KEXEC_FILE_LOAD,
         libc::SYS_bpf,
         libc::SYS_perf_event_open,
         libc::SYS_keyctl,
