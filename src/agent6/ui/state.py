@@ -127,7 +127,7 @@ _MAX_LOG_TAIL = 400
 def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PLR0911, PLR0912, PLR0915
     """Fold one event into the run state. Pure function."""
     etype = event.get("type", "")
-    log_line = _format_log_line(event)
+    log_line = format_log_line(event)
     new_log = _push_bounded(state.log_tail, log_line, _MAX_LOG_TAIL)
     # log_count is monotonic; log_tail is a sliding window. A live viewer must
     # diff on the count (which keeps growing) -- diffing on len(log_tail) freezes
@@ -363,7 +363,7 @@ def _render_args(args: dict[str, Any]) -> str:
     return ", ".join(pairs)
 
 
-def _format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912
+def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912
     ts = str(event.get("ts", ""))
     etype = str(event.get("type", "?"))
     # Compact one-line representation: timestamp, type, salient field.

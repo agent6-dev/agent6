@@ -53,6 +53,7 @@ from agent6.ui.approval import (
     write_steer_answer,
     write_tui_pid,
 )
+from agent6.ui.logview import LogScreen
 from agent6.ui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.modals import ApprovalModal, QuestionModal, SteerModal
 from agent6.ui.state import (
@@ -135,6 +136,7 @@ class Agent6TUI(App[int]):
             "View",
             (
                 MenuItem("Next pane", "focus_next", "Tab"),
+                MenuItem("Full log…", "view_logs", "l"),
                 MenuItem("Log → end", "scroll_log_end", "g"),
                 MenuItem("Theme…", "choose_theme"),
             ),
@@ -152,6 +154,7 @@ class Agent6TUI(App[int]):
         # the home + config footers. Esc backs out to the hub (consistent with the
         # config screen); q quits the whole hub; Ctrl+Q is the hard quit. (Esc on an
         # open modal cancels it first -- the modal consumes the key.)
+        Binding("l", "view_logs", "Full log", show=True),
         Binding("g", "scroll_log_end", "Log→end", show=True),
         Binding("question_mark", "help", "Help"),
         Binding("escape", "to_hub", "Back"),
@@ -196,7 +199,11 @@ class Agent6TUI(App[int]):
                 yield DataTable(id="tools")
                 # markup=False: log lines contain raw tool args like `args=[a,b]`
                 # which Rich would otherwise try to parse as markup and crash.
-                yield RichLog(id="log", highlight=False, markup=False, wrap=False)
+                # auto_scroll off: _render does sticky-bottom itself (snap to the
+                # newest line only when the operator is already at the bottom).
+                yield RichLog(
+                    id="log", highlight=False, markup=False, wrap=False, auto_scroll=False
+                )
                 yield Static("", id="diff")
         yield Footer()
 
@@ -306,6 +313,11 @@ class Agent6TUI(App[int]):
     def action_scroll_log_end(self) -> None:
         self.query_one("#log", RichLog).scroll_end(animate=False)
 
+    def action_view_logs(self) -> None:
+        """Open the full, scrollable log of THIS run -- the inline #log pane is a
+        small sliding window; this is the whole history, scroll-anchored."""
+        self.push_screen(LogScreen(self.logs_path, title=f"logs · {self.run_dir.name}"))
+
     def action_menu(self, mnemonic: str) -> None:
         self.query_one(MenuBar).open(mnemonic)
 
@@ -406,11 +418,17 @@ class Agent6TUI(App[int]):
 
         # Log. Diff on the monotonic log_count, not len(log_tail): log_tail is a
         # sliding window, so a length-based diff freezes once it saturates.
+        # Sticky-bottom: only snap to the newest line if the operator was already
+        # at the bottom, so scrolling up to read holds position (the pane no
+        # longer "plays through" out from under them). `g` / Full log jump back.
         log = self.query_one("#log", RichLog)
         n_new = min(s.log_count - self._last_log_count, len(s.log_tail))
         if n_new > 0:
+            at_bottom = (log.max_scroll_y - log.scroll_offset.y) <= 1
             for line in s.log_tail[-n_new:]:
                 log.write(line)
+            if at_bottom:
+                log.scroll_end(animate=False)
         self._last_log_count = s.log_count
 
         # Diff (the latest auto-commit) or live verify output. Built as rich Text

@@ -39,6 +39,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 # Safe at module top: the textual guard above runs first, so this (which also
 # needs textual) is only reached when textual is present.
 from agent6.ui.config_page import ConfigScreen
+from agent6.ui.logview import LogScreen
 from agent6.ui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.theme import PALETTE_CSS, open_theme_picker, setup_theme
 from agent6.ui.widgets import FORM_CSS, ActionItem
@@ -209,6 +210,7 @@ class HomeScreen(Screen[None]):
             (
                 MenuItem("New run/plan/ask", "new_work", "n"),
                 MenuItem("Open selected", "open_selected", "enter"),
+                MenuItem("View logs", "view_logs", "l"),
                 MenuItem("Refresh", "refresh", "r"),
                 MenuItem("Quit", "quit", "q"),
             ),
@@ -227,6 +229,7 @@ class HomeScreen(Screen[None]):
         # Footer order: run-list actions, then Config, then meta (Help, Quit, Menu).
         Binding("n", "new_work", "New run/plan/ask"),
         Binding("enter", "open_selected", "Open"),
+        Binding("l", "view_logs", "View logs"),
         Binding("r", "refresh", "Refresh"),
         Binding("c", "open_config", "Config"),
         Binding("question_mark", "help", "Help"),
@@ -309,6 +312,16 @@ class HomeScreen(Screen[None]):
         table = self.query_one("#runs", DataTable)
         if self._runs and 0 <= table.cursor_row < len(self._runs):
             self.app.exit(self._runs[table.cursor_row])
+
+    def action_view_logs(self) -> None:
+        """Open a scrollable, read-only log of the selected run (current or
+        finished) without leaving the hub -- the run list only shows a one-line
+        status, so this is how you read what a past run actually did."""
+        table = self.query_one("#runs", DataTable)
+        if not (self._runs and 0 <= table.cursor_row < len(self._runs)):
+            return
+        run_dir = self._runs[table.cursor_row]
+        self.app.push_screen(LogScreen(run_dir / "logs.jsonl", title=f"logs · {run_dir.name}"))
 
     def on_data_table_row_selected(self, _event: DataTable.RowSelected) -> None:
         # Enter / double-click a run row opens it. The DataTable consumes Enter
