@@ -211,14 +211,21 @@ class HomeScreen(Screen[None]):
             (
                 MenuItem("New run/plan/ask", "new_work", "n"),
                 MenuItem("Open selected", "open_selected", "enter"),
-                MenuItem("View logs", "view_logs", "l"),
-                MenuItem("View transcript", "view_transcript", "t"),
                 MenuItem("Refresh", "refresh", "r"),
                 MenuItem("Quit", "quit", "q"),
             ),
         ),
         Menu("Config", (MenuItem("Open config", "open_config", "c"),)),
-        Menu("View", (MenuItem("Theme…", "choose_theme"),)),
+        Menu(
+            "View",
+            (
+                # Viewing a selected run's logs/transcript is filed under View to
+                # match the run dashboard's View menu (the two surfaces stay aligned).
+                MenuItem("View logs", "view_logs", "l"),
+                MenuItem("View transcript", "view_transcript", "t"),
+                MenuItem("Theme…", "choose_theme"),
+            ),
+        ),
         Menu(
             "Help",
             (

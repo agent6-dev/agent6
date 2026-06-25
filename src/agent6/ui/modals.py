@@ -185,7 +185,12 @@ class QuestionModal(ModalScreen[str]):
             self.query_one("#question-input", Input).focus()
 
     def on_key(self, event: object) -> None:
-        # Number keys 1-9 pick the matching option directly.
+        # Number keys 1-9 pick the matching option directly -- but NOT while the
+        # free-text answer field is focused, or a numeric custom answer ("2") would
+        # be hijacked as option 2. (on_key is a raw handler that fires even over a
+        # focused Input, unlike a Binding, which the Input would swallow.)
+        if isinstance(self.focused, Input):
+            return
         key = getattr(event, "key", "")
         if key.isdigit() and key != "0":
             idx = int(key)

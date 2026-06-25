@@ -8,6 +8,11 @@ back, and finished runs in the hub had no log view at all. ``LogScreen`` reads
 a run's whole logs.jsonl, renders each event with the SAME one-line formatter
 the dashboard uses (so the two read identically), and lets the operator scroll
 freely. It is read-only; ``r`` re-reads the file (a live run keeps appending).
+
+Deliberately lighter chrome than HomeScreen/ConfigScreen: a read-only pager
+needs no File/View menus, so it skips the MenuBar/MENUS/palette convention and
+keeps just a dock-top title and a terse binding set (Esc/q back, r refresh,
+g/G scroll) -- the same minimal shape as its sibling ConversationScreen.
 """
 
 from __future__ import annotations
@@ -36,7 +41,7 @@ class LogScreen(Screen[None]):
     BINDINGS: ClassVar = [
         Binding("escape", "close", "Back"),
         Binding("q", "close", "Back"),
-        Binding("r", "reload", "Reload"),
+        Binding("r", "reload", "Refresh"),
         Binding("g", "scroll_top", "Top"),
         Binding("G", "scroll_bottom", "End"),
     ]
@@ -66,7 +71,7 @@ class LogScreen(Screen[None]):
             log.write(format_log_line(event))
             count += 1
         if count == 0:
-            log.write("(no events yet — press r to reload)")
+            log.write("(no events yet — press r to refresh)")
         log.scroll_end(animate=False)
         log.focus()
 

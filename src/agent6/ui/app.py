@@ -20,7 +20,7 @@ from __future__ import annotations
 import inspect
 import os
 import threading
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -131,15 +131,17 @@ class Agent6TUI(App[int]):
     MENUS: ClassVar = (
         Menu(
             "File",
-            (MenuItem("Back to hub", "to_hub", "Esc"), MenuItem("Quit", "quit_hub", "q")),
+            (MenuItem("Back", "to_hub", "Esc"), MenuItem("Quit", "quit_hub", "q")),
         ),
         Menu(
             "View",
             (
                 MenuItem("Next pane", "focus_next", "Tab"),
+                MenuItem("Prev pane", "focus_previous", "Shift+Tab"),
                 MenuItem("Full log…", "view_logs", "l"),
                 MenuItem("Conversation…", "view_transcript", "t"),
-                MenuItem("Log → end", "scroll_log_end", "g"),
+                MenuItem("Log → top", "scroll_log_home", "g"),
+                MenuItem("Log → end", "scroll_log_end", "G"),
                 MenuItem("Theme…", "choose_theme"),
             ),
         ),
@@ -158,7 +160,10 @@ class Agent6TUI(App[int]):
         # open modal cancels it first -- the modal consumes the key.)
         Binding("l", "view_logs", "Full log", show=True),
         Binding("t", "view_transcript", "Conversation", show=True),
-        Binding("g", "scroll_log_end", "Log→end", show=True),
+        # g=top / G=end, matching vi and the LogScreen/ConversationScreen viewers
+        # (g used to be "end" here, contradicting those screens reached via l/t).
+        Binding("g", "scroll_log_home", "Log→top", show=False),
+        Binding("G", "scroll_log_end", "Log→end", show=True),
         Binding("question_mark", "help", "Help"),
         Binding("escape", "to_hub", "Back"),
         Binding("q", "quit_hub", "Quit"),
@@ -290,20 +295,18 @@ class Agent6TUI(App[int]):
 
     # --- command palette ---------------------------------------------
 
-    def palette_commands(self) -> list[tuple[str, Callable[[], Any], str]]:
+    def palette_commands(self) -> Iterator[tuple[str, Callable[[], Any], str]]:
         """(label, runnable, help) per menu action -- the Ctrl+P palette source, from
         the same MENUS registry as the menu bar, footer, and key bindings, so the
-        surfaces never drift (same pattern as the home hub). Skips the palette opener
-        itself (textual provides it)."""
-        cmds: list[tuple[str, Callable[[], Any], str]] = []
+        surfaces never drift (same generator pattern as the home hub + config). Skips
+        the palette opener itself (textual provides it)."""
         for menu in self.MENUS:
             for item in menu.items:
                 if item.action == "command_palette":
                     continue
                 handler = getattr(self, f"action_{item.action}", None)
                 if handler is not None:
-                    cmds.append((item.label, handler, menu.title))
-        return cmds
+                    yield (item.label, handler, menu.title)
 
     def action_to_hub(self) -> None:
         self.exit(0)  # back to the hub loop (or just close, standalone)
@@ -315,6 +318,9 @@ class Agent6TUI(App[int]):
 
     def action_scroll_log_end(self) -> None:
         self.query_one("#log", RichLog).scroll_end(animate=False)
+
+    def action_scroll_log_home(self) -> None:
+        self.query_one("#log", RichLog).scroll_home(animate=False)
 
     def action_view_logs(self) -> None:
         """Open the full, scrollable log of THIS run -- the inline #log pane is a

@@ -15,12 +15,49 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
+from textual.app import App
+from textual.widgets import Button, Input
+
 from agent6.ui.app import Agent6TUI
 from agent6.ui.modals import ApprovalModal, QuestionModal, SteerModal
 
 
 def _ev(**fields: Any) -> dict[str, object]:
     return dict(fields)
+
+
+def test_question_modal_digit_in_freetext_is_not_hijacked() -> None:
+    """A digit typed into the free-text answer field must land in the Input, not
+    be hijacked as a numbered option pick -- while digit quick-select still works
+    when an option Button is focused (regression: on_key fired over the Input)."""
+    result: dict[str, str | None] = {}
+
+    class _Host(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(
+                QuestionModal("q1", "pick?", ("alpha", "beta")),
+                lambda v: result.__setitem__("v", v),
+            )
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, QuestionModal)
+            modal.query_one("#question-input", Input).focus()
+            await pilot.pause()
+            await pilot.press("2")  # pre-fix this dismissed the modal as option 2
+            await pilot.pause()
+            assert isinstance(app.screen, QuestionModal)  # still open
+            assert "v" not in result
+            assert modal.query_one("#question-input", Input).value == "2"  # digit typed
+            modal.query_one("#opt-1", Button).focus()  # back on an option button
+            await pilot.press("1")
+            await pilot.pause()
+            assert result.get("v") == "alpha"  # quick-select still works
+
+    asyncio.run(scenario())
 
 
 def test_render_and_modals(tmp_path: Path) -> None:

@@ -7,6 +7,11 @@ stream, this folds the run's lossless per-call transcripts (``transcripts/``)
 into the actual conversation -- assistant text + thinking, and every tool call
 with its full arguments and result. Read-only; ``t`` toggles thinking, ``r``
 re-reads (a live run keeps appending a file per LLM call).
+
+Deliberately lighter chrome than HomeScreen/ConfigScreen: a read-only pager
+needs no File/View menus, so it skips the MenuBar/MENUS/palette convention and
+keeps just a dock-top title and a terse binding set (Esc/q back, r refresh,
+g/G scroll) -- the same minimal shape as its sibling LogScreen.
 """
 
 from __future__ import annotations
@@ -62,7 +67,7 @@ class ConversationScreen(Screen[None]):
     BINDINGS: ClassVar = [
         Binding("escape", "close", "Back"),
         Binding("q", "close", "Back"),
-        Binding("r", "reload", "Reload"),
+        Binding("r", "reload", "Refresh"),
         Binding("t", "toggle_thinking", "Thinking"),
         Binding("g", "scroll_top", "Top"),
         Binding("G", "scroll_bottom", "End"),
@@ -88,7 +93,7 @@ class ConversationScreen(Screen[None]):
         log.clear()
         turns = fold_conversation(load_transcripts(self._dir))
         if not turns:
-            log.write("(no transcripts yet — press r to reload)")
+            log.write("(no transcripts yet — press r to refresh)")
             log.focus()
             return
         for tn in turns:
