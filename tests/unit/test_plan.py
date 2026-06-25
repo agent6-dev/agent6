@@ -148,6 +148,61 @@ def test_build_system_prompt_plan_mode_mentions_plan(tmp_path: Path) -> None:
     assert "PLAN mode" in text or "plan mode" in text.lower()
 
 
+def test_system_prompt_file_override_replaces_run_base_keeps_blocks(tmp_path: Path) -> None:
+    custom = tmp_path / "prompt.txt"
+    custom.write_text("<role>CUSTOM WORKER. apply_edit + finish_run.</role>", encoding="utf-8")
+    cfg = Config.model_validate({"workflow": {"system_prompt_file": str(custom)}})
+    repo = RepoSummary(
+        root=tmp_path,
+        branch="main",
+        head_sha="0" * 40,
+        file_count=0,
+        top_level=(),
+        agents_md="",
+        recent_log="",
+    )
+    run = loopmod._build_system_prompt(config=cfg, repo=repo, mode="run")  # pyright: ignore[reportPrivateUsage]
+    plan = loopmod._build_system_prompt(config=cfg, repo=repo, mode="plan")  # pyright: ignore[reportPrivateUsage]
+    # override replaces the run base...
+    assert "CUSTOM WORKER" in run and "<edit-rules>" not in run
+    # ...but the dynamic blocks (budget, repo-priors) still append
+    assert "<budget-awareness>" in run and "<repo-priors>" in run
+    # other modes are unaffected (scoped to run)
+    assert "CUSTOM WORKER" not in plan
+
+
+def test_system_prompt_file_validator_rejects_missing(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="not a readable file"):
+        Config.model_validate({"workflow": {"system_prompt_file": str(tmp_path / "nope.txt")}})
+
+
+def test_warn_if_prompt_override_incomplete(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from agent6.cli.run import (
+        _warn_if_prompt_override_incomplete,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    good = tmp_path / "good.txt"
+    good.write_text("use apply_edit and call finish_run when done", encoding="utf-8")
+    bad = tmp_path / "bad.txt"
+    bad.write_text("just go do stuff", encoding="utf-8")
+    # complete override -> silent
+    _warn_if_prompt_override_incomplete(
+        Config.model_validate({"workflow": {"system_prompt_file": str(good)}})
+    )
+    assert capsys.readouterr().err == ""
+    # missing both contracts -> warns about each
+    _warn_if_prompt_override_incomplete(
+        Config.model_validate({"workflow": {"system_prompt_file": str(bad)}})
+    )
+    err = capsys.readouterr().err
+    assert "finish_run" in err and "apply_edit/apply_patch" in err
+    # no override -> silent
+    _warn_if_prompt_override_incomplete(Config())
+    assert capsys.readouterr().err == ""
+
+
 def test_build_system_prompt_warns_against_git_checkout_revert(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     repo = RepoSummary(
@@ -288,7 +343,7 @@ def test_dispatcher_refuses_mutations_in_ask_mode(tmp_path: Path) -> None:
 def _wf(**kw: Any) -> Workflow:
     defaults: dict[str, Any] = {
         "root": Path("/tmp"),
-        "config": MagicMock(),
+        "config": MagicMock(workflow=MagicMock(system_prompt_file="")),
         "provider": MagicMock(),
         "dispatcher": MagicMock(),
         "logger": _silent,

@@ -5,9 +5,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from agent6.git_ops import recent_log, status, tracked_files
+from agent6.budget import BudgetExceeded
+from agent6.git_ops import co_change_pairs, recent_log, status, tracked_files
 from agent6.types import RepoSummary
+from agent6.workflows._symbol_outline import build_symbol_outline_block
+
+if TYPE_CHECKING:
+    from agent6.tools.dispatch import ToolDispatcher
 
 _REPO_MAP_MAX_LINES = 60
 _REPO_MAP_MAX_FILES_PER_DIR = 6
@@ -48,11 +54,16 @@ def _build_repo_map(root: Path) -> str:
     return "\n".join(rows)
 
 
-def load_repo_summary(root: Path) -> RepoSummary:
+def load_repo_summary(root: Path, *, dispatcher: ToolDispatcher | None = None) -> RepoSummary:
     """Build a `RepoSummary` for the workspace rooted at ``root``.
 
-    Used by both the implement workflow and plan-mode workflow so they see
-    the same view of the repo (top-level layout, AGENTS.md, recent commits).
+    Base view (layout, AGENTS.md, recent commits, repo map) is shared by the
+    implement and plan-mode workflows. When *dispatcher* is given (the run loop,
+    and ``agent6 prompt show``), ALSO enrich with structural priors: hot symbols
+    (cross-file reference hot spots), git co-change pairs, and the tree-sitter
+    symbol outline. Enrichment is best-effort -- a parser or git-history hiccup
+    must not block the run -- but BudgetExceeded / KeyboardInterrupt propagate so
+    the loop's budget guarantee and abort path stay intact.
     """
     st = status(root)
     top = tuple(
@@ -65,6 +76,28 @@ def load_repo_summary(root: Path) -> RepoSummary:
     file_count = sum(1 for p in root.rglob("*") if p.is_file())
     agents_md_path = root / "AGENTS.md"
     agents_md = agents_md_path.read_text(encoding="utf-8") if agents_md_path.is_file() else ""
+    hot: tuple[tuple[str, str, str, int, int], ...] = ()
+    co_change: tuple[tuple[str, str, int], ...] = ()
+    symbol_outline = ""
+    if dispatcher is not None:
+        try:
+            hot = tuple(dispatcher.hot_symbols(max_symbols=20, min_files_referenced=2))
+        except (BudgetExceeded, KeyboardInterrupt):
+            raise
+        except Exception:
+            hot = ()
+        try:
+            co_change = tuple(co_change_pairs(root, n_commits=200))
+        except (BudgetExceeded, KeyboardInterrupt):
+            raise
+        except Exception:
+            co_change = ()
+        try:
+            symbol_outline = build_symbol_outline_block(dispatcher.file_outlines(), root=root)
+        except (BudgetExceeded, KeyboardInterrupt):
+            raise
+        except Exception:
+            symbol_outline = ""
     return RepoSummary(
         root=root,
         branch=st.branch,
@@ -74,4 +107,7 @@ def load_repo_summary(root: Path) -> RepoSummary:
         agents_md=agents_md,
         recent_log=recent_log(root, n=20),
         repo_map=_build_repo_map(root),
+        co_change_pairs=co_change,
+        hot_symbols=hot,
+        symbol_outline=symbol_outline,
     )

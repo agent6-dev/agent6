@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import subprocess
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -29,7 +30,6 @@ from typing import TYPE_CHECKING, Any, Literal
 from agent6.budget import BudgetExceeded, BudgetTracker
 from agent6.config import Config
 from agent6.git_ops import GitError, commit_all, commit_diff
-from agent6.git_ops import co_change_pairs as git_co_change_pairs
 from agent6.git_ops import status as git_status
 from agent6.graph.client import CuratorClientError, GraphClient
 from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft, UpdateStatusIntent
@@ -90,6 +90,9 @@ from agent6.workflows._metric import (
     MetricSample as _MetricSample,
 )
 from agent6.workflows._metric import (
+    best_metric_sample as _best_metric_sample,
+)
+from agent6.workflows._metric import (
     coerce_metric_score as _coerce_metric_score,
 )
 from agent6.workflows._metric import (
@@ -110,6 +113,8 @@ from agent6.workflows._metric import (
 from agent6.workflows._metric import (
     metric_plateau_summary as _metric_plateau_summary,
 )
+from agent6.workflows._panel import Decision as ReviewDecision
+from agent6.workflows._panel import ReviewContext, render_findings
 from agent6.workflows._prompt_revision import (
     PromptRevision as _PromptRevision,
 )
@@ -141,6 +146,8 @@ from agent6.workflows._prompts import (
     PROMPT_REVISION_SYSTEM_PROMPT as _PROMPT_REVISION_SYSTEM_PROMPT,
 )
 from agent6.workflows._prompts import build_system_prompt as _build_system_prompt
+from agent6.workflows._review import ReviewDispatch, run_panel
+from agent6.workflows._review import Seat as ReviewSeat
 from agent6.workflows._run_state import (
     SNAPSHOT_VERSION as _SNAPSHOT_VERSION,
 )
@@ -150,9 +157,6 @@ from agent6.workflows._run_state import (
 )
 from agent6.workflows._run_state import (
     load_resume_snapshot as _load_resume_snapshot,
-)
-from agent6.workflows._symbol_outline import (
-    build_symbol_outline_block as _build_symbol_outline_block,
 )
 
 if TYPE_CHECKING:
@@ -295,6 +299,22 @@ def _extract_initial_task(messages: list[dict[str, Any]]) -> str:
     return body[:end][:2000]
 
 
+# The ONLY tools an explore-tier reviewer may use: read-only navigation, no
+# edits/commits/run_command/dag/finish. Enforced both by what we expose AND by
+# the dispatch wrapper (defense in depth).
+_READONLY_REVIEW_TOOLS = frozenset(
+    {
+        "read_file",
+        "list_dir",
+        "grep",
+        "outline",
+        "find_definition",
+        "find_references",
+        "agent6_docs",
+    }
+)
+
+
 def _tool_definitions(
     dispatcher: ToolDispatcher,
     *,
@@ -372,6 +392,26 @@ def _tool_definitions(
     return out
 
 
+def build_readonly_review_tools(
+    dispatcher: ToolDispatcher,
+) -> tuple[list[ToolDefinition], ReviewDispatch]:
+    """Read-only tool surface for explore-tier review seats: the navigation tools
+    *dispatcher* exposes filtered to ``_READONLY_REVIEW_TOOLS``, plus a dispatch
+    wrapper that REFUSES anything outside the allowlist (so a reviewer can never
+    edit, commit, run a command, or mutate the task graph). Shared by the in-loop
+    panel and the post-hoc ``agent6 review`` path."""
+    tools = [
+        t for t in _tool_definitions(dispatcher, mode="run") if t.name in _READONLY_REVIEW_TOOLS
+    ]
+
+    def dispatch(name: str, tool_input: dict[str, Any]) -> Any:
+        if name not in _READONLY_REVIEW_TOOLS:
+            raise ToolError(f"review reviewer may not call {name!r} (read-only)")
+        return dispatcher.dispatch(name, tool_input)
+
+    return tools, dispatch
+
+
 @dataclass(slots=True)
 class _LoopState:
     """Mutable per-run bookkeeping threaded through the agent loop.
@@ -391,6 +431,13 @@ class _LoopState:
     # Consecutive before_finish critic rejections, so a stubborn worker can't
     # burn the budget bouncing off the critic.
     consecutive_critic_rejections: int = 0
+    # Per-run TOTAL review-panel blocks (persisted across resume). Decays on a
+    # pass; once it hits review_max_total_rejections the gate auto-disarms to
+    # advisory for the rest of the run (oscillation can't burn the budget).
+    review_rejections_total: int = 0
+    # Last verify result the panel grounds against (None = no verify yet).
+    last_verify_ok: bool | None = None
+    last_verify_tail: str = ""
     # Degenerate-loop guard: a back-to-back streak of the same (tool, args)
     # signature. Reset on any change so a normal re-read after edits is fine.
     last_tool_signature: str | None = None
@@ -543,6 +590,20 @@ class Workflow:
     # accepted (with a `[critic]` warning still injected so the
     # transcript records the disagreement). 0 disables the cap.
     max_consecutive_critic_rejections: int = 2
+    # Adversarial review panel. When ``review_seats`` is non-empty the in-loop
+    # critic triggers run the grounded PANEL (run_panel over the run diff +
+    # verify result) instead of the single critic. ``review_decision`` gates only
+    # for veto/quorum; "advisory" just injects findings as a [review] message.
+    # The panel reviews ``git diff base_sha`` (the run's cumulative change). The
+    # per-run rejection counter auto-disarms the gate after
+    # ``review_max_total_rejections`` blocks so it can never stall the run.
+    review_seats: list[ReviewSeat] = field(default_factory=list)
+    review_decision: ReviewDecision = "advisory"
+    review_quorum: int = 2
+    review_max_total_rejections: int = 4
+    review_budget_fraction: float = 0.25
+    review_concurrency: int = 1
+    base_sha: str = ""
     # When set, : Workflow writes a JSON snapshot of (system, messages,
     # tool_calls, next_iteration, root_task_id) before every LLM call. The
     # snapshot is provider-agnostic (it holds the anthropic-shaped message
@@ -728,6 +789,11 @@ class Workflow:
             tool_calls=snapshot.tool_calls,
             start_iteration=snapshot.next_iteration,
             root_task_id=snapshot.root_task_id,
+            review_rejections_total=snapshot.review_rejections_total,
+            verify_ever_passed=snapshot.verify_ever_passed,
+            gateless_ever_committed=snapshot.gateless_ever_committed,
+            metric_best_score=snapshot.metric_best_score,
+            metric_at_ceiling=snapshot.metric_at_ceiling,
         )
 
     def _drive_loop(  # noqa: PLR0911, PLR0912, PLR0915
@@ -740,6 +806,11 @@ class Workflow:
         start_iteration: int,
         root_task_id: str | None,
         original_task: str | None = None,
+        review_rejections_total: int = 0,
+        verify_ever_passed: bool = False,
+        gateless_ever_committed: bool = False,
+        metric_best_score: float | None = None,
+        metric_at_ceiling: bool = False,
     ) -> RunResult:
         """Shared loop body for both fresh ``run()`` and ``resume()``.
 
@@ -755,7 +826,26 @@ class Workflow:
         # the passed-in value -- which is why run() threads it explicitly.
         original_task = original_task or _extract_initial_task(messages)
         state = _LoopState(original_task=original_task, tool_calls=tool_calls)
+        state.review_rejections_total = review_rejections_total  # survives resume
+        # Restore completion-relevant state from the snapshot (all default to the
+        # fresh-run values, so run() is unaffected). Without this the metric and
+        # verify-settled stop logic regress to zero after a resume.
+        state.verify_ever_passed = verify_ever_passed
+        state.gateless_ever_committed = gateless_ever_committed
+        if metric_at_ceiling or metric_best_score is not None:
+            # Seed a single synthetic sample so `_metric_at_ceiling` and the
+            # plateau guard see the prior best (we persist a summary, not the
+            # full history). `label` marks it as resume-reconstructed.
+            state.metric_history.append(
+                _MetricSample(
+                    label="resumed",
+                    score=metric_best_score,
+                    returncode=0,
+                    at_ceiling=metric_at_ceiling,
+                )
+            )
         for iteration in range(start_iteration, self.max_iterations + 1):
+            self._emit_budget(iteration)
             self._maybe_compact(messages)
             self._maybe_pre_call_nudges(
                 messages, state, iteration=iteration, start_iteration=start_iteration
@@ -769,6 +859,7 @@ class Workflow:
                 tool_calls=state.tool_calls,
                 next_iteration=iteration,
                 root_task_id=root_task_id,
+                state=state,
             )
 
             try:
@@ -870,6 +961,13 @@ class Workflow:
                             verify_just_passed = True
                         elif rc is not None:
                             verify_just_failed = True
+                        if rc is not None:
+                            # Remember the latest verify result so the review
+                            # panel can ground findings against it (verify-pass
+                            # presumes correctness; verify-red is the hard signal).
+                            state.last_verify_ok = rc == 0
+                            tail = f"{result.get('stdout', '')}\n{result.get('stderr', '')}"
+                            state.last_verify_tail = tail.strip()[-2000:]
                     elif name == "run_metric_command":
                         if verify_just_passed:
                             metric_called_after_verify_pass = True
@@ -1033,9 +1131,7 @@ class Workflow:
                     directive = self.after_auto_commit(iteration, sha)
                     if directive == "stop":
                         self._log(f"LOOP: interactive stop at iter {iteration}")
-                        self._emit_run_end_passed(
-                            reason="interactive_stop", iterations=iteration
-                        )
+                        self._emit_run_end_passed(reason="interactive_stop", iterations=iteration)
                         return RunResult(
                             completed=True,
                             reason="interactive_stop",
@@ -1060,13 +1156,9 @@ class Workflow:
             #   before_finish  - handled below, after finish_signal is
             #                    inspected, because it can revoke finish.
             critic_text: str | None = None
-            if (
-                self.critic_mode == "on_verify_fail"
-                and verify_just_failed
-                and self.critic_provider is not None
-            ):
-                critique = self._run_critic(
-                    task=state.original_task,
+            if self.critic_mode == "on_verify_fail" and verify_just_failed and self._has_reviewer():
+                critique = self._review_or_critic(
+                    state=state,
                     messages=messages,
                     trigger="verify_failed",
                     iteration=iteration,
@@ -1075,11 +1167,11 @@ class Workflow:
                     critic_text = critique.text
             elif (
                 self.critic_mode == "periodic"
-                and self.critic_provider is not None
+                and self._has_reviewer()
                 and iteration % max(1, self.critic_period) == 0
             ):
-                critique = self._run_critic(
-                    task=state.original_task,
+                critique = self._review_or_critic(
+                    state=state,
                     messages=messages,
                     trigger="periodic",
                     iteration=iteration,
@@ -1099,10 +1191,10 @@ class Workflow:
                 finish_signal is not None
                 and finish_kind == "finish_run"
                 and self.critic_mode == "before_finish"
-                and self.critic_provider is not None
+                and self._has_reviewer()
             ):
-                critique = self._run_critic(
-                    task=state.original_task,
+                critique = self._review_or_critic(
+                    state=state,
                     messages=messages,
                     trigger="before_finish",
                     iteration=iteration,
@@ -1327,10 +1419,28 @@ class Workflow:
 
             messages.append({"role": "user", "content": tool_results})
 
+            # Snapshot AFTER the executed tools (assistant turn + tool_results
+            # are now in `messages`) so a crash before iteration N+1's pre-call
+            # snapshot resumes from AFTER the dispatched tools instead of
+            # replaying them. Without this, a kill after a non-idempotent tool
+            # (run_command `>>`, apply_patch, a migration) but before the next
+            # iteration would re-issue iteration N's identical provider call and
+            # re-dispatch the same tool_uses (temperature 0.0 makes re-emission
+            # likely) -- double-applying edits / re-running commands.
+            self._save_resume_snapshot(
+                system=system,
+                messages=messages,
+                tool_calls=state.tool_calls,
+                next_iteration=iteration + 1,
+                root_task_id=root_task_id,
+                state=state,
+            )
+
             if verify_settled_stop:
                 self._log(
                     f"LOOP: verify_settled at iter {iteration} (idle {state.verify_settled_idle})"
                 )
+                self._final_checkpoint(iteration)
                 self._emit_run_end_passed(reason="verify_settled", iterations=iteration)
                 return RunResult(
                     completed=True,
@@ -1343,6 +1453,7 @@ class Workflow:
             if plateau_should_stop:
                 assert metric_plateau_finish is not None
                 self._log(f"LOOP: metric_plateau at iter {iteration}")
+                self._final_checkpoint(iteration)
                 self._emit_run_end_passed(reason="metric_plateau", iterations=iteration)
                 return RunResult(
                     completed=True,
@@ -1393,6 +1504,7 @@ class Workflow:
 
             if finish_signal is not None:
                 self._log(f"LOOP: {finish_kind} called at iter {iteration}")
+                self._final_checkpoint(iteration)
                 self._emit_run_end_passed(reason=finish_kind, iterations=iteration)
                 return RunResult(
                     completed=True,
@@ -1427,6 +1539,7 @@ class Workflow:
                 )
 
         self._log(f"LOOP: max_iterations={self.max_iterations} reached")
+        self._final_checkpoint(self.max_iterations)
         self._emit(
             "run.end",
             reason="max_iterations",
@@ -1489,9 +1602,7 @@ class Workflow:
                     if self.config.workflow.verify_command
                     else _RUN_BUDGET_NUDGE_GATELESS
                 )
-                messages.append(
-                    {"role": "user", "content": [{"type": "text", "text": nudge}]}
-                )
+                messages.append({"role": "user", "content": [{"type": "text", "text": nudge}]})
                 self._log(f"LOOP: run budget-nudge at iter {iteration}")
                 self._emit("loop.run_budget.nudge", iteration=iteration, budget_remaining=remaining)
 
@@ -1519,9 +1630,9 @@ class Workflow:
             # entirely. Rejection cap is shared with the
             # tool_use path so a stubborn worker can't bounce
             # the loop forever.
-            if self.critic_mode == "before_finish" and self.critic_provider is not None:
-                critique = self._run_critic(
-                    task=state.original_task,
+            if self.critic_mode == "before_finish" and self._has_reviewer():
+                critique = self._review_or_critic(
+                    state=state,
                     messages=messages,
                     trigger="before_finish",
                     iteration=iteration,
@@ -1610,6 +1721,7 @@ class Workflow:
             self._log(
                 f"LOOP: silent_finish at iter {iteration} - agent emitted text but no tool_use"
             )
+            self._final_checkpoint(iteration)
             self._emit_run_end_passed(reason="silent_finish", iterations=iteration)
             return RunResult(
                 completed=True,
@@ -1770,6 +1882,32 @@ class Workflow:
         except (GitError, OSError):
             return False
 
+    def _final_checkpoint(self, iteration: int) -> None:
+        """Best-effort commit of any dirty worktree on a successful exit so
+        run_command-authored edits on a gated run aren't lost from git history.
+
+        On a gated run (verify_command set) the in-loop auto-commit only fires
+        on a green verify; an edit made via run_command after a prior green
+        verify, never re-verified, is left only in the working tree and is
+        silently lost when the run ends (score.sh, resume, and the diff viewer
+        all read git history). Capturing it here closes that gap."""
+        if self.mode != "run" or not self._worktree_dirty():
+            return
+        try:
+            sha = commit_all(self.root, f"checkpoint (iter {iteration})")
+            if sha:
+                self._log(f"  final checkpoint: {sha[:12]}")
+                self._emit("loop.auto_commit", iteration=iteration, sha=sha)
+        except (GitError, OSError) as exc:
+            msg = str(exc).lower()
+            benign = (
+                "nothing to commit" in msg
+                or "no changes added" in msg
+                or "working tree clean" in msg
+            )
+            if not benign:
+                self._log(f"  final checkpoint commit failed: {exc}")
+
     def _pass_pending_root_tasks(self) -> None:
         """On successful completion, mark still-pending root task(s) as passed.
 
@@ -1794,9 +1932,7 @@ class Workflow:
         for nid, node in nodes.items():
             if node.get("parent_id") is None and node.get("status") in ("pending", "in_progress"):
                 try:
-                    self.graph_client.update_status(
-                        UpdateStatusIntent(id=nid, new_status="passed")
-                    )
+                    self.graph_client.update_status(UpdateStatusIntent(id=nid, new_status="passed"))
                     changed = True
                 except Exception as exc:  # IPC/validation glitch must not break finish
                     self._log(f"LOOP: auto-pass root {nid} failed: {exc}")
@@ -1855,41 +1991,10 @@ class Workflow:
         audit: re-raise BudgetExceeded and KeyboardInterrupt so the loop's
         budget guarantee and operator-abort path stay intact.
         """
-        base = load_repo_summary(self.root)
-        try:
-            hot = tuple(self.dispatcher.hot_symbols(max_symbols=20, min_files_referenced=2))
-        except (BudgetExceeded, KeyboardInterrupt):
-            raise
-        except Exception:
-            hot = ()
-        try:
-            co_change = tuple(git_co_change_pairs(self.root, n_commits=200))
-        except (BudgetExceeded, KeyboardInterrupt):
-            raise
-        except Exception:
-            co_change = ()
-        try:
-            symbol_outline = _build_symbol_outline_block(
-                self.dispatcher.file_outlines(),
-                root=self.root,
-            )
-        except (BudgetExceeded, KeyboardInterrupt):
-            raise
-        except Exception:
-            symbol_outline = ""
-        return RepoSummary(
-            root=base.root,
-            branch=base.branch,
-            head_sha=base.head_sha,
-            file_count=base.file_count,
-            top_level=base.top_level,
-            agents_md=base.agents_md,
-            recent_log=base.recent_log,
-            co_change_pairs=co_change,
-            hot_symbols=hot,
-            repo_map=base.repo_map,
-            symbol_outline=symbol_outline,
-        )
+        # workflow.structural_priors=false -> base summary only (no hot symbols /
+        # co-change / symbol outline), a leaner prompt that leans on on-demand tools.
+        disp = self.dispatcher if self.config.workflow.structural_priors else None
+        return load_repo_summary(self.root, dispatcher=disp)
 
     def _save_resume_snapshot(
         self,
@@ -1899,15 +2004,21 @@ class Workflow:
         tool_calls: int,
         next_iteration: int,
         root_task_id: str | None,
+        state: _LoopState,
     ) -> None:
         """Write loop state to disk for resume.
 
-        Called before each LLM call. Atomic via tmp-file + replace so a
-        crash mid-write leaves the prior snapshot intact. No-op if
+        Called before each LLM call and again at the end of each iteration
+        (after the executed tool_results are appended) so a crash after a
+        non-idempotent tool dispatch resumes from AFTER the executed tools
+        rather than replaying them. Atomic via tmp-file + replace so a crash
+        mid-write leaves the prior snapshot intact. No-op if
         ``resume_state_path`` is None (e.g. unit tests).
         """
         if self.resume_state_path is None:
             return
+        goal = _metric_goal(self.config.workflow.metric)
+        best = _best_metric_sample(state.metric_history, goal=goal) if goal is not None else None
         payload = {
             "version": _SNAPSHOT_VERSION,
             "system": system,
@@ -1915,10 +2026,19 @@ class Workflow:
             "tool_calls": tool_calls,
             "next_iteration": next_iteration,
             "root_task_id": root_task_id,
+            "review_rejections_total": state.review_rejections_total,
             # So resume reuses the exact verify resolution (gated argv or [] for
             # gateless) instead of re-inferring and possibly diverging from the
             # frozen `system` prompt's verify/no-verify block.
             "verify_command": list(self.config.workflow.verify_command),
+            # Completion-relevant scalars: without these the metric / verify-
+            # settled stop logic restarts from zero on resume (re-rejecting a
+            # correct finish_run, re-counting idle from scratch). Compact metric
+            # summary only -- enough to seed `_metric_at_ceiling` + the plateau.
+            "verify_ever_passed": state.verify_ever_passed,
+            "gateless_ever_committed": state.gateless_ever_committed,
+            "metric_best_score": best.score if best is not None else None,
+            "metric_at_ceiling": self._metric_at_ceiling(state.metric_history),
         }
         self.resume_state_path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.resume_state_path.with_suffix(self.resume_state_path.suffix + ".tmp")
@@ -2259,6 +2379,149 @@ class Workflow:
         assert last_exc is not None
         raise last_exc
 
+    def _has_reviewer(self) -> bool:
+        """A second opinion is available: the review panel (seats) or the legacy
+        single critic. Gates the in-loop critic triggers."""
+        return bool(self.review_seats) or self.critic_provider is not None
+
+    def _review_or_critic(
+        self,
+        *,
+        state: _LoopState,
+        messages: list[dict[str, Any]],
+        trigger: str,
+        iteration: int,
+    ) -> _CritiqueResult | None:
+        """Dispatch the in-loop second-opinion: the grounded review PANEL when
+        ``review_seats`` is configured, else the legacy single critic. Both
+        return a ``_CritiqueResult`` the trigger logic consumes identically."""
+        if self.review_seats:
+            return self._run_review_panel(state, trigger=trigger, iteration=iteration)
+        return self._run_critic(
+            task=state.original_task, messages=messages, trigger=trigger, iteration=iteration
+        )
+
+    def _run_diff(self) -> str:
+        """The run's cumulative change (``git diff base_sha``: base commit vs the
+        working tree, so it includes committed AND uncommitted edits). Empty if
+        no base is known or git fails."""
+        if not self.base_sha:
+            return ""
+        proc = subprocess.run(
+            ["git", "diff", self.base_sha],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return proc.stdout if proc.returncode == 0 else ""
+
+    def _read_agents_md(self) -> str:
+        path = self.root / "AGENTS.md"
+        try:
+            return path.read_text(encoding="utf-8") if path.is_file() else ""
+        except OSError:
+            return ""
+
+    def _readonly_review_tools(self) -> tuple[list[ToolDefinition], ReviewDispatch]:
+        return build_readonly_review_tools(self.dispatcher)
+
+    def _run_review_panel(
+        self, state: _LoopState, *, trigger: str, iteration: int
+    ) -> _CritiqueResult | None:
+        """Run the grounded review panel over the run diff. Returns a
+        ``_CritiqueResult`` (``satisfied=False`` only when the panel BLOCKS and
+        the gate is still armed). Per-seat + panel events are emitted in seat
+        order; the per-run rejection counter decays on a pass and disarms the gate
+        once it hits the cap so a gating panel can never stall the run."""
+        diff = self._run_diff()
+        if not diff.strip():
+            # No diff to ground against (nothing changed, or base_sha missing on a
+            # pre-field resume). Can't review -> approve, but make the skip visible
+            # so a "gate didn't run" is never silent.
+            self._emit(
+                "loop.review.skipped", iteration=iteration, trigger=trigger, reason="no_diff"
+            )
+            return None
+        # Skip the panel once the run's remaining token budget falls below
+        # review_budget_fraction: reviewing is most expensive (esp. explore-tier
+        # seats) exactly when budget is scarcest, and a skipped panel is
+        # approve-and-proceed (the before_finish gate only blocks on an explicit
+        # unsatisfied critique, so returning None here lets finish through). This
+        # is the sole read site for review_budget_fraction.
+        remaining = self._budget_fraction_remaining()
+        if remaining is not None and remaining < self.review_budget_fraction:
+            self._emit(
+                "loop.review.skipped",
+                iteration=iteration,
+                trigger=trigger,
+                reason="budget_fraction",
+                remaining=round(remaining, 3),
+            )
+            return None
+        # on_verify_fail/periodic never gate (advisory text only); only
+        # before_finish consumes .satisfied + the rejection counter.
+        decision: ReviewDecision = (
+            self.review_decision if trigger == "before_finish" else "advisory"
+        )
+        ctx = ReviewContext(
+            task=state.original_task,
+            agents_md=self._read_agents_md(),
+            diff=diff,
+            verify_ok=state.last_verify_ok,
+            verify_output=state.last_verify_tail,
+        )
+        self._emit(
+            "loop.review.start", iteration=iteration, trigger=trigger, seats=len(self.review_seats)
+        )
+        tools: list[ToolDefinition] | None = None
+        dispatch: ReviewDispatch | None = None
+        if any(s.tier == "explore" for s in self.review_seats):
+            tools, dispatch = self._readonly_review_tools()
+        try:
+            result = run_panel(
+                self.review_seats,
+                ctx,
+                decision=decision,
+                quorum=self.review_quorum,
+                panel_id=f"{trigger}-{iteration}",
+                concurrency=self.review_concurrency,
+                tools=tools,
+                dispatch=dispatch,
+            )
+        except BudgetExceeded:
+            self._emit("loop.review.skipped", iteration=iteration, reason="budget")
+            return None
+        for v in result.per_seat:
+            self._emit(
+                "loop.review.seat",
+                iteration=iteration,
+                seat=v.seat,
+                model=v.model,
+                verdict="abstain" if v.error else v.verdict,
+                findings=len(v.findings),
+            )
+        disarmed = state.review_rejections_total >= self.review_max_total_rejections
+        effective_blocked = result.blocked and not disarmed
+        self._emit(
+            "loop.review.panel",
+            iteration=iteration,
+            trigger=trigger,
+            decision=decision,
+            blocked=effective_blocked,
+            raw_blocked=result.blocked,
+            disarmed=disarmed,
+            n_block=result.n_block,
+            n_abstain=result.n_abstain,
+        )
+        if trigger == "before_finish":
+            if effective_blocked:
+                state.review_rejections_total += 1
+            else:
+                state.review_rejections_total = max(0, state.review_rejections_total - 1)
+        text = render_findings(result.merged_findings) or "No blocking findings."
+        return _CritiqueResult(text=text, satisfied=not effective_blocked)
+
     def _run_critic(
         self,
         *,
@@ -2362,3 +2625,21 @@ class Workflow:
     def _emit(self, event_type: str, **fields: Any) -> None:
         if self.events is not None:
             self.events.emit(event_type, **fields)
+
+    def _emit_budget(self, iteration: int) -> None:
+        """Per-iteration usage heartbeat: running token + cost totals. Lets
+        `agent6 status` / the TUI show live spend, and leaves a recent event at
+        the start of each iteration so a long provider call is still
+        distinguishable from a stall."""
+        if self.budget is None:
+            return
+        snap = self.budget.snapshot()
+        cost, _ = self.budget.estimate_usd()
+        self._emit(
+            "loop.budget",
+            iteration=iteration,
+            input_tokens=snap.get("input_total"),
+            output_tokens=snap.get("output_total"),
+            cache_read_tokens=snap.get("cache_read_total"),
+            cost_usd=round(cost, 6),
+        )

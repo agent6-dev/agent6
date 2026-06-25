@@ -20,7 +20,7 @@ def _silent(_msg: str) -> None:
 def _wf(**kw: Any) -> Workflow:
     defaults: dict[str, Any] = {
         "root": Path("/tmp"),
-        "config": MagicMock(),
+        "config": MagicMock(workflow=MagicMock(system_prompt_file="")),
         "provider": MagicMock(),
         "dispatcher": MagicMock(),
         "logger": _silent,

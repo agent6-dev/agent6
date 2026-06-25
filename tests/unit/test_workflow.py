@@ -36,7 +36,7 @@ def _wf(**kw: Any) -> Workflow:
     """
     defaults: dict[str, Any] = {
         "root": Path("/tmp"),
-        "config": MagicMock(),
+        "config": MagicMock(workflow=MagicMock(system_prompt_file="")),
         "provider": MagicMock(),
         "dispatcher": MagicMock(),
         "logger": _silent,
@@ -44,6 +44,15 @@ def _wf(**kw: Any) -> Workflow:
     }
     defaults.update(kw)
     return Workflow(**defaults)
+
+
+def _state(**kw: Any) -> Any:
+    """Minimal _LoopState for _save_resume_snapshot call sites."""
+    from agent6.workflows.loop import _LoopState  # pyright: ignore[reportPrivateUsage]
+
+    defaults: dict[str, Any] = {"original_task": "t", "tool_calls": 0}
+    defaults.update(kw)
+    return _LoopState(**defaults)
 
 
 def _resp(text: str = "ok") -> ProviderResponse:
@@ -1456,7 +1465,7 @@ def test_save_resume_snapshot_noop_when_path_unset(tmp_path: Path) -> None:
     """resume_state_path=None -> no file written, no exception."""
     wf = _wf()
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
-        system="s", messages=[], tool_calls=0, next_iteration=1, root_task_id=None
+        system="s", messages=[], tool_calls=0, next_iteration=1, root_task_id=None, state=_state()
     )
     # tmp_path should still be empty.
     assert list(tmp_path.iterdir()) == []
@@ -1478,6 +1487,7 @@ def test_save_and_load_resume_snapshot_round_trip(tmp_path: Path) -> None:
         tool_calls=3,
         next_iteration=7,
         root_task_id="task-abc",
+        state=_state(tool_calls=3),
     )
     assert snap_path.is_file()
     loaded = _load_resume_snapshot(snap_path)
@@ -1493,7 +1503,7 @@ def test_save_resume_snapshot_atomic_no_partial_tmp(tmp_path: Path) -> None:
     snap_path = tmp_path / "loop_state.json"
     wf = _wf(resume_state_path=snap_path)
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
-        system="s", messages=[], tool_calls=0, next_iteration=1, root_task_id=None
+        system="s", messages=[], tool_calls=0, next_iteration=1, root_task_id=None, state=_state()
     )
     assert snap_path.is_file()
     leftovers = [p.name for p in tmp_path.iterdir() if p.name != snap_path.name]
@@ -1919,13 +1929,13 @@ def test_resume_snapshot_carries_verify_command(tmp_path: Path) -> None:
     )
     wf = _wf(resume_state_path=snap, config=config)
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
-        system="s", messages=[], tool_calls=0, next_iteration=1, root_task_id=None
+        system="s", messages=[], tool_calls=0, next_iteration=1, root_task_id=None, state=_state()
     )
     assert load_resume_snapshot(snap).verify_command == ("pytest", "-q")
 
     config.workflow.verify_command = ()  # gateless run -> stored as [] -> loads as ()
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
-        system="s", messages=[], tool_calls=0, next_iteration=1, root_task_id=None
+        system="s", messages=[], tool_calls=0, next_iteration=1, root_task_id=None, state=_state()
     )
     assert load_resume_snapshot(snap).verify_command == ()
 

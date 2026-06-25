@@ -60,6 +60,18 @@ class _ResumeSnapshot:
     # frozen system prompt's verify/no-verify block). `()` = the run was gateless;
     # `None` = a pre-field snapshot (resume falls back to re-inference).
     verify_command: tuple[str, ...] | None = None
+    # Per-run review-panel block counter, so the anti-stall gate-disarm survives
+    # resume instead of resetting to 0 (additive; absent in older snapshots = 0).
+    review_rejections_total: int = 0
+    # Completion-relevant scalars, so the metric / verify-settled stop logic
+    # doesn't regress across a resume (all additive; absent in older snapshots
+    # = the safe defaults below). We persist a compact metric *summary* (best
+    # score + at-ceiling flag) rather than the full list[MetricSample]: that is
+    # all `_metric_at_ceiling` and the plateau seed need.
+    verify_ever_passed: bool = False
+    gateless_ever_committed: bool = False
+    metric_best_score: float | None = None
+    metric_at_ceiling: bool = False
 
 
 SNAPSHOT_VERSION = 1
@@ -72,6 +84,7 @@ def load_resume_snapshot(path: Path) -> _ResumeSnapshot:
     if version != SNAPSHOT_VERSION:
         raise ValueError(f"snapshot version mismatch at {path}: {version!r} != {SNAPSHOT_VERSION}")
     vc = raw.get("verify_command")  # additive field; absent in older snapshots
+    best = raw.get("metric_best_score")  # additive; absent in older snapshots
     return _ResumeSnapshot(
         system=raw["system"],
         messages=raw["messages"],
@@ -79,4 +92,9 @@ def load_resume_snapshot(path: Path) -> _ResumeSnapshot:
         next_iteration=int(raw["next_iteration"]),
         root_task_id=raw.get("root_task_id"),
         verify_command=tuple(vc) if isinstance(vc, list) else None,
+        review_rejections_total=int(raw.get("review_rejections_total", 0)),
+        verify_ever_passed=bool(raw.get("verify_ever_passed", False)),
+        gateless_ever_committed=bool(raw.get("gateless_ever_committed", False)),
+        metric_best_score=float(best) if isinstance(best, int | float) else None,
+        metric_at_ceiling=bool(raw.get("metric_at_ceiling", False)),
     )

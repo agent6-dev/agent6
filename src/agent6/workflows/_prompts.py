@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from typing import Literal
 
 from agent6.config import Config
@@ -457,6 +458,14 @@ def build_system_prompt(
         if mode == "plan"
         else SYSTEM_PROMPT_BASE
     )
+    # ADVANCED override: replace run-mode's static base with an operator-supplied
+    # file. The dynamic blocks below (verify/metric/budget/repo-priors) still
+    # append, so repo context + budget awareness are preserved. The file is
+    # validated to exist at config-load time; run startup warns if it omits the
+    # core tool names. Scoped to run mode -- the worker is what operators tune.
+    override = config.workflow.system_prompt_file
+    if mode == "run" and override:
+        base = Path(override).expanduser().read_text(encoding="utf-8")
     parts = [base]
 
     # When the bench harness sets
