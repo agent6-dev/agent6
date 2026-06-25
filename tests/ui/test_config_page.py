@@ -779,6 +779,111 @@ def test_add_provider_via_form_persists(repo: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_add_provider_prefills_known_preset_base_url(repo: Path) -> None:
+    """Regression: typing a known provider name (openrouter) in the Add-provider
+    form prefills its api_format + base_url from PROVIDER_PRESETS, so submitting
+    WITHOUT hand-typing a URL lands on openrouter.ai -- not the api.openai.com
+    fallback in config._default_base_url. The form used to ignore the presets
+    that `agent6 connect` applies, silently pointing openrouter at OpenAI."""
+
+    async def scenario() -> None:
+        from agent6.ui.config_page import ChoiceField, ProviderModal
+
+        app = _Host(repo)
+        async with app.run_test(size=(110, 44)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, ConfigScreen)
+            screen.action_add_provider()
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, ProviderModal)
+            # Type only the name; leave api_format + base_url untouched.
+            modal.query_one("#prov-name", Input).value = "openrouter"
+            await pilot.pause()
+            # Live prefill flipped the format dropdown and filled the URL field.
+            assert modal.query_one("#prov-format", ChoiceField).value == "openai"
+            assert (
+                modal.query_one("#prov-baseurl", Input).value == "https://openrouter.ai/api/v1"
+            )
+            modal.action_add()
+            await pilot.pause()
+            assert isinstance(app.screen, ConfigScreen)  # written + validated, modal closed
+            cfg = load_effective(repo).config
+            assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
+
+    asyncio.run(scenario())
+
+
+def test_add_provider_prefill_keeps_user_typed_base_url(repo: Path) -> None:
+    """The name-based prefill never overwrites a base_url the user typed: set a
+    custom URL first, then type a known name -- the custom URL stays."""
+
+    async def scenario() -> None:
+        from agent6.ui.config_page import ProviderModal
+
+        app = _Host(repo)
+        async with app.run_test(size=(110, 44)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, ConfigScreen)
+            screen.action_add_provider()
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, ProviderModal)
+            modal.query_one("#prov-baseurl", Input).value = "https://my.proxy/v1"
+            await pilot.pause()
+            modal.query_one("#prov-name", Input).value = "openrouter"
+            await pilot.pause()
+            # Their URL is preserved (only our own autofill, or a blank, is replaced).
+            assert modal.query_one("#prov-baseurl", Input).value == "https://my.proxy/v1"
+
+    asyncio.run(scenario())
+
+
+def test_edit_base_url_prefills_preset_for_known_provider(repo: Path) -> None:
+    """UX parity with the Add form + `agent6 connect`: when a known provider's
+    base_url is still the generic default (api.openai.com, filled for any unset
+    openai-format provider), opening its base_url editor offers the name's preset
+    URL prefilled -- so re-setting an unset openrouter is one Save, no need to
+    know the host."""
+
+    async def scenario() -> None:
+        from agent6.config_layer import set_config_table
+        from agent6.ui.config_page import EditModal
+
+        # An openrouter provider with NO base_url -> effective default api.openai.com.
+        assert set_config_table(repo, "providers.openrouter", {"api_format": "openai"}) is None
+
+        app = _Host(repo)
+        async with app.run_test(size=(110, 44)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, ConfigScreen)
+            tbl = screen.query_one("#tbl-providers", DataTable)
+            tbl.focus()
+            ridx = next(
+                r
+                for r in range(tbl.row_count)
+                if "openrouter" in str(tbl.get_row_at(r)[0])
+                and "base_url" in str(tbl.get_row_at(r)[0])
+            )
+            tbl.move_cursor(row=ridx)
+            await pilot.pause()
+            screen.action_edit()
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, EditModal)
+            # Prefilled with the preset host, not the generic api.openai.com default.
+            assert modal.query_one("#edit-value", Input).value == "https://openrouter.ai/api/v1"
+            modal.action_save()
+            await pilot.pause()
+            cfg = load_effective(repo).config
+            assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
+
+    asyncio.run(scenario())
+
+
 def test_up_off_first_setting_reveals_top_header_then_filter(repo: Path) -> None:
     """Regression: in a short window, Up off the first setting must focus AND reveal
     the first section's header (the smooth-scroll left the very top row a line

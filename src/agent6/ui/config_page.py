@@ -41,6 +41,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
     raise SystemExit("The config page needs textual: pip install 'agent6[tui]'") from e
 
 from agent6.config_layer import (
+    PROVIDER_PRESETS,
     ConfigSetting,
     ConfigView,
     build_config_view,
@@ -175,6 +176,17 @@ class _NavTable(DataTable[str]):
             screen.nav_from_table(section, direction)
 
 
+def _provider_preset_base_url(key: str) -> str:
+    """The preset base_url for a ``providers.<name>.base_url`` setting whose
+    ``<name>`` is a known provider (else ""). Lets the single-setting editor
+    offer e.g. openrouter.ai instead of the generic api.openai.com that
+    ``config._default_base_url`` fills in for any unset openai-format provider."""
+    parts = key.split(".")
+    if len(parts) == 3 and parts[0] == "providers" and parts[2] == "base_url":
+        return PROVIDER_PRESETS.get(parts[1], {}).get("base_url", "")
+    return ""
+
+
 class EditModal(ModalScreen[tuple[str, str, bool] | None]):
     """Edit one setting with a natural terminal chooser: a [x]/[ ] list (↑↓ select
     as they move) for enum choices and bools -- with an inline "custom" row for
@@ -266,8 +278,14 @@ class EditModal(ModalScreen[tuple[str, str, bool] | None]):
                     classes="edit-gap",
                 )
             else:
+                initial = "" if s.value is None else current
+                # A known provider whose base_url is still the generic default
+                # (api.openai.com, filled by _default_base_url): offer its preset
+                # host so an unset openrouter/ollama is one Save from correct.
+                if not s.modified and (preset_url := _provider_preset_base_url(s.key)):
+                    initial = preset_url
                 yield Input(
-                    value="" if s.value is None else current,
+                    value=initial,
                     placeholder=str(_fmt(s.default)),
                     id="edit-value",
                     classes="edit-input edit-gap",
@@ -363,6 +381,7 @@ class ProviderModal(ModalScreen[None]):
     def __init__(self, repo_root: Path) -> None:
         super().__init__()
         self._repo = repo_root
+        self._autofilled_baseurl = ""  # the base_url we last prefilled (never clobber a typed one)
 
     def on_mount(self) -> None:
         self.query_one("#prov-name", Input).focus()
@@ -440,6 +459,22 @@ class ProviderModal(ModalScreen[None]):
     @on(Input.Submitted)
     def _input_submitted(self, event: Input.Submitted) -> None:
         focus_neighbor(event.input, 1)  # Enter in a text field advances (like Tab/↓)
+
+    @on(Input.Changed, "#prov-name")
+    def _prefill_from_preset(self, event: Input.Changed) -> None:
+        """Typing a known provider name prefills its api_format + base_url (parity
+        with `agent6 connect`) so e.g. 'openrouter' lands on openrouter.ai rather
+        than the api.openai.com fallback in config._default_base_url. Visible and
+        editable; only overwrites a base_url we ourselves autofilled (or a blank
+        one), never a URL the user typed."""
+        preset = PROVIDER_PRESETS.get(event.value.strip())
+        if preset is None:
+            return
+        self.query_one("#prov-format", ChoiceField).select_value(preset["api_format"])
+        baseurl = self.query_one("#prov-baseurl", Input)
+        if baseurl.value in ("", self._autofilled_baseurl):
+            self._autofilled_baseurl = preset.get("base_url", "")
+            baseurl.value = self._autofilled_baseurl
 
     def action_add(self) -> None:
         name = self.query_one("#prov-name", Input).value.strip()

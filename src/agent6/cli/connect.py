@@ -12,6 +12,7 @@ from pathlib import Path
 from agent6.config import _validate_base_url
 from agent6.config_io import upsert_toml_table
 from agent6.config_layer import (
+    PROVIDER_PRESETS,
     repo_config_path_for,
 )
 from agent6.paths import (
@@ -19,19 +20,6 @@ from agent6.paths import (
     global_config_path,
 )
 from agent6.secrets import SecretsError, save_secret
-
-# Known provider presets for `agent6 connect`. api_format + default base_url;
-# the table key (provider name) is what [models.<role>].provider references and
-# what the key is stored under in secrets.toml. connect handles the common
-# `direct` deployment with a stored key; auth.style and deployment default from
-# api_format (see config), and advanced deployments (vertex/azure/token_command)
-# are documented in CONFIG.md for hand-editing.
-_CONNECT_PRESETS: dict[str, dict[str, str]] = {
-    "anthropic": {"api_format": "anthropic"},
-    "openai": {"api_format": "openai", "base_url": "https://api.openai.com/v1"},
-    "openrouter": {"api_format": "openai", "base_url": "https://openrouter.ai/api/v1"},
-    "ollama": {"api_format": "openai", "base_url": "http://localhost:11434/v1"},
-}
 
 
 def _prompt_api_key(name: str) -> str:
@@ -87,7 +75,7 @@ def _resolve_provider_name(provider: str) -> str | None:
     """
     name = provider.strip()
     if not name:
-        print("Known presets: " + ", ".join(sorted(_CONNECT_PRESETS)) + " (or any custom name).")
+        print("Known presets: " + ", ".join(sorted(PROVIDER_PRESETS)) + " (or any custom name).")
         try:
             name = input("Provider name [anthropic]: ").strip() or "anthropic"
         except EOFError:
@@ -115,7 +103,7 @@ def _cmd_connect(*, provider: str, to_repo: bool) -> int:
     name = _resolve_provider_name(provider)
     if name is None:
         return 2
-    preset = _CONNECT_PRESETS.get(name)
+    preset = PROVIDER_PRESETS.get(name)
     api_format = preset["api_format"] if preset else ""
     if not api_format:
         try:

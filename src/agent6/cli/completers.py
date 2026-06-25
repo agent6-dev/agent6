@@ -8,12 +8,12 @@ import argparse
 from pathlib import Path
 
 from agent6.cli._common import _machines_dir, _runs_dir
-from agent6.cli.connect import _CONNECT_PRESETS
 from agent6.cli.model import _connected_providers, _models_for
 from agent6.config import (
     ConfigError,
 )
 from agent6.config_layer import (
+    PROVIDER_PRESETS,
     leaf_keys,
     load_effective,
 )
@@ -21,7 +21,7 @@ from agent6.config_layer import (
 
 def _complete_providers(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: connected provider names + known presets."""
-    names = set(_connected_providers(None)) | set(_CONNECT_PRESETS)
+    names = set(_connected_providers(None)) | set(PROVIDER_PRESETS)
     return sorted(n for n in names if n.startswith(prefix))
 
 

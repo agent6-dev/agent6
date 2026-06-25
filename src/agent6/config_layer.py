@@ -710,6 +710,22 @@ def provider_choices() -> dict[str, list[str]]:
     return {"api_format": formats, "deployment": list(get_args(Deployment))}
 
 
+# Known provider presets, keyed by the conventional provider NAME used as the
+# [providers.<name>] table key. Maps a name to its api_format and, for
+# OpenAI-compatible hosts, the default base_url. Both `agent6 connect` and the
+# TUI add-provider form consult this so well-known names (openrouter, ollama)
+# land on the right host instead of the bare (api_format, deployment) fallback
+# in `config._default_base_url` -- which only knows api.openai.com for the
+# `openai` format and would otherwise point an "openrouter" provider at OpenAI.
+# Advanced deployments (vertex/azure/token_command) are hand-edited per CONFIG.md.
+PROVIDER_PRESETS: dict[str, dict[str, str]] = {
+    "anthropic": {"api_format": "anthropic"},
+    "openai": {"api_format": "openai", "base_url": "https://api.openai.com/v1"},
+    "openrouter": {"api_format": "openai", "base_url": "https://openrouter.ai/api/v1"},
+    "ollama": {"api_format": "openai", "base_url": "http://localhost:11434/v1"},
+}
+
+
 def unset_config_value(repo_root: Path, dotted_key: str, *, to_repo: bool = False) -> str | None:
     """Remove one leaf so it reverts to the next layer / built-in default.
 

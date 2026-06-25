@@ -122,6 +122,15 @@ class ChoiceField(Widget, can_focus=True):
             return self._options[self._sel]
         return ""
 
+    def select_value(self, value: str) -> None:
+        """Programmatically select ``value`` if it is one of the fixed options
+        (a no-op otherwise, including the custom row). Silent -- posts no
+        ``Changed`` -- so a dialog can prefill this field from a chosen preset
+        without retriggering its own change handlers."""
+        if value in self._options:
+            self._sel = self._cursor = self._options.index(value)
+            self.refresh(layout=True)
+
     def render(self) -> Text:
         focused = self.has_focus
         width = max(self.size.width, 1)
