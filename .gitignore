@@ -25,7 +25,6 @@ src/agent6/_docs/
 .vscode/*.log
 *.swp
 
-# agent6 runtime
-.agent6/
-.agent6-self-review/
+# tooling state + bench data
 .claude/
+bench/swebench/instances_verified.json

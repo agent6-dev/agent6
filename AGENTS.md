@@ -4,50 +4,73 @@ This file is read by coding agents (including agent6 itself) operating in
 this repository. It is the authoritative map of project conventions and the
 list of invariants that PRs are not allowed to weaken.
 
-## Stability policy (pre-1.0)
+## Hard rules (a PR never weakens these)
 
-agent6 is pre-1.0; the version in `src/agent6/__init__.py` is the single
-source of truth. Until `1.0.0`, treat every public shape (config TOML, IPC
-messages, on-disk graph format, CLI flags, transcript layout) as liquid.
-Prefer breaking a shape cleanly over carrying it:
+The load-bearing invariants, collected; each is detailed in its section below.
 
-- No backward-compat shims, deprecation warnings, or aliased field names.
-- No migration code or `config_version` translators. Bump `config_version`
-  only when the new shape genuinely improves the user's error message.
-- If something is wrong, rip it out. If you are tempted to write a
-  compatibility branch, delete the old shape instead.
+- No `git push`, `--force`, history rewrite, `reset --hard`, or `branch -D`.
+  `git_ops.py` refuses them unconditionally; don't add overrides.
+- Every child process whose argv depends on LLM output goes through
+  `run_in_jail`; never a direct `subprocess` of model output
+  (audit: `rg 'subprocess\.(run|Popen)' src/agent6/`).
+- Adding a tool (`tools/schema.py`), loosening a security default, or dialling a
+  host not derived from a provider `base_url` each require a `Security review
+  note:` in the commit message.
+- Secrets stay `0600`, never printed by `config show`, never written to
+  transcripts, never mounted into the jail.
+- Keep the suite green (`ruff check` + `ruff format --check` + `pyright` +
+  `tach check` + `pytest`); don't skip the verify command.
+- Rip out wrong shapes: no backward-compat shims or migrations. No
+  `Co-Authored-By` lines.
+
+## Architecture and changes
+
+- **Layering** is `cli -> workflows -> agents -> tools -> sandbox`; workflows
+  never import each other, and agents never import workflows or the CLI.
+  [tach](https://docs.gauge.sh/) (`tach.toml`) checks it.
+- **`tach.toml` mirrors the design.** Write the right design, then update
+  `tach.toml` to match; never contort code (or add an indirection) to satisfy
+  tach or strict pyright. After a change, audit the boundaries it produced and ask
+  whether they still look right; if they look complex, redesign rather than accept
+  the complexity.
+- **Changes are decided by evidence and tests, not churn.** When measurement
+  shows something is better, adopt it and delete the old shape; no backward-compat
+  shims, deprecation aliases, or migrations standing as artificial roadblocks.
+  (`1.0.0` will add semantic versioning with stable args/config/interfaces and
+  migrations; until then there is none of that ceremony. The version in
+  `src/agent6/__init__.py` is the single source of truth.)
+- **Keep docs in sync.** When a change affects the architecture, config, security
+  model, or state machines, update the matching file (`ARCHITECTURE.md`,
+  `CONFIG.md`, `SECURITY.md`, `STATE_MACHINES.md`, `README.md`, this file) so the
+  docs never drift from the code.
 
 ## Design principles
 
-These are the standing rationales behind the small decisions. State them
-here once; do not re-justify them per command in code comments or docs.
+The standing rationales behind small decisions. State them here once; don't
+re-justify them per command in code or docs.
 
-- **One obvious way** (Zen of Python). Prefer a single, well-named
-  command over near-duplicate aliases. We have `agent6 connect`, not also
-  `agent6 auth login`.
-- **Explicit is better than implicit** (Zen). Defaults are real, readable
-  values (`agent6 config show` prints every one and its origin); no
-  behavior keyed off hidden state; errors never pass silently (see
-  Errors below).
-- **Least surprise.** A command does the boring, expected thing. Config
-  writes default to the global config, with `--repo` (and `--machine
-  FILE` where relevant) to redirect; the same target selection
-  everywhere. Set-valued config merges last-overlay-wins like every
-  other field.
-- **Consistency** (special cases aren't special enough to break the
-  rules). New subcommands mirror the shape of existing ones (positional
-  core args, `--repo`/`--machine` target flags, argcomplete on
-  fixed-choice values).
-- **Simplicity** (simple is better than complex). No speculative
-  abstraction, no plugin layers, no indirection that exists for a future
-  that has not arrived. A reviewer should be able to read a module top to
-  bottom in one sitting; if the implementation is hard to explain, it's a
-  bad idea. If a helper has one caller, inline it; if a class has no
-  state, make it a function.
-- **Right-shaped data.** Get the data structure correct first and the
-  code around it stays small. A field that can never be half-set belongs
-  in one frozen type, not two parallel dicts. When code keeps converting
-  between shapes, fix the shape instead of adding a converter.
+We follow the **Zen of Python** (`python -c 'import this'`): one obvious way,
+explicit over implicit, simple over complex, special cases aren't special enough
+to break the rules, errors never pass silently. The agent6 concretions, and the
+principles the Zen doesn't cover:
+
+- **One obvious way.** One well-named command, not near-duplicate aliases:
+  `agent6 connect`, not also `agent6 auth login`.
+- **Explicit.** Defaults are real, readable values `agent6 config show` prints
+  with their origin; no behavior keyed off hidden state; errors never pass
+  silently (see Errors).
+- **Least surprise.** A command does the boring, expected thing. Config writes
+  default to the global config, `--repo` (and `--machine FILE`) to redirect. The
+  same target selection everywhere; set-valued config merges last-overlay-wins.
+- **Consistency.** New subcommands mirror existing ones: positional core args,
+  `--repo`/`--machine` target flags, argcomplete on fixed-choice values.
+- **Simplicity.** No speculative abstraction or indirection for a future that
+  hasn't arrived. A reviewer should read a module top to bottom in one sitting;
+  inline a one-caller helper, make a stateless class a function, and if it's hard
+  to explain it's a bad idea.
+- **Right-shaped data.** Get the data structure right and the code around it
+  stays small. A field that can never be half-set belongs in one frozen type, not
+  two parallel dicts; when code keeps converting between shapes, fix the shape.
 - **Decompose proactively; don't let debt accumulate.** When a module
   grows past ~1000 lines or a method past a few hundred, split it before
   it ossifies, rather than threading one more local or piling on another
@@ -65,8 +88,8 @@ here once; do not re-justify them per command in code comments or docs.
     bookkeeping ONE mutable state dataclass (`workflows.loop._LoopState`) so
     each phase becomes a method taking `state`. Never a 9-parameter helper
     or a multi-value tuple return — that is the spaghetti we are avoiding.
-  - Record the new edge in `tach.toml` when an extraction crosses a module
-    boundary (tach is guidance, so update it; don't contort the code).
+  - When an extraction shifts a module boundary, add the new edge to `tach.toml`
+    (see Architecture and changes).
   - pyright `reportPrivateUsage` allows importing `_name` only from a
     `_`-prefixed module; when a symbol must be shared across a non-private
     module boundary, make it public.
@@ -121,16 +144,6 @@ output, run summaries, and review feedback.
 - **Touch only what the task needs.** Do not add comments or annotations to
   code you did not change, and do not refactor surrounding code in
   passing. Scope creep is a review blocker.
-- **Module boundaries.** The intended layering is
-  `cli -> workflows -> agents -> tools -> sandbox`; workflows never import
-  each other, and agents never import workflows or the CLI.
-  [tach](https://docs.gauge.sh/) (`tach.toml`) checks this, but it is
-  guidance to encourage good design, not a lock. Pre-1.0 the architecture
-  is liquid: when a new feature legitimately needs a new edge, UPDATE
-  `tach.toml` to record it rather than contorting the code (or wedging in an
-  indirection) to satisfy the old graph. Do not let tach, or strict pyright,
-  push you toward a worse design than the feature warrants. A boundary you
-  keep fighting is a signal the design is wrong, not that the feature is.
 
 ## Verify command
 
@@ -167,8 +180,6 @@ All five must pass; keep the suite green.
   state as a fixed-argv `python -m agent6.cli.machine_agent` subprocess
   whose request travels in a temp file, never on argv). Audit with
   `rg 'subprocess\.(run|Popen)' src/agent6/`.
-- `src/agent6/git_ops.py` refuses `push`, `--force`, history rewrite,
-  `reset --hard`, and `branch -D` unconditionally. Do not add overrides.
 - Config is secure by default: every field has a default, and
   security-sensitive fields default to the safe value
   (`sandbox.agent_network = "providers"`, `sandbox.tool_network = "block"`,
@@ -218,7 +229,7 @@ All five must pass; keep the suite green.
 
 ## Self-review
 
-agent6 reviews its own source via `agent6 review`. Reviews live under
-`.agent6-self-review/` (gitignored). When working on a module, read the
-corresponding review file if present; it records real findings and which
-were acted on.
+agent6 reviews its own source via `agent6 review`. Reviews are written under the
+per-repo state directory (`$XDG_STATE_HOME/agent6/<repo-id>/reviews/`), outside the
+checkout, never in the repo. When working on a module, read its review there if
+present; it records real findings and which were acted on.
