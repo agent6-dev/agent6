@@ -745,7 +745,11 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                 steer_clear=steer_state.clear,
                 steer_prompt=steer_state.prompt,
                 budget=budget,
-                resume_state_path=layout.run_dir / "loop_state.json",
+                # `agent6 ask` (under asks/) is not resumable -- `agent6 resume`
+                # only looks under runs/ -- so don't write an orphan snapshot.
+                resume_state_path=(
+                    None if mode == "ask" else layout.run_dir / "loop_state.json"
+                ),
                 mode=mode,
                 plan_output_path=(layout.run_dir / "plan.md" if mode == "plan" else None),
                 after_auto_commit=(
