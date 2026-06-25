@@ -497,6 +497,38 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     hist_graph_run.completer = _complete_run_ids  # type: ignore[attr-defined]
 
+    hist_tr = hist_sub.add_parser(
+        "transcript",
+        help="Render a run's full LLM conversation (the lossless transcripts) as Markdown.",
+    )
+    hist_tr_run = hist_tr.add_argument(
+        "run",
+        nargs="?",
+        default="",
+        help="Run id (or unambiguous prefix). Defaults to the most recent run.",
+    )
+    hist_tr_run.completer = _complete_run_ids  # type: ignore[attr-defined]
+    hist_tr.add_argument(
+        "--json",
+        dest="as_json",
+        action="store_true",
+        help="Emit the raw transcript array (the per-call request/response objects) instead.",
+    )
+    hist_tr.add_argument(
+        "--no-thinking", action="store_true", help="Omit the model's reasoning/thinking blocks."
+    )
+    hist_tr.add_argument(
+        "--tools",
+        choices=("both", "calls", "none"),
+        default="both",
+        help="Show tool calls + results (both), calls only, or neither.",
+    )
+    hist_tr.add_argument(
+        "--seq",
+        default="",
+        help="Restrict to a round-trip seq window, e.g. 3 or 3-7 (default: all).",
+    )
+
     init_p = sub.add_parser(
         "init",
         help="Optional setup wizard: per-repo config, verify_command, .gitignore, AGENTS.md.",

@@ -46,6 +46,7 @@ from agent6.cli.misc_cmds import (
     _cmd_diff,
     _cmd_history_graph,
     _cmd_history_search,
+    _cmd_history_transcript,
     _cmd_init,
     _cmd_mcp_serve,
     _cmd_memory_add,
@@ -282,6 +283,14 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
         return _cmd_history_search(args.query, fixed=not args.regex, run_id=args.run)
     if args.command == "history" and args.history_command == "graph":
         return _cmd_history_graph(args.run)
+    if args.command == "history" and args.history_command == "transcript":
+        return _cmd_history_transcript(
+            args.run,
+            as_json=args.as_json,
+            no_thinking=args.no_thinking,
+            tools=args.tools,
+            seq=args.seq,
+        )
     if args.command == "init":
         return _cmd_init(force=args.force, profile=args.profile, assume_yes=args.yes)
     if args.command == "review":

@@ -133,6 +133,9 @@ Other commands:
   (`<state-dir>/<repo-id>/memories/`).
 - `agent6 history search <query>`: search persisted transcripts.
 - `agent6 history graph [<run-id>]`: render the persisted task graph.
+- `agent6 history transcript [<run-id>]`: render a run's full LLM conversation
+  (assistant text + every tool call with complete I/O) as Markdown; `--json`
+  for the raw transcript. The lossless deep-dive, vs the terse `logs.jsonl`.
 - `agent6 diff [<run-id>]`: print the git diff a run produced.
 - `agent6 machine ...`: author and run state machines (`.asm.toml`); see
   [STATE_MACHINES.md](STATE_MACHINES.md).

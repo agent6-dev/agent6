@@ -54,6 +54,7 @@ from agent6.providers import (
     TranscriptSink,
 )
 from agent6.run_id import RunIdError, resolve_run_id
+from agent6.transcript_render import fold_conversation, load_transcripts, render_markdown
 from agent6.workflows.review import CodeReviewError, run_review
 
 
@@ -196,6 +197,82 @@ def _print_node_dfs(node: TaskNode, nodes: dict[str, TaskNode], *, depth: int) -
             print(f"{indent}  [MISSING] <child id {child_id} not found>")
             continue
         _print_node_dfs(child, nodes, depth=depth + 1)
+
+
+def _parse_seq_window(spec: str) -> tuple[int, int] | None:
+    """`""` -> None (all); `"5"` -> (5,5); `"3-7"` -> (3,7). Raises ValueError on junk."""
+    spec = spec.strip()
+    if not spec:
+        return None
+    if "-" in spec:
+        a, b = spec.split("-", 1)
+        return int(a), int(b)
+    n = int(spec)
+    return n, n
+
+
+def _cmd_history_transcript(
+    run_id: str, *, as_json: bool, no_thinking: bool, tools: str, seq: str
+) -> int:
+    """Render a run's full LLM conversation from its lossless per-call transcripts.
+
+    The transcripts (``<run>/transcripts/*.json``) are the complete, self-
+    contained record -- no join with logs.jsonl is needed. This is the CONVERSATION
+    view (assistant text/thinking + every tool call with full I/O); for the terse
+    EVENT timeline use `agent6 watch --plain` / `agent6 history search`.
+    """
+    cwd = Path.cwd()
+    if run_id:
+        try:
+            layout = resolve_run_layout(cwd, run_id)
+        except RunIdError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
+    else:
+        runs_dir = _runs_dir(cwd)
+        candidates = (
+            sorted(
+                (p for p in runs_dir.iterdir() if p.is_dir() and (p / "transcripts").is_dir()),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            if runs_dir.is_dir()
+            else []
+        )
+        if not candidates:
+            print(f"ERROR: no runs with transcripts under {runs_dir}", file=sys.stderr)
+            return 2
+        layout = RunLayout(state_dir=_state_dir(cwd), run_id=candidates[0].name)
+        print(f"[agent6] transcript for most recent run: {layout.run_id}", file=sys.stderr)
+
+    try:
+        window = _parse_seq_window(seq)
+    except ValueError:
+        print(f"ERROR: --seq expects N or N-M, got {seq!r}", file=sys.stderr)
+        return 2
+
+    transcripts = load_transcripts(layout.transcripts_dir)
+    if not transcripts:
+        print(f"ERROR: run {layout.run_id} has no transcripts", file=sys.stderr)
+        return 2
+
+    if as_json:
+        if window is not None:
+            lo, hi = window
+            transcripts = [t for t in transcripts if lo <= int(t.get("seq", 0)) <= hi]
+        print(json.dumps(transcripts, indent=2, ensure_ascii=False))
+        return 0
+
+    # Fold the FULL set (the per-seq walk needs every call), then window the turns.
+    turns = fold_conversation(transcripts)
+    if window is not None:
+        lo, hi = window
+        turns = [t for t in turns if lo <= t.seq <= hi]
+    print(
+        render_markdown(turns, run_id=layout.run_id, show_thinking=not no_thinking, tools=tools),
+        end="",
+    )
+    return 0
 
 
 def _offer_git_setup(root: Path, created: tuple[Path, ...], *, interactive: bool) -> None:
