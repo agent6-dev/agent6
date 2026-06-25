@@ -381,7 +381,7 @@ def _cmd_review(  # noqa: PLR0911
     """Print a freeform code review of a diff to stdout. Read-only; no jail."""
     try:
         cfg = load_effective(Path.cwd(), config_path).config
-        cfg.require_runnable("reviewer", need_verify=False)
+        cfg.require_runnable("reviewer")
     except ConfigError as exc:
         print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
         return 2

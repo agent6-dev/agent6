@@ -55,6 +55,11 @@ class _ResumeSnapshot:
     tool_calls: int
     next_iteration: int
     root_task_id: str | None
+    # The verify command the original run resolved (possibly inferred), so resume
+    # reuses it rather than re-inferring (which could flip and diverge from the
+    # frozen system prompt's verify/no-verify block). `()` = the run was gateless;
+    # `None` = a pre-field snapshot (resume falls back to re-inference).
+    verify_command: tuple[str, ...] | None = None
 
 
 SNAPSHOT_VERSION = 1
@@ -66,10 +71,12 @@ def load_resume_snapshot(path: Path) -> _ResumeSnapshot:
     version = raw.get("version")
     if version != SNAPSHOT_VERSION:
         raise ValueError(f"snapshot version mismatch at {path}: {version!r} != {SNAPSHOT_VERSION}")
+    vc = raw.get("verify_command")  # additive field; absent in older snapshots
     return _ResumeSnapshot(
         system=raw["system"],
         messages=raw["messages"],
         tool_calls=int(raw["tool_calls"]),
         next_iteration=int(raw["next_iteration"]),
         root_task_id=raw.get("root_task_id"),
+        verify_command=tuple(vc) if isinstance(vc, list) else None,
     )

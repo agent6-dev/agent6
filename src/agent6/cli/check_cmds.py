@@ -290,8 +290,10 @@ def _doctor_check_verify(cfg: Config) -> list[_DoctorCheck]:
     """
     argv = list(cfg.workflow.verify_command)
     if not argv:
-        print("[FAIL] verify.argv: empty")
-        return [_DoctorCheck(name="verify.argv", ok=False, detail="empty")]
+        # Optional now: `agent6 run`/`plan` infer one (AGENTS.md -> repo signals
+        # -> LLM), falling back to a gateless run. Advisory, not a failure.
+        print("[INFO] verify.argv: unset — will be inferred per run (or run gateless)")
+        return [_DoctorCheck(name="verify.argv", ok=True, detail="unset (inferred per run)")]
     head = argv[0]
     resolved = shutil.which(head)
     ok = resolved is not None

@@ -536,7 +536,7 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
         try:
             cfg = load_effective_with_overlay(cwd, spec.config).config
             if has_agent_state:
-                cfg.require_runnable("worker", need_verify=False)
+                cfg.require_runnable("worker")
         except ConfigError as exc:
             print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
             return 2
@@ -755,7 +755,7 @@ def _cmd_machine_create(  # noqa: PLR0911, PLR0912, PLR0915
     cwd = Path.cwd()
     try:
         cfg = load_effective(cwd, None).config
-        cfg.require_runnable("worker", need_verify=False)
+        cfg.require_runnable("worker")
     except ConfigError as exc:
         print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
         return 2

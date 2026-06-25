@@ -15,11 +15,12 @@ defaults, per-repo config (out of the workspace, under the state dir) overrides)
 and a repo can be
 zero-config when the global config supplies providers + models. Use
 ``agent6 config show`` to audit the *effective* value of every field and
-exactly where it came from (default / global / repo / flag). The few
-things a run genuinely cannot guess, a provider+key and the repo's
-``verify_command``, are checked by :meth:`Config.require_runnable` with a
-friendly pointer to ``agent6 connect`` / ``agent6 init`` rather than a
-load-time failure, so ``config show`` always works.
+exactly where it came from (default / global / repo / flag). The one thing a
+run genuinely cannot guess, a provider+key, is checked by
+:meth:`Config.require_runnable` with a friendly pointer to ``agent6 connect``
+rather than a load-time failure, so ``config show`` always works. The repo's
+``verify_command`` is optional: `agent6 run`/`plan` infer one per run when it
+is unset (see :mod:`agent6.verify_infer`), else run gateless.
 """
 
 from __future__ import annotations
@@ -497,10 +498,10 @@ class WorkflowConfig(BaseModel):
     model_config = _BASE_MODEL_CONFIG
 
     # The command agent6 runs to decide whether a step "succeeded". This is
-    # inherently repo-specific, so it has no useful global default and
-    # defaults to empty; `Config.require_runnable` requires it before a run
-    # (with a pointer to `agent6 init`). `agent6 plan` / `agent6 review` do
-    # not need it.
+    # inherently repo-specific, so it has no useful global default and defaults
+    # to empty. Optional: `agent6 run`/`plan` infer one per run when it is unset
+    # (AGENTS.md -> repo signals -> a cheap LLM call; see agent6.verify_infer),
+    # falling back to a gateless run. `agent6 init` can pin one.
     verify_command: tuple[str, ...] = ()
     # per-call timeout for verify_command (and metric_command) in
     # seconds. Defaults to the jail's general 600s but should be cranked
@@ -844,13 +845,28 @@ class Config(BaseModel):
             budget["max_output_tokens"] = max_output_tokens
         return Config.model_validate(data)
 
-    def require_runnable(self, role: RoleName = "worker", *, need_verify: bool = True) -> None:
+    def with_inferred_verify(self, argv: tuple[str, ...]) -> Config:
+        """Return a copy with an inferred ``workflow.verify_command``.
+
+        Used by `agent6 run`/`plan` to inject a verify command inferred at run
+        start when none is configured. IN-MEMORY only -- runs never write config;
+        the operator is shown the inferred command and can pin it explicitly.
+        Re-validates through ``model_validate``. A no-op for empty ``argv``.
+        """
+        if not argv:
+            return self
+        data = self.model_dump(mode="python")
+        data.setdefault("workflow", {})["verify_command"] = list(argv)
+        return Config.model_validate(data)
+
+    def require_runnable(self, role: RoleName = "worker") -> None:
         """Raise ConfigError unless *role* can actually run.
 
-        Checks (in order) that a provider is configured, the role resolves
-        to a model whose provider exists, and, for execution roles, that
-        ``verify_command`` is set. Messages point at the command that fixes
-        the gap so a fresh user is never stuck.
+        Checks (in order) that a provider is configured and the role resolves
+        to a model whose provider exists. Messages point at the command that
+        fixes the gap so a fresh user is never stuck. ``verify_command`` is NOT
+        required: `agent6 run`/`plan` infer one when unset (and fall back to a
+        gateless run if even that fails) -- see ``agent6.verify_infer``.
         """
         if not self.providers:
             raise ConfigError(
@@ -869,13 +885,6 @@ class Config(BaseModel):
             raise ConfigError(
                 f"models.{role}.provider = {rm.provider!r} but [providers.{rm.provider}]"
                 f" is not configured. Known providers: {known}."
-            )
-        if need_verify and not self.workflow.verify_command:
-            raise ConfigError(
-                "workflow.verify_command is empty — agent6 needs to know what"
-                " 'a step succeeded' means in this repo. Run `agent6 init` (it"
-                " writes a starter) or set workflow.verify_command in"
-                " the per-repo config."
             )
 
 

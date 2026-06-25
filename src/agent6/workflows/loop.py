@@ -172,7 +172,9 @@ _NON_RETRYABLE_HTTP_STATUSES = frozenset({400, 401, 402, 403, 404, 422})
 _CACHE_CONTROL_EPHEMERAL: dict[str, str] = {"type": "ephemeral"}
 
 
-def _summarise_assistant_text_for_commit(text: str, iteration: int) -> str:
+def _summarise_assistant_text_for_commit(
+    text: str, iteration: int, *, fallback: str = "verify passed"
+) -> str:
     """Build a one-line commit subject from the LLM's most recent prose.
 
     Replaces the constant "agent6 iter N: verify passed" subject
@@ -204,7 +206,7 @@ def _summarise_assistant_text_for_commit(text: str, iteration: int) -> str:
             first_line = line
             break
     if not first_line:
-        first_line = "verify passed"
+        first_line = fallback
     subject_body = first_line[:72]
     return f"agent6 iter {iteration}: {subject_body}"
 
@@ -231,7 +233,7 @@ _VERIFY_SETTLED_NUDGE_AFTER = 3
 _VERIFY_SETTLED_STOP_AFTER = 6
 
 _VERIFY_SETTLED_NUDGE = (
-    "[harness verify-settled] Your verify command is passing and your last turns"
+    "[harness settled] Your recent changes are committed and your last turns"
     " made no new changes (no commit, no edit). If the task is complete, call"
     " finish_run now with a short summary. If not, make a concrete edit toward"
     " what remains — do not keep re-running read-only commands."
@@ -248,6 +250,13 @@ _RUN_BUDGET_NUDGE = (
     " NOW. If it passes, call finish_run immediately with a short summary. If"
     " it fails, fix ONLY the smallest blocking issue, re-verify, and finish."
     " Do not run any other commands."
+)
+
+# Gateless variant (no verify command this run): there is nothing to verify, so
+# steer straight to finish_run.
+_RUN_BUDGET_NUDGE_GATELESS = (
+    "[harness budget] You are running low on budget. Call finish_run NOW with a"
+    " short summary of what you changed. Do not run any other commands."
 )
 
 _PLAN_BUDGET_NUDGE = (
@@ -392,9 +401,11 @@ class _LoopState:
     plateau_nudges_used: int = 0
     metric_finish_nudges_used: int = 0
     plan_finish_nudged: bool = False
-    # verify-settled completion (run mode): once verify has passed, count
-    # no-progress iterations; nudge then stop a worker that spins after success.
+    # verify-settled completion (run mode): once verify has passed -- or, on a
+    # gateless run, once an edit has been committed -- count no-progress
+    # iterations; nudge then stop a worker that spins after success.
     verify_ever_passed: bool = False
+    gateless_ever_committed: bool = False
     verify_settled_idle: int = 0
     verify_settled_nudged: bool = False
     run_budget_nudged: bool = False
@@ -936,15 +947,26 @@ class Workflow:
             if dag_mutated_this_iter:
                 self._emit_graph_snapshot()
 
-            # Auto-commit on verify pass, AFTER the tool_results so the
-            # commit message reflects the iteration number. Best-effort:
-            # commit failures (e.g. nothing to commit) are logged but
-            # don't abort the run. The catch also handles OSError
-            # (subprocess failures) so a transient FS hiccup doesn't kill
-            # an otherwise-fine run.
+            # Auto-commit, AFTER the tool_results so the commit message
+            # reflects the iteration number. Best-effort: commit failures (e.g.
+            # nothing to commit) are logged but don't abort the run. The catch
+            # also handles OSError (subprocess failures) so a transient FS
+            # hiccup doesn't kill an otherwise-fine run.
             # Plan mode is read-only; never auto-commit.
-            if verify_just_passed and self.mode == "run":
-                commit_subject = _summarise_assistant_text_for_commit(resp.text or "", iteration)
+            # With a verify command, commits are gated on a green verify; with
+            # none configured (a gateless run), each editing step is committed
+            # as an un-gated checkpoint so resume + the audit trail still work.
+            # `edited_this_iter` (apply_edit/apply_patch) is the cheap fast-path;
+            # fall back to a worktree-dirty check so run_command-authored edits
+            # are also checkpointed (else they'd never be committed gateless).
+            gateless = not self.config.workflow.verify_command
+            gateless_changed = gateless and (edited_this_iter or self._worktree_dirty())
+            if self.mode == "run" and (verify_just_passed or gateless_changed):
+                commit_subject = _summarise_assistant_text_for_commit(
+                    resp.text or "",
+                    iteration,
+                    fallback="checkpoint" if gateless else "verify passed",
+                )
                 sha = ""
                 try:
                     sha = commit_all(
@@ -954,6 +976,10 @@ class Workflow:
                     self._log(f"  auto-commit: {sha[:12]}")
                     self._emit("loop.auto_commit", iteration=iteration, sha=sha)
                     committed_this_iter = bool(sha)
+                    if gateless and sha:
+                        # Seed the idle-stop net for gateless runs (no green
+                        # verify ever fires); see the verify-settled logic below.
+                        state.gateless_ever_committed = True
                     if sha:
                         # Surface "what the worker just changed" to a live viewer
                         # (the TUI diff panel). Capped; best-effort.
@@ -1272,7 +1298,10 @@ class Workflow:
             non_metric_run = (
                 self.mode == "run" and _metric_goal(self.config.workflow.metric) is None
             )
-            if non_metric_run and state.verify_ever_passed:
+            # "Settled" once the run reached a good state: a green verify, or (on
+            # a gateless run, where verify never fires) a committed edit.
+            settled_seeded = state.verify_ever_passed or state.gateless_ever_committed
+            if non_metric_run and settled_seeded:
                 made_progress = committed_this_iter or edited_this_iter or self._worktree_dirty()
                 if made_progress:
                     state.verify_settled_idle = 0
@@ -1282,14 +1311,14 @@ class Workflow:
             verify_settled_stop = (
                 non_metric_run
                 and finish_signal is None
-                and state.verify_ever_passed
+                and settled_seeded
                 and state.verify_settled_idle >= _VERIFY_SETTLED_STOP_AFTER
             )
             if (
                 non_metric_run
                 and finish_signal is None
                 and not verify_settled_stop
-                and state.verify_ever_passed
+                and settled_seeded
                 and state.verify_settled_idle >= _VERIFY_SETTLED_NUDGE_AFTER
                 and not state.verify_settled_nudged
             ):
@@ -1470,8 +1499,13 @@ class Workflow:
             remaining = self._budget_fraction_remaining()
             if remaining is not None and remaining <= _RUN_BUDGET_NUDGE_BELOW:
                 state.run_budget_nudged = True
+                nudge = (
+                    _RUN_BUDGET_NUDGE
+                    if self.config.workflow.verify_command
+                    else _RUN_BUDGET_NUDGE_GATELESS
+                )
                 messages.append(
-                    {"role": "user", "content": [{"type": "text", "text": _RUN_BUDGET_NUDGE}]}
+                    {"role": "user", "content": [{"type": "text", "text": nudge}]}
                 )
                 self._log(f"LOOP: run budget-nudge at iter {iteration}")
                 self._emit("loop.run_budget.nudge", iteration=iteration, budget_remaining=remaining)
@@ -1860,6 +1894,10 @@ class Workflow:
             "tool_calls": tool_calls,
             "next_iteration": next_iteration,
             "root_task_id": root_task_id,
+            # So resume reuses the exact verify resolution (gated argv or [] for
+            # gateless) instead of re-inferring and possibly diverging from the
+            # frozen `system` prompt's verify/no-verify block.
+            "verify_command": list(self.config.workflow.verify_command),
         }
         self.resume_state_path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.resume_state_path.with_suffix(self.resume_state_path.suffix + ".tmp")

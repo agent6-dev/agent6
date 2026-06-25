@@ -304,6 +304,16 @@ the timeout.
 </verify-command>
 """
 
+V2_NO_VERIFY_BLOCK = """<no-verify-command>
+No verify command is configured for this run, so `run_verify_command` is not
+available and there is no automated pass/fail gate. Make the smallest correct
+edits the task needs and call `finish_run` with a short summary when done.
+agent6 commits each editing step automatically. You MAY run the project's tests
+via `run_command` to check your work, but it is not required. Ignore any other
+instruction to call `run_verify_command`.
+</no-verify-command>
+"""
+
 V2_METRIC_BLOCK_TEMPLATE = """<metric-command>
 This run has a continuous-score metric (call via `run_metric_command`):
   argv: {argv}
@@ -479,12 +489,15 @@ def build_system_prompt(
         return "\n".join(parts)
 
     verify_argv = list(config.workflow.verify_command)
-    parts.append(
-        V2_VERIFY_BLOCK_TEMPLATE.format(
-            argv=json.dumps(verify_argv),
-            timeout_s=config.workflow.verify_timeout_s,
+    if verify_argv:
+        parts.append(
+            V2_VERIFY_BLOCK_TEMPLATE.format(
+                argv=json.dumps(verify_argv),
+                timeout_s=config.workflow.verify_timeout_s,
+            )
         )
-    )
+    else:
+        parts.append(V2_NO_VERIFY_BLOCK)
 
     if config.workflow.metric is not None:
         m = config.workflow.metric

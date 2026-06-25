@@ -353,7 +353,7 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(tmp_path: Path) -> None:
     provider = ProviderStub()
     dispatcher = DispatcherStub()
     config = SimpleNamespace(
-        workflow=SimpleNamespace(metric=SimpleNamespace(goal="minimize")),
+        workflow=SimpleNamespace(verify_command=("true",), metric=SimpleNamespace(goal="minimize")),
     )
     wf = _wf(
         root=tmp_path,
@@ -418,7 +418,7 @@ def test_drive_loop_finishes_on_metric_plateau(tmp_path: Path) -> None:
     provider = ProviderStub()
     dispatcher = DispatcherStub()
     config = SimpleNamespace(
-        workflow=SimpleNamespace(metric=SimpleNamespace(goal="minimize")),
+        workflow=SimpleNamespace(verify_command=("true",), metric=SimpleNamespace(goal="minimize")),
     )
     wf = _wf(
         root=tmp_path,
@@ -492,7 +492,7 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: Path) -> None:
     provider = ProviderStub()
     dispatcher = DispatcherStub()
     config = SimpleNamespace(
-        workflow=SimpleNamespace(metric=SimpleNamespace(goal="minimize")),
+        workflow=SimpleNamespace(verify_command=("true",), metric=SimpleNamespace(goal="minimize")),
     )
     wf = _wf(
         root=tmp_path,
@@ -681,7 +681,9 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: Path) -> None:
             return {"returncode": 0, "stdout": "ok", "stderr": "", "duration_s": 0.1}
 
     provider = ProviderStub()
-    config = SimpleNamespace(workflow=SimpleNamespace(metric=SimpleNamespace(goal=None)))
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(verify_command=("true",), metric=SimpleNamespace(goal=None))
+    )
     wf = _wf(
         root=tmp_path,
         config=config,
@@ -731,7 +733,9 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(tmp_path: P
             return {"content": "..."}
 
     provider = ProviderStub()
-    config = SimpleNamespace(workflow=SimpleNamespace(metric=SimpleNamespace(goal=None)))
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(verify_command=("true",), metric=SimpleNamespace(goal=None))
+    )
     wf = _wf(
         root=tmp_path, config=config, mode="run", provider=provider, dispatcher=DispatcherStub()
     )
@@ -762,7 +766,9 @@ def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: Path) -> None:
             return {"returncode": 0, "stdout": "ok", "stderr": "", "duration_s": 0.1}
 
     provider = ProviderStub()
-    config = SimpleNamespace(workflow=SimpleNamespace(metric=SimpleNamespace(goal=None)))
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(verify_command=("true",), metric=SimpleNamespace(goal=None))
+    )
     wf = _wf(
         root=tmp_path,
         config=config,
@@ -805,7 +811,9 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: Path) -> Non
 
     provider = ProviderStub()
     # goal set -> this is a metric run (still mode=="run")
-    config = SimpleNamespace(workflow=SimpleNamespace(metric=SimpleNamespace(goal="minimize")))
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(verify_command=("true",), metric=SimpleNamespace(goal="minimize"))
+    )
     wf = _wf(
         root=tmp_path,
         config=config,
@@ -904,7 +912,7 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: Path) -> N
     provider = ProviderStub()
     dispatcher = DispatcherStub()
     config = SimpleNamespace(
-        workflow=SimpleNamespace(metric=SimpleNamespace(goal="minimize")),
+        workflow=SimpleNamespace(verify_command=("true",), metric=SimpleNamespace(goal="minimize")),
     )
     # Fresh budget with huge ceilings -> fraction_remaining stays ~1.0, well
     # above the final-slice threshold, so the plateau never becomes terminal.
@@ -969,7 +977,7 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: Path) -> No
 
     provider = ProviderStub()
     config = SimpleNamespace(
-        workflow=SimpleNamespace(metric=SimpleNamespace(goal="minimize")),
+        workflow=SimpleNamespace(verify_command=("true",), metric=SimpleNamespace(goal="minimize")),
     )
     # Huge ceilings keep fraction_remaining ~1.0, well above the final slice.
     budget = BudgetTracker(max_input_tokens=10_000_000, max_output_tokens=10_000_000)
@@ -1022,7 +1030,7 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: Path) -> None:
 
     provider = ProviderStub()
     config = SimpleNamespace(
-        workflow=SimpleNamespace(metric=SimpleNamespace(goal="minimize")),
+        workflow=SimpleNamespace(verify_command=("true",), metric=SimpleNamespace(goal="minimize")),
     )
     wf = _wf(
         root=tmp_path,
@@ -1110,7 +1118,7 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
 
     provider = ProviderStub()
     config = SimpleNamespace(
-        workflow=SimpleNamespace(metric=SimpleNamespace(goal="maximize")),
+        workflow=SimpleNamespace(verify_command=("true",), metric=SimpleNamespace(goal="maximize")),
     )
     # Huge ceilings keep fraction_remaining ~1.0: without the ceiling guard
     # the early-finish guard would reject the finish here.
@@ -1217,7 +1225,7 @@ def test_format_metric_feedback_shows_next_target() -> None:
 
 def test_worker_max_tokens_lifts_cap_on_metric_runs() -> None:
     config = SimpleNamespace(
-        workflow=SimpleNamespace(metric=SimpleNamespace(goal="minimize")),
+        workflow=SimpleNamespace(verify_command=("true",), metric=SimpleNamespace(goal="minimize")),
     )
     wf = _wf(
         config=config,
@@ -1229,7 +1237,9 @@ def test_worker_max_tokens_lifts_cap_on_metric_runs() -> None:
 
 
 def test_worker_max_tokens_keeps_default_without_metric() -> None:
-    config = SimpleNamespace(workflow=SimpleNamespace(metric=SimpleNamespace(goal=None)))
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(verify_command=("true",), metric=SimpleNamespace(goal=None))
+    )
     wf = _wf(
         config=config,
         mode="run",
@@ -1241,7 +1251,7 @@ def test_worker_max_tokens_keeps_default_without_metric() -> None:
 
 def test_worker_max_tokens_keeps_default_in_plan_mode() -> None:
     config = SimpleNamespace(
-        workflow=SimpleNamespace(metric=SimpleNamespace(goal="minimize")),
+        workflow=SimpleNamespace(verify_command=("true",), metric=SimpleNamespace(goal="minimize")),
     )
     wf = _wf(
         config=config,
@@ -1774,7 +1784,7 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: Path) -> None:
 
     events = EventSink(tmp_path / "logs.jsonl")
     summ = SummariserStub()
-    config = SimpleNamespace(workflow=SimpleNamespace(metric=None))
+    config = SimpleNamespace(workflow=SimpleNamespace(verify_command=("true",), metric=None))
     wf = _wf(
         root=tmp_path,
         config=config,
@@ -1808,3 +1818,118 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: Path) -> None:
         for line in (tmp_path / "logs.jsonl").read_text(encoding="utf-8").splitlines()
     ]
     assert "loop.compact.summarise.done" in types  # summarise-and-restart happened cleanly
+
+
+def test_pass_pending_root_tasks_passes_only_pending_roots() -> None:
+    """_pass_pending_root_tasks marks pending/in-progress ROOT tasks passed and
+    leaves everything else (already-terminal roots, non-root subtasks) alone --
+    so a finish_run-only ask/run reads N/N, not 0/1."""
+
+    class _FakeClient:
+        def __init__(self, nodes: dict[str, dict[str, Any]]) -> None:
+            self._nodes = nodes
+            self.passed: list[str] = []
+
+        def get_state(self) -> dict[str, Any]:
+            return {"nodes": self._nodes}
+
+        def update_status(self, intent: Any) -> None:
+            self.passed.append(intent.id)
+            self._nodes[intent.id]["status"] = intent.new_status
+
+    nodes: dict[str, dict[str, Any]] = {
+        "root1": {"parent_id": None, "status": "pending"},
+        "root2": {"parent_id": None, "status": "passed"},  # already done -> skip
+        "child": {"parent_id": "root1", "status": "pending"},  # not a root -> skip
+        "root3": {"parent_id": None, "status": "in_progress"},
+        "root4": {"parent_id": None, "status": "failed"},  # failed -> leave honest
+    }
+    fake = _FakeClient(nodes)
+    wf = _wf(graph_client=fake)
+    wf._pass_pending_root_tasks()  # pyright: ignore[reportPrivateUsage]
+    assert set(fake.passed) == {"root1", "root3"}
+
+
+def test_pass_pending_root_tasks_noop_without_graph_client() -> None:
+    """No curator wired (e.g. ask without a DAG) -> the auto-pass is a no-op."""
+    wf = _wf(graph_client=None)
+    wf._pass_pending_root_tasks()  # pyright: ignore[reportPrivateUsage]  (must not raise)
+
+
+def test_drive_loop_gateless_settles_after_commit(tmp_path: Path) -> None:
+    """A GATELESS run (no verify_command) has no green verify to seed the
+    idle-stop net. Once an edit is committed it must still settle: spinning on
+    read-only commands after the commit stops the run (reason='verify_settled'),
+    so a gateless run can't burn budget to exhaustion when the worker is done."""
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            if self.calls == 1:
+                # an edit -> gateless auto-commit -> seeds gateless_ever_committed
+                return _tool_resp("apply_edit", {"path": "x", "edits": []}, tool_id="e1")
+            # then spin on read-only commands (no edit, no commit)
+            return _tool_resp("run_command", {"cmd": f"ls {self.calls}"}, tool_id=f"c{self.calls}")
+
+    class DispatcherStub:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+            return {"returncode": 0, "stdout": "ok", "stderr": "", "duration_s": 0.1}
+
+    provider = ProviderStub()
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(verify_command=(), metric=SimpleNamespace(goal=None))
+    )
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        mode="run",
+        provider=provider,
+        dispatcher=DispatcherStub(),
+        max_iterations=30,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
+    with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            messages=messages,
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+        )
+    assert result.reason == "verify_settled"
+    assert result.completed is True
+    assert provider.calls < 30  # stopped well before max_iterations, not burned to the cap
+
+
+def test_resume_snapshot_carries_verify_command(tmp_path: Path) -> None:
+    """The snapshot stores the run's resolved verify_command so resume reuses it
+    rather than re-inferring (which could diverge from the frozen prompt). A
+    gateless run stores []; an older snapshot without the field loads as None."""
+    import json as _json
+
+    from agent6.workflows._run_state import load_resume_snapshot
+
+    snap = tmp_path / "loop_state.json"
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(verify_command=("pytest", "-q"), metric=SimpleNamespace(goal=None))
+    )
+    wf = _wf(resume_state_path=snap, config=config)
+    wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
+        system="s", messages=[], tool_calls=0, next_iteration=1, root_task_id=None
+    )
+    assert load_resume_snapshot(snap).verify_command == ("pytest", "-q")
+
+    config.workflow.verify_command = ()  # gateless run -> stored as [] -> loads as ()
+    wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
+        system="s", messages=[], tool_calls=0, next_iteration=1, root_task_id=None
+    )
+    assert load_resume_snapshot(snap).verify_command == ()
+
+    raw = _json.loads(snap.read_text(encoding="utf-8"))  # older snapshot: no field
+    del raw["verify_command"]
+    snap.write_text(_json.dumps(raw), encoding="utf-8")
+    assert load_resume_snapshot(snap).verify_command is None

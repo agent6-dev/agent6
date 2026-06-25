@@ -97,6 +97,8 @@ from agent6.ui.approval import (
     read_question_answer,
     tui_is_live,
 )
+from agent6.verify_infer import VERIFY_INFER_SYSTEM_PROMPT, infer_verify_command
+from agent6.workflows._run_state import load_resume_snapshot
 from agent6.workflows.loop import ResumeError, RunResult, Workflow
 
 # Distinct exit code for a budget-exhausted run so automation can tell "raise
@@ -395,6 +397,76 @@ def _write_run_manifest(
     )
 
 
+def _infer_verify_if_unset(
+    cfg: Config,
+    cwd: Path,
+    *,
+    mode: str,
+    events: EventSink,
+    transcript_sink: TranscriptSink,
+    budget: BudgetTracker,
+) -> Config:
+    """When ``workflow.verify_command`` is unset for a run/plan, infer one and
+    inject it IN-MEMORY (never persisted -- runs do not mutate config).
+
+    Layered cheapest-first (AGENTS.md -> repo signals -> a cheap reviewer-role
+    LLM call); see ``agent6.verify_infer``. Emits ``loop.verify_inferred`` and
+    prints what was picked + that it is per-run. If nothing can be inferred the
+    run proceeds GATELESS (no verify gate; the loop commits each editing step).
+    """
+    if mode not in ("run", "plan") or cfg.workflow.verify_command:
+        return cfg
+    agents_md = ""
+    agents_path = cwd / "AGENTS.md"
+    if agents_path.is_file():
+        try:
+            agents_md = agents_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            agents_md = ""
+
+    def _llm_call(context: str) -> str:
+        inner = _build_role_provider(
+            cfg, "reviewer", transcript_sink=transcript_sink, budget=budget
+        )
+        rm = cfg.models.resolve("reviewer")
+        provider = _InstrumentedProvider(
+            inner=inner,
+            role="verify_inferer",
+            model=rm.model if rm else "",
+            provider_name=rm.provider if rm else "",
+            events=events,
+            budget=budget,
+        )
+        resp = provider.call(
+            system=VERIFY_INFER_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": context}],
+            tools=[],
+            max_tokens=512,
+            temperature=0.0,
+        )
+        return resp.text or ""
+
+    inferred = infer_verify_command(cwd, agents_md, llm_call=_llm_call)
+    if inferred is None:
+        events.emit("loop.verify_inferred", command=[], source="none")
+        if mode == "run":
+            print(
+                "[agent6] no verify_command set and none could be inferred; running"
+                " gateless\n         (per-step commits, no green gate). Set"
+                " workflow.verify_command to gate commits on a passing verify.",
+                file=sys.stderr,
+            )
+        return cfg
+    events.emit("loop.verify_inferred", command=list(inferred.argv), source=inferred.source)
+    print(
+        f"[agent6] verify_command not set; inferred from {inferred.source}:"
+        f" {' '.join(inferred.argv)}\n         (this run only — set"
+        " workflow.verify_command in your per-repo config to pin it)",
+        file=sys.stderr,
+    )
+    return cfg.with_inferred_verify(inferred.argv)
+
+
 def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     config_path: Path | None,
     task: str,
@@ -427,7 +499,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         return 2
     role: RoleName = "planner" if mode == "plan" else "worker"
     try:
-        cfg.require_runnable(role, need_verify=(mode == "run"))
+        cfg.require_runnable(role)
     except ConfigError as exc:
         print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
         return 2
@@ -606,6 +678,12 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     )
     summariser_provider = _build_summariser_provider(
         cfg, transcript_sink=transcript_sink, budget=budget, events=events
+    )
+
+    # Verify is optional: if unset, infer one for this run (AGENTS.md -> repo
+    # signals -> a cheap LLM call) and inject it in-memory. Never persisted.
+    cfg = _infer_verify_if_unset(
+        cfg, cwd, mode=mode, events=events, transcript_sink=transcript_sink, budget=budget
     )
 
     # Spawn the curator + connect a GraphClient so the agent
@@ -957,6 +1035,29 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     summariser_provider = _build_summariser_provider(
         cfg, transcript_sink=transcript_sink, budget=budget, events=events
     )
+
+    # Resume reuses the verify command the ORIGINAL run resolved (stored in the
+    # snapshot), so the tool list, prompt, and commit branch stay consistent with
+    # the frozen system prompt -- never re-inferring (which could flip and
+    # diverge). Fall back to re-inference only for a pre-field snapshot, and only
+    # when the operator hasn't since pinned a command in config.
+    if not cfg.workflow.verify_command:
+        snap_verify: tuple[str, ...] | None = None
+        if snapshot_path.is_file():
+            try:
+                snap_verify = load_resume_snapshot(snapshot_path).verify_command
+            except (ValueError, OSError, KeyError):
+                snap_verify = None
+        if snap_verify is None:  # older snapshot: re-infer as the original did
+            cfg = _infer_verify_if_unset(
+                cfg, cwd, mode="run", events=events, transcript_sink=transcript_sink, budget=budget
+            )
+        elif snap_verify:  # () means the original run was gateless: stay gateless
+            cfg = cfg.with_inferred_verify(snap_verify)
+            print(
+                f"[agent6] reusing this run's verify command: {' '.join(snap_verify)}",
+                file=sys.stderr,
+            )
 
     sock_tmpdir = Path(tempfile.mkdtemp(prefix="agent6-sock-"))
     sock_path = sock_tmpdir / "curator.sock"

@@ -373,6 +373,10 @@ class ToolDispatcher:
         names = list(self._available)
         if self._config.sandbox.run_commands == "no":
             names = [n for n in names if n != RunCommandInput.TOOL_NAME]
+        # No verify_command (and none inferred) -> a gateless run: hide
+        # run_verify_command rather than offer a tool that would error.
+        if not self._config.workflow.verify_command:
+            names = [n for n in names if n != RunVerifyInput.TOOL_NAME]
         # Bench / A-B harness: hide the tree-sitter index tools when this env
         # var is set so we can compare cost/quality with and without them
         # without rebuilding agent6.

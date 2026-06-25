@@ -238,14 +238,25 @@ def test_role_temperature_out_of_range(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
-def test_empty_verify_command_loads_but_not_runnable(tmp_path: Path) -> None:
-    # Empty verify_command is allowed at load time (so `config show` works);
-    # require_runnable is what refuses to start a run without it.
+def test_empty_verify_command_loads_and_is_runnable(tmp_path: Path) -> None:
+    # verify_command is OPTIONAL: an empty one loads AND is runnable. `agent6
+    # run`/`plan` infer one (or fall back to a gateless run), so require_runnable
+    # must NOT block on it -- only providers/model are required.
     body = _VALID_TOML.replace('verify_command = ["true"]', "verify_command = []")
     cfg = load_config(_write(tmp_path, body))
     assert cfg.workflow.verify_command == ()
-    with pytest.raises(ConfigError):
-        cfg.require_runnable("worker")
+    cfg.require_runnable("worker")  # does not raise
+
+
+def test_with_inferred_verify_injects_in_memory(tmp_path: Path) -> None:
+    # An inferred verify command is injected in-memory for one run, never
+    # mutating the original config.
+    body = _VALID_TOML.replace('verify_command = ["true"]', "verify_command = []")
+    cfg = load_config(_write(tmp_path, body))
+    injected = cfg.with_inferred_verify(("pytest", "-q"))
+    assert injected.workflow.verify_command == ("pytest", "-q")
+    assert cfg.workflow.verify_command == ()  # original untouched
+    assert cfg.with_inferred_verify(()) is cfg  # empty argv is a no-op
 
 
 def test_verify_timeout_s_defaults_to_600(tmp_path: Path) -> None:
