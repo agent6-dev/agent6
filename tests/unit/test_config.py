@@ -164,6 +164,34 @@ def test_allow_urls_rejects_bad_port(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
+def test_extra_read_paths_accepts_clean_absolute(tmp_path: Path) -> None:
+    body = _VALID_TOML.replace(
+        "protect_git = true",
+        'protect_git = true\nextra_read_paths = ["/opt/toolchain", "/usr/local/go"]',
+    )
+    cfg = load_config(_write(tmp_path, body))
+    assert cfg.sandbox.extra_read_paths == ("/opt/toolchain", "/usr/local/go")
+
+
+def test_extra_read_paths_rejects_relative(tmp_path: Path) -> None:
+    body = _VALID_TOML.replace(
+        "protect_git = true", 'protect_git = true\nextra_read_paths = ["opt/toolchain"]'
+    )
+    with pytest.raises(ConfigError, match=r"extra_read_paths"):
+        load_config(_write(tmp_path, body))
+
+
+def test_extra_read_paths_rejects_dotdot_traversal(tmp_path: Path) -> None:
+    # FINDING 2: extra_read_paths are bind-mounted read+EXECUTE into the jail, so
+    # a `..` component (which could traverse outside the apparent target) must be
+    # rejected at config validation even though the path is absolute.
+    body = _VALID_TOML.replace(
+        "protect_git = true", 'protect_git = true\nextra_read_paths = ["/opt/../etc/shadow"]'
+    )
+    with pytest.raises(ConfigError, match=r"extra_read_paths.*'\.\.'"):
+        load_config(_write(tmp_path, body))
+
+
 def test_openai_base_url_accepts_http_and_https(tmp_path: Path) -> None:
     body = _VALID_TOML.replace(
         "[models.worker]",

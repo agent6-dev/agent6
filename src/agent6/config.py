@@ -341,7 +341,11 @@ class ModelsConfig(BaseModel):
 class SandboxConfig(BaseModel):
     model_config = _BASE_MODEL_CONFIG
 
-    profile: Literal["auto", "strict", "hardened"] = "auto"
+    # "none" is the explicit UNSANDBOXED opt-out (no Landlock/seccomp/namespaces);
+    # allowed in a detected container ("the container is the sandbox"), refused on
+    # a bare host unless AGENT6_ALLOW_NO_SANDBOX=1. `auto` never resolves to none
+    # on Linux -- see detect.select_profile.
+    profile: Literal["auto", "strict", "hardened", "none"] = "auto"
     # Where the agent PROCESS (its own LLM/provider HTTP) may connect:
     #  - `providers`: only the configured `[providers.*]` endpoints, plus any
     #    `allow_urls`. On `strict` this is structural, a trusted broker (see
@@ -389,12 +393,34 @@ class SandboxConfig(BaseModel):
     # under `agent_network = "providers"`; ignored under `local`/`open`. It
     # widens only the agent path, never a jailed `tool`/`run_command`.
     allow_urls: tuple[str, ...] = ()
+    # Extra filesystem paths a JAILED command may READ and EXECUTE, on top of
+    # the system defaults (/usr /bin /lib /lib64 /etc /dev) and the workspace.
+    # For projects whose toolchain or interpreter lives outside the repo — a
+    # system conda/virtualenv, a language toolchain (Go/Rust/Node), a shared
+    # data dir. Each entry is an absolute path; it is granted read+execute
+    # (not write) under `hardened`/`strict`. This LOOSENS confinement (the child
+    # can read more of the host), so list only what the build/test actually
+    # needs. Empty by default. Has no effect under the `none` profile.
+    extra_read_paths: tuple[str, ...] = ()
 
     @field_validator("allow_urls")
     @classmethod
     def _check_allow_urls(cls, v: tuple[str, ...]) -> tuple[str, ...]:
         for entry in v:
             _validate_allow_url(entry)
+        return v
+
+    @field_validator("extra_read_paths")
+    @classmethod
+    def _check_extra_read_paths(cls, v: tuple[str, ...]) -> tuple[str, ...]:
+        for p in v:
+            if not p.startswith("/"):
+                raise ValueError(f"sandbox.extra_read_paths must be absolute: {p!r}")
+            # These paths are bind-mounted read+execute into the jail, so a `..`
+            # component would let an entry traverse outside its apparent target.
+            # Reject any `..` segment outright (absolute + no traversal).
+            if ".." in Path(p).parts:
+                raise ValueError(f"sandbox.extra_read_paths must not contain '..': {p!r}")
         return v
 
     @model_validator(mode="after")
@@ -551,6 +577,56 @@ class WorkflowConfig(BaseModel):
     # any other provider call. Default off keeps crisp prompts/frontier-model
     # runs on the old path.
     revise_prompt: Literal["off", "auto", "interactive"] = "off"
+    # ADVANCED: replace run-mode's static base system prompt (role + edit/tool-use/
+    # dag/scope rules) with the contents of this file. The dynamic blocks (verify,
+    # metric, budget, repo-priors + AGENTS.md) still append, so repo context and
+    # the budget cap are preserved. Empty = the built-in default. You own keeping
+    # the tool contracts intact (apply_edit/apply_patch, run_verify_command,
+    # finish_run); run startup warns if the override omits them. Inspect the
+    # assembled result with `agent6 prompt show`.
+    system_prompt_file: str = ""
+    # Include the structural-prior blocks in the run-mode <repo-priors>: hot
+    # symbols (cross-file reference ranking), git co-change pairs, and the
+    # tree-sitter symbol outline. Default on. Set false for a leaner/cheaper
+    # prompt that relies purely on on-demand exploration (outline/find_definition)
+    # -- the base repo map + AGENTS.md still ship.
+    structural_priors: bool = True
+    # Adversarial review panel (opt-in). Shared by `agent6 review --reviewers N`
+    # and, once validated, the in-loop critic trigger. ``review_decision`` is only
+    # a GATE in-loop; "advisory" (default) just injects findings as guidance and
+    # never blocks. ``review_seats`` (flat "persona@provider/model" strings, e.g.
+    # "security@openrouter/moonshotai/kimi-k2") overrides size/personas for
+    # distinct models per seat; empty = ``review_panel_size`` seats on the
+    # ``reviewer`` model with ``review_personas`` cycled across them.
+    review_panel_size: int = Field(ge=1, default=1)
+    review_personas: tuple[str, ...] = ()
+    review_decision: Literal["advisory", "veto", "quorum", "all"] = "advisory"
+    review_quorum: int = Field(ge=1, default=2)
+    # Per-run cap on total panel blocks before the gate auto-downgrades to
+    # advisory for the rest of the run (so a gating panel can never stall forever).
+    review_max_total_rejections: int = Field(ge=1, default=4)
+    # Budget floor: the in-loop review panel is SKIPPED (approve-and-proceed) once
+    # the run's remaining token budget falls below this fraction -- reviewing costs
+    # most exactly when budget is scarcest. Default 0.25 = skip the panel in the
+    # last quarter of the budget.
+    review_budget_fraction: float = Field(gt=0.0, le=1.0, default=0.25)
+    review_seats: tuple[str, ...] = ()
+    # Seat concurrency for the in-loop panel (1 = sequential). The post-hoc
+    # `agent6 review` runs all seats in parallel regardless (fast one-shot).
+    review_concurrency: int = Field(ge=1, default=1)
+    # Reviewer tier: "diff" (one grounded call over the diff) or "explore" (a
+    # read-only tool-using mini-loop that reads the broader repo first to catch
+    # cross-file impact). explore is more thorough but costs several calls/seat.
+    review_tier: Literal["diff", "explore"] = "diff"
+    # Named config PROFILE: a preset that fills in many settings at once (see
+    # agent6.config BUILTIN_PROFILES + user [profiles.<name>] tables). Injected
+    # just ABOVE the config layer that selected it, so the profile OVERRIDES that
+    # config; a more-specific config layer (repo over global, an explicit
+    # --config FILE) or the --profile flag still overrides the profile. Only the
+    # most-specific source's profile applies -- global and repo presets do not
+    # stack. "" / "standard" = the plain defaults. The --profile CLI flag selects
+    # a profile that overrides all config except an explicit --config FILE.
+    profile: str = ""
 
     @model_validator(mode="after")
     def _check_compaction_thresholds(self) -> WorkflowConfig:
@@ -573,6 +649,50 @@ class WorkflowConfig(BaseModel):
                 f" compact_drop_at_chars ({drop}): tier-2"
                 " summarise must escalate above tier-1 elision."
             )
+        return self
+
+    @model_validator(mode="after")
+    def _check_system_prompt_file(self) -> WorkflowConfig:
+        # Fail loud at config time if the override path is set but missing, rather
+        # than silently falling back to the default prompt at run start.
+        if self.system_prompt_file:
+            p = Path(self.system_prompt_file).expanduser()
+            if not p.is_file():
+                raise ValueError(f"workflow.system_prompt_file: not a readable file: {p}")
+        return self
+
+    @model_validator(mode="after")
+    def _check_review_seats(self) -> WorkflowConfig:
+        # Each review_seats entry is "persona", "persona@provider/model", or
+        # "@provider/model"; an "@" form must name BOTH a provider and a model so
+        # a typo doesn't silently degrade to the reviewer route.
+        for spec in self.review_seats:
+            if not spec.strip():
+                raise ValueError("workflow.review_seats entries must be non-empty")
+            _persona, sep, route = spec.partition("@")
+            if sep:
+                provider, slash, model = route.partition("/")
+                if not (provider.strip() and slash and model.strip()):
+                    raise ValueError(
+                        f"workflow.review_seats: {spec!r} must be"
+                        " 'persona@provider/model' (both provider and model required)"
+                    )
+        return self
+
+    @model_validator(mode="after")
+    def _check_review_quorum(self) -> WorkflowConfig:
+        # The quorum gate counts one block per DISTINCT model, so quorum > 1 needs
+        # at least that many distinct models -- a same-model panel can reach only 1
+        # and would never gate. Catch the footgun at load time.
+        if self.review_decision == "quorum" and self.review_quorum > 1:
+            models = {(s.partition("@")[2].strip() if "@" in s else "") for s in self.review_seats}
+            if len(models) < self.review_quorum:
+                raise ValueError(
+                    f"workflow.review_decision='quorum' with review_quorum={self.review_quorum}"
+                    f" needs >= {self.review_quorum} DISTINCT models (the gate counts one block per"
+                    " distinct model). Provide them via review_seats"
+                    " ('persona@provider/model'), or use review_decision='veto'."
+                )
         return self
 
 
@@ -886,6 +1006,67 @@ class Config(BaseModel):
                 f"models.{role}.provider = {rm.provider!r} but [providers.{rm.provider}]"
                 f" is not configured. Known providers: {known}."
             )
+
+
+# Built-in config profiles: named presets that fill in many settings at once, so
+# a task can pick a strategy with one knob (`--profile ultra`) instead of tuning
+# the review_* / budget knobs by hand. Each value is a nested config dict applied
+# as the LOWEST layer (your explicit settings still win). Users add their own via
+# [profiles.<name>] tables in config.toml.
+BUILTIN_PROFILES: dict[str, dict[str, Any]] = {
+    # The pre-feature baseline: plain defaults, no review panel.
+    "standard": {},
+    # Fast/cheap: no review, tighter output budget.
+    "quick": {
+        "workflow": {"critic": "off"},
+        "budget": {"max_output_tokens": 50_000},
+    },
+    # The "ultracode" tier: a 3-seat grounded panel that advises + gates by quorum.
+    "ultra": {
+        "workflow": {
+            "critic": "before_finish",
+            "review_panel_size": 3,
+            # veto, not quorum: the 3 seats share one model (the gate counts one
+            # block per DISTINCT model, so quorum>1 would be unreachable here).
+            "review_decision": "veto",
+            "review_personas": ["security", "correctness", "tests"],
+        },
+    },
+    # Maximum scrutiny: 5 explore-tier seats, before_finish veto, bigger budget.
+    "paranoid": {
+        "workflow": {
+            "critic": "before_finish",
+            "review_panel_size": 5,
+            "review_decision": "veto",
+            "review_tier": "explore",
+            "review_personas": [
+                "security",
+                "correctness",
+                "tests",
+                "edge-cases",
+                "over-engineering",
+            ],
+        },
+        "budget": {"max_output_tokens": 400_000},
+    },
+}
+
+
+def resolve_profile(name: str, user_profiles: dict[str, Any]) -> dict[str, Any]:
+    """The config-override dict for profile *name* (user profiles win over
+    built-ins of the same name). "" / "standard" -> {} (plain defaults). Raises
+    ConfigError for an unknown name so a typo'd profile fails loudly."""
+    if name in ("", "standard"):
+        return BUILTIN_PROFILES.get(name, {})
+    if name in user_profiles:
+        prof = user_profiles[name]
+        if not isinstance(prof, dict):
+            raise ConfigError(f"[profiles.{name}] must be a table, got {type(prof).__name__}")
+        return prof
+    if name in BUILTIN_PROFILES:
+        return BUILTIN_PROFILES[name]
+    known = ", ".join(sorted({*BUILTIN_PROFILES, *user_profiles}))
+    raise ConfigError(f"unknown profile {name!r}. Known profiles: {known}.")
 
 
 def _format_validation_error(err: ValidationError, source: str) -> str:

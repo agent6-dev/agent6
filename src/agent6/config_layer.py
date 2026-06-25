@@ -15,10 +15,18 @@ repo can override a single field without restating the rest. Every leaf
 remembers which layer last set it, which powers ``agent6 config show``,
 the audit surface that makes the effective config and its provenance
 obvious at a glance.
+
+A selected ``profile`` preset is injected just ABOVE the config layer that
+SELECTED it (``--profile`` flag / repo / global ``[workflow].profile``), so the
+profile OVERRIDES that config while a more-specific config layer (or an explicit
+``--config FILE`` / machine overlay) still overrides the profile. Only the
+most-specific source's profile is injected -- global and repo presets never
+stack. See :func:`_apply_profile`.
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
 import tomllib
 import types
@@ -30,11 +38,13 @@ from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
 from agent6.config import (
+    BUILTIN_PROFILES,
     AnthropicProviderEntry,
     Config,
     ConfigError,
     Deployment,
     OpenAIProviderEntry,
+    resolve_profile,
     validate_config,
 )
 from agent6.config_io import (
@@ -50,7 +60,7 @@ from agent6.paths import (
     state_dir,
 )
 
-LayerName = Literal["default", "global", "repo", "flag", "machine"]
+LayerName = Literal["default", "profile", "global", "repo", "flag", "machine"]
 
 # Display order for `config show` / `config fill` (model definition order).
 _SECTION_ORDER = (
@@ -159,6 +169,21 @@ def discover_layers(repo_root: Path, explicit_path: Path | None) -> list[Layer]:
     return layers
 
 
+def available_profile_names(repo_root: Path, explicit_path: Path | None = None) -> list[str]:
+    """Profile names a chooser can offer: the built-ins plus the user's custom
+    ``[profiles.<name>]`` tables (read from the config layers, the same source
+    ``--profile`` resolves against), sorted + de-duplicated. A config-read failure
+    degrades to the built-ins alone, so a caller (e.g. the TUI's new-work chooser)
+    never blocks on a bad config."""
+    names: set[str] = set(BUILTIN_PROFILES)
+    with contextlib.suppress(Exception):
+        for layer in discover_layers(repo_root, explicit_path):
+            prof = layer.data.get("profiles")
+            if isinstance(prof, dict):
+                names.update(prof.keys())
+    return sorted(names)
+
+
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     out = dict(base)
     for key, val in override.items():
@@ -214,9 +239,93 @@ def _effective_from_layers(layers: list[Layer], *, source: str) -> EffectiveConf
     return EffectiveConfig(config=config, sources=sources, layers=tuple(layers))
 
 
-def load_effective(repo_root: Path, explicit_path: Path | None = None) -> EffectiveConfig:
-    """Merge + validate all layers and record per-leaf provenance."""
+def _own_profile(layer: Layer) -> str:
+    """A layer's OWN raw ``[workflow].profile`` (not the merged value), or ""."""
+    wf = layer.data.get("workflow")
+    if isinstance(wf, dict):
+        return str(wf.get("profile", "") or "")
+    return ""
+
+
+def _select_profile(cleaned: list[Layer], profile_override: str) -> tuple[str, str]:
+    """Pick the (profile name, source) most-specific first from each layer's OWN
+    raw ``[workflow].profile`` (never stacking global+repo): the ``--profile``
+    flag, else the ``repo`` layer's field, else the ``global`` layer's field,
+    else ("", "none")."""
+    if profile_override:
+        return profile_override, "flag"
+    by_name = {layer.name: layer for layer in cleaned}
+    for source in ("repo", "global"):
+        layer = by_name.get(source)
+        if layer is not None and (name := _own_profile(layer)):
+            return name, source
+    return "", "none"
+
+
+def _insert_profile(cleaned: list[Layer], preset: Layer, source: str) -> list[Layer]:
+    """Splice *preset* into *cleaned* at the position for its *source*.
+
+    ``global``/``repo`` -> right AFTER that config layer (so the profile
+    overrides it but the more-specific config layer / flag still wins). ``flag``
+    (``--profile``) -> just BELOW an explicit ``--config FILE`` / machine overlay
+    if present (those still win), else appended last (overrides all config).
+    """
+    out: list[Layer] = []
+    inserted = False
+    for layer in cleaned:
+        if source == "flag" and not inserted and layer.name in ("flag", "machine"):
+            out.append(preset)
+            inserted = True
+        out.append(layer)
+        if not inserted and layer.name == source:  # source in {"global", "repo"}
+            out.append(preset)
+            inserted = True
+    if not inserted:
+        out.append(preset)
+    return out
+
+
+def _apply_profile(layers: list[Layer], profile_override: str) -> list[Layer]:
+    """Strip ``[profiles]`` tables out of the user layers (they are meta-config,
+    not part of the validated Config) and inject the selected profile preset
+    just ABOVE the config layer that SELECTED it, so the profile OVERRIDES that
+    config while a more-specific config layer (or an explicit ``--config FILE`` /
+    machine overlay) still overrides the profile. Only the most-specific source's
+    profile is injected -- global and repo presets never stack.
+
+    Source is chosen by :func:`_select_profile` (``--profile`` flag > repo's own
+    ``[workflow].profile`` > global's own), and the preset is spliced in by
+    :func:`_insert_profile`. Resulting precedence (low->high): default <
+    global-config < [profile if global-selected] < repo-config <
+    [profile if repo-selected] < [profile if --flag] < flag(``--config FILE``) <
+    machine-overlay.
+    """
+    cleaned: list[Layer] = []
+    user_profiles: dict[str, Any] = {}
+    for layer in layers:
+        data = dict(layer.data)
+        prof = data.pop("profiles", None)
+        if isinstance(prof, dict):
+            user_profiles = _deep_merge(user_profiles, prof)
+        cleaned.append(Layer(layer.name, layer.path, data))
+
+    name, source = _select_profile(cleaned, profile_override)
+    overrides = resolve_profile(name, user_profiles)
+    if not overrides:
+        return cleaned
+    return _insert_profile(cleaned, Layer("profile", None, overrides), source)
+
+
+def load_effective(
+    repo_root: Path, explicit_path: Path | None = None, *, profile: str = ""
+) -> EffectiveConfig:
+    """Merge + validate all layers and record per-leaf provenance. A named
+    ``profile`` (CLI flag or ``[workflow].profile``) is injected just above the
+    config layer that selected it, so it OVERRIDES that config (a more-specific
+    config layer / flag still wins); ``[profiles.<name>]`` tables in config
+    define custom ones. See :func:`_apply_profile`."""
     layers = discover_layers(repo_root, explicit_path)
+    layers = _apply_profile(layers, profile)
     return _effective_from_layers(layers, source="(merged config layers)")
 
 
@@ -232,6 +341,10 @@ def load_effective_with_overlay(repo_root: Path, overlay: dict[str, Any]) -> Eff
     if overlay:
         _forbid_repo_state_dir("machine overlay", overlay)
         layers = [*layers, Layer("machine", None, overlay)]
+    # Apply the selected profile (and strip [profiles] tables) just like
+    # load_effective, so a user's [profiles.<name>] + [workflow].profile work
+    # under `machine run` / `config --machine` instead of failing validation.
+    layers = _apply_profile(layers, "")
     return _effective_from_layers(layers, source="(merged config layers + machine overlay)")
 
 
