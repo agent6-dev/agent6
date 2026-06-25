@@ -100,8 +100,13 @@ def usd_budget_to_tokens(
     # => (ratio + 1) * output_usd = max_usd
     output_usd = max_usd / (ratio + 1)
     input_usd = max_usd - output_usd
-    max_input_tokens = int((input_usd * 1_000_000) / in_per_mtok)
-    max_output_tokens = int((output_usd * 1_000_000) / out_per_mtok)
+    # Clamp to at least one token: an extreme-but-legal tiny USD budget can
+    # floor to 0 here, which would synthesize an invalid 0 token ceiling (the
+    # BudgetConfig validators require gt=0). The runtime USD ceiling (max_usd
+    # via BudgetTracker) still enforces the true dollar bound, so a 1-token
+    # floor just means the run stops after a single tiny call.
+    max_input_tokens = max(1, int((input_usd * 1_000_000) / in_per_mtok))
+    max_output_tokens = max(1, int((output_usd * 1_000_000) / out_per_mtok))
     return max_input_tokens, max_output_tokens
 
 

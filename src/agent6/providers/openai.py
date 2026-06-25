@@ -54,6 +54,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -142,6 +143,24 @@ def _is_reasoning_model(model: str) -> bool:
     ``reasoning_content`` separately from ``content``."""
     lowered = model.lower()
     return any(hint in lowered for hint in _REASONING_MODEL_HINTS)
+
+
+# OpenAI's OWN reasoning families (o-series + gpt-5). On the api.openai.com
+# direct host these reject the legacy ``max_tokens`` param (400, "Use
+# max_completion_tokens") and reject ``temperature != 1``. Kept narrower than
+# ``_is_reasoning_model`` on purpose: third-party reasoning models (kimi,
+# deepseek, qwq) are never served by api.openai.com, so they must NOT trigger
+# the rename even if someone points them at the default base_url.
+_OPENAI_DIRECT_REASONING_PREFIXES: tuple[str, ...] = ("o1", "o3", "o4", "gpt-5")
+
+
+def _is_openai_direct_reasoning_model(model: str) -> bool:
+    """True if ``model`` is one of OpenAI's own o-series/gpt-5 reasoning
+    models (only meaningful when the request targets api.openai.com)."""
+    lowered = model.lower()
+    return any(
+        lowered == p or lowered.startswith(p + "-") for p in _OPENAI_DIRECT_REASONING_PREFIXES
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -253,10 +272,25 @@ class OpenAIProvider:
             streaming=streaming,
             extra_query=self.extra_query,
         )
-        body: dict[str, Any] = {
-            "max_tokens": effective_max_tokens,
-            "messages": oai_messages,
-        }
+        # OpenAI-direct o-series/reasoning models (o1/o3/o4/gpt-5-style)
+        # REJECT the legacy ``max_tokens`` parameter with a hard 400
+        # ("Use max_completion_tokens"), and reject ``temperature != 1``.
+        # They are reached only on the OpenAI-direct host; other
+        # openai-compatible hosts (OpenRouter, Azure, vLLM, llama.cpp) still
+        # require ``max_tokens`` and accept arbitrary temperature, so gate the
+        # rename on host + model. OpenRouter masked this by normalising
+        # ``max_tokens`` -> ``max_completion_tokens`` itself.
+        is_openai_direct = (
+            self.deployment == "direct" and urlsplit(self.base_url).hostname == "api.openai.com"
+        )
+        is_openai_direct_reasoning = is_openai_direct and _is_openai_direct_reasoning_model(
+            self.model
+        )
+        body: dict[str, Any] = {"messages": oai_messages}
+        if is_openai_direct_reasoning:
+            body["max_completion_tokens"] = effective_max_tokens
+        else:
+            body["max_tokens"] = effective_max_tokens
         # Direct/Vertex carry the model in the body; Azure carries the
         # deployment name in the URL path, so omit it from the body there.
         if model_in_body:
@@ -334,7 +368,10 @@ class OpenAIProvider:
                     body["reasoning"] = {"effort": override}
                 else:
                     body["reasoning"] = {"effort": "low"}
-        if temperature is not None:
+        # OpenAI-direct o-series/reasoning models reject any explicit
+        # ``temperature`` (only the server default is accepted), so omit it
+        # there. Other hosts forward it as-is.
+        if temperature is not None and not is_openai_direct_reasoning:
             body["temperature"] = temperature
         if tools:
             body["tools"] = tools_to_openai(tools)
@@ -442,7 +479,25 @@ class OpenAIProvider:
                     f"OpenAI API error {resp.status_code}: {resp.text[:500]}",
                     status_code=resp.status_code,
                 )
-            data: dict[str, Any] = resp.json()
+            try:
+                data: dict[str, Any] = resp.json()
+            except (json.JSONDecodeError, ValueError) as exc:
+                # A 2xx with a non-JSON body (transient proxy/gateway glitch)
+                # would otherwise raise a JSONDecodeError that the retry loop
+                # doesn't catch (it only handles ProviderError), aborting the
+                # run. Convert to a retryable ProviderError. Leaving
+                # status_code unset marks it retryable.
+                if self.transcript_sink is not None:
+                    self.transcript_sink.record(
+                        url=url,
+                        request_headers=headers,
+                        request_body=body,
+                        response_status=resp.status_code,
+                        response_body=resp.text[:8192],
+                    )
+                raise ProviderError(
+                    f"non-JSON response from OpenAI (status {resp.status_code}): {resp.text[:500]}"
+                ) from exc
             if self.transcript_sink is not None:
                 self.transcript_sink.record(
                     url=url,
@@ -879,12 +934,17 @@ _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 # Qwen-Coder XML tool form. The closing ``</function>`` is sometimes
 # missing (truncation) or mis-spelled ``</tool_call>``; capture the name
 # and a lenient body, then mine ``<parameter=...>`` pairs out of it.
+# The next-tag terminators are LOOKAHEADS (not consuming): when a closing tag
+# is missing, the body must end *before* the next block's opening tag without
+# swallowing it -- otherwise finditer consumes that opener and silently drops
+# the following function/parameter (corrupts e.g. apply_edit on open-weight
+# models that emit unclosed Qwen-XML tool calls).
 _FUNCTION_CALL_RE = re.compile(
-    r"<function\s*=\s*([^>\s]+?)\s*>(.*?)(?:</function>|</tool_call>|<function\s*=|\Z)",
+    r"<function\s*=\s*([^>\s]+?)\s*>(.*?)(?:</function>|</tool_call>|(?=<function\s*=)|\Z)",
     re.DOTALL,
 )
 _PARAMETER_RE = re.compile(
-    r"<parameter\s*=\s*([^>\s]+?)\s*>(.*?)(?:</parameter>|<parameter\s*=|\Z)",
+    r"<parameter\s*=\s*([^>\s]+?)\s*>(.*?)(?:</parameter>|(?=<parameter\s*=)|\Z)",
     re.DOTALL,
 )
 # Leftover scaffolding to scrub from the visible text once calls are mined.
@@ -1072,7 +1132,7 @@ def _parse_response(  # noqa: PLR0912, PLR0915
         stop_reason = str(first.get("finish_reason") or "")
         raw_calls = message.get("tool_calls") or []
         parsed_calls: list[dict[str, Any]] = []
-        for call in raw_calls:
+        for i, call in enumerate(raw_calls):
             if not isinstance(call, dict):
                 continue
             func = call.get("function") or {}
@@ -1115,7 +1175,13 @@ def _parse_response(  # noqa: PLR0912, PLR0915
                 parsed_input = {"_raw_arguments": raw_str}
             parsed_calls.append(
                 {
-                    "id": str(call.get("id", "")),
+                    # Synthesise a distinct id when the backend omits one
+                    # (some open-weight models stream tool_calls with no id).
+                    # Two native tool_calls both with id="" would otherwise
+                    # collapse to ambiguous/duplicate tool_call_id pairing on
+                    # the next request, tripping a strict-backend 400. Mirrors
+                    # the call_text_{i} fallback used for recovered calls.
+                    "id": str(call.get("id") or f"call_auto_{i}"),
                     "name": str(func.get("name", "")),
                     "input": parsed_input,
                 }
@@ -1154,9 +1220,13 @@ def _parse_response(  # noqa: PLR0912, PLR0915
     if isinstance(details, dict):
         cached = int(details.get("cached_tokens", 0) or 0)
     prompt_total = int(usage.get("prompt_tokens", 0))
-    # Defensive clamp: a misbehaving upstream that reports cached > prompt
-    # would otherwise make input_tokens negative.
-    fresh_input = max(prompt_total - cached, 0)
+    # Clamp cached to the prompt total as the SINGLE source of truth: a
+    # misbehaving upstream that reports cached > prompt would otherwise make
+    # input_tokens negative (clamped below) AND leave cache_read_tokens -- billed
+    # at the 10% cache rate in budget.py -- inconsistent with that clamped input.
+    # Clamping once here keeps both fields consistent.
+    cached = min(cached, prompt_total)
+    fresh_input = prompt_total - cached
     # Build a content-blocks raw payload mirroring Anthropic's response
     # shape so callers that inspect resp.raw["content"] (the worker_loop
     # does this to reconstruct the assistant message verbatim) see the

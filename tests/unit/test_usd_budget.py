@@ -125,3 +125,34 @@ def test_explicit_usd_flag_ok_when_priced(price_cache: Path) -> None:
         }
     )
     assert _explicit_usd_flag_error(2.5, cfg) is None
+
+
+def test_warn_if_usd_unenforceable(price_cache: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """A TOML best_effort_usd_limit on an unpriced worker can't enforce (Anthropic
+    publishes no pricing), so run startup must warn instead of silently no-op'ing.
+    The --max-usd *flag* is already guarded by _explicit_usd_flag_error; this is
+    the config-path complement."""
+    from agent6.cli.run import _warn_if_usd_unenforceable  # pyright: ignore[reportPrivateUsage]
+    from agent6.config import Config
+
+    def _cfg(model: str, usd: float) -> Config:
+        return Config.model_validate(
+            {
+                "providers": {"p": {"api_format": "openai", "base_url": "http://localhost:1"}},
+                "models": {"worker": {"provider": "p", "model": model}},
+                "budget": {"best_effort_usd_limit": usd},
+            }
+        )
+
+    # unpriced + usd>0 -> warns, names the model, points at token ceilings
+    _warn_if_usd_unenforceable(_cfg("nobody/unpriced", 1.0), "nobody/unpriced")
+    warned = capsys.readouterr().err
+    assert "cannot be enforced" in warned and "nobody/unpriced" in warned
+
+    # priced worker -> the USD ceiling works, so stay silent
+    _warn_if_usd_unenforceable(_cfg(PRICED_MODEL, 1.0), PRICED_MODEL)
+    assert capsys.readouterr().err == ""
+
+    # no USD limit -> nothing to enforce, stay silent
+    _warn_if_usd_unenforceable(_cfg("nobody/unpriced", 0.0), "nobody/unpriced")
+    assert capsys.readouterr().err == ""

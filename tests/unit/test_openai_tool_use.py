@@ -689,6 +689,25 @@ def test_qwen_function_xml_structured_param_is_typed(
     ]
 
 
+def test_qwen_function_xml_unclosed_params_keep_all(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: with `</parameter>` closers MISSING (truncation), each param's
+    body must stop at the NEXT `<parameter=` via a lookahead, not consume it --
+    else the following param is silently dropped (here `edits`), making apply_edit
+    fail pydantic validation and wasting a turn. Open-weight models emit this."""
+    edits = '[{"kind": "replace", "old_string": "a", "new_string": "b"}]'
+    content = (  # no </parameter> closers at all
+        f"<function=apply_edit>\n<parameter=path>\nf.py\n<parameter=edits>\n{edits}\n</function>"
+    )
+    resp = _call_with_text_content(monkeypatch, content, tools=[_APPLY_EDIT_TOOL])
+    assert len(resp.tool_uses) == 1
+    assert resp.tool_uses[0]["input"]["path"] == "f.py"
+    assert resp.tool_uses[0]["input"]["edits"] == [
+        {"kind": "replace", "old_string": "a", "new_string": "b"}
+    ]
+
+
 def test_qwen_function_xml_string_param_not_mangled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

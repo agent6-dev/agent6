@@ -13,6 +13,7 @@ import contextlib
 import json
 import os
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -36,6 +37,23 @@ ANTHROPIC_VERSION = "2023-06-01"
 # a Vertex-specific value; see _anthropic_version.
 ANTHROPIC_VERTEX_VERSION = "vertex-2023-10-16"
 DEFAULT_MAX_TOKENS = 8192
+
+# Idle-since-last-data watchdog for the SSE streaming path. ``http_stream``
+# forwards ``timeout`` to httpx as a per-read gap that resets on every byte;
+# Anthropic ``ping`` heartbeats are bytes, so a wedged-but-pinging upstream
+# would otherwise block ``iter_lines`` forever with no spend cap (budget is
+# only recorded after the loop completes). We track time since the last
+# MEANINGFUL data event (anything that isn't a ``ping``) and have a daemon
+# thread close the response once it goes past ``_STREAM_IDLE_TIMEOUT_S``; the
+# blocking ``iter_lines`` then raises an ``httpx.HTTPError`` we convert to a
+# retryable ProviderError. Mirrors the OpenAI provider's watchdog; the
+# constants are duplicated here rather than imported because openai.py imports
+# from this module (importing back would be a cycle).
+#
+# 180s is generous: real reasoning bursts emit token-level deltas every few
+# seconds even mid-thinking. Three minutes of only heartbeats means wedged.
+_STREAM_IDLE_TIMEOUT_S = 180.0
+_STREAM_WATCHDOG_TICK_S = 5.0
 
 
 def _anthropic_version(deployment: str) -> tuple[str, str]:
@@ -82,6 +100,13 @@ class ProviderError(Exception):
 def _redact_headers(headers: dict[str, str]) -> dict[str, str]:
     """Return a copy of `headers` with secret-bearing entries redacted."""
     return {k: (_REDACTED if k.lower() in _REDACT_HEADER_NAMES else v) for k, v in headers.items()}
+
+
+def _is_temperature_400(status: int | None, text: str, body: dict[str, Any]) -> bool:
+    """True when a 400 says the model rejects ``temperature`` (e.g. claude-opus-4-8:
+    "temperature is deprecated for this model") AND temperature is still in the
+    request body -- the signal to drop it and retry once."""
+    return status == 400 and "temperature" in body and "temperature" in (text or "").lower()
 
 
 class TranscriptSink:
@@ -190,6 +215,12 @@ class AnthropicProvider:
     # the auth token per call instead of api_key, and a 401/403 triggers one
     # refresh + retry. Internally mutable (cache), hence held by reference.
     credential: CommandToken | None = None
+    # Some newer models (e.g. claude-opus-4-8) reject ANY ``temperature`` with a
+    # 400 "temperature is deprecated for this model". agent6 pins temperature for
+    # determinism, so on that 400 we drop it and retry, latching this flag so the
+    # rest of the run omits it (avoids re-sending the full context every call).
+    # A 1-element list because the dataclass is frozen but the list is mutable.
+    _omit_temperature: list[bool] = field(default_factory=lambda: [False])
 
     @classmethod
     def from_env(
@@ -285,7 +316,7 @@ class AnthropicProvider:
             # Extended thinking is incompatible with temperature overrides,
             # so only pass temperature when thinking is disabled.
             body["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
-        elif temperature is not None:
+        elif temperature is not None and not self._omit_temperature[0]:
             body["temperature"] = temperature
         if tool_payload:
             body["tools"] = tool_payload
@@ -297,7 +328,9 @@ class AnthropicProvider:
         # a short-lived bearer (Vertex Google OAuth); on a 401/403 we refresh it
         # once and retry. Without a credential there is exactly one attempt.
         cred = self.credential
-        max_attempts = 2 if cred is not None else 1
+        # +1 attempt reserved for a one-shot "temperature is deprecated" 400 retry
+        # (only possible while temperature is still in the body).
+        max_attempts = (2 if cred is not None else 1) + (1 if "temperature" in body else 0)
         for attempt in range(max_attempts):
             headers: dict[str, str] = {"content-type": "application/json"}
             token = cred.token() if cred is not None else self.api_key
@@ -322,6 +355,10 @@ class AnthropicProvider:
                         thinking_delta_callback=thinking_delta_callback,
                     )
                 except ProviderError as exc:
+                    if _is_temperature_400(exc.status_code, str(exc), body):
+                        self._omit_temperature[0] = True
+                        body.pop("temperature", None)
+                        continue
                     if (
                         cred is not None
                         and attempt + 1 < max_attempts
@@ -360,11 +397,34 @@ class AnthropicProvider:
                         response_status=resp.status_code,
                         response_body=resp.text[:8192],
                     )
+                if _is_temperature_400(resp.status_code, resp.text, body):
+                    self._omit_temperature[0] = True
+                    body.pop("temperature", None)
+                    continue
                 raise ProviderError(
                     f"Anthropic API error {resp.status_code}: {resp.text[:500]}",
                     status_code=resp.status_code,
                 )
-            data: dict[str, Any] = resp.json()
+            try:
+                data: dict[str, Any] = resp.json()
+            except (json.JSONDecodeError, ValueError) as exc:
+                # A 2xx with a non-JSON body (transient proxy/gateway glitch)
+                # would otherwise raise a JSONDecodeError that the retry loop
+                # doesn't catch (it only handles ProviderError), aborting the
+                # run. Convert to a retryable ProviderError. Leaving
+                # status_code unset marks it retryable.
+                if self.transcript_sink is not None:
+                    self.transcript_sink.record(
+                        url=url,
+                        request_headers=headers,
+                        request_body=body,
+                        response_status=resp.status_code,
+                        response_body=resp.text[:8192],
+                    )
+                raise ProviderError(
+                    f"non-JSON response from Anthropic (status {resp.status_code}): "
+                    f"{resp.text[:500]}"
+                ) from exc
             if self.transcript_sink is not None:
                 self.transcript_sink.record(
                     url=url,
@@ -432,6 +492,37 @@ class AnthropicProvider:
         usage_cache_creation = 0
 
         sse_lines: list[str] = []  # for transcript audit trail
+
+        # idle-since-last-data watchdog. ``last_data_at`` is updated only on
+        # meaningful SSE events; ``ping`` heartbeats do NOT count (they are
+        # exactly the bytes that mask an upstream hang from httpx's read
+        # timeout). A background thread closes the response once the idle
+        # threshold is exceeded; the blocking ``iter_lines`` then raises and
+        # we surface a descriptive, retryable ProviderError.
+        last_data_at = time.monotonic()
+        idle_killed = threading.Event()
+        watchdog_stop = threading.Event()
+        # Mutable holder so the watchdog can reach the response without racing
+        # on assignment (the ``with`` body runs in a different frame).
+        resp_holder: dict[str, httpx.Response] = {}
+
+        def _watchdog() -> None:
+            while not watchdog_stop.wait(_STREAM_WATCHDOG_TICK_S):
+                if time.monotonic() - last_data_at <= _STREAM_IDLE_TIMEOUT_S:
+                    continue
+                resp = resp_holder.get("resp")
+                if resp is None:
+                    continue
+                idle_killed.set()
+                with contextlib.suppress(Exception):
+                    resp.close()
+                return
+
+        watchdog = threading.Thread(
+            target=_watchdog, name="agent6-anthropic-sse-watchdog", daemon=True
+        )
+        watchdog.start()
+
         try:
             with http_stream(
                 "POST",
@@ -440,6 +531,7 @@ class AnthropicProvider:
                 content=json.dumps(body).encode("utf-8"),
                 timeout=self.timeout_s,
             ) as resp:
+                resp_holder["resp"] = resp
                 if resp.status_code >= 400:
                     error_body = resp.read().decode("utf-8", errors="replace")[:8192]
                     if self.transcript_sink is not None:
@@ -473,6 +565,11 @@ class AnthropicProvider:
                     except json.JSONDecodeError:
                         continue
                     et = event_type or str(evt.get("type", ""))
+                    # Reset the idle clock on every MEANINGFUL event. ``ping``
+                    # heartbeats are deliberately excluded: they are exactly
+                    # the bytes that would otherwise mask a wedged upstream.
+                    if et != "ping":
+                        last_data_at = time.monotonic()
                     if et == "message_start":
                         msg = evt.get("message", {})
                         u = msg.get("usage", {}) or {}
@@ -570,6 +667,27 @@ class AnthropicProvider:
                             f"Anthropic stream error: {err.get('type')}: {err.get('message')}"
                         )
         except httpx.HTTPError as exc:
+            watchdog_stop.set()
+            if idle_killed.is_set():
+                # Convert the watchdog-induced HTTPError into a purpose-specific
+                # ProviderError so the loop's retry/quit path can log a
+                # meaningful reason rather than a generic "ReadError".
+                if self.transcript_sink is not None:
+                    self.transcript_sink.record(
+                        url=url,
+                        request_headers=stream_headers,
+                        request_body=body,
+                        response_status=0,
+                        response_body=(
+                            f"SSE idle watchdog: no data event for "
+                            f"{_STREAM_IDLE_TIMEOUT_S:.0f}s "
+                            f"(only heartbeats). Upstream model appears wedged."
+                        ),
+                    )
+                raise ProviderError(
+                    f"Anthropic SSE stream idle for >{_STREAM_IDLE_TIMEOUT_S:.0f}s "
+                    "(only heartbeats received); upstream appears wedged."
+                ) from exc
             if self.transcript_sink is not None:
                 self.transcript_sink.record(
                     url=url,
@@ -579,6 +697,8 @@ class AnthropicProvider:
                     response_body=f"HTTPError: {exc}",
                 )
             raise ProviderError(f"HTTP error streaming Anthropic: {exc}") from exc
+        finally:
+            watchdog_stop.set()
 
         # Synthesise the non-streaming-shaped response body so
         # downstream consumers (transcript replay, assistant_blocks

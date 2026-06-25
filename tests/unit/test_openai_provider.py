@@ -115,7 +115,10 @@ def test_call_clamps_negative_fresh_input_to_zero() -> None:
         resp = provider.call(system="s", messages=[{"role": "user", "content": "x"}])
 
     assert resp.input_tokens == 0
-    assert resp.cache_read_tokens == 999
+    # cache_read is clamped to the prompt total too (single source of truth): an
+    # upstream reporting cached(999) > prompt(10) no longer leaves cache_read_tokens
+    # inconsistent with the clamped input (which budget.py would mis-bill).
+    assert resp.cache_read_tokens == 10
 
 
 def test_call_flattens_anthropic_block_content() -> None:
