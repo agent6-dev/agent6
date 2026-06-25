@@ -36,8 +36,8 @@ REPL_HELP = (
     "                              (snapshot; not a live tail)\n"
     "  /mcp                     - list MCP servers + tools currently wired\n"
     "                              into the agent's tool surface\n"
-    "  /init                    - run `agent6 init` in the current cwd to\n"
-    "                              (re)write per-repo config + AGENTS.md scaffolds\n"
+    "  /init                    - run the `agent6 init` setup wizard in the\n"
+    "                              current cwd (prompts; never overwrites files)\n"
     "  /undo                    - git revert HEAD (forward revert of the\n"
     "                              last auto-commit; safe under git policy).\n"
     "                              History is preserved: a NEW commit is\n"
@@ -183,15 +183,17 @@ def repl_list_mcp(mcp_manager: MCPManager | None) -> None:
 
 
 def repl_run_init(root: Path) -> None:
-    """REPL /init: run init_workspace (non-destructive without --force)."""
+    """REPL /init: run the setup wizard. Prompts on a TTY (the REPL is
+    interactive) and never overwrites existing files; the ecosystem is
+    auto-detected (no hard-coded profile)."""
     try:
         rc = init_workspace(
-            root, force=False, profile="py", repo_config_target=repo_config_path_for(root)
+            root,
+            force=False,
+            repo_config_target=repo_config_path_for(root),
+            interactive=sys.stdin.isatty(),
         )
     except Exception as exc:
         print(f"[agent6] /init failed: {exc}", file=sys.stderr)
         return
-    if rc == 0:
-        print("[agent6] /init: ok", file=sys.stderr)
-    else:
-        print(f"[agent6] /init: exit {rc} (existing files left in place)", file=sys.stderr)
+    print("[agent6] /init: ok" if rc == 0 else f"[agent6] /init: exit {rc}", file=sys.stderr)

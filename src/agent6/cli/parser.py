@@ -499,28 +499,25 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
 
     init_p = sub.add_parser(
         "init",
-        help="Scaffold the per-repo config, AGENTS.md, and .gitignore.",
+        help="Optional setup wizard: per-repo config, verify_command, .gitignore, AGENTS.md.",
     )
     init_p.add_argument(
         "--force",
         action="store_true",
-        help="Overwrite existing files (default: refuse and write a .suggested sibling).",
+        help="Non-interactive: accept every step's default (never overwrites your files).",
     )
     init_p.add_argument(
         "--yes",
         action="store_true",
-        help="Skip the interactive prompts; write all starter files non-interactively.",
+        help="Skip the interactive prompts and accept the defaults for every step.",
     )
     init_p.add_argument(
         "--profile",
         choices=("py", "rust", "node"),
-        default="py",
+        default="",
         help=(
-            "Pick a starter verify_command for your language. "
-            "py (default): `.venv/bin/python -m pytest -x`. "
-            "rust: `cargo test --quiet`. "
-            "node: `npm test --silent`. "
-            "Edit the config afterward to match your real pipeline."
+            "Ecosystem for the .gitignore build-artifact entries. Auto-detected"
+            " from the repo's manifests when omitted (py/rust/node)."
         ),
     )
 
