@@ -22,7 +22,9 @@ from typing import Any
 from agent6.events import EventSink
 from agent6.ui.approval import (
     clear_steer_answer,
+    clear_steer_request,
     read_steer_answer,
+    steer_request_pending,
     tui_is_live,
 )
 
@@ -167,16 +169,29 @@ def install_steer_sigint(events: EventSink, run_dir: Path) -> SteerState:
     previous = signal.signal(signal.SIGINT, _handler)
 
     def requested() -> bool:
-        return bool(state["requested"])
+        # Either a Ctrl-C (the SIGINT flag) OR a TUI `s`-key steer request marker.
+        return bool(state["requested"]) or steer_request_pending(run_dir)
 
     def clear() -> None:
         state["requested"] = False
         clear_steer_answer(run_dir)
+        clear_steer_request(run_dir)
 
     def prompt() -> str | None:
         # TUI live: the user answers a modal; read its file-bridge result.
         if tui_is_live(run_dir):
-            return read_steer_answer(run_dir)
+            answer = read_steer_answer(run_dir)
+            # A dismissed/abandoned modal yields None (read_steer_answer timed out
+            # or the TUI died). Clear the request marker on THIS no-answer path so a
+            # persisting `steer.request` cannot re-trigger another 600s blocking
+            # read at the very next boundary, looping the run. A genuinely-answered
+            # steer leaves clearing to the caller's clear() (with the answer already
+            # consumed). The SIGINT flag is also cleared so a stale Ctrl-C request
+            # doesn't immediately re-arm the same dead prompt.
+            if answer is None:
+                state["requested"] = False
+                clear_steer_request(run_dir)
+            return answer
         return tty_prompt("[agent6] steer (blank=continue, 'abort'=stop, else=instruction): ")
 
     def restore() -> None:

@@ -18,8 +18,9 @@ from agent6.cli._common import (
     resolve_run_layout,
 )
 from agent6.cli.plan_watch import _most_recent_run_id
-from agent6.cli.providers import _build_role_provider
+from agent6.cli.providers import _build_role_provider, build_review_seats
 from agent6.config import (
+    Config,
     ConfigError,
 )
 from agent6.config_layer import (
@@ -54,7 +55,11 @@ from agent6.providers import (
     TranscriptSink,
 )
 from agent6.run_id import RunIdError, resolve_run_id
+from agent6.tools.dispatch import ToolDispatcher
 from agent6.transcript_render import fold_conversation, load_transcripts, render_markdown
+from agent6.workflows._panel import ReviewContext, render_findings
+from agent6.workflows._review import run_panel
+from agent6.workflows.loop import build_readonly_review_tools
 from agent6.workflows.review import CodeReviewError, run_review
 
 
@@ -456,6 +461,79 @@ def _collect_review_diff(
             subprocess.run([git, "reset", "-q", "--", *untracked], cwd=root, check=False)
 
 
+def _run_review_panel(
+    cfg: Config,
+    *,
+    base: str,
+    diff: str,
+    agents_md: str,
+    reviewers: int,
+    personas: str,
+    model_override: str,
+    transcript_sink: TranscriptSink,
+    budget: BudgetTracker,
+) -> int:
+    """Run the grounded adversarial review panel over *diff* and print a verdict
+    + merged findings. Read-only; no gating here (post-hoc), the verdict is
+    informational. Per-seat status and budget go to stderr."""
+    persona_tuple = tuple(p.strip() for p in personas.split(",") if p.strip())
+    seats = build_review_seats(
+        cfg,
+        transcript_sink=transcript_sink,
+        budget=budget,
+        n=reviewers,
+        personas=persona_tuple,
+        model_override=model_override,
+    )
+    label = base or "working tree vs HEAD"
+    ctx = ReviewContext(task=f"code review: {label}", agents_md=agents_md, diff=diff)
+    # explore-tier seats need a read-only tool surface over the repo.
+    tools = None
+    dispatch = None
+    if any(s.tier == "explore" for s in seats):
+        disp = ToolDispatcher(root=Path.cwd(), config=cfg)
+        tools, dispatch = build_readonly_review_tools(disp)
+    print(
+        f"[agent6] review panel: {len(seats)} seats"
+        f" ({', '.join(s.persona for s in seats)}) | decision={cfg.workflow.review_decision}"
+        f" | tier={cfg.workflow.review_tier}",
+        file=sys.stderr,
+    )
+    try:
+        result = run_panel(
+            seats,
+            ctx,
+            decision=cfg.workflow.review_decision,
+            quorum=cfg.workflow.review_quorum,
+            panel_id="cli",
+            concurrency=len(seats),  # one-shot CLI: run all seats in parallel
+            tools=tools,
+            dispatch=dispatch,
+        )
+    except BudgetExceeded as exc:
+        print(f"BUDGET EXCEEDED: {exc}", file=sys.stderr)
+        return 3
+    if result.blocked:
+        verdict = "BLOCK"
+    elif result.merged_findings:
+        verdict = "PASS (with findings)"
+    else:
+        verdict = "PASS"
+    print(f"VERDICT: {verdict}")
+    body = render_findings(result.merged_findings)
+    if body:
+        print(body)
+    print(
+        f"\nper-seat ({result.n_block} blocking model(s), {result.n_abstain} abstained):",
+        file=sys.stderr,
+    )
+    for v in result.per_seat:
+        status = f"abstain: {v.error}" if v.error else f"{v.verdict} ({len(v.findings)} findings)"
+        print(f"  - {v.seat} [{v.model}]: {status}", file=sys.stderr)
+    print(budget.format_summary(), file=sys.stderr)
+    return 0
+
+
 def _cmd_review(  # noqa: PLR0911
     config_path: Path | None,
     *,
@@ -463,8 +541,12 @@ def _cmd_review(  # noqa: PLR0911
     head: str,
     paths: tuple[str, ...],
     model_override: str = "",
+    reviewers: int = 0,
+    personas: str = "",
 ) -> int:
-    """Print a freeform code review of a diff to stdout. Read-only; no jail."""
+    """Print a code review of a diff to stdout. Read-only; no jail. With
+    ``reviewers >= 1``, runs the grounded adversarial review PANEL instead of the
+    single freeform review."""
     try:
         cfg = load_effective(Path.cwd(), config_path).config
         cfg.require_runnable("reviewer")
@@ -510,6 +592,19 @@ def _cmd_review(  # noqa: PLR0911
     layout_root = _state_dir(root) / "reviews"
     layout_root.mkdir(parents=True, exist_ok=True)
     transcript_sink = TranscriptSink(layout_root)
+
+    if reviewers >= 1:
+        return _run_review_panel(
+            cfg,
+            base=base,
+            diff=diff,
+            agents_md=agents_md,
+            reviewers=reviewers,
+            personas=personas,
+            model_override=model_override,
+            transcript_sink=transcript_sink,
+            budget=budget,
+        )
 
     try:
         reviewer = _build_role_provider(

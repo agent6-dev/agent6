@@ -57,6 +57,12 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     run_p.add_argument("--run-id", default="", help="Explicit run id (default: generate one).")
     run_p.add_argument(
+        "--profile",
+        default="",
+        help="Config profile preset (quick/standard/ultra/paranoid or a custom"
+        " [profiles.<name>]). Overrides [workflow].profile; your explicit settings win.",
+    )
+    run_p.add_argument(
         "--config",
         type=Path,
         # SUPPRESS (not None): a subparser default would otherwise clobber a
@@ -125,6 +131,9 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     plan_p.add_argument("--run-id", default="", help="Explicit run id (default: generate one).")
     plan_p.add_argument(
+        "--profile", default="", help="Config profile preset (see `agent6 run --profile`)."
+    )
+    plan_p.add_argument(
         "--config",
         type=Path,
         # SUPPRESS (not None): a subparser default would otherwise clobber a
@@ -159,6 +168,9 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
             " (no edits/commits). Brainstorm, rubber-duck, or ask how to do"
             " something."
         ),
+    )
+    ask_p.add_argument(
+        "--profile", default="", help="Config profile preset (see `agent6 run --profile`)."
     )
     ask_p.add_argument(
         "task",
@@ -250,9 +262,46 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
 
+    status_p = sub.add_parser(
+        "status",
+        help="One-shot liveness + progress of a run, then exit (vs `watch`, which follows).",
+    )
+    status_run = status_p.add_argument(
+        "run_id",
+        nargs="?",
+        default="",
+        help="Run id (omit for the most recent run).",
+    )
+    status_run.completer = _complete_run_ids  # type: ignore[attr-defined]
+    status_p.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the status as a single JSON object (for scripts/monitoring).",
+    )
+
     sub.add_parser(
         "tui",
         help="Open the TUI hub: browse runs and start a new run/plan/ask.",
+    )
+
+    prompt_p = sub.add_parser(
+        "prompt",
+        help="Inspect the assembled system prompt for this repo + config.",
+    )
+    prompt_sub = prompt_p.add_subparsers(dest="prompt_command", required=True)
+    prompt_show = prompt_sub.add_parser(
+        "show",
+        help=(
+            "Print the exact system prompt the worker receives: the static"
+            " structural blocks plus the per-repo <repo-priors> block (repo map"
+            " + AGENTS.md + recent commits)."
+        ),
+    )
+    prompt_show.add_argument(
+        "--mode",
+        choices=("run", "plan", "ask", "machine", "agent"),
+        default="run",
+        help="Which mode's prompt to assemble (default: run).",
     )
 
     resume_p = sub.add_parser("resume", help="Resume a paused run from its snapshot.")
@@ -580,6 +629,25 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
             "Override the reviewer model for this one-shot review "
             "(e.g. claude-sonnet-4-5 for a cheaper read). "
             "Default: reviewer_model from config."
+        ),
+    )
+    review_p.add_argument(
+        "--reviewers",
+        type=int,
+        default=0,
+        metavar="N",
+        help=(
+            "Run an adversarial REVIEW PANEL of N grounded reviewers instead of one"
+            " freeform review. Findings are grounded against the diff (only real,"
+            " block-eligible problems gate). 0 (default) = the classic single review."
+        ),
+    )
+    review_p.add_argument(
+        "--personas",
+        default="",
+        help=(
+            "Comma-separated adversarial stances for the panel seats, cycled across"
+            " --reviewers (e.g. 'security,correctness,tests'). Default: a built-in set."
         ),
     )
 

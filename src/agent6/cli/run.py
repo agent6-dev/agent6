@@ -55,7 +55,9 @@ from agent6.cli.providers import (
     _build_summariser_provider,
     _InstrumentedProvider,
     _role_temperature,
+    build_review_seats,
     resolve_compaction_thresholds,
+    review_panel_configured,
 )
 from agent6.config import (
     Config,
@@ -74,17 +76,19 @@ from agent6.git_ops import (
     create_branch,
     is_git_repo,
     set_repo_hook_policy,
+    stash_all,
     verify_git_identity,
 )
 from agent6.git_ops import (
     status as git_status,
 )
-from agent6.graph.client import GraphClient, spawn_curator
+from agent6.graph.client import CuratorClientError, GraphClient, spawn_curator
 from agent6.graph.curator import GraphCurator
 from agent6.graph.storage import RunLayout
 from agent6.paths import (
     chown_to_real_user,
 )
+from agent6.pricing import lookup_price
 from agent6.providers import (
     Provider,
     TranscriptSink,
@@ -93,9 +97,11 @@ from agent6.run_id import RunIdError, new_friendly_id, resolve_run_id
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.ui.approval import (
     clear_pending_answers,
+    clear_worker_pid,
     read_answer,
     read_question_answer,
     tui_is_live,
+    write_worker_pid,
 )
 from agent6.verify_infer import VERIFY_INFER_SYSTEM_PROMPT, infer_verify_command
 from agent6.workflows._run_state import load_resume_snapshot
@@ -124,6 +130,60 @@ def _eprint(msg: str) -> None:
     """Loop logger that writes to stderr (used for `ask`, whose stdout is the
     answer and must stay clean for piping)."""
     print(msg, file=sys.stderr)
+
+
+def _warn_if_usd_unenforceable(cfg: Config, worker_model: str) -> None:
+    """Warn at startup when ``best_effort_usd_limit`` is set but the worker
+    model has no published price, so the USD ceiling silently can't be enforced
+    and spend is bounded only by the token ceilings. We deliberately do NOT
+    guess a price or terminate early (a wrong guess could kill a run mid-task);
+    we just make the gap visible so the operator can set token ceilings if they
+    need a precise dollar bound. Anthropic publishes no pricing, so this fires
+    for Claude workers."""
+    usd = cfg.budget.best_effort_usd_limit
+    if usd > 0 and lookup_price(worker_model) is None:
+        print(
+            f"[agent6] WARNING: best_effort_usd_limit=${usd:g} cannot be enforced "
+            f"for {worker_model!r} (no published price); spend is bounded only by "
+            f"max_input_tokens={cfg.budget.max_input_tokens:,} / "
+            f"max_output_tokens={cfg.budget.max_output_tokens:,}. Set explicit "
+            f"token ceilings if you need a precise dollar bound.",
+            file=sys.stderr,
+        )
+
+
+def _warn_if_prompt_override_incomplete(cfg: Config) -> None:
+    """Warn when a custom ``workflow.system_prompt_file`` omits the core tool
+    contracts the worker needs: ``finish_run`` is the only clean exit, and an
+    edit primitive (``apply_edit``/``apply_patch``) is needed to do work. The
+    override is advanced + operator-owned, so we don't block -- just flag the
+    likely-broken case loudly and point at ``agent6 prompt show``."""
+    path = cfg.workflow.system_prompt_file
+    if not path:
+        return
+    try:
+        text = Path(path).expanduser().read_text(encoding="utf-8")
+    except OSError:
+        return  # config validation already enforces existence; nothing to add
+    missing = [t for t in ("finish_run",) if t not in text]
+    if "apply_edit" not in text and "apply_patch" not in text:
+        missing.append("apply_edit/apply_patch")
+    if missing:
+        # Name every capability that is actually absent, not just one of them, so
+        # a prompt missing both finish_run AND an edit primitive reads correctly.
+        actions = []
+        if "finish_run" in missing:
+            actions.append("terminate")
+        if "apply_edit/apply_patch" in missing:
+            actions.append("make edits")
+        print(
+            f"[agent6] WARNING: custom system_prompt_file ({path}) does not mention "
+            f"{', '.join(missing)}; the worker may not know how to "
+            f"{' or '.join(actions)}. The override "
+            "replaces the built-in run-mode base -- you own preserving the tool "
+            "contracts. Inspect the assembled prompt with `agent6 prompt show`.",
+            file=sys.stderr,
+        )
 
 
 def _require_git_repo(cwd: Path) -> bool:
@@ -363,6 +423,7 @@ def _write_run_manifest(
     run_branch: str | None,
     cfg: Config,
     mode: str = "run",
+    effective_profile: str = "",
 ) -> None:
     """Write the canonical manifest.json for a run.
 
@@ -389,6 +450,9 @@ def _write_run_manifest(
         "workflow": {
             "critic": cfg.workflow.critic,
             "revise_prompt": cfg.workflow.revise_prompt,
+            # The profile the run actually used (--profile flag or [workflow].profile),
+            # so `agent6 resume` re-applies the same strategy.
+            "profile": effective_profile,
         },
     }
     layout.manifest_path.write_text(
@@ -476,6 +540,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     no_tui: bool = False,
     mode: Literal["run", "plan", "ask"] = "run",
     budget_overrides: _BudgetOverrides | None = None,
+    profile: str = "",
 ) -> int:
     """Single-loop agent: one provider, one LLM driving via tool
     calls over the fixed tool surface, deterministic harness (jail +
@@ -490,7 +555,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     The ``planner`` model role drives plan mode (falls back to ``worker``).
     """
     try:
-        cfg = load_effective(Path.cwd(), config_path).config
+        cfg = load_effective(Path.cwd(), config_path, profile=profile).config
         set_repo_hook_policy(cfg.git.run_repo_hooks)
         if budget_overrides is not None:
             cfg = budget_overrides.apply(cfg)
@@ -545,6 +610,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     # so it skips the commit-oriented git pre-flight entirely.
     base_sha = ""
     base_branch = ""
+    pre_status = None  # set below for run/plan; stays None for read-only ask
     if mode != "ask":
         if not _require_git_repo(cwd):
             return 2
@@ -578,6 +644,30 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     # id counters reset on resume, so an old answer must not be read instead of
     # re-prompting; a stale tui.pid would otherwise stall the answer-poll).
     clear_pending_answers(layout.run_dir)
+    # Record this worker's pid so `agent6 status` can probe liveness even while
+    # the worker is blocked in a long provider call (which emits no events).
+    write_worker_pid(layout.run_dir, os.getpid())
+
+    # Enforce the dirty-tree policy BEFORE cutting the run branch, so the
+    # branch is cut from a clean tree and the agent's per-step auto-commits
+    # (`git add -A`) never swallow the user's pre-existing uncommitted work.
+    # Only `run` makes commits; `plan`/`ask` are read-only (matching the
+    # branch_per_run guard below).
+    if mode == "run" and pre_status is not None and not pre_status.is_clean:
+        if cfg.git.auto_stash:
+            try:
+                stash_all(cwd, f"agent6 auto-stash before run {effective_run_id}")
+            except GitError as exc:
+                print(f"ERROR: could not auto-stash before run: {exc}", file=sys.stderr)
+                return 2
+        elif cfg.git.require_clean_worktree:
+            print(
+                "REFUSING: working tree is not clean. Commit, stash, or discard "
+                "your changes, set [git].auto_stash=true, or set "
+                "[git].require_clean_worktree=false to override.",
+                file=sys.stderr,
+            )
+            return 2
 
     # Cut a fresh branch named after the run id so it is 1:1 with the run
     # (find it from any run id, `agent6 diff <id>`, or just delete the
@@ -608,6 +698,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         run_branch=run_branch,
         cfg=cfg,
         mode=mode,
+        effective_profile=profile or cfg.workflow.profile,
     )
 
     transcript_sink = TranscriptSink(layout.transcripts_dir)
@@ -627,6 +718,9 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     landlock_err = _maybe_apply_agent_landlock(cfg, selected_profile, env)
     if landlock_err is not None:
         print(f"REFUSING: {landlock_err}", file=sys.stderr)
+        # The egress broker is already running at this point; tear it down so
+        # the refusal doesn't leak the broker process + its socket dir.
+        _stop_egress(egress_broker, egress_sock_dir)
         return 2
 
     # ask gets a small default USD ceiling so an exploratory question can't run
@@ -645,6 +739,8 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     worker_inner = _build_role_provider(cfg, role, transcript_sink=transcript_sink, budget=budget)
     rm_worker = cfg.models.resolve(role)
     assert rm_worker is not None  # require_runnable validated this
+    _warn_if_usd_unenforceable(cfg, rm_worker.model)
+    _warn_if_prompt_override_incomplete(cfg)
     # Enable SSE streaming when stderr is a TTY (covers TUI
     # and interactive shell use). Bench/CI runs pipe stderr, so they
     # stay on the audited non-streaming code path UNLESS the operator
@@ -679,6 +775,20 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     summariser_provider = _build_summariser_provider(
         cfg, transcript_sink=transcript_sink, budget=budget, events=events
     )
+    # The grounded review panel runs at the critic trigger WHEN explicitly
+    # configured (any review_* key); otherwise critic!=off keeps the legacy single
+    # critic, so a pre-panel before_finish/periodic config still gates as before.
+    review_seats = (
+        build_review_seats(
+            cfg,
+            transcript_sink=transcript_sink,
+            budget=budget,
+            n=cfg.workflow.review_panel_size,
+            personas=cfg.workflow.review_personas,
+        )
+        if cfg.workflow.critic != "off" and review_panel_configured(cfg)
+        else []
+    )
 
     # Verify is optional: if unset, infer one for this run (AGENTS.md -> repo
     # signals -> a cheap LLM call) and inject it in-memory. Never persisted.
@@ -686,27 +796,12 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         cfg, cwd, mode=mode, events=events, transcript_sink=transcript_sink, budget=budget
     )
 
-    # Spawn the curator + connect a GraphClient so the agent
-    # has access to the DAG-as-tool surface.
-    #
     # AF_UNIX paths have a 108-char limit (Linux sun_path), which
     # bench setups with long BENCH_ROOT (and any future overlay-mount
     # paths) blew through. Bind the socket under a short /tmp dir and
     # leave a symlink under run_dir for observability. Cleaned up in
     # the finally block. See bench/improvement_plan.md audit cross-cutting.
-    sock_tmpdir = Path(tempfile.mkdtemp(prefix="agent6-sock-"))
-    sock_path = sock_tmpdir / "curator.sock"
-    sock_link = layout.run_dir / "curator.sock"
-    with contextlib.suppress(FileNotFoundError):
-        sock_link.unlink()
-    sock_link.symlink_to(sock_path)
-    curator_proc = spawn_curator(state_dir, effective_run_id, sock_path, subdir=layout.subdir)
-    print(f"[agent6] run id: {effective_run_id}", file=sys.stderr)
-
-    # Spawn any configured MCP servers BEFORE the workflow
-    # starts so their tools are visible from iteration 1. The manager
-    # owns its subprocesses; we close it in the finally block.
-    mcp_manager = _start_mcp_manager_if_enabled(cfg)
+    sock_path = layout.run_dir / "curator.sock"  # rebound to the /tmp socket inside the try
 
     # Steering (mid-run Ctrl-C -> a stdin prompt) needs the terminal; skip it
     # when the TUI owns it (then default Ctrl-C aborts cleanly). Double-Ctrl-C
@@ -716,7 +811,29 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     result = None
     interrupted = False
     dispatcher: ToolDispatcher | None = None
+    # Spawned inside the try so the finally below always tears them down even
+    # if a spawn itself fails (otherwise curator/MCP procs + the /tmp socket
+    # dir leak past the only cleanup path).
+    curator_proc: subprocess.Popen[bytes] | None = None
+    sock_tmpdir: Path | None = None
+    mcp_manager = None
     try:
+        # Spawn the curator + connect a GraphClient so the agent
+        # has access to the DAG-as-tool surface.
+        sock_tmpdir = Path(tempfile.mkdtemp(prefix="agent6-sock-"))
+        sock_path = sock_tmpdir / "curator.sock"
+        sock_link = layout.run_dir / "curator.sock"
+        with contextlib.suppress(FileNotFoundError):
+            sock_link.unlink()
+        sock_link.symlink_to(sock_path)
+        curator_proc = spawn_curator(state_dir, effective_run_id, sock_path, subdir=layout.subdir)
+        print(f"[agent6] run id: {effective_run_id}", file=sys.stderr)
+
+        # Spawn any configured MCP servers BEFORE the workflow
+        # starts so their tools are visible from iteration 1. The manager
+        # owns its subprocesses; we close it in the finally block.
+        mcp_manager = _start_mcp_manager_if_enabled(cfg)
+
         with GraphClient(sock_path) as graph_client:
             dispatcher = ToolDispatcher(
                 root=cwd,
@@ -747,9 +864,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                 budget=budget,
                 # `agent6 ask` (under asks/) is not resumable -- `agent6 resume`
                 # only looks under runs/ -- so don't write an orphan snapshot.
-                resume_state_path=(
-                    None if mode == "ask" else layout.run_dir / "loop_state.json"
-                ),
+                resume_state_path=(None if mode == "ask" else layout.run_dir / "loop_state.json"),
                 mode=mode,
                 plan_output_path=(layout.run_dir / "plan.md" if mode == "plan" else None),
                 after_auto_commit=(
@@ -765,6 +880,13 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                 critic_provider=critic_provider,
                 critic_mode=cfg.workflow.critic,
                 critic_period=cfg.workflow.critic_period,
+                review_seats=review_seats,
+                review_decision=cfg.workflow.review_decision,
+                review_quorum=cfg.workflow.review_quorum,
+                review_max_total_rejections=cfg.workflow.review_max_total_rejections,
+                review_budget_fraction=cfg.workflow.review_budget_fraction,
+                review_concurrency=cfg.workflow.review_concurrency,
+                base_sha=base_sha,
                 prompt_reviser_provider=prompt_reviser_provider,
                 revise_prompt=cfg.workflow.revise_prompt,
                 temperature=_role_temperature(cfg, role),
@@ -787,17 +909,23 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
             except KeyboardInterrupt:
                 interrupted = True
                 print("\n[agent6] run interrupted", file=sys.stderr)
+    except CuratorClientError as exc:
+        print(f"ERROR: curator failed to start: {exc}", file=sys.stderr)
+        return 1
     finally:
-        curator_proc.terminate()
-        try:
-            curator_proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            curator_proc.kill()
+        if curator_proc is not None:
+            curator_proc.terminate()
+            try:
+                curator_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                curator_proc.kill()
         steer_state.restore()
+        clear_worker_pid(layout.run_dir)
         # Clean up the /tmp socket dir + symlink under run_dir.
         with contextlib.suppress(FileNotFoundError):
-            sock_link.unlink()
-        shutil.rmtree(sock_tmpdir, ignore_errors=True)
+            (layout.run_dir / "curator.sock").unlink()
+        if sock_tmpdir is not None:
+            shutil.rmtree(sock_tmpdir, ignore_errors=True)
         if dispatcher is not None:
             dispatcher.close()
         if mcp_manager is not None:
@@ -880,6 +1008,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     force: bool,
     no_tui: bool = False,
     budget_overrides: _BudgetOverrides | None = None,
+    profile: str = "",
 ) -> int:
     """Resume a paused/crashed run from its snapshot.
 
@@ -910,6 +1039,9 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     # Drop a prior session's stale answer files + tui.pid (the id counters reset
     # on resume, an old answer must not be read instead of re-prompting).
     clear_pending_answers(layout.run_dir)
+    # Record this worker's pid so `agent6 status` can probe liveness even while
+    # the worker is blocked in a long provider call (which emits no events).
+    write_worker_pid(layout.run_dir, os.getpid())
 
     snapshot_path = layout.run_dir / "loop_state.json"
     if not snapshot_path.is_file():
@@ -943,8 +1075,17 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
             )
             return 1
 
+    # `agent6 resume` has no --profile flag, so re-apply the profile the original
+    # run used (persisted in the manifest), unless one is passed explicitly.
+    manifest_profile = ""
+    with contextlib.suppress(OSError, ValueError, KeyError, AttributeError):
+        manifest_profile = (
+            json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+            .get("workflow", {})
+            .get("profile", "")
+        )
     try:
-        cfg = load_effective(Path.cwd(), config_path).config
+        cfg = load_effective(Path.cwd(), config_path, profile=profile or manifest_profile).config
         set_repo_hook_policy(cfg.git.run_repo_hooks)
         if budget_overrides is not None:
             cfg = budget_overrides.apply(cfg)
@@ -1004,6 +1145,9 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     landlock_err = _maybe_apply_agent_landlock(cfg, selected_profile, env)
     if landlock_err is not None:
         print(f"REFUSING: {landlock_err}", file=sys.stderr)
+        # The egress broker is already running; tear it down so the refusal
+        # doesn't leak the broker process + its socket dir.
+        _stop_egress(egress_broker, egress_sock_dir)
         return 2
 
     budget = BudgetTracker(
@@ -1017,6 +1161,8 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     )
     rm_worker = cfg.models.resolve("worker")
     assert rm_worker is not None  # require_runnable validated this
+    _warn_if_usd_unenforceable(cfg, rm_worker.model)
+    _warn_if_prompt_override_incomplete(cfg)
     # Streaming gated on stderr TTY (matches _cmd_run);
     # AGENT6_FORCE_STREAM=1 forces it on for bench/CI.
     stream_text = sys.stderr.isatty() or os.environ.get("AGENT6_FORCE_STREAM") == "1"
@@ -1039,6 +1185,24 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     summariser_provider = _build_summariser_provider(
         cfg, transcript_sink=transcript_sink, budget=budget, events=events
     )
+    review_seats = (
+        build_review_seats(
+            cfg,
+            transcript_sink=transcript_sink,
+            budget=budget,
+            n=cfg.workflow.review_panel_size,
+            personas=cfg.workflow.review_personas,
+        )
+        if cfg.workflow.critic != "off" and review_panel_configured(cfg)
+        else []
+    )
+    resume_base_sha = ""
+    try:
+        resume_base_sha = json.loads(layout.manifest_path.read_text(encoding="utf-8")).get(
+            "base_sha", ""
+        )
+    except (OSError, ValueError):
+        resume_base_sha = ""
 
     # Resume reuses the verify command the ORIGINAL run resolved (stored in the
     # snapshot), so the tool list, prompt, and commit branch stay consistent with
@@ -1063,23 +1227,31 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
                 file=sys.stderr,
             )
 
-    sock_tmpdir = Path(tempfile.mkdtemp(prefix="agent6-sock-"))
-    sock_path = sock_tmpdir / "curator.sock"
-    sock_link = layout.run_dir / "curator.sock"
-    with contextlib.suppress(FileNotFoundError):
-        sock_link.unlink()
-    sock_link.symlink_to(sock_path)
-    curator_proc = spawn_curator(state_dir, run_id, sock_path, subdir=layout.subdir)
-    print(f"[agent6] resume run id: {run_id}", file=sys.stderr)
-
-    mcp_manager = _start_mcp_manager_if_enabled(cfg)
+    sock_path = layout.run_dir / "curator.sock"  # rebound to the /tmp socket inside the try
 
     steer_state = _make_steer_state(events, layout.run_dir)
 
     result = None
     interrupted = False
     dispatcher: ToolDispatcher | None = None
+    # Spawned inside the try so the finally below always tears them down even
+    # if a spawn itself fails (otherwise curator/MCP procs + the /tmp socket
+    # dir leak past the only cleanup path).
+    curator_proc: subprocess.Popen[bytes] | None = None
+    sock_tmpdir: Path | None = None
+    mcp_manager = None
     try:
+        sock_tmpdir = Path(tempfile.mkdtemp(prefix="agent6-sock-"))
+        sock_path = sock_tmpdir / "curator.sock"
+        sock_link = layout.run_dir / "curator.sock"
+        with contextlib.suppress(FileNotFoundError):
+            sock_link.unlink()
+        sock_link.symlink_to(sock_path)
+        curator_proc = spawn_curator(state_dir, run_id, sock_path, subdir=layout.subdir)
+        print(f"[agent6] resume run id: {run_id}", file=sys.stderr)
+
+        mcp_manager = _start_mcp_manager_if_enabled(cfg)
+
         with GraphClient(sock_path) as graph_client:
             dispatcher = ToolDispatcher(
                 root=cwd,
@@ -1111,6 +1283,13 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
                 critic_provider=critic_provider,
                 critic_mode=cfg.workflow.critic,
                 critic_period=cfg.workflow.critic_period,
+                review_seats=review_seats,
+                review_decision=cfg.workflow.review_decision,
+                review_quorum=cfg.workflow.review_quorum,
+                review_max_total_rejections=cfg.workflow.review_max_total_rejections,
+                review_budget_fraction=cfg.workflow.review_budget_fraction,
+                review_concurrency=cfg.workflow.review_concurrency,
+                base_sha=resume_base_sha,
                 temperature=_role_temperature(cfg, "worker"),
                 critic_temperature=_role_temperature(cfg, "reviewer"),
                 summariser_provider=summariser_provider,
@@ -1127,16 +1306,22 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
             except KeyboardInterrupt:
                 interrupted = True
                 print("\n[agent6] resume interrupted", file=sys.stderr)
+    except CuratorClientError as exc:
+        print(f"ERROR: curator failed to start: {exc}", file=sys.stderr)
+        return 1
     finally:
-        curator_proc.terminate()
-        try:
-            curator_proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            curator_proc.kill()
+        if curator_proc is not None:
+            curator_proc.terminate()
+            try:
+                curator_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                curator_proc.kill()
         steer_state.restore()
+        clear_worker_pid(layout.run_dir)
         with contextlib.suppress(FileNotFoundError):
-            sock_link.unlink()
-        shutil.rmtree(sock_tmpdir, ignore_errors=True)
+            (layout.run_dir / "curator.sock").unlink()
+        if sock_tmpdir is not None:
+            shutil.rmtree(sock_tmpdir, ignore_errors=True)
         if dispatcher is not None:
             dispatcher.close()
         if mcp_manager is not None:

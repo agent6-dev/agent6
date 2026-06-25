@@ -59,12 +59,14 @@ from agent6.cli.parser import build_parser
 from agent6.cli.plan_watch import (
     _cmd_plan_edit,
     _cmd_plan_show,
+    _cmd_status,
     _cmd_tui,
     _cmd_watch,
     _most_recent_plan_run_id,
     _most_recent_run_id,
     _resolve_plan_run_id,
 )
+from agent6.cli.prompt_cmds import _cmd_prompt_show
 from agent6.cli.run import (
     _cmd_resume,
     _cmd_run,
@@ -177,6 +179,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             interactive=args.interactive,
             no_tui=args.no_tui,
             budget_overrides=_BudgetOverrides.from_args(args),
+            profile=getattr(args, "profile", ""),
         )
     if args.command == "plan":
         if args.show and args.edit:
@@ -198,6 +201,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             run_id=args.run_id,
             mode="plan",
             budget_overrides=_BudgetOverrides.from_args(args),
+            profile=getattr(args, "profile", ""),
         )
     if args.command == "ask":
         if args.ask_list:
@@ -229,11 +233,16 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             mode="ask",
             interactive=repl,
             budget_overrides=_BudgetOverrides.from_args(args),
+            profile=getattr(args, "profile", ""),
         )
     if args.command == "watch":
         return _cmd_watch(args.run_id, plain=args.plain, since=args.since)
+    if args.command == "status":
+        return _cmd_status(args.run_id, as_json=args.json)
     if args.command == "tui":
         return _cmd_tui()
+    if args.command == "prompt" and args.prompt_command == "show":
+        return _cmd_prompt_show(args.config, mode=args.mode)
     if args.command == "resume":
         return _cmd_resume(
             args.config,
@@ -300,6 +309,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             head=args.head,
             paths=tuple(args.paths),
             model_override=args.model,
+            reviewers=args.reviewers,
+            personas=args.personas,
         )
     if args.command == "diff":
         return _cmd_diff(

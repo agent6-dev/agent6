@@ -64,18 +64,20 @@ def _allow_url_endpoints(cfg: Config) -> set[Endpoint]:
 def _warn_if_unsandboxed(selected_profile: SandboxProfile) -> None:
     """Print a prominent warning when running without the kernel sandbox.
 
-    The `none` profile is only reached on non-Linux hosts (see
-    `agent6.detect.select_profile`); commands run as plain subprocesses with
-    no confinement, so the operator must be told loudly.
+    The `none` profile is reached either on a non-Linux host (no kernel sandbox)
+    or when the operator EXPLICITLY sets `profile = "none"` on Linux (the
+    unsandboxed opt-out, intended for inside a container). Either way commands
+    run as plain subprocesses with no agent6 confinement, so say so loudly.
     """
     if selected_profile != "none":
         return
     print(
-        "[agent6] WARNING: the Linux kernel sandbox is unavailable on this "
-        f"platform ({sys.platform}); running UNSANDBOXED. Commands, including "
-        "the LLM's run_command tool and verify_command, execute as plain "
-        "subprocesses with NO filesystem, network, or syscall confinement. "
-        "Run agent6 on Linux for kernel-enforced isolation.",
+        "[agent6] WARNING: running UNSANDBOXED (sandbox.profile = 'none'). "
+        "Commands -- including the LLM's run_command and verify_command -- "
+        "execute as plain subprocesses with NO filesystem, network, or syscall "
+        "confinement; the agent is contained only by the surrounding environment "
+        "(e.g. the container it runs in). Use 'auto'/'strict'/'hardened' for "
+        "kernel-enforced isolation.",
         file=sys.stderr,
     )
 

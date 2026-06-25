@@ -16,6 +16,7 @@ from agent6.config import (
     Config,
     RoleModel,
     RoleName,
+    ThinkingLevel,
 )
 from agent6.events import EventSink
 from agent6.providers import (
@@ -29,6 +30,8 @@ from agent6.providers import (
     TranscriptSink,
 )
 from agent6.secrets import resolve_api_key
+from agent6.workflows._review import Seat as ReviewSeat
+from agent6.workflows._review import parse_seat_spec
 
 
 def resolve_compaction_thresholds(
@@ -87,7 +90,24 @@ def _build_role_provider(
         raise ProviderError(
             f"models.{role}.provider = {rm.provider!r} but [providers.{rm.provider}] missing"
         )
-    key = resolve_api_key(rm.provider, entry.api_key_env)
+    return _provider_from_entry(
+        rm.provider, entry, model, rm.thinking, transcript_sink=transcript_sink, budget=budget
+    )
+
+
+def _provider_from_entry(
+    provider_name: str,
+    entry: Any,
+    model: str,
+    thinking: ThinkingLevel | None,
+    *,
+    transcript_sink: TranscriptSink,
+    budget: BudgetTracker,
+) -> Provider:
+    """Build a Provider for an explicit ``[providers.<provider_name>]`` entry +
+    model + thinking. Shared by ``_build_role_provider`` (role routing) and the
+    review panel's explicit per-seat ``provider/model`` routing."""
+    key = resolve_api_key(provider_name, entry.api_key_env)
     credential = (
         CommandToken(entry.token_command, ttl_s=entry.token_command_ttl_s)
         if entry.token_command
@@ -101,7 +121,7 @@ def _build_role_provider(
         # endpoint); a token_command credential or `auth_style = "none"` satisfies it.
         if not key and credential is None and entry.auth_style != "none":
             raise ProviderError(
-                f"No API key for provider {rm.provider!r}. Run `agent6 connect`"
+                f"No API key for provider {provider_name!r}. Run `agent6 connect`"
                 f" to store one, or set the {entry.api_key_env or 'provider'} env var."
             )
         return AnthropicProvider(
@@ -114,7 +134,7 @@ def _build_role_provider(
             timeout_s=entry.http_timeout_s,
             transcript_sink=transcript_sink,
             budget=budget,
-            thinking=rm.thinking,
+            thinking=thinking,
             extra_headers=extra_headers,
             extra_body=extra_body,
             extra_query=extra_query,
@@ -132,7 +152,7 @@ def _build_role_provider(
         timeout_s=entry.http_timeout_s,
         transcript_sink=transcript_sink,
         budget=budget,
-        reasoning_effort=rm.thinking,
+        reasoning_effort=thinking,
         credential=credential,
     )
 
@@ -323,6 +343,108 @@ def _build_critic_provider(
         events=events,
         budget=budget,
     )
+
+
+_DEFAULT_PERSONAS = ("security", "correctness", "tests", "over-engineering", "edge-cases")
+
+
+def review_panel_configured(cfg: Config) -> bool:
+    """True iff the user EXPLICITLY opted into the review panel (vs just enabling
+    the legacy single critic). When ``critic != "off"`` but no review_* key is
+    set, we keep the legacy gating critic so a pre-panel before_finish/periodic
+    config is not silently downgraded to the advisory panel."""
+    wf = cfg.workflow
+    return (
+        bool(wf.review_seats)
+        or wf.review_panel_size != 1
+        or wf.review_decision != "advisory"
+        or bool(wf.review_personas)
+        or wf.review_tier != "diff"
+    )
+
+
+def build_review_seats(
+    cfg: Config,
+    *,
+    transcript_sink: TranscriptSink,
+    budget: BudgetTracker,
+    n: int,
+    personas: tuple[str, ...] = (),
+    model_override: str = "",
+) -> list[ReviewSeat]:
+    """Build the review-panel seats.
+
+    Explicit form (``cfg.workflow.review_seats`` set): one seat per
+    ``"persona@provider/model"`` string -> distinct models per seat. A seat with
+    no ``@provider/model`` (bare persona) routes via ``[models.reviewer]``.
+
+    Simple form (no ``review_seats``): ``n`` seats all on the ``reviewer`` model,
+    differing only by adversarial persona (``personas`` cycled, else a built-in
+    set)."""
+    if cfg.workflow.review_seats:
+        seats: list[ReviewSeat] = []
+        for spec in cfg.workflow.review_seats:
+            persona, provider_name, model = parse_seat_spec(spec)
+            if provider_name and model:
+                entry = cfg.providers.get(provider_name)
+                if entry is None:
+                    raise ProviderError(
+                        f"review_seats: {spec!r} names provider {provider_name!r} but"
+                        f" [providers.{provider_name}] is missing"
+                    )
+                # `--model X` (model_override) overrides the seat's pinned model;
+                # provider routing is preserved -- that's the point of the flag.
+                seat_model = model_override or model
+                provider = _provider_from_entry(
+                    provider_name,
+                    entry,
+                    seat_model,
+                    None,
+                    transcript_sink=transcript_sink,
+                    budget=budget,
+                )
+                label = f"{provider_name}/{seat_model}"
+            else:  # bare persona -> reviewer route
+                rm = cfg.models.resolve("reviewer")
+                provider = _build_role_provider(
+                    cfg,
+                    "reviewer",
+                    transcript_sink=transcript_sink,
+                    budget=budget,
+                    model_override=model_override,
+                )
+                label = model_override or (rm.model if rm is not None else "reviewer")
+            seats.append(
+                ReviewSeat(
+                    persona=persona or "general",
+                    model=label,
+                    provider=provider,
+                    tier=cfg.workflow.review_tier,
+                )
+            )
+        return seats
+
+    rm = cfg.models.resolve("reviewer")
+    model = model_override or (rm.model if rm is not None else "reviewer")
+    pool = list(personas) if personas else list(_DEFAULT_PERSONAS)
+    seats = []
+    for i in range(max(1, n)):
+        provider = _build_role_provider(
+            cfg,
+            "reviewer",
+            transcript_sink=transcript_sink,
+            budget=budget,
+            model_override=model_override,
+        )
+        seats.append(
+            ReviewSeat(
+                persona=pool[i % len(pool)],
+                model=model,
+                provider=provider,
+                tier=cfg.workflow.review_tier,
+            )
+        )
+    return seats
 
 
 def _build_prompt_reviser_provider(
