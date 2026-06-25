@@ -29,7 +29,7 @@ try:
     from textual.command import DiscoveryHit, Hit, Hits, Provider
     from textual.containers import Horizontal, Vertical
     from textual.screen import ModalScreen, Screen
-    from textual.widgets import DataTable, Footer, Static, TextArea
+    from textual.widgets import DataTable, Footer, Select, Static, TextArea
 except ImportError as e:  # pragma: no cover - clear runtime message
     raise ImportError(
         "agent6 TUI requires the 'textual' package (part of the base install)."
@@ -50,6 +50,19 @@ _RUN_SUBDIRS = ("runs", "asks")
 # A "running" run whose logs.jsonl hasn't been touched in this long reads as
 # crashed/killed (a long reasoning burst still appends within minutes).
 _STALE_AFTER_S = 600.0
+# The new-work profile dropdown's first entry: "" => no --profile, so the run
+# uses [workflow].profile from config (or the plain defaults).
+_DEFAULT_PROFILE_LABEL = "(config default)"
+
+
+def _available_profiles(repo_cwd: Path) -> list[str]:
+    """Profile names the new-work chooser offers (the built-ins plus the user's
+    custom ``[profiles.<name>]`` tables). Delegates to ``config_layer`` -- the
+    TUI's config entry point (see config_page.py) -- so the dropdown and the
+    ``--profile`` CLI flag resolve against the same source."""
+    from agent6.config_layer import available_profile_names  # noqa: PLC0415
+
+    return available_profile_names(repo_cwd, None)
 
 
 def _run_summary(run_dir: Path) -> dict[str, str]:
@@ -95,10 +108,13 @@ def _list_runs(agent6_dir: Path) -> list[Path]:
     return out
 
 
-class _NewWorkModal(ModalScreen[tuple[str, str] | None]):
-    """Type a task, then start it as a run / plan / ask. The mode IS the button
-    you pick (flat actions, like the config dialogs); Enter in the box runs.
-    Result: (mode, task) or None."""
+class _NewWorkModal(ModalScreen[tuple[str, str, str] | None]):
+    """Type a task, pick an optional config profile, then start it as a run /
+    plan / ask. The mode IS the button you pick (flat actions, like the config
+    dialogs); Enter in the box runs. The profile dropdown maps to the
+    ``--profile`` CLI flag; "(config default)" => no flag (so [workflow].profile
+    applies). Result: (mode, task, profile) or None, where profile="" means the
+    config default (no --profile)."""
 
     CSS = (
         FORM_CSS
@@ -114,11 +130,22 @@ class _NewWorkModal(ModalScreen[tuple[str, str] | None]):
         border: round $primary; background: $surface;
     }
     #new-task:focus { border: round $accent; }
+    #new-profile-row { height: auto; padding-top: 1; }
+    #new-profile-label { width: auto; padding: 1 1 0 0; color: $text-muted; }
+    #new-profile { width: 1fr; }
     #new-actions { padding-top: 1; height: auto; }
     """
     )
 
     BINDINGS: ClassVar = [Binding("escape", "cancel", "Cancel", show=True)]
+
+    def __init__(self, profiles: list[str] | None = None) -> None:
+        # Profile names for the dropdown (built-ins + user [profiles.*]); the
+        # caller passes the repo-resolved list (built-ins + user [profiles.*]).
+        # None (e.g. a bare test) => only the "(config default)" entry, so the
+        # modal stands alone as a pure widget without loading config.
+        super().__init__()
+        self._profiles = profiles if profiles is not None else []
 
     def compose(self) -> ComposeResult:
         with Vertical(id="new-box"):
@@ -127,6 +154,16 @@ class _NewWorkModal(ModalScreen[tuple[str, str] | None]):
             # can span lines; it brings undo/redo/select-all for free. Tab (and ↓
             # past the last line) move to the run/plan/ask buttons.
             yield TextArea(id="new-task", placeholder="task / question…")
+            with Horizontal(id="new-profile-row"):
+                yield Static("profile:", id="new-profile-label")
+                # value="" is the "(config default)" sentinel: NO --profile, so
+                # the config's [workflow].profile (or plain defaults) applies.
+                yield Select(
+                    [(_DEFAULT_PROFILE_LABEL, ""), *((p, p) for p in self._profiles)],
+                    value="",
+                    allow_blank=False,
+                    id="new-profile",
+                )
             with Horizontal(id="new-actions"):
                 yield ActionItem("run", "run")
                 yield ActionItem("plan", "plan")
@@ -165,7 +202,11 @@ class _NewWorkModal(ModalScreen[tuple[str, str] | None]):
     def _submit(self, mode: str) -> None:
         task = self.query_one("#new-task", TextArea).text.strip()
         if task:
-            self.dismiss((mode, task))
+            # Select.value is the option's value: "" for "(config default)"
+            # (no --profile), else the chosen profile name. allow_blank=False
+            # plus the leading "" option means it's never Select.BLANK.
+            profile = str(self.query_one("#new-profile", Select).value)
+            self.dismiss((mode, task, profile))
         else:
             self.notify("Enter a task first.", severity="warning")
 
@@ -357,7 +398,7 @@ class HomeScreen(Screen[None]):
         self.app.exit()
 
     def action_new_work(self) -> None:
-        self.app.push_screen(_NewWorkModal(), self._on_new_work)
+        self.app.push_screen(_NewWorkModal(_available_profiles(self.repo_cwd)), self._on_new_work)
 
     def action_open_config(self) -> None:
         self.app.push_screen(ConfigScreen(self.repo_cwd))
@@ -368,10 +409,13 @@ class HomeScreen(Screen[None]):
     def action_help(self) -> None:
         self.app.push_screen(HelpScreen(self.MENUS, title="agent6 — keys & actions"))
 
-    def _on_new_work(self, result: tuple[str, str] | None) -> None:
+    def _on_new_work(self, result: tuple[str, str, str] | None) -> None:
         if result is None:
             return
-        run_dir, error = _spawn_and_locate(self.agent6_dir, self.repo_cwd, *result)
+        mode, task, profile = result
+        run_dir, error = _spawn_and_locate(
+            self.agent6_dir, self.repo_cwd, mode, task, profile=profile
+        )
         if run_dir is not None:
             self.app.exit(run_dir)
         else:
@@ -419,15 +463,23 @@ class Agent6HomeApp(App[Path | None]):
 
 
 def _spawn_and_locate(
-    agent6_dir: Path, repo_cwd: Path, mode: str, task: str
+    agent6_dir: Path, repo_cwd: Path, mode: str, task: str, *, profile: str = ""
 ) -> tuple[Path | None, str]:
-    """Spawn `agent6 <mode> <task>` detached (non-TTY stdout → no nested TUI) and
-    return (run_dir, ""). On failure returns (None, diagnostic). The dir is found
-    by snapshotting existing runs and polling for a NEW one; if the child exits
-    before producing a run dir (no git repo, bad config, …) its stderr tail is
-    surfaced instead of silently waiting out the timeout."""
+    """Spawn `agent6 <mode> [--profile <name>] <task>` detached (non-TTY stdout →
+    no nested TUI) and return (run_dir, ""). On failure returns (None,
+    diagnostic). A non-empty *profile* maps to the per-subcommand --profile flag
+    (placed after the mode, before the task); "" => no flag, so the config's
+    [workflow].profile applies. The dir is found by snapshotting existing runs
+    and polling for a NEW one; if the child exits before producing a run dir (no
+    git repo, bad config, …) its stderr tail is surfaced instead of silently
+    waiting out the timeout."""
     cwd = repo_cwd
-    argv = [_agent6_exe(), mode, task]
+    # --profile is a per-subcommand flag, so it goes after <mode> and before the
+    # positional <task> -> `agent6 <mode> --profile <name> <task>`.
+    argv = [_agent6_exe(), mode]
+    if profile:
+        argv += ["--profile", profile]
+    argv.append(task)
     before = set(_list_runs(agent6_dir))
     err = tempfile.NamedTemporaryFile(  # noqa: SIM115 - closed in finally
         mode="w+", suffix=".agent6-launch.err", delete=False

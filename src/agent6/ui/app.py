@@ -47,7 +47,9 @@ except ImportError as e:  # pragma: no cover - clear runtime message
     ) from e
 
 from agent6.ui.approval import (
+    clear_steer_answer,
     clear_tui_pid,
+    request_steer,
     write_answer,
     write_question_answer,
     write_steer_answer,
@@ -136,6 +138,7 @@ class Agent6TUI(App[int]):
         Menu(
             "View",
             (
+                MenuItem("Steer the run", "steer", "s"),
                 MenuItem("Next pane", "focus_next", "Tab"),
                 MenuItem("Prev pane", "focus_previous", "Shift+Tab"),
                 MenuItem("Full log…", "view_logs", "l"),
@@ -159,6 +162,7 @@ class Agent6TUI(App[int]):
         # (like Esc) backs out TO the hub; only the root hub quits on q. Ctrl+Q is
         # the app-wide hard quit. (Esc on an open modal cancels it first -- the
         # modal consumes the key.)
+        Binding("s", "steer", "Steer", show=True),
         Binding("l", "view_logs", "Full log", show=True),
         Binding("t", "view_transcript", "Conversation", show=True),
         # g=top / G=end, matching vi and the LogScreen/ConversationScreen viewers
@@ -294,6 +298,18 @@ class Agent6TUI(App[int]):
     def _on_steer(self, answer: str | None) -> None:
         self._steer_open = False
         write_steer_answer(self.run_dir, answer or "")
+
+    def action_steer(self) -> None:
+        """Steer the run WITHOUT Ctrl-C: open the steer box and drop a request
+        marker the run picks up at its next safe boundary (after the current step,
+        never mid tool-call), then injects your instruction into the next step.
+        The run keeps going -- no stop/resume. Submit blank to cancel."""
+        if self._steer_open or self._run_ended:
+            return
+        self._steer_open = True
+        clear_steer_answer(self.run_dir)  # discard any stale answer -> run waits for this one
+        request_steer(self.run_dir)
+        self.push_screen(SteerModal(), self._on_steer)
 
     # --- command palette ---------------------------------------------
 

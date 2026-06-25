@@ -810,9 +810,7 @@ def test_add_provider_prefills_known_preset_base_url(repo: Path) -> None:
             await pilot.pause()
             # Live prefill flipped the format dropdown and filled the URL field.
             assert modal.query_one("#prov-format", ChoiceField).value == "openai"
-            assert (
-                modal.query_one("#prov-baseurl", Input).value == "https://openrouter.ai/api/v1"
-            )
+            assert modal.query_one("#prov-baseurl", Input).value == "https://openrouter.ai/api/v1"
             modal.action_add()
             await pilot.pause()
             assert isinstance(app.screen, ConfigScreen)  # written + validated, modal closed

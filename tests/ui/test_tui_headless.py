@@ -200,3 +200,38 @@ def test_dashboard_footer_shows_one_dual_back_key(tmp_path: Path) -> None:
             assert "q" not in displays  # the q alias is hidden, not a 2nd entry
 
     asyncio.run(scenario())
+
+
+def test_steer_request_marker_round_trip(tmp_path: Path) -> None:
+    from agent6.ui.approval import clear_steer_request, request_steer, steer_request_pending
+
+    assert not steer_request_pending(tmp_path)
+    request_steer(tmp_path)
+    assert steer_request_pending(tmp_path)  # the run's requested() sees this
+    clear_steer_request(tmp_path)
+    assert not steer_request_pending(tmp_path)
+
+
+def test_dashboard_s_key_steers_without_ctrl_c(tmp_path: Path) -> None:
+    """The dashboard 's' action drops a steer.request marker (the run picks it up
+    at its next boundary) and opens the steer box -- no Ctrl-C needed -- then the
+    typed instruction lands in steer.answer for the run to inject."""
+    from agent6.ui.approval import steer_request_pending
+    from agent6.ui.modals import SteerModal
+
+    async def scenario() -> None:
+        (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+        app = Agent6TUI(tmp_path)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            assert not steer_request_pending(tmp_path)
+            app.action_steer()
+            await pilot.pause()
+            assert steer_request_pending(tmp_path)  # marker dropped for the run
+            assert isinstance(app.screen, SteerModal)  # steer box opened
+            await pilot.press("g", "o")
+            await pilot.press("enter")
+            await pilot.pause()
+            assert (tmp_path / "steer.answer").read_text(encoding="utf-8") == "go"
+
+    asyncio.run(scenario())

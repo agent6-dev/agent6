@@ -146,9 +146,85 @@ def test_new_work_modal_is_multiline_and_starts_chosen_mode(tmp_path: Path) -> N
             await pilot.press("right")
             await pilot.press("enter")
             await pilot.pause()
-            assert result == [("plan", "a\nb")]  # chosen mode + the multiline task
+            # mode + multiline task + profile ("" = config default, no --profile).
+            assert result == [("plan", "a\nb", "")]
 
     asyncio.run(scenario())
+
+
+def test_new_work_modal_yields_chosen_profile(tmp_path: Path) -> None:
+    """The new-work modal carries the picked config profile in its result tuple:
+    (mode, task, profile). Selecting a built-in (e.g. 'ultra') yields that name;
+    the default '(config default)' would yield '' (covered above)."""
+    import asyncio
+
+    from textual.widgets import Select, TextArea
+
+    from agent6.ui.home import Agent6HomeApp, _NewWorkModal
+
+    a6 = tmp_path / ".agent6"
+    _write_run(a6, "runs", "r1", [{"type": "run.start", "mode": "run", "user_task": "x"}])
+
+    async def scenario() -> None:
+        app = Agent6HomeApp(a6, tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            result: list[object] = []
+            # An explicit profile list so the dropdown offers a known value.
+            app.push_screen(_NewWorkModal(["ultra"]), result.append)
+            await pilot.pause()
+            app.screen.query_one(TextArea).insert("do it")
+            # Pick 'ultra' directly on the Select (no overlay navigation needed).
+            app.screen.query_one("#new-profile", Select).value = "ultra"
+            await pilot.pause()
+            # Run via a button activation (Esc-free path), like the user clicking.
+            from agent6.ui.widgets import ActionItem
+
+            next(iter(app.screen.query(ActionItem))).post_message(ActionItem.Activated("run"))
+            await pilot.pause()
+            assert result == [("run", "do it", "ultra")]  # profile threaded through
+
+    asyncio.run(scenario())
+
+
+def test_spawn_argv_includes_profile_flag_only_when_chosen(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    """The launch helper builds `agent6 <mode> --profile <name> <task>` when a
+    profile is picked, and `agent6 <mode> <task>` (no --profile) for the
+    "(config default)" choice (profile=""). Captures argv by stubbing Popen, so
+    no real agent6 is spawned; the helper times out fast on the stubbed proc."""
+    import subprocess
+
+    from agent6.ui import home
+
+    captured: list[list[str]] = []
+
+    class _FakeProc:
+        returncode = 0
+
+        def poll(self) -> int:
+            return 0  # "already exited" -> helper bails out immediately
+
+    def _fake_popen(argv: list[str], **_kw: object) -> _FakeProc:
+        captured.append(list(argv))
+        return _FakeProc()
+
+    monkeypatch.setattr(subprocess, "Popen", _fake_popen)  # type: ignore[attr-defined]
+    # A stable executable name so the argv assertion isn't path-dependent.
+    monkeypatch.setattr(home, "_agent6_exe", lambda: "agent6")  # type: ignore[attr-defined]
+
+    a6 = tmp_path / ".agent6"
+    a6.mkdir()
+
+    # Chosen profile -> --profile is present, after <mode>, before <task>.
+    home._spawn_and_locate(a6, tmp_path, "plan", "do it", profile="ultra")
+    assert captured[-1] == ["agent6", "plan", "--profile", "ultra", "do it"]
+
+    # "(config default)" (profile="") -> NO --profile flag at all.
+    home._spawn_and_locate(a6, tmp_path, "run", "do it", profile="")
+    assert captured[-1] == ["agent6", "run", "do it"]
+    assert "--profile" not in captured[-1]
 
 
 def test_home_open_run_returns_its_dir(tmp_path: Path) -> None:

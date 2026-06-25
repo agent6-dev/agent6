@@ -29,6 +29,7 @@ from pathlib import Path
 APPROVAL_DIR_NAME = "approvals"
 QUESTION_DIR_NAME = "questions"
 TUI_PID_FILE = "tui.pid"
+WORKER_PID_FILE = "worker.pid"  # the run's worker process, for `agent6 status` liveness
 STEER_ANSWER_FILE = "steer.answer"
 
 
@@ -41,8 +42,14 @@ def approvals_dir(run_dir: Path) -> Path:
 def clear_pending_answers(run_dir: Path) -> None:
     """Drop stale bridge state at run/resume START: leftover `*.answer` files
     from a prior session (the id counters reset, so an old answer would be read
-    instead of prompting) and a stale `tui.pid` from a hard-killed TUI (which
-    would otherwise make the answer-poll block until timeout). Best-effort."""
+    instead of prompting), a leftover `steer.request` marker (which would
+    otherwise trigger a phantom steer prompt that no live TUI answers), and a
+    stale `tui.pid` from a hard-killed TUI (which would otherwise make the
+    answer-poll block until timeout). Best-effort.
+
+    The `tui.pid` is only dropped when NO live TUI owns it: a concurrently-live
+    `agent6 watch` watcher must keep bridging the resumed run's approval/question
+    modals, so we must not unlink a pid that still points at a running process."""
     for sub in (APPROVAL_DIR_NAME, QUESTION_DIR_NAME):
         d = run_dir / sub
         if d.is_dir():
@@ -50,7 +57,9 @@ def clear_pending_answers(run_dir: Path) -> None:
                 with contextlib.suppress(OSError):
                     f.unlink()
     clear_steer_answer(run_dir)
-    clear_tui_pid(run_dir)
+    clear_steer_request(run_dir)
+    if not tui_is_live(run_dir):  # only drop a STALE pid (hard-killed TUI)
+        clear_tui_pid(run_dir)
 
 
 def write_tui_pid(run_dir: Path, pid: int) -> None:
@@ -61,6 +70,43 @@ def clear_tui_pid(run_dir: Path) -> None:
     p = run_dir / TUI_PID_FILE
     with contextlib.suppress(FileNotFoundError):
         p.unlink()
+
+
+def _pid_alive(pid: int) -> bool:
+    """True if a process with *pid* exists (signal 0 probes without killing)."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # exists but is owned by another user
+    except OSError:
+        return False
+    return True
+
+
+def write_worker_pid(run_dir: Path, pid: int) -> None:
+    """Record the run's worker pid so `agent6 status` can probe liveness even
+    while the worker is blocked in a long provider call (no events emitted)."""
+    (run_dir / WORKER_PID_FILE).write_text(str(pid), encoding="utf-8")
+
+
+def clear_worker_pid(run_dir: Path) -> None:
+    with contextlib.suppress(FileNotFoundError):
+        (run_dir / WORKER_PID_FILE).unlink()
+
+
+def read_worker_pid(run_dir: Path) -> int | None:
+    try:
+        return int((run_dir / WORKER_PID_FILE).read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+
+
+def worker_is_alive(run_dir: Path) -> bool:
+    """True iff the run dir has a worker.pid pointing at a live process."""
+    pid = read_worker_pid(run_dir)
+    return pid is not None and _pid_alive(pid)
 
 
 def tui_is_live(run_dir: Path) -> bool:
@@ -165,6 +211,28 @@ def write_steer_answer(run_dir: Path, answer: str) -> None:
 def clear_steer_answer(run_dir: Path) -> None:
     with contextlib.suppress(FileNotFoundError):
         (run_dir / STEER_ANSWER_FILE).unlink()
+
+
+# A steer can also be INITIATED from the TUI (the `s` key) without Ctrl-C: the
+# dashboard drops this marker, the run notices it at its next safe boundary (same
+# as the SIGINT flag), prompts via the modal, and clears it. Decoupled from
+# signals so a watcher process can request a steer the run picks up.
+STEER_REQUEST_FILE = "steer.request"
+
+
+def request_steer(run_dir: Path) -> None:
+    """TUI-initiated steer: drop a marker the run polls at its next boundary."""
+    with contextlib.suppress(OSError):
+        (run_dir / STEER_REQUEST_FILE).write_text("", encoding="utf-8")
+
+
+def steer_request_pending(run_dir: Path) -> bool:
+    return (run_dir / STEER_REQUEST_FILE).exists()
+
+
+def clear_steer_request(run_dir: Path) -> None:
+    with contextlib.suppress(FileNotFoundError):
+        (run_dir / STEER_REQUEST_FILE).unlink()
 
 
 def read_steer_answer(

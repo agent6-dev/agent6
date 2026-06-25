@@ -14,7 +14,9 @@ import json
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 
+from rich.text import Text
 from textual.app import App
 
 from agent6.ui.app import Agent6TUI
@@ -153,7 +155,7 @@ def test_menu_dropdown_keys_right_align_to_common_edge() -> None:
         MenuItem("Theme…", "c", None),  # keyless
         MenuItem("Quit", "d", "q"),
     )
-    opts = {o.id: o.prompt.plain for o in _menu_options(items)}
+    opts = {o.id: cast(Text, o.prompt).plain for o in _menu_options(items)}
     keyed = [opts["a"], opts["b"], opts["d"]]
     assert len({len(r) for r in keyed}) == 1  # all padded to one width => shared right edge
     assert opts["a"].endswith(" n") and opts["b"].endswith("Enter") and opts["d"].endswith(" q")
