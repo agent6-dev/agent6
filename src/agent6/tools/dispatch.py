@@ -400,25 +400,38 @@ class ToolDispatcher:
         return tuple(sorted(names))
 
     def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
-        # MCP routing happens BEFORE the built-in handler
-        # check so mcp__* names don't collide with the built-in
-        # "Unknown tool" error path.
+        # Emit `tool.call` UP FRONT, before any guard, so EVERY dispatched tool
+        # -- including ones a guard rejects (unknown name, disabled, wrong mode)
+        # -- produces a matching `tool.result(ok=...)` pair. Otherwise a reader
+        # sees a `loop.tool.call` with no result and has to guess what happened.
+        # The emit + the ok flag live here in the dispatcher (not gated on the
+        # model), so a prompt injection cannot suppress the event or fake
+        # success; rejection reasons come from these hardcoded guards, not from
+        # model-supplied content.
+        self._emit("tool.call", name=name, args=_truncate_args(raw_input))
+        try:
+            result = self._dispatch_inner(name, raw_input)
+        except ToolError as exc:
+            self._emit("tool.result", name=name, ok=False, summary=str(exc))
+            raise
+        except Exception as exc:
+            self._emit("tool.result", name=name, ok=False, summary=str(exc))
+            raise ToolError(f"{name} failed: {exc}") from exc
+        self._emit("tool.result", name=name, ok=True, summary=_summarize_result(name, result))
+        return result
+
+    def _dispatch_inner(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        """Resolve + execute a tool. Raises ToolError on a rejected/failed call;
+        the caller (`dispatch`) owns the tool.call/tool.result events."""
+        # MCP routing happens BEFORE the built-in handler check so mcp__* names
+        # don't collide with the built-in "Unknown tool" error path.
         if name.startswith(MCP_TOOL_PREFIX):
             if self._mcp_manager is None:
                 raise ToolError(f"{name}: MCP is not configured")
-            self._emit("tool.call", name=name, args=_truncate_args(raw_input))
             try:
-                result = self._mcp_manager.call(name, raw_input)
+                return self._mcp_manager.call(name, raw_input)
             except MCPError as exc:
-                self._emit("tool.result", name=name, ok=False, summary=str(exc))
                 raise ToolError(str(exc)) from exc
-            self._emit(
-                "tool.result",
-                name=name,
-                ok=True,
-                summary=_summarize_result(name, result),
-            )
-            return result
         if name not in self._handlers:
             raise ToolError(f"Unknown tool: {name}")
         if name == RunCommandInput.TOOL_NAME and self._config.sandbox.run_commands == "no":
@@ -451,17 +464,7 @@ class ToolDispatcher:
             # ask_user is a run-mode tool (LOOP_EXTRA_TOOLS only); backstop it so
             # a future tool-list regression can't pause a plan/ask/machine loop.
             raise ToolError(f"{name} is not available in {self._mode} mode")
-        self._emit("tool.call", name=name, args=_truncate_args(raw_input))
-        try:
-            result = self._handlers[name](raw_input)
-        except ToolError as exc:
-            self._emit("tool.result", name=name, ok=False, summary=str(exc))
-            raise
-        except Exception as exc:
-            self._emit("tool.result", name=name, ok=False, summary=str(exc))
-            raise ToolError(f"{name} failed: {exc}") from exc
-        self._emit("tool.result", name=name, ok=True, summary=_summarize_result(name, result))
-        return result
+        return self._handlers[name](raw_input)
 
     def _emit(self, event_type: str, /, **fields: Any) -> None:
         if self._events is not None:

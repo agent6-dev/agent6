@@ -190,7 +190,7 @@ any external viewer (the fold to UI state lives in
 | Event                       | Notable fields                              |
 | --------------------------- | ------------------------------------------- |
 | `run.start`                 | `user_task`                                 |
-| `tool.call` / `.result`     | `name`, `args` (preview), `ok`, `summary`   |
+| `tool.call` / `.result`     | `name`, `args` (preview), `ok`, `summary` — emitted as a pair for EVERY dispatched tool, including ones a guard rejects (`ok=false`, trusted reason), so no call is unaccounted for |
 | `verify.start` / `.end`     | `cmd`, `exit_code`, `duration_s`, `*_tail`  |
 | `loop.verify_inferred`      | `command` (argv, `[]` if none), `source` (`agents_md`/manifest/`llm`/`none`) |
 | `role.call` / `.result`     | `role`, `model`, `tokens_in`, `tokens_out`  |

@@ -1012,3 +1012,34 @@ def test_apply_patch_unified_still_works_and_path_optional(tmp_path: Path) -> No
     out = d.dispatch("apply_patch", {"patch": "--- a/x.py\n+++ b/x.py\n@@ -1 +1 @@\n-a\n+A\n"})
     assert out["path"] == "x.py"
     assert (tmp_path / "x.py").read_text(encoding="utf-8") == "A\n"
+
+
+def test_rejected_tool_emits_call_and_result_pair(tmp_path: Path) -> None:
+    """A guard-rejected tool (unknown name / disabled / wrong-mode) still emits a
+    tool.call + tool.result(ok=false) pair with a trusted, deterministic reason --
+    so a reader never sees a loop.tool.call with no matching result, and the
+    ok=false signal is dispatcher-owned (a prompt injection can't fake success)."""
+    import json
+
+    from agent6.events import EventSink
+
+    cfg = _config(tmp_path)  # run_commands = "no"
+    logs = tmp_path / "logs.jsonl"
+    d = ToolDispatcher(root=tmp_path, config=cfg, events=EventSink(logs))
+
+    with pytest.raises(ToolError):  # run_command disabled by config -> guard reject
+        d.dispatch("run_command", {"argv": ["echo", "hi"]})
+    with pytest.raises(ToolError):  # unknown tool name -> guard reject
+        d.dispatch("totally_unknown_tool", {})
+
+    events = [json.loads(line) for line in logs.read_text(encoding="utf-8").splitlines()]
+    calls = [e for e in events if e["type"] == "tool.call"]
+    results = [e for e in events if e["type"] == "tool.result"]
+    assert [e["name"] for e in calls] == ["run_command", "totally_unknown_tool"]
+    assert [(e["name"], e["ok"]) for e in results] == [
+        ("run_command", False),
+        ("totally_unknown_tool", False),
+    ]
+    # Reasons come from the dispatcher's own guard messages, not model content.
+    assert "disabled by config" in results[0]["summary"]
+    assert "Unknown tool" in results[1]["summary"]
