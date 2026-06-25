@@ -32,7 +32,7 @@ from agent6.git_ops import GitError, commit_all, commit_diff
 from agent6.git_ops import co_change_pairs as git_co_change_pairs
 from agent6.git_ops import status as git_status
 from agent6.graph.client import CuratorClientError, GraphClient
-from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft
+from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft, UpdateStatusIntent
 from agent6.providers import Provider, ProviderError, ToolDefinition
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 from agent6.tools.schema import (
@@ -1033,11 +1033,8 @@ class Workflow:
                     directive = self.after_auto_commit(iteration, sha)
                     if directive == "stop":
                         self._log(f"LOOP: interactive stop at iter {iteration}")
-                        self._emit(
-                            "run.end",
-                            reason="interactive_stop",
-                            iterations=iteration,
-                            all_passed=True,
+                        self._emit_run_end_passed(
+                            reason="interactive_stop", iterations=iteration
                         )
                         return RunResult(
                             completed=True,
@@ -1334,9 +1331,7 @@ class Workflow:
                 self._log(
                     f"LOOP: verify_settled at iter {iteration} (idle {state.verify_settled_idle})"
                 )
-                self._emit(
-                    "run.end", reason="verify_settled", iterations=iteration, all_passed=True
-                )
+                self._emit_run_end_passed(reason="verify_settled", iterations=iteration)
                 return RunResult(
                     completed=True,
                     reason="verify_settled",
@@ -1348,12 +1343,7 @@ class Workflow:
             if plateau_should_stop:
                 assert metric_plateau_finish is not None
                 self._log(f"LOOP: metric_plateau at iter {iteration}")
-                self._emit(
-                    "run.end",
-                    reason="metric_plateau",
-                    iterations=iteration,
-                    all_passed=True,
-                )
+                self._emit_run_end_passed(reason="metric_plateau", iterations=iteration)
                 return RunResult(
                     completed=True,
                     reason="metric_plateau",
@@ -1403,12 +1393,7 @@ class Workflow:
 
             if finish_signal is not None:
                 self._log(f"LOOP: {finish_kind} called at iter {iteration}")
-                self._emit(
-                    "run.end",
-                    reason=finish_kind,
-                    iterations=iteration,
-                    all_passed=True,
-                )
+                self._emit_run_end_passed(reason=finish_kind, iterations=iteration)
                 return RunResult(
                     completed=True,
                     reason=finish_kind,
@@ -1625,12 +1610,7 @@ class Workflow:
             self._log(
                 f"LOOP: silent_finish at iter {iteration} - agent emitted text but no tool_use"
             )
-            self._emit(
-                "run.end",
-                reason="silent_finish",
-                iterations=iteration,
-                all_passed=True,
-            )
+            self._emit_run_end_passed(reason="silent_finish", iterations=iteration)
             return RunResult(
                 completed=True,
                 reason="silent_finish",
@@ -1789,6 +1769,47 @@ class Workflow:
             return not git_status(self.root).is_clean
         except (GitError, OSError):
             return False
+
+    def _pass_pending_root_tasks(self) -> None:
+        """On successful completion, mark still-pending root task(s) as passed.
+
+        The loop seeds one root task per ``run()`` (each ask REPL follow-up seeds
+        another), but the worker finishes via ``finish_run`` without ever
+        touching it -- so a completed ask/run otherwise reads ``tasks 0/1``. Pass
+        any root (``parent_id is None``) still pending/in-progress so the DAG --
+        and every viewer + resume -- agrees the run completed. Subtasks the
+        worker deliberately left unfinished are untouched (kept honest).
+        Best-effort: a curator hiccup must never break completion."""
+        if self.graph_client is None:
+            return
+        try:
+            state = self.graph_client.get_state()
+        except Exception as exc:  # dead socket / IPC error must not break finish
+            self._log(f"LOOP: auto-pass root skipped: {exc}")
+            return
+        nodes = state.get("nodes", {})
+        if not isinstance(nodes, dict):
+            return
+        changed = False
+        for nid, node in nodes.items():
+            if node.get("parent_id") is None and node.get("status") in ("pending", "in_progress"):
+                try:
+                    self.graph_client.update_status(
+                        UpdateStatusIntent(id=nid, new_status="passed")
+                    )
+                    changed = True
+                except Exception as exc:  # IPC/validation glitch must not break finish
+                    self._log(f"LOOP: auto-pass root {nid} failed: {exc}")
+                    break  # a dead socket fails for every remaining node too
+        if changed:
+            self._emit_graph_snapshot()
+
+    def _emit_run_end_passed(self, *, reason: str, iterations: int) -> None:
+        """Emit a successful ``run.end``, first auto-passing any still-pending
+        root task so the DAG (and every viewer + resume) agrees the run
+        completed -- otherwise a finish_run-only ask/run reads ``tasks 0/1``."""
+        self._pass_pending_root_tasks()
+        self._emit("run.end", reason=reason, iterations=iterations, all_passed=True)
 
     def _emit_graph_snapshot(self) -> None:
         """Emit the current task DAG so a live viewer (the TUI) can render it.
