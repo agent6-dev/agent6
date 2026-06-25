@@ -107,7 +107,17 @@ agent6 resume <run-id>
 
 # Read-only code review of a diff. Never touches the worktree.
 agent6 review --base origin/main --head HEAD
+
+# Adversarial review PANEL: N grounded reviewers (findings grounded against the
+# diff, so only real, block-eligible problems gate). Also runs in-loop.
+agent6 review --reviewers 3 --personas security,correctness,tests
+
+# Pick a strategy preset with one knob (quick / standard / ultra / paranoid).
+agent6 run "..." --profile ultra
 ```
+
+The in-loop review panel and profiles are configured under `[workflow]`
+(`critic`, `review_*`, `profile`); see [CONFIG.md](CONFIG.md).
 
 Config is layered: built-in secure defaults, then the global
 `~/.config/agent6/config.toml`, then the per-repo config (out of the
@@ -124,6 +134,9 @@ it deterministic.
 Other commands:
 
 - `agent6 watch [<run-id>]`: attach the live TUI to an existing run.
+- `agent6 status [<run-id>]`: one-shot liveness + progress of a run (running /
+  crashed / finished, current iteration, last activity, elapsed), then exit —
+  a quick or scripted check (`--json`) without the live follower.
 - `agent6 plan "<task>"`: read-only planning pass; execute with
   `agent6 run --from-plan`.
 - `agent6 ask "<question>"`: read-only Q&A over the repo, including

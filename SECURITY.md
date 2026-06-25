@@ -166,9 +166,10 @@ strict schema and refuses on any unknown field.
 ### 3. Profile selection
 
 You *set* the `sandbox.profile` field; it resolves against the host to an
-*effective profile*: what actually runs. There is no `none` value (you cannot
-ask for it) and no `auto` effective profile (it is resolved away). No silent
-downgrade: an explicit request the host can't satisfy is refused, not weakened.
+*effective profile*: what actually runs. `auto` is never itself an effective
+profile (it is resolved away), and `auto` never resolves to `none` on Linux. No
+silent downgrade: an explicit request the host can't satisfy is refused, not
+weakened. `none` (unsandboxed) is a deliberate, gated opt-out — see its rows below.
 
 | `sandbox.profile` | Host | Effective profile |
 |---|---|---|
@@ -179,6 +180,14 @@ downgrade: an explicit request the host can't satisfy is refused, not weakened.
 | `strict` | anything else | ⛔ refuse to run |
 | `hardened` | Linux (user namespaces or not) | `hardened` |
 | `hardened` | non-Linux (macOS / Windows) | ⛔ refuse to run |
+| `none` *(explicit opt-out)* | a detected container | `none` (the container is the boundary) |
+| `none` | a bare host | ⛔ refuse unless `AGENT6_ALLOW_NO_SANDBOX=1` |
+
+The `none` opt-out runs commands UNSANDBOXED. It is allowed automatically only
+inside a **detected container** — proven by a filesystem marker (`/.dockerenv` or
+`/run/.containerenv`), not a forgeable env var — where the container is the blast
+radius. On a bare host it is refused unless the operator confirms with
+`AGENT6_ALLOW_NO_SANDBOX=1`. Always with a loud startup warning.
 
 The three effective profiles:
 

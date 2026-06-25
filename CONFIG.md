@@ -182,12 +182,13 @@ The security boundary. Profiles and the network model are specified in
 
 | Field | Default | Meaning |
 |---|---|---|
-| `profile` | `"auto"` | `auto` / `strict` / `hardened` → resolves to an effective `strict` / `hardened` / `none` (SECURITY §3). |
+| `profile` | `"auto"` | `auto` / `strict` / `hardened` → effective `strict` / `hardened` / `none`; or explicit `none` to run UNSANDBOXED, allowed only inside a detected container (else refused on a bare host unless `AGENT6_ALLOW_NO_SANDBOX=1`). See SECURITY §3. |
 | `agent_network` | `"providers"` | The agent's own egress: `providers` / `local` / `open` (SECURITY §1b). |
 | `tool_network` | `"block"` | Jailed-command egress: `block` / `only_explicit_states` / `allow` (SECURITY §8). |
 | `allow_urls` | `[]` | Extra agent egress hosts under `agent_network = "providers"` (`host`, `host:port`, or URL). Edit with `agent6 config add/remove sandbox.allow_urls <host>`. |
 | `run_commands` | `"ask"` | Whether the LLM gets `run_command`: `yes` / `no` / `ask`. |
 | `protect_git` | `true` | Strict only: re-bind `.git/` read-only in the jail. On the hardened profile the cwd is blanket read-write (no mount namespace to carve), so `.git` is writable by jailed commands there; that is gated by `run_commands`, recoverable (branch-per-run, commits through git_ops), and bounded by the surrounding container. |
+| `extra_read_paths` | `[]` | Extra absolute paths a jailed command may **read + execute** (not write), beyond the system defaults (`/usr /bin /lib …`) and the workspace. For a project whose toolchain/interpreter lives outside the repo — a system conda/virtualenv, a Go/Rust/Node toolchain, a shared data dir. Granted under `hardened` **and** `strict`. Loosens confinement (the child can read more of the host), so list only what the build/test needs. |
 
 ## `[git]`
 
@@ -213,12 +214,76 @@ The security boundary. Profiles and the network model are specified in
 |---|---|---|
 | `verify_command` | `[]` | argv defining "a step succeeded" (run with NO shell — wrap a pipeline as `["sh","-c","a && b"]`). **Optional**: when unset, `agent6 run`/`plan` infer one per run — AGENTS.md `## Verify command` section → repo manifests (package.json/Makefile/pyproject/Cargo/go.mod) → a cheap model call — inject it in-memory (never written to config) and print it. With none inferable, the run is *gateless* (per-step commits, no green gate). Set it to pin a deterministic one. |
 | `verify_timeout_s` | `600.0` | Per-call timeout for `verify_command` / `metric.command`. |
-| `critic` | `"off"` | In-loop critic (runs the `reviewer` model): `off` / `on_verify_fail` / `before_finish` / `periodic`. |
-| `critic_period` | `10` | Iterations between critiques when `critic = "periodic"`. |
+| `critic` | `"off"` | Trigger for the in-loop **adversarial review panel** (below): `off` / `on_verify_fail` / `before_finish` / `periodic`. |
+| `critic_period` | `10` | Iterations between reviews when `critic = "periodic"`. |
+| `review_panel_size` | `1` | Number of reviewer seats (personas cycled). |
+| `review_personas` | `[]` | Per-seat stances, e.g. `["security","correctness","tests"]`; empty = a built-in set. |
+| `review_decision` | `"advisory"` | `advisory` (inject findings, never blocks) / `veto` / `quorum` / `all`. Only gates in-loop. |
+| `review_quorum` | `2` | K for `quorum` (counts **distinct models**, so same-model seats can't fake a quorum). |
+| `review_tier` | `"diff"` | `diff` (one grounded call over the diff) or `explore` (read-only tool-using reviewer that reads the broader repo to catch cross-file impact). |
+| `review_concurrency` | `1` | In-loop seat parallelism (post-hoc `agent6 review` is always parallel). |
+| `review_max_total_rejections` | `4` | Per-run blocks before the gate auto-disarms to advisory (anti-stall). |
+| `review_budget_fraction` | `0.25` | Max run-budget fraction the panel may spend. |
+| `review_seats` | `[]` | Explicit `"persona@provider/model"` seats → **distinct models per seat** (overrides size/personas). A bare `"persona"` routes via `[models.reviewer]`. |
 | `revise_prompt` | `"off"` | One-shot task-prompt revision before the loop: `off` / `auto` / `interactive`. |
+| `profile` | `""` | Named **config profile** (below). The `--profile` CLI flag overrides it. |
 | `compact_drop_at_chars` | _adaptive_ | Tier-1 compaction: replace oldest tool-results with a placeholder. Default (unset) sizes from the worker model's context window (~45% of it); set BOTH `compact_*` to pin. |
 | `compact_summarise_at_chars` | _adaptive_ | Tier-2 compaction: summarise elided history + restart (the task DAG survives). Default (unset) ~80% of the model's context window; the historical 256k/768k apply when the window is unknown. |
 | `context_summary_max_tokens` | `2048` | Cap on the tier-2 summary. |
+| `structural_priors` | `true` | Include the enriched `<repo-priors>` block (ranked hot symbols, git co-change, tree-sitter outline) in the system prompt. Set `false` for a leaner/cheaper prompt. |
+| `system_prompt_file` | `""` | ADVANCED: replace run-mode's static base prompt with this file's contents (the dynamic verify / budget / repo-priors blocks still append). Validated to exist at config load; a startup warning fires if it omits the core tool names. |
+
+### Adversarial review panel
+
+When `critic != "off"`, the in-loop second opinion is a **grounded review panel**:
+`review_panel_size` reviewers (the `reviewer` model, or distinct models via
+`review_seats`) each scrutinize the run's diff (+ the last verify result) and
+return structured findings. The same panel runs post-hoc, read-only, via
+`agent6 review --reviewers N [--personas a,b,c]`.
+
+What keeps it from false-blocking correct work (the trap that retired the old
+in-loop reviewer): grounding is **mechanical, not prose**. A reviewer's `block`
+only gates if its `file:line` is actually in the diff AND its category is in a
+fixed allowed-block set (security / sandbox-bypass / off-topic-edit / data-loss /
+verify-uncovered-correctness). Taste, naming, "missing test", and uncited claims
+are downgraded to advisory and can never stall the run; a per-run rejection cap
+disarms the gate after a few blocks. `advisory` (the default) only injects
+findings as guidance — enable `veto`/`quorum` to gate.
+
+### Config profiles
+
+A profile presets many settings at once so a task picks a strategy with one knob.
+Select with `--profile <name>` (on `run`/`plan`/`ask`), `[workflow] profile =
+"<name>"`, or the TUI new-work chooser. A profile **overrides** config rather than
+being a baseline: its preset is injected just above the config layer that selected
+it, so precedence (low → high) is
+
+    defaults < global config < [profile via global workflow.profile]
+            < repo config < [profile via repo workflow.profile]
+            < [profile via --profile flag] < --config FILE
+
+The most-specific source wins (`--profile` flag, else repo `[workflow].profile`,
+else global; the presets never stack), and the profile beats the config at its
+scope — but a more-specific config layer, an explicit `--config FILE`, or an
+individual flag still beats the profile.
+
+| Profile | Bundles |
+|---|---|
+| `quick` | review off, tighter output budget — fast/cheap. |
+| `standard` | the plain defaults (no review). The default. |
+| `ultra` | a 3-seat grounded quorum panel — thorough review. |
+| `paranoid` | 5 explore-tier seats, `before_finish` veto, bigger budget. |
+
+Define your own with a `[profiles.<name>]` table (a partial config); it wins over
+a built-in of the same name. Example:
+
+```toml
+[profiles.myteam.workflow]
+critic = "before_finish"
+review_panel_size = 3
+review_decision = "veto"
+review_seats = ["security@anthropic/claude-opus-4-8", "correctness@openrouter/moonshotai/kimi-k2"]
+```
 
 ### `[workflow.metric]` (optional)
 
