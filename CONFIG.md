@@ -16,17 +16,19 @@ fields see [SECURITY.md](SECURITY.md).
 
 The per-repo config lives in the per-repo state dir out of the workspace
 (`$XDG_STATE_HOME/agent6/<repo-id>/`; see `[agent6].state_dir` below), so it
-is per-machine and not committed or shared. It can be empty when the global
-config supplies a provider + model; the one thing a repo always needs is its
-`workflow.verify_command`, which `agent6 init` scaffolds per checkout (it can
-detect the project type).
+is per-machine and not committed or shared. It can be empty -- even absent --
+when the global config supplies a provider + model. `workflow.verify_command`
+is optional: `agent6 run`/`plan` infer one per run when it is unset (see the
+table below), so a repo needs nothing repo-specific to run.
 
 ## Creating & inspecting
 
 - `agent6 connect`: add a provider + API key (stored `0600`), global.
 - `agent6 model <role> <provider> <model> [--thinking off|low|medium|high]`.
-- `agent6 init`: scaffold the per-repo `config.toml` (in the state dir) +
-  `AGENTS.md` in a repo, detecting the project type to set `verify_command`.
+- `agent6 init`: an OPTIONAL, granular setup wizard. Step by step it creates the
+  per-repo `config.toml` (in the state dir) if missing, sets a `verify_command`
+  inferred from the repo, adds `.gitignore` entries, and creates/updates
+  `AGENTS.md` -- each step asks first and never overwrites your files.
 - `agent6 config show`: every effective value and which layer set it.
 - `agent6 config get|set|unset|add|remove <dotted.key> [value]`: edit one leaf
   (`--repo`, or `--machine FILE` for a machine `[config]` overlay). Every edit is
@@ -209,7 +211,7 @@ The security boundary. Profiles and the network model are specified in
 
 | Field | Default | Meaning |
 |---|---|---|
-| `verify_command` | `[]` | argv defining "a step succeeded". **Required for `agent6 run`** (checked at run time); `plan` / `review` don't need it. |
+| `verify_command` | `[]` | argv defining "a step succeeded" (run with NO shell — wrap a pipeline as `["sh","-c","a && b"]`). **Optional**: when unset, `agent6 run`/`plan` infer one per run — AGENTS.md `## Verify command` section → repo manifests (package.json/Makefile/pyproject/Cargo/go.mod) → a cheap model call — inject it in-memory (never written to config) and print it. With none inferable, the run is *gateless* (per-step commits, no green gate). Set it to pin a deterministic one. |
 | `verify_timeout_s` | `600.0` | Per-call timeout for `verify_command` / `metric.command`. |
 | `critic` | `"off"` | In-loop critic (runs the `reviewer` model): `off` / `on_verify_fail` / `before_finish` / `periodic`. |
 | `critic_period` | `10` | Iterations between critiques when `critic = "periodic"`. |

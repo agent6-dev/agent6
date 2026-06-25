@@ -192,6 +192,7 @@ any external viewer (the fold to UI state lives in
 | `run.start`                 | `user_task`                                 |
 | `tool.call` / `.result`     | `name`, `args` (preview), `ok`, `summary`   |
 | `verify.start` / `.end`     | `cmd`, `exit_code`, `duration_s`, `*_tail`  |
+| `loop.verify_inferred`      | `command` (argv, `[]` if none), `source` (`agents_md`/manifest/`llm`/`none`) |
 | `role.call` / `.result`     | `role`, `model`, `tokens_in`, `tokens_out`  |
 | `role.text_delta`           | streamed assistant text chunk               |
 | `role.thinking_delta`       | streamed reasoning chunk (TUI "thinking" pane) |

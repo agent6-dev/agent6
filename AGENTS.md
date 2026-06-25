@@ -135,7 +135,9 @@ output, run summaries, and review feedback.
 ## Verify command
 
 Also what `verify_command` should be in this repo's agent6 config when
-running the agent on this repo:
+running the agent on this repo (agent6 parses this fenced block to infer the
+verify command when none is configured — a shell pipeline is wrapped as
+`sh -c`):
 
 ```bash
 uv run ruff check && uv run ruff format --check && \

@@ -88,17 +88,19 @@ register-python-argcomplete --shell fish agent6 > ~/.config/fish/completions/age
 agent6 connect                # interactive: pick provider, paste API key
 agent6 model worker anthropic claude-sonnet-4-5
 
-# In a project: scaffold the per-repo config + AGENTS.md.
+# Run the agent on a task -- that's it. agent6 infers a verify command for
+# the repo if you haven't set one.
+agent6 run "add a --json output mode to the CLI"
+
+# Optional: a granular setup wizard (per-repo config, a pinned verify
+# command, .gitignore, AGENTS.md). Safe to run anytime; never overwrites.
 agent6 init
 
 # Audit the effective config: every value and where it came from.
 agent6 config show
 
-# Pre-flight: sandbox + config + provider keys + verify_command.
+# Pre-flight: sandbox + config + provider keys.
 agent6 check
-
-# Run the agent on a task.
-agent6 run "add a --json output mode to the CLI"
 
 # Resume an interrupted run from its last tool-call snapshot.
 agent6 resume <run-id>
@@ -112,8 +114,12 @@ Config is layered: built-in secure defaults, then the global
 workspace under `$XDG_STATE_HOME/agent6/<repo-id>/config.toml`), then an
 explicit `--config FILE`. The per-repo config is per-machine, not committed.
 A repo can be zero-config when the global config supplies a provider and
-model; the one thing a repo always needs is its `verify_command`, which
-`agent6 init` scaffolds per checkout.
+model. The verify command (agent6's success gate) is optional: if a repo
+hasn't set `workflow.verify_command`, `agent6 run`/`plan` infer one per run
+(from AGENTS.md, then repo manifests, then a cheap model call) and print what
+they picked; with none inferable the run proceeds gateless (per-step commits,
+no green gate). Pin one in the per-repo config — or via `agent6 init` — to make
+it deterministic.
 
 Other commands:
 
@@ -219,7 +225,8 @@ There is no `write_file`, `shell`, or `web_fetch`.
 agent6 is a single-loop agent: one provider, one model, one message
 history. The model drives the run by calling tools; the workflow dispatches
 them, snapshots state before every LLM call (so any run is resumable),
-commits when `verify_command` passes, and hard-stops on budget. Module
+commits each step when `verify_command` passes (or, on a gateless run with no
+verify command, every editing step), and hard-stops on budget. Module
 boundaries (`cli -> workflows -> agents -> tools -> sandbox`) are enforced
 by [tach](https://docs.gauge.sh/). See
 [ARCHITECTURE.md](ARCHITECTURE.md) for the run/review loops, the curator
@@ -268,7 +275,9 @@ reasoning and answers to the terminal. Attach from another shell with
 `agent6 watch [<run-id>]`; `agent6 watch --plain` is a plain-text tail.
 The dashboard renders the JSONL event stream at
 `<state-dir>/<repo-id>/runs/<run-id>/logs.jsonl`, which is also the contract
-for external viewers (vocabulary in [ARCHITECTURE.md](ARCHITECTURE.md)).
+for external viewers (vocabulary in [ARCHITECTURE.md](ARCHITECTURE.md)). The
+inline log pane is a live tail; press `l` (or pick a run in the hub and press
+`l`) for a full-height, scrollable log of the whole run — current or finished.
 
 ## Persistence
 
