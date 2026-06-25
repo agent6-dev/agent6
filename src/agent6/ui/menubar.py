@@ -71,6 +71,7 @@ def _key_label(key: str) -> str:
         "escape": "Esc",
         "ctrl+r": "^R",
         "ctrl+p": "^P",
+        "ctrl+q": "^Q",
         "enter": "Enter",
     }.get(key, key)
 
@@ -124,7 +125,7 @@ class HelpScreen(ModalScreen[None]):
                     yield Static(line)
             yield Static("")
             yield Static(
-                Text("F10 or Alt+<letter> opens a menu · Esc or click outside closes", style="dim"),
+                Text("F10 or Alt+<letter> opens a menu · Esc/q or click-out closes", style="dim"),
             )
 
     def on_click(self, event: events.Click) -> None:

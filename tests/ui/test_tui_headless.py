@@ -165,8 +165,8 @@ def test_render_and_modals(tmp_path: Path) -> None:
 
 
 def test_dashboard_back_vs_quit(tmp_path: Path) -> None:
-    """In the hub loop, Esc returns to the hub (exit 0) while q quits it
-    (QUIT_HUB_CODE); standalone, both just close (0)."""
+    """Option 3: q (like Esc) backs out to the hub (exit 0); only Ctrl+Q quits the
+    hub (QUIT_HUB_CODE). Standalone, every one of them just closes (0)."""
     from agent6.ui.app import QUIT_HUB_CODE
 
     async def press(from_hub: bool, key: str) -> int | None:
@@ -179,5 +179,24 @@ def test_dashboard_back_vs_quit(tmp_path: Path) -> None:
         return app.return_value
 
     assert asyncio.run(press(True, "escape")) == 0  # back to the hub
-    assert asyncio.run(press(True, "q")) == QUIT_HUB_CODE  # quit the hub
+    assert asyncio.run(press(True, "q")) == 0  # q backs out to the hub too now
+    assert asyncio.run(press(True, "ctrl+q")) == QUIT_HUB_CODE  # only Ctrl+Q quits the hub
     assert asyncio.run(press(False, "q")) == 0  # standalone: just close
+    assert asyncio.run(press(False, "ctrl+q")) == 0  # standalone: just close
+
+
+def test_dashboard_footer_shows_one_dual_back_key(tmp_path: Path) -> None:
+    """Back is a single 'Esc/q' footer entry (q and Esc both back out), not two
+    separate Esc/q entries -- via key_display on the shown binding + a hidden q."""
+    from textual.widgets._footer import FooterKey
+
+    async def scenario() -> None:
+        (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+        app = Agent6TUI(tmp_path, from_hub=True)
+        async with app.run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            displays = [fk.key_display for fk in app.screen.query(FooterKey)]
+            assert displays.count("Esc/q") == 1  # exactly one combined Back entry
+            assert "q" not in displays  # the q alias is hidden, not a 2nd entry
+
+    asyncio.run(scenario())

@@ -131,7 +131,7 @@ class Agent6TUI(App[int]):
     MENUS: ClassVar = (
         Menu(
             "File",
-            (MenuItem("Back", "to_hub", "Esc"), MenuItem("Quit", "quit_hub", "q")),
+            (MenuItem("Back", "to_hub", "Esc/q"), MenuItem("Quit", "quit_hub", "ctrl+q")),
         ),
         Menu(
             "View",
@@ -154,10 +154,11 @@ class Agent6TUI(App[int]):
         ),
     )
     BINDINGS: ClassVar = [
-        # Footer order: page action, then meta (Help, Back, Quit, Menu) -- matching
-        # the home + config footers. Esc backs out to the hub (consistent with the
-        # config screen); q quits the whole hub; Ctrl+Q is the hard quit. (Esc on an
-        # open modal cancels it first -- the modal consumes the key.)
+        # Footer order: page action, then meta (Help, Back, Menu) -- matching the
+        # home + config footers. The dashboard is one level below the hub, so q
+        # (like Esc) backs out TO the hub; only the root hub quits on q. Ctrl+Q is
+        # the app-wide hard quit. (Esc on an open modal cancels it first -- the
+        # modal consumes the key.)
         Binding("l", "view_logs", "Full log", show=True),
         Binding("t", "view_transcript", "Conversation", show=True),
         # g=top / G=end, matching vi and the LogScreen/ConversationScreen viewers
@@ -165,8 +166,9 @@ class Agent6TUI(App[int]):
         Binding("g", "scroll_log_home", "Log→top", show=False),
         Binding("G", "scroll_log_end", "Log→end", show=True),
         Binding("question_mark", "help", "Help"),
-        Binding("escape", "to_hub", "Back"),
-        Binding("q", "quit_hub", "Quit"),
+        # q and Esc both back out to the hub; shown as one "Esc/q Back" footer entry.
+        Binding("escape", "to_hub", "Back", key_display="Esc/q"),
+        Binding("q", "to_hub", "Back", show=False),
         Binding("ctrl+q", "quit_hub", "Quit", show=False),
         Binding("tab", "focus_next", "Next pane", show=False),
         Binding("shift+tab", "focus_previous", "Prev pane", show=False),

@@ -381,9 +381,10 @@ def test_edit_modal_up_at_top_is_a_hard_stop(repo: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_q_quits_from_config_but_types_in_search(repo: Path) -> None:
-    """q quits the app from the Config screen (it only did from home before), yet
-    still types normally in the search box — the focused Input eats it first."""
+def test_q_backs_out_from_config_but_types_in_search(repo: Path) -> None:
+    """Option 3: q backs out of the Config screen (only the root hub quits on q),
+    yet still types normally in the search box — the focused Input eats it first.
+    The menu's Quit (^Q -> action_quit) still exits the app."""
 
     async def scenario() -> None:
         app = _Host(repo)
@@ -403,13 +404,19 @@ def test_q_quits_from_config_but_types_in_search(repo: Path) -> None:
             assert screen.query_one("#search", Input).value == "q"
             assert not exits
 
-            # Out on a table, q quits.
+            # Out on a table, q backs out (dismiss) instead of quitting.
             screen._cancel_search()  # pyright: ignore[reportPrivateUsage]
             screen.query_one("#tbl-sandbox", DataTable).focus()
             await pilot.pause()
             await pilot.press("q")
             await pilot.pause()
-            assert exits  # action_quit -> app.exit()
+            assert not exits  # q did NOT quit
+            assert not isinstance(app.screen, ConfigScreen)  # it backed out
+
+            # The menu's Quit (^Q) path still quits the app.
+            screen.action_quit()
+            await pilot.pause()
+            assert exits
 
     asyncio.run(scenario())
 

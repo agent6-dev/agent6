@@ -39,10 +39,11 @@ class LogScreen(Screen[None]):
     """
 
     BINDINGS: ClassVar = [
-        Binding("escape", "close", "Back"),
-        # q=Back (close the pager) here, deliberately opposite Home/Config/Dashboard
-        # where q quits the app -- closing a throwaway overlay is the natural q.
-        Binding("q", "close", "Back"),
+        # q and Esc both close the pager (back out one level); shown as one "Esc/q
+        # Back" footer entry. Only the root hub quits on q -- every other screen
+        # backs out; Ctrl+Q is the app-wide hard quit.
+        Binding("escape", "close", "Back", key_display="Esc/q"),
+        Binding("q", "close", "Back", show=False),
         Binding("r", "reload", "Refresh"),
         Binding("g", "scroll_top", "Top"),
         Binding("G", "scroll_bottom", "End"),

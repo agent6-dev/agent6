@@ -116,3 +116,20 @@ def test_conversation_screen_empty(tmp_path: Path) -> None:
             assert len(body.lines) == 1  # the "(no transcripts yet …)" placeholder
 
     asyncio.run(scenario())
+
+
+def test_conversation_screen_q_backs_out(tmp_path: Path) -> None:
+    """q (like Esc) closes the pager -- backs out one level (Option 3)."""
+    tdir = tmp_path / "transcripts"
+    _write(tdir)
+
+    async def scenario() -> None:
+        app = _Host(tdir)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert isinstance(app.screen, ConversationScreen)
+            await pilot.press("q")
+            await pilot.pause()
+            assert not isinstance(app.screen, ConversationScreen)  # backed out
+
+    asyncio.run(scenario())

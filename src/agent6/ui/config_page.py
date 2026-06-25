@@ -556,7 +556,11 @@ class ConfigScreen(Screen[None]):
     MENUS: ClassVar = (
         Menu(
             "Config",
-            (MenuItem("Refresh", "reload", "r"), MenuItem("Back", "close", "escape")),
+            (
+                MenuItem("Refresh", "reload", "r"),
+                MenuItem("Back", "close", "Esc/q"),
+                MenuItem("Quit", "quit", "ctrl+q"),
+            ),
         ),
         Menu(
             "Edit",
@@ -582,9 +586,10 @@ class ConfigScreen(Screen[None]):
             ),
         ),
     )
-    # Footer order: page actions first, then the fixed meta tail Help, Back, Quit,
-    # Menu -- same order as the home/run footers, so the chrome reads identically
-    # across screens. (Help + Back close out CONFIG_ACTIONS; Quit + Menu appended.)
+    # Footer order: page actions first, then the meta tail Help, Back, Menu --
+    # same order as the home/run footers (the root hub shows Quit in that slot
+    # instead, since it is the only screen that quits on q). Help + Back close out
+    # CONFIG_ACTIONS; Menu is appended below.
     BINDINGS: ClassVar = (
         [
             Binding(
@@ -592,13 +597,16 @@ class ConfigScreen(Screen[None]):
                 a.id,
                 a.label,
                 show=a.id in {"search", "edit", "toggle_modified", "reload", "help", "close"},
+                # Back responds to both Esc and q -- shown as one "Esc/q" footer entry.
+                key_display="Esc/q" if a.id == "close" else None,
             )
             for a in CONFIG_ACTIONS
             if a.key is not None
         ]
-        # q quits the app (typeable in #search: the focused Input eats it first);
-        # Esc still backs out to home, Ctrl+Q is the app-wide hard quit.
-        + [Binding("q", "quit", "Quit")]
+        # Config is one level below the hub, so q (like Esc) backs out -- only the
+        # root hub quits on q. (q is typeable in #search: the focused Input eats it
+        # first.) Ctrl+Q is the app-wide hard quit; Quit is in the menu as ^Q.
+        + [Binding("q", "close", "Back", show=False)]
         + menu_bindings(MENUS)
     )
     COMMANDS: ClassVar = Screen.COMMANDS | {_ConfigCommands}
@@ -893,8 +901,9 @@ class ConfigScreen(Screen[None]):
         open_theme_picker(self.app)
 
     def action_quit(self) -> None:
-        # q quits the whole app from here too (it only did from home before). On a
-        # Screen `quit` isn't built-in and doesn't bubble, so call exit() directly.
+        # The menu's "Quit" (^Q) quits the whole app. On a Screen `quit` isn't
+        # built-in and doesn't bubble, so call exit() directly. (q backs out
+        # instead -- see action_close; only the root hub quits on q.)
         self.app.exit()
 
     def action_close(self) -> None:
