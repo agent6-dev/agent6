@@ -107,9 +107,9 @@ def open_theme_picker(app: App[Any]) -> None:
 
 class ThemePicker(ModalScreen[None]):
     """A small, live-previewing theme chooser: the same ``[x]``/``[ ]`` chooser
-    the config dialogs use. Arrow through to preview; Enter keeps it, Esc restores
-    the theme you started with. The choice is persisted by ``setup_theme``'s
-    signal hook, so nothing here writes to disk directly."""
+    the config dialogs use. Arrow through to preview; the previewed theme is kept
+    on close (Enter or Esc both just dismiss). The choice is persisted by
+    ``setup_theme``'s signal hook, so nothing here writes to disk directly."""
 
     BINDINGS: ClassVar = [
         Binding("escape", "cancel", "Cancel"),

@@ -7,6 +7,10 @@ These are pure textual widgets, they take a prompt and `dismiss()` a result.
 The app wires the result back through the file bridge (see ui.approval); nothing
 here touches the workflow, so any other front-end can drop them in or replace
 them.
+
+Unlike the theme/edit/provider/help overlays, these consequential prompts have
+NO backdrop-click-to-close: an accidental click outside must not silently
+approve/deny/answer -- dismissal is explicit (buttons / keys) only.
 """
 
 from __future__ import annotations
@@ -21,6 +25,9 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Static
 
 
+# Modal frames pin a static round $accent (focused) border: a modal always owns
+# focus, so it always shows the focused accent -- the $primary<->$accent
+# resting/focus toggle is only for non-modal cards where focus actually moves.
 class ApprovalModal(ModalScreen[bool]):
     DEFAULT_CSS = """
     ApprovalModal { align: center middle; }

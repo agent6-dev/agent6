@@ -582,6 +582,9 @@ class ConfigScreen(Screen[None]):
             ),
         ),
     )
+    # Footer order: page actions first, then the fixed meta tail Help, Back, Quit,
+    # Menu -- same order as the home/run footers, so the chrome reads identically
+    # across screens. (Help + Back close out CONFIG_ACTIONS; Quit + Menu appended.)
     BINDINGS: ClassVar = (
         [
             Binding(

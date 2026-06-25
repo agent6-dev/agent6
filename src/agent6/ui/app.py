@@ -438,7 +438,8 @@ class Agent6TUI(App[int]):
         # sliding window, so a length-based diff freezes once it saturates.
         # Sticky-bottom: only snap to the newest line if the operator was already
         # at the bottom, so scrolling up to read holds position (the pane no
-        # longer "plays through" out from under them). `g` / Full log jump back.
+        # longer "plays through" out from under them). `G` / Full log jump back
+        # to the live tail.
         log = self.query_one("#log", RichLog)
         n_new = min(s.log_count - self._last_log_count, len(s.log_tail))
         if n_new > 0:

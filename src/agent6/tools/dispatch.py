@@ -194,7 +194,7 @@ def _refuse_mutating_git_command(argv: tuple[str, ...]) -> None:
 
 
 # Execution tools whose stdout/stderr IS the diagnostic signal. Their tool.result
-# event carries a capped output tail (like verify.start/end) so logs.jsonl shows
+# event carries a capped output tail (like verify.end) so logs.jsonl shows
 # the command's output for quick observability -- not just a one-line summary --
 # without opening the transcripts (where the full, uncapped output always lives).
 _EXEC_OUTPUT_TOOLS = frozenset({RunCommandInput.TOOL_NAME, RunMetricInput.TOOL_NAME})

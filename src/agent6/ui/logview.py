@@ -40,6 +40,8 @@ class LogScreen(Screen[None]):
 
     BINDINGS: ClassVar = [
         Binding("escape", "close", "Back"),
+        # q=Back (close the pager) here, deliberately opposite Home/Config/Dashboard
+        # where q quits the app -- closing a throwaway overlay is the natural q.
         Binding("q", "close", "Back"),
         Binding("r", "reload", "Refresh"),
         Binding("g", "scroll_top", "Top"),
