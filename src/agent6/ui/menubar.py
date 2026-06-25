@@ -83,11 +83,22 @@ def _title_text(menu: Menu) -> Text:
     return t
 
 
-def _option(item: MenuItem) -> Option:
-    t = Text(item.label)
-    if item.key:
-        t.append(f"   {_key_label(item.key)}", style="dim")
-    return Option(t, id=item.action)
+def _menu_options(items: tuple[MenuItem, ...]) -> list[Option]:
+    """Dropdown rows with labels left-aligned and shortcut keys RIGHT-aligned to a
+    common edge, so the keys line up in a column (instead of floating a fixed gap
+    after each varying-width label). The key column is sized to the widest of each."""
+    keys = [_key_label(it.key) if it.key else "" for it in items]
+    label_w = max((len(it.label) for it in items), default=0)
+    key_w = max((len(k) for k in keys), default=0)
+    width = label_w + 2 + key_w  # 2-space minimum gap between the two columns
+    opts: list[Option] = []
+    for it, key in zip(items, keys, strict=True):
+        t = Text(it.label)
+        if key:  # pad so the key's right edge lands at `width`
+            t.pad_right(width - len(it.label) - len(key))
+            t.append(key, style="dim")
+        opts.append(Option(t, id=it.action))
+    return opts
 
 
 class HelpScreen(ModalScreen[None]):
@@ -112,16 +123,23 @@ class HelpScreen(ModalScreen[None]):
         self._title = title
 
     def compose(self) -> ComposeResult:
+        # Keys right-aligned to a common edge across ALL sections (labels left),
+        # matching the menu dropdowns. Width = indent + widest label + gap + key.
+        items = [it for m in self._menus for it in m.items]
+        label_w = max((len(it.label) for it in items), default=0)
+        key_w = max((len(_key_label(it.key)) for it in items if it.key), default=0)
+        right = 2 + label_w + 2 + key_w
         with VerticalScroll(id="help-box"):
             yield Static(self._title, id="help-title")
             for m in self._menus:
                 # Underline the mnemonic letter, matching the top menu bar.
                 yield Static(_title_text(m), classes="help-menu")
                 for it in m.items:
-                    key = _key_label(it.key) if it.key else ""
                     line = Text(f"  {it.label}")
-                    line.pad_right(max(2, 30 - len(it.label)))
-                    line.append(key, style="dim")
+                    if it.key:  # pad so the key's right edge lands at `right`
+                        key = _key_label(it.key)
+                        line.pad_right(right - 2 - len(it.label) - len(key))
+                        line.append(key, style="dim")
                     yield Static(line)
             yield Static("")
             yield Static(
@@ -297,7 +315,7 @@ class MenuBar(Horizontal):
         # the bottom.) No fixed id: remove() is async, so a re-open could mount a
         # second one before the first is gone (DuplicateIds).
         title = self.query_one(f"#menu-{mnemonic}", _MenuTitle)
-        dd = _Dropdown(*[_option(i) for i in menu.items], mnemonic=mnemonic, on_pick=self._dispatch)
+        dd = _Dropdown(*_menu_options(menu.items), mnemonic=mnemonic, on_pick=self._dispatch)
         self.screen.mount(dd)
         dd.absolute_offset = Offset(title.region.x, title.region.y + 1)
         title.add_class("-open")  # keep the open menu's title highlighted
