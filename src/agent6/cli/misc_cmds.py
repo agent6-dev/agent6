@@ -11,7 +11,12 @@ import sys
 from pathlib import Path
 
 from agent6.budget import BudgetExceeded, BudgetTracker
-from agent6.cli._common import _check_provider_keys, _runs_dir, _state_dir
+from agent6.cli._common import (
+    _check_provider_keys,
+    _runs_dir,
+    _state_dir,
+    resolve_run_layout,
+)
 from agent6.cli.plan_watch import _most_recent_run_id
 from agent6.cli.providers import _build_role_provider
 from agent6.config import (
@@ -103,14 +108,16 @@ def _cmd_history_search(query: str, *, fixed: bool, run_id: str) -> int:
             file=sys.stderr,
         )
         return 2
-    runs_root = _runs_dir(Path.cwd())
+    cwd = Path.cwd()
     if run_id:
+        # Resolve across runs/ + asks/ so an ask's logs/transcript are searchable.
         try:
-            run_id = resolve_run_id(runs_root, run_id)
+            target = resolve_run_layout(cwd, run_id).run_dir
         except RunIdError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
-    target = runs_root / run_id if run_id else runs_root
+    else:
+        target = _runs_dir(cwd)
     if not target.is_dir():
         print(f"ERROR: no such directory: {target}", file=sys.stderr)
         return 2
@@ -133,14 +140,16 @@ def _cmd_history_search(query: str, *, fixed: bool, run_id: str) -> int:
 def _cmd_history_graph(run_id: str) -> int:
     """Render the persisted TaskNode tree for a run as a DFS-ordered listing."""
 
-    runs_dir = _runs_dir(Path.cwd())
+    cwd = Path.cwd()
     if run_id:
+        # Resolve across runs/ + asks/ so an ask's graph is findable too.
         try:
-            target_id = resolve_run_id(runs_dir, run_id)
+            layout = resolve_run_layout(cwd, run_id)
         except RunIdError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
     else:
+        runs_dir = _runs_dir(cwd)
         if not runs_dir.is_dir():
             print(f"ERROR: no runs directory at {runs_dir}", file=sys.stderr)
             return 2
@@ -152,10 +161,10 @@ def _cmd_history_graph(run_id: str) -> int:
         if not candidates:
             print(f"ERROR: no runs with a graph under {runs_dir}", file=sys.stderr)
             return 2
-        target_id = candidates[0].name
-        print(f"[agent6] showing graph for most recent run: {target_id}", file=sys.stderr)
+        layout = RunLayout(state_dir=_state_dir(cwd), run_id=candidates[0].name)
+        print(f"[agent6] showing graph for most recent run: {layout.run_id}", file=sys.stderr)
 
-    layout = RunLayout(state_dir=_state_dir(Path.cwd()), run_id=target_id)
+    target_id = layout.run_id
     nodes = load_graph(layout)
     if not nodes:
         print(f"ERROR: run {target_id} has no persisted graph nodes", file=sys.stderr)

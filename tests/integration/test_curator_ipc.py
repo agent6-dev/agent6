@@ -75,6 +75,33 @@ def test_curator_ipc_roundtrip(curator_proc) -> None:  # type: ignore[no-untyped
         assert state["nodes"][child.id]["status"] == "in_progress"
 
 
+def test_curator_writes_under_requested_subdir(tmp_path: Path) -> None:
+    """An ask spawns its curator with subdir='asks'; the DAG must land under
+    asks/<id>/, not the default runs/<id>/ (else a stray, log-less runs/<id>
+    appears -- the phantom duplicate row in the TUI run list)."""
+    state = tmp_path / ".agent6"
+    sock_path = state / "asks" / "run1" / "curator.sock"
+    proc = spawn_curator(state, "run1", sock_path, subdir="asks")
+    try:
+        _wait_for_socket(sock_path)
+        with GraphClient(sock_path) as client:
+            client.add_subtask(
+                AddSubtaskIntent(
+                    parent_id=None,
+                    draft=TaskNodeDraft(title="root", created_by="planner"),
+                )
+            )
+        assert (state / "asks" / "run1" / "graph.jsonl").is_file()
+        assert not (state / "runs" / "run1").exists()
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+
+
 def test_curator_ipc_rejects_unknown_op(curator_proc) -> None:  # type: ignore[no-untyped-def]
     sock_path, _ = curator_proc
     from agent6.graph.client import CuratorClientError

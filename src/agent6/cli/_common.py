@@ -17,6 +17,7 @@ from agent6.config_layer import (
     resolved_state_dir,
 )
 from agent6.detect import Environment, detect
+from agent6.graph.storage import RunLayout
 from agent6.models_cache import list_models
 from agent6.paths import (
     effective_user,
@@ -24,6 +25,7 @@ from agent6.paths import (
     root_optin_enabled,
 )
 from agent6.pricing import lookup_price
+from agent6.run_id import RunIdError, resolve_run_id
 from agent6.sandbox import strict_namespaces_work
 from agent6.secrets import SecretsError, load_secrets, resolve_api_key
 from agent6.tools.mcp_client import MCPManager
@@ -117,6 +119,27 @@ def _runs_dir(repo_root: Path) -> Path:
 def _machines_dir(repo_root: Path) -> Path:
     """The ``machines/`` directory under the per-repo state dir."""
     return _state_dir(repo_root) / "machines"
+
+
+def resolve_run_layout(repo_root: Path, query: str) -> RunLayout:
+    """Resolve a run id (or unique prefix) across BOTH ``runs/`` and ``asks/``,
+    returning a ``RunLayout`` with the matching subdir.
+
+    `agent6 run`/`plan` live under ``runs/`` and `agent6 ask` under ``asks/``;
+    read-only commands (``history graph``/``search``) use this so an ask's
+    state is findable too. Raises ``RunIdError`` if no run matches in either.
+    """
+    state = _state_dir(repo_root)
+    for subdir in ("runs", "asks"):
+        d = state / subdir
+        if not d.is_dir():
+            continue
+        try:
+            rid = resolve_run_id(d, query)
+        except RunIdError:
+            continue
+        return RunLayout(state_dir=state, run_id=rid, subdir=subdir)
+    raise RunIdError(f"no run matches {query!r} under {state}/(runs|asks)")
 
 
 def _check_provider_keys(cfg: Config) -> str | None:

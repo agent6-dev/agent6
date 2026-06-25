@@ -147,13 +147,18 @@ def spawn_curator(
     state_dir: Path,
     run_id: str,
     sock_path: Path,
+    *,
+    subdir: str = "runs",
 ) -> subprocess.Popen[bytes]:
     """Launch the `graph-curator` subprocess for one run and return the Popen.
 
     ``state_dir`` is the resolved run-state base (see
     ``agent6.paths.state_dir``); the curator writes the run's graph under
-    ``<state_dir>/runs/<run_id>``. The caller is responsible for connecting
-    (via `GraphClient`) and for terminating the process on shutdown.
+    ``<state_dir>/<subdir>/<run_id>``. ``subdir`` MUST match the caller's
+    ``RunLayout.subdir`` ("runs" for run/plan, "asks" for ask) or the curator
+    writes the DAG to a different directory than the rest of the run state.
+    The caller connects (via `GraphClient`) and terminates the process on
+    shutdown.
     """
     sock_path.parent.mkdir(parents=True, exist_ok=True)
     return subprocess.Popen(
@@ -164,6 +169,7 @@ def spawn_curator(
             str(state_dir),
             run_id,
             str(sock_path),
+            subdir,
         ],
         stdin=subprocess.DEVNULL,
     )

@@ -700,7 +700,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     with contextlib.suppress(FileNotFoundError):
         sock_link.unlink()
     sock_link.symlink_to(sock_path)
-    curator_proc = spawn_curator(state_dir, effective_run_id, sock_path)
+    curator_proc = spawn_curator(state_dir, effective_run_id, sock_path, subdir=layout.subdir)
     print(f"[agent6] run id: {effective_run_id}", file=sys.stderr)
 
     # Spawn any configured MCP servers BEFORE the workflow
@@ -1065,7 +1065,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     with contextlib.suppress(FileNotFoundError):
         sock_link.unlink()
     sock_link.symlink_to(sock_path)
-    curator_proc = spawn_curator(state_dir, run_id, sock_path)
+    curator_proc = spawn_curator(state_dir, run_id, sock_path, subdir=layout.subdir)
     print(f"[agent6] resume run id: {run_id}", file=sys.stderr)
 
     mcp_manager = _start_mcp_manager_if_enabled(cfg)
