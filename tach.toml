@@ -43,6 +43,7 @@ depends_on = [
   "agent6.mcp_server",
   "agent6.machine",
   "agent6.verify_infer",
+  "agent6.transcript_render",
 ]
 
 [[modules]]
@@ -76,7 +77,7 @@ depends_on = []
 
 [[modules]]
 path = "agent6.ui"
-depends_on = ["agent6.config_layer", "agent6.models_cache", "agent6.paths", "agent6.secrets"]
+depends_on = ["agent6.config_layer", "agent6.models_cache", "agent6.paths", "agent6.secrets", "agent6.transcript_render"]
 
 [[modules]]
 path = "agent6.init"
@@ -84,6 +85,10 @@ depends_on = ["agent6.config_layer", "agent6.verify_infer"]
 
 [[modules]]
 path = "agent6.verify_infer"
+depends_on = []
+
+[[modules]]
+path = "agent6.transcript_render"
 depends_on = []
 
 [[modules]]

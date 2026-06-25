@@ -53,6 +53,7 @@ from agent6.ui.approval import (
     write_steer_answer,
     write_tui_pid,
 )
+from agent6.ui.conversation import ConversationScreen
 from agent6.ui.logview import LogScreen
 from agent6.ui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.modals import ApprovalModal, QuestionModal, SteerModal
@@ -137,6 +138,7 @@ class Agent6TUI(App[int]):
             (
                 MenuItem("Next pane", "focus_next", "Tab"),
                 MenuItem("Full log…", "view_logs", "l"),
+                MenuItem("Conversation…", "view_transcript", "t"),
                 MenuItem("Log → end", "scroll_log_end", "g"),
                 MenuItem("Theme…", "choose_theme"),
             ),
@@ -155,6 +157,7 @@ class Agent6TUI(App[int]):
         # config screen); q quits the whole hub; Ctrl+Q is the hard quit. (Esc on an
         # open modal cancels it first -- the modal consumes the key.)
         Binding("l", "view_logs", "Full log", show=True),
+        Binding("t", "view_transcript", "Conversation", show=True),
         Binding("g", "scroll_log_end", "Log→end", show=True),
         Binding("question_mark", "help", "Help"),
         Binding("escape", "to_hub", "Back"),
@@ -317,6 +320,15 @@ class Agent6TUI(App[int]):
         """Open the full, scrollable log of THIS run -- the inline #log pane is a
         small sliding window; this is the whole history, scroll-anchored."""
         self.push_screen(LogScreen(self.logs_path, title=f"logs · {self.run_dir.name}"))
+
+    def action_view_transcript(self) -> None:
+        """Open THIS run's full LLM conversation (assistant text + every tool
+        call with full I/O), folded from the lossless per-call transcripts."""
+        self.push_screen(
+            ConversationScreen(
+                self.run_dir / "transcripts", title=f"conversation · {self.run_dir.name}"
+            )
+        )
 
     def action_menu(self, mnemonic: str) -> None:
         self.query_one(MenuBar).open(mnemonic)
