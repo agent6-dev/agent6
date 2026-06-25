@@ -48,6 +48,14 @@ _INTENT_TABLE = {
     "set_cursor": SetCursorIntent,
 }
 
+# Ops that never mutate curator state (pure reads). Everything else -- the whole
+# _INTENT_TABLE, plus an unknown/missing op -- is treated as mutating for the
+# fail-safe in _serve_connection. A mutating handler updates self._nodes IN
+# MEMORY *before* it calls write_node (see curator.py), so a non-validation
+# fault on the write path can leave in-memory state ahead of disk; those must
+# fail-safe (die -> respawn reloads consistent on-disk state), not stay alive.
+_READ_ONLY_OPS = frozenset({"get_state", "compute_resume_diff"})
+
 
 def _handle_one(curator: GraphCurator, intent_dict: dict[str, Any]) -> Any:
     op = intent_dict.get("op")
@@ -120,9 +128,40 @@ def _serve_connection(curator: GraphCurator, conn: socket.socket) -> None:
         try:
             result = _handle_one(curator, intent_dict)
         except (CuratorError, ValidationError) as exc:
+            # Clean validation rejections. Every curator mutation runs its
+            # CuratorError/ValidationError checks BEFORE the in-memory
+            # self._nodes write (see curator.py), so reaching here means nothing
+            # was applied -- safe to report and stay alive.
             send_message(conn, {"id": req_id, "ok": False, "error": str(exc)})
             continue
+        except OSError:
+            # A disk fault mid-mutation (ENOSPC/EROFS/permission) can leave the
+            # curator's in-memory graph ahead of what was persisted. Do NOT mask
+            # it: let the subprocess die so the next spawn reloads consistent
+            # on-disk state (the pre-resilience fail-safe). Masking here would let
+            # the client observe a node that was never persisted.
+            raise
+        except Exception as exc:
+            # Any other fault. For a MUTATING op the in-memory graph may already
+            # be ahead of disk (e.g. a serialization TypeError or an
+            # _ancestor_chain cycle ValueError surfacing from write_node, AFTER
+            # self._nodes was updated), so a non-OSError write-path fault is just
+            # as unsafe as the OSError case: fail-safe by dying so the next spawn
+            # reloads consistent on-disk state. A read op cannot skew persisted
+            # state, so it stays alive and reports the error in-band.
+            if not _is_read_only(intent_dict):
+                raise
+            send_message(
+                conn,
+                {"id": req_id, "ok": False, "error": f"curator internal error: {exc}"},
+            )
+            continue
         send_message(conn, {"id": req_id, "ok": True, "result": result})
+
+
+def _is_read_only(intent_dict: dict[str, Any]) -> bool:
+    """True iff this intent is a pure read (cannot leave in-memory ahead of disk)."""
+    return intent_dict.get("op") in _READ_ONLY_OPS
 
 
 def main(argv: tuple[str, ...] | None = None) -> int:

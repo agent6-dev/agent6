@@ -203,6 +203,21 @@ class _MCPServer:
         )
         if not isinstance(result, dict):
             raise MCPError(f"server {self.name!r} tools/call returned non-dict result")
+        if result.get("isError") is True:
+            # MCP tool-execution failure: the spec returns it as a SUCCESSFUL
+            # JSON-RPC result with isError=true (not a JSON-RPC error), so
+            # surface it as an error here to match built-in tool semantics.
+            content = result.get("content")
+            text = ""
+            if isinstance(content, list):
+                text = " ".join(
+                    c.get("text", "")
+                    for c in content
+                    if isinstance(c, dict) and isinstance(c.get("text"), str)
+                ).strip()
+            raise MCPError(
+                f"server {self.name!r} tool {tool_name!r} reported error: {text or '(no detail)'}"
+            )
         return result
 
     def close(self) -> None:
@@ -319,9 +334,13 @@ class _MCPServer:
             if not isinstance(msg, dict):
                 continue
             req_id = msg.get("id")
-            # We only consume responses (have an id we sent). Server-
-            # initiated requests / notifications are silently dropped.
-            if isinstance(req_id, int):
+            # We only consume responses: messages that carry an id we sent
+            # and have no "method" key. A message with both an int id and a
+            # "method" is a server-INITIATED request (e.g. sampling/createMessage,
+            # roots/list, elicitation/create); its id is the server's own counter
+            # and can collide with one of ours, so it must NOT be stored as a
+            # response. Notifications (no id) and server requests are ignored.
+            if isinstance(req_id, int) and "method" not in msg:
                 with self._pending_cv:
                     self._pending[req_id] = msg
                     self._pending_cv.notify_all()

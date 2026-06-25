@@ -29,6 +29,7 @@ serialize and parse deterministically.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sys
@@ -332,6 +333,12 @@ def _ancestor_chain(nodes: dict[str, TaskNode], node_id: str) -> list[str]:
     cur: str | None = node_id
     seen: set[str] = set()
     while cur is not None:
+        if cur not in nodes:
+            # Orphaned ancestor: its file was skipped as malformed by load_graph
+            # (or a node carries a dangling parent_id). Terminate the chain here
+            # and treat the deepest present node as a root, instead of KeyError-ing
+            # on the missing parent.
+            break
         if cur in seen:
             raise ValueError(f"cycle in parent chain at {cur}")
         seen.add(cur)
@@ -361,6 +368,27 @@ def write_node(layout: RunLayout, nodes: dict[str, TaskNode], node: TaskNode) ->
         child_dir = path.with_suffix("")
         child_dir.mkdir(exist_ok=True)
     _atomic_write(path, _dump_frontmatter(node))
+    # Remove any STALE .md for this same id at a different path. The canonical
+    # path can move -- e.g. load_graph re-roots an orphan (parent_id -> None when
+    # its parent file was malformed/skipped), shifting the node from a nested
+    # <parent>/<id>.md to a root <id>.md. The new file is written above; the old
+    # nested one would otherwise linger and make load_graph's rglob find TWO .md
+    # for one id (nondeterministic which wins). Crash-safety ordering: the new
+    # canonical file is durable BEFORE we unlink the stale one, so a crash here
+    # leaves at worst the recoverable pre-fix duplicate, never a missing node.
+    _prune_stale_node_files(layout, node.id, keep=path)
+
+
+def _prune_stale_node_files(layout: RunLayout, node_id: str, *, keep: Path) -> None:
+    """Delete any other ``<node_id>.md`` under graph/ except ``keep``."""
+    if not layout.graph_dir.is_dir():
+        return
+    keep_resolved = keep.resolve()
+    for stale in layout.graph_dir.rglob(f"{node_id}.md"):
+        if stale.resolve() == keep_resolved:
+            continue
+        with contextlib.suppress(OSError):
+            stale.unlink()
 
 
 def load_graph(layout: RunLayout) -> dict[str, TaskNode]:
@@ -369,8 +397,25 @@ def load_graph(layout: RunLayout) -> dict[str, TaskNode]:
     if not layout.graph_dir.is_dir():
         return nodes
     for md in layout.graph_dir.rglob("*.md"):
-        node = _parse_frontmatter(md.read_text(encoding="utf-8"))
+        try:
+            node = _parse_frontmatter(md.read_text(encoding="utf-8"))
+        except (ValueError, OSError) as exc:
+            # A hand-edited or torn node file must not brick resume; the rest of
+            # the graph is still loadable, so degrade to a missing node (mirrors
+            # the torn-line tolerance in iter_journal / _iter_recent_journal).
+            sys.stderr.write(f"agent6: skipping malformed node file {md}: {exc}\n")
+            continue
         nodes[node.id] = node
+    # Reconcile integrity: skipping a malformed PARENT node above would leave its
+    # children with a dangling parent_id. Re-root such orphans (parent_id -> None)
+    # so every parent_id resolves and reads of parent_id can't observe a missing
+    # node. (node_md_path is independently defended in _ancestor_chain.)
+    for node_id, node in list(nodes.items()):
+        if node.parent_id is not None and node.parent_id not in nodes:
+            sys.stderr.write(
+                f"agent6: re-rooting orphan node {node_id} (parent {node.parent_id} missing)\n"
+            )
+            nodes[node_id] = node.model_copy(update={"parent_id": None})
     return nodes
 
 

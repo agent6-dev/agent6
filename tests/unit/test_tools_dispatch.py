@@ -589,6 +589,32 @@ def test_grep_skips_dotdirs_by_default_but_searches_explicit_ones(tmp_path: Path
     assert any(h["path"].endswith("ci.yml") for h in dot_hits)
 
 
+def test_grep_screen_flags_catastrophic_shapes_only() -> None:
+    from agent6.tools.dispatch import (
+        _has_nested_unbounded_quantifier as nested,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    for bad in ("(a+)+", "(a*)*", "(a+)*$", "(.*)*", "((ab)+)+", "(x+){2,}", "(\\d+)+"):
+        assert nested(bad), f"should flag {bad!r}"
+    for ok in ("hello", "foo+bar", "(foo)bar", "(foo+)bar", "[a-z]+", "a.*b", "(ab|cd)+", "x{2,4}"):
+        assert not nested(ok), f"should NOT flag {ok!r}"
+
+
+def test_grep_rejects_nested_quantifier_pattern(tmp_path: Path) -> None:
+    cfg = _config(tmp_path)
+    (tmp_path / "a.py").write_text("aaaaaaaaaa\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(ToolError, match="nested unbounded quantifier"):
+        d.dispatch("grep", {"pattern": "(a+)+$", "path": "."})
+
+
+def test_grep_rejects_overlong_pattern(tmp_path: Path) -> None:
+    cfg = _config(tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(ToolError, match="too long"):
+        d.dispatch("grep", {"pattern": "a" * 1001, "path": "."})
+
+
 def test_list_dir(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "x").mkdir()
@@ -1058,16 +1084,16 @@ def test_run_command_result_carries_output_tails(
     cfg = _config_with_run_commands(tmp_path, "yes")  # skip the approval prompt
     logs = tmp_path / "logs.jsonl"
     d = ToolDispatcher(root=tmp_path, config=cfg, events=EventSink(logs))
-    monkeypatch.setattr(
-        ToolDispatcher,
-        "_run_argv_in_jail",
-        lambda self, argv, **kw: {
+
+    def _fake_run_argv(self: object, argv: object, **kw: object) -> dict[str, object]:
+        return {
             "returncode": 1,
             "stdout": "OUT-X" * 500,
             "stderr": "ERR-Y" * 500,
             "duration_s": 0.1,
-        },
-    )
+        }
+
+    monkeypatch.setattr(ToolDispatcher, "_run_argv_in_jail", _fake_run_argv)
     d.dispatch("run_command", {"argv": ["echo", "hi"]})
     (tmp_path / "f.txt").write_text("hi", encoding="utf-8")
     d.dispatch("read_file", {"path": "f.txt"})
@@ -1083,3 +1109,33 @@ def test_run_command_result_carries_output_tails(
     assert run["stderr_tail"].startswith("ERR-Y") and len(run["stderr_tail"]) == 2000
     read = next(e for e in results if e["name"] == "read_file")
     assert "stdout_tail" not in read and "stderr_tail" not in read  # non-exec: summary only
+
+
+def test_run_command_passes_extra_read_paths_to_policy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # sandbox.extra_read_paths must reach the JailPolicy as extra_ro_paths, so a
+    # project whose toolchain/interpreter lives outside the repo (e.g. a conda
+    # env at /opt) is usable under hardened/strict.
+    from agent6.config import load_config
+    from agent6.sandbox.jail import CommandResult
+
+    body = _VALID_TOML.replace(
+        'run_commands = "no"',
+        'run_commands = "yes"\nextra_read_paths = ["/opt/miniconda3"]',
+    )
+    p = tmp_path / "agent6.toml"
+    p.write_text(body, encoding="utf-8")
+    cfg = load_config(p)
+    captured: dict[str, tuple[str, ...]] = {}
+
+    def fake_run_in_jail(policy):  # type: ignore[no-untyped-def]
+        captured["ro"] = tuple(str(x) for x in policy.extra_ro_paths)
+        return CommandResult(
+            argv=tuple(policy.argv), returncode=0, stdout="", stderr="", duration_s=0.0
+        )
+
+    monkeypatch.setattr("agent6.tools.dispatch.run_in_jail", fake_run_in_jail)
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d.dispatch("run_command", {"argv": ["echo", "hi"]})
+    assert "/opt/miniconda3" in captured["ro"]

@@ -34,6 +34,7 @@ note when added.
 
 from __future__ import annotations
 
+import threading
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -159,8 +160,18 @@ class SymbolIndex:
         self._refs: dict[Path, list[Reference]] = {}
         self._scanned = False
         self._dirty: set[Path] = set()
+        # path -> (st_mtime_ns, st_size) recorded at parse time. Used to detect
+        # out-of-band changes/deletions (run_command formatters, rm, git mv, sed)
+        # that never go through mark_changed/mark_deleted.
+        self._stamps: dict[Path, tuple[int, int]] = {}
         # lang_name -> (parser, def_query, ref_query). Built on first use.
         self._parsers: dict[str, tuple[Parser, Query, Query]] = {}
+        # Guards every public reader/mutator so the index can be shared across
+        # the concurrent explore-review seats (one dispatcher, one index, N
+        # ThreadPoolExecutor threads). Re-entrant because public methods call
+        # each other (e.g. queries rely on _ensure_fresh) and _ensure_fresh is
+        # also invoked under the lock.
+        self._lock = threading.RLock()
 
     # ------------------------------------------------------------------
     # Dirty-tracking surface for the dispatcher to call after apply_edit
@@ -168,14 +179,17 @@ class SymbolIndex:
 
     def mark_changed(self, path: Path) -> None:
         """Record that `path` was created or modified; re-parsed on next query."""
-        self._dirty.add(path.resolve())
+        with self._lock:
+            self._dirty.add(path.resolve())
 
     def mark_deleted(self, path: Path) -> None:
         """Drop a path from the index immediately."""
-        p = path.resolve()
-        self._symbols.pop(p, None)
-        self._refs.pop(p, None)
-        self._dirty.discard(p)
+        with self._lock:
+            p = path.resolve()
+            self._symbols.pop(p, None)
+            self._refs.pop(p, None)
+            self._stamps.pop(p, None)
+            self._dirty.discard(p)
 
     # ------------------------------------------------------------------
     # Queries
@@ -183,36 +197,39 @@ class SymbolIndex:
 
     def outline(self, path: Path) -> list[Symbol]:
         """Top-level + nested definitions in one file, in source order."""
-        self._ensure_fresh()
-        p = path.resolve()
-        if p not in self._symbols and p.is_file():
-            # On-demand parse for a file we hadn't seen at scan time.
-            self._reparse(p)
-        out = list(self._symbols.get(p, []))
-        out.sort(key=lambda s: (s.line, s.col))
-        return out
+        with self._lock:
+            self._ensure_fresh()
+            p = path.resolve()
+            if p not in self._symbols and p.is_file():
+                # On-demand parse for a file we hadn't seen at scan time.
+                self._reparse(p)
+            out = list(self._symbols.get(p, []))
+            out.sort(key=lambda s: (s.line, s.col))
+            return out
 
     def find_definition(self, name: str) -> list[Symbol]:
         """All definition sites of `name` across the project, in path order."""
-        self._ensure_fresh()
-        out: list[Symbol] = []
-        for syms in self._symbols.values():
-            for s in syms:
-                if s.name == name:
-                    out.append(s)
-        out.sort(key=lambda s: (str(s.path), s.line, s.col))
-        return out
+        with self._lock:
+            self._ensure_fresh()
+            out: list[Symbol] = []
+            for syms in self._symbols.values():
+                for s in syms:
+                    if s.name == name:
+                        out.append(s)
+            out.sort(key=lambda s: (str(s.path), s.line, s.col))
+            return out
 
     def find_references(self, name: str) -> list[Reference]:
         """All identifier occurrences of `name` (incl. defs), in path order."""
-        self._ensure_fresh()
-        out: list[Reference] = []
-        for refs in self._refs.values():
-            for r in refs:
-                if r.name == name:
-                    out.append(r)
-        out.sort(key=lambda r: (str(r.path), r.line, r.col))
-        return out
+        with self._lock:
+            self._ensure_fresh()
+            out: list[Reference] = []
+            for refs in self._refs.values():
+                for r in refs:
+                    if r.name == name:
+                        out.append(r)
+            out.sort(key=lambda r: (str(r.path), r.line, r.col))
+            return out
 
     def hot_symbols(
         self,
@@ -237,17 +254,18 @@ class SymbolIndex:
         pairs but driven by static analysis instead of git history.
         Works on fresh repos (no history needed).
         """
-        self._ensure_fresh()
-        files_per_name: defaultdict[str, set[Path]] = defaultdict(set)
-        ref_count: Counter[str] = Counter()
-        for refs in self._refs.values():
-            for r in refs:
-                files_per_name[r.name].add(r.path)
-                ref_count[r.name] += 1
-        defs_by_name: dict[str, list[Symbol]] = defaultdict(list)
-        for syms in self._symbols.values():
-            for s in syms:
-                defs_by_name[s.name].append(s)
+        with self._lock:
+            self._ensure_fresh()
+            files_per_name: defaultdict[str, set[Path]] = defaultdict(set)
+            ref_count: Counter[str] = Counter()
+            for refs in self._refs.values():
+                for r in refs:
+                    files_per_name[r.name].add(r.path)
+                    ref_count[r.name] += 1
+            defs_by_name: dict[str, list[Symbol]] = defaultdict(list)
+            for syms in self._symbols.values():
+                for s in syms:
+                    defs_by_name[s.name].append(s)
         qualifying: list[tuple[str, str, str, int, int]] = []
         for name, files in files_per_name.items():
             n_files = len(files)
@@ -277,20 +295,39 @@ class SymbolIndex:
         give the agent a one-line-per-symbol outline of the codebase
         without round-tripping ``outline`` for every file.
         """
-        self._ensure_fresh()
-        out: dict[Path, list[Symbol]] = {}
-        for path, syms in self._symbols.items():
-            out[path] = sorted(syms, key=lambda s: (s.line, s.col))
-        return out
+        with self._lock:
+            self._ensure_fresh()
+            out: dict[Path, list[Symbol]] = {}
+            for path, syms in self._symbols.items():
+                out[path] = sorted(syms, key=lambda s: (s.line, s.col))
+            return out
 
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
 
     def _ensure_fresh(self) -> None:
+        # Callers hold self._lock.
         if not self._scanned:
             self._scan_all()
             self._scanned = True
+        # Detect out-of-band changes/deletions (run_command formatters, rm,
+        # git mv, sed) that never went through mark_changed/mark_deleted.
+        # mark_* remain a cheap fast-path; this stat sweep is the source of
+        # truth so the index self-heals regardless of who mutated the tree.
+        for p in list(self._symbols.keys()):
+            try:
+                st = p.stat()
+                cur = (st.st_mtime_ns, st.st_size)
+            except OSError:
+                # File vanished -> evict.
+                self._symbols.pop(p, None)
+                self._refs.pop(p, None)
+                self._stamps.pop(p, None)
+                self._dirty.discard(p)
+                continue
+            if self._stamps.get(p) != cur:
+                self._dirty.add(p)
         if not self._dirty:
             return
         for p in list(self._dirty):
@@ -312,6 +349,7 @@ class SymbolIndex:
         if not p.is_file() or self._is_excluded(p):
             self._symbols.pop(p, None)
             self._refs.pop(p, None)
+            self._stamps.pop(p, None)
             return
         lang_name = self._lang_for(p)
         if lang_name is None:
@@ -323,10 +361,19 @@ class SymbolIndex:
         try:
             src = p.read_bytes()
         except OSError:
+            self._symbols.pop(p, None)
+            self._refs.pop(p, None)
+            self._stamps.pop(p, None)
             return
         try:
             tree = parser.parse(src)
         except Exception:  # tree-sitter errors are opaque; absorb per-file failures
+            # Record the stamp anyway so a persistently-unparseable file is not
+            # re-read and re-parsed on every query (the stat-sweep would keep
+            # flagging it dirty); drop any now-stale symbols/refs.
+            self._symbols.pop(p, None)
+            self._refs.pop(p, None)
+            self._record_stamp(p)
             return
         root = tree.root_node
         syms: list[Symbol] = []
@@ -362,6 +409,17 @@ class SymbolIndex:
                 )
         self._symbols[p] = syms
         self._refs[p] = refs
+        self._record_stamp(p)
+
+    def _record_stamp(self, p: Path) -> None:
+        """Remember (mtime_ns, size) so the stat-sweep treats p as processed.
+        Recorded on BOTH a successful parse and an absorbed parse failure, so a
+        persistently-unparseable file is not re-read on every query."""
+        try:
+            st = p.stat()
+            self._stamps[p] = (st.st_mtime_ns, st.st_size)
+        except OSError:
+            self._stamps.pop(p, None)
 
     def _is_excluded(self, p: Path) -> bool:
         # Compare against parts of the path relative to root so an excluded

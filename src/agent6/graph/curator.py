@@ -149,6 +149,11 @@ class GraphCurator:
                 created_by=intent.draft.created_by,
             )
             self._nodes[node.id] = node
+            # Write the child node BEFORE the parent->child link so a crash in
+            # between can at worst leave an orphan node (parent_id set, not yet
+            # listed in parent.children) rather than a dangling reference to a
+            # child whose .md never made it to disk.
+            write_node(self._layout, self._nodes, node)
             if parent is not None:
                 updated_parent = parent.model_copy(
                     update={
@@ -158,7 +163,6 @@ class GraphCurator:
                 )
                 self._nodes[parent.id] = updated_parent
                 write_node(self._layout, self._nodes, updated_parent)
-            write_node(self._layout, self._nodes, node)
             self._post_mutation(
                 {
                     "op": "add_subtask",
