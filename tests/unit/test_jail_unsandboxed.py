@@ -91,20 +91,27 @@ def test_child_exec_failure_is_command_error_not_jail_unavailable(
     worked and the COMMAND failed. Reporting it as 'jail unavailable' tells
     the model the sandbox is broken; report a shell-style 127 instead."""
     import subprocess
-    from types import SimpleNamespace
 
     from agent6.sandbox import jail as jail_mod
 
     monkeypatch.setattr(jail_mod, "_locate_jail_binary", lambda: Path("/fake/agent6-jail"))
 
-    def fake_run(*a: object, **k: object) -> SimpleNamespace:
-        return SimpleNamespace(
-            returncode=2,
-            stdout="",
-            stderr="agent6-jail: child execution failed: No such file or directory (os error 2)",
-        )
+    # run_in_jail now uses Popen (it needs the pid to group-kill on timeout), so
+    # fake the launcher there: a clean exec failure -> launcher rc=2 + the child
+    # failure on stderr, which must map to a command error (127), not a raised
+    # JailUnavailableError.
+    class FakePopen:
+        def __init__(self, *a: object, **k: object) -> None:
+            self.pid = 424242
+            self.returncode = 2
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+        def communicate(self, input: object = None, timeout: object = None) -> tuple[str, str]:
+            return (
+                "",
+                "agent6-jail: child execution failed: No such file or directory (os error 2)",
+            )
+
+    monkeypatch.setattr(subprocess, "Popen", FakePopen)
     res = run_in_jail(
         JailPolicy(cwd=tmp_path, argv=("/usr/local/go/bin/go", "test"), profile="hardened")
     )

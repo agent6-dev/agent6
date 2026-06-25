@@ -166,7 +166,7 @@ def _setup_verify_command(root: Path, *, profile: str, ask: _Ask) -> None:
     """Set workflow.verify_command if unset, inferring it from the repo. Warns
     (and asks) before overriding a command already set in any layer."""
     leaf = effective_leaf(load_effective(root), "workflow.verify_command")
-    value, source = (leaf or ((), "default"))
+    value, source = leaf or ((), "default")
     already = bool(value)
     if already:
         print(f"  verify_command already set ({source}): {' '.join(value)}")

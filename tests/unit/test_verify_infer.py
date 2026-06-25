@@ -72,7 +72,21 @@ def test_repo_signal_makefile_target(tmp_path: Path) -> None:
 
 
 def test_repo_signal_pyproject(tmp_path: Path) -> None:
+    # No .venv present (e.g. a container or system-python checkout) -> fall back
+    # to python3 on PATH, NOT the missing .venv/bin/python that would break verify.
     (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
+    assert verify_from_repo_signals(tmp_path) == (
+        ("python3", "-m", "pytest", "-q"),
+        "pyproject",
+    )
+
+
+def test_repo_signal_pyproject_prefers_existing_venv(tmp_path: Path) -> None:
+    # When a project .venv/bin/python exists, prefer it (jail-visible convention).
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
+    venv_py = tmp_path / ".venv" / "bin" / "python"
+    venv_py.parent.mkdir(parents=True)
+    venv_py.write_text("", encoding="utf-8")
     assert verify_from_repo_signals(tmp_path) == (
         (".venv/bin/python", "-m", "pytest", "-q"),
         "pyproject",
@@ -96,7 +110,7 @@ def test_parse_llm_verify() -> None:
     assert parse_llm_verify('here you go:\n```json\n["cargo","test"]\n```') == ("cargo", "test")
     assert parse_llm_verify("[]") is None
     assert parse_llm_verify("I cannot tell") is None
-    assert parse_llm_verify('[1, 2]') is None
+    assert parse_llm_verify("[1, 2]") is None
     assert parse_llm_verify('["", "x"]') is None
 
 

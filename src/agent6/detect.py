@@ -92,6 +92,10 @@ def detect_container_signals() -> tuple[str, ...]:
     signals: list[str] = []
     if Path("/.dockerenv").exists():
         signals.append("/.dockerenv")
+    # podman's equivalent marker; rootless podman often lacks a "podman" token in
+    # /proc/1/cgroup (user-session cgroup), so this file is the reliable signal.
+    if Path("/run/.containerenv").exists():
+        signals.append("/run/.containerenv")
     if os.environ.get("REMOTE_CONTAINERS") == "true":
         signals.append("REMOTE_CONTAINERS")
     if os.environ.get("CODESPACES") == "true":
@@ -103,6 +107,20 @@ def detect_container_signals() -> tuple[str, ...]:
     if any(token in cgroup for token in ("docker", "containerd", "kubepods", "podman")):
         signals.append("cgroup")
     return tuple(signals)
+
+
+def _has_strong_container_evidence() -> bool:
+    """True iff a filesystem container marker is present (`/.dockerenv` or
+    `/run/.containerenv`).
+
+    Stronger than :func:`detect_container_signals`, which also reports WEAK
+    env-var signals (``REMOTE_CONTAINERS`` / ``CODESPACES``) a stray exported
+    variable can forge on a bare host. The ``profile = 'none'`` refusal gate in
+    :func:`select_profile` relies on this so that env-vars alone cannot bypass
+    the ``AGENT6_ALLOW_NO_SANDBOX`` confirmation and run UNSANDBOXED on a real
+    bare host. A genuine container always carries one of these files.
+    """
+    return Path("/.dockerenv").exists() or Path("/run/.containerenv").exists()
 
 
 @functools.lru_cache(maxsize=1)
@@ -192,6 +210,33 @@ def select_profile(requested: str, env: Environment) -> SandboxProfile:
         )
     if requested == "auto":
         return env.detected_profile
+    if requested == "none":
+        # Explicit opt-out of agent6's kernel sandbox: the agent's commands run
+        # with NO Landlock/seccomp/namespace confinement, relying entirely on
+        # whatever isolates the surrounding environment. Intended for running
+        # INSIDE a container ("the container is the sandbox"), where the jail is
+        # redundant and can conflict with non-standard interpreters (e.g. a conda
+        # env at /opt). On a bare host there is no outer boundary, so refuse
+        # unless the operator confirms with AGENT6_ALLOW_NO_SANDBOX=1. `auto`
+        # NEVER resolves here on Linux -- unsandboxing is always an explicit,
+        # deliberate choice the operator typed.
+        #
+        # The gate requires STRONG container evidence (a filesystem marker), NOT
+        # env.in_container, which is also True for WEAK env-var signals
+        # (REMOTE_CONTAINERS / CODESPACES). A stray exported env var on a real
+        # bare host must not bypass the AGENT6_ALLOW_NO_SANDBOX confirmation and
+        # silently run UNSANDBOXED.
+        confirmed = os.environ.get("AGENT6_ALLOW_NO_SANDBOX") == "1"
+        if not _has_strong_container_evidence() and not confirmed:
+            raise RuntimeError(
+                "sandbox.profile = 'none' runs the agent UNSANDBOXED (no "
+                "Landlock/seccomp/namespaces). This host is not a detected "
+                "container, so nothing else confines the agent's commands. If you "
+                "are deliberately providing isolation another way, set "
+                "AGENT6_ALLOW_NO_SANDBOX=1 to confirm. Otherwise use "
+                "'auto'/'strict'/'hardened' for kernel-enforced isolation."
+            )
+        return "none"
     if requested == "strict":
         if not env.userns_supported:
             raise RuntimeError(

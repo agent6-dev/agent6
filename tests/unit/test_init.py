@@ -42,8 +42,9 @@ def test_init_infers_verify_for_python_repo(tmp_path: Path) -> None:
     (repo / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
     init_workspace(repo, force=True)
     cfg = load_effective(repo).config
-    # jail-compatible (.venv/bin/python, no uv), written to the per-repo config.
-    assert cfg.workflow.verify_command == (".venv/bin/python", "-m", "pytest", "-q")
+    # No .venv in this fresh repo -> python3 on PATH (the .venv/bin/python default
+    # is only used when that interpreter actually exists; see verify_infer).
+    assert cfg.workflow.verify_command == ("python3", "-m", "pytest", "-q")
 
 
 def test_init_verify_from_agents_md(tmp_path: Path) -> None:

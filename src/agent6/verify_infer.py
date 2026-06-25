@@ -145,9 +145,13 @@ def verify_from_repo_signals(repo_root: Path) -> tuple[tuple[str, ...], str] | N
         (repo_root / f).is_file()
         for f in ("pyproject.toml", "pytest.ini", "tox.ini", "setup.cfg", "setup.py")
     ):
-        # Prefer a stdlib `.venv/bin/python` (symlinks into /usr, so jail-visible)
-        # per the documented convention; the operator can pin a better one.
-        return ((".venv/bin/python", "-m", "pytest", "-q"), "pyproject")
+        # Prefer a project `.venv/bin/python` WHEN IT EXISTS (symlinks into /usr,
+        # so jail-visible per the documented convention); otherwise fall back to
+        # `python3` on PATH, which is the correct interpreter in containers and
+        # system-/conda-python setups that have no `.venv` (hardcoding the missing
+        # `.venv/bin/python` there silently breaks verify). Operator can pin one.
+        py = ".venv/bin/python" if (repo_root / ".venv" / "bin" / "python").exists() else "python3"
+        return ((py, "-m", "pytest", "-q"), "pyproject")
     if (repo_root / "Cargo.toml").is_file():
         return (("cargo", "test", "--quiet"), "Cargo.toml")
     if (repo_root / "go.mod").is_file():
@@ -170,14 +174,14 @@ _MANIFEST_FILES = (
 VERIFY_INFER_SYSTEM_PROMPT = (
     "You infer the single command a CI/verify step runs to decide whether a change to THIS"
     " repository passes (build + tests). You are given the repo's manifest files and AGENTS.md.\n\n"
-    "Reply with ONLY a JSON array of argv strings and nothing else, e.g. [\"pytest\",\"-q\"].\n"
+    'Reply with ONLY a JSON array of argv strings and nothing else, e.g. ["pytest","-q"].\n'
     "Hard rules:\n"
     "- The command runs in a locked-down sandbox: PATH is /usr/bin:/bin plus the repo dir,"
     " with NO $HOME and NO network. Prefer interpreters that resolve there: a stdlib"
     " .venv/bin/python, /usr/bin/python3, or system cargo/go/node/make. AVOID home-dir"
     " wrappers (uv, poetry, pipx, nvm-managed node) that will not exist in the sandbox.\n"
     "- Prefer the project's real fast test/build command, not a lint-only or syntax check.\n"
-    "- If you need a shell pipeline, return [\"sh\",\"-c\",\"<pipeline>\"].\n"
+    '- If you need a shell pipeline, return ["sh","-c","<pipeline>"].\n'
     "- If you genuinely cannot determine one, return []."
 )
 

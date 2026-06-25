@@ -15,6 +15,7 @@ import functools
 import json
 import os
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
@@ -183,13 +184,51 @@ def run_in_jail(policy: JailPolicy) -> CommandResult:
         )
     spec = _policy_to_json(policy)
     start = time.monotonic()
-    proc = subprocess.run(
+    # Launch the launcher in its own session (group leader) so that, if it ever
+    # hangs — e.g. a backgrounded grandchild holds the stdout pipe open past the
+    # timeout — we can kill its whole process group and reap any orphaned
+    # pidns-init/grandchild, not just the launcher itself. Use Popen (not
+    # subprocess.run) so we keep the pid to target os.killpg.
+    launcher = subprocess.Popen(
         [str(binary)],
-        input=spec,
-        capture_output=True,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        check=False,
-        timeout=policy.timeout_s + 5.0,
+        start_new_session=True,
+    )
+    try:
+        out, err = launcher.communicate(input=spec, timeout=policy.timeout_s + 5.0)
+    except subprocess.TimeoutExpired as exc:
+        # Kill the whole group, then drain whatever output was produced. Mirror
+        # _run_unsandboxed: surface a timeout as the documented rc=124 result, not
+        # a raised exception the caller would have to special-case.
+        try:
+            os.killpg(os.getpgid(launcher.pid), signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            launcher.kill()
+        try:
+            out, err = launcher.communicate(timeout=5.0)
+        except subprocess.TimeoutExpired:
+            out, err = "", ""
+
+        def _text(v: object) -> str:
+            if isinstance(v, bytes):
+                return v.decode(errors="replace")
+            return v if isinstance(v, str) else ""
+
+        return CommandResult(
+            argv=tuple(policy.argv),
+            returncode=124,
+            stdout=_text(out) or _text(exc.stdout),
+            stderr=_text(err) or _text(exc.stderr),
+            duration_s=time.monotonic() - start,
+        )
+    proc = subprocess.CompletedProcess(
+        args=[str(binary)],
+        returncode=launcher.returncode,
+        stdout=out,
+        stderr=err,
     )
     duration = time.monotonic() - start
     # The launcher prints a single JSON line on stdout describing the child's result,

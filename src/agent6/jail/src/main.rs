@@ -16,7 +16,7 @@
 use std::ffi::{CString, OsStr};
 use std::fs;
 use std::io::{self, Read, Write};
-use std::os::unix::process::ExitStatusExt;
+use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -756,8 +756,14 @@ fn run_child(policy: &Policy, cwd: &Path) -> io::Result<()> {
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
     cmd.current_dir(cwd);
+    // Put the child in its own process group (pgid == its pid) so we can kill
+    // the whole tree on timeout/exit. Otherwise a backgrounded grandchild that
+    // inherited our stdout/stderr write-end keeps the pipe open and the reader
+    // threads' read_to_string() never sees EOF — hanging the launcher.
+    cmd.process_group(0);
 
     let mut child = cmd.spawn()?;
+    let child_pid = child.id() as i32; // == pgid, since process_group(0)
     let timeout = Duration::from_secs_f64(policy.timeout_s);
     let start = std::time::Instant::now();
 
@@ -783,16 +789,30 @@ fn run_child(policy: &Policy, cwd: &Path) -> io::Result<()> {
 
     let returncode: i32;
     let mut timed_out = false;
+    // Track whether try_wait()/wait() has already reaped the direct child. Once
+    // reaped, child_pid (== pgid) is free for the kernel to reuse for an
+    // UNRELATED process group, so a blind post-loop killpg(child_pid) could
+    // SIGKILL a stranger. The timeout branch does its own killpg BEFORE waiting
+    // (the pid is still ours there), so it is safe regardless.
+    let mut reaped = false;
     loop {
         match child.try_wait()? {
             Some(status) => {
                 returncode = status.code().unwrap_or_else(|| {
                     status.signal().map(|s| 128 + s).unwrap_or(-1)
                 });
+                reaped = true;
                 break;
             }
             None => {
                 if start.elapsed() > timeout {
+                    // Kill the whole process group, not just the direct child,
+                    // so backgrounded grandchildren can't keep running / hold
+                    // the pipe write-end open. This runs BEFORE wait(), while
+                    // child_pid is still unambiguously our process group.
+                    unsafe {
+                        libc::killpg(child_pid, libc::SIGKILL);
+                    }
                     let _ = child.kill();
                     let _ = child.wait();
                     returncode = 124;
@@ -801,6 +821,24 @@ fn run_child(policy: &Policy, cwd: &Path) -> io::Result<()> {
                 }
                 std::thread::sleep(Duration::from_millis(50));
             }
+        }
+    }
+    // Reap the whole process group on exit so any backgrounded fd-holder is gone
+    // and the pipe write-end is closed (read_to_string() then gets EOF instead of
+    // the reader-thread joins below blocking until those grandchildren exit). This
+    // also, by design, means a command's process group does not outlive the
+    // command: a daemon the command backgrounded is torn down here rather than
+    // leaking — the sandbox-appropriate behavior (in strict mode the PID namespace
+    // already enforces this; this makes hardened mode match).
+    //
+    // ONLY when the child was not already reaped on the normal path: once
+    // try_wait() has reaped it, child_pid may have been recycled by the kernel
+    // for an unrelated process group, and killpg(child_pid) would signal that
+    // stranger. The normal-exit case (reaped == true) skips this; the timeout
+    // case already killpg'd above before waiting.
+    if !reaped {
+        unsafe {
+            libc::killpg(child_pid, libc::SIGKILL);
         }
     }
     let stdout = stdout_handle.join().unwrap_or_default();
