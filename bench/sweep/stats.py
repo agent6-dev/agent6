@@ -366,8 +366,8 @@ def build_report(samples: list[dict], ref: str | None = None) -> str:
     for m in models:
         a = aggs[m]
         med, _q1, _q3, lo, hi = a.cost_med_iqr_ci
-        sr = f"{a.success_rate*100:.0f}% ({a.successes}/{a.n})"
-        ci = f"[{a.success_ci[0]*100:.0f}, {a.success_ci[1]*100:.0f}]%"
+        sr = f"{a.success_rate * 100:.0f}% ({a.successes}/{a.n})"
+        ci = f"[{a.success_ci[0] * 100:.0f}, {a.success_ci[1] * 100:.0f}]%"
         cost = _fmt_usd(med)
         cost_ci = "n/a" if math.isnan(hi) else f"[{lo:.4f}, {hi:.4f}]"
         L.append(
@@ -401,8 +401,7 @@ def build_report(samples: list[dict], ref: str | None = None) -> str:
     )
     L.append("")
     L.append(
-        "| model | Δ success rate | Fisher p | median cost Δ (succ) | "
-        "Mann-Whitney p | Cliff's δ |"
+        "| model | Δ success rate | Fisher p | median cost Δ (succ) | Mann-Whitney p | Cliff's δ |"
     )
     L.append("|---|--:|--:|--:|--:|--:|")
     ra = aggs[ref]
@@ -424,9 +423,7 @@ def build_report(samples: list[dict], ref: str | None = None) -> str:
             dcost_s = f"{dcost:+.4f}"
         else:
             mwp, cd, dcost_s = "n/a", "n/a", "n/a"
-        L.append(
-            f"| `{m}` | {d_sr*100:+.0f}pp | {fp:.3f} | {dcost_s} | {mwp} | {cd} |"
-        )
+        L.append(f"| `{m}` | {d_sr * 100:+.0f}pp | {fp:.3f} | {dcost_s} | {mwp} | {cd} |")
     L.append("")
     L.append(
         "_pp = percentage points. δ > 0 means this model spent more than the reference\n"

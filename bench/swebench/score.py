@@ -41,13 +41,23 @@ def main() -> int:
         print(f"\n=== {model}: {len(plist)} predictions -> swebench eval ===", flush=True)
         subprocess.run(
             [
-                "sudo", SWEPY, "-m", "swebench.harness.run_evaluation",
-                "--dataset_name", "princeton-nlp/SWE-bench_Verified",
-                "--predictions_path", str(combined.resolve()),
-                "--max_workers", str(args.max_workers),
-                "--run_id", run_id, "--cache_level", "instance",
+                "sudo",
+                SWEPY,
+                "-m",
+                "swebench.harness.run_evaluation",
+                "--dataset_name",
+                "princeton-nlp/SWE-bench_Verified",
+                "--predictions_path",
+                str(combined.resolve()),
+                "--max_workers",
+                str(args.max_workers),
+                "--run_id",
+                run_id,
+                "--cache_level",
+                "instance",
             ],
-            cwd=str(args.out), check=False,
+            cwd=str(args.out),
+            check=False,
         )
         report = args.out / f"{model}.{run_id}.json"
         if report.exists():
@@ -55,7 +65,8 @@ def main() -> int:
             resolved = r.get("resolved_instances", 0)
             total = len(plist)  # we submitted len(plist), not the full dataset
             summary[model] = {
-                "resolved": resolved, "total": total,
+                "resolved": resolved,
+                "total": total,
                 "rate": round(resolved / total, 3) if total else 0.0,
                 "empty_patches": r.get("empty_patch_instances", 0),
                 "errors": r.get("error_instances", 0),
@@ -63,8 +74,10 @@ def main() -> int:
 
     print("\n===== SWE-bench Verified resolve rates =====")
     for model, s in sorted(summary.items(), key=lambda kv: -kv[1]["rate"]):
-        print(f"  {model:36} {s['resolved']:3}/{s['total']:<3} "
-              f"= {s['rate']*100:4.1f}%  (empty={s['empty_patches']}, err={s['errors']})")
+        print(
+            f"  {model:36} {s['resolved']:3}/{s['total']:<3} "
+            f"= {s['rate'] * 100:4.1f}%  (empty={s['empty_patches']}, err={s['errors']})"
+        )
     (args.out / "summary.json").write_text(json.dumps(summary, indent=2))
     return 0
 

@@ -111,9 +111,7 @@ def _git_cache_config(cache_dir: Path, repos: set[str]) -> Path:
         mirror = cache_dir / name
         if not mirror.exists():
             print(f"[cache] mirroring {url} -> {mirror}", flush=True)
-            subprocess.run(
-                ["git", "clone", "--mirror", "--quiet", url, str(mirror)], check=True
-            )
+            subprocess.run(["git", "clone", "--mirror", "--quiet", url, str(mirror)], check=True)
         lines.append(f'[url "{mirror}"]\n\tinsteadOf = "{url}"\n')
     cfg = cache_dir / "gitconfig"
     cfg.write_text("".join(lines), encoding="utf-8")
@@ -279,7 +277,9 @@ def main() -> int:
     gitconfig = _git_cache_config(args.out / "_cache", _task_repos(tasks))
 
     todo = [j for j in jobs if not j.sample_path.exists()]
-    print(f"{len(jobs)} total, {len(jobs) - len(todo)} cached, {len(todo)} to run, conc={args.conc}")
+    print(
+        f"{len(jobs)} total, {len(jobs) - len(todo)} cached, {len(todo)} to run, conc={args.conc}"
+    )
     done = 0
     t0 = time.monotonic()
     with ThreadPoolExecutor(max_workers=args.conc) as ex:
@@ -295,10 +295,10 @@ def main() -> int:
             print(
                 f"[{done}/{len(todo)}] {j.model.label}/{j.task} r{j.rep} -> {j.status} "
                 f"({j.extra.get('wall', '?')}s, ${j.extra.get('cost', 0):.4f}); "
-                f"spend ${spent:.2f}, elapsed {el/60:.1f}m",
+                f"spend ${spent:.2f}, elapsed {el / 60:.1f}m",
                 flush=True,
             )
-    print(f"done in {(time.monotonic()-t0)/60:.1f}m")
+    print(f"done in {(time.monotonic() - t0) / 60:.1f}m")
     return 0
 
 

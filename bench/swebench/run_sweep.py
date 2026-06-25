@@ -59,8 +59,9 @@ def _strip_test_files(patch: str) -> str:
     return "".join(out)
 
 
-def run_one(inst: dict, model: str, wheel: Path, out_dir: Path, *, max_usd: float,
-            timeout_s: int) -> dict:
+def run_one(
+    inst: dict, model: str, wheel: Path, out_dir: Path, *, max_usd: float, timeout_s: int
+) -> dict:
     iid = inst["instance_id"]
     pred_path = out_dir / "preds" / f"{model_label(model)}__{iid}.json"
     if pred_path.exists():
@@ -80,36 +81,57 @@ def run_one(inst: dict, model: str, wheel: Path, out_dir: Path, *, max_usd: floa
     # Forward optional review-panel env (Fugu dimension) into the container.
     review_env = [
         flag
-        for k in ("AGENT6_SB_VERIFY", "AGENT6_SB_STRUCTURAL_PRIORS", "AGENT6_SB_REVIEW_SEATS", "AGENT6_SB_REVIEW_DECISION", "AGENT6_SB_REVIEW_QUORUM")
+        for k in (
+            "AGENT6_SB_VERIFY",
+            "AGENT6_SB_STRUCTURAL_PRIORS",
+            "AGENT6_SB_REVIEW_SEATS",
+            "AGENT6_SB_REVIEW_DECISION",
+            "AGENT6_SB_REVIEW_QUORUM",
+        )
         if (v := os.environ.get(k))
         for flag in ("-e", f"{k}={v}")
     ]
     cmd = [
-        "run", "--rm",
-        "-e", f"AGENT6_SB_MODEL={model}",
-        "-e", f"AGENT6_SB_MAX_USD={max_usd}",
-        "-e", f"AGENT6_SB_TIMEOUT={timeout_s}",
+        "run",
+        "--rm",
+        "-e",
+        f"AGENT6_SB_MODEL={model}",
+        "-e",
+        f"AGENT6_SB_MAX_USD={max_usd}",
+        "-e",
+        f"AGENT6_SB_TIMEOUT={timeout_s}",
         *review_env,
-        "-v", f"{uv}:/usr/local/bin/uv:ro",
-        "-v", f"{wheel.parent}:/mnt/wheel:ro",
-        "-v", f"{SECRETS}:/root/.config/agent6/secrets.toml:ro",
-        "-v", f"{IN_CONTAINER}:/mnt/in_container.sh:ro",
-        "-v", f"{work / 'problem.txt'}:/mnt/problem.txt:ro",
-        "-v", f"{work}:/out",
-        image, "bash", "/mnt/in_container.sh",
+        "-v",
+        f"{uv}:/usr/local/bin/uv:ro",
+        "-v",
+        f"{wheel.parent}:/mnt/wheel:ro",
+        "-v",
+        f"{SECRETS}:/root/.config/agent6/secrets.toml:ro",
+        "-v",
+        f"{IN_CONTAINER}:/mnt/in_container.sh:ro",
+        "-v",
+        f"{work / 'problem.txt'}:/mnt/problem.txt:ro",
+        "-v",
+        f"{work}:/out",
+        image,
+        "bash",
+        "/mnt/in_container.sh",
     ]
     log = (work / "run.log").open("w", encoding="utf-8")
     try:
         subprocess.run(
-            ["sudo", "docker", *cmd], stdout=log, stderr=subprocess.STDOUT,
-            timeout=timeout_s + 600, check=False,
+            ["sudo", "docker", *cmd],
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            timeout=timeout_s + 600,
+            check=False,
         )
         timed_out = False
     except subprocess.TimeoutExpired:
         timed_out = True
     log.close()
 
-    raw = (work / "patch.diff")
+    raw = work / "patch.diff"
     patch = _strip_test_files(raw.read_text(encoding="utf-8")) if raw.exists() else ""
     pred_path.write_text(
         json.dumps(
@@ -122,7 +144,8 @@ def run_one(inst: dict, model: str, wheel: Path, out_dir: Path, *, max_usd: floa
         encoding="utf-8",
     )
     return {
-        "instance_id": iid, "model": model,
+        "instance_id": iid,
+        "model": model,
         "status": "timeout" if timed_out else ("patch" if patch.strip() else "empty"),
         "patch_bytes": len(patch),
     }
@@ -140,26 +163,35 @@ def main() -> int:
     ap.add_argument("--models", required=True, help="comma-separated OpenRouter model slugs")
     ap.add_argument("--n", type=int, default=0, help="first N sample instances (0 = all)")
     ap.add_argument("--conc", type=int, default=2)
-    ap.add_argument("--max-usd", type=float, default=1.0,
-                    help="per-instance USD cap (SWE-agent uses $1)")
+    ap.add_argument(
+        "--max-usd", type=float, default=1.0, help="per-instance USD cap (SWE-agent uses $1)"
+    )
     ap.add_argument("--timeout", type=int, default=1200, help="per-instance agent timeout (s)")
     ap.add_argument("--plan", action="store_true")
     ap.add_argument("--skip", type=int, default=0, help="skip the first N sample instances")
-    ap.add_argument("--wheel", type=Path, default=None,
-                    help="explicit agent6 wheel (default: newest in dist/); use to A/B two builds")
+    ap.add_argument(
+        "--wheel",
+        type=Path,
+        default=None,
+        help="explicit agent6 wheel (default: newest in dist/); use to A/B two builds",
+    )
     args = ap.parse_args()
 
     rows = {r["instance_id"]: r for r in json.loads(args.instances.read_text())}
     sample = json.loads(args.sample.read_text())
-    ids = sample["sample_ids"][args.skip:]
+    ids = sample["sample_ids"][args.skip :]
     ids = ids[: args.n] if args.n else ids
     models = [m.strip() for m in args.models.split(",") if m.strip()]
     jobs = [(rows[i], m) for m in models for i in ids if i in rows]
 
     if args.plan:
-        print(f"{len(jobs)} runs: {len(models)} models x {len(ids)} instances "
-              f"(seed {sample.get('seed')}, per-instance cap ${args.max_usd})")
-        print(f"est max spend: ${args.max_usd * len(jobs):.0f} (cap x runs; real spend is usually lower)")
+        print(
+            f"{len(jobs)} runs: {len(models)} models x {len(ids)} instances "
+            f"(seed {sample.get('seed')}, per-instance cap ${args.max_usd})"
+        )
+        print(
+            f"est max spend: ${args.max_usd * len(jobs):.0f} (cap x runs; real spend is usually lower)"
+        )
         return 0
 
     wheel = args.wheel or sorted((REPO / "dist").glob("agent6-*.whl"))[-1]
@@ -168,15 +200,19 @@ def main() -> int:
     done = 0
     with ThreadPoolExecutor(max_workers=args.conc) as ex:
         futs = {
-            ex.submit(run_one, inst, m, wheel, args.out,
-                      max_usd=args.max_usd, timeout_s=args.timeout): (inst["instance_id"], m)
+            ex.submit(
+                run_one, inst, m, wheel, args.out, max_usd=args.max_usd, timeout_s=args.timeout
+            ): (inst["instance_id"], m)
             for inst, m in jobs
         }
         for fut in as_completed(futs):
             r = fut.result()
             done += 1
-            print(f"[{done}/{len(jobs)}] {r['model'].split('/')[-1]} / {r['instance_id']} "
-                  f"-> {r['status']} ({r.get('patch_bytes', 0)}b)", flush=True)
+            print(
+                f"[{done}/{len(jobs)}] {r['model'].split('/')[-1]} / {r['instance_id']} "
+                f"-> {r['status']} ({r.get('patch_bytes', 0)}b)",
+                flush=True,
+            )
     print(f"predictions in {args.out / 'preds'}. Score with bench/swebench/score.sh")
     return 0
 
