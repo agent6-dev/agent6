@@ -149,13 +149,14 @@ flowchart TD
 
 ## Curator subprocess
 
-The task graph is owned by a separate `agent6-curator` subprocess. The
+The task graph is owned by a separate `graph-curator` subprocess
+(`python -m agent6.graph.server`). The
 main agent process writes the rest of the run state (resume snapshot,
 event log, transcripts) in-process.
 
 ```mermaid
 flowchart LR
-    Agent[agent6 run<br/>main process] -->|UDS JSON IPC| Curator[agent6-curator<br/>subprocess]
+    Agent[agent6 run<br/>main process] -->|UDS JSON IPC| Curator[graph-curator<br/>subprocess]
     Curator -->|task graph| Graph[(graph.jsonl, graph/*.md, graph snapshots)]
     Agent -->|in-process| Rest[(loop_state.json, logs.jsonl, transcripts)]
 ```

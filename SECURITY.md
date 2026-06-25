@@ -272,7 +272,7 @@ radius.
 
 ### 6. Curator subprocess and run-state location
 
-The task graph is written by a separate `agent6-curator` subprocess. The
+The task graph is written by a separate `graph-curator` subprocess. The
 main agent process talks to it over a Unix domain socket inside the run
 directory and never writes graph data directly, so a bug in the worker /
 planner cannot corrupt the on-disk graph; the curator's append-only

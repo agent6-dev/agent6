@@ -2,8 +2,10 @@
 # Copyright 2026 Eric Lesiuta
 """UDS server that hosts a single `GraphCurator` for one run id.
 
-This is what the `agent6-curator` console script invokes. It is *not* meant to
-be used directly from agent6 application code, application code goes through
+This is the `graph-curator` subprocess entrypoint, spawned as
+`python -m agent6.graph.server <state-dir> <run-id> <sock-path>` by
+`agent6.graph.client.spawn_curator`. It is *not* meant to be used directly from
+agent6 application code, application code goes through
 `agent6.graph.client.GraphClient`, which speaks the same wire protocol.
 
 The server is single-threaded by design: every mutation already takes an
@@ -124,11 +126,11 @@ def _serve_connection(curator: GraphCurator, conn: socket.socket) -> None:
 
 
 def main(argv: tuple[str, ...] | None = None) -> int:
-    """`agent6-curator <state-dir> <run-id> <sock-path>` entrypoint."""
+    """`python -m agent6.graph.server <state-dir> <run-id> <sock-path>` entrypoint."""
     args = list(sys.argv[1:] if argv is None else argv)
     if len(args) != 3:
         print(
-            "usage: agent6-curator <state-dir> <run-id> <sock-path>",
+            "usage: python -m agent6.graph.server <state-dir> <run-id> <sock-path>",
             file=sys.stderr,
         )
         return 2

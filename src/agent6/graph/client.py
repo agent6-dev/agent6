@@ -148,7 +148,7 @@ def spawn_curator(
     run_id: str,
     sock_path: Path,
 ) -> subprocess.Popen[bytes]:
-    """Launch `agent6-curator` for one run and return the Popen.
+    """Launch the `graph-curator` subprocess for one run and return the Popen.
 
     ``state_dir`` is the resolved run-state base (see
     ``agent6.paths.state_dir``); the curator writes the run's graph under

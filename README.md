@@ -276,7 +276,7 @@ Per-repo state lives out of the workspace under `$XDG_STATE_HOME/agent6/<repo-id
 (override with `[agent6].state_dir` or `AGENT6_STATE_HOME`). Each run's state
 sits under `runs/<run-id>/`: the append-only task graph, per-call snapshots
 that drive `agent6 resume`, full transcripts, and the event log. The
-`agent6-curator` subprocess owns the task graph; the main process writes the
+`graph-curator` subprocess owns the task graph; the main process writes the
 resume snapshots, transcripts, and event log in-process. The run directory is
 safe from jailed commands because it lives outside the repo cwd they run on,
 not because of any single writer.

@@ -3,7 +3,7 @@
 """Authoritative in-process graph mutator.
 
 `GraphCurator` is the single source of truth for one run's task graph. The
-production deployment runs it inside the `agent6-curator` subprocess, which is a
+production deployment runs it inside the `graph-curator` subprocess, which is a
 plain subprocess (no jail of its own) that inherits the agent process's
 confinement and writes the run's graph under the out-of-tree per-repo state dir.
 The class itself is process-agnostic: unit tests instantiate it directly to
@@ -431,7 +431,7 @@ class GraphCurator:
                 # the corrupt line rather than crashing curator startup -- which
                 # would otherwise make the whole run unresumable.
                 sys.stderr.write(
-                    f"agent6-curator: skipping malformed journal line: {stripped[:80]!r}\n"
+                    f"graph-curator: skipping malformed journal line: {stripped[:80]!r}\n"
                 )
         return entries
 

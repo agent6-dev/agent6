@@ -26,7 +26,6 @@ dependencies = [
 
 [project.scripts]
 agent6 = "agent6.cli:main"
-agent6-curator = "agent6.graph.server:main"
 
 [build-system]
 requires = ["hatchling"]

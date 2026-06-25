@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""End-to-end test: spawn `agent6-curator` subprocess, drive it via GraphClient."""
+"""End-to-end test: spawn the `graph-curator` subprocess, drive it via GraphClient."""
 
 from __future__ import annotations
 
