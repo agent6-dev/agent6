@@ -193,6 +193,24 @@ def _refuse_mutating_git_command(argv: tuple[str, ...]) -> None:
     )
 
 
+# Execution tools whose stdout/stderr IS the diagnostic signal. Their tool.result
+# event carries a capped output tail (like verify.start/end) so logs.jsonl shows
+# the command's output for quick observability -- not just a one-line summary --
+# without opening the transcripts (where the full, uncapped output always lives).
+_EXEC_OUTPUT_TOOLS = frozenset({RunCommandInput.TOOL_NAME, RunMetricInput.TOOL_NAME})
+_TOOL_OUTPUT_TAIL = 2000  # chars, matching verify.end's stdout_tail/stderr_tail
+
+
+def _output_tails(name: str, result: Any) -> dict[str, str]:
+    """Capped stdout/stderr tails for an execution tool's result, else {}."""
+    if name not in _EXEC_OUTPUT_TOOLS or not isinstance(result, dict):
+        return {}
+    return {
+        "stdout_tail": str(result.get("stdout", ""))[-_TOOL_OUTPUT_TAIL:],
+        "stderr_tail": str(result.get("stderr", ""))[-_TOOL_OUTPUT_TAIL:],
+    }
+
+
 class _Approver(Protocol):
     def __call__(self, prompt: str, /) -> bool: ...
 
@@ -417,7 +435,13 @@ class ToolDispatcher:
         except Exception as exc:
             self._emit("tool.result", name=name, ok=False, summary=str(exc))
             raise ToolError(f"{name} failed: {exc}") from exc
-        self._emit("tool.result", name=name, ok=True, summary=_summarize_result(name, result))
+        self._emit(
+            "tool.result",
+            name=name,
+            ok=True,
+            summary=_summarize_result(name, result),
+            **_output_tails(name, result),
+        )
         return result
 
     def _dispatch_inner(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:

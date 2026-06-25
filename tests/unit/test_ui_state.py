@@ -12,8 +12,28 @@ from agent6.ui.state import (
     RunState,
     TaskNodeView,
     apply_event,
+    format_log_line,
     initial_state,
 )
+
+
+def test_format_log_line_tool_result_appends_output_tail() -> None:
+    """An execution tool's tool.result line shows a one-line stderr/stdout hint
+    (full tail is in the event), while a plain result stays summary-only."""
+    line = format_log_line(
+        {
+            "type": "tool.result",
+            "name": "run_command",
+            "ok": True,
+            "summary": "exit=1 in 0.2s",
+            "stderr_tail": "boom: file not found\nsecond line",
+        }
+    )
+    assert "run_command" in line and "exit=1" in line and "boom: file not found" in line
+    plain = format_log_line(
+        {"type": "tool.result", "name": "read_file", "ok": True, "summary": "40 bytes"}
+    )
+    assert "|" not in plain  # no tail hint for non-execution tools
 
 
 def _graph_event(nodes: dict[str, Any], cursor: str | None = None) -> dict[str, Any]:

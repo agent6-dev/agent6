@@ -378,6 +378,13 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912
             salient = f"{event.get('name', '')}({_render_args(event.get('args', {}) or {})})"
         case "tool.result":
             salient = f"{event.get('name', '')} ok={event.get('ok')} {event.get('summary', '')}"
+            # Execution tools carry capped output tails; show a one-line hint of
+            # the latest stderr (else stdout) so a command's outcome reads in the
+            # log without opening the transcript. The full tail is in the event.
+            tail = str(event.get("stderr_tail") or event.get("stdout_tail") or "")
+            snippet = " ".join(tail.split())[:100]
+            if snippet:
+                salient = f"{salient.rstrip()} | {snippet}"
         case "role.call":
             salient = f"{event.get('role', '')}/{event.get('model', '')}"
         case "role.result":

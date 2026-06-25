@@ -1043,3 +1043,43 @@ def test_rejected_tool_emits_call_and_result_pair(tmp_path: Path) -> None:
     # Reasons come from the dispatcher's own guard messages, not model content.
     assert "disabled by config" in results[0]["summary"]
     assert "Unknown tool" in results[1]["summary"]
+
+
+def test_run_command_result_carries_output_tails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Execution tools' tool.result events carry capped stdout/stderr tails (like
+    verify.end), so logs.jsonl shows command output -- not just an exit code --
+    while non-execution tools stay summary-only (full output is in transcripts)."""
+    import json
+
+    from agent6.events import EventSink
+
+    cfg = _config_with_run_commands(tmp_path, "yes")  # skip the approval prompt
+    logs = tmp_path / "logs.jsonl"
+    d = ToolDispatcher(root=tmp_path, config=cfg, events=EventSink(logs))
+    monkeypatch.setattr(
+        ToolDispatcher,
+        "_run_argv_in_jail",
+        lambda self, argv, **kw: {
+            "returncode": 1,
+            "stdout": "OUT-X" * 500,
+            "stderr": "ERR-Y" * 500,
+            "duration_s": 0.1,
+        },
+    )
+    d.dispatch("run_command", {"argv": ["echo", "hi"]})
+    (tmp_path / "f.txt").write_text("hi", encoding="utf-8")
+    d.dispatch("read_file", {"path": "f.txt"})
+
+    results = [
+        e
+        for e in (json.loads(line) for line in logs.read_text(encoding="utf-8").splitlines())
+        if e["type"] == "tool.result"
+    ]
+    run = next(e for e in results if e["name"] == "run_command")
+    assert run["ok"] is True
+    assert run["stdout_tail"].startswith("OUT-X") and len(run["stdout_tail"]) == 2000
+    assert run["stderr_tail"].startswith("ERR-Y") and len(run["stderr_tail"]) == 2000
+    read = next(e for e in results if e["name"] == "read_file")
+    assert "stdout_tail" not in read and "stderr_tail" not in read  # non-exec: summary only
