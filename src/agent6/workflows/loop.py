@@ -32,7 +32,12 @@ from agent6.config import Config
 from agent6.git_ops import GitError, commit_all, commit_diff
 from agent6.git_ops import status as git_status
 from agent6.graph.client import CuratorClientError, GraphClient
-from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft, UpdateStatusIntent
+from agent6.graph.models import (
+    AddSubtaskIntent,
+    SetCursorIntent,
+    TaskNodeDraft,
+    UpdateStatusIntent,
+)
 from agent6.providers import Provider, ProviderError, ToolDefinition
 from agent6.tools.dispatch import OperatorCommandUnexecutable, ToolDispatcher, ToolError
 from agent6.tools.schema import (
@@ -238,6 +243,18 @@ _DAG_MUTATING_TOOLS = frozenset({"add_task", "update_task", "set_cursor"})
 # honoured. Only SUBTASKS gate -- the always-pending auto-root would deadlock.
 _TASK_FINISH_PATIENCE = 3
 
+# surface-current-task: keep a small/weak worker on ONE task at a time. Each turn
+# the loop computes the current task -- the curator cursor when it still points at
+# an open subtask (the worker's explicit choice wins), else the first
+# dependency-satisfied open subtask in creation order -- advances the cursor to
+# it, and injects a focus banner when the focus first appears, changes, or was
+# wiped by a tier-2 restart. The banner survives tier-1 elision, so the worker
+# keeps seeing it between those events without re-appending every turn. Only
+# SUBTASKS are focus candidates, mirroring the finish-gate: the always-pending
+# auto-root is the whole job, not a unit of work to surface.
+_OPEN_STATUSES = frozenset({"pending", "in_progress"})
+_DEPS_SATISFIED_STATUSES = frozenset({"passed", "skipped", "obsolete"})
+
 # verify-settled completion (run mode). A non-metric run has no positive "done"
 # signal, clean exit depends on the worker volunteering finish_run, and a weak
 # worker keeps re-running read-only commands after success (Kimi K2.6 observed:
@@ -285,6 +302,62 @@ _PLAN_BUDGET_NUDGE = (
     " rough, plan that is actually delivered is far more useful than an"
     " exhaustive one you never emit. Do not call any other tool first."
 )
+
+
+def _first_ready_subtask(nodes: dict[str, Any]) -> str | None:
+    """First open SUBTASK whose dependencies are all satisfied, in node creation
+    order (dict insertion order mirrors the order tasks were added). A dependency
+    on a missing or not-yet-done task blocks the subtask. Returns None when
+    nothing is ready (no subtasks, all done, or all blocked)."""
+
+    def _deps_satisfied(node: dict[str, Any]) -> bool:
+        for dep in node.get("depends_on", ()) or ():
+            d = nodes.get(dep)
+            if d is None or d.get("status") not in _DEPS_SATISFIED_STATUSES:
+                return False
+        return True
+
+    for nid, node in nodes.items():
+        if (
+            node.get("parent_id") is not None
+            and node.get("status") in _OPEN_STATUSES
+            and _deps_satisfied(node)
+        ):
+            return nid
+    return None
+
+
+def _current_task_id(nodes: dict[str, Any], cursor: str | None) -> str | None:
+    """The subtask to focus on now: the curator cursor when it still points at an
+    open subtask, else the first ready subtask. None when no subtask is open."""
+    if cursor is not None:
+        node = nodes.get(cursor)
+        if (
+            node is not None
+            and node.get("parent_id") is not None
+            and node.get("status") in _OPEN_STATUSES
+        ):
+            return cursor
+    return _first_ready_subtask(nodes)
+
+
+def _current_task_banner(task_id: str, node: dict[str, Any]) -> str:
+    """The per-turn focus directive naming the current task and its acceptance."""
+    title = str(node.get("title", "")).strip() or "(untitled)"
+    lines = [f"[harness focus] Current task ({task_id}): {title}"]
+    acceptance = str(node.get("acceptance", "")).strip()
+    if acceptance:
+        lines.append(f"Acceptance: {acceptance}")
+    paths = node.get("relevant_paths") or ()
+    if paths:
+        lines.append("Relevant paths: " + ", ".join(str(p) for p in paths[:8]))
+    lines.append(
+        "Work this ONE task to completion before anything else. When its acceptance"
+        " is met, mark it passed with update_task -- you will then be moved to the"
+        " next task. If you find unrelated work, add_task it instead of switching"
+        " to it now."
+    )
+    return "\n".join(lines)
 
 
 def _extract_initial_task(messages: list[dict[str, Any]]) -> str:
@@ -472,6 +545,11 @@ class _LoopState:
     verify_settled_idle: int = 0
     verify_settled_nudged: bool = False
     run_budget_nudged: bool = False
+    # surface-current-task: id of the subtask last injected as the focus banner.
+    # Re-surface only on a focus change or after a tier-2 restart (reset to None
+    # there) -- the banner survives tier-1 elision, so the worker keeps seeing it
+    # between those events without re-appending it every turn.
+    surfaced_task_id: str | None = None
 
 
 @dataclass
@@ -862,7 +940,10 @@ class Workflow:
             )
         for iteration in range(start_iteration, self.max_iterations + 1):
             self._emit_budget(iteration)
-            self._maybe_compact(messages)
+            if self._maybe_compact(messages):
+                # A tier-2 restart wiped the surfaced focus banner; let the next
+                # nudge pass re-surface the current task into the fresh context.
+                state.surfaced_task_id = None
             self._maybe_pre_call_nudges(
                 messages, state, iteration=iteration, start_iteration=start_iteration
             )
@@ -1615,9 +1696,14 @@ class Workflow:
         iteration: int,
         start_iteration: int,
     ) -> None:
-        """Before the LLM call, inject a one-shot finish directive when a
-        verbose planner or a non-metric run is reading forever without
-        landing a plan / verify+finish before the budget dies."""
+        """Before the LLM call, surface the current task for one-task focus, and
+        inject a one-shot finish directive when a verbose planner or a non-metric
+        run is reading forever without landing a plan / verify+finish before the
+        budget dies."""
+        # Surface-current-task first, so when a low budget ALSO fires a finish
+        # directive below, that finish nudge is the most-recent (strongest)
+        # message rather than the focus banner.
+        self._maybe_surface_current_task(messages, state)
         # Force a verbose planner to land a plan. Trigger on EITHER a low
         # token budget OR too many planning turns, with prompt caching a
         # planner can take many cheap turns, so an iteration cap is the
@@ -1658,6 +1744,69 @@ class Workflow:
                 messages.append({"role": "user", "content": [{"type": "text", "text": nudge}]})
                 self._log(f"LOOP: run budget-nudge at iter {iteration}")
                 self._emit("loop.run_budget.nudge", iteration=iteration, budget_remaining=remaining)
+
+    def _maybe_surface_current_task(
+        self, messages: list[dict[str, Any]], state: _LoopState
+    ) -> None:
+        """Surface-current-task: keep the worker on ONE task at a time.
+
+        Compute the current task (the cursor if it still points at an open
+        subtask, else the first dependency-satisfied open subtask), advance the
+        cursor to it, and inject a focus banner when the focus first appears,
+        changes, or was wiped by a tier-2 restart (``surfaced_task_id`` reset to
+        None there). Advancing the cursor each turn means that once the worker
+        marks the current task passed, the next turn's frontier recompute moves
+        focus to the next ready task -- the cursor walks the frontier on its own.
+
+        Run mode only; no curator or no open subtask is a no-op (the finish-gate
+        covers the empty-frontier finish). Best-effort throughout: a curator
+        hiccup logs and returns rather than breaking the loop.
+        """
+        if self.mode != "run" or self.graph_client is None:
+            return
+        try:
+            gstate = self.graph_client.get_state()
+        except Exception as exc:  # dead socket / IPC error must not break the loop
+            self._log(f"LOOP: surface-current-task skipped: {exc}")
+            return
+        nodes = gstate.get("nodes", {})
+        if not isinstance(nodes, dict):
+            return
+        cursor = gstate.get("cursor")
+        current_id = _current_task_id(nodes, cursor)
+        if current_id is None:
+            return  # nothing decomposed yet, or the frontier is empty
+        if cursor != current_id:
+            # Advance the cursor onto the frontier task (auto-advance: a passed
+            # cursor task drops out of the frontier, so this moves forward).
+            try:
+                self.graph_client.set_cursor(SetCursorIntent(id=current_id))
+            except Exception as exc:  # cursor advance is advisory; never fatal
+                self._log(f"LOOP: cursor advance skipped: {exc}")
+        if current_id == state.surfaced_task_id:
+            return  # already surfaced; the banner survives tier-1 elision
+        node = nodes[current_id]
+        if node.get("status") == "pending":
+            # Reflect that this task is now being worked, keeping the DAG honest
+            # for the TUI and the check-off / finish-gate "open" set. Best-effort.
+            try:
+                self.graph_client.update_status(
+                    UpdateStatusIntent(id=current_id, new_status="in_progress")
+                )
+            except Exception as exc:
+                self._log(f"LOOP: mark in_progress skipped: {exc}")
+        messages.append(
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": _current_task_banner(current_id, node)}],
+            }
+        )
+        state.surfaced_task_id = current_id
+        self._log(f"LOOP: surfaced current task {current_id}")
+        self._emit("loop.task.surfaced", task_id=current_id)
+        # The harness-driven cursor/status writes bypass the tool-dispatch path
+        # that emits graph.update, so refresh the live view here.
+        self._emit_graph_snapshot()
 
     def _handle_no_tool_use(  # noqa: PLR0912, PLR0915
         self, resp: Any, messages: list[dict[str, Any]], state: _LoopState, *, iteration: int
@@ -2271,8 +2420,10 @@ class Workflow:
             return max(self.per_call_max_tokens, self.metric_task_max_tokens)
         return self.per_call_max_tokens
 
-    def _maybe_compact(self, messages: list[dict[str, Any]]) -> None:
-        """Tiered compaction
+    def _maybe_compact(self, messages: list[dict[str, Any]]) -> bool:
+        """Tiered compaction. Returns True iff a tier-2 summarise-and-restart
+        actually replaced the history (so the caller can re-surface the
+        current-task banner the restart wiped); False otherwise.
 
         Tier 1 (cheap): drop old tool_result blocks once cumulative content
         exceeds ``compact_drop_at_chars``.
@@ -2304,14 +2455,17 @@ class Workflow:
         # to be worth summarising; below that a restart would lose more than
         # it saves.
         if total > self.compact_summarise_at_chars and len(messages) > 3:
-            self._summarise_and_restart(messages)
+            return self._summarise_and_restart(messages)
+        return False
 
-    def _summarise_and_restart(self, messages: list[dict[str, Any]]) -> None:
+    def _summarise_and_restart(self, messages: list[dict[str, Any]]) -> bool:
         """Replace the message history with (original task + a model-written
         progress summary). Mutates ``messages`` in place. The loop only calls
         this at the top of an iteration, where the history is balanced (every
         ``tool_use`` already has its ``tool_result``), so the restart can drop
-        the middle without orphaning a tool-call pairing.
+        the middle without orphaning a tool-call pairing. Returns True iff the
+        history was actually replaced; False on every fail-safe path (the
+        tier-1-elided context is kept and the run continues).
         """
         provider = self.summariser_provider or self.provider
         original = messages[0]
@@ -2357,11 +2511,11 @@ class Workflow:
             # budget exhaustion is re-detected by the next provider call.
             self._log(f"  tier-2 summarise failed: {exc}; keeping current context")
             self._emit("loop.compact.summarise.failed", error=str(exc)[:200])
-            return
+            return False
         raw = (resp.text or "").strip()
         if not raw:
             self._emit("loop.compact.summarise.failed", error="empty summary")
-            return
+            return False
         # Apply the check-off to the curator (best-effort) and strip the block
         # from the summary so the restarted worker sees narrative, not bookkeeping.
         if open_tasks:
@@ -2373,6 +2527,7 @@ class Workflow:
         }
         messages[:] = [original, restart]
         self._emit("loop.compact.summarise.done", summary_chars=len(summary))
+        return True
 
     def _open_tasks_for_checkoff(self) -> list[tuple[str, str]]:
         """(id, title) of every pending/in_progress task in the DAG, for the

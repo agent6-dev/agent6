@@ -238,7 +238,7 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
         events.append({"kind": "provider_call"})
         return orig_call(*a, **kw)
 
-    def _spy_compact(msgs: Any) -> None:
+    def _spy_compact(msgs: Any) -> bool:
         events.append({"kind": "compact"})
         return orig_compact(msgs)
 

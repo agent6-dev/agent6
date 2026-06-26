@@ -1398,6 +1398,291 @@ def test_task_finish_gate_allows_finish_without_open_subtasks() -> None:
     assert _wf(graph_client=None)._task_finish_gate_nudge(_state()) is None  # pyright: ignore[reportPrivateUsage]
 
 
+# --- surface-current-task -------------------------------------------------
+
+
+def test_current_task_id_prefers_open_cursor() -> None:
+    """The cursor wins when it still points at an open subtask, even if an
+    earlier subtask is also open (the worker's explicit focus choice is kept)."""
+    from agent6.workflows.loop import _current_task_id  # pyright: ignore[reportPrivateUsage]
+
+    nodes = {
+        "root": {"parent_id": None, "status": "in_progress", "title": "r"},
+        "a": {"parent_id": "root", "status": "pending", "title": "a"},
+        "b": {"parent_id": "root", "status": "in_progress", "title": "b"},
+    }
+    assert _current_task_id(nodes, "b") == "b"  # cursor respected
+    assert _current_task_id(nodes, None) == "a"  # no cursor -> first open subtask
+    # Stale cursor (points at a closed task) -> recompute the frontier.
+    nodes["b"]["status"] = "passed"
+    assert _current_task_id(nodes, "b") == "a"
+    # Cursor on the auto-root is not a focus target -> first open subtask.
+    assert _current_task_id(nodes, "root") == "a"
+
+
+def test_first_ready_subtask_respects_deps_and_order() -> None:
+    """The frontier skips a subtask whose dependency is not yet done, and a
+    passed/obsolete dependency unblocks it; roots and done tasks never surface."""
+    from agent6.workflows.loop import _first_ready_subtask  # pyright: ignore[reportPrivateUsage]
+
+    nodes = {
+        "root": {"parent_id": None, "status": "in_progress", "title": "r"},
+        "a": {"parent_id": "root", "status": "passed", "title": "a"},  # done
+        "b": {"parent_id": "root", "status": "pending", "title": "b", "depends_on": ["c"]},
+        "c": {"parent_id": "root", "status": "pending", "title": "c"},
+    }
+    # b is blocked on c (pending) -> c is the first ready subtask.
+    assert _first_ready_subtask(nodes) == "c"
+    # Once c is done, b unblocks.
+    nodes["c"]["status"] = "obsolete"
+    assert _first_ready_subtask(nodes) == "b"
+    # Everything done -> nothing ready (the finish-gate, not this, ends the run).
+    nodes["b"]["status"] = "passed"
+    assert _first_ready_subtask(nodes) is None
+
+
+def test_current_task_banner_carries_title_acceptance_paths() -> None:
+    from agent6.workflows.loop import _current_task_banner  # pyright: ignore[reportPrivateUsage]
+
+    banner = _current_task_banner(
+        "01TASK",
+        {"title": "audit providers", "acceptance": "no bugs left", "relevant_paths": ["a.py"]},
+    )
+    assert "Current task (01TASK): audit providers" in banner
+    assert "Acceptance: no bugs left" in banner
+    assert "Relevant paths: a.py" in banner
+    assert "ONE task to completion" in banner
+    # Absent acceptance/paths are simply omitted, not rendered empty.
+    bare = _current_task_banner("01X", {"title": "t"})
+    assert "Acceptance:" not in bare and "Relevant paths:" not in bare
+
+
+class _FakeCurator:
+    """In-memory GraphClient stand-in: get_state / set_cursor / update_status."""
+
+    def __init__(self, nodes: dict[str, dict[str, Any]], cursor: str | None = None) -> None:
+        self._nodes = nodes
+        self._cursor = cursor
+        self.cursor_sets: list[str | None] = []
+        self.status_sets: list[tuple[str, str]] = []
+
+    def get_state(self) -> dict[str, Any]:
+        return {"nodes": self._nodes, "cursor": self._cursor}
+
+    def set_cursor(self, intent: Any) -> None:
+        self._cursor = intent.id
+        self.cursor_sets.append(intent.id)
+
+    def update_status(self, intent: Any) -> None:
+        self.status_sets.append((intent.id, intent.new_status))
+        self._nodes[intent.id]["status"] = intent.new_status
+
+
+def _surface(wf: Workflow, st: Any, messages: list[dict[str, Any]]) -> None:
+    wf._maybe_surface_current_task(messages, st)  # pyright: ignore[reportPrivateUsage]
+
+
+def test_surface_current_task_surfaces_advances_then_quiets() -> None:
+    """First call surfaces the focus banner, advances the cursor onto the task,
+    and marks it in_progress; a repeat call with the same focus stays quiet (the
+    banner survives tier-1 elision); marking it passed advances to the next."""
+    nodes = {
+        "root": {"parent_id": None, "status": "in_progress", "title": "review repo"},
+        "a": {"parent_id": "root", "status": "pending", "title": "audit providers"},
+        "b": {"parent_id": "root", "status": "pending", "title": "audit sandbox"},
+    }
+    cur = _FakeCurator(nodes)
+    wf = _wf(graph_client=cur)
+    st = _state()
+    messages: list[dict[str, Any]] = []
+
+    _surface(wf, st, messages)
+    assert len(messages) == 1
+    assert "audit providers" in messages[0]["content"][0]["text"]
+    assert cur.cursor_sets == ["a"]  # cursor advanced onto the focus task
+    assert cur.status_sets == [("a", "in_progress")]  # reflected as being worked
+    assert st.surfaced_task_id == "a"
+
+    # Same focus -> no new banner, no redundant cursor/status writes.
+    _surface(wf, st, messages)
+    assert len(messages) == 1
+    assert cur.cursor_sets == ["a"]
+    assert cur.status_sets == [("a", "in_progress")]  # no second write for the same task
+
+    # Worker finishes task a -> next turn focus advances to b.
+    nodes["a"]["status"] = "passed"
+    _surface(wf, st, messages)
+    assert len(messages) == 2
+    assert "audit sandbox" in messages[1]["content"][0]["text"]
+    assert cur.cursor_sets == ["a", "b"]
+    assert cur.status_sets == [("a", "in_progress"), ("b", "in_progress")]
+    assert st.surfaced_task_id == "b"
+
+
+def test_surface_current_task_skips_status_write_when_already_in_progress() -> None:
+    """The in_progress-only guard: a current task already in_progress is surfaced
+    WITHOUT a redundant update_status write (only pending -> in_progress writes).
+    Pins the negative branch of the sole conditional curator write."""
+    cur = _FakeCurator(
+        {
+            "root": {"parent_id": None, "status": "in_progress", "title": "r"},
+            "a": {"parent_id": "root", "status": "in_progress", "title": "audit providers"},
+        },
+        cursor="a",
+    )
+    wf = _wf(graph_client=cur)
+    messages: list[dict[str, Any]] = []
+    _surface(wf, _state(), messages)
+    assert len(messages) == 1  # banner still surfaced
+    assert cur.status_sets == []  # already in_progress -> no redundant status write
+    assert cur.cursor_sets == []  # cursor already on it -> no redundant set_cursor
+
+
+def test_surface_current_task_resurfaces_after_compaction_reset() -> None:
+    """A tier-2 restart resets surfaced_task_id to None; the next surface call
+    re-injects the focus banner into the fresh context."""
+    nodes = {
+        "root": {"parent_id": None, "status": "in_progress", "title": "r"},
+        "a": {"parent_id": "root", "status": "pending", "title": "audit providers"},
+    }
+    wf = _wf(graph_client=_FakeCurator(nodes))
+    st = _state()
+    messages: list[dict[str, Any]] = []
+    _surface(wf, st, messages)
+    assert len(messages) == 1
+    st.surfaced_task_id = None  # what the loop does on a tier-2 restart
+    _surface(wf, st, messages)
+    assert len(messages) == 2  # re-surfaced after the restart wiped the banner
+
+
+def test_surface_current_task_noop_cases() -> None:
+    """No-op without open subtasks (root only), without a curator, or outside run
+    mode -- nothing is appended and no cursor/status write happens."""
+    root_only = _FakeCurator({"root": {"parent_id": None, "status": "pending", "title": "t"}})
+    msgs: list[dict[str, Any]] = []
+    _surface(_wf(graph_client=root_only), _state(), msgs)
+    assert msgs == [] and root_only.cursor_sets == []
+
+    _surface(_wf(graph_client=None), _state(), msgs)
+    assert msgs == []
+
+    open_sub = _FakeCurator(
+        {
+            "root": {"parent_id": None, "status": "pending", "title": "t"},
+            "a": {"parent_id": "root", "status": "pending", "title": "a"},
+        }
+    )
+    _surface(_wf(graph_client=open_sub, mode="plan"), _state(), msgs)
+    assert msgs == [] and open_sub.cursor_sets == []  # plan mode does not surface
+
+
+def test_maybe_compact_returns_restart_signal() -> None:
+    """_maybe_compact returns True only when a tier-2 restart actually replaced
+    the history (the loop's cue to re-surface the focus banner)."""
+    summariser = MagicMock()
+    summariser.call.return_value = _resp("progress summary")
+    wf = _wf(summariser_provider=summariser, compact_summarise_at_chars=500_000)
+    # Below the tier-2 threshold -> no restart, returns False.
+    short = [{"role": "user", "content": [{"type": "text", "text": "hi"}]}]
+    assert wf._maybe_compact(short) is False  # pyright: ignore[reportPrivateUsage]
+    # Over the threshold -> restart, returns True.
+    big = _big_text_history("TASK: x", blocks=8, block_chars=100_000)
+    assert wf._maybe_compact(big) is True  # pyright: ignore[reportPrivateUsage]
+    assert len(big) == 2  # history was replaced
+
+
+def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: Path) -> None:
+    """Integration: a tier-2 restart mid-run wipes the focus banner, and the loop's
+    `if self._maybe_compact(messages): state.surfaced_task_id = None` edge makes the
+    next nudge pass RE-SURFACE the current task into the fresh context. Pins that
+    edge -- dropping the reset (or inverting the _maybe_compact bool) leaves no
+    loop.task.surfaced after the restart, which is exactly the regression the
+    surface/check-off/finish-gate trio exists to prevent."""
+    import json
+
+    from agent6.events import EventSink
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            del kwargs
+            self.calls += 1
+            if self.calls >= 6:
+                return _tool_resp("finish_run", {"summary": "done"}, tool_id=f"f{self.calls}")
+            big = "y" * 3000  # accumulates each turn so tier-2 fires mid-run
+            tid = f"t{self.calls}"
+            return ProviderResponse(
+                text=big,
+                tool_uses=({"id": tid, "name": "noop", "input": {}},),
+                stop_reason="tool_use",
+                input_tokens=1,
+                output_tokens=1,
+                cache_read_tokens=0,
+                cache_creation_tokens=0,
+                raw={
+                    "content": [
+                        {"type": "text", "text": big},
+                        {"type": "tool_use", "id": tid, "name": "noop", "input": {}},
+                    ]
+                },
+            )
+
+    class SummariserStub:
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            del kwargs
+            return _resp("SUMMARY of progress so far")  # no checkoff block
+
+    class DispatcherStub:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+            if name == "finish_run":
+                return {"acknowledged": True, "summary": raw_input.get("summary", "")}
+            return {"ok": True}
+
+    events = EventSink(tmp_path / "logs.jsonl")
+    cur = _FakeCurator(
+        {
+            "root": {"parent_id": None, "status": "in_progress", "title": "review"},
+            "a": {"parent_id": "root", "status": "pending", "title": "audit providers"},
+        }
+    )
+    config = SimpleNamespace(workflow=SimpleNamespace(verify_command=("true",), metric=None))
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        provider=ProviderStub(),
+        dispatcher=DispatcherStub(),
+        summariser_provider=SummariserStub(),
+        events=events,
+        graph_client=cur,
+        compact_drop_at_chars=256_000,
+        compact_summarise_at_chars=5_000,  # low so tier-2 fires mid-run
+        budget=None,
+        max_iterations=30,
+        loop_guard_kill_threshold=0,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK: review"}]}]
+    with patch("agent6.workflows.loop.commit_all", return_value="abc1234567890"):
+        wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="system",
+            messages=messages,
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id="root",
+        )
+    types = [
+        json.loads(line)["type"]
+        for line in (tmp_path / "logs.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert "loop.compact.summarise.done" in types  # tier-2 restart happened
+    assert "loop.task.surfaced" in types
+    # The focus banner re-surfaces AFTER the restart wiped it (the load-bearing edge).
+    restart_at = types.index("loop.compact.summarise.done")
+    assert "loop.task.surfaced" in types[restart_at + 1 :]
+
+
 def test_summarise_and_restart_falls_back_to_worker_provider() -> None:
     worker = MagicMock()
     worker.call.return_value = _resp("summary text")

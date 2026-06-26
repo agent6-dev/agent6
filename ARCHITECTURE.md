@@ -77,23 +77,32 @@ Notes:
   `git_ops.py` from outside the jail. Per-step is the default; the
   `git.commit_strategy` knob also allows `squash` (one commit at run
   end), `stage` (stage but never commit), and `none`.
-- **DAG-as-tool.** `add_task` / `update_task` /
+- **DAG-as-scaffold.** `add_task` / `update_task` /
   `set_cursor` / `list_tasks` write to a curator-owned side
-  store. They do not gate which tool runs next; they are the worker's
-  task breakdown. agent6 reads the DAG at compaction (below) to keep task
-  state accurate so it survives a context restart.
+  store: the worker's task breakdown. They do not pick which tool runs
+  next, but agent6 reads the DAG to keep a small or weak model focused on
+  a long task. Each turn it surfaces the current task -- the cursor when it
+  still points at an open subtask, else the first dependency-satisfied
+  pending subtask -- into the prompt, advances the cursor as tasks pass,
+  and marks the surfaced task `in_progress`. It also refuses `finish_run`
+  while the worker's own subtasks are still open (capped, so a task it
+  cannot close cannot stall the run forever). The surfaced banner survives
+  tier-1 elision and is re-injected after each tier-2 restart, so the
+  worker always sees its current task without it being re-appended every
+  turn.
 - **Context compaction.** Long runs are kept inside the model's context
   window in two tiers (thresholds in `[context]`): at
   `drop_at_chars` the oldest tool_results are replaced by a
   short "re-call if needed" placeholder; at `summarise_at_chars`
   the elided history is summarised by the `reviewer` model and the
   conversation restarts from (task + summary). The curator-owned task
-  DAG survives the restart, so the worker recovers task-level state with
-  `list_tasks` instead of starting over. At that tier-2 restart agent6
-  also asks the summariser which tracked tasks the transcript shows
-  finished and what new work it found, then marks the finished ones
-  `passed` and queues the new ones in the DAG -- so task state stays
-  accurate even though weak models rarely call `update_task` themselves.
+  DAG survives the restart: agent6 re-surfaces the current task into the
+  fresh context (above), so the worker resumes the right task instead of
+  starting over. At that tier-2 restart agent6 also asks the summariser
+  which tracked tasks the transcript shows finished and what new work it
+  found, then marks the finished ones `passed` and queues the new ones in
+  the DAG -- so task state stays accurate even though weak models rarely
+  call `update_task` themselves.
 - **`finish_run(summary)`** is the only terminal tool. Calling it
   emits a `run.end` event and returns control to the CLI.
 
