@@ -60,10 +60,11 @@ principles the Zen doesn't cover:
   with their origin; no behavior keyed off hidden state; errors never pass
   silently (see Errors).
 - **Least surprise.** A command does the boring, expected thing. Config writes
-  default to the global config, `--repo` (and `--machine FILE`) to redirect. The
-  same target selection everywhere; set-valued config merges last-overlay-wins.
+  default to the global config, `--repo` (and `--machine-file FILE`) to redirect.
+  The same target selection everywhere; set-valued config merges
+  last-overlay-wins.
 - **Consistency.** New subcommands mirror existing ones: positional core args,
-  `--repo`/`--machine` target flags, argcomplete on fixed-choice values.
+  `--repo`/`--machine-file` target flags, argcomplete on fixed-choice values.
 - **Simplicity.** No speculative abstraction or indirection for a future that
   hasn't arrived. A reviewer should read a module top to bottom in one sitting;
   inline a one-caller helper, make a stateless class a function, and if it's hard

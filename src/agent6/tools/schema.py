@@ -238,7 +238,7 @@ class FinishPlanningInput(_ToolInput):
         "task, context discovered, an ordered task list with acceptance "
         "criteria, any open questions for the user as `**Q:** ...` blocks "
         "with blank `**A:**` lines, and the verification approach. The "
-        "operator can edit this file (`agent6 plan --edit <run-id>`) to "
+        "operator can edit this file (`agent6 plan edit <run-id>`) to "
         "fill in answers, then hand it to `agent6 run --from-plan "
         "<run-id>` to start execution. `summary` is a one-paragraph "
         "description surfaced to the operator at exit. Do not call any "
@@ -251,7 +251,7 @@ class FinishPlanningInput(_ToolInput):
 
 # DAG-as-tool surface. Lets the agent maintain its own task
 # breakdown in the persistent curator-backed graph. Survives crashes via
-# <run-dir>/graph.jsonl; operator can inspect via `agent6 watch`.
+# <run-dir>/graph.jsonl; operator can inspect via `agent6 runs watch`.
 # DAG manipulation tools.
 # directly through its planner/worker/critic pipeline.
 

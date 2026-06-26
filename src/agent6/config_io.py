@@ -182,7 +182,7 @@ def read_toml_file(path: Path) -> dict[str, Any]:
     """Parse *path* as TOML, or return an empty dict if it does not exist.
 
     Wrap a parse error in ``ConfigError`` (matching ``config_layer._read_toml``)
-    so the ``config ... --machine FILE`` commands surface a clean message
+    so the ``config ... --machine-file FILE`` commands surface a clean message
     instead of letting a raw ``TOMLDecodeError`` traceback escape -- and, for
     ``set``/``add``, so the malformed file is reported before it is rewritten.
     """

@@ -31,7 +31,7 @@ REPL_HELP = (
     "  /continue  (empty enter) - let the agent take another iteration\n"
     "  /cost                    - print the running token + USD summary\n"
     "  /diff                    - git diff: base_sha -> this run's HEAD\n"
-    "                              (read-only; same as `agent6 diff`)\n"
+    "                              (read-only; same as `agent6 runs diff`)\n"
     "  /watch                   - print the last 20 events from this run\n"
     "                              (snapshot; not a live tail)\n"
     "  /mcp                     - list MCP servers + tools currently wired\n"
@@ -132,7 +132,7 @@ def repl_show_recent_events(root: Path, run_id: str, *, n: int) -> None:
 
     Intentionally NOT a live tail - the REPL is between turns of the
     agent loop; a tail would block the next iteration. Operators who
-    want continuous tail use ``agent6 watch --plain`` in another shell.
+    want continuous tail use ``agent6 runs watch --plain`` in another shell.
     """
     if not run_id:
         print("[agent6] /watch: no run id available", file=sys.stderr)

@@ -111,7 +111,7 @@ def _complete_run_ids(prefix: str, **_kw: object) -> list[str]:
 
 
 def _complete_plan_run_ids(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: run ids that hold a plan.md (for --from-plan / plan --show/--edit)."""
+    """argcomplete: run ids that hold a plan.md (for --from-plan / plan show/edit)."""
     try:
         runs = _runs_dir(Path.cwd())
         if not runs.is_dir():

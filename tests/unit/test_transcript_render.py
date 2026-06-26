@@ -207,7 +207,7 @@ def test_load_transcripts_sorted_by_seq(tmp_path: Path) -> None:
 def test_cmd_history_transcript_end_to_end(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`agent6 history transcript <run>` resolves the run, folds its transcripts,
+    """`agent6 runs transcript <run>` resolves the run, folds its transcripts,
     and prints the conversation (full tool I/O), with --json as the raw escape."""
     from agent6.cli.misc_cmds import _cmd_history_transcript  # pyright: ignore[reportPrivateUsage]
     from agent6.config_layer import resolved_state_dir

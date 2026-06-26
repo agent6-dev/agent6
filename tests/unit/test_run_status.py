@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 status`: one-shot liveness + progress of a run from its run dir."""
+"""`agent6 runs show`: one-shot liveness + progress of a run from its run dir."""
 
 from __future__ import annotations
 

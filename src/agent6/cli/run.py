@@ -621,7 +621,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
             return 2
 
         # Capture base sha + branch BEFORE we (optionally) cut a run branch
-        # so `agent6 diff <run-id>` knows where the run started.
+        # so `agent6 runs diff <run-id>` knows where the run started.
         try:
             pre_status = git_status(cwd)
         except GitError as exc:
@@ -644,7 +644,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     # id counters reset on resume, so an old answer must not be read instead of
     # re-prompting; a stale tui.pid would otherwise stall the answer-poll).
     clear_pending_answers(layout.run_dir)
-    # Record this worker's pid so `agent6 status` can probe liveness even while
+    # Record this worker's pid so `agent6 runs show` can probe liveness even while
     # the worker is blocked in a long provider call (which emits no events).
     write_worker_pid(layout.run_dir, os.getpid())
 
@@ -670,7 +670,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
             return 2
 
     # Cut a fresh branch named after the run id so it is 1:1 with the run
-    # (find it from any run id, `agent6 diff <id>`, or just delete the
+    # (find it from any run id, `agent6 runs diff <id>`, or just delete the
     # branch to discard everything the agent did). The name is the unique
     # run id, never a timestamp+task-slug that collides into a pile of
     # near-duplicate `agent6/<ts>-<same-task>` branches on re-runs. Only real
@@ -687,7 +687,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
 
     # Write the run manifest. This is the canonical record of where the
     # run started (base_sha + base_branch), which model+provider drove
-    # it, and the user_task it was given. `agent6 diff <run-id>` and
+    # it, and the user_task it was given. `agent6 runs diff <run-id>` and
     # any future tooling that wants to reproduce a run reads from here.
     _write_run_manifest(
         layout,
@@ -1039,7 +1039,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     # Drop a prior session's stale answer files + tui.pid (the id counters reset
     # on resume, an old answer must not be read instead of re-prompting).
     clear_pending_answers(layout.run_dir)
-    # Record this worker's pid so `agent6 status` can probe liveness even while
+    # Record this worker's pid so `agent6 runs show` can probe liveness even while
     # the worker is blocked in a long provider call (which emits no events).
     write_worker_pid(layout.run_dir, os.getpid())
 

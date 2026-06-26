@@ -133,30 +133,33 @@ it deterministic.
 
 Other commands:
 
-- `agent6 watch [<run-id>]`: attach the live TUI to an existing run.
-- `agent6 status [<run-id>]`: one-shot liveness + progress of a run (running /
-  crashed / finished, current iteration, last activity, elapsed), then exit —
-  a quick or scripted check (`--json`) without the live follower.
+- `agent6 runs <verb> [<run-id>]`: inspect a specific run (run id is a
+  positional everywhere, exact or unambiguous prefix; omit for the most recent):
+  - `runs show`: one-shot liveness + progress (running / crashed / finished,
+    current iteration, last activity, elapsed), then exit — a quick or scripted
+    check (`--json`) without the live follower.
+  - `runs watch`: attach the live TUI; `--plain` is a plain-text tail.
+  - `runs diff`: print the git diff a run produced.
+  - `runs transcript`: render a run's full LLM conversation (assistant text +
+    every tool call with complete I/O) as Markdown; `--json` for the raw
+    transcript. The lossless deep-dive, vs the terse `logs.jsonl`.
+  - `runs graph`: render the persisted task graph.
 - `agent6 plan "<task>"`: read-only planning pass; execute with
-  `agent6 run --from-plan`.
+  `agent6 run --from-plan`. Inspect with `plan show <id>` / `plan edit <id>`.
 - `agent6 ask "<question>"`: read-only Q&A over the repo, including
   questions about agent6 itself (it consults its bundled docs). Seed
-  context with `@path` or `--file`; `--run <id>` asks about a prior run.
+  context with `@path` or `--file`; `--run <id>` (or `--seed-latest`) asks
+  about a prior run. `ask list` enumerates saved asks.
 - `agent6 memory`: persistent agent memory under the per-repo state dir
   (`<state-dir>/<repo-id>/memories/`).
-- `agent6 history search <query>`: search persisted transcripts.
-- `agent6 history graph [<run-id>]`: render the persisted task graph.
-- `agent6 history transcript [<run-id>]`: render a run's full LLM conversation
-  (assistant text + every tool call with complete I/O) as Markdown; `--json`
-  for the raw transcript. The lossless deep-dive, vs the terse `logs.jsonl`.
-- `agent6 diff [<run-id>]`: print the git diff a run produced.
+- `agent6 history search <query>`: cross-run search over persisted transcripts.
 - `agent6 machine ...`: author and run state machines (`.asm.toml`); see
   [STATE_MACHINES.md](STATE_MACHINES.md).
 - `agent6 mcp serve`: expose agent6's tools over MCP (stdio).
 - `agent6 config fill`: materialize every effective value into one file.
 - `agent6 config get/set/unset/add/remove <key> [value]`: edit a single
   dotted leaf. Writes go to the global config by default, `--repo` for the
-  repo, `--machine FILE` for a machine overlay. Every edit is re-validated
+  repo, `--machine-file FILE` for a machine overlay. Every edit is re-validated
   and rolled back if invalid.
 
 ## Configuration
@@ -288,7 +291,7 @@ budget bar, tool table, live reasoning pane, log tail, latest diff);
 prompts appear as modals, with a `/dev/tty` fallback when no TUI is
 present. `agent6 plan`, `agent6 ask`, and `agent6 machine create` stream
 reasoning and answers to the terminal. Attach from another shell with
-`agent6 watch [<run-id>]`; `agent6 watch --plain` is a plain-text tail.
+`agent6 runs watch [<run-id>]`; `agent6 runs watch --plain` is a plain-text tail.
 The dashboard renders the JSONL event stream at
 `<state-dir>/<repo-id>/runs/<run-id>/logs.jsonl`, which is also the contract
 for external viewers (vocabulary in [ARCHITECTURE.md](ARCHITECTURE.md)). The

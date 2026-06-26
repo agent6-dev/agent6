@@ -105,7 +105,7 @@ def _state_dir(repo_root: Path) -> Path:
 
     Resolved from the global ``[agent6].state_dir`` base (default
     ``$XDG_STATE_HOME/agent6``) plus a per-repo id, so this is cheap and works
-    for read-only commands (``watch``/``history``/...) without a full config
+    for read-only commands (``runs``/``history``/...) without a full config
     merge.
     """
     return resolved_state_dir(repo_root)
@@ -126,7 +126,7 @@ def resolve_run_layout(repo_root: Path, query: str) -> RunLayout:
     returning a ``RunLayout`` with the matching subdir.
 
     `agent6 run`/`plan` live under ``runs/`` and `agent6 ask` under ``asks/``;
-    read-only commands (``history graph``/``search``) use this so an ask's
+    read-only commands (``runs graph``/``history search``) use this so an ask's
     state is findable too. Raises ``RunIdError`` if no run matches in either.
     """
     state = _state_dir(repo_root)

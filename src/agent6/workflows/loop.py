@@ -2832,7 +2832,7 @@ class Workflow:
 
     def _emit_budget(self, iteration: int) -> None:
         """Per-iteration usage heartbeat: running token + cost totals. Lets
-        `agent6 status` / the TUI show live spend, and leaves a recent event at
+        `agent6 runs show` / the TUI show live spend, and leaves a recent event at
         the start of each iteration so a long provider call is still
         distinguishable from a stall."""
         if self.budget is None:

@@ -31,7 +31,7 @@ table below), so a repo needs nothing repo-specific to run.
   `AGENTS.md` -- each step asks first and never overwrites your files.
 - `agent6 config show`: every effective value and which layer set it.
 - `agent6 config get|set|unset|add|remove <dotted.key> [value]`: edit one leaf
-  (`--repo`, or `--machine FILE` for a machine `[config]` overlay). Every edit is
+  (`--repo`, or `--machine-file FILE` for a machine `[config]` overlay). Every edit is
   re-validated and rolled back if it would produce an invalid config.
 - `agent6 config fill [--repo]`: materialize every resolved value into one file.
 - `agent6 check`: validate config + sandbox + provider keys without running.

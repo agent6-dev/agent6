@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for `agent6 history graph` DFS tree rendering."""
+"""Tests for `agent6 runs graph` DFS tree rendering."""
 
 from __future__ import annotations
 
@@ -81,7 +81,7 @@ def test_history_graph_renders_dfs_order(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_tree(tmp_path, "test-run-AAAA11")
-    rc = main(["history", "graph", "test-run-AAAA11"])
+    rc = main(["runs", "graph", "test-run-AAAA11"])
     out = capsys.readouterr().out
     assert rc == 0
     lines = [line for line in out.splitlines() if line and not line.startswith("Run id:")]
@@ -103,7 +103,7 @@ def test_history_graph_uses_most_recent_when_no_arg(
     _seed_tree(tmp_path, "newer-run-BBBB22")
     # Touch the newer run to make sure mtime ordering picks it.
     (resolved_state_dir(tmp_path) / "runs" / "newer-run-BBBB22").touch()
-    rc = main(["history", "graph"])
+    rc = main(["runs", "graph"])
     out = capsys.readouterr().out
     assert rc == 0
     assert "[pending] root task" in out
@@ -113,7 +113,7 @@ def test_history_graph_missing_run_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    rc = main(["history", "graph", "nonexistent"])
+    rc = main(["runs", "graph", "nonexistent"])
     err = capsys.readouterr().err
     assert rc == 2
     assert "no runs directory" in err or "no run matches" in err
@@ -125,7 +125,7 @@ def test_history_graph_empty_graph_errors(
     monkeypatch.chdir(tmp_path)
     layout = RunLayout(state_dir=resolved_state_dir(tmp_path), run_id="empty-run-CCCC33")
     layout.ensure()
-    rc = main(["history", "graph", "empty-run-CCCC33"])
+    rc = main(["runs", "graph", "empty-run-CCCC33"])
     err = capsys.readouterr().err
     assert rc == 2
     assert "no persisted graph nodes" in err

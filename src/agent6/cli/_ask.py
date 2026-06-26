@@ -46,7 +46,7 @@ def ask_question_snippet(transcript: str) -> str:
 
 
 def cmd_ask_list() -> int:
-    """`agent6 ask --list`: enumerate saved asks under the per-repo state dir (asks subdir)."""
+    """`agent6 ask list`: enumerate saved asks under the per-repo state dir (asks subdir)."""
     asks_dir = _state_dir(Path.cwd()) / "asks"
     if not asks_dir.is_dir():
         print("No asks yet (the asks subdir under the per-repo state dir does not exist).")
@@ -148,7 +148,7 @@ def build_ask_run_digest(cwd: Path, run_id: str, *, latest: bool) -> str | None:
     head_ref = str(run_branch) if run_branch else "HEAD"
     diff = ""
     if base_sha:
-        # operator-controlled argv, no LLM input (same as `agent6 diff`).
+        # operator-controlled argv, no LLM input (same as `agent6 runs diff`).
         proc = subprocess.run(
             ["git", "diff", f"{base_sha}..{head_ref}"],
             cwd=cwd,

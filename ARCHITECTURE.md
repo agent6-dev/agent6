@@ -205,7 +205,7 @@ any external viewer (the fold to UI state lives in
 | `budget.update`             | totals + caps for input/output tokens       |
 | `approval.prompt`/`.answer` | `id`, `prompt`, `approved`, `source` (`tui`/`stdin`) |
 | `loop.*`                    | agent progress: `loop.auto_commit`, `loop.compact.*`, `loop.critic.*`, `loop.metric.*`, `loop.steer.*` |
-| `loop.budget`               | per-iteration usage heartbeat: `iteration`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cost_usd` (read by `agent6 status`) |
+| `loop.budget`               | per-iteration usage heartbeat: `iteration`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cost_usd` (read by `agent6 runs show`) |
 | `loop.review.*`             | adversarial review panel: `loop.review.start` (trigger, seats), `loop.review.seat` (seat, model, verdict, findings), `loop.review.panel` (blocked, raw_blocked, decision, n_block, disarmed), `loop.review.skipped` |
 | `run.end`                   | `summary`                                   |
 
@@ -213,7 +213,7 @@ A `run_command` approval is published as `approval.prompt`; the dashboard
 TUI shows an Allow/Deny modal and writes `approvals/<id>.answer`, which the
 workflow reads (falling back to a stdin prompt with no TUI), then records
 `approval.answer`. The task DAG is not in this stream; it is
-curator-owned and lives in `graph.jsonl` (read via `agent6 history
+curator-owned and lives in `graph.jsonl` (read via `agent6 runs
 graph`).
 
 ## Where things live

@@ -29,7 +29,7 @@ from pathlib import Path
 APPROVAL_DIR_NAME = "approvals"
 QUESTION_DIR_NAME = "questions"
 TUI_PID_FILE = "tui.pid"
-WORKER_PID_FILE = "worker.pid"  # the run's worker process, for `agent6 status` liveness
+WORKER_PID_FILE = "worker.pid"  # the run's worker process, for `agent6 runs show` liveness
 STEER_ANSWER_FILE = "steer.answer"
 
 
@@ -48,7 +48,7 @@ def clear_pending_answers(run_dir: Path) -> None:
     answer-poll block until timeout). Best-effort.
 
     The `tui.pid` is only dropped when NO live TUI owns it: a concurrently-live
-    `agent6 watch` watcher must keep bridging the resumed run's approval/question
+    `agent6 runs watch` watcher must keep bridging the resumed run's approval/question
     modals, so we must not unlink a pid that still points at a running process."""
     for sub in (APPROVAL_DIR_NAME, QUESTION_DIR_NAME):
         d = run_dir / sub
@@ -86,7 +86,7 @@ def _pid_alive(pid: int) -> bool:
 
 
 def write_worker_pid(run_dir: Path, pid: int) -> None:
-    """Record the run's worker pid so `agent6 status` can probe liveness even
+    """Record the run's worker pid so `agent6 runs show` can probe liveness even
     while the worker is blocked in a long provider call (no events emitted)."""
     (run_dir / WORKER_PID_FILE).write_text(str(pid), encoding="utf-8")
 

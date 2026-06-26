@@ -13,7 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from agent6.cli.parser import build_parser
+from agent6.cli.parser import (
+    _inject_default_verb,  # pyright: ignore[reportPrivateUsage]
+    build_parser,
+)
 
 
 @pytest.mark.parametrize(
@@ -21,6 +24,8 @@ from agent6.cli.parser import build_parser
     [
         ["run", "--config", "c.toml", "task"],
         ["--config", "c.toml", "run", "task"],
+        # `plan` carries --config/task on its implicit `run` verb (see
+        # _inject_default_verb), which `main` applies before parsing.
         ["plan", "--config", "c.toml", "task"],
         ["--config", "c.toml", "plan", "task"],
         ["resume", "rid", "--config", "c.toml"],
@@ -30,7 +35,7 @@ from agent6.cli.parser import build_parser
     ],
 )
 def test_config_flag_parses_in_both_positions(argv: list[str]) -> None:
-    args = build_parser().parse_args(argv)
+    args = build_parser().parse_args(_inject_default_verb(argv))
     assert args.config == Path("c.toml")
 
 

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 plan --show/--edit` and `agent6 run --from-plan` CLI smoke."""
+"""`agent6 plan show/edit` and `agent6 run --from-plan` CLI smoke."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ def test_plan_show_prints_plan(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_plan(tmp_path, "happy-tree-abcd", "# Plan: foo\n\nbody\n")
-    rc = main(["plan", "--show", "happy-tree-abcd"])
+    rc = main(["plan", "show", "happy-tree-abcd"])
     assert rc == 0
     assert "# Plan: foo" in capsys.readouterr().out
 
@@ -39,7 +39,7 @@ def test_plan_show_resolves_prefix(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _seed_plan(tmp_path, "happy-tree-abcd", "# Plan: foo\n")
-    rc = main(["plan", "--show", "happy"])
+    rc = main(["plan", "show", "happy"])
     assert rc == 0
     assert "# Plan: foo" in capsys.readouterr().out
 
@@ -51,7 +51,7 @@ def test_plan_show_missing_run_errors(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     (resolved_state_dir(tmp_path) / "runs").mkdir(parents=True)
-    rc = main(["plan", "--show", "nonexistent"])
+    rc = main(["plan", "show", "nonexistent"])
     assert rc == 2
     assert "ERROR" in capsys.readouterr().err
 
@@ -63,20 +63,10 @@ def test_plan_show_no_plan_md_errors(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     (resolved_state_dir(tmp_path) / "runs" / "happy-tree-abcd").mkdir(parents=True)
-    rc = main(["plan", "--show", "happy-tree-abcd"])
+    rc = main(["plan", "show", "happy-tree-abcd"])
     assert rc == 2
     err = capsys.readouterr().err
     assert "plan.md" in err
-
-
-def test_plan_show_and_edit_mutually_exclusive(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    monkeypatch.chdir(tmp_path)
-    rc = main(["plan", "--show", "x", "--edit", "y"])
-    assert rc == 2
 
 
 def test_plan_requires_task_or_show(
@@ -85,6 +75,8 @@ def test_plan_requires_task_or_show(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.chdir(tmp_path)
+    # Bare `plan` (no task, no verb) injects the `run` verb and reports the
+    # missing-task error rather than the most-recent-plan prompt (no runs here).
     rc = main(["plan"])
     assert rc == 2
     assert "ERROR" in capsys.readouterr().err
@@ -101,7 +93,7 @@ def test_plan_edit_invokes_editor(
     script.write_text(f"#!/bin/sh\necho edited >> $1\ntouch {marker}\n", encoding="utf-8")
     script.chmod(0o755)
     monkeypatch.setenv("EDITOR", str(script))
-    rc = main(["plan", "--edit", "happy-tree-abcd"])
+    rc = main(["plan", "edit", "happy-tree-abcd"])
     assert rc == 0
     assert marker.exists()
     assert "edited" in plan.read_text(encoding="utf-8")

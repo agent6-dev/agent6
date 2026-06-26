@@ -83,11 +83,11 @@ def test_get_unknown_key_errors(iso: Path) -> None:
 def test_machine_get_on_malformed_toml_is_clean_error(
     iso: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # A malformed --machine file must produce a clean CONFIG ERROR (exit 2),
+    # A malformed --machine-file must produce a clean CONFIG ERROR (exit 2),
     # not an uncaught TOMLDecodeError traceback.
     bad = tmp_path / "broken.asm.toml"
     bad.write_text("this is = not valid [[[\n", encoding="utf-8")
-    assert _run(["config", "get", "git.commit_strategy", "--machine", str(bad)]) == 2
+    assert _run(["config", "get", "git.commit_strategy", "--machine-file", str(bad)]) == 2
     err = capsys.readouterr().err
     assert "invalid TOML" in err
 
@@ -165,34 +165,38 @@ def _machine_file(tmp_path: Path) -> Path:
 def test_machine_overlay_set_and_get(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
     mf = _machine_file(iso)
     # A non-security knob is fine in a machine overlay (review tuning).
-    assert _run(["config", "set", "review.trigger", "on_verify_fail", "--machine", str(mf)]) == 0
+    assert (
+        _run(["config", "set", "review.trigger", "on_verify_fail", "--machine-file", str(mf)]) == 0
+    )
     data = tomllib.loads(mf.read_text(encoding="utf-8"))
     assert data["config"] == {"review": {"trigger": "on_verify_fail"}}  # type: ignore[comparison-overlap]
     # The original machine tables survive the edit.
     assert data["machine"]["name"] == "demo"  # type: ignore[index]
     capsys.readouterr()
-    assert _run(["config", "get", "review.trigger", "--machine", str(mf)]) == 0
+    assert _run(["config", "get", "review.trigger", "--machine-file", str(mf)]) == 0
     assert "[machine]" in capsys.readouterr().out
 
 
 def test_machine_overlay_rejects_providers(iso: Path) -> None:
     mf = _machine_file(iso)
-    assert _run(["config", "set", "providers.x.kind", "anthropic", "--machine", str(mf)]) == 2
+    assert _run(["config", "set", "providers.x.kind", "anthropic", "--machine-file", str(mf)]) == 2
 
 
 def test_machine_overlay_rejects_sandbox(iso: Path) -> None:
     # Sandbox policy is an operator-only decision — a machine file (possibly
     # LLM-drafted/shared) must not weaken the jail via its [config] overlay.
     mf = _machine_file(iso)
-    assert _run(["config", "set", "sandbox.agent_network", "open", "--machine", str(mf)]) == 2
-    assert _run(["config", "add", "sandbox.allow_urls", "evil.com", "--machine", str(mf)]) == 2
+    assert _run(["config", "set", "sandbox.agent_network", "open", "--machine-file", str(mf)]) == 2
+    assert _run(["config", "add", "sandbox.allow_urls", "evil.com", "--machine-file", str(mf)]) == 2
     # ...but the same keys are settable in the global config.
     assert _run(["config", "set", "sandbox.agent_network", "open"]) == 0
 
 
 def test_repo_and_machine_together_rejected(iso: Path) -> None:
     mf = _machine_file(iso)
-    rc = _run(["config", "set", "sandbox.agent_network", "open", "--repo", "--machine", str(mf)])
+    rc = _run(
+        ["config", "set", "sandbox.agent_network", "open", "--repo", "--machine-file", str(mf)]
+    )
     assert rc == 2
 
 

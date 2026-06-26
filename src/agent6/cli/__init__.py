@@ -55,7 +55,7 @@ from agent6.cli.misc_cmds import (
     _cmd_review,
 )
 from agent6.cli.model import _cmd_model
-from agent6.cli.parser import build_parser
+from agent6.cli.parser import _inject_default_verb, build_parser
 from agent6.cli.plan_watch import (
     _cmd_plan_edit,
     _cmd_plan_show,
@@ -85,7 +85,8 @@ def _first_markdown_line(text: str, max_len: int = 80) -> str:
 def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR0915
     parser = build_parser()
     argcomplete.autocomplete(parser)
-    args = parser.parse_args(argv)
+    raw = sys.argv[1:] if argv is None else argv
+    args = parser.parse_args(_inject_default_verb(raw))
     root_rc = _enforce_root_policy(getattr(args, "allow_root", False))
     if root_rc is not None:
         return root_rc
@@ -182,16 +183,13 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             profile=getattr(args, "profile", ""),
         )
     if args.command == "plan":
-        if args.show and args.edit:
-            print("ERROR: --show and --edit are mutually exclusive.", file=sys.stderr)
-            return 2
-        if args.show:
-            return _cmd_plan_show(args.show)
-        if args.edit:
-            return _cmd_plan_edit(args.edit)
+        if args.plan_command == "show":
+            return _cmd_plan_show(args.run_id)
+        if args.plan_command == "edit":
+            return _cmd_plan_edit(args.run_id)
         if not args.task:
             print(
-                "ERROR: 'plan' needs a task argument (or --show/--edit).",
+                "ERROR: 'plan' needs a task argument (or `plan show/edit <id>`).",
                 file=sys.stderr,
             )
             return 2
@@ -204,7 +202,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             profile=getattr(args, "profile", ""),
         )
     if args.command == "ask":
-        if args.ask_list:
+        if args.ask_command == "list":
             return _cmd_ask_list()
         # REPL when -i is given, or no question + an interactive stdin.
         repl = args.interactive or (not args.task and sys.stdin.isatty())
@@ -216,8 +214,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             return 2
         question = args.task
         prefix: list[str] = []
-        if args.ask_continue or args.ask_run:
-            digest = _build_ask_run_digest(Path.cwd(), args.ask_run, latest=args.ask_continue)
+        if args.ask_seed_latest or args.ask_run:
+            digest = _build_ask_run_digest(Path.cwd(), args.ask_run, latest=args.ask_seed_latest)
             if digest is None:
                 return 2
             prefix.append(digest)
@@ -235,10 +233,23 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             budget_overrides=_BudgetOverrides.from_args(args),
             profile=getattr(args, "profile", ""),
         )
-    if args.command == "watch":
-        return _cmd_watch(args.run_id, plain=args.plain, since=args.since)
-    if args.command == "status":
-        return _cmd_status(args.run_id, as_json=args.json)
+    if args.command == "runs":
+        if args.runs_command == "show":
+            return _cmd_status(args.run_id, as_json=args.json)
+        if args.runs_command == "watch":
+            return _cmd_watch(args.run_id, plain=args.plain, since=args.since)
+        if args.runs_command == "diff":
+            return _cmd_diff(run_id=args.run_id, stat=args.stat, paths=tuple(args.paths))
+        if args.runs_command == "transcript":
+            return _cmd_history_transcript(
+                args.run_id,
+                as_json=args.as_json,
+                no_thinking=args.no_thinking,
+                tools=args.tools,
+                seq=args.seq,
+            )
+        if args.runs_command == "graph":
+            return _cmd_history_graph(args.run_id)
     if args.command == "tui":
         return _cmd_tui()
     if args.command == "prompt" and args.prompt_command == "show":
@@ -259,15 +270,17 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
         if args.config_command == "path":
             return _cmd_config_path()
         if args.config_command == "get":
-            return _cmd_config_get(args.key, machine=args.machine)
+            return _cmd_config_get(args.key, machine=args.machine_file)
         if args.config_command == "set":
-            return _cmd_config_set(args.key, args.value, repo=args.repo, machine=args.machine)
+            return _cmd_config_set(args.key, args.value, repo=args.repo, machine=args.machine_file)
         if args.config_command == "unset":
-            return _cmd_config_unset(args.key, repo=args.repo, machine=args.machine)
+            return _cmd_config_unset(args.key, repo=args.repo, machine=args.machine_file)
         if args.config_command == "add":
-            return _cmd_config_add(args.key, args.value, repo=args.repo, machine=args.machine)
+            return _cmd_config_add(args.key, args.value, repo=args.repo, machine=args.machine_file)
         if args.config_command == "remove":
-            return _cmd_config_remove(args.key, args.value, repo=args.repo, machine=args.machine)
+            return _cmd_config_remove(
+                args.key, args.value, repo=args.repo, machine=args.machine_file
+            )
     if args.command == "check":
         return _cmd_check(args.config, section=args.section)
     if args.command == "connect":
@@ -290,16 +303,6 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             return _cmd_memory_invalidate(args.memory_id, args.reason)
     if args.command == "history" and args.history_command == "search":
         return _cmd_history_search(args.query, fixed=not args.regex, run_id=args.run)
-    if args.command == "history" and args.history_command == "graph":
-        return _cmd_history_graph(args.run)
-    if args.command == "history" and args.history_command == "transcript":
-        return _cmd_history_transcript(
-            args.run,
-            as_json=args.as_json,
-            no_thinking=args.no_thinking,
-            tools=args.tools,
-            seq=args.seq,
-        )
     if args.command == "init":
         return _cmd_init(force=args.force, profile=args.profile, assume_yes=args.yes)
     if args.command == "review":
@@ -311,12 +314,6 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             model_override=args.model,
             reviewers=args.reviewers,
             personas=args.personas,
-        )
-    if args.command == "diff":
-        return _cmd_diff(
-            run_id=args.run_id,
-            stat=args.stat,
-            paths=tuple(args.paths),
         )
     if args.command == "mcp" and args.mcp_command == "serve":
         return _cmd_mcp_serve(args.config)

@@ -83,14 +83,14 @@ def _cmd_config_fill(config_path: Path | None, *, to_repo: bool, force: bool) ->
 def _config_write_target(*, repo: bool, machine: Path | None) -> tuple[Path, str]:
     """Resolve the file + dotted-key prefix a config write should target.
 
-    Global by default; ``--repo`` writes the in-repo config; ``--machine FILE``
+    Global by default; ``--repo`` writes the in-repo config; ``--machine-file FILE``
     edits that machine's ``[config]`` overlay (so keys are prefixed ``config.``
-    and land in ``[config.<section>]``). ``--repo`` and ``--machine`` together
-    are ambiguous and rejected.
+    and land in ``[config.<section>]``). ``--repo`` and ``--machine-file``
+    together are ambiguous and rejected.
     """
     if machine is not None:
         if repo:
-            raise ValueError("use either --repo or --machine, not both")
+            raise ValueError("use either --repo or --machine-file, not both")
         return machine, "config."
     if repo:
         return repo_config_path_for(Path.cwd()), ""
@@ -120,7 +120,7 @@ def _reject_machine_protected(key: str, machine: Path | None) -> str | None:
 def _machine_is_valid(text: str | None) -> bool:
     """True iff *text* parses as a complete, valid machine spec.
 
-    Used to decide whether a `config set --machine` edit BROKE a working machine
+    Used to decide whether a `config set --machine-file` edit BROKE a working machine
     (block + roll back) versus merely touched an already-incomplete one (allow).
     """
     if text is None:
@@ -148,7 +148,7 @@ def _revalidate_config(target: Path, prior_text: str | None, *, machine: Path | 
             overlay = data.get("config", {})
             load_effective_with_overlay(Path.cwd(), overlay if isinstance(overlay, dict) else {})
             # Validate the WHOLE machine spec too (not just the [config] overlay)
-            # so `config set --machine` can't BREAK a runnable machine. We only
+            # so `config set --machine-file` can't BREAK a runnable machine. We only
             # block when the edit made a previously-VALID machine invalid -- a
             # machine that was already invalid (or a brand-new stub) is left for
             # the author to finish; `machine check` is the gate for runnability.

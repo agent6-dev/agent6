@@ -182,7 +182,7 @@ task description). Suggested skeleton:
 
 Include `## Open questions` only when there are real ambiguities the
 operator must resolve before execution. Leave the `**A:**` lines blank
-- the operator fills them in via `agent6 plan --edit <run-id>`.
+- the operator fills them in via `agent6 plan edit <run-id>`.
 
 Call `finish_planning` exactly once when the plan is complete. Do not
 call any other tools after `finish_planning`.

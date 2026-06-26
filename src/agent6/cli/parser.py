@@ -21,6 +21,67 @@ from agent6.cli.completers import (
     _complete_run_ids,
 )
 
+# Commands with a default verb: `plan <task>` == `plan run <task>`, and
+# `ask <q>` == `ask query <q>`. _inject_default_verb rewrites argv so a bare
+# task isn't mistaken for a subcommand name. The explicit forms (`plan run`,
+# `ask query`) cover the rare task whose first word is a verb name.
+_DEFAULT_VERBS: dict[str, tuple[str, frozenset[str]]] = {
+    "plan": ("run", frozenset({"run", "show", "edit"})),
+    "ask": ("query", frozenset({"query", "list"})),
+}
+
+
+# Top-level options that may precede the subcommand. `--config` takes a value;
+# the rest are flags. _inject_default_verb skips past these to find the command.
+_GLOBAL_VALUE_OPTS = frozenset({"--config"})
+_GLOBAL_FLAG_OPTS = frozenset({"--allow-root"})
+
+
+def _command_index(argv: list[str]) -> int | None:
+    """Index of the subcommand token, skipping leading global options.
+
+    `["--config", "c.toml", "plan", ...]` -> 2. Returns None if a global help
+    or version flag appears first (argparse handles those) or no command is
+    found.
+    """
+    i = 0
+    while i < len(argv):
+        tok = argv[i]
+        if tok in ("-h", "--help", "--version"):
+            return None
+        if tok in _GLOBAL_VALUE_OPTS:
+            i += 2
+            continue
+        if tok.startswith("--") and "=" in tok and tok.split("=", 1)[0] in _GLOBAL_VALUE_OPTS:
+            i += 1
+            continue
+        if tok in _GLOBAL_FLAG_OPTS:
+            i += 1
+            continue
+        return i
+    return None
+
+
+def _inject_default_verb(argv: list[str]) -> list[str]:
+    """Insert the implicit verb for `plan`/`ask` when the next token isn't one.
+
+    `["plan", "fix the bug"]` -> `["plan", "run", "fix the bug"]`;
+    `["ask", "why?"]` -> `["ask", "query", "why?"]`. Leading global options
+    (`--config FILE`, `--allow-root`) are skipped to find the command. A bare
+    `plan`/`ask`, an explicit verb, or `-h`/`--help` is left untouched.
+    """
+    ci = _command_index(argv)
+    if ci is None or argv[ci] not in _DEFAULT_VERBS:
+        return argv
+    default_verb, verbs = _DEFAULT_VERBS[argv[ci]]
+    rest = argv[ci + 1 :]
+    # A bare `plan`/`ask` also gets the default verb so the no-task path (offer
+    # the most recent plan / start the ask REPL) still runs; only an explicit
+    # verb or -h/--help is left alone.
+    if rest and (rest[0] in verbs or rest[0] in ("-h", "--help")):
+        return argv
+    return [*argv[: ci + 1], default_verb, *rest]
+
 
 def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     parser = argparse.ArgumentParser(prog="agent6", description="Sandboxed coding agent.")
@@ -121,64 +182,71 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help=(
             "Planning pass: same loop, read-only tools, writes plan.md."
             " Pair with `agent6 run --from-plan <run-id>` to execute."
+            " Inspect with `plan show <id>` / `plan edit <id>`."
         ),
     )
-    plan_p.add_argument(
+    # `plan <task>` is the bare planning run; `plan show/edit <id>` inspect a
+    # prior plan. `run` is the implicit default verb injected by
+    # `_inject_default_verb` when the first token isn't a known plan verb, so
+    # `plan "fix the bug"` and `plan run "fix the bug"` are the same.
+    plan_sub = plan_p.add_subparsers(dest="plan_command", required=True)
+    plan_run = plan_sub.add_parser("run", help="Run a planning pass on a task.")
+    plan_run.add_argument(
         "task",
         nargs="?",
         default="",
-        help="Task description (in quotes). Omit when using --show/--edit.",
+        help="Task description (in quotes). Omit to execute/offer the most recent plan.",
     )
-    plan_p.add_argument("--run-id", default="", help="Explicit run id (default: generate one).")
-    plan_p.add_argument(
+    plan_run.add_argument("--run-id", default="", help="Explicit run id (default: generate one).")
+    plan_run.add_argument(
         "--profile", default="", help="Config profile preset (see `agent6 run --profile`)."
     )
-    plan_p.add_argument(
+    plan_run.add_argument(
         "--config",
         type=Path,
         # SUPPRESS (not None): a subparser default would otherwise clobber a
         # top-level `agent6 --config FILE <cmd>` back to None. With SUPPRESS the
         # subparser only sets `config` when --config is given AFTER the
-        # subcommand, so both `agent6 --config F run` and `agent6 run --config F`
+        # subcommand, so both `agent6 --config F plan` and `agent6 plan --config F`
         # work; the top-level --config supplies the always-present default.
         default=argparse.SUPPRESS,
         metavar="FILE",
         help="Explicit config file (layered over global + repo configs).",
     )
-    plan_show = plan_p.add_argument(
-        "--show",
-        default="",
-        metavar="RUN_ID",
-        help="Print the plan.md for a prior plan run and exit.",
-    )
-    plan_show.completer = _complete_plan_run_ids  # type: ignore[attr-defined]
-    plan_edit = plan_p.add_argument(
-        "--edit",
-        default="",
-        metavar="RUN_ID",
+    _add_budget_flags(plan_run)
+    plan_show = plan_sub.add_parser("show", help="Print the plan.md for a prior plan run and exit.")
+    plan_show_id = plan_show.add_argument("run_id", help="Plan run id (or unambiguous prefix).")
+    plan_show_id.completer = _complete_plan_run_ids  # type: ignore[attr-defined]
+    plan_edit = plan_sub.add_parser(
+        "edit",
         help="Open the plan.md for a prior plan run in $EDITOR (default: vi) and exit.",
     )
-    plan_edit.completer = _complete_plan_run_ids  # type: ignore[attr-defined]
-    _add_budget_flags(plan_p)
+    plan_edit_id = plan_edit.add_argument("run_id", help="Plan run id (or unambiguous prefix).")
+    plan_edit_id.completer = _complete_plan_run_ids  # type: ignore[attr-defined]
 
     ask_p = sub.add_parser(
         "ask",
         help=(
             "Read-only Q&A: investigate the repo and answer a question in prose"
             " (no edits/commits). Brainstorm, rubber-duck, or ask how to do"
-            " something."
+            " something. `ask list` enumerates saved asks."
         ),
     )
-    ask_p.add_argument(
+    # `ask <question>` runs a Q&A; `ask list` enumerates saved asks. `query` is
+    # the implicit default verb injected by `_inject_default_verb` when the first
+    # token isn't a known ask verb, so `ask "why ..."` == `ask query "why ..."`.
+    ask_sub = ask_p.add_subparsers(dest="ask_command", required=True)
+    ask_query = ask_sub.add_parser("query", help="Ask a question (the default verb).")
+    ask_query.add_argument(
         "--profile", default="", help="Config profile preset (see `agent6 run --profile`)."
     )
-    ask_p.add_argument(
+    ask_query.add_argument(
         "task",
         nargs="?",
         default="",
         help='Question (in quotes), e.g. "why does the broker drop large requests?".',
     )
-    ask_p.add_argument(
+    ask_query.add_argument(
         "--config",
         type=Path,
         # SUPPRESS so a top-level `agent6 --config F ask` is not clobbered; see
@@ -187,7 +255,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         metavar="FILE",
         help="Explicit config file (layered over global + repo configs).",
     )
-    ask_run = ask_p.add_argument(
+    ask_run = ask_query.add_argument(
         "--run",
         dest="ask_run",
         default="",
@@ -198,13 +266,13 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
     ask_run.completer = _complete_run_ids  # type: ignore[attr-defined]
-    ask_p.add_argument(
-        "--continue",
-        dest="ask_continue",
+    ask_query.add_argument(
+        "--seed-latest",
+        dest="ask_seed_latest",
         action="store_true",
-        help="Like --run, but use the most recent run.",
+        help="Like --run, but seed the most recent run.",
     )
-    ask_p.add_argument(
+    ask_query.add_argument(
         "--file",
         dest="ask_files",
         action="append",
@@ -212,13 +280,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         metavar="PATH",
         help="Seed a file's contents into the question (repeatable; like an inline @path).",
     )
-    ask_p.add_argument(
-        "--list",
-        dest="ask_list",
-        action="store_true",
-        help="List saved asks under the per-repo state dir (asks subdir, newest first) and exit.",
-    )
-    ask_p.add_argument(
+    ask_query.add_argument(
         "-i",
         "--interactive",
         action="store_true",
@@ -228,20 +290,51 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
             " when no question is given and stdin is a TTY."
         ),
     )
-    _add_budget_flags(ask_p)
-
-    watch_p = sub.add_parser(
-        "watch",
-        help="Read-only live view of a run (defaults to the most recent run).",
+    _add_budget_flags(ask_query)
+    ask_sub.add_parser(
+        "list",
+        help="List saved asks under the per-repo state dir (asks subdir, newest first) and exit.",
     )
-    watch_run = watch_p.add_argument(
+
+    runs_p = sub.add_parser(
+        "runs",
+        help=(
+            "Inspect a specific run: show (liveness/progress), watch (follow"
+            " live), diff, transcript, graph. The run id is a positional"
+            " everywhere (exact or unambiguous prefix; omit for the most recent)."
+        ),
+    )
+    runs_sub = runs_p.add_subparsers(dest="runs_command", required=True)
+
+    runs_show = runs_sub.add_parser(
+        "show",
+        help="One-shot liveness + progress of a run, then exit (vs `watch`, which follows).",
+    )
+    runs_show_id = runs_show.add_argument(
         "run_id",
         nargs="?",
         default="",
         help="Run id (omit for the most recent run).",
     )
-    watch_run.completer = _complete_run_ids  # type: ignore[attr-defined]
-    watch_p.add_argument(
+    runs_show_id.completer = _complete_run_ids  # type: ignore[attr-defined]
+    runs_show.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the status as a single JSON object (for scripts/monitoring).",
+    )
+
+    runs_watch = runs_sub.add_parser(
+        "watch",
+        help="Read-only live view of a run (defaults to the most recent run).",
+    )
+    runs_watch_id = runs_watch.add_argument(
+        "run_id",
+        nargs="?",
+        default="",
+        help="Run id (omit for the most recent run).",
+    )
+    runs_watch_id.completer = _complete_run_ids  # type: ignore[attr-defined]
+    runs_watch.add_argument(
         "--plain",
         action="store_true",
         help=(
@@ -251,7 +344,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
             " follows the file like `tail -f`."
         ),
     )
-    watch_p.add_argument(
+    runs_watch.add_argument(
         "--since",
         type=int,
         default=0,
@@ -262,22 +355,72 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
 
-    status_p = sub.add_parser(
-        "status",
-        help="One-shot liveness + progress of a run, then exit (vs `watch`, which follows).",
+    runs_diff = runs_sub.add_parser(
+        "diff",
+        help="Print the git diff produced by a run (manifest.base_sha -> HEAD of run branch).",
     )
-    status_run = status_p.add_argument(
+    runs_diff_id = runs_diff.add_argument(
         "run_id",
         nargs="?",
         default="",
-        help="Run id (omit for the most recent run).",
+        help="Run id (or unique prefix). Omit to diff the most recent run.",
     )
-    status_run.completer = _complete_run_ids  # type: ignore[attr-defined]
-    status_p.add_argument(
-        "--json",
+    runs_diff_id.completer = _complete_run_ids  # type: ignore[attr-defined]
+    runs_diff.add_argument(
+        "--stat",
         action="store_true",
-        help="Emit the status as a single JSON object (for scripts/monitoring).",
+        help="Show --stat summary instead of the full patch.",
     )
+    runs_diff.add_argument(
+        "--paths",
+        nargs="*",
+        default=(),
+        help="Restrict the diff to these paths.",
+    )
+
+    runs_tr = runs_sub.add_parser(
+        "transcript",
+        help="Render a run's full LLM conversation (the lossless transcripts) as Markdown.",
+    )
+    runs_tr_id = runs_tr.add_argument(
+        "run_id",
+        nargs="?",
+        default="",
+        help="Run id (or unambiguous prefix). Defaults to the most recent run.",
+    )
+    runs_tr_id.completer = _complete_run_ids  # type: ignore[attr-defined]
+    runs_tr.add_argument(
+        "--json",
+        dest="as_json",
+        action="store_true",
+        help="Emit the raw transcript array (the per-call request/response objects) instead.",
+    )
+    runs_tr.add_argument(
+        "--no-thinking", action="store_true", help="Omit the model's reasoning/thinking blocks."
+    )
+    runs_tr.add_argument(
+        "--tools",
+        choices=("both", "calls", "none"),
+        default="both",
+        help="Show tool calls + results (both), calls only, or neither.",
+    )
+    runs_tr.add_argument(
+        "--seq",
+        default="",
+        help="Restrict to a round-trip seq window, e.g. 3 or 3-7 (default: all).",
+    )
+
+    runs_graph = runs_sub.add_parser(
+        "graph",
+        help="Render the persisted task graph for a run as a DFS tree.",
+    )
+    runs_graph_id = runs_graph.add_argument(
+        "run_id",
+        nargs="?",
+        default="",
+        help="Run id (or unambiguous prefix). Defaults to the most recent run.",
+    )
+    runs_graph_id.completer = _complete_run_ids  # type: ignore[attr-defined]
 
     sub.add_parser(
         "tui",
@@ -373,13 +516,15 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "key", help="Dotted leaf path, e.g. sandbox.agent_network."
     )
     config_get_key.completer = _complete_config_keys  # type: ignore[attr-defined]
-    config_get.add_argument(
-        "--machine",
+    config_get_machine = config_get.add_argument(
+        "--machine-file",
+        dest="machine_file",
         type=Path,
         default=None,
         metavar="FILE",
         help="View the value with a machine file's [config] overlay applied.",
     )
+    config_get_machine.completer = _complete_machine_files  # type: ignore[attr-defined]
     for verb, blurb in (
         ("set", "Set a leaf to a scalar value (global by default)."),
         ("unset", "Remove a leaf, reverting it to the next-lower layer / default."),
@@ -398,7 +543,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
             help="Write the per-repo config instead of the global config.",
         )
         machine_arg = p.add_argument(
-            "--machine",
+            "--machine-file",
+            dest="machine_file",
             type=Path,
             default=None,
             metavar="FILE",
@@ -522,7 +668,10 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     mem_inv.add_argument("memory_id", help="26-char ULID of the entry to invalidate.")
     mem_inv.add_argument("reason", help="Why this entry is no longer valid.")
 
-    hist_p = sub.add_parser("history", help="Search persisted transcripts and run data.")
+    hist_p = sub.add_parser(
+        "history",
+        help="Cross-run search over persisted transcripts and run data (per-run views: `runs`).",
+    )
     hist_sub = hist_p.add_subparsers(dest="history_command", required=True)
     hist_search = hist_sub.add_parser("search", help="ripgrep-backed search over all runs.")
     hist_search.add_argument("query", help="Pattern (passed to rg --fixed-strings by default).")
@@ -533,50 +682,6 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "--run", default="", help="Restrict to a single run id (default: all runs)."
     )
     hist_search_run.completer = _complete_run_ids  # type: ignore[attr-defined]
-
-    hist_graph = hist_sub.add_parser(
-        "graph",
-        help="Render the persisted task graph for a run as a DFS tree.",
-    )
-    hist_graph_run = hist_graph.add_argument(
-        "run",
-        nargs="?",
-        default="",
-        help="Run id (or unambiguous prefix). Defaults to the most recent run.",
-    )
-    hist_graph_run.completer = _complete_run_ids  # type: ignore[attr-defined]
-
-    hist_tr = hist_sub.add_parser(
-        "transcript",
-        help="Render a run's full LLM conversation (the lossless transcripts) as Markdown.",
-    )
-    hist_tr_run = hist_tr.add_argument(
-        "run",
-        nargs="?",
-        default="",
-        help="Run id (or unambiguous prefix). Defaults to the most recent run.",
-    )
-    hist_tr_run.completer = _complete_run_ids  # type: ignore[attr-defined]
-    hist_tr.add_argument(
-        "--json",
-        dest="as_json",
-        action="store_true",
-        help="Emit the raw transcript array (the per-call request/response objects) instead.",
-    )
-    hist_tr.add_argument(
-        "--no-thinking", action="store_true", help="Omit the model's reasoning/thinking blocks."
-    )
-    hist_tr.add_argument(
-        "--tools",
-        choices=("both", "calls", "none"),
-        default="both",
-        help="Show tool calls + results (both), calls only, or neither.",
-    )
-    hist_tr.add_argument(
-        "--seq",
-        default="",
-        help="Restrict to a round-trip seq window, e.g. 3 or 3-7 (default: all).",
-    )
 
     init_p = sub.add_parser(
         "init",
@@ -649,29 +754,6 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
             "Comma-separated adversarial stances for the panel seats, cycled across"
             " --reviewers (e.g. 'security,correctness,tests'). Default: a built-in set."
         ),
-    )
-
-    diff_p = sub.add_parser(
-        "diff",
-        help="Print the git diff produced by a run (manifest.base_sha -> HEAD of run branch).",
-    )
-    diff_run = diff_p.add_argument(
-        "run_id",
-        nargs="?",
-        default="",
-        help="Run id (or unique prefix). Omit to diff the most recent run.",
-    )
-    diff_run.completer = _complete_run_ids  # type: ignore[attr-defined]
-    diff_p.add_argument(
-        "--stat",
-        action="store_true",
-        help="Show --stat summary instead of the full patch.",
-    )
-    diff_p.add_argument(
-        "--paths",
-        nargs="*",
-        default=(),
-        help="Restrict the diff to these paths.",
     )
 
     mcp_p = sub.add_parser(
