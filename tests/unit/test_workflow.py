@@ -120,6 +120,63 @@ def test_call_with_retry_reraises_after_retries_exhausted() -> None:
     assert provider.call.call_count == 2
 
 
+def _empty_tool_call_resp() -> ProviderResponse:
+    """A self-contradictory response: stop_reason=tool_calls but no tool_use/text
+    (the GLM-via-OpenRouter post-restart flake)."""
+    return ProviderResponse(
+        text="",
+        tool_uses=(),
+        stop_reason="tool_calls",
+        input_tokens=1,
+        output_tokens=20,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+    )
+
+
+def test_call_with_retry_retries_empty_tool_call_response() -> None:
+    """An empty finish=tool_calls response (no tool_use, no text) is retried; the
+    recovered real response is returned."""
+    provider = MagicMock()
+    provider.call.side_effect = [_empty_tool_call_resp(), _tool_resp("read_file", {"path": "x"})]
+    wf = _wf(provider=provider, provider_retry_count=4, provider_retry_delay_s=0.001)
+    out = wf._call_with_retry(system="s", messages=[], tools=[])  # pyright: ignore[reportPrivateUsage]
+    assert out.tool_uses  # recovered to a real tool call
+    assert provider.call.call_count == 2
+
+
+def test_call_with_retry_returns_last_empty_after_exhausting() -> None:
+    """If every attempt is empty, return the last empty response (the loop's
+    went_quiet handler takes over) -- never raise / assert-fail."""
+    provider = MagicMock()
+    provider.call.return_value = _empty_tool_call_resp()
+    wf = _wf(provider=provider, provider_retry_count=2, provider_retry_delay_s=0.001)
+    out = wf._call_with_retry(system="s", messages=[], tools=[])  # pyright: ignore[reportPrivateUsage]
+    assert out.stop_reason == "tool_calls" and not out.tool_uses
+    assert provider.call.call_count == 3  # 1 initial + 2 retries
+
+
+def test_is_empty_tool_call_response_discriminates() -> None:
+    from agent6.workflows.loop import (
+        _is_empty_tool_call_response,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    assert _is_empty_tool_call_response(_empty_tool_call_resp())
+    assert not _is_empty_tool_call_response(_resp("hi"))  # has text -> a silent finish
+    assert not _is_empty_tool_call_response(_tool_resp("read_file"))  # has a tool_use
+    # length-truncated reasoning starvation is handled separately, not retried here.
+    starved = ProviderResponse(
+        text="",
+        tool_uses=(),
+        stop_reason="length",
+        input_tokens=1,
+        output_tokens=20,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+    )
+    assert not _is_empty_tool_call_response(starved)
+
+
 def test_call_with_retry_default_rides_out_multiple_flaps() -> None:
     """The default retry budget survives more than one consecutive transient
     disconnect. Regression: a single retry (the old default) aborted long,

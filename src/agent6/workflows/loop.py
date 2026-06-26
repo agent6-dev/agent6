@@ -182,6 +182,11 @@ if TYPE_CHECKING:
 # the normal backoff.
 _NON_RETRYABLE_HTTP_STATUSES = frozenset({400, 401, 402, 403, 404, 422})
 
+# Finish/stop reasons that promise a tool call. A response carrying one of these
+# but with NO tool_use and NO text is self-contradictory and gets retried (see
+# _is_empty_tool_call_response).
+_TOOL_CALL_STOP_REASONS = frozenset({"tool_calls", "tool_use"})
+
 # cache_control marker on the initial user message
 # so the system + initial context get cached across the loop's turns.
 _CACHE_CONTROL_EPHEMERAL: dict[str, str] = {"type": "ephemeral"}
@@ -302,6 +307,23 @@ _PLAN_BUDGET_NUDGE = (
     " rough, plan that is actually delivered is far more useful than an"
     " exhaustive one you never emit. Do not call any other tool first."
 )
+
+
+def _is_empty_tool_call_response(resp: Any) -> bool:
+    """A self-contradictory provider response: the finish/stop reason says the
+    model stopped to make a tool call, but no tool_use and no text came back.
+
+    Observed live with GLM via OpenRouter after a tier-2 context restart (~50% of
+    turns): finish_reason=tool_calls with an empty payload (~20 reasoning tokens,
+    no content, no tool_calls). A blind retry of the identical request recovers it
+    about half the time; without one the loop counts it as went_quiet and the run
+    dies at the first compaction. Excludes stop_reason=="length" (deterministic
+    reasoning starvation, handled separately with its own nudge)."""
+    return (
+        str(getattr(resp, "stop_reason", "")) in _TOOL_CALL_STOP_REASONS
+        and not resp.tool_uses
+        and not (resp.text or "").strip()
+    )
 
 
 def _first_ready_subtask(nodes: dict[str, Any]) -> str | None:
@@ -2736,7 +2758,7 @@ class Workflow:
         last_exc: ProviderError | None = None
         for attempt in range(1, attempts + 1):
             try:
-                return self.provider.call(
+                resp = self.provider.call(
                     system=system,
                     messages=messages,
                     tools=tools,
@@ -2771,6 +2793,27 @@ class Workflow:
                         error=str(exc)[:200],
                     )
                 raise
+            # A self-contradictory empty tool-call response (GLM via OpenRouter,
+            # ~50% after a context restart): retry the identical request, which
+            # recovers it about half the time. Bounded by the same attempt budget;
+            # if every attempt comes back empty the loop's went_quiet handler takes
+            # over. A short delay (no exponential growth) -- this is model
+            # flakiness, not rate-limiting.
+            if _is_empty_tool_call_response(resp) and attempt < attempts:
+                delay = min(self.provider_retry_delay_s, 1.0) * random.uniform(0.5, 1.0)  # noqa: S311
+                self._log(
+                    f"LOOP: empty tool-call response attempt {attempt}/{attempts}"
+                    f" (stop_reason={resp.stop_reason!r}, no tool_use/text);"
+                    f" retrying in {delay:.2f}s"
+                )
+                self._emit(
+                    "loop.provider.empty_tool_call_retry",
+                    attempt=attempt,
+                    stop_reason=str(resp.stop_reason),
+                )
+                time.sleep(delay)
+                continue
+            return resp
         # Defensive: loop above either returns or raises; this is unreachable.
         # Kept for type-checker exhaustiveness in case the loop body changes.
         assert last_exc is not None
