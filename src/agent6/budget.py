@@ -93,6 +93,14 @@ def usd_budget_to_tokens(
     if price is None:
         return None
     in_per_mtok, out_per_mtok = price
+    if in_per_mtok <= 0 or out_per_mtok <= 0:
+        # A free or provider-unpriced model (OpenRouter has reported 0/0 for
+        # some routes, e.g. z-ai/glm-5.2 transiently): a USD budget can't be
+        # turned into a token ceiling, and the runtime USD tracker reads the
+        # same 0 cost, so there is nothing to convert. Return None like the
+        # no-price case (caller keeps the operator token ceilings) instead of
+        # dividing by zero.
+        return None
     ratio = INPUT_TO_OUTPUT_RATIO_FOR_USD_BUDGET
     # Solve: input_usd + output_usd = max_usd
     #        input_usd = ratio * output_usd  (by ratio of tokens at their

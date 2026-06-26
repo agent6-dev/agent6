@@ -23,6 +23,7 @@ def price_cache(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPa
                 "pricing": {
                     "claude-sonnet-4-5": [3.0, 15.0],
                     "claude-sonnet-4-20250514": [3.0, 15.0],
+                    "free-or-unpriced": [0.0, 0.0],  # OpenRouter reports 0/0 for some routes
                 },
             }
         ),
@@ -33,6 +34,19 @@ def price_cache(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPa
 
 def _t(*, input_max: int = 100, output_max: int = 100) -> BudgetTracker:
     return BudgetTracker(max_input_tokens=input_max, max_output_tokens=output_max)
+
+
+def test_usd_budget_to_tokens_zero_priced_model_returns_none_not_crash() -> None:
+    """A 0/0-priced model (free, or transiently unpriced by OpenRouter) must
+    return None like the no-price case, not raise ZeroDivisionError -- which
+    crashed `agent6 run --max-usd` at config load."""
+    from agent6.budget import usd_budget_to_tokens
+
+    assert usd_budget_to_tokens(2.0, worker_model="free-or-unpriced") is None
+    assert usd_budget_to_tokens(2.0, worker_model="not-in-cache-at-all") is None
+    # A normally-priced model still converts.
+    converted = usd_budget_to_tokens(2.0, worker_model="claude-sonnet-4-5")
+    assert converted is not None and converted[0] > 0 and converted[1] > 0
 
 
 def test_usd_ceiling_counts_cache_tokens_token_caps_would_miss() -> None:
