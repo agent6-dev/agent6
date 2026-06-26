@@ -17,6 +17,7 @@ the message list; the loop owns the policy of when to call them.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 ELISION_PLACEHOLDER = (
@@ -83,6 +84,39 @@ def cap_tool_result(content: str, *, tool_name: str) -> str:
         },
         ensure_ascii=False,
     )
+
+
+_CHECKOFF_FENCE_RE = re.compile(r"```checkoff\s*\n(.*?)\n```", re.DOTALL)
+
+
+def parse_checkoff(text: str) -> tuple[list[str], list[str]]:
+    """Extract a tier-2 compaction check-off from the summariser's output.
+
+    The summariser is asked to append a fenced ```checkoff block holding
+    ``{"completed_ids": [...], "new_tasks": [...]}`` so agent6 can mark finished
+    tasks done and queue newly-discovered ones in the curator-owned DAG (the
+    model rarely calls update_task itself -- observed live). Returns
+    ``(completed_ids, new_task_titles)``. Best-effort and total: a missing or
+    malformed block yields ``([], [])`` so a bad summary never breaks the run.
+    """
+    m = _CHECKOFF_FENCE_RE.search(text)
+    if m is None:
+        return [], []
+    try:
+        data = json.loads(m.group(1))
+    except (ValueError, TypeError):
+        return [], []
+    if not isinstance(data, dict):
+        return [], []
+    completed = [s for s in data.get("completed_ids", []) if isinstance(s, str) and s]
+    new_tasks = [s.strip() for s in data.get("new_tasks", []) if isinstance(s, str) and s.strip()]
+    return completed, new_tasks
+
+
+def strip_checkoff(text: str) -> str:
+    """Remove the ```checkoff block from a summary before it re-enters context;
+    it is agent6 bookkeeping, not narrative the restarted worker should re-read."""
+    return _CHECKOFF_FENCE_RE.sub("", text).strip()
 
 
 def context_chars(messages: list[dict[str, Any]]) -> int:

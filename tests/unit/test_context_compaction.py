@@ -9,7 +9,36 @@ from typing import Any
 from agent6.workflows._compaction import (
     compact_old_tool_results,
     context_chars,
+    parse_checkoff,
+    strip_checkoff,
 )
+
+
+def test_parse_checkoff_valid_block() -> None:
+    text = (
+        "Progress summary here.\n\n"
+        '```checkoff\n{"completed_ids": ["01A", "01B"], "new_tasks": ["fix the parser", ""]}\n```'
+    )
+    completed, new_tasks = parse_checkoff(text)
+    assert completed == ["01A", "01B"]
+    assert new_tasks == ["fix the parser"]  # empty title filtered
+
+
+def test_parse_checkoff_absent_or_malformed() -> None:
+    assert parse_checkoff("no block at all") == ([], [])
+    assert parse_checkoff("```checkoff\nnot json\n```") == ([], [])
+    assert parse_checkoff('```checkoff\n["not", "a", "dict"]\n```') == ([], [])
+    # non-string ids/titles are dropped
+    assert parse_checkoff('```checkoff\n{"completed_ids": [1, "ok"], "new_tasks": [2]}\n```') == (
+        ["ok"],
+        [],
+    )
+
+
+def test_strip_checkoff_removes_block() -> None:
+    text = 'the summary\n\n```checkoff\n{"completed_ids": []}\n```'
+    assert strip_checkoff(text) == "the summary"
+    assert strip_checkoff("no block") == "no block"
 
 
 def test_context_chars_counts_text_tool_use_and_tool_results() -> None:

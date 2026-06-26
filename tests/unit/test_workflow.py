@@ -1317,6 +1317,50 @@ def test_summarise_and_restart_replaces_history() -> None:
     summariser.call.assert_called_once()
 
 
+def test_summarise_and_restart_applies_dag_checkoff() -> None:
+    """At tier-2 compaction agent6 asks the summariser which tasks finished and
+    applies it to the curator (passes completed, queues discovered), strips the
+    bookkeeping block from the restart, and ignores hallucinated task ids."""
+
+    class _FakeClient:
+        def __init__(self) -> None:
+            self._nodes = {
+                "01ROOT": {"parent_id": None, "status": "in_progress", "title": "review repo"},
+                "01DONE": {"parent_id": "01ROOT", "status": "pending", "title": "audit providers"},
+                "01OPEN": {"parent_id": "01ROOT", "status": "pending", "title": "audit sandbox"},
+            }
+            self.passed: list[str] = []
+            self.added: list[tuple[str | None, str]] = []
+
+        def get_state(self) -> dict[str, Any]:
+            return {"nodes": self._nodes}
+
+        def update_status(self, intent: Any) -> None:
+            self.passed.append(intent.id)
+            self._nodes[intent.id]["status"] = intent.new_status
+
+        def add_subtask(self, intent: Any) -> Any:
+            self.added.append((intent.parent_id, intent.draft.title))
+            return MagicMock()
+
+    fake = _FakeClient()
+    summariser = MagicMock()
+    summariser.call.return_value = _resp(
+        "Progress: finished the providers audit.\n\n"
+        '```checkoff\n{"completed_ids": ["01DONE", "01HALLUCINATED"], '
+        '"new_tasks": ["fix the budget rounding bug"]}\n```'
+    )
+    wf = _wf(summariser_provider=summariser, graph_client=fake)
+    messages = _long_history(6)
+    wf._summarise_and_restart(messages)  # pyright: ignore[reportPrivateUsage]
+
+    assert fake.passed == ["01DONE"]  # valid completed id passed; hallucinated id ignored
+    assert fake.added == [("01ROOT", "fix the budget rounding bug")]  # queued under the root
+    restart_text = messages[1]["content"][0]["text"]
+    assert "providers audit" in restart_text
+    assert "checkoff" not in restart_text  # bookkeeping block stripped from the restart
+
+
 def test_summarise_and_restart_falls_back_to_worker_provider() -> None:
     worker = MagicMock()
     worker.call.return_value = _resp("summary text")

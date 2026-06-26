@@ -79,8 +79,9 @@ Notes:
   end), `stage` (stage but never commit), and `none`.
 - **DAG-as-tool.** `add_task` / `update_task` /
   `set_cursor` / `list_tasks` write to a curator-owned side
-  store. They do not gate the loop; they are notes the worker keeps
-  for itself and the user.
+  store. They do not gate which tool runs next; they are the worker's
+  task breakdown. agent6 reads the DAG at compaction (below) to keep task
+  state accurate so it survives a context restart.
 - **Context compaction.** Long runs are kept inside the model's context
   window in two tiers (thresholds in `[context]`): at
   `drop_at_chars` the oldest tool_results are replaced by a
@@ -88,7 +89,11 @@ Notes:
   the elided history is summarised by the `reviewer` model and the
   conversation restarts from (task + summary). The curator-owned task
   DAG survives the restart, so the worker recovers task-level state with
-  `list_tasks` instead of starting over.
+  `list_tasks` instead of starting over. At that tier-2 restart agent6
+  also asks the summariser which tracked tasks the transcript shows
+  finished and what new work it found, then marks the finished ones
+  `passed` and queues the new ones in the DAG -- so task state stays
+  accurate even though weak models rarely call `update_task` themselves.
 - **`finish_run(summary)`** is the only terminal tool. Calling it
   emits a `run.end` event and returns control to the CLI.
 

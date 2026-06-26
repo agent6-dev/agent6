@@ -64,6 +64,12 @@ from agent6.workflows._compaction import (
 from agent6.workflows._compaction import (
     context_chars as _context_chars,
 )
+from agent6.workflows._compaction import (
+    parse_checkoff as _parse_checkoff,
+)
+from agent6.workflows._compaction import (
+    strip_checkoff as _strip_checkoff,
+)
 from agent6.workflows._context import load_repo_summary
 from agent6.workflows._critic import (
     CritiqueResult as _CritiqueResult,
@@ -2228,9 +2234,29 @@ class Workflow:
         transcript = _format_messages_tail_for_critic(
             messages[1:], max_messages=len(messages), max_chars=60_000
         )
+        # The DAG is agent6's compaction memory: at each restart we ask the
+        # summariser to check off finished tasks and surface newly-found ones, so
+        # task state stays accurate across compaction without depending on the
+        # worker calling update_task (which weak models rarely do -- observed live).
+        open_tasks = self._open_tasks_for_checkoff()
+        if open_tasks:
+            task_lines = "\n".join(f"- {tid}: {title}" for tid, title in open_tasks)
+            checkoff_req = (
+                "\n\nThe worker is tracking these OPEN tasks:\n"
+                f"{task_lines}\n\n"
+                "After the summary, append a fenced block exactly like:\n"
+                "```checkoff\n"
+                '{"completed_ids": ["<ids the transcript clearly shows finished>"], '
+                '"new_tasks": ["<short title of work discovered but not yet tracked>"]}\n'
+                "```\n"
+                "Mark a task completed ONLY if the transcript clearly shows it done;"
+                " leave the rest open. Use [] when none apply."
+            )
+        else:
+            checkoff_req = ""
         user_msg = (
-            "Summarise the following agent transcript for a context restart.\n\n"
-            f"TRANSCRIPT (oldest first):\n{transcript}"
+            "Summarise the following agent transcript for a context restart."
+            f"{checkoff_req}\n\nTRANSCRIPT (oldest first):\n{transcript}"
         )
         self._log(f"LOOP: tier-2 compaction summarise-and-restart ({len(messages)} msgs)")
         self._emit("loop.compact.summarise.call", messages=len(messages))
@@ -2248,16 +2274,91 @@ class Workflow:
             self._log(f"  tier-2 summarise failed: {exc}; keeping current context")
             self._emit("loop.compact.summarise.failed", error=str(exc)[:200])
             return
-        summary = (resp.text or "").strip()
-        if not summary:
+        raw = (resp.text or "").strip()
+        if not raw:
             self._emit("loop.compact.summarise.failed", error="empty summary")
             return
+        # Apply the check-off to the curator (best-effort) and strip the block
+        # from the summary so the restarted worker sees narrative, not bookkeeping.
+        if open_tasks:
+            self._apply_compaction_checkoff(raw, valid_ids={tid for tid, _ in open_tasks})
+        summary = _strip_checkoff(raw) if open_tasks else raw
         restart = {
             "role": "user",
             "content": [{"type": "text", "text": _CONTEXT_RESTART_NOTICE + summary}],
         }
         messages[:] = [original, restart]
         self._emit("loop.compact.summarise.done", summary_chars=len(summary))
+
+    def _open_tasks_for_checkoff(self) -> list[tuple[str, str]]:
+        """(id, title) of every pending/in_progress task in the DAG, for the
+        tier-2 compaction check-off. Best-effort: no curator or an IPC hiccup
+        yields an empty list, so compaction degrades to the plain summary."""
+        if self.graph_client is None:
+            return []
+        try:
+            state = self.graph_client.get_state()
+        except Exception as exc:  # dead socket / IPC error must not break compaction
+            self._log(f"LOOP: checkoff task list skipped: {exc}")
+            return []
+        nodes = state.get("nodes", {})
+        if not isinstance(nodes, dict):
+            return []
+        out: list[tuple[str, str]] = []
+        for nid, node in nodes.items():
+            if node.get("status") in ("pending", "in_progress"):
+                out.append((nid, str(node.get("title", ""))[:120]))
+        return out
+
+    def _apply_compaction_checkoff(self, summary_text: str, *, valid_ids: set[str]) -> None:
+        """Parse the summariser's ```checkoff block and apply it to the curator:
+        mark completed tasks passed, queue newly-discovered ones as children of
+        the first root. Best-effort: a curator hiccup must never break the run."""
+        if self.graph_client is None:
+            return
+        completed, new_tasks = _parse_checkoff(summary_text)
+        completed = [cid for cid in completed if cid in valid_ids]  # ignore hallucinated ids
+        if not completed and not new_tasks:
+            return
+        changed = False
+        try:
+            for cid in completed:
+                self.graph_client.update_status(
+                    UpdateStatusIntent(id=cid, new_status="passed", note="compaction check-off")
+                )
+                changed = True
+            if new_tasks:
+                root_id = self._first_root_id()
+                for title in new_tasks[:8]:  # cap: a runaway summary can't flood the DAG
+                    self.graph_client.add_subtask(
+                        AddSubtaskIntent(
+                            parent_id=root_id,
+                            draft=TaskNodeDraft(title=title, created_by="planner"),
+                        )
+                    )
+                    changed = True
+        except Exception as exc:  # IPC/validation glitch must not break the run
+            self._log(f"LOOP: compaction check-off partial ({exc})")
+        if changed:
+            self._log(
+                f"LOOP: compaction check-off -- passed {len(completed)}, queued {len(new_tasks)}"
+            )
+            self._emit_graph_snapshot()
+
+    def _first_root_id(self) -> str | None:
+        """The first root task id (parent_id is None), or None. Best-effort."""
+        if self.graph_client is None:
+            return None
+        try:
+            state = self.graph_client.get_state()
+        except Exception:
+            return None
+        nodes = state.get("nodes", {})
+        if isinstance(nodes, dict):
+            for nid, node in nodes.items():
+                if node.get("parent_id") is None:
+                    return nid
+        return None
 
     def _maybe_revise_prompt(self, user_task: str, repo: RepoSummary) -> str:
         if self.revise_prompt == "off":
