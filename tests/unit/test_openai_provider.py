@@ -71,6 +71,38 @@ def test_call_translates_messages_and_parses_usage() -> None:
     assert resp.cache_read_tokens == 40
 
 
+def test_openai_direct_reasoning_uses_top_level_reasoning_effort() -> None:
+    """api.openai.com o-series/gpt-5 take a TOP-LEVEL ``reasoning_effort``; the
+    nested ``reasoning`` object (OpenRouter's convention) 400s there. A non-direct
+    host keeps the nested object. (Found by GLM during dogfood, rewritten here.)"""
+    captured: dict[str, Any] = {}
+
+    def fake_post(*_a: Any, **kw: Any) -> httpx.Response:
+        captured["body"] = json.loads(kw["content"])
+        return _fake_response(
+            {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}], "usage": {}}
+        )
+
+    # OpenAI-direct reasoning model (default base_url = api.openai.com).
+    direct = OpenAIProvider(api_key="sk", model="o3-mini", reasoning_effort="medium")
+    with mock.patch("httpx.post", side_effect=fake_post):
+        direct.call(system="s", messages=[{"role": "user", "content": "hi"}])
+    assert captured["body"].get("reasoning_effort") == "medium"
+    assert "reasoning" not in captured["body"]
+
+    # Non-direct host (OpenRouter): nested reasoning object, no top-level field.
+    router = OpenAIProvider(
+        api_key="sk",
+        model="z-ai/glm-5.2",
+        base_url="https://openrouter.ai/api/v1",
+        reasoning_effort="high",
+    )
+    with mock.patch("httpx.post", side_effect=fake_post):
+        router.call(system="s", messages=[{"role": "user", "content": "hi"}])
+    assert captured["body"].get("reasoning") == {"effort": "high"}
+    assert "reasoning_effort" not in captured["body"]
+
+
 def test_call_merges_extra_body() -> None:
     # extra_body (e.g. OpenRouter `provider` routing) is merged into the request
     # body, last, so an operator can pin a caching/fast backend.

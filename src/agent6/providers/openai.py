@@ -363,19 +363,25 @@ class OpenAIProvider:
             effective_reasoning = (
                 reasoning_effort if reasoning_effort is not None else self.reasoning_effort
             )
-            if effective_reasoning is not None:
-                if effective_reasoning.strip().lower() == "off":
-                    body["reasoning"] = {"enabled": False}
-                else:
-                    body["reasoning"] = {"effort": effective_reasoning.strip().lower()}
+            if effective_reasoning is None:
+                env_override = os.environ.get("AGENT6_REASONING_EFFORT", "").strip().lower()
+                effective_reasoning = (
+                    env_override if env_override in ("off", "low", "medium", "high") else "low"
+                )
+            effort = effective_reasoning.strip().lower()
+            if is_openai_direct_reasoning:
+                # api.openai.com Chat Completions o-series/gpt-5 take a TOP-LEVEL
+                # ``reasoning_effort`` (low/medium/high), NOT the nested
+                # ``reasoning`` object OpenRouter invented -- sending the nested
+                # object there is an unknown parameter and 400s. Reasoning cannot
+                # be disabled on o-series, so "off" omits the param (server
+                # default) rather than sending {"enabled": False}.
+                if effort != "off":
+                    body["reasoning_effort"] = effort
+            elif effort == "off":
+                body["reasoning"] = {"enabled": False}
             else:
-                override = os.environ.get("AGENT6_REASONING_EFFORT", "").strip().lower()
-                if override == "off":
-                    body["reasoning"] = {"enabled": False}
-                elif override in ("low", "medium", "high"):
-                    body["reasoning"] = {"effort": override}
-                else:
-                    body["reasoning"] = {"effort": "low"}
+                body["reasoning"] = {"effort": effort}
         # OpenAI-direct o-series/reasoning models reject any explicit
         # ``temperature`` (only the server default is accepted), so omit it
         # there. Other hosts forward it as-is.
