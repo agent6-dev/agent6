@@ -10,7 +10,7 @@ summarizer) can be routed through this provider via
 `[models.<role>]` in your config.
 
 Single HTTP call site, same shape as
-`agent6.providers.anthropic`. Uses httpx directly (no SDK) for a
+`agent6.providers.anthropic`. Uses httpx2 directly (no SDK) for a
 smaller audit surface.
 
 **- tool-use translation (Shape B)**: agent6's internal
@@ -56,7 +56,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlsplit
 
-import httpx
+import httpx2
 
 from agent6.budget import BudgetTracker
 from agent6.providers.anthropic import (
@@ -74,7 +74,7 @@ DEFAULT_MAX_TOKENS = 8192
 
 # SSE idle-since-last-DATA watchdog.
 #
-# httpx's ``timeout`` (whether float or ``httpx.Timeout`` with ``read=``)
+# httpx2's ``timeout`` (whether float or ``httpx2.Timeout`` with ``read=``)
 # is reset on EVERY received byte. OpenRouter (and other gateways
 # fronted by Cloudflare) emits ``:`` SSE comment heartbeats every
 # ~15s while a request is in flight. Those heartbeats reset the
@@ -88,7 +88,7 @@ DEFAULT_MAX_TOKENS = 8192
 # Fix: track time since the last meaningful SSE ``data:`` line
 # (anything that isn't a heartbeat comment). If that goes past
 # ``_STREAM_IDLE_TIMEOUT_S``, close the response from a watchdog
-# thread; the blocking ``iter_lines`` then raises an ``httpx.HTTPError``
+# thread; the blocking ``iter_lines`` then raises an ``httpx2.HTTPError``
 # that we re-raise as ``ProviderError`` with a descriptive message so
 # the loop can retry-or-quit at its own layer.
 #
@@ -467,7 +467,7 @@ class OpenAIProvider:
                     content=json.dumps(body).encode("utf-8"),
                     timeout=self.timeout_s,
                 )
-            except httpx.HTTPError as exc:
+            except httpx2.HTTPError as exc:
                 if self.transcript_sink is not None:
                     self.transcript_sink.record(
                         url=url,
@@ -589,7 +589,7 @@ class OpenAIProvider:
         # Mutable holder so the watchdog can reach the response without
         # racing on assignment (the ``with`` block runs in a different
         # frame from the watchdog closure).
-        resp_holder: dict[str, httpx.Response] = {}
+        resp_holder: dict[str, httpx2.Response] = {}
 
         def _watchdog() -> None:
             while not watchdog_stop.wait(_STREAM_WATCHDOG_TICK_S):
@@ -638,7 +638,7 @@ class OpenAIProvider:
                     # SSE comment heartbeats (OpenRouter, etc).
                     # Deliberately do NOT update last_data_at
                     # here -- heartbeats are exactly the bytes that mask
-                    # an upstream hang from httpx's read timeout.
+                    # an upstream hang from httpx2's read timeout.
                     if line.startswith(":"):
                         continue
                     if not line.startswith("data:"):
@@ -710,7 +710,7 @@ class OpenAIProvider:
                             args_piece = func.get("arguments")
                             if isinstance(args_piece, str) and args_piece:
                                 tool_arg_buf.setdefault(idx, []).append(args_piece)
-        except httpx.HTTPError as exc:
+        except httpx2.HTTPError as exc:
             if idle_killed.is_set():
                 # Convert the watchdog-induced HTTPError into a
                 # purpose-specific ProviderError so the loop's error

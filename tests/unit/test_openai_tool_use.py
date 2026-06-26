@@ -7,7 +7,7 @@ in both directions: outgoing messages (tool_use -> tool_calls,
 tool_result -> role=tool) and incoming responses (tool_calls ->
 tool_uses tuple in Anthropic shape).
 
-Uses a stub `httpx.post` so no network call is made; the test asserts
+Uses a stub `httpx2.post` so no network call is made; the test asserts
 on the request body and synthesises an OpenAI-shape response.
 """
 
@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 
 from agent6.providers import OpenAIProvider, ToolDefinition
@@ -254,7 +254,7 @@ def test_call_with_tools_translates_request_and_response(
             ),
         )
 
-    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr(httpx2, "post", fake_post)
     provider = OpenAIProvider(api_key="k", model="gpt-x")
     tools = [
         ToolDefinition(
@@ -316,7 +316,7 @@ def test_response_with_malformed_tool_arguments_doesnt_crash(
             ),
         )
 
-    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr(httpx2, "post", fake_post)
     provider = OpenAIProvider(api_key="k", model="gpt-x")
     resp = provider.call(system="s", messages=[{"role": "user", "content": "u"}])
     assert resp.tool_uses[0]["input"] == {"_raw_arguments": '{"path": "foo.py'}
@@ -354,7 +354,7 @@ def test_huge_malformed_tool_arguments_are_capped(
             ),
         )
 
-    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr(httpx2, "post", fake_post)
     provider = OpenAIProvider(api_key="k", model="gpt-x")
     resp = provider.call(system="s", messages=[{"role": "user", "content": "u"}])
     parsed = resp.tool_uses[0]["input"]
@@ -380,7 +380,7 @@ def test_extended_thinking_silently_ignored(monkeypatch: pytest.MonkeyPatch) -> 
             payload=_ok_response({"role": "assistant", "content": "ok"}),
         )
 
-    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr(httpx2, "post", fake_post)
     provider = OpenAIProvider(api_key="k", model="gpt-x")
     provider.call(
         system="s",
@@ -402,7 +402,7 @@ def test_no_tools_path_still_works(monkeypatch: pytest.MonkeyPatch) -> None:
             payload=_ok_response({"role": "assistant", "content": "hi"}),
         )
 
-    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr(httpx2, "post", fake_post)
     provider = OpenAIProvider(api_key="k", model="gpt-x")
     resp = provider.call(system="s", messages=[{"role": "user", "content": "u"}])
     assert "tools" not in captured["body"]
@@ -440,7 +440,7 @@ def test_full_loop_message_roundtrip(monkeypatch: pytest.MonkeyPatch) -> None:
             ),
         )
 
-    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr(httpx2, "post", fake_post)
     provider = OpenAIProvider(api_key="k", model="gpt-x")
 
     # First call: simple user prompt.
@@ -528,7 +528,7 @@ def _call_with_text_content(
             },
         )
 
-    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr(httpx2, "post", fake_post)
     provider = OpenAIProvider(api_key="k", model="qwen2.5-coder")
     return provider.call(
         system="s",
@@ -604,7 +604,7 @@ def test_native_tool_calls_take_precedence_over_text(
             ),
         )
 
-    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr(httpx2, "post", fake_post)
     provider = OpenAIProvider(api_key="k", model="gpt-x")
     resp = provider.call(
         system="s",
@@ -773,7 +773,7 @@ def test_blank_name_native_tool_call_is_dropped(
             },
         )
 
-    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr(httpx2, "post", fake_post)
     provider = OpenAIProvider(api_key="k", model="qwen3-coder-30b")
     resp = provider.call(
         system="s",

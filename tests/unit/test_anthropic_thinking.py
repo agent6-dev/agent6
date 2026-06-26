@@ -18,7 +18,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 
 from agent6.providers import AnthropicProvider, TranscriptSink
@@ -50,7 +50,7 @@ def _capture_body(monkeypatch: pytest.MonkeyPatch, bodies: list[dict[str, Any]])
         bodies.append(json.loads(kwargs["content"]))
         return _FakeResponse(status_code=200, payload=_ok_payload())
 
-    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr(httpx2, "post", fake_post)
 
 
 @pytest.mark.parametrize("level", ["low", "medium", "high"])
@@ -212,7 +212,7 @@ def test_streaming_preserves_thinking_blocks(
     def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
         return _FakeStreamResponse(status_code=200, lines=_thinking_then_tool_stream())
 
-    monkeypatch.setattr(httpx, "stream", fake_stream)
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
 
     resp = provider.call(
         system="sys",

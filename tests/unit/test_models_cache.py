@@ -8,7 +8,7 @@ import json
 import time
 from pathlib import Path
 
-import httpx
+import httpx2
 import pytest
 
 from agent6 import models_cache
@@ -22,16 +22,16 @@ def cache_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 
 
 def _ok_response(ids: list[str]) -> object:
-    def _get(url: str, headers: dict[str, str], timeout: float) -> httpx.Response:
-        return httpx.Response(
-            200, json={"data": [{"id": i} for i in ids]}, request=httpx.Request("GET", url)
+    def _get(url: str, headers: dict[str, str], timeout: float) -> httpx2.Response:
+        return httpx2.Response(
+            200, json={"data": [{"id": i} for i in ids]}, request=httpx2.Request("GET", url)
         )
 
     return _get
 
 
 def test_fetches_and_caches_openai(cache_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(httpx, "get", _ok_response(["gpt-x", "gpt-y"]))
+    monkeypatch.setattr(httpx2, "get", _ok_response(["gpt-x", "gpt-y"]))
     entry = OpenAIProviderEntry(api_format="openai", base_url="https://api.openai.com/v1")
     out = models_cache.list_models("openai", entry, "sk-test")
     assert out == ["gpt-x", "gpt-y"]
@@ -44,10 +44,10 @@ def test_fresh_cache_skips_network(cache_home: Path, monkeypatch: pytest.MonkeyP
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"models": ["claude-cached"]}), encoding="utf-8")
 
-    def _boom(*a: object, **k: object) -> httpx.Response:
+    def _boom(*a: object, **k: object) -> httpx2.Response:
         raise AssertionError("network must not be hit when cache is fresh")
 
-    monkeypatch.setattr(httpx, "get", _boom)
+    monkeypatch.setattr(httpx2, "get", _boom)
     entry = AnthropicProviderEntry(api_format="anthropic")
     assert models_cache.list_models("anthropic", entry, "sk-test") == ["claude-cached"]
 
@@ -64,10 +64,10 @@ def test_stale_cache_used_on_network_error(
 
     os.utime(path, (old, old))
 
-    def _fail(*a: object, **k: object) -> httpx.Response:
-        raise httpx.ConnectError("no route")
+    def _fail(*a: object, **k: object) -> httpx2.Response:
+        raise httpx2.ConnectError("no route")
 
-    monkeypatch.setattr(httpx, "get", _fail)
+    monkeypatch.setattr(httpx2, "get", _fail)
     entry = OpenAIProviderEntry(api_format="openai", base_url="https://openrouter.ai/api/v1")
     assert models_cache.list_models("openrouter", entry, None) == ["stale-1"]
 
@@ -75,19 +75,21 @@ def test_stale_cache_used_on_network_error(
 def test_no_cache_network_error_returns_empty(
     cache_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def _fail(*a: object, **k: object) -> httpx.Response:
-        raise httpx.ConnectTimeout("slow")
+    def _fail(*a: object, **k: object) -> httpx2.Response:
+        raise httpx2.ConnectTimeout("slow")
 
-    monkeypatch.setattr(httpx, "get", _fail)
+    monkeypatch.setattr(httpx2, "get", _fail)
     entry = OpenAIProviderEntry(api_format="openai")
     assert models_cache.list_models("openai", entry, "sk") == []
 
 
 def test_never_raises_on_bad_payload(cache_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    def _garbage(*a: object, **k: object) -> httpx.Response:
-        return httpx.Response(200, text="not json", request=httpx.Request("GET", "http://x/models"))
+    def _garbage(*a: object, **k: object) -> httpx2.Response:
+        return httpx2.Response(
+            200, text="not json", request=httpx2.Request("GET", "http://x/models")
+        )
 
-    monkeypatch.setattr(httpx, "get", _garbage)
+    monkeypatch.setattr(httpx2, "get", _garbage)
     entry = OpenAIProviderEntry(api_format="openai")
     assert models_cache.list_models("openai", entry, "sk") == []
 
@@ -106,7 +108,7 @@ def test_unsafe_provider_name_still_fetches(
     cache_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # An unsafe name skips the cache but still fetches live (never raises).
-    monkeypatch.setattr(httpx, "get", _ok_response(["m1"]))
+    monkeypatch.setattr(httpx2, "get", _ok_response(["m1"]))
     entry = OpenAIProviderEntry(api_format="openai", base_url="https://api.openai.com/v1")
     assert models_cache.list_models("../evil", entry, "sk") == ["m1"]
     assert not (cache_home / "models").exists()  # nothing written outside
@@ -116,8 +118,8 @@ def test_unsafe_provider_name_still_fetches(
 
 
 def _ok_full(models: list[dict[str, object]]) -> object:
-    def _get(url: str, headers: dict[str, str], timeout: float) -> httpx.Response:
-        return httpx.Response(200, json={"data": models}, request=httpx.Request("GET", url))
+    def _get(url: str, headers: dict[str, str], timeout: float) -> httpx2.Response:
+        return httpx2.Response(200, json={"data": models}, request=httpx2.Request("GET", url))
 
     return _get
 
@@ -126,7 +128,7 @@ def test_caches_context_length_and_reads_it_back(
     cache_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        httpx,
+        httpx2,
         "get",
         _ok_full(
             [

@@ -17,7 +17,7 @@ the provider:
 * synthesises a non-streaming-shape response so ``_parse_response``
   yields the same ProviderResponse it would for a normal call;
 * surfaces HTTP errors as ``ProviderError``;
-* never calls ``httpx.stream`` when the callback is None.
+* never calls ``httpx2.stream`` when the callback is None.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ import json
 from typing import Any
 from unittest import mock
 
-import httpx
+import httpx2
 import pytest
 
 from agent6.providers import ProviderError
@@ -34,7 +34,7 @@ from agent6.providers.openai import OpenAIProvider
 
 
 class _FakeStreamResponse:
-    """Mimics the subset of httpx streaming Response we use."""
+    """Mimics the subset of httpx2 streaming Response we use."""
 
     def __init__(self, *, status_code: int, lines: list[str], error_body: str = "") -> None:
         self.status_code = status_code
@@ -162,7 +162,7 @@ def test_streaming_calls_back_on_each_text_delta() -> None:
         return _FakeStreamResponse(status_code=200, lines=_text_stream())
 
     pieces: list[str] = []
-    with mock.patch("httpx.stream", side_effect=fake_stream):
+    with mock.patch("httpx2.stream", side_effect=fake_stream):
         resp = provider.call(
             system="sys",
             messages=[{"role": "user", "content": "x"}],
@@ -187,7 +187,7 @@ def test_streaming_reassembles_tool_call_arguments_across_chunks() -> None:
     def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
         return _FakeStreamResponse(status_code=200, lines=_tool_stream())
 
-    with mock.patch("httpx.stream", side_effect=fake_stream):
+    with mock.patch("httpx2.stream", side_effect=fake_stream):
         resp = provider.call(
             system="sys",
             messages=[{"role": "user", "content": "x"}],
@@ -214,7 +214,7 @@ def test_streaming_swallows_callback_exception() -> None:
     def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
         return _FakeStreamResponse(status_code=200, lines=_text_stream())
 
-    with mock.patch("httpx.stream", side_effect=fake_stream):
+    with mock.patch("httpx2.stream", side_effect=fake_stream):
         resp = provider.call(
             system="sys",
             messages=[{"role": "user", "content": "x"}],
@@ -231,7 +231,7 @@ def test_streaming_http_error_raises_provider_error() -> None:
         return _FakeStreamResponse(status_code=429, lines=[], error_body='{"error": "rate limit"}')
 
     with (
-        mock.patch("httpx.stream", side_effect=fake_stream),
+        mock.patch("httpx2.stream", side_effect=fake_stream),
         pytest.raises(ProviderError, match="429"),
     ):
         provider.call(
@@ -245,10 +245,10 @@ def test_streaming_httpx_transport_error_raises_provider_error() -> None:
     provider = OpenAIProvider(api_key="sk-test", model="kimi")
 
     def boom(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
-        raise httpx.ReadTimeout("timed out")
+        raise httpx2.ReadTimeout("timed out")
 
     with (
-        mock.patch("httpx.stream", side_effect=boom),
+        mock.patch("httpx2.stream", side_effect=boom),
         pytest.raises(ProviderError, match="HTTP error streaming OpenAI"),
     ):
         provider.call(
@@ -261,10 +261,10 @@ def test_streaming_httpx_transport_error_raises_provider_error() -> None:
 def test_no_callback_does_not_stream() -> None:
     provider = OpenAIProvider(api_key="sk-test", model="kimi")
 
-    def fake_post(*_a: Any, **kw: Any) -> httpx.Response:
-        return httpx.Response(
+    def fake_post(*_a: Any, **kw: Any) -> httpx2.Response:
+        return httpx2.Response(
             status_code=200,
-            request=httpx.Request("POST", "https://api.openai.com/v1/chat/completions"),
+            request=httpx2.Request("POST", "https://api.openai.com/v1/chat/completions"),
             content=json.dumps(
                 {
                     "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
@@ -275,8 +275,8 @@ def test_no_callback_does_not_stream() -> None:
         )
 
     with (
-        mock.patch("httpx.post", side_effect=fake_post) as post_mock,
-        mock.patch("httpx.stream") as stream_mock,
+        mock.patch("httpx2.post", side_effect=fake_post) as post_mock,
+        mock.patch("httpx2.stream") as stream_mock,
     ):
         resp = provider.call(
             system="sys",
@@ -294,7 +294,7 @@ def test_streaming_idle_watchdog_kills_heartbeat_only_stream(
     """A stream that emits only ``:`` heartbeats must trip
     the idle watchdog. Without this guard, OpenRouter sessions where
     the upstream model wedges can pin the harness for 800+ seconds
-    while heartbeats keep httpx's read-timeout reset indefinitely.
+    while heartbeats keep httpx2's read-timeout reset indefinitely.
     """
     import threading
     import time
@@ -328,17 +328,17 @@ def test_streaming_idle_watchdog_kills_heartbeat_only_stream(
             while not self._closed.is_set():
                 yield ":OPENROUTER PROCESSING"
                 yield ""
-                # Block briefly; on close(), raise to mimic httpx.
+                # Block briefly; on close(), raise to mimic httpx2.
                 if self._closed.wait(0.05):
-                    raise httpx.ReadError("connection closed by watchdog")
-            raise httpx.ReadError("connection closed by watchdog")
+                    raise httpx2.ReadError("connection closed by watchdog")
+            raise httpx2.ReadError("connection closed by watchdog")
 
     def fake_stream(method: str, url: str, **kwargs: Any) -> _BlockingHeartbeatResponse:
         return _BlockingHeartbeatResponse()
 
     started = time.monotonic()
     with (
-        mock.patch("httpx.stream", side_effect=fake_stream),
+        mock.patch("httpx2.stream", side_effect=fake_stream),
         pytest.raises(ProviderError, match="idle for"),
     ):
         provider.call(
@@ -367,7 +367,7 @@ def test_streaming_idle_watchdog_does_not_fire_when_data_flows(
     def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
         return _FakeStreamResponse(status_code=200, lines=_text_stream())
 
-    with mock.patch("httpx.stream", side_effect=fake_stream):
+    with mock.patch("httpx2.stream", side_effect=fake_stream):
         resp = provider.call(
             system="sys",
             messages=[{"role": "user", "content": "x"}],

@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Anthropic provider.
 
-Single HTTP call site. Uses httpx directly (no SDK) for a smaller
+Single HTTP call site. Uses httpx2 directly (no SDK) for a smaller
 audit surface and pinned URL. Supports prompt caching via the
 `cache_control` block field on system / tool entries.
 """
@@ -20,7 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import httpx
+import httpx2
 
 from agent6.budget import BudgetTracker
 from agent6.providers.egress import http_post, http_stream
@@ -39,13 +39,13 @@ ANTHROPIC_VERTEX_VERSION = "vertex-2023-10-16"
 DEFAULT_MAX_TOKENS = 8192
 
 # Idle-since-last-data watchdog for the SSE streaming path. ``http_stream``
-# forwards ``timeout`` to httpx as a per-read gap that resets on every byte;
+# forwards ``timeout`` to httpx2 as a per-read gap that resets on every byte;
 # Anthropic ``ping`` heartbeats are bytes, so a wedged-but-pinging upstream
 # would otherwise block ``iter_lines`` forever with no spend cap (budget is
 # only recorded after the loop completes). We track time since the last
 # MEANINGFUL data event (anything that isn't a ``ping``) and have a daemon
 # thread close the response once it goes past ``_STREAM_IDLE_TIMEOUT_S``; the
-# blocking ``iter_lines`` then raises an ``httpx.HTTPError`` we convert to a
+# blocking ``iter_lines`` then raises an ``httpx2.HTTPError`` we convert to a
 # retryable ProviderError. Mirrors the OpenAI provider's watchdog; the
 # constants are duplicated here rather than imported because openai.py imports
 # from this module (importing back would be a cycle).
@@ -375,7 +375,7 @@ class AnthropicProvider:
                     content=json.dumps(body).encode("utf-8"),
                     timeout=self.timeout_s,
                 )
-            except httpx.HTTPError as exc:
+            except httpx2.HTTPError as exc:
                 if self.transcript_sink is not None:
                     self.transcript_sink.record(
                         url=url,
@@ -495,7 +495,7 @@ class AnthropicProvider:
 
         # idle-since-last-data watchdog. ``last_data_at`` is updated only on
         # meaningful SSE events; ``ping`` heartbeats do NOT count (they are
-        # exactly the bytes that mask an upstream hang from httpx's read
+        # exactly the bytes that mask an upstream hang from httpx2's read
         # timeout). A background thread closes the response once the idle
         # threshold is exceeded; the blocking ``iter_lines`` then raises and
         # we surface a descriptive, retryable ProviderError.
@@ -504,7 +504,7 @@ class AnthropicProvider:
         watchdog_stop = threading.Event()
         # Mutable holder so the watchdog can reach the response without racing
         # on assignment (the ``with`` body runs in a different frame).
-        resp_holder: dict[str, httpx.Response] = {}
+        resp_holder: dict[str, httpx2.Response] = {}
 
         def _watchdog() -> None:
             while not watchdog_stop.wait(_STREAM_WATCHDOG_TICK_S):
@@ -666,7 +666,7 @@ class AnthropicProvider:
                         raise ProviderError(
                             f"Anthropic stream error: {err.get('type')}: {err.get('message')}"
                         )
-        except httpx.HTTPError as exc:
+        except httpx2.HTTPError as exc:
             watchdog_stop.set()
             if idle_killed.is_set():
                 # Convert the watchdog-induced HTTPError into a purpose-specific

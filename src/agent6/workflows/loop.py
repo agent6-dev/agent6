@@ -545,7 +545,7 @@ class Workflow:
     compact_summarise_at_chars: int = _SUMMARISE_AT_CHARS
     # Retry the provider call on transient ProviderError before aborting the
     # run. Common cases: Anthropic 529 overload, Anthropic "Server disconnected
-    # without sending a response" (httpx RemoteProtocolError, no HTTP status),
+    # without sending a response" (httpx2 RemoteProtocolError, no HTTP status),
     # OpenRouter 502, brief socket timeouts. Such a disconnect can flap for a
     # few seconds, so a single retry (the previous default) was too weak: one
     # bad blip aborted a long, expensive run that is otherwise fully

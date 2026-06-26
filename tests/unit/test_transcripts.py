@@ -3,7 +3,7 @@
 """Tests for the Anthropic provider transcript writer.
 
 The critical security property: the literal `x-api-key` value must never
-land on disk. We monkeypatch httpx.post so no network call is made.
+land on disk. We monkeypatch httpx2.post so no network call is made.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 
 from agent6.providers import AnthropicProvider, ProviderError, TranscriptSink
@@ -59,7 +59,7 @@ def test_transcript_redacts_api_key_on_success(
             },
         )
 
-    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr(httpx2, "post", fake_post)
     resp = provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     assert resp.text == "hi"
     leaks = _scan_for_secret(tmp_path / "transcripts", api_key)
@@ -83,7 +83,7 @@ def test_transcript_redacts_api_key_on_http_error(
     def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
         return _FakeResponse(status_code=429, text="rate limited")
 
-    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr(httpx2, "post", fake_post)
     with pytest.raises(ProviderError):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     leaks = _scan_for_secret(tmp_path / "transcripts", api_key)
@@ -100,9 +100,9 @@ def test_transcript_redacts_api_key_on_network_error(
     )
 
     def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
-        raise httpx.ConnectError("no route")
+        raise httpx2.ConnectError("no route")
 
-    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr(httpx2, "post", fake_post)
     with pytest.raises(ProviderError):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     leaks = _scan_for_secret(tmp_path / "transcripts", api_key)

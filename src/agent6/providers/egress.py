@@ -13,7 +13,7 @@ This module is the transport seam. The provider call sites ask it to
 issue every request; if an endpoint has a broker socket registered, the
 request is dialled over that unix-domain socket (TLS stays end-to-end,
 the broker only ever splices ciphertext). If no socket is registered the
-request falls through to a plain ``httpx`` call, byte-for-byte identical
+request falls through to a plain ``httpx2`` call, byte-for-byte identical
 to the un-sandboxed path, so runs without it are unaffected.
 
 Fail-closed: the kernel network namespace is the actual security
@@ -33,7 +33,7 @@ import threading
 from collections.abc import Generator
 from urllib.parse import urlsplit
 
-import httpx
+import httpx2
 
 # (host, port) -> unix-domain socket path. Guarded by `_LOCK` because the
 # providers create per-call streaming watchdog threads; registration
@@ -85,16 +85,16 @@ def http_post(
     headers: dict[str, str],
     content: bytes,
     timeout: float,
-) -> httpx.Response:
+) -> httpx2.Response:
     """POST ``url``, transparently dialling the broker socket if one is
     registered for the URL's endpoint. TLS (when the URL is ``https``)
     is performed against the URL host as usual, so certificate
     verification and SNI are unchanged regardless of routing."""
     uds = _uds_for_url(url)
     if uds is None:
-        return httpx.post(url, headers=headers, content=content, timeout=timeout)
-    transport = httpx.HTTPTransport(uds=uds)
-    with httpx.Client(transport=transport, timeout=timeout) as client:
+        return httpx2.post(url, headers=headers, content=content, timeout=timeout)
+    transport = httpx2.HTTPTransport(uds=uds)
+    with httpx2.Client(transport=transport, timeout=timeout) as client:
         return client.post(url, headers=headers, content=content)
 
 
@@ -106,17 +106,17 @@ def http_stream(
     headers: dict[str, str],
     content: bytes,
     timeout: float,
-) -> Generator[httpx.Response]:
+) -> Generator[httpx2.Response]:
     """Streaming counterpart of :func:`http_post`, yielding the open
     response so the caller can iterate SSE lines."""
     uds = _uds_for_url(url)
     if uds is None:
-        with httpx.stream(method, url, headers=headers, content=content, timeout=timeout) as resp:
+        with httpx2.stream(method, url, headers=headers, content=content, timeout=timeout) as resp:
             yield resp
         return
-    transport = httpx.HTTPTransport(uds=uds)
+    transport = httpx2.HTTPTransport(uds=uds)
     with (
-        httpx.Client(transport=transport, timeout=timeout) as client,
+        httpx2.Client(transport=transport, timeout=timeout) as client,
         client.stream(method, url, headers=headers, content=content) as resp,
     ):
         yield resp

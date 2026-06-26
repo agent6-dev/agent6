@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-import httpx
+import httpx2
 import pytest
 
 from agent6.providers import ProviderError
@@ -17,10 +17,10 @@ from agent6.providers.openai import OpenAIProvider
 from agent6.providers.token_command import CommandToken
 
 
-def _fake_response(body: dict[str, Any], status: int = 200) -> httpx.Response:
-    return httpx.Response(
+def _fake_response(body: dict[str, Any], status: int = 200) -> httpx2.Response:
+    return httpx2.Response(
         status_code=status,
-        request=httpx.Request("POST", "https://api.openai.com/v1/chat/completions"),
+        request=httpx2.Request("POST", "https://api.openai.com/v1/chat/completions"),
         content=json.dumps(body).encode("utf-8"),
         headers={"content-type": "application/json"},
     )
@@ -30,7 +30,7 @@ def test_call_translates_messages_and_parses_usage() -> None:
     provider = OpenAIProvider(api_key="sk-test", model="gpt-x")
     captured: dict[str, Any] = {}
 
-    def fake_post(*_a: Any, **kw: Any) -> httpx.Response:
+    def fake_post(*_a: Any, **kw: Any) -> httpx2.Response:
         captured["headers"] = kw["headers"]
         captured["body"] = json.loads(kw["content"])
         return _fake_response(
@@ -49,7 +49,7 @@ def test_call_translates_messages_and_parses_usage() -> None:
             }
         )
 
-    with mock.patch("httpx.post", side_effect=fake_post):
+    with mock.patch("httpx2.post", side_effect=fake_post):
         resp = provider.call(
             system="you are a reviewer",
             messages=[{"role": "user", "content": "judge this"}],
@@ -77,7 +77,7 @@ def test_openai_direct_reasoning_uses_top_level_reasoning_effort() -> None:
     host keeps the nested object. (Found by GLM during dogfood, rewritten here.)"""
     captured: dict[str, Any] = {}
 
-    def fake_post(*_a: Any, **kw: Any) -> httpx.Response:
+    def fake_post(*_a: Any, **kw: Any) -> httpx2.Response:
         captured["body"] = json.loads(kw["content"])
         return _fake_response(
             {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}], "usage": {}}
@@ -85,7 +85,7 @@ def test_openai_direct_reasoning_uses_top_level_reasoning_effort() -> None:
 
     # OpenAI-direct reasoning model (default base_url = api.openai.com).
     direct = OpenAIProvider(api_key="sk", model="o3-mini", reasoning_effort="medium")
-    with mock.patch("httpx.post", side_effect=fake_post):
+    with mock.patch("httpx2.post", side_effect=fake_post):
         direct.call(system="s", messages=[{"role": "user", "content": "hi"}])
     assert captured["body"].get("reasoning_effort") == "medium"
     assert "reasoning" not in captured["body"]
@@ -97,7 +97,7 @@ def test_openai_direct_reasoning_uses_top_level_reasoning_effort() -> None:
         base_url="https://openrouter.ai/api/v1",
         reasoning_effort="high",
     )
-    with mock.patch("httpx.post", side_effect=fake_post):
+    with mock.patch("httpx2.post", side_effect=fake_post):
         router.call(system="s", messages=[{"role": "user", "content": "hi"}])
     assert captured["body"].get("reasoning") == {"effort": "high"}
     assert "reasoning_effort" not in captured["body"]
@@ -113,13 +113,13 @@ def test_call_merges_extra_body() -> None:
     )
     captured: dict[str, Any] = {}
 
-    def fake_post(*_a: Any, **kw: Any) -> httpx.Response:
+    def fake_post(*_a: Any, **kw: Any) -> httpx2.Response:
         captured["body"] = json.loads(kw["content"])
         return _fake_response(
             {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}], "usage": {}}
         )
 
-    with mock.patch("httpx.post", side_effect=fake_post):
+    with mock.patch("httpx2.post", side_effect=fake_post):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
 
     assert captured["body"]["provider"] == {"sort": "throughput"}
@@ -131,7 +131,7 @@ def test_call_clamps_negative_fresh_input_to_zero() -> None:
     counters)."""
     provider = OpenAIProvider(api_key="sk", model="gpt-x")
 
-    def fake_post(*_a: Any, **_kw: Any) -> httpx.Response:
+    def fake_post(*_a: Any, **_kw: Any) -> httpx2.Response:
         return _fake_response(
             {
                 "choices": [{"message": {"content": "x"}, "finish_reason": "stop"}],
@@ -143,7 +143,7 @@ def test_call_clamps_negative_fresh_input_to_zero() -> None:
             }
         )
 
-    with mock.patch("httpx.post", side_effect=fake_post):
+    with mock.patch("httpx2.post", side_effect=fake_post):
         resp = provider.call(system="s", messages=[{"role": "user", "content": "x"}])
 
     assert resp.input_tokens == 0
@@ -157,7 +157,7 @@ def test_call_flattens_anthropic_block_content() -> None:
     provider = OpenAIProvider(api_key="sk", model="gpt-x")
     captured: dict[str, Any] = {}
 
-    def fake_post(*_a: Any, **kw: Any) -> httpx.Response:
+    def fake_post(*_a: Any, **kw: Any) -> httpx2.Response:
         captured["body"] = json.loads(kw["content"])
         return _fake_response({"choices": [{"message": {"content": "ok"}}], "usage": {}})
 
@@ -165,7 +165,7 @@ def test_call_flattens_anthropic_block_content() -> None:
         {"type": "text", "text": "hello "},
         {"type": "text", "text": "world"},
     ]
-    with mock.patch("httpx.post", side_effect=fake_post):
+    with mock.patch("httpx2.post", side_effect=fake_post):
         provider.call(system="s", messages=[{"role": "user", "content": msg_content}])
 
     assert captured["body"]["messages"][1] == {"role": "user", "content": "hello world"}
@@ -174,7 +174,7 @@ def test_call_flattens_anthropic_block_content() -> None:
 def test_call_raises_provider_error_on_http_status() -> None:
     provider = OpenAIProvider(api_key="sk", model="gpt-x")
     with (
-        mock.patch("httpx.post", return_value=_fake_response({"error": "no"}, status=500)),
+        mock.patch("httpx2.post", return_value=_fake_response({"error": "no"}, status=500)),
         pytest.raises(ProviderError, match="OpenAI API error 500"),
     ):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
@@ -190,7 +190,7 @@ def test_from_env_missing_env_var_yields_no_auth_header(
 
     captured: dict[str, Any] = {}
 
-    def fake_post(_url: str, *_a: Any, **kw: Any) -> httpx.Response:
+    def fake_post(_url: str, *_a: Any, **kw: Any) -> httpx2.Response:
         captured["headers"] = kw["headers"]
         return _fake_response(
             {
@@ -199,7 +199,7 @@ def test_from_env_missing_env_var_yields_no_auth_header(
             }
         )
 
-    with mock.patch("httpx.post", side_effect=fake_post):
+    with mock.patch("httpx2.post", side_effect=fake_post):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
 
     assert "authorization" not in {k.lower() for k in captured["headers"]}
@@ -221,12 +221,12 @@ def test_base_url_override_and_extra_headers() -> None:
     )
     captured: dict[str, Any] = {}
 
-    def fake_post(url: str, *_a: Any, **kw: Any) -> httpx.Response:
+    def fake_post(url: str, *_a: Any, **kw: Any) -> httpx2.Response:
         captured["url"] = url
         captured["headers"] = kw["headers"]
         return _fake_response({"choices": [{"message": {"content": "k"}}], "usage": {}})
 
-    with mock.patch("httpx.post", side_effect=fake_post):
+    with mock.patch("httpx2.post", side_effect=fake_post):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
 
     assert captured["url"] == "https://openrouter.ai/api/v1/chat/completions"
@@ -290,16 +290,16 @@ def test_call_bumps_max_tokens_for_reasoning_models() -> None:
     provider = OpenAIProvider(api_key="sk", model="kimi-k2-thinking")
     captured: dict[str, Any] = {}
 
-    def fake_post(*_a: Any, **kw: Any) -> httpx.Response:
+    def fake_post(*_a: Any, **kw: Any) -> httpx2.Response:
         captured["body"] = json.loads(kw["content"])
         return _fake_response({"choices": [{"message": {"content": "ok"}}], "usage": {}})
 
-    with mock.patch("httpx.post", side_effect=fake_post):
+    with mock.patch("httpx2.post", side_effect=fake_post):
         provider.call(system="s", messages=[{"role": "user", "content": "hi"}], max_tokens=16384)
     assert captured["body"]["max_tokens"] == REASONING_MODEL_MIN_MAX_TOKENS
 
     # Caller-supplied value above the floor wins.
-    with mock.patch("httpx.post", side_effect=fake_post):
+    with mock.patch("httpx2.post", side_effect=fake_post):
         provider.call(system="s", messages=[{"role": "user", "content": "hi"}], max_tokens=65536)
     assert captured["body"]["max_tokens"] == 65536
 
@@ -308,11 +308,11 @@ def test_call_does_not_bump_max_tokens_for_normal_models() -> None:
     provider = OpenAIProvider(api_key="sk", model="gpt-4o")
     captured: dict[str, Any] = {}
 
-    def fake_post(*_a: Any, **kw: Any) -> httpx.Response:
+    def fake_post(*_a: Any, **kw: Any) -> httpx2.Response:
         captured["body"] = json.loads(kw["content"])
         return _fake_response({"choices": [{"message": {"content": "ok"}}], "usage": {}})
 
-    with mock.patch("httpx.post", side_effect=fake_post):
+    with mock.patch("httpx2.post", side_effect=fake_post):
         provider.call(system="s", messages=[{"role": "user", "content": "hi"}], max_tokens=4096)
     assert captured["body"]["max_tokens"] == 4096
 
@@ -327,24 +327,24 @@ def test_reasoning_effort_arg_overrides_default(monkeypatch: Any) -> None:
     provider = OpenAIProvider(api_key="sk", model="moonshotai/kimi-k2.6")
     captured: dict[str, Any] = {}
 
-    def fake_post(*_a: Any, **kw: Any) -> httpx.Response:
+    def fake_post(*_a: Any, **kw: Any) -> httpx2.Response:
         captured["body"] = json.loads(kw["content"])
         return _fake_response({"choices": [{"message": {"content": "ok"}}], "usage": {}})
 
     # No arg -> env override wins.
-    with mock.patch("httpx.post", side_effect=fake_post):
+    with mock.patch("httpx2.post", side_effect=fake_post):
         provider.call(system="s", messages=[{"role": "user", "content": "hi"}])
     assert captured["body"]["reasoning"] == {"effort": "medium"}
 
     # Explicit "off" -> reasoning channel explicitly disabled.
-    with mock.patch("httpx.post", side_effect=fake_post):
+    with mock.patch("httpx2.post", side_effect=fake_post):
         provider.call(
             system="s", messages=[{"role": "user", "content": "hi"}], reasoning_effort="off"
         )
     assert captured["body"]["reasoning"] == {"enabled": False}
 
     # Explicit "low" -> overrides env "medium".
-    with mock.patch("httpx.post", side_effect=fake_post):
+    with mock.patch("httpx2.post", side_effect=fake_post):
         provider.call(
             system="s", messages=[{"role": "user", "content": "hi"}], reasoning_effort="low"
         )
@@ -358,7 +358,7 @@ def test_call_captures_reasoning_content_in_raw() -> None:
     auto-commit summary, and we don't want it double-printed)."""
     provider = OpenAIProvider(api_key="sk", model="kimi-k2-thinking")
 
-    def fake_post(*_a: Any, **_kw: Any) -> httpx.Response:
+    def fake_post(*_a: Any, **_kw: Any) -> httpx2.Response:
         return _fake_response(
             {
                 "choices": [
@@ -374,7 +374,7 @@ def test_call_captures_reasoning_content_in_raw() -> None:
             }
         )
 
-    with mock.patch("httpx.post", side_effect=fake_post):
+    with mock.patch("httpx2.post", side_effect=fake_post):
         resp = provider.call(system="s", messages=[{"role": "user", "content": "q"}])
 
     assert resp.text == "the answer is 42"
@@ -390,7 +390,7 @@ def test_call_captures_deepseek_reasoning_field() -> None:
     """DeepSeek-R1 / OpenRouter spell it ``reasoning`` (no _content)."""
     provider = OpenAIProvider(api_key="sk", model="deepseek-r1")
 
-    def fake_post(*_a: Any, **_kw: Any) -> httpx.Response:
+    def fake_post(*_a: Any, **_kw: Any) -> httpx2.Response:
         return _fake_response(
             {
                 "choices": [
@@ -403,7 +403,7 @@ def test_call_captures_deepseek_reasoning_field() -> None:
             }
         )
 
-    with mock.patch("httpx.post", side_effect=fake_post):
+    with mock.patch("httpx2.post", side_effect=fake_post):
         resp = provider.call(system="s", messages=[{"role": "user", "content": "q"}])
 
     assert any(
@@ -428,13 +428,13 @@ def test_credential_overrides_static_key_in_auth_header() -> None:
     )
     captured: dict[str, Any] = {}
 
-    def fake_post(*_a: Any, **kw: Any) -> httpx.Response:
+    def fake_post(*_a: Any, **kw: Any) -> httpx2.Response:
         captured["auth"] = kw["headers"].get("authorization")
         return _fake_response(
             {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}
         )
 
-    with mock.patch("httpx.post", side_effect=fake_post):
+    with mock.patch("httpx2.post", side_effect=fake_post):
         resp = provider.call(system="s", messages=[{"role": "user", "content": "hi"}])
 
     assert captured["auth"] == "Bearer minted-tok"
@@ -455,11 +455,11 @@ def test_401_refreshes_token_command_and_retries(tmp_path: Path) -> None:
         ),
     ]
 
-    def fake_post(*_a: Any, **kw: Any) -> httpx.Response:
+    def fake_post(*_a: Any, **kw: Any) -> httpx2.Response:
         seen.append(kw["headers"].get("authorization"))
         return responses[len(seen) - 1]
 
-    with mock.patch("httpx.post", side_effect=fake_post):
+    with mock.patch("httpx2.post", side_effect=fake_post):
         resp = provider.call(system="s", messages=[{"role": "user", "content": "hi"}])
 
     assert seen == ["Bearer tok1", "Bearer tok2"]
@@ -471,10 +471,10 @@ def test_401_without_credential_is_not_retried() -> None:
     provider = OpenAIProvider(api_key="static", model="m")
     calls = {"n": 0}
 
-    def fake_post(*_a: Any, **_kw: Any) -> httpx.Response:
+    def fake_post(*_a: Any, **_kw: Any) -> httpx2.Response:
         calls["n"] += 1
         return _fake_response({}, status=401)
 
-    with mock.patch("httpx.post", side_effect=fake_post), pytest.raises(ProviderError):
+    with mock.patch("httpx2.post", side_effect=fake_post), pytest.raises(ProviderError):
         provider.call(system="s", messages=[{"role": "user", "content": "hi"}])
     assert calls["n"] == 1

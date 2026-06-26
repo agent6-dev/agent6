@@ -428,7 +428,7 @@ not to bound what an attacker can do.
   speculative-execution side channels. If your threat model includes
   Spectre-class attacks, do not co-locate agent6 on a host with secrets.
 - **Supply chain**: pin your install. The runtime deps are `pydantic`,
-  `httpx`, `argcomplete`, the `tree-sitter` pair (`tree-sitter` +
+  `httpx2`, `argcomplete`, the `tree-sitter` pair (`tree-sitter` +
   `tree-sitter-language-pack`), and `textual` (the live dashboard);
   build-dep is `hatchling`; and the jail pulls a small set of well-known
   Rust crates (`nix`, `libc`, `landlock`, `seccompiler`, `serde`,

@@ -24,7 +24,7 @@ import threading
 from typing import Any
 from unittest import mock
 
-import httpx
+import httpx2
 import pytest
 
 from agent6.providers import anthropic as anthropic_mod
@@ -79,8 +79,8 @@ class _PingOnlyStreamResponse:
     """A stream that only ever emits ``ping`` heartbeats.
 
     ``iter_lines`` blocks (via an event) until the watchdog calls
-    ``close()``, at which point it raises ``httpx.ReadError`` exactly as
-    httpx would when the underlying socket is closed mid-read.
+    ``close()``, at which point it raises ``httpx2.ReadError`` exactly as
+    httpx2 would when the underlying socket is closed mid-read.
     """
 
     def __init__(self) -> None:
@@ -107,7 +107,7 @@ class _PingOnlyStreamResponse:
         # Now park as if waiting for real data. The watchdog must fire.
         if not self._closed.wait(timeout=10.0):
             raise AssertionError("watchdog never closed the response")
-        raise httpx.ReadError("connection closed by watchdog")
+        raise httpx2.ReadError("connection closed by watchdog")
 
 
 def test_anthropic_streaming_idle_watchdog_fires(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -121,7 +121,7 @@ def test_anthropic_streaming_idle_watchdog_fires(monkeypatch: pytest.MonkeyPatch
         return _PingOnlyStreamResponse()
 
     with (
-        mock.patch("httpx.stream", side_effect=fake_stream),
+        mock.patch("httpx2.stream", side_effect=fake_stream),
         pytest.raises(ProviderError) as ei,
     ):
         provider.call(

@@ -19,7 +19,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 
 from agent6.providers import AnthropicProvider, ProviderError, TranscriptSink
@@ -27,7 +27,7 @@ from agent6.providers.token_command import CommandToken
 
 
 class _FakeStreamResponse:
-    """Mimics the subset of httpx streaming Response we use."""
+    """Mimics the subset of httpx2 streaming Response we use."""
 
     def __init__(self, *, status_code: int, lines: list[str], error_body: str = "") -> None:
         self.status_code = status_code
@@ -48,7 +48,7 @@ class _FakeStreamResponse:
 
 
 def _sse(events: list[tuple[str, dict[str, Any]]]) -> list[str]:
-    """Turn (event_type, data) pairs into the raw line list httpx
+    """Turn (event_type, data) pairs into the raw line list httpx2
     .iter_lines() would yield. SSE frames are separated by a blank line."""
     out: list[str] = []
     for et, data in events:
@@ -193,7 +193,7 @@ def test_streaming_calls_back_on_each_text_delta(
         captured_bodies.append(body)
         return _FakeStreamResponse(status_code=200, lines=_basic_text_stream())
 
-    monkeypatch.setattr(httpx, "stream", fake_stream)
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
 
     pieces: list[str] = []
     resp = provider.call(
@@ -233,7 +233,7 @@ def test_streaming_reassembles_tool_use_input_across_deltas(
     def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
         return _FakeStreamResponse(status_code=200, lines=_tool_use_stream())
 
-    monkeypatch.setattr(httpx, "stream", fake_stream)
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
 
     pieces: list[str] = []
     resp = provider.call(
@@ -266,7 +266,7 @@ def test_streaming_callback_exception_does_not_break_stream(
     def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
         return _FakeStreamResponse(status_code=200, lines=_basic_text_stream())
 
-    monkeypatch.setattr(httpx, "stream", fake_stream)
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
 
     def boom(_piece: str) -> None:
         raise RuntimeError("renderer exploded")
@@ -294,7 +294,7 @@ def test_streaming_propagates_http_error(monkeypatch: pytest.MonkeyPatch, tmp_pa
             error_body='{"error":{"type":"rate_limit"}}',
         )
 
-    monkeypatch.setattr(httpx, "stream", fake_stream)
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
 
     with pytest.raises(ProviderError):
         provider.call(
@@ -307,7 +307,7 @@ def test_streaming_propagates_http_error(monkeypatch: pytest.MonkeyPatch, tmp_pa
 def test_non_streaming_path_unchanged_when_callback_is_none(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The default behaviour must NOT call httpx.stream. Bench runs
+    """The default behaviour must NOT call httpx2.stream. Bench runs
     rely on the audited non-streaming code path."""
     sink = TranscriptSink(tmp_path / "transcripts")
     provider = AnthropicProvider(
@@ -335,8 +335,8 @@ def test_non_streaming_path_unchanged_when_callback_is_none(
     def fake_post(*_a: Any, **_kw: Any) -> _R:
         return _R()
 
-    monkeypatch.setattr(httpx, "stream", fake_stream)
-    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
+    monkeypatch.setattr(httpx2, "post", fake_post)
 
     resp = provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     assert resp.text == "ok"
@@ -377,7 +377,7 @@ def test_streaming_refreshes_token_command_on_401(
         seen_auth.append(kwargs["headers"].get("authorization"))
         return responses[len(seen_auth) - 1]
 
-    monkeypatch.setattr(httpx, "stream", fake_stream)
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
     resp = provider.call(
         system="sys",
         messages=[{"role": "user", "content": "x"}],

@@ -25,7 +25,7 @@ import re
 import time
 from pathlib import Path
 
-import httpx
+import httpx2
 
 from agent6.config import AnthropicProviderEntry, Config, ProviderEntry
 from agent6.paths import cache_dir
@@ -161,7 +161,7 @@ def _fetch(
     authed = auth_header(entry.auth_style, api_key or "")
     if authed is not None:
         headers[authed[0]] = authed[1]
-    resp = httpx.get(url, headers=headers, timeout=timeout_s)
+    resp = httpx2.get(url, headers=headers, timeout=timeout_s)
     resp.raise_for_status()
     payload = resp.json()
     return _parse_models(payload), _parse_pricing(payload), _parse_context(payload)
@@ -191,7 +191,7 @@ def list_models(
         return cached
     try:
         models, pricing, context = _fetch(entry, api_key, timeout_s)
-    except (httpx.HTTPError, ValueError, OSError):
+    except (httpx2.HTTPError, ValueError, OSError):
         return cached or []
     if models:
         _write_cache(path, models, pricing, context)

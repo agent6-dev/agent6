@@ -15,7 +15,7 @@ unpriced here; their runs rely on token ceilings (and OpenRouter-style
 ``usage.cost`` reporting where available).
 
 This module is import-light (stdlib + ``agent6.paths``) so ``agent6.budget``
-can use it without dragging in config/httpx. Reads are cache-file only, never
+can use it without dragging in config/httpx2. Reads are cache-file only, never
 network. Lookups are memoized for the process lifetime: one CLI invocation is
 one run, and mid-run price changes are noise.
 """

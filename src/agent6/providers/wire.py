@@ -33,7 +33,7 @@ def auth_header(style: AuthStyle, token: str) -> tuple[str, str] | None:
     """The ``(lowercased-header-name, value)`` for an auth style, or None.
 
     Returns None for ``none`` or an empty token (an unauthenticated local
-    endpoint sends no auth header). httpx lowercases header names anyway; we do
+    endpoint sends no auth header). httpx2 lowercases header names anyway; we do
     it here so callers and the transcript-redaction set agree on the spelling.
     """
     if style == "none" or not token:

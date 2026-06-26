@@ -10,7 +10,7 @@ import json
 from typing import Any
 from unittest import mock
 
-import httpx
+import httpx2
 
 from agent6.providers.anthropic import AnthropicProvider
 from agent6.providers.openai import OpenAIProvider
@@ -21,10 +21,10 @@ _VERTEX_ANTHROPIC = (
 )
 
 
-def _capture(resp: httpx.Response) -> tuple[dict[str, Any], Any]:
+def _capture(resp: httpx2.Response) -> tuple[dict[str, Any], Any]:
     captured: dict[str, Any] = {}
 
-    def fake_post(*args: Any, **kw: Any) -> httpx.Response:
+    def fake_post(*args: Any, **kw: Any) -> httpx2.Response:
         captured["url"] = args[0] if args else kw.get("url")
         captured["headers"] = kw["headers"]
         captured["body"] = json.loads(kw["content"])
@@ -33,10 +33,10 @@ def _capture(resp: httpx.Response) -> tuple[dict[str, Any], Any]:
     return captured, fake_post
 
 
-def _anthropic_ok() -> httpx.Response:
-    return httpx.Response(
+def _anthropic_ok() -> httpx2.Response:
+    return httpx2.Response(
         200,
-        request=httpx.Request("POST", "https://x"),
+        request=httpx2.Request("POST", "https://x"),
         json={
             "content": [{"type": "text", "text": "hi"}],
             "stop_reason": "end_turn",
@@ -45,10 +45,10 @@ def _anthropic_ok() -> httpx.Response:
     )
 
 
-def _openai_ok() -> httpx.Response:
-    return httpx.Response(
+def _openai_ok() -> httpx2.Response:
+    return httpx2.Response(
         200,
-        request=httpx.Request("POST", "https://x"),
+        request=httpx2.Request("POST", "https://x"),
         json={
             "choices": [{"message": {"content": "hi"}, "finish_reason": "stop"}],
             "usage": {"prompt_tokens": 5, "completion_tokens": 2},
@@ -59,7 +59,7 @@ def _openai_ok() -> httpx.Response:
 def test_anthropic_direct_wire() -> None:
     p = AnthropicProvider(api_key="sk-ant", model="claude-x")  # deployment/auth default
     captured, fake = _capture(_anthropic_ok())
-    with mock.patch("httpx.post", side_effect=fake):
+    with mock.patch("httpx2.post", side_effect=fake):
         p.call(system="s", messages=[{"role": "user", "content": "q"}])
     assert captured["url"] == "https://api.anthropic.com/v1/messages"
     assert captured["headers"]["x-api-key"] == "sk-ant"
@@ -79,7 +79,7 @@ def test_anthropic_vertex_wire() -> None:
         auth_style="bearer",
     )
     captured, fake = _capture(_anthropic_ok())
-    with mock.patch("httpx.post", side_effect=fake):
+    with mock.patch("httpx2.post", side_effect=fake):
         p.call(system="s", messages=[{"role": "user", "content": "q"}])
     assert captured["url"] == f"{_VERTEX_ANTHROPIC}/claude-opus-4-8:rawPredict"
     assert captured["headers"]["authorization"] == "Bearer ya29.tok"
@@ -91,7 +91,7 @@ def test_anthropic_vertex_wire() -> None:
 def test_openai_direct_wire() -> None:
     p = OpenAIProvider(api_key="sk-oai", model="gpt-x")  # bearer default
     captured, fake = _capture(_openai_ok())
-    with mock.patch("httpx.post", side_effect=fake):
+    with mock.patch("httpx2.post", side_effect=fake):
         p.call(system="s", messages=[{"role": "user", "content": "q"}])
     assert captured["url"] == "https://api.openai.com/v1/chat/completions"
     assert captured["headers"]["authorization"] == "Bearer sk-oai"
@@ -109,7 +109,7 @@ def test_openai_azure_wire() -> None:
         extra_query={"api-version": "2024-06-01"},
     )
     captured, fake = _capture(_openai_ok())
-    with mock.patch("httpx.post", side_effect=fake):
+    with mock.patch("httpx2.post", side_effect=fake):
         p.call(system="s", messages=[{"role": "user", "content": "q"}])
     assert captured["url"] == (
         "https://res.openai.azure.com/openai/deployments/my-deployment"
@@ -125,7 +125,7 @@ def test_openai_none_auth_sends_no_auth_header() -> None:
         api_key="", model="local", base_url="http://localhost:1234/v1", auth_style="none"
     )
     captured, fake = _capture(_openai_ok())
-    with mock.patch("httpx.post", side_effect=fake):
+    with mock.patch("httpx2.post", side_effect=fake):
         p.call(system="s", messages=[{"role": "user", "content": "q"}])
     assert "authorization" not in captured["headers"]
     assert "api-key" not in captured["headers"]

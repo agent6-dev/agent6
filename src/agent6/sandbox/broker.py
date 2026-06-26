@@ -226,7 +226,7 @@ def _handle_connection(client: socket.socket, endpoint: Endpoint) -> None:  # pr
     # recv timeout there raises socket.timeout, tears the connection down, and
     # surfaces to the agent as "Server disconnected without sending a response"
     # -- aborting otherwise-healthy runs on the default provider-only egress
-    # path. The real end-to-end deadline is the agent's httpx http_timeout_s.
+    # path. The real end-to-end deadline is the agent's httpx2 http_timeout_s.
     upstream.settimeout(None)
     client.settimeout(None)
     try:

@@ -7,7 +7,7 @@ from __future__ import annotations
 import contextlib
 from collections.abc import Generator
 
-import httpx
+import httpx2
 import pytest
 
 from agent6.providers import egress
@@ -38,12 +38,12 @@ def test_http_post_without_route_uses_plain_httpx(monkeypatch: pytest.MonkeyPatc
 
     def fake_post(
         url: str, *, headers: dict[str, str], content: bytes, timeout: float
-    ) -> httpx.Response:
+    ) -> httpx2.Response:
         seen["url"] = url
         seen["uds"] = "plain"
-        return httpx.Response(200, text="ok")
+        return httpx2.Response(200, text="ok")
 
-    monkeypatch.setattr(egress.httpx, "post", fake_post)
+    monkeypatch.setattr(egress.httpx2, "post", fake_post)
     resp = egress.http_post(
         "https://api.openai.com/v1/chat",
         headers={"a": "b"},
@@ -67,9 +67,9 @@ def test_http_post_with_route_dials_unix_socket(monkeypatch: pytest.MonkeyPatch)
         def __exit__(self, *exc: object) -> None:
             return None
 
-        def post(self, url: str, *, headers: dict[str, str], content: bytes) -> httpx.Response:
+        def post(self, url: str, *, headers: dict[str, str], content: bytes) -> httpx2.Response:
             captured["url"] = url
-            return httpx.Response(200, text="routed")
+            return httpx2.Response(200, text="routed")
 
     transports: dict[str, object] = {}
 
@@ -77,8 +77,8 @@ def test_http_post_with_route_dials_unix_socket(monkeypatch: pytest.MonkeyPatch)
         transports["uds"] = uds
         return f"transport:{uds}"
 
-    monkeypatch.setattr(egress.httpx, "Client", FakeClient)
-    monkeypatch.setattr(egress.httpx, "HTTPTransport", fake_transport)
+    monkeypatch.setattr(egress.httpx2, "Client", FakeClient)
+    monkeypatch.setattr(egress.httpx2, "HTTPTransport", fake_transport)
     egress.register_route("api.openai.com", 443, "/tmp/egress-0.sock")
 
     try:
@@ -106,12 +106,12 @@ def test_http_stream_without_route_uses_plain_httpx(monkeypatch: pytest.MonkeyPa
         headers: dict[str, str],
         content: bytes,
         timeout: float,
-    ) -> Generator[httpx.Response]:
+    ) -> Generator[httpx2.Response]:
         used["method"] = method
         used["url"] = url
-        yield httpx.Response(200, text="streamed")
+        yield httpx2.Response(200, text="streamed")
 
-    monkeypatch.setattr(egress.httpx, "stream", fake_stream)
+    monkeypatch.setattr(egress.httpx2, "stream", fake_stream)
     with egress.http_stream(
         "POST",
         "https://api.openai.com/v1/chat",

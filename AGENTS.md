@@ -137,7 +137,7 @@ output, run summaries, and review feedback.
 - **Errors**: fail loudly. No bare `except:`, no swallowed errors. Custom
   exception classes per subsystem.
 - **No new runtime dependencies** without explicit discussion. Current list:
-  `pydantic`, `httpx`, `argcomplete`, the `tree-sitter` pair backing the
+  `pydantic`, `httpx2`, `argcomplete`, the `tree-sitter` pair backing the
   symbol-navigation tools, `textual` (live dashboard), and `ruff` + `ty`
   (validate scripts that `machine create` generates). Build dep is
   `hatchling`; `pyright` stays dev-only.
