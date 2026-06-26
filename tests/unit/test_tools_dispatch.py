@@ -73,6 +73,45 @@ def test_read_file_ok(tmp_path: Path) -> None:
     assert out["content"] == "hi"
 
 
+def test_verify_command_unexecutable_raises_loud(tmp_path: Path) -> None:
+    """A verify_command that the jail could not execute (rc 127, exec_failed)
+    must raise OperatorCommandUnexecutable, not return a silent verify-failure.
+
+    Regression: on a no-userns host the jail PATH is /usr/bin:/bin; a uv-based
+    verify (uv lives under /usr/local/bin or ~/.local/bin) exited 127 and was
+    reported as an ordinary verify failure (ok=True, exit=127), so the run
+    reported all_passed and committed unverified work. The model cannot fix
+    operator config, so this must fail loudly instead.
+    """
+    from agent6.tools.dispatch import OperatorCommandUnexecutable
+    from agent6.types import CommandResult
+
+    cfg = _config(tmp_path)  # verify_command = ["true"]
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    unexecutable = CommandResult(
+        argv=("true",),
+        returncode=127,
+        stdout="",
+        stderr="true: command not found or not executable (agent6-jail: child execution failed)",
+        duration_s=0.0,
+        exec_failed=True,
+    )
+    with (
+        mock.patch("agent6.tools.dispatch.run_in_jail", return_value=unexecutable),
+        pytest.raises(OperatorCommandUnexecutable),
+    ):
+        d.dispatch("run_verify_command", {})
+
+    # An ordinary non-zero exit (ran but failed) must NOT raise -- it is a real
+    # verify failure the model can act on.
+    ran_and_failed = CommandResult(
+        argv=("true",), returncode=1, stdout="", stderr="assert", duration_s=0.1, exec_failed=False
+    )
+    with mock.patch("agent6.tools.dispatch.run_in_jail", return_value=ran_and_failed):
+        out = d.dispatch("run_verify_command", {})
+    assert out["returncode"] == 1
+
+
 def test_ask_user_routes_to_questioner(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     seen: dict[str, object] = {}

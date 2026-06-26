@@ -34,7 +34,7 @@ from agent6.git_ops import status as git_status
 from agent6.graph.client import CuratorClientError, GraphClient
 from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft, UpdateStatusIntent
 from agent6.providers import Provider, ProviderError, ToolDefinition
-from agent6.tools.dispatch import ToolDispatcher, ToolError
+from agent6.tools.dispatch import OperatorCommandUnexecutable, ToolDispatcher, ToolError
 from agent6.tools.schema import (
     ALL_TOOLS,
     ASK_EXTRA_TOOLS,
@@ -989,6 +989,25 @@ class Workflow:
                 except ToolError as exc:
                     content = json.dumps({"error": str(exc)})
                     self._log(f"  tool_error: {name}: {exc}")
+                except OperatorCommandUnexecutable as exc:
+                    # The operator's verify/metric command cannot run in the jail.
+                    # The model can't fix operator config, so abort loudly instead
+                    # of letting it flail against a verify that never executes (and
+                    # never silently report all_passed on an un-run gate).
+                    self._log(f"LOOP: aborting -- {exc}")
+                    self._emit(
+                        "run.end",
+                        reason="verify_command_unexecutable",
+                        iterations=iteration,
+                        all_passed=False,
+                    )
+                    return RunResult(
+                        completed=False,
+                        reason="verify_command_unexecutable",
+                        summary=str(exc),
+                        iterations=iteration,
+                        tool_calls=state.tool_calls,
+                    )
                 tool_results.append(
                     {
                         "type": "tool_result",

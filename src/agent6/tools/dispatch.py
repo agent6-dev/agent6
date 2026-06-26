@@ -94,6 +94,16 @@ class ToolError(Exception):
     """The LLM tried something the tool layer refused."""
 
 
+class OperatorCommandUnexecutable(Exception):
+    """An operator-configured verify/metric command could not be executed in the
+    jail (not found on PATH /usr/bin:/bin, or a path that escapes the sandbox).
+
+    Distinct from ToolError (which the loop surfaces to the model and continues):
+    the model cannot fix the operator's config, so the loop must abort loudly
+    rather than let the worker flail against a verify that never actually runs.
+    """
+
+
 # --- grep regex safety (ReDoS containment) -----------------------------------
 # `grep` compiles a model-supplied regex and runs it in agent6's own process
 # (not the jail). CPython's `re` engine holds the GIL and is not interruptible
@@ -691,6 +701,13 @@ class ToolDispatcher:
         except ToolError as exc:
             self._emit("tool.result", name=name, ok=False, summary=str(exc))
             raise
+        except OperatorCommandUnexecutable as exc:
+            # Not a model-fixable tool error: an operator verify/metric command
+            # that cannot execute in the jail. Record the failed result for the
+            # audit trail, then propagate (NOT wrapped as ToolError) so the loop
+            # aborts the run loudly instead of surfacing it as a normal failure.
+            self._emit("tool.result", name=name, ok=False, summary=str(exc))
+            raise
         except Exception as exc:
             self._emit("tool.result", name=name, ok=False, summary=str(exc))
             raise ToolError(f"{name} failed: {exc}") from exc
@@ -1110,6 +1127,15 @@ class ToolDispatcher:
             stdout_tail=str(res["stdout"])[-2000:],
             stderr_tail=str(res["stderr"])[-2000:],
         )
+        if res.get("exec_failed"):
+            raise OperatorCommandUnexecutable(
+                f"verify_command {list(argv)} could not be executed in the sandbox: "
+                f"{res['stderr']}. The jail PATH is /usr/bin:/bin; a tool installed "
+                "elsewhere (e.g. uv under /usr/local/bin or ~/.local/bin, or a venv "
+                "python symlinked outside the workspace) is not reachable. Fix the "
+                "verify_command to use a /usr/bin-reachable invocation, or grant the "
+                "tool's real path via sandbox.extra_read_paths."
+            )
         return res
 
     def _run_command(self, raw: dict[str, Any]) -> dict[str, Any]:
@@ -1236,6 +1262,13 @@ class ToolDispatcher:
         argv = tuple(metric_cfg.command)
         self._emit("metric.start", cmd=list(argv))
         res = self._run_argv_in_jail(argv, label="metric_command")
+        if res.get("exec_failed"):
+            raise OperatorCommandUnexecutable(
+                f"metric_command {list(argv)} could not be executed in the sandbox: "
+                f"{res['stderr']}. See run_verify_command's note: the jail PATH is "
+                "/usr/bin:/bin; grant the tool's real path via sandbox.extra_read_paths "
+                "or use a /usr/bin-reachable invocation."
+            )
         score = _parse_metric_score(res, pattern=metric_cfg.pattern)
         res["score"] = score
         self._emit(
@@ -1304,4 +1337,5 @@ class ToolDispatcher:
             "stdout": res.stdout[-20_000:],
             "stderr": res.stderr[-20_000:],
             "duration_s": res.duration_s,
+            "exec_failed": res.exec_failed,
         }

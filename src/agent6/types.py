@@ -28,6 +28,12 @@ class CommandResult:
     stdout: str
     stderr: str
     duration_s: float
+    # True when the launcher could not execute the binary at all (bad path, not
+    # on the jail PATH /usr/bin:/bin, missing interpreter, or a symlink that
+    # escapes the sandbox roots). Distinct from "ran and exited non-zero": a
+    # model can fix its own argv, but an operator verify/metric command that
+    # cannot execute is a config/sandbox problem the run must surface loudly.
+    exec_failed: bool = False
 
     @property
     def ok(self) -> bool:

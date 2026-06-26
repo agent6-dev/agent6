@@ -246,6 +246,7 @@ def run_in_jail(policy: JailPolicy) -> CommandResult:
                 stdout="",
                 stderr=f"{policy.argv[0]}: command not found or not executable ({stderr})",
                 duration_s=duration,
+                exec_failed=True,
             )
         raise JailUnavailableError(f"agent6-jail launcher exited {proc.returncode}: {stderr}")
     try:
