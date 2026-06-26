@@ -68,11 +68,12 @@ if [ -n "${AGENT6_SB_REVIEW_SEATS:-}" ]; then
   ARR=""
   IFS=';' read -ra _SEATS <<< "$AGENT6_SB_REVIEW_SEATS"
   for s in "${_SEATS[@]}"; do ARR="${ARR}\"${s}\", "; done
-  REVIEW_LINES="critic = \"before_finish\"
-review_decision = \"${AGENT6_SB_REVIEW_DECISION:-quorum}\"
-review_quorum = ${AGENT6_SB_REVIEW_QUORUM:-2}
-review_tier = \"diff\"
-review_seats = [${ARR%, }]"
+  REVIEW_LINES="[review]
+trigger = \"before_finish\"
+decision = \"${AGENT6_SB_REVIEW_DECISION:-quorum}\"
+quorum = ${AGENT6_SB_REVIEW_QUORUM:-2}
+tier = \"diff\"
+seats = [${ARR%, }]"
 fi
 
 # Verify command. The jail forces child PATH=/usr/bin:/bin, so a bare `python3`
@@ -129,9 +130,12 @@ allow_force = false
 allow_history_rewrite = false
 
 [workflow]
+$VERIFY_TOML
+
+[prompt]
 revise_prompt = "off"
 structural_priors = ${AGENT6_SB_STRUCTURAL_PRIORS:-true}
-$VERIFY_TOML
+
 $REVIEW_LINES
 
 [budget]

@@ -146,7 +146,7 @@ def _cfg_with_seats(seats: tuple[str, ...]) -> Any:
         {
             "providers": {"anthropic": {"api_format": "anthropic", "api_key_env": "FAKE_KEY"}},
             "models": {"reviewer": {"provider": "anthropic", "model": "reviewer-default"}},
-            "workflow": {"critic": "before_finish", "review_seats": list(seats)},
+            "review": {"trigger": "before_finish", "seats": list(seats)},
         }
     )
 

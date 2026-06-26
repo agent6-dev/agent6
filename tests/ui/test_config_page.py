@@ -105,10 +105,10 @@ def test_config_page_adaptive_value_shown(repo: Path) -> None:
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, ConfigScreen)
-            wf = screen.query_one("#tbl-workflow", DataTable)
+            ctx = screen.query_one("#tbl-context", DataTable)
             # adaptive compaction (worker=claude-sonnet-4-5 -> 200k window) shows
             # its resolved number tagged "(adaptive)", not "(unset)".
-            cells = [str(wf.get_row_at(r)[1]) for r in range(wf.row_count)]
+            cells = [str(ctx.get_row_at(r)[1]) for r in range(ctx.row_count)]
             assert any("(adaptive)" in c for c in cells)
 
     asyncio.run(scenario())

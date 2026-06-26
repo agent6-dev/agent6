@@ -42,7 +42,7 @@ def select_revised_prompt(
     revised: str,
     questions: tuple[str, ...],
 ) -> str | None:
-    """Interactive accept/edit/skip prompt for workflow.revise_prompt."""
+    """Interactive accept/edit/skip prompt for prompt.revise_prompt."""
     print("\n[agent6] prompt revision proposed:", file=sys.stderr)
     print("\n--- revised ---", file=sys.stderr)
     print(revised, file=sys.stderr)

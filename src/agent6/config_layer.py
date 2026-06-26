@@ -17,7 +17,7 @@ the audit surface that makes the effective config and its provenance
 obvious at a glance.
 
 A selected ``profile`` preset is injected just ABOVE the config layer that
-SELECTED it (``--profile`` flag / repo / global ``[workflow].profile``), so the
+SELECTED it (``--profile`` flag / repo / global top-level ``profile``), so the
 profile OVERRIDES that config while a more-specific config layer (or an explicit
 ``--config FILE`` / machine overlay) still overrides the profile. Only the
 most-specific source's profile is injected -- global and repo presets never
@@ -62,18 +62,12 @@ from agent6.paths import (
 
 LayerName = Literal["default", "profile", "global", "repo", "flag", "machine"]
 
-# Display order for `config show` / `config fill` (model definition order).
-_SECTION_ORDER = (
-    "agent6",
-    "providers",
-    "models",
-    "sandbox",
-    "git",
-    "workflow",
-    "budget",
-    "notify",
-    "mcp",
-)
+# Display order for `config show` / `config fill`, derived FROM the Config model's
+# field declaration order so a new section can never be silently omitted. Scalar
+# top-level fields (e.g. `profile`) carry no `[section]` table and are rendered
+# inline by their parent, so the section ordering only needs the table names; we
+# keep every field name here and the lookups below tolerate non-section entries.
+_SECTION_ORDER = tuple(Config.model_fields)
 
 
 @dataclass(frozen=True, slots=True)
@@ -240,16 +234,13 @@ def _effective_from_layers(layers: list[Layer], *, source: str) -> EffectiveConf
 
 
 def _own_profile(layer: Layer) -> str:
-    """A layer's OWN raw ``[workflow].profile`` (not the merged value), or ""."""
-    wf = layer.data.get("workflow")
-    if isinstance(wf, dict):
-        return str(wf.get("profile", "") or "")
-    return ""
+    """A layer's OWN raw top-level ``profile`` (not the merged value), or ""."""
+    return str(layer.data.get("profile", "") or "")
 
 
 def _select_profile(cleaned: list[Layer], profile_override: str) -> tuple[str, str]:
     """Pick the (profile name, source) most-specific first from each layer's OWN
-    raw ``[workflow].profile`` (never stacking global+repo): the ``--profile``
+    raw top-level ``profile`` (never stacking global+repo): the ``--profile``
     flag, else the ``repo`` layer's field, else the ``global`` layer's field,
     else ("", "none")."""
     if profile_override:
@@ -294,7 +285,7 @@ def _apply_profile(layers: list[Layer], profile_override: str) -> list[Layer]:
     profile is injected -- global and repo presets never stack.
 
     Source is chosen by :func:`_select_profile` (``--profile`` flag > repo's own
-    ``[workflow].profile`` > global's own), and the preset is spliced in by
+    top-level ``profile`` > global's own), and the preset is spliced in by
     :func:`_insert_profile`. Resulting precedence (low->high): default <
     global-config < [profile if global-selected] < repo-config <
     [profile if repo-selected] < [profile if --flag] < flag(``--config FILE``) <
@@ -320,7 +311,7 @@ def load_effective(
     repo_root: Path, explicit_path: Path | None = None, *, profile: str = ""
 ) -> EffectiveConfig:
     """Merge + validate all layers and record per-leaf provenance. A named
-    ``profile`` (CLI flag or ``[workflow].profile``) is injected just above the
+    ``profile`` (CLI flag or top-level ``profile``) is injected just above the
     config layer that selected it, so it OVERRIDES that config (a more-specific
     config layer / flag still wins); ``[profiles.<name>]`` tables in config
     define custom ones. See :func:`_apply_profile`."""
@@ -723,6 +714,14 @@ def materialize(config: Config, *, for_repo: bool = False) -> str:
     ]
     ordered = [s for s in _SECTION_ORDER if s in data]
     ordered += [s for s in data if s not in _SECTION_ORDER]
+    # Top-level scalar fields (e.g. `profile`) carry no table header and must
+    # precede every `[section]` in TOML, so emit them first as bare key=value.
+    for section in ordered:
+        value = data[section]
+        if value is not None and not isinstance(value, dict) and not _is_table_array(value):
+            lines.append(f"{section} = {_toml_scalar(value)}")
+    if lines[-1] != "":
+        lines.append("")
     for section in ordered:
         value = data[section]
         if isinstance(value, dict):

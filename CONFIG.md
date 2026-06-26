@@ -208,36 +208,42 @@ The security boundary. Profiles and the network model are specified in
 | `name` / `email` | none | Override the commit identity (else use the project's `git config`). `agent6 run` refuses to start with no resolvable identity. |
 | `coauthor` | none | Append a `Co-authored-by:` trailer, e.g. `"Alice <alice@example.com>"`. |
 
+## `profile` (top-level)
+
+| Field | Default | Meaning |
+|---|---|---|
+| `profile` | `""` | Named **config profile** (see [Config profiles](#config-profiles)). A bare top-level key (not inside any section) because it overrides EVERY section. The `--profile` CLI flag overrides it. |
+
 ## `[workflow]`
 
 | Field | Default | Meaning |
 |---|---|---|
 | `verify_command` | `[]` | argv defining "a step succeeded" (run with NO shell — wrap a pipeline as `["sh","-c","a && b"]`). **Optional**: when unset, `agent6 run`/`plan` infer one per run — AGENTS.md `## Verify command` section → repo manifests (package.json/Makefile/pyproject/Cargo/go.mod) → a cheap model call — inject it in-memory (never written to config) and print it. With none inferable, the run is *gateless* (per-step commits, no green gate). Set it to pin a deterministic one. |
 | `verify_timeout_s` | `600.0` | Per-call timeout for `verify_command` / `metric.command`. |
-| `critic` | `"off"` | Trigger for the in-loop **adversarial review panel** (below): `off` / `on_verify_fail` / `before_finish` / `periodic`. |
-| `critic_period` | `10` | Iterations between reviews when `critic = "periodic"`. |
-| `review_panel_size` | `1` | Number of reviewer seats (personas cycled). |
-| `review_personas` | `[]` | Per-seat stances, e.g. `["security","correctness","tests"]`; empty = a built-in set. |
-| `review_decision` | `"advisory"` | `advisory` (inject findings, never blocks) / `veto` / `quorum` / `all`. Only gates in-loop. |
-| `review_quorum` | `2` | K for `quorum` (counts **distinct models**, so same-model seats can't fake a quorum). |
-| `review_tier` | `"diff"` | `diff` (one grounded call over the diff) or `explore` (read-only tool-using reviewer that reads the broader repo to catch cross-file impact). |
-| `review_concurrency` | `1` | In-loop seat parallelism (post-hoc `agent6 review` is always parallel). |
-| `review_max_total_rejections` | `4` | Per-run blocks before the gate auto-disarms to advisory (anti-stall). |
-| `review_budget_fraction` | `0.25` | Max run-budget fraction the panel may spend. |
-| `review_seats` | `[]` | Explicit `"persona@provider/model"` seats → **distinct models per seat** (overrides size/personas). A bare `"persona"` routes via `[models.reviewer]`. |
-| `revise_prompt` | `"off"` | One-shot task-prompt revision before the loop: `off` / `auto` / `interactive`. |
-| `profile` | `""` | Named **config profile** (below). The `--profile` CLI flag overrides it. |
-| `compact_drop_at_chars` | _adaptive_ | Tier-1 compaction: replace oldest tool-results with a placeholder. Default (unset) sizes from the worker model's context window (~45% of it); set BOTH `compact_*` to pin. |
-| `compact_summarise_at_chars` | _adaptive_ | Tier-2 compaction: summarise elided history + restart (the task DAG survives). Default (unset) ~80% of the model's context window; the historical 256k/768k apply when the window is unknown. |
-| `context_summary_max_tokens` | `2048` | Cap on the tier-2 summary. |
-| `structural_priors` | `true` | Include the enriched `<repo-priors>` block (ranked hot symbols, git co-change, tree-sitter outline) in the system prompt. Set `false` for a leaner/cheaper prompt. |
-| `system_prompt_file` | `""` | ADVANCED: replace run-mode's static base prompt with this file's contents (the dynamic verify / budget / repo-priors blocks still append). Validated to exist at config load; a startup warning fires if it omits the core tool names. |
+
+## `[review]`
+
+The in-loop critic trigger plus the adversarial review panel (below).
+
+| Field | Default | Meaning |
+|---|---|---|
+| `trigger` | `"off"` | Trigger for the in-loop **adversarial review panel**: `off` / `on_verify_fail` / `before_finish` / `periodic`. |
+| `period` | `10` | Iterations between reviews when `trigger = "periodic"`. |
+| `panel_size` | `1` | Number of reviewer seats (personas cycled). |
+| `personas` | `[]` | Per-seat stances, e.g. `["security","correctness","tests"]`; empty = a built-in set. |
+| `decision` | `"advisory"` | `advisory` (inject findings, never blocks) / `veto` / `quorum` / `all`. Only gates in-loop. |
+| `quorum` | `2` | K for `quorum` (counts **distinct models**, so same-model seats can't fake a quorum). |
+| `tier` | `"diff"` | `diff` (one grounded call over the diff) or `explore` (read-only tool-using reviewer that reads the broader repo to catch cross-file impact). |
+| `concurrency` | `1` | In-loop seat parallelism (post-hoc `agent6 review` is always parallel). |
+| `max_total_rejections` | `4` | Per-run blocks before the gate auto-disarms to advisory (anti-stall). |
+| `budget_fraction` | `0.25` | Max run-budget fraction the panel may spend. |
+| `seats` | `[]` | Explicit `"persona@provider/model"` seats → **distinct models per seat** (overrides size/personas). A bare `"persona"` routes via `[models.reviewer]`. |
 
 ### Adversarial review panel
 
-When `critic != "off"`, the in-loop second opinion is a **grounded review panel**:
-`review_panel_size` reviewers (the `reviewer` model, or distinct models via
-`review_seats`) each scrutinize the run's diff (+ the last verify result) and
+When `trigger != "off"`, the in-loop second opinion is a **grounded review panel**:
+`panel_size` reviewers (the `reviewer` model, or distinct models via
+`seats`) each scrutinize the run's diff (+ the last verify result) and
 return structured findings. The same panel runs post-hoc, read-only, via
 `agent6 review --reviewers N [--personas a,b,c]`.
 
@@ -250,20 +256,38 @@ are downgraded to advisory and can never stall the run; a per-run rejection cap
 disarms the gate after a few blocks. `advisory` (the default) only injects
 findings as guidance — enable `veto`/`quorum` to gate.
 
+## `[context]`
+
+Tiered context-compaction thresholds (approximate chars; tokens ≈ chars/4).
+
+| Field | Default | Meaning |
+|---|---|---|
+| `drop_at_chars` | _adaptive_ | Tier-1 compaction: replace oldest tool-results with a placeholder. Default (unset) sizes from the worker model's context window (~45% of it); set BOTH thresholds to pin. |
+| `summarise_at_chars` | _adaptive_ | Tier-2 compaction: summarise elided history + restart (the task DAG survives). Default (unset) ~80% of the model's context window; the historical 256k/768k apply when the window is unknown. Must be greater than `drop_at_chars`. |
+| `summary_max_tokens` | `2048` | Cap on the tier-2 summary. |
+
+## `[prompt]`
+
+| Field | Default | Meaning |
+|---|---|---|
+| `system_prompt_file` | `""` | ADVANCED: replace run-mode's static base prompt with this file's contents (the dynamic verify / budget / repo-priors blocks still append). Validated to exist at config load; a startup warning fires if it omits the core tool names. |
+| `structural_priors` | `true` | Include the enriched `<repo-priors>` block (ranked hot symbols, git co-change, tree-sitter outline) in the system prompt. Set `false` for a leaner/cheaper prompt. |
+| `revise_prompt` | `"off"` | One-shot task-prompt revision before the loop: `off` / `auto` / `interactive`. |
+
 ### Config profiles
 
 A profile presets many settings at once so a task picks a strategy with one knob.
-Select with `--profile <name>` (on `run`/`plan`/`ask`), `[workflow] profile =
-"<name>"`, or the TUI new-work chooser. A profile **overrides** config rather than
+Select with `--profile <name>` (on `run`/`plan`/`ask`), the top-level `profile =
+"<name>"` key, or the TUI new-work chooser. A profile **overrides** config rather than
 being a baseline: its preset is injected just above the config layer that selected
 it, so precedence (low → high) is
 
-    defaults < global config < [profile via global workflow.profile]
-            < repo config < [profile via repo workflow.profile]
+    defaults < global config < [profile via global profile field]
+            < repo config < [profile via repo profile field]
             < [profile via --profile flag] < --config FILE
 
-The most-specific source wins (`--profile` flag, else repo `[workflow].profile`,
-else global; the presets never stack), and the profile beats the config at its
+The most-specific source wins (`--profile` flag, else repo's `profile`,
+else global's; the presets never stack), and the profile beats the config at its
 scope — but a more-specific config layer, an explicit `--config FILE`, or an
 individual flag still beats the profile.
 
@@ -278,11 +302,13 @@ Define your own with a `[profiles.<name>]` table (a partial config); it wins ove
 a built-in of the same name. Example:
 
 ```toml
-[profiles.myteam.workflow]
-critic = "before_finish"
-review_panel_size = 3
-review_decision = "veto"
-review_seats = ["security@anthropic/claude-opus-4-8", "correctness@openrouter/moonshotai/kimi-k2"]
+profile = "myteam"
+
+[profiles.myteam.review]
+trigger = "before_finish"
+panel_size = 3
+decision = "veto"
+seats = ["security@anthropic/claude-opus-4-8", "correctness@openrouter/moonshotai/kimi-k2"]
 ```
 
 ### `[workflow.metric]` (optional)

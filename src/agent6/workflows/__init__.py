@@ -31,7 +31,7 @@ def system_prompt_for(
     AGENTS.md + recent commits + hot symbols + co-change + symbol outline) -- the
     same view the run loop sees, so prompt show matches reality."""
     dispatcher = (
-        ToolDispatcher(root=root, config=config) if config.workflow.structural_priors else None
+        ToolDispatcher(root=root, config=config) if config.prompt.structural_priors else None
     )
     repo = load_repo_summary(root, dispatcher=dispatcher)
     return build_system_prompt(config=config, repo=repo, mode=mode)

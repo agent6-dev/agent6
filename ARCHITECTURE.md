@@ -82,9 +82,9 @@ Notes:
   store. They do not gate the loop; they are notes the worker keeps
   for itself and the user.
 - **Context compaction.** Long runs are kept inside the model's context
-  window in two tiers (thresholds in `[workflow]`): at
-  `compact_drop_at_chars` the oldest tool_results are replaced by a
-  short "re-call if needed" placeholder; at `compact_summarise_at_chars`
+  window in two tiers (thresholds in `[context]`): at
+  `drop_at_chars` the oldest tool_results are replaced by a
+  short "re-call if needed" placeholder; at `summarise_at_chars`
   the elided history is summarised by the `reviewer` model and the
   conversation restarts from (task + summary). The curator-owned task
   DAG survives the restart, so the worker recovers task-level state with

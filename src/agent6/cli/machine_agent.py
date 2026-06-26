@@ -164,7 +164,7 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
             mode=mode if mode in ("machine", "agent") else "run",
             compact_drop_at_chars=compact_drop,
             compact_summarise_at_chars=compact_summarise,
-            context_summary_max_tokens=cfg.workflow.context_summary_max_tokens,
+            context_summary_max_tokens=cfg.context.summary_max_tokens,
         )
         result = wf.run(r["prompt"])
         payload = result.finish_payload if result.reason == "finish_run" else None

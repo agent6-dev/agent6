@@ -135,10 +135,8 @@ def test_build_config_view_provenance_type_choices(repo: Path) -> None:
 
 
 def test_build_config_view_adaptive_resolution(repo: Path) -> None:
-    view = build_config_view(
-        load_effective(repo), resolved={"workflow.compact_drop_at_chars": 999_999}
-    )
-    s = _by_key(view)["workflow.compact_drop_at_chars"]
+    view = build_config_view(load_effective(repo), resolved={"context.drop_at_chars": 999_999})
+    s = _by_key(view)["context.drop_at_chars"]
     assert s.value is None  # raw: unset -> adaptive
     assert s.effective_value == 999_999
     assert s.is_adaptive is True
@@ -164,7 +162,7 @@ def test_render_show_json_is_full_view(repo: Path) -> None:
 
 
 def test_render_show_text_marks_adaptive(repo: Path) -> None:
-    text = render_show(load_effective(repo), resolved={"workflow.compact_drop_at_chars": 471859})
+    text = render_show(load_effective(repo), resolved={"context.drop_at_chars": 471859})
     assert "(adaptive)" in text and "471859" in text
 
 
@@ -201,14 +199,14 @@ def test_flag_layer_wins(repo: Path, tmp_path: Path) -> None:
 def test_overlay_is_highest_layer(repo: Path) -> None:
     from agent6.config_layer import load_effective_with_overlay
 
-    overlay = {"sandbox": {"run_commands": "no"}, "workflow": {"critic": "periodic"}}
+    overlay = {"sandbox": {"run_commands": "no"}, "review": {"trigger": "periodic"}}
     eff = load_effective_with_overlay(repo, overlay)
     # Overlay beats the repo value.
     assert eff.config.sandbox.run_commands == "no"
     assert eff.sources["sandbox.run_commands"] == "machine"
     # Overlay sets a brand-new value.
-    assert eff.config.workflow.critic == "periodic"
-    assert eff.sources["workflow.critic"] == "machine"
+    assert eff.config.review.trigger == "periodic"
+    assert eff.sources["review.trigger"] == "machine"
     # Lower layers still read through where the overlay is silent.
     assert eff.config.workflow.verify_command == ("pytest", "-q")
 

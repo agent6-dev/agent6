@@ -153,12 +153,12 @@ def _warn_if_usd_unenforceable(cfg: Config, worker_model: str) -> None:
 
 
 def _warn_if_prompt_override_incomplete(cfg: Config) -> None:
-    """Warn when a custom ``workflow.system_prompt_file`` omits the core tool
+    """Warn when a custom ``prompt.system_prompt_file`` omits the core tool
     contracts the worker needs: ``finish_run`` is the only clean exit, and an
     edit primitive (``apply_edit``/``apply_patch``) is needed to do work. The
     override is advanced + operator-owned, so we don't block -- just flag the
     likely-broken case loudly and point at ``agent6 prompt show``."""
-    path = cfg.workflow.system_prompt_file
+    path = cfg.prompt.system_prompt_file
     if not path:
         return
     try:
@@ -448,10 +448,10 @@ def _write_run_manifest(
             "reviewer": _manifest_model_brief(cfg.models.resolve("reviewer")),
         },
         "workflow": {
-            "critic": cfg.workflow.critic,
-            "revise_prompt": cfg.workflow.revise_prompt,
-            # The profile the run actually used (--profile flag or [workflow].profile),
-            # so `agent6 resume` re-applies the same strategy.
+            "critic": cfg.review.trigger,
+            "revise_prompt": cfg.prompt.revise_prompt,
+            # The profile the run actually used (--profile flag or top-level
+            # `profile`), so `agent6 resume` re-applies the same strategy.
             "profile": effective_profile,
         },
     }
@@ -698,7 +698,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         run_branch=run_branch,
         cfg=cfg,
         mode=mode,
-        effective_profile=profile or cfg.workflow.profile,
+        effective_profile=profile or cfg.profile,
     )
 
     transcript_sink = TranscriptSink(layout.transcripts_dir)
@@ -783,10 +783,10 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
             cfg,
             transcript_sink=transcript_sink,
             budget=budget,
-            n=cfg.workflow.review_panel_size,
-            personas=cfg.workflow.review_personas,
+            n=cfg.review.panel_size,
+            personas=cfg.review.personas,
         )
-        if cfg.workflow.critic != "off" and review_panel_configured(cfg)
+        if cfg.review.trigger != "off" and review_panel_configured(cfg)
         else []
     )
 
@@ -878,27 +878,27 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                     else (lambda _i, _s: "continue")
                 ),
                 critic_provider=critic_provider,
-                critic_mode=cfg.workflow.critic,
-                critic_period=cfg.workflow.critic_period,
+                critic_mode=cfg.review.trigger,
+                critic_period=cfg.review.period,
                 review_seats=review_seats,
-                review_decision=cfg.workflow.review_decision,
-                review_quorum=cfg.workflow.review_quorum,
-                review_max_total_rejections=cfg.workflow.review_max_total_rejections,
-                review_budget_fraction=cfg.workflow.review_budget_fraction,
-                review_concurrency=cfg.workflow.review_concurrency,
+                review_decision=cfg.review.decision,
+                review_quorum=cfg.review.quorum,
+                review_max_total_rejections=cfg.review.max_total_rejections,
+                review_budget_fraction=cfg.review.budget_fraction,
+                review_concurrency=cfg.review.concurrency,
                 base_sha=base_sha,
                 prompt_reviser_provider=prompt_reviser_provider,
-                revise_prompt=cfg.workflow.revise_prompt,
+                revise_prompt=cfg.prompt.revise_prompt,
                 temperature=_role_temperature(cfg, role),
                 critic_temperature=_role_temperature(cfg, "reviewer"),
                 prompt_reviser_temperature=_role_temperature(cfg, "reviewer"),
                 prompt_revision_selector=(
-                    _select_revised_prompt if cfg.workflow.revise_prompt == "interactive" else None
+                    _select_revised_prompt if cfg.prompt.revise_prompt == "interactive" else None
                 ),
                 summariser_provider=summariser_provider,
                 compact_drop_at_chars=compact_drop,
                 compact_summarise_at_chars=compact_summarise,
-                context_summary_max_tokens=cfg.workflow.context_summary_max_tokens,
+                context_summary_max_tokens=cfg.context.summary_max_tokens,
             )
             try:
                 with _tui_session(layout.run_dir, enabled=tui_enabled):
@@ -1190,10 +1190,10 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
             cfg,
             transcript_sink=transcript_sink,
             budget=budget,
-            n=cfg.workflow.review_panel_size,
-            personas=cfg.workflow.review_personas,
+            n=cfg.review.panel_size,
+            personas=cfg.review.personas,
         )
-        if cfg.workflow.critic != "off" and review_panel_configured(cfg)
+        if cfg.review.trigger != "off" and review_panel_configured(cfg)
         else []
     )
     resume_base_sha = ""
@@ -1281,21 +1281,21 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
                 budget=budget,
                 resume_state_path=snapshot_path,
                 critic_provider=critic_provider,
-                critic_mode=cfg.workflow.critic,
-                critic_period=cfg.workflow.critic_period,
+                critic_mode=cfg.review.trigger,
+                critic_period=cfg.review.period,
                 review_seats=review_seats,
-                review_decision=cfg.workflow.review_decision,
-                review_quorum=cfg.workflow.review_quorum,
-                review_max_total_rejections=cfg.workflow.review_max_total_rejections,
-                review_budget_fraction=cfg.workflow.review_budget_fraction,
-                review_concurrency=cfg.workflow.review_concurrency,
+                review_decision=cfg.review.decision,
+                review_quorum=cfg.review.quorum,
+                review_max_total_rejections=cfg.review.max_total_rejections,
+                review_budget_fraction=cfg.review.budget_fraction,
+                review_concurrency=cfg.review.concurrency,
                 base_sha=resume_base_sha,
                 temperature=_role_temperature(cfg, "worker"),
                 critic_temperature=_role_temperature(cfg, "reviewer"),
                 summariser_provider=summariser_provider,
                 compact_drop_at_chars=compact_drop,
                 compact_summarise_at_chars=compact_summarise,
-                context_summary_max_tokens=cfg.workflow.context_summary_max_tokens,
+                context_summary_max_tokens=cfg.context.summary_max_tokens,
             )
             try:
                 with _tui_session(layout.run_dir, enabled=tui_enabled):

@@ -537,16 +537,25 @@ class WorkflowConfig(BaseModel):
     # Setting too low for slow legitimate tests will cause false-positive
     # failures, so leave at 600 unless the verify is reliably fast.
     verify_timeout_s: float = Field(gt=0.0, default=600.0)
+    # Optional. None means "no metric; ``run_metric_command`` is unavailable".
+    metric: MetricConfig | None = None
+
+
+class ContextConfig(BaseModel):
+    """``[context]`` section: tiered context-compaction thresholds."""
+
+    model_config = _BASE_MODEL_CONFIG
+
     # Tiered context-compaction thresholds (approximate chars; tokens ~=
     # chars/4). When cumulative *tool_result* content grows past
-    # ``compact_drop_at_chars`` the oldest tool_results are replaced by a
+    # ``drop_at_chars`` the oldest tool_results are replaced by a
     # short placeholder (the worker can re-call the tool to refetch). When the
     # *whole* context (text + tool_use inputs + surviving tool_results) grows
-    # past ``compact_summarise_at_chars`` -- which must be > drop, so tier-2
+    # past ``summarise_at_chars`` -- which must be > drop, so tier-2
     # escalates above tier-1 -- the conversation is summarized and restarted
     # (the durable task DAG survives; the restart notice points the worker at
     # ``list_tasks`` to recover task-level state).
-    # ``context_summary_max_tokens`` caps the summarizer's output.
+    # ``summary_max_tokens`` caps the summarizer's output.
     #
     # Default ``None`` == ADAPTIVE: agent6 sizes both thresholds from the worker
     # model's context window (tier-1 at ~45%, tier-2 at ~80% of it), resolving
@@ -555,28 +564,40 @@ class WorkflowConfig(BaseModel):
     # explicitly (e.g. a self-hosted model agent6 can't size); leave BOTH unset
     # to stay adaptive. When the window is unknown the historical 256k/768k
     # fixed defaults apply.
-    compact_drop_at_chars: int | None = Field(default=None, gt=0)
-    compact_summarise_at_chars: int | None = Field(default=None, gt=0)
-    context_summary_max_tokens: int = Field(gt=0, default=2048)
-    # Optional. None means "no metric; ``run_metric_command`` is unavailable".
-    metric: MetricConfig | None = None
-    # critic-in-loop. When != "off", Workflow runs the
-    # ``reviewer`` model as a critic at the chosen trigger and injects
-    # its critique as a user message the worker sees next turn.
-    #   off              - never (default; behaviour unchanged).
-    #   on_verify_fail   - after every verify failure.
-    #   before_finish    - intercept ``finish_run``; reject if critic
-    #                      is not satisfied and inject critique.
-    #   periodic         - every ``critic_period`` iterations.
-    # The reviewer provider must already be configured in
-    # ``[models.reviewer]`` (same one ``agent6 review`` uses).
-    critic: Literal["off", "on_verify_fail", "before_finish", "periodic"] = "off"
-    critic_period: int = Field(ge=1, default=10)
-    # one-shot task prompt revision before the worker loop starts.
-    # Reuses the reviewer model, takes no tools, and is budget-tracked like
-    # any other provider call. Default off keeps crisp prompts/frontier-model
-    # runs on the old path.
-    revise_prompt: Literal["off", "auto", "interactive"] = "off"
+    drop_at_chars: int | None = Field(default=None, gt=0)
+    summarise_at_chars: int | None = Field(default=None, gt=0)
+    summary_max_tokens: int = Field(gt=0, default=2048)
+
+    @model_validator(mode="after")
+    def _check_compaction_thresholds(self) -> ContextConfig:
+        drop, summarise = self.drop_at_chars, self.summarise_at_chars
+        # Both-or-neither: a lone value is ambiguous (is the other adaptive or
+        # fixed?). Neither set == adaptive from the model's context window.
+        if (drop is None) != (summarise is None):
+            raise ValueError(
+                "set BOTH context.drop_at_chars and"
+                " summarise_at_chars, or NEITHER (neither == adaptive,"
+                " sized from the worker model's context window)."
+            )
+        # Tier 2 (summarise + restart) must escalate ABOVE tier 1 (drop old
+        # tool_results). If summarise <= drop, tier 2 fires at or before tier 1
+        # -- the inverted ordering that historically left tier 2 unreachable.
+        if drop is not None and summarise is not None and summarise <= drop:
+            raise ValueError(
+                "context.summarise_at_chars"
+                f" ({summarise}) must be greater than"
+                f" drop_at_chars ({drop}): tier-2"
+                " summarise must escalate above tier-1 elision."
+            )
+        return self
+
+
+class PromptConfig(BaseModel):
+    """``[prompt]`` section: system-prompt override, structural priors, and
+    one-shot task-prompt revision."""
+
+    model_config = _BASE_MODEL_CONFIG
+
     # ADVANCED: replace run-mode's static base system prompt (role + edit/tool-use/
     # dag/scope rules) with the contents of this file. The dynamic blocks (verify,
     # metric, budget, repo-priors + AGENTS.md) still append, so repo context and
@@ -591,107 +612,99 @@ class WorkflowConfig(BaseModel):
     # prompt that relies purely on on-demand exploration (outline/find_definition)
     # -- the base repo map + AGENTS.md still ship.
     structural_priors: bool = True
-    # Adversarial review panel (opt-in). Shared by `agent6 review --reviewers N`
-    # and, once validated, the in-loop critic trigger. ``review_decision`` is only
-    # a GATE in-loop; "advisory" (default) just injects findings as guidance and
-    # never blocks. ``review_seats`` (flat "persona@provider/model" strings, e.g.
-    # "security@openrouter/moonshotai/kimi-k2") overrides size/personas for
-    # distinct models per seat; empty = ``review_panel_size`` seats on the
-    # ``reviewer`` model with ``review_personas`` cycled across them.
-    review_panel_size: int = Field(ge=1, default=1)
-    review_personas: tuple[str, ...] = ()
-    review_decision: Literal["advisory", "veto", "quorum", "all"] = "advisory"
-    review_quorum: int = Field(ge=1, default=2)
-    # Per-run cap on total panel blocks before the gate auto-downgrades to
-    # advisory for the rest of the run (so a gating panel can never stall forever).
-    review_max_total_rejections: int = Field(ge=1, default=4)
-    # Budget floor: the in-loop review panel is SKIPPED (approve-and-proceed) once
-    # the run's remaining token budget falls below this fraction -- reviewing costs
-    # most exactly when budget is scarcest. Default 0.25 = skip the panel in the
-    # last quarter of the budget.
-    review_budget_fraction: float = Field(gt=0.0, le=1.0, default=0.25)
-    review_seats: tuple[str, ...] = ()
-    # Seat concurrency for the in-loop panel (1 = sequential). The post-hoc
-    # `agent6 review` runs all seats in parallel regardless (fast one-shot).
-    review_concurrency: int = Field(ge=1, default=1)
-    # Reviewer tier: "diff" (one grounded call over the diff) or "explore" (a
-    # read-only tool-using mini-loop that reads the broader repo first to catch
-    # cross-file impact). explore is more thorough but costs several calls/seat.
-    review_tier: Literal["diff", "explore"] = "diff"
-    # Named config PROFILE: a preset that fills in many settings at once (see
-    # agent6.config BUILTIN_PROFILES + user [profiles.<name>] tables). Injected
-    # just ABOVE the config layer that selected it, so the profile OVERRIDES that
-    # config; a more-specific config layer (repo over global, an explicit
-    # --config FILE) or the --profile flag still overrides the profile. Only the
-    # most-specific source's profile applies -- global and repo presets do not
-    # stack. "" / "standard" = the plain defaults. The --profile CLI flag selects
-    # a profile that overrides all config except an explicit --config FILE.
-    profile: str = ""
+    # one-shot task prompt revision before the worker loop starts.
+    # Reuses the reviewer model, takes no tools, and is budget-tracked like
+    # any other provider call. Default off keeps crisp prompts/frontier-model
+    # runs on the old path.
+    revise_prompt: Literal["off", "auto", "interactive"] = "off"
 
     @model_validator(mode="after")
-    def _check_compaction_thresholds(self) -> WorkflowConfig:
-        drop, summarise = self.compact_drop_at_chars, self.compact_summarise_at_chars
-        # Both-or-neither: a lone value is ambiguous (is the other adaptive or
-        # fixed?). Neither set == adaptive from the model's context window.
-        if (drop is None) != (summarise is None):
-            raise ValueError(
-                "set BOTH workflow.compact_drop_at_chars and"
-                " compact_summarise_at_chars, or NEITHER (neither == adaptive,"
-                " sized from the worker model's context window)."
-            )
-        # Tier 2 (summarise + restart) must escalate ABOVE tier 1 (drop old
-        # tool_results). If summarise <= drop, tier 2 fires at or before tier 1
-        # -- the inverted ordering that historically left tier 2 unreachable.
-        if drop is not None and summarise is not None and summarise <= drop:
-            raise ValueError(
-                "workflow.compact_summarise_at_chars"
-                f" ({summarise}) must be greater than"
-                f" compact_drop_at_chars ({drop}): tier-2"
-                " summarise must escalate above tier-1 elision."
-            )
-        return self
-
-    @model_validator(mode="after")
-    def _check_system_prompt_file(self) -> WorkflowConfig:
+    def _check_system_prompt_file(self) -> PromptConfig:
         # Fail loud at config time if the override path is set but missing, rather
         # than silently falling back to the default prompt at run start.
         if self.system_prompt_file:
             p = Path(self.system_prompt_file).expanduser()
             if not p.is_file():
-                raise ValueError(f"workflow.system_prompt_file: not a readable file: {p}")
+                raise ValueError(f"prompt.system_prompt_file: not a readable file: {p}")
         return self
 
+
+class ReviewConfig(BaseModel):
+    """``[review]`` section: critic-in-loop trigger + the adversarial review panel."""
+
+    model_config = _BASE_MODEL_CONFIG
+
+    # critic-in-loop. When != "off", Workflow runs the
+    # ``reviewer`` model as a critic at the chosen trigger and injects
+    # its critique as a user message the worker sees next turn.
+    #   off              - never (default; behaviour unchanged).
+    #   on_verify_fail   - after every verify failure.
+    #   before_finish    - intercept ``finish_run``; reject if critic
+    #                      is not satisfied and inject critique.
+    #   periodic         - every ``period`` iterations.
+    # The reviewer provider must already be configured in
+    # ``[models.reviewer]`` (same one ``agent6 review`` uses).
+    trigger: Literal["off", "on_verify_fail", "before_finish", "periodic"] = "off"
+    period: int = Field(ge=1, default=10)
+    # Adversarial review panel (opt-in). Shared by `agent6 review --reviewers N`
+    # and, once validated, the in-loop critic trigger. ``decision`` is only
+    # a GATE in-loop; "advisory" (default) just injects findings as guidance and
+    # never blocks. ``seats`` (flat "persona@provider/model" strings, e.g.
+    # "security@openrouter/moonshotai/kimi-k2") overrides size/personas for
+    # distinct models per seat; empty = ``panel_size`` seats on the
+    # ``reviewer`` model with ``personas`` cycled across them.
+    panel_size: int = Field(ge=1, default=1)
+    personas: tuple[str, ...] = ()
+    decision: Literal["advisory", "veto", "quorum", "all"] = "advisory"
+    quorum: int = Field(ge=1, default=2)
+    # Per-run cap on total panel blocks before the gate auto-downgrades to
+    # advisory for the rest of the run (so a gating panel can never stall forever).
+    max_total_rejections: int = Field(ge=1, default=4)
+    # Budget floor: the in-loop review panel is SKIPPED (approve-and-proceed) once
+    # the run's remaining token budget falls below this fraction -- reviewing costs
+    # most exactly when budget is scarcest. Default 0.25 = skip the panel in the
+    # last quarter of the budget.
+    budget_fraction: float = Field(gt=0.0, le=1.0, default=0.25)
+    seats: tuple[str, ...] = ()
+    # Seat concurrency for the in-loop panel (1 = sequential). The post-hoc
+    # `agent6 review` runs all seats in parallel regardless (fast one-shot).
+    concurrency: int = Field(ge=1, default=1)
+    # Reviewer tier: "diff" (one grounded call over the diff) or "explore" (a
+    # read-only tool-using mini-loop that reads the broader repo first to catch
+    # cross-file impact). explore is more thorough but costs several calls/seat.
+    tier: Literal["diff", "explore"] = "diff"
+
     @model_validator(mode="after")
-    def _check_review_seats(self) -> WorkflowConfig:
-        # Each review_seats entry is "persona", "persona@provider/model", or
+    def _check_review_seats(self) -> ReviewConfig:
+        # Each seats entry is "persona", "persona@provider/model", or
         # "@provider/model"; an "@" form must name BOTH a provider and a model so
         # a typo doesn't silently degrade to the reviewer route.
-        for spec in self.review_seats:
+        for spec in self.seats:
             if not spec.strip():
-                raise ValueError("workflow.review_seats entries must be non-empty")
+                raise ValueError("review.seats entries must be non-empty")
             _persona, sep, route = spec.partition("@")
             if sep:
                 provider, slash, model = route.partition("/")
                 if not (provider.strip() and slash and model.strip()):
                     raise ValueError(
-                        f"workflow.review_seats: {spec!r} must be"
+                        f"review.seats: {spec!r} must be"
                         " 'persona@provider/model' (both provider and model required)"
                     )
         return self
 
     @model_validator(mode="after")
-    def _check_review_quorum(self) -> WorkflowConfig:
+    def _check_review_quorum(self) -> ReviewConfig:
         # The quorum gate counts one block per DISTINCT model, so quorum > 1 needs
         # at least that many distinct models -- a same-model panel can reach only 1
         # and would never gate. Catch the footgun at load time.
-        if self.review_decision == "quorum" and self.review_quorum > 1:
-            models = {(s.partition("@")[2].strip() if "@" in s else "") for s in self.review_seats}
-            if len(models) < self.review_quorum:
+        if self.decision == "quorum" and self.quorum > 1:
+            models = {(s.partition("@")[2].strip() if "@" in s else "") for s in self.seats}
+            if len(models) < self.quorum:
                 raise ValueError(
-                    f"workflow.review_decision='quorum' with review_quorum={self.review_quorum}"
-                    f" needs >= {self.review_quorum} DISTINCT models (the gate counts one block per"
-                    " distinct model). Provide them via review_seats"
-                    " ('persona@provider/model'), or use review_decision='veto'."
+                    f"review.decision='quorum' with quorum={self.quorum}"
+                    f" needs >= {self.quorum} DISTINCT models (the gate counts one block per"
+                    " distinct model). Provide them via seats"
+                    " ('persona@provider/model'), or use decision='veto'."
                 )
         return self
 
@@ -842,10 +855,22 @@ class Config(BaseModel):
     sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
     git: GitConfig = Field(default_factory=GitConfig)
     workflow: WorkflowConfig = Field(default_factory=WorkflowConfig)
+    review: ReviewConfig = Field(default_factory=ReviewConfig)
+    context: ContextConfig = Field(default_factory=ContextConfig)
+    prompt: PromptConfig = Field(default_factory=PromptConfig)
     budget: BudgetConfig = Field(default_factory=BudgetConfig)
     machine: MachineConfig = Field(default_factory=MachineConfig)
     notify: NotifyConfig = Field(default_factory=NotifyConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
+    # Named config PROFILE: a preset that fills in many settings at once (see
+    # agent6.config BUILTIN_PROFILES + user [profiles.<name>] tables). Injected
+    # just ABOVE the config layer that selected it, so the profile OVERRIDES that
+    # config; a more-specific config layer (repo over global, an explicit
+    # --config FILE) or the --profile flag still overrides the profile. Only the
+    # most-specific source's profile applies -- global and repo presets do not
+    # stack. "" / "standard" = the plain defaults. The --profile CLI flag selects
+    # a profile that overrides all config except an explicit --config FILE.
+    profile: str = ""
 
     @model_validator(mode="after")
     def _cross_validate_provider_routing(self) -> Config:
@@ -1010,7 +1035,7 @@ class Config(BaseModel):
 
 # Built-in config profiles: named presets that fill in many settings at once, so
 # a task can pick a strategy with one knob (`--profile ultra`) instead of tuning
-# the review_* / budget knobs by hand. Each value is a nested config dict applied
+# the [review] / budget knobs by hand. Each value is a nested config dict applied
 # as the LOWEST layer (your explicit settings still win). Users add their own via
 # [profiles.<name>] tables in config.toml.
 BUILTIN_PROFILES: dict[str, dict[str, Any]] = {
@@ -1018,28 +1043,28 @@ BUILTIN_PROFILES: dict[str, dict[str, Any]] = {
     "standard": {},
     # Fast/cheap: no review, tighter output budget.
     "quick": {
-        "workflow": {"critic": "off"},
+        "review": {"trigger": "off"},
         "budget": {"max_output_tokens": 50_000},
     },
     # The "ultracode" tier: a 3-seat grounded panel that advises + gates by quorum.
     "ultra": {
-        "workflow": {
-            "critic": "before_finish",
-            "review_panel_size": 3,
+        "review": {
+            "trigger": "before_finish",
+            "panel_size": 3,
             # veto, not quorum: the 3 seats share one model (the gate counts one
             # block per DISTINCT model, so quorum>1 would be unreachable here).
-            "review_decision": "veto",
-            "review_personas": ["security", "correctness", "tests"],
+            "decision": "veto",
+            "personas": ["security", "correctness", "tests"],
         },
     },
     # Maximum scrutiny: 5 explore-tier seats, before_finish veto, bigger budget.
     "paranoid": {
-        "workflow": {
-            "critic": "before_finish",
-            "review_panel_size": 5,
-            "review_decision": "veto",
-            "review_tier": "explore",
-            "review_personas": [
+        "review": {
+            "trigger": "before_finish",
+            "panel_size": 5,
+            "decision": "veto",
+            "tier": "explore",
+            "personas": [
                 "security",
                 "correctness",
                 "tests",

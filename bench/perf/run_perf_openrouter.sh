@@ -179,6 +179,8 @@ verify_command = [
   "tests/submission_tests.py::CorrectnessTests",
 ]
 verify_timeout_s = 30.0
+
+[prompt]
 revise_prompt = "${AGENT6_PERF_REVISE_PROMPT:-off}"
 
 [workflow.metric]

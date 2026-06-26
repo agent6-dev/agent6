@@ -567,7 +567,7 @@ class Workflow:
     critic_mode: Literal["off", "on_verify_fail", "before_finish", "periodic"] = "off"
     critic_period: int = 10
     # Optional one-shot prompt revision before the first worker call.
-    # The CLI wires this to the reviewer model when workflow.revise_prompt !=
+    # The CLI wires this to the reviewer model when prompt.revise_prompt !=
     # "off". It never receives tools and never iterates.
     prompt_reviser_provider: Provider | None = None
     revise_prompt: Literal["off", "auto", "interactive"] = "off"
@@ -2010,9 +2010,9 @@ class Workflow:
         audit: re-raise BudgetExceeded and KeyboardInterrupt so the loop's
         budget guarantee and operator-abort path stay intact.
         """
-        # workflow.structural_priors=false -> base summary only (no hot symbols /
+        # prompt.structural_priors=false -> base summary only (no hot symbols /
         # co-change / symbol outline), a leaner prompt that leans on on-demand tools.
-        disp = self.dispatcher if self.config.workflow.structural_priors else None
+        disp = self.dispatcher if self.config.prompt.structural_priors else None
         return load_repo_summary(self.root, dispatcher=disp)
 
     def _save_resume_snapshot(
@@ -2264,7 +2264,7 @@ class Workflow:
             return user_task
         if self.prompt_reviser_provider is None:
             raise _PromptRevisionError(
-                "workflow.revise_prompt is enabled but no reviser provider is wired"
+                "prompt.revise_prompt is enabled but no reviser provider is wired"
             )
 
         context = _format_prompt_revision_context(repo)
@@ -2312,7 +2312,7 @@ class Workflow:
         if self.revise_prompt == "interactive":
             if self.prompt_revision_selector is None:
                 raise _PromptRevisionError(
-                    "workflow.revise_prompt='interactive' needs an interactive selector"
+                    "prompt.revise_prompt='interactive' needs an interactive selector"
                 )
             selected = self.prompt_revision_selector(
                 user_task,

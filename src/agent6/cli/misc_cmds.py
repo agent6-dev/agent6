@@ -495,16 +495,16 @@ def _run_review_panel(
         tools, dispatch = build_readonly_review_tools(disp)
     print(
         f"[agent6] review panel: {len(seats)} seats"
-        f" ({', '.join(s.persona for s in seats)}) | decision={cfg.workflow.review_decision}"
-        f" | tier={cfg.workflow.review_tier}",
+        f" ({', '.join(s.persona for s in seats)}) | decision={cfg.review.decision}"
+        f" | tier={cfg.review.tier}",
         file=sys.stderr,
     )
     try:
         result = run_panel(
             seats,
             ctx,
-            decision=cfg.workflow.review_decision,
-            quorum=cfg.workflow.review_quorum,
+            decision=cfg.review.decision,
+            quorum=cfg.review.quorum,
             panel_id="cli",
             concurrency=len(seats),  # one-shot CLI: run all seats in parallel
             tools=tools,

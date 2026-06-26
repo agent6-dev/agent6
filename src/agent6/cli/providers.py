@@ -37,14 +37,14 @@ from agent6.workflows._review import parse_seat_spec
 def resolve_compaction_thresholds(
     cfg: Config, rm: RoleModel | None, *, log: Callable[[str], None] | None = None
 ) -> tuple[int, int]:
-    """Effective ``(compact_drop_at_chars, compact_summarise_at_chars)`` for the
+    """Effective ``(context.drop_at_chars, context.summarise_at_chars)`` for the
     model *rm* drives the loop with: the explicit config values if set, else
     sized from the model's context window (bundled table + live model cache),
     else the historical fixed defaults. Logs the choice when adaptive so the
     operator can see what was picked. ``rm is None`` (model unresolved) falls
     through to explicit-or-fixed-default."""
-    drop_override = cfg.workflow.compact_drop_at_chars
-    summarise_override = cfg.workflow.compact_summarise_at_chars
+    drop_override = cfg.context.drop_at_chars
+    summarise_override = cfg.context.summarise_at_chars
     provider = rm.provider if rm is not None else ""
     model = rm.model if rm is not None else ""
     drop, summarise = models_cache.compaction_thresholds(
@@ -326,9 +326,9 @@ def _build_critic_provider(
     events: EventSink,
 ) -> Provider | None:
     """critic-in-loop. Routes the reviewer role as the critic
-    provider when ``workflow.critic != "off"``. Returns None when
+    provider when ``review.trigger != "off"``. Returns None when
     disabled so Workflow leaves the critic path inert."""
-    if cfg.workflow.critic == "off":
+    if cfg.review.trigger == "off":
         return None
     critic_inner = _build_role_provider(
         cfg, "reviewer", transcript_sink=transcript_sink, budget=budget
@@ -350,16 +350,16 @@ _DEFAULT_PERSONAS = ("security", "correctness", "tests", "over-engineering", "ed
 
 def review_panel_configured(cfg: Config) -> bool:
     """True iff the user EXPLICITLY opted into the review panel (vs just enabling
-    the legacy single critic). When ``critic != "off"`` but no review_* key is
-    set, we keep the legacy gating critic so a pre-panel before_finish/periodic
+    the legacy single critic). When ``trigger != "off"`` but no [review] panel key
+    is set, we keep the legacy gating critic so a pre-panel before_finish/periodic
     config is not silently downgraded to the advisory panel."""
-    wf = cfg.workflow
+    rv = cfg.review
     return (
-        bool(wf.review_seats)
-        or wf.review_panel_size != 1
-        or wf.review_decision != "advisory"
-        or bool(wf.review_personas)
-        or wf.review_tier != "diff"
+        bool(rv.seats)
+        or rv.panel_size != 1
+        or rv.decision != "advisory"
+        or bool(rv.personas)
+        or rv.tier != "diff"
     )
 
 
@@ -374,22 +374,22 @@ def build_review_seats(
 ) -> list[ReviewSeat]:
     """Build the review-panel seats.
 
-    Explicit form (``cfg.workflow.review_seats`` set): one seat per
+    Explicit form (``cfg.review.seats`` set): one seat per
     ``"persona@provider/model"`` string -> distinct models per seat. A seat with
     no ``@provider/model`` (bare persona) routes via ``[models.reviewer]``.
 
-    Simple form (no ``review_seats``): ``n`` seats all on the ``reviewer`` model,
+    Simple form (no ``review.seats``): ``n`` seats all on the ``reviewer`` model,
     differing only by adversarial persona (``personas`` cycled, else a built-in
     set)."""
-    if cfg.workflow.review_seats:
+    if cfg.review.seats:
         seats: list[ReviewSeat] = []
-        for spec in cfg.workflow.review_seats:
+        for spec in cfg.review.seats:
             persona, provider_name, model = parse_seat_spec(spec)
             if provider_name and model:
                 entry = cfg.providers.get(provider_name)
                 if entry is None:
                     raise ProviderError(
-                        f"review_seats: {spec!r} names provider {provider_name!r} but"
+                        f"review.seats: {spec!r} names provider {provider_name!r} but"
                         f" [providers.{provider_name}] is missing"
                     )
                 # `--model X` (model_override) overrides the seat's pinned model;
@@ -419,7 +419,7 @@ def build_review_seats(
                     persona=persona or "general",
                     model=label,
                     provider=provider,
-                    tier=cfg.workflow.review_tier,
+                    tier=cfg.review.tier,
                 )
             )
         return seats
@@ -441,7 +441,7 @@ def build_review_seats(
                 persona=pool[i % len(pool)],
                 model=model,
                 provider=provider,
-                tier=cfg.workflow.review_tier,
+                tier=cfg.review.tier,
             )
         )
     return seats
@@ -455,7 +455,7 @@ def _build_prompt_reviser_provider(
     events: EventSink,
 ) -> Provider | None:
     """Route the reviewer role as a one-shot prompt reviser."""
-    if cfg.workflow.revise_prompt == "off":
+    if cfg.prompt.revise_prompt == "off":
         return None
     reviser_inner = _build_role_provider(
         cfg, "reviewer", transcript_sink=transcript_sink, budget=budget

@@ -194,7 +194,7 @@ What DID move the needle: **working verify** (+2/18, recovered django wins) and
 **model choice** (opus 4/6 / 12-20 turns vs glm ~39% / ~49 turns). Notably the
 structural-prior A/B shows we are *ahead of aider* on repo context (ranked hot
 symbols + tree-sitter outline + git co-change) yet it doesn't help SWE-bench — so
-upfront context is not the bottleneck. New `workflow.structural_priors=false` gives
+upfront context is not the bottleneck. New `prompt.structural_priors=false` gives
 a leaner/cheaper prompt with no measured resolve cost.
 
 **Conclusion for "harder problems":** spend on the model and on verify quality,

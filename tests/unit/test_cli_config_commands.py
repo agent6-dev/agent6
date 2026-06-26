@@ -164,14 +164,14 @@ def _machine_file(tmp_path: Path) -> Path:
 
 def test_machine_overlay_set_and_get(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
     mf = _machine_file(iso)
-    # A non-security knob is fine in a machine overlay (workflow tuning).
-    assert _run(["config", "set", "workflow.critic", "on_verify_fail", "--machine", str(mf)]) == 0
+    # A non-security knob is fine in a machine overlay (review tuning).
+    assert _run(["config", "set", "review.trigger", "on_verify_fail", "--machine", str(mf)]) == 0
     data = tomllib.loads(mf.read_text(encoding="utf-8"))
-    assert data["config"] == {"workflow": {"critic": "on_verify_fail"}}  # type: ignore[comparison-overlap]
+    assert data["config"] == {"review": {"trigger": "on_verify_fail"}}  # type: ignore[comparison-overlap]
     # The original machine tables survive the edit.
     assert data["machine"]["name"] == "demo"  # type: ignore[index]
     capsys.readouterr()
-    assert _run(["config", "get", "workflow.critic", "--machine", str(mf)]) == 0
+    assert _run(["config", "get", "review.trigger", "--machine", str(mf)]) == 0
     assert "[machine]" in capsys.readouterr().out
 
 

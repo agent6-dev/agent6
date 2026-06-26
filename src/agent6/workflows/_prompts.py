@@ -463,7 +463,7 @@ def build_system_prompt(
     # append, so repo context + budget awareness are preserved. The file is
     # validated to exist at config-load time; run startup warns if it omits the
     # core tool names. Scoped to run mode -- the worker is what operators tune.
-    override = config.workflow.system_prompt_file
+    override = config.prompt.system_prompt_file
     if mode == "run" and override:
         base = Path(override).expanduser().read_text(encoding="utf-8")
     parts = [base]

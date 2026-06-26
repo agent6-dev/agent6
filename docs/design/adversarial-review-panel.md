@@ -123,7 +123,7 @@ boundary — so deferring it reshapes nothing.
 
 - Per-run `review_rejections_total` (persisted). On a panel block, +1; on a
   pass, **decay −1** (not reset, so oscillation between seats still trends up).
-- When `review_rejections_total ≥ review_max_total_rejections` (default 4) the
+- When `review_rejections_total ≥ review.max_total_rejections` (default 4) the
   panel **downgrades to advisory for the rest of the run** (reported via the
   `disarmed` boolean on the `loop.review.panel` event). The veto can bite real
   bugs (a higher cap is safe because grounding already blocks taste), but can
@@ -131,7 +131,7 @@ boundary — so deferring it reshapes nothing.
 
 ## In-loop wiring (reuse the critic trigger enum; default advisory)
 
-`workflow.critic` stays the trigger selector. The single critic call becomes a
+`review.trigger` stays the trigger selector. The single critic call becomes a
 panel run:
 
 - `before_finish`: on `finish_run`, run the panel over the delta diff +
@@ -141,7 +141,7 @@ panel run:
 - `on_verify_fail`: panel is **advisory-only here** (verify-red is already the
   hard signal); cap to top-1 finding/seat, seats may only point at the failing
   symbol shown in `verify_output`.
-- `periodic`: advisory injection every `critic_period` iterations.
+- `periodic`: advisory injection every `review.period` iterations.
 
 ## Post-hoc mode (ships first, safest)
 
@@ -153,7 +153,7 @@ real diffs with real API spend before anything touches the worker.
 ## Budget / events
 
 - Seats draw from the run's shared `BudgetTracker`. A per-trigger sub-budget
-  `min(panel_cap, review_budget_fraction × remaining)` is checked **before and
+  `min(panel_cap, review.budget_fraction × remaining)` is checked **before and
   between** seats; a seat skipped for budget abstains with
   `loop.review.skipped(reason=budget)` (≠ pass). Per-seat usage is folded into
   ONE `budget.update` the parent emits after the panel.
@@ -163,16 +163,16 @@ real diffs with real API spend before anything touches the worker.
 ## Config (flat, round-trippable by the config editor — NO array-of-tables)
 
 ```toml
-[workflow]
-critic = "before_finish"        # trigger: off|on_verify_fail|before_finish|periodic
-review_panel_size = 3           # N seats (sugar; ignored if review_seats set)
-review_personas = ["security", "correctness", "tests"]   # cycled across seats
-review_decision = "advisory"    # advisory(default)|veto|quorum|all
-review_quorum = 2               # K for quorum (distinct-model blocks)
-review_max_total_rejections = 4 # per-run gate-stall cap, then auto-advisory
-review_budget_fraction = 0.25   # max run-budget fraction the panel may spend
+[review]
+trigger = "before_finish"       # off|on_verify_fail|before_finish|periodic
+panel_size = 3                  # N seats (sugar; ignored if seats set)
+personas = ["security", "correctness", "tests"]   # cycled across seats
+decision = "advisory"           # advisory(default)|veto|quorum|all
+quorum = 2                      # K for quorum (distinct-model blocks)
+max_total_rejections = 4        # per-run gate-stall cap, then auto-advisory
+budget_fraction = 0.25          # max run-budget fraction the panel may spend
 # Explicit seats (overrides size/personas), FLAT strings "persona@provider/model":
-review_seats = ["security@anthropic/claude-opus-4-8", "correctness@openrouter/x/kimi-k2"]
+seats = ["security@anthropic/claude-opus-4-8", "correctness@openrouter/x/kimi-k2"]
 ```
 
 `[models.reviewer]` is the default route when a seat names no model. (No `tier`

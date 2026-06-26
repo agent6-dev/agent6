@@ -96,10 +96,14 @@ allow_history_rewrite = false
 
 [workflow]
 verify_command = $verify_cmd_json
+
+[review]
 # Optional critic-in-loop. Set AGENT6_REALWORLD_CRITIC=before_finish (or
 # on_verify_fail / periodic) to evaluate critic modes against the
 # premature-finish task variants. Default "off" mirrors the prior bench config.
-critic = "${AGENT6_REALWORLD_CRITIC:-off}"
+trigger = "${AGENT6_REALWORLD_CRITIC:-off}"
+
+[prompt]
 revise_prompt = "${AGENT6_REALWORLD_REVISE_PROMPT:-off}"
 ${metric_block}
 

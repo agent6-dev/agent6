@@ -330,10 +330,10 @@ def resolved_adaptive_values(cfg: Config) -> dict[str, object]:
     drop, summarise = compaction_thresholds(
         rm.provider,
         rm.model,
-        drop_override=cfg.workflow.compact_drop_at_chars,
-        summarise_override=cfg.workflow.compact_summarise_at_chars,
+        drop_override=cfg.context.drop_at_chars,
+        summarise_override=cfg.context.summarise_at_chars,
     )
     return {
-        "workflow.compact_drop_at_chars": drop,
-        "workflow.compact_summarise_at_chars": summarise,
+        "context.drop_at_chars": drop,
+        "context.summarise_at_chars": summarise,
     }

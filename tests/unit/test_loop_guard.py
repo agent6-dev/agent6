@@ -63,7 +63,7 @@ def _init_repo(repo: Path) -> None:
 def _build_wf(repo: Path, provider: MagicMock, dispatcher: MagicMock) -> Workflow:
     return Workflow(
         root=repo,
-        config=MagicMock(workflow=MagicMock(system_prompt_file="")),
+        config=MagicMock(prompt=MagicMock(system_prompt_file="")),
         provider=provider,
         dispatcher=dispatcher,
         logger=_silent,
@@ -191,7 +191,7 @@ def test_loop_guard_kills_run_when_streak_passes_threshold(tmp_path: Path) -> No
 
     wf = Workflow(
         root=repo,
-        config=MagicMock(workflow=MagicMock(system_prompt_file="")),
+        config=MagicMock(prompt=MagicMock(system_prompt_file="")),
         provider=provider,
         dispatcher=dispatcher,
         logger=_silent,
@@ -223,7 +223,7 @@ def test_loop_guard_kill_disabled_when_threshold_zero(tmp_path: Path) -> None:
 
     wf = Workflow(
         root=repo,
-        config=MagicMock(workflow=MagicMock(system_prompt_file="")),
+        config=MagicMock(prompt=MagicMock(system_prompt_file="")),
         provider=provider,
         dispatcher=dispatcher,
         logger=_silent,

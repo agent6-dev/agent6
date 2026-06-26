@@ -151,7 +151,7 @@ def test_build_system_prompt_plan_mode_mentions_plan(tmp_path: Path) -> None:
 def test_system_prompt_file_override_replaces_run_base_keeps_blocks(tmp_path: Path) -> None:
     custom = tmp_path / "prompt.txt"
     custom.write_text("<role>CUSTOM WORKER. apply_edit + finish_run.</role>", encoding="utf-8")
-    cfg = Config.model_validate({"workflow": {"system_prompt_file": str(custom)}})
+    cfg = Config.model_validate({"prompt": {"system_prompt_file": str(custom)}})
     repo = RepoSummary(
         root=tmp_path,
         branch="main",
@@ -173,7 +173,7 @@ def test_system_prompt_file_override_replaces_run_base_keeps_blocks(tmp_path: Pa
 
 def test_system_prompt_file_validator_rejects_missing(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="not a readable file"):
-        Config.model_validate({"workflow": {"system_prompt_file": str(tmp_path / "nope.txt")}})
+        Config.model_validate({"prompt": {"system_prompt_file": str(tmp_path / "nope.txt")}})
 
 
 def test_warn_if_prompt_override_incomplete(
@@ -189,12 +189,12 @@ def test_warn_if_prompt_override_incomplete(
     bad.write_text("just go do stuff", encoding="utf-8")
     # complete override -> silent
     _warn_if_prompt_override_incomplete(
-        Config.model_validate({"workflow": {"system_prompt_file": str(good)}})
+        Config.model_validate({"prompt": {"system_prompt_file": str(good)}})
     )
     assert capsys.readouterr().err == ""
     # missing both contracts -> warns about each
     _warn_if_prompt_override_incomplete(
-        Config.model_validate({"workflow": {"system_prompt_file": str(bad)}})
+        Config.model_validate({"prompt": {"system_prompt_file": str(bad)}})
     )
     err = capsys.readouterr().err
     assert "finish_run" in err and "apply_edit/apply_patch" in err
@@ -343,7 +343,7 @@ def test_dispatcher_refuses_mutations_in_ask_mode(tmp_path: Path) -> None:
 def _wf(**kw: Any) -> Workflow:
     defaults: dict[str, Any] = {
         "root": Path("/tmp"),
-        "config": MagicMock(workflow=MagicMock(system_prompt_file="")),
+        "config": MagicMock(prompt=MagicMock(system_prompt_file="")),
         "provider": MagicMock(),
         "dispatcher": MagicMock(),
         "logger": _silent,

@@ -316,24 +316,18 @@ def test_verify_timeout_s_must_be_positive(tmp_path: Path) -> None:
 
 def test_revise_prompt_defaults_off(tmp_path: Path) -> None:
     cfg = load_config(_write(tmp_path, _VALID_TOML))
-    assert cfg.workflow.revise_prompt == "off"
+    assert cfg.prompt.revise_prompt == "off"
 
 
 @pytest.mark.parametrize("mode", ["off", "auto", "interactive"])
 def test_revise_prompt_modes_load(tmp_path: Path, mode: str) -> None:
-    body = _VALID_TOML.replace(
-        'verify_command = ["true"]',
-        f'verify_command = ["true"]\nrevise_prompt = "{mode}"',
-    )
+    body = _VALID_TOML + f'\n[prompt]\nrevise_prompt = "{mode}"\n'
     cfg = load_config(_write(tmp_path, body))
-    assert cfg.workflow.revise_prompt == mode
+    assert cfg.prompt.revise_prompt == mode
 
 
 def test_revise_prompt_invalid_mode_rejected(tmp_path: Path) -> None:
-    body = _VALID_TOML.replace(
-        'verify_command = ["true"]',
-        'verify_command = ["true"]\nrevise_prompt = "always"',
-    )
+    body = _VALID_TOML + '\n[prompt]\nrevise_prompt = "always"\n'
     with pytest.raises(ConfigError):
         load_config(_write(tmp_path, body))
 
@@ -488,42 +482,36 @@ def test_compaction_defaults(tmp_path: Path) -> None:
     # Default is now None == adaptive (sized from the worker model's context
     # window at run construction; see models_cache.compaction_thresholds).
     cfg = load_config(_write(tmp_path, _VALID_TOML))
-    assert cfg.workflow.compact_drop_at_chars is None
-    assert cfg.workflow.compact_summarise_at_chars is None
-    assert cfg.workflow.context_summary_max_tokens == 2048
+    assert cfg.context.drop_at_chars is None
+    assert cfg.context.summarise_at_chars is None
+    assert cfg.context.summary_max_tokens == 2048
 
 
 def test_compaction_both_or_neither(tmp_path: Path) -> None:
     # A lone threshold is ambiguous (is the other adaptive or fixed?); the
     # loader must reject setting only one.
-    body = _VALID_TOML.replace(
-        'verify_command = ["true"]',
-        'verify_command = ["true"]\ncompact_drop_at_chars = 100000',
-    )
+    body = _VALID_TOML + "\n[context]\ndrop_at_chars = 100000\n"
     with pytest.raises(ConfigError) as exc:
         load_config(_write(tmp_path, body))
     assert "BOTH" in str(exc.value) or "NEITHER" in str(exc.value)
 
 
 def test_compaction_thresholds_overridable(tmp_path: Path) -> None:
-    body = _VALID_TOML.replace(
-        'verify_command = ["true"]',
-        'verify_command = ["true"]\n'
-        "compact_drop_at_chars = 100000\n"
-        "compact_summarise_at_chars = 300000\n"
-        "context_summary_max_tokens = 1024",
+    body = (
+        _VALID_TOML
+        + "\n[context]\n"
+        + "drop_at_chars = 100000\n"
+        + "summarise_at_chars = 300000\n"
+        + "summary_max_tokens = 1024\n"
     )
     cfg = load_config(_write(tmp_path, body))
-    assert cfg.workflow.compact_drop_at_chars == 100000
-    assert cfg.workflow.compact_summarise_at_chars == 300000
-    assert cfg.workflow.context_summary_max_tokens == 1024
+    assert cfg.context.drop_at_chars == 100000
+    assert cfg.context.summarise_at_chars == 300000
+    assert cfg.context.summary_max_tokens == 1024
 
 
 def test_compaction_threshold_must_be_positive(tmp_path: Path) -> None:
-    body = _VALID_TOML.replace(
-        'verify_command = ["true"]',
-        'verify_command = ["true"]\ncompact_drop_at_chars = 0',
-    )
+    body = _VALID_TOML + "\n[context]\ndrop_at_chars = 0\n"
     with pytest.raises(ConfigError):
         load_config(_write(tmp_path, body))
 
@@ -531,12 +519,7 @@ def test_compaction_threshold_must_be_positive(tmp_path: Path) -> None:
 def test_compaction_summarise_must_exceed_drop(tmp_path: Path) -> None:
     # Inverted ordering (tier-2 <= tier-1) is the misconfiguration that made
     # tier-2 unreachable; the loader must reject it.
-    body = _VALID_TOML.replace(
-        'verify_command = ["true"]',
-        'verify_command = ["true"]\n'
-        "compact_drop_at_chars = 300000\n"
-        "compact_summarise_at_chars = 200000",
-    )
+    body = _VALID_TOML + "\n[context]\ndrop_at_chars = 300000\nsummarise_at_chars = 200000\n"
     with pytest.raises(ConfigError) as exc:
         load_config(_write(tmp_path, body))
     assert "must be greater than" in str(exc.value)

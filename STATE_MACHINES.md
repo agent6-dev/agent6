@@ -567,8 +567,10 @@ global), and every knob `agent6 config show` lists is valid inside it.
 
 ```toml
 [config.workflow]
-critic = "on_verify_fail"
 verify_command = ["uv", "run", "pytest", "-q"]
+
+[config.review]
+trigger = "on_verify_fail"
 
 [config.budget]
 best_effort_usd_limit = 50.0
