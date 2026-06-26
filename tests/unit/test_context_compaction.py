@@ -133,7 +133,10 @@ def test_restart_notice_is_dag_aware() -> None:
         CONTEXT_RESTART_NOTICE as notice,
     )
 
-    assert "dag_list_tasks" in notice
+    # The real tool is ``list_tasks`` (no ``dag_`` prefix); the notice must
+    # name it exactly or the post-compaction recovery call 404s.
+    assert "list_tasks" in notice
+    assert "dag_list_tasks" not in notice
     assert "DAG" in notice
     # Still tells the worker not to start over.
     assert "Do NOT start over" in notice

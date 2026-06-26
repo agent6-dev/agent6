@@ -545,7 +545,7 @@ class WorkflowConfig(BaseModel):
     # past ``compact_summarise_at_chars`` -- which must be > drop, so tier-2
     # escalates above tier-1 -- the conversation is summarized and restarted
     # (the durable task DAG survives; the restart notice points the worker at
-    # ``dag_list_tasks`` to recover task-level state).
+    # ``list_tasks`` to recover task-level state).
     # ``context_summary_max_tokens`` caps the summarizer's output.
     #
     # Default ``None`` == ADAPTIVE: agent6 sizes both thresholds from the worker

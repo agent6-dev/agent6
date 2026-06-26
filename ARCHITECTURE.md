@@ -77,8 +77,8 @@ Notes:
   `git_ops.py` from outside the jail. Per-step is the default; the
   `git.commit_strategy` knob also allows `squash` (one commit at run
   end), `stage` (stage but never commit), and `none`.
-- **DAG-as-tool.** `dag_add_task` / `dag_update_task` /
-  `dag_set_cursor` / `dag_list_tasks` write to a curator-owned side
+- **DAG-as-tool.** `add_task` / `update_task` /
+  `set_cursor` / `list_tasks` write to a curator-owned side
   store. They do not gate the loop; they are notes the worker keeps
   for itself and the user.
 - **Context compaction.** Long runs are kept inside the model's context
@@ -88,7 +88,7 @@ Notes:
   the elided history is summarised by the `reviewer` model and the
   conversation restarts from (task + summary). The curator-owned task
   DAG survives the restart, so the worker recovers task-level state with
-  `dag_list_tasks` instead of starting over.
+  `list_tasks` instead of starting over.
 - **`finish_run(summary)`** is the only terminal tool. Calling it
   emits a `run.end` event and returns control to the CLI.
 

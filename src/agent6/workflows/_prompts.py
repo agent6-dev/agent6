@@ -423,7 +423,7 @@ CONTEXT_RESTART_NOTICE = (
     " progress summary below — trust it for prior results and continue the task"
     " from here. Do NOT start over.\n\n"
     "Your task DAG is durable curator-owned state and was NOT compacted: call"
-    " `dag_list_tasks` to recover the full task breakdown, each task's status,"
+    " `list_tasks` to recover the full task breakdown, each task's status,"
     " and the current cursor, then resume from the first unfinished task."
     " Treat the DAG as the authoritative record of what is done vs. pending —"
     " the summary below is only a narrative supplement.\n\nPROGRESS SUMMARY:\n"
