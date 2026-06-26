@@ -226,6 +226,28 @@ def _maybe_apply_agent_landlock(
     )
     run_paths = (Path("/run"),) if Path("/run").exists() else ()
     proc_paths = (Path("/proc"),) if Path("/proc").exists() else ()
+    # The jail launcher (agent6-jail, hardened profile) grants the CHILD
+    # read+execute on these system dirs by opening each one from inside THIS
+    # already-Landlocked process (PathFd::new in apply_landlock_hardened). If a
+    # dir is not in the agent's own read set, that open is denied, the child's
+    # rule for it is silently skipped, and the child cannot exec ANY binary that
+    # needs it -- every run_command / verify / commit then fails with execve
+    # EACCES (returncode 127) on a no-userns host. So the agent read set must be
+    # a SUPERSET of the jail child's read+exec roots. /usr + /etc are already
+    # below; add the rest. /dev is the one that bites on a merged-/usr host
+    # (where /bin /lib /lib64 /sbin are symlinks into /usr); the others matter on
+    # a split-/usr host. Must mirror apply_landlock_hardened's ro_paths.
+    sys_exec_dirs = tuple(
+        p
+        for p in (
+            Path("/bin"),
+            Path("/sbin"),
+            Path("/lib"),
+            Path("/lib64"),
+            Path("/dev"),
+        )
+        if p.exists()
+    )
     # The agent process (and the curator subprocess it re-execs) must be able to
     # READ its own Python install for lazy imports. A `uv tool` install lives
     # under $HOME (already covered), but a venv outside $HOME, a dev checkout,
@@ -259,6 +281,7 @@ def _maybe_apply_agent_landlock(
         Path("/usr"),
         Path("/etc"),
         tmp,
+        *sys_exec_dirs,
         *dev_files,
         *run_paths,
         *proc_paths,

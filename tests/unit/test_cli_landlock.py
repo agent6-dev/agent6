@@ -89,6 +89,38 @@ def test_agent_landlock_read_roots_include_python_install(
     assert Path(cli.__file__).resolve().parents[2] in reads  # the agent6 source root
 
 
+def test_agent_landlock_read_roots_include_jail_child_exec_dirs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The agent read set must be a SUPERSET of the jail child's read+exec roots.
+
+    The jail launcher (hardened) grants the child read+exec on /usr /bin /sbin
+    /lib /lib64 /etc /dev by opening each from inside the agent's own Landlock
+    domain. If the agent omits one, that open is denied, the child's rule is
+    silently skipped, and the child cannot exec ANY binary needing it -- every
+    run_command/verify/commit then fails execve EACCES (rc 127) on a no-userns
+    host. /dev is the gap on a merged-/usr host (/bin /lib /lib64 /sbin are
+    symlinks into /usr there); the rest matter on a split-/usr host.
+    """
+    calls: list[dict[str, Any]] = []
+
+    def _rec(**kwargs: Any) -> LandlockReport:
+        calls.append(kwargs)
+        return _report()
+
+    monkeypatch.setattr(cli, "apply_agent_landlock", _rec)
+    cli._maybe_apply_agent_landlock(  # pyright: ignore[reportPrivateUsage]
+        _cfg(), "hardened", _env(major=6, minor=14)
+    )
+    reads = calls[0]["read_paths"]
+    assert Path("/usr") in reads
+    assert Path("/etc") in reads
+    # The dirs that were missing and broke jail-child exec on no-userns hosts.
+    for d in ("/bin", "/sbin", "/lib", "/lib64", "/dev"):
+        if Path(d).exists():
+            assert Path(d) in reads, f"agent read roots must include {d} (jail child exec)"
+
+
 def test_agent_landlock_open_network_imposes_no_tcp_rule(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[dict[str, Any]] = []
 

@@ -68,7 +68,7 @@ every child it spawns):
 
 | Landlock rule | Allowed |
 |---|---|
-| FS read | cwd, `$HOME`, `/usr`, `/etc`, `/tmp`, the common `/dev` char devices, and `/run` + `/proc` when present |
+| FS read+exec | cwd, `$HOME`, `/usr`, `/etc`, `/tmp`, the system exec dirs `/bin` `/sbin` `/lib` `/lib64` `/dev` (when present), and `/run` + `/proc` when present. The system dirs mirror the jail child's read+exec roots: the launcher opens each from inside this domain to grant the child, so omitting one (notably `/dev` on a merged-`/usr` host) makes the child's execve fail EACCES |
 | FS write | cwd, `/tmp`, the `/dev` char devices, and `/proc` when present |
 | TCP connect (kernel ≥ 6.7) | the *ports* of configured providers: `443` for each `anthropic` entry, the `base_url` port for each `openai` entry (default `443`) |
 
