@@ -1498,6 +1498,30 @@ def test_first_ready_subtask_respects_deps_and_order() -> None:
     assert _first_ready_subtask(nodes) is None
 
 
+def test_first_ready_subtask_prefers_leaf_over_decomposed_parent() -> None:
+    """A subtask with open children is a container -- the frontier surfaces its
+    first ready leaf, not the parent, so a decompose moves focus forward. A cursor
+    still pointing at the parent falls through to the leaf too."""
+    from agent6.workflows.loop import (
+        _current_task_id,  # pyright: ignore[reportPrivateUsage]
+        _first_ready_subtask,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    nodes = {
+        "root": {"parent_id": None, "status": "in_progress", "title": "r", "children": ["a", "b"]},
+        "a": {"parent_id": "root", "status": "in_progress", "title": "a", "children": ["a1", "a2"]},
+        "a1": {"parent_id": "a", "status": "pending", "title": "a1"},
+        "a2": {"parent_id": "a", "status": "pending", "title": "a2"},
+        "b": {"parent_id": "root", "status": "pending", "title": "b"},
+    }
+    assert _first_ready_subtask(nodes) == "a1"  # the parent 'a' is skipped as a container
+    assert _current_task_id(nodes, "a") == "a1"  # stale cursor on the parent falls through
+    # Once the children are done, the parent becomes a focusable leaf again.
+    nodes["a1"]["status"] = "passed"
+    nodes["a2"]["status"] = "passed"
+    assert _first_ready_subtask(nodes) == "a"
+
+
 def test_current_task_banner_carries_title_acceptance_paths() -> None:
     from agent6.workflows.loop import _current_task_banner  # pyright: ignore[reportPrivateUsage]
 
@@ -1711,6 +1735,29 @@ def test_surface_current_task_stuck_counter_survives_compaction() -> None:
     _surface(wf, st, messages)
     assert st.turns_on_task == 5  # kept climbing across the restart
     assert st.last_focus_id == "a"
+
+
+def test_surface_decompose_resets_grind_counter() -> None:
+    """Obeying the nudge -- decomposing the focus task with add_task -- moves focus
+    to the first new leaf and resets the grind counter (the fix for the
+    self-defeating-nudge bug)."""
+    nodes: dict[str, dict[str, Any]] = {
+        "root": {"parent_id": None, "status": "in_progress", "title": "r", "children": ["a"]},
+        "a": {"parent_id": "root", "status": "pending", "title": "a", "children": []},
+    }
+    wf = _wf(graph_client=_FakeCurator(nodes))
+    st = _state()
+    messages: list[dict[str, Any]] = []
+    for _ in range(5):
+        _surface(wf, st, messages)
+    assert st.last_focus_id == "a" and st.turns_on_task == 4
+    # Worker splits 'a' into a child -> 'a' becomes a container, focus moves to a1.
+    nodes["a"]["status"] = "in_progress"
+    nodes["a"]["children"] = ["a1"]
+    nodes["a1"] = {"parent_id": "a", "status": "pending", "title": "a1"}
+    _surface(wf, st, messages)
+    assert st.last_focus_id == "a1"  # focus advanced to the new leaf
+    assert st.turns_on_task == 0  # grind counter reset by the decompose
 
 
 def test_maybe_compact_returns_restart_signal() -> None:

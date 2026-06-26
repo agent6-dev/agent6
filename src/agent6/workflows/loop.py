@@ -339,39 +339,50 @@ def _is_empty_tool_call_response(resp: Any) -> bool:
     )
 
 
+def _has_open_child(nodes: dict[str, Any], node: dict[str, Any]) -> bool:
+    """True if any of ``node``'s children is still open. A subtask with open
+    children is a container -- its children are the unit of work, not it -- so the
+    frontier surfaces the children's leaves instead."""
+    for cid in node.get("children", ()) or ():
+        c = nodes.get(cid)
+        if c is not None and c.get("status") in _OPEN_STATUSES:
+            return True
+    return False
+
+
+def _is_focusable_subtask(nodes: dict[str, Any], node: dict[str, Any]) -> bool:
+    """An open SUBTASK ready to work: not the auto-root, open, dependencies all
+    satisfied, and no open child (a decomposed parent is not itself a unit of
+    work)."""
+    if node.get("parent_id") is None or node.get("status") not in _OPEN_STATUSES:
+        return False
+    for dep in node.get("depends_on", ()) or ():
+        d = nodes.get(dep)
+        if d is None or d.get("status") not in _DEPS_SATISFIED_STATUSES:
+            return False  # a missing or not-yet-done dependency blocks the subtask
+    return not _has_open_child(nodes, node)
+
+
 def _first_ready_subtask(nodes: dict[str, Any]) -> str | None:
-    """First open SUBTASK whose dependencies are all satisfied, in node creation
-    order (dict insertion order mirrors the order tasks were added). A dependency
-    on a missing or not-yet-done task blocks the subtask. Returns None when
-    nothing is ready (no subtasks, all done, or all blocked)."""
-
-    def _deps_satisfied(node: dict[str, Any]) -> bool:
-        for dep in node.get("depends_on", ()) or ():
-            d = nodes.get(dep)
-            if d is None or d.get("status") not in _DEPS_SATISFIED_STATUSES:
-                return False
-        return True
-
-    for nid, node in nodes.items():
-        if (
-            node.get("parent_id") is not None
-            and node.get("status") in _OPEN_STATUSES
-            and _deps_satisfied(node)
-        ):
+    """First focusable subtask (open, deps satisfied, no open child) in node
+    creation order. Node ids are time-sortable ULIDs, so sorting by id restores
+    creation order even on a resumed run, where the nodes dict is in filesystem
+    order. Returns None when nothing is ready (no subtasks, all done, or all
+    blocked / waiting on open children)."""
+    for nid in sorted(nodes):
+        if _is_focusable_subtask(nodes, nodes[nid]):
             return nid
     return None
 
 
 def _current_task_id(nodes: dict[str, Any], cursor: str | None) -> str | None:
-    """The subtask to focus on now: the curator cursor when it still points at an
-    open subtask, else the first ready subtask. None when no subtask is open."""
+    """The subtask to focus on now: the curator cursor when it still points at a
+    focusable subtask (a decomposed parent does NOT qualify -- its leaves do, so
+    a split moves focus forward), else the first ready subtask. None when no
+    subtask is focusable."""
     if cursor is not None:
         node = nodes.get(cursor)
-        if (
-            node is not None
-            and node.get("parent_id") is not None
-            and node.get("status") in _OPEN_STATUSES
-        ):
+        if node is not None and _is_focusable_subtask(nodes, node):
             return cursor
     return _first_ready_subtask(nodes)
 
@@ -406,7 +417,8 @@ def _stuck_on_task_nudge(task_id: str, node: dict[str, Any], turns: int) -> str:
         " the first one.\n"
         "- Effectively done? Mark it passed with update_task.\n"
         "- Not needed? Mark it obsolete or skipped with update_task.\n"
-        "Do not keep exploring without recording progress in the task list."
+        "Keep the task list in step with your progress rather than working on"
+        " without updating it."
     )
 
 
@@ -2819,19 +2831,23 @@ class Workflow:
         messages: list[dict[str, Any]],
         tools: list[ToolDefinition],
     ) -> Any:
-        """Single-retry wrapper around ``provider.call``.
+        """Bounded-retry wrapper around ``provider.call``: up to
+        ``provider_retry_count + 1`` attempts. Two retry paths share that budget:
 
-        audit finding: a single transient ProviderError
-        (Anthropic 529, OpenRouter 502, brief socket timeout) shouldn't
-        abort the run. Retry once with a short fixed backoff; on the second
-        failure re-raise and let the loop handle it as before. BudgetExceeded
-        is never retried - it's a hard stop signal.
-
-        Permanent client errors (``ProviderError.status_code`` in
-        ``_NON_RETRYABLE_HTTP_STATUSES``: 401/402/403/404/422) are re-raised
-        immediately without consuming a retry - a second identical request
-        cannot succeed (observed live: a 402 "Insufficient credits" was
-        otherwise retried on every remaining turn).
+        - Transient ``ProviderError`` (Anthropic 529, OpenRouter 502, brief socket
+          timeout): retried with exponential backoff + full jitter so one flap
+          doesn't abort the run. ``BudgetExceeded`` is never retried (hard stop).
+          Permanent client errors (``ProviderError.status_code`` in
+          ``_NON_RETRYABLE_HTTP_STATUSES``: 401/402/403/404/422) re-raise
+          immediately without consuming a retry -- a second identical request
+          cannot succeed (observed live: a 402 "Insufficient credits" was
+          otherwise retried every remaining turn).
+        - A self-contradictory empty tool-call response
+          (``_is_empty_tool_call_response``: stop_reason promises a tool call but
+          none and no text came back -- GLM via OpenRouter, ~50% post-restart):
+          retried with a short fixed delay (model flakiness, not rate-limiting),
+          excluding ``stop_reason=length`` starvation. If every attempt is empty
+          the last is returned and the loop's went_quiet handler takes over.
         """
         attempts = max(1, self.provider_retry_count + 1)
         last_exc: ProviderError | None = None
