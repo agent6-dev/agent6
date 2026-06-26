@@ -1633,6 +1633,86 @@ def test_surface_current_task_noop_cases() -> None:
     assert msgs == [] and open_sub.cursor_sets == []  # plan mode does not surface
 
 
+def _stuck_count(messages: list[dict[str, Any]]) -> int:
+    return sum(1 for m in messages if "without concluding it" in m["content"][0]["text"])
+
+
+def test_surface_current_task_stuck_nudge_fires_periodically_then_caps() -> None:
+    """The split/pass/skip nudge re-fires every _STUCK_ON_TASK_AFTER turns on the
+    same stuck task (a weak model ignored a single nudge live), but caps at
+    _STUCK_NUDGE_MAX so it cannot nag forever."""
+    from agent6.workflows.loop import (
+        _STUCK_NUDGE_MAX,  # pyright: ignore[reportPrivateUsage]
+        _STUCK_ON_TASK_AFTER,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    cur = _FakeCurator(
+        {
+            "root": {"parent_id": None, "status": "in_progress", "title": "r"},
+            "a": {"parent_id": "root", "status": "pending", "title": "audit providers"},
+        }
+    )
+    wf = _wf(graph_client=cur)
+    st = _state()
+    messages: list[dict[str, Any]] = []
+    # One nudge after the first period, but not before it.
+    for _ in range(_STUCK_ON_TASK_AFTER):
+        _surface(wf, st, messages)
+    assert _stuck_count(messages) == 0  # turns_on_task is _STUCK_ON_TASK_AFTER-1 here
+    _surface(wf, st, messages)
+    assert _stuck_count(messages) == 1  # crossed the first period
+    # Keep grinding well past the cap; it re-fires periodically then stops.
+    for _ in range((_STUCK_NUDGE_MAX + 2) * _STUCK_ON_TASK_AFTER):
+        _surface(wf, st, messages)
+    assert _stuck_count(messages) == _STUCK_NUDGE_MAX
+    assert st.stuck_nudges_fired == _STUCK_NUDGE_MAX
+
+
+def test_surface_current_task_stuck_nudge_resets_on_progress() -> None:
+    """Forward motion (a task marked passed -> focus advances) resets the grind
+    counter, so the stuck nudge does not fire."""
+    from agent6.workflows.loop import _STUCK_ON_TASK_AFTER  # pyright: ignore[reportPrivateUsage]
+
+    nodes = {
+        "root": {"parent_id": None, "status": "in_progress", "title": "r"},
+        "a": {"parent_id": "root", "status": "pending", "title": "a"},
+        "b": {"parent_id": "root", "status": "pending", "title": "b"},
+    }
+    wf = _wf(graph_client=_FakeCurator(nodes))
+    st = _state()
+    messages: list[dict[str, Any]] = []
+    for _ in range(_STUCK_ON_TASK_AFTER - 1):  # grind almost to the threshold on a
+        _surface(wf, st, messages)
+    assert _stuck_count(messages) == 0
+    nodes["a"]["status"] = "passed"  # progress -> focus advances to b
+    for _ in range(3):
+        _surface(wf, st, messages)
+    assert _stuck_count(messages) == 0
+    assert st.last_focus_id == "b" and st.turns_on_task < _STUCK_ON_TASK_AFTER
+
+
+def test_surface_current_task_stuck_counter_survives_compaction() -> None:
+    """A tier-2 restart resets the banner (surfaced_task_id) but NOT the grind
+    counter -- compaction is not progress on the task."""
+    wf = _wf(
+        graph_client=_FakeCurator(
+            {
+                "root": {"parent_id": None, "status": "in_progress", "title": "r"},
+                "a": {"parent_id": "root", "status": "pending", "title": "a"},
+            }
+        )
+    )
+    st = _state()
+    messages: list[dict[str, Any]] = []
+    for _ in range(5):
+        _surface(wf, st, messages)
+    assert st.turns_on_task == 4
+    st.surfaced_task_id = None  # what the loop does on a tier-2 restart
+    _surface(wf, st, messages)
+    assert st.turns_on_task == 5  # kept climbing across the restart
+    assert st.last_focus_id == "a"
+
+
 def test_maybe_compact_returns_restart_signal() -> None:
     """_maybe_compact returns True only when a tier-2 restart actually replaced
     the history (the loop's cue to re-surface the focus banner)."""

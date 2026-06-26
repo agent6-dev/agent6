@@ -89,7 +89,11 @@ Notes:
   cannot close cannot stall the run forever). The surfaced banner survives
   tier-1 elision and is re-injected after each tier-2 restart, so the
   worker always sees its current task without it being re-appended every
-  turn.
+  turn. If the focus task holds for many turns with no forward motion
+  (a weak model grinding one task without concluding or decomposing it), a
+  nudge offers to split / pass / skip it -- re-firing periodically up to a
+  small cap (a weak model was seen ignoring a single nudge); any progress
+  resets the counter, so a healthy run never sees it.
 - **Context compaction.** Long runs are kept inside the model's context
   window in two tiers (thresholds in `[context]`): at
   `drop_at_chars` the oldest tool_results are replaced by a

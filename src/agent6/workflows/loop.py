@@ -260,6 +260,19 @@ _TASK_FINISH_PATIENCE = 3
 _OPEN_STATUSES = frozenset({"pending", "in_progress"})
 _DEPS_SATISFIED_STATUSES = frozenset({"passed", "skipped", "obsolete"})
 
+# Anti-grind: a weak model on a vague/oversized task can stay on one DAG task for
+# many turns, reading without ever marking it done, decomposing it, or trying to
+# finish -- so neither the finish-gate (fires on a finish attempt) nor went_quiet
+# (it is busy) catches it (observed live: GLM ground task 1 for 200 turns, 394
+# reads, 0 passed). Every this-many consecutive turns on the SAME focus task with
+# no forward motion (cursor advance / mark-done / decompose, any of which changes
+# the focus and resets the count), fire a nudge offering split / pass / skip. It
+# re-fires periodically -- a weak model was observed ignoring a single nudge --
+# but caps at _STUCK_NUDGE_MAX per task so it cannot nag forever; generous so a
+# model making normal progress (which changes focus well before this) never sees it.
+_STUCK_ON_TASK_AFTER = 20
+_STUCK_NUDGE_MAX = 3
+
 # verify-settled completion (run mode). A non-metric run has no positive "done"
 # signal, clean exit depends on the worker volunteering finish_run, and a weak
 # worker keeps re-running read-only commands after success (Kimi K2.6 observed:
@@ -380,6 +393,21 @@ def _current_task_banner(task_id: str, node: dict[str, Any]) -> str:
         " to it now."
     )
     return "\n".join(lines)
+
+
+def _stuck_on_task_nudge(task_id: str, node: dict[str, Any], turns: int) -> str:
+    """The anti-grind directive: the model has spent ``turns`` turns on one task
+    without concluding it; offer the three ways to record progress."""
+    title = str(node.get("title", "")).strip() or "(untitled)"
+    return (
+        f"[harness] You have spent {turns} turns on the current task"
+        f" ({task_id}: {title}) without concluding it. Pick ONE now and record it:\n"
+        "- Too big? Split it into smaller ordered subtasks with add_task and work"
+        " the first one.\n"
+        "- Effectively done? Mark it passed with update_task.\n"
+        "- Not needed? Mark it obsolete or skipped with update_task.\n"
+        "Do not keep exploring without recording progress in the task list."
+    )
 
 
 def _extract_initial_task(messages: list[dict[str, Any]]) -> str:
@@ -572,6 +600,12 @@ class _LoopState:
     # there) -- the banner survives tier-1 elision, so the worker keeps seeing it
     # between those events without re-appending it every turn.
     surfaced_task_id: str | None = None
+    # anti-grind: the focus task being counted, how many consecutive turns it has
+    # held (NOT reset by compaction -- only by forward motion), and how many stuck
+    # nudges have fired for THIS focus task (reset on focus change; capped).
+    last_focus_id: str | None = None
+    turns_on_task: int = 0
+    stuck_nudges_fired: int = 0
 
 
 @dataclass
@@ -1780,6 +1814,10 @@ class Workflow:
         marks the current task passed, the next turn's frontier recompute moves
         focus to the next ready task -- the cursor walks the frontier on its own.
 
+        Also runs the anti-grind counter: when the focus task holds for
+        ``_STUCK_ON_TASK_AFTER`` turns with no forward motion, fire one nudge
+        offering to split / pass / skip it.
+
         Run mode only; no curator or no open subtask is a no-op (the finish-gate
         covers the empty-frontier finish). Best-effort throughout: a curator
         hiccup logs and returns rather than breaking the loop.
@@ -1797,6 +1835,8 @@ class Workflow:
         cursor = gstate.get("cursor")
         current_id = _current_task_id(nodes, cursor)
         if current_id is None:
+            state.turns_on_task = 0  # frontier empty: nothing to grind on
+            state.last_focus_id = None
             return  # nothing decomposed yet, or the frontier is empty
         if cursor != current_id:
             # Advance the cursor onto the frontier task (auto-advance: a passed
@@ -1805,6 +1845,45 @@ class Workflow:
                 self.graph_client.set_cursor(SetCursorIntent(id=current_id))
             except Exception as exc:  # cursor advance is advisory; never fatal
                 self._log(f"LOOP: cursor advance skipped: {exc}")
+        # Anti-grind: count consecutive turns on the same focus task. Any forward
+        # motion (cursor advance, a task marked done, or a decompose that moves the
+        # cursor to a new subtask) changes current_id and resets the count; survives
+        # compaction (last_focus_id is not reset there). Re-fire every
+        # _STUCK_ON_TASK_AFTER turns, capped at _STUCK_NUDGE_MAX per task.
+        if current_id != state.last_focus_id:
+            state.turns_on_task = 0
+            state.last_focus_id = current_id
+            state.stuck_nudges_fired = 0
+        else:
+            state.turns_on_task += 1
+            if (
+                state.turns_on_task % _STUCK_ON_TASK_AFTER == 0
+                and state.stuck_nudges_fired < _STUCK_NUDGE_MAX
+            ):
+                state.stuck_nudges_fired += 1
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": _stuck_on_task_nudge(
+                                    current_id, nodes[current_id], state.turns_on_task
+                                ),
+                            }
+                        ],
+                    }
+                )
+                self._log(
+                    f"LOOP: stuck-on-task nudge #{state.stuck_nudges_fired} for"
+                    f" {current_id} after {state.turns_on_task} turns"
+                )
+                self._emit(
+                    "loop.task.stuck_nudge",
+                    task_id=current_id,
+                    turns=state.turns_on_task,
+                    n=state.stuck_nudges_fired,
+                )
         if current_id == state.surfaced_task_id:
             return  # already surfaced; the banner survives tier-1 elision
         node = nodes[current_id]
