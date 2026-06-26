@@ -1361,6 +1361,43 @@ def test_summarise_and_restart_applies_dag_checkoff() -> None:
     assert "checkoff" not in restart_text  # bookkeeping block stripped from the restart
 
 
+class _FakeGraph:
+    def __init__(self, nodes: dict[str, dict[str, Any]]) -> None:
+        self._nodes = nodes
+
+    def get_state(self) -> dict[str, Any]:
+        return {"nodes": self._nodes}
+
+
+def test_task_finish_gate_nudges_open_subtasks_then_caps() -> None:
+    """The finish-gate nudges while a SUBTASK is open, naming it, and stops after
+    _TASK_FINISH_PATIENCE so a stuck worker can't bounce the loop forever."""
+    from agent6.workflows.loop import _TASK_FINISH_PATIENCE  # pyright: ignore[reportPrivateUsage]
+
+    nodes = {
+        "root": {"parent_id": None, "status": "in_progress", "title": "review repo"},
+        "sub1": {"parent_id": "root", "status": "pending", "title": "audit providers"},
+        "sub2": {"parent_id": "root", "status": "passed", "title": "audit sandbox"},  # done
+    }
+    wf = _wf(graph_client=_FakeGraph(nodes))
+    st = _state()
+    for i in range(1, _TASK_FINISH_PATIENCE + 1):
+        nudge = wf._task_finish_gate_nudge(st)  # pyright: ignore[reportPrivateUsage]
+        assert nudge is not None and "audit providers" in nudge
+        assert "audit sandbox" not in nudge  # passed subtask not listed
+        assert st.task_finish_nudges_used == i
+    # Cap reached -> finish is honoured (no further nudges).
+    assert wf._task_finish_gate_nudge(st) is None  # pyright: ignore[reportPrivateUsage]
+
+
+def test_task_finish_gate_allows_finish_without_open_subtasks() -> None:
+    """Only SUBTASKS gate. The always-pending auto-root alone must NOT block a
+    finish (else every run deadlocks); no curator -> no gate either."""
+    root_only = _FakeGraph({"root": {"parent_id": None, "status": "pending", "title": "t"}})
+    assert _wf(graph_client=root_only)._task_finish_gate_nudge(_state()) is None  # pyright: ignore[reportPrivateUsage]
+    assert _wf(graph_client=None)._task_finish_gate_nudge(_state()) is None  # pyright: ignore[reportPrivateUsage]
+
+
 def test_summarise_and_restart_falls_back_to_worker_provider() -> None:
     worker = MagicMock()
     worker.call.return_value = _resp("summary text")

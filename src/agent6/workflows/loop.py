@@ -229,6 +229,15 @@ _PLAN_NUDGE_AFTER_ITERS = 12
 # (graph.update event) so a live viewer can render the worker's task breakdown.
 _DAG_MUTATING_TOOLS = frozenset({"add_task", "update_task", "set_cursor"})
 
+# Task finish-gate: when the worker has broken the run into subtasks, don't let
+# it finish (or silently stop) while subtasks are still open -- re-prompt with
+# the open list instead. A weak model on a long task tends to quit early with
+# work pending (observed live: silent_finish at iter 7 with 7 subtasks open).
+# Capped so a worker that genuinely can't close a task (and won't mark it
+# obsolete/skipped) can't bounce the loop forever; after the cap the finish is
+# honoured. Only SUBTASKS gate -- the always-pending auto-root would deadlock.
+_TASK_FINISH_PATIENCE = 3
+
 # verify-settled completion (run mode). A non-metric run has no positive "done"
 # signal, clean exit depends on the worker volunteering finish_run, and a weak
 # worker keeps re-running read-only commands after success (Kimi K2.6 observed:
@@ -453,6 +462,7 @@ class _LoopState:
     went_quiet_nudges_used: int = 0
     plateau_nudges_used: int = 0
     metric_finish_nudges_used: int = 0
+    task_finish_nudges_used: int = 0
     plan_finish_nudged: bool = False
     # verify-settled completion (run mode): once verify has passed -- or, on a
     # gateless run, once an edit has been committed -- count no-progress
@@ -1293,6 +1303,24 @@ class Workflow:
                         budget_remaining=finish_budget_remaining,
                     )
 
+            # Task finish-gate: don't let finish_run through while the worker's
+            # own subtasks are still open (capped; see _task_finish_gate_nudge).
+            if finish_signal is not None and finish_kind == "finish_run" and self.mode == "run":
+                task_nudge = self._task_finish_gate_nudge(state)
+                if task_nudge is not None:
+                    finish_signal = None
+                    finish_payload = None
+                    tool_results.append({"type": "text", "text": task_nudge})
+                    self._log(
+                        f"  finish_run gated: open subtasks remain (nudge"
+                        f" #{state.task_finish_nudges_used}) at iter {iteration}"
+                    )
+                    self._emit(
+                        "loop.task_finish.gated",
+                        iteration=iteration,
+                        nudges_used=state.task_finish_nudges_used,
+                    )
+
             if critic_text:
                 tool_results.append(
                     {
@@ -1743,6 +1771,24 @@ class Workflow:
                         trigger="silent_finish",
                     )
                     return None
+            # Task finish-gate (silent path): a worker that stops emitting tool
+            # calls with its own subtasks still open is steered back to the list
+            # rather than silently finished (shares the cap with the finish_run
+            # path). This is the premature-stop case observed live.
+            task_nudge = self._task_finish_gate_nudge(state)
+            if task_nudge is not None:
+                self._log(
+                    f"  silent_finish gated: open subtasks remain (nudge"
+                    f" #{state.task_finish_nudges_used}) at iter {iteration}"
+                )
+                self._emit(
+                    "loop.task_finish.gated",
+                    iteration=iteration,
+                    nudges_used=state.task_finish_nudges_used,
+                    trigger="silent_finish",
+                )
+                messages.append({"role": "user", "content": [{"type": "text", "text": task_nudge}]})
+                return None
             self._log(
                 f"LOOP: silent_finish at iter {iteration} - agent emitted text but no tool_use"
             )
@@ -2359,6 +2405,44 @@ class Workflow:
                 if node.get("parent_id") is None:
                     return nid
         return None
+
+    def _task_finish_gate_nudge(self, state: _LoopState) -> str | None:
+        """If the worker created subtasks and any are still open, return a nudge
+        message to re-prompt with instead of finishing; else None (finish OK).
+
+        Only SUBTASKS (parent_id is not None) gate -- the auto-root is pending
+        until the run ends, so gating on it would deadlock. Capped by
+        ``_TASK_FINISH_PATIENCE``: after that many blocked finishes the finish is
+        honoured (a task the worker can't close, and won't mark obsolete/skipped,
+        must not bounce the loop forever). Best-effort: no curator -> no gate."""
+        if self.graph_client is None:
+            return None
+        try:
+            nodes = self.graph_client.get_state().get("nodes", {})
+        except Exception as exc:  # dead socket / IPC error must not block finishing
+            self._log(f"LOOP: task finish-gate skipped: {exc}")
+            return None
+        if not isinstance(nodes, dict):
+            return None
+        open_subtasks = [
+            (nid, str(node.get("title", ""))[:120])
+            for nid, node in nodes.items()
+            if node.get("parent_id") is not None
+            and node.get("status") in ("pending", "in_progress")
+        ]
+        if not open_subtasks:
+            return None
+        if state.task_finish_nudges_used >= _TASK_FINISH_PATIENCE:
+            return None  # cap reached: stop bouncing, honour the finish
+        state.task_finish_nudges_used += 1
+        listing = "\n".join(f"- {tid}: {title}" for tid, title in open_subtasks)
+        return (
+            "[harness] You still have open tasks; finish the work before stopping. "
+            f"{len(open_subtasks)} task(s) are pending/in_progress:\n{listing}\n"
+            "Continue with the next one. If a task is genuinely not needed or you"
+            " cannot do it, call update_task to mark it skipped or obsolete -- do"
+            " not just abandon it. Then finish_run once the list is clear."
+        )
 
     def _maybe_revise_prompt(self, user_task: str, repo: RepoSummary) -> str:
         if self.revise_prompt == "off":
