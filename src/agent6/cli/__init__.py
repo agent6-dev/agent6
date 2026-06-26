@@ -32,6 +32,7 @@ from agent6.cli.config_cmds import (
     _cmd_config_unset,
 )
 from agent6.cli.connect import _cmd_connect
+from agent6.cli.fork import _cmd_fork
 from agent6.cli.machine_cmds import (
     _cmd_machine_check,
     _cmd_machine_create,
@@ -259,6 +260,16 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             args.config,
             args.run_id,
             force=args.force_resume,
+            no_tui=args.no_tui,
+            budget_overrides=_BudgetOverrides.from_args(args),
+        )
+    if args.command == "fork":
+        return _cmd_fork(
+            args.config,
+            args.run_id,
+            at_turn=args.at_turn,
+            new_run_id=args.new_run_id,
+            no_run=args.no_run,
             no_tui=args.no_tui,
             budget_overrides=_BudgetOverrides.from_args(args),
         )

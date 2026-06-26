@@ -77,6 +77,39 @@ class _ResumeSnapshot:
 SNAPSHOT_VERSION = 1
 
 
+@dataclass(frozen=True, slots=True)
+class _Checkpoint:
+    """One per-turn fork checkpoint: a resume snapshot payload plus the workspace
+    HEAD sha and curator graph_version captured at that turn.
+
+    ``payload`` is the exact dict the loop wrote (a superset of ``loop_state.json``);
+    ``agent6 fork`` copies it verbatim as the new run's ``loop_state.json`` and seed
+    checkpoint. ``head_sha`` is the workspace HEAD at the turn (``""`` if it could
+    not be read), used to cut the fork's git branch; ``graph_version`` is the
+    curator DAG version (0 = no curator/empty graph)."""
+
+    turn: int
+    head_sha: str
+    graph_version: int
+    payload: dict[str, Any]
+
+
+def load_checkpoint(path: Path) -> _Checkpoint:
+    """Load a per-turn checkpoint. Raises on bad shape (fail loudly)."""
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    version = raw.get("version")
+    if version != SNAPSHOT_VERSION:
+        raise ValueError(
+            f"checkpoint version mismatch at {path}: {version!r} != {SNAPSHOT_VERSION}"
+        )
+    return _Checkpoint(
+        turn=int(raw["next_iteration"]),
+        head_sha=str(raw.get("head_sha", "")),
+        graph_version=int(raw.get("graph_version", 0)),
+        payload=raw,
+    )
+
+
 def load_resume_snapshot(path: Path) -> _ResumeSnapshot:
     """Load and validate a resume snapshot. Raises on bad shape."""
     raw = json.loads(path.read_text(encoding="utf-8"))

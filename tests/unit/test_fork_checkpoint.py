@@ -1,0 +1,322 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Eric Lesiuta
+"""Per-turn checkpoint store + `agent6 fork` (clone-to-new-session recovery).
+
+Covers:
+- the loop's `_save_resume_snapshot` ALSO writes append-only `checkpoints/<NNNN>.json`
+  carrying head_sha + graph_version,
+- `agent6 fork` clones state, writes lineage manifest fields, cuts the branch,
+  and appends `lineage.jsonl`,
+- forking a pre-checkpoint (old) run degrades gracefully.
+"""
+
+from __future__ import annotations
+
+import json
+import subprocess as sp
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+from unittest.mock import MagicMock
+
+import pytest
+
+from agent6.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
+from agent6.cli.fork import _cmd_fork  # pyright: ignore[reportPrivateUsage]
+from agent6.graph.storage import RunLayout, list_checkpoint_turns
+from agent6.workflows._run_state import load_checkpoint
+from agent6.workflows.loop import (
+    Workflow,
+    _LoopState,  # pyright: ignore[reportPrivateUsage]
+)
+
+
+def _silent(_: str) -> None:
+    return None
+
+
+def _git_repo(path: Path) -> str:
+    path.mkdir(parents=True, exist_ok=True)
+    sp.run(["git", "init", "-q", "-b", "main"], cwd=path, check=True)
+    sp.run(["git", "config", "user.email", "t@example.com"], cwd=path, check=True)
+    sp.run(["git", "config", "user.name", "t"], cwd=path, check=True)
+    (path / "seed.txt").write_text("seed\n")
+    sp.run(["git", "add", "seed.txt"], cwd=path, check=True)
+    sp.run(["git", "commit", "-q", "-m", "init"], cwd=path, check=True)
+    return sp.run(
+        ["git", "rev-parse", "HEAD"], cwd=path, capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+
+def _wf(**kw: Any) -> Workflow:
+    defaults: dict[str, Any] = {
+        "root": Path("/tmp"),
+        "config": MagicMock(prompt=MagicMock(system_prompt_file="")),
+        "provider": MagicMock(),
+        "dispatcher": MagicMock(),
+        "logger": _silent,
+    }
+    defaults.update(kw)
+    return Workflow(**defaults)
+
+
+# --- checkpoint store -------------------------------------------------------
+
+
+def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: Path) -> None:
+    """`_save_resume_snapshot` writes both loop_state.json AND a per-turn
+    checkpoints/<NNNN>.json carrying head_sha + graph_version."""
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    snap = run_dir / "loop_state.json"
+
+    graph_client = MagicMock()
+    graph_client.get_state.return_value = {"nodes": {}, "cursor": None, "graph_version": 7}
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(verify_command=(), metric=SimpleNamespace(goal=None))
+    )
+    wf = _wf(root=repo, config=config, resume_state_path=snap, graph_client=graph_client)
+    state = _LoopState(original_task="t", tool_calls=0)
+
+    wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
+        system="s", messages=[], tool_calls=0, next_iteration=3, root_task_id=None, state=state
+    )
+
+    # checkpoints live next to loop_state.json (the run dir).
+    cp = run_dir / "checkpoints" / "0003.json"
+    assert snap.is_file()
+    assert cp.is_file(), "per-turn checkpoint must be written"
+
+    loaded = load_checkpoint(cp)
+    assert loaded.turn == 3
+    assert loaded.head_sha == head
+    assert loaded.graph_version == 7
+    # The checkpoint payload is a superset of loop_state.json (same core fields).
+    assert loaded.payload["next_iteration"] == 3
+    assert json.loads(snap.read_text())["head_sha"] == head
+
+
+def test_checkpoints_are_append_only(tmp_path: Path) -> None:
+    """Each turn writes a distinct checkpoint; older ones are never overwritten."""
+    repo = tmp_path / "repo"
+    _git_repo(repo)
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    snap = run_dir / "loop_state.json"
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(verify_command=(), metric=SimpleNamespace(goal=None))
+    )
+    wf = _wf(root=repo, config=config, resume_state_path=snap)
+    state = _LoopState(original_task="t", tool_calls=0)
+    for turn in (1, 2, 3):
+        wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            messages=[{"role": "user", "content": f"turn {turn}"}],
+            tool_calls=0,
+            next_iteration=turn,
+            root_task_id=None,
+            state=state,
+        )
+    cp_dir = run_dir / "checkpoints"
+    assert sorted(p.name for p in cp_dir.glob("*.json")) == ["0001.json", "0002.json", "0003.json"]
+    # Turn 1's payload was not clobbered by later turns.
+    assert load_checkpoint(cp_dir / "0001.json").payload["messages"][0]["content"] == "turn 1"
+
+
+def test_list_checkpoint_turns_empty_for_old_run(tmp_path: Path) -> None:
+    """A run dir with no checkpoints/ dir lists no turns (old-run detection)."""
+    layout = RunLayout(state_dir=tmp_path, run_id="old")
+    (tmp_path / "runs" / "old").mkdir(parents=True)
+    assert list_checkpoint_turns(layout) == []
+
+
+# --- fork command -----------------------------------------------------------
+
+
+def _seed_source_run(
+    state_dir: Path, run_id: str, *, head_sha: str, turns: tuple[int, ...]
+) -> RunLayout:
+    """Lay down a source run dir with a manifest, graph DAG, and checkpoints."""
+    layout = RunLayout(state_dir=state_dir, run_id=run_id)
+    layout.ensure()
+    layout.manifest_path.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "run_id": run_id,
+                "mode": "run",
+                "user_task": "do the thing",
+                "base_sha": "basesha000",
+                "base_branch": "main",
+                "run_branch": f"agent6/{run_id}",
+            }
+        ),
+        encoding="utf-8",
+    )
+    # A curator DAG artifact to be cloned verbatim.
+    (layout.graph_dir / "root.md").write_text("---\nid: root\n---\nnode\n", encoding="utf-8")
+    layout.journal_path.write_text('{"op": "add_subtask"}\n', encoding="utf-8")
+    layout.cursor_path.write_text('{"node_id": "root"}', encoding="utf-8")
+    for turn in turns:
+        payload = {
+            "version": 1,
+            "system": "sys",
+            "messages": [{"role": "user", "content": f"turn {turn}"}],
+            "tool_calls": 0,
+            "next_iteration": turn,
+            "root_task_id": "root",
+            "head_sha": head_sha,
+            "graph_version": turn,
+        }
+        layout.checkpoint_path(turn).write_text(json.dumps(payload), encoding="utf-8")
+    # loop_state.json mirrors the latest checkpoint.
+    layout.run_dir.joinpath("loop_state.json").write_text(
+        layout.checkpoint_path(turns[-1]).read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    return layout
+
+
+def test_fork_clones_state_writes_lineage_and_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`agent6 fork --no-run` clones the checkpoint + DAG into a new run, writes
+    the lineage manifest fields, cuts agent6/<new> at the checkpoint sha, and
+    appends lineage.jsonl."""
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state_dir = _state_dir(repo)
+    src = _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
+
+    rc = _cmd_fork(None, "sunny-otter", new_run_id="brave-yak-BBBB22", no_run=True)
+    assert rc == 0
+
+    dst = RunLayout(state_dir=state_dir, run_id="brave-yak-BBBB22")
+    assert dst.run_dir.is_dir()
+    # loop_state.json + seed checkpoint 0000.json carry the latest (turn 3) state.
+    seed = load_checkpoint(dst.checkpoint_path(0))
+    assert seed.payload["messages"][0]["content"] == "turn 3"
+    assert (dst.run_dir / "loop_state.json").is_file()
+    # DAG cloned verbatim.
+    assert (dst.graph_dir / "root.md").is_file()
+    assert dst.journal_path.read_text(encoding="utf-8") == '{"op": "add_subtask"}\n'
+    assert dst.cursor_path.read_text(encoding="utf-8") == '{"node_id": "root"}'
+
+    # Lineage manifest fields.
+    manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["parent_run_id"] == "sunny-otter-AAAA11"
+    assert manifest["forked_from_turn"] == 3
+    assert manifest["forked_from_sha"] == head
+    assert manifest["base_sha"] == "basesha000"
+    assert manifest["base_branch"] == "main"
+    assert manifest["run_branch"] == "agent6/brave-yak-BBBB22"
+
+    # Branch cut at the checkpoint sha, WITHOUT moving HEAD off main.
+    branch_sha = sp.run(
+        ["git", "rev-parse", "agent6/brave-yak-BBBB22"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert branch_sha == head
+    current = sp.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert current == "main", "fork must not move the operator's checkout"
+
+    # lineage.jsonl appended under the state dir root.
+    lineage = (state_dir / "lineage.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    assert len(lineage) == 1
+    ev = json.loads(lineage[0])
+    assert ev["child"] == "brave-yak-BBBB22"
+    assert ev["parent"] == "sunny-otter-AAAA11"
+    assert ev["turn"] == 3
+    assert ev["sha"] == head
+    assert ev["ts"]
+
+    # Source run is untouched: no new checkpoints, manifest unchanged.
+    assert sorted(list_checkpoint_turns(src)) == [1, 2, 3]
+
+
+def test_fork_at_turn_selects_that_checkpoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--at-turn N` forks from checkpoint N, not the latest."""
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state_dir = _state_dir(repo)
+    _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
+
+    rc = _cmd_fork(None, "sunny-otter", at_turn=2, new_run_id="kid-CCCC33", no_run=True)
+    assert rc == 0
+    dst = RunLayout(state_dir=state_dir, run_id="kid-CCCC33")
+    assert load_checkpoint(dst.checkpoint_path(0)).payload["messages"][0]["content"] == "turn 2"
+    assert json.loads(dst.manifest_path.read_text(encoding="utf-8"))["forked_from_turn"] == 2
+
+
+def test_fork_unknown_turn_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`--at-turn` with no matching checkpoint is a clean error, no fork dir."""
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state_dir = _state_dir(repo)
+    _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
+
+    rc = _cmd_fork(None, "sunny-otter", at_turn=99, new_run_id="kid-DDDD44", no_run=True)
+    assert rc == 2
+    assert not (state_dir / "runs" / "kid-DDDD44").exists()
+
+
+def test_fork_pre_checkpoint_run_degrades_gracefully(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An old run with only loop_state.json (no checkpoints/) still forks, from
+    that latest snapshot."""
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state_dir = _state_dir(repo)
+    layout = RunLayout(state_dir=state_dir, run_id="old-run-EEEE55")
+    layout.ensure()
+    layout.manifest_path.write_text(
+        json.dumps({"version": 1, "run_id": "old-run-EEEE55", "base_sha": "x", "base_branch": "m"}),
+        encoding="utf-8",
+    )
+    # Old run: loop_state.json exists but no checkpoints dir content. We DO carry
+    # head_sha now (older snapshots without it cannot cut a branch).
+    layout.run_dir.joinpath("loop_state.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "system": "s",
+                "messages": [{"role": "user", "content": "legacy"}],
+                "tool_calls": 0,
+                "next_iteration": 4,
+                "root_task_id": None,
+                "head_sha": head,
+            }
+        ),
+        encoding="utf-8",
+    )
+    # Remove the (empty) checkpoints dir created by .ensure() so it's truly "old".
+    for p in layout.checkpoints_dir.glob("*"):
+        p.unlink()
+    layout.checkpoints_dir.rmdir()
+
+    rc = _cmd_fork(None, "old-run", new_run_id="fresh-FFFF66", no_run=True)
+    assert rc == 0
+    dst = RunLayout(state_dir=state_dir, run_id="fresh-FFFF66")
+    seed = load_checkpoint(dst.checkpoint_path(0))
+    assert seed.payload["messages"][0]["content"] == "legacy"
+    assert seed.turn == 4
+    manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["parent_run_id"] == "old-run-EEEE55"
+    assert manifest["forked_from_turn"] == 4

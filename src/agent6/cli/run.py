@@ -424,6 +424,9 @@ def _write_run_manifest(
     cfg: Config,
     mode: str = "run",
     effective_profile: str = "",
+    parent_run_id: str | None = None,
+    forked_from_turn: int | None = None,
+    forked_from_sha: str | None = None,
 ) -> None:
     """Write the canonical manifest.json for a run.
 
@@ -432,9 +435,14 @@ def _write_run_manifest(
     grep-able from a shell and easy to consume from any language. The
     on-disk shape is *liquid* until 1.0 - bump ``version`` only when
     the new shape genuinely improves a downstream consumer.
+
+    ``parent_run_id`` / ``forked_from_turn`` / ``forked_from_sha`` are set only
+    for a run created by ``agent6 fork``; they record the lineage (source run +
+    the turn forked from + the workspace sha at that turn). A non-forked run
+    leaves them out.
     """
     manifest: dict[str, Any] = {
-        "version": 1,
+        "version": 2,
         "agent6_version": __version__,
         "run_id": run_id,
         "mode": mode,  # run | plan (ask runs live under asks/, not here)
@@ -455,6 +463,10 @@ def _write_run_manifest(
             "profile": effective_profile,
         },
     }
+    if parent_run_id is not None:
+        manifest["parent_run_id"] = parent_run_id
+        manifest["forked_from_turn"] = forked_from_turn
+        manifest["forked_from_sha"] = forked_from_sha
     layout.manifest_path.write_text(
         json.dumps(manifest, indent=2) + "\n",
         encoding="utf-8",

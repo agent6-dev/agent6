@@ -15,6 +15,7 @@ from agent6.git_ops import (
     GitSafetyError,
     commit_all,
     create_branch,
+    create_branch_at,
     diff_since,
     init_repo,
     is_git_repo,
@@ -177,6 +178,37 @@ def test_create_branch(tmp_path: Path) -> None:
     _init_repo(tmp_path)
     create_branch(tmp_path, "agent6/test")
     assert status(tmp_path).branch == "agent6/test"
+
+
+def test_create_branch_at_is_additive_no_checkout(tmp_path: Path) -> None:
+    """create_branch_at points a new branch at a sha WITHOUT moving HEAD."""
+    _init_repo(tmp_path)
+    base = status(tmp_path).head_sha
+    # Advance HEAD so base != current; the fork branch must land on base.
+    (tmp_path / "b.txt").write_text("b\n", encoding="utf-8")
+    commit_all(tmp_path, "second")
+    create_branch_at(tmp_path, "agent6/fork", base)
+    assert status(tmp_path).branch == "main", "must not check out the new branch"
+    forked = subprocess.run(
+        ["git", "-C", str(tmp_path), "rev-parse", "agent6/fork"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert forked == base
+
+
+def test_create_branch_at_idempotent_and_refuses_move(tmp_path: Path) -> None:
+    """A no-op when the branch already points at the sha; a GitError if it points
+    elsewhere (moving a branch would be a rewrite, which we refuse)."""
+    _init_repo(tmp_path)
+    base = status(tmp_path).head_sha
+    create_branch_at(tmp_path, "agent6/fork", base)
+    create_branch_at(tmp_path, "agent6/fork", base)  # idempotent: no raise
+    (tmp_path / "c.txt").write_text("c\n", encoding="utf-8")
+    other = commit_all(tmp_path, "third")
+    with pytest.raises(GitError):
+        create_branch_at(tmp_path, "agent6/fork", other)
 
 
 def test_refuse_helpers() -> None:

@@ -2110,11 +2110,49 @@ class Workflow:
             "gateless_ever_committed": state.gateless_ever_committed,
             "metric_best_score": best.score if best is not None else None,
             "metric_at_ceiling": self._metric_at_ceiling(state.metric_history),
+            # Fork checkpoint extras: the workspace HEAD + curator DAG version at
+            # this turn, so `agent6 fork --at-turn N` can cut the new run's branch
+            # at the right sha and clone the DAG as of that version. Plain resume
+            # ignores both. Best-effort: a checkpoint is recovery state, so an
+            # unreadable git/curator degrades to "" / 0 rather than crashing.
+            "head_sha": self._checkpoint_head_sha(),
+            "graph_version": self._checkpoint_graph_version(),
         }
         self.resume_state_path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.resume_state_path.with_suffix(self.resume_state_path.suffix + ".tmp")
-        tmp.write_text(json.dumps(payload), encoding="utf-8")
+        blob = json.dumps(payload)
+        tmp.write_text(blob, encoding="utf-8")
         tmp.replace(self.resume_state_path)
+        # ALSO append a per-turn checkpoint (never overwritten) so a fork can roll
+        # back to turn N. loop_state.json stays the "latest" pointer for resume.
+        # Keep all checkpoints for now (a run is dozens of turns); bound disk only
+        # if long runs prove it matters.
+        cp_dir = self.resume_state_path.parent / "checkpoints"
+        cp_dir.mkdir(parents=True, exist_ok=True)
+        cp_path = cp_dir / f"{next_iteration:04d}.json"
+        cp_tmp = cp_path.with_suffix(cp_path.suffix + ".tmp")
+        cp_tmp.write_text(blob, encoding="utf-8")
+        cp_tmp.replace(cp_path)
+
+    def _checkpoint_head_sha(self) -> str:
+        """Workspace HEAD for the per-turn checkpoint; "" if it can't be read.
+
+        A checkpoint is best-effort recovery state -- a missing sha must not
+        crash the snapshot. fork degrades gracefully when it is empty."""
+        try:
+            return git_status(self.root).head_sha
+        except (GitError, OSError):
+            return ""
+
+    def _checkpoint_graph_version(self) -> int:
+        """Curator DAG version for the per-turn checkpoint; 0 if no curator."""
+        if self.graph_client is None:
+            return 0
+        try:
+            gv = self.graph_client.get_state().get("graph_version", 0)
+        except (CuratorClientError, OSError):
+            return 0
+        return gv if isinstance(gv, int) else 0
 
     def _record_metric_result(
         self,

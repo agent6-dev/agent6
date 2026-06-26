@@ -183,10 +183,27 @@ Each run's directory `<state-dir>/<repo-id>/runs/<run-id>/` holds:
   (curator-owned).
 - `logs.jsonl`: the structured event stream (below), written by the
   main process.
-- `loop_state.json`: the resume snapshot that drives `agent6 resume`,
-  written by the main process.
+- `loop_state.json`: the latest resume snapshot that drives `agent6 resume`,
+  written by the main process before each LLM call and at iteration end.
+- `checkpoints/<NNNN>.json`: append-only per-turn snapshots (NNNN =
+  zero-padded `next_iteration`), each the same payload as `loop_state.json`
+  plus the workspace `head_sha` and curator `graph_version` at that turn.
+  `agent6 fork --at-turn N` rolls a run back to turn N by cloning the matching
+  checkpoint into a new run. Kept in full (a run is dozens of turns); written
+  by the main process alongside `loop_state.json`.
 - `transcripts/`: full provider request/response pairs for replay,
   written by the main process.
+
+A fork (`agent6 fork <src>`) clones a source run's state, as of a checkpoint,
+into a NEW run dir with a new id: it copies the checkpoint as the new run's
+`loop_state.json` + seed `checkpoints/0000.json`, copies the curator DAG
+(`graph/`, `graph.jsonl`, `cursor.json`) verbatim, writes a manifest with
+`parent_run_id` / `forked_from_turn` / `forked_from_sha`, and cuts
+`agent6/<new>` at the turn's sha (additive `git branch`, the operator's
+checkout is untouched). The source run is never mutated. One fork edge per line
+lands in a per-repo `lineage.jsonl` at the state-dir root. Past-turn DAG replay
+(reconstructing the graph at an older `graph_version`) is deferred; a fork copies
+the source's current DAG.
 
 The `logs.jsonl` vocabulary is small and stable: the data contract for
 any external viewer (the fold to UI state lives in

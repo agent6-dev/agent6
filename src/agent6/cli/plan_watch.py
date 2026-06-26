@@ -236,6 +236,17 @@ def _scan_run_events(events_path: Path) -> dict[str, object]:
     return out
 
 
+def _print_fork_lineage(manifest: dict[str, object]) -> None:
+    """Print the fork-lineage line for a run created by `agent6 fork` (no-op
+    otherwise)."""
+    parent = manifest.get("parent_run_id")
+    if not (isinstance(parent, str) and parent):
+        return
+    sha = manifest.get("forked_from_sha")
+    sha_note = f" ({sha[:12]})" if isinstance(sha, str) and sha else ""
+    print(f"forked from: {parent}@turn {manifest.get('forked_from_turn')}{sha_note}")
+
+
 def _cmd_status(run_id: str, *, as_json: bool = False) -> int:
     """One-shot liveness + progress summary for a run, then exit (no follower).
 
@@ -305,6 +316,9 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:
                     "input_tokens": ev["input_tokens"],
                     "output_tokens": ev["output_tokens"],
                     "cost_usd": ev["cost_usd"],
+                    "parent_run_id": manifest.get("parent_run_id"),
+                    "forked_from_turn": manifest.get("forked_from_turn"),
+                    "forked_from_sha": manifest.get("forked_from_sha"),
                 }
             )
         )
@@ -315,12 +329,15 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:
         pid_note = f"  — worker pid {pid} alive"
     elif pid is not None and end_reason is None:
         pid_note = f"  — worker pid {pid} not running"
-    age_note = f"  ({_fmt_dur(last_age)} ago)" if last_age is not None else ""
     print(f"run:        {target.name}  (mode={manifest.get('mode', '?')})")
+    _print_fork_lineage(manifest)
     print(f"model:      {model}")
     print(f"state:      {state}{pid_note}")
     print(f"iteration:  {iteration if iteration is not None else '-'}")
-    print(f"last event: {last_type or '-'}{age_note}")
+    print(
+        f"last event: {last_type or '-'}"
+        f"{f'  ({_fmt_dur(last_age)} ago)' if last_age is not None else ''}"
+    )
     print(f"elapsed:    {_fmt_dur(elapsed)}")
     if ev["input_tokens"] is not None or ev["cost_usd"] is not None:
         cost = ev["cost_usd"]

@@ -231,6 +231,25 @@ def create_branch(path: Path, name: str) -> None:
         _run(path, "checkout", "-b", name)
 
 
+def create_branch_at(path: Path, name: str, sha: str) -> None:
+    """Create branch *name* pointing at *sha* WITHOUT checking it out.
+
+    Additive only (``git branch <name> <sha>``): it never touches HEAD or the
+    working tree, so `agent6 fork` can cut the new run's branch at a historical
+    sha while the operator's checkout stays put. No-op if *name* already points
+    at *sha*; raises ``GitError`` if it exists pointing elsewhere (we never move
+    a branch -- that would be a force/rewrite, which is refused)."""
+    existing = _run(path, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}", check=False)
+    if existing.ok and existing.stdout.strip():
+        if existing.stdout.strip() == sha:
+            return
+        raise GitError(
+            f"branch {name!r} already exists at {existing.stdout.strip()[:12]}, not {sha[:12]}; "
+            "refusing to move it"
+        )
+    _run(path, "branch", name, sha)
+
+
 def init_repo(path: Path) -> None:
     """`git init` a new repository at *path*. Creating a repo is not a push /
     force / history-rewrite, so it is outside the refusal set."""

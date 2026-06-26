@@ -474,6 +474,50 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     _add_budget_flags(resume_p)
 
+    fork_p = sub.add_parser(
+        "fork",
+        help=(
+            "Clone a run, rolled back to a checkpoint, into a NEW run and continue"
+            " it (the source run is never mutated)."
+        ),
+    )
+    fork_src = fork_p.add_argument(
+        "run_id", help="Source run id (or unambiguous prefix) to fork from."
+    )
+    fork_src.completer = _complete_run_ids  # type: ignore[attr-defined]
+    fork_p.add_argument(
+        "--at-turn",
+        type=int,
+        default=None,
+        metavar="N",
+        dest="at_turn",
+        help="Checkpoint turn to fork from (default: the latest checkpoint).",
+    )
+    fork_p.add_argument(
+        "--run-id",
+        default="",
+        dest="new_run_id",
+        help="Explicit id for the new (forked) run (default: generate one).",
+    )
+    fork_p.add_argument(
+        "--no-run",
+        action="store_true",
+        help="Only create the fork dir; do not continue it (resume it later).",
+    )
+    fork_p.add_argument(
+        "--config",
+        type=Path,
+        default=argparse.SUPPRESS,
+        metavar="FILE",
+        help="Explicit config file (layered over global + repo configs).",
+    )
+    fork_p.add_argument(
+        "--no-tui",
+        action="store_true",
+        help="Do not auto-spawn the textual dashboard (see `agent6 run --no-tui`).",
+    )
+    _add_budget_flags(fork_p)
+
     config_p = sub.add_parser(
         "config",
         help="Inspect and materialize the layered config (global + repo + defaults).",

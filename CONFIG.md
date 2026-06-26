@@ -43,7 +43,7 @@ table below), so a repo needs nothing repo-specific to run.
 | Field | Default | Meaning |
 |---|---|---|
 | `config_version` | `1` | Config schema version (must be `1`). |
-| `state_dir` | `"$XDG_STATE_HOME/agent6"` | Absolute base path for all per-repo state, out of the workspace. Each repo gets `<state_dir>/<repo-id>/` (`<repo-id>` = `<folder>-<short hash of the repo's canonical path>`) holding `config.toml`, `runs/`, `machines/`, `memories/`. **Global-config only** (it locates the per-repo config). Override with the `AGENT6_STATE_HOME` env var. Devcontainer tip: the XDG state base is inside the container and ephemeral, so mount a volume at the state dir or set this to a persisted out-of-cwd path to keep run state across rebuilds. |
+| `state_dir` | `"$XDG_STATE_HOME/agent6"` | Absolute base path for all per-repo state, out of the workspace. Each repo gets `<state_dir>/<repo-id>/` (`<repo-id>` = `<folder>-<short hash of the repo's canonical path>`) holding `config.toml`, `runs/`, `machines/`, `memories/`, and `lineage.jsonl` (the fork forest: one `{child,parent,turn,sha}` edge per line). **Global-config only** (it locates the per-repo config). Override with the `AGENT6_STATE_HOME` env var. Devcontainer tip: the XDG state base is inside the container and ephemeral, so mount a volume at the state dir or set this to a persisted out-of-cwd path to keep run state across rebuilds. |
 
 ## `[providers.<name>]`
 

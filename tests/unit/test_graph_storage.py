@@ -119,3 +119,25 @@ def test_load_graph_reconstructs_parent_dir_layout(tmp_path: Path) -> None:
     loaded = load_graph(layout)
     assert loaded[root.id].children == (child.id,)
     assert loaded[child.id].parent_id == root.id
+
+
+def test_checkpoints_dir_and_path(tmp_path: Path) -> None:
+    layout = RunLayout(state_dir=tmp_path, run_id="run1")
+    layout.ensure()
+    assert layout.checkpoints_dir.is_dir()
+    assert layout.checkpoint_path(7) == layout.checkpoints_dir / "0007.json"
+    assert layout.checkpoint_path(1234) == layout.checkpoints_dir / "1234.json"
+
+
+def test_list_checkpoint_turns(tmp_path: Path) -> None:
+    from agent6.graph.storage import list_checkpoint_turns
+
+    layout = RunLayout(state_dir=tmp_path, run_id="run1")
+    # No checkpoints dir yet (old run): empty.
+    assert list_checkpoint_turns(layout) == []
+    layout.ensure()
+    for turn in (3, 1, 10, 2):
+        layout.checkpoint_path(turn).write_text("{}", encoding="utf-8")
+    # A stray non-numeric file is ignored.
+    (layout.checkpoints_dir / "notes.json").write_text("{}", encoding="utf-8")
+    assert list_checkpoint_turns(layout) == [1, 2, 3, 10]

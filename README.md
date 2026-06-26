@@ -105,6 +105,10 @@ agent6 check
 # Resume an interrupted run from its last tool-call snapshot.
 agent6 resume <run-id>
 
+# Go back and try a different direction: clone a run, rolled back to a turn,
+# into a NEW run (the original stays intact) and continue it.
+agent6 fork <run-id> --at-turn 7
+
 # Read-only code review of a diff. Never touches the worktree.
 agent6 review --base origin/main --head HEAD
 
@@ -144,6 +148,17 @@ Other commands:
     every tool call with complete I/O) as Markdown; `--json` for the raw
     transcript. The lossless deep-dive, vs the terse `logs.jsonl`.
   - `runs graph`: render the persisted task graph.
+  - `runs show` also prints fork lineage (`forked from <parent>@turn N`) when
+    the run was created by `agent6 fork`.
+- `agent6 fork <run-id> [--at-turn N] [--run-id NEW] [--no-run]`: clone a run,
+  rolled back to checkpoint turn N (default: the latest), into a NEW run with a
+  new id and the same repo, recording lineage (parent run + the turn). The
+  source run is never mutated — this is "sessions as trees" done as
+  clone-to-new-session, not in-place branching. It cuts `agent6/<NEW>` at the
+  turn's sha (your checkout stays put) and, by default, continues the new run
+  from turn N (reusing the resume path); `--no-run` just creates it. Each run
+  writes a per-turn `checkpoints/<NNNN>.json` so any turn is forkable; a run
+  from before this feature forks from its latest snapshot only.
 - `agent6 plan "<task>"`: read-only planning pass; execute with
   `agent6 run --from-plan`. Inspect with `plan show <id>` / `plan edit <id>`.
 - `agent6 ask "<question>"`: read-only Q&A over the repo, including
@@ -302,12 +317,16 @@ inline log pane is a live tail; press `l` (or pick a run in the hub and press
 
 Per-repo state lives out of the workspace under `$XDG_STATE_HOME/agent6/<repo-id>/`
 (override with `[agent6].state_dir` or `AGENT6_STATE_HOME`). Each run's state
-sits under `runs/<run-id>/`: the append-only task graph, per-call snapshots
-that drive `agent6 resume`, full transcripts, and the event log. The
-`graph-curator` subprocess owns the task graph; the main process writes the
-resume snapshots, transcripts, and event log in-process. The run directory is
-safe from jailed commands because it lives outside the repo cwd they run on,
-not because of any single writer.
+sits under `runs/<run-id>/`: the append-only task graph, the latest per-call
+snapshot (`loop_state.json`) that drives `agent6 resume`, an append-only
+per-turn `checkpoints/<NNNN>.json` store (each carrying that turn's workspace sha
+and DAG version) that `agent6 fork` rolls back to, full transcripts, and the
+event log. The `graph-curator` subprocess owns the task graph; the main process
+writes the resume snapshots, checkpoints, transcripts, and event log in-process.
+A per-repo `lineage.jsonl` at the state-dir root records every fork edge
+(`child`, `parent`, `turn`, `sha`). The run directory is safe from jailed
+commands because it lives outside the repo cwd they run on, not because of any
+single writer.
 
 ## End-of-run notify hook
 

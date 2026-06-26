@@ -93,6 +93,17 @@ class RunLayout:
         return self.run_dir / "snapshots"
 
     @property
+    def checkpoints_dir(self) -> Path:
+        """Append-only per-turn resume checkpoints (``<NNNN>.json``).
+
+        Each holds the same payload as ``loop_state.json`` for that turn plus
+        the workspace ``head_sha`` and curator ``graph_version`` at the turn, so
+        ``agent6 fork`` can roll a run back to turn N. ``loop_state.json`` stays
+        the "latest" pointer for plain ``resume``.
+        """
+        return self.run_dir / "checkpoints"
+
+    @property
     def transcripts_dir(self) -> Path:
         return self.run_dir / "transcripts"
 
@@ -114,6 +125,11 @@ class RunLayout:
         self.graph_dir.mkdir(exist_ok=True)
         self.snapshots_dir.mkdir(exist_ok=True)
         self.transcripts_dir.mkdir(exist_ok=True)
+        self.checkpoints_dir.mkdir(exist_ok=True)
+
+    def checkpoint_path(self, turn: int) -> Path:
+        """Path of the checkpoint for ``turn`` (zero-padded to 4 digits)."""
+        return self.checkpoints_dir / f"{turn:04d}.json"
 
 
 # ---- atomic write + flock helpers ----------------------------------------
@@ -148,6 +164,15 @@ def _append_line(path: Path, line: str) -> None:
         os.fsync(fd)
     finally:
         os.close(fd)
+
+
+def append_jsonl(path: Path, entry: dict[str, object]) -> None:
+    """Append one JSON object as a line to ``path`` (durable single write).
+
+    Public wrapper over the atomic append used for the per-repo fork
+    ``lineage.jsonl``; the caller supplies a fully-formed entry (including any
+    timestamp) so this stays a pure I/O helper with no clock dependency."""
+    _append_line(path, json.dumps(entry, sort_keys=True))
 
 
 @contextmanager
@@ -451,6 +476,25 @@ def read_snapshot(layout: RunLayout, node_id: str) -> NodeSnapshot | None:
     if not path.is_file():
         return None
     return NodeSnapshot.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def list_checkpoint_turns(layout: RunLayout) -> list[int]:
+    """Return the recorded checkpoint turn indices, ascending.
+
+    Empty when the run predates the checkpoint store (no ``checkpoints/`` dir),
+    which is how ``agent6 fork`` detects an old run and falls back to forking
+    from ``loop_state.json`` only.
+    """
+    cp_dir = layout.checkpoints_dir
+    if not cp_dir.is_dir():
+        return []
+    turns: list[int] = []
+    for p in cp_dir.glob("*.json"):
+        try:
+            turns.append(int(p.stem))
+        except ValueError:
+            continue  # a non-numeric stray file is not a checkpoint
+    return sorted(turns)
 
 
 def write_dot(layout: RunLayout, nodes: dict[str, TaskNode]) -> None:

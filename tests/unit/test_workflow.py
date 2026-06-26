@@ -1580,15 +1580,20 @@ def test_save_and_load_resume_snapshot_round_trip(tmp_path: Path) -> None:
 
 
 def test_save_resume_snapshot_atomic_no_partial_tmp(tmp_path: Path) -> None:
-    """After save, no .tmp file remains; only the final snapshot exists."""
+    """After save, no .tmp file remains: the final snapshot + its per-turn
+    checkpoint are the only artifacts (both written atomically)."""
     snap_path = tmp_path / "loop_state.json"
     wf = _wf(resume_state_path=snap_path)
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
         system="s", messages=[], tool_calls=0, next_iteration=1, root_task_id=None, state=_state()
     )
     assert snap_path.is_file()
-    leftovers = [p.name for p in tmp_path.iterdir() if p.name != snap_path.name]
-    assert leftovers == [], f"unexpected leftover files: {leftovers}"
+    # The per-turn checkpoint lands under checkpoints/; nothing else (no .tmp).
+    assert (tmp_path / "checkpoints" / "0001.json").is_file()
+    leftovers = sorted(p.name for p in tmp_path.iterdir() if p.name != snap_path.name)
+    assert leftovers == ["checkpoints"], f"unexpected leftover files: {leftovers}"
+    cp_leftovers = [p.name for p in (tmp_path / "checkpoints").iterdir()]
+    assert cp_leftovers == ["0001.json"], f"unexpected checkpoint leftovers: {cp_leftovers}"
 
 
 def test_load_resume_snapshot_rejects_version_mismatch(tmp_path: Path) -> None:
