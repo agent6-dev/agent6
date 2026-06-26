@@ -132,9 +132,17 @@ _REASONING_MODEL_HINTS: tuple[str, ...] = (
     #                 streams reasoning_content even on the non-"reasoning"
     #                 variant; observed starving (loop.reasoning_starvation)
     #                 at the 16k default on the synthetic edit tasks.
+    #   - glm:        Zhipu GLM-4.x/5.x (z-ai/glm-4.6, glm-4.7, glm-5.2).
+    #                 All stream a separate ``reasoning`` channel; a direct
+    #                 OpenRouter probe at max_tokens=40 returned
+    #                 finish_reason="length" with empty content/tool_calls and
+    #                 ~all 40 tokens charged as reasoning_tokens. The "v"
+    #                 vision variants (glm-4.5v etc.) match too, which is fine:
+    #                 they reason as well, and the floor only raises a ceiling.
     "kimi-k2",
     "minimax-m2",
     "nemotron",
+    "glm",
 )
 
 

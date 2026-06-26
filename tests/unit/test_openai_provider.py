@@ -238,10 +238,14 @@ def test_is_reasoning_model_detects_thinking_models() -> None:
     assert _is_reasoning_model("minimax/minimax-m2.7")
     assert _is_reasoning_model("minimax/minimax-m2")
     assert _is_reasoning_model("nvidia/nemotron-3-nano-30b-a3b")
+    # GLM-4.x/5.x all stream a separate reasoning channel and starve at the
+    # default cap (direct OpenRouter probe: glm-4.6/4.7/5.2 each returned
+    # finish_reason="length" with empty content and ~all tokens as reasoning).
+    assert _is_reasoning_model("z-ai/glm-4.6")
+    assert _is_reasoning_model("z-ai/glm-5.2")
     assert not _is_reasoning_model("gpt-4o")
     assert not _is_reasoning_model("claude-3-5-sonnet")
     assert not _is_reasoning_model("llama-3-70b")
-    assert not _is_reasoning_model("z-ai/glm-4.6")
 
 
 def test_call_bumps_max_tokens_for_reasoning_models() -> None:

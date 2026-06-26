@@ -231,6 +231,7 @@ BUNDLED_CONTEXT_WINDOWS: dict[str, int] = {
     "qwen/qwen3-coder": 1_048_576,
     "qwen/qwen3-coder-30b-a3b-instruct": 160_000,
     "z-ai/glm-4.6": 202_752,
+    "z-ai/glm-5.2": 1_048_576,
     "deepseek/deepseek-v3.2-exp": 163_840,
 }
 
