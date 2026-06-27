@@ -306,7 +306,11 @@ radius.
   3.14+) and writes config/secrets. It does not run any command, URL, or
   script returned by a provider or any remote, by construction. This is a
   deliberate guard against the class of bug where a login flow runs an
-  attacker-supplied shell command.
+  attacker-supplied shell command. After saving a key it makes one read-only
+  `GET` to the provider's models/key endpoint to confirm the key authenticates
+  (a 401 is caught at setup, not mid-run); the response is only inspected for
+  the HTTP status, never executed. Skip it with `--no-verify` for offline or
+  local endpoints.
   agent6 also opens no listening network socket of any kind (MCP is
   stdio; the egress broker is a private Unix socket).
 - **Root.** Running an LLM-driven agent as root is dangerous, so agent6

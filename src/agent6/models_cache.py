@@ -23,7 +23,9 @@ import contextlib
 import json
 import re
 import time
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import httpx2
 
@@ -148,9 +150,12 @@ def _parse_context(payload: object) -> dict[str, int]:
     return out
 
 
-def _fetch(
-    entry: ProviderEntry, api_key: str | None, timeout_s: float
-) -> tuple[list[str], dict[str, tuple[float, float]], dict[str, int]]:
+def _models_endpoint(entry: ProviderEntry, api_key: str | None) -> tuple[str, dict[str, str]]:
+    """The (url, headers) for *entry*'s ``/models`` listing, auth included.
+
+    Shared by the cache fetch and the ``connect`` key probe so both hit the
+    endpoint the same way the call path authenticates.
+    """
     url = entry.base_url.rstrip("/") + "/models"
     headers = dict(entry.extra_headers)
     # Anthropic's direct /models needs the version header; Vertex/Azure have no
@@ -161,10 +166,68 @@ def _fetch(
     authed = auth_header(entry.auth_style, api_key or "")
     if authed is not None:
         headers[authed[0]] = authed[1]
+    return url, headers
+
+
+def _fetch(
+    entry: ProviderEntry, api_key: str | None, timeout_s: float
+) -> tuple[list[str], dict[str, tuple[float, float]], dict[str, int]]:
+    url, headers = _models_endpoint(entry, api_key)
     resp = httpx2.get(url, headers=headers, timeout=timeout_s)
     resp.raise_for_status()
     payload = resp.json()
     return _parse_models(payload), _parse_pricing(payload), _parse_context(payload)
+
+
+@dataclass(frozen=True, slots=True)
+class KeyProbeResult:
+    """Outcome of a `connect` key-validation probe."""
+
+    ok: bool
+    status: Literal["ok", "auth_failed", "unreachable", "unsupported"]
+    detail: str
+
+
+def probe_provider_key(
+    entry: ProviderEntry, api_key: str, *, timeout_s: float = 10.0
+) -> KeyProbeResult:
+    """Check whether *api_key* authenticates against *entry*'s ``/models``.
+
+    A read-only GET (no remote content is executed), used by ``agent6 connect``
+    to catch a bad key at setup instead of mid-run. Distinguishes a working key
+    (2xx) from a rejected one (401/403) from an unreachable endpoint, unlike
+    `list_models` which swallows every failure into an empty list. Vertex/Azure
+    have no uniform ``/models`` listing, so they report ``unsupported`` rather
+    than a misleading failure.
+
+    Caveat: a 401/403 is a reliable "bad key" everywhere, but a 2xx only proves
+    validity when ``/models`` is auth-gated (Anthropic, OpenAI). OpenRouter's
+    ``/models`` is PUBLIC (returns 200 for any key), so for it we probe the
+    auth-gated ``/key`` endpoint instead. A different OpenAI-compatible provider
+    with a public ``/models`` would report a false ``ok`` -- the negative
+    (auth_failed) is the trustworthy signal.
+    """
+    if getattr(entry, "deployment", "direct") != "direct":
+        return KeyProbeResult(
+            ok=True, status="unsupported", detail="no /models listing for this deployment"
+        )
+    url, headers = _models_endpoint(entry, api_key)
+    if "openrouter.ai" in entry.base_url:
+        url = entry.base_url.rstrip("/") + "/key"
+    try:
+        resp = httpx2.get(url, headers=headers, timeout=timeout_s)
+    except (httpx2.HTTPError, OSError) as exc:
+        return KeyProbeResult(ok=False, status="unreachable", detail=str(exc)[:200])
+    if resp.status_code in (401, 403):
+        return KeyProbeResult(ok=False, status="auth_failed", detail=f"HTTP {resp.status_code}")
+    if resp.status_code >= 400:
+        return KeyProbeResult(ok=False, status="unreachable", detail=f"HTTP {resp.status_code}")
+    try:
+        n = len(_parse_models(resp.json()))
+        detail = f"provider returned {n} models" if n else "provider accepted the key"
+    except (ValueError, json.JSONDecodeError):
+        detail = "provider accepted the key"
+    return KeyProbeResult(ok=True, status="ok", detail=detail)
 
 
 def list_models(

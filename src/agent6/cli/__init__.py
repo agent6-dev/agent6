@@ -331,7 +331,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
     if args.command == "check":
         return _cmd_check(args.config, section=args.section)
     if args.command == "connect":
-        return _cmd_connect(provider=args.provider, to_repo=args.repo)
+        return _cmd_connect(provider=args.provider, to_repo=args.repo, verify=args.verify)
     if args.command == "model":
         return _cmd_model(
             args.config,

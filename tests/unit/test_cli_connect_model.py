@@ -12,6 +12,7 @@ import pytest
 from agent6 import secrets
 from agent6.cli import main
 from agent6.config_layer import resolved_state_dir
+from agent6.models_cache import KeyProbeResult
 
 
 @pytest.fixture
@@ -22,6 +23,14 @@ def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     # the masked-input behaviour, which `connect` only takes when stdin is a
     # TTY. Under pytest stdin reports non-TTY; the non-TTY path has its own test.
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    # Keep connect hermetic by default: stub the post-save key probe so no test
+    # makes a real network call. Tests of the probe behaviour re-patch it.
+    monkeypatch.setattr(
+        "agent6.cli.connect.probe_provider_key",
+        lambda *a, **k: KeyProbeResult(  # type: ignore[misc]
+            ok=True, status="ok", detail="provider returned 1 models"
+        ),
+    )
     return tmp_path / "g"
 
 
@@ -48,6 +57,48 @@ def test_connect_stores_key_and_provider_and_never_execs(
     gc = (tmp_path / "g" / "config.toml").read_text(encoding="utf-8")
     assert "[providers.anthropic]" in gc
     assert calls == []
+
+
+def test_connect_validates_key_and_reports_ok(
+    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr("agent6.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-REAL")
+    rc = main(["connect", "--provider", "anthropic"])  # iso stubs the probe -> ok
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Checking the key against the provider" in out
+    assert "Key validated" in out
+
+
+def test_connect_warns_when_provider_rejects_key(
+    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr("agent6.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-BAD")
+    monkeypatch.setattr(
+        "agent6.cli.connect.probe_provider_key",
+        lambda *a, **k: KeyProbeResult(ok=False, status="auth_failed", detail="HTTP 401"),  # type: ignore[misc]
+    )
+    rc = main(["connect", "--provider", "anthropic"])
+    assert rc == 0  # the key is saved anyway; the warning is advisory
+    err = capsys.readouterr().err
+    assert "REJECTED this key" in err
+    assert "HTTP 401" in err
+    # The key was still written (the user may fix it later).
+    assert secrets.resolve_api_key("anthropic", None) == "sk-ant-BAD"
+
+
+def test_connect_no_verify_skips_the_probe(
+    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr("agent6.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-REAL")
+
+    def _boom(*_a: object, **_k: object) -> KeyProbeResult:
+        raise AssertionError("--no-verify must not probe the provider")
+
+    monkeypatch.setattr("agent6.cli.connect.probe_provider_key", _boom)
+    rc = main(["connect", "--provider", "anthropic", "--no-verify"])
+    assert rc == 0
+    assert "Checking the key" not in capsys.readouterr().out
 
 
 def test_connect_non_tty_reads_plain_input_without_getpass(

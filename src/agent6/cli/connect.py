@@ -9,12 +9,20 @@ import re
 import sys
 from pathlib import Path
 
-from agent6.config import _validate_base_url
+from pydantic import ValidationError
+
+from agent6.config import (
+    AnthropicProviderEntry,
+    OpenAIProviderEntry,
+    ProviderEntry,
+    _validate_base_url,
+)
 from agent6.config_io import upsert_toml_table
 from agent6.config_layer import (
     PROVIDER_PRESETS,
     repo_config_path_for,
 )
+from agent6.models_cache import probe_provider_key
 from agent6.paths import (
     chown_to_real_user,
     global_config_path,
@@ -100,13 +108,54 @@ def _resolve_provider_name(provider: str) -> str | None:
     return name
 
 
-def _cmd_connect(*, provider: str, to_repo: bool) -> int:
+def _verify_key(*, api_format: str, base_url: str, api_key: str) -> None:
+    """Probe the provider's /models endpoint to confirm the key authenticates.
+
+    A read-only GET, so it does not violate connect's no-remote-execution rule.
+    Prints the outcome; never raises (a probe failure must not fail connect, the
+    key is already saved). Skipped for offline/local endpoints via --no-verify.
+    """
+    try:
+        entry: ProviderEntry = (
+            AnthropicProviderEntry(api_format="anthropic")
+            if api_format == "anthropic"
+            else OpenAIProviderEntry(
+                api_format="openai", base_url=base_url or "https://api.openai.com/v1"
+            )
+        )
+    except ValidationError as exc:
+        print(f"  (skipped key check: {exc})", file=sys.stderr)
+        return
+    print("Checking the key against the provider...")
+    result = probe_provider_key(entry, api_key)
+    if result.status == "ok":
+        print(f"  Key validated: {result.detail}.")
+    elif result.status == "auth_failed":
+        print(
+            f"  WARNING: the provider REJECTED this key ({result.detail}). It was saved anyway;\n"
+            "  re-run `agent6 connect` with the correct key (or pass --no-verify for a local"
+            " endpoint).",
+            file=sys.stderr,
+        )
+    elif result.status == "unsupported":
+        print(f"  (key check skipped: {result.detail})")
+    else:  # unreachable
+        print(
+            f"  NOTE: could not reach the provider to validate the key ({result.detail}); saved"
+            " anyway.",
+            file=sys.stderr,
+        )
+
+
+def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True) -> int:  # noqa: PLR0912
     """Interactively add a provider + API key.
 
     Security: this command NEVER executes anything supplied by a remote. It
     only prompts locally (key via getpass, hidden, or masked with ``*`` on
-    Python 3.14+), stores the key in the 0600 secrets file, and writes a
-    minimal ``[providers.<name>]`` block.
+    Python 3.14+), stores the key in the 0600 secrets file, writes a minimal
+    ``[providers.<name>]`` block, and (unless ``verify`` is False) makes one
+    read-only GET to the provider's ``/models`` endpoint to confirm the key
+    authenticates.
     """
     print("agent6 connect — add a provider + API key.\n")
     name = _resolve_provider_name(provider)
@@ -146,6 +195,8 @@ def _cmd_connect(*, provider: str, to_repo: bool) -> int:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
         print(f"Saved key to {saved} (0600).")
+        if verify:
+            _verify_key(api_format=api_format, base_url=base_url, api_key=api_key)
     elif api_format == "anthropic":
         # The Anthropic api_format always sends a key; a keyless block is
         # unusable and `agent6 run` would later fail with "no API key". Say so

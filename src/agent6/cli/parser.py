@@ -650,6 +650,13 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         action="store_true",
         help="Write the [providers.*] block to the per-repo config instead of the global config.",
     )
+    connect_p.add_argument(
+        "--no-verify",
+        dest="verify",
+        action="store_false",
+        help="Skip the post-save read-only key check (a GET to the provider's /models)."
+        " Use for offline/local endpoints (Ollama, llama.cpp) that have no models listing.",
+    )
 
     model_p = sub.add_parser(
         "model",
