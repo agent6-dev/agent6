@@ -1109,6 +1109,11 @@ class Workflow:
             tool_results: list[dict[str, Any]] = []
             verify_just_passed = False
             verify_just_failed = False
+            # An apply_edit/apply_patch run AFTER a passing verify in the same
+            # turn changes the tree the verify validated, so the green no longer
+            # applies. Tracked separately from verify_just_passed (which the
+            # metric path also reads) so only the auto-commit gate is affected.
+            edit_since_verify_pass = False
             edited_this_iter = False
             committed_this_iter = False
             dag_mutated_this_iter = False
@@ -1152,6 +1157,9 @@ class Workflow:
                         rc = result.get("returncode")
                         if rc == 0:
                             verify_just_passed = True
+                            # This verify validated the current tree; any earlier
+                            # edit is now covered.
+                            edit_since_verify_pass = False
                         elif rc is not None:
                             verify_just_failed = True
                         if rc is not None:
@@ -1177,6 +1185,9 @@ class Workflow:
                             )
                     if name in ("apply_edit", "apply_patch"):
                         edited_this_iter = True
+                        # Invalidate a same-turn earlier verify pass: the commit
+                        # gate must not label this edited tree "verify passed".
+                        edit_since_verify_pass = True
                     if name in _DAG_MUTATING_TOOLS:
                         dag_mutated_this_iter = True  # snapshot once after the turn
                 except ToolError as exc:
@@ -1256,7 +1267,8 @@ class Workflow:
             # are also checkpointed (else they'd never be committed gateless).
             gateless = not self.config.workflow.verify_command
             gateless_changed = gateless and (edited_this_iter or self._worktree_dirty())
-            if self.mode == "run" and (verify_just_passed or gateless_changed):
+            verified_commit = verify_just_passed and not edit_since_verify_pass
+            if self.mode == "run" and (verified_commit or gateless_changed):
                 commit_subject = _summarise_assistant_text_for_commit(
                     resp.text or "",
                     iteration,

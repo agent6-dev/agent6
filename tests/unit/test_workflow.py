@@ -530,6 +530,80 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: Path) -
     assert dispatcher.calls == ["run_verify_command", "run_metric_command"]
 
 
+def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(tmp_path: Path) -> None:
+    """A turn that runs verify (green) and THEN edits must not auto-commit the
+    edited tree labeled 'verify passed': the edit changed the tree the verify
+    validated. Pins the verify_just_passed latch where an unverified edit was
+    committed as green. (edit-then-verify, the normal order, still commits.)"""
+
+    def _multi(*names: str) -> ProviderResponse:
+        tus = tuple({"id": f"t{i}", "name": n, "input": {}} for i, n in enumerate(names))
+        return ProviderResponse(
+            text="",
+            tool_uses=tus,
+            stop_reason="tool_use",
+            input_tokens=1,
+            output_tokens=1,
+            cache_read_tokens=0,
+            cache_creation_tokens=0,
+            raw={"content": [{"type": "tool_use", **tu} for tu in tus]},
+        )
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.n = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            del kwargs
+            self.n += 1
+            if self.n == 1:
+                # verify (green) THEN edit, in that order, in ONE turn.
+                return _multi("run_verify_command", "apply_edit")
+            return _tool_resp("finish_run", {"summary": "done"}, tool_id="fin")
+
+    class DispatcherStub:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+            if name == "run_verify_command":
+                return {"returncode": 0, "stdout": "", "stderr": "", "duration_s": 0.1}
+            if name == "apply_edit":
+                return {"ok": True}
+            if name == "finish_run":
+                return {"acknowledged": True, "summary": raw_input["summary"]}
+            raise AssertionError(f"unexpected tool: {name}")
+
+    provider = ProviderStub()
+    config = SimpleNamespace(workflow=SimpleNamespace(verify_command=("true",), metric=None))
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        provider=provider,
+        dispatcher=DispatcherStub(),
+        max_iterations=3,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nx"}]}]
+
+    commits: list[str] = []
+
+    def _fake_commit(root: Any, subject: str) -> str:
+        del root
+        commits.append(subject)
+        return f"sha{len(commits)}"
+
+    with patch("agent6.workflows.loop.commit_all", side_effect=_fake_commit):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            messages=messages,
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+        )
+
+    # The verify->edit turn produced no 'verify passed' commit (old code did).
+    assert commits == []
+    assert result.reason == "finish_run"
+
+
 def test_drive_loop_finishes_on_metric_plateau(tmp_path: Path) -> None:
     class ProviderStub:
         def __init__(self) -> None:
