@@ -1,10 +1,13 @@
 # agent6
 
-A sandboxed coding agent for Linux. The LLM is treated as adversarial: every
-command it spawns runs inside a custom Rust launcher (`agent6-jail`) built on
-user namespaces, Landlock, seccomp, `pivot_root`, `capset(0)`, and
-`NO_NEW_PRIVS`, so a misbehaving model cannot escape the workspace, reach the
-network beyond the provider endpoint, or corrupt git history.
+A sandboxed coding agent for Linux, tuned to stay effective on cheap
+open-weight models (Kimi, GLM, Qwen) as well as Claude. The LLM is treated as
+adversarial: every command it spawns runs inside a custom Rust launcher
+(`agent6-jail`) built on user namespaces, Landlock, seccomp, `pivot_root`,
+`capset(0)`, and `NO_NEW_PRIVS`, so you can point a weaker or untrusted model at
+a real repository and it cannot escape the workspace, reach the network beyond
+the provider endpoint, or corrupt git history. Runs commit per step and are
+resumable and forkable, so an interrupted or wrong turn is never a dead end.
 
 Features:
 
@@ -274,6 +277,18 @@ profiles), see [SECURITY.md](SECURITY.md). Defaults are safe:
 `git_ops.py` refuses `push`, `--force`, and history rewrites
 unconditionally.
 
+### Why not just run an agent in a devcontainer?
+
+A container is one coarse blast radius for the whole agent: anything it does,
+including `git push --force` or reaching the network from a build step, is
+allowed inside that box. agent6 instead jails every child process the model
+runs individually (Landlock + seccomp + `pivot_root`), rebinds `.git`
+read-only, and confines egress to the provider endpoint, so a misbehaving model
+cannot corrupt history or exfiltrate even from inside a command it chose to run.
+The two compose: agent6 runs fine inside a devcontainer, where its `hardened`
+profile uses the container as the filesystem boundary and still applies the
+per-process network and git protections. See [SECURITY.md](SECURITY.md).
+
 ## Benchmarks
 
 Reproducible harnesses live under [bench/](bench/):
@@ -281,8 +296,11 @@ Reproducible harnesses live under [bench/](bench/):
 - [bench/realworld/](bench/realworld/): 11 SWE-bench-Lite-style tasks
   scored by fresh sandboxed verifies on hidden tests. Latest recorded run:
   agent6 and claude-code both solve 11/11 on the same worker model
-  (`claude-sonnet-4-5`); agent6 at about $2.60 total, claude-code at about
-  $3.96. Single runs, no variance measured; re-run before quoting.
+  (`claude-sonnet-4-5`). Cost is profile-dependent: agent6 ran $2.60 under a
+  tight per-task budget cap and $8.45 when each task was free to optimize
+  toward the cap, vs claude-code at $3.96; the same suite on the open-weights
+  `kimi-k2.6` worker solved 11/11 for $1.20. Single runs, no variance measured;
+  re-run before quoting.
 - [bench/agents/](bench/agents/): head-to-head against Claude Code,
   opencode, and aider on Go and Rust tasks with cheap models.
 - [bench/machine/](bench/machine/): `machine create` attempts, cost, and
@@ -298,6 +316,11 @@ publishes them; Anthropic does not, so its models report an unknown
 price). Where the provider reports per-call cost, that figure is used
 directly. The `[budget]` ceilings hard-stop the run; a stopped run is
 resumable.
+
+As a rough anchor: a small, well-scoped task on an open-weight worker (Kimi or
+GLM via OpenRouter) typically runs well under $1. Cap any run with
+`agent6 run --max-usd N` (a hard stop on priced models); a frontier model costs
+more per token but usually finishes a task in fewer turns.
 
 ## Live view
 
