@@ -54,7 +54,7 @@ from agent6.tools._result_format import (
     truncate_args as _truncate_args,
 )
 from agent6.tools.index import Symbol, SymbolIndex
-from agent6.tools.lsp import LspClient, LspError
+from agent6.tools.lsp import LspClient, LspError, lsp_tools_useful
 from agent6.tools.mcp_client import MCP_TOOL_PREFIX, MCPError, MCPManager
 from agent6.tools.patch_apply import (
     PatchError,
@@ -645,6 +645,10 @@ class ToolDispatcher:
         # first use, killed by close(). Outside the jail, same trust
         # boundary as the tree-sitter index.
         self._lsp: LspClient | None = None
+        # The ty LSP server is Python-only; hide the two find_*_lsp tools when
+        # they can't help (no ty/uvx, or a non-Python repo) so they don't waste
+        # schema tokens or confuse the model with dead near-duplicate tools.
+        self._lsp_tools_useful = lsp_tools_useful(self._root)
 
     @property
     def root(self) -> Path:
@@ -664,6 +668,11 @@ class ToolDispatcher:
         # run_verify_command rather than offer a tool that would error.
         if not self._config.workflow.verify_command:
             names = [n for n in names if n != RunVerifyInput.TOOL_NAME]
+        # Python-only LSP tools are dead weight on a non-Python repo or with no
+        # ty/uvx installed: hide them rather than offer tools that only error.
+        if not self._lsp_tools_useful:
+            lsp_names = {FindDefinitionLspInput.TOOL_NAME, FindReferencesLspInput.TOOL_NAME}
+            names = [n for n in names if n not in lsp_names]
         # Bench / A-B harness: hide the tree-sitter index tools when this env
         # var is set so we can compare cost/quality with and without them
         # without rebuilding agent6.

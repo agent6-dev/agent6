@@ -63,6 +63,22 @@ def _find_ty_argv() -> list[str] | None:
     return None
 
 
+def lsp_tools_useful(root: Path) -> bool:
+    """True when the ``find_*_lsp`` tools can actually do something for *root*.
+
+    The ``ty`` server is Python-only, so the tools are dead weight on a non-Python
+    repo or when neither ``ty`` nor ``uvx`` is on PATH. Gating their exposure on
+    this keeps two near-duplicate symbol tools (and their schema tokens) out of
+    the model's tool list where they would only ever error. Cheap, shallow
+    checks: the common project markers, then a top-level / src-level ``*.py``.
+    """
+    if _find_ty_argv() is None:
+        return False
+    if any((root / m).is_file() for m in ("pyproject.toml", "setup.py", "setup.cfg")):
+        return True
+    return any(next(root.glob(pat), None) is not None for pat in ("*.py", "*/*.py", "src/*/*.py"))
+
+
 def _symbol_position(text: str, symbol: str) -> tuple[int, int] | None:
     """Return (line, character) of the best whole-word occurrence to anchor on.
 

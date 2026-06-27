@@ -262,3 +262,56 @@ def test_lsp_request_times_out_on_hung_server(
         client.start()  # initialize never gets its response
     assert time.monotonic() - started < 5.0  # deadline enforced, did not hang
     client.close()
+
+
+# --- lsp_tools_useful gating ------------------------------------------------
+
+
+def test_lsp_tools_useful_false_without_ty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from agent6.tools import lsp as lspmod
+    from agent6.tools.lsp import lsp_tools_useful
+
+    monkeypatch.setattr(lspmod, "_find_ty_argv", lambda: None)
+    (tmp_path / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+    assert lsp_tools_useful(tmp_path) is False  # no ty/uvx -> dead tools
+
+
+def test_lsp_tools_useful_true_for_python_with_ty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from agent6.tools import lsp as lspmod
+    from agent6.tools.lsp import lsp_tools_useful
+
+    monkeypatch.setattr(lspmod, "_find_ty_argv", lambda: ["ty", "server"])
+    (tmp_path / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+    assert lsp_tools_useful(tmp_path) is True
+
+
+def test_lsp_tools_useful_false_for_nonpython_repo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from agent6.tools import lsp as lspmod
+    from agent6.tools.lsp import lsp_tools_useful
+
+    monkeypatch.setattr(lspmod, "_find_ty_argv", lambda: ["ty", "server"])
+    (tmp_path / "main.go").write_text("package main\n", encoding="utf-8")
+    assert lsp_tools_useful(tmp_path) is False  # ty present but no Python
+
+
+def test_lsp_tools_hidden_from_available_when_not_useful(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = _config(tmp_path)
+    monkeypatch.setattr("agent6.tools.dispatch.lsp_tools_useful", lambda _root: False)  # type: ignore[misc]
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    names = set(d.available_tool_names())
+    assert "find_definition_lsp" not in names
+    assert "find_references_lsp" not in names
+    # The tree-sitter symbol tools are never gated this way.
+    assert "find_definition" in names
+
+    monkeypatch.setattr("agent6.tools.dispatch.lsp_tools_useful", lambda _root: True)  # type: ignore[misc]
+    d2 = ToolDispatcher(root=tmp_path, config=cfg)
+    assert {"find_definition_lsp", "find_references_lsp"} <= set(d2.available_tool_names())
