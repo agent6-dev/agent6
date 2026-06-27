@@ -121,7 +121,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "--profile",
         default="",
         help="Config profile preset (quick/standard/ultra/paranoid or a custom"
-        " [profiles.<name>]). Overrides [workflow].profile; your explicit settings win.",
+        " [profiles.<name>]). Overrides the top-level `profile` key; your explicit"
+        " settings win.",
     )
     run_p.add_argument(
         "--config",

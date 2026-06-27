@@ -120,8 +120,9 @@ agent6 review --reviewers 3 --personas security,correctness,tests
 agent6 run "..." --profile ultra
 ```
 
-The in-loop review panel and profiles are configured under `[workflow]`
-(`critic`, `review_*`, `profile`); see [CONFIG.md](CONFIG.md).
+The in-loop review panel lives in the `[review]` section (`trigger`,
+`panel_size`, `seats`, `decision`, `personas`); the strategy preset is the
+top-level `profile` key. See [CONFIG.md](CONFIG.md).
 
 Config is layered: built-in secure defaults, then the global
 `~/.config/agent6/config.toml`, then the per-repo config (out of the
@@ -206,7 +207,7 @@ max_output_tokens = 200000
 # best_effort_usd_limit = 10.0  # optional; see CONFIG.md
 
 [providers.anthropic]
-kind = "anthropic"
+api_format = "anthropic"
 api_key_env = "ANTHROPIC_API_KEY"
 
 [models.worker]
@@ -221,8 +222,8 @@ or `--max-input-tokens` / `--max-output-tokens` on `run`, `plan`, and
 ### Providers and models
 
 Declare any number of `[providers.<name>]` blocks, each with
-`kind = "anthropic"` or `kind = "openai"`, its own `base_url`, and
-`api_key_env`. Per-provider `http_timeout_s` (default 600) caps each HTTP
+`api_format = "anthropic"` or `api_format = "openai"`, its own `base_url`,
+and `api_key_env`. Per-provider `http_timeout_s` (default 600) caps each HTTP
 call.
 
 agent6 uses three model roles:

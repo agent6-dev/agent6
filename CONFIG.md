@@ -295,7 +295,7 @@ individual flag still beats the profile.
 |---|---|
 | `quick` | review off, tighter output budget — fast/cheap. |
 | `standard` | the plain defaults (no review). The default. |
-| `ultra` | a 3-seat grounded quorum panel — thorough review. |
+| `ultra` | a 3-seat grounded `before_finish` veto panel — thorough review. |
 | `paranoid` | 5 explore-tier seats, `before_finish` veto, bigger budget. |
 
 Define your own with a `[profiles.<name>]` table (a partial config); it wins over
