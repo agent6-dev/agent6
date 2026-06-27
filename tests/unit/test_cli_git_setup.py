@@ -6,13 +6,39 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
 from agent6.cli import main
 from agent6.cli.misc_cmds import _offer_git_setup  # pyright: ignore[reportPrivateUsage]
-from agent6.cli.run import _require_git_repo  # pyright: ignore[reportPrivateUsage]
+from agent6.cli.run import (
+    _require_git_repo,  # pyright: ignore[reportPrivateUsage]
+    _warn_if_headless_ask,  # pyright: ignore[reportPrivateUsage]
+)
+from agent6.config import Config
 from agent6.git_ops import init_repo, is_git_repo
+
+
+def test_warn_if_headless_ask(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ask = cast(Config, SimpleNamespace(sandbox=SimpleNamespace(run_commands="ask")))
+    # Headless (no TTY, no TUI) + ask -> warn (run_command would be auto-denied).
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    _warn_if_headless_ask(ask, tui_enabled=False)
+    assert "headless" in capsys.readouterr().err
+    # No warning when a TUI is up, or stdin is a TTY, or run_commands != ask.
+    _warn_if_headless_ask(ask, tui_enabled=True)
+    assert capsys.readouterr().err == ""
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    _warn_if_headless_ask(ask, tui_enabled=False)
+    assert capsys.readouterr().err == ""
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    yes = cast(Config, SimpleNamespace(sandbox=SimpleNamespace(run_commands="yes")))
+    _warn_if_headless_ask(yes, tui_enabled=False)
+    assert capsys.readouterr().err == ""
 
 
 def test_run_surfaces_git_wall_before_provider_wall(

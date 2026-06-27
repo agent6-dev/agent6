@@ -246,6 +246,23 @@ def _build_approver(run_dir: Path, events: EventSink) -> Callable[[str], bool]:
     return approve
 
 
+def _warn_if_headless_ask(cfg: Config, *, tui_enabled: bool) -> None:
+    """Warn when run_commands='ask' but no approver is reachable.
+
+    A headless run (no TUI, no controlling TTY) has nothing to answer the
+    Allow/Deny prompt, so every ``run_command`` is auto-denied. Surface that up
+    front instead of letting the agent hit confusing mid-run "denied" errors
+    (observed dogfooding a headless run). run_verify_command is unaffected.
+    """
+    if cfg.sandbox.run_commands == "ask" and not tui_enabled and not sys.stdin.isatty():
+        print(
+            "[agent6] NOTE: sandbox.run_commands='ask' but this run is headless (no TUI,"
+            " no TTY), so run_command calls will be auto-denied. Set"
+            " sandbox.run_commands='yes' (trusted) or 'no' for headless/CI runs.",
+            file=sys.stderr,
+        )
+
+
 def _build_questioner(run_dir: Path, events: EventSink) -> Callable[[str, tuple[str, ...]], str]:
     """Build the `ask_user` questioner, bridged to a live TUI when present.
 
@@ -769,6 +786,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     # response body (resp.json() blows up with JSONDecodeError).
     stream_text = sys.stderr.isatty() or os.environ.get("AGENT6_FORCE_STREAM") == "1"
     tui_enabled = _should_spawn_tui(no_tui=no_tui, interactive=interactive, mode=mode)
+    _warn_if_headless_ask(cfg, tui_enabled=tui_enabled)
     # Echo the model's reasoning + answer to stderr live whenever the TUI is
     # NOT owning the terminal (plan / ask / machine create / --no-tui). With the
     # TUI up it renders the same deltas from the event stream, so console echo
@@ -1246,6 +1264,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     # AGENT6_FORCE_STREAM=1 forces it on for bench/CI.
     stream_text = sys.stderr.isatty() or os.environ.get("AGENT6_FORCE_STREAM") == "1"
     tui_enabled = _should_spawn_tui(no_tui=no_tui, interactive=False, mode="run")
+    _warn_if_headless_ask(cfg, tui_enabled=tui_enabled)
     console_stream = stream_text and not tui_enabled
     provider: Provider = _InstrumentedProvider(
         inner=worker_inner,
