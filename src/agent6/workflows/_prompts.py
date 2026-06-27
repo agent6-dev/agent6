@@ -97,7 +97,8 @@ own state independently before each LLM call).
 </dag-rules>
 
 <scope-and-style>
-Project conventions live in AGENTS.md (read it if present). Defaults:
+Project conventions live in AGENTS.md, already included in the repo-priors
+above (read_file only if it was truncated there and you need the rest). Defaults:
 minimum-necessary edits matching the file's existing style. Tests are
 the authoritative behavioural specification - if a test says X must
 happen, match that behaviour even if a docstring says otherwise.

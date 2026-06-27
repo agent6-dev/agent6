@@ -17,17 +17,21 @@ if TYPE_CHECKING:
 
 _REPO_MAP_MAX_LINES = 60
 _REPO_MAP_MAX_FILES_PER_DIR = 6
+# Bound the AGENTS.md injected into every turn's prompt. Generous enough to
+# carry a normal conventions file whole; truncates a pathological 50KB one so it
+# can't dominate the prefix. The model is pointed at read_file for the rest.
+_AGENTS_MD_MAX_CHARS = 16000
 
 
-def _build_repo_map(root: Path) -> str:
+def _build_repo_map(tracked: tuple[str, ...]) -> str:
     """Compact `path/  (N files: a, b, ...)` directory map from git ls-files.
 
-    Returns an empty string outside a git repo or when ls-files fails.
-    Output is hard-capped at ``_REPO_MAP_MAX_LINES`` rows so it never
-    dominates the system prompt; directories beyond the cap are summarised
-    as a single ``... (K more directories)`` line.
+    Takes the already-resolved tracked-file list (shared with ``file_count`` so
+    git ls-files runs once). Returns an empty string for an empty list. Output is
+    hard-capped at ``_REPO_MAP_MAX_LINES`` rows so it never dominates the system
+    prompt; directories beyond the cap are summarised as a single
+    ``... (K more directories)`` line.
     """
-    tracked = tracked_files(root)
     if not tracked:
         return ""
     by_dir: dict[str, list[str]] = {}
@@ -73,9 +77,18 @@ def load_repo_summary(root: Path, *, dispatcher: ToolDispatcher | None = None) -
             if not p.name.startswith(".")
         )
     )
-    file_count = sum(1 for p in root.rglob("*") if p.is_file())
+    # Count git-tracked files, not an unfiltered rglob: the old walk counted
+    # .git/.venv/build junk (a misleading number to the model) and traversed the
+    # whole tree every startup. tracked is reused by _build_repo_map below.
+    tracked = tracked_files(root)
+    file_count = len(tracked)
     agents_md_path = root / "AGENTS.md"
     agents_md = agents_md_path.read_text(encoding="utf-8") if agents_md_path.is_file() else ""
+    if len(agents_md) > _AGENTS_MD_MAX_CHARS:
+        agents_md = (
+            agents_md[:_AGENTS_MD_MAX_CHARS]
+            + "\n... (AGENTS.md truncated here; use read_file for the full text)\n"
+        )
     hot: tuple[tuple[str, str, str, int, int], ...] = ()
     co_change: tuple[tuple[str, str, int], ...] = ()
     symbol_outline = ""
@@ -106,7 +119,7 @@ def load_repo_summary(root: Path, *, dispatcher: ToolDispatcher | None = None) -
         top_level=top,
         agents_md=agents_md,
         recent_log=recent_log(root, n=20),
-        repo_map=_build_repo_map(root),
+        repo_map=_build_repo_map(tracked),
         co_change_pairs=co_change,
         hot_symbols=hot,
         symbol_outline=symbol_outline,
