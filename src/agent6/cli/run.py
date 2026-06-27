@@ -47,6 +47,7 @@ from agent6.cli.egress import (
     _maybe_start_egress,
     _stop_egress,
     _warn_if_unsandboxed,
+    resolve_strict_egress_viability,
 )
 from agent6.cli.plan_watch import _most_recent_run_id
 from agent6.cli.providers import (
@@ -622,6 +623,13 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     net_err = _check_network_profile(cfg, selected_profile)
     if net_err is not None:
         print(f"REFUSING: {net_err}", file=sys.stderr)
+        return 2
+    # strict can be selected because the jail launcher has userns, yet this
+    # process can't create one for the egress broker (surgical AppArmor profile).
+    # Downgrade auto->hardened, or refuse an explicit strict, with guidance.
+    selected_profile, egress_err = resolve_strict_egress_viability(cfg, selected_profile)
+    if egress_err is not None:
+        print(egress_err, file=sys.stderr)
         return 2
 
     missing = _check_provider_keys(cfg)
@@ -1202,6 +1210,13 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     net_err = _check_network_profile(cfg, selected_profile)
     if net_err is not None:
         print(f"REFUSING: {net_err}", file=sys.stderr)
+        return 2
+    # strict can be selected because the jail launcher has userns, yet this
+    # process can't create one for the egress broker (surgical AppArmor profile).
+    # Downgrade auto->hardened, or refuse an explicit strict, with guidance.
+    selected_profile, egress_err = resolve_strict_egress_viability(cfg, selected_profile)
+    if egress_err is not None:
+        print(egress_err, file=sys.stderr)
         return 2
 
     missing = _check_provider_keys(cfg)

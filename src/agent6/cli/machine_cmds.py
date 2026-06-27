@@ -19,7 +19,11 @@ from pathlib import Path
 from typing import Any, Literal
 
 from agent6.cli._common import _check_provider_keys, _machines_dir, _state_dir, detect_env
-from agent6.cli.egress import _check_network_profile, _warn_if_unsandboxed
+from agent6.cli.egress import (
+    _check_network_profile,
+    _warn_if_unsandboxed,
+    resolve_strict_egress_viability,
+)
 from agent6.cli.scriptcheck import lint_and_typecheck, run_offline_tests
 from agent6.config import (
     Config,
@@ -545,6 +549,13 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
         except RuntimeError as exc:
             print(f"REFUSING: {exc}", file=sys.stderr)
             return 2
+        # Same as run/resume: a strict that can't run the egress broker on this
+        # process (surgical AppArmor profile) downgrades to hardened or refuses,
+        # so the per-state agent subprocess gets a profile it can actually use.
+        profile, egress_err = resolve_strict_egress_viability(cfg, profile)
+        if egress_err is not None:
+            print(egress_err, file=sys.stderr)
+            return 2
         snapshot_keep = cfg.machine.snapshot_keep
         refusal = _machine_network_refusal(cfg, profile, tool_states)
         if refusal is not None:
@@ -767,6 +778,10 @@ def _cmd_machine_create(  # noqa: PLR0911, PLR0912, PLR0915
         profile = select_profile(cfg.sandbox.profile, detect_env())
     except RuntimeError as exc:
         print(f"REFUSING: {exc}", file=sys.stderr)
+        return 2
+    profile, egress_err = resolve_strict_egress_viability(cfg, profile)
+    if egress_err is not None:
+        print(egress_err, file=sys.stderr)
         return 2
     net_err = _check_network_profile(cfg, profile)
     if net_err is not None:

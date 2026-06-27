@@ -11,7 +11,7 @@ from pathlib import Path
 
 from agent6.config import Config
 from agent6.config_layer import resolved_state_dir
-from agent6.detect import Environment
+from agent6.detect import Environment, probe_userns_supported
 from agent6.providers.egress import clear_routes, parse_endpoint, register_route
 from agent6.sandbox import (
     BrokerHandle,
@@ -113,6 +113,64 @@ def _check_network_profile(cfg: Config, selected_profile: SandboxProfile) -> str
             " this host supports only 'hardened'. Use 'block' or 'allow'."
         )
     return None
+
+
+def resolve_strict_egress_viability(
+    cfg: Config, selected_profile: SandboxProfile
+) -> tuple[SandboxProfile, str | None]:
+    """Handle strict selected when this process can't run the egress broker.
+
+    ``detect_env`` selects ``strict`` when the jail *launcher* binary can create
+    a user namespace -- but strict's provider-egress broker
+    (``agent_network in {providers, local}``) needs THIS process to create one
+    too, and we can't apply the hardened agent-Landlock under strict (it breaks
+    the jail's ``pivot_root``). On an AppArmor-restricted host where only the
+    surgical agent6-jail profile is installed, the launcher has userns but this
+    process does not, so the broker would fail with a cryptic
+    "failed to write namespace id maps".
+
+    Returns ``(effective_profile, error)``:
+    - ``agent_network = "open"`` (no broker) -> unchanged.
+    - this process CAN create a userns -> unchanged (the broker will work).
+    - ``profile = "auto"`` -> downgrade to ``hardened`` (egress confined by
+      Landlock instead) with a NOTE, so the run still works.
+    - ``profile = "strict"`` (explicit) -> refuse with guidance (no silent
+      downgrade of an explicit request).
+    """
+    if selected_profile != "strict" or cfg.sandbox.agent_network not in ("providers", "local"):
+        return selected_profile, None
+    if probe_userns_supported():
+        return selected_profile, None  # this process can userns -> broker works
+    core = (
+        "strict's provider-egress broker needs this process to create a user"
+        " namespace, but the host blocks it (AppArmor grants userns to the jail"
+        " launcher binary only, not this process)."
+    )
+    fixes = (
+        "Set kernel.apparmor_restrict_unprivileged_userns=0 (host-wide), or use"
+        " sandbox.agent_network='open' (the per-command jail still isolates"
+        " run_command)"
+    )
+    # Downgrade to hardened ONLY when the config can actually run there. An
+    # explicit profile='strict' must not be silently downgraded; and a config
+    # that itself requires strict (agent_network='local', tool_network=
+    # 'only_explicit_states') has no hardened fallback. _check_network_profile is
+    # the authority on what hardened refuses, so reusing it also covers future
+    # strict-only knobs.
+    hardened_blocker = _check_network_profile(cfg, "hardened")
+    if hardened_blocker is not None:
+        return selected_profile, (
+            f"REFUSING: {core} That config also requires strict on hardened"
+            f" ({hardened_blocker}) so there is no fallback. {fixes}."
+        )
+    if cfg.sandbox.profile == "strict":
+        return selected_profile, f"REFUSING: {core} {fixes}, or set sandbox.profile='hardened'."
+    print(
+        f"[agent6] NOTE: {core} Falling back to the hardened profile (egress"
+        f" confined by Landlock). {fixes}.",
+        file=sys.stderr,
+    )
+    return "hardened", None
 
 
 def _maybe_start_egress(
