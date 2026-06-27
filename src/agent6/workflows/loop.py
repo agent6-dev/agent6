@@ -210,6 +210,12 @@ def _provider_error_hint(status_code: int | None) -> str:
 # _is_empty_tool_call_response).
 _TOOL_CALL_STOP_REASONS = frozenset({"tool_calls", "tool_use"})
 
+# Consecutive went-quiet turns after which a metric run drops the worker's
+# per-call output cap from metric_task_max_tokens back to per_call_max_tokens
+# (see Workflow._worker_max_tokens). 2 spares a one-off starvation its full
+# recovery room while breaking a reasoning-binge spiral.
+_STARVATION_BACKOFF_AFTER_QUIETS = 2
+
 # cache_control marker on the initial user message
 # so the system + initial context get cached across the loop's turns.
 _CACHE_CONTROL_EPHEMERAL: dict[str, str] = {"type": "ephemeral"}
@@ -1059,6 +1065,7 @@ class Workflow:
                     system,
                     messages,
                     tools,
+                    self._worker_max_tokens(state),
                 )
             except BudgetExceeded as exc:
                 self._log(f"LOOP: budget exhausted at iter {iteration} ({exc})")
@@ -2601,15 +2608,30 @@ class Workflow:
             tool_calls=tool_calls,
         )
 
-    def _worker_max_tokens(self) -> int:
+    def _worker_max_tokens(self, state: _LoopState) -> int:
         """Per-call output cap for the worker turn.
 
         Metric-optimization runs (mode "run" with a configured continuous
-        metric) lift the ceiling to ``metric_task_max_tokens`` so a single
-        turn can rewrite a hot function wholesale without truncating
-        mid-apply_patch. Every other run keeps ``per_call_max_tokens``.
+        metric) lift the ceiling to ``metric_task_max_tokens`` so a single turn
+        can rewrite a hot function wholesale without truncating mid-apply_patch.
+        Every other run keeps ``per_call_max_tokens``.
+
+        Starvation backoff: once the worker has gone quiet (no text + no
+        tool_use -- typically a reasoning model that spent its whole output
+        budget on reasoning_content) on >= 2 CONSECUTIVE turns, drop back to
+        ``per_call_max_tokens`` even on a metric run. A spiraling over-reasoner
+        (observed: GLM 5.2) otherwise burns a fresh ~65k-token reasoning binge
+        every nudged turn until it exhausts ``went_quiet_max_nudges`` and the run
+        dies with zero progress. A tight cap plus the forceful "emit a tool_use
+        now" nudge pressures it to ACT; ``went_quiet_nudges_used`` resets to 0 on
+        the first productive turn, so the very next turn gets the full ceiling
+        back for the real edit (the recovery edit itself is never truncated).
+        The 2-quiet threshold spares the model the high ceiling was raised FOR
+        (Kimi K2.x finishes its reasoning within 65k and rarely goes quiet, let
+        alone twice in a row), so the backoff targets the spiral, not the model.
         """
-        if self.mode == "run" and _metric_goal(self.config.workflow.metric) is not None:
+        metric_run = self.mode == "run" and _metric_goal(self.config.workflow.metric) is not None
+        if metric_run and state.went_quiet_nudges_used < _STARVATION_BACKOFF_AFTER_QUIETS:
             return max(self.per_call_max_tokens, self.metric_task_max_tokens)
         return self.per_call_max_tokens
 
@@ -2916,6 +2938,7 @@ class Workflow:
         system: str,
         messages: list[dict[str, Any]],
         tools: list[ToolDefinition],
+        max_tokens: int,
     ) -> Any:
         """Bounded-retry wrapper around ``provider.call``: up to
         ``provider_retry_count + 1`` attempts. Two retry paths share that budget:
@@ -2943,7 +2966,7 @@ class Workflow:
                     system=system,
                     messages=messages,
                     tools=tools,
-                    max_tokens=self._worker_max_tokens(),
+                    max_tokens=max_tokens,
                     temperature=self.temperature,
                 )
             except ProviderError as exc:

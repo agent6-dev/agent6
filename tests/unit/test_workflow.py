@@ -95,7 +95,7 @@ def test_call_with_retry_first_try_returns() -> None:
     provider = MagicMock()
     provider.call.return_value = _resp("first")
     wf = _wf(provider=provider)
-    out = wf._call_with_retry(system="s", messages=[], tools=[])  # pyright: ignore[reportPrivateUsage]
+    out = wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
     assert out.text == "first"
     assert provider.call.call_count == 1
 
@@ -105,7 +105,7 @@ def test_call_with_retry_succeeds_on_retry() -> None:
     provider = MagicMock()
     provider.call.side_effect = [ProviderError("transient 529"), _resp("retried")]
     wf = _wf(provider=provider, provider_retry_count=1)
-    out = wf._call_with_retry(system="s", messages=[], tools=[])  # pyright: ignore[reportPrivateUsage]
+    out = wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
     assert out.text == "retried"
     assert provider.call.call_count == 2
 
@@ -116,7 +116,7 @@ def test_call_with_retry_reraises_after_retries_exhausted() -> None:
     provider.call.side_effect = [ProviderError("flake 1"), ProviderError("flake 2")]
     wf = _wf(provider=provider, provider_retry_count=1)
     with pytest.raises(ProviderError, match="flake 2"):
-        wf._call_with_retry(system="s", messages=[], tools=[])  # pyright: ignore[reportPrivateUsage]
+        wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
     assert provider.call.call_count == 2
 
 
@@ -131,7 +131,7 @@ def test_call_with_retry_honors_retry_after(monkeypatch: pytest.MonkeyPatch) -> 
         _resp("ok"),
     ]
     wf = _wf(provider=provider, provider_retry_count=1)  # _wf backoff is 0.01s
-    out = wf._call_with_retry(system="s", messages=[], tools=[])  # pyright: ignore[reportPrivateUsage]
+    out = wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
     assert out.text == "ok"
     assert slept and slept[0] >= 50.0  # honored the server's window, not ~0.01
 
@@ -146,7 +146,7 @@ def test_call_with_retry_clamps_retry_after_to_ceiling(monkeypatch: pytest.Monke
         _resp("ok"),
     ]
     wf = _wf(provider=provider, provider_retry_count=1)
-    wf._call_with_retry(system="s", messages=[], tools=[])  # pyright: ignore[reportPrivateUsage]
+    wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
     assert slept and slept[0] <= 120.0  # _RETRY_AFTER_CEILING_S
 
 
@@ -170,7 +170,7 @@ def test_call_with_retry_retries_empty_tool_call_response() -> None:
     provider = MagicMock()
     provider.call.side_effect = [_empty_tool_call_resp(), _tool_resp("read_file", {"path": "x"})]
     wf = _wf(provider=provider, provider_retry_count=4, provider_retry_delay_s=0.001)
-    out = wf._call_with_retry(system="s", messages=[], tools=[])  # pyright: ignore[reportPrivateUsage]
+    out = wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
     assert out.tool_uses  # recovered to a real tool call
     assert provider.call.call_count == 2
 
@@ -181,7 +181,7 @@ def test_call_with_retry_returns_last_empty_after_exhausting() -> None:
     provider = MagicMock()
     provider.call.return_value = _empty_tool_call_resp()
     wf = _wf(provider=provider, provider_retry_count=2, provider_retry_delay_s=0.001)
-    out = wf._call_with_retry(system="s", messages=[], tools=[])  # pyright: ignore[reportPrivateUsage]
+    out = wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
     assert out.stop_reason == "tool_calls" and not out.tool_uses
     assert provider.call.call_count == 3  # 1 initial + 2 retries
 
@@ -215,7 +215,7 @@ def test_call_with_retry_default_rides_out_multiple_flaps() -> None:
     disconnect = ProviderError("Server disconnected without sending a response")
     provider.call.side_effect = [disconnect, disconnect, disconnect, _resp("recovered")]
     wf = _wf(provider=provider)  # uses the default provider_retry_count
-    out = wf._call_with_retry(system="s", messages=[], tools=[])  # pyright: ignore[reportPrivateUsage]
+    out = wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
     assert out.text == "recovered"
     assert provider.call.call_count == 4
 
@@ -226,7 +226,7 @@ def test_call_with_retry_zero_retries_no_retry() -> None:
     provider.call.side_effect = [ProviderError("nope")]
     wf = _wf(provider=provider, provider_retry_count=0)
     with pytest.raises(ProviderError, match="nope"):
-        wf._call_with_retry(system="s", messages=[], tools=[])  # pyright: ignore[reportPrivateUsage]
+        wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
     assert provider.call.call_count == 1
 
 
@@ -236,7 +236,7 @@ def test_call_with_retry_does_not_swallow_non_provider_errors() -> None:
     provider.call.side_effect = [RuntimeError("not a provider error")]
     wf = _wf(provider=provider, provider_retry_count=3)
     with pytest.raises(RuntimeError, match="not a provider error"):
-        wf._call_with_retry(system="s", messages=[], tools=[])  # pyright: ignore[reportPrivateUsage]
+        wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
     assert provider.call.call_count == 1
 
 
@@ -251,7 +251,7 @@ def test_call_with_retry_skips_retry_on_permanent_status() -> None:
     ]
     wf = _wf(provider=provider, provider_retry_count=3)
     with pytest.raises(ProviderError, match="402"):
-        wf._call_with_retry(system="s", messages=[], tools=[])  # pyright: ignore[reportPrivateUsage]
+        wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
     assert provider.call.call_count == 1
 
 
@@ -266,7 +266,7 @@ def test_call_with_retry_skips_retry_on_all_permanent_statuses(status: int) -> N
     ]
     wf = _wf(provider=provider, provider_retry_count=3)
     with pytest.raises(ProviderError, match=str(status)):
-        wf._call_with_retry(system="s", messages=[], tools=[])  # pyright: ignore[reportPrivateUsage]
+        wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
     assert provider.call.call_count == 1
 
 
@@ -279,7 +279,7 @@ def test_call_with_retry_still_retries_transient_5xx() -> None:
         _resp("recovered"),
     ]
     wf = _wf(provider=provider, provider_retry_count=1)
-    out = wf._call_with_retry(system="s", messages=[], tools=[])  # pyright: ignore[reportPrivateUsage]
+    out = wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
     assert out.text == "recovered"
     assert provider.call.call_count == 2
 
@@ -308,7 +308,7 @@ def test_call_with_retry_exponential_backoff() -> None:
         patch("time.sleep", side_effect=sleep_calls.append),
         patch("random.uniform", return_value=0.75),
     ):
-        out = wf._call_with_retry(system="s", messages=[], tools=[])  # pyright: ignore[reportPrivateUsage]
+        out = wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
     assert out.text == "success"
     assert provider.call.call_count == 4
     assert sleep_calls[0] == pytest.approx(1.5)  # 2.0 * 2**0 * 0.75
@@ -337,7 +337,7 @@ def test_call_with_retry_backoff_capped_at_max_delay() -> None:
         patch("time.sleep", side_effect=sleep_calls.append),
         patch("random.uniform", return_value=1.0),
     ):
-        out = wf._call_with_retry(system="s", messages=[], tools=[])  # pyright: ignore[reportPrivateUsage]
+        out = wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
     assert out.text == "success"
     assert provider.call.call_count == 5
     assert sleep_calls[0] == pytest.approx(2.0)  # min(2.0 * 2**0, 5.0)
@@ -359,7 +359,7 @@ def test_call_with_retry_backoff_skips_sleep_on_permanent_status() -> None:
         patch("time.sleep", side_effect=sleep_calls.append),
         pytest.raises(ProviderError, match="Insufficient credits"),
     ):
-        wf._call_with_retry(system="s", messages=[], tools=[])  # pyright: ignore[reportPrivateUsage]
+        wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
     assert provider.call.call_count == 1
     assert sleep_calls == []
 
@@ -375,7 +375,7 @@ def test_call_with_retry_pins_default_temperature_to_zero() -> None:
     provider = MagicMock()
     provider.call.return_value = _resp("ok")
     wf = _wf(provider=provider)
-    wf._call_with_retry(system="s", messages=[], tools=[])  # pyright: ignore[reportPrivateUsage]
+    wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
     assert provider.call.call_args.kwargs["temperature"] == 0.0
 
 
@@ -385,7 +385,7 @@ def test_call_with_retry_honours_overridden_temperature() -> None:
     provider = MagicMock()
     provider.call.return_value = _resp("ok")
     wf = _wf(provider=provider, temperature=0.7)
-    wf._call_with_retry(system="s", messages=[], tools=[])  # pyright: ignore[reportPrivateUsage]
+    wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
     assert provider.call.call_args.kwargs["temperature"] == 0.7
 
 
@@ -395,7 +395,7 @@ def test_call_with_retry_passes_through_none_temperature() -> None:
     provider = MagicMock()
     provider.call.return_value = _resp("ok")
     wf = _wf(provider=provider, temperature=None)
-    wf._call_with_retry(system="s", messages=[], tools=[])  # pyright: ignore[reportPrivateUsage]
+    wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
     assert provider.call.call_args.kwargs["temperature"] is None
 
 
@@ -602,6 +602,97 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(tmp_path
     # The verify->edit turn produced no 'verify passed' commit (old code did).
     assert commits == []
     assert result.reason == "finish_run"
+
+
+def test_worker_max_tokens_starvation_backoff() -> None:
+    """A metric run uses the lifted ceiling until the worker has gone quiet on 2
+    CONSECUTIVE turns, then backs off to per_call_max_tokens to break a
+    reasoning-binge spiral. A one-off quiet keeps the full recovery room;
+    non-metric runs are unaffected."""
+    metric_cfg = SimpleNamespace(
+        workflow=SimpleNamespace(verify_command=("true",), metric=SimpleNamespace(goal="minimize"))
+    )
+    wf = _wf(config=metric_cfg)
+    wmt = wf._worker_max_tokens  # pyright: ignore[reportPrivateUsage]
+    full = max(wf.per_call_max_tokens, wf.metric_task_max_tokens)
+    assert wmt(_state(went_quiet_nudges_used=0)) == full
+    assert wmt(_state(went_quiet_nudges_used=1)) == full  # one-off quiet: full room
+    assert wmt(_state(went_quiet_nudges_used=2)) == wf.per_call_max_tokens  # spiral: back off
+    assert wmt(_state(went_quiet_nudges_used=3)) == wf.per_call_max_tokens
+
+    # Non-metric run: always per_call, regardless of the quiet streak.
+    plain = _wf(
+        config=SimpleNamespace(workflow=SimpleNamespace(verify_command=("true",), metric=None))
+    )
+    pwmt = plain._worker_max_tokens  # pyright: ignore[reportPrivateUsage]
+    assert pwmt(_state(went_quiet_nudges_used=0)) == plain.per_call_max_tokens
+    assert pwmt(_state(went_quiet_nudges_used=2)) == plain.per_call_max_tokens
+
+
+def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: Path) -> None:
+    """End-to-end: a model that goes quiet at the full metric ceiling but ACTS
+    once the cap is tightened recovers via the starvation backoff instead of
+    dying on went_quiet. The stub's behaviour is keyed on the cap it receives, so
+    this proves the backoff changes the loop's OUTCOME, not just the number:
+    turns 1-2 see the lifted ceiling and go quiet; turn 3 (>= 2 consecutive
+    quiets) gets per_call_max_tokens and the stub finishes. Without the backoff
+    the cap would stay lifted, the stub would keep going quiet, and the run would
+    die on went_quiet -- exactly GLM 5.2's observed spiral."""
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.caps_seen: list[int] = []
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            cap = kwargs["max_tokens"]
+            self.caps_seen.append(cap)
+            if cap >= 65536:
+                # Full ceiling: a reasoning binge that emits nothing actionable.
+                return ProviderResponse(
+                    text="",
+                    tool_uses=(),
+                    stop_reason="end_turn",
+                    input_tokens=1,
+                    output_tokens=1,
+                    cache_read_tokens=0,
+                    cache_creation_tokens=0,
+                    raw={"content": []},
+                )
+            # Tightened cap: the model is forced to act.
+            return _tool_resp("finish_run", {"summary": "done"}, tool_id="fin")
+
+    class DispatcherStub:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+            if name == "finish_run":
+                return {"acknowledged": True, "summary": raw_input["summary"]}
+            raise AssertionError(f"unexpected tool: {name}")
+
+    provider = ProviderStub()
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(verify_command=("true",), metric=SimpleNamespace(goal="minimize"))
+    )
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        provider=provider,
+        dispatcher=DispatcherStub(),
+        max_iterations=10,
+        per_call_max_tokens=16384,
+        metric_task_max_tokens=65536,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
+    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        system="s",
+        messages=messages,
+        tools=[],
+        tool_calls=0,
+        start_iteration=1,
+        root_task_id=None,
+    )
+    # Recovered (finished) rather than dying on went_quiet.
+    assert result.reason == "finish_run"
+    # Two quiet turns at the lifted ceiling, then the backoff to per_call.
+    assert provider.caps_seen[:3] == [65536, 65536, 16384]
 
 
 def test_drive_loop_finishes_on_metric_plateau(tmp_path: Path) -> None:
@@ -1550,7 +1641,7 @@ def test_worker_max_tokens_lifts_cap_on_metric_runs() -> None:
         per_call_max_tokens=16384,
         metric_task_max_tokens=32768,
     )
-    assert wf._worker_max_tokens() == 32768  # pyright: ignore[reportPrivateUsage]
+    assert wf._worker_max_tokens(_state()) == 32768  # pyright: ignore[reportPrivateUsage]
 
 
 def test_worker_max_tokens_keeps_default_without_metric() -> None:
@@ -1563,7 +1654,7 @@ def test_worker_max_tokens_keeps_default_without_metric() -> None:
         per_call_max_tokens=16384,
         metric_task_max_tokens=32768,
     )
-    assert wf._worker_max_tokens() == 16384  # pyright: ignore[reportPrivateUsage]
+    assert wf._worker_max_tokens(_state()) == 16384  # pyright: ignore[reportPrivateUsage]
 
 
 def test_worker_max_tokens_keeps_default_in_plan_mode() -> None:
@@ -1576,7 +1667,7 @@ def test_worker_max_tokens_keeps_default_in_plan_mode() -> None:
         per_call_max_tokens=16384,
         metric_task_max_tokens=32768,
     )
-    assert wf._worker_max_tokens() == 16384  # pyright: ignore[reportPrivateUsage]
+    assert wf._worker_max_tokens(_state()) == 16384  # pyright: ignore[reportPrivateUsage]
 
 
 # --- tier-2 summarise-and-restart compaction ------------------------------
