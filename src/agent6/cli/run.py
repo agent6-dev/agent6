@@ -575,6 +575,13 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     except ConfigError as exc:
         print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
         return 2
+    # Surface the not-a-git-repo wall up front. run/plan need git; ask is
+    # read-only and may run outside a repo. Without this, a user in a scratch
+    # non-git dir clears the provider, model, and key walls serially only to
+    # discover at the end that they also need git. Mirrors the resume path,
+    # which already checks git before require_runnable.
+    if mode != "ask" and not _require_git_repo(Path.cwd()):
+        return 2
     role: RoleName = "planner" if mode == "plan" else "worker"
     try:
         cfg.require_runnable(role)
@@ -625,8 +632,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     base_branch = ""
     pre_status = None  # set below for run/plan; stays None for read-only ask
     if mode != "ask":
-        if not _require_git_repo(cwd):
-            return 2
+        # The not-a-git-repo guard already ran up front, before require_runnable.
         try:
             verify_git_identity(cwd, identity)
         except GitError as exc:

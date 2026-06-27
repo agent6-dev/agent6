@@ -9,9 +9,23 @@ from pathlib import Path
 
 import pytest
 
+from agent6.cli import main
 from agent6.cli.misc_cmds import _offer_git_setup  # pyright: ignore[reportPrivateUsage]
 from agent6.cli.run import _require_git_repo  # pyright: ignore[reportPrivateUsage]
 from agent6.git_ops import init_repo, is_git_repo
+
+
+def test_run_surfaces_git_wall_before_provider_wall(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Non-git scratch dir with no provider configured (conftest isolates config):
+    # the not-a-git-repo error surfaces first, not after the provider/key walls.
+    monkeypatch.chdir(tmp_path)
+    rc = main(["run", "do a thing", "--no-tui"])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "not a git repository" in err
+    assert "No providers configured" not in err  # git wall comes first now
 
 
 def test_require_git_repo_errors_outside_repo(
