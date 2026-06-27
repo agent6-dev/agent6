@@ -1578,15 +1578,25 @@ class Workflow:
                 elif in_final_slice and state.plateau_nudges_used >= _METRIC_PLATEAU_PATIENCE:
                     plateau_should_stop = True
                 else:
-                    state.plateau_nudges_used += 1
+                    # Count patience only against final-slice nudges. While the run
+                    # still has runway (in_final_slice False), keep nudging the
+                    # worker to explore without consuming the budget, exactly as the
+                    # early-finish guard only counts rejections while it has runway.
+                    # Counting runway ties here would exhaust _METRIC_PLATEAU_PATIENCE
+                    # before the final slice, so the run would stop the instant the
+                    # budget crossed the threshold and the escalating FINAL
+                    # ("make your one best bet") nudge would never fire.
+                    if in_final_slice:
+                        state.plateau_nudges_used += 1
                     nudge_text = _metric_plateau_nudge(budget_remaining)
                     tool_results.append({"type": "text", "text": nudge_text})
                     budget_note = (
                         "n/a" if budget_remaining is None else f"{budget_remaining:.0%} left"
                     )
                     self._log(
-                        "  metric_plateau pivot-nudge"
-                        f" #{state.plateau_nudges_used} at iter {iteration} (budget {budget_note})"
+                        f"  metric_plateau pivot-nudge at iter {iteration} (budget"
+                        f" {budget_note}; final-slice patience"
+                        f" {state.plateau_nudges_used}/{_METRIC_PLATEAU_PATIENCE})"
                     )
                     self._emit(
                         "loop.metric_plateau.nudge",

@@ -618,6 +618,99 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: Path) -> None:
     assert result.reason == "finish_run"
 
 
+def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: Path) -> None:
+    """On a REAL-budget run, ties while budget is high must not exhaust the
+    plateau patience: the escalating FINAL ("make your one best bet") nudge has
+    to still fire once the budget enters the final slice. Pins the bug where
+    `plateau_nudges_used` accrued on high-budget ties, so the run stopped the
+    instant the budget crossed the threshold and the FINAL nudge never showed."""
+    from agent6.workflows._metric import (
+        METRIC_PLATEAU_NUDGE_FINAL as _METRIC_PLATEAU_NUDGE_FINAL,
+    )
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.saw_final_nudge = False
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            if _METRIC_PLATEAU_NUDGE_FINAL in str(kwargs["messages"][-1]):
+                self.saw_final_nudge = True
+            # Vary the call signature each turn so the repeat-loop-guard (which
+            # kills at 10 identical back-to-back calls) does not fire; a real
+            # worker varies its edits between verifies. This isolates the plateau
+            # logic under test from the orthogonal loop-guard.
+            return _tool_resp(
+                "run_verify_command", {"n": self.calls}, tool_id=f"verify-{self.calls}"
+            )
+
+    class DispatcherStub:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+            self.metric_count = 0
+            # Improve to 50, then tie it for many rounds. Plateau fires from the
+            # 5th sample; ties 5-8 land while budget is high (runway), 9+ land in
+            # the final slice. With the fix, runway ties do not consume patience,
+            # so the FINAL nudge fires on samples 9/10/11 and the run stops on 12.
+            self.scores = iter([100.0, 80.0, 60.0, 50.0] + [50.0] * 8)
+
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+            del raw_input
+            self.calls.append(name)
+            if name == "run_verify_command":
+                return {"returncode": 0, "stdout": "", "stderr": "", "duration_s": 0.1}
+            if name == "run_metric_command":
+                self.metric_count += 1
+                score = next(self.scores)
+                return {
+                    "returncode": 0,
+                    "stdout": f"CYCLES: {score:g}\n",
+                    "stderr": "",
+                    "duration_s": 0.1,
+                    "score": score,
+                }
+            raise AssertionError(f"unexpected tool: {name}")
+
+    provider = ProviderStub()
+    dispatcher = DispatcherStub()
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(verify_command=("true",), metric=SimpleNamespace(goal="minimize")),
+    )
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        provider=provider,
+        dispatcher=dispatcher,
+        max_iterations=20,
+    )
+    # Drive the budget fraction off the dispatcher's measurement count (robust to
+    # _budget_fraction_remaining being read more than once per iteration): samples
+    # 5-8 see 80% left (runway), 9+ see 10% left (final slice, FINAL nudge tier).
+    wf._budget_fraction_remaining = lambda: 0.8 if dispatcher.metric_count <= 8 else 0.1  # type: ignore[method-assign]  # pyright: ignore[reportPrivateUsage]
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
+
+    with patch(
+        "agent6.workflows.loop.commit_all",
+        side_effect=[f"sha{i}" for i in range(20)],
+    ):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="system",
+            messages=messages,
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+        )
+
+    # The FINAL nudge must have fired in the final slice before the run stopped.
+    assert provider.saw_final_nudge is True
+    assert result.reason == "metric_plateau"
+    # Runway ties (samples 5-8) did not consume patience, so the run kept going
+    # well past the point the old code stopped (sample 9): >=12 metric samples.
+    assert dispatcher.metric_count >= 12
+
+
 def test_drive_loop_plan_finish_nudge_fires_once_at_iter_cap(tmp_path: Path) -> None:
     """A verbose planner that never calls finish_planning gets a single harness
     'finish now' nudge once it hits the plan turn cap -- not before, not again.
