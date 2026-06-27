@@ -182,6 +182,12 @@ if TYPE_CHECKING:
 # the normal backoff.
 _NON_RETRYABLE_HTTP_STATUSES = frozenset({400, 401, 402, 403, 404, 422})
 
+# Upper bound on how long we honor an upstream Retry-After hint. A 429/503 often
+# carries Retry-After: <seconds>; we wait at least that long (the provider's own
+# backoff is usually shorter and just exhausts the retries before the window
+# clears), but never longer than this so a buggy/hostile header can't hang a run.
+_RETRY_AFTER_CEILING_S = 120.0
+
 
 def _provider_error_hint(status_code: int | None) -> str:
     """A short, actionable suffix for a fatal provider error, or "".
@@ -2909,6 +2915,12 @@ class Workflow:
                     # jitter (full jitter, lower-bounded at 0.5) decorrelates
                     # concurrent retriers; non-crypto randomness is fine here.
                     delay = capped_delay * random.uniform(0.5, 1.0)  # noqa: S311
+                    # Honor an upstream Retry-After (429/503): wait at least the
+                    # advertised window (bounded), since our own backoff is
+                    # usually shorter and would just burn the retries before the
+                    # rate-limit clears.
+                    if exc.retry_after_s is not None:
+                        delay = max(delay, min(exc.retry_after_s, _RETRY_AFTER_CEILING_S))
                     self._log(
                         f"LOOP: provider error attempt {attempt}/{attempts}: "
                         f"{exc} - retrying in {delay:.2f}s"

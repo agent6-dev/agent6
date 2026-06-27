@@ -29,10 +29,20 @@ from agent6.providers.token_command import CommandToken
 class _FakeStreamResponse:
     """Mimics the subset of httpx2 streaming Response we use."""
 
-    def __init__(self, *, status_code: int, lines: list[str], error_body: str = "") -> None:
+    def __init__(
+        self,
+        *,
+        status_code: int,
+        lines: list[str],
+        error_body: str = "",
+        headers: dict[str, str] | None = None,
+    ) -> None:
         self.status_code = status_code
         self._lines = lines
         self._error_body = error_body
+        # The real httpx2 Response always exposes headers; the error path reads
+        # Retry-After from them.
+        self.headers: dict[str, str] = headers or {}
 
     def __enter__(self) -> _FakeStreamResponse:
         return self
@@ -302,6 +312,34 @@ def test_streaming_propagates_http_error(monkeypatch: pytest.MonkeyPatch, tmp_pa
             messages=[{"role": "user", "content": "x"}],
             text_delta_callback=lambda _p: None,
         )
+
+
+def test_streaming_429_captures_retry_after(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    sink = TranscriptSink(tmp_path / "transcripts")
+    provider = AnthropicProvider(
+        api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
+    )
+
+    def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
+        return _FakeStreamResponse(
+            status_code=429,
+            lines=[],
+            error_body='{"error":{"type":"rate_limit"}}',
+            headers={"retry-after": "30"},
+        )
+
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
+
+    with pytest.raises(ProviderError) as exc_info:
+        provider.call(
+            system="sys",
+            messages=[{"role": "user", "content": "x"}],
+            text_delta_callback=lambda _p: None,
+        )
+    assert exc_info.value.status_code == 429
+    assert exc_info.value.retry_after_s == 30.0  # threaded from the header
 
 
 def test_non_streaming_path_unchanged_when_callback_is_none(

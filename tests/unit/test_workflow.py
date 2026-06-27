@@ -120,6 +120,36 @@ def test_call_with_retry_reraises_after_retries_exhausted() -> None:
     assert provider.call.call_count == 2
 
 
+def test_call_with_retry_honors_retry_after(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A 429 carrying retry_after_s waits at least that long, not the (shorter)
+    self-computed backoff."""
+    slept: list[float] = []
+    monkeypatch.setattr("agent6.workflows.loop.time.sleep", slept.append)
+    provider = MagicMock()
+    provider.call.side_effect = [
+        ProviderError("429 rate limited", status_code=429, retry_after_s=50.0),
+        _resp("ok"),
+    ]
+    wf = _wf(provider=provider, provider_retry_count=1)  # _wf backoff is 0.01s
+    out = wf._call_with_retry(system="s", messages=[], tools=[])  # pyright: ignore[reportPrivateUsage]
+    assert out.text == "ok"
+    assert slept and slept[0] >= 50.0  # honored the server's window, not ~0.01
+
+
+def test_call_with_retry_clamps_retry_after_to_ceiling(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A hostile/buggy Retry-After can't hang the run: clamp to the ceiling."""
+    slept: list[float] = []
+    monkeypatch.setattr("agent6.workflows.loop.time.sleep", slept.append)
+    provider = MagicMock()
+    provider.call.side_effect = [
+        ProviderError("429", status_code=429, retry_after_s=9999.0),
+        _resp("ok"),
+    ]
+    wf = _wf(provider=provider, provider_retry_count=1)
+    wf._call_with_retry(system="s", messages=[], tools=[])  # pyright: ignore[reportPrivateUsage]
+    assert slept and slept[0] <= 120.0  # _RETRY_AFTER_CEILING_S
+
+
 def _empty_tool_call_resp() -> ProviderResponse:
     """A self-contradictory response: stop_reason=tool_calls but no tool_use/text
     (the GLM-via-OpenRouter post-restart flake)."""

@@ -11,12 +11,14 @@ from __future__ import annotations
 
 import contextlib
 import json
+import math
 import os
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -90,11 +92,50 @@ class ProviderError(Exception):
     from an API error response (None for network/parse failures). The loop's
     retry wrapper uses it to skip retrying permanent client errors such as
     401/402/403 that will never succeed on a second attempt.
+
+    ``retry_after_s`` carries the upstream ``Retry-After`` hint (seconds) on a
+    rate-limit/unavailable response (429/503) when present, so the retry wrapper
+    waits at least as long as the server asked instead of its own shorter
+    backoff. None when absent.
     """
 
-    def __init__(self, *args: object, status_code: int | None = None) -> None:
+    def __init__(
+        self,
+        *args: object,
+        status_code: int | None = None,
+        retry_after_s: float | None = None,
+    ) -> None:
         super().__init__(*args)
         self.status_code = status_code
+        self.retry_after_s = retry_after_s
+
+
+def parse_retry_after(headers: Mapping[str, str]) -> float | None:
+    """Parse an HTTP ``Retry-After`` header to a non-negative seconds value.
+
+    Accepts the two RFC 7231 forms: a delta in seconds (``"120"``) or an
+    HTTP-date (``"Wed, 21 Oct 2026 07:28:00 GMT"``, converted to a delay from
+    now). Returns None when the header is absent or unparseable. Case-insensitive
+    lookup works with httpx2's header mapping.
+    """
+    raw = headers.get("retry-after") or headers.get("Retry-After")
+    if not raw:
+        return None
+    raw = raw.strip()
+    try:
+        secs = float(raw)
+        # Reject inf/nan (a malformed header); a real delta is finite seconds.
+        return max(0.0, secs) if math.isfinite(secs) else None
+    except ValueError:
+        pass
+    try:
+        when = parsedate_to_datetime(raw)
+    except (TypeError, ValueError):
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    delta = (when - datetime.now(tz=UTC)).total_seconds()
+    return max(0.0, delta)
 
 
 def _redact_headers(headers: dict[str, str]) -> dict[str, str]:
@@ -404,6 +445,7 @@ class AnthropicProvider:
                 raise ProviderError(
                     f"Anthropic API error {resp.status_code}: {resp.text[:500]}",
                     status_code=resp.status_code,
+                    retry_after_s=parse_retry_after(resp.headers),
                 )
             try:
                 data: dict[str, Any] = resp.json()
@@ -545,6 +587,7 @@ class AnthropicProvider:
                     raise ProviderError(
                         f"Anthropic API error {resp.status_code}: {error_body[:500]}",
                         status_code=resp.status_code,
+                        retry_after_s=parse_retry_after(resp.headers),
                     )
                 event_type: str = ""
                 for line in resp.iter_lines():

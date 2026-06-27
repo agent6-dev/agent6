@@ -30,6 +30,7 @@ from agent6.providers.anthropic import (
 class _FakeResponse:
     def __init__(self, *, status_code: int, payload: dict[str, Any]) -> None:
         self.status_code = status_code
+        self.headers: dict[str, str] = {}
         self._payload = payload
         self.text = ""
 
@@ -111,6 +112,7 @@ def test_thinking_unset_is_a_plain_call(monkeypatch: pytest.MonkeyPatch) -> None
 class _FakeStreamResponse:
     def __init__(self, *, status_code: int, lines: list[str]) -> None:
         self.status_code = status_code
+        self.headers: dict[str, str] = {}
         self._lines = lines
 
     def __enter__(self) -> _FakeStreamResponse:

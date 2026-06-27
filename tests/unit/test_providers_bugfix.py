@@ -41,6 +41,7 @@ from agent6.providers.openai import (
 class _FakeJSONResponse:
     def __init__(self, *, status_code: int, text: str) -> None:
         self.status_code = status_code
+        self.headers: dict[str, str] = {}
         self.text = text
 
     def json(self) -> Any:
@@ -85,6 +86,7 @@ class _PingOnlyStreamResponse:
 
     def __init__(self) -> None:
         self.status_code = 200
+        self.headers: dict[str, str] = {}
         self._closed = threading.Event()
 
     def __enter__(self) -> _PingOnlyStreamResponse:

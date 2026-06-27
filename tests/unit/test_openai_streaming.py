@@ -36,10 +36,20 @@ from agent6.providers.openai import OpenAIProvider
 class _FakeStreamResponse:
     """Mimics the subset of httpx2 streaming Response we use."""
 
-    def __init__(self, *, status_code: int, lines: list[str], error_body: str = "") -> None:
+    def __init__(
+        self,
+        *,
+        status_code: int,
+        lines: list[str],
+        error_body: str = "",
+        headers: dict[str, str] | None = None,
+    ) -> None:
         self.status_code = status_code
         self._lines = lines
         self._error_body = error_body
+        # The real httpx2 Response always exposes headers; the error path reads
+        # Retry-After from them.
+        self.headers: dict[str, str] = headers or {}
 
     def __enter__(self) -> _FakeStreamResponse:
         return self

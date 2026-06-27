@@ -22,6 +22,7 @@ from agent6.providers import anthropic as anth_module
 class _FakeResponse:
     def __init__(self, *, status_code: int, payload: dict[str, Any] | None = None, text: str = ""):
         self.status_code = status_code
+        self.headers: dict[str, str] = {}
         self._payload = payload
         self.text = text
 

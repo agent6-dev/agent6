@@ -64,6 +64,7 @@ from agent6.providers.anthropic import (
     ProviderResponse,
     ToolDefinition,
     TranscriptSink,
+    parse_retry_after,
 )
 from agent6.providers.egress import http_post, http_stream
 from agent6.providers.token_command import CommandToken
@@ -492,6 +493,7 @@ class OpenAIProvider:
                 raise ProviderError(
                     f"OpenAI API error {resp.status_code}: {resp.text[:500]}",
                     status_code=resp.status_code,
+                    retry_after_s=parse_retry_after(resp.headers),
                 )
             try:
                 data: dict[str, Any] = resp.json()
@@ -630,6 +632,7 @@ class OpenAIProvider:
                     raise ProviderError(
                         f"OpenAI API error {resp.status_code}: {error_body[:500]}",
                         status_code=resp.status_code,
+                        retry_after_s=parse_retry_after(resp.headers),
                     )
                 for raw_line in resp.iter_lines():
                     line = raw_line.strip()
