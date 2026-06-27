@@ -328,9 +328,10 @@ class OutlineInput(_ToolInput):
         "/ enums) in ONE source file with their start line numbers. Tree-"
         "sitter backed, deterministic, cheap. Use this instead of `read_file` "
         "when you only need a file's shape (e.g. 'what classes are in "
-        "core.py?'). Supported extensions: .py .rs .ts .tsx - other files "
-        "return an empty list. Returns names + line numbers only; for "
-        "function bodies use `read_file`."
+        "core.py?'). Supported extensions: .py .rs .ts .tsx .js .jsx .go "
+        ".java .c .h .cpp .cc .cs .rb .php - other files return an empty "
+        "list. Returns names + line numbers only; for function bodies use "
+        "`read_file`."
     )
 
     path: str = Field(min_length=1)

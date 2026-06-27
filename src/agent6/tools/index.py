@@ -13,11 +13,20 @@ the caller marks files changed via `mark_changed(path)` / `mark_deleted(path)`.
 Re-parses happen in batch on the next query, so a worker can call `apply_edit`
 many times and pay the parse cost only when it next asks for symbol info.
 
-Language support is intentionally limited to a small set:
+Language support covers the common ecosystems the tree-sitter pack ships:
 
-    .py            -> python
-    .rs            -> rust
-    .ts, .tsx      -> typescript
+    .py                              -> python
+    .rs                              -> rust
+    .ts, .tsx                        -> typescript
+    .js, .jsx, .mjs, .cjs            -> javascript
+    .go                              -> go
+    .java                            -> java
+    .c                               -> c
+    .h, .hpp, .hh, .hxx              -> cpp   (superset; parses C and C++ headers)
+    .cpp, .cc, .cxx                  -> cpp
+    .cs                              -> csharp
+    .rb                              -> ruby
+    .php                             -> php
 
 Other extensions are silently ignored. Adding a language is mechanical:
 extend `_LANG_TABLE` with the tree-sitter language name and a definitions
@@ -105,6 +114,144 @@ _TS_DEFS: Final = """
 (enum_declaration name: (identifier) @enum)
 """
 
+_GO_DEFS: Final = """
+(function_declaration name: (identifier) @function)
+(method_declaration name: (field_identifier) @method)
+(type_spec name: (type_identifier) @struct type: (struct_type))
+(type_spec name: (type_identifier) @interface type: (interface_type))
+(type_spec name: (type_identifier) @type
+  type: [(type_identifier) (function_type) (pointer_type) (array_type)
+         (slice_type) (map_type) (channel_type) (qualified_type) (generic_type)])
+(type_alias name: (type_identifier) @type)
+(const_spec name: (identifier) @const)
+"""
+
+_JAVA_DEFS: Final = """
+(class_declaration name: (identifier) @class)
+(interface_declaration name: (identifier) @interface)
+(enum_declaration name: (identifier) @enum)
+(record_declaration name: (identifier) @class)
+(annotation_type_declaration name: (identifier) @interface)
+(method_declaration name: (identifier) @method)
+(constructor_declaration name: (identifier) @method)
+(annotation_type_element_declaration name: (identifier) @method)
+(enum_constant name: (identifier) @const)
+"""
+
+_JS_DEFS: Final = """
+(function_declaration name: (identifier) @function)
+(generator_function_declaration name: (identifier) @function)
+(function_expression name: (identifier) @function)
+(generator_function name: (identifier) @function)
+(class_declaration name: (identifier) @class)
+(class name: (identifier) @class)
+(method_definition name: (property_identifier) @method)
+(method_definition name: (private_property_identifier) @method)
+"""
+
+_C_DEFS: Final = """
+(function_definition declarator: (function_declarator declarator: (identifier) @function))
+(function_definition declarator: (pointer_declarator
+  declarator: (function_declarator declarator: (identifier) @function)))
+(function_definition declarator: (pointer_declarator
+  declarator: (pointer_declarator
+    declarator: (function_declarator declarator: (identifier) @function))))
+(struct_specifier name: (type_identifier) @struct body: (_))
+(union_specifier name: (type_identifier) @struct body: (_))
+(enum_specifier name: (type_identifier) @enum body: (_))
+(type_definition declarator: (type_identifier) @type)
+(type_definition declarator: (pointer_declarator declarator: (type_identifier) @type))
+(type_definition declarator: (function_declarator
+  declarator: (parenthesized_declarator (pointer_declarator (type_identifier) @type))))
+(preproc_def name: (identifier) @const)
+(preproc_function_def name: (identifier) @macro)
+"""
+
+_CPP_DEFS: Final = """
+(function_definition
+  declarator: (function_declarator
+    declarator: (identifier) @function))
+(function_definition
+  declarator: (function_declarator
+    declarator: (operator_name) @function))
+(function_definition
+  declarator: (function_declarator
+    declarator: (qualified_identifier name: (identifier) @method)))
+(function_definition
+  declarator: (function_declarator
+    declarator: (qualified_identifier name: (operator_name) @method)))
+(function_definition
+  declarator: (function_declarator
+    declarator: (qualified_identifier name: (destructor_name) @method)))
+(field_declaration
+  declarator: (function_declarator
+    declarator: (field_identifier) @method))
+(field_declaration
+  declarator: (function_declarator
+    declarator: (operator_name) @method))
+(declaration
+  declarator: (function_declarator
+    declarator: (identifier) @function))
+(declaration
+  declarator: (function_declarator
+    declarator: (destructor_name) @method))
+(class_specifier name: (type_identifier) @class body: (_))
+(struct_specifier name: (type_identifier) @struct body: (_))
+(enum_specifier name: (type_identifier) @enum body: (_))
+(namespace_definition name: (namespace_identifier) @module)
+(alias_declaration name: (type_identifier) @type)
+(type_definition declarator: (type_identifier) @type)
+"""
+
+_CSHARP_DEFS: Final = """
+(namespace_declaration name: (identifier) @module)
+(namespace_declaration name: (qualified_name) @module)
+(file_scoped_namespace_declaration name: (identifier) @module)
+(file_scoped_namespace_declaration name: (qualified_name) @module)
+(class_declaration name: (identifier) @class)
+(record_declaration name: (identifier) @class)
+(struct_declaration name: (identifier) @struct)
+(interface_declaration name: (identifier) @interface)
+(enum_declaration name: (identifier) @enum)
+(delegate_declaration name: (identifier) @type)
+(method_declaration name: (identifier) @method)
+(constructor_declaration name: (identifier) @method)
+(destructor_declaration name: (identifier) @method)
+(operator_declaration
+  ["+" "-" "*" "/" "%" "==" "!=" "<" ">" "<=" ">=" "++" "--"
+   "!" "~" "&" "|" "^" "<<" ">>" "true" "false"] @method)
+; conversion_operator_declaration (implicit/explicit operator) and
+; indexer_declaration (this[...]) are intentionally NOT captured: they have no
+; name node, so the only available text is the target type / bracket list, which
+; makes a poor, noisy symbol name. The (rarely-navigated) gap is deliberate.
+(property_declaration name: (identifier) @method)
+(event_declaration name: (identifier) @method)
+(field_declaration (modifier "const")
+  (variable_declaration (variable_declarator name: (identifier) @const)))
+"""
+
+_RUBY_DEFS: Final = """
+(method name: [(identifier) (constant) (setter) (operator)] @method)
+(singleton_method name: [(identifier) (constant) (setter) (operator)] @method)
+(class name: (constant) @class)
+(class name: (scope_resolution name: (constant) @class))
+(module name: (constant) @module)
+(module name: (scope_resolution name: (constant) @module))
+(assignment left: (constant) @const)
+"""
+
+_PHP_DEFS: Final = """
+(function_definition name: (name) @function)
+(method_declaration name: (name) @method)
+(class_declaration name: (name) @class)
+(interface_declaration name: (name) @interface)
+(trait_declaration name: (name) @trait)
+(enum_declaration name: (name) @enum)
+(namespace_definition name: (namespace_name) @module)
+(const_element . (name) @const)
+(enum_case name: (name) @const)
+"""
+
 # Per-language identifier query for references. Different grammars surface
 # names under different node types (rust splits `identifier` vs
 # `type_identifier`; ts adds `property_identifier`).
@@ -113,6 +260,14 @@ _REF_QUERIES: Final[dict[str, str]] = {
     "rust": "[(identifier) (type_identifier)] @id",
     "typescript": "[(identifier) (type_identifier) (property_identifier)] @id",
     "tsx": "[(identifier) (type_identifier) (property_identifier)] @id",
+    "go": "[(identifier) (type_identifier) (field_identifier) (package_identifier)] @id",
+    "java": "(identifier) @id",
+    "javascript": "[(identifier) (property_identifier)] @id",
+    "c": "[(identifier) (type_identifier) (field_identifier)] @id",
+    "cpp": "[(identifier) (type_identifier) (field_identifier) (namespace_identifier)] @id",
+    "csharp": "(identifier) @id",
+    "ruby": "[(identifier) (constant)] @id",
+    "php": "(name) @id",
 }
 
 # suffix -> (tree-sitter language name, definitions query)
@@ -121,6 +276,23 @@ _LANG_TABLE: Final[dict[str, tuple[str, str]]] = {
     ".rs": ("rust", _RUST_DEFS),
     ".ts": ("typescript", _TS_DEFS),
     ".tsx": ("tsx", _TS_DEFS),
+    ".go": ("go", _GO_DEFS),
+    ".java": ("java", _JAVA_DEFS),
+    ".js": ("javascript", _JS_DEFS),
+    ".jsx": ("javascript", _JS_DEFS),
+    ".mjs": ("javascript", _JS_DEFS),
+    ".cjs": ("javascript", _JS_DEFS),
+    ".c": ("c", _C_DEFS),
+    ".h": ("cpp", _CPP_DEFS),
+    ".cpp": ("cpp", _CPP_DEFS),
+    ".cc": ("cpp", _CPP_DEFS),
+    ".cxx": ("cpp", _CPP_DEFS),
+    ".hpp": ("cpp", _CPP_DEFS),
+    ".hh": ("cpp", _CPP_DEFS),
+    ".hxx": ("cpp", _CPP_DEFS),
+    ".cs": ("csharp", _CSHARP_DEFS),
+    ".rb": ("ruby", _RUBY_DEFS),
+    ".php": ("php", _PHP_DEFS),
 }
 
 # Directories never indexed. Hard-coded; we are not parsing .gitignore here.

@@ -245,6 +245,156 @@ def test_typescript_outline(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Multi-language outline (tree-sitter-language-pack grammars)
+# ---------------------------------------------------------------------------
+
+# (filename, source, expected (name, kind) pairs the outline MUST contain).
+_LANG_CASES: list[tuple[str, str, set[tuple[str, str]]]] = [
+    (
+        "s.go",
+        "package m\ntype Point struct{ X int }\ntype Shape interface{ Area() float64 }\n"
+        "const Max = 10\nfunc Add(a, b int) int { return a + b }\n"
+        "func (p Point) Move(d int) {}\n",
+        {
+            ("Add", "function"),
+            ("Move", "method"),
+            ("Point", "struct"),
+            ("Shape", "interface"),
+            ("Max", "const"),
+        },
+    ),
+    (
+        "S.java",
+        "class Foo {\n  int field;\n  Foo() {}\n  void doIt() {}\n}\n"
+        "interface Bar { void run(); }\nenum Color { RED, GREEN }\n",
+        {
+            ("Foo", "class"),
+            ("doIt", "method"),
+            ("Bar", "interface"),
+            ("Color", "enum"),
+            ("RED", "const"),
+        },
+    ),
+    (
+        "s.js",
+        "function top() {}\nclass Widget {\n  render() {}\n  #priv() {}\n}\n",
+        {("top", "function"), ("Widget", "class"), ("render", "method")},
+    ),
+    (
+        "s.c",
+        "struct Pt { int x; };\ntypedef int MyInt;\n#define MAXN 8\n"
+        "int add(int a, int b) { return a + b; }\n",
+        {("add", "function"), ("Pt", "struct"), ("MyInt", "type"), ("MAXN", "const")},
+    ),
+    (
+        "s.cpp",
+        "namespace ns { class Animal {\npublic:\n  void speak();\n}; }\n"
+        "void ns::Animal::speak() {}\nint freefn() { return 0; }\n",
+        {("Animal", "class"), ("ns", "module"), ("freefn", "function"), ("speak", "method")},
+    ),
+    (
+        "S.cs",
+        "namespace App {\n  class Svc { public void Do() {} }\n  struct V {}\n"
+        "  interface I {}\n  enum E { A }\n}\n",
+        {
+            ("App", "module"),
+            ("Svc", "class"),
+            ("Do", "method"),
+            ("V", "struct"),
+            ("I", "interface"),
+            ("E", "enum"),
+        },
+    ),
+    (
+        "s.rb",
+        "module M\n  class Foo\n    def bar; end\n    def name=(v); end\n  end\nend\n",
+        {("M", "module"), ("Foo", "class"), ("bar", "method"), ("name=", "method")},
+    ),
+    (
+        "s.php",
+        "<?php\nfunction top() {}\nclass C { public function m() {} }\n"
+        "interface I {}\ntrait T {}\n",
+        {("top", "function"), ("C", "class"), ("m", "method"), ("I", "interface"), ("T", "trait")},
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "filename,source,expected", _LANG_CASES, ids=lambda v: v if isinstance(v, str) else ""
+)
+def test_outline_supported_languages(
+    tmp_path: Path, filename: str, source: str, expected: set[tuple[str, str]]
+) -> None:
+    f = tmp_path / filename
+    f.write_text(source, encoding="utf-8")
+    idx = SymbolIndex(tmp_path)
+    got = {(s.name, s.kind) for s in idx.outline(f)}
+    assert expected <= got, f"{filename}: missing {expected - got} (got {got})"
+
+
+def test_outline_c_header_uses_cpp_grammar(tmp_path: Path) -> None:
+    # .h maps to the cpp grammar (a C superset), so a C++ class in a header is
+    # captured -- the plain C grammar would miss it.
+    f = tmp_path / "widget.h"
+    f.write_text("class Widget {\npublic:\n  void draw();\n};\n", encoding="utf-8")
+    idx = SymbolIndex(tmp_path)
+    got = {(s.name, s.kind) for s in idx.outline(f)}
+    assert ("Widget", "class") in got
+
+
+def test_cpp_skips_forward_decls_and_param_type_uses(tmp_path: Path) -> None:
+    # The cpp class/struct/enum queries require a body, so a forward declaration
+    # and a bare type-use in a parameter are NOT captured as definitions (which
+    # would pollute find_definition with phantoms + duplicates).
+    f = tmp_path / "t.hpp"
+    f.write_text(
+        "class Conn;\nvoid f(Conn *c, struct Pt *p) {}\nclass Conn { int x; };\n",
+        encoding="utf-8",
+    )
+    idx = SymbolIndex(tmp_path)
+    defs = idx.find_definition("Conn")
+    assert len(defs) == 1 and defs[0].kind == "class"  # real def only, no forward-decl dup
+    assert idx.find_definition("Pt") == []  # bare param type is not a definition
+
+
+def test_c_header_prototypes_are_functions_not_methods(tmp_path: Path) -> None:
+    # A plain-C prototype in a .h (cpp grammar) is a free function, not a method.
+    f = tmp_path / "api.h"
+    f.write_text("int conn_open(const char *s, int n);\nvoid conn_close(void);\n", encoding="utf-8")
+    idx = SymbolIndex(tmp_path)
+    got = {(s.name, s.kind) for s in idx.outline(f)}
+    assert ("conn_open", "function") in got and ("conn_close", "function") in got
+    assert not any(k == "method" for _, k in got)
+
+
+def test_csharp_operator_overload_name_is_the_symbol(tmp_path: Path) -> None:
+    # An operator overload is named by its operator token (+, ==), not "operator".
+    f = tmp_path / "V.cs"
+    f.write_text(
+        "class V { public static V operator +(V a, V b){return a;}"
+        " public static bool operator ==(V a, V b){return true;} }",
+        encoding="utf-8",
+    )
+    idx = SymbolIndex(tmp_path)
+    got = {(s.name, s.kind) for s in idx.outline(f)}
+    assert ("+", "method") in got and ("==", "method") in got
+    assert ("operator", "method") not in got
+
+
+def test_find_references_go_filters_to_identifiers(tmp_path: Path) -> None:
+    # Cross-language sanity: references use the per-language ref query, so a Go
+    # symbol is found by find_references (and never inside strings/comments).
+    f = tmp_path / "m.go"
+    f.write_text(
+        "package m\nfunc helper() {}\nfunc use() { helper() }\n// helper\n", encoding="utf-8"
+    )
+    idx = SymbolIndex(tmp_path)
+    refs = idx.find_references("helper")
+    # definition + call site, but NOT the comment mention.
+    assert len(refs) == 2
+
+
+# ---------------------------------------------------------------------------
 # Symbol value type
 # ---------------------------------------------------------------------------
 
