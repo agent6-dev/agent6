@@ -182,6 +182,23 @@ if TYPE_CHECKING:
 # the normal backoff.
 _NON_RETRYABLE_HTTP_STATUSES = frozenset({400, 401, 402, 403, 404, 422})
 
+
+def _provider_error_hint(status_code: int | None) -> str:
+    """A short, actionable suffix for a fatal provider error, or "".
+
+    The raw upstream body (e.g. a 401 JSON blob) tells a user nothing about how
+    to fix it. Map the common credential/quota statuses to a next step.
+    """
+    if status_code in (401, 403):
+        return (
+            " Authentication failed: verify the provider key with `agent6 connect`"
+            " or check [providers.<name>].api_key_env."
+        )
+    if status_code == 402:
+        return " Insufficient credits/quota at the provider; top up or switch providers."
+    return ""
+
+
 # Finish/stop reasons that promise a tool call. A response carrying one of these
 # but with NO tool_use and NO text is self-contradictory and gets retried (see
 # _is_empty_tool_call_response).
@@ -1053,7 +1070,8 @@ class Workflow:
                     tool_calls=state.tool_calls,
                 )
             except ProviderError as exc:
-                self._log(f"LOOP: provider error at iter {iteration}: {exc}")
+                hint = _provider_error_hint(exc.status_code)
+                self._log(f"LOOP: provider error at iter {iteration}: {exc}{hint}")
                 self._emit(
                     "run.end",
                     reason="provider_error",
@@ -1063,7 +1081,7 @@ class Workflow:
                 return RunResult(
                     completed=False,
                     reason="provider_error",
-                    summary=f"provider error at iter {iteration}: {exc}",
+                    summary=f"provider error at iter {iteration}: {exc}{hint}",
                     iterations=iteration,
                     tool_calls=state.tool_calls,
                 )
@@ -2860,7 +2878,7 @@ class Workflow:
           timeout): retried with exponential backoff + full jitter so one flap
           doesn't abort the run. ``BudgetExceeded`` is never retried (hard stop).
           Permanent client errors (``ProviderError.status_code`` in
-          ``_NON_RETRYABLE_HTTP_STATUSES``: 401/402/403/404/422) re-raise
+          ``_NON_RETRYABLE_HTTP_STATUSES``: 400/401/402/403/404/422) re-raise
           immediately without consuming a retry -- a second identical request
           cannot succeed (observed live: a 402 "Insufficient credits" was
           otherwise retried every remaining turn).

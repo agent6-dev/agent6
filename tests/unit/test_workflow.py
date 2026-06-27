@@ -2500,6 +2500,18 @@ def test_resume_snapshot_carries_verify_command(tmp_path: Path) -> None:
     assert load_resume_snapshot(snap).verify_command is None
 
 
+def test_provider_error_hint_for_auth_and_quota() -> None:
+    from agent6.workflows.loop import _provider_error_hint  # pyright: ignore[reportPrivateUsage]
+
+    assert "agent6 connect" in _provider_error_hint(401)
+    assert "agent6 connect" in _provider_error_hint(403)
+    assert "credits" in _provider_error_hint(402).lower()
+    # Transient / unknown statuses get no hint (don't mislead).
+    assert _provider_error_hint(429) == ""
+    assert _provider_error_hint(500) == ""
+    assert _provider_error_hint(None) == ""
+
+
 def test_save_resume_snapshot_degrades_on_unwritable_state_dir(tmp_path: Path) -> None:
     # A full disk / read-only state dir disables resume/fork but must not abort
     # the run. Simulate by pointing the snapshot under a path whose parent is a

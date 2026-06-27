@@ -267,9 +267,7 @@ def test_lsp_request_times_out_on_hung_server(
 # --- lsp_tools_useful gating ------------------------------------------------
 
 
-def test_lsp_tools_useful_false_without_ty(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_lsp_tools_useful_false_without_ty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from agent6.tools import lsp as lspmod
     from agent6.tools.lsp import lsp_tools_useful
 
