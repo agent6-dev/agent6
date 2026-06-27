@@ -134,19 +134,26 @@ def _eprint(msg: str) -> None:
     print(msg, file=sys.stderr)
 
 
-def _warn_if_usd_unenforceable(cfg: Config, worker_model: str) -> None:
-    """Warn at startup when ``best_effort_usd_limit`` is set but the worker
-    model has no published price, so the USD ceiling silently can't be enforced
-    and spend is bounded only by the token ceilings. We deliberately do NOT
-    guess a price or terminate early (a wrong guess could kill a run mid-task);
-    we just make the gap visible so the operator can set token ceilings if they
-    need a precise dollar bound. Anthropic publishes no pricing, so this fires
-    for Claude workers."""
+def _warn_if_usd_unenforceable(cfg: Config) -> None:
+    """Warn at startup when ``best_effort_usd_limit`` is set but a configured
+    role model has no published price. The USD ceiling sums per-model estimated
+    cost, and an unpriced model contributes $0, so ANY unpriced role that spends
+    tokens (the worker, but also a distinct reviewer/critic/planner) makes the
+    ceiling silently under-count and spend is bounded only by the token
+    ceilings. We deliberately do NOT guess a price or terminate early (a wrong
+    guess could kill a run mid-task); we just make the gap visible. Anthropic
+    publishes no pricing, so this fires for Claude in any role."""
     usd = cfg.budget.best_effort_usd_limit
-    if usd > 0 and lookup_price(worker_model) is None:
+    if usd <= 0:
+        return
+    unpriced = sorted(
+        {rm.model for rm in cfg.models.configured().values() if lookup_price(rm.model) is None}
+    )
+    if unpriced:
         print(
             f"[agent6] WARNING: best_effort_usd_limit=${usd:g} cannot be enforced "
-            f"for {worker_model!r} (no published price); spend is bounded only by "
+            f"for {', '.join(repr(m) for m in unpriced)} (no published price); their "
+            f"spend is invisible to the dollar ceiling, so it is bounded only by "
             f"max_input_tokens={cfg.budget.max_input_tokens:,} / "
             f"max_output_tokens={cfg.budget.max_output_tokens:,}. Set explicit "
             f"token ceilings if you need a precise dollar bound.",
@@ -783,7 +790,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     worker_inner = _build_role_provider(cfg, role, transcript_sink=transcript_sink, budget=budget)
     rm_worker = cfg.models.resolve(role)
     assert rm_worker is not None  # require_runnable validated this
-    _warn_if_usd_unenforceable(cfg, rm_worker.model)
+    _warn_if_usd_unenforceable(cfg)
     _warn_if_prompt_override_incomplete(cfg)
     # Enable SSE streaming when stderr is a TTY (covers TUI
     # and interactive shell use). Bench/CI runs pipe stderr, so they
@@ -1273,7 +1280,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     )
     rm_worker = cfg.models.resolve("worker")
     assert rm_worker is not None  # require_runnable validated this
-    _warn_if_usd_unenforceable(cfg, rm_worker.model)
+    _warn_if_usd_unenforceable(cfg)
     _warn_if_prompt_override_incomplete(cfg)
     # Streaming gated on stderr TTY (matches _cmd_run);
     # AGENT6_FORCE_STREAM=1 forces it on for bench/CI.
