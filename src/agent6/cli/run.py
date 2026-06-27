@@ -1013,6 +1013,50 @@ def _fire_notify_hook(
         print(f"[agent6] notify.on_complete failed: {exc}", file=sys.stderr)
 
 
+def _ensure_on_run_branch(cwd: Path, layout: RunLayout) -> str | None:
+    """Check out the run's branch if HEAD isn't already on it.
+
+    The loop's per-step commits land on whatever branch HEAD points at, so a
+    resume must be on the run's branch. ``_cmd_run`` checks it out up front, but
+    two paths reach resume off the run branch: ``agent6 fork`` cuts
+    ``agent6/<id>`` additively (never switching to it), and an operator may have
+    moved branches since the original run. Either way, without this the work
+    silently lands on the operator's current branch and the run branch stays
+    empty (so ``runs diff`` shows nothing).
+
+    Reads ``run_branch`` from the manifest. Returns None when there's nothing to
+    do (no branch recorded, or already on it) or after a clean checkout; returns
+    an error string when a switch is needed but the working tree is dirty.
+    """
+    try:
+        manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    run_branch = manifest.get("run_branch")
+    try:
+        st = git_status(cwd)
+    except GitError:
+        st = None
+    # Nothing to do: branch_per_run was off (no run_branch), git unreadable, or
+    # already on the run branch. Commits then land on HEAD as before.
+    if not run_branch or st is None or st.branch == run_branch:
+        return None
+    # Only MODIFIED tracked files block the switch; untracked files are carried
+    # across a checkout fine (and a rare untracked-vs-target collision is caught
+    # by the create_branch error below), so don't refuse on those.
+    if st.modified_count > 0:
+        return (
+            f"ERROR: resume needs to switch to this run's branch {run_branch!r}, but the "
+            "working tree has uncommitted changes to tracked files. Commit or stash them "
+            f"(or run `git checkout {run_branch}` yourself), then resume."
+        )
+    try:
+        create_branch(cwd, run_branch)  # idempotent: checks out the existing branch
+    except GitError as exc:
+        return f"ERROR: could not switch to run branch {run_branch!r}: {exc}"
+    return None
+
+
 def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     config_path: Path | None,
     run_id: str,
@@ -1066,6 +1110,14 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     # Friendly no-repo guard BEFORE any git-touching resume-diff (which would
     # otherwise print zeroed-out heads first, then the real error).
     if not _require_git_repo(cwd):
+        return 2
+
+    # Get onto the run's branch before diffing or committing. A fork cuts
+    # agent6/<id> without checking it out; do it here so the loop's commits land
+    # on the run branch and the resume-diff below references the right HEAD.
+    branch_err = _ensure_on_run_branch(cwd, layout)
+    if branch_err is not None:
+        print(branch_err, file=sys.stderr)
         return 2
 
     # Safety check: refuse on snapshot-commit divergence unless --force-resume.
