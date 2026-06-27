@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.budget import INPUT_TO_OUTPUT_RATIO_FOR_USD_BUDGET, usd_budget_to_tokens
+from agent6.budget import usd_budget_to_tokens
 
 # $3/M in, $15/M out: the worked example in the usd_budget_to_tokens docstring.
 PRICED_MODEL = "test/priced-model"
@@ -45,14 +45,25 @@ def _convert(max_usd: float, model: str) -> tuple[int, int]:
 
 
 def test_usd_converter_priced_model(price_cache: Path) -> None:
-    """$3/M input + $15/M output, $5 budget."""
+    """$3/M input + $15/M output, $5 budget. Each axis is sized to the FULL
+    budget (the runtime USD ceiling bounds combined spend), so input alone is
+    ~$5 of input tokens and output alone is ~$5 of output tokens."""
     max_in, max_out = _convert(5.0, PRICED_MODEL)
-    # Ratio of 5 input:output value means input gets 5/6 of the budget,
-    # output gets 1/6.
-    expected_in_usd = 5.0 * 5 / 6  # ~$4.17
-    expected_out_usd = 5.0 * 1 / 6  # ~$0.83
-    assert abs(max_in - int(expected_in_usd * 1_000_000 / 3.0)) <= 1
-    assert abs(max_out - int(expected_out_usd * 1_000_000 / 15.0)) <= 1
+    assert abs(max_in - int(5.0 * 1_000_000 / 3.0)) <= 1  # 1_666_666
+    assert abs(max_out - int(5.0 * 1_000_000 / 15.0)) <= 1  # 333_333
+
+
+def test_usd_converter_output_axis_gets_full_budget(price_cache: Path) -> None:
+    """Regression: an output-heavy (e.g. reasoning) workload must be able to
+    spend the whole USD budget on output. The output cap must equal max_usd /
+    output_price, NOT a small ratio-split fraction of it -- the bug that halted
+    a $3 GLM 5.2 run at $0.66 because its 1:1 reasoning I/O blew a 1/6 output
+    cap while the input cap sat 94% unused."""
+    # $15/M out, $5 budget -> the full budget buys 333_333 output tokens.
+    _, max_out = _convert(5.0, PRICED_MODEL)
+    assert max_out == int(5.0 * 1_000_000 / 15.0)
+    # ...not the old 1/6 split (which would have been ~55_555).
+    assert max_out > 5 * 55_555
 
 
 def test_usd_converter_unknown_model_returns_none(price_cache: Path) -> None:
@@ -80,12 +91,6 @@ def test_usd_converter_scale_linearity(price_cache: Path) -> None:
     in_10, out_10 = _convert(10.0, PRICED_MODEL)
     assert abs((in_10 / in_5) - 2.0) < 0.01
     assert abs((out_10 / out_5) - 2.0) < 0.01
-
-
-def test_usd_converter_ratio_constant_value() -> None:
-    """The hard-coded input:output ratio constant is what we documented
-    (5.0). Trip wire so changing it requires updating the docstring."""
-    assert INPUT_TO_OUTPUT_RATIO_FOR_USD_BUDGET == 5.0
 
 
 def test_explicit_usd_flag_refused_when_unpriced(

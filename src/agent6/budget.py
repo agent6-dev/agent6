@@ -49,17 +49,6 @@ from agent6.pricing import lookup_price
 # to it: an unknown price is honest, an outdated hardcoded one is wrong.
 
 
-INPUT_TO_OUTPUT_RATIO_FOR_USD_BUDGET = 5.0
-"""Operator-facing USD budgets are converted into separate input/output
-token ceilings via this assumed ratio. Empirically code-editing workloads
-spend ~5 input tokens for each output token (the worker re-reads more
-than it writes). The ratio is intentionally conservative on the output
-side because output tokens are 5x the per-token price; underestimating
-output capacity is cheaper than underestimating input capacity. Tweak
-here if your workload shape is very different - this only affects the
-USD-to-tokens conversion, not the runtime token accounting."""
-
-
 def usd_budget_to_tokens(
     max_usd: float,
     *,
@@ -74,18 +63,23 @@ def usd_budget_to_tokens(
     runtime `max_usd` ceiling still enforces wherever the provider reports
     per-call cost (OpenRouter `usage.cost`) or a cached price exists.
 
-    Returns (input_tokens, output_tokens) sized so that hitting BOTH
-    ceilings simultaneously costs approximately `max_usd`. The runtime
-    enforcement is still per-ceiling (input_total >= max_input_tokens
-    triggers BudgetExceeded regardless of output usage), so the actual
-    spend ceiling is roughly `max_usd` when the workload's I/O ratio
-    matches `INPUT_TO_OUTPUT_RATIO_FOR_USD_BUDGET`, less when the
-    workload spends one bucket but not the other.
+    Each axis is sized so that THAT axis alone reaching its cap costs ~max_usd.
+    The authoritative bound is the runtime USD ceiling (BudgetTracker.max_usd):
+    this conversion only runs when `best_effort_usd_limit > 0`, so that ceiling
+    is always active, it bounds the cache-INCLUSIVE COMBINED spend, and on any
+    mixed workload it trips before either axis alone is exhausted. The per-axis
+    caps are a backstop (each bounds its own axis to ~max_usd).
 
-    Example: at $3/M in, $15/M out, usd_budget_to_tokens(5.0, ...)
-    returns (max_input=1_388_888, max_output=277_777) - 5x more input
-    headroom than output, sized so that hitting both at the same time
-    is ~$5.
+    Sizing each axis to the full budget -- rather than splitting it by an
+    assumed input:output ratio -- is what lets an output-heavy workload use the
+    whole budget. A reasoning model whose reasoning_content dominates output
+    (e.g. GLM, Kimi K2.x) spends far more on output than a 5:1 code-edit ratio
+    assumes; a ratio-split output cap would halt such a run at a fraction of the
+    USD budget (output cap hit while input sat almost untouched) even though the
+    USD ceiling had plenty of room.
+
+    Example: at $3/M in, $15/M out, usd_budget_to_tokens(5.0, ...) returns
+    (max_input=1_666_666, max_output=333_333) - each axis alone is ~$5.
     """
     if max_usd <= 0:
         raise ValueError(f"max_usd must be positive, got {max_usd}")
@@ -101,20 +95,13 @@ def usd_budget_to_tokens(
         # no-price case (caller keeps the operator token ceilings) instead of
         # dividing by zero.
         return None
-    ratio = INPUT_TO_OUTPUT_RATIO_FOR_USD_BUDGET
-    # Solve: input_usd + output_usd = max_usd
-    #        input_usd = ratio * output_usd  (by ratio of tokens at their
-    #                                         respective per-token rates)
-    # => (ratio + 1) * output_usd = max_usd
-    output_usd = max_usd / (ratio + 1)
-    input_usd = max_usd - output_usd
     # Clamp to at least one token: an extreme-but-legal tiny USD budget can
     # floor to 0 here, which would synthesize an invalid 0 token ceiling (the
     # BudgetConfig validators require gt=0). The runtime USD ceiling (max_usd
     # via BudgetTracker) still enforces the true dollar bound, so a 1-token
     # floor just means the run stops after a single tiny call.
-    max_input_tokens = max(1, int((input_usd * 1_000_000) / in_per_mtok))
-    max_output_tokens = max(1, int((output_usd * 1_000_000) / out_per_mtok))
+    max_input_tokens = max(1, int((max_usd * 1_000_000) / in_per_mtok))
+    max_output_tokens = max(1, int((max_usd * 1_000_000) / out_per_mtok))
     return max_input_tokens, max_output_tokens
 
 
@@ -150,12 +137,14 @@ class BudgetTracker:
     max_input_tokens: int
     max_output_tokens: int
     # Estimated-dollar ceiling (0 = off). Set from `[budget]
-    # best_effort_usd_limit`. Unlike the
-    # token caps -- which `usd_budget_to_tokens` sizes against full *fresh*-input
-    # price and which `record` thresholds on fresh input only -- this bounds the
-    # estimated spend INCLUDING cache_read/cache_creation tokens, which cost real
-    # money but never count toward the token caps. Without it, a heavily-cached
-    # run can blow well past `max_usd`.
+    # best_effort_usd_limit`. This is the AUTHORITATIVE spend bound when
+    # `usd_budget_to_tokens` derives the token caps (it sizes each axis to the
+    # full budget on purpose). Unlike the token caps -- which `record`
+    # thresholds on fresh input/output only -- this bounds the estimated spend
+    # INCLUDING cache_read/cache_creation tokens, which cost real money but
+    # never count toward the token caps, and bounds COMBINED in+out so it trips
+    # before either full-budget axis cap on a mixed workload. Without it, a
+    # heavily-cached run can blow well past `max_usd`.
     max_usd: float = 0.0
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _per_model: dict[str, _ModelTotals] = field(default_factory=dict)

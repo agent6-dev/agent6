@@ -333,11 +333,16 @@ Hard stops; on hit the run aborts (exit 3) and is resumable (raise the limit and
 | `max_output_tokens` | `200000` | Output-token ceiling. Exact and always enforced. |
 | `best_effort_usd_limit` | `0.0` (off) | Dollar-denominated bound, enforced where price data exists. |
 
-Token ceilings are the authoritative constraint. When the worker model's
-price is cached, `best_effort_usd_limit` converts to token ceilings at load
-(the lower wins per axis); at runtime the run also stops when estimated
-spend (reported cost, else price times tokens, cache included) crosses it.
-With no price and no reported cost it does nothing, hence best effort.
+The token ceilings are exact and always enforced. When the worker model's
+price is cached, `best_effort_usd_limit` also converts to token ceilings at
+load (the lower wins per axis), sizing EACH axis to the full dollar budget;
+the run then stops when estimated spend (reported cost, else price times
+tokens, cache included) crosses the limit. That combined, cache-inclusive USD
+check is the authoritative bound on a USD-budgeted run -- it trips before
+either full-budget axis cap, so an output-heavy workload (e.g. a reasoning
+model whose hidden reasoning dominates output) can spend the whole budget
+instead of halting once a ratio-split output cap is hit. With no price and no
+reported cost the USD limit does nothing, hence best effort.
 
 Override per-run from the CLI without editing config: `agent6 run --max-usd 5`,
 `--max-input-tokens`, `--max-output-tokens` (on `run`, `plan`, `resume`).
