@@ -747,7 +747,10 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         " (nothing existing is ever overwritten).",
     )
     init_p.add_argument(
-        "--profile",
+        # Named --ecosystem, not --profile: `run/plan/ask --profile` already mean
+        # the config strategy preset (quick/ultra/...), a different concept.
+        "--ecosystem",
+        dest="profile",
         choices=("py", "rust", "node"),
         default="",
         help=(
