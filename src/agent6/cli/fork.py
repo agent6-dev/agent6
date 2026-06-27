@@ -24,6 +24,7 @@ import sys
 from pathlib import Path
 
 from agent6.cli._common import _BudgetOverrides, _state_dir
+from agent6.cli.plan_watch import _most_recent_run_id
 from agent6.cli.run import _cmd_resume, _write_run_manifest
 from agent6.config import Config, ConfigError
 from agent6.config_layer import load_effective
@@ -109,6 +110,14 @@ def _cmd_fork(  # noqa: PLR0911
     cwd = Path.cwd()
     state_dir = _state_dir(cwd)
     runs_dir = state_dir / "runs"
+    if not source_run_id:
+        # "fork my last run" -- omitting the id forks the most recent run.
+        latest = _most_recent_run_id(runs_dir)
+        if latest is None:
+            print(f"ERROR: no runs under {runs_dir}; nothing to fork.", file=sys.stderr)
+            return 2
+        source_run_id = latest
+        print(f"[agent6] forking most recent run: {source_run_id}", file=sys.stderr)
     try:
         source_id = resolve_run_id(runs_dir, source_run_id)
     except RunIdError as exc:

@@ -449,7 +449,12 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
 
     resume_p = sub.add_parser("resume", help="Resume a paused run from its snapshot.")
-    resume_run = resume_p.add_argument("run_id", help="Run id under the per-repo run-state dir.")
+    resume_run = resume_p.add_argument(
+        "run_id",
+        nargs="?",
+        default="",
+        help="Run id under the per-repo run-state dir (omit for the most recent run).",
+    )
     resume_run.completer = _complete_run_ids  # type: ignore[attr-defined]
     resume_p.add_argument(
         "--config",
@@ -483,7 +488,10 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
     fork_src = fork_p.add_argument(
-        "run_id", help="Source run id (or unambiguous prefix) to fork from."
+        "run_id",
+        nargs="?",
+        default="",
+        help="Source run id or unambiguous prefix to fork from (omit for the most recent run).",
     )
     fork_src.completer = _complete_run_ids  # type: ignore[attr-defined]
     fork_p.add_argument(

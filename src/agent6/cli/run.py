@@ -48,6 +48,7 @@ from agent6.cli.egress import (
     _stop_egress,
     _warn_if_unsandboxed,
 )
+from agent6.cli.plan_watch import _most_recent_run_id
 from agent6.cli.providers import (
     _build_critic_provider,
     _build_prompt_reviser_provider,
@@ -1082,6 +1083,14 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     cwd = Path.cwd()
     state_dir = _state_dir(cwd)
     runs_dir = state_dir / "runs"
+    if not run_id:
+        # "resume my last run" -- the common recovery case, matching `runs *`.
+        latest = _most_recent_run_id(runs_dir)
+        if latest is None:
+            print(f"ERROR: no runs under {runs_dir}; nothing to resume.", file=sys.stderr)
+            return 2
+        run_id = latest
+        print(f"[agent6] resuming most recent run: {run_id}", file=sys.stderr)
     try:
         resolved = resolve_run_id(runs_dir, run_id)
     except RunIdError as exc:

@@ -23,6 +23,7 @@ import pytest
 
 from agent6.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
 from agent6.cli.fork import _cmd_fork  # pyright: ignore[reportPrivateUsage]
+from agent6.cli.run import _cmd_resume  # pyright: ignore[reportPrivateUsage]
 from agent6.graph.storage import RunLayout, list_checkpoint_turns
 from agent6.workflows._run_state import load_checkpoint
 from agent6.workflows.loop import (
@@ -388,6 +389,46 @@ def test_ensure_on_run_branch_allows_untracked_files(tmp_path: Path) -> None:
     assert _ensure_on_run_branch(repo, layout) is None
     assert _current_branch(repo) == "agent6/child"
     assert (repo / "scratch.txt").exists()  # untracked file preserved
+
+
+# --- resume/fork accept an omitted run id (most recent) --------------------
+
+
+def test_fork_without_id_forks_most_recent_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state_dir = _state_dir(repo)
+    _seed_source_run(state_dir, "only-run-AAAA11", head_sha=head, turns=(1,))
+    rc = _cmd_fork(None, "", new_run_id="child-BBBB22", no_run=True)
+    assert rc == 0
+    dst = RunLayout(state_dir=state_dir, run_id="child-BBBB22")
+    manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["parent_run_id"] == "only-run-AAAA11"  # the only/most-recent run
+
+
+def test_fork_without_id_and_no_runs_errors_cleanly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "repo"
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    rc = _cmd_fork(None, "")  # no id, no runs -> clean error, not a crash
+    assert rc == 2
+    assert "nothing to fork" in capsys.readouterr().err
+
+
+def test_resume_without_id_and_no_runs_errors_cleanly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "repo"
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    rc = _cmd_resume(None, "", force=False)
+    assert rc == 2
+    assert "nothing to resume" in capsys.readouterr().err
 
 
 def test_ensure_on_run_branch_noop_without_run_branch(tmp_path: Path) -> None:
