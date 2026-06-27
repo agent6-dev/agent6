@@ -2500,6 +2500,33 @@ def test_resume_snapshot_carries_verify_command(tmp_path: Path) -> None:
     assert load_resume_snapshot(snap).verify_command is None
 
 
+def test_save_resume_snapshot_degrades_on_unwritable_state_dir(tmp_path: Path) -> None:
+    # A full disk / read-only state dir disables resume/fork but must not abort
+    # the run. Simulate by pointing the snapshot under a path whose parent is a
+    # regular file, so mkdir raises OSError.
+    blocker = tmp_path / "blocker"
+    blocker.write_text("x", encoding="utf-8")
+    snap = blocker / "loop_state.json"  # parent "blocker" is a file -> mkdir fails
+    logs: list[str] = []
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(verify_command=(), metric=None),
+    )
+    wf = _wf(resume_state_path=snap, config=config, logger=logs.append)
+    # Must not raise, twice (the second call must not re-warn).
+    for _ in range(2):
+        wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            messages=[],
+            tool_calls=0,
+            next_iteration=1,
+            root_task_id=None,
+            state=_state(),
+        )
+    warnings = [m for m in logs if "could not persist resume snapshot" in m]
+    assert len(warnings) == 1, "warn exactly once, then stay quiet"
+    assert not snap.exists()
+
+
 def test_open_tasks_for_checkoff_excludes_auto_root() -> None:
     # The tier-2 compaction check-off must never offer the auto-root (parent_id
     # is None): a summariser listing it would mark the whole run passed mid-run.

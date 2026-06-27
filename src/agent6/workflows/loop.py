@@ -804,6 +804,10 @@ class Workflow:
     # the worker burn the rest of the budget circling the same call.
     # Set to 0 to disable forced termination (notice-only behaviour).
     loop_guard_kill_threshold: int = 10
+    # One-shot guard so a persistently unwritable state dir (full disk, quota,
+    # read-only mount) warns once instead of every turn. Snapshot persistence is
+    # recovery state; a failure disables resume/fork but must not abort the run.
+    _snapshot_write_failed: bool = field(default=False, init=False)
 
     def run(self, user_task: str) -> RunResult:
         """Drive the single-loop agent to completion."""
@@ -2380,21 +2384,33 @@ class Workflow:
             "head_sha": self._checkpoint_head_sha(),
             "graph_version": self._checkpoint_graph_version(),
         }
-        self.resume_state_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.resume_state_path.with_suffix(self.resume_state_path.suffix + ".tmp")
         blob = json.dumps(payload)
-        tmp.write_text(blob, encoding="utf-8")
-        tmp.replace(self.resume_state_path)
-        # ALSO append a per-turn checkpoint (never overwritten) so a fork can roll
-        # back to turn N. loop_state.json stays the "latest" pointer for resume.
-        # Keep all checkpoints for now (a run is dozens of turns); bound disk only
-        # if long runs prove it matters.
-        cp_dir = self.resume_state_path.parent / "checkpoints"
-        cp_dir.mkdir(parents=True, exist_ok=True)
-        cp_path = cp_dir / f"{next_iteration:04d}.json"
-        cp_tmp = cp_path.with_suffix(cp_path.suffix + ".tmp")
-        cp_tmp.write_text(blob, encoding="utf-8")
-        cp_tmp.replace(cp_path)
+        # The snapshot is recovery state, not run output: an unwritable state dir
+        # (full disk, quota, read-only mount) disables resume/fork but must not
+        # abort an otherwise-healthy run whose edits + commits are already on disk
+        # independently. Warn once, then continue.
+        try:
+            self.resume_state_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.resume_state_path.with_suffix(self.resume_state_path.suffix + ".tmp")
+            tmp.write_text(blob, encoding="utf-8")
+            tmp.replace(self.resume_state_path)
+            # ALSO append a per-turn checkpoint (never overwritten) so a fork can
+            # roll back to turn N. loop_state.json stays the "latest" pointer for
+            # resume. Keep all checkpoints for now (a run is dozens of turns);
+            # bound disk only if long runs prove it matters.
+            cp_dir = self.resume_state_path.parent / "checkpoints"
+            cp_dir.mkdir(parents=True, exist_ok=True)
+            cp_path = cp_dir / f"{next_iteration:04d}.json"
+            cp_tmp = cp_path.with_suffix(cp_path.suffix + ".tmp")
+            cp_tmp.write_text(blob, encoding="utf-8")
+            cp_tmp.replace(cp_path)
+        except OSError as exc:
+            if not self._snapshot_write_failed:
+                self._snapshot_write_failed = True
+                self._log(
+                    f"LOOP: WARNING could not persist resume snapshot ({exc}); "
+                    "resume/fork are unavailable for this run, continuing anyway"
+                )
 
     def _checkpoint_head_sha(self) -> str:
         """Workspace HEAD for the per-turn checkpoint; "" if it can't be read.
