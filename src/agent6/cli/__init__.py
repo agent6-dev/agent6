@@ -5,7 +5,10 @@
 
 from __future__ import annotations
 
+import os
 import sys
+import tempfile
+import traceback
 from pathlib import Path
 
 import argcomplete
@@ -81,6 +84,39 @@ def _first_markdown_line(text: str, max_len: int = 80) -> str:
         if line:
             return line[:max_len]
     return "(untitled plan)"
+
+
+def cli_main() -> int:
+    """Console-script entry point: a top-level guard around ``main``.
+
+    An unexpected exception surfaces as a one-line ``ERROR:`` plus a pointer to
+    a saved traceback, not a raw Python stack dumped at the user. Set
+    ``AGENT6_DEBUG=1`` to re-raise the full traceback inline (for bug reports).
+    ``main`` itself is left unguarded so tests and ``python -m`` see real
+    tracebacks. argparse's ``SystemExit`` (bad args / --help) is not an
+    ``Exception`` and passes through untouched.
+    """
+    try:
+        return main()
+    except KeyboardInterrupt:
+        print("\nagent6: interrupted.", file=sys.stderr)
+        return 130
+    except Exception as exc:  # top-level last resort; re-raised under AGENT6_DEBUG
+        if os.environ.get("AGENT6_DEBUG") == "1":
+            raise
+        print(f"ERROR: unexpected {type(exc).__name__}: {exc}", file=sys.stderr)
+        try:
+            fd, path = tempfile.mkstemp(prefix="agent6-crash-", suffix=".log")
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                traceback.print_exc(file=fh)
+            print(f"  full traceback: {path}", file=sys.stderr)
+        except OSError:
+            pass  # never let crash-reporting itself crash the exit path
+        print(
+            "  re-run with AGENT6_DEBUG=1 to see it inline; please report this if it persists.",
+            file=sys.stderr,
+        )
+        return 1
 
 
 def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR0915

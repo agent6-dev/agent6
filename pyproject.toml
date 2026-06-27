@@ -25,7 +25,7 @@ dependencies = [
 ]
 
 [project.scripts]
-agent6 = "agent6.cli:main"
+agent6 = "agent6.cli:cli_main"
 
 [build-system]
 requires = ["hatchling"]
