@@ -307,11 +307,20 @@ def _doctor_check_verify(cfg: Config) -> list[_DoctorCheck]:
 def _doctor_check_config(cfg: Config) -> list[_DoctorCheck]:
     """Static config sanity checks: provider keys + worktree git policy."""
     out: list[_DoctorCheck] = []
-    env_err = _check_provider_keys(cfg)
-    ok_env = env_err is None
-    detail_env = "all referenced provider keys resolve" if ok_env else env_err or ""
-    print(f"[{'PASS' if ok_env else 'FAIL'}] config.provider_keys: {detail_env}")
-    out.append(_DoctorCheck(name="config.provider_keys", ok=ok_env, detail=detail_env))
+    if not cfg.providers:
+        # Zero providers configured: "all referenced keys resolve" is vacuously
+        # true and would signal "ready", but `agent6 run` will reject. Say so.
+        detail_env = (
+            "no providers configured yet — run `agent6 connect` (required before `agent6 run`)"
+        )
+        print(f"[INFO] config.provider_keys: {detail_env}")
+        out.append(_DoctorCheck(name="config.provider_keys", ok=True, detail=detail_env))
+    else:
+        env_err = _check_provider_keys(cfg)
+        ok_env = env_err is None
+        detail_env = "all referenced provider keys resolve" if ok_env else env_err or ""
+        print(f"[{'PASS' if ok_env else 'FAIL'}] config.provider_keys: {detail_env}")
+        out.append(_DoctorCheck(name="config.provider_keys", ok=ok_env, detail=detail_env))
 
     ok_git = cfg.git.allow_push is False
     detail_git = "git.allow_push=False (push is blocked, as required)"
