@@ -58,10 +58,9 @@ def _cmd_check_sandbox() -> int:
         print(
             "  NOTE: strict is unavailable because unprivileged user namespaces are\n"
             "  blocked by kernel.apparmor_restrict_unprivileged_userns=1 (Ubuntu 24.04+\n"
-            "  default). For the stronger strict profile, install the agent6-jail\n"
+            "  default). For the stronger strict profile, install the bundled agent6-jail\n"
             "  AppArmor profile (grants userns to just that binary):\n"
-            "    sudo cp packaging/apparmor/agent6-jail /etc/apparmor.d/agent6-jail\n"
-            "    sudo apparmor_parser -r /etc/apparmor.d/agent6-jail\n"
+            "    agent6 system apparmor install\n"
             "  (or, less surgically, set the sysctl to 0). hardened is still real,\n"
             "  kernel-enforced isolation."
         )

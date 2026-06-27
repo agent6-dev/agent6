@@ -154,8 +154,8 @@ def apparmor_userns_restricted() -> bool:
     an unprivileged process can then create a user namespace only with an
     AppArmor profile granting ``userns``. This is why ``strict`` can be
     unavailable even when ``kernel.unprivileged_userns_clone = 1`` -- the fix is
-    to install the agent6-jail AppArmor profile (packaging/apparmor/) or set the
-    sysctl to 0. Reads the proc file directly; absent on non-AppArmor kernels.
+    ``agent6 system apparmor install`` (or set the sysctl to 0). Reads the proc
+    file directly; absent on non-AppArmor kernels.
     """
     try:
         raw = Path("/proc/sys/kernel/apparmor_restrict_unprivileged_userns").read_text(

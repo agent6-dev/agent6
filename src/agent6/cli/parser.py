@@ -658,6 +658,24 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         " Use for offline/local endpoints (Ollama, llama.cpp) that have no models listing.",
     )
 
+    # `agent6 system <component> <action>`: privileged host/OS setup (uses sudo).
+    system_p = sub.add_parser(
+        "system",
+        help="Host/OS setup that needs privileges (e.g. the AppArmor profile for the"
+        " strict sandbox). Uses sudo.",
+    )
+    system_sub = system_p.add_subparsers(dest="system_command", required=True)
+    apparmor_p = system_sub.add_parser(
+        "apparmor",
+        help="Install/remove the agent6-jail AppArmor profile (Ubuntu 24.04+: lets the"
+        " strict sandbox use user namespaces).",
+    )
+    apparmor_p.add_argument(
+        "action",
+        choices=("install", "remove", "status"),
+        help="install the profile and reload AppArmor, remove it, or report its state.",
+    )
+
     model_p = sub.add_parser(
         "model",
         help="Show or set which model + thinking level each role uses (planner/worker/reviewer).",

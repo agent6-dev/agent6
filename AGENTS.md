@@ -177,7 +177,9 @@ All five must pass; keep the suite green.
   plan editing, `git diff/log` for the review subcommand, `rg` for history
   search, `cli/scriptcheck.py` running ruff/ty with fixed argv to
   statically read generated scripts, which only ever execute via
-  `run_in_jail`, and the `machine run` supervisor that spawns each agent
+  `run_in_jail`, `cli/system_cmds.py` running `cp`/`rm`/`apparmor_parser`
+  via sudo with fixed argv for `agent6 system apparmor` (operator host
+  setup), and the `machine run` supervisor that spawns each agent
   state as a fixed-argv `python -m agent6.cli.machine_agent` subprocess
   whose request travels in a temp file, never on argv). Audit with
   `rg 'subprocess\.(run|Popen)' src/agent6/`.

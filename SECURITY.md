@@ -199,10 +199,12 @@ runs as* (`uid_map "0 <uid> 1"`). As your normal user, the jailed child's
 namespaced-root is your unprivileged uid outside — no real privileges. If you
 start agent6 as **root** (`--allow-root` / `AGENT6_ALLOW_ROOT=1`), that
 inside-root maps to **real root**, so jailed children run as real root confined
-only by Landlock + seccomp + `NO_NEW_PRIVS` — still no filesystem escape and
-still no network beyond the provider (so still no package installs), but a
-strictly larger blast radius. `sudo` adds nothing either way (`NO_NEW_PRIVS`).
-Run agent6 as your normal user and pre-provision with your own sudo.
+only by Landlock + seccomp + `NO_NEW_PRIVS` — still no write outside the
+workspace and no network beyond the provider (so still no package installs),
+but a larger blast radius: as root those allowed *reads* include root-only host
+files (e.g. `/etc/shadow` under `hardened`; `strict`'s minimal rootfs hides
+them). `sudo` adds nothing either way (`NO_NEW_PRIVS`). Run agent6 as your
+normal user and pre-provision with your own sudo.
 
 ### 3. Profile selection
 
@@ -453,13 +455,17 @@ not to bound what an attacker can do.
 - **AppArmor userns restriction** (Ubuntu 24.04+:
   `kernel.apparmor_restrict_unprivileged_userns = 1`) blocks unprivileged
   userns unless the process has an AppArmor profile granting `userns`.
-  agent6 ships such a profile, scoped to just the launcher binary, in
-  [packaging/apparmor/agent6-jail](packaging/apparmor/agent6-jail), the
-  surgical fix (preferred over disabling the sysctl host-wide). agent6's
-  profile detection probes the *real launcher binary* (not
-  `/usr/bin/unshare`), so once the profile is installed it correctly
-  selects `strict`; without it, it uses `hardened` and `agent6 check
-  sandbox` prints how to enable `strict`.
+  agent6 ships such a profile, scoped to just the launcher binary; install
+  it with `agent6 system apparmor install` (`remove` reverts it) -- the
+  surgical fix for strict per-command jailing. agent6's profile detection
+  probes the *real launcher binary* (not `/usr/bin/unshare`), so once the
+  profile is installed it selects `strict` for per-command jailing; without
+  it, `hardened`. One limitation: strict's provider-egress broker
+  (`agent_network = "providers"`, the default) needs the *agent process*
+  itself to create a userns, which the launcher-only profile does not grant
+  -- so a default run downgrades to `hardened` (egress confined by Landlock)
+  with a note unless you set the sysctl to 0 host-wide or use
+  `agent_network = "open"`.
 - **seccomp** is required by the jail; on rare hardened kernels that
   block seccomp from unprivileged callers, the jail fails closed.
 - **Devcontainers**: the jail's `hardened` profile is what you get

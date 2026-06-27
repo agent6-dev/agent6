@@ -75,6 +75,7 @@ from agent6.cli.run import (
     _cmd_resume,
     _cmd_run,
 )
+from agent6.cli.system_cmds import _cmd_system_apparmor
 
 
 def _first_markdown_line(text: str, max_len: int = 80) -> str:
@@ -124,9 +125,17 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
     argcomplete.autocomplete(parser)
     raw = sys.argv[1:] if argv is None else argv
     args = parser.parse_args(_inject_default_verb(raw))
-    root_rc = _enforce_root_policy(getattr(args, "allow_root", False))
-    if root_rc is not None:
-        return root_rc
+    # `agent6 system ...` is a privileged host-setup command that legitimately
+    # runs as root (it writes /etc and reloads AppArmor); it does not run the
+    # LLM, so it is exempt from the "no LLM agent as root" gate.
+    if args.command != "system":
+        root_rc = _enforce_root_policy(getattr(args, "allow_root", False))
+        if root_rc is not None:
+            return root_rc
+    if args.command == "system":
+        if args.system_command == "apparmor":
+            return _cmd_system_apparmor(args.action)
+        parser.error("unknown system command")  # pragma: no cover
     if args.command == "run":
         if args.continue_run:
             if args.task:

@@ -39,8 +39,13 @@ Features:
   on Ubuntu, Debian, and most cloud images); without it agent6 falls back
   to `hardened`. On Ubuntu 24.04+ with
   `kernel.apparmor_restrict_unprivileged_userns = 1`, install the bundled
-  AppArmor profile (`packaging/apparmor/agent6-jail`; `agent6 check sandbox`
-  prints the commands) or set that sysctl to 0.
+  AppArmor profile with `agent6 system apparmor install` (it `sudo`s a profile
+  granting userns to just the jail binary; `agent6 system apparmor remove`
+  reverts it). That enables strict per-command jailing; strict's default
+  provider-egress confinement also needs the agent process itself to create a
+  userns, so for the default `agent_network = "providers"` either set the sysctl
+  to 0 (host-wide) or use `agent_network = "open"` — otherwise a run falls back
+  to `hardened` (still real isolation).
 - Python 3.12 or newer, plus an API key for at least one provider.
 - Building from source needs a Rust toolchain on `PATH`; PyPI wheels bundle
   a prebuilt `agent6-jail`.
