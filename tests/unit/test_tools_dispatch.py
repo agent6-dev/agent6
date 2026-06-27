@@ -598,6 +598,63 @@ def test_run_command_refuses_mutating_git_before_approval(tmp_path: Path) -> Non
         d.dispatch("run_command", {"argv": ["git", "checkout", "bad.py"]})
 
 
+@pytest.mark.parametrize(
+    "argv",
+    [
+        # `-c alias.x=<forbidden>` parses as the benign subcommand `r`/`bd`/`p`
+        # but git expands the alias to the real (forbidden) command.
+        ["git", "-c", "alias.r=reset --hard", "r"],
+        ["/usr/bin/git", "-c", "alias.bd=branch -D", "bd", "main"],
+        ["git", "-c", "alias.p=push", "p"],
+        # core.hooksPath injection (runs an arbitrary hook script).
+        ["git", "-c", "core.hooksPath=/tmp/evil", "status"],
+        # --config-env is the same injection by another spelling.
+        ["git", "--config-env=alias.r=EVIL", "r"],
+        # GIT_CONFIG_* via an env wrapper: stripped for subcommand detection but
+        # still passed to git, so the alias still expands.
+        [
+            "env",
+            "GIT_CONFIG_COUNT=1",
+            "GIT_CONFIG_KEY_0=alias.r",
+            "GIT_CONFIG_VALUE_0=reset --hard",
+            "git",
+            "r",
+        ],
+    ],
+)
+def test_run_command_refuses_git_config_injection(tmp_path: Path, argv: list[str]) -> None:
+    """`git -c alias.x=<forbidden> x` (and --config-env / GIT_CONFIG_* env) hid a
+    forbidden subcommand behind a benign alias name and slipped past the
+    mutating-git refusal. The refusal must reject injected config outright."""
+    cfg = _config_with_run_commands(tmp_path, "yes")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(ToolError) as exc_info:
+        d.dispatch("run_command", {"argv": argv})
+    assert "injected config" in str(exc_info.value)
+
+
+def test_run_command_allows_readonly_git_without_injected_config() -> None:
+    """The injection refusal must NOT fire for legit read-only git: -C (dir
+    change, uppercase) and --no-pager are not config injection."""
+    from agent6.tools.dispatch import (
+        _refuse_mutating_git_command,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    for argv in (
+        ("git", "status"),
+        ("git", "-C", "subdir", "log", "--oneline"),
+        ("git", "--no-pager", "diff"),
+        ("env", "FOO=bar", "git", "show", "HEAD:x.py"),
+        # `-c` AFTER the subcommand is the read-only combined-diff option, not
+        # config injection, so it must not be refused.
+        ("git", "log", "-c", "HEAD"),
+        ("git", "show", "-c", "HEAD"),
+        ("git", "diff", "-c"),
+        ("git", "-C", "subdir", "show", "-c", "HEAD"),
+    ):
+        _refuse_mutating_git_command(argv)  # must not raise
+
+
 def test_unknown_tool_rejected(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     d = ToolDispatcher(root=tmp_path, config=cfg)

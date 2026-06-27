@@ -445,7 +445,56 @@ def _git_subcommand(argv: tuple[str, ...]) -> str | None:
     return None
 
 
+_GIT_CONFIG_INJECTION_MSG = (
+    "run_command refuses `git` with injected config (`-c`, `--config-env`, or a "
+    "`GIT_CONFIG_*` env var): an inline `alias.<name>` or `core.hooksPath` can "
+    "make git run a forbidden subcommand (push, reset --hard, clean, rebase, ...) "
+    "under a benign name, slipping past the mutating-git refusal. Run read-only "
+    "git (status, diff, show, log) WITHOUT injected config; change files with "
+    "apply_patch / apply_edit."
+)
+
+
+def _refuse_git_config_injection(argv: tuple[str, ...]) -> None:
+    """Refuse a git invocation that injects inline config. ``git -c name=value``
+    (and ``--config-env``, and ``GIT_CONFIG_*`` set by a leading ``env`` wrapper)
+    can define an ``alias.<x>`` or ``core.hooksPath`` that makes git execute a
+    FORBIDDEN subcommand under a benign alias name -- e.g.
+    ``git -c alias.r='reset --hard' r`` parses as subcommand ``r`` and would
+    otherwise slip past :func:`_refuse_mutating_git_command`. The read-only git
+    the model is allowed never needs injected config, so refuse it outright."""
+    git_argv = _strip_env_wrapper(argv)
+    if not git_argv or Path(git_argv[0]).name != "git":
+        return
+    # GIT_CONFIG_* assignments in the leading `env` wrapper: _strip_env_wrapper
+    # drops them for subcommand detection, but they are still passed to git.
+    wrapper = argv[: len(argv) - len(git_argv)]
+    for arg in wrapper:
+        if "=" in arg and arg.split("=", 1)[0].startswith("GIT_CONFIG"):
+            raise ToolError(_GIT_CONFIG_INJECTION_MSG)
+    # `-c` / `--config-env` only inject config when they appear as a GLOBAL
+    # option (BEFORE the subcommand): `git -c k=v <sub>`. AFTER the subcommand,
+    # `-c` is an ordinary read-only option (combined-diff for `git log/show/diff
+    # -c`), so we must stop at the subcommand and not block those. Walk the
+    # leading global options exactly as _git_subcommand does.
+    idx = 1
+    while idx < len(git_argv):
+        arg = git_argv[idx]
+        if arg == "--":
+            return
+        if arg in {"-c", "--config-env"} or arg.startswith("--config-env="):
+            raise ToolError(_GIT_CONFIG_INJECTION_MSG)
+        if arg in _GIT_GLOBAL_OPTIONS_WITH_VALUE:
+            idx += 2
+            continue
+        if arg.startswith(_GIT_GLOBAL_OPTIONS_WITH_VALUE_PREFIXES) or arg.startswith("-"):
+            idx += 1
+            continue
+        return  # reached the subcommand; a later `-c` is a read-only option
+
+
 def _refuse_mutating_git_command(argv: tuple[str, ...]) -> None:
+    _refuse_git_config_injection(argv)
     subcommand = _git_subcommand(argv)
     if subcommand not in _GIT_MUTATING_SUBCOMMANDS:
         return
