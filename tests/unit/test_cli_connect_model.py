@@ -18,6 +18,10 @@ from agent6.config_layer import resolved_state_dir
 def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "g"))
     monkeypatch.chdir(tmp_path)
+    # Default to an interactive terminal: the getpass-path tests below assert
+    # the masked-input behaviour, which `connect` only takes when stdin is a
+    # TTY. Under pytest stdin reports non-TTY; the non-TTY path has its own test.
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     return tmp_path / "g"
 
 
@@ -44,6 +48,25 @@ def test_connect_stores_key_and_provider_and_never_execs(
     gc = (tmp_path / "g" / "config.toml").read_text(encoding="utf-8")
     assert "[providers.anthropic]" in gc
     assert calls == []
+
+
+def test_connect_non_tty_reads_plain_input_without_getpass(
+    iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Scripted/piped connect (no controlling terminal): getpass would print a
+    # GetPassWarning + "input may be echoed" line. The non-TTY path reads a
+    # plain line via input() instead, never touching getpass.
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+
+    def _boom(*_a: object, **_k: object) -> str:
+        raise AssertionError("getpass must not be called on the non-TTY path")
+
+    monkeypatch.setattr("agent6.cli.connect.getpass.getpass", _boom)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "sk-ant-PIPED")
+
+    rc = main(["connect", "--provider", "anthropic"])
+    assert rc == 0
+    assert secrets.resolve_api_key("anthropic", None) == "sk-ant-PIPED"
 
 
 def test_connect_rejects_non_bare_key_provider_name(

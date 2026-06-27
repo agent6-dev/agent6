@@ -33,6 +33,15 @@ def _prompt_api_key(name: str) -> str:
     logged.
     """
     prompt = f"API key for {name} (input hidden, blank for none): "
+    if not sys.stdin.isatty():
+        # No controlling terminal (piped/scripted connect): getpass would fall
+        # back to an unmasked read AND print a GetPassWarning about echo. Read a
+        # plain line instead -- echo is moot without a terminal, and the scary
+        # warning is suppressed.
+        try:
+            return input(prompt).strip()
+        except EOFError:
+            return ""
     masked = False
     try:
         api_key = getpass.getpass(prompt, echo_char="*").strip()  # type: ignore[call-arg]
@@ -137,6 +146,15 @@ def _cmd_connect(*, provider: str, to_repo: bool) -> int:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
         print(f"Saved key to {saved} (0600).")
+    elif api_format == "anthropic":
+        # The Anthropic api_format always sends a key; a keyless block is
+        # unusable and `agent6 run` would later fail with "no API key". Say so
+        # now rather than contradicting ourselves one command later.
+        print(
+            f"WARNING: no key entered, but the Anthropic API format requires one.\n"
+            f"  [providers.{name}] is written but not usable yet -- rerun"
+            " `agent6 connect`\n  (or set the api_key_env var) before `agent6 run`."
+        )
     else:
         print("No key entered; assuming an unauthenticated/local endpoint.")
 
