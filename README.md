@@ -86,7 +86,7 @@ register-python-argcomplete --shell fish agent6 > ~/.config/fish/completions/age
 # Connect a provider once (stored in ~/.config/agent6/, key in a 0600
 # secrets file). Works across every repo.
 agent6 connect                # interactive: pick provider, paste API key
-agent6 model worker anthropic claude-sonnet-4-5
+agent6 model worker anthropic claude-sonnet-4-6
 
 # Run the agent on a task -- that's it. agent6 infers a verify command for
 # the repo if you haven't set one.
@@ -212,7 +212,7 @@ api_key_env = "ANTHROPIC_API_KEY"
 
 [models.worker]
 provider = "anthropic"
-model = "claude-sonnet-4-5"
+model = "claude-sonnet-4-6"
 ```
 
 Budget ceilings can be overridden per run: `agent6 run --max-usd 5 "..."`,

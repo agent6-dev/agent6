@@ -228,7 +228,7 @@ text.
 ```toml
 [states.classify]
 kind  = "agent"
-model = "claude-sonnet-4-5"      # any configured provider model
+model = "claude-sonnet-4-6"      # any configured provider model
 prompt = """
 Classify the item at path {{ cursor }}.
 Call finish_run with JSON {label, confidence}.
@@ -882,7 +882,7 @@ when = [
 
 [states.classify]
 kind  = "agent"
-model = "claude-sonnet-4-5"
+model = "claude-sonnet-4-6"
 prompt = """
 Classify these pending items: {{ pending | json }}
 Call finish_run with JSON {label:"urgent"|"normal"|"spam", confidence:0..1}.
