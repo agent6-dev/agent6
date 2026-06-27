@@ -2498,3 +2498,20 @@ def test_resume_snapshot_carries_verify_command(tmp_path: Path) -> None:
     del raw["verify_command"]
     snap.write_text(_json.dumps(raw), encoding="utf-8")
     assert load_resume_snapshot(snap).verify_command is None
+
+
+def test_open_tasks_for_checkoff_excludes_auto_root() -> None:
+    # The tier-2 compaction check-off must never offer the auto-root (parent_id
+    # is None): a summariser listing it would mark the whole run passed mid-run.
+    graph_client = MagicMock()
+    graph_client.get_state.return_value = {
+        "nodes": {
+            "root": {"status": "in_progress", "title": "the whole run", "parent_id": None},
+            "01A": {"status": "pending", "title": "subtask A", "parent_id": "root"},
+            "01B": {"status": "in_progress", "title": "subtask B", "parent_id": "root"},
+            "01C": {"status": "passed", "title": "done subtask", "parent_id": "root"},
+        }
+    }
+    wf = _wf(graph_client=graph_client)
+    ids = {nid for nid, _ in wf._open_tasks_for_checkoff()}  # pyright: ignore[reportPrivateUsage]
+    assert ids == {"01A", "01B"}  # root excluded; passed subtask excluded

@@ -2658,6 +2658,12 @@ class Workflow:
             return []
         out: list[tuple[str, str]] = []
         for nid, node in nodes.items():
+            # Subtasks only: never offer the auto-root (parent_id is None) for
+            # check-off, mirroring the finish-gate and surface rules. The root is
+            # the whole-run container, so a mid-run summary must not mark it
+            # passed and end the run early.
+            if node.get("parent_id") is None:
+                continue
             if node.get("status") in ("pending", "in_progress"):
                 out.append((nid, str(node.get("title", ""))[:120]))
         return out
