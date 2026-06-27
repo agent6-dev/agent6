@@ -258,6 +258,18 @@ requires a security review note in the commit message.
 
 There is no `write_file`, `shell`, or `web_fetch`.
 
+### What the agent can set up
+
+agent6 can explore a repo, read and edit it, and run an *already-installed*
+toolchain (compiler, test runner, build tool) jailed via `run_command` /
+`run_verify_command`. It **cannot** install system packages or use `sudo` from
+inside the jail — `NO_NEW_PRIVS` neuters `sudo` (even passwordless), egress is
+confined to your provider, and writes outside the workspace are blocked. So the
+operator provisions the environment (install the toolchain, create the venv,
+fetch deps with your own shell) and agent6 works within it; widen access through
+config (`sandbox.extra_read_paths`, `sandbox.tool_network`), never sudo. See
+[SECURITY.md](SECURITY.md) §2a.
+
 ## How it works
 
 agent6 is a single-loop agent: one provider, one model, one message

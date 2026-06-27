@@ -163,6 +163,47 @@ The jail's policy is passed as a JSON document on stdin from
 `agent6.sandbox.jail.run_in_jail`. The Rust side validates it against a
 strict schema and refuses on any unknown field.
 
+### 2a. Environment setup: sudo, packages, and what the operator provides
+
+The jail is a one-way boundary: the agent works *within* the environment you
+give it and cannot expand it. Concretely, what an agent can and cannot do to the
+host (verified empirically under both `strict` and `hardened`):
+
+- **`sudo` cannot escalate, even with passwordless sudo.** The jail sets
+  `NO_NEW_PRIVS`, so the kernel ignores the setuid bit on `sudo` (and every
+  setuid binary). A jailed `sudo -n true` fails with *"the 'no new privileges'
+  flag is set, which prevents sudo from running as root"* — whether or not the
+  host has a `NOPASSWD` sudoers rule. An agent on a box where *you* can `sudo`
+  freely still cannot.
+- **Installing system packages from inside the jail is impossible.**
+  `apt-get`/`dnf`/`apk` may be present (mounted read-only) but are unusable:
+  they need root (blocked above), network to the package mirrors (egress only
+  permits your provider endpoints, §1b/§7), and writes to `/usr`, `/var`
+  (Landlock denies everything outside the workspace). All three are blocked.
+- **Compiling and running code works** — `run_verify_command` and, when
+  `sandbox.run_commands` permits, `run_command` execute jailed, so the agent can
+  invoke a compiler, test runner, or build tool that is *already installed on
+  the host*. It just cannot install new ones, and a build step that needs the
+  network is blocked unless `sandbox.tool_network` is loosened.
+- **The provisioning model is operator-first.** You install the toolchain,
+  create the venv, and fetch dependencies with your own shell and sudo, *before*
+  or *outside* agent6; agent6 then works inside the jail with what you provided.
+  To widen what a command may read or reach, use config, never sudo:
+  `sandbox.extra_read_paths` (extra read mounts), `sandbox.tool_network` (let
+  jailed commands reach the network), `[providers.*].base_url` (which hosts
+  egress allows). All operator-controlled and visible in `agent6 config show`.
+
+**Running agent6 itself as root is opt-in and weakens the boundary.** Under
+`strict` the jail's user namespace maps inside-uid-0 to *the real uid agent6
+runs as* (`uid_map "0 <uid> 1"`). As your normal user, the jailed child's
+namespaced-root is your unprivileged uid outside — no real privileges. If you
+start agent6 as **root** (`--allow-root` / `AGENT6_ALLOW_ROOT=1`), that
+inside-root maps to **real root**, so jailed children run as real root confined
+only by Landlock + seccomp + `NO_NEW_PRIVS` — still no filesystem escape and
+still no network beyond the provider (so still no package installs), but a
+strictly larger blast radius. `sudo` adds nothing either way (`NO_NEW_PRIVS`).
+Run agent6 as your normal user and pre-provision with your own sudo.
+
 ### 3. Profile selection
 
 You *set* the `sandbox.profile` field; it resolves against the host to an
