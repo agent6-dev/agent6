@@ -189,7 +189,6 @@ def repl_run_init(root: Path) -> None:
     try:
         rc = init_workspace(
             root,
-            force=False,
             repo_config_target=repo_config_path_for(root),
             interactive=sys.stdin.isatty(),
         )

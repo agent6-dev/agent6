@@ -222,21 +222,21 @@ def _setup_agents_md(root: Path, *, profile: str, ask: _Ask) -> None:
 def init_workspace(
     root: Path,
     *,
-    force: bool = False,
     profile: str = "",
     repo_config_target: Path | None = None,
     interactive: bool = False,
 ) -> int:
     """Run the granular setup wizard. Returns a CLI exit code.
 
-    ``interactive`` prompts each step; otherwise (or with ``force``) every step
-    takes its default. ``profile`` overrides ecosystem auto-detection.
+    ``interactive`` prompts each step; otherwise every step takes its default.
+    Either way nothing existing is overwritten. ``profile`` overrides ecosystem
+    auto-detection.
     """
     root = root.resolve()
     cfg_path = repo_config_target or repo_config_path_for(root)
     detected = profile or _detect_profile(root)
-    # In non-interactive mode (or --force) take every step's default answer.
-    ask: _Ask = _ask if (interactive and not force) else _accept_default
+    # Non-interactive: take every step's default answer.
+    ask: _Ask = _ask if interactive else _accept_default
 
     print(f"agent6 setup — {root}")
     print(f"  per-repo config: {cfg_path}  (out of the repo, under your state dir)")

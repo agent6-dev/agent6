@@ -741,14 +741,10 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Optional setup wizard: per-repo config, verify_command, .gitignore, AGENTS.md.",
     )
     init_p.add_argument(
-        "--force",
-        action="store_true",
-        help="Non-interactive: accept every step's default (never overwrites your files).",
-    )
-    init_p.add_argument(
         "--yes",
         action="store_true",
-        help="Skip the interactive prompts and accept the defaults for every step.",
+        help="Skip the interactive prompts and accept the defaults for every step"
+        " (nothing existing is ever overwritten).",
     )
     init_p.add_argument(
         "--profile",

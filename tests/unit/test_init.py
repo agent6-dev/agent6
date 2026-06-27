@@ -27,7 +27,7 @@ def _repo(tmp_path: Path, name: str = "repo") -> Path:
 
 def test_init_empty_dir_creates_scaffold(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
-    rc = init_workspace(repo, force=True)  # force => non-interactive, accept defaults
+    rc = init_workspace(repo)  # default is non-interactive: accept defaults
     assert rc == 0
     assert repo_config_path_for(repo).is_file()  # config lives OUT of the workspace
     assert not (repo / ".agent6").exists()
@@ -40,7 +40,7 @@ def test_init_empty_dir_creates_scaffold(tmp_path: Path) -> None:
 def test_init_infers_verify_for_python_repo(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     (repo / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
-    init_workspace(repo, force=True)
+    init_workspace(repo)
     cfg = load_effective(repo).config
     # No .venv in this fresh repo -> python3 on PATH (the .venv/bin/python default
     # is only used when that interpreter actually exists; see verify_infer).
@@ -50,19 +50,19 @@ def test_init_infers_verify_for_python_repo(tmp_path: Path) -> None:
 def test_init_verify_from_agents_md(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     (repo / "AGENTS.md").write_text("## Verify\n\n```bash\nmake test\n```\n", encoding="utf-8")
-    init_workspace(repo, force=True)
+    init_workspace(repo)
     assert load_effective(repo).config.workflow.verify_command == ("make", "test")
 
 
 def test_init_detects_ecosystem_for_gitignore(tmp_path: Path) -> None:
     py = _repo(tmp_path, "py")
     (py / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
-    init_workspace(py, force=True)
+    init_workspace(py)
     assert "__pycache__/" in (py / ".gitignore").read_text(encoding="utf-8")
 
     rust = _repo(tmp_path, "rust")
     (rust / "Cargo.toml").write_text("[package]\n", encoding="utf-8")
-    init_workspace(rust, force=True)
+    init_workspace(rust)
     assert "target/" in (rust / ".gitignore").read_text(encoding="utf-8")
 
 
@@ -74,7 +74,7 @@ def test_init_never_overwrites_or_writes_suggested(tmp_path: Path) -> None:
     cfgp.write_text('[workflow]\nverify_command = ["my-test"]\n', encoding="utf-8")
     (repo / "AGENTS.md").write_text("# mine\n", encoding="utf-8")
 
-    init_workspace(repo, force=True)
+    init_workspace(repo)
 
     # Existing content untouched, NO .suggested siblings, verify not clobbered.
     assert (repo / "AGENTS.md").read_text(encoding="utf-8") == "# mine\n"
@@ -85,15 +85,15 @@ def test_init_never_overwrites_or_writes_suggested(tmp_path: Path) -> None:
 
 def test_init_gitignore_is_idempotent(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
-    init_workspace(repo, force=True)
+    init_workspace(repo)
     first = (repo / ".gitignore").read_text(encoding="utf-8")
-    init_workspace(repo, force=True)
+    init_workspace(repo)
     assert (repo / ".gitignore").read_text(encoding="utf-8") == first
 
 
 def test_init_gitignore_preserves_existing(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     (repo / ".gitignore").write_text("# pre-existing\nmy-secret-file\n", encoding="utf-8")
-    init_workspace(repo, force=True)
+    init_workspace(repo)
     gi = (repo / ".gitignore").read_text(encoding="utf-8")
     assert "# pre-existing" in gi and "my-secret-file" in gi and "secrets/" in gi

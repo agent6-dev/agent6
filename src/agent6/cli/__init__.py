@@ -351,7 +351,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
     if args.command == "history" and args.history_command == "search":
         return _cmd_history_search(args.query, fixed=not args.regex, run_id=args.run)
     if args.command == "init":
-        return _cmd_init(force=args.force, profile=args.profile, assume_yes=args.yes)
+        return _cmd_init(profile=args.profile, assume_yes=args.yes)
     if args.command == "review":
         return _cmd_review(
             args.config,

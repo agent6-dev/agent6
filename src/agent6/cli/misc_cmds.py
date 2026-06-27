@@ -326,13 +326,12 @@ def _offer_git_setup(root: Path, created: tuple[Path, ...], *, interactive: bool
         print("  Set git user.name / user.email, then: git add -A && git commit")
 
 
-def _cmd_init(*, force: bool, profile: str, assume_yes: bool = False) -> int:
+def _cmd_init(*, profile: str, assume_yes: bool = False) -> int:
     cwd = Path.cwd()
     target = repo_config_path_for(cwd)
-    interactive = not assume_yes and not force and sys.stdin.isatty()
+    interactive = not assume_yes and sys.stdin.isatty()
     rc = init_workspace(
         cwd,
-        force=force,
         profile=profile,
         repo_config_target=target,
         interactive=interactive,
