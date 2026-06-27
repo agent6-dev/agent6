@@ -1183,23 +1183,8 @@ class Workflow:
                     content = json.dumps({"error": str(exc)})
                     self._log(f"  tool_error: {name}: {exc}")
                 except OperatorCommandUnexecutable as exc:
-                    # The operator's verify/metric command cannot run in the jail.
-                    # The model can't fix operator config, so abort loudly instead
-                    # of letting it flail against a verify that never executes (and
-                    # never silently report all_passed on an un-run gate).
-                    self._log(f"LOOP: aborting -- {exc}")
-                    self._emit(
-                        "run.end",
-                        reason="verify_command_unexecutable",
-                        iterations=iteration,
-                        all_passed=False,
-                    )
-                    return RunResult(
-                        completed=False,
-                        reason="verify_command_unexecutable",
-                        summary=str(exc),
-                        iterations=iteration,
-                        tool_calls=state.tool_calls,
+                    return self._unexecutable_abort(
+                        exc, iteration=iteration, tool_calls=state.tool_calls
                     )
                 tool_results.append(
                     {
@@ -1352,11 +1337,20 @@ class Workflow:
                             tool_calls=state.tool_calls,
                         )
                 if not metric_called_after_verify_pass:
-                    metric_feedback_text = self._auto_metric_feedback(
-                        state.metric_history,
-                        iteration=iteration,
-                        sha=sha,
-                    )
+                    # The auto path raises OperatorCommandUnexecutable just like a
+                    # manual run_metric_command would; abort the same graceful way
+                    # the per-tool handler does (it is a distinct exception, NOT a
+                    # ToolError, so _auto_metric_feedback does not swallow it).
+                    try:
+                        metric_feedback_text = self._auto_metric_feedback(
+                            state.metric_history,
+                            iteration=iteration,
+                            sha=sha,
+                        )
+                    except OperatorCommandUnexecutable as exc:
+                        return self._unexecutable_abort(
+                            exc, iteration=iteration, tool_calls=state.tool_calls
+                        )
                     metric_plateau_finish = self._metric_plateau_summary(state.metric_history)
 
             # critic-in-loop triggers.
@@ -2570,6 +2564,30 @@ class Workflow:
         if self.budget is None:
             return None
         return self.budget.fraction_remaining()
+
+    def _unexecutable_abort(
+        self, exc: OperatorCommandUnexecutable, *, iteration: int, tool_calls: int
+    ) -> RunResult:
+        """Graceful abort when an operator verify/metric command cannot run in
+        the jail (e.g. its binary is not on the jail PATH). The model cannot fix
+        operator config, so stop loudly rather than flail against a gate that
+        never executes or silently report success. Shared by the manual per-tool
+        path and the auto-metric-after-verify path so the same misconfiguration
+        ends the same way regardless of who triggered the command."""
+        self._log(f"LOOP: aborting -- {exc}")
+        self._emit(
+            "run.end",
+            reason="verify_command_unexecutable",
+            iterations=iteration,
+            all_passed=False,
+        )
+        return RunResult(
+            completed=False,
+            reason="verify_command_unexecutable",
+            summary=str(exc),
+            iterations=iteration,
+            tool_calls=tool_calls,
+        )
 
     def _worker_max_tokens(self) -> int:
         """Per-call output cap for the worker turn.

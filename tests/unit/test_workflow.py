@@ -476,6 +476,60 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(tmp_path: Path) -> None:
     assert dispatcher.calls == ["run_verify_command", "run_metric_command", "finish_run"]
 
 
+def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: Path) -> None:
+    """An unexecutable metric command must abort the run the SAME graceful way
+    whether the model called run_metric_command or the auto-after-verify path
+    did. Pins the crash where the auto path's `except ToolError` could not catch
+    OperatorCommandUnexecutable (a sibling of ToolError, not a subclass), so the
+    misconfiguration escaped as an uncaught traceback out of the whole run."""
+    from agent6.tools.dispatch import OperatorCommandUnexecutable
+
+    class ProviderStub:
+        # Always pass verify; never call run_metric_command itself, so the AUTO
+        # path is what triggers the unexecutable metric command.
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            del kwargs
+            return _tool_resp("run_verify_command")
+
+    class DispatcherStub:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+            del raw_input
+            self.calls.append(name)
+            if name == "run_verify_command":
+                return {"returncode": 0, "stdout": "", "stderr": "", "duration_s": 0.1}
+            if name == "run_metric_command":
+                raise OperatorCommandUnexecutable("metric command '/x/uv' not in jail")
+            raise AssertionError(f"unexpected tool: {name}")
+
+    provider = ProviderStub()
+    dispatcher = DispatcherStub()
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(verify_command=("true",), metric=SimpleNamespace(goal="minimize")),
+    )
+    wf = _wf(
+        root=tmp_path, config=config, provider=provider, dispatcher=dispatcher, max_iterations=5
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
+
+    with patch("agent6.workflows.loop.commit_all", return_value="abc1234567890"):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="system",
+            messages=messages,
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+        )
+
+    assert result.completed is False
+    assert result.reason == "verify_command_unexecutable"
+    # The auto path triggered it: verify ran, then the auto metric raised.
+    assert dispatcher.calls == ["run_verify_command", "run_metric_command"]
+
+
 def test_drive_loop_finishes_on_metric_plateau(tmp_path: Path) -> None:
     class ProviderStub:
         def __init__(self) -> None:
