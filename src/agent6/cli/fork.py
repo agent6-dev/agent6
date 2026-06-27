@@ -183,14 +183,18 @@ def _cmd_fork(  # noqa: PLR0911
 
     if no_run:
         print(f"[agent6] fork created (not started): {child_id}", file=sys.stderr)
-        print(f"  resume it with: agent6 resume {child_id}", file=sys.stderr)
+        print(f"  resume it with: agent6 resume {child_id} --force-resume", file=sys.stderr)
         return 0
 
-    # Continue the new run from turn N by reusing the resume path.
+    # Continue the new run from turn N by reusing the resume path. force=True: the
+    # fork JUST cut agent6/<child> at the checkpoint sha and checked it out, so the
+    # worktree is aligned by construction. Without this, the resume alignment guard
+    # refuses any fork whose source run never set a DAG cursor (compute_resume_diff
+    # reports snapshot_missing when cursor is None) -- i.e. most simple runs.
     return _cmd_resume(
         config_path,
         child_id,
-        force=False,
+        force=True,
         no_tui=no_tui,
         budget_overrides=budget_overrides,
     )
@@ -245,6 +249,9 @@ def _materialize_fork(
         create_branch_at(cwd, run_branch, forked_from_sha)
     except GitError as exc:
         print(f"ERROR: could not cut fork branch {run_branch}: {exc}", file=sys.stderr)
+        # The fork dir was just materialized; don't leave an orphan run dir +
+        # manifest (and a lineage gap) when the branch couldn't be cut.
+        shutil.rmtree(dst.run_dir, ignore_errors=True)
         return 1
 
     # Append the per-repo lineage event (ts minted here, passed into the pure helper).

@@ -179,6 +179,31 @@ def _seed_source_run(
     return layout
 
 
+def test_fork_cleans_up_run_dir_when_branch_cut_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # If the fork branch already exists at a DIFFERENT sha, create_branch_at
+    # refuses (we never move a branch) -- the just-materialized run dir must be
+    # cleaned up, not left orphaned.
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state_dir = _state_dir(repo)
+    _seed_source_run(state_dir, "src-AAAA11", head_sha=head, turns=(1,))
+    # A second commit, and pre-create the fork branch pointing at it (≠ head).
+    (repo / "b.txt").write_text("y\n")
+    sp.run(["git", "add", "-A"], cwd=repo, check=True)
+    sp.run(["git", "commit", "-qm", "c2"], cwd=repo, check=True)
+    other = sp.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    sp.run(["git", "branch", "agent6/child-BBBB22", other], cwd=repo, check=True)
+
+    rc = _cmd_fork(None, "src", new_run_id="child-BBBB22", no_run=True)
+    assert rc == 1
+    assert not RunLayout(state_dir=state_dir, run_id="child-BBBB22").run_dir.exists()
+
+
 def test_fork_clones_state_writes_lineage_and_branch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -407,6 +432,32 @@ def test_fork_without_id_forks_most_recent_run(
     dst = RunLayout(state_dir=state_dir, run_id="child-BBBB22")
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
     assert manifest["parent_run_id"] == "only-run-AAAA11"  # the only/most-recent run
+
+
+def test_fork_continue_forces_resume_past_alignment_guard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The default `agent6 fork` continue path just cut + checked out the branch
+    # at the fork sha, so the worktree is aligned by construction. It must pass
+    # force=True to _cmd_resume; otherwise a source run with no DAG cursor trips
+    # the snapshot_missing guard and the fork refuses to continue.
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state_dir = _state_dir(repo)
+    _seed_source_run(state_dir, "src-AAAA11", head_sha=head, turns=(1,))
+    captured: dict[str, Any] = {}
+
+    def _fake_resume(config_path: object, run_id: str, *, force: bool, **_kw: object) -> int:
+        captured["force"] = force
+        captured["run_id"] = run_id
+        return 0
+
+    monkeypatch.setattr("agent6.cli.fork._cmd_resume", _fake_resume)
+    rc = _cmd_fork(None, "src", new_run_id="child-BBBB22")  # default: continue
+    assert rc == 0
+    assert captured["force"] is True
+    assert captured["run_id"] == "child-BBBB22"
 
 
 def test_fork_without_id_and_no_runs_errors_cleanly(
