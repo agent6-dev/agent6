@@ -86,6 +86,21 @@ def test_probe_non_openrouter_uses_models(monkeypatch: pytest.MonkeyPatch) -> No
     assert urls == ["https://api.openai.com/v1/models"]
 
 
+def test_probe_openrouter_match_is_host_not_substring(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A proxy whose URL merely CONTAINS "openrouter.ai" (in the path) must use
+    # /models, not OpenRouter's /key. The real host (and subdomains) use /key.
+    urls = _patch_get(monkeypatch, _FakeResp(200, {"data": []}))
+    proxy = OpenAIProviderEntry(
+        api_format="openai", base_url="https://myproxy.com/openrouter.ai/v1"
+    )
+    probe_provider_key(proxy, "sk")
+    assert urls == ["https://myproxy.com/openrouter.ai/v1/models"]
+    urls.clear()
+    sub = OpenAIProviderEntry(api_format="openai", base_url="https://gateway.openrouter.ai/api/v1")
+    probe_provider_key(sub, "sk")
+    assert urls == ["https://gateway.openrouter.ai/api/v1/key"]
+
+
 def test_probe_unsupported_deployment_skips_network(monkeypatch: pytest.MonkeyPatch) -> None:
     # Vertex/Azure have no uniform /models; the probe must NOT make a request.
     urls = _patch_get(monkeypatch, _FakeResp(200))

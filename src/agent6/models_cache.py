@@ -26,6 +26,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 import httpx2
 
@@ -212,7 +213,11 @@ def probe_provider_key(
             ok=True, status="unsupported", detail="no /models listing for this deployment"
         )
     url, headers = _models_endpoint(entry, api_key)
-    if "openrouter.ai" in entry.base_url:
+    # OpenRouter's /models is public (200 for any key); probe its auth-gated /key
+    # instead. Match the parsed host, not a base_url substring (a proxy URL could
+    # merely contain the string).
+    host = (urlsplit(entry.base_url).hostname or "").lower()
+    if host == "openrouter.ai" or host.endswith(".openrouter.ai"):
         url = entry.base_url.rstrip("/") + "/key"
     try:
         resp = httpx2.get(url, headers=headers, timeout=timeout_s)

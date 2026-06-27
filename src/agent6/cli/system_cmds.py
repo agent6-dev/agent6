@@ -108,12 +108,19 @@ def _cmd_system_apparmor(action: Literal["install", "remove", "status"]) -> int:
         if not installed:
             print(f"Nothing to remove: {_APPARMOR_PROFILE_PATH} is not present.")
             return 0
-        # Unload from the kernel first (needs the file), then delete it.
-        ok = _run_priv(["apparmor_parser", "-R", _APPARMOR_PROFILE_PATH], what="unload the profile")
-        ok = _run_priv(["rm", "-f", _APPARMOR_PROFILE_PATH], what="delete the profile") and ok
-        if ok:
-            print("Removed the agent6-jail AppArmor profile. The sandbox falls back to hardened.")
-        return 0 if ok else 1
+        # Unload from the kernel first (best-effort: the profile may be on disk
+        # but not loaded, in which case -R exits non-zero harmlessly), then
+        # delete the file. Success is "the file is gone", not the -R exit.
+        _run_priv(["apparmor_parser", "-R", _APPARMOR_PROFILE_PATH], what="unload the profile")
+        _run_priv(["rm", "-f", _APPARMOR_PROFILE_PATH], what="delete the profile")
+        if Path(_APPARMOR_PROFILE_PATH).is_file():
+            print(
+                f"ERROR: {_APPARMOR_PROFILE_PATH} is still present after removal.",
+                file=sys.stderr,
+            )
+            return 1
+        print("Removed the agent6-jail AppArmor profile. The sandbox falls back to hardened.")
+        return 0
 
     # install
     from agent6.sandbox.jail import _locate_jail_binary  # noqa: PLC0415 - avoid import cycle

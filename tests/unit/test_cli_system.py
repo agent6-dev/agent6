@@ -72,7 +72,30 @@ def test_remove_unloads_then_deletes(
     profile = tmp_path / "agent6-jail"
     profile.write_text("x", encoding="utf-8")
     monkeypatch.setattr(sc, "_APPARMOR_PROFILE_PATH", str(profile))
+
+    # The recorded mock leaves the file; have `rm` actually delete it so the
+    # post-removal file check (success = file gone) sees success.
+    def _run_priv_rm(argv: list[str], *, what: str) -> bool:
+        priv_calls.append(argv)
+        if argv and argv[0] == "rm":
+            profile.unlink(missing_ok=True)
+        return True
+
+    monkeypatch.setattr(sc, "_run_priv", _run_priv_rm)
     rc = sc._cmd_system_apparmor("remove")  # pyright: ignore[reportPrivateUsage]
     assert rc == 0
     assert priv_calls[0][:2] == ["apparmor_parser", "-R"]  # unload first
     assert priv_calls[1][0] == "rm"  # then delete
+
+
+def test_remove_reports_failure_if_file_remains(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, priv_calls: list[list[str]]
+) -> None:
+    # If the privileged rm couldn't delete the file, removal failed (exit 1) --
+    # but a failed -R (profile present-but-not-loaded) alone must NOT fail it.
+    monkeypatch.setattr(sc, "_apparmor_present", lambda: True)
+    profile = tmp_path / "agent6-jail"
+    profile.write_text("x", encoding="utf-8")
+    monkeypatch.setattr(sc, "_APPARMOR_PROFILE_PATH", str(profile))
+    rc = sc._cmd_system_apparmor("remove")  # pyright: ignore[reportPrivateUsage]
+    assert rc == 1  # priv_calls mock left the file in place
