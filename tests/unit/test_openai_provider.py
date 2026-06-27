@@ -103,6 +103,30 @@ def test_openai_direct_reasoning_uses_top_level_reasoning_effort() -> None:
     assert "reasoning_effort" not in captured["body"]
 
 
+def test_openai_direct_gpt5_honors_reasoning_effort() -> None:
+    """gpt-5 / bare o1 / o3 match _is_openai_direct_reasoning_model but NOT
+    _is_reasoning_model, so a configured reasoning_effort used to be silently
+    dropped (the reasoning block was gated on _is_reasoning_model alone). It must
+    emit the top-level reasoning_effort like any other openai-direct reasoner."""
+    from agent6.providers.openai import _is_reasoning_model  # pyright: ignore[reportPrivateUsage]
+
+    assert _is_reasoning_model("gpt-5") is False  # the exact gap this closes
+    captured: dict[str, Any] = {}
+
+    def fake_post(*_a: Any, **kw: Any) -> httpx2.Response:
+        captured["body"] = json.loads(kw["content"])
+        return _fake_response(
+            {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}], "usage": {}}
+        )
+
+    direct = OpenAIProvider(api_key="sk", model="gpt-5", reasoning_effort="high")
+    with mock.patch("httpx2.post", side_effect=fake_post):
+        direct.call(system="s", messages=[{"role": "user", "content": "hi"}])
+    assert captured["body"].get("reasoning_effort") == "high"
+    assert "reasoning" not in captured["body"]  # not the nested OpenRouter object
+    assert "max_completion_tokens" in captured["body"]  # the direct rename still applies
+
+
 def test_call_merges_extra_body() -> None:
     # extra_body (e.g. OpenRouter `provider` routing) is merged into the request
     # body, last, so an operator can pin a caching/fast backend.

@@ -358,7 +358,12 @@ class OpenAIProvider:
         # mediocre output. The automatic loop-level suppression
         # (per-turn + latch) was therefore removed. The
         # "off" knob remains for explicit operator/bench use.
-        if _is_reasoning_model(self.model):
+        # `is_openai_direct_reasoning` (gpt-5, bare o1/o3) is a separate
+        # predicate from `_is_reasoning_model` and does NOT imply it, so gate on
+        # both: otherwise the configured `thinking`/reasoning_effort is silently
+        # dropped for exactly the api.openai.com models whose only reasoning
+        # control IS top-level `reasoning_effort`.
+        if _is_reasoning_model(self.model) or is_openai_direct_reasoning:
             # Precedence: per-call argument > provider default (from config
             # `thinking`) > AGENT6_REASONING_EFFORT env > "low".
             effective_reasoning = (
