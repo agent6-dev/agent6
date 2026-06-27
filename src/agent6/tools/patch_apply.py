@@ -439,7 +439,7 @@ def apply_v4a_text(patch_text: str, original: str | None) -> tuple[str, str]:  #
     if not hunks:
         raise PatchError(f"V4A `*** Update File: {path}` has no hunks")
     content = original
-    for old_block, new_block in hunks:
+    for hints, old_block, new_block in hunks:
         if old_block == "":
             raise PatchError(
                 f"V4A hunk for {path!r} has no context/removed lines to anchor on; "
@@ -452,39 +452,55 @@ def apply_v4a_text(patch_text: str, original: str | None) -> tuple[str, str]:  #
                 f"the file byte-for-byte. Closest-anchor failed; re-read and retry.\n"
                 f"Expected block:\n{_render_lines(old_block.split(chr(10)))}"
             )
-        if count > 1:
+        if count == 1:
+            content = content.replace(old_block, new_block, 1)
+            continue
+        # The block itself repeats; the `@@ <section>` hints disambiguate it. We
+        # only apply when the hints pin a SINGLE occurrence -- otherwise the hunk
+        # stays ambiguous and we refuse rather than edit the wrong copy.
+        idx = _v4a_locate_with_hints(content, hints, old_block)
+        if idx is None:
             raise PatchError(
                 f"V4A hunk context is ambiguous in {path!r} ({count} matches); include "
-                "more surrounding context lines so it is unique"
+                "more surrounding context lines, or a `@@ <section>` marker naming the "
+                "enclosing def/class, so the location is unique"
             )
-        content = content.replace(old_block, new_block, 1)
+        content = content[:idx] + new_block + content[idx + len(old_block) :]
     return path, content
 
 
-def _v4a_split_hunks(section: list[str]) -> list[tuple[str, str]]:
-    """Split a V4A Update body into (old_block, new_block) string pairs.
+def _v4a_split_hunks(section: list[str]) -> list[tuple[tuple[str, ...], str, str]]:
+    """Split a V4A Update body into ``(hints, old_block, new_block)`` tuples.
 
-    `@@`-prefixed section markers start a new hunk and are dropped (they are
-    locator hints, not matched content). Within a hunk, ` `/`-` lines build the
-    old block and ` `/`+` lines build the new block.
+    A ``@@ <text>`` line is a section LOCATOR HINT for the hunk that follows: its
+    text (typically a ``def``/``class`` line) names the enclosing region, used to
+    disambiguate when the hunk's own context lines repeat elsewhere in the file.
+    One or more ``@@`` lines may precede a hunk; an empty ``@@`` is a bare hunk
+    separator with no hint. Within a hunk, ` `/`-` lines build the old block and
+    ` `/`+` lines build the new block.
     """
-    hunks: list[tuple[list[str], list[str]]] = []
+    hunks: list[tuple[list[str], list[str], list[str]]] = []
+    cur_hints: list[str] = []
     cur_old: list[str] = []
     cur_new: list[str] = []
-    started = False
 
     def flush() -> None:
-        nonlocal cur_old, cur_new, started
-        if started and (cur_old or cur_new):
-            hunks.append((cur_old, cur_new))
-        cur_old, cur_new = [], []
+        nonlocal cur_hints, cur_old, cur_new
+        if cur_old or cur_new:
+            hunks.append((cur_hints, cur_old, cur_new))
+        cur_hints, cur_old, cur_new = [], [], []
 
     for ln in section:
         if ln.startswith("@@"):
-            flush()
-            started = True
+            # A `@@` after hunk content starts a NEW hunk; flush the current one
+            # first (which clears its hints). Then record this `@@`'s text as a
+            # locator hint for the hunk now beginning (empty `@@` = no hint).
+            if cur_old or cur_new:
+                flush()
+            hint = ln[2:].strip()
+            if hint:
+                cur_hints.append(hint)
             continue
-        started = True
         if ln == "" or ln.startswith(" "):
             text = ln[1:] if ln.startswith(" ") else ""
             cur_old.append(text)
@@ -496,4 +512,25 @@ def _v4a_split_hunks(section: list[str]) -> list[tuple[str, str]]:
         else:
             raise PatchError(f"Unexpected V4A hunk line (expected ` `, `-`, `+`, `@@`): {ln!r}")
     flush()
-    return [("\n".join(o), "\n".join(n)) for o, n in hunks]
+    return [(tuple(h), "\n".join(o), "\n".join(n)) for h, o, n in hunks]
+
+
+def _v4a_locate_with_hints(content: str, hints: tuple[str, ...], old_block: str) -> int | None:
+    """Index at which to apply *old_block* when it occurs more than once, using
+    the ``@@`` *hints* to disambiguate. Returns None when the hints do not
+    resolve it to a SINGLE location (the caller then reports the hunk as
+    ambiguous -- we never guess which occurrence to edit). Each hint must appear
+    in order; ``old_block`` must then occur exactly once at or after the last
+    hint's position."""
+    search_from = 0
+    last_hint_pos = 0
+    for hint in hints:
+        pos = content.find(hint, search_from)
+        if pos == -1:
+            return None
+        last_hint_pos = pos
+        search_from = pos + len(hint)
+    region = content[last_hint_pos:]
+    if region.count(old_block) != 1:
+        return None
+    return last_hint_pos + region.index(old_block)

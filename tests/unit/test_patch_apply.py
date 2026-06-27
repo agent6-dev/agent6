@@ -228,6 +228,29 @@ def test_v4a_ambiguous_context_rejected() -> None:
         apply_v4a_text(patch, "x = 1\nx = 1\n")
 
 
+def test_v4a_section_hint_disambiguates_repeated_block() -> None:
+    # `return 1` appears in both a() and b(); the `@@ def b():` section marker
+    # pins the edit to b() instead of failing as ambiguous (the locator-hint bug).
+    orig = "def a():\n    return 1\n\ndef b():\n    return 1\n"
+    patch = (
+        "*** Begin Patch\n*** Update File: m.py\n"
+        "@@ def b():\n-    return 1\n+    return 2\n*** End Patch"
+    )
+    _, new = apply_v4a_text(patch, orig)
+    assert new == "def a():\n    return 1\n\ndef b():\n    return 2\n"
+
+
+def test_v4a_section_hint_that_does_not_resolve_stays_ambiguous() -> None:
+    # The hint is present but the block still repeats AFTER it, so we must refuse
+    # rather than guess which occurrence to edit (safety: never mis-apply).
+    orig = "class C:\n    x = 1\n    x = 1\n"
+    patch = (
+        "*** Begin Patch\n*** Update File: m.py\n@@ class C:\n-    x = 1\n+    x = 2\n*** End Patch"
+    )
+    with pytest.raises(PatchError, match="ambiguous"):
+        apply_v4a_text(patch, orig)
+
+
 def test_v4a_context_not_found_rejected() -> None:
     patch = "*** Begin Patch\n*** Update File: a.py\n@@\n-missing\n+x\n*** End Patch"
     with pytest.raises(PatchError, match="not found"):
