@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from textual.app import App
-from textual.widgets import Button, Input
+from textual.widgets import Button, Input, RichLog
 
 from agent6.ui.app import Agent6TUI
 from agent6.ui.modals import ApprovalModal, QuestionModal, SteerModal
@@ -98,6 +98,7 @@ def test_render_and_modals(tmp_path: Path) -> None:
                 _ev(type="diff.updated", index=1, patch="--- a\n+++ b\n@@ [x] @@"),
             ):
                 app._handle_event(ev)
+            app._tick()  # the coalesced repaint happens in the tick, not per event
             await pilot.pause()
 
             # Approval modal: keyboard 'y' must reach the modal (routing bug).
@@ -183,6 +184,88 @@ def test_dashboard_back_vs_quit(tmp_path: Path) -> None:
     assert asyncio.run(press(True, "ctrl+q")) == QUIT_HUB_CODE  # only Ctrl+Q quits the hub
     assert asyncio.run(press(False, "q")) == 0  # standalone: just close
     assert asyncio.run(press(False, "ctrl+q")) == 0  # standalone: just close
+
+
+def test_dashboard_pane_maximize_and_restore(tmp_path: Path) -> None:
+    """f maximizes the focused pane to full screen; Esc and f both restore it. Esc
+    while maximized must minimize (not also back out to the hub), and a non-default
+    pane like the diff must be focusable for this to work."""
+
+    async def scenario() -> None:
+        (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+        app = Agent6TUI(tmp_path, from_hub=True)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            diff = app.query_one("#diff")
+            diff.focus()
+            await pilot.pause()
+            await pilot.press("f")  # maximize the focused pane
+            await pilot.pause()
+            assert app.screen.maximized is diff
+            await pilot.press("escape")  # Esc restores, does NOT exit to the hub
+            await pilot.pause()
+            assert app.screen.maximized is None
+            assert app.return_value is None  # still running; Esc was consumed by minimize
+            diff.focus()
+            await pilot.press("f")
+            await pilot.pause()
+            assert app.screen.maximized is diff
+            await pilot.press("f")  # f toggles back too
+            await pilot.pause()
+            assert app.screen.maximized is None
+
+    asyncio.run(scenario())
+
+
+def test_dashboard_diff_pane_scrolls(tmp_path: Path) -> None:
+    """A long diff overflows the diff pane, which is a scroll container, so it can be
+    scrolled -- inline and while maximized (regression: it used to be a plain Static
+    that just clipped)."""
+
+    async def scenario() -> None:
+        (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+        app = Agent6TUI(tmp_path)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            long_patch = "--- a\n+++ b\n" + "".join(f"+added line {i}\n" for i in range(200))
+            app._handle_event(_ev(type="diff.updated", index=1, patch=long_patch))
+            app._tick()
+            await pilot.pause()
+            diff = app.query_one("#diff")
+            assert diff.max_scroll_y > 0  # content overflows the pane -> scrollable
+            diff.focus()
+            await pilot.press("f")  # maximize, then it must still scroll
+            await pilot.pause()
+            assert app.screen.maximized is diff
+            assert diff.max_scroll_y > 0
+
+    asyncio.run(scenario())
+
+
+def test_dashboard_inline_log_is_a_bounded_gapless_window(tmp_path: Path) -> None:
+    """Coalescing folds many events between paints. The inline log must stay a bounded
+    window: feed a pre-burst, then a burst larger than the window in one tick, and the
+    RichLog caps at MAX_LOG_TAIL -- the gap-causing pre-burst lines are evicted, so it
+    is the gapless recent window, not pre-burst lines + a hole + the tail."""
+    from agent6.ui.state import MAX_LOG_TAIL
+
+    async def scenario() -> None:
+        (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+        app = Agent6TUI(tmp_path)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            for i in range(100):
+                app._handle_event(_ev(type="loop.tool.call", name=f"pre{i}"))
+            app._tick()
+            await pilot.pause()
+            for i in range(MAX_LOG_TAIL + 100):
+                app._handle_event(_ev(type="loop.tool.call", name=f"burst{i}"))
+            app._tick()
+            await pilot.pause()
+            log = app.query_one("#log", RichLog)
+            assert len(log.lines) == MAX_LOG_TAIL  # bounded; pre-burst lines evicted
+
+    asyncio.run(scenario())
 
 
 def test_dashboard_footer_shows_one_dual_back_key(tmp_path: Path) -> None:

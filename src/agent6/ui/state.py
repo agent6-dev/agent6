@@ -121,17 +121,17 @@ def initial_state() -> RunState:
 
 
 _MAX_TOOL_HISTORY = 50
-_MAX_LOG_TAIL = 400
+MAX_LOG_TAIL = 400  # public: the inline log RichLog caps to this so it stays a gapless window
 
 
 def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PLR0911, PLR0912, PLR0915
     """Fold one event into the run state. Pure function."""
     etype = event.get("type", "")
     log_line = format_log_line(event)
-    new_log = _push_bounded(state.log_tail, log_line, _MAX_LOG_TAIL)
+    new_log = _push_bounded(state.log_tail, log_line, MAX_LOG_TAIL)
     # log_count is monotonic; log_tail is a sliding window. A live viewer must
     # diff on the count (which keeps growing) -- diffing on len(log_tail) freezes
-    # the panel once the window saturates at _MAX_LOG_TAIL.
+    # the panel once the window saturates at MAX_LOG_TAIL.
     state = replace(state, log_tail=new_log, log_count=state.log_count + 1)
 
     match etype:

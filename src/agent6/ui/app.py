@@ -31,7 +31,7 @@ try:
     from textual.app import App, ComposeResult, SystemCommand
     from textual.binding import Binding
     from textual.command import DiscoveryHit, Hit, Hits, Provider
-    from textual.containers import Horizontal, Vertical
+    from textual.containers import Horizontal, VerticalScroll
     from textual.css.query import NoMatches
     from textual.screen import Screen
     from textual.widgets import (
@@ -62,6 +62,7 @@ from agent6.ui.logview import LogScreen
 from agent6.ui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.modals import ApprovalModal, QuestionModal, SteerModal
 from agent6.ui.state import (
+    MAX_LOG_TAIL,
     ApprovalPrompt,
     QuestionPrompt,
     RunState,
@@ -107,6 +108,14 @@ class _Agent6Commands(Provider):
 QUIT_HUB_CODE = 99
 
 
+class _ScrollPane(VerticalScroll):
+    """A scrollable pane that can be tabbed to and maximized (f). VerticalScroll is
+    focusable but disables maximize by default, so re-enable it; the content is a
+    child Static the dashboard updates in place."""
+
+    ALLOW_MAXIMIZE = True
+
+
 class Agent6TUI(App[int]):
     TITLE = "agent6"
     CSS = (
@@ -114,19 +123,23 @@ class Agent6TUI(App[int]):
         + """
     Screen { layers: base dropdown; }
     #top { height: 4; padding: 0 1; }
-    #mid { height: 1fr; }
-    #left { width: 38%; }
+    /* Top row: the task graph is usually a few nodes, so it stays compact beside
+       the model's live output. */
+    #head { height: 28%; }
+    #plan { width: 32%; border: round $primary; }
+    #stream { width: 1fr; border: round $primary; padding: 0 1; }
+    /* The tool table spans the full width so all four columns stay visible. */
+    #tools { height: 20%; border: round $primary; }
+    /* Log and diff share the tallest row; press f to maximize either full-screen. */
+    #body { height: 1fr; }
+    #log { width: 1fr; border: round $primary; }
+    #diff { width: 1fr; border: round $primary; padding: 0 1; }
+    /* The stream/diff bodies fill their scroll pane so long content scrolls. */
+    #stream-body, #diff-body { width: 1fr; height: auto; }
+    #budget { width: 1fr; height: 3; border: round $primary; padding: 0 1; }
     /* Uniform resting border (matches the home table + config card); the focused
-       panel goes $accent. (Standardized -- was per-panel colour-coded.) */
-    #plan { height: 1fr; border: round $primary; }
-    #budget { height: 3; border: round $primary; padding: 0 1; }
-    #right { width: 1fr; }
-    #stream { height: 28%; border: round $primary; padding: 0 1; }
-    #tools { height: 24%; border: round $primary; }
-    #log { height: 1fr; border: round $primary; }
-    #diff { height: 26%; border: round $primary; padding: 0 1; }
-    /* Highlight whichever panel currently has keyboard focus. */
-    #plan:focus, #tools:focus, #log:focus { border: round $accent; }
+       panel goes $accent. */
+    #plan:focus, #stream:focus, #tools:focus, #log:focus, #diff:focus { border: round $accent; }
     """
     )
 
@@ -143,6 +156,7 @@ class Agent6TUI(App[int]):
                 MenuItem("Steer the run", "steer", "s"),
                 MenuItem("Next pane", "focus_next", "Tab"),
                 MenuItem("Prev pane", "focus_previous", "Shift+Tab"),
+                MenuItem("Maximize pane", "fullscreen", "f"),
                 MenuItem("Full log…", "view_logs", "l"),
                 MenuItem("Conversation…", "view_transcript", "t"),
                 MenuItem("Log → top", "scroll_log_home", "g"),
@@ -171,6 +185,7 @@ class Agent6TUI(App[int]):
         # (g used to be "end" here, contradicting those screens reached via l/t).
         Binding("g", "scroll_log_home", "Log→top", show=False),
         Binding("G", "scroll_log_end", "Log→end", show=True),
+        Binding("f", "fullscreen", "Fullscreen", show=True),
         Binding("question_mark", "help", "Help"),
         # q and Esc both back out to the hub; shown as one "Esc/q Back" footer entry.
         Binding("escape", "to_hub", "Back", key_display="Esc/q"),
@@ -194,6 +209,7 @@ class Agent6TUI(App[int]):
         self._seen_steer = 0
         self._steer_open = False
         self._last_log_count = 0
+        self._dirty = False  # an event arrived; _tick coalesces the repaint
         self._stop = threading.Event()
         # When True (the auto-spawned co-process of `agent6 run`), close the
         # dashboard once the run ends so the parent command returns; `agent6
@@ -206,31 +222,38 @@ class Agent6TUI(App[int]):
     def compose(self) -> ComposeResult:
         yield MenuBar(self.MENUS)  # the top row: menus + "agent6 — <run>"
         yield Static("", id="top")
-        with Horizontal(id="mid"):
-            with Vertical(id="left"):
-                yield Tree("tasks", id="plan")
-                yield ProgressBar(id="budget", total=100, show_eta=False)
-            with Vertical(id="right"):
-                yield Static("", id="stream")
-                yield DataTable(id="tools")
-                # markup=False: log lines contain raw tool args like `args=[a,b]`
-                # which Rich would otherwise try to parse as markup and crash.
-                # auto_scroll off: _render does sticky-bottom itself (snap to the
-                # newest line only when the operator is already at the bottom).
-                yield RichLog(
-                    id="log", highlight=False, markup=False, wrap=False, auto_scroll=False
-                )
-                yield Static("", id="diff")
+        with Horizontal(id="head"):
+            yield Tree("tasks", id="plan")
+            with _ScrollPane(id="stream"):
+                yield Static("", id="stream-body")
+        yield DataTable(id="tools")
+        with Horizontal(id="body"):
+            # markup=False: log lines contain raw tool args like `args=[a,b]` which
+            # Rich would otherwise try to parse as markup and crash. auto_scroll off:
+            # _render does sticky-bottom itself (snap to the newest line only when the
+            # operator is already at the bottom).
+            # max_lines == the state log window: a burst that outruns the window
+            # between coalesced paints evicts the pre-burst lines, so the inline
+            # pane stays a gapless recent window (full history is under `l`).
+            yield RichLog(
+                id="log",
+                highlight=False,
+                markup=False,
+                wrap=False,
+                auto_scroll=False,
+                max_lines=MAX_LOG_TAIL,
+            )
+            with _ScrollPane(id="diff"):
+                yield Static("", id="diff-body")
+        yield ProgressBar(id="budget", total=100, show_eta=False)
         yield Footer()
 
     def on_mount(self) -> None:
         setup_theme(self)  # apply the saved theme before the first paint
         write_tui_pid(self.run_dir, os.getpid())
         self.sub_title = f"run · {self.run_dir.name}"  # menu-bar title context
-        table = self.query_one("#tools", DataTable)
-        table.add_columns("tool", "args", "ok", "summary")
-        self.query_one("#plan", Tree).root.expand()
-        self.query_one("#stream", Static).update(Text("(waiting for the model…)", style="dim"))
+        self.query_one("#tools", DataTable).add_columns("tool", "args", "ok", "summary")
+        self._render()  # initial paint; later paints are coalesced in _tick
         # Auto-spawn close: the reader thread sets `_run_ended` on `run.end`; we
         # poll it from a timer in the app's OWN loop and exit there. Exit()
         # scheduled from inside a call_from_thread callback does not take effect,
@@ -256,13 +279,11 @@ class Agent6TUI(App[int]):
         self.state = apply_event(self.state, event)
         if self.exit_on_end and event.get("type") == "run.end":
             self._run_ended = True
-        # Paint only when the dashboard is the active, mounted screen. A queued
-        # event can arrive while a transcript/log modal covers it, or during
-        # shutdown after its widgets are unmounted; querying them then raises.
-        if self._stop.is_set() or len(self.screen_stack) > 1:
-            return
-        with contextlib.suppress(NoMatches):
-            self._render()
+        # Coalesce: mark dirty and let the 0.2s _tick repaint once. Replaying a
+        # finished run floods hundreds of events on open; rendering each one would
+        # rebuild the whole dashboard per event (UI thrash, and vhs can't capture
+        # the burst, so the tour video skipped past the dashboard).
+        self._dirty = True
 
     def _tick(self) -> None:
         for ap in self.state.pending_approvals:
@@ -280,6 +301,14 @@ class Agent6TUI(App[int]):
             self._seen_steer = self.state.steer_requests
             self._steer_open = True
             self.push_screen(SteerModal(), self._on_steer)
+        # Coalesced repaint: once per tick, and only when the dashboard is the
+        # active, mounted screen. A modal (transcript/log) or shutdown leaves the
+        # dashboard widgets covered or torn down, so querying them raises; defer
+        # the paint (dirty stays set) until it is back on top.
+        if self._dirty and not self._stop.is_set() and len(self.screen_stack) <= 1:
+            self._dirty = False
+            with contextlib.suppress(NoMatches):
+                self._render()
         # Exit only once the run ended AND nothing is still awaiting an answer,
         # so a final approval/question/steer isn't dropped on the way out.
         if (
@@ -341,6 +370,14 @@ class Agent6TUI(App[int]):
         # In the hub loop, signal "quit the hub" via the exit code; standalone,
         # there's nothing to return to, so a plain close (0) is the same thing.
         self.exit(QUIT_HUB_CODE if self.from_hub else 0)
+
+    def action_fullscreen(self) -> None:
+        """Maximize the focused pane; Esc or f again restores the dashboard."""
+        screen = self.screen
+        if screen.maximized is not None:
+            screen.minimize()
+        elif self.focused is not None and self.focused.allow_maximize:
+            screen.maximize(self.focused)
 
     def action_scroll_log_end(self) -> None:
         self.query_one("#log", RichLog).scroll_end(animate=False)
@@ -413,7 +450,7 @@ class Agent6TUI(App[int]):
 
         # Live reasoning / response pane. Built as rich Text so model output is
         # never parsed as markup.
-        stream = self.query_one("#stream", Static)
+        stream = self.query_one("#stream-body", Static)
         st = Text()
         if role is not None and role.in_flight:
             if role.streamed_thinking:
@@ -478,7 +515,7 @@ class Agent6TUI(App[int]):
 
         # Diff (the latest auto-commit) or live verify output. Built as rich Text
         # to avoid markup parsing of diff/verify bodies (which contain brackets).
-        diff_widget = self.query_one("#diff", Static)
+        diff_widget = self.query_one("#diff-body", Static)
         verify = s.last_verify
         dt = Text()
         # A RUNNING or FAILED verify takes precedence so a failure is never
