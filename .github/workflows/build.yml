@@ -9,9 +9,10 @@ name: build
 # so the jail binary is the host arch and no cross-linker is needed. The sdist
 # is architecture-independent, so it is built once (on amd64).
 #
-# Only actions from `actions/*`, `astral-sh/*`, and `pypa/*` are used and
-# pinned to the latest immutable tag. Rust comes pre-installed on both runner
-# images, so no third-party toolchain or cache action is needed.
+# Only actions from `actions/*`, `astral-sh/*`, and `pypa/*` are used. The
+# first-party `actions/*` track a major tag (e.g. @v6) for patches; `setup-uv`
+# and `gh-action-pypi-publish` ship immutable releases, so they are pinned to a
+# full version and bumped by hand. Rust is pre-installed on both runner images.
 
 on:
   push:
@@ -42,7 +43,7 @@ jobs:
             plat_tag: manylinux_2_17_aarch64.musllinux_1_2_aarch64
             sdist: false
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6
 
       - name: Install uv
         uses: astral-sh/setup-uv@v8.1.0
@@ -92,7 +93,7 @@ jobs:
       - name: Verify wheel metadata
         run: uv tool run --from twine twine check dist/*
 
-      - uses: actions/upload-artifact@v7.0.1
+      - uses: actions/upload-artifact@v7
         with:
           name: agent6-dist-${{ matrix.arch }}
           path: dist/

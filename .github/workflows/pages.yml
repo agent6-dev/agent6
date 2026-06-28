@@ -9,8 +9,7 @@ name: pages
 # land on master without redeploying the live site until you cut a release.
 #
 # The screenshots are written into the site artifact itself (no release-asset
-# upload, no committed media): they ship as part of the deployed site, so they
-# never expire and clicking one opens a lightbox instead of a forced download.
+# upload, no committed media), so they ship with the site and never expire.
 #
 # One-time setup: repo Settings > Pages > Source = "GitHub Actions", and a CNAME
 # (docs/CNAME = agent6.dev) with the domain's DNS pointing at GitHub Pages.
@@ -39,7 +38,7 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6
 
       - name: Install uv
         uses: astral-sh/setup-uv@v8.1.0

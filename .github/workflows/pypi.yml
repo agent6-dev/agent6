@@ -31,7 +31,7 @@ jobs:
       - name: Download every arch's wheel + the sdist
         # build.yml uploads one artifact per arch (agent6-dist-amd64 /
         # agent6-dist-arm64); merge them into a single dist/ for upload.
-        uses: actions/download-artifact@v8.0.1
+        uses: actions/download-artifact@v8
         with:
           pattern: agent6-dist-*
           merge-multiple: true
