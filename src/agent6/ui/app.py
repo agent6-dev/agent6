@@ -17,6 +17,7 @@ front-end can mirror this contract.
 
 from __future__ import annotations
 
+import contextlib
 import inspect
 import os
 import threading
@@ -31,6 +32,7 @@ try:
     from textual.binding import Binding
     from textual.command import DiscoveryHit, Hit, Hits, Provider
     from textual.containers import Horizontal, Vertical
+    from textual.css.query import NoMatches
     from textual.screen import Screen
     from textual.widgets import (
         DataTable,
@@ -252,9 +254,15 @@ class Agent6TUI(App[int]):
 
     def _handle_event(self, event: dict[str, object]) -> None:
         self.state = apply_event(self.state, event)
-        self._render()
         if self.exit_on_end and event.get("type") == "run.end":
             self._run_ended = True
+        # Paint only when the dashboard is the active, mounted screen. A queued
+        # event can arrive while a transcript/log modal covers it, or during
+        # shutdown after its widgets are unmounted; querying them then raises.
+        if self._stop.is_set() or len(self.screen_stack) > 1:
+            return
+        with contextlib.suppress(NoMatches):
+            self._render()
 
     def _tick(self) -> None:
         for ap in self.state.pending_approvals:
