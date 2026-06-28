@@ -9,7 +9,7 @@ fields see [security.md](security.md).
 
 | Layer | Path | Set with |
 |---|---|---|
-| built-in defaults | — | (secure defaults, always present) |
+| built-in defaults | (none) | (secure defaults, always present) |
 | global *(default location)* | `$XDG_CONFIG_HOME/agent6/config.toml` (default `~/.config/agent6/config.toml`; or set `AGENT6_CONFIG_HOME`) | `agent6 connect`, `agent6 model` |
 | per-repo *(override)* | `<state-dir>/<repo-id>/config.toml` | `agent6 init`, `agent6 config set --repo` |
 | explicit | `--config FILE` | `agent6 run --config FILE` |
@@ -51,10 +51,10 @@ One backend per block; `<name>` is yours to pick and is referenced from
 `[models.<role>]`. At least one provider is required. Three orthogonal choices
 describe any backend:
 
-- **`api_format`** — the wire dialect (the only field that selects code).
-- **`deployment`** — a named profile for the URL / model-placement / version
+- **`api_format`**: the wire dialect (the only field that selects code).
+- **`deployment`**: a named profile for the URL / model-placement / version
   quirks of *where* that format is hosted.
-- **auth** — `auth_style` plus a static `api_key_env` or a refreshable
+- **auth**: `auth_style` plus a static `api_key_env` or a refreshable
   `token_command`.
 
 So Claude-on-Vertex and Gemini-on-Vertex differ only in `api_format` (both
@@ -70,7 +70,7 @@ for a non-default host); everything else defaults.
 | `api_key_env` | none | Env var holding the key. Omit to use the key stored by `agent6 connect` (secrets.toml), or for unauthenticated local endpoints. The env var (when set) takes precedence. |
 | `token_command` | none | Command (argv) run to mint a short-lived bearer (printed to stdout) instead of a static key. Re-run on a TTL and once on a `401`/`403`. Takes precedence over `api_key_env`. See below. |
 | `token_command_ttl_s` | `300.0` | Seconds to cache `token_command` output before re-running it. |
-| `extra_headers` | `{}` | Extra HTTP headers on every request (e.g. OpenRouter's `HTTP-Referer` / `X-Title`). Not for secrets — use the auth fields. |
+| `extra_headers` | `{}` | Extra HTTP headers on every request (e.g. OpenRouter's `HTTP-Referer` / `X-Title`). Not for secrets; use the auth fields. |
 | `extra_body` | `{}` | Provider-specific JSON merged into every request body (load-bearing keys filtered). See below. |
 | `extra_query` | `{}` | Extra URL query params (e.g. Azure's `api-version`). No secrets here. |
 | `prompt_caching` | `true` | (`anthropic`) Enable Anthropic prompt caching. |
@@ -82,7 +82,7 @@ under different `<name>`s.
 ### Deployments
 
 ```toml
-# Anthropic direct (default) — equivalent to a bare api_format = "anthropic"
+# Anthropic direct (default): equivalent to a bare api_format = "anthropic"
 [providers.anthropic]
 api_format = "anthropic"
 
@@ -94,7 +94,7 @@ base_url = "https://LOCATION-aiplatform.googleapis.com/v1/projects/PROJ/location
 token_command = ["gcloud", "auth", "print-access-token"]
 
 # Claude on Vertex (Anthropic Messages over Vertex: model goes in the URL,
-# anthropic_version in the body — handled for you by deployment = "vertex")
+# anthropic_version in the body, handled for you by deployment = "vertex")
 [providers.vertex-claude]
 api_format = "anthropic"
 deployment = "vertex"
@@ -146,7 +146,7 @@ run's cost summary to confirm it's engaging.
 Some endpoints authenticate with a short-lived bearer that has to be refreshed
 rather than a static key (Vertex's Google OAuth access token, internal OIDC/STS
 gateways). Point `token_command` at any command that prints a current token to
-stdout — e.g. `["gcloud", "auth", "print-access-token"]`, or for Azure AD
+stdout, e.g. `["gcloud", "auth", "print-access-token"]`, or for Azure AD
 `["az", "account", "get-access-token", "--query", "accessToken", "-o", "tsv"]`.
 agent6 runs it, caches the token for `token_command_ttl_s`, re-runs it when that
 elapses, and re-runs it once more on a `401`/`403` so an expired token
@@ -188,7 +188,7 @@ The security boundary. Profiles and the network model are specified in
 | `allow_urls` | `[]` | Extra agent egress hosts under `agent_network = "providers"` (`host`, `host:port`, or URL). Edit with `agent6 config add/remove sandbox.allow_urls <host>`. |
 | `run_commands` | `"ask"` | Whether the LLM gets `run_command`: `yes` / `no` / `ask`. |
 | `protect_git` | `true` | Strict only: re-bind `.git/` read-only in the jail. On the hardened profile the cwd is blanket read-write (no mount namespace to carve), so `.git` is writable by jailed commands there; that is gated by `run_commands`, recoverable (branch-per-run, commits through git_ops), and bounded by the surrounding container. |
-| `extra_read_paths` | `[]` | Extra absolute paths a jailed command may **read + execute** (not write), beyond the system defaults (`/usr /bin /lib …`) and the workspace. For a project whose toolchain/interpreter lives outside the repo — a system conda/virtualenv, a Go/Rust/Node toolchain, a shared data dir. Granted under `hardened` **and** `strict`. Loosens confinement (the child can read more of the host), so list only what the build/test needs. |
+| `extra_read_paths` | `[]` | Extra absolute paths a jailed command may **read + execute** (not write), beyond the system defaults (`/usr /bin /lib …`) and the workspace. Use it for a project whose toolchain/interpreter lives outside the repo: a system conda/virtualenv, a Go/Rust/Node toolchain, a shared data dir. Granted under `hardened` **and** `strict`. Loosens confinement (the child can read more of the host), so list only what the build/test needs. |
 
 ## `[git]`
 
@@ -212,13 +212,13 @@ The security boundary. Profiles and the network model are specified in
 
 | Field | Default | Meaning |
 |---|---|---|
-| `profile` | `""` | Named **config profile** (see [Config profiles](#config-profiles)). A bare top-level key (not inside any section) because it overrides EVERY section. The `--profile` CLI flag overrides it. |
+| `profile` | `""` | Named **config profile** (see [Config profiles](#config-profiles)). A bare top-level key (not inside any section) because it overrides every section. The `--profile` CLI flag overrides it. |
 
 ## `[workflow]`
 
 | Field | Default | Meaning |
 |---|---|---|
-| `verify_command` | `[]` | argv defining "a step succeeded" (run with NO shell — wrap a pipeline as `["sh","-c","a && b"]`). **Optional**: when unset, `agent6 run`/`plan` infer one per run — AGENTS.md `## Verify command` section → repo manifests (package.json/Makefile/pyproject/Cargo/go.mod) → a cheap model call — inject it in-memory (never written to config) and print it. With none inferable, the run is *gateless* (per-step commits, no green gate). Set it to pin a deterministic one. |
+| `verify_command` | `[]` | argv defining "a step succeeded" (run with no shell; wrap a pipeline as `["sh","-c","a && b"]`). **Optional**: when unset, `agent6 run`/`plan` infer one per run (AGENTS.md `## Verify command` section → repo manifests (package.json/Makefile/pyproject/Cargo/go.mod) → a cheap model call), inject it in-memory (never written to config), and print it. With none inferable, the run is *gateless* (per-step commits, no green gate). Set it to pin a deterministic one. |
 | `verify_timeout_s` | `600.0` | Per-call timeout for `verify_command` / `metric.command`. |
 
 ## `[review]`
@@ -254,7 +254,7 @@ fixed allowed-block set (security / sandbox-bypass / off-topic-edit / data-loss 
 verify-uncovered-correctness). Taste, naming, "missing test", and uncited claims
 are downgraded to advisory and can never stall the run; a per-run rejection cap
 disarms the gate after a few blocks. `advisory` (the default) only injects
-findings as guidance — enable `veto`/`quorum` to gate.
+findings as guidance. Enable `veto`/`quorum` to gate.
 
 ## `[context]`
 
@@ -288,14 +288,14 @@ it, so precedence (low → high) is
 
 The most-specific source wins (`--profile` flag, else repo's `profile`,
 else global's; the presets never stack), and the profile beats the config at its
-scope — but a more-specific config layer, an explicit `--config FILE`, or an
+scope. But a more-specific config layer, an explicit `--config FILE`, or an
 individual flag still beats the profile.
 
 | Profile | Bundles |
 |---|---|
-| `quick` | review off, tighter output budget — fast/cheap. |
+| `quick` | review off, tighter output budget; fast/cheap. |
 | `standard` | the plain defaults (no review). The default. |
-| `ultra` | a 3-seat grounded `before_finish` veto panel — thorough review. |
+| `ultra` | a 3-seat grounded `before_finish` veto panel; thorough review. |
 | `paranoid` | 5 explore-tier seats, `before_finish` veto, bigger budget. |
 
 Define your own with a `[profiles.<name>]` table (a partial config); it wins over
@@ -335,7 +335,7 @@ Hard stops; on hit the run aborts (exit 3) and is resumable (raise the limit and
 
 The token ceilings are exact and always enforced. When the worker model's
 price is cached, `best_effort_usd_limit` also converts to token ceilings at
-load (the lower wins per axis), sizing EACH axis to the full dollar budget;
+load (the lower wins per axis), sizing each axis to the full dollar budget;
 the run then stops when estimated spend (reported cost, else price times
 tokens, cache included) crosses the limit. That combined, cache-inclusive USD
 check is the authoritative bound on a USD-budgeted run -- it trips before

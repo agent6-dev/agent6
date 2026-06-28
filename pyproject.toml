@@ -1,27 +1,21 @@
 [project]
 name = "agent6"
 dynamic = ["version"]
-description = "Opinionated, sandboxed Python coding agent."
+description = "A sandboxed coding agent for Linux, tuned for affordable open-weight models."
 readme = "README.md"
 urls = { "Homepage" = "https://agent6.dev", "Documentation" = "https://agent6.dev", "Source" = "https://github.com/agent6-dev/agent6" }
 requires-python = ">=3.12"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Eric Lesiuta" }]
 dependencies = [
-    "pydantic>=2.7,<3",
-    "httpx2>=2.3",
     "argcomplete>=3,<4",
+    "httpx2>=2.3",
+    "pydantic>=2.7,<3",
+    "ruff>=0.6,<1",  # runtime, not dev: lints the scripts `machine create` generates
+    "textual>=0.86",  # the live dashboard; the CLI degrades to `--plain` without it
     "tree-sitter==0.25.2",
     "tree-sitter-language-pack==1.8.1",
-    # The live dashboard (`agent6 run`/`watch`/`plan`/`machine create`). The CLI
-    # degrades to the `--plain` tail + line logger if textual is stripped out.
-    "textual>=0.86",
-    # Lint + typecheck the helper scripts `machine create` generates (and that
-    # `machine check`/`test` re-validate). Bundled at runtime, unlike pyright
-    # (dev-only): both are self-contained wheels, ty especially so. The CLI
-    # degrades gracefully (skips the check) if they're stripped from an install.
-    "ruff>=0.6,<1",
-    "ty>=0.0.46,<0.1",
+    "ty>=0.0.46,<0.1",  # runtime: typechecks the scripts `machine create` generates
 ]
 
 [project.scripts]
@@ -32,24 +26,17 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.version]
-# Single source of truth: src/agent6/__init__.py's `__version__`.
 path = "src/agent6/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agent6"]
-# The compiled jail binary is dropped here by hatch_build.py during the
-# wheel build. It lives in .gitignore, so we have to list it explicitly
-# as an artifact for hatchling to include it in the wheel.
+# The jail binary is gitignored, so list it explicitly or hatchling drops it.
 artifacts = ["src/agent6/sandbox/_bin/agent6-jail"]
-# The Rust crate source + its build dir live inside the package tree
-# (src/agent6/jail) but must never ship in the wheel — the runtime only
-# needs the compiled binary bundled under sandbox/_bin.
+# Ship the compiled binary, not the Rust crate it is built from.
 exclude = ["src/agent6/jail"]
 
-# Bundle the reference docs into the wheel at agent6/_docs/ for the agent6_docs
-# tool, under their canonical UPPERCASE names. README/AGENTS already live
-# uppercase at the repo root; the others live lowercase under docs/ (the site's
-# convention) and ship under the matching uppercase name.
+# Bundle the reference docs into the wheel (agent6/_docs/) for the agent6_docs
+# tool. Sources are lowercase under docs/; they ship under uppercase names.
 [tool.hatch.build.targets.wheel.force-include]
 "README.md" = "agent6/_docs/README.md"
 "AGENTS.md" = "agent6/_docs/AGENTS.md"
@@ -57,24 +44,18 @@ exclude = ["src/agent6/jail"]
 "docs/config.md" = "agent6/_docs/CONFIG.md"
 "docs/security.md" = "agent6/_docs/SECURITY.md"
 
-# Build the Rust `agent6-jail` binary as a side effect of building the
-# wheel and bundle it inside the wheel under agent6/sandbox/_bin/. A plain
-# `uv sync` (editable install) or `uv build` (release) therefore produces a
-# self-contained install — no separate `cargo build` step required. The
-# hook degrades gracefully when cargo is not on PATH (the resulting wheel
-# is pure-Python and `agent6 check sandbox` tells the user to build the
-# binary themselves). For PyPI distribution, set
-# AGENT6_JAIL_TARGET=x86_64-unknown-linux-musl so the bundled binary is a
-# fully static musl binary with no glibc dependency (runs on any Linux); CI
-# does this. Building host-native against a newer glibc would otherwise fail
-# on older systems with `GLIBC_x.yz not found`.
+# Compile agent6-jail during the wheel build and bundle it under
+# agent6/sandbox/_bin/, so `uv sync` or `uv build` is self-contained with no
+# separate cargo step. Without cargo the hook falls back to a pure-Python wheel
+# (`agent6 check sandbox` then explains the missing binary). CI sets
+# AGENT6_JAIL_TARGET=x86_64-unknown-linux-musl so the binary is static and runs
+# on any glibc.
 [tool.hatch.build.targets.wheel.hooks.custom]
 path = "hatch_build.py"
 
 [tool.hatch.build.targets.sdist]
-# The Rust crate sources ship in the sdist so a downstream consumer can build
-# the jail from source. They live under src/agent6/jail (included via
-# "src/agent6"); the compiled binary + build dir are excluded below.
+# Ship the Rust crate sources (under src/agent6) so the jail can be built from
+# the sdist; the binary and build dir are excluded below.
 include = [
     "src/agent6",
     "hatch_build.py",
@@ -87,8 +68,7 @@ include = [
     "tach.toml",
     "LICENSE",
 ]
-# Never ship a built binary or Rust build artifacts inside the sdist; the
-# build hook regenerates the binary from the crate sources.
+# No built binary or Rust artifacts in the sdist; the hook rebuilds it.
 exclude = [
     "src/agent6/sandbox/_bin",
     "src/agent6/jail/target",
@@ -97,10 +77,10 @@ exclude = [
 [dependency-groups]
 dev = [
     "pyright>=1.1.380",
-    "ruff>=0.6,<1",
-    "tach>=0.20",
     "pytest>=8",
     "pytest-cov>=5",
+    "ruff>=0.6,<1",
+    "tach>=0.20",
 ]
 
 [tool.ruff]
@@ -122,17 +102,16 @@ select = [
     "S",                  # bandit
 ]
 ignore = [
-    "PLR0913",  # too many args — fine in our typed APIs
+    "PLR0913",  # too many args; fine in our typed APIs
     "S101",     # asserts allowed
     "S603",     # subprocess: we audit every call site
     "S607",     # subprocess partial path: we use absolute paths
-    "PLR2004",  # magic-value comparisons — noisy in tests
+    "PLR2004",  # magic-value comparisons; noisy in tests
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S", "PLR2004", "PLR0915", "PLC0415", "B017"]
 "bench/**" = ["S", "PLR0912", "PLR0915", "PLC0415", "PLW2901", "SIM105", "SIM114", "SIM115", "E501", "PTH"]
-# Vendored verbatim from the author's picosnitch (relicensed Apache); keep as-is.
 "docs/screenshots/keystroke_overlay.py" = ["PLR0912", "PLR1730"]
 
 [tool.pyright]
@@ -144,22 +123,18 @@ reportUnknownMemberType = false
 reportUnknownVariableType = false
 reportUnknownArgumentType = false
 
-# The `agent6.cli` package is a single CLI split across cohesive modules that
-# share underscore-prefixed helpers among themselves (command dispatch, run
-# scaffolding, toml/egress/provider helpers). That cross-module sharing is the
-# package's own internal API — not a public surface — so the
-# private-usage/unused-symbol checks (which assume `_name` is file-local) only
-# produce noise here. They stay strict everywhere else.
+# cli/ is one CLI split across modules that share underscore-prefixed helpers.
+# That cross-module sharing is the package's internal API, so the private-usage
+# and unused-symbol checks (which assume `_name` is file-local) only add noise
+# here; they stay strict everywhere else.
 [[tool.pyright.executionEnvironments]]
 root = "src/agent6/cli"
 reportPrivateUsage = false
 reportUnusedFunction = false
 reportUnusedClass = false
 
-# The headless TUI tests drive the app through its internal event-fold + timer
-# seams (`_handle_event`, `_tick`) — the same surface a human exercises by
-# hand. Poking those underscored methods is the point of the test, so silence
-# the private-usage check here only.
+# The headless TUI tests poke internal seams (`_handle_event`, `_tick`) on
+# purpose, so silence the private-usage check here only.
 [[tool.pyright.executionEnvironments]]
 root = "tests/ui"
 reportPrivateUsage = false

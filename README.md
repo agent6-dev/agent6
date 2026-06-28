@@ -1,12 +1,12 @@
 # agent6
 
-A sandboxed coding agent for Linux, tuned to stay effective on cheap open-weight models
-(Kimi, GLM, Qwen) as well as Claude. The LLM is treated as adversarial: every command it
-spawns runs inside a custom Rust launcher (`agent6-jail`) built on user namespaces,
-Landlock, seccomp, `pivot_root`, `capset(0)`, and `NO_NEW_PRIVS`, so you can point a weaker
-or untrusted model at a real repository and it cannot escape the workspace, reach the
-network beyond the provider endpoint, or corrupt git history. Runs commit per step and are
-resumable and forkable, so an interrupted or wrong turn is never a dead end.
+A sandboxed coding agent for Linux, tuned to stay effective on affordable open-weight
+models like Kimi, GLM, and Qwen, as well as Claude. The LLM is treated as adversarial:
+every command it spawns runs inside a custom Rust launcher (`agent6-jail`) built on user
+namespaces, Landlock, seccomp, `pivot_root`, `capset(0)`, and `NO_NEW_PRIVS`, so you can
+point a weaker or untrusted model at a real repository and it cannot escape the workspace,
+reach the network beyond the provider endpoint, or corrupt git history. Runs commit per
+step and are resumable and forkable, so an interrupted or wrong turn is never a dead end.
 
 **Full documentation: [agent6.dev](https://agent6.dev)**
 
@@ -72,17 +72,6 @@ explicit `--config FILE`. Every field has a default; security-sensitive fields d
 the safe value (`agent_network = "providers"`, `tool_network = "block"`,
 `run_commands = "ask"`, `protect_git = true`, `git.allow_* = false`), and `git_ops.py`
 refuses `push`, `--force`, and history rewrites unconditionally.
-
-## Documentation
-
-- [Installation](https://agent6.dev/installation/) — requirements, install methods, completion
-- [Getting started](https://agent6.dev/getting-started/) — connect a provider, first run, config basics
-- [Tour](https://agent6.dev/tour/) — screenshots and a short video of the TUI
-- [Configuration](https://agent6.dev/config/) — every field, its default, and its origin
-- [Security model](https://agent6.dev/security/) — threat model, sandbox layers, known limits
-- [Architecture](https://agent6.dev/architecture/) — run/review loops, curator, on-disk layout
-- [State machines](https://agent6.dev/state-machines/) — the `.asm.toml` format and semantics
-- [FAQ](https://agent6.dev/faq/)
 
 ## Benchmarks
 

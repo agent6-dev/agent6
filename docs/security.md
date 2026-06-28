@@ -172,7 +172,7 @@ host (verified empirically under both `strict` and `hardened`):
 - **`sudo` cannot escalate, even with passwordless sudo.** The jail sets
   `NO_NEW_PRIVS`, so the kernel ignores the setuid bit on `sudo` (and every
   setuid binary). A jailed `sudo -n true` fails with *"the 'no new privileges'
-  flag is set, which prevents sudo from running as root"* — whether or not the
+  flag is set, which prevents sudo from running as root"*, whether or not the
   host has a `NOPASSWD` sudoers rule. An agent on a box where *you* can `sudo`
   freely still cannot.
 - **Installing system packages from inside the jail is impossible.**
@@ -180,7 +180,7 @@ host (verified empirically under both `strict` and `hardened`):
   they need root (blocked above), network to the package mirrors (egress only
   permits your provider endpoints, §1b/§7), and writes to `/usr`, `/var`
   (Landlock denies everything outside the workspace). All three are blocked.
-- **Compiling and running code works** — `run_verify_command` and, when
+- **Compiling and running code works.** `run_verify_command` and, when
   `sandbox.run_commands` permits, `run_command` execute jailed, so the agent can
   invoke a compiler, test runner, or build tool that is *already installed on
   the host*. It just cannot install new ones, and a build step that needs the
@@ -196,10 +196,10 @@ host (verified empirically under both `strict` and `hardened`):
 **Running agent6 itself as root is opt-in and weakens the boundary.** Under
 `strict` the jail's user namespace maps inside-uid-0 to *the real uid agent6
 runs as* (`uid_map "0 <uid> 1"`). As your normal user, the jailed child's
-namespaced-root is your unprivileged uid outside — no real privileges. If you
+namespaced-root is your unprivileged uid outside, so no real privileges. If you
 start agent6 as **root** (`--allow-root` / `AGENT6_ALLOW_ROOT=1`), that
 inside-root maps to **real root**, so jailed children run as real root confined
-only by Landlock + seccomp + `NO_NEW_PRIVS` — still no write outside the
+only by Landlock + seccomp + `NO_NEW_PRIVS`: still no write outside the
 workspace and no network beyond the provider (so still no package installs),
 but a larger blast radius: as root those allowed *reads* include root-only host
 files (e.g. `/etc/shadow` under `hardened`; `strict`'s minimal rootfs hides
@@ -212,7 +212,7 @@ You *set* the `sandbox.profile` field; it resolves against the host to an
 *effective profile*: what actually runs. `auto` is never itself an effective
 profile (it is resolved away), and `auto` never resolves to `none` on Linux. No
 silent downgrade: an explicit request the host can't satisfy is refused, not
-weakened. `none` (unsandboxed) is a deliberate, gated opt-out — see its rows below.
+weakened. `none` (unsandboxed) is a deliberate, gated opt-out; see its rows below.
 
 | `sandbox.profile` | Host | Effective profile |
 |---|---|---|
@@ -226,10 +226,10 @@ weakened. `none` (unsandboxed) is a deliberate, gated opt-out — see its rows b
 | `none` *(explicit opt-out)* | a detected container | `none` (the container is the boundary) |
 | `none` | a bare host | ⛔ refuse unless `AGENT6_ALLOW_NO_SANDBOX=1` |
 
-The `none` opt-out runs commands UNSANDBOXED. It is allowed automatically only
-inside a **detected container** — proven by a filesystem marker (`/.dockerenv` or
-`/run/.containerenv`), not a forgeable env var — where the container is the blast
-radius. On a bare host it is refused unless the operator confirms with
+The `none` opt-out runs commands unsandboxed. It is allowed automatically only
+inside a **detected container**, where the container is the blast radius. A
+container is proven by a filesystem marker (`/.dockerenv` or
+`/run/.containerenv`), not a forgeable env var. On a bare host it is refused unless the operator confirms with
 `AGENT6_ALLOW_NO_SANDBOX=1`. Always with a loud startup warning.
 
 The three effective profiles:
