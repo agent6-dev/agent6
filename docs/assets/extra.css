@@ -1,4 +1,4 @@
-/* agent6 docs theme — colours lifted from the TUI themes in
+/* agent6 docs theme: colours lifted from the TUI themes in
    src/agent6/ui/theme.py (agent6-dark / agent6-light) so the site and the
    terminal read as one product. */
 
@@ -9,7 +9,7 @@
   --a6-panel: #2c2c30;     /* panel / table header                     */
   --a6-fg: #c0caf5;        /* soft lavender text                       */
   --a6-primary: #7aa2f7;   /* selection / links                        */
-  --a6-accent: #06f5f3;    /* focus / hover — vivid cyan               */
+  --a6-accent: #06f5f3;    /* focus / hover, vivid cyan               */
   --a6-amber: #ffa62b;     /* footer-key warm amber                    */
 
   --md-hue: 232;
@@ -33,7 +33,7 @@
 }
 
 /* The header tracks the surface (a calm dark bar) rather than a saturated
-   primary block — same low-contrast resting state as the TUI. */
+   primary block, same low-contrast resting state as the TUI. */
 [data-md-color-scheme="slate"] .md-header,
 [data-md-color-scheme="slate"] .md-tabs {
   background-color: var(--a6-surface);

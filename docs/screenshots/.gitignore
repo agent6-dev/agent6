@@ -1,4 +1,4 @@
-# Generated media — we commit the .tape scripts, never the screenshots/GIFs.
+# Generated media; we commit the .tape scripts, never the screenshots or video.
 out/
 *.gif
 *.png

@@ -5,8 +5,8 @@
 #
 # Seeds committed fixtures (docs/screenshots/seed/) into an isolated, temporary
 # agent6 home, then drives the TUI with vhs (docs/screenshots/tour.tape) to
-# capture PNGs + tour.gif / tour.webm under docs/screenshots/out/ (gitignored).
-# No live LLM calls, no network, no API key — everything renders from the seeded
+# capture PNGs + tour.webm under docs/screenshots/out/ (gitignored).
+# No live LLM calls, no network, no API key; everything renders from the seeded
 # run logs. The pages workflow runs this before `mkdocs build`.
 #
 # AGENT6_SCREENSHOTS=placeholder writes flat placeholder images instead (a fast,

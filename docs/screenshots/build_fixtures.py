@@ -20,15 +20,23 @@ import shutil
 from pathlib import Path
 
 # Curated source runs by run id (ids are unique; we glob for the dir). All
-# generic RFC / library reimplementation tasks — safe to publish. We
+# generic RFC / library reimplementation tasks, safe to publish. We
 # deliberately exclude the perf take-home runs.
 SOURCES = [
-    "willing-glen-9ZYWWB",  # url RFC 3986 — rich, the dashboard + transcript star
-    "friendly-crane-1X3ER0",  # csv RFC 4180 — many tool calls
+    "willing-glen-9ZYWWB",  # url RFC 3986: rich, the dashboard + transcript star
+    "friendly-crane-1X3ER0",  # csv RFC 4180: many tool calls
     "tidy-river-165YS6",  # html -> text
     "thoughtful-comet-1TQASW",  # restore click.format_filename
-    "ready-rowan-A5P972",  # csv RFC 4180 — small + clean
+    "ready-rowan-A5P972",  # csv RFC 4180: small + clean
 ]
+
+# The committed willing-glen fixture is hand-trimmed to event 132, a clean mid-run
+# point right after a passing verify and the rich parse_url diff. The full run went
+# on to event 661: around event 383 its recording sandbox lost the interpreter
+# (run_command returns exit 127 "command not found", an environment artifact of the
+# capture, not an agent failure) and it floundered to a failed end. Trimming drops
+# that misleading tail so the featured run shows the dashboard mid-task. Re-apply
+# the trim after rebuilding from source.
 
 # Only one run needs transcripts on disk: the dashboard/transcript star. Hub and
 # dashboard render from logs.jsonl alone; the conversation viewer reads

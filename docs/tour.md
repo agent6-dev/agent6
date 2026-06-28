@@ -16,9 +16,9 @@ cost. Enter opens a run; `c` opens the config page; `?` lists the keys.
 
 ## Run dashboard
 
-Opening a run shows the task graph and budget on the left, and the model's reasoning, the
-tool calls with their results, the live event log, and the latest commit diff on the
-right.
+Opening a run shows the task graph beside the model's live reasoning, then the tool calls
+with their results, and the event log and latest commit diff side by side. A budget bar
+runs along the foot, and `f` maximizes the focused pane to full screen.
 
 ![The run dashboard](screenshots/out/02-run-dashboard.png)
 

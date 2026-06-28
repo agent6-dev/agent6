@@ -1,4 +1,4 @@
-# agent6 TUI tour — captures the release screenshots, with vhs
+# agent6 TUI tour: captures the release screenshots with vhs
 # (https://github.com/charmbracelet/vhs).
 #
 #   bash docs/screenshots/generate.sh        # seeds fixtures, runs this tape
@@ -14,8 +14,8 @@
 # the first keystroke that follows it.
 #
 # This tape's job is the PNGs. vhs requires an Output, but this recording is a
-# throwaway -- the tour.webm video is recorded separately by reel-hub.tape +
-# reel-run.tape (no Screenshots, so the toast timeline stays accurate). The wide
+# throwaway -- the tour.webm video is recorded separately by reel.tape (no
+# Screenshots, so the toast timeline stays accurate). The wide
 # 1920x1080 terminal keeps the dashboard's tool table and diff from clipping.
 Output docs/screenshots/out/_capture.webm
 
