@@ -1,0 +1,6 @@
+digraph agent6 {
+  rankdir=LR;
+  "01KVT5187TQ6CYD25RK80WW97P" [label="# Implement `html_to_text` (HTML → plain text with entities)\n[passed]", style=filled, fillcolor=palegreen];
+  "01KVT578N2JZR9TJATGA0YFVZ9" [label="Implement html_to_text using HTMLParser\n[passed]", style=filled, fillcolor=palegreen];
+  "01KVT5187TQ6CYD25RK80WW97P" -> "01KVT578N2JZR9TJATGA0YFVZ9";
+}

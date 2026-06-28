@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "agent6_version": "0.0.11",
+  "run_id": "ready-rowan-A5P972",
+  "mode": "run",
+  "start_ts": "2026-06-23T08:59:51.894047+00:00",
+  "user_task": "# Implement `parse_csv_row` per RFC 4180\n\n`mylib/csv_parse.py` contains a stub implementation of `parse_csv_row(line: str) -> list[str]`\nthat currently only handles the simplest comma-split case. Make it parse a\nsingle CSV row correctly per RFC 4180.\n\nRequirements (see the docstring in `mylib/csv_parse.py` for the spec\nsummary):\n\n- Fields are separated by commas at the top level.\n- A field MAY be enclosed in double quotes; a comma inside quotes is data,\n  not a separator.\n- Inside a quoted field, two consecutive double-quotes (`\"\"`) represent a\n  literal `\"`.\n- Whitespace at field boundaries is preserved literally (the spec is\n  pedantic about this).\n- A single trailing CR/LF or LF is not part of any field, but CR/LF\n  *inside* a quoted field is preserved.\n- An empty input yields `[\"\"]`.\n\nThe verify command runs `tests/test_basic.py` \u2014 three tests covering the\nshape the stub already handles. They will pass without your edits; treat\nthem as a sanity check, not as a definition-of-done.\n\nThe definition-of-done is the full RFC 4180 behaviour described above.\nYou may run `.venv/bin/python tests/score.py` (or the\n`run_metric_command` tool) to see how many of the hidden edge-case\ninputs pass; the harness will run the same scorer after you finish.\n\nDo not modify files under `tests/`.",
+  "base_sha": "38cf0acdd3d33a6e05c04c28492f0c5440de6053",
+  "base_branch": "master",
+  "run_branch": "agent6/ready-rowan-A5P972",
+  "models": {
+    "worker": {
+      "provider": "openrouter",
+      "model": "moonshotai/kimi-k2.7-code-20260612"
+    },
+    "reviewer": {
+      "provider": "openrouter",
+      "model": "moonshotai/kimi-k2.7-code-20260612"
+    }
+  },
+  "workflow": {
+    "critic": "off",
+    "revise_prompt": "off",
+    "profile": ""
+  }
+}

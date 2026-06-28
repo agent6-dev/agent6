@@ -28,3 +28,6 @@ src/agent6/_docs/
 # tooling state + bench data
 .claude/
 bench/swebench/instances_verified.json
+
+# mkdocs build output (docs/mkdocs.yml builds here via site_dir: ../site)
+/site/

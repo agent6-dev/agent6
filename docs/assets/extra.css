@@ -1,0 +1,144 @@
+/* agent6 docs theme — colours lifted from the TUI themes in
+   src/agent6/ui/theme.py (agent6-dark / agent6-light) so the site and the
+   terminal read as one product. */
+
+/* ---- Dark scheme (mirrors agent6-dark) -------------------------------- */
+[data-md-color-scheme="slate"] {
+  --a6-bg: #161618;        /* near-black charcoal background           */
+  --a6-surface: #202023;   /* raised card                              */
+  --a6-panel: #2c2c30;     /* panel / table header                     */
+  --a6-fg: #c0caf5;        /* soft lavender text                       */
+  --a6-primary: #7aa2f7;   /* selection / links                        */
+  --a6-accent: #06f5f3;    /* focus / hover — vivid cyan               */
+  --a6-amber: #ffa62b;     /* footer-key warm amber                    */
+
+  --md-hue: 232;
+  --md-primary-fg-color: var(--a6-primary);
+  --md-primary-fg-color--light: #8fb3f9;
+  --md-primary-fg-color--dark: #5d86e0;
+  --md-accent-fg-color: var(--a6-accent);
+
+  --md-default-bg-color: var(--a6-bg);
+  --md-default-fg-color: var(--a6-fg);
+  --md-default-fg-color--light: #a9b3df;
+  --md-default-fg-color--lighter: #6f78a0;
+  --md-default-fg-color--lightest: #34384a;
+
+  --md-typeset-a-color: var(--a6-primary);
+  --md-code-bg-color: #1b1b1e;
+  --md-code-fg-color: #c8d3f5;
+
+  --md-footer-bg-color: #0f0f11;
+  --md-footer-bg-color--dark: #0f0f11;
+}
+
+/* The header tracks the surface (a calm dark bar) rather than a saturated
+   primary block — same low-contrast resting state as the TUI. */
+[data-md-color-scheme="slate"] .md-header,
+[data-md-color-scheme="slate"] .md-tabs {
+  background-color: var(--a6-surface);
+  color: var(--a6-fg);
+  border-bottom: 1px solid #2c2c30;
+}
+
+/* ---- Light scheme (mirrors agent6-light) ------------------------------ */
+[data-md-color-scheme="default"] {
+  --a6-bg: #f4f5f8;
+  --a6-surface: #eaecf2;
+  --a6-panel: #dee1ea;
+  --a6-fg: #2a2e3f;
+  --a6-primary: #2e5ba8;
+  --a6-accent: #4c7a2f;        /* green focus accent */
+
+  --md-primary-fg-color: var(--a6-primary);
+  --md-primary-fg-color--light: #3f6dbc;
+  --md-primary-fg-color--dark: #244a8c;
+  --md-accent-fg-color: var(--a6-accent);
+
+  --md-default-bg-color: var(--a6-bg);
+  --md-default-fg-color: var(--a6-fg);
+
+  --md-typeset-a-color: var(--a6-primary);
+  --md-code-bg-color: #eaecf2;
+}
+
+[data-md-color-scheme="default"] .md-header,
+[data-md-color-scheme="default"] .md-tabs {
+  background-color: var(--a6-surface);
+  color: var(--a6-fg);
+  border-bottom: 1px solid var(--a6-panel);
+}
+
+/* Search input should sit on a panel surface in both schemes. */
+.md-search__input {
+  background-color: var(--a6-panel);
+}
+
+/* ---- Home hero -------------------------------------------------------- */
+.a6-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.4rem;
+  padding: 2.2rem 0 1.4rem;
+}
+.a6-hero h1 {
+  font-size: 2.6rem;
+  font-weight: 800;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+.a6-hero .a6-tagline {
+  font-size: 1.05rem;
+  color: var(--md-default-fg-color--light);
+  max-width: 42rem;
+}
+.a6-cta {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 0.6rem;
+}
+.a6-cta .md-button {
+  margin: 0;
+}
+
+/* ---- Feature grid ----------------------------------------------------- */
+.a6-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem;
+  margin: 1.2rem 0;
+}
+.a6-grid .a6-card {
+  border: 1px solid var(--a6-panel);
+  border-radius: 0.5rem;
+  padding: 1rem 1.1rem;
+  background-color: var(--a6-surface);
+}
+.a6-grid .a6-card h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+}
+.a6-grid .a6-card p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--md-default-fg-color--light);
+}
+
+/* Screenshots: rounded, framed, click-to-zoom (glightbox). */
+.md-typeset img[src*="screenshots/"],
+.md-typeset .a6-shot img {
+  border-radius: 0.5rem;
+  border: 1px solid var(--a6-panel);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+}
+
+/* The terminal demo video on the tour page. */
+.md-typeset video {
+  width: 100%;
+  border-radius: 0.5rem;
+  border: 1px solid var(--a6-panel);
+}

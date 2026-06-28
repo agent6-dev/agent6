@@ -1,0 +1,109 @@
+name: pages
+
+# Builds and deploys the docs site (agent6.dev) to GitHub Pages.
+#
+# Heavy by design: it regenerates the TUI screenshots + tour video from the
+# committed seed fixtures (docs/screenshots/seed/) with vhs, so the site's
+# images always match the current UI. Because that is slow, this runs ONLY on a
+# published release or a manual dispatch — NOT on every push. That also lets docs
+# land on master without redeploying the live site until you cut a release.
+#
+# The screenshots are written into the site artifact itself (no release-asset
+# upload, no committed media): they ship as part of the deployed site, so they
+# never expire and clicking one opens a lightbox instead of a forced download.
+#
+# One-time setup: repo Settings > Pages > Source = "GitHub Actions", and a CNAME
+# (docs/CNAME = agent6.dev) with the domain's DNS pointing at GitHub Pages.
+
+on:
+  workflow_dispatch:
+    inputs:
+      screenshots:
+        description: "Regenerate TUI screenshots/video with vhs (uncheck for a fast docs-only deploy)"
+        type: boolean
+        default: true
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time; never cancel an in-progress publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Sync agent6 (the demo repo + the CLI the tape drives)
+        run: uv sync --all-extras
+
+      - name: Install ttyd + ffmpeg + fonts (Ubuntu repos)
+        if: inputs.screenshots != false
+        run: |
+          set -eux
+          sudo apt-get update
+          # fonts-dejavu: the bold mono face keystroke_overlay.py draws toasts in.
+          sudo apt-get install -y ttyd ffmpeg fonts-jetbrains-mono fonts-noto-color-emoji fonts-dejavu
+
+      - name: Install vhs (pinned release, checksum-verified)
+        # vhs is not in the Ubuntu repos. Rather than trust a rolling third-party
+        # apt repo, pin the exact charmbracelet/vhs release and verify its SHA256
+        # before installing. Bump VHS_VERSION and VHS_SHA256 together; the hash is
+        # from the published release asset (sha256sum vhs_<v>_Linux_x86_64.tar.gz).
+        if: inputs.screenshots != false
+        run: |
+          set -eux
+          VHS_VERSION=0.11.0
+          VHS_SHA256=99cb634587eaae0473c1ea377db80c3a048c27f99fe0a7febb1a1e8cb7ee5009
+          TARBALL=vhs_${VHS_VERSION}_Linux_x86_64.tar.gz
+          curl -fsSL -o "$TARBALL" \
+            "https://github.com/charmbracelet/vhs/releases/download/v${VHS_VERSION}/${TARBALL}"
+          echo "${VHS_SHA256}  ${TARBALL}" | sha256sum --check --status
+          tar -xzf "$TARBALL" --strip-components=1 "vhs_${VHS_VERSION}_Linux_x86_64/vhs"
+          sudo install -m755 vhs /usr/local/bin/vhs
+          vhs --version
+
+      - name: Allow unprivileged user namespaces (Ubuntu 24.04 AppArmor)
+        # vhs renders through a headless Chromium whose sandbox needs unprivileged
+        # userns; the default 24.04 AppArmor policy blocks it (same restriction
+        # agent6's strict sandbox hits — see ci.yml).
+        if: inputs.screenshots != false
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Generate screenshots (or placeholders)
+        env:
+          AGENT6_SCREENSHOTS: ${{ inputs.screenshots == false && 'placeholder' || 'full' }}
+        run: |
+          source .venv/bin/activate
+          bash docs/screenshots/generate.sh
+
+      - name: Build the site (strict)
+        run: >
+          uvx --with mkdocs-material==9.7.6 --with mkdocs-glightbox==0.5.2
+          mkdocs build --strict -f docs/mkdocs.yml
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

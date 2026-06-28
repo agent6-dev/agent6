@@ -1,0 +1,135 @@
+site_name: agent6
+site_description: A sandboxed Python coding agent for Linux, tuned to stay effective on cheap open-weight models as well as Claude.
+site_url: https://agent6.dev
+site_author: Eric Lesiuta
+copyright: Apache-2.0
+
+repo_url: https://github.com/agent6-dev/agent6
+repo_name: agent6-dev/agent6
+edit_uri: edit/master/docs/
+
+# This config lives in docs/, so docs_dir is the folder it sits in and the built
+# site goes to a sibling of docs/. Build/serve with: mkdocs ... -f docs/mkdocs.yml
+docs_dir: .
+site_dir: ../site
+
+# Tooling and seed fixtures live under docs/screenshots/ next to the tapes that
+# use them; only the generated media (screenshots/out/) ships in the site.
+exclude_docs: |
+  mkdocs.yml
+  .gitignore
+  screenshots/*.tape
+  screenshots/*.sh
+  screenshots/*.py
+  screenshots/seed/
+  screenshots/README.md
+  requirements.txt
+
+theme:
+  name: material
+  # Header logo. Alternatives to switch in: assets/logo.png (the full brand mark,
+  # which is detailed for this size) or assets/logo-snowflake.svg (plain snowflake).
+  logo: assets/logo-hybrid.svg
+  favicon: assets/favicon.svg
+  icon:
+    repo: fontawesome/brands/github
+  font:
+    text: Inter
+    code: JetBrains Mono
+  palette:
+    # Dark is the brand default, mirroring the TUI's agent6-dark theme.
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+  features:
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.tracking
+    - navigation.top
+    # Flat nav (one entry per page, no nested groups) in the left sidebar; the
+    # current page's sections live in the right-hand table of contents, which
+    # scrolls independently so a long page like config stays navigable.
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+
+extra_css:
+  - assets/extra.css
+
+plugins:
+  - search
+  - glightbox:
+      touchNavigation: true
+      loop: false
+      effect: zoom
+      slide_effect: slide
+      width: 100%
+      height: auto
+      zoomable: true
+      draggable: true
+      skip_classes:
+        - no-lightbox
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.keys
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/agent6-dev/agent6
+      name: agent6 on GitHub
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/agent6/
+      name: agent6 on PyPI
+
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - Getting started: getting-started.md
+  - Tour: tour.md
+  - Configuration: config.md
+  - Security: security.md
+  - Architecture: architecture.md
+  - State machines: state-machines.md
+  - Adversarial review panel: design/adversarial-review-panel.md

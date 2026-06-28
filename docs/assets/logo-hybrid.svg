@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="agent6">
+  <defs><linearGradient id="g" x1="10" y1="6" x2="86" y2="90" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#7aa2f7"/><stop offset="1" stop-color="#06f5f3"/></linearGradient>
+    <clipPath id="lh"><rect x="0" y="0" width="48" height="96"/></clipPath>
+  </defs>
+  <path d="M48.0 4.0 L86.1 26.0 L86.1 70.0 L48.0 92.0 L9.9 70.0 L9.9 26.0 Z" fill="none" stroke="url(#g)" stroke-width="2.6" stroke-linejoin="round"/>
+  <g clip-path="url(#lh)">
+    <g stroke="url(#g)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <line x1="48.00" y1="48.00" x2="48.00" y2="15.00"/>
+    <line x1="48.00" y1="31.50" x2="42.06" y2="27.79"/>
+    <line x1="48.00" y1="31.50" x2="53.94" y2="27.79"/>
+    <line x1="48.00" y1="22.26" x2="43.76" y2="19.61"/>
+    <line x1="48.00" y1="22.26" x2="52.24" y2="19.61"/>
+    <line x1="48.00" y1="48.00" x2="19.42" y2="31.50"/>
+    <line x1="33.71" y1="39.75" x2="27.53" y2="43.04"/>
+    <line x1="33.71" y1="39.75" x2="33.47" y2="32.75"/>
+    <line x1="25.71" y1="35.13" x2="21.29" y2="37.48"/>
+    <line x1="25.71" y1="35.13" x2="25.53" y2="30.13"/>
+    <line x1="48.00" y1="48.00" x2="19.42" y2="64.50"/>
+    <line x1="33.71" y1="56.25" x2="33.47" y2="63.25"/>
+    <line x1="33.71" y1="56.25" x2="27.53" y2="52.96"/>
+    <line x1="25.71" y1="60.87" x2="25.53" y2="65.87"/>
+    <line x1="25.71" y1="60.87" x2="21.29" y2="58.52"/>
+    <line x1="48.00" y1="48.00" x2="48.00" y2="81.00"/>
+    <line x1="48.00" y1="64.50" x2="53.94" y2="68.21"/>
+    <line x1="48.00" y1="64.50" x2="42.06" y2="68.21"/>
+    <line x1="48.00" y1="73.74" x2="52.24" y2="76.39"/>
+    <line x1="48.00" y1="73.74" x2="43.76" y2="76.39"/>
+    <line x1="48.00" y1="48.00" x2="76.58" y2="64.50"/>
+    <line x1="62.29" y1="56.25" x2="68.47" y2="52.96"/>
+    <line x1="62.29" y1="56.25" x2="62.53" y2="63.25"/>
+    <line x1="70.29" y1="60.87" x2="74.71" y2="58.52"/>
+    <line x1="70.29" y1="60.87" x2="70.47" y2="65.87"/>
+    <line x1="48.00" y1="48.00" x2="76.58" y2="31.50"/>
+    <line x1="62.29" y1="39.75" x2="62.53" y2="32.75"/>
+    <line x1="62.29" y1="39.75" x2="68.47" y2="43.04"/>
+    <line x1="70.29" y1="35.13" x2="70.47" y2="30.13"/>
+    <line x1="70.29" y1="35.13" x2="74.71" y2="37.48"/>
+  </g>
+  </g>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="56,34 65,42 56,50" stroke="url(#g)" stroke-width="3.4"/><line x1="68" y1="50" x2="78" y2="50" stroke="url(#g)" stroke-width="3.4"/><line x1="56" y1="59" x2="78" y2="59" stroke="url(#g)" stroke-width="3.4"/><line x1="56" y1="67" x2="71" y2="67" stroke="url(#g)" stroke-width="3.4"/><line x1="56" y1="75" x2="75" y2="75" stroke="url(#g)" stroke-width="3.4"/></g>
+</svg>

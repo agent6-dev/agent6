@@ -1,0 +1,5 @@
+{"by": "user", "graph_version": 1, "id": "01KVT5187TQ6CYD25RK80WW97P", "op": "add_subtask", "parent_id": null, "ts": "2026-06-23T11:49:45.348819+00:00"}
+{"by": "worker", "graph_version": 2, "id": "01KVT578N2JZR9TJATGA0YFVZ9", "op": "add_subtask", "parent_id": "01KVT5187TQ6CYD25RK80WW97P", "ts": "2026-06-23T11:53:02.381754+00:00"}
+{"graph_version": 3, "id": "01KVT578N2JZR9TJATGA0YFVZ9", "new_status": "in_progress", "op": "update_status", "ts": "2026-06-23T11:54:12.655311+00:00"}
+{"graph_version": 4, "id": "01KVT578N2JZR9TJATGA0YFVZ9", "new_status": "passed", "op": "update_status", "ts": "2026-06-23T12:24:26.053585+00:00"}
+{"graph_version": 5, "id": "01KVT5187TQ6CYD25RK80WW97P", "new_status": "passed", "op": "update_status", "ts": "2026-06-23T12:27:50.851674+00:00"}

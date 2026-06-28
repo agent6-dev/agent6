@@ -1,0 +1,2 @@
+{"by": "user", "graph_version": 1, "id": "01KVSVA6FAP70KDFGXBA36AZQC", "op": "add_subtask", "parent_id": null, "ts": "2026-06-23T08:59:52.688311+00:00"}
+{"graph_version": 2, "id": "01KVSVA6FAP70KDFGXBA36AZQC", "new_status": "passed", "op": "update_status", "ts": "2026-06-23T09:08:11.288343+00:00"}

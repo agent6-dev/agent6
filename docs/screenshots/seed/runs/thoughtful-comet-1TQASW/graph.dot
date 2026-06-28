@@ -1,0 +1,4 @@
+digraph agent6 {
+  rankdir=LR;
+  "01KVBS1WG126GD3WZDEB58MQ7Z" [label="# Restore `click.format_filename`\n[pending]", style=filled, fillcolor=lightgray];
+}

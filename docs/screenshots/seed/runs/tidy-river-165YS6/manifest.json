@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "agent6_version": "0.0.11",
+  "run_id": "tidy-river-165YS6",
+  "mode": "run",
+  "start_ts": "2026-06-23T11:49:43.255075+00:00",
+  "user_task": "# Implement `html_to_text` (HTML \u2192 plain text with entities)\n\n`mylib/html_strip.py` contains a stub implementation of\n`html_to_text(s: str) -> str` that currently just does\n`re.sub(r'<[^>]+>', '', s)` and returns the result unchanged\notherwise. Replace it with a real HTML-to-text converter.\n\nRequirements (see the docstring in `mylib/html_strip.py` for the\nspec summary):\n\n- Strip all tags. Tag names are ASCII-case-insensitive.\n- Decode named entities (`&amp;`, `&lt;`, `&gt;`, `&quot;`,\n  `&apos;`, `&nbsp;`) and numeric entities both decimal\n  (`&#39;`) and hex (`&#x27;`, `&#X27;`).\n- A trailing `;` is preferred for entity decoding. HTML5-style\n  leniency of decoding a bare `&amp` / `&lt` followed by\n  non-name characters is acceptable (this is what Python's\n  `html.parser` does). Unrecognised entities (e.g. `&unknown;`)\n  are left literally in the output.\n- Strip HTML comments `<!-- ... -->` (including their contents).\n- Strip the contents of `<script>...</script>` and\n  `<style>...</style>` entirely (the text between the tags is\n  removed, not preserved).\n- Preserve `<![CDATA[ ... ]]>` *contents* (drop the CDATA delimiters\n  but keep the inner text verbatim; entities inside CDATA are NOT\n  decoded).\n- Attribute values containing `>` (when properly quoted with `\"`\n  or `'`) must NOT terminate the tag early. For example,\n  `<a title=\"a>b\">x</a>` strips to `x`, not `b\">x`.\n- Self-closing tags (`<br/>`, `<img src=\"\" />`) are stripped\n  normally. Void elements need no special handling beyond \"strip\n  the tag\".\n- Whitespace inside the input is preserved verbatim; do not\n  collapse runs of spaces or trim.\n\nThe verify command runs `tests/test_basic.py` \u2014 three tests covering\nthe shape the stub already handles (plain text passthrough, simple\ntag strip, ampersand entity). They will pass without your edits;\ntreat them as a sanity check, not a definition-of-done.\n\nThe definition-of-done is the full behaviour above. You may run\n`.venv/bin/python tests/score.py` (or the `run_metric_command` tool)\nto see how many of the hidden edge-case inputs pass; the harness\nwill run the same scorer after you finish.\n\nHint: `html.parser.HTMLParser` from the stdlib gives you tag /\ndata / entityref / charref / comment / decl callbacks. You do not\nhave to use it (a hand-rolled state machine works too), but the\nstdlib parser already handles most of the lexical edge cases.\n\nDo not modify files under `tests/`.",
+  "base_sha": "f4ea76f8028ca97da6dbd70bf8201e2a2b919204",
+  "base_branch": "master",
+  "run_branch": "agent6/tidy-river-165YS6",
+  "models": {
+    "worker": {
+      "provider": "openrouter",
+      "model": "deepseek/deepseek-v4-flash-20260423"
+    },
+    "reviewer": {
+      "provider": "openrouter",
+      "model": "deepseek/deepseek-v4-flash-20260423"
+    }
+  },
+  "workflow": {
+    "critic": "off",
+    "revise_prompt": "off",
+    "profile": ""
+  }
+}

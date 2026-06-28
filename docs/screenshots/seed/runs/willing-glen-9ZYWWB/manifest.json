@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "agent6_version": "0.0.11",
+  "run_id": "willing-glen-9ZYWWB",
+  "mode": "run",
+  "start_ts": "2026-06-23T11:02:06.058955+00:00",
+  "user_task": "# Implement `parse_url` per RFC 3986\n\n`mylib/url_parse.py` contains a stub implementation of `parse_url(s: str) -> UrlParts`\nthat currently only handles the simplest `scheme://host/path` case. Make\nit parse a URI correctly per RFC 3986.\n\nRequirements (see the docstring on `parse_url` for the spec summary):\n\n- Scheme: the prefix before the first `:`, lowercased.\n- Authority: follows `//` and ends at the first of `/?#` or end-of-string.\n  Optional `userinfo@` before the host. Host may be a `reg-name`\n  (lowercased) or an `[IP-literal]` (brackets stripped, NOT lowercased).\n  Optional `:port` (decimal int). Missing port is `None`, not `0`.\n- Path: starts at the first `/` after authority (or after the scheme\n  for opaque URIs like `mailto:`); ends at the first of `?#` or EOS.\n- Query: between `?` and `#` (or EOS); leading `?` excluded.\n- Fragment: after `#`; leading `#` excluded.\n- Percent-encoded bytes in any component are preserved literally\n  (not decoded).\n\nThe verify command runs `tests/test_basic.py` \u2014 three tests covering the\nshape the stub already handles. They will pass without your edits; treat\nthem as a sanity check, not as a definition-of-done.\n\nThe definition-of-done is the full RFC 3986 behaviour described above.\nYou may run `.venv/bin/python tests/score.py` (or the\n`run_metric_command` tool) to see how many of the hidden edge-case\ninputs pass; the harness will run the same scorer after you finish.\n\nDo not modify files under `tests/`.",
+  "base_sha": "b8ff360a4fd4e0235b8612499d6384c7b6251f96",
+  "base_branch": "master",
+  "run_branch": "agent6/willing-glen-9ZYWWB",
+  "models": {
+    "worker": {
+      "provider": "openrouter",
+      "model": "qwen/qwen3.6-35b-a3b-20260415"
+    },
+    "reviewer": {
+      "provider": "openrouter",
+      "model": "qwen/qwen3.6-35b-a3b-20260415"
+    }
+  },
+  "workflow": {
+    "critic": "off",
+    "revise_prompt": "off",
+    "profile": ""
+  }
+}
