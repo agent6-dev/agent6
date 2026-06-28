@@ -40,9 +40,9 @@ The load-bearing invariants, collected; each is detailed in its section below.
   migrations; until then there is none of that ceremony. The version in
   `src/agent6/__init__.py` is the single source of truth.)
 - **Keep docs in sync.** When a change affects the architecture, config, security
-  model, or state machines, update the matching file (`ARCHITECTURE.md`,
-  `CONFIG.md`, `SECURITY.md`, `STATE_MACHINES.md`, `README.md`, this file) so the
-  docs never drift from the code.
+  model, or state machines, update the matching file (`docs/architecture.md`,
+  `docs/config.md`, `docs/security.md`, `docs/state-machines.md`, `README.md`,
+  this file) so the docs never drift from the code.
 
 ## Design principles
 

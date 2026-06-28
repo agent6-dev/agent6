@@ -255,7 +255,7 @@ terminal `finish_run`, a curator-backed task notepad, and the
 capability-gated `run_command`. There is no `shell`, no `write_file`
 (writes go through `apply_edit`, an in-process rewriter that refuses
 paths outside cwd), no `web_fetch`, and no `eval`. Adding a tool requires
-a security review note in the commit message; see [AGENTS.md](AGENTS.md).
+a security review note in the commit message; see [AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md).
 
 ### 5. Git invariants
 
@@ -433,7 +433,7 @@ Every surface fails closed:
 
 ## Prompt-injection resilience
 
-The test suite under [`tests/security/test_prompt_injection.py`](tests/security/test_prompt_injection.py)
+The test suite under [`tests/security/test_prompt_injection.py`](https://github.com/agent6-dev/agent6/blob/master/tests/security/test_prompt_injection.py)
 runs a small corpus of adversarial inputs through the planner, worker,
 and reviewer prompts and asserts that the agent does not exfiltrate
 file content, does not attempt out-of-policy tool calls, and does not

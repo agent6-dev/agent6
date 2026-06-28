@@ -10,13 +10,13 @@ runtime. The feature is implemented end-to-end under `src/agent6/machine/`
 and exposed through the `agent6 machine` subcommands: `create`, `check`,
 `graph`, `run`, `status`, `poke`, and `replay` (§7). It does not change
 the security model, the tool surface, or the stability policy in
-[AGENTS.md](AGENTS.md); §9 records how each invariant is preserved.
+[AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md); §9 records how each invariant is preserved.
 
 ---
 
 ## 1. Motivation
 
-agent6's two workflows ([ARCHITECTURE.md](ARCHITECTURE.md)), `run` (the
+agent6's two workflows ([architecture.md](architecture.md)), `run` (the
 agent loop) and `review` (a read-only diff pass), are both *single-shot*:
 you start them, they finish. There is no first-class way to express a
 program that runs indefinitely, reacting to the clock or to external
@@ -801,7 +801,7 @@ No new runtime dependency (`tomllib` + `pydantic` + stdlib `ast`).
   `run_in_jail`; each `agent` state is an ordinary jailed run in its own
   self-confining subprocess (the engine is a host-netns supervisor). The
   per-state network model and its refusals are specified in
-  [SECURITY.md](SECURITY.md) §8.
+  [security.md](security.md) §8.
 - **Spend bounds.** `[budget].max_transitions` is required and always
   binds. The USD limit is optional, at most one of: `max_usd` (hard:
   `machine run` refuses up front when a covered agent state's model has

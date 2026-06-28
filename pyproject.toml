@@ -3,7 +3,7 @@ name = "agent6"
 dynamic = ["version"]
 description = "Opinionated, sandboxed Python coding agent."
 readme = "README.md"
-urls = { "Homepage" = "https://github.com/elesiuta/agent6" }
+urls = { "Homepage" = "https://agent6.dev", "Documentation" = "https://agent6.dev", "Source" = "https://github.com/agent6-dev/agent6" }
 requires-python = ">=3.12"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Eric Lesiuta" }]
@@ -46,13 +46,16 @@ artifacts = ["src/agent6/sandbox/_bin/agent6-jail"]
 # needs the compiled binary bundled under sandbox/_bin.
 exclude = ["src/agent6/jail"]
 
-# Map the root docs into the wheel at agent6/_docs/ for the agent6_docs tool.
+# Bundle the reference docs into the wheel at agent6/_docs/ for the agent6_docs
+# tool, under their canonical UPPERCASE names. README/AGENTS already live
+# uppercase at the repo root; the others live lowercase under docs/ (the site's
+# convention) and ship under the matching uppercase name.
 [tool.hatch.build.targets.wheel.force-include]
 "README.md" = "agent6/_docs/README.md"
-"CONFIG.md" = "agent6/_docs/CONFIG.md"
-"SECURITY.md" = "agent6/_docs/SECURITY.md"
 "AGENTS.md" = "agent6/_docs/AGENTS.md"
-"ARCHITECTURE.md" = "agent6/_docs/ARCHITECTURE.md"
+"docs/architecture.md" = "agent6/_docs/ARCHITECTURE.md"
+"docs/config.md" = "agent6/_docs/CONFIG.md"
+"docs/security.md" = "agent6/_docs/SECURITY.md"
 
 # Build the Rust `agent6-jail` binary as a side effect of building the
 # wheel and bundle it inside the wheel under agent6/sandbox/_bin/. A plain
@@ -76,10 +79,11 @@ include = [
     "src/agent6",
     "hatch_build.py",
     "README.md",
-    "SECURITY.md",
     "AGENTS.md",
-    "CONFIG.md",
-    "ARCHITECTURE.md",
+    "docs/architecture.md",
+    "docs/config.md",
+    "docs/security.md",
+    "docs/state-machines.md",
     "tach.toml",
     "LICENSE",
 ]

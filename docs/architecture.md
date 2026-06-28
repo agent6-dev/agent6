@@ -2,9 +2,9 @@
 
 This document is a map of how agent6 runs end-to-end. The diagrams
 are mermaid (`mermaid` fenced blocks render natively on GitHub). For
-per-file conventions and stability rules see [AGENTS.md](AGENTS.md).
+per-file conventions and stability rules see [AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md).
 For the security model (threat model, defense layers, sandbox profiles),
-see [SECURITY.md](SECURITY.md).
+see [security.md](security.md).
 
 ## Layering
 
@@ -15,32 +15,32 @@ cli  ──▶  workflows  ──▶  agents  ──▶  tools  ──▶  sandb
 ```
 
 Boundaries are enforced by [tach](https://docs.gauge.sh/) (see
-[tach.toml](tach.toml)). Workflows never import each other; agents never
+[tach.toml](https://github.com/agent6-dev/agent6/blob/master/tach.toml)). Workflows never import each other; agents never
 import workflows or the CLI. Crossing a boundary is almost always a
 sign of the wrong design.
 
-- **cli** ([src/agent6/cli/](src/agent6/cli/)): argument parsing,
+- **cli** ([src/agent6/cli/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/cli)): argument parsing,
   optional TUI spawn, top-level dispatch. Picks a workflow. Config is
-  resolved by [config_layer.py](src/agent6/config_layer.py) (built-in
+  resolved by [config_layer.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config_layer.py) (built-in
   secure defaults < global `~/.config/agent6/config.toml` < per-repo
   config < `--config FILE`), with paths + sudo/root
-  resolution in [paths.py](src/agent6/paths.py) and API keys in
-  [secrets.py](src/agent6/secrets.py). Per-repo state (config and run
+  resolution in [paths.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/paths.py) and API keys in
+  [secrets.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/secrets.py). Per-repo state (config and run
   state together) lives out of the workspace under
   `$XDG_STATE_HOME/agent6/<repo-id>/`; the base is settable via the
   global-only `[agent6].state_dir` or the `AGENT6_STATE_HOME` env var.
   Roles: `worker` drives
   `run`/`resume`, `planner` drives `plan` (falls back to `worker`),
   `reviewer` drives `review` + the in-loop critic.
-- **workflows** ([src/agent6/workflows/](src/agent6/workflows/)): two
+- **workflows** ([src/agent6/workflows/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/workflows)): two
   exist, `loop` (the agent loop driving `agent6 run` / `agent6 resume`)
   and `review` (the read-only review pass driving `agent6 review`).
-- **agents** ([src/agent6/agents/](src/agent6/agents/)): single-turn
+- **agents** ([src/agent6/agents/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/agents)): single-turn
   LLM call shapes. The only one is `code_review`; the agent loop makes
   its own provider calls inline.
-- **tools** ([src/agent6/tools/](src/agent6/tools/)): the fixed
+- **tools** ([src/agent6/tools/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/tools)): the fixed
   tool surface the LLM sees, plus dispatch.
-- **sandbox** ([src/agent6/sandbox/](src/agent6/sandbox/)): Landlock
+- **sandbox** ([src/agent6/sandbox/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/sandbox)): Landlock
   on the agent process, `agent6-jail` for children.
 
 ## Workflow: `run`
@@ -112,7 +112,7 @@ Notes:
 
 ## Workflow: `review`
 
-A single read-only pass ([src/agent6/workflows/review.py](src/agent6/workflows/review.py))
+A single read-only pass ([src/agent6/workflows/review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/review.py))
 over a diff (working tree, branch-vs-base, or arbitrary range) using
 the `agents/code_review.py` agent. Produces structured findings; no
 edits, no commits, no `run_command`.
@@ -126,7 +126,7 @@ stateDiagram-v2
 
 ## Enforcement layering
 
-[SECURITY.md](SECURITY.md) details which guarantee each layer provides.
+[security.md](security.md) details which guarantee each layer provides.
 As a diagram:
 
 ```mermaid
@@ -220,7 +220,7 @@ the source's current DAG.
 
 The `logs.jsonl` vocabulary is small and stable: the data contract for
 any external viewer (the fold to UI state lives in
-[src/agent6/ui/state.py](src/agent6/ui/state.py) as a pure function):
+[src/agent6/ui/state.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/state.py) as a pure function):
 
 | Event                       | Notable fields                              |
 | --------------------------- | ------------------------------------------- |
@@ -250,22 +250,22 @@ graph`).
 
 | Concern                          | File / dir                                                            |
 | -------------------------------- | --------------------------------------------------------------------- |
-| Config schema                    | [src/agent6/config.py](src/agent6/config.py)                          |
-| Tool surface                     | [src/agent6/tools/schema.py](src/agent6/tools/schema.py)              |
-| Tool dispatch                    | [src/agent6/tools/dispatch.py](src/agent6/tools/dispatch.py)          |
-| agent loop                       | [src/agent6/workflows/loop.py](src/agent6/workflows/loop.py)          |
-| Review workflow                  | [src/agent6/workflows/review.py](src/agent6/workflows/review.py)      |
-| Code-review agent                | [src/agent6/agents/code_review.py](src/agent6/agents/code_review.py)  |
-| Jail launcher (Python wrapper)   | [src/agent6/sandbox/jail.py](src/agent6/sandbox/jail.py)              |
-| Jail launcher (Rust binary)      | [src/agent6/jail/src/main.rs](src/agent6/jail/src/main.rs)            |
-| Git policy                       | [src/agent6/git_ops.py](src/agent6/git_ops.py)                        |
-| Provider clients                 | [src/agent6/providers/](src/agent6/providers/)                        |
-| Knowledge graph (curator)        | [src/agent6/graph/](src/agent6/graph/)                                |
-| Event log + UI fold              | [src/agent6/events.py](src/agent6/events.py), [src/agent6/ui/](src/agent6/ui/) |
+| Config schema                    | [src/agent6/config.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config.py)                          |
+| Tool surface                     | [src/agent6/tools/schema.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/schema.py)              |
+| Tool dispatch                    | [src/agent6/tools/dispatch.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/dispatch.py)          |
+| agent loop                       | [src/agent6/workflows/loop.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/loop.py)          |
+| Review workflow                  | [src/agent6/workflows/review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/review.py)      |
+| Code-review agent                | [src/agent6/agents/code_review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/agents/code_review.py)  |
+| Jail launcher (Python wrapper)   | [src/agent6/sandbox/jail.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail.py)              |
+| Jail launcher (Rust binary)      | [src/agent6/jail/src/main.rs](https://github.com/agent6-dev/agent6/blob/master/src/agent6/jail/src/main.rs)            |
+| Git policy                       | [src/agent6/git_ops.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/git_ops.py)                        |
+| Provider clients                 | [src/agent6/providers/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/providers)                        |
+| Knowledge graph (curator)        | [src/agent6/graph/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/graph)                                |
+| Event log + UI fold              | [src/agent6/events.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/events.py), [src/agent6/ui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui) |
 | Run state on disk                | `<state-dir>/<repo-id>/runs/<run-id>/` (out of the workspace)         |
 
 ## Pre-1.0 stability
 
-See [AGENTS.md](AGENTS.md). Until 1.0 every public shape (config TOML,
+See [AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md). Until 1.0 every public shape (config TOML,
 IPC frames, on-disk graph, CLI flags, transcript layout) is liquid;
 we break cleanly rather than carry shims.

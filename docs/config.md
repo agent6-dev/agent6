@@ -3,7 +3,7 @@
 agent6 is **secure by default**: every field has a default (security-sensitive
 ones default to the safe value), so you only set what you want to change. This
 is the field reference; for the security model behind the `[sandbox]` and `[git]`
-fields see [SECURITY.md](SECURITY.md).
+fields see [security.md](security.md).
 
 ## Where config lives (layered, lowest precedence first)
 
@@ -178,7 +178,7 @@ provider may serve any role (cross-vendor mixes are fine).
 ## `[sandbox]`
 
 The security boundary. Profiles and the network model are specified in
-[SECURITY.md](SECURITY.md) (§3 profiles, §1b/§8 network); this is a summary.
+[security.md](security.md) (§3 profiles, §1b/§8 network); this is a summary.
 
 | Field | Default | Meaning |
 |---|---|---|
