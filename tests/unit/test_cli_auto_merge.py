@@ -133,6 +133,30 @@ def test_auto_merge_conflict_keeps_run_branch_intact(
     _ = base
 
 
+def test_auto_merge_skips_when_base_branch_is_gone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _setup_run_on_branch(
+        tmp_path,
+        "run-GONE11",
+        commits=[("a.txt", "a\n", "agent6 iter 1: add a")],
+        run_branch="agent6/run-GONE11",
+    )
+    # operator deleted the base branch mid-run (we're on the run branch, so -D works)
+    _git(tmp_path, "branch", "-D", "main")
+    cfg = load_effective(tmp_path, None).config
+    runmod._finalize_auto_merge(  # pyright: ignore[reportPrivateUsage]
+        tmp_path, layout=RunLayout(resolved_state_dir(tmp_path), "run-GONE11"), cfg=cfg
+    )
+    assert _git(tmp_path, "branch", "--list", "main") == ""  # base NOT fabricated
+    manifest = json.loads(
+        (resolved_state_dir(tmp_path) / "runs" / "run-GONE11" / "manifest.json").read_text()
+    )
+    assert "merged_into" not in manifest  # no phantom merge recorded
+    assert "failed" in capsys.readouterr().err.lower()
+
+
 def test_auto_prune_deletes_reachable_merge_branch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

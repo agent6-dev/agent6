@@ -95,8 +95,19 @@ def test_runs_merge_strategy_merge_keeps_history(
     _setup_run(tmp_path, "run-MERG11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
     rc = main(["runs", "merge", "run-MERG11", "--strategy", "merge"])
     assert rc == 0
+    assert (tmp_path / "a.txt").exists()  # the merge landed the work on main
     log = _git(tmp_path, "log", "--oneline")
     assert "agent6 iter 1: add a" in log  # --no-ff keeps the per-step commit reachable
+
+
+def test_runs_merge_squash_honors_message(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-MSG111", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    rc = main(["runs", "merge", "run-MSG111", "--strategy", "squash", "-m", "custom subject"])
+    assert rc == 0
+    assert _git(tmp_path, "log", "-1", "--format=%s", "main") == "custom subject"
 
 
 def test_runs_merge_refuses_when_no_branch_recorded(

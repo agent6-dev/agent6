@@ -410,6 +410,44 @@ def test_merge_branch_conflict_aborts_clean(tmp_path: Path) -> None:
     assert status(tmp_path).is_clean  # merge --abort left a clean tree
 
 
+def test_merge_branch_ff_only_fast_forwards(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    create_branch(tmp_path, "agent6/r1")
+    _commit_file(tmp_path, "feat.txt", "x\n", "agent6 iter 1: add feat")
+    create_branch(tmp_path, "main")  # base is an ancestor of r1, so ff is possible
+    res = merge_branch(tmp_path, "agent6/r1", ff_only=True)
+    assert not res.conflicted
+    assert res.merged_sha == status(tmp_path).head_sha
+    assert (tmp_path / "feat.txt").read_text(encoding="utf-8") == "x\n"
+
+
+def test_merge_branch_ff_only_refuses_when_diverged(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    create_branch(tmp_path, "agent6/r1")
+    _commit_file(tmp_path, "feat.txt", "x\n", "agent6 iter 1: add feat")
+    create_branch(tmp_path, "main")
+    _commit_file(tmp_path, "other.txt", "y\n", "main diverges")  # base moved, no ff
+    with pytest.raises(GitError):
+        merge_branch(tmp_path, "agent6/r1", ff_only=True)
+    assert status(tmp_path).is_clean  # a refused ff leaves the tree clean
+
+
+def test_merge_branch_no_ff_credits_coauthor(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    create_branch(tmp_path, "agent6/r1")
+    _commit_file(tmp_path, "feat.txt", "x\n", "agent6 iter 1: add feat")
+    create_branch(tmp_path, "main")
+    res = merge_branch(tmp_path, "agent6/r1", identity=CommitIdentity(coauthor="Op <op@x>"))
+    assert not res.conflicted
+    head_msg = subprocess.run(
+        ["git", "-C", str(tmp_path), "log", "-1", "--format=%B"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert "Co-authored-by: Op <op@x>" in head_msg  # the merge commit credits the operator
+
+
 def test_list_run_commits_oldest_first(tmp_path: Path) -> None:
     _init_repo(tmp_path)
     base = status(tmp_path).head_sha

@@ -420,15 +420,22 @@ def merge_branch(
     identity: CommitIdentity | None = None,
 ) -> MergeResult:
     """Merge *branch* into the current HEAD. A real merge commit (`--no-ff`, with
-    *message* and *identity* when given) keeps the run's per-step history; *ff_only*
-    instead fast-forwards and raises if the target has moved (no commit is created,
-    so message and identity do not apply). On conflict, `git merge --abort` (not a
+    *message* and *identity*, including a Co-authored-by trailer for
+    identity.coauthor) keeps the run's per-step history; *ff_only* instead
+    fast-forwards and raises if the target has moved (no commit is created, so
+    message and identity do not apply). On conflict, `git merge --abort` (not a
     history rewrite) leaves the tree clean and the result reports the conflicts."""
     if ff_only:
         args: tuple[str, ...] = ("merge", "--ff-only", branch)
         env_extra = None
     else:
-        msg_args = ("-m", message) if message else ("--no-edit",)
+        text = message
+        coauthor = identity.coauthor if identity else None
+        if coauthor:
+            base = text or f"Merge {branch}"
+            trailer = f"Co-authored-by: {coauthor}"
+            text = base if trailer in base else f"{base}\n\n{trailer}"
+        msg_args = ("-m", text) if text else ("--no-edit",)
         args = ("merge", "--no-ff", *msg_args, branch)
         env_extra = _identity_env(identity)
     res = _run(path, *args, check=False, env_extra=env_extra)

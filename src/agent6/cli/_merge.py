@@ -118,8 +118,13 @@ def execute_merge(
     *original* checkout, and record the merge. The caller validates first; this
     mutates. Leaves a clean tree on conflict or error."""
     set_repo_hook_policy(cfg.git.run_repo_hooks)
+    if not branch_exists(cwd, target):
+        # The merge target must already exist; never fabricate it (create_branch
+        # would otherwise make it at HEAD). runs merge pre-checks this for a nicer
+        # message; auto_merge relies on this guard if the base was deleted mid-run.
+        return MergeOutcome("error", error=f"target branch {target!r} does not exist")
     try:
-        create_branch(cwd, target)  # checkout the (caller-verified) target
+        create_branch(cwd, target)  # checkout the (now-verified) target
     except GitError as exc:
         return MergeOutcome("error", error=f"could not check out target branch {target!r}: {exc}")
     try:

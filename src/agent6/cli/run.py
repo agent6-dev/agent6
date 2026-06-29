@@ -76,6 +76,7 @@ from agent6.events import EventSink
 from agent6.git_ops import (
     CommitIdentity,
     GitError,
+    branch_exists,
     create_branch,
     delete_branch_if_merged,
     is_git_repo,
@@ -1136,8 +1137,15 @@ def _finalize_auto_stash(
         )
         return
     if run_branch and st.branch == run_branch:
+        if not branch_exists(cwd, base_branch):
+            print(
+                f"[agent6] base branch {base_branch} no longer exists; pre-run changes left "
+                f"stashed (recover with: git stash pop)",
+                file=sys.stderr,
+            )
+            return
         try:
-            create_branch(cwd, base_branch)  # idempotent: checks out the existing base branch
+            create_branch(cwd, base_branch)  # checks out the existing base branch
         except GitError as exc:
             print(
                 f"[agent6] could not switch to {base_branch} to restore the stash ({exc}); "
