@@ -7,11 +7,8 @@
 # agent6 home, then drives the TUI with vhs (docs/screenshots/tour.tape) to
 # capture PNGs + tour.webm under docs/screenshots/out/ (gitignored).
 # No live LLM calls, no network, no API key; everything renders from the seeded
-# run logs. The pages workflow runs this before `mkdocs build`.
-#
-# AGENT6_SCREENSHOTS=placeholder writes flat placeholder images instead (a fast,
-# tool-free docs-only build path). Needs `vhs`, `ttyd`, `ffmpeg`, `agent6`, and
-# `python3` (with agent6 importable) on PATH in the default (full) mode.
+# run logs. The pages workflow runs this before `mkdocs build`. Needs `vhs`,
+# `ttyd`, `ffmpeg`, `agent6`, and `python3` (with agent6 importable) on PATH.
 set -euo pipefail
 
 ROOT="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
@@ -20,40 +17,8 @@ OUT="$ROOT/docs/screenshots/out"
 mkdir -p "$OUT"
 
 # The screenshots tour.tape writes, kept in sync with the docs pages that embed
-# them. generate.sh fails if `full` mode does not produce every one.
+# them. generate.sh fails if it does not produce every one.
 SHOTS=(01-hub 02-run-dashboard 03-config 04-config-search 05-transcript 08-help 09-logs)
-
-write_placeholders() {
-  python3 - "$OUT" "${SHOTS[@]}" <<'PY'
-import struct, zlib, sys
-from pathlib import Path
-out = Path(sys.argv[1]); names = sys.argv[2:]
-def png(path, w=1600, h=900, rgb=(0x16, 0x16, 0x18)):
-    raw = bytearray()
-    row = bytes(rgb) * w
-    for _ in range(h):
-        raw.append(0); raw += row
-    def chunk(t, d):
-        c = t + d
-        return struct.pack(">I", len(d)) + c + struct.pack(">I", zlib.crc32(c) & 0xffffffff)
-    path.write_bytes(
-        b"\x89PNG\r\n\x1a\n"
-        + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
-        + chunk(b"IDAT", zlib.compress(bytes(raw), 9))
-        + chunk(b"IEND", b"")
-    )
-for n in names:
-    png(out / f"{n}.png")
-(out / "tour.webm").write_bytes(b"")
-print(f"wrote {len(names)} placeholder PNGs + empty tour.webm")
-PY
-}
-
-if [ "${AGENT6_SCREENSHOTS:-full}" = "placeholder" ]; then
-  echo "screenshots: placeholder mode"
-  write_placeholders
-  exit 0
-fi
 
 for bin in vhs ttyd ffmpeg agent6 python3; do
   command -v "$bin" >/dev/null 2>&1 || { echo "generate.sh: missing required tool: $bin" >&2; exit 1; }

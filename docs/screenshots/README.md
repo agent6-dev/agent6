@@ -23,8 +23,7 @@ We commit the **tape, scripts, and seed fixtures only**. Generated media
   repo's id and writes a demo `config.toml` + `ui.toml` (theme `agent6-dark`).
 - `generate.sh`: the orchestrator. Seeds a temp home, runs `tour.tape` for the
   PNGs (1920x1080), then records `reel.tape` and overlays keystroke toasts to make
-  `tour.webm`. `AGENT6_SCREENSHOTS=placeholder` writes flat placeholders for a
-  fast, tool-free docs-only build.
+  `tour.webm`.
 - `build_fixtures.py`: dev tool, not run in CI. Rebuilds `seed/` from real runs
   under `$XDG_STATE_HOME/agent6/`, trimming token-delta bloat and scrubbing paths.
 

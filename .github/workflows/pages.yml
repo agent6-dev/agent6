@@ -16,11 +16,6 @@ name: pages
 
 on:
   workflow_dispatch:
-    inputs:
-      screenshots:
-        description: "Regenerate TUI screenshots/video with vhs (uncheck for a fast docs-only deploy)"
-        type: boolean
-        default: true
   release:
     types: [published]
 
@@ -49,7 +44,6 @@ jobs:
         run: uv sync --all-extras
 
       - name: Install ttyd + ffmpeg + fonts (Ubuntu repos)
-        if: inputs.screenshots != false
         run: |
           set -eux
           sudo apt-get update
@@ -61,7 +55,6 @@ jobs:
         # apt repo, pin the exact charmbracelet/vhs release and verify its SHA256
         # before installing. Bump VHS_VERSION and VHS_SHA256 together; the hash is
         # from the published release asset (sha256sum vhs_<v>_Linux_x86_64.tar.gz).
-        if: inputs.screenshots != false
         run: |
           set -eux
           VHS_VERSION=0.11.0
@@ -78,12 +71,9 @@ jobs:
         # vhs renders through a headless Chromium whose sandbox needs unprivileged
         # userns; the default 24.04 AppArmor policy blocks it (same restriction
         # agent6's strict sandbox hits — see ci.yml).
-        if: inputs.screenshots != false
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
-      - name: Generate screenshots (or placeholders)
-        env:
-          AGENT6_SCREENSHOTS: ${{ inputs.screenshots == false && 'placeholder' || 'full' }}
+      - name: Generate screenshots
         run: |
           source .venv/bin/activate
           bash docs/screenshots/generate.sh
