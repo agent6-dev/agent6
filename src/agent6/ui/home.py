@@ -42,6 +42,7 @@ from agent6.ui.config_page import ConfigScreen
 from agent6.ui.conversation import ConversationScreen
 from agent6.ui.logview import LogScreen
 from agent6.ui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
+from agent6.ui.modals import ConfirmModal
 from agent6.ui.theme import PALETTE_CSS, open_theme_picker, setup_theme
 from agent6.ui.widgets import FORM_CSS, ActionItem
 
@@ -252,6 +253,7 @@ class HomeScreen(Screen[None]):
             (
                 MenuItem("New run/plan/ask", "new_work", "n"),
                 MenuItem("Open selected", "open_selected", "enter"),
+                MenuItem("Merge selected run", "merge_selected", "m"),
                 MenuItem("Refresh", "refresh", "r"),
                 MenuItem("Quit", "quit", "q"),
             ),
@@ -281,6 +283,7 @@ class HomeScreen(Screen[None]):
         Binding("enter", "open_selected", "Open"),
         Binding("l", "view_logs", "View logs"),
         Binding("t", "view_transcript", "View transcript"),
+        Binding("m", "merge_selected", "Merge run"),
         Binding("r", "refresh", "Refresh"),
         Binding("c", "open_config", "Config"),
         Binding("question_mark", "help", "Help"),
@@ -399,6 +402,34 @@ class HomeScreen(Screen[None]):
 
     def action_new_work(self) -> None:
         self.app.push_screen(_NewWorkModal(_available_profiles(self.repo_cwd)), self._on_new_work)
+
+    def action_merge_selected(self) -> None:
+        """Merge the selected run's branch into its base, after a confirm. The TUI
+        shells out to `agent6 runs merge` (never git_ops directly); the CLI applies
+        git.merge_strategy and refuses a dirty tree / unconfigured identity."""
+        table = self.query_one("#runs", DataTable)
+        if not (self._runs and 0 <= table.cursor_row < len(self._runs)):
+            return
+        run_id = self._runs[table.cursor_row].name
+        self.app.push_screen(
+            ConfirmModal(
+                f"Merge run {run_id}?",
+                "Runs `agent6 runs merge` to land this run's branch on its base using your "
+                "git.merge_strategy. The working tree must be clean.",
+                confirm_label="Merge",
+            ),
+            self._on_merge_confirm(run_id),
+        )
+
+    def _on_merge_confirm(self, run_id: str) -> Callable[[bool | None], None]:
+        def cb(confirmed: bool | None) -> None:
+            if not confirmed:
+                return
+            ok, msg = _run_merge_cli(self.repo_cwd, run_id)
+            self.app.notify(msg, severity="information" if ok else "error", timeout=10.0)
+            self.action_refresh()
+
+        return cb
 
     def action_open_config(self) -> None:
         self.app.push_screen(ConfigScreen(self.repo_cwd))
@@ -523,6 +554,26 @@ def _located_run(agent6_dir: Path, before: set[Path]) -> Path | None:
         if rd not in before and (rd / "logs.jsonl").exists():
             return rd
     return None
+
+
+def _run_merge_cli(repo_cwd: Path, run_id: str) -> tuple[bool, str]:
+    """Run `agent6 runs merge <run_id>` (capturing output) and return (ok, message).
+    The hub shells out to the same CLI a user would, so merging stays a CLI concern
+    and the UI never touches git_ops. Synchronous: a merge is a quick git op."""
+    try:
+        proc = subprocess.run(
+            [_agent6_exe(), "runs", "merge", run_id],
+            cwd=str(repo_cwd),
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, f"merge failed to run: {exc}"
+    message = "\n".join(p for p in (proc.stdout.strip(), proc.stderr.strip()) if p)
+    return proc.returncode == 0, message or f"exit {proc.returncode}"
 
 
 def _agent6_exe() -> str:

@@ -82,6 +82,64 @@ class ApprovalModal(ModalScreen[bool]):
         self.dismiss(False)
 
 
+class ConfirmModal(ModalScreen[bool]):
+    """A generic yes/no confirmation (title + body). y confirms; n / Esc cancels.
+    No backdrop-click dismissal, matching the other consequential modals. Defaults
+    focus to Cancel so an accidental Enter is safe."""
+
+    DEFAULT_CSS = """
+    ConfirmModal { align: center middle; }
+    #confirm-box {
+        width: 80%; max-width: 100; height: auto;
+        border: round $accent; padding: 1 2; background: $surface;
+    }
+    #confirm-buttons { height: auto; align: center middle; margin-top: 1; }
+    #confirm-buttons Button {
+        margin: 0 2; min-width: 16; height: 1; border: none;
+        background: transparent; color: $accent;
+    }
+    #confirm-buttons Button:focus { background: $primary; color: $text; text-style: bold; }
+    """
+
+    BINDINGS: ClassVar = [
+        Binding("left", "focus_previous", "◀", show=False),
+        Binding("right", "focus_next", "▶", show=False),
+        Binding("y", "confirm", "Yes", show=True),
+        Binding("Y", "confirm", "Yes", show=False),
+        Binding("n", "cancel", "No", show=True),
+        Binding("N", "cancel", "No", show=False),
+        Binding("escape", "cancel", "No", show=False),
+    ]
+
+    def __init__(self, title: str, body: str, *, confirm_label: str = "Confirm") -> None:
+        super().__init__()
+        self._title = title
+        self._body = body
+        self._confirm_label = confirm_label
+
+    def compose(self) -> ComposeResult:
+        with Container(id="confirm-box"):
+            text = Text()
+            text.append(f"{self._title}\n\n", style="bold")
+            text.append(self._body)  # plain append: never parsed as markup
+            yield Static(text)
+            with Horizontal(id="confirm-buttons"):
+                yield Button(f"{self._confirm_label} (y)", id="yes", variant="success")
+                yield Button("Cancel (n)", id="no", variant="error")
+
+    def on_mount(self) -> None:
+        self.query_one("#no", Button).focus()  # default to the safe choice
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(event.button.id == "yes")
+
+    def action_confirm(self) -> None:
+        self.dismiss(True)
+
+    def action_cancel(self) -> None:
+        self.dismiss(False)
+
+
 class SteerModal(ModalScreen[str]):
     """Mid-run Ctrl-C prompt: continue, abort, or inject a steering instruction.
 

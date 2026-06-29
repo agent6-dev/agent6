@@ -227,6 +227,72 @@ def test_spawn_argv_includes_profile_flag_only_when_chosen(
     assert "--profile" not in captured[-1]
 
 
+def test_run_merge_cli_builds_argv_and_parses_result(tmp_path: Path, monkeypatch: object) -> None:
+    """The hub's merge helper shells out to `agent6 runs merge <id>` and reports the
+    captured output as (ok, message) -- it never touches git_ops itself."""
+    import subprocess
+
+    from agent6.ui import home
+
+    captured: list[list[str]] = []
+
+    class _Proc:
+        returncode = 0
+        stdout = "[agent6] merged agent6/r1 into main (squash) -> abcdef123456\n"
+        stderr = ""
+
+    def _fake_run(argv: list[str], **_kw: object) -> _Proc:
+        captured.append(list(argv))
+        return _Proc()
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)  # type: ignore[attr-defined]
+    monkeypatch.setattr(home, "_agent6_exe", lambda: "agent6")  # type: ignore[attr-defined]
+
+    ok, msg = home._run_merge_cli(tmp_path, "r1")  # pyright: ignore[reportPrivateUsage]
+    assert captured[-1] == ["agent6", "runs", "merge", "r1"]
+    assert ok is True
+    assert "merged agent6/r1" in msg
+
+
+def test_merge_action_confirms_then_shells_out(tmp_path: Path, monkeypatch: object) -> None:
+    """Pressing `m` opens a confirm modal; confirming runs `agent6 runs merge` for the
+    selected run (stubbed here so no real CLI is spawned)."""
+    import asyncio
+
+    from textual.widgets import DataTable
+
+    from agent6.ui import home
+    from agent6.ui.home import Agent6HomeApp
+    from agent6.ui.modals import ConfirmModal
+
+    a6 = tmp_path / ".agent6"
+    _write_run(a6, "runs", "r1", [{"type": "run.start", "mode": "run", "user_task": "x"}])
+
+    calls: list[str] = []
+
+    def _fake_merge(cwd: Path, run_id: str) -> tuple[bool, str]:
+        calls.append(run_id)
+        return True, "merged"
+
+    monkeypatch.setattr(home, "_run_merge_cli", _fake_merge)  # type: ignore[attr-defined]
+
+    async def scenario() -> None:
+        app = Agent6HomeApp(a6, tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            tbl = app.screen.query_one("#runs", DataTable)
+            tbl.focus()
+            tbl.move_cursor(row=0)
+            await pilot.press("m")
+            await pilot.pause()
+            assert isinstance(app.screen, ConfirmModal)
+            await pilot.press("y")  # confirm
+            await pilot.pause()
+            assert calls == ["r1"]  # merged the selected run
+
+    asyncio.run(scenario())
+
+
 def test_home_open_run_returns_its_dir(tmp_path: Path) -> None:
     """Selecting a run on the hub (Enter on the row) opens it: the app exits
     returning that run directory for the dashboard to watch."""
