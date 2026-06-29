@@ -124,7 +124,6 @@ extra_read_paths = ["/opt/miniconda3"]
 require_clean_worktree = true
 auto_stash = false
 branch_per_run = false
-commit_strategy = "none"
 allow_push = false
 allow_force = false
 allow_history_rewrite = false

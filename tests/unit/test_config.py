@@ -37,7 +37,6 @@ protect_git = true
 require_clean_worktree = true
 auto_stash = false
 branch_per_run = true
-commit_strategy = "per_step"
 allow_push = false
 allow_force = false
 allow_history_rewrite = false
@@ -468,7 +467,7 @@ max_output_tokens = 10000
     assert cfg.git.require_clean_worktree is True
     assert cfg.git.auto_stash is False
     assert cfg.git.branch_per_run is True
-    assert cfg.git.commit_strategy == "per_step"
+    assert cfg.git.merge_strategy == "squash"
     assert cfg.workflow.verify_timeout_s == 600.0
     anthro = cfg.providers["anthropic"]
     from agent6.config import AnthropicProviderEntry

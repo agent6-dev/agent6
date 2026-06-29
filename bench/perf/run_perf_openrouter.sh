@@ -167,7 +167,6 @@ protect_git = true
 require_clean_worktree = true
 auto_stash = false
 branch_per_run = true
-commit_strategy = "per_step"
 allow_push = false
 allow_force = false
 allow_history_rewrite = false

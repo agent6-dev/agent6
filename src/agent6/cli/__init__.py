@@ -47,6 +47,7 @@ from agent6.cli.machine_cmds import (
     _cmd_machine_test,
 )
 from agent6.cli.misc_cmds import (
+    _cmd_commits,
     _cmd_diff,
     _cmd_history_graph,
     _cmd_history_search,
@@ -56,6 +57,7 @@ from agent6.cli.misc_cmds import (
     _cmd_memory_add,
     _cmd_memory_invalidate,
     _cmd_memory_list,
+    _cmd_merge,
     _cmd_review,
 )
 from agent6.cli.model import _cmd_model
@@ -286,6 +288,15 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             return _cmd_watch(args.run_id, plain=args.plain, since=args.since)
         if args.runs_command == "diff":
             return _cmd_diff(run_id=args.run_id, stat=args.stat, paths=tuple(args.paths))
+        if args.runs_command == "merge":
+            return _cmd_merge(
+                run_id=args.run_id,
+                strategy=args.strategy,
+                into=args.into,
+                message=args.message,
+            )
+        if args.runs_command == "commits":
+            return _cmd_commits(run_id=args.run_id)
         if args.runs_command == "transcript":
             return _cmd_history_transcript(
                 args.run_id,

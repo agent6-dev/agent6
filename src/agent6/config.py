@@ -485,7 +485,12 @@ class GitConfig(BaseModel):
     # the stash with a message rather than risk a conflicted auto-apply.
     auto_stash_pop: bool = False
     branch_per_run: bool = True
-    commit_strategy: Literal["per_step", "squash", "stage", "none"] = "per_step"
+    # Default strategy for `agent6 runs merge`: how the run branch lands on
+    # your branch. `squash` (one combined commit), `merge` (a
+    # --no-ff merge keeping the per-step history), or `ff` (fast-forward only).
+    # The per-step commits always happen on the run branch during the run; this
+    # only governs how they are consolidated when you merge.
+    merge_strategy: Literal["squash", "merge", "ff"] = "squash"
     # Whether the repo's own git hooks (`.git/hooks/*`) run during agent6's
     # OWN git operations (notably the per-step auto-commit). Default false:
     # secure-by-default (a hook is repo-controlled code that would execute on

@@ -45,7 +45,6 @@ protect_git = true
 [git]
 require_clean_worktree = true
 branch_per_run = true
-commit_strategy = "per_step"
 allow_push = false
 
 [budget]

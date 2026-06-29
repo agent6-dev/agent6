@@ -231,6 +231,11 @@ def restore_stash(path: Path) -> bool:
     return False
 
 
+def branch_exists(path: Path, name: str) -> bool:
+    """True if a local branch *name* exists."""
+    return _run(path, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}", check=False).ok
+
+
 def create_branch(path: Path, name: str) -> None:
     """Create *name* from HEAD and check it out, or just check it out if it
     already exists. Idempotent so re-running/resuming a run reuses the run's
@@ -323,6 +328,19 @@ def commit_paths(
     return _commit(path, message, trailers=trailers, identity=identity)
 
 
+def _identity_env(identity: CommitIdentity | None) -> dict[str, str] | None:
+    """Author + committer env for a commit-creating git invocation, or None to fall
+    back to the repo's configured identity."""
+    if identity is None:
+        return None
+    env: dict[str, str] = {}
+    if identity.name:
+        env["GIT_AUTHOR_NAME"] = env["GIT_COMMITTER_NAME"] = identity.name
+    if identity.email:
+        env["GIT_AUTHOR_EMAIL"] = env["GIT_COMMITTER_EMAIL"] = identity.email
+    return env or None
+
+
 def _commit(
     path: Path,
     message: str,
@@ -331,21 +349,14 @@ def _commit(
     identity: CommitIdentity | None,
 ) -> str:
     merged_trailers = dict(trailers or {})
-    env_extra: dict[str, str] = {}
-    if identity is not None:
-        if identity.name:
-            env_extra["GIT_AUTHOR_NAME"] = identity.name
-            env_extra["GIT_COMMITTER_NAME"] = identity.name
-        if identity.email:
-            env_extra["GIT_AUTHOR_EMAIL"] = identity.email
-            env_extra["GIT_COMMITTER_EMAIL"] = identity.email
-        if identity.coauthor:
-            merged_trailers["Co-authored-by"] = identity.coauthor
+    env_extra = _identity_env(identity)
+    if identity is not None and identity.coauthor:
+        merged_trailers["Co-authored-by"] = identity.coauthor
     full_message = message
     if merged_trailers:
         trailer_lines = "\n".join(f"{k}: {v}" for k, v in merged_trailers.items())
         full_message = f"{message}\n\n{trailer_lines}"
-    _run(path, "commit", "-m", full_message, env_extra=env_extra or None)
+    _run(path, "commit", "-m", full_message, env_extra=env_extra)
     return _run(path, "rev-parse", "HEAD").stdout.strip()
 
 
@@ -378,13 +389,27 @@ def _untracked_files(path: Path) -> frozenset[str]:
     return frozenset(p for p in res.stdout.split("\x00") if p)
 
 
-def merge_branch(path: Path, branch: str, *, ff_only: bool = False) -> MergeResult:
-    """Merge *branch* into the current HEAD. A real merge commit (`--no-ff`) keeps
-    the run's per-step history; *ff_only* instead fast-forwards and raises if the
-    target has moved. On conflict, `git merge --abort` (not a history rewrite)
-    leaves the tree clean and the result reports the conflicted paths."""
-    args = ("merge", "--ff-only", branch) if ff_only else ("merge", "--no-ff", "--no-edit", branch)
-    res = _run(path, *args, check=False)
+def merge_branch(
+    path: Path,
+    branch: str,
+    *,
+    ff_only: bool = False,
+    message: str | None = None,
+    identity: CommitIdentity | None = None,
+) -> MergeResult:
+    """Merge *branch* into the current HEAD. A real merge commit (`--no-ff`, with
+    *message* and *identity* when given) keeps the run's per-step history; *ff_only*
+    instead fast-forwards and raises if the target has moved (no commit is created,
+    so message and identity do not apply). On conflict, `git merge --abort` (not a
+    history rewrite) leaves the tree clean and the result reports the conflicts."""
+    if ff_only:
+        args: tuple[str, ...] = ("merge", "--ff-only", branch)
+        env_extra = None
+    else:
+        msg_args = ("-m", message) if message else ("--no-edit",)
+        args = ("merge", "--no-ff", *msg_args, branch)
+        env_extra = _identity_env(identity)
+    res = _run(path, *args, check=False, env_extra=env_extra)
     if res.ok:
         return MergeResult(_run(path, "rev-parse", "HEAD").stdout.strip(), False, ())
     conflicts = _conflicted_paths(path)
@@ -436,7 +461,18 @@ def squash_merge(
     if coauthors:
         full = message + "\n\n" + "\n".join(f"Co-authored-by: {c}" for c in coauthors)
     author = CommitIdentity(name=identity.name, email=identity.email) if identity else None
-    return MergeResult(_commit(path, full, trailers=None, identity=author), False, ())
+    try:
+        sha = _commit(path, full, trailers=None, identity=author)
+    except GitError:
+        # The squash already staged a tree; if the commit step itself fails (a
+        # rejecting hook, say), restore the clean pre-merge tree rather than leave
+        # the index staged. Mirrors the conflict cleanup above.
+        rollback_to_known_good(path, head)
+        stray = tuple(sorted(_untracked_files(path) - pre_untracked))
+        if stray:
+            _run(path, "clean", "-fdq", "--", *stray, check=False)
+        raise
+    return MergeResult(sha, False, ())
 
 
 def list_run_commits(path: Path, base_sha: str, run_branch: str) -> tuple[CommitRow, ...]:

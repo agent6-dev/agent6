@@ -8,7 +8,9 @@ import json
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from agent6.budget import BudgetExceeded, BudgetTracker
 from agent6.cli._common import (
@@ -17,6 +19,7 @@ from agent6.cli._common import (
     _state_dir,
     resolve_run_layout,
 )
+from agent6.cli._merge import execute_merge
 from agent6.cli.plan_watch import _most_recent_run_id
 from agent6.cli.providers import _build_role_provider, build_review_seats
 from agent6.config import (
@@ -27,7 +30,18 @@ from agent6.config_layer import (
     load_effective,
     repo_config_path_for,
 )
-from agent6.git_ops import GitError, commit_paths, init_repo, is_git_repo, unignored
+from agent6.git_ops import (
+    CommitIdentity,
+    GitError,
+    branch_exists,
+    commit_paths,
+    init_repo,
+    is_git_repo,
+    list_run_commits,
+    unignored,
+    verify_git_identity,
+)
+from agent6.git_ops import status as git_status
 from agent6.graph.models import TaskNode
 from agent6.graph.storage import RunLayout, load_graph
 from agent6.init import _ask, init_workspace
@@ -412,6 +426,194 @@ def _cmd_diff(*, run_id: str, stat: bool, paths: tuple[str, ...]) -> int:  # noq
     )
     proc = subprocess.run(argv, cwd=cwd, check=False)
     return proc.returncode
+
+
+def _resolve_run_manifest(cwd: Path, run_id: str) -> tuple[RunLayout, dict[str, Any]] | int:
+    """Resolve a run id (or '' for most-recent) to its (layout, manifest), or an exit
+    code on error. Shared by `runs merge` and `runs commits`."""
+    runs_dir = _runs_dir(cwd)
+    if not runs_dir.is_dir():
+        print(f"ERROR: no runs directory at {runs_dir}", file=sys.stderr)
+        return 2
+    target_id = run_id
+    if not target_id:
+        latest = _most_recent_run_id(runs_dir)
+        if latest is None:
+            print(f"ERROR: no runs under {runs_dir}", file=sys.stderr)
+            return 2
+        target_id = latest
+        print(f"[agent6] using most recent run: {target_id}", file=sys.stderr)
+    else:
+        try:
+            target_id = resolve_run_id(runs_dir, target_id)
+        except RunIdError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
+    layout = RunLayout(state_dir=_state_dir(cwd), run_id=target_id)
+    if not layout.manifest_path.is_file():
+        print(f"ERROR: run {target_id} has no manifest.json", file=sys.stderr)
+        return 2
+    try:
+        manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"ERROR: could not read manifest: {exc}", file=sys.stderr)
+        return 2
+    return layout, manifest
+
+
+def _cmd_commits(*, run_id: str) -> int:
+    """List the per-step commits on a run's branch (manifest.base_sha -> run branch)."""
+    cwd = Path.cwd()
+    res = _resolve_run_manifest(cwd, run_id)
+    if isinstance(res, int):
+        return res
+    _layout, manifest = res
+    base_sha = str(manifest.get("base_sha") or "")
+    run_branch = manifest.get("run_branch")
+    if not run_branch or not base_sha:
+        print(
+            "ERROR: this run has no branch/base recorded (branch_per_run was off?).",
+            file=sys.stderr,
+        )
+        return 2
+    rows = list_run_commits(cwd, base_sha, str(run_branch))
+    if not rows:
+        print("[agent6] no commits on the run branch.")
+        return 0
+    for row in rows:
+        print(f"{row.sha[:12]}  {row.subject}")
+    print(f"\n[agent6] {len(rows)} commit(s) on {run_branch}", file=sys.stderr)
+    return 0
+
+
+@dataclass(frozen=True, slots=True)
+class _MergePlan:
+    """A validated, mutation-ready merge: everything `_cmd_merge` needs after every
+    guard has passed. `_plan_merge` builds it without touching the repo."""
+
+    layout: RunLayout
+    manifest: dict[str, Any]
+    run_branch: str
+    target: str
+    base_sha: str
+    strategy: str
+    identity: CommitIdentity
+    cfg: Config
+    original: str
+
+
+def _plan_merge(  # noqa: PLR0911
+    cwd: Path, run_id: str, into: str | None, strategy: str | None
+) -> _MergePlan | int:
+    """Resolve and validate everything a merge needs, or return an exit code. Pure:
+    every guard fails before `_cmd_merge` mutates the repo."""
+    res = _resolve_run_manifest(cwd, run_id)
+    if isinstance(res, int):
+        return res
+    layout, manifest = res
+    run_branch = manifest.get("run_branch")
+    if not run_branch:
+        print(
+            "ERROR: this run has no branch to merge (branch_per_run was off, so the "
+            "work already landed on your current branch).",
+            file=sys.stderr,
+        )
+        return 2
+    run_branch = str(run_branch)
+    target = into or str(manifest.get("base_branch") or "")
+    if not target:
+        print(
+            "ERROR: no target branch (manifest has no base_branch); pass --into <branch>.",
+            file=sys.stderr,
+        )
+        return 2
+    if target == run_branch:
+        print(
+            f"ERROR: target {target!r} is the run branch itself; pass --into <other-branch>.",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        cfg = load_effective(cwd, None).config
+        st = git_status(cwd)
+    except (ConfigError, GitError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    if not st.is_clean:
+        print(
+            "REFUSING: working tree is not clean; commit or stash your changes first.",
+            file=sys.stderr,
+        )
+        return 2
+    if not branch_exists(cwd, run_branch):
+        print(f"ERROR: run branch {run_branch!r} no longer exists.", file=sys.stderr)
+        return 2
+    if not branch_exists(cwd, target):
+        print(
+            f"ERROR: target branch {target!r} does not exist; pass --into <existing-branch>.",
+            file=sys.stderr,
+        )
+        return 2
+    identity = CommitIdentity(
+        name=cfg.git.commit.name, email=cfg.git.commit.email, coauthor=cfg.git.commit.coauthor
+    )
+    try:
+        verify_git_identity(cwd, identity)  # refuse cleanly before mutating anything
+    except GitError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    return _MergePlan(
+        layout=layout,
+        manifest=manifest,
+        run_branch=run_branch,
+        target=target,
+        base_sha=str(manifest.get("base_sha") or ""),
+        strategy=strategy or cfg.git.merge_strategy,
+        identity=identity,
+        cfg=cfg,
+        original=st.branch,
+    )
+
+
+def _cmd_merge(*, run_id: str, strategy: str | None, into: str | None, message: str | None) -> int:
+    """Merge a run's branch into a target (default: the branch the run was cut
+    from), with the chosen strategy (default: git.merge_strategy). Refuses a dirty
+    worktree, leaves a clean tree on failure, restores your original checkout, and
+    records the merge in the manifest."""
+    cwd = Path.cwd()
+    plan = _plan_merge(cwd, run_id, into, strategy)
+    if isinstance(plan, int):
+        return plan
+    outcome = execute_merge(
+        cwd,
+        layout=plan.layout,
+        manifest=plan.manifest,
+        run_branch=plan.run_branch,
+        target=plan.target,
+        base_sha=plan.base_sha,
+        strategy=plan.strategy,
+        message=message,
+        cfg=plan.cfg,
+        identity=plan.identity,
+        original=plan.original,
+    )
+    if outcome.status == "error":
+        print(f"ERROR: {outcome.error}", file=sys.stderr)
+        return 1
+    if outcome.status == "conflict":
+        print(
+            f"CONFLICT: merging {plan.run_branch} into {plan.target} hit conflicts in "
+            f"{', '.join(outcome.conflicts)}. The tree was left clean (no partial merge); "
+            f"resolve it by hand if you want:\n"
+            f"    git checkout {plan.target} && git merge {plan.run_branch}",
+            file=sys.stderr,
+        )
+        return 1
+    print(
+        f"[agent6] merged {plan.run_branch} into {plan.target} "
+        f"({plan.strategy}) -> {outcome.merged_sha[:12]}"
+    )
+    return 0
 
 
 def _cmd_mcp_serve(config_path: Path | None) -> int:

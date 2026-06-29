@@ -379,6 +379,48 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Restrict the diff to these paths.",
     )
 
+    runs_merge = runs_sub.add_parser(
+        "merge",
+        help="Merge a run's branch into a target (default: the branch it was cut from).",
+    )
+    runs_merge_id = runs_merge.add_argument(
+        "run_id",
+        nargs="?",
+        default="",
+        help="Run id (or unique prefix). Omit to merge the most recent run.",
+    )
+    runs_merge_id.completer = _complete_run_ids  # type: ignore[attr-defined]
+    runs_merge.add_argument(
+        "--strategy",
+        choices=("squash", "merge", "ff"),
+        default=None,
+        help="Override git.merge_strategy for this merge.",
+    )
+    runs_merge.add_argument(
+        "--into",
+        default=None,
+        metavar="BRANCH",
+        help="Target branch to merge into (default: the run's base branch).",
+    )
+    runs_merge.add_argument(
+        "--message",
+        "-m",
+        default=None,
+        help="Commit message for squash or merge (default: a condensed run summary).",
+    )
+
+    runs_commits = runs_sub.add_parser(
+        "commits",
+        help="List the per-step commits on a run's branch.",
+    )
+    runs_commits_id = runs_commits.add_argument(
+        "run_id",
+        nargs="?",
+        default="",
+        help="Run id (or unique prefix). Omit for the most recent run.",
+    )
+    runs_commits_id.completer = _complete_run_ids  # type: ignore[attr-defined]
+
     runs_tr = runs_sub.add_parser(
         "transcript",
         help="Render a run's full LLM conversation (the lossless transcripts) as Markdown.",

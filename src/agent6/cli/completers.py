@@ -43,7 +43,7 @@ _CONFIG_ENUM_CHOICES: dict[str, tuple[str, ...]] = {
     "sandbox.agent_network": ("providers", "local", "open"),
     "sandbox.tool_network": ("block", "only_explicit_states", "allow"),
     "sandbox.run_commands": ("yes", "no", "ask"),
-    "git.commit_strategy": ("per_step", "squash", "stage", "none"),
+    "git.merge_strategy": ("squash", "merge", "ff"),
     "review.trigger": ("off", "on_verify_fail", "before_finish", "periodic"),
     "prompt.revise_prompt": ("off", "auto", "interactive"),
     "models.worker.thinking": ("off", "low", "medium", "high"),

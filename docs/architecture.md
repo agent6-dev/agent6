@@ -74,9 +74,11 @@ Notes:
   interrupted run can be replayed deterministically up to the model
   call that comes next.
 - **Per-step commits** fire when `run_verify_command` returns 0, via
-  `git_ops.py` from outside the jail. Per-step is the default; the
-  `git.commit_strategy` knob also allows `squash` (one commit at run
-  end), `stage` (stage but never commit), and `none`.
+  `git_ops.py` from outside the jail, onto the run branch (or your current
+  branch when `branch_per_run` is off). They always happen (they make a run
+  resumable and forkable); how they consolidate onto your branch is chosen
+  later at `agent6 runs merge` time via `git.merge_strategy`
+  (`squash` / `merge` / `ff`).
 - **DAG-as-scaffold.** `add_task` / `update_task` /
   `set_cursor` / `list_tasks` write to a curator-owned side
   store: the worker's task breakdown. They do not pick which tool runs
