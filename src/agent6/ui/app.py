@@ -494,7 +494,7 @@ class Agent6TUI(App[int]):
         for tc in s.tool_calls[-20:]:
             ok = "…" if tc.ok is None else ("✓" if tc.ok else "✗")
             table.add_row(
-                Text(tc.name), Text(tc.args_preview[:60]), ok, Text(tc.result_summary[:60])
+                Text(tc.name), Text(tc.args_preview[:90]), ok, Text(tc.result_summary[:40])
             )
 
         # Log. Diff on the monotonic log_count, not len(log_tail): log_tail is a
