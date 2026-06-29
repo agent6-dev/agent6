@@ -8,8 +8,8 @@ hide:
 
 # agent6
 
-<p class="a6-tagline">A sandboxed coding agent for Linux, tuned to stay effective even on
-affordable open-weight models like Kimi, GLM, and Qwen, as well as Claude.</p>
+<p class="a6-tagline">A coding agent that jails model commands and uses editable state
+machines for long-running tasks.</p>
 
 <div class="a6-cta" markdown>
 [Get started](getting-started.md){ .md-button .md-button--primary }
@@ -23,11 +23,10 @@ affordable open-weight models like Kimi, GLM, and Qwen, as well as Claude.</p>
 ![The run dashboard: task graph, budget, tool calls, reasoning, log, and diff](screenshots/out/02-run-dashboard.png)
 </div>
 
-Run agent6 with a weaker or untrusted model on any repository: it cannot escape the
-workspace, reach the network beyond your model provider, or corrupt git history. The model
-reads, searches, and edits files, runs the project's verify command, and commits each step
-that passes; state is snapshotted before every model call, so an interrupted or wrong run
-is resumable.
+The model can write code and ask to run commands, but those commands go through a jail with
+restricted filesystem and network access. Long-running workflows can be written, reviewed,
+edited, resumed, and replayed as declarative state machines instead of being left to an
+open-ended agent loop.
 
 <div class="a6-grid" markdown>
 

@@ -1,12 +1,11 @@
 # agent6
 
-A sandboxed coding agent for Linux, tuned to stay effective on affordable open-weight
-models like Kimi, GLM, and Qwen, as well as Claude. The LLM is treated as adversarial:
-every command it spawns runs inside a custom Rust launcher (`agent6-jail`) built on user
-namespaces, Landlock, seccomp, `pivot_root`, `capset(0)`, and `NO_NEW_PRIVS`, so you can
-point a weaker or untrusted model at a real repository and it cannot escape the workspace,
-reach the network beyond the provider endpoint, or corrupt git history. Runs commit per
-step and are resumable and forkable, so an interrupted or wrong turn is never a dead end.
+A coding agent that jails model commands and uses editable state machines for long-running tasks.
+
+The model can write code and ask to run commands, but those commands go through a jail with
+restricted filesystem and network access. Long-running workflows can be written, reviewed,
+edited, resumed, and replayed as declarative state machines instead of being left to an
+open-ended agent loop.
 
 **Full documentation: [agent6.dev](https://agent6.dev)**
 

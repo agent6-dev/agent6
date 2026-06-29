@@ -1,5 +1,5 @@
 site_name: agent6
-site_description: A sandboxed coding agent for Linux, tuned to stay effective on affordable open-weight models as well as Claude.
+site_description: A coding agent that jails model commands and uses editable state machines for long-running tasks.
 site_url: https://agent6.dev
 site_author: Eric Lesiuta
 copyright: Apache-2.0

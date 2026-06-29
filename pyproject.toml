@@ -1,7 +1,7 @@
 [project]
 name = "agent6"
 dynamic = ["version"]
-description = "A sandboxed coding agent for Linux, tuned for affordable open-weight models."
+description = "A coding agent that jails model commands and uses editable state machines for long-running tasks."
 readme = "README.md"
 urls = { "Homepage" = "https://agent6.dev", "Documentation" = "https://agent6.dev", "Source" = "https://github.com/agent6-dev/agent6" }
 requires-python = ">=3.12"
