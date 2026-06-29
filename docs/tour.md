@@ -3,8 +3,8 @@
 A walk through the terminal UI. Every image is from a recorded run; click to enlarge.
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox"
-       poster="screenshots/out/01-hub.png">
-  <source src="screenshots/out/tour.webm" type="video/webm">
+       poster="/screenshots/out/01-hub.png">
+  <source src="/screenshots/out/tour.webm" type="video/webm">
 </video>
 
 ## Hub

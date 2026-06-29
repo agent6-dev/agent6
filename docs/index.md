@@ -74,8 +74,8 @@ operator-configured MCP server, off by default. No telemetry, no auto-update.
 ## The terminal UI
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox"
-       poster="screenshots/out/02-run-dashboard.png">
-  <source src="screenshots/out/tour.webm" type="video/webm">
+       poster="/screenshots/out/02-run-dashboard.png">
+  <source src="/screenshots/out/tour.webm" type="video/webm">
 </video>
 
 `agent6 tui` opens the hub: every run for the repository, with its mode, status, and
