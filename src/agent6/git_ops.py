@@ -349,6 +349,157 @@ def _commit(
     return _run(path, "rev-parse", "HEAD").stdout.strip()
 
 
+@dataclass(frozen=True, slots=True)
+class MergeResult:
+    """Outcome of merging a run branch into a target. On conflict the merge is
+    undone so the working tree is left clean (merged_sha empty, conflicts listed)."""
+
+    merged_sha: str
+    conflicted: bool
+    conflicts: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CommitRow:
+    """One commit on a run branch (oldest-first), for listing + squash-condensing."""
+
+    sha: str
+    subject: str
+    message: str  # full %B
+
+
+def _conflicted_paths(path: Path) -> tuple[str, ...]:
+    res = _run(path, "diff", "--name-only", "--diff-filter=U", check=False)
+    return tuple(p for p in res.stdout.splitlines() if p.strip())
+
+
+def _untracked_files(path: Path) -> frozenset[str]:
+    res = _run(path, "ls-files", "--others", "--exclude-standard", "-z", check=False)
+    return frozenset(p for p in res.stdout.split("\x00") if p)
+
+
+def merge_branch(path: Path, branch: str, *, ff_only: bool = False) -> MergeResult:
+    """Merge *branch* into the current HEAD. A real merge commit (`--no-ff`) keeps
+    the run's per-step history; *ff_only* instead fast-forwards and raises if the
+    target has moved. On conflict, `git merge --abort` (not a history rewrite)
+    leaves the tree clean and the result reports the conflicted paths."""
+    args = ("merge", "--ff-only", branch) if ff_only else ("merge", "--no-ff", "--no-edit", branch)
+    res = _run(path, *args, check=False)
+    if res.ok:
+        return MergeResult(_run(path, "rev-parse", "HEAD").stdout.strip(), False, ())
+    conflicts = _conflicted_paths(path)
+    _run(path, "merge", "--abort", check=False)
+    if not conflicts:
+        raise GitError(f"merge failed: {res.stderr.strip() or res.stdout.strip() or 'exit'}")
+    return MergeResult("", True, conflicts)
+
+
+def squash_merge(
+    path: Path,
+    branch: str,
+    message: str,
+    *,
+    identity: CommitIdentity | None,
+    coauthors: tuple[str, ...] = (),
+) -> MergeResult:
+    """Squash *branch* into HEAD as ONE commit. `git merge --squash` stages the
+    branch's cumulative tree without committing or moving HEAD (not a rebase or
+    reset, so policy-clean); we then commit once with *message* plus the deduped
+    *coauthors*. A squash with nothing to merge is a clean no-op (returns HEAD).
+    On conflict, restore the pre-merge tree (reset --mixed + checkout, plus
+    removing only the files this squash newly staged, which otherwise survive as
+    untracked; never reset --hard, as a squash leaves no MERGE_HEAD to --abort)
+    and report the conflicted paths."""
+    head = _run(path, "rev-parse", "HEAD").stdout.strip()
+    pre_untracked = _untracked_files(path)
+    res = _run(path, "merge", "--squash", branch, check=False)
+    if not res.ok:
+        conflicts = _conflicted_paths(path)
+        rollback_to_known_good(path, head)
+        # A conflicted squash also stages new files from the branch; reset --mixed
+        # demotes them to untracked and checkout cannot remove them. Clean only the
+        # files this merge introduced, so the user's pre-existing untracked files
+        # are untouched (and still never reset --hard).
+        stray = tuple(sorted(_untracked_files(path) - pre_untracked))
+        if stray:
+            _run(path, "clean", "-fdq", "--", *stray, check=False)
+        if not conflicts:
+            raise GitError(
+                f"squash merge failed: {res.stderr.strip() or res.stdout.strip() or 'exit'}"
+            )
+        return MergeResult("", True, conflicts)
+    if _run(path, "diff", "--cached", "--quiet", check=False).ok:
+        # Nothing staged: the branch was already up to date / an ancestor. A clean
+        # no-op, matching merge_branch's "Already up to date" behavior.
+        return MergeResult(head, False, ())
+    full = message
+    if coauthors:
+        full = message + "\n\n" + "\n".join(f"Co-authored-by: {c}" for c in coauthors)
+    author = CommitIdentity(name=identity.name, email=identity.email) if identity else None
+    return MergeResult(_commit(path, full, trailers=None, identity=author), False, ())
+
+
+def list_run_commits(path: Path, base_sha: str, run_branch: str) -> tuple[CommitRow, ...]:
+    """Commits on *run_branch* since *base_sha*, oldest first."""
+    # NUL-separate commits (-z): a commit body can contain any byte except NUL, so
+    # \x1f/\x1e separators in a body would corrupt records/fields. Within a record,
+    # split the \x1f fields at most twice so the body (last field) keeps any \x1f.
+    fmt = "%H%x1f%s%x1f%B"
+    res = _run(
+        path, "log", "-z", "--reverse", f"--format={fmt}", f"{base_sha}..{run_branch}", check=False
+    )
+    if not res.ok:
+        return ()
+    rows: list[CommitRow] = []
+    for rec in res.stdout.split("\x00"):
+        if not rec.strip():
+            continue
+        fields = rec.split("\x1f", 2)
+        if len(fields) >= 3:
+            rows.append(CommitRow(sha=fields[0].strip(), subject=fields[1], message=fields[2]))
+    return tuple(rows)
+
+
+_ITER_SUBJECT_RE = re.compile(r"^agent6 iter \d+:\s*", re.IGNORECASE)
+_COAUTHOR_RE = re.compile(r"^co-authored-by:\s*(.+)$", re.IGNORECASE)
+
+
+def condense_commit_message(
+    rows: tuple[CommitRow, ...], *, subject: str
+) -> tuple[str, tuple[str, ...]]:
+    """Fold per-step commits into one readable message + a deduped co-author list,
+    so a squash reads as a single authored commit, not a squashed series.
+
+    *subject* is the run's task (the headline). The body lists the distinct,
+    de-noised per-step subjects (the `agent6 iter N:` prefix and checkpoint noise
+    stripped). Co-authored-by trailers are collected across every commit and
+    de-duplicated case-insensitively by `Name <email>`."""
+    bullets: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        s = _ITER_SUBJECT_RE.sub("", row.subject).strip()
+        if not s or s.lower().startswith("checkpoint") or s.lower() in seen:
+            continue
+        seen.add(s.lower())
+        bullets.append(s)
+    coauthors: list[str] = []
+    seen_ca: set[str] = set()
+    for row in rows:
+        for line in row.message.splitlines():
+            m = _COAUTHOR_RE.match(line.strip())
+            if m and m.group(1).strip().lower() not in seen_ca:
+                seen_ca.add(m.group(1).strip().lower())
+                coauthors.append(m.group(1).strip())
+    headline = _ITER_SUBJECT_RE.sub("", subject).strip() or (
+        bullets[0] if bullets else "agent6 run"
+    )
+    parts = [headline]
+    if bullets:
+        parts.append("")
+        parts.extend(f"- {b}" for b in bullets)
+    return "\n".join(parts), tuple(coauthors)
+
+
 def recent_log(path: Path, n: int = 20) -> str:
     res = _run(path, "log", f"-n{n}", "--oneline", check=False)
     return res.stdout if res.ok else ""

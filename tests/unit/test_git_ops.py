@@ -14,12 +14,15 @@ from agent6.git_ops import (
     GitError,
     GitSafetyError,
     commit_all,
+    condense_commit_message,
     create_branch,
     create_branch_at,
     diff_since,
     init_repo,
     is_git_repo,
+    list_run_commits,
     make_run_branch_name,
+    merge_branch,
     recent_log,
     refuse_force,
     refuse_history_rewrite,
@@ -28,6 +31,7 @@ from agent6.git_ops import (
     restore_stash,
     set_repo_hook_policy,
     slugify,
+    squash_merge,
     stash_all,
     status,
     unignored,
@@ -373,3 +377,126 @@ def test_restore_stash_conflict_keeps_stash(tmp_path: Path) -> None:
         ["git", "-C", str(tmp_path), "stash", "list"], capture_output=True, text=True, check=True
     ).stdout
     assert "agent6 auto-stash" in listing  # preserved, never dropped on conflict
+
+
+def _commit_file(repo: Path, name: str, content: str, msg: str) -> str:
+    (repo / name).write_text(content, encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", msg], check=True)
+    return status(repo).head_sha
+
+
+def test_merge_branch_no_ff_clean(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    create_branch(tmp_path, "agent6/r1")
+    _commit_file(tmp_path, "feat.txt", "x\n", "agent6 iter 1: add feat")
+    create_branch(tmp_path, "main")  # idempotent checkout back to base
+    res = merge_branch(tmp_path, "agent6/r1")
+    assert not res.conflicted
+    assert res.merged_sha
+    assert (tmp_path / "feat.txt").read_text(encoding="utf-8") == "x\n"
+    assert "add feat" in recent_log(tmp_path, 10)
+
+
+def test_merge_branch_conflict_aborts_clean(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    create_branch(tmp_path, "agent6/r1")
+    _commit_file(tmp_path, "README.md", "run change\n", "agent6 iter 1: edit")
+    create_branch(tmp_path, "main")
+    _commit_file(tmp_path, "README.md", "main change\n", "main edit")  # same line
+    res = merge_branch(tmp_path, "agent6/r1")
+    assert res.conflicted
+    assert "README.md" in res.conflicts
+    assert status(tmp_path).is_clean  # merge --abort left a clean tree
+
+
+def test_list_run_commits_oldest_first(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    base = status(tmp_path).head_sha
+    create_branch(tmp_path, "agent6/r1")
+    _commit_file(tmp_path, "a.txt", "a\n", "agent6 iter 1: add a")
+    _commit_file(tmp_path, "b.txt", "b\n", "agent6 iter 2: add b")
+    rows = list_run_commits(tmp_path, base, "agent6/r1")
+    assert [r.subject for r in rows] == ["agent6 iter 1: add a", "agent6 iter 2: add b"]
+
+
+def test_condense_dedups_coauthors_and_strips_prefix(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    base = status(tmp_path).head_sha
+    create_branch(tmp_path, "agent6/r1")
+    _commit_file(tmp_path, "a.txt", "a\n", "agent6 iter 1: add a\n\nCo-authored-by: Op <op@x>")
+    _commit_file(tmp_path, "b.txt", "b\n", "agent6 iter 2: add b\n\nCo-authored-by: Op <op@x>")
+    rows = list_run_commits(tmp_path, base, "agent6/r1")
+    message, coauthors = condense_commit_message(rows, subject="implement parse_url")
+    assert coauthors == ("Op <op@x>",)  # deduped from two identical trailers
+    assert message.splitlines()[0] == "implement parse_url"  # headline = the task
+    assert "- add a" in message and "- add b" in message  # prefix stripped, bulleted
+
+
+def test_squash_merge_is_one_commit_with_single_coauthor(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    base = status(tmp_path).head_sha
+    create_branch(tmp_path, "agent6/r1")
+    _commit_file(tmp_path, "a.txt", "a\n", "agent6 iter 1: add a\n\nCo-authored-by: Op <op@x>")
+    _commit_file(tmp_path, "b.txt", "b\n", "agent6 iter 2: add b\n\nCo-authored-by: Op <op@x>")
+    create_branch(tmp_path, "main")
+    rows = list_run_commits(tmp_path, base, "agent6/r1")
+    message, coauthors = condense_commit_message(rows, subject="the task")
+    res = squash_merge(tmp_path, "agent6/r1", message, identity=None, coauthors=coauthors)
+    assert not res.conflicted
+    assert (tmp_path / "a.txt").exists() and (tmp_path / "b.txt").exists()
+    head_msg = subprocess.run(
+        ["git", "-C", str(tmp_path), "log", "-1", "--format=%B"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert head_msg.count("Co-authored-by: Op <op@x>") == 1  # single deduped trailer
+    # ONE squash commit on main since base (not the two per-step commits)
+    main_commits = list_run_commits(tmp_path, base, "main")
+    assert len(main_commits) == 1
+
+
+def test_squash_merge_conflict_rolls_back_clean(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    create_branch(tmp_path, "agent6/r1")
+    # The run commit BOTH edits a shared file (conflict) AND adds a new file --
+    # the conflicted squash stages the add, which a naive reset --mixed + checkout
+    # would leave behind as an untracked stray.
+    (tmp_path / "README.md").write_text("run change\n", encoding="utf-8")
+    (tmp_path / "added_by_run.txt").write_text("new\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "commit", "-q", "-m", "agent6 iter 1: edit+add"], check=True
+    )
+    create_branch(tmp_path, "main")
+    _commit_file(tmp_path, "README.md", "main change\n", "main edit")  # same line conflicts
+    res = squash_merge(tmp_path, "agent6/r1", "msg", identity=None)
+    assert res.conflicted
+    assert "README.md" in res.conflicts
+    assert status(tmp_path).is_clean  # rolled back AND the merge-added stray removed
+    assert not (tmp_path / "added_by_run.txt").exists()
+    assert (tmp_path / "README.md").read_text(encoding="utf-8") == "main change\n"
+
+
+def test_squash_merge_noop_when_nothing_to_merge(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    head = status(tmp_path).head_sha
+    create_branch(tmp_path, "agent6/r1")  # identical to main, no new commits
+    create_branch(tmp_path, "main")
+    res = squash_merge(tmp_path, "agent6/r1", "msg", identity=None)
+    assert not res.conflicted
+    assert res.merged_sha == head  # clean no-op, not a "nothing to commit" raise
+    assert status(tmp_path).is_clean
+
+
+def test_list_run_commits_preserves_body_with_separator_bytes(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    base = status(tmp_path).head_sha
+    create_branch(tmp_path, "agent6/r1")
+    body = "line A \x1f mid \x1e end\n\nCo-authored-by: Op <op@x>"
+    _commit_file(tmp_path, "a.txt", "a\n", f"agent6 iter 1: add a\n\n{body}")
+    rows = list_run_commits(tmp_path, base, "agent6/r1")
+    assert len(rows) == 1  # \x1e in the body did not split it into two records
+    _, coauthors = condense_commit_message(rows, subject="t")
+    assert coauthors == ("Op <op@x>",)  # \x1f in the body did not truncate the trailer
