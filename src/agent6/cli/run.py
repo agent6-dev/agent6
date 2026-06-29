@@ -77,6 +77,7 @@ from agent6.git_ops import (
     CommitIdentity,
     GitError,
     create_branch,
+    delete_branch_if_merged,
     is_git_repo,
     restore_stash,
     set_repo_hook_policy,
@@ -1091,6 +1092,15 @@ def _finalize_auto_merge(cwd: Path, *, layout: RunLayout, cfg: Config) -> None:
             f"({cfg.git.merge_strategy}) -> {outcome.merged_sha[:12]}",
             file=sys.stderr,
         )
+        if cfg.git.auto_prune:
+            if delete_branch_if_merged(cwd, run_branch):
+                print(f"[agent6] auto_pruned {run_branch}", file=sys.stderr)
+            else:
+                print(
+                    f"[agent6] auto_prune kept {run_branch} (squash-merged, unreachable; "
+                    f"remove with: git branch -D {run_branch})",
+                    file=sys.stderr,
+                )
     elif outcome.status == "conflict":
         print(
             f"[agent6] auto_merge into {base_branch} hit conflicts "

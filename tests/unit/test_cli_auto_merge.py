@@ -131,3 +131,46 @@ def test_auto_merge_conflict_keeps_run_branch_intact(
     # the run branch still has its commit
     assert "agent6 iter 1: edit" in _git(tmp_path, "log", "--oneline", "agent6/run-AM3333")
     _ = base
+
+
+def test_auto_prune_deletes_reachable_merge_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _setup_run_on_branch(
+        tmp_path,
+        "run-AP1111",
+        commits=[("a.txt", "a\n", "agent6 iter 1: add a")],
+        run_branch="agent6/run-AP1111",
+    )
+    cfg = load_effective(tmp_path, None).config
+    git2 = cfg.git.model_copy(
+        update={"auto_merge": True, "auto_prune": True, "merge_strategy": "merge"}
+    )
+    cfg2 = cfg.model_copy(update={"git": git2})
+    runmod._finalize_auto_merge(  # pyright: ignore[reportPrivateUsage]
+        tmp_path, layout=RunLayout(resolved_state_dir(tmp_path), "run-AP1111"), cfg=cfg2
+    )
+    assert _git(tmp_path, "branch", "--list", "agent6/run-AP1111") == ""  # pruned (reachable)
+
+
+def test_auto_prune_keeps_squash_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _setup_run_on_branch(
+        tmp_path,
+        "run-AP2222",
+        commits=[("a.txt", "a\n", "agent6 iter 1: add a")],
+        run_branch="agent6/run-AP2222",
+    )
+    cfg = load_effective(tmp_path, None).config
+    git2 = cfg.git.model_copy(
+        update={"auto_merge": True, "auto_prune": True, "merge_strategy": "squash"}
+    )
+    cfg2 = cfg.model_copy(update={"git": git2})
+    runmod._finalize_auto_merge(  # pyright: ignore[reportPrivateUsage]
+        tmp_path, layout=RunLayout(resolved_state_dir(tmp_path), "run-AP2222"), cfg=cfg2
+    )
+    assert _git(tmp_path, "branch", "--list", "agent6/run-AP2222")  # kept (squash unreachable)
+    assert "git branch -D" in capsys.readouterr().err

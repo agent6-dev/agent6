@@ -497,6 +497,13 @@ class GitConfig(BaseModel):
     # (without a run branch there is nothing to merge). With auto_stash_pop the
     # merge lands first, then your stashed pre-run changes go back on top.
     auto_merge: bool = False
+    # After auto_merge, delete the run branch when it is safely deletable
+    # (`git branch -d`: reachable-merged, so merge/ff strategies). A squash-merged
+    # branch is unreachable and is reported with the `git branch -D` to remove it by
+    # hand, never force-deleted. Requires auto_merge. With both on, run branches
+    # stop accumulating, so agent6 looks like a direct-to-branch agent while keeping
+    # the per-step commits during the run. Default off.
+    auto_prune: bool = False
     # Whether the repo's own git hooks (`.git/hooks/*`) run during agent6's
     # OWN git operations (notably the per-step auto-commit). Default false:
     # secure-by-default (a hook is repo-controlled code that would execute on
@@ -522,6 +529,11 @@ class GitConfig(BaseModel):
             raise ValueError(
                 "git.auto_merge requires git.branch_per_run: with no run branch there is "
                 "nothing to merge (the run commits straight onto your branch)."
+            )
+        if self.auto_prune and not self.auto_merge:
+            raise ValueError(
+                "git.auto_prune requires git.auto_merge: pruning a run branch only makes "
+                "sense once it has been merged."
             )
         return self
 

@@ -421,6 +421,11 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     runs_commits_id.completer = _complete_run_ids  # type: ignore[attr-defined]
 
+    runs_sub.add_parser(
+        "prune",
+        help="Delete agent6/* run branches that are safely merged; report the rest.",
+    )
+
     runs_tr = runs_sub.add_parser(
         "transcript",
         help="Render a run's full LLM conversation (the lossless transcripts) as Markdown.",

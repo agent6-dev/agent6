@@ -236,6 +236,28 @@ def branch_exists(path: Path, name: str) -> bool:
     return _run(path, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}", check=False).ok
 
 
+def list_run_branches(path: Path) -> tuple[str, ...]:
+    """Local branches under the `agent6/` namespace (run branches), sorted."""
+    res = _run(path, "for-each-ref", "--format=%(refname:short)", "refs/heads/agent6/", check=False)
+    return tuple(b for b in res.stdout.splitlines() if b.strip())
+
+
+def is_ancestor(path: Path, maybe_ancestor: str, ref: str) -> bool:
+    """True if *maybe_ancestor* is reachable from *ref* (`git merge-base
+    --is-ancestor`). Used to tell a reachable-merged run branch (an ancestor of its
+    base) from a squash-merged one (content in the base, but not reachable)."""
+    return _run(path, "merge-base", "--is-ancestor", maybe_ancestor, ref, check=False).ok
+
+
+def delete_branch_if_merged(path: Path, branch: str) -> bool:
+    """Delete *branch* with `git branch -d`, the SAFE delete: git refuses unless the
+    branch is reachable-merged into the current HEAD (or its upstream). Returns True
+    if deleted, False if git refused -- a squash-merged or genuinely unmerged branch,
+    since neither is reachable. Never `branch -D`; forced deletion is refused by
+    agent6, so an unreachable branch is reported, never force-removed."""
+    return _run(path, "branch", "-d", branch, check=False).ok
+
+
 def create_branch(path: Path, name: str) -> None:
     """Create *name* from HEAD and check it out, or just check it out if it
     already exists. Idempotent so re-running/resuming a run reuses the run's

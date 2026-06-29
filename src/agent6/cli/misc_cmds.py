@@ -35,8 +35,11 @@ from agent6.git_ops import (
     GitError,
     branch_exists,
     commit_paths,
+    delete_branch_if_merged,
     init_repo,
+    is_ancestor,
     is_git_repo,
+    list_run_branches,
     list_run_commits,
     unignored,
     verify_git_identity,
@@ -612,6 +615,73 @@ def _cmd_merge(*, run_id: str, strategy: str | None, into: str | None, message: 
     print(
         f"[agent6] merged {plan.run_branch} into {plan.target} "
         f"({plan.strategy}) -> {outcome.merged_sha[:12]}"
+    )
+    return 0
+
+
+def _manifest_merged_into(state_dir: Path, branch: str) -> str:
+    """The base branch the run owning *branch* (agent6/<run_id>) was merged into, or
+    "" if there is no manifest or it was never recorded as merged."""
+    run_id = branch.removeprefix("agent6/")
+    try:
+        manifest = json.loads(
+            RunLayout(state_dir=state_dir, run_id=run_id).manifest_path.read_text(encoding="utf-8")
+        )
+    except (OSError, json.JSONDecodeError):
+        return ""
+    return str(manifest.get("merged_into") or "") if manifest.get("merged_sha") else ""
+
+
+def _cmd_prune() -> int:
+    """Delete agent6/* run branches that `git branch -d` can safely remove
+    (reachable-merged into HEAD, i.e. merge/ff strategies). Report squash-merged
+    ones (remove by hand with git branch -D) and unmerged ones (review first);
+    agent6 never force-deletes."""
+    cwd = Path.cwd()
+    if not is_git_repo(cwd):
+        print("ERROR: not a git repository", file=sys.stderr)
+        return 2
+    branches = list_run_branches(cwd)
+    if not branches:
+        print("[agent6] no agent6/* run branches to prune.")
+        return 0
+    try:
+        current = git_status(cwd).branch
+    except GitError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    state_dir = _state_dir(cwd)
+    deleted = merged_kept = unmerged_kept = 0
+    for br in branches:
+        if br == current:
+            print(f"[agent6] skipped {br} (checked out)", file=sys.stderr)
+            continue
+        if delete_branch_if_merged(cwd, br):
+            deleted += 1
+            print(f"[agent6] deleted {br} (merged)")
+            continue
+        merged_into = _manifest_merged_into(state_dir, br)
+        if not merged_into:
+            unmerged_kept += 1
+            print(f"[agent6] kept {br} (NOT merged; review, then: git branch -D {br})")
+            continue
+        merged_kept += 1
+        if branch_exists(cwd, merged_into) and is_ancestor(cwd, br, merged_into):
+            # Reachable-merged into its base, so `git branch -d` only refused because
+            # HEAD is not the base; deleting it cleanly needs to run from the base.
+            print(
+                f"[agent6] kept {br} (merged into {merged_into} but not reachable from "
+                f"{current!r}; re-run prune on {merged_into}, or: git branch -D {br})"
+            )
+        else:
+            print(
+                f"[agent6] kept {br} (squash-merged into {merged_into}, unreachable; "
+                f"remove with: git branch -D {br})"
+            )
+    print(
+        f"\n[agent6] deleted {deleted}; kept {merged_kept + unmerged_kept} "
+        f"({merged_kept} merged, {unmerged_kept} unmerged)",
+        file=sys.stderr,
     )
     return 0
 

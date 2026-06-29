@@ -55,6 +55,7 @@ agent6 runs watch         # attach the live dashboard; --plain for a text tail
 agent6 runs diff          # the git diff the run produced
 agent6 runs commits       # the per-step commits on the run branch
 agent6 runs merge         # merge the run branch into your branch (squash/merge/ff)
+agent6 runs prune         # delete safely-merged agent6/* run branches; report the rest
 agent6 runs transcript    # the full conversation, every tool call with its I/O
 agent6 runs graph         # the persisted task graph
 ```

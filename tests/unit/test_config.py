@@ -93,6 +93,12 @@ def test_auto_merge_requires_branch_per_run(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
+def test_auto_prune_requires_auto_merge(tmp_path: Path) -> None:
+    body = "[git]\nauto_prune = true\nauto_merge = false\n"
+    with pytest.raises(ConfigError, match="auto_prune requires"):
+        load_config(_write(tmp_path, body))
+
+
 def test_network_defaults_are_secure(tmp_path: Path) -> None:
     body = _VALID_TOML.replace('agent_network = "providers"\n', "")
     cfg = load_config(_write(tmp_path, body))
