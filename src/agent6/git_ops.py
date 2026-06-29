@@ -219,6 +219,18 @@ def stash_all(path: Path, message: str) -> None:
     _run(path, "stash", "push", "--include-untracked", "--message", message)
 
 
+def restore_stash(path: Path) -> bool:
+    """Apply the latest stash back onto the working tree. On a clean apply, drop
+    the stash and return True. On conflict (or any non-zero apply), leave the
+    stash in place so the user's work is never lost, and return False. We never
+    `reset --hard` to undo a conflicted apply (refused), so a conflict leaves the
+    markers for the user to resolve with their stash still safe at stash@{0}."""
+    if _run(path, "stash", "apply", check=False).ok:
+        _run(path, "stash", "drop", check=False)
+        return True
+    return False
+
+
 def create_branch(path: Path, name: str) -> None:
     """Create *name* from HEAD and check it out, or just check it out if it
     already exists. Idempotent so re-running/resuming a run reuses the run's

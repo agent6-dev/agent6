@@ -77,6 +77,7 @@ from agent6.git_ops import (
     GitError,
     create_branch,
     is_git_repo,
+    restore_stash,
     set_repo_hook_policy,
     stash_all,
     verify_git_identity,
@@ -704,10 +705,15 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     # (`git add -A`) never swallow the user's pre-existing uncommitted work.
     # Only `run` makes commits; `plan`/`ask` are read-only (matching the
     # branch_per_run guard below).
+    # Track an auto-stash so the run-end finalizer can restore or at least report
+    # it; otherwise the user's stashed pre-run work is silently left behind.
+    stashed = False
+    base_branch = pre_status.branch if pre_status is not None else ""
     if mode == "run" and pre_status is not None and not pre_status.is_clean:
         if cfg.git.auto_stash:
             try:
                 stash_all(cwd, f"agent6 auto-stash before run {effective_run_id}")
+                stashed = True
             except GitError as exc:
                 print(f"ERROR: could not auto-stash before run: {exc}", file=sys.stderr)
                 return 2
@@ -985,6 +991,13 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         _stop_egress(egress_broker, egress_sock_dir)
         # Never leave root-owned run state in the user's repo (sudo case).
         chown_to_real_user(state_dir)
+        if stashed:
+            _finalize_auto_stash(
+                cwd,
+                base_branch=base_branch,
+                run_branch=run_branch,
+                auto_pop=cfg.git.auto_stash_pop,
+            )
 
     if interrupted:
         return 130
@@ -1019,6 +1032,49 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         reason=result.reason,
     )
     return _run_exit_code(result)
+
+
+def _finalize_auto_stash(
+    cwd: Path, *, base_branch: str, run_branch: str | None, auto_pop: bool
+) -> None:
+    """Restore or report the pre-run auto-stash so the user's work is never left in a
+    hidden stash. With auto_pop off, print how to pop it. With auto_pop on, pop it
+    onto the base branch when that is safe (clean worktree, conflict-free apply);
+    otherwise leave the stash with a message. Never reset --hard (refused)."""
+    recover = f"git checkout {base_branch} && git stash pop" if run_branch else "git stash pop"
+    if not auto_pop:
+        print(
+            f"[agent6] pre-run changes are stashed; restore them with: {recover}", file=sys.stderr
+        )
+        return
+    try:
+        st = git_status(cwd)
+    except GitError:
+        st = None
+    if st is None or not st.is_clean:
+        print(
+            f"[agent6] pre-run changes left stashed (worktree not clean); restore with: {recover}",
+            file=sys.stderr,
+        )
+        return
+    if run_branch and st.branch == run_branch:
+        try:
+            create_branch(cwd, base_branch)  # idempotent: checks out the existing base branch
+        except GitError as exc:
+            print(
+                f"[agent6] could not switch to {base_branch} to restore the stash ({exc}); "
+                f"restore with: {recover}",
+                file=sys.stderr,
+            )
+            return
+    if restore_stash(cwd):
+        print(f"[agent6] restored your pre-run changes onto {base_branch}", file=sys.stderr)
+    else:
+        print(
+            "[agent6] restoring your pre-run changes hit a conflict; resolve the markers"
+            " (your stash is preserved at stash@{0})",
+            file=sys.stderr,
+        )
 
 
 def _fire_notify_hook(

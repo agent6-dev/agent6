@@ -25,8 +25,10 @@ from agent6.git_ops import (
     refuse_history_rewrite,
     refuse_push,
     reset_to,
+    restore_stash,
     set_repo_hook_policy,
     slugify,
+    stash_all,
     status,
     unignored,
     verify_git_identity,
@@ -344,3 +346,30 @@ def test_commit_error_surfaces_stdout_when_stderr_empty(tmp_path: Path) -> None:
     assert "nothing to commit" in msg.lower()
     # And the prefix must still identify which git invocation failed.
     assert "git commit" in msg
+
+
+def test_restore_stash_clean_apply_restores_and_drops(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    (tmp_path / "wip.txt").write_text("work in progress\n", encoding="utf-8")
+    stash_all(tmp_path, "agent6 auto-stash")
+    assert not (tmp_path / "wip.txt").exists()  # stashed away, tree clean
+    assert restore_stash(tmp_path) is True
+    assert (tmp_path / "wip.txt").read_text(encoding="utf-8") == "work in progress\n"
+    listing = subprocess.run(
+        ["git", "-C", str(tmp_path), "stash", "list"], capture_output=True, text=True, check=True
+    ).stdout
+    assert listing.strip() == ""  # dropped after a clean apply
+
+
+def test_restore_stash_conflict_keeps_stash(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    (tmp_path / "README.md").write_text("stashed change\n", encoding="utf-8")
+    stash_all(tmp_path, "agent6 auto-stash")
+    # A conflicting commit on the same line means the stash cannot apply cleanly.
+    (tmp_path / "README.md").write_text("committed change\n", encoding="utf-8")
+    commit_all(tmp_path, "conflicting commit")
+    assert restore_stash(tmp_path) is False
+    listing = subprocess.run(
+        ["git", "-C", str(tmp_path), "stash", "list"], capture_output=True, text=True, check=True
+    ).stdout
+    assert "agent6 auto-stash" in listing  # preserved, never dropped on conflict

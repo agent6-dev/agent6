@@ -478,6 +478,12 @@ class GitConfig(BaseModel):
 
     require_clean_worktree: bool = True
     auto_stash: bool = False
+    # When auto_stash stashed pre-run changes, restore them at run end. Default
+    # off (safe): the run-end reporter always prints how to pop the stash; with
+    # this on, agent6 also pops it for you when it can do so cleanly (switching
+    # back to the base branch first under branch_per_run), and otherwise leaves
+    # the stash with a message rather than risk a conflicted auto-apply.
+    auto_stash_pop: bool = False
     branch_per_run: bool = True
     commit_strategy: Literal["per_step", "squash", "stage", "none"] = "per_step"
     # Whether the repo's own git hooks (`.git/hooks/*`) run during agent6's

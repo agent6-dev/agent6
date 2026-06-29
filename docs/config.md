@@ -195,7 +195,8 @@ The security boundary. Profiles and the network model are specified in
 | Field | Default | Meaning |
 |---|---|---|
 | `require_clean_worktree` | `true` | Refuse to start on a dirty worktree. |
-| `auto_stash` | `false` | Stash before, restore after the run. |
+| `auto_stash` | `false` | Stash uncommitted changes before the run. Restored at run end per `auto_stash_pop`; otherwise agent6 prints how to `git stash pop` them (never silently left). |
+| `auto_stash_pop` | `false` | When `auto_stash` stashed changes, pop them back at run end if it is safe: clean worktree and a conflict-free apply, switching back to the base branch first under `branch_per_run`. On any conflict or doubt, leave the stash and print how to restore it. Never `reset --hard`. |
 | `branch_per_run` | `true` | Cut a fresh `agent6/<slug>` branch off HEAD (else stay on the current branch and remember the starting sha). |
 | `commit_strategy` | `"per_step"` | End-of-run finalization: `per_step` (keep N commits) / `squash` (one combined commit) / `stage` (leave staged) / `none` (leave unstaged). All strategies commit per-step *during* the run. |
 | `run_repo_hooks` | `false` | Whether the repo's own `.git/hooks/*` run during agent6's git ops (notably the per-step auto-commit). Default off: a repo hook is repo-controlled code that runs on the host (outside the jail), so honoring it on agent6's commit is a host-RCE vector for an untrusted repo, and the `verify_command` is agent6's real success gate. Set true to honor the repo's hooks (you trust the repo). `core.fsmonitor`/`diff.external` are always neutralized regardless. |
