@@ -34,6 +34,7 @@ from agent6.cli._common import (
     _state_dir,
     detect_env,
 )
+from agent6.cli._merge import execute_merge
 from agent6.cli._repl import build_repl_hook as _build_repl_hook
 from agent6.cli._steer import (
     make_steer_state as _make_steer_state,
@@ -989,6 +990,8 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         if mcp_manager is not None:
             mcp_manager.close()
         _stop_egress(egress_broker, egress_sock_dir)
+        if not interrupted and result is not None and result.completed and cfg.git.auto_merge:
+            _finalize_auto_merge(cwd, layout=layout, cfg=cfg)
         # Never leave root-owned run state in the user's repo (sudo case).
         chown_to_real_user(state_dir)
         if stashed:
@@ -1032,6 +1035,71 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         reason=result.reason,
     )
     return _run_exit_code(result)
+
+
+def _finalize_auto_merge(cwd: Path, *, layout: RunLayout, cfg: Config) -> None:
+    """After a successful run, merge the run branch into its base using
+    git.merge_strategy (git.auto_merge). Reads the run context from the manifest, so
+    run + resume share it. Ends on the base branch (the pre-run branch) with a clean
+    tree. Non-fatal and best-effort: on conflict or error the run branch is left
+    intact and the message says how to merge by hand. No-op when branch_per_run was
+    off."""
+    try:
+        manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    run_branch = manifest.get("run_branch")
+    base_branch = manifest.get("base_branch")
+    if not run_branch or not base_branch:
+        return  # branch_per_run was off: the work already landed on the base branch
+    run_branch, base_branch = str(run_branch), str(base_branch)
+    try:
+        st = git_status(cwd)
+    except GitError:
+        return
+    if not st.is_clean:
+        print(
+            f"[agent6] auto_merge skipped (worktree not clean); merge by hand:\n"
+            f"    git checkout {base_branch} && git merge {run_branch}",
+            file=sys.stderr,
+        )
+        return
+    identity = CommitIdentity(
+        name=cfg.git.commit.name, email=cfg.git.commit.email, coauthor=cfg.git.commit.coauthor
+    )
+    try:
+        verify_git_identity(cwd, identity)
+    except GitError as exc:
+        print(f"[agent6] auto_merge skipped: {exc}", file=sys.stderr)
+        return
+    outcome = execute_merge(
+        cwd,
+        layout=layout,
+        manifest=manifest,
+        run_branch=run_branch,
+        target=base_branch,
+        base_sha=str(manifest.get("base_sha") or ""),
+        strategy=cfg.git.merge_strategy,
+        message=None,
+        cfg=cfg,
+        identity=identity,
+        original="",  # stay on the base branch, where the work now lives
+    )
+    if outcome.status == "merged":
+        print(
+            f"[agent6] auto_merged {run_branch} into {base_branch} "
+            f"({cfg.git.merge_strategy}) -> {outcome.merged_sha[:12]}",
+            file=sys.stderr,
+        )
+    elif outcome.status == "conflict":
+        print(
+            f"[agent6] auto_merge into {base_branch} hit conflicts "
+            f"({', '.join(outcome.conflicts)}); left a clean tree on {base_branch} with the run "
+            f"branch {run_branch} intact. Merge by hand:\n    git merge {run_branch}",
+            file=sys.stderr,
+        )
+    else:
+        print(f"[agent6] auto_merge failed: {outcome.error}", file=sys.stderr)
 
 
 def _finalize_auto_stash(
@@ -1503,6 +1571,8 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
         if mcp_manager is not None:
             mcp_manager.close()
         _stop_egress(egress_broker, egress_sock_dir)
+        if not interrupted and result is not None and result.completed and cfg.git.auto_merge:
+            _finalize_auto_merge(cwd, layout=layout, cfg=cfg)
         # Never leave root-owned run state in the user's repo (sudo case).
         chown_to_real_user(state_dir)
 
