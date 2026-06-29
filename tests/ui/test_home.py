@@ -212,7 +212,7 @@ def test_spawn_argv_includes_profile_flag_only_when_chosen(
 
     monkeypatch.setattr(subprocess, "Popen", _fake_popen)  # type: ignore[attr-defined]
     # A stable executable name so the argv assertion isn't path-dependent.
-    monkeypatch.setattr(home, "_agent6_exe", lambda: "agent6")  # type: ignore[attr-defined]
+    monkeypatch.setattr(home, "agent6_exe", lambda: "agent6")  # type: ignore[attr-defined]
 
     a6 = tmp_path / ".agent6"
     a6.mkdir()
@@ -246,7 +246,7 @@ def test_run_merge_cli_builds_argv_and_parses_result(tmp_path: Path, monkeypatch
         return _Proc()
 
     monkeypatch.setattr(subprocess, "run", _fake_run)  # type: ignore[attr-defined]
-    monkeypatch.setattr(home, "_agent6_exe", lambda: "agent6")  # type: ignore[attr-defined]
+    monkeypatch.setattr(home, "agent6_exe", lambda: "agent6")  # type: ignore[attr-defined]
 
     ok, msg = home._run_merge_cli(tmp_path, "r1")  # pyright: ignore[reportPrivateUsage]
     assert captured[-1] == ["agent6", "runs", "merge", "r1"]

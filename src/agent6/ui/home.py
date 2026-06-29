@@ -14,7 +14,6 @@ from __future__ import annotations
 import inspect
 import json
 import subprocess
-import sys
 import tempfile
 import time
 from collections.abc import Callable, Iterable, Iterator
@@ -38,9 +37,11 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 
 # Safe at module top: the textual guard above runs first, so this (which also
 # needs textual) is only reached when textual is present.
+from agent6.ui._spawn import agent6_exe
 from agent6.ui.config_page import ConfigScreen
 from agent6.ui.conversation import ConversationScreen
 from agent6.ui.logview import LogScreen
+from agent6.ui.machines import MachinesScreen
 from agent6.ui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.modals import ConfirmModal
 from agent6.ui.theme import PALETTE_CSS, open_theme_picker, setup_theme
@@ -259,6 +260,7 @@ class HomeScreen(Screen[None]):
             ),
         ),
         Menu("Config", (MenuItem("Open config", "open_config", "c"),)),
+        Menu("Machines", (MenuItem("Open machines", "open_machines", "M"),)),
         Menu(
             "View",
             (
@@ -286,6 +288,7 @@ class HomeScreen(Screen[None]):
         Binding("m", "merge_selected", "Merge run"),
         Binding("r", "refresh", "Refresh"),
         Binding("c", "open_config", "Config"),
+        Binding("M", "open_machines", "Machines"),
         Binding("question_mark", "help", "Help"),
         Binding("q", "quit", "Quit"),
         *menu_bindings(MENUS),
@@ -434,6 +437,9 @@ class HomeScreen(Screen[None]):
     def action_open_config(self) -> None:
         self.app.push_screen(ConfigScreen(self.repo_cwd))
 
+    def action_open_machines(self) -> None:
+        self.app.push_screen(MachinesScreen(self.repo_cwd))
+
     def action_choose_theme(self) -> None:
         open_theme_picker(self.app)
 
@@ -507,7 +513,7 @@ def _spawn_and_locate(
     cwd = repo_cwd
     # --profile is a per-subcommand flag, so it goes after <mode> and before the
     # positional <task> -> `agent6 <mode> --profile <name> <task>`.
-    argv = [_agent6_exe(), mode]
+    argv = [agent6_exe(), mode]
     if profile:
         argv += ["--profile", profile]
     argv.append(task)
@@ -562,7 +568,7 @@ def _run_merge_cli(repo_cwd: Path, run_id: str) -> tuple[bool, str]:
     and the UI never touches git_ops. Synchronous: a merge is a quick git op."""
     try:
         proc = subprocess.run(
-            [_agent6_exe(), "runs", "merge", run_id],
+            [agent6_exe(), "runs", "merge", run_id],
             cwd=str(repo_cwd),
             stdin=subprocess.DEVNULL,
             capture_output=True,
@@ -574,17 +580,6 @@ def _run_merge_cli(repo_cwd: Path, run_id: str) -> tuple[bool, str]:
         return False, f"merge failed to run: {exc}"
     message = "\n".join(p for p in (proc.stdout.strip(), proc.stderr.strip()) if p)
     return proc.returncode == 0, message or f"exit {proc.returncode}"
-
-
-def _agent6_exe() -> str:
-    """The agent6 executable that launched this hub (so a spawned child uses the
-    same install). Falls back to the entry on PATH."""
-    argv0 = Path(sys.argv[0])
-    if argv0.name.startswith("agent6") and argv0.exists():
-        return str(argv0.resolve())
-    import shutil  # noqa: PLC0415
-
-    return shutil.which("agent6") or "agent6"
 
 
 def run_home(agent6_dir: Path, repo_cwd: Path) -> Path | None:
