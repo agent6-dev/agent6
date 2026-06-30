@@ -11,7 +11,9 @@ load-time error aggregated into MachineError.
 
 from __future__ import annotations
 
+import ast
 import tomllib
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -718,7 +720,96 @@ def _validate_wait(
                 where=f"state {name!r} {timing}",
             )
         )
+    # Value-validate the timing at load so `check`/`test` catch a float/garbage
+    # `every_secs`, a busy-looping `every_secs <= 0`, or a non-ISO `until`, rather
+    # than letting them surface only when the wait is first reached at run.
+    if state.every_secs is not None:
+        problems.extend(
+            _int_timing_problems(name, "every_secs", state.every_secs, var_types, schemas)
+        )
+    if state.until is not None:
+        problems.extend(_iso_timing_problems(name, "until", state.until, var_types, schemas))
     return problems
+
+
+def _timing_literal(text: str) -> str | None:
+    """The constant value of a timing template, or None if it interpolates a
+    variable (validated against the variable's type instead). Returns None on a
+    malformed template, which ``_validate_template`` already reported."""
+    try:
+        template = parse_template(text)
+    except TemplateError:
+        return None
+    if any(isinstance(part, Interp) for part in template.parts):
+        return None
+    return "".join(part for part in template.parts if isinstance(part, str))
+
+
+def _timing_ref_type(
+    text: str, var_types: dict[str, TypeRef], schemas: dict[str, dict[str, TypeRef]]
+) -> TypeRef | None:
+    """The declared type a lone-reference timing template resolves to, else None."""
+    try:
+        template = parse_template(text)
+    except TemplateError:
+        return None
+    if not template.is_lone_ref:
+        return None
+    interp = template.parts[0]
+    assert isinstance(interp, Interp)
+    ftype, error = _resolve_ref_type(interp.ref, var_types, schemas, None)
+    return ftype if error is None else None
+
+
+def _int_timing_problems(
+    name: str,
+    key: str,
+    text: str,
+    var_types: dict[str, TypeRef],
+    schemas: dict[str, dict[str, TypeRef]],
+) -> list[str]:
+    literal = _timing_literal(text)
+    if literal is not None:
+        try:
+            seconds = int(literal)
+        except ValueError:
+            return [
+                f"state {name!r}: `{key}` must be an integer literal or an int variable"
+                f" reference; got {literal!r}"
+            ]
+        if seconds < 1:
+            return [
+                f"state {name!r}: `{key}` must be >= 1; got {seconds}"
+                " (a zero or negative interval would busy-loop)"
+            ]
+        return []
+    ref_type = _timing_ref_type(text, var_types, schemas)
+    if ref_type is not None and ref_type != ScalarT("int"):
+        return [f"state {name!r}: `{key}` must reference an int variable, not {type_str(ref_type)}"]
+    return []
+
+
+def _iso_timing_problems(
+    name: str,
+    key: str,
+    text: str,
+    var_types: dict[str, TypeRef],
+    schemas: dict[str, dict[str, TypeRef]],
+) -> list[str]:
+    literal = _timing_literal(text)
+    if literal is not None:
+        try:
+            datetime.fromisoformat(literal)
+        except ValueError:
+            return [
+                f"state {name!r}: `{key}` must be an ISO-8601 instant or a str variable"
+                f" reference; got {literal!r}"
+            ]
+        return []
+    ref_type = _timing_ref_type(text, var_types, schemas)
+    if ref_type is not None and ref_type != ScalarT("str"):
+        return [f"state {name!r}: `{key}` must reference a str variable, not {type_str(ref_type)}"]
+    return []
 
 
 def _validate_branch(
@@ -756,7 +847,68 @@ def _validate_predicate(
     for ref in predicate.references:
         _, error = _resolve_ref_type(ref, var_types, schemas, None)
         if error is not None:
+            # The file is TOML, so an author naturally writes `flag == true`; but
+            # predicates are Python-parsed, so `true` reads as an undeclared name.
+            # Point at the Python literal rather than leaving a bare "unknown var".
+            if not ref.path and ref.root in {"true", "false", "null", "none"}:
+                error += (
+                    " (predicates use Python literals True/False/None, not TOML"
+                    " true/false/null; for a bool var write the bare name, e.g. `flag`)"
+                )
             problems.append(f"state {name!r}: predicate {source!r}: {error}")
+    # Type-check `len()` arguments at load (mirrors the template `| len` filter):
+    # `len(n)` on an int/float/bool is a guaranteed runtime PredicateError, and
+    # the spec promises type mismatches are load-time errors, not run surprises.
+    problems.extend(_predicate_len_problems(name, source, predicate.tree.body, var_types, schemas))
+    return problems
+
+
+def _ast_reference(node: ast.expr) -> Reference | None:
+    """Reconstruct a blackboard :class:`Reference` from an already-allow-listed
+    predicate AST node (a `Name` or `Attribute` chain), or None for anything
+    else. The structure was validated by ``parse_predicate``."""
+    parts: list[str] = []
+    current: ast.expr = node
+    while isinstance(current, ast.Attribute):
+        parts.append(current.attr)
+        current = current.value
+    if not isinstance(current, ast.Name):
+        return None
+    parts.append(current.id)
+    parts.reverse()
+    return Reference(root=parts[0], path=tuple(parts[1:]))
+
+
+def _predicate_len_problems(
+    name: str,
+    source: str,
+    body: ast.expr,
+    var_types: dict[str, TypeRef],
+    schemas: dict[str, dict[str, TypeRef]],
+) -> list[str]:
+    problems: list[str] = []
+    for node in ast.walk(body):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "len"
+            and len(node.args) == 1
+        ):
+            continue
+        arg = node.args[0]
+        ref = _ast_reference(arg)
+        if ref is not None:
+            ftype, error = _resolve_ref_type(ref, var_types, schemas, None)
+            if error is None and isinstance(ftype, ScalarT) and ftype.name != "str":
+                problems.append(
+                    f"state {name!r}: predicate {source!r}: `len()` does not apply to"
+                    f" {type_str(ftype)} ({ref.dotted!r})"
+                )
+        elif isinstance(arg, ast.Constant) and not isinstance(arg.value, str):
+            problems.append(
+                f"state {name!r}: predicate {source!r}: `len()` does not apply to literal"
+                f" {arg.value!r}"
+            )
     return problems
 
 

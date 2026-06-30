@@ -236,6 +236,50 @@ def test_predicate_unknown_variable(tmp_path: Path) -> None:
     assert any("unknown variable" in p and "nonsense" in p for p in problems)
 
 
+def test_predicate_toml_boolean_literal_hints_python_form(tmp_path: Path) -> None:
+    # `flag == true` reads `true` as an undeclared name; the error should point at
+    # the Python literal rather than a bare "unknown variable".
+    body = VALID_MACHINE.replace("len(pending) == 0", "len(pending) == 0 and pending == true")
+    problems = _problems(tmp_path, body)
+    assert any("True/False/None" in p for p in problems)
+
+
+def test_predicate_len_of_int_rejected_at_load(tmp_path: Path) -> None:
+    # `len(poll_secs)` (poll_secs is int) is a guaranteed runtime PredicateError;
+    # it must be caught at load, mirroring the template `| len` filter check.
+    body = VALID_MACHINE.replace("len(pending) == 0", "len(poll_secs) == 0")
+    problems = _problems(tmp_path, body)
+    assert any("`len()` does not apply to int" in p and "poll_secs" in p for p in problems)
+
+
+def test_predicate_len_of_str_allowed(tmp_path: Path) -> None:
+    # `len(cursor)` (cursor is str) is fine and must NOT be flagged.
+    body = VALID_MACHINE.replace("len(pending) == 0", "len(cursor) == 0")
+    # No MachineError raised means the machine validated cleanly.
+    load_machine(_write(tmp_path, body))
+
+
+def test_wait_every_secs_float_ref_rejected(tmp_path: Path) -> None:
+    body = VALID_MACHINE.replace(
+        'poll_secs = { type = "int", value = 300 }',
+        'poll_secs = { type = "float", value = 300.0 }',
+    )
+    problems = _problems(tmp_path, body)
+    assert any("every_secs" in p and "int variable" in p for p in problems)
+
+
+def test_wait_every_secs_zero_literal_rejected(tmp_path: Path) -> None:
+    body = VALID_MACHINE.replace('every_secs = "{{ poll_secs }}"', 'every_secs = "0"')
+    problems = _problems(tmp_path, body)
+    assert any("every_secs" in p and ">= 1" in p for p in problems)
+
+
+def test_wait_until_garbage_literal_rejected(tmp_path: Path) -> None:
+    body = VALID_MACHINE.replace('every_secs = "{{ poll_secs }}"', 'until = "not-a-date"')
+    problems = _problems(tmp_path, body)
+    assert any("until" in p and "ISO-8601" in p for p in problems)
+
+
 # -- type checks -----------------------------------------------------------
 
 
