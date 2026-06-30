@@ -506,6 +506,17 @@ def test_wait_zero_dynamic_interval_fails_cleanly(tmp_path: Path) -> None:
     assert not any(isinstance(event, StepEvent) for event in journal.read())
 
 
+def test_exit_on_wait_zero_dynamic_interval_fails_cleanly(tmp_path: Path) -> None:
+    # The --exit-on-wait path must halt FAILED with a journaled MachineEnd too,
+    # not leave the instance "incomplete" with the error escaping as a CLI error.
+    journal, f = _load(tmp_path, WAITER_DYNAMIC_ZERO)
+    spec = load_machine(f)
+    result = drive(spec, journal, FakeWorld({}), live=True, exit_on_wait=True)
+    assert result.status == "failed"
+    assert "`every_secs` must be >= 1" in result.reason
+    assert isinstance(journal.read()[-1], MachineEnd)
+
+
 def test_wait_signal_path(tmp_path: Path) -> None:
     journal, f = _load(tmp_path, WAITER)
     spec = load_machine(f)

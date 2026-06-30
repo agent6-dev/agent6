@@ -661,23 +661,24 @@ def drive(  # noqa: PLR0911, PLR0912, PLR0915
             )
             return MachineResult("failed", reason, state, transitions)
 
-        if exit_on_wait and isinstance(current, WaitState):
-            fired = _fire_persisted_wait(current, blackboard, journal, world, state)
-            if fired is None:
-                pending = journal.read_pending_wait()
-                wake = pending.wake_epoch if pending is not None else world.now()
-                return MachineResult(
-                    "waiting", f"waiting in {state!r} until {wake}", state, transitions
-                )
-            label, goto, fact = fired
-        else:
-            try:
+        try:
+            if exit_on_wait and isinstance(current, WaitState):
+                fired = _fire_persisted_wait(current, blackboard, journal, world, state)
+                if fired is None:
+                    pending = journal.read_pending_wait()
+                    wake = pending.wake_epoch if pending is not None else world.now()
+                    return MachineResult(
+                        "waiting", f"waiting in {state!r} until {wake}", state, transitions
+                    )
+                label, goto, fact = fired
+            else:
                 label, goto, fact = _execute(spec, current, blackboard, world)
-            except _STATE_RUNTIME_ERRORS as exc:
-                # A data-driven state failure (e.g. an absent optional field, a
-                # tool command rendering a non-scalar, a dynamic wait interval of
-                # zero): halt cleanly. Broader EngineError faults still propagate.
-                return _end_failed(journal, state, transitions, exc)
+        except _STATE_RUNTIME_ERRORS as exc:
+            # A data-driven state failure (e.g. an absent optional field, a tool
+            # command rendering a non-scalar, a dynamic wait interval of zero):
+            # halt cleanly with a journaled MachineEnd in BOTH the blocking and
+            # the --exit-on-wait paths. Broader EngineError faults still propagate.
+            return _end_failed(journal, state, transitions, exc)
         # Apply the capture BEFORE journaling the StepEvent. If a malformed output
         # (non-JSON / missing field / mistyped) can't be reduced, the machine halts
         # cleanly here instead of writing a poison fact that would re-crash every
