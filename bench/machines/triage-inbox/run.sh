@@ -3,9 +3,9 @@
 # cycle: scan -> classify (agent) -> route -> file/escalate -> wait. The wait
 # paces the loop with a real (journaled) sleep between cycles.
 #
-# Has `tool` states, so on the hardened profile it opts the THROWAWAY repo into
-# tools sharing the host network (see repo-digest/run.sh for why). A strict host
-# runs it confined under the defaults.
+# Runs under the default sandbox config (tool states get their own network
+# namespace on strict). On a hardened-only host a tool state is refused under the
+# default `sandbox.tool_network = "block"`; agent6 prints the opt-in to apply.
 #
 # Usage:  bash bench/machines/triage-inbox/run.sh [workdir]
 set -euo pipefail
@@ -34,8 +34,6 @@ git -C "$WORK" -c user.email=b@b -c user.name=b add -A
 git -C "$WORK" -c user.email=b@b -c user.name=b commit -q -m "seed inbox"
 
 export AGENT6_STATE_HOME="$WORK/.agent6-state"
-(cd "$WORK" && "$AGENT6" config set sandbox.agent_network open --repo >/dev/null)
-(cd "$WORK" && "$AGENT6" config set sandbox.tool_network allow --repo >/dev/null)
 
 echo "== running triage-inbox (drains $(ls "$WORK/inbox" | wc -l) items) =="
 time (cd "$WORK" && "$AGENT6" machine run triage-inbox.asm.toml)

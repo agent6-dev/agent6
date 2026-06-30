@@ -2,10 +2,10 @@
 # Seed a small repo with a few commits, then run repo-digest over it. The digest
 # lands in the machine's persistent data dir (printed at the end).
 #
-# This machine has `tool` states, which the default `sandbox.tool_network=block`
-# refuses on the hardened profile (no per-tool netns there); the script opts the
-# THROWAWAY repo into tools sharing the host network. On a strict-capable host
-# the default config runs it unchanged and confined.
+# Runs under the default sandbox config: the `tool` states get their own network
+# namespace (strict). On a host that supports only the hardened profile, a tool
+# state is refused under the default `sandbox.tool_network = "block"` and agent6
+# prints the one-line opt-in to apply.
 #
 # Usage:  bash bench/machines/repo-digest/run.sh [workdir]
 set -euo pipefail
@@ -26,9 +26,6 @@ gc "Ana"   "perf(db): add an index on events(created_at)"
 gc "Ben"   "test: cover the token-refresh edge cases"
 
 export AGENT6_STATE_HOME="$WORK/.agent6-state"
-# agent_network first: tool_network='allow' is rejected until it is set.
-(cd "$WORK" && "$AGENT6" config set sandbox.agent_network open --repo >/dev/null)
-(cd "$WORK" && "$AGENT6" config set sandbox.tool_network allow --repo >/dev/null)
 
 echo "== running repo-digest =="
 (cd "$WORK" && AGENT6_FORCE_STREAM=1 "$AGENT6" machine run repo-digest.asm.toml)

@@ -36,16 +36,22 @@ Observed (one run each, 2026-06-29):
 - **wait-clock** — deadline fired immediately; pulse persisted its wake and
   resumed to `done`; cron-demo is rejected by `machine check`.
 
-## Running on a host without the strict profile
+## Sandboxing
 
-Machines with `tool` states are refused under the default
-`sandbox.tool_network = "block"` on the `hardened` profile (this host falls back
-to hardened when the kernel blocks the user namespace the strict egress broker
-needs). The `run.sh` scripts opt the *throwaway* repo into tools sharing the host
-network (`sandbox.tool_network = "allow"` + `sandbox.agent_network = "open"`) so
-the examples run anywhere; on a strict-capable host the defaults run them
-confined. The pure-agent machines (hello, council) and pure-timer machines
-(wait-clock) run fully confined on any profile and need no opt-in.
+All of these run under the **default** sandbox config. Each `tool` state gets its
+own network namespace from the jail launcher (the `strict` profile), and each
+`agent` state confines its egress to the provider API. That holds even on a host
+where the kernel blocks the user namespace the agent egress broker needs (the
+agent state falls back to the hardened profile, confining egress with Landlock
+instead) — the tool jails keep their per-tool isolation regardless.
+
+On a host that supports **only** the hardened profile (no per-tool network
+namespace at all), a `tool` state is refused under the default
+`sandbox.tool_network = "block"`. agent6 prints the exact one-line config opt-in
+to apply (`sandbox.tool_network = "allow"` + `sandbox.agent_network = "open"`,
+letting tools share the host network) and never relaxes the sandbox unattended.
+The pure-agent machines (hello, council) and the pure-timer machine (wait-clock)
+have no tool states and run confined on any profile.
 
 ## Test harnesses
 
