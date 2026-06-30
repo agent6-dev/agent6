@@ -418,9 +418,7 @@ class Agent6TUI(App[int]):
         window = self.state.tool_calls[-_TOOL_TABLE_ROWS:]
         if 0 <= event.cursor_row < len(window):
             tc = window[event.cursor_row]
-            self.push_screen(
-                ToolCallDetailModal(tc.name, tc.ok, tc.args_full, tc.result_summary)
-            )
+            self.push_screen(ToolCallDetailModal(tc.name, tc.ok, tc.args_full, tc.result_summary))
 
     def action_menu(self, mnemonic: str) -> None:
         self.query_one(MenuBar).open(mnemonic)
