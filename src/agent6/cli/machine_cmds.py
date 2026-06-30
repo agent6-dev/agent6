@@ -28,7 +28,6 @@ from agent6.cli.scriptcheck import lint_and_typecheck, run_offline_tests
 from agent6.config import (
     Config,
     ConfigError,
-    MachineConfig,
 )
 from agent6.config_io import upsert_toml_leaf
 from agent6.config_layer import (
@@ -37,6 +36,7 @@ from agent6.config_layer import (
     repo_config_path_for,
 )
 from agent6.detect import select_profile
+from agent6.git_ops import CommitIdentity, GitError, verify_git_identity
 from agent6.machine import (
     SCRIPTS_PAYLOAD_KEY,
     TOML_PAYLOAD_KEY,
@@ -270,6 +270,7 @@ def _build_machine_agent_runner(
     profile: SandboxProfile,
     transcript_dir: Path,
     protect_paths: tuple[Path, ...] = (),
+    commit_identity: CommitIdentity | None = None,
 ) -> Callable[[AgentRequest], AgentExecResult]:
     """Build the runner an `agent` state uses to drive a confined agent6 loop.
 
@@ -291,6 +292,15 @@ def _build_machine_agent_runner(
             "profile": profile,
             "transcript_dir": str(transcript_dir),
             "protect_paths": [str(p) for p in protect_paths],
+            # Resolved on the host (pre-Landlock, so it sees global git config);
+            # the confined agent subprocess can't read ~/.gitconfig, so its
+            # mode="run" commits would otherwise fail with "Author identity
+            # unknown". None for read-only (mode="agent"/"machine") states.
+            "commit_identity": (
+                {"name": commit_identity.name, "email": commit_identity.email}
+                if commit_identity is not None
+                else None
+            ),
             "request": {
                 "model": request.model,
                 "prompt": request.prompt,
@@ -415,8 +425,9 @@ def _machine_network_refusal(
         return (
             "isolating a machine's tool-state network requires the strict profile"
             " (a per-tool network namespace); this host supports only 'hardened'."
-            " Run on strict, or set sandbox.tool_network = 'allow' (tools share"
-            " the host network)."
+            " Run on strict, or let tools share the host network with"
+            " sandbox.tool_network = 'allow' (which also requires"
+            " sandbox.agent_network = 'open')."
         )
     if has_block and profile == "hardened":
         return (
@@ -438,21 +449,31 @@ def _safe_input(prompt: str) -> str | None:
 def _suggested_network_fix(
     cfg: Config, profile: SandboxProfile, tool_states: list[ToolState]
 ) -> dict[str, str] | None:
-    """The minimal sandbox-config change that lets this machine's tools reach the
-    network ON THIS PROFILE, or None if no config change can (a tool requiring
-    REQUIRED isolation needs `strict`, which config can't conjure). Targets the
-    common case: a tool that opted in (`allow_network = "allow"`) under a config
-    that blocks egress."""
+    """The minimal sandbox-config change that lets this machine's tool states run
+    ON THIS PROFILE, or None if no config change can (a tool that REQUIRES network
+    isolation needs `strict`, which config can't conjure).
+
+    Two refusals this resolves: a tool that opted in (`allow_network = "allow"`)
+    under a config that blocks egress, and -- on `hardened`, which can't give any
+    tool its own netns -- a plain tool refused under `tool_network = "block"`. The
+    returned dict is applied in order, with `agent_network` before `tool_network`
+    so `config set`-style sequential writes never trip the combo validator."""
+    if not tool_states:
+        return None
     has_allow = any(s.allow_network == "allow" for s in tool_states)
     has_block = any(s.allow_network == "block" for s in tool_states)
-    if has_block or not has_allow:
+    if has_block:
+        # A tool REQUIRES no network; only strict's per-tool netns isolates it.
         return None
     if profile == "strict":
-        return {"sandbox.tool_network": "only_explicit_states"}
+        # Plain no-network tools already run on strict; only a tool that opted
+        # into the network needs the explicit-per-tool egress mode.
+        return {"sandbox.tool_network": "only_explicit_states"} if has_allow else None
     if profile == "hardened":
-        # hardened can't isolate one tool's netns, so tools share the host
-        # network; the combo validator then requires agent_network = "open".
-        return {"sandbox.tool_network": "allow", "sandbox.agent_network": "open"}
+        # hardened can't isolate one tool's netns, so EVERY tool (networked or
+        # not) shares the host network; the combo validator then requires
+        # agent_network = "open". Same fix whether or not a tool opted in.
+        return {"sandbox.agent_network": "open", "sandbox.tool_network": "allow"}
     return None
 
 
@@ -523,9 +544,18 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
         for problem in exc.problems:
             print(f"  - {problem}", file=sys.stderr)
         return 1
+    # Re-validate the script bundle before executing anything: `load_machine`
+    # does not, and on a profile that can't RO-bind the bundle a `scripts/`
+    # symlink escaping it (which `machine check` rejects) would otherwise be read
+    # by a tool. Security boundary, so run enforces it too, not just check.
+    bundle_problems = _validate_bundle(spec, path)
+    if bundle_problems:
+        return _fail(path, bundle_problems, "bundle")
     cwd = Path.cwd()
     states = list(spec.states.values())
     has_agent_state = any(getattr(s, "kind", None) == "agent" for s in states)
+    # mode="run" agent states edit + commit; they need a resolved git identity.
+    has_run_agent = any(isinstance(s, AgentState) and s.mode == "run" for s in states)
     tool_states = [s for s in states if isinstance(s, ToolState)]
     agent_runner: Callable[[AgentRequest], AgentExecResult] | None = None
     # Default profile for confinement-free machines: resolve from the host.
@@ -533,12 +563,19 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
     # The running machine's own file + scripts bundle are read-only in every
     # run jail, so a tool/agent can't rewrite its own logic or bundled scripts.
     protect_paths = _machine_protect_paths(path, cwd)
-    # Load the effective config when an `agent` state needs it, or when there
-    # are any tool states (we need sandbox.tool_network/profile to gate egress).
-    snapshot_keep = MachineConfig().snapshot_keep  # config default; refined below
+    # Load the effective config (machine [config] overlay included) for EVERY
+    # machine: a pure wait/branch machine still reads [machine] snapshot_keep from
+    # it, and validating the overlay up front means a bad overlay or an ignored
+    # snapshot_keep never slips through to a pure machine. The agent/tool block
+    # below adds the provider/sandbox checks only those state kinds need.
+    try:
+        cfg = load_effective_with_overlay(cwd, spec.config).config
+    except ConfigError as exc:
+        print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
+        return 2
+    snapshot_keep = cfg.machine.snapshot_keep
     if has_agent_state or tool_states:
         try:
-            cfg = load_effective_with_overlay(cwd, spec.config).config
             if has_agent_state:
                 cfg.require_runnable("worker")
         except ConfigError as exc:
@@ -575,11 +612,33 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
             if usd_err is not None:
                 print(f"REFUSING: {usd_err}", file=sys.stderr)
                 return 2
+            # Resolve the commit identity HERE on the host, where global git
+            # config is visible, so a mode="run" state's confined agent (which
+            # can't read ~/.gitconfig under Landlock) still commits cleanly. A
+            # missing identity fails loudly up front, not as mid-loop noise.
+            commit_identity: CommitIdentity | None = None
+            if has_run_agent:
+                base = CommitIdentity(
+                    name=cfg.git.commit.name,
+                    email=cfg.git.commit.email,
+                    coauthor=cfg.git.commit.coauthor,
+                )
+                try:
+                    name, email = verify_git_identity(cwd, base)
+                except GitError as exc:
+                    print(f"ERROR: {exc}", file=sys.stderr)
+                    return 2
+                commit_identity = CommitIdentity(name=name, email=email)
             root = _machines_dir(cwd) / spec.machine
             # The engine is a host-netns supervisor; each agent state confines
             # itself in its own subprocess per sandbox.agent_network.
             agent_runner = _build_machine_agent_runner(
-                spec.config, cwd, profile, root / "agent_transcripts", protect_paths
+                spec.config,
+                cwd,
+                profile,
+                root / "agent_transcripts",
+                protect_paths,
+                commit_identity,
             )
     _warn_if_unsandboxed(profile)
     root = _machines_dir(cwd) / spec.machine

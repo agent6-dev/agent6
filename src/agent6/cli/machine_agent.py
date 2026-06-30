@@ -81,6 +81,16 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
         max_output_tokens=r["max_output_tokens"],
     )
     set_repo_hook_policy(cfg.git.run_repo_hooks)
+    # A mode="run" state commits its work, but this confined process can't read
+    # ~/.gitconfig (not a Landlock read root). The engine resolved the identity on
+    # the host and passed it down; export it so git uses it regardless of where
+    # the config lives. None for read-only states (no commits).
+    ident = req.get("commit_identity")
+    if isinstance(ident, dict):
+        if name := ident.get("name"):
+            os.environ["GIT_AUTHOR_NAME"] = os.environ["GIT_COMMITTER_NAME"] = str(name)
+        if email := ident.get("email"):
+            os.environ["GIT_AUTHOR_EMAIL"] = os.environ["GIT_COMMITTER_EMAIL"] = str(email)
     # Confine THIS process's egress per sandbox.agent_network (single-threaded
     # here, as required by unshare). The engine already validated the combo, but
     # re-check defensively and fail closed.

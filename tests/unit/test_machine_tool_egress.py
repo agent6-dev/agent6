@@ -307,6 +307,47 @@ def test_machine_check_passes_with_valid_bundle(
     assert main(["machine", "check", str(f)]) == 0
 
 
+def test_machine_run_refuses_escaping_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Security: `machine run` must re-validate the bundle, not only `check`. On a
+    # profile that can't RO-bind the bundle, a `scripts/` symlink escaping it
+    # would otherwise be executed; run must refuse before touching the world.
+    from agent6.cli import main
+
+    f = _write(tmp_path, NET_MACHINE)
+    (tmp_path / "scripts").mkdir()
+    outside = tmp_path.parent / "outside_secret_run"
+    outside.write_text("secret", encoding="utf-8")
+    (tmp_path / "scripts" / "fetch.sh").symlink_to(outside)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / ".state"))
+    assert main(["machine", "run", str(f)]) == 1
+
+
+def test_machine_run_validates_config_overlay_for_pure_machine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # B10: a pure wait/terminal machine has no agent/tool state, but its [config]
+    # overlay must still be validated (and [machine] snapshot_keep honored). A
+    # bogus overlay key now fails the run with CONFIG ERROR instead of being
+    # silently ignored.
+    from agent6.cli import main
+
+    pure = (
+        'machine = "pure"\nversion = 1\ninitial = "go"\n'
+        "[budget]\nmax_transitions = 5\n"
+        "[config.workflow]\nbogus_key = 42\n"
+        '[states.go]\nkind = "wait"\nuntil = "2020-01-01T00:00:00Z"\n'
+        'on = { tick = "done", signal = "done" }\n'
+        '[states.done]\nkind = "terminal"\nstatus = "ok"\nreason = "x"\n'
+    )
+    f = _write(tmp_path, pure)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / ".state"))
+    assert main(["machine", "run", str(f)]) == 2
+
+
 # --- sandbox-conflict UX (suggest a fix, don't dead-end) --------------------
 
 
@@ -327,6 +368,30 @@ def test_suggested_network_fix_strict(tmp_path: Path) -> None:
     # strict can single one tool out: explicit per-tool egress is the safe fix.
     fix = _suggested_network_fix(Config.model_validate({}), "strict", [_allow_tool(tmp_path)])
     assert fix == {"sandbox.tool_network": "only_explicit_states"}
+
+
+def _plain_tool(tmp_path: Path) -> ToolState:
+    # `store` has no allow_network -> defaults to "auto" (no network wanted).
+    spec = load_machine(_write(tmp_path, NET_MACHINE))
+    store = spec.states["store"]
+    assert isinstance(store, ToolState)
+    return store
+
+
+def test_suggested_network_fix_plain_tool_hardened(tmp_path: Path) -> None:
+    # Regression: on hardened EVERY tool (even one that wants no network) is
+    # refused under tool_network="block" because no per-tool netns exists, and
+    # the only config that runs it is tools sharing the host net (+ agent open).
+    # Previously this returned None, contradicting the refusal's own advice.
+    fix = _suggested_network_fix(Config.model_validate({}), "hardened", [_plain_tool(tmp_path)])
+    assert fix == {"sandbox.tool_network": "allow", "sandbox.agent_network": "open"}
+
+
+def test_suggested_network_fix_plain_tool_strict_is_noop(tmp_path: Path) -> None:
+    # A plain no-network tool already runs on strict (its own empty netns), so
+    # there is nothing to offer.
+    fix = _suggested_network_fix(Config.model_validate({}), "strict", [_plain_tool(tmp_path)])
+    assert fix is None
 
 
 def test_suggested_network_fix_block_is_unfixable(tmp_path: Path) -> None:
