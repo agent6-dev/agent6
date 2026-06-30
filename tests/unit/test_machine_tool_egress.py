@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 
 from agent6.cli.machine_cmds import (
+    _machine_network_refusal,  # pyright: ignore[reportPrivateUsage]
     _machine_protect_paths,  # pyright: ignore[reportPrivateUsage]
     _resolve_network_refusal,  # pyright: ignore[reportPrivateUsage]
     _suggested_network_fix,  # pyright: ignore[reportPrivateUsage]
@@ -362,6 +363,16 @@ def test_suggested_network_fix_hardened(tmp_path: Path) -> None:
     # hardened can't isolate per-tool, so tools share the host net (+ agent open).
     fix = _suggested_network_fix(Config.model_validate({}), "hardened", [_allow_tool(tmp_path)])
     assert fix == {"sandbox.tool_network": "allow", "sandbox.agent_network": "open"}
+
+
+def test_network_refusal_hardened_allow_tool_names_runnable_fix(tmp_path: Path) -> None:
+    refusal = _machine_network_refusal(
+        Config.model_validate({}), "hardened", [_allow_tool(tmp_path)]
+    )
+    assert refusal is not None
+    assert "sandbox.tool_network = 'allow'" in refusal
+    assert "sandbox.agent_network = 'open'" in refusal
+    assert "only_explicit_states" not in refusal
 
 
 def test_suggested_network_fix_strict(tmp_path: Path) -> None:

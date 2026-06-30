@@ -242,19 +242,19 @@ class MachineJournal:
         """Parse and validate every journal line in order."""
         if not self.journal_path.is_file():
             return []
-        text = self.journal_path.read_text(encoding="utf-8")
-        # split("\n"), NOT splitlines(): splitlines() also breaks on U+2028 /
-        # U+2029 / U+0085, which `model_dump_json` writes literally inside JSON
-        # strings, so a captured value containing one would shred a single line
-        # into unparseable fragments and brick the instance.
-        lines = text.split("\n")
-        # A committed append ends in "\n", so the final element is "". A non-empty
-        # final element is a torn write (crash mid-append): drop it rather than
-        # failing the whole journal -- the engine re-runs the unrecorded step.
-        if lines and lines[-1] != "":
-            lines.pop()
+        raw_lines = self.journal_path.read_bytes().split(b"\n")
+        # split(b"\n"), NOT splitlines(): splitlines() also breaks on U+2028 /
+        # U+2029 / U+0085 after decode, which `model_dump_json` writes literally
+        # inside JSON strings, so a captured value containing one would shred a
+        # single line into unparseable fragments and brick the instance.
+        #
+        # Split bytes before decoding: a crash can tear the final line in the
+        # middle of a multibyte UTF-8 sequence. Dropping that byte tail first
+        # keeps the committed prefix readable.
+        if raw_lines and raw_lines[-1] != b"":
+            raw_lines.pop()
         events: list[Any] = []
-        for lineno, raw in enumerate(lines, start=1):
+        for lineno, raw in enumerate(raw_lines, start=1):
             if not raw.strip():
                 continue
             try:

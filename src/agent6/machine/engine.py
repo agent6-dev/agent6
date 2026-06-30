@@ -81,12 +81,16 @@ class EngineError(Exception):
     """Raised when a machine cannot be executed (bad data, unsupported kind)."""
 
 
+class StateRuntimeError(EngineError):
+    """Raised when a state reaches invalid data despite load-time checks."""
+
+
 # Runtime failures from a state's predicate/template/capture. A check-passing
 # machine should not hit these (the load-time validators catch type errors), but
 # defense in depth: they are converted to a clean failed `MachineResult`, never an
 # uncaught traceback, and never journaled as a poison StepEvent that would
 # re-crash every later reduce (status/replay/resume).
-_STATE_RUNTIME_ERRORS = (EngineError, PredicateError, TemplateError)
+_STATE_RUNTIME_ERRORS = (StateRuntimeError, PredicateError, TemplateError)
 
 
 def _now_iso() -> str:
@@ -303,7 +307,7 @@ def _apply_capture(state: ToolState, stdout: str, blackboard: dict[str, Any]) ->
     try:
         result_obj: Any = json.loads(stdout) if stdout.strip() else None
     except json.JSONDecodeError as exc:
-        raise EngineError(f"tool stdout is not valid JSON for capture: {exc}") from exc
+        raise StateRuntimeError(f"tool stdout is not valid JSON for capture: {exc}") from exc
     if capture.stdout_json is not None:
         blackboard[capture.stdout_json] = result_obj
         return
@@ -368,20 +372,22 @@ def _compute_wake(state: WaitState, blackboard: Mapping[str, object], now: float
         try:
             seconds = int(rendered)
         except ValueError as exc:
-            raise EngineError(f"`every_secs` did not render to an integer: {rendered!r}") from exc
-        if seconds < 0:
-            raise EngineError(f"`every_secs` is negative: {seconds}")
+            raise StateRuntimeError(
+                f"`every_secs` did not render to an integer: {rendered!r}"
+            ) from exc
+        if seconds < 1:
+            raise StateRuntimeError(f"`every_secs` must be >= 1: {seconds}")
         return now + seconds
     if state.until is not None:
         rendered = render_string(parse_template(state.until), blackboard, where="until")
         try:
             moment = datetime.fromisoformat(rendered)
         except ValueError as exc:
-            raise EngineError(f"`until` is not an ISO-8601 instant: {rendered!r}") from exc
+            raise StateRuntimeError(f"`until` is not an ISO-8601 instant: {rendered!r}") from exc
         if moment.tzinfo is None:
             moment = moment.replace(tzinfo=UTC)
         return moment.timestamp()
-    raise EngineError(
+    raise StateRuntimeError(
         "`cron` wait timing is not implemented in the v1 runtime (Phase 4 persisted-wake)"
     )
 
@@ -667,11 +673,10 @@ def drive(  # noqa: PLR0911, PLR0912, PLR0915
         else:
             try:
                 label, goto, fact = _execute(spec, current, blackboard, world)
-            except (PredicateError, TemplateError) as exc:
-                # A data-driven predicate/template failure (e.g. a branch over an
-                # absent optional field, a tool command rendering a non-scalar):
-                # the state can't run, so halt cleanly rather than as a traceback.
-                # An EngineError here is a config/invariant fault and propagates.
+            except _STATE_RUNTIME_ERRORS as exc:
+                # A data-driven state failure (e.g. an absent optional field, a
+                # tool command rendering a non-scalar, a dynamic wait interval of
+                # zero): halt cleanly. Broader EngineError faults still propagate.
                 return _end_failed(journal, state, transitions, exc)
         # Apply the capture BEFORE journaling the StepEvent. If a malformed output
         # (non-JSON / missing field / mistyped) can't be reduced, the machine halts

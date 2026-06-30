@@ -416,6 +416,14 @@ def _machine_network_refusal(
     has_allow = any(s.allow_network == "allow" for s in tool_states)
     has_block = any(s.allow_network == "block" for s in tool_states)
     if has_allow and tn == "block":
+        if profile == "hardened":
+            return (
+                'a tool state sets allow_network = "allow" but sandbox.tool_network ='
+                " 'block'. The hardened profile cannot single out one tool's"
+                " network namespace; let tools share the host network with"
+                " sandbox.tool_network = 'allow' and sandbox.agent_network = 'open',"
+                " or run on strict for explicit per-tool egress."
+            )
         return (
             'a tool state sets allow_network = "allow" but sandbox.tool_network ='
             " 'block'. Set sandbox.tool_network = 'only_explicit_states' for"

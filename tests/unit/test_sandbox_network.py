@@ -5,6 +5,7 @@ the supervisor subprocess that runs a machine `agent` state self-confined."""
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -277,6 +278,45 @@ def test_run_one_drops_out_of_cwd_protect_paths(
     machine_agent._run_one(req)  # pyright: ignore[reportPrivateUsage]
     # Only the in-cwd path survives the subprocess-boundary re-validation.
     assert captured["extra_protect_paths"] == (inside.resolve(),)
+
+
+def test_run_one_exports_commit_identity(
+    iso: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_loop(monkeypatch)
+    for key in (
+        "GIT_AUTHOR_NAME",
+        "GIT_COMMITTER_NAME",
+        "GIT_AUTHOR_EMAIL",
+        "GIT_COMMITTER_EMAIL",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    req = {
+        "cwd": str(iso),
+        "root": str(iso),
+        "overlay": {},
+        "profile": "none",
+        "transcript_dir": str(tmp_path / "t"),
+        "commit_identity": {"name": "Machine Bot", "email": "bot@example.com"},
+        "request": {
+            "model": "claude-x",
+            "prompt": "go",
+            "timeout_s": 5.0,
+            "provider": "anthropic",
+            "thinking": None,
+            "temperature": None,
+            "max_usd": None,
+            "max_input_tokens": None,
+            "max_output_tokens": None,
+            "mode": "run",
+        },
+    }
+    out = machine_agent._run_one(req)  # pyright: ignore[reportPrivateUsage]
+    assert out["reason"] == "finish_run"
+    assert os.environ["GIT_AUTHOR_NAME"] == "Machine Bot"
+    assert os.environ["GIT_COMMITTER_NAME"] == "Machine Bot"
+    assert os.environ["GIT_AUTHOR_EMAIL"] == "bot@example.com"
+    assert os.environ["GIT_COMMITTER_EMAIL"] == "bot@example.com"
 
 
 def test_egress_fails_closed_and_cleans_up_on_socket_error(

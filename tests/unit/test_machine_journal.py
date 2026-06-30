@@ -73,6 +73,23 @@ def test_read_tolerates_and_append_heals_torn_final_line(tmp_path: Path) -> None
     assert isinstance(healed[-1], MachineEnd)
 
 
+def test_read_tolerates_torn_final_utf8_sequence(tmp_path: Path) -> None:
+    # A crash can split a multibyte UTF-8 character on the final line. `read`
+    # must drop that byte tail before decoding, then append must heal it.
+    j = _journal(tmp_path)
+    j.begin(machine="demo", version=1)
+    torn = b'{"type":"machine.end","ts":"t","status":"failed","reason":"caf' + "é".encode()[:1]
+    with j.journal_path.open("ab") as fh:
+        fh.write(torn)
+    events = j.read()
+    assert len(events) == 1
+    assert isinstance(events[0], MachineBegin)
+    j.append(MachineEnd(ts="t", status="failed", reason="r", state="s", transitions=1))
+    healed = j.read()
+    assert len(healed) == 2
+    assert isinstance(healed[-1], MachineEnd)
+
+
 def test_latest_snapshot_falls_back_past_corrupt_newest(tmp_path: Path) -> None:
     j = _journal(tmp_path)
     j.write_snapshot(Snapshot(seq=1, state="a", blackboard={"n": 1}))

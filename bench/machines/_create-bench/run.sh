@@ -48,7 +48,8 @@ for entry in "${MODELS[@]}"; do
   code=$?
   secs=$(( $(date +%s) - start ))
 
-  attempts=$(grep -cE "machine create: attempt" "$log" 2>/dev/null || echo 0)
+  attempts=$(grep -cE "machine create: attempt" "$log" 2>/dev/null || true)
+  attempts="${attempts:-0}"
   spent=$(grep -oE "spent ~\\\$[0-9.]+" "$log" 2>/dev/null | grep -oE "[0-9.]+" | tail -1)
   check=fail; testok=fail; scripts=0
   if [ -f "$dir/created.asm.toml" ]; then

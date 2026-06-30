@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ast
 import tomllib
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -122,7 +123,7 @@ def validate_semantics(spec: MachineSpec) -> list[str]:
     schemas, schema_problems = _resolve_schemas(spec, schema_names)
     problems.extend(schema_problems)
 
-    var_types, var_owner, var_problems = _resolve_vars(spec, schema_names, schemas)
+    var_types, var_owner, var_values, var_problems = _resolve_vars(spec, schema_names, schemas)
     problems.extend(var_problems)
 
     if spec.initial not in spec.states:
@@ -131,7 +132,9 @@ def validate_semantics(spec: MachineSpec) -> list[str]:
     for name, state in spec.states.items():
         if not IDENT_RE.match(name):
             problems.append(f"state name {name!r} is not a valid identifier (^[a-z][a-z0-9_]*$)")
-        problems.extend(_validate_state(name, state, var_types, var_owner, schemas, schema_names))
+        problems.extend(
+            _validate_state(name, state, var_types, var_owner, var_values, schemas, schema_names)
+        )
 
     problems.extend(_validate_graph(spec))
     return problems
@@ -188,10 +191,11 @@ def _resolve_vars(
     spec: MachineSpec,
     schema_names: frozenset[str],
     schemas: dict[str, dict[str, TypeRef]],
-) -> tuple[dict[str, TypeRef], dict[str, str], list[str]]:
+) -> tuple[dict[str, TypeRef], dict[str, str], dict[str, Any], list[str]]:
     problems: list[str] = []
     var_types: dict[str, TypeRef] = {}
     var_owner: dict[str, str] = {}
+    var_values: dict[str, Any] = {}
 
     declared: dict[str, str] = {}
     owners: tuple[tuple[str, dict[str, Any]], ...] = (
@@ -223,8 +227,9 @@ def _resolve_vars(
                 continue
             var_types[vname] = vtype
             value = varspec.value if owner == "operator" else varspec.default
+            var_values[vname] = value
             problems.extend(_check_value(value, vtype, schemas, f"variable {vname!r}"))
-    return var_types, var_owner, problems
+    return var_types, var_owner, var_values, problems
 
 
 def _check_value(
@@ -454,6 +459,7 @@ def _validate_state(
     state: StateSpec,
     var_types: dict[str, TypeRef],
     var_owner: dict[str, str],
+    var_values: dict[str, Any],
     schemas: dict[str, dict[str, TypeRef]],
     schema_names: frozenset[str],
 ) -> list[str]:
@@ -462,7 +468,7 @@ def _validate_state(
     if isinstance(state, ToolState):
         return _validate_tool(name, state, var_types, var_owner, schemas, schema_names)
     if isinstance(state, WaitState):
-        return _validate_wait(name, state, var_types, schemas)
+        return _validate_wait(name, state, var_types, var_owner, var_values, schemas)
     if isinstance(state, BranchState):
         return _validate_branch(name, state, var_types, schemas)
     return []  # TerminalState: shape is fully checked by pydantic
@@ -678,6 +684,8 @@ def _validate_wait(
     name: str,
     state: WaitState,
     var_types: dict[str, TypeRef],
+    var_owner: dict[str, str],
+    var_values: dict[str, Any],
     schemas: dict[str, dict[str, TypeRef]],
 ) -> list[str]:
     problems = _validate_on(name, state.on, WAIT_LABELS)
@@ -725,10 +733,16 @@ def _validate_wait(
     # than letting them surface only when the wait is first reached at run.
     if state.every_secs is not None:
         problems.extend(
-            _int_timing_problems(name, "every_secs", state.every_secs, var_types, schemas)
+            _int_timing_problems(
+                name, "every_secs", state.every_secs, var_types, var_owner, var_values, schemas
+            )
         )
     if state.until is not None:
-        problems.extend(_iso_timing_problems(name, "until", state.until, var_types, schemas))
+        problems.extend(
+            _iso_timing_problems(
+                name, "until", state.until, var_types, var_owner, var_values, schemas
+            )
+        )
     return problems
 
 
@@ -745,10 +759,13 @@ def _timing_literal(text: str) -> str | None:
     return "".join(part for part in template.parts if isinstance(part, str))
 
 
-def _timing_ref_type(
-    text: str, var_types: dict[str, TypeRef], schemas: dict[str, dict[str, TypeRef]]
-) -> TypeRef | None:
-    """The declared type a lone-reference timing template resolves to, else None."""
+def _timing_ref(text: str) -> Reference | None:
+    """The lone reference in a timing template, else None.
+
+    Malformed templates and composite templates return None. ``_validate_template``
+    already reports parse errors, and composite templates are data-dependent: the
+    engine validates the rendered value at runtime.
+    """
     try:
         template = parse_template(text)
     except TemplateError:
@@ -757,8 +774,16 @@ def _timing_ref_type(
         return None
     interp = template.parts[0]
     assert isinstance(interp, Interp)
-    ftype, error = _resolve_ref_type(interp.ref, var_types, schemas, None)
-    return ftype if error is None else None
+    return interp.ref
+
+
+def _static_ref_value(ref: Reference, var_values: dict[str, Any]) -> Any:
+    current: Any = var_values.get(ref.root)
+    for key in ref.path:
+        if not isinstance(current, Mapping) or key not in current:
+            return None
+        current = current[key]
+    return current
 
 
 def _int_timing_problems(
@@ -766,27 +791,46 @@ def _int_timing_problems(
     key: str,
     text: str,
     var_types: dict[str, TypeRef],
+    var_owner: dict[str, str],
+    var_values: dict[str, Any],
     schemas: dict[str, dict[str, TypeRef]],
 ) -> list[str]:
+    problems: list[str] = []
     literal = _timing_literal(text)
     if literal is not None:
         try:
             seconds = int(literal)
         except ValueError:
-            return [
+            problems.append(
                 f"state {name!r}: `{key}` must be an integer literal or an int variable"
                 f" reference; got {literal!r}"
-            ]
-        if seconds < 1:
-            return [
-                f"state {name!r}: `{key}` must be >= 1; got {seconds}"
-                " (a zero or negative interval would busy-loop)"
-            ]
-        return []
-    ref_type = _timing_ref_type(text, var_types, schemas)
-    if ref_type is not None and ref_type != ScalarT("int"):
-        return [f"state {name!r}: `{key}` must reference an int variable, not {type_str(ref_type)}"]
-    return []
+            )
+        else:
+            if seconds < 1:
+                problems.append(
+                    f"state {name!r}: `{key}` must be >= 1; got {seconds}"
+                    " (a zero or negative interval would busy-loop)"
+                )
+        return problems
+
+    ref = _timing_ref(text)
+    if ref is None:
+        return problems
+    ref_type, error = _resolve_ref_type(ref, var_types, schemas, None)
+    if error is None:
+        assert ref_type is not None
+        if ref_type != ScalarT("int"):
+            problems.append(
+                f"state {name!r}: `{key}` must reference an int variable, not {type_str(ref_type)}"
+            )
+        elif var_owner.get(ref.root) == "operator":
+            value = _static_ref_value(ref, var_values)
+            if isinstance(value, int) and not isinstance(value, bool) and value < 1:
+                problems.append(
+                    f"state {name!r}: `{key}` must be >= 1; {ref.dotted!r} is {value}"
+                    " (a zero or negative interval would busy-loop)"
+                )
+    return problems
 
 
 def _iso_timing_problems(
@@ -794,22 +838,43 @@ def _iso_timing_problems(
     key: str,
     text: str,
     var_types: dict[str, TypeRef],
+    var_owner: dict[str, str],
+    var_values: dict[str, Any],
     schemas: dict[str, dict[str, TypeRef]],
 ) -> list[str]:
+    problems: list[str] = []
     literal = _timing_literal(text)
     if literal is not None:
         try:
             datetime.fromisoformat(literal)
         except ValueError:
-            return [
+            problems.append(
                 f"state {name!r}: `{key}` must be an ISO-8601 instant or a str variable"
                 f" reference; got {literal!r}"
-            ]
-        return []
-    ref_type = _timing_ref_type(text, var_types, schemas)
-    if ref_type is not None and ref_type != ScalarT("str"):
-        return [f"state {name!r}: `{key}` must reference a str variable, not {type_str(ref_type)}"]
-    return []
+            )
+        return problems
+
+    ref = _timing_ref(text)
+    if ref is None:
+        return problems
+    ref_type, error = _resolve_ref_type(ref, var_types, schemas, None)
+    if error is None:
+        assert ref_type is not None
+        if ref_type != ScalarT("str"):
+            problems.append(
+                f"state {name!r}: `{key}` must reference a str variable, not {type_str(ref_type)}"
+            )
+        elif var_owner.get(ref.root) == "operator":
+            value = _static_ref_value(ref, var_values)
+            if isinstance(value, str):
+                try:
+                    datetime.fromisoformat(value)
+                except ValueError:
+                    problems.append(
+                        f"state {name!r}: `{key}` must be an ISO-8601 instant;"
+                        f" {ref.dotted!r} is {value!r}"
+                    )
+    return problems
 
 
 def _validate_branch(

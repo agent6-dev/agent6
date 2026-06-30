@@ -274,10 +274,55 @@ def test_wait_every_secs_zero_literal_rejected(tmp_path: Path) -> None:
     assert any("every_secs" in p and ">= 1" in p for p in problems)
 
 
+def test_wait_every_secs_zero_operator_ref_rejected(tmp_path: Path) -> None:
+    body = VALID_MACHINE.replace(
+        'poll_secs = { type = "int", value = 300 }',
+        'poll_secs = { type = "int", value = 0 }',
+    )
+    problems = _problems(tmp_path, body)
+    assert any("every_secs" in p and "poll_secs" in p and ">= 1" in p for p in problems)
+
+
+def test_wait_every_secs_composite_template_allowed(tmp_path: Path) -> None:
+    body = VALID_MACHINE.replace(
+        'every_secs = "{{ poll_secs }}"',
+        'every_secs = "{{ poll_secs }}0"',
+    )
+    load_machine(_write(tmp_path, body))
+
+
 def test_wait_until_garbage_literal_rejected(tmp_path: Path) -> None:
     body = VALID_MACHINE.replace('every_secs = "{{ poll_secs }}"', 'until = "not-a-date"')
     problems = _problems(tmp_path, body)
     assert any("until" in p and "ISO-8601" in p for p in problems)
+
+
+def test_wait_until_bad_operator_ref_rejected(tmp_path: Path) -> None:
+    body = VALID_MACHINE.replace(
+        'poll_secs = { type = "int", value = 300 }',
+        'when = { type = "str", value = "not-a-date" }',
+    ).replace('every_secs = "{{ poll_secs }}"', 'until = "{{ when }}"')
+    problems = _problems(tmp_path, body)
+    assert any("until" in p and "when" in p and "ISO-8601" in p for p in problems)
+
+
+def test_wait_until_composite_template_allowed(tmp_path: Path) -> None:
+    body = VALID_MACHINE.replace(
+        'poll_secs = { type = "int", value = 300 }',
+        'day = { type = "str", value = "2030-01-01" }',
+    ).replace(
+        'every_secs = "{{ poll_secs }}"',
+        'until = "{{ day }}T00:00:00Z"',
+    )
+    load_machine(_write(tmp_path, body))
+
+
+def test_wait_until_unverifiable_composite_template_allowed_at_load(tmp_path: Path) -> None:
+    body = VALID_MACHINE.replace(
+        'every_secs = "{{ poll_secs }}"',
+        'until = "prefix-{{ cursor }}"',
+    )
+    load_machine(_write(tmp_path, body))
 
 
 # -- type checks -----------------------------------------------------------

@@ -88,7 +88,37 @@ max_usd = 1.0
 max_transitions = 100
 
 [vars.operator]
-secs = { type = "int", value = 0 }
+secs = { type = "int", value = 1 }
+
+[states.poll]
+kind = "wait"
+every_secs = "{{ secs }}"
+on = { tick = "done", signal = "woken" }
+
+[states.done]
+kind = "terminal"
+status = "ok"
+reason = "ticked"
+
+[states.woken]
+kind = "terminal"
+status = "ok"
+reason = "signalled"
+"""
+
+# A mutable wait interval can become invalid at runtime; the engine must fail
+# cleanly instead of busy-looping.
+WAITER_DYNAMIC_ZERO = """
+machine = "waiter_dynamic_zero"
+version = 1
+initial = "poll"
+
+[budget]
+max_usd = 1.0
+max_transitions = 100
+
+[vars.code]
+secs = { type = "int", default = 0 }
 
 [states.poll]
 kind = "wait"
@@ -465,6 +495,15 @@ def test_wait_tick_path(tmp_path: Path) -> None:
     events = journal.read()
     step = next(e for e in events if isinstance(e, StepEvent))
     assert step.label == "tick"
+
+
+def test_wait_zero_dynamic_interval_fails_cleanly(tmp_path: Path) -> None:
+    journal, f = _load(tmp_path, WAITER_DYNAMIC_ZERO)
+    spec = load_machine(f)
+    result = drive(spec, journal, FakeWorld({}), live=True)
+    assert result.status == "failed"
+    assert "`every_secs` must be >= 1" in result.reason
+    assert not any(isinstance(event, StepEvent) for event in journal.read())
 
 
 def test_wait_signal_path(tmp_path: Path) -> None:
