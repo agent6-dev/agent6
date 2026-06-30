@@ -13,16 +13,13 @@ from agent6.config import (
     ConfigError,
     RoleName,
 )
-from agent6.config_io import upsert_toml_table
 from agent6.config_layer import (
     load_effective,
     repo_config_path_for,
+    set_config_table,
 )
 from agent6.models_cache import list_models
-from agent6.paths import (
-    chown_to_real_user,
-    global_config_path,
-)
+from agent6.paths import global_config_path
 from agent6.secrets import resolve_api_key
 
 
@@ -148,23 +145,25 @@ def _cmd_model(
         print("ERROR: no model given.", file=sys.stderr)
         return 2
     target = repo_config_path_for(Path.cwd()) if to_repo else global_config_path()
-    target.parent.mkdir(parents=True, exist_ok=True)
     fields: dict[str, str | bool | None] = {"provider": provider, "model": model}
     if thinking:
         fields["thinking"] = thinking
     roles: tuple[RoleName, ...] = (
         ("planner", "worker", "reviewer") if role == "all" else (cast("RoleName", role),)
     )
+    # Write through the shared edit path: each [models.<role>] table is persisted,
+    # the merged config re-validated, and the file ROLLED BACK if the combination
+    # is invalid -- so a bad provider/model never leaves config.toml broken (which
+    # would fail every later command). The roles get identical fields, so the first
+    # rejection rolls back with nothing partially applied.
     for r in roles:
-        upsert_toml_table(target, f"models.{r}", fields)
-    chown_to_real_user(target.parent)
-    chown_to_real_user(target)
-    # Re-validate so a bad combination is caught immediately.
-    try:
-        load_effective(Path.cwd(), config_path)
-    except ConfigError as exc:
-        print(f"Wrote {target}, but the config no longer validates:\n{exc}", file=sys.stderr)
-        return 2
+        err = set_config_table(Path.cwd(), f"models.{r}", fields, to_repo=to_repo)
+        if err is not None:
+            print(
+                f"Refusing: {provider}/{model} would make the config invalid:\n{err}",
+                file=sys.stderr,
+            )
+            return 2
     where = "[models.*] (all roles)" if role == "all" else f"[models.{role}]"
     print(
         f"Set {where} = {provider}/{model}"

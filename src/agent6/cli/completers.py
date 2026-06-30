@@ -39,6 +39,9 @@ def _complete_models(
 # Used by the `config set/add/remove` value completer so TAB offers the exact
 # valid choices (e.g. `config set sandbox.agent_network <TAB>` -> providers/...).
 _CONFIG_ENUM_CHOICES: dict[str, tuple[str, ...]] = {
+    # `sandbox.profile` also accepts "none" (the unsandboxed opt-out, see
+    # config.SandboxConfig.profile), deliberately omitted here: TAB should not put
+    # "disable the sandbox" one keystroke away. Type it explicitly to set it.
     "sandbox.profile": ("auto", "strict", "hardened"),
     "sandbox.agent_network": ("providers", "local", "open"),
     "sandbox.tool_network": ("block", "only_explicit_states", "allow"),

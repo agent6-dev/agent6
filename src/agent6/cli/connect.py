@@ -17,16 +17,13 @@ from agent6.config import (
     ProviderEntry,
     _validate_base_url,
 )
-from agent6.config_io import upsert_toml_table
 from agent6.config_layer import (
     PROVIDER_PRESETS,
     repo_config_path_for,
+    set_config_table,
 )
 from agent6.models_cache import probe_provider_key
-from agent6.paths import (
-    chown_to_real_user,
-    global_config_path,
-)
+from agent6.paths import global_config_path
 from agent6.secrets import SecretsError, save_secret
 
 
@@ -147,7 +144,7 @@ def _verify_key(*, api_format: str, base_url: str, api_key: str) -> None:
         )
 
 
-def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True) -> int:  # noqa: PLR0912
+def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True) -> int:  # noqa: PLR0911, PLR0912
     """Interactively add a provider + API key.
 
     Security: this command NEVER executes anything supplied by a remote. It
@@ -210,13 +207,16 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True) -> int:  
         print("No key entered; assuming an unauthenticated/local endpoint.")
 
     target = repo_config_path_for(Path.cwd()) if to_repo else global_config_path()
-    target.parent.mkdir(parents=True, exist_ok=True)
     fields: dict[str, str | bool | None] = {"api_format": api_format}
     if api_format == "openai" and base_url and base_url != "https://api.openai.com/v1":
         fields["base_url"] = base_url
-    upsert_toml_table(target, f"providers.{name}", fields)
-    chown_to_real_user(target.parent)
-    chown_to_real_user(target)
+    # Shared edit path: persist [providers.<name>], re-validate the merged config,
+    # and roll the file back on failure so a bad endpoint never leaves config.toml
+    # broken (the key, saved above, is a harmless orphan until a valid retry).
+    err = set_config_table(Path.cwd(), f"providers.{name}", fields, to_repo=to_repo)
+    if err is not None:
+        print(f"Refusing: that would make the config invalid:\n{err}", file=sys.stderr)
+        return 2
     print(f"Wrote [providers.{name}] to {target}.")
     print(
         "\nNext: `agent6 model worker "

@@ -227,6 +227,26 @@ def test_model_all_sets_every_role(
     assert "all roles" in capsys.readouterr().out
 
 
+def test_model_invalid_provider_refuses_and_rolls_back(
+    iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Regression: setting a role to an unconfigured provider makes the merged
+    # config invalid. The set must REFUSE (rc 2) and leave config.toml byte-for-
+    # byte as it was, not write the broken value -- which previously bricked every
+    # later command. (The provider cross-check is active only once a provider is
+    # configured, so connect one first.)
+    monkeypatch.setattr("agent6.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-FAKE")
+    assert main(["connect", "--provider", "anthropic"]) == 0
+    assert main(["model", "worker", "anthropic", "good-x"]) == 0
+    cfg = tmp_path / "g" / "config.toml"
+    before = cfg.read_text(encoding="utf-8")
+    assert main(["model", "worker", "missing-prov", "gpt"]) == 2
+    after = cfg.read_text(encoding="utf-8")
+    assert after == before  # rolled back exactly
+    assert "missing-prov" not in after
+    assert main(["model"]) == 0  # config still loads (not bricked)
+
+
 def test_model_rejects_unknown_role(iso: Path) -> None:
     # argparse `choices` validates the role positional (and feeds argcomplete).
     with pytest.raises(SystemExit) as exc:
