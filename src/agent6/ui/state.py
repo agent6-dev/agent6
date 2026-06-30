@@ -35,7 +35,8 @@ class TaskNodeView:
 @dataclass(frozen=True, slots=True)
 class ToolCallView:
     name: str
-    args_preview: str  # rendered, not raw dict
+    args_preview: str  # rendered, per-value truncated, for the inline table
+    args_full: str = ""  # rendered with a generous per-value cap, for the detail modal
     result_summary: str = ""
     ok: bool | None = None  # None = in-flight
 
@@ -195,9 +196,11 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
             return replace(state, last_role=replace(last, in_flight=False))
 
         case "tool.call":
+            raw_args = event.get("args", {}) or {}
             tc = ToolCallView(
                 name=str(event.get("name", "")),
-                args_preview=_render_args(event.get("args", {}) or {}),
+                args_preview=_render_args(raw_args),
+                args_full=_render_args(raw_args, max_value=4000),
                 ok=None,
             )
             return replace(
@@ -353,12 +356,16 @@ def _push_bounded[T](existing: tuple[T, ...], item: T, cap: int) -> tuple[T, ...
     return new
 
 
-def _render_args(args: dict[str, Any]) -> str:
+def _render_args(args: dict[str, Any], *, max_value: int = 80) -> str:
+    """Render an args dict as `k=v, ...`, truncating each value to *max_value*
+    chars. The inline table uses the tight default; the detail modal renders with
+    a generous cap so a long arg (a command, a path, a payload) is readable while
+    one pathological value still can't bloat the bounded history."""
     pairs: list[str] = []
     for k, v in args.items():
         s = repr(v) if not isinstance(v, str) else v
-        if len(s) > 80:
-            s = s[:80] + "…"
+        if len(s) > max_value:
+            s = s[:max_value] + "…"
         pairs.append(f"{k}={s}")
     return ", ".join(pairs)
 

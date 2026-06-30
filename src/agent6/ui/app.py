@@ -60,7 +60,7 @@ from agent6.ui.approval import (
 from agent6.ui.conversation import ConversationScreen
 from agent6.ui.logview import LogScreen
 from agent6.ui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
-from agent6.ui.modals import ApprovalModal, QuestionModal, SteerModal
+from agent6.ui.modals import ApprovalModal, QuestionModal, SteerModal, ToolCallDetailModal
 from agent6.ui.state import (
     MAX_LOG_TAIL,
     ApprovalPrompt,
@@ -80,6 +80,10 @@ _TASK_ICONS = {
     "obsolete": "⊘",
     "pending": "·",
 }
+
+# How many recent tool calls the inline table shows. The RowSelected handler maps
+# a visual row back through the same window, so both must use this one value.
+_TOOL_TABLE_ROWS = 20
 
 
 class _Agent6Commands(Provider):
@@ -130,6 +134,9 @@ class Agent6TUI(App[int]):
     #stream { width: 1fr; border: round $primary; padding: 0 1; }
     /* The tool table spans the full width so all four columns stay visible. */
     #tools { height: 20%; border: round $primary; }
+    /* Maximized (press f), the table fills the screen instead of holding its 20%
+       resting height -- textual tags the maximized widget with `-maximized`. */
+    #tools.-maximized { height: 1fr; }
     /* Log and diff share the tallest row; press f to maximize either full-screen. */
     #body { height: 1fr; }
     #log { width: 1fr; border: round $primary; }
@@ -226,7 +233,9 @@ class Agent6TUI(App[int]):
             yield Tree("tasks", id="plan")
             with _ScrollPane(id="stream"):
                 yield Static("", id="stream-body")
-        yield DataTable(id="tools")
+        # cursor_type="row": the whole row highlights and Enter opens its full
+        # detail (the columns truncate long args/summaries; see RowSelected).
+        yield DataTable(id="tools", cursor_type="row")
         with Horizontal(id="body"):
             # markup=False: log lines contain raw tool args like `args=[a,b]` which
             # Rich would otherwise try to parse as markup and crash. auto_scroll off:
@@ -399,6 +408,20 @@ class Agent6TUI(App[int]):
             )
         )
 
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """Enter on a tool-calls row opens its full args + summary in a modal (the
+        columns truncate long values). Map the visual row back through the same
+        window the table was built from; ignore an out-of-range index from a race
+        with a rebuild."""
+        if event.data_table.id != "tools":
+            return
+        window = self.state.tool_calls[-_TOOL_TABLE_ROWS:]
+        if 0 <= event.cursor_row < len(window):
+            tc = window[event.cursor_row]
+            self.push_screen(
+                ToolCallDetailModal(tc.name, tc.ok, tc.args_full, tc.result_summary)
+            )
+
     def action_menu(self, mnemonic: str) -> None:
         self.query_one(MenuBar).open(mnemonic)
 
@@ -491,7 +514,7 @@ class Agent6TUI(App[int]):
 
         table = self.query_one("#tools", DataTable)
         table.clear()
-        for tc in s.tool_calls[-20:]:
+        for tc in s.tool_calls[-_TOOL_TABLE_ROWS:]:
             ok = "…" if tc.ok is None else ("✓" if tc.ok else "✗")
             table.add_row(
                 Text(tc.name), Text(tc.args_preview[:90]), ok, Text(tc.result_summary[:40])

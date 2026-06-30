@@ -18,11 +18,12 @@ from __future__ import annotations
 from typing import ClassVar
 
 from rich.text import Text
+from textual import events
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Static
+from textual.widgets import Button, Input, Static, TextArea
 
 
 # Modal frames pin a static round $accent (focused) border: a modal always owns
@@ -193,6 +194,64 @@ class SteerModal(ModalScreen[str]):
 
     def action_cont(self) -> None:
         self.dismiss("")
+
+
+class ToolCallDetailModal(ModalScreen[None]):
+    """Read-only detail of one tool-call row: the full args + summary the inline
+    table truncates to fit its columns. Informational, so clicking the backdrop
+    closes it (unlike the consequential approval/steer modals). The text areas are
+    read-only but selectable, so a long command, path, or payload can be copied.
+    Esc closes; the args area is focused so arrow/page keys scroll it at once.
+    """
+
+    DEFAULT_CSS = """
+    ToolCallDetailModal { align: center middle; }
+    #toolcall-box {
+        width: 90%; max-width: 120; height: auto; max-height: 85%;
+        border: round $accent; padding: 1 2; background: $surface;
+    }
+    #toolcall-box .tc-label { color: $accent; text-style: bold; margin-top: 1; }
+    #toolcall-box TextArea {
+        height: auto; max-height: 24; border: round $primary; background: $surface;
+    }
+    """
+
+    BINDINGS: ClassVar = [
+        Binding("escape", "close", "Close", show=True),
+        # enter/q also close, but the focused read-only TextArea may swallow them;
+        # Esc is the one that always bubbles, so it is the advertised key.
+        Binding("enter", "close", "Close", show=False),
+        Binding("q", "close", "Close", show=False),
+    ]
+
+    def __init__(self, name: str, ok: bool | None, args: str, summary: str) -> None:
+        super().__init__()
+        self._name = name
+        self._ok = ok
+        self._args = args or "(no args)"
+        self._summary = summary or "(no summary)"
+
+    def compose(self) -> ComposeResult:
+        status = "… in flight" if self._ok is None else ("✓ ok" if self._ok else "✗ failed")
+        with Vertical(id="toolcall-box"):
+            header = Text()
+            header.append(self._name, style="bold")
+            header.append(f"   {status}", style="dim")
+            yield Static(header)
+            yield Static("args", classes="tc-label")
+            yield TextArea(self._args, read_only=True, soft_wrap=True, id="tc-args")
+            yield Static("summary", classes="tc-label")
+            yield TextArea(self._summary, read_only=True, soft_wrap=True, id="tc-summary")
+
+    def on_mount(self) -> None:
+        self.query_one("#tc-args", TextArea).focus()
+
+    def on_click(self, event: events.Click) -> None:
+        if event.widget is self:  # click on the backdrop (outside the box) = close
+            self.dismiss(None)
+
+    def action_close(self) -> None:
+        self.dismiss(None)
 
 
 class QuestionModal(ModalScreen[str]):

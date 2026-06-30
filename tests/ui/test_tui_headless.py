@@ -16,10 +16,15 @@ from pathlib import Path
 from typing import Any
 
 from textual.app import App
-from textual.widgets import Button, Input, RichLog
+from textual.widgets import Button, DataTable, Input, RichLog, TextArea
 
 from agent6.ui.app import Agent6TUI
-from agent6.ui.modals import ApprovalModal, QuestionModal, SteerModal
+from agent6.ui.modals import (
+    ApprovalModal,
+    QuestionModal,
+    SteerModal,
+    ToolCallDetailModal,
+)
 
 
 def _ev(**fields: Any) -> dict[str, object]:
@@ -56,6 +61,62 @@ def test_question_modal_digit_in_freetext_is_not_hijacked() -> None:
             await pilot.press("1")
             await pilot.pause()
             assert result.get("v") == "alpha"  # quick-select still works
+
+    asyncio.run(scenario())
+
+
+def test_tools_table_maximizes_to_full_height(tmp_path: Path) -> None:
+    """Pressing `f` on the focused tool table fills the screen, not its 20%
+    resting height -- regression: the explicit `height: 20%` made the maximized
+    view stay short until `#tools.-maximized { height: 1fr; }` was added."""
+    (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+
+    async def scenario() -> None:
+        app = Agent6TUI(tmp_path)
+        async with app.run_test(size=(100, 40)) as pilot:
+            app._handle_event(_ev(type="tool.call", name="grep", args={"pattern": "x"}))
+            app._tick()
+            await pilot.pause()
+            table = app.query_one("#tools", DataTable)
+            table.focus()
+            await pilot.pause()
+            resting_h = table.size.height
+            await pilot.press("f")  # maximize
+            await pilot.pause()
+            assert app.screen.maximized is table
+            assert table.has_class("-maximized")
+            maxed_h = table.size.height
+            assert maxed_h > resting_h * 2  # fills the screen, not the 20% resting band
+            assert maxed_h >= 25  # ~full of a 40-row screen (minus menu + footer)
+
+    asyncio.run(scenario())
+
+
+def test_tool_row_enter_opens_detail_with_full_args(tmp_path: Path) -> None:
+    """Enter on a tool-calls row opens a read-only detail modal carrying the FULL
+    arg value, not the column-truncated preview."""
+    (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+    long_val = "abc/" * 100  # 400 chars, well past the 80-char preview + 90-char column
+
+    async def scenario() -> None:
+        app = Agent6TUI(tmp_path)
+        async with app.run_test() as pilot:
+            app._handle_event(_ev(type="tool.call", name="run_command", args={"cmd": long_val}))
+            app._handle_event(
+                _ev(type="tool.result", name="run_command", ok=True, summary="lots of output")
+            )
+            app._tick()
+            await pilot.pause()
+            app.query_one("#tools", DataTable).focus()
+            await pilot.pause()
+            await pilot.press("enter")  # select the single row
+            await pilot.pause()
+            assert isinstance(app.screen, ToolCallDetailModal)
+            args_text = app.screen.query_one("#tc-args", TextArea).text
+            assert long_val in args_text  # full value present, not the "…" preview
+            await pilot.press("escape")  # closes past the focused read-only TextArea
+            await pilot.pause()
+            assert not isinstance(app.screen, ToolCallDetailModal)
 
     asyncio.run(scenario())
 
