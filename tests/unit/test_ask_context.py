@@ -116,6 +116,18 @@ def test_ask_question_snippet_skips_digest_tags() -> None:
     assert _ask_question_snippet("## Question\n\nwhat does fib do?\n\n## Answer\n") == (
         "what does fib do?"
     )
+    with_file = (
+        "# agent6 ask\n\n## Question\n\n"
+        '<file path="a.py">\nprint("a")\n</file>\n\n'
+        "what does this file do?\n\n## Answer\n\nprints a\n"
+    )
+    assert _ask_question_snippet(with_file) == "what does this file do?"
+    with_answer_heading_in_file = (
+        "# agent6 ask\n\n## Question\n\n"
+        '<file path="notes.md">\n## Answer\nbody\n</file>\n\n'
+        "what does this note say?\n\n## Answer\n\nbody\n"
+    )
+    assert _ask_question_snippet(with_answer_heading_in_file) == "what does this note say?"
 
 
 def test_ask_repl_multi_turn_carries_context(

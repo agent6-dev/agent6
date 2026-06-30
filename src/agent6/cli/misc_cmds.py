@@ -681,7 +681,6 @@ def _cmd_prune() -> int:
     print(
         f"\n[agent6] deleted {deleted}; kept {merged_kept + unmerged_kept} "
         f"({merged_kept} merged, {unmerged_kept} unmerged)",
-        file=sys.stderr,
     )
     return 0
 

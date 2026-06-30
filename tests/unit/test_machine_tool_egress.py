@@ -21,6 +21,7 @@ from agent6.cli.machine_cmds import (
 from agent6.config import Config
 from agent6.machine import MachineJournal, ToolState, drive, load_machine
 from agent6.machine.engine import LiveWorld, ToolExecResult
+from agent6.types import CommandResult
 
 # A two-tool machine: the first tool opts into the network, the second does not.
 NET_MACHINE = """
@@ -51,6 +52,31 @@ status = "ok"
 reason = "done"
 
 [states.stop_fail]
+kind = "terminal"
+status = "failed"
+reason = "failed"
+"""
+
+TOOL_ONLY_MACHINE = """
+machine = "toolonly"
+version = 1
+initial = "check"
+
+[budget]
+max_transitions = 5
+
+[states.check]
+kind = "tool"
+command = ["true"]
+timeout_secs = 5
+on = { ok = "done", nonzero = "fail", timeout = "fail" }
+
+[states.done]
+kind = "terminal"
+status = "ok"
+reason = "checked"
+
+[states.fail]
 kind = "terminal"
 status = "failed"
 reason = "failed"
@@ -183,6 +209,15 @@ def test_liveworld_no_data_dir_grants_no_extra_rw(
     world.run_tool(("true",), 5.0, allow_network=False)
     assert seen[-1].extra_rw_paths == ()
     assert all(k != "AGENT6_MACHINE_DATA_DIR" for k, _ in seen[-1].env)
+
+
+def test_liveworld_disables_python_bytecode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen = _patch_jail(monkeypatch)
+    world = LiveWorld(cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), profile="hardened")
+    world.run_tool(("python3", "-m", "unittest"), 5.0, allow_network=False)
+    assert ("PYTHONDONTWRITEBYTECODE", "1") in seen[-1].env
 
 
 def test_liveworld_passes_protect_paths_to_jail(
@@ -347,6 +382,41 @@ def test_machine_run_validates_config_overlay_for_pure_machine(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / ".state"))
     assert main(["machine", "run", str(f)]) == 2
+
+
+def test_machine_run_keeps_tool_jail_strict_when_agent_egress_would_downgrade(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from agent6.cli import main
+
+    f = _write(tmp_path, TOOL_ONLY_MACHINE)
+    seen_profiles: list[str] = []
+
+    def fake_run_in_jail(policy: Any) -> CommandResult:
+        seen_profiles.append(policy.profile)
+        return CommandResult(
+            argv=tuple(policy.argv),
+            returncode=0,
+            stdout="",
+            stderr="",
+            duration_s=0.0,
+        )
+
+    def fail_egress_probe(*_args: object) -> tuple[str, str | None]:
+        pytest.fail("tool-only machines do not need the provider-egress downgrade")
+
+    def select_strict(*_args: object) -> str:
+        return "strict"
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("agent6.cli.machine_cmds.select_profile", select_strict)
+    monkeypatch.setattr(
+        "agent6.cli.machine_cmds.resolve_strict_egress_viability", fail_egress_probe
+    )
+    monkeypatch.setattr("agent6.machine.engine.run_in_jail", fake_run_in_jail)
+
+    assert main(["machine", "run", str(f)]) == 0
+    assert seen_profiles == ["strict"]
 
 
 # --- sandbox-conflict UX (suggest a fix, don't dead-end) --------------------

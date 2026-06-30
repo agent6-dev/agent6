@@ -594,13 +594,17 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
         except RuntimeError as exc:
             print(f"REFUSING: {exc}", file=sys.stderr)
             return 2
-        # Same as run/resume: a strict that can't run the egress broker on this
-        # process (surgical AppArmor profile) downgrades to hardened or refuses,
-        # so the per-state agent subprocess gets a profile it can actually use.
-        profile, egress_err = resolve_strict_egress_viability(cfg, profile)
-        if egress_err is not None:
-            print(egress_err, file=sys.stderr)
-            return 2
+        agent_profile = profile
+        if has_agent_state:
+            # Same as run/resume: a strict that can't run the egress broker on
+            # this process (surgical AppArmor profile) downgrades to hardened or
+            # refuses, so the per-state agent subprocess gets a profile it can
+            # actually use. Tool states keep `profile`: the jail launcher itself
+            # can still run strict and give each tool its own namespace.
+            agent_profile, egress_err = resolve_strict_egress_viability(cfg, profile)
+            if egress_err is not None:
+                print(egress_err, file=sys.stderr)
+                return 2
         snapshot_keep = cfg.machine.snapshot_keep
         refusal = _machine_network_refusal(cfg, profile, tool_states)
         if refusal is not None:
@@ -643,7 +647,7 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
             agent_runner = _build_machine_agent_runner(
                 spec.config,
                 cwd,
-                profile,
+                agent_profile,
                 root / "agent_transcripts",
                 protect_paths,
                 commit_identity,

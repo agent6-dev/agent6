@@ -760,6 +760,29 @@ def test_passthrough_env_is_fixed_allowlist() -> None:
                 os.environ[k] = v
 
 
+def test_jail_env_disables_python_bytecode(tmp_path: Path) -> None:
+    from agent6.types import CommandResult, JailPolicy
+
+    cfg = _config(tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    captured: dict[str, str] = {}
+
+    def fake_run(policy: JailPolicy) -> CommandResult:
+        captured.update(dict(policy.env))
+        return CommandResult(
+            argv=("true",),
+            returncode=0,
+            stdout="",
+            stderr="",
+            duration_s=0.0,
+        )
+
+    with mock.patch("agent6.tools.dispatch.run_in_jail", side_effect=fake_run):
+        d.dispatch("run_verify_command", {})
+
+    assert captured["PYTHONDONTWRITEBYTECODE"] == "1"
+
+
 def test_outline_returns_symbols(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text("def foo():\n    pass\nclass Bar:\n    pass\n", encoding="utf-8")

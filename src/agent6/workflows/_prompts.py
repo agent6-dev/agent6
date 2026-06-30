@@ -61,9 +61,8 @@ the loop will halt if you exceed it.
   top-level files or directories in the workspace root (existing entries
   are writable as normal). If a build tool needs a new top-level entry
   (e.g. `Cargo.lock`, `target/`, `go.sum`), create it first with
-  `write_file` (which runs outside the jail): the file itself for a file,
-  or a placeholder like `target/.keep` for a directory. Then rerun the
-  command.
+  `apply_edit` using `kind="create"`: the file itself for a file, or a
+  placeholder like `target/.keep` for a directory. Then rerun the command.
 - If an edit fails verify and you need to revert it, do NOT call
     `git checkout`, `git reset`, or other history-mutating git commands
     through `run_command`: `.git/` is protected inside the jail and those

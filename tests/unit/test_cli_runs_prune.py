@@ -85,6 +85,7 @@ def test_runs_prune_classifies_branches(
     assert "deleted agent6/reach11" in text
     assert "squash-merged" in text  # sqush11 classification
     assert "NOT merged" in text  # unmrg11 classification
+    assert cap.out.index("kept agent6/sqush11") < cap.out.index("[agent6] deleted 1; kept 2")
 
 
 def test_runs_prune_from_non_base_does_not_mislabel_merge_as_squash(

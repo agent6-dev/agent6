@@ -36,10 +36,23 @@ def ask_question_snippet(transcript: str) -> str:
         start = lines.index("## Question") + 1
     except ValueError:
         return "(no question)"
+    skip_until: str | None = None
     for line in lines[start:]:
         s = line.strip()
+        if skip_until is not None:
+            if s == skip_until:
+                skip_until = None
+            continue
         if s == "## Answer":
             break
+        if s.startswith("<file "):
+            if "</file>" not in s:
+                skip_until = "</file>"
+            continue
+        if s.startswith("<prior-run "):
+            if "</prior-run>" not in s:
+                skip_until = "</prior-run>"
+            continue
         if s and not s.startswith("<"):  # skip blank lines + digest/file tags
             return s
     return "(question)"

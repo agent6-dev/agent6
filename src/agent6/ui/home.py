@@ -96,7 +96,29 @@ def _run_summary(run_dir: Path) -> dict[str, str]:
             status = "stale"
     except OSError:
         pass
-    return {"id": run_dir.name, "mode": mode, "task": task[:60], "status": status}
+    return {"id": run_dir.name, "mode": mode, "task": _task_snippet(task)[:60], "status": status}
+
+
+def _task_snippet(task: str) -> str:
+    """First user-authored line after any seeded ask context blocks."""
+    skip_until: str | None = None
+    for line in task.splitlines():
+        s = line.strip()
+        if skip_until is not None:
+            if s == skip_until:
+                skip_until = None
+            continue
+        if s.startswith("<file "):
+            if "</file>" not in s:
+                skip_until = "</file>"
+            continue
+        if s.startswith("<prior-run "):
+            if "</prior-run>" not in s:
+                skip_until = "</prior-run>"
+            continue
+        if s and not s.startswith("<"):
+            return s
+    return task.strip()
 
 
 def _list_runs(agent6_dir: Path) -> list[Path]:

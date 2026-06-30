@@ -1376,6 +1376,7 @@ class ToolDispatcher:
         # on hardened), so point HOME there. Without it `go test` fails outright
         # and models burn whole budgets probing the sandbox for a writable spot.
         env.setdefault("HOME", "/tmp/agent6-home")  # noqa: S108 - resolved inside the jail
+        env.setdefault("PYTHONDONTWRITEBYTECODE", "1")
         policy = JailPolicy(
             cwd=self._root,
             argv=argv,

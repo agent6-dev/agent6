@@ -135,11 +135,14 @@ def _stub_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     def _require_runnable(*_a: object, **_k: object) -> None:
         return None
 
+    def _resolve(_role: object) -> object:
+        return SimpleNamespace(model="test-model")
+
     def _load(_root: object, _explicit: object = None) -> object:
         cfg = SimpleNamespace(
             sandbox=SimpleNamespace(profile="none"),
             require_runnable=_require_runnable,
-            models=SimpleNamespace(resolve=lambda _role: SimpleNamespace(model="test-model")),
+            models=SimpleNamespace(resolve=_resolve),
         )
         return SimpleNamespace(config=cfg)
 

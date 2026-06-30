@@ -218,6 +218,7 @@ class LiveWorld:
         # Writable HOME for toolchain caches (go/cargo/pip); the jail's /tmp is
         # writable on both profiles. Mirrors the run_command jail env.
         env_list.append(("HOME", "/tmp/agent6-home"))  # noqa: S108 - resolved inside the jail
+        env_list.append(("PYTHONDONTWRITEBYTECODE", "1"))
         extra_rw: tuple[Path, ...] = ()
         if self.data_dir is not None:
             # Grant RW on the data dir + tell the script where it is. This is the
