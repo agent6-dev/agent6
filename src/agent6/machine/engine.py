@@ -36,6 +36,7 @@ from agent6.machine.journal import (
     AgentFact,
     BranchFact,
     Fact,
+    MachineBegin,
     MachineEnd,
     MachineJournal,
     PendingWait,
@@ -53,8 +54,14 @@ from agent6.machine.model import (
     ToolState,
     WaitState,
 )
-from agent6.machine.predicate import evaluate, parse_predicate
-from agent6.machine.template import parse_template, render_command, render_string, render_value
+from agent6.machine.predicate import PredicateError, evaluate, parse_predicate
+from agent6.machine.template import (
+    TemplateError,
+    parse_template,
+    render_command,
+    render_string,
+    render_value,
+)
 from agent6.sandbox.jail import JailUnavailableError, run_in_jail
 from agent6.types import JailPolicy, SandboxProfile
 
@@ -72,6 +79,14 @@ __all__ = [
 
 class EngineError(Exception):
     """Raised when a machine cannot be executed (bad data, unsupported kind)."""
+
+
+# Runtime failures from a state's predicate/template/capture. A check-passing
+# machine should not hit these (the load-time validators catch type errors), but
+# defense in depth: they are converted to a clean failed `MachineResult`, never an
+# uncaught traceback, and never journaled as a poison StepEvent that would
+# re-crash every later reduce (status/replay/resume).
+_STATE_RUNTIME_ERRORS = (EngineError, PredicateError, TemplateError)
 
 
 def _now_iso() -> str:
@@ -496,7 +511,20 @@ def _execute(
 # --------------------------------------------------------------------------
 
 
-def drive(  # noqa: PLR0911, PLR0912
+def _end_failed(
+    journal: MachineJournal, state: str, transitions: int, exc: Exception
+) -> MachineResult:
+    """Journal a clean failed `MachineEnd` for a runtime state error and return it."""
+    reason = f"state {state!r}: {exc}"
+    journal.append(
+        MachineEnd(
+            ts=_now_iso(), status="failed", reason=reason, state=state, transitions=transitions
+        )
+    )
+    return MachineResult("failed", reason, state, transitions)
+
+
+def drive(  # noqa: PLR0911, PLR0912, PLR0915
     spec: MachineSpec,
     journal: MachineJournal,
     world: World | None,
@@ -522,6 +550,20 @@ def drive(  # noqa: PLR0911, PLR0912
         end = events[-1]
         return MachineResult(end.status, end.reason, end.state, end.transitions)
 
+    # The instance is keyed only by the `machine` id, so a different file (or an
+    # incompatible edit) can land on the same journal. Cross-check the recorded
+    # identity so a mismatch fails loudly here, not as a KeyError mid-recovery.
+    begin = events[0] if events else None
+    if isinstance(begin, MachineBegin) and (
+        begin.machine != spec.machine or begin.version != spec.version
+    ):
+        raise EngineError(
+            f"this journal was started by machine {begin.machine!r} v{begin.version},"
+            f" but the file declares {spec.machine!r} v{spec.version}. A different"
+            " machine reused the id, or the file changed since this instance began;"
+            " archive the instance directory to start fresh."
+        )
+
     blackboard = initial_blackboard(spec)
     state = spec.initial
     transitions = 0
@@ -535,7 +577,20 @@ def drive(  # noqa: PLR0911, PLR0912
     for event in events:
         if not isinstance(event, StepEvent):
             continue
-        blackboard = reduce(spec.states[state], event.fact, blackboard)
+        state_spec = spec.states.get(state)
+        if state_spec is None:
+            raise EngineError(
+                f"journal references state {state!r}, which the loaded machine no"
+                " longer declares (the file was edited since this instance started);"
+                " archive the instance directory to start fresh."
+            )
+        try:
+            blackboard = reduce(state_spec, event.fact, blackboard)
+        except _STATE_RUNTIME_ERRORS as exc:
+            # An older journal (written before captures were validated pre-journal)
+            # can hold a fact that no longer reduces. Surface it as a clean error,
+            # not a traceback, so status/replay/resume stay inspectable.
+            raise EngineError(f"cannot replay journaled step at state {state!r}: {exc}") from exc
         if isinstance(event.fact, AgentFact):
             spent_usd += event.fact.usd
         state = event.goto
@@ -553,7 +608,13 @@ def drive(  # noqa: PLR0911, PLR0912
         raise EngineError("live execution requires a World")
 
     while True:
-        current = spec.states[state]
+        current = spec.states.get(state)
+        if current is None:
+            raise EngineError(
+                f"journal resumes at state {state!r}, which the loaded machine no"
+                " longer declares (the file was edited since this instance started);"
+                " archive the instance directory to start fresh."
+            )
         if isinstance(current, TerminalState):
             journal.append(
                 MachineEnd(
@@ -604,7 +665,23 @@ def drive(  # noqa: PLR0911, PLR0912
                 )
             label, goto, fact = fired
         else:
-            label, goto, fact = _execute(spec, current, blackboard, world)
+            try:
+                label, goto, fact = _execute(spec, current, blackboard, world)
+            except (PredicateError, TemplateError) as exc:
+                # A data-driven predicate/template failure (e.g. a branch over an
+                # absent optional field, a tool command rendering a non-scalar):
+                # the state can't run, so halt cleanly rather than as a traceback.
+                # An EngineError here is a config/invariant fault and propagates.
+                return _end_failed(journal, state, transitions, exc)
+        # Apply the capture BEFORE journaling the StepEvent. If a malformed output
+        # (non-JSON / missing field / mistyped) can't be reduced, the machine halts
+        # cleanly here instead of writing a poison fact that would re-crash every
+        # later reduce (resume/status/replay), bricking the instance. The side
+        # effect already ran; halting loudly matches the §4.2 capture contract.
+        try:
+            next_blackboard = reduce(current, fact, blackboard)
+        except _STATE_RUNTIME_ERRORS as exc:
+            return _end_failed(journal, state, transitions, exc)
         journal.append(
             StepEvent(
                 ts=_now_iso(),
@@ -615,7 +692,7 @@ def drive(  # noqa: PLR0911, PLR0912
                 fact=fact,
             )
         )
-        blackboard = reduce(current, fact, blackboard)
+        blackboard = next_blackboard
         if isinstance(fact, AgentFact):
             spent_usd += fact.usd
         transitions += 1

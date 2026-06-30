@@ -14,6 +14,7 @@ from agent6.machine._semantics import load_machine
 from agent6.machine.engine import (
     AgentExecResult,
     AgentRequest,
+    EngineError,
     MachineResult,
     ToolExecResult,
     World,
@@ -321,6 +322,56 @@ def test_tool_timeout_routes_to_failure(tmp_path: Path) -> None:
     result = drive(spec, journal, world, live=True)
     assert result.status == "failed"
     assert result.state == "stop_fail"
+
+
+def test_tool_bad_stdout_fails_clean_without_poisoning_journal(tmp_path: Path) -> None:
+    # A tool that exits 0 but prints non-JSON stdout cannot be captured. The
+    # machine must halt FAILED cleanly, and -- critically -- never journal the
+    # poison fact, so a later replay/status re-reduces without re-crashing.
+    journal, f = _load(tmp_path, COUNTER)
+    spec = load_machine(f)
+    world = FakeWorld({"scan": _ok("not json at all")})
+    result = drive(spec, journal, world, live=True)
+    assert result.status == "failed"
+    assert "not valid JSON" in result.reason
+    # No StepEvent was written: only MachineBegin + MachineEnd.
+    events = journal.read()
+    assert not any(isinstance(e, StepEvent) for e in events)
+    assert isinstance(events[-1], MachineEnd)
+    # Replay over the same journal returns the failure, it does not raise.
+    replayed = drive(spec, journal, None, live=False)
+    assert replayed.status == "failed"
+
+
+def test_recovery_rejects_unknown_resume_state(tmp_path: Path) -> None:
+    # An edited file that dropped a state the journal points to must fail loudly,
+    # not raise a bare KeyError from spec.states[...].
+    journal, f = _load(tmp_path, COUNTER)
+    spec = load_machine(f)
+    journal.ensure_dirs()
+    journal.begin(machine="counter", version=1)
+    journal.append(
+        StepEvent(
+            ts="t",
+            seq=0,
+            state="scan",
+            label="ok",
+            goto="ghost",  # not a state in COUNTER
+            fact=ToolFact(exit_code=0, stdout='{"items": []}', timed_out=False),
+        )
+    )
+    with pytest.raises(EngineError, match="no longer declares"):
+        drive(spec, journal, FakeWorld({}), live=True)
+
+
+def test_recovery_rejects_machine_id_mismatch(tmp_path: Path) -> None:
+    # A different machine reusing the same instance id is caught up front.
+    journal, f = _load(tmp_path, COUNTER)
+    spec = load_machine(f)
+    journal.ensure_dirs()
+    journal.begin(machine="someone_else", version=1)
+    with pytest.raises(EngineError, match="someone_else"):
+        drive(spec, journal, FakeWorld({}), live=True)
 
 
 def test_record_splices_captured_list(tmp_path: Path) -> None:
