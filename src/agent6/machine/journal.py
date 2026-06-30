@@ -210,21 +210,51 @@ class MachineJournal:
         self.append(MachineBegin(ts=_now_iso(), machine=machine, version=version))
 
     def append(self, event: BaseModel) -> None:
-        """Append one event as a JSON line, fsync'd."""
+        """Append one event as a JSON line, fsync'd.
+
+        Heals a torn previous append first: a committed line always ends in
+        ``\\n``, so a file that does not is a crash mid-write. Truncating the
+        partial line off keeps this event on its own line instead of
+        concatenating onto the fragment (which `read` would then reject).
+        """
+        self._heal_torn_tail()
         line = event.model_dump_json()
         with self.journal_path.open("a", encoding="utf-8") as fh:
             fh.write(line + "\n")
             fh.flush()
             os.fsync(fh.fileno())
 
+    def _heal_torn_tail(self) -> None:
+        if not self.journal_path.is_file():
+            return
+        # Cheap common path: peek the last byte only.
+        with self.journal_path.open("rb") as fh:
+            if fh.seek(0, os.SEEK_END) == 0:
+                return
+            fh.seek(-1, os.SEEK_END)
+            if fh.read(1) == b"\n":
+                return
+        raw = self.journal_path.read_bytes()
+        last_nl = raw.rfind(b"\n")
+        self.journal_path.write_bytes(raw[: last_nl + 1])
+
     def read(self) -> list[Any]:
         """Parse and validate every journal line in order."""
         if not self.journal_path.is_file():
             return []
+        text = self.journal_path.read_text(encoding="utf-8")
+        # split("\n"), NOT splitlines(): splitlines() also breaks on U+2028 /
+        # U+2029 / U+0085, which `model_dump_json` writes literally inside JSON
+        # strings, so a captured value containing one would shred a single line
+        # into unparseable fragments and brick the instance.
+        lines = text.split("\n")
+        # A committed append ends in "\n", so the final element is "". A non-empty
+        # final element is a torn write (crash mid-append): drop it rather than
+        # failing the whole journal -- the engine re-runs the unrecorded step.
+        if lines and lines[-1] != "":
+            lines.pop()
         events: list[Any] = []
-        for lineno, raw in enumerate(
-            self.journal_path.read_text(encoding="utf-8").splitlines(), start=1
-        ):
+        for lineno, raw in enumerate(lines, start=1):
             if not raw.strip():
                 continue
             try:
@@ -263,22 +293,31 @@ class MachineJournal:
                         entry.unlink()
 
     def latest_snapshot(self) -> Snapshot | None:
+        """The newest readable snapshot, falling back through the retained tail.
+
+        Snapshots are an inspection optimization (the journal is authoritative),
+        and `write_snapshot` keeps a short tail expressly "against a corrupt
+        latest". So a torn newest snapshot falls back to the next-older one, and
+        only when none are readable do we return None instead of raising -- a
+        single bad snapshot must not make `machine status` fail.
+        """
         if not self.snapshots_dir.is_dir():
             return None
-        best: int | None = None
-        for entry in self.snapshots_dir.iterdir():
-            if entry.suffix != ".json" or not entry.stem.isdigit():
+        seqs = sorted(
+            (
+                int(entry.stem)
+                for entry in self.snapshots_dir.iterdir()
+                if entry.suffix == ".json" and entry.stem.isdigit()
+            ),
+            reverse=True,
+        )
+        for seq in seqs:
+            path = self.snapshots_dir / f"{seq}.json"
+            try:
+                return Snapshot.model_validate_json(path.read_text(encoding="utf-8"))
+            except (ValidationError, OSError):
                 continue
-            seq = int(entry.stem)
-            if best is None or seq > best:
-                best = seq
-        if best is None:
-            return None
-        path = self.snapshots_dir / f"{best}.json"
-        try:
-            return Snapshot.model_validate_json(path.read_text(encoding="utf-8"))
-        except ValidationError as exc:
-            raise JournalError(f"corrupt snapshot {path}: {exc}") from exc
+        return None
 
     def take_signal(self) -> bool:
         """Consume a pending operator poke, if any. Returns True if one was present."""

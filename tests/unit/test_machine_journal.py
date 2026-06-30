@@ -32,6 +32,61 @@ def _journal(tmp_path: Path) -> MachineJournal:
     return j
 
 
+def test_read_survives_unicode_line_separators(tmp_path: Path) -> None:
+    # U+2028/U+2029/U+0085 are written literally inside JSON strings; `read` must
+    # not treat them as line breaks (splitlines does), or one captured value with
+    # one would shred a journal line and brick the instance.
+    j = _journal(tmp_path)
+    j.begin(machine="demo", version=1)
+    poison = "a\u2028b\u2029c\u0085d"  # line/para/next-line separators
+    j.append(
+        StepEvent(
+            ts="t",
+            seq=0,
+            state="scan",
+            label="ok",
+            goto="done",
+            fact=ToolFact(exit_code=0, stdout=f'{{"note": "{poison}"}}', timed_out=False),
+        )
+    )
+    events = j.read()
+    assert len(events) == 2  # begin + one step, not fragmented
+    assert isinstance(events[1], StepEvent)
+    assert isinstance(events[1].fact, ToolFact)
+    assert poison in events[1].fact.stdout
+
+
+def test_read_tolerates_and_append_heals_torn_final_line(tmp_path: Path) -> None:
+    # A crash mid-append leaves a final line with no trailing newline. `read`
+    # drops it instead of bricking, and the next `append` heals the file so the
+    # new event lands on its own line (not concatenated onto the fragment).
+    j = _journal(tmp_path)
+    j.begin(machine="demo", version=1)
+    with j.journal_path.open("a", encoding="utf-8") as fh:
+        fh.write('{"kind": "machine.end", "ts": "t", "status": "ok"')  # torn, no newline
+    events = j.read()
+    assert len(events) == 1  # just the begin; the torn tail is ignored
+    assert isinstance(events[0], MachineBegin)
+    j.append(MachineEnd(ts="t", status="failed", reason="r", state="s", transitions=1))
+    healed = j.read()
+    assert len(healed) == 2
+    assert isinstance(healed[-1], MachineEnd)
+
+
+def test_latest_snapshot_falls_back_past_corrupt_newest(tmp_path: Path) -> None:
+    j = _journal(tmp_path)
+    j.write_snapshot(Snapshot(seq=1, state="a", blackboard={"n": 1}))
+    j.write_snapshot(Snapshot(seq=2, state="b", blackboard={"n": 2}))
+    # Corrupt the newest snapshot; latest_snapshot must fall back to seq=1.
+    (j.snapshots_dir / "2.json").write_text("{ not valid", encoding="utf-8")
+    snap = j.latest_snapshot()
+    assert snap is not None
+    assert snap.seq == 1
+    # All corrupt -> None (the journal is authoritative), never an exception.
+    (j.snapshots_dir / "1.json").write_text("nope", encoding="utf-8")
+    assert j.latest_snapshot() is None
+
+
 def test_append_and_read_roundtrip(tmp_path: Path) -> None:
     j = _journal(tmp_path)
     j.begin(machine="demo", version=1)
