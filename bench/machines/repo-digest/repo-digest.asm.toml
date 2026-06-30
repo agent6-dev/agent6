@@ -1,0 +1,91 @@
+machine = "repo-digest"
+version = 1
+initial = "collect"
+
+# Summarize recent repository activity into a digest file. A `tool` collects the
+# last N commits as typed JSON, a `branch` short-circuits an empty repo, an
+# `agent` writes a human digest, and a second `tool` renders it to the machine's
+# persistent data dir. Run it on a fixed range for a one-shot digest, or wrap
+# `collect` in a `wait` to get a periodic standup.
+#
+# Demonstrates: a tool's typed field-capture (output_schema -> navigable
+# `result`), a branch on an int, the `| json` filter feeding structured data
+# into an agent prompt, splicing an AGENT-produced `list[str]` field into a
+# command's argv, opaque whole-capture of a tool's stdout, and a tool that
+# persists to $AGENT6_MACHINE_DATA_DIR.
+
+[budget]
+max_transitions = 20
+best_effort_usd_limit = 2.0
+
+[vars.operator]
+max_commits = { type = "int", value = 20 }
+
+[vars.code]
+count = { type = "int", default = 0 }
+range = { type = "str", default = "" }
+log   = { type = "str", default = "" }
+write_result = { type = "json", default = {} }
+
+[vars.agent]
+digest = { type = "digest", default = {} }
+
+[schemas.gitlog]
+count = "int"
+range = "str"
+log   = "str"
+
+[schemas.digest]
+headline   = "str"
+highlights = "list[str]"
+
+[states.collect]
+kind = "tool"
+command = ["python3", "scripts/collect.py", "{{ max_commits }}"]
+output_schema = "gitlog"
+capture = { set = { count = "{{ result.count }}", range = "{{ result.range }}", log = "{{ result.log }}" } }
+timeout_secs = 30
+on = { ok = "gate", nonzero = "empty", timeout = "empty" }
+
+[states.gate]
+kind = "branch"
+when = [
+  { if = "count == 0", goto = "empty" },
+  { else = true,       goto = "summarize" },
+]
+
+[states.summarize]
+kind  = "agent"
+provider = "anthropic"
+model = "claude-haiku-4-5"
+prompt = """
+Here are the {{ count }} most recent commits in range {{ range }}:
+
+{{ log }}
+
+Write a short digest a teammate could skim. Call finish_run with JSON
+{headline: "<one line>", highlights: ["<bullet>", ...]} (2-5 highlights).
+"""
+output_schema = "digest"
+capture = { finish_json = "digest" }
+timeout_secs = 180
+on = { ok = "write", failed = "empty", budget_exhausted = "empty", timeout = "empty" }
+
+[states.write]
+kind = "tool"
+# `{{ digest.highlights }}` is a lone list reference -> spliced to one argv
+# element per highlight, after the headline.
+command = ["python3", "scripts/write_digest.py", "{{ digest.headline }}", "{{ digest.highlights }}"]
+capture = { stdout_json = "write_result" }
+timeout_secs = 30
+on = { ok = "done", nonzero = "empty", timeout = "empty" }
+
+[states.done]
+kind   = "terminal"
+status = "ok"
+reason = "digest written"
+
+[states.empty]
+kind   = "terminal"
+status = "ok"
+reason = "nothing to digest"

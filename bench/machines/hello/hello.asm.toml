@@ -1,0 +1,37 @@
+machine = "hello"
+version = 1
+initial = "greet"
+
+[budget]
+max_transitions = 10
+best_effort_usd_limit = 1.0
+
+[vars.agent]
+out = { type = "greeting", default = {} }
+
+[schemas.greeting]
+message = "str"
+mood = { type = "str", enum = ["happy", "neutral", "sad"] }
+
+[states.greet]
+kind = "agent"
+model = "claude-haiku-4-5"
+provider = "anthropic"
+prompt = """
+Reply with a one-sentence friendly greeting. Call finish_run with JSON
+{message: "<your greeting>", mood: "happy"}.
+"""
+output_schema = "greeting"
+capture = { finish_json = "out" }
+timeout_secs = 120
+on = { ok = "done", failed = "fail", budget_exhausted = "fail", timeout = "fail" }
+
+[states.done]
+kind = "terminal"
+status = "ok"
+reason = "greeted"
+
+[states.fail]
+kind = "terminal"
+status = "failed"
+reason = "agent did not greet"

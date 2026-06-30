@@ -1,0 +1,100 @@
+machine = "triage-inbox"
+version = 1
+initial = "scan"
+
+# The canonical poll -> classify -> act loop, made runnable and finite. Each
+# cycle scans an inbox directory, an agent classifies the head item, and a
+# branch decides whether to escalate it; a `wait` paces the loop. When the inbox
+# drains the machine terminates.
+#
+# Demonstrates: a `wait` state on `every_secs`, an enum-constrained agent schema,
+# a compound branch predicate (string == AND float >=), list-splicing a
+# `list[str]` into a tool's argv, and a self-terminating poll loop.
+
+[budget]
+max_transitions = 200
+best_effort_usd_limit = 2.0
+
+[vars.operator]
+poll_secs       = { type = "int",   value = 2 }
+escalate_at     = { type = "float", value = 0.7 }
+
+[vars.code]
+pending   = { type = "list[str]", default = [] }
+remaining = { type = "int",       default = 0 }
+head      = { type = "str",       default = "" }
+head_text = { type = "str",       default = "" }
+
+[vars.agent]
+verdict = { type = "classification", default = {} }
+
+[schemas.scan_result]
+pending   = "list[str]"
+remaining = "int"
+head      = "str"
+head_text = "str"
+
+[schemas.classification]
+label      = { type = "str", enum = ["urgent", "normal", "spam"] }
+confidence = "float"
+
+[states.scan]
+kind = "tool"
+command = ["python3", "scripts/scan.py"]
+output_schema = "scan_result"
+capture = { set = { pending = "{{ result.pending }}", remaining = "{{ result.remaining }}", head = "{{ result.head }}", head_text = "{{ result.head_text }}" } }
+timeout_secs = 20
+on = { ok = "have_items", nonzero = "drained", timeout = "drained" }
+
+[states.have_items]
+kind = "branch"
+when = [
+  { if = "remaining == 0", goto = "drained"  },
+  { else = true,           goto = "classify" },
+]
+
+[states.classify]
+kind  = "agent"
+provider = "openrouter"
+model = "moonshotai/kimi-k2.6"
+prompt = """
+Classify this inbox item into exactly one label.
+Item ({{ head }}):
+---
+{{ head_text }}
+---
+Call finish_run with JSON {label: "urgent"|"normal"|"spam", confidence: 0..1}.
+"""
+output_schema = "classification"
+capture = { finish_json = "verdict" }
+timeout_secs = 120
+on = { ok = "route", failed = "ack", budget_exhausted = "drained", timeout = "ack" }
+
+[states.route]
+kind = "branch"
+when = [
+  { if = "verdict.label == 'urgent' and verdict.confidence >= escalate_at", goto = "escalate" },
+  { else = true,                                                            goto = "ack"      },
+]
+
+[states.escalate]
+kind = "tool"
+command = ["python3", "scripts/process.py", "{{ head }}", "escalated"]
+timeout_secs = 20
+on = { ok = "poll", nonzero = "poll", timeout = "poll" }
+
+[states.ack]
+kind = "tool"
+command = ["python3", "scripts/process.py", "{{ head }}", "filed"]
+timeout_secs = 20
+on = { ok = "poll", nonzero = "poll", timeout = "poll" }
+
+[states.poll]
+kind = "wait"
+every_secs = "{{ poll_secs }}"
+on = { tick = "scan", signal = "scan" }
+
+[states.drained]
+kind   = "terminal"
+status = "ok"
+reason = "inbox drained"

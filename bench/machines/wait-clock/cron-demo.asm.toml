@@ -1,0 +1,21 @@
+machine = "cron-demo"
+version = 1
+initial = "beat"
+
+# `cron` is a parsed field but the v1 runtime cannot fire it, so `machine check`
+# REJECTS a cron wait at load time (fail-loud) rather than letting it surface
+# only when the wait is reached. This bundle exists to pin that behavior: it is
+# meant to FAIL `machine check`. Use `every_secs` or `until` for a v1 machine.
+
+[budget]
+max_transitions = 10
+
+[states.beat]
+kind = "wait"
+cron = "*/5 * * * *"
+on = { tick = "done", signal = "done" }
+
+[states.done]
+kind   = "terminal"
+status = "ok"
+reason = "tick"

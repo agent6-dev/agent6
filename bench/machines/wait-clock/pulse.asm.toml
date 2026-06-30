@@ -1,0 +1,26 @@
+machine = "pulse"
+version = 1
+initial = "tick"
+
+# Minimal timer: wait one interval, then end. No agent or tool, so it runs fully
+# confined anywhere. Its point is the `--exit-on-wait` persisted-wake driver:
+# `agent6 machine run pulse.asm.toml --exit-on-wait` journals the absolute next
+# wake and exits 0 (status `waiting`) instead of blocking, so a systemd timer or
+# cron can re-arm it. Re-running before the wake stays `waiting`; re-running
+# after it advances to `done`.
+
+[budget]
+max_transitions = 100
+
+[vars.operator]
+interval_secs = { type = "int", value = 4 }
+
+[states.tick]
+kind = "wait"
+every_secs = "{{ interval_secs }}"
+on = { tick = "done", signal = "done" }
+
+[states.done]
+kind   = "terminal"
+status = "ok"
+reason = "interval elapsed"

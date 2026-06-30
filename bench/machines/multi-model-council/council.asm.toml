@@ -1,0 +1,101 @@
+machine = "council"
+version = 1
+initial = "juror_a"
+
+# A consensus machine: two jurors backed by DIFFERENT providers/models answer
+# the same yes/no question, a `branch` checks whether they agree, and a stronger
+# tiebreaker model only runs when they disagree. No tool states, so this runs
+# fully confined on any host (each agent's egress is pinned to its provider).
+#
+# Demonstrates: multiple providers in one machine, agent -> branch -> agent
+# routing, a record field compared across two agent outputs, and the `| json`
+# filter rendering one juror's verdict into the tiebreaker's prompt.
+
+[budget]
+max_transitions = 20
+best_effort_usd_limit = 2.0   # anthropic is unpriced; soft cap (binds on openrouter)
+
+[vars.operator]
+question = { type = "str", value = "Is 91 a prime number? Answer strictly yes or no." }
+
+[vars.agent]
+verdict_a = { type = "verdict", default = {} }
+verdict_b = { type = "verdict", default = {} }
+verdict_c = { type = "verdict", default = {} }
+
+[schemas.verdict]
+answer     = { type = "str", enum = ["yes", "no"] }
+confidence = "float"
+reason     = { type = "str" }
+
+[states.juror_a]
+kind     = "agent"
+provider = "anthropic"
+model    = "claude-haiku-4-5"
+temperature = 0.0
+prompt = """
+You are juror A. Answer this question, reasoning carefully first:
+{{ question }}
+Call finish_run with JSON {answer: "yes"|"no", confidence: 0..1, reason: "<one sentence>"}.
+"""
+output_schema = "verdict"
+capture = { finish_json = "verdict_a" }
+timeout_secs = 180
+on = { ok = "juror_b", failed = "stuck", budget_exhausted = "stuck", timeout = "stuck" }
+
+[states.juror_b]
+kind     = "agent"
+provider = "openrouter"
+model    = "moonshotai/kimi-k2.6"
+temperature = 0.0
+prompt = """
+You are juror B. Answer this question, reasoning carefully first:
+{{ question }}
+Call finish_run with JSON {answer: "yes"|"no", confidence: 0..1, reason: "<one sentence>"}.
+"""
+output_schema = "verdict"
+capture = { finish_json = "verdict_b" }
+timeout_secs = 180
+on = { ok = "compare", failed = "stuck", budget_exhausted = "stuck", timeout = "stuck" }
+
+[states.compare]
+kind = "branch"
+when = [
+  { if = "verdict_a.answer == verdict_b.answer", goto = "consensus" },
+  { else = true,                                 goto = "tiebreak"  },
+]
+
+[states.tiebreak]
+kind     = "agent"
+provider = "anthropic"
+model    = "claude-sonnet-4-6"
+thinking = "low"
+prompt = """
+Two jurors disagree on this question:
+{{ question }}
+
+Juror A said: {{ verdict_a | json }}
+Juror B said: {{ verdict_b | json }}
+
+You are the senior tiebreaker. Decide the correct answer.
+Call finish_run with JSON {answer: "yes"|"no", confidence: 0..1, reason: "<why>"}.
+"""
+output_schema = "verdict"
+capture = { finish_json = "verdict_c" }
+timeout_secs = 240
+on = { ok = "decided", failed = "stuck", budget_exhausted = "stuck", timeout = "stuck" }
+
+[states.consensus]
+kind   = "terminal"
+status = "ok"
+reason = "both jurors agreed"
+
+[states.decided]
+kind   = "terminal"
+status = "ok"
+reason = "tiebreaker resolved a split decision"
+
+[states.stuck]
+kind   = "terminal"
+status = "failed"
+reason = "a juror could not return a verdict"

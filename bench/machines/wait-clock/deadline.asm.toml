@@ -1,0 +1,24 @@
+machine = "deadline"
+version = 1
+initial = "hold"
+
+# Wait until an absolute instant, then end. `until` takes an ISO-8601 timestamp;
+# a past instant fires immediately (the seed value below is in the past, so a
+# plain `machine run` wakes at once). Set it to a future instant and pair with
+# `--exit-on-wait` to schedule a one-shot.
+
+[budget]
+max_transitions = 10
+
+[vars.operator]
+when = { type = "str", value = "2020-01-01T00:00:00Z" }
+
+[states.hold]
+kind = "wait"
+until = "{{ when }}"
+on = { tick = "done", signal = "done" }
+
+[states.done]
+kind   = "terminal"
+status = "ok"
+reason = "deadline reached"
