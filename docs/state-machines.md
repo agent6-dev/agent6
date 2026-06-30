@@ -238,6 +238,7 @@ capture = { finish_json = "verdict" }   # parsed finish_run payload -> blackboar
 timeout_secs = 600
 on = { ok = "route", failed = "poll", budget_exhausted = "halt", timeout = "poll" }
 
+# mode = "agent"                   # "agent" (default, read-only) | "run"
 # Optional per-state overrides (inherit the effective config when unset):
 # provider = "anthropic"           # which [providers.*] entry backs this call
 # thinking = "high"                # off | low | medium | high (extended thinking)
@@ -254,6 +255,19 @@ it returns is the outcome label; its structured product is whatever
 `finish_run` emitted, validated against `output_schema`, captured into
 the blackboard. The LLM cannot pick the next state; it can only
 populate variables that a downstream `branch` reads.
+
+`mode` chooses the tool surface. The default `"agent"` is a read-only,
+structured-output loop: the dispatcher refuses edit, `run_command`, and
+`run_verify`, so the state can only read and call `finish_run`. Set
+`mode = "run"` for a state that must do real coding work (edit + verify +
+commit tools), exactly like `agent6 run`. A `mode = "run"` state still
+returns only its outcome label and `finish_run` payload as control-flow
+signals; `machine run` resolves a git commit identity up front (from
+`[git.commit]` or the repo's git config) so the confined agent's commits
+succeed. A read-only `mode = "agent"` state's `run_command` is gated by
+`sandbox.run_commands`, which auto-denies on a headless (non-TTY) host, so
+keep verification in a `tool` state rather than the agent for an
+unattended machine.
 
 The optional per-state knobs above tune *how* that loop runs: `provider`
 / `thinking` / `temperature` select and tune the model, and the
@@ -360,9 +374,10 @@ replay re-reads that instant and never actually sleeps. In v1 the
 process simply blocks in-process until the instant (or an external
 `signal`, a file/IPC poke, arrives first); because the wake is
 journaled absolutely, the `--exit-on-wait` persisted-wake driver (§6)
-runs the identical file with no format change. (`cron` is accepted by
-the parser but not yet evaluated by the v1 runtime: use `every_secs` or
-`until`; a `cron` wait raises at run time.)
+runs the identical file with no format change. (`cron` is parsed as a
+field but the v1 runtime cannot fire it, so `machine check` rejects a
+`cron` wait at load time, fail-loud, rather than letting it surface only
+when the wait is reached. Use `every_secs` or `until`.)
 
 #### `branch`
 
@@ -662,14 +677,23 @@ the primary runaway guard.
 
 ### 5.4 Idempotency and crash recovery
 
-Each *side-effecting* state execution gets a deterministic step id
-`(<state>, <transition-count>)`. On restart the engine reads the journal:
-if the last line is an in-progress `state.begin` with no matching
-`state.end`, the step is re-attempted only if it is known-idempotent
-(tool/agent reads), otherwise it surfaces for operator decision. The
-default posture is *at-least-once for reads, never-silently-twice for
-writes*: destructive tools must be authored to be idempotent (the same
-discipline the rest of agent6 already follows).
+A state runs, then exactly one fsync'd `StepEvent` records its outcome and
+captured fact. That single line is the commit point: the engine validates
+the capture (a tool's stdout against its `output_schema`, an agent's
+`finish_run` against it) *before* writing the StepEvent, so a malformed
+output halts the machine loudly without ever journaling a fact that a later
+`reduce` could not replay. On restart the engine rehydrates from the last
+StepEvent and continues.
+
+The crash window is the gap between a side effect completing and its
+StepEvent reaching disk. A process killed there loses the unrecorded fact,
+so on resume the engine re-runs that one step. The posture is therefore
+*at-least-once*: a `tool` with an external side effect must be authored to
+be idempotent (the same discipline the rest of agent6 follows; the `tool`
+examples here move a file or write to `$AGENT6_MACHINE_DATA_DIR` so a
+re-run is a no-op). The journal itself is crash-tolerant: a torn final line
+from a kill mid-append is dropped on read and healed on the next append,
+and a corrupt newest snapshot falls back to the retained tail.
 
 ---
 
@@ -697,7 +721,7 @@ discipline the rest of agent6 already follows).
 | command                                   | effect                                            |
 |-------------------------------------------|---------------------------------------------------|
 | `agent6 machine create <task> [-o <file>] [--max-attempts N]`| **LLM-drafted** machine bundle: the `.asm.toml` plus every `scripts/...` file its tool states run, plus a `scripts/<name>_test.py` mock test per script with an external seam (network/clock/files). Each draft is gated before acceptance: `machine check` validation, ruff lint, ty type check, and the mock tests executed in a no-network jail; failures loop back to the model with the failing source (up to `--max-attempts`, default 3). Writes a *draft* the operator reviews, edits, and commits; running it still requires the operator (see §9). |
-| `agent6 machine check <file>`             | validate: parse, type-check vars, verify every edge target exists, every state reachable, every `branch` total, every variable name unique across owners and owned by a subtable (no bare `vars.*`), every reference resolving to a declared variable, every `capture` writing a var owned by the writing state kind (`tool` → `[vars.code]`, `agent` → `[vars.agent]`, `[vars.operator]` read-only), the script bundle (`scripts/` entries + static `scripts/...` command refs stay inside the bundle), and static script health (ruff lint + ty type check). No execution, no network. |
+| `agent6 machine check <file>`             | validate: parse, type-check vars, verify every edge target exists, every state reachable, every `branch` total, every variable name unique across owners and owned by a subtable (no bare `vars.*`), every reference resolving to a declared variable, every `capture` writing a var owned by the writing state kind (`tool` → `[vars.code]`, `agent` → `[vars.agent]`, `[vars.operator]` read-only), every predicate `len()` argument and `wait` timing value well-typed (an `every_secs` resolving to an int ≥ 1, a parseable `until`), the script bundle (`scripts/` entries + static `scripts/...` command refs stay inside the bundle), and static script health (ruff lint + ty type check). No execution, no network. |
 | `agent6 machine test <file> [--blackboard FIXTURE.toml]` | everything `check` does, plus the bundle's `scripts/*_test.py` mock tests executed in a **no-network jail**, plus a pure dry-run (no provider/clock): per state, synthesize the success fact it would emit (a tool's `output_schema`-shaped JSON / an agent's `finish_run` payload), push it through the real `reduce`, and confirm the capture binds and the produced label routes to a declared state; per `branch`, evaluate each `when` clause against the declared defaults overlaid with `--blackboard` and print the winning `goto`. The full offline simulation: plumbing, schema, routing, and script behavior with every seam mocked (no real network, no model calls). |
 | `agent6 machine graph <file> [--format mermaid\|dot]` | emit the machine as a diagram. `mermaid` (default) prints `stateDiagram-v2`; `dot` prints Graphviz DOT for `dot -Tsvg`/`dot -Tpng` and the broader Graphviz/`xdot` ecosystem. Reachability is already computed at load, so both are pure renders of the same validated graph. |
 | `agent6 machine run <file> [--exit-on-wait]` | start (or resume) a machine. Acquires the lock, drives the loop. With `--exit-on-wait`, persist the next wake and exit 0 (status `waiting`) at the first not-ready `wait`, for an external scheduler (systemd timer / cron) to resume. |
