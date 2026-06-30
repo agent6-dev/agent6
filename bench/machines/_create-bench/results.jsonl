@@ -1,6 +1,6 @@
-{"provider":"openrouter","model":"moonshotai/kimi-k2.6","exit":0,"attempts":1,"spent_usd":0.0247,"wall_secs":42,"scripts":5,"check":"ok","test":"ok"}
+{"provider":"openrouter","model":"moonshotai/kimi-k2.6","exit":0,"attempts":1,"spent_usd":0.0304,"wall_secs":61,"scripts":5,"check":"ok","test":"ok"}
 {"provider":"anthropic","model":"claude-sonnet-4-6","exit":0,"attempts":1,"spent_usd":0.0000,"wall_secs":47,"scripts":5,"check":"ok","test":"ok"}
-{"provider":"openrouter","model":"z-ai/glm-5.2","exit":0,"attempts":1,"spent_usd":0.0228,"wall_secs":178,"scripts":5,"check":"ok","test":"ok"}
-{"provider":"openrouter","model":"openai/gpt-oss-120b","exit":1,"attempts":4,"spent_usd":0.0112,"wall_secs":104,"scripts":0,"check":"fail","test":"fail"}
-{"provider":"openrouter","model":"deepseek/deepseek-v3.2","exit":1,"attempts":4,"spent_usd":0.0088,"wall_secs":308,"scripts":0,"check":"fail","test":"fail"}
-{"provider":"anthropic","model":"claude-haiku-4-5","exit":0,"attempts":1,"spent_usd":0.0000,"wall_secs":22,"scripts":5,"check":"ok","test":"ok"}
+{"provider":"openrouter","model":"z-ai/glm-5.2","exit":0,"attempts":2,"spent_usd":0.0463,"wall_secs":113,"scripts":5,"check":"ok","test":"ok"}
+{"provider":"openrouter","model":"openai/gpt-oss-120b","exit":1,"attempts":4,"spent_usd":0.0131,"wall_secs":97,"scripts":0,"check":"fail","test":"fail"}
+{"provider":"openrouter","model":"deepseek/deepseek-v3.2","exit":1,"attempts":4,"spent_usd":0.0103,"wall_secs":338,"scripts":0,"check":"fail","test":"fail"}
+{"provider":"anthropic","model":"claude-haiku-4-5","exit":0,"attempts":4,"spent_usd":0.0000,"wall_secs":89,"scripts":5,"check":"ok","test":"ok"}
