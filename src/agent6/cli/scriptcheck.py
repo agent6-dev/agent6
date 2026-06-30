@@ -23,6 +23,7 @@ there is no jail to run model-authored code in and execution is skipped.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -74,9 +75,11 @@ def _run_static(argv: list[str], cwd: Path, label: str) -> str | None:
     """Run a static checker; return a problem string on failure, else None."""
     # Fixed argv (an operator-installed tool + flags); the only LLM-derived input
     # is the *files* it statically reads, it never executes them. See AGENTS.md.
+    env = os.environ.copy()
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
     try:
         res = subprocess.run(
-            argv, capture_output=True, text=True, timeout=180, cwd=cwd, check=False
+            argv, capture_output=True, text=True, timeout=180, cwd=cwd, check=False, env=env
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return f"{label} could not run ({exc})"
@@ -159,7 +162,10 @@ def run_offline_tests(
                 cwd=bundle_dir,
                 argv=("python3", rel),
                 profile=profile,
-                env=(("AGENT6_MACHINE_DATA_DIR", ".scriptcheck_data"),),
+                env=(
+                    ("AGENT6_MACHINE_DATA_DIR", ".scriptcheck_data"),
+                    ("PYTHONDONTWRITEBYTECODE", "1"),
+                ),
                 allow_network=False,
                 extra_rw_paths=(data_dir,),
                 timeout_s=timeout_s,

@@ -61,6 +61,35 @@ def test_run_summary_skips_seeded_ask_file_block(tmp_path: Path) -> None:
     assert s["task"] == "what does this do?"
 
 
+def test_run_summary_reads_ask_question_from_transcript_when_log_task_is_truncated(
+    tmp_path: Path,
+) -> None:
+    rd = _write_run(
+        tmp_path / ".agent6",
+        "asks",
+        "a1",
+        [
+            {
+                "type": "run.start",
+                "mode": "ask",
+                "user_task": '<file path="a.py">\nprint("a")',
+            },
+            {"type": "run.end", "all_passed": True},
+        ],
+    )
+    (rd / "transcript.md").write_text(
+        "# agent6 ask\n\n"
+        "## Question\n\n"
+        '<file path="a.py">\nprint("a")\n</file>\n\n'
+        "what does this do?\n\n"
+        "## Answer\n\n"
+        "It prints a.\n",
+        encoding="utf-8",
+    )
+    s = _run_summary(rd)  # pyright: ignore[reportPrivateUsage]
+    assert s["task"] == "what does this do?"
+
+
 def test_run_summary_running_when_no_end(tmp_path: Path) -> None:
     rd = _write_run(tmp_path / ".agent6", "runs", "r2", [{"type": "run.start", "mode": "plan"}])
     assert _run_summary(rd)["status"] == "running"  # pyright: ignore[reportPrivateUsage]

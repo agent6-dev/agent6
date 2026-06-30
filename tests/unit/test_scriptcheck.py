@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from agent6.cli import scriptcheck
-from agent6.types import CommandResult
+from agent6.types import CommandResult, JailPolicy
 
 _CLEAN = "import json\n\n\ndef f(x: int) -> str:\n    return json.dumps({'v': x})\n"
 
@@ -32,6 +32,37 @@ def test_lint_typecheck_clean(tmp_path: Path) -> None:
     _need("ty")
     _write(tmp_path / "scripts", "ok.py", _CLEAN)
     assert scriptcheck.lint_and_typecheck(tmp_path / "scripts") == []
+
+
+def test_static_checks_disable_python_bytecode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write(tmp_path / "scripts", "ok.py", _CLEAN)
+    monkeypatch.setenv("PYTHONDONTWRITEBYTECODE", "0")
+    seen_env: dict[str, str] = {}
+
+    def _resolve_tool(name: str) -> list[str] | None:
+        return ["fake-tool"] if name == "ruff" else None
+
+    def _run(
+        _argv: list[str],
+        *,
+        capture_output: bool,
+        text: bool,
+        timeout: float,
+        cwd: Path,
+        check: bool,
+        env: dict[str, str],
+    ) -> object:
+        del capture_output, text, timeout, cwd, check
+        seen_env.update(env)
+        return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr(scriptcheck, "_resolve_tool", _resolve_tool)
+    monkeypatch.setattr(scriptcheck.subprocess, "run", _run)
+
+    assert scriptcheck.lint_and_typecheck(tmp_path / "scripts") == []
+    assert seen_env["PYTHONDONTWRITEBYTECODE"] == "1"
 
 
 def test_lint_catches_undefined_name(tmp_path: Path) -> None:
@@ -86,6 +117,28 @@ def test_offline_tests_pass(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     _write(tmp_path / "scripts", "thing_test.py", "print('ok')\n")
     monkeypatch.setattr(scriptcheck, "run_in_jail", _fake_jail(0))
     assert scriptcheck.run_offline_tests(tmp_path, "hardened") == []
+
+
+def test_offline_tests_disable_python_bytecode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write(tmp_path / "scripts", "thing_test.py", "print('ok')\n")
+    seen: list[JailPolicy] = []
+
+    def _run(policy: JailPolicy) -> CommandResult:
+        seen.append(policy)
+        return CommandResult(
+            argv=policy.argv,
+            returncode=0,
+            stdout="",
+            stderr="",
+            duration_s=0.0,
+        )
+
+    monkeypatch.setattr(scriptcheck, "run_in_jail", _run)
+
+    assert scriptcheck.run_offline_tests(tmp_path, "hardened") == []
+    assert ("PYTHONDONTWRITEBYTECODE", "1") in seen[0].env
 
 
 def test_offline_tests_fail_surfaces_stderr(

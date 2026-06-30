@@ -11,6 +11,7 @@ thin driver over the CLI + the same file/event contract the dashboard reads.
 
 from __future__ import annotations
 
+import contextlib
 import inspect
 import json
 import subprocess
@@ -96,6 +97,10 @@ def _run_summary(run_dir: Path) -> dict[str, str]:
             status = "stale"
     except OSError:
         pass
+    if mode == "ask":
+        transcript = run_dir / "transcript.md"
+        with contextlib.suppress(OSError):
+            task = transcript.read_text(encoding="utf-8")
     return {"id": run_dir.name, "mode": mode, "task": _task_snippet(task)[:60], "status": status}
 
 
@@ -108,6 +113,10 @@ def _task_snippet(task: str) -> str:
             if s == skip_until:
                 skip_until = None
             continue
+        if s in {"# agent6 ask", "## Question"}:
+            continue
+        if s == "## Answer":
+            break
         if s.startswith("<file "):
             if "</file>" not in s:
                 skip_until = "</file>"
