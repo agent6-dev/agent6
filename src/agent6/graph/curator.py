@@ -250,7 +250,10 @@ class GraphCurator:
     def reorder_children(self, intent: ReorderChildrenIntent) -> TaskNode:
         with flock(self._layout.lock_path):
             parent = self.get(intent.parent_id)
-            if set(intent.new_order) != set(parent.children):
+            # Multiset comparison: a set check would accept a new_order with a
+            # duplicated child id (set drops the dup), silently corrupting
+            # parent.children into a list that visits a child twice.
+            if sorted(intent.new_order) != sorted(parent.children):
                 raise CuratorError(
                     f"reorder_children {intent.parent_id}: new_order must be a permutation"
                 )
@@ -451,7 +454,10 @@ class GraphCurator:
             if cur in seen:
                 continue
             seen.add(cur)
-            stack.extend(self._nodes[cur].depends_on)
+            node = self._nodes.get(cur)
+            if node is None:
+                continue  # dangling depends_on edge (target missing): not a cycle
+            stack.extend(node.depends_on)
         return False
 
 

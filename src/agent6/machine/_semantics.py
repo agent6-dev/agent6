@@ -67,11 +67,12 @@ def load_machine(path: Path) -> MachineSpec:
     """
     if not path.is_file():
         raise MachineError([f"machine file not found: {path}"])
-    text = path.read_text(encoding="utf-8")
     try:
-        raw = tomllib.loads(text)
+        raw = tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
         raise MachineError([f"not valid TOML ({path}): {exc}"]) from exc
+    except UnicodeDecodeError as exc:
+        raise MachineError([f"not valid UTF-8 ({path}): {exc}"]) from exc
     precheck = _precheck(raw)
     if precheck:
         raise MachineError(precheck)

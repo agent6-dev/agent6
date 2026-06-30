@@ -722,6 +722,20 @@ def test_list_dir(tmp_path: Path) -> None:
     assert ".hidden" in out["entries"]  # hidden entries are included (per the description)
 
 
+def test_parse_metric_score_optional_group_is_no_score() -> None:
+    """A pattern whose numeric capture group did not participate in the match
+    (an alternation/optional group) yields group(1) == None; float(None) raises
+    TypeError, which must be caught as "no score this turn", not propagate."""
+    from agent6.tools._result_format import parse_metric_score
+
+    res = {"stdout": "build done", "stderr": ""}
+    # Group 1 is in the first alternative; the matched text hits the second, so
+    # group(1) is None. Pre-fix this raised TypeError instead of returning None.
+    assert parse_metric_score(res, pattern=r"score: (\d+)|done") is None
+    # A genuinely matched numeric group still parses.
+    assert parse_metric_score({"stdout": "score: 42"}, pattern=r"score: (\d+)|done") == 42.0
+
+
 def test_passthrough_env_is_fixed_allowlist() -> None:
     """Regression: dispatch must never forward LD_*/PYTHON*/DYLD_* to the jail.
 

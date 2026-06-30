@@ -133,6 +133,44 @@ def test_clear_pending_answers_wipes_stale_state(tmp_path: Path) -> None:
     assert not (tmp_path / "tui.pid").exists()
 
 
+def test_refresh_keeps_runs_list_aligned_with_table_when_a_run_vanishes(tmp_path: Path) -> None:
+    """A run dir that disappears between the listing and its stat() must be dropped
+    from BOTH the table and self._runs. Otherwise the two desync and every
+    cursor_row-indexed action (open/logs/merge) maps to the wrong run for rows
+    past the gap."""
+    import asyncio
+    import shutil
+
+    from textual.widgets import DataTable
+
+    from agent6.ui.home import Agent6HomeApp, HomeScreen
+
+    a6 = tmp_path / ".agent6"
+    for rid in ("r1", "r2", "r3"):
+        _write_run(a6, "runs", rid, [{"type": "run.start", "mode": "run", "user_task": rid}])
+
+    async def scenario() -> None:
+        app = Agent6HomeApp(a6, tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, HomeScreen)
+            table = screen.query_one("#runs", DataTable)
+            assert table.row_count == 3
+            # Delete the run currently shown in the MIDDLE row, then refresh.
+            vanished = screen._runs[1]  # pyright: ignore[reportPrivateUsage]
+            shutil.rmtree(vanished)
+            screen.action_refresh()
+            await pilot.pause()
+            runs = screen._runs  # pyright: ignore[reportPrivateUsage]
+            assert table.row_count == 2
+            assert len(runs) == 2  # pre-fix this stayed 3 (the vanished run kept)
+            assert vanished not in runs
+            assert all(rd.exists() for rd in runs)  # every selectable row maps to a live run
+
+    asyncio.run(scenario())
+
+
 def test_home_app_lists_runs_and_opens_new_work_modal(tmp_path: Path) -> None:
     import asyncio
 

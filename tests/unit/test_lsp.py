@@ -113,6 +113,18 @@ def test_path_to_uri_and_back(tmp_path: Path) -> None:
     assert _uri_to_path(uri) == p
 
 
+def test_uri_round_trips_path_with_space() -> None:
+    # A workspace path with a space encodes to %20 in the URI (LSP spec). Without
+    # percent-decoding, _uri_to_path returned a literal "%20" path that failed
+    # relative_to(root) and the location was silently dropped.
+    p = Path("/tmp/my project/mod.py")
+    uri = _path_to_uri(p)
+    assert "%20" in uri  # the space is percent-encoded on the wire
+    assert _uri_to_path(uri) == p  # and decodes back to the real path
+    # A server that emits a pre-encoded file:// URI also decodes correctly.
+    assert _uri_to_path("file:///tmp/my%20project/mod.py") == p
+
+
 # --- fail-open --------------------------------------------------------
 
 
@@ -206,6 +218,29 @@ def test_lsp_find_references_e2e(tmp_path: Path) -> None:
     assert len(refs) >= 2
     lines = sorted(r["line"] for r in refs)
     assert 1 in lines  # definition site
+
+
+@pytest.mark.skipif(not _HAS_LSP, reason="requires `ty` or `uvx` on PATH")
+def test_lsp_respawns_after_server_dies(tmp_path: Path) -> None:
+    """If the ty server dies mid-run, the next query must respawn it. _query calls
+    start() before every request; pre-fix start() returned early because _proc was
+    still a (dead) object, so the LSP tools stayed broken for the rest of the run."""
+    src = tmp_path / "mod.py"
+    src.write_text("def helper():\n    return 1\n\nx = helper()\n", encoding="utf-8")
+    client = LspClient(tmp_path)
+    try:
+        first = client.find_definition(src, "helper")
+        assert len(first) >= 1
+        # Simulate a crash: kill the server out from under the client.
+        assert client._proc is not None  # pyright: ignore[reportPrivateUsage]
+        client._proc.kill()  # pyright: ignore[reportPrivateUsage]
+        client._proc.wait(timeout=5)  # pyright: ignore[reportPrivateUsage]
+        # The next query must transparently respawn and still work.
+        again = client.find_definition(src, "helper")
+        assert len(again) >= 1
+        assert again[0].line == 1
+    finally:
+        client.close()
 
 
 @pytest.mark.skipif(not _HAS_LSP, reason="requires `ty` or `uvx` on PATH")

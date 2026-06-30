@@ -34,7 +34,9 @@ def parse_metric_score(res: dict[str, Any], *, pattern: str) -> float | None:
         return None
     try:
         return float(m.group(1))
-    except (ValueError, IndexError):
+    except (ValueError, IndexError, TypeError):
+        # TypeError: an optional/alternation capture group that did not
+        # participate in the match yields None, and float(None) raises it.
         return None
 
 

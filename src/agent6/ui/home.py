@@ -379,12 +379,14 @@ class HomeScreen(Screen[None]):
         self.action_refresh()
 
     def action_refresh(self) -> None:
-        self._runs = _list_runs(self.agent6_dir)
-        # Useful context in the header sub-title rather than a duplicate hint bar.
-        self.app.sub_title = f"{self.repo_cwd} · {len(self._runs)} runs"
         table = self.query_one("#runs", DataTable)
         table.clear()
-        for rd in self._runs:
+        # Keep self._runs 1:1 with the table rows: a run dir that vanished between
+        # the listing and its stat() must be dropped from BOTH, or every
+        # cursor_row-indexed selection action (open/logs/merge) maps to the wrong
+        # run for cursor positions past the gap.
+        survivors: list[Path] = []
+        for rd in _list_runs(self.agent6_dir):
             try:
                 mtime = rd.stat().st_mtime
             except OSError:
@@ -393,6 +395,10 @@ class HomeScreen(Screen[None]):
             when = time.strftime("%m-%d %H:%M", time.localtime(mtime))
             # Text cells: task is model/user input and may carry markup brackets.
             table.add_row(when, s["mode"], s["status"], Text(s["id"]), Text(s["task"]))
+            survivors.append(rd)
+        self._runs = survivors
+        # Useful context in the header sub-title rather than a duplicate hint bar.
+        self.app.sub_title = f"{self.repo_cwd} · {len(self._runs)} runs"
         # An empty table shouldn't paint a full-height focus cursor over its body.
         table.show_cursor = table.row_count > 0
 

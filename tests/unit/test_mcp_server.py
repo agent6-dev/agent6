@@ -306,7 +306,9 @@ def test_run_verify_delegates_to_dispatcher(
             }
         ],
     )
-    assert captured == [("run_verify", {})]
+    # The MCP tool is `run_verify`; internally it dispatches the dispatcher's
+    # `run_verify_command` (the registered handler name).
+    assert captured == [("run_verify_command", {})]
     assert resps[0]["result"]["structuredContent"]["returncode"] == 0
 
 
@@ -350,7 +352,7 @@ def test_apply_patch_runs_verify_after(tmp_path: Path, monkeypatch: pytest.Monke
         calls.append(name)
         if name == "apply_patch":
             return {"path": "foo.py", "bytes_written": 5}
-        if name == "run_verify":
+        if name == "run_verify_command":
             return {"returncode": 0, "stdout": "", "stderr": "", "duration_s": 0.1}
         raise AssertionError(name)
 
@@ -369,7 +371,7 @@ def test_apply_patch_runs_verify_after(tmp_path: Path, monkeypatch: pytest.Monke
             }
         ],
     )
-    assert calls == ["apply_patch", "run_verify"]
+    assert calls == ["apply_patch", "run_verify_command"]
     payload = resps[0]["result"]["structuredContent"]
     assert payload["apply"]["bytes_written"] == 5
     assert payload["verify"]["returncode"] == 0

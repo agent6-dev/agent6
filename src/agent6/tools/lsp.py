@@ -33,6 +33,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any
+from urllib.parse import urlsplit
+from urllib.request import pathname2url, url2pathname
 
 
 class LspError(Exception):
@@ -109,14 +111,20 @@ def _symbol_position(text: str, symbol: str) -> tuple[int, int] | None:
 
 
 def _uri_to_path(uri: str) -> Path:
-    """Convert ``file://...`` URI to a Path. Best-effort, stdlib-only."""
+    """Convert ``file://...`` URI to a Path. Best-effort, stdlib-only.
+
+    Percent-decodes the path so a server-returned URI for a workspace path
+    containing a space or other special char (LSP encodes these as ``%XX``)
+    round-trips to the real filesystem path instead of a literal ``%20`` that
+    would fail ``relative_to(root)`` and be silently dropped.
+    """
     if uri.startswith("file://"):
-        return Path(uri[7:])
+        return Path(url2pathname(urlsplit(uri).path))
     return Path(uri)
 
 
 def _path_to_uri(path: Path) -> str:
-    return "file://" + str(path)
+    return "file://" + pathname2url(str(path))
 
 
 class LspClient:
@@ -149,7 +157,12 @@ class LspClient:
 
     def start(self) -> None:
         if self._proc is not None:
-            return
+            if self._proc.poll() is None:
+                return  # already running
+            # The server died (crashed or was killed). _query calls start()
+            # before every request, so tear the corpse down and respawn instead
+            # of leaving the LSP tools broken for the rest of the run.
+            self.close()
         argv = _find_ty_argv()
         if argv is None:
             raise LspError(

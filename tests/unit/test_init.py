@@ -37,6 +37,41 @@ def test_init_empty_dir_creates_scaffold(tmp_path: Path) -> None:
         assert entry in gi
 
 
+def test_cmd_init_reports_invalid_config_cleanly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A pre-existing INVALID (but TOML-parseable) config makes `agent6 init` exit
+    2 with a CONFIG ERROR, not crash through the generic "unexpected ... please
+    report this" handler. init loads the effective config to infer a verify
+    command; it is the user's setup to fix, and init is the repair command, so it
+    must surface the validation error the way every other command does."""
+    from agent6.cli.init_cmds import _cmd_init  # pyright: ignore[reportPrivateUsage]
+
+    repo = _repo(tmp_path)
+    # Valid global with a configured provider, so the cross-field validator has a
+    # non-empty "known providers" set to reject the typo against. AGENT6_CONFIG_HOME
+    # (set by the isolated_state fixture) points at the agent6 dir itself, so the
+    # global config is <cfg>/config.toml.
+    global_cfg = tmp_path / "cfg" / "config.toml"
+    global_cfg.parent.mkdir(parents=True, exist_ok=True)
+    global_cfg.write_text(
+        '[providers.openrouter]\napi_format = "openai"\n'
+        'base_url = "https://openrouter.ai/api/v1"\n',
+        encoding="utf-8",
+    )
+    # Invalid per-repo config: worker references a provider that does not exist.
+    cfgp = repo_config_path_for(repo)
+    cfgp.parent.mkdir(parents=True, exist_ok=True)
+    cfgp.write_text('[models.worker]\nprovider = "typoprovider"\nmodel = "x/y"\n', encoding="utf-8")
+
+    monkeypatch.chdir(repo)
+    rc = _cmd_init(profile="", assume_yes=True)
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "CONFIG ERROR" in err
+    assert "typoprovider" in err  # the precise validation reason is surfaced
+
+
 def test_init_infers_verify_for_python_repo(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     (repo / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")

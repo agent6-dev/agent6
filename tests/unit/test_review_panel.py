@@ -216,6 +216,22 @@ def test_added_line_starting_like_a_header_is_not_a_file_header() -> None:
     assert ranges["foo.py"] == [(1, 3)]
 
 
+def test_deleted_line_starting_like_a_header_is_not_a_file_header() -> None:
+    # A DELETED line whose CONTENT begins with "-- " renders as "--- ..." and must
+    # not be mistaken for a "--- " file header (the symmetric "+++ " side was
+    # already guarded; the "--- " side was not). Otherwise it clobbers the path
+    # and every LATER hunk's range is mis-attributed, so a grounded block citing a
+    # real line in a later hunk is silently downgraded to a warning.
+    diff = (
+        "--- a/schema.sql\n+++ b/schema.sql\n"
+        "@@ -10,3 +10,2 @@\n CREATE TABLE t (\n-- legacy column note\n   id INT\n"
+        "@@ -50,2 +50,3 @@\n cols\n+  api_key TEXT\n more\n"
+    )
+    ranges = diff_touched_ranges(diff)
+    assert "legacy column note" not in ranges  # the deletion was not read as a header
+    assert is_grounded("schema.sql:51", ranges)  # the later hunk still grounds
+
+
 def test_pure_deletion_grounds_on_the_old_path() -> None:
     # A file deleted entirely (post-image /dev/null) must still ground a citation
     # of the deleted file so a data-loss/off-topic block on it can gate.

@@ -133,6 +133,17 @@ def test_bad_toml(tmp_path: Path) -> None:
     assert any("not valid TOML" in p for p in problems)
 
 
+def test_non_utf8_file_raises_machine_error(tmp_path: Path) -> None:
+    # A non-UTF-8 .asm.toml must surface as a MachineError (which the CLI catches
+    # and prints cleanly), not an unhandled UnicodeDecodeError that crashes
+    # through the generic handler.
+    path = tmp_path / "m.asm.toml"
+    path.write_bytes(b"machine = \xff\xfe not utf-8")
+    with pytest.raises(MachineError) as excinfo:
+        load_machine(path)
+    assert any("UTF-8" in p for p in excinfo.value.problems)
+
+
 # -- naming rules ----------------------------------------------------------
 
 

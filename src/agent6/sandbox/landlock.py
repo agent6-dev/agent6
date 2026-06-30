@@ -226,9 +226,18 @@ def apply_agent_landlock(
     # makes Landlock DENY all TCP bind()/listen() for the agent process, which
     # is exactly "no agent-owned network surface" (SECURITY.md §7). Removing it
     # from the handled set would instead leave bind UNrestricted.
-    handled_net = (
-        _LANDLOCK_ACCESS_NET_CONNECT_TCP | _LANDLOCK_ACCESS_NET_BIND_TCP if abi >= 4 else 0
-    )
+    #
+    # CONNECT_TCP, by contrast, is handled ONLY when there is a connect
+    # allow-list to enforce. An empty tcp_connect_ports means "no connect
+    # restriction" (the documented `agent_network = "open"` fallback on hardened
+    # hosts): handling CONNECT_TCP with zero allow rules would deny EVERY
+    # outbound connect() by the same deny-unless-allowed mechanism, so the agent
+    # could not reach its provider at all. Leave it unhandled there.
+    handled_net = 0
+    if abi >= 4:
+        handled_net = _LANDLOCK_ACCESS_NET_BIND_TCP
+        if tcp_connect_ports:
+            handled_net |= _LANDLOCK_ACCESS_NET_CONNECT_TCP
 
     _set_no_new_privs()
     ruleset_fd = _create_ruleset(handled_fs, handled_net, abi)

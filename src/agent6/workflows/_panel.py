@@ -114,8 +114,15 @@ def diff_touched_ranges(diff: str) -> dict[str, list[tuple[int, int]]]:
     ranges: dict[str, list[tuple[int, int]]] = {}
     newpath = oldpath = ""
     prev_minus = False
-    for raw in diff.splitlines():
-        if raw.startswith("--- "):
+    lines = diff.splitlines()
+    for i, raw in enumerate(lines):
+        # A real "--- " file header is always immediately followed by a "+++ "
+        # header. Requiring that lookahead stops a DELETED line whose own text
+        # begins with "-- " -- rendered "--- ..." in the diff -- from being
+        # misparsed as a file header, which would clobber oldpath/newpath and
+        # mis-attribute every later hunk's ranges (the symmetric "+++ " side is
+        # already guarded by prev_minus).
+        if raw.startswith("--- ") and i + 1 < len(lines) and lines[i + 1].startswith("+++ "):
             oldpath, newpath, prev_minus = _hdr_path(raw), "", True
             continue
         if raw.startswith("+++ ") and prev_minus:

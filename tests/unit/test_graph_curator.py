@@ -96,6 +96,26 @@ def test_reorder_children_requires_permutation(tmp_path: Path) -> None:
     assert p2.children == (b.id, a.id)
     with pytest.raises(CuratorError, match="permutation"):
         c.reorder_children(ReorderChildrenIntent(parent_id=p.id, new_order=(a.id,)))
+    # A duplicated child id must be rejected, not silently accepted: a set check
+    # would pass `{a,b,a} == {a,b}` and corrupt children into (a, b, a).
+    with pytest.raises(CuratorError, match="permutation"):
+        c.reorder_children(ReorderChildrenIntent(parent_id=p.id, new_order=(a.id, b.id, a.id)))
+    assert c.get(p.id).children == (b.id, a.id)  # unchanged after the rejected reorder
+
+
+def test_cycle_check_survives_dangling_depends_on(tmp_path: Path) -> None:
+    # A node carrying a depends_on edge to an id absent from the loaded graph (a
+    # partially-loaded/corrupt graph) must not crash the transitive cycle walk
+    # with a KeyError; the missing target is simply treated as not-a-cycle.
+    c = GraphCurator(_layout(tmp_path))
+    a = c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft("a")))
+    b = c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft("b")))
+    # Inject a dangling depends_on on b (the public add_dependency would reject an
+    # unknown target, so corrupt the in-memory node directly to model a bad load).
+    c._nodes[b.id] = b.model_copy(update={"depends_on": ("ghost-id",)})  # pyright: ignore[reportPrivateUsage]
+    # add_dependency(a -> b) walks b's deps (incl. the ghost); must not raise KeyError.
+    updated = c.add_dependency(AddDependencyIntent(id=a.id, depends_on=b.id))
+    assert b.id in updated.depends_on
 
 
 def test_obsolete_and_record_commit(tmp_path: Path) -> None:

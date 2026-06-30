@@ -7,6 +7,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from agent6.config import ConfigError
 from agent6.config_layer import repo_config_path_for
 from agent6.git_ops import (
     GitError,
@@ -69,12 +70,25 @@ def _cmd_init(*, profile: str, assume_yes: bool = False) -> int:
     cwd = Path.cwd()
     target = repo_config_path_for(cwd)
     interactive = not assume_yes and sys.stdin.isatty()
-    rc = init_workspace(
-        cwd,
-        profile=profile,
-        repo_config_target=target,
-        interactive=interactive,
-    )
+    try:
+        rc = init_workspace(
+            cwd,
+            profile=profile,
+            repo_config_target=target,
+            interactive=interactive,
+        )
+    except ConfigError as exc:
+        # init loads the effective config to infer a verify command. A
+        # pre-existing invalid config is the user's to fix, not an agent6 crash;
+        # surface it the way every other config-loading command does (a clean
+        # CONFIG ERROR, not the generic "unexpected" traceback handler) -- doubly
+        # so here, since init is the command a user runs to repair their setup.
+        print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
+        print(
+            f"\nFix or delete the per-repo config at {target}, then re-run `agent6 init`.",
+            file=sys.stderr,
+        )
+        return 2
     if rc == 0:
         # Only the repo-tracked scaffold; the per-repo config is out of the
         # workspace (under the state dir) and never committed.

@@ -327,7 +327,7 @@ class MCPServer:
     # ---- tool handlers -----
 
     def _h_run_verify(self, _args: dict[str, Any]) -> dict[str, Any]:
-        return self._dispatcher.dispatch("run_verify", {})
+        return self._dispatcher.dispatch("run_verify_command", {})
 
     def _h_run_in_sandbox(self, args: dict[str, Any]) -> dict[str, Any]:
         argv = args.get("argv")
@@ -341,7 +341,7 @@ class MCPServer:
         if not isinstance(path, str) or not isinstance(patch, str):
             raise ToolError("path and patch must be strings")
         apply_result = self._dispatcher.dispatch("apply_patch", {"path": path, "patch": patch})
-        verify_result = self._dispatcher.dispatch("run_verify", {})
+        verify_result = self._dispatcher.dispatch("run_verify_command", {})
         return {"apply": apply_result, "verify": verify_result}
 
     def _h_query_dag(self, args: dict[str, Any]) -> dict[str, Any]:
