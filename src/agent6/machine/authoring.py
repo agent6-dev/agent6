@@ -54,8 +54,10 @@ plain TOML. Author one complete machine per task.
   The USD cap is optional, at most one of `max_usd` /
   `best_effort_usd_limit` (both > 0). `max_usd` is hard: `machine run`
   refuses to start when an agent state's model has no price data.
-  `best_effort_usd_limit` binds only when spend is measurable; use it for
-  unpriced or local models. Prefer `max_usd`.
+  `best_effort_usd_limit` always runs but binds only when spend is
+  measurable. Default to `best_effort_usd_limit` -- it runs on any model;
+  pick `max_usd` only when every agent model is priced and you want a hard
+  ceiling. `max_transitions` is the always-binding runaway guard.
 
 ## The blackboard: three owner tables (write-authorization, one read namespace)
 
@@ -497,6 +499,7 @@ def build_authoring_prompt(
     prior_toml: str | None = None,
     diagnostics: list[str] | None = None,
     prior_scripts: dict[str, str] | None = None,
+    worker_unpriced: bool = False,
 ) -> str:
     """Assemble the user-task prompt for one draft→check→fix attempt.
 
@@ -505,6 +508,11 @@ def build_authoring_prompt(
     diagnostics are appended so the model can PATCH its own output instead of
     re-deriving everything (most retries are a one-line script fix; without the
     prior script source the model regenerates every file blind).
+
+    When ``worker_unpriced`` is set, the operator's configured worker model (the
+    one the machine's agent states inherit) has no price data, so the draft must
+    use ``best_effort_usd_limit``; a ``max_usd`` cap would make `machine run`
+    refuse to start, leaving the freshly-created machine unrunnable.
     """
     parts = [
         MACHINE_AUTHOR_GUIDE,
@@ -515,6 +523,19 @@ def build_authoring_prompt(
         "",
         task.strip(),
         "",
+    ]
+    if worker_unpriced:
+        parts += [
+            "## Budget",
+            "",
+            "The configured worker model (which this machine's agent states will"
+            " inherit) has NO price data. Use `best_effort_usd_limit` in `[budget]`"
+            " and on any per-state cap, NOT `max_usd` -- a hard `max_usd` would make"
+            " `machine run` refuse to start. `max_transitions` remains the binding"
+            " runaway guard.",
+            "",
+        ]
+    parts += [
         "## How to return it",
         "",
         "Do NOT write any files. When the machine is complete, call `finish_run`"

@@ -861,6 +861,13 @@ def _cmd_machine_create(  # noqa: PLR0911, PLR0912, PLR0915
     # Authoring drafts a machine; it has no machine [config] overlay of its own.
     runner = _build_machine_agent_runner({}, cwd, profile, scratch / "agent_transcripts")
 
+    # The drafted machine's agent states inherit this worker model. If it is
+    # unpriced (anthropic-direct, local), steer the draft to best_effort_usd_limit
+    # so the freshly-created machine actually runs -- a hard max_usd would refuse.
+    # Checked after _check_provider_keys refreshed the price cache.
+    worker = cfg.models.resolve("worker")
+    worker_unpriced = worker is None or lookup_price(worker.model) is None
+
     prior_toml: str | None = None
     prior_scripts: dict[str, str] = {}
     diagnostics: list[str] | None = None
@@ -875,6 +882,7 @@ def _cmd_machine_create(  # noqa: PLR0911, PLR0912, PLR0915
             prior_toml=prior_toml,
             diagnostics=diagnostics,
             prior_scripts=prior_scripts,
+            worker_unpriced=worker_unpriced,
         )
         print(f"machine create: attempt {attempt}/{max_attempts}...", file=sys.stderr)
         # model omitted (=None): inherit the operator's effective worker model.
