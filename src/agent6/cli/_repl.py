@@ -14,11 +14,11 @@ from typing import Literal
 
 from agent6.budget import BudgetTracker
 from agent6.cli._common import _runs_dir
-from agent6.cli.misc_cmds import _cmd_diff
 from agent6.cli.plan_watch import (
     _event_epoch,
     _format_plain_event,
 )
+from agent6.cli.runs_cmds import _cmd_diff
 from agent6.config_layer import repo_config_path_for
 from agent6.git_ops import (
     GitError,

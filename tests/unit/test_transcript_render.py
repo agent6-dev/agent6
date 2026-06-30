@@ -209,7 +209,9 @@ def test_cmd_history_transcript_end_to_end(
 ) -> None:
     """`agent6 runs transcript <run>` resolves the run, folds its transcripts,
     and prints the conversation (full tool I/O), with --json as the raw escape."""
-    from agent6.cli.misc_cmds import _cmd_history_transcript  # pyright: ignore[reportPrivateUsage]
+    from agent6.cli.history_cmds import (
+        _cmd_history_transcript,  # pyright: ignore[reportPrivateUsage]
+    )
     from agent6.config_layer import resolved_state_dir
 
     monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "st"))

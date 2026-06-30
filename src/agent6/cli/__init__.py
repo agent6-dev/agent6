@@ -36,6 +36,12 @@ from agent6.cli.config_cmds import (
 )
 from agent6.cli.connect import _cmd_connect
 from agent6.cli.fork import _cmd_fork
+from agent6.cli.history_cmds import (
+    _cmd_history_graph,
+    _cmd_history_search,
+    _cmd_history_transcript,
+)
+from agent6.cli.init_cmds import _cmd_init
 from agent6.cli.machine_cmds import (
     _cmd_machine_check,
     _cmd_machine_create,
@@ -46,20 +52,11 @@ from agent6.cli.machine_cmds import (
     _cmd_machine_status,
     _cmd_machine_test,
 )
-from agent6.cli.misc_cmds import (
-    _cmd_commits,
-    _cmd_diff,
-    _cmd_history_graph,
-    _cmd_history_search,
-    _cmd_history_transcript,
-    _cmd_init,
-    _cmd_mcp_serve,
+from agent6.cli.mcp_cmds import _cmd_mcp_serve
+from agent6.cli.memory_cmds import (
     _cmd_memory_add,
     _cmd_memory_invalidate,
     _cmd_memory_list,
-    _cmd_merge,
-    _cmd_prune,
-    _cmd_review,
 )
 from agent6.cli.model import _cmd_model
 from agent6.cli.parser import _inject_default_verb, build_parser
@@ -74,9 +71,16 @@ from agent6.cli.plan_watch import (
     _resolve_plan_run_id,
 )
 from agent6.cli.prompt_cmds import _cmd_prompt_show
+from agent6.cli.review_cmds import _cmd_review
 from agent6.cli.run import (
     _cmd_resume,
     _cmd_run,
+)
+from agent6.cli.runs_cmds import (
+    _cmd_commits,
+    _cmd_diff,
+    _cmd_merge,
+    _cmd_prune,
 )
 from agent6.cli.system_cmds import _cmd_system_apparmor
 

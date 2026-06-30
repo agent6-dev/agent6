@@ -12,7 +12,7 @@ from typing import cast
 import pytest
 
 from agent6.cli import main
-from agent6.cli.misc_cmds import _offer_git_setup  # pyright: ignore[reportPrivateUsage]
+from agent6.cli.init_cmds import _offer_git_setup  # pyright: ignore[reportPrivateUsage]
 from agent6.cli.run import (
     _require_git_repo,  # pyright: ignore[reportPrivateUsage]
     _warn_if_headless_ask,  # pyright: ignore[reportPrivateUsage]
