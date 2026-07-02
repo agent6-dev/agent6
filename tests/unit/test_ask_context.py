@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 ask --run/--continue` digest + `--file` seed helpers."""
+"""`agent6 ask --run/--seed-latest` digest + `--file` seed helpers."""
 
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -95,6 +96,16 @@ def test_ask_run_digest_unknown_run_returns_none(
     assert _build_ask_run_digest(tmp_path, "nope", latest=False) is None
 
 
+def test_ask_seed_latest_no_runs_names_the_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (resolved_state_dir(tmp_path) / "runs").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+
+    assert _build_ask_run_digest(tmp_path, "", latest=True) is None
+    assert "--seed-latest" in capsys.readouterr().err
+
+
 def test_seed_files_wraps_and_skips_missing(tmp_path: Path) -> None:
     (tmp_path / "a.py").write_text("print('a')\n", encoding="utf-8")
     out = _seed_files(tmp_path, ["a.py", "missing.py"])
@@ -128,6 +139,30 @@ def test_ask_question_snippet_skips_digest_tags() -> None:
         "what does this note say?\n\n## Answer\n\nbody\n"
     )
     assert _ask_question_snippet(with_answer_heading_in_file) == "what does this note say?"
+
+
+def test_ask_list_uses_log_activity_not_frontend_dir_touch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from agent6.cli._ask import cmd_ask_list
+
+    monkeypatch.chdir(tmp_path)
+    asks = resolved_state_dir(tmp_path) / "asks"
+    for name, question in (("older-ask", "old question"), ("newer-ask", "new question")):
+        d = asks / name
+        d.mkdir(parents=True)
+        (d / "logs.jsonl").write_text('{"type":"run.start"}\n', encoding="utf-8")
+        (d / "transcript.md").write_text(
+            f"# agent6 ask\n\n## Question\n\n{question}\n\n## Answer\n\n",
+            encoding="utf-8",
+        )
+    os.utime(asks / "older-ask" / "logs.jsonl", (100, 100))
+    os.utime(asks / "newer-ask" / "logs.jsonl", (1000, 1000))
+    (asks / "older-ask" / "frontend.pid").write_text("12345", encoding="utf-8")
+
+    assert cmd_ask_list() == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].startswith("newer-ask")
 
 
 def test_ask_repl_multi_turn_carries_context(

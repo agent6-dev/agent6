@@ -89,7 +89,7 @@ def _cmd_plan_edit(run_id: str) -> int:
 
 
 def _most_recent_run_id(runs_dir: Path) -> str | None:
-    """Return the directory name (= run id) of the most recently mtime'd run.
+    """Return the directory name (= run id) of the most recently active run.
 
     Used by `agent6 watch` (no arg), `agent6 run --continue`, and the
     history-graph subcommand. Returns None when there are no runs yet (the
@@ -99,7 +99,7 @@ def _most_recent_run_id(runs_dir: Path) -> str | None:
         return None
     candidates = sorted(
         (p for p in runs_dir.iterdir() if p.is_dir()),
-        key=lambda p: p.stat().st_mtime,
+        key=run_mtime,
         reverse=True,
     )
     if not candidates:
@@ -108,7 +108,7 @@ def _most_recent_run_id(runs_dir: Path) -> str | None:
 
 
 def _most_recent_plan_run_id(runs_dir: Path) -> str | None:
-    """Most recently mtime'd run dir that holds a ``plan.md`` (a plan run).
+    """Most recently active run dir that holds a ``plan.md`` (a plan run).
 
     Used by bare `agent6 run` (no task) to offer the latest plan for execution.
     """
@@ -116,13 +116,13 @@ def _most_recent_plan_run_id(runs_dir: Path) -> str | None:
         return None
     candidates = sorted(
         (p for p in runs_dir.iterdir() if p.is_dir() and (p / "plan.md").is_file()),
-        key=lambda p: p.stat().st_mtime,
+        key=run_mtime,
         reverse=True,
     )
     return candidates[0].name if candidates else None
 
 
-def _cmd_watch(run_id: str, *, tui: bool = False, since: int = 0) -> int:  # noqa: PLR0911
+def _cmd_watch(run_id: str, *, tui: bool = False, since: int = 0) -> int:
     """Read-only live view of a run directory.
 
     Default is a no-deps line tail of ``logs.jsonl`` (the CLI mode). ``--tui``
@@ -137,18 +137,11 @@ def _cmd_watch(run_id: str, *, tui: bool = False, since: int = 0) -> int:  # noq
             return 2
         target = runs_dir / resolved
     else:
-        if not runs_dir.is_dir():
-            print(f"ERROR: no runs directory at {runs_dir}", file=sys.stderr)
-            return 2
-        candidates = sorted(
-            (p for p in runs_dir.iterdir() if p.is_dir()),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
-        if not candidates:
+        latest = _most_recent_run_id(runs_dir)
+        if latest is None:
             print(f"ERROR: no runs found under {runs_dir}", file=sys.stderr)
             return 2
-        target = candidates[0]
+        target = runs_dir / latest
         print(f"[agent6] watching most recent run: {target.name}", file=sys.stderr)
     if not target.is_dir():
         print(f"ERROR: no such run dir: {target}", file=sys.stderr)

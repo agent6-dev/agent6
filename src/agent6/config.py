@@ -26,6 +26,7 @@ is unset (see :mod:`agent6.verify_infer`), else run gateless.
 from __future__ import annotations
 
 import tomllib
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
@@ -789,13 +790,18 @@ class MachineConfig(BaseModel):
     snapshot_keep: int = Field(ge=0, default=5)
 
 
-_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
-
-
 def is_loopback_host(host: str) -> bool:
     """True iff *host* is a loopback bind (the one source of truth for the web
     UI's secure-by-default gate; a wildcard like 0.0.0.0/:: is NOT loopback)."""
-    return host in _LOOPBACK_HOSTS
+    normalized = host.strip()
+    if normalized.startswith("[") and normalized.endswith("]"):
+        normalized = normalized[1:-1]
+    if normalized.lower() == "localhost":
+        return True
+    try:
+        return ip_address(normalized).is_loopback
+    except ValueError:
+        return False
 
 
 class WebConfig(BaseModel):

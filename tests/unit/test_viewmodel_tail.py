@@ -22,6 +22,13 @@ def test_tail_yields_existing_lines_in_non_follow_mode(tmp_path: Path) -> None:
     assert [e["type"] for e in out] == ["run.start", "run.end"]
 
 
+def test_tail_yields_final_line_without_trailing_newline(tmp_path: Path) -> None:
+    p = tmp_path / "logs.jsonl"
+    p.write_text(json.dumps({"type": "run.start"}) + "\n" + json.dumps({"type": "run.end"}))
+    out = list(tail_events(p, follow=False))
+    assert [e["type"] for e in out] == ["run.start", "run.end"]
+
+
 def test_tail_skips_malformed_lines(tmp_path: Path) -> None:
     p = tmp_path / "logs.jsonl"
     p.write_text(

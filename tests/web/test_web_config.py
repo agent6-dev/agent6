@@ -21,7 +21,7 @@ def test_config_carries_web_section() -> None:
     assert Config().web.host == "127.0.0.1"
 
 
-@pytest.mark.parametrize("host", ["127.0.0.1", "::1", "localhost"])
+@pytest.mark.parametrize("host", ["127.0.0.1", "127.0.0.2", "::1", "[::1]", "LOCALHOST"])
 def test_loopback_hosts_need_no_optin(host: str) -> None:
     assert WebConfig(host=host).host == host
 

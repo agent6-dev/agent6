@@ -19,6 +19,7 @@ from agent6.graph.models import TaskNode
 from agent6.graph.storage import RunLayout, load_graph
 from agent6.run_id import RunIdError
 from agent6.transcript_render import fold_conversation, load_transcripts, render_markdown
+from agent6.viewmodel import run_mtime
 
 
 def _cmd_history_search(query: str, *, fixed: bool, run_id: str) -> int:
@@ -77,7 +78,7 @@ def _cmd_history_graph(run_id: str) -> int:
             return 2
         candidates = sorted(
             (p for p in runs_dir.iterdir() if p.is_dir() and (p / "graph").is_dir()),
-            key=lambda p: p.stat().st_mtime,
+            key=run_mtime,
             reverse=True,
         )
         if not candidates:
@@ -154,7 +155,7 @@ def _cmd_history_transcript(
         candidates = (
             sorted(
                 (p for p in runs_dir.iterdir() if p.is_dir() and (p / "transcripts").is_dir()),
-                key=lambda p: p.stat().st_mtime,
+                key=run_mtime,
                 reverse=True,
             )
             if runs_dir.is_dir()

@@ -38,6 +38,41 @@ def test_resolves_runs_and_asks_with_correct_subdir(tmp_path: Path) -> None:
     assert resolve_run_layout(repo, "ask-").run_id == "ask-xyz"
 
 
+def test_prefix_must_be_unique_across_runs_and_asks(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    state = resolved_state_dir(repo)
+    (state / "runs" / "same-run").mkdir(parents=True)
+    (state / "asks" / "same-ask").mkdir(parents=True)
+
+    with pytest.raises(RunIdError) as exc:
+        resolve_run_layout(repo, "same-")
+    assert exc.value.ambiguous
+    assert "runs/same-run" in str(exc.value)
+    assert "asks/same-ask" in str(exc.value)
+
+
+def test_exact_match_wins_over_cross_bucket_prefix(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    state = resolved_state_dir(repo)
+    (state / "runs" / "run").mkdir(parents=True)
+    (state / "asks" / "run-question").mkdir(parents=True)
+
+    layout = resolve_run_layout(repo, "run")
+    assert layout.subdir == "runs"
+    assert layout.run_id == "run"
+
+
+def test_empty_query_is_invalid(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (resolved_state_dir(repo) / "runs" / "run-abc").mkdir(parents=True)
+
+    with pytest.raises(RunIdError, match="empty run id"):
+        resolve_run_layout(repo, "")
+
+
 def test_raises_when_no_match(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()

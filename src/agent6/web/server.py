@@ -19,10 +19,12 @@ from __future__ import annotations
 import json
 import os
 import queue
+import socket
 import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
@@ -147,6 +149,39 @@ class WebServer(ThreadingHTTPServer):
                 clear_frontend_pid(run_dir)
 
 
+class _IPv6WebServer(WebServer):
+    address_family = socket.AF_INET6
+
+
+def _bind_host(host: str) -> str:
+    """Normalize URL-style bracketed IPv6 literals to socket bind addresses."""
+    stripped = host.strip()
+    if stripped.startswith("[") and stripped.endswith("]"):
+        return stripped[1:-1]
+    return stripped
+
+
+def _is_ipv6_literal(host: str) -> bool:
+    try:
+        return ip_address(_bind_host(host)).version == 6
+    except ValueError:
+        return False
+
+
+def _display_host(host: str) -> str:
+    if host == "0.0.0.0":  # noqa: S104 - display only
+        return "127.0.0.1"
+    if host == "::":
+        return "[::1]"
+    return f"[{host}]" if _is_ipv6_literal(host) else host
+
+
+def _create_web_server(host: str, port: int, cwd: Path, target: str) -> WebServer:
+    bind_host = _bind_host(host)
+    server_cls: type[WebServer] = _IPv6WebServer if _is_ipv6_literal(bind_host) else WebServer
+    return server_cls((bind_host, port), cwd, target)
+
+
 class _Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server: WebServer  # type: ignore[assignment]
@@ -262,15 +297,15 @@ class _Handler(BaseHTTPRequestHandler):
             return
         parts = path.strip("/").split("/")
         # /api/run/<id>[/transcript|/events]
-        if len(parts) >= 3 and parts[0] == "api" and parts[1] == "run":
+        if len(parts) in (3, 4) and parts[0] == "api" and parts[1] == "run":
             self._route_run(parts[2], parts[3] if len(parts) > 3 else "")
             return
         # /api/machine/<name>[/reasoning|/events]
-        if len(parts) >= 3 and parts[0] == "api" and parts[1] == "machine":
+        if len(parts) in (3, 4) and parts[0] == "api" and parts[1] == "machine":
             self._route_machine(parts[2], parts[3] if len(parts) > 3 else "")
             return
         # /api/draft/<name>[/events]: a `machine create` draft, watched as a run.
-        if len(parts) >= 3 and parts[0] == "api" and parts[1] == "draft":
+        if len(parts) in (3, 4) and parts[0] == "api" and parts[1] == "draft":
             self._route_draft(parts[2], parts[3] if len(parts) > 3 else "")
             return
         self._send_json({"error": f"not found: {path}"}, status=404)
@@ -460,17 +495,18 @@ def run_web(target: str, *, host: str, port: int, cwd: Path | None = None) -> in
     """Serve the web UI on host:port until interrupted. `target` deep-links the
     page to a run id or machine name on load (empty opens the hub)."""
     workdir = cwd or Path.cwd()
+    bind_host = _bind_host(host)
     try:
-        server = WebServer((host, port), workdir, target)
+        server = _create_web_server(bind_host, port, workdir, target)
     except OSError as exc:
-        print(f"agent6 web: cannot bind {host}:{port}: {exc}", file=sys.stderr)
+        print(f"agent6 web: cannot bind {bind_host}:{port}: {exc}", file=sys.stderr)
         return 2
-    shown = "127.0.0.1" if host in {"0.0.0.0", "::"} else host  # noqa: S104 - display only
+    shown = _display_host(bind_host)
     print(f"agent6 web: serving on http://{shown}:{port}  (Ctrl-C to stop)", file=sys.stderr)
-    if not is_loopback_host(host):
+    if not is_loopback_host(bind_host):
         print(
             "agent6 web: WARNING bound to a non-loopback address; anyone who can reach"
-            f" {host}:{port} can drive this agent. Prefer `tailscale serve` in front of a"
+            f" {bind_host}:{port} can drive this agent. Prefer `tailscale serve` in front of a"
             " loopback bind.",
             file=sys.stderr,
         )

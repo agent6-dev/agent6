@@ -58,18 +58,26 @@ def tail_events(  # noqa: PLR0912
             lines = pending.split("\n")
             pending = lines[-1]  # last fragment may be incomplete
             for line in lines[:-1]:
-                if not line.strip():
-                    continue
-                try:
-                    evt = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if not isinstance(evt, dict):
+                evt = _parse_event_line(line)
+                if evt is None:
                     continue
                 yield evt
                 if stop_when_finished and evt.get("type") == "run.end":
                     return
 
         if not follow:
+            evt = _parse_event_line(pending)
+            if evt is not None:
+                yield evt
             return
         time.sleep(poll_s)
+
+
+def _parse_event_line(line: str) -> dict[str, Any] | None:
+    if not line.strip():
+        return None
+    try:
+        evt = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    return evt if isinstance(evt, dict) else None

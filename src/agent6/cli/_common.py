@@ -25,7 +25,7 @@ from agent6.paths import (
     root_optin_enabled,
 )
 from agent6.pricing import lookup_price
-from agent6.run_id import RunIdError, resolve_run_id
+from agent6.run_id import RunIdError, list_run_ids
 from agent6.sandbox import strict_namespaces_work
 from agent6.secrets import SecretsError, load_secrets, resolve_api_key
 from agent6.tools.mcp_client import MCPManager
@@ -129,16 +129,38 @@ def resolve_run_layout(repo_root: Path, query: str) -> RunLayout:
     read-only commands (``runs graph``/``history search``) use this so an ask's
     state is findable too. Raises ``RunIdError`` if no run matches in either.
     """
+    if not query:
+        raise RunIdError("empty run id")
     state = _state_dir(repo_root)
+    exact: list[tuple[str, str]] = []
+    prefix: list[tuple[str, str]] = []
     for subdir in ("runs", "asks"):
         d = state / subdir
         if not d.is_dir():
             continue
-        try:
-            rid = resolve_run_id(d, query)
-        except RunIdError:
-            continue
+        for rid in list_run_ids(d):
+            if rid == query:
+                exact.append((subdir, rid))
+            elif rid.startswith(query):
+                prefix.append((subdir, rid))
+    if len(exact) == 1:
+        subdir, rid = exact[0]
         return RunLayout(state_dir=state, run_id=rid, subdir=subdir)
+    if len(exact) > 1:
+        preview = ", ".join(f"{subdir}/{rid}" for subdir, rid in sorted(exact)[:5])
+        raise RunIdError(
+            f"run id {query!r} is ambiguous ({len(exact)} exact matches): {preview}",
+            ambiguous=True,
+        )
+    if len(prefix) == 1:
+        subdir, rid = prefix[0]
+        return RunLayout(state_dir=state, run_id=rid, subdir=subdir)
+    if len(prefix) > 1:
+        preview = ", ".join(f"{subdir}/{rid}" for subdir, rid in sorted(prefix)[:5])
+        raise RunIdError(
+            f"run id {query!r} is ambiguous ({len(prefix)} matches): {preview}",
+            ambiguous=True,
+        )
     raise RunIdError(f"no run matches {query!r} under {state}/(runs|asks)")
 
 

@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -238,3 +239,31 @@ def test_cmd_history_transcript_end_to_end(
     assert (
         _cmd_history_transcript("nope", as_json=False, no_thinking=False, tools="both", seq="") == 2
     )
+
+
+def test_cmd_history_transcript_latest_uses_log_activity_not_dir_touch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from agent6.cli.history_cmds import (
+        _cmd_history_transcript,  # pyright: ignore[reportPrivateUsage]
+    )
+    from agent6.config_layer import resolved_state_dir
+
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "st"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    runs = resolved_state_dir(repo) / "runs"
+    for name in ("older-run", "newer-run"):
+        tdir = runs / name / "transcripts"
+        tdir.mkdir(parents=True)
+        (tdir / "20260101-000001.json").write_text(json.dumps(_OPENAI[0]), encoding="utf-8")
+        (runs / name / "logs.jsonl").write_text('{"type":"run.start"}\n', encoding="utf-8")
+    os.utime(runs / "older-run" / "logs.jsonl", (100, 100))
+    os.utime(runs / "newer-run" / "logs.jsonl", (1000, 1000))
+    (runs / "older-run" / "frontend.pid").write_text("12345", encoding="utf-8")
+
+    assert _cmd_history_transcript("", as_json=True, no_thinking=False, tools="both", seq="") == 0
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)[0]["seq"] == 1
+    assert "newer-run" in captured.err

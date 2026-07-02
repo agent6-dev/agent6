@@ -38,6 +38,7 @@ from agent6.config import Config
 from agent6.config_layer import load_effective, resolved_state_dir
 from agent6.graph.storage import RunLayout, load_graph
 from agent6.tools.dispatch import ToolDispatcher, ToolError
+from agent6.viewmodel import run_mtime
 
 _PROTOCOL_VERSION = "2024-11-05"
 _SERVER_NAME = "agent6"
@@ -90,16 +91,17 @@ def _runs_root(agent6_dir: Path) -> Path:
 
 
 def _run_dirs_newest_first(runs: Path) -> list[Path]:
-    """Run dirs sorted newest-first by mtime.
+    """Run dirs sorted newest-first by run activity.
 
     Run ids are NOT chronologically sortable -- they start with a random
     ``<adjective>-<noun>`` and the embedded ms timestamp rolls over -- so a
     name sort picks the alphabetically-last run, not the latest. Sort by
-    directory mtime instead.
+    logs.jsonl activity instead of directory mtime so a front-end writing
+    frontend.pid into an older run does not make it look newest.
     """
     return sorted(
         (d for d in runs.iterdir() if d.is_dir()),
-        key=lambda d: d.stat().st_mtime,
+        key=run_mtime,
         reverse=True,
     )
 

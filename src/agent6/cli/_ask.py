@@ -23,7 +23,7 @@ from agent6.run_id import (
     RunIdError,
     resolve_run_id,
 )
-from agent6.viewmodel import first_task_line
+from agent6.viewmodel import first_task_line, run_mtime
 from agent6.workflows.loop import (
     RunResult,
     Workflow,
@@ -48,7 +48,7 @@ def cmd_ask_list() -> int:
         return 0
     dirs = sorted(
         (d for d in asks_dir.iterdir() if d.is_dir()),
-        key=lambda d: d.stat().st_mtime,
+        key=run_mtime,
         reverse=True,
     )
     if not dirs:
@@ -121,7 +121,7 @@ def build_ask_run_digest(cwd: Path, run_id: str, *, latest: bool) -> str | None:
     if latest:
         target = _most_recent_run_id(runs_dir)
         if target is None:
-            print(f"ERROR: --continue: no runs under {runs_dir}", file=sys.stderr)
+            print(f"ERROR: --seed-latest: no runs under {runs_dir}", file=sys.stderr)
             return None
     else:
         try:

@@ -9,6 +9,7 @@ Starts the stdlib server on an ephemeral loopback port and drives it with
 from __future__ import annotations
 
 import json
+import socket
 import threading
 from collections.abc import Iterator
 from http.client import HTTPConnection
@@ -18,7 +19,7 @@ import pytest
 
 from agent6.cli import main
 from agent6.config_layer import resolved_state_dir
-from agent6.web.server import WebServer
+from agent6.web.server import WebServer, _create_web_server  # pyright: ignore[reportPrivateUsage]
 
 TINY = """
 machine = "tiny"
@@ -93,6 +94,15 @@ def test_page_served(server: tuple[WebServer, int]) -> None:
     assert status == 200
     assert "text/html" in ctype
     assert b"<title>agent6</title>" in body
+
+
+@pytest.mark.parametrize("host", ["::1", "[::1]"])
+def test_ipv6_loopback_bind_uses_ipv6_socket(tmp_path: Path, host: str) -> None:
+    srv = _create_web_server(host, 0, tmp_path, "")  # pyright: ignore[reportPrivateUsage]
+    try:
+        assert srv.address_family == socket.AF_INET6
+    finally:
+        srv.server_close()
 
 
 def test_run_snapshot_matches_watch_json(
@@ -239,6 +249,21 @@ def test_run_id_traversal_is_404(server: tuple[WebServer, int]) -> None:
     _srv, port = server
     status, _body, _ = _get(port, "/api/run/..")
     assert status == 404
+
+
+def test_extra_api_path_segments_are_404(server: tuple[WebServer, int], tmp_path: Path) -> None:
+    _srv, port = server
+    _make_run(tmp_path, "seg-run", [{"type": "run.start", "user_task": "x"}])
+    machine = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    machine.mkdir(parents=True)
+    (machine / "machine.asm.toml").write_text(TINY, encoding="utf-8")
+    draft = resolved_state_dir(tmp_path) / "machine-drafts" / "drafty"
+    draft.mkdir(parents=True)
+    (draft / "logs.jsonl").write_text('{"type": "run.start"}\n', encoding="utf-8")
+
+    assert _get(port, "/api/run/seg-run/events/extra")[0] == 404
+    assert _get(port, "/api/machine/tiny/events/extra")[0] == 404
+    assert _get(port, "/api/draft/drafty/events/extra")[0] == 404
 
 
 def test_draft_snapshot_folds_the_draft_log(server: tuple[WebServer, int], tmp_path: Path) -> None:

@@ -11,6 +11,7 @@ import pytest
 
 from agent6.cli import main
 from agent6.cli.plan_watch import (
+    _most_recent_plan_run_id,  # pyright: ignore[reportPrivateUsage]
     _most_recent_run_id,  # pyright: ignore[reportPrivateUsage]
 )
 from agent6.config_layer import resolved_state_dir
@@ -25,16 +26,35 @@ def test_most_recent_run_id_none_when_empty(tmp_path: Path) -> None:
     assert _most_recent_run_id(resolved_state_dir(tmp_path) / "runs") is None
 
 
-def test_most_recent_run_id_picks_newest_mtime(tmp_path: Path) -> None:
+def test_most_recent_run_id_uses_log_activity_not_frontend_dir_touch(tmp_path: Path) -> None:
     runs = resolved_state_dir(tmp_path) / "runs"
     runs.mkdir(parents=True)
     older = runs / "alpha-bravo-charlie"
     newer = runs / "delta-echo-foxtrot"
     older.mkdir()
     newer.mkdir()
-    os.utime(older, (1, 1))
-    os.utime(newer, (1000, 1000))
+    (older / "logs.jsonl").write_text('{"type":"run.start"}\n', encoding="utf-8")
+    (newer / "logs.jsonl").write_text('{"type":"run.start"}\n', encoding="utf-8")
+    os.utime(older / "logs.jsonl", (100, 100))
+    os.utime(newer / "logs.jsonl", (1000, 1000))
+    (older / "frontend.pid").write_text("12345", encoding="utf-8")
     assert _most_recent_run_id(runs) == "delta-echo-foxtrot"
+
+
+def test_most_recent_plan_run_id_uses_log_activity_not_frontend_dir_touch(tmp_path: Path) -> None:
+    runs = resolved_state_dir(tmp_path) / "runs"
+    runs.mkdir(parents=True)
+    older = runs / "older-plan"
+    newer = runs / "newer-plan"
+    older.mkdir()
+    newer.mkdir()
+    for run_dir in (older, newer):
+        (run_dir / "plan.md").write_text("# Plan\n", encoding="utf-8")
+        (run_dir / "logs.jsonl").write_text('{"type":"run.start"}\n', encoding="utf-8")
+    os.utime(older / "logs.jsonl", (100, 100))
+    os.utime(newer / "logs.jsonl", (1000, 1000))
+    (older / "frontend.pid").write_text("12345", encoding="utf-8")
+    assert _most_recent_plan_run_id(runs) == "newer-plan"
 
 
 def test_continue_with_task_argument_rejected(

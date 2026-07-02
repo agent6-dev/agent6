@@ -411,10 +411,10 @@ def test_deny_approver_always_returns_false() -> None:
     assert _deny_approver("Allow this?") is False
 
 
-def test_most_recent_run_id_uses_mtime_not_name(tmp_path: Path) -> None:
+def test_most_recent_run_id_uses_log_activity_not_name_or_dir_touch(tmp_path: Path) -> None:
     # Run ids start with a random adjective-noun, so a name sort is not
-    # chronological. The alphabetically-LATER name with the OLDER mtime must
-    # NOT win; the newest dir (by mtime) must.
+    # chronological. Front-ends also write frontend.pid into run dirs, so
+    # directory mtime is not chronological either. The newest log activity wins.
     import os
 
     from agent6.mcp_server import _most_recent_run_id  # pyright: ignore[reportPrivateUsage]
@@ -425,6 +425,9 @@ def test_most_recent_run_id_uses_mtime_not_name(tmp_path: Path) -> None:
     newer = runs / "aaa-newer-BBB222"  # alphabetically first
     older.mkdir()
     newer.mkdir()
-    os.utime(older, (1000, 1000))
-    os.utime(newer, (2000, 2000))  # newer mtime
+    (older / "logs.jsonl").write_text('{"type":"run.start"}\n', encoding="utf-8")
+    (newer / "logs.jsonl").write_text('{"type":"run.start"}\n', encoding="utf-8")
+    os.utime(older / "logs.jsonl", (1000, 1000))
+    os.utime(newer / "logs.jsonl", (2000, 2000))
+    (older / "frontend.pid").write_text("12345", encoding="utf-8")
     assert _most_recent_run_id(tmp_path) == "aaa-newer-BBB222"
