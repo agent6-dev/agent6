@@ -1114,3 +1114,71 @@ def test_agent_state_best_effort_limit_flows_to_request(tmp_path: Path) -> None:
     )
     drive(spec, journal, world, live=True)
     assert world.agent_calls[0].max_usd == 1.25
+
+
+NOTIFY_WAIT = """
+machine = "notifywait"
+version = 1
+initial = "park"
+
+[budget]
+max_usd = 1.0
+max_transitions = 100
+
+[states.park]
+kind = "wait"
+notify = { message = "machine parked, poke me", level = "info" }
+on = { signal = "done" }
+
+[states.done]
+kind = "terminal"
+status = "ok"
+reason = "finished"
+"""
+
+
+def test_parked_wait_notify_fires_once_across_scheduler_ticks(tmp_path: Path) -> None:
+    # Re-driving a parked --exit-on-wait machine (a cron/systemd tick) must not
+    # re-fire the wait's notify (or the operator hook: a page, an email) once
+    # per poll; the notify belongs to state ENTRY, and an armed PendingWait
+    # means the state was already entered.
+    from agent6.machine.journal import MachineNotify
+
+    journal, f = _load(tmp_path, NOTIFY_WAIT)
+    spec = load_machine(f)
+    hook_notifies = 0
+    for _ in range(3):
+        world = FakeWorld({})
+        result = drive(spec, journal, world, live=True, exit_on_wait=True)
+        assert result.status == "waiting"
+        hook_notifies += sum(1 for n in world.notifications if n[0] == "notify")
+    assert hook_notifies == 1
+    assert sum(1 for e in journal.read() if isinstance(e, MachineNotify)) == 1
+    # The firing tick (poke consumed) adds no duplicate either.
+    journal.poke(None)
+    result = drive(spec, journal, FakeWorld({}), live=True, exit_on_wait=True)
+    assert result.status == "ok"
+    assert sum(1 for e in journal.read() if isinstance(e, MachineNotify)) == 1
+
+
+def test_poke_atomic_write_leaves_no_temp_and_keeps_payload(tmp_path: Path) -> None:
+    # poke() must publish the signal file atomically (temp + rename): the
+    # engine's take_signal polls from another process, and a plain write let
+    # it consume an empty/partial file and drop the payload.
+    journal, _ = _load(tmp_path, FOREVER)
+    journal.poke({"cmd": "deploy", "target": "prod"})
+    assert not any(p.name.endswith(".tmp") for p in journal.root.iterdir())
+    present, payload = journal.take_signal()
+    assert present is True
+    assert payload == {"cmd": "deploy", "target": "prod"}
+
+
+def test_machine_is_parked_reflects_pending_wait(tmp_path: Path) -> None:
+    from agent6.web.model import machine_is_parked
+
+    journal, f = _load(tmp_path, FOREVER)
+    spec = load_machine(f)
+    assert machine_is_parked(journal.root) is False
+    result = drive(spec, journal, FakeWorld({}), live=True, exit_on_wait=True)
+    assert result.status == "waiting"
+    assert machine_is_parked(journal.root) is True

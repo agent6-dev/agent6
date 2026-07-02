@@ -38,6 +38,7 @@ from agent6.machine.journal import (
     AgentFact,
     BranchFact,
     Fact,
+    JournalError,
     MachineBegin,
     MachineEnd,
     MachineJournal,
@@ -790,8 +791,18 @@ def drive(  # noqa: PLR0911, PLR0912, PLR0915
         # `notify` is presentation only (§4.3): a render failure must NEVER affect
         # control flow, so it is swallowed (never fails the machine, and in
         # particular never flips a terminal's real ok/failed status).
-        with contextlib.suppress(*_STATE_RUNTIME_ERRORS):
-            _emit_notify(current, blackboard, journal, world, state)
+        # A wait whose PendingWait is already armed is NOT a fresh entry: every
+        # --exit-on-wait scheduler tick re-drives into the parked state, and
+        # without this guard the notify (and the operator hook: a page, an
+        # email) re-fired once per poll for one park.
+        already_parked = False
+        if isinstance(current, WaitState):
+            with contextlib.suppress(JournalError):
+                pending = journal.read_pending_wait()
+                already_parked = pending is not None and pending.state == state
+        if not already_parked:
+            with contextlib.suppress(*_STATE_RUNTIME_ERRORS):
+                _emit_notify(current, blackboard, journal, world, state)
         if isinstance(current, TerminalState):
             result = _emit_end(
                 journal,

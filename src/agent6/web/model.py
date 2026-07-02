@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from agent6.config_layer import load_effective, render_show, resolved_state_dir
-from agent6.machine import MachineError, MachineJournal, load_machine
+from agent6.machine import JournalError, MachineError, MachineJournal, load_machine
 from agent6.transcript_render import fold_conversation, load_transcripts
 from agent6.viewmodel import (
     fold_machine,
@@ -249,6 +249,18 @@ def machine_snapshot(machine_dir: Path) -> dict[str, Any]:
     spec = load_machine(machine_dir / "machine.asm.toml")
     ms = fold_machine(spec, MachineJournal(machine_dir).read())
     return machine_state_as_dict(ms)
+
+
+def machine_is_parked(machine_dir: Path) -> bool:
+    """True when the instance is parked in an armed wait (a PendingWait is
+    persisted). Under --exit-on-wait scheduling a parked machine legitimately
+    has no live process, so liveness probes must not read "dead pid" as
+    "crashed" while this holds. A corrupt wait file counts as parked: better
+    to keep streaming than to close on a guess."""
+    try:
+        return MachineJournal(machine_dir).read_pending_wait() is not None
+    except JournalError:
+        return True
 
 
 def machine_reasoning_snapshot(machine_dir: Path) -> dict[str, Any]:

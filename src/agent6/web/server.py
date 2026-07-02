@@ -536,6 +536,16 @@ class _Handler(BaseHTTPRequestHandler):
                     idle = 0.0
             if payload["machine"].get("ended") is not None:
                 return  # machine terminated: final snapshot sent, close the stream
+            # A machine that died mid-state (no MachineEnd) would pin this
+            # stream forever: its worker.pid points at a dead process AND no
+            # armed wait explains the absence (a parked --exit-on-wait machine
+            # legitimately has no live process between scheduler ticks).
+            if (
+                read_worker_pid(machine_dir) is not None
+                and not worker_is_alive(machine_dir)
+                and not model.machine_is_parked(machine_dir)
+            ):
+                return
             time.sleep(_MACHINE_POLL_S)
 
 

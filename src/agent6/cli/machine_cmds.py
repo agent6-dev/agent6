@@ -39,6 +39,7 @@ from agent6.config_layer import (
 )
 from agent6.detect import select_profile
 from agent6.events import EventSink
+from agent6.frontend.approval import write_worker_pid
 from agent6.frontend.notify import desktop_notify
 from agent6.git_ops import CommitIdentity, GitError, verify_git_identity
 from agent6.machine import (
@@ -708,6 +709,9 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
         with machine_lock(root):
             journal.ensure_dirs()
             data_dir.mkdir(parents=True, exist_ok=True)
+            # Liveness marker for watchers (the web SSE stream probes it to
+            # tell a crashed machine from a parked one), mirroring cli/run.py.
+            write_worker_pid(root, os.getpid())
             if not journal.exists():
                 write_source(root, path.read_text(encoding="utf-8"))
             world = LiveWorld(

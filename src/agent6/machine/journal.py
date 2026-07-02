@@ -373,9 +373,18 @@ class MachineJournal:
 
         The optional *payload* travels to the waking `wait` as its `signal`
         payload (journaled, replay-safe) for the next tool to read.
+
+        Atomic (temp + fsync + rename) like every other journal write: the
+        engine's ``take_signal`` polls from another process, and a plain write
+        exposes an empty/partial file it would consume as a bare poke,
+        dropping the payload.
         """
         self.root.mkdir(parents=True, exist_ok=True)
-        self.signal_path.write_text(json.dumps(payload), encoding="utf-8")
+        tmp = self.signal_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(payload), encoding="utf-8")
+        with tmp.open("r", encoding="utf-8") as fh:
+            os.fsync(fh.fileno())
+        tmp.rename(self.signal_path)
 
     def read_pending_wait(self) -> PendingWait | None:
         if not self.wait_path.is_file():
