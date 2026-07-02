@@ -733,6 +733,53 @@ def test_qwen_function_xml_prose_mentioning_tool_is_not_a_call(
     assert resp.tool_uses == ()
 
 
+# --- Gemini / Gemma ```tool_code Python-call blocks --------------------------
+
+
+def test_gemma_tool_code_block_is_recovered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The exact gemma-3 leakage: a ```tool_code fence holding a Python list of
+    calls in `content`, with empty native tool_calls. Without recovery the loop
+    sees no tool_use and silent-finishes."""
+    content = "Okay, I'll read the spec.\n```tool_code\n[read_file(path='spec.md')]\n```"
+    resp = _call_with_text_content(monkeypatch, content)
+    assert len(resp.tool_uses) == 1
+    assert resp.tool_uses[0]["name"] == "read_file"
+    assert resp.tool_uses[0]["input"] == {"path": "spec.md"}
+    assert resp.text == "Okay, I'll read the spec."
+
+
+def test_gemma_tool_code_typed_kwargs_and_print_wrapper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A print()-wrapped call with int kwargs: ast.literal_eval keeps the types,
+    and the inner tool call is mined out of the wrapper."""
+    content = "```tool_code\nprint(read_file(path='shapes.py', offset=10, limit=50))\n```"
+    resp = _call_with_text_content(monkeypatch, content)
+    assert resp.tool_uses[0]["input"] == {"path": "shapes.py", "offset": 10, "limit": 50}
+
+
+def test_gemma_tool_code_prose_mentioning_tool_is_not_a_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No ```tool_code fence -> prose naming a tool stays text (no false call)."""
+    resp = _call_with_text_content(monkeypatch, "Next I will read_file(path='x') to check.")
+    assert resp.tool_uses == ()
+
+
+def test_gemma_tool_code_preserves_source_order_mixed_depth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A list mixing a print-wrapped call and a bare call must keep SOURCE order
+    (ast.walk's breadth-first order would put the shallower bare call first and
+    invert read-before-edit intent)."""
+    content = "```tool_code\n[print(read_file(path='FIRST')), apply_edit(path='SECOND')]\n```"
+    resp = _call_with_text_content(monkeypatch, content, tools=[_READ_FILE_TOOL, _APPLY_EDIT_TOOL])
+    assert [c["name"] for c in resp.tool_uses] == ["read_file", "apply_edit"]
+    assert resp.tool_uses[0]["input"]["path"] == "FIRST"
+
+
 # --- blank-name native tool_call (poisons strict backends with a 400) -------
 
 

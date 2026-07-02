@@ -45,6 +45,7 @@ What's still per-provider (intentionally not abstracted):
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import json
 import os
@@ -972,6 +973,75 @@ _PARAMETER_RE = re.compile(
 # Leftover scaffolding to scrub from the visible text once calls are mined.
 _TOOL_SCAFFOLD_RE = re.compile(r"</?tool_call>|</?function[^>]*>|</?parameter[^>]*>")
 
+# Gemini / Gemma ``tool_code`` form: a fenced block of Python-call syntax, e.g.
+#   ```tool_code
+#   [read_file(path='spec.md'), apply_edit(path='x', ...)]
+#   ```
+# Gemma-family models on OpenRouter emit calls this way in `content` with empty
+# native `tool_calls`, so without recovery the loop sees no tool_use and stops.
+_TOOL_CODE_FENCE_RE = re.compile(r"```tool_code\s*\n?(.*?)```", re.DOTALL)
+
+
+def _tool_code_call_to_dict(node: ast.Call, tool_names: frozenset[str]) -> dict[str, Any] | None:
+    """Turn one ``ast.Call`` into ``{"name", "input"}`` if it (or, unwrapping a
+    non-tool wrapper such as ``print(tool(...))``, an inner call) targets an
+    offered tool. Keyword args are read with ``ast.literal_eval`` (already typed),
+    so no coercion; non-literal or positional args are skipped. Returns None for a
+    non-tool call -- we do NOT recurse into kwarg VALUES, so a tool nested as an
+    argument (``apply_edit(path=read_file(...))``) is not separately mined."""
+    if not isinstance(node.func, ast.Name):
+        return None
+    if node.func.id not in tool_names:
+        # One-level unwrap: a non-tool wrapper around a single tool call.
+        for arg in node.args:
+            if isinstance(arg, ast.Call):
+                inner = _tool_code_call_to_dict(arg, tool_names)
+                if inner is not None:
+                    return inner
+        return None
+    args: dict[str, Any] = {}
+    for kw in node.keywords:
+        if kw.arg is None:  # **kwargs splat -- not a named arg
+            continue
+        try:
+            args[kw.arg] = ast.literal_eval(kw.value)
+        except (ValueError, SyntaxError):
+            continue  # a non-literal value (a name/expr); skip it
+    return {"name": node.func.id, "input": args}
+
+
+def _extract_tool_code_calls(
+    text: str,
+    tool_names: frozenset[str],
+) -> list[dict[str, Any]]:
+    """Mine Gemini/Gemma ```tool_code Python-call blocks from leaked content.
+
+    Parses each fenced block with ``ast`` (never executes it) and returns
+    ``[{"name", "input"}, ...]`` for every offered-tool call, in SOURCE ORDER. It
+    walks only the TOP-LEVEL expressions (a bare call, or the elements of a list /
+    tuple), unwrapping one ``print(...)``-style wrapper -- not ``ast.walk`` (whose
+    breadth-first order would reorder a tool call nested at a different depth)."""
+    out: list[dict[str, Any]] = []
+    for block in _TOOL_CODE_FENCE_RE.finditer(text):
+        code = block.group(1).strip()
+        if not code:
+            continue
+        try:
+            tree = ast.parse(code, mode="exec")
+        except SyntaxError:
+            continue
+        for stmt in tree.body:
+            if not isinstance(stmt, ast.Expr):
+                continue
+            value = stmt.value
+            elements = value.elts if isinstance(value, (ast.List, ast.Tuple)) else [value]
+            for el in elements:
+                if isinstance(el, ast.Call):
+                    call = _tool_code_call_to_dict(el, tool_names)
+                    if call is not None:
+                        out.append(call)
+    return out
+
 
 def _coerce_param_value(value: str, declared_type: str | None) -> Any:  # noqa: PLR0911
     """Coerce a Qwen-XML ``<parameter>`` string to its schema-declared type.
@@ -1083,7 +1153,7 @@ def _extract_tool_call_obj(  # noqa: PLR0911
     return {"name": name, "input": raw_args}
 
 
-def _coerce_text_tool_calls(
+def _coerce_text_tool_calls(  # noqa: PLR0911
     text: str,
     tool_names: frozenset[str],
     tool_schemas: dict[str, dict[str, Any]] | None = None,
@@ -1107,6 +1177,14 @@ def _coerce_text_tool_calls(
         if xml_calls:
             remaining = _TOOL_SCAFFOLD_RE.sub("", _FUNCTION_CALL_RE.sub("", text)).strip()
             return xml_calls, remaining
+    # 0.5) Gemini / Gemma ```tool_code Python-call block. Self-delimiting like the
+    # XML form, and parsed with ast (not JSON), so check it before the JSON
+    # branches below.
+    if "```tool_code" in text:
+        code_calls = _extract_tool_code_calls(text, tool_names)
+        if code_calls:
+            remaining = _TOOL_CODE_FENCE_RE.sub("", text).strip()
+            return code_calls, remaining
     # 1) Hermes / Qwen ``<tool_call>...</tool_call>`` wrappers (≥1).
     tag_matches = list(_TOOL_CALL_TAG_RE.finditer(text))
     if tag_matches:
