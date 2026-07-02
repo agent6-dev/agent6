@@ -84,6 +84,17 @@ status, and cost, where you open a run to watch the dashboard, read the full tra
 or scroll the event log. `agent6 run --tui` jumps straight to that dashboard; `-i` drives
 the run from a stdin REPL. The [tour](tour.md) has a still of each screen.
 
+## The web UI
+
+<video controls muted loop playsinline preload="metadata" class="no-lightbox">
+  <source src="/screenshots/out/web-desktop.webm" type="video/webm">
+</video>
+
+`agent6 web` serves the same views in a browser: start a run and watch it stream,
+steer it, approve prompts, answer questions, read the transcript, and browse and
+run state machines, from a desktop or a phone. It binds `127.0.0.1`; put
+`tailscale serve` in front for encrypted remote access. See [the web UI](web.md).
+
 ## Install
 
 ```sh

@@ -1,13 +1,8 @@
 # Web UI
 
-`agent6 web` serves a browser front-end with near-full parity to the TUI, so a
-run is fully drivable from a desktop or a phone: watch it stream, steer it,
-approve prompts, answer questions, read the transcript, and browse, create, run,
-and watch state machines.
-
-It uses a stdlib HTTP server and a single HTML/CSS/JS page. Like the CLI and TUI,
-it is a thin renderer of the shared view-model, so nothing about how a run is
-folded or driven is re-derived here.
+`agent6 web` serves a browser front-end for driving agent6 from a desktop or a
+phone: watch a run stream, steer it, approve prompts, answer questions, read the
+transcript, and browse, create, run, and watch state machines.
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox">
   <source src="/screenshots/out/web-desktop.webm" type="video/webm">
@@ -54,16 +49,14 @@ nav on a phone.
 
 ## Notifications and installing (PWA)
 
-The page ships a web app manifest and a service worker, so it installs as a PWA
-(a phone home-screen app or a desktop app). Click **🔔 Notifications** on a
-machine view to grant permission; a `machine.notify` message or a machine's
-completion then pops an OS notification (foreground on any device, and
-backgrounded on desktop; a backgrounded phone will not wake, which is expected).
-There is no Web Push / VAPID; notifications are the foreground Notification API
-only. Notifications are ephemeral overlays: they never clear or block the
-send/answer inputs (a banner popping mid-type never loses your text or focus).
-For out-of-band delivery to a phone in a pocket, use the operator notify hook
-`[machine.notify].on_event` (see [config.md](config.md)).
+The page installs as an app (a phone home-screen icon or a desktop window). Click
+**🔔 Notifications** on a machine view to grant permission; a `machine.notify`
+message or a machine finishing then pops an OS notification — foreground on any
+device, and backgrounded on desktop (a backgrounded phone won't wake, which is
+expected). A notification never clears or blocks the send/answer inputs: one
+popping mid-type keeps your text and focus. For a phone in your pocket, point the
+operator notify hook `[machine.notify].on_event` (see [config.md](config.md)) at
+a push service you already use.
 
 ## How it talks to the server
 
@@ -71,9 +64,9 @@ The page reads the same wire form as `agent6 watch --json`:
 
 ```bash
 curl -s localhost:8901/api/hub                 # runs + machines + machine files
-curl -s localhost:8901/api/run/<id>            # a run's folded RunState
+curl -s localhost:8901/api/run/<id>            # a run's state, as JSON
 curl -s localhost:8901/api/run/<id>/transcript # the conversation turns
-curl -s localhost:8901/api/machine/<name>      # a machine's folded MachineState
+curl -s localhost:8901/api/machine/<name>      # a machine's state, as JSON
 curl -s localhost:8901/api/config              # effective config (no secrets)
 curl -sN localhost:8901/api/run/<id>/events    # SSE: a fresh snapshot per change
 ```
