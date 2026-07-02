@@ -61,7 +61,8 @@ from agent6.ui.conversation import ConversationScreen
 from agent6.ui.logview import LogScreen
 from agent6.ui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.modals import ApprovalModal, QuestionModal, SteerModal, ToolCallDetailModal
-from agent6.ui.state import (
+from agent6.ui.theme import PALETTE_CSS, open_theme_picker, setup_theme
+from agent6.viewmodel.state import (
     MAX_LOG_TAIL,
     ApprovalPrompt,
     QuestionPrompt,
@@ -69,8 +70,7 @@ from agent6.ui.state import (
     apply_event,
     initial_state,
 )
-from agent6.ui.tail import tail_events
-from agent6.ui.theme import PALETTE_CSS, open_theme_picker, setup_theme
+from agent6.viewmodel.tail import tail_events
 
 _TASK_ICONS = {
     "passed": "✓",

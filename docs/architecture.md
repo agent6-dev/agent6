@@ -221,8 +221,8 @@ lands in a per-repo `lineage.jsonl` at the state-dir root. Past-turn DAG replay
 the source's current DAG.
 
 The `logs.jsonl` vocabulary is small and stable: the data contract for
-any external viewer (the fold to UI state lives in
-[src/agent6/ui/state.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/state.py) as a pure function):
+any external viewer (the fold to render-ready state lives in
+[src/agent6/viewmodel/state.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state.py) as a pure function, shared by the CLI, the TUI, and a future web client):
 
 | Event                       | Notable fields                              |
 | --------------------------- | ------------------------------------------- |
@@ -263,7 +263,7 @@ graph`).
 | Git policy                       | [src/agent6/git_ops.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/git_ops.py)                        |
 | Provider clients                 | [src/agent6/providers/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/providers)                        |
 | Knowledge graph (curator)        | [src/agent6/graph/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/graph)                                |
-| Event log + UI fold              | [src/agent6/events.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/events.py), [src/agent6/ui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui) |
+| Event log + view-model fold      | [src/agent6/events.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/events.py) (writer), [src/agent6/viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel) (RunState/MachineState fold), [src/agent6/ui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui) (textual render) |
 | Run state on disk                | `<state-dir>/<repo-id>/runs/<run-id>/` (out of the workspace)         |
 
 ## Pre-1.0 stability

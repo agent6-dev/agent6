@@ -77,7 +77,14 @@ depends_on = []
 
 [[modules]]
 path = "agent6.ui"
-depends_on = ["agent6.config_layer", "agent6.machine", "agent6.models_cache", "agent6.paths", "agent6.secrets", "agent6.transcript_render"]
+depends_on = ["agent6.config_layer", "agent6.machine", "agent6.models_cache", "agent6.paths", "agent6.secrets", "agent6.transcript_render", "agent6.viewmodel"]
+
+[[modules]]
+# The shared view-model: logs.jsonl folded into render-ready RunState. Consumed
+# by the TUI, the CLI watchers, and (later) the web UI; depends on nothing so
+# any front-end can fold the same events without pulling in a UI toolkit.
+path = "agent6.viewmodel"
+depends_on = []
 
 [[modules]]
 path = "agent6.init"

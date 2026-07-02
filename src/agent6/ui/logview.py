@@ -25,8 +25,8 @@ from textual.binding import Binding
 from textual.screen import Screen
 from textual.widgets import Footer, RichLog, Static
 
-from agent6.ui.state import format_log_line
-from agent6.ui.tail import tail_events
+from agent6.viewmodel.state import format_log_line
+from agent6.viewmodel.tail import tail_events
 
 
 class LogScreen(Screen[None]):
