@@ -205,6 +205,14 @@ def test_add_subtask_writes_child_before_parent_link(
     # Reload purely from disk. The parent must NOT reference any child whose
     # .md is missing -- i.e. no dangling references.
     on_disk = load_graph(layout)
+    # The child .md was written BEFORE the parent link, so the crash during the
+    # link write leaves the child on disk as a recoverable orphan. This is the
+    # observable that distinguishes the fix from the reverted order (which writes
+    # the parent link first and never reaches the child write, losing it): under
+    # the fix two nodes persist, under the revert only the parent.
+    assert len(on_disk) == 2, "child node was not persisted before the parent link"
+    orphan = next(n for n in on_disk.values() if n.id != parent.id)
+    assert orphan.parent_id == parent.id  # it's the child, recorded as an orphan
     # The original parent file on disk should still be the pre-link version
     # (children empty), because its re-write crashed.
     assert parent_path.exists()

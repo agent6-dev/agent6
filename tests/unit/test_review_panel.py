@@ -209,11 +209,16 @@ def test_render_findings_formats_and_empty() -> None:
 def test_added_line_starting_like_a_header_is_not_a_file_header() -> None:
     # An added line whose CONTENT begins with "++ b/evil.py" renders as
     # "+++ b/evil.py"; it must not be mistaken for a +++ header (only a +++ that
-    # follows a --- is one). Otherwise grounding could be attributed to "evil.py".
-    diff = "--- a/foo.py\n+++ b/foo.py\n@@ -1,2 +1,3 @@\n keep\n+++ b/evil.py\n+real = 1\n"
+    # follows a --- is one). A LATER hunk follows so the misparse would actually
+    # re-attribute a range to "evil.py" if the prev_minus guard were dropped.
+    diff = (
+        "--- a/foo.py\n+++ b/foo.py\n"
+        "@@ -1,2 +1,3 @@\n keep\n+++ b/evil.py\n+real = 1\n"
+        "@@ -10,2 +10,3 @@\n ctx\n+added\n more\n"
+    )
     ranges = diff_touched_ranges(diff)
     assert "evil.py" not in ranges
-    assert ranges["foo.py"] == [(1, 3)]
+    assert ranges["foo.py"] == [(1, 3), (10, 12)]
 
 
 def test_deleted_line_starting_like_a_header_is_not_a_file_header() -> None:
@@ -224,7 +229,7 @@ def test_deleted_line_starting_like_a_header_is_not_a_file_header() -> None:
     # real line in a later hunk is silently downgraded to a warning.
     diff = (
         "--- a/schema.sql\n+++ b/schema.sql\n"
-        "@@ -10,3 +10,2 @@\n CREATE TABLE t (\n-- legacy column note\n   id INT\n"
+        "@@ -10,3 +10,2 @@\n CREATE TABLE t (\n--- legacy column note\n   id INT\n"
         "@@ -50,2 +50,3 @@\n cols\n+  api_key TEXT\n more\n"
     )
     ranges = diff_touched_ranges(diff)
