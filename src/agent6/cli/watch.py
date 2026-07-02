@@ -3,11 +3,12 @@
 """The unified `agent6 watch <target>`: follow a run or a machine, live.
 
 Resolves <target> to a run (id or unique prefix) or a machine (by name) and
-dispatches to the right viewer. A run defaults to the textual dashboard
-(`--plain` for a no-deps line tail); a machine streams its state overview +
-reasoning. `--json` prints a one-shot snapshot of the folded state, the same
-wire form a web client reads. An empty target watches the most recent run. A
-target that is both a run prefix and a machine name resolves as the run.
+dispatches to the right viewer. Both default to a plain CLI stream (a run is a
+no-deps line tail of logs.jsonl; a machine streams its state overview +
+reasoning); `--tui` opens the full-screen dashboard instead. `--json` prints a
+one-shot snapshot of the folded state, the same wire form a web client reads. An
+empty target watches the most recent run. A target that is both a run prefix and
+a machine name resolves as the run.
 """
 
 from __future__ import annotations
@@ -63,7 +64,24 @@ def _machine_json_snapshot(machine_dir: Path) -> int:
     return 0
 
 
-def _cmd_watch_target(target: str, *, plain: bool, json_out: bool, since: int) -> int:
+def _machine_watch_tui(machine_dir: Path) -> int:
+    """Open the full-screen MachineWatchScreen for a machine instance (`--tui`)."""
+    source = machine_dir / "machine.asm.toml"
+    try:
+        spec = load_machine(source)
+    except MachineError as exc:
+        print(f"FAIL: {source}: {'; '.join(exc.problems)}", file=sys.stderr)
+        return 1
+    try:
+        from agent6.ui.machines import run_machine_watch_tui  # noqa: PLC0415
+    except ImportError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        print("HINT: drop --tui for the plain text follow.", file=sys.stderr)
+        return 3
+    return run_machine_watch_tui(machine_dir, spec)
+
+
+def _cmd_watch_target(target: str, *, tui: bool, json_out: bool, since: int) -> int:
     """Resolve *target* to a run or machine and follow it (or snapshot it)."""
     cwd = Path.cwd()
     runs_dir = _runs_dir(cwd)
@@ -72,7 +90,7 @@ def _cmd_watch_target(target: str, *, plain: bool, json_out: bool, since: int) -
     # Empty target, or one that resolves to a run id: watch the run.
     if not target or _is_run_target(runs_dir, target):
         if not json_out:
-            return _watch_run(target, plain=plain, since=since)
+            return _watch_run(target, tui=tui, since=since)
         run_dir = _resolve_run_dir(runs_dir, target)
         if run_dir is None or not run_dir.is_dir():
             print(f"ERROR: no run found ({target or 'latest'}) under {runs_dir}", file=sys.stderr)
@@ -82,7 +100,9 @@ def _cmd_watch_target(target: str, *, plain: bool, json_out: bool, since: int) -
     # Else a machine by name.
     machine_dir = machines_dir / target
     if machine_dir.is_dir():
-        return _machine_json_snapshot(machine_dir) if json_out else _cmd_machine_watch(target)
+        if json_out:
+            return _machine_json_snapshot(machine_dir)
+        return _machine_watch_tui(machine_dir) if tui else _cmd_machine_watch(target)
 
     print(
         f"ERROR: no run or machine matches {target!r} (looked under {runs_dir} and {machines_dir})",

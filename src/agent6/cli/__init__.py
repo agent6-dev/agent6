@@ -167,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
                 args.config,
                 target,
                 force=False,
-                no_tui=args.no_tui,
+                tui=args.tui,
                 budget_overrides=_BudgetOverrides.from_args(args),
             )
         if args.from_plan:
@@ -231,7 +231,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             task,
             run_id=args.run_id,
             interactive=args.interactive,
-            no_tui=args.no_tui,
+            tui=args.tui,
             budget_overrides=_BudgetOverrides.from_args(args),
             profile=getattr(args, "profile", ""),
         )
@@ -287,9 +287,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             profile=getattr(args, "profile", ""),
         )
     if args.command == "watch":
-        return _cmd_watch_target(
-            args.target, plain=args.plain, json_out=args.json, since=args.since
-        )
+        return _cmd_watch_target(args.target, tui=args.tui, json_out=args.json, since=args.since)
     if args.command == "runs":
         if args.runs_command == "show":
             return _cmd_status(args.run_id, as_json=args.json)
@@ -325,7 +323,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             args.config,
             args.run_id,
             force=args.force_resume,
-            no_tui=args.no_tui,
+            tui=args.tui,
             budget_overrides=_BudgetOverrides.from_args(args),
         )
     if args.command == "fork":
@@ -335,7 +333,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             at_turn=args.at_turn,
             new_run_id=args.new_run_id,
             no_run=args.no_run,
-            no_tui=args.no_tui,
+            tui=args.tui,
             budget_overrides=_BudgetOverrides.from_args(args),
         )
     if args.command == "config":

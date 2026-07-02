@@ -12,7 +12,7 @@ dependencies = [
     "httpx2>=2.3",
     "pydantic>=2.7,<3",
     "ruff>=0.6,<1",  # runtime, not dev: lints the scripts `machine create` generates
-    "textual>=0.86",  # the live dashboard; the CLI degrades to `--plain` without it
+    "textual>=0.86",  # the live dashboard; without it `--tui` falls back to the plain CLI stream
     "tree-sitter==0.25.2",
     "tree-sitter-language-pack==1.8.1",
     "ty>=0.0.46,<0.1",  # runtime: typechecks the scripts `machine create` generates

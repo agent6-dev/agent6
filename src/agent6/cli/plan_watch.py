@@ -121,12 +121,11 @@ def _most_recent_plan_run_id(runs_dir: Path) -> str | None:
     return candidates[0].name if candidates else None
 
 
-def _cmd_watch(run_id: str, *, plain: bool = False, since: int = 0) -> int:  # noqa: PLR0911
+def _cmd_watch(run_id: str, *, tui: bool = False, since: int = 0) -> int:  # noqa: PLR0911
     """Read-only live view of a run directory.
 
-    Default is the textual TUI viewer. ``--plain`` switches to a no-deps
-    line tail of ``logs.jsonl``; useful in headless terminals
-    or when ``textual`` isn't installed.
+    Default is a no-deps line tail of ``logs.jsonl`` (the CLI mode). ``--tui``
+    opens the full-screen textual dashboard instead.
     """
     runs_dir = _runs_dir(Path.cwd())
     if run_id:
@@ -153,14 +152,14 @@ def _cmd_watch(run_id: str, *, plain: bool = False, since: int = 0) -> int:  # n
     if not target.is_dir():
         print(f"ERROR: no such run dir: {target}", file=sys.stderr)
         return 2
-    if plain:
+    if not tui:
         return _cmd_watch_plain(target, since=since)
     try:
         from agent6.ui.app import run_tui  # noqa: PLC0415 - lazy: textual is optional
     except ImportError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         print(
-            "HINT: pass --plain for a no-deps text tail of logs.jsonl.",
+            "HINT: drop --tui for a no-deps text tail of logs.jsonl.",
             file=sys.stderr,
         )
         return 3
@@ -431,7 +430,7 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0912, PLR0
         run_start_ts = None
 
     print(
-        f"[agent6] tailing {events_path} (--plain). Ctrl-C to exit.",
+        f"[agent6] tailing {events_path}. Ctrl-C to exit.",
         file=sys.stderr,
     )
 
@@ -481,7 +480,7 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0912, PLR0
                 continue
             time.sleep(0.25)
     except KeyboardInterrupt:
-        print("\n[agent6] watch --plain: stopped.", file=sys.stderr)
+        print("\n[agent6] watch: stopped.", file=sys.stderr)
         return 0
     finally:
         with contextlib.suppress(OSError):

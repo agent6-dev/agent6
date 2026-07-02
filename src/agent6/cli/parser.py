@@ -158,12 +158,12 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
     run_p.add_argument(
-        "--no-tui",
+        "--tui",
         action="store_true",
         help=(
-            "Do not auto-spawn the textual dashboard. The TUI is launched"
-            " automatically when the `tui` extra is installed and stdout is a"
-            " TTY; this opts out (always implied by -i and on non-TTY runs)."
+            "Open the full-screen dashboard instead of the default headless CLI"
+            " stream. Needs the `tui` extra and a TTY; mutually exclusive with -i."
+            " (Or run `agent6 tui` and start the run from there.)"
         ),
     )
     run_from_plan = run_p.add_argument(
@@ -301,10 +301,10 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     watch_p = sub.add_parser(
         "watch",
         help=(
-            "Follow a run or machine live. A run opens the TUI dashboard"
-            " (--plain for a no-deps line tail); a machine streams its state"
-            " overview, transitions, and reasoning. --json prints a one-shot"
-            " snapshot of the folded state. Omit the target for the most recent run."
+            "Follow a run or machine live as a plain event stream (no-deps line"
+            " tail). --tui opens the full-screen dashboard instead. --json prints"
+            " a one-shot snapshot of the folded state. Omit the target for the"
+            " most recent run."
         ),
     )
     watch_target = watch_p.add_argument(
@@ -315,9 +315,9 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     watch_target.completer = _complete_watch_targets  # type: ignore[attr-defined]
     watch_p.add_argument(
-        "--plain",
+        "--tui",
         action="store_true",
-        help="For a run: a no-deps line tail of logs.jsonl instead of the textual TUI.",
+        help="Open the full-screen dashboard instead of the default plain line tail.",
     )
     watch_p.add_argument(
         "--json",
@@ -329,7 +329,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         type=int,
         default=0,
         metavar="N",
-        help="With --plain: replay the last N events before following (0 = from end).",
+        help="Plain tail only: replay the last N events before following (0 = from end).",
     )
 
     runs_p = sub.add_parser(
@@ -525,9 +525,9 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Resume even if snapshot commit is missing or worktree has diverged.",
     )
     resume_p.add_argument(
-        "--no-tui",
+        "--tui",
         action="store_true",
-        help="Do not auto-spawn the textual dashboard (see `agent6 run --no-tui`).",
+        help="Open the full-screen dashboard instead of the headless stream (like `run --tui`).",
     )
     _add_budget_flags(resume_p)
 
@@ -572,9 +572,9 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Explicit config file (layered over global + repo configs).",
     )
     fork_p.add_argument(
-        "--no-tui",
+        "--tui",
         action="store_true",
-        help="Do not auto-spawn the textual dashboard (see `agent6 run --no-tui`).",
+        help="Open the full-screen dashboard instead of the headless stream (like `run --tui`).",
     )
     _add_budget_flags(fork_p)
 

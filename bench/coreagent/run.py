@@ -289,7 +289,6 @@ def one_run(
         task_prompt(task, module),
         "--config",
         str(cfg),
-        "--no-tui",
         "--run-id",
         run_id,
         *budget_flags,

@@ -119,19 +119,20 @@ def test_should_spawn_tui_gating(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(runmod, "_tui_available", _yes)
     monkeypatch.setattr(runmod.sys, "stdout", _FakeStdout(tty=True))
-    # Default: TTY + textual + run mode + not no-tui/-i -> spawn.
-    assert should(no_tui=False, interactive=False, mode="run") is True
-    # Opt-outs.
-    assert should(no_tui=True, interactive=False, mode="run") is False
-    assert should(no_tui=False, interactive=True, mode="run") is False
-    assert should(no_tui=False, interactive=False, mode="plan") is False
+    # Headless by default: no --tui -> never spawn.
+    assert should(tui=False, interactive=False, mode="run") is False
+    # --tui on a TTY with textual + run mode -> spawn.
+    assert should(tui=True, interactive=False, mode="run") is True
+    # --tui asked for but can't honour -> warn and stay headless.
+    assert should(tui=True, interactive=True, mode="run") is False
+    assert should(tui=True, interactive=False, mode="plan") is False
     # textual not installed.
     monkeypatch.setattr(runmod, "_tui_available", _no)
-    assert should(no_tui=False, interactive=False, mode="run") is False
+    assert should(tui=True, interactive=False, mode="run") is False
     # non-TTY (benches / CI / pipes).
     monkeypatch.setattr(runmod, "_tui_available", _yes)
     monkeypatch.setattr(runmod.sys, "stdout", _FakeStdout(tty=False))
-    assert should(no_tui=False, interactive=False, mode="run") is False
+    assert should(tui=True, interactive=False, mode="run") is False
 
 
 def test_stream_modes(monkeypatch: pytest.MonkeyPatch) -> None:

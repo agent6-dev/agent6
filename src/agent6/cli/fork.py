@@ -99,7 +99,7 @@ def _cmd_fork(  # noqa: PLR0911
     at_turn: int | None = None,
     new_run_id: str = "",
     no_run: bool = False,
-    no_tui: bool = False,
+    tui: bool = False,
     budget_overrides: _BudgetOverrides | None = None,
 ) -> int:
     """Create a new run cloned from *source_run_id* at checkpoint *at_turn*.
@@ -195,7 +195,7 @@ def _cmd_fork(  # noqa: PLR0911
         config_path,
         child_id,
         force=True,
-        no_tui=no_tui,
+        tui=tui,
         budget_overrides=budget_overrides,
     )
 

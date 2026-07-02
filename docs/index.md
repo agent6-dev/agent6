@@ -78,10 +78,11 @@ operator-configured MCP server, off by default. No telemetry, no auto-update.
   <source src="/screenshots/out/tour.webm" type="video/webm">
 </video>
 
-`agent6 tui` opens the hub: every run for the repository, with its mode, status, and
-cost. Open a run to watch the dashboard, read the full transcript, or scroll the event
-log. `agent6 run` opens the dashboard directly; `--no-tui` and `-i` (a stdin REPL) opt
-out. The [tour](tour.md) has a still of each screen.
+`agent6 run` is headless by default: a scrolling event stream in your terminal, the CLI
+mode. `agent6 tui` opens the hub instead: every run for the repository, with its mode,
+status, and cost, where you open a run to watch the dashboard, read the full transcript,
+or scroll the event log. `agent6 run --tui` jumps straight to that dashboard; `-i` drives
+the run from a stdin REPL. The [tour](tour.md) has a still of each screen.
 
 ## Install
 

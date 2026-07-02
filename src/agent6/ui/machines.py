@@ -20,7 +20,7 @@ from typing import ClassVar
 
 try:
     from rich.text import Text
-    from textual.app import ComposeResult
+    from textual.app import App, ComposeResult
     from textual.binding import Binding
     from textual.command import DiscoveryHit, Hit, Hits, Provider
     from textual.containers import Container, Horizontal, VerticalScroll
@@ -43,7 +43,7 @@ from agent6.machine import (
 from agent6.ui._spawn import agent6_exe, spawn_and_locate, spawn_detached
 from agent6.ui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.modals import ConfirmModal
-from agent6.ui.theme import PALETTE_CSS
+from agent6.ui.theme import PALETTE_CSS, setup_theme
 from agent6.viewmodel import fold_machine, newest_state_log
 
 
@@ -135,7 +135,12 @@ class MachineWatchScreen(Screen[None]):
         self.set_interval(0.5, self._poll)
 
     def action_close(self) -> None:
-        self.app.pop_screen()
+        # Standalone `agent6 watch <machine> --tui` mounts this directly on the
+        # app's base screen, so there is nothing to pop back to; exit instead.
+        if len(self.app.screen_stack) > 2:
+            self.app.pop_screen()
+        else:
+            self.app.exit()
 
     def _flush_pending(self) -> None:
         text = self._pending.strip()
@@ -538,3 +543,23 @@ class MachinesScreen(Screen[None]):
 
     def action_close(self) -> None:
         self.dismiss()
+
+
+class _MachineWatchApp(App[None]):
+    """One-screen host for `agent6 watch <machine> --tui`: the same live machine
+    view the Machines page opens, runnable straight from the CLI."""
+
+    CSS = PALETTE_CSS
+
+    def __init__(self, instance_dir: Path, spec: MachineSpec) -> None:
+        super().__init__()
+        self._instance = instance_dir
+        self._spec = spec
+
+    def on_mount(self) -> None:
+        setup_theme(self)  # apply the saved theme before the first paint
+        self.push_screen(MachineWatchScreen(self._instance, self._spec))
+
+
+def run_machine_watch_tui(instance_dir: Path, spec: MachineSpec) -> int:
+    return _MachineWatchApp(instance_dir, spec).run() or 0

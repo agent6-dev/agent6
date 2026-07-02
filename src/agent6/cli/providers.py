@@ -166,7 +166,7 @@ def _role_temperature(cfg: Config, role: RoleName) -> float | None:
 class _ConsoleStreamer:
     """Echo streamed reasoning + answer deltas to stderr in real time.
 
-    Used by `plan` / `ask` / `machine create` / `--no-tui` runs (anything
+    Used by `plan` / `ask` / `machine create` / headless runs (anything
     without the TUI) so the terminal shows the model thinking instead of
     sitting silent through a 30-120s reasoning call. Reasoning is dimmed and
     separated from the visible answer by a one-line header per phase switch.

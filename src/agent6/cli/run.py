@@ -323,19 +323,26 @@ def _tui_available() -> bool:
     return importlib.util.find_spec("textual") is not None
 
 
-def _should_spawn_tui(*, no_tui: bool, interactive: bool, mode: str) -> bool:
-    """Whether `agent6 run`/`resume` auto-spawns the dashboard TUI.
+def _should_spawn_tui(*, tui: bool, interactive: bool, mode: str) -> bool:
+    """Whether `agent6 run`/`resume` opens the dashboard TUI.
 
-    Default yes when the `tui` extra is installed and stdout is a real TTY.
-    `--no-tui` opts out; `-i` (the stdin REPL) is mutually exclusive with the
-    full-screen TUI, so it wins; `plan` stays a plain text pass."""
-    return (
-        not no_tui
-        and not interactive
-        and mode == "run"
-        and sys.stdout.isatty()
-        and _tui_available()
-    )
+    Headless by default (a scrolling CLI event stream); `--tui` opts into the
+    full-screen dashboard. It needs the `tui` extra and a real TTY, is for `run`
+    mode only (`plan`/`ask` stay text), and is mutually exclusive with `-i` (the
+    stdin REPL). When `--tui` is asked for but cannot run, warn and stay
+    headless rather than fail the run."""
+    if not tui:
+        return False
+    if interactive or mode != "run":
+        print("[agent6] --tui is not available here; continuing in CLI mode.", file=sys.stderr)
+        return False
+    if not sys.stdout.isatty():
+        print("[agent6] --tui needs a TTY; continuing in CLI mode.", file=sys.stderr)
+        return False
+    if not _tui_available():
+        print("[agent6] --tui needs the `tui` extra; continuing in CLI mode.", file=sys.stderr)
+        return False
+    return True
 
 
 def _stream_modes(*, tui_enabled: bool) -> tuple[bool, bool]:
@@ -606,7 +613,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     *,
     run_id: str = "",
     interactive: bool = False,
-    no_tui: bool = False,
+    tui: bool = False,
     mode: Literal["run", "plan", "ask"] = "run",
     budget_overrides: _BudgetOverrides | None = None,
     profile: str = "",
@@ -835,7 +842,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     # streaming on because the gateway emits SSE keep-alive comment
     # heartbeats during long requests, which corrupt the non-streaming
     # response body (resp.json() blows up with JSONDecodeError).
-    tui_enabled = _should_spawn_tui(no_tui=no_tui, interactive=interactive, mode=mode)
+    tui_enabled = _should_spawn_tui(tui=tui, interactive=interactive, mode=mode)
     _warn_if_headless_ask(cfg, tui_enabled=tui_enabled)
     stream_text, console_stream = _stream_modes(tui_enabled=tui_enabled)
     provider: Provider = _InstrumentedProvider(
@@ -1266,7 +1273,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     run_id: str,
     *,
     force: bool,
-    no_tui: bool = False,
+    tui: bool = False,
     budget_overrides: _BudgetOverrides | None = None,
     profile: str = "",
 ) -> int:
@@ -1446,7 +1453,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     assert rm_worker is not None  # require_runnable validated this
     _warn_if_usd_unenforceable(cfg)
     _warn_if_prompt_override_incomplete(cfg)
-    tui_enabled = _should_spawn_tui(no_tui=no_tui, interactive=False, mode="run")
+    tui_enabled = _should_spawn_tui(tui=tui, interactive=False, mode="run")
     _warn_if_headless_ask(cfg, tui_enabled=tui_enabled)
     stream_text, console_stream = _stream_modes(tui_enabled=tui_enabled)
     provider: Provider = _InstrumentedProvider(

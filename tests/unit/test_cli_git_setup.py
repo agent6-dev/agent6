@@ -47,7 +47,7 @@ def test_run_surfaces_git_wall_before_provider_wall(
     # Non-git scratch dir with no provider configured (conftest isolates config):
     # the not-a-git-repo error surfaces first, not after the provider/key walls.
     monkeypatch.chdir(tmp_path)
-    rc = main(["run", "do a thing", "--no-tui"])
+    rc = main(["run", "do a thing"])
     assert rc == 2
     err = capsys.readouterr().err
     assert "not a git repository" in err
