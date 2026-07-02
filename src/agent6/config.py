@@ -777,6 +777,33 @@ class BudgetConfig(BaseModel):
     best_effort_usd_limit: float = Field(ge=0.0, default=0.0)
 
 
+class MachineNotifyConfig(BaseModel):
+    """Optional out-of-band notify hook for a running machine.
+
+    When ``on_event`` is set, `agent6 machine run` runs the argv tuple on each
+    `machine.notify` (a state's ``notify`` message) and on the terminal
+    `machine.end`, on the host OUTSIDE the jail (mirror of
+    ``[notify].on_complete``). The argv is operator-controlled and never
+    includes LLM output. Env vars passed:
+
+    - ``AGENT6_MACHINE_ID``      , the machine id
+    - ``AGENT6_MACHINE_DIR``     , absolute path to the instance dir
+    - ``AGENT6_MACHINE_EVENT``   , ``notify`` or ``end``
+    - ``AGENT6_MACHINE_STATE``   , the state that emitted it
+    - ``AGENT6_MACHINE_MESSAGE`` , the notify message (or the end reason)
+    - ``AGENT6_MACHINE_LEVEL``   , ``info``/``warn``/``error`` for notify, or the
+                                   ``ok``/``failed`` status for end
+
+    Use it to fan out to a phone (ntfy/Pushover/Telegram/email); agent6 owns no
+    push infra. A failed hook is logged and does not change the exit code.
+    """
+
+    model_config = _BASE_MODEL_CONFIG
+
+    on_event: tuple[str, ...] = Field(default=(), description="argv to run on a notify/end event")
+    timeout_s: float = Field(gt=0.0, default=30.0)
+
+
 class MachineConfig(BaseModel):
     """State-machine runtime knobs (`agent6 machine run`)."""
 
@@ -788,6 +815,7 @@ class MachineConfig(BaseModel):
     # every snapshot (one file per transition; budget disk accordingly for
     # long-running machines).
     snapshot_keep: int = Field(ge=0, default=5)
+    notify: MachineNotifyConfig = Field(default_factory=MachineNotifyConfig)
 
 
 def is_loopback_host(host: str) -> bool:

@@ -9,8 +9,11 @@ from pathlib import Path
 
 import pytest
 
+from agent6.cli.machine_cmds import (
+    _build_machine_notify_hook,  # pyright: ignore[reportPrivateUsage]
+)
 from agent6.cli.run import _fire_notify_hook  # pyright: ignore[reportPrivateUsage]
-from agent6.config import NotifyConfig
+from agent6.config import NotifyConfig, load_config
 
 
 def test_notify_noop_when_unconfigured(tmp_path: Path) -> None:
@@ -91,9 +94,73 @@ def test_notify_ok_zero_when_failed(tmp_path: Path) -> None:
     assert out.read_text(encoding="utf-8") == "0"
 
 
+_MACHINE_CFG_BODY = """
+[agent6]
+config_version = 1
+
+[providers.anthropic]
+api_format = "anthropic"
+api_key_env = "ANTHROPIC_API_KEY"
+
+[models.worker]
+provider = "anthropic"
+model = "claude-sonnet-4-5"
+
+[models.reviewer]
+provider = "anthropic"
+model = "claude-opus-4-5"
+
+[workflow]
+verify_command = ["true"]
+
+[machine.notify]
+on_event = ["python3", "-c", "PLACEHOLDER"]
+timeout_s = 10.0
+"""
+
+
+def test_machine_notify_hook_fires_with_env(tmp_path: Path) -> None:
+    out = tmp_path / "machine-notify.json"
+    script = (
+        "import json,os,sys; json.dump({"
+        "'id': os.environ['AGENT6_MACHINE_ID'], "
+        "'dir': os.environ['AGENT6_MACHINE_DIR'], "
+        "'event': os.environ['AGENT6_MACHINE_EVENT'], "
+        "'state': os.environ['AGENT6_MACHINE_STATE'], "
+        "'message': os.environ['AGENT6_MACHINE_MESSAGE'], "
+        "'level': os.environ['AGENT6_MACHINE_LEVEL']"
+        "}, open(sys.argv[1], 'w'))"
+    )
+    body = _MACHINE_CFG_BODY.replace('"PLACEHOLDER"', f'"{script}", "{out}"')
+    cfg_path = tmp_path / "agent6.toml"
+    cfg_path.write_text(body, encoding="utf-8")
+    cfg = load_config(cfg_path)
+    hook = _build_machine_notify_hook(cfg, "mymachine", tmp_path / "inst")
+    assert hook is not None
+    hook("notify", "poll", "attention needed", "warn")
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload == {
+        "id": "mymachine",
+        "dir": str(tmp_path / "inst"),
+        "event": "notify",
+        "state": "poll",
+        "message": "attention needed",
+        "level": "warn",
+    }
+
+
+def test_machine_notify_hook_none_when_unconfigured(tmp_path: Path) -> None:
+    body = _MACHINE_CFG_BODY.replace(
+        '\n[machine.notify]\non_event = ["python3", "-c", "PLACEHOLDER"]\ntimeout_s = 10.0\n', ""
+    )
+    cfg_path = tmp_path / "agent6.toml"
+    cfg_path.write_text(body, encoding="utf-8")
+    cfg = load_config(cfg_path)
+    assert _build_machine_notify_hook(cfg, "m", tmp_path) is None
+
+
 def test_notify_in_config_loads(tmp_path: Path) -> None:
     """[notify] section round-trips through the config loader."""
-    from agent6.config import load_config
 
     body = """
 [agent6]

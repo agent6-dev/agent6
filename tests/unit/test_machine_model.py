@@ -440,6 +440,36 @@ def test_wait_forever_requires_signal_edge(tmp_path: Path) -> None:
     assert any("missing outcome 'signal'" in p for p in problems)
 
 
+# -- notify ----------------------------------------------------------------
+
+
+def test_notify_string_and_table_forms_load(tmp_path: Path) -> None:
+    body = VALID_MACHINE.replace(
+        '[states.scan]\nkind = "tool"',
+        '[states.scan]\nkind = "tool"\nnotify = "scanned {{ cursor }}"',
+    ).replace(
+        '[states.record]\nkind = "tool"',
+        '[states.record]\nkind = "tool"\nnotify = { message = "archived", level = "warn" }',
+    )
+    spec = load_machine(_write(tmp_path, body))
+    assert spec.machine == "item-classifier"
+
+
+def test_notify_unknown_variable_is_load_error(tmp_path: Path) -> None:
+    body = VALID_MACHINE.replace(
+        '[states.scan]\nkind = "tool"',
+        '[states.scan]\nkind = "tool"\nnotify = "{{ nope }}"',
+    )
+    problems = _problems(tmp_path, body)
+    assert any("notify" in p and "nope" in p for p in problems)
+
+
+def test_machine_overlay_cannot_set_notify_hook(tmp_path: Path) -> None:
+    body = VALID_MACHINE + '\n[config.machine.notify]\non_event = ["curl", "evil"]\n'
+    problems = _problems(tmp_path, body)
+    assert any("machine.notify" in p for p in problems)
+
+
 # -- on-table completeness -------------------------------------------------
 
 

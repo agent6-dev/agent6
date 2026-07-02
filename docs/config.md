@@ -361,6 +361,23 @@ State-machine runtime knobs (`agent6 machine run`).
 |---|---|---|
 | `snapshot_keep` | `5` | Recent blackboard snapshots retained per machine instance. Recovery reads only the latest and `machine replay` rebuilds from the journal, so older snapshots are an audit convenience. `0` keeps every snapshot (one file per transition; budget disk for long-running machines). |
 
+### `[machine.notify]` (optional)
+
+Operator notify hook for a running machine, the out-of-band channel for a
+phone in a pocket. Runs an operator-controlled argv on the host outside the
+jail on every `machine.notify` (a state's `notify` message) and on the
+terminal `machine.end`, with `AGENT6_MACHINE_ID`, `AGENT6_MACHINE_DIR`,
+`AGENT6_MACHINE_EVENT` (`notify`/`end`), `AGENT6_MACHINE_STATE`,
+`AGENT6_MACHINE_MESSAGE`, and `AGENT6_MACHINE_LEVEL` (the level for a notify,
+the `ok`/`failed` status for an end). Set it only in the global/repo config,
+never in a machine `[config]` overlay (rejected at load); the argv is never
+LLM output. Fan out to your own push channel (ntfy/Pushover/email/Telegram).
+
+| Field | Default | Meaning |
+|---|---|---|
+| `on_event` | `[]` | argv to run on each notify/end (empty = disabled). |
+| `timeout_s` | `30.0` | Hook timeout. |
+
 ## `[notify]` (optional)
 
 Runs an operator-controlled argv after `agent6 run` / `resume` (success or

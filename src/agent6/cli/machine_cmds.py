@@ -365,6 +365,35 @@ def _build_machine_agent_runner(
     return run_agent
 
 
+def _build_machine_notify_hook(
+    cfg: Config, machine_id: str, root: Path
+) -> Callable[[str, str, str, str], None] | None:
+    """The operator notify hook fired on `machine.notify`/`machine.end`, or None.
+
+    The argv comes from `[machine.notify].on_event`, operator-controlled and
+    never LLM output, so it runs on the host OUTSIDE the jail (mirror of
+    `[notify].on_complete`). Failures are logged and never change the exit code.
+    """
+    notify = cfg.machine.notify
+    if not notify.on_event:
+        return None
+
+    def fire(kind: str, state: str, message: str, level: str) -> None:
+        env = dict(os.environ)
+        env["AGENT6_MACHINE_ID"] = machine_id
+        env["AGENT6_MACHINE_DIR"] = str(root)
+        env["AGENT6_MACHINE_EVENT"] = kind
+        env["AGENT6_MACHINE_STATE"] = state
+        env["AGENT6_MACHINE_MESSAGE"] = message
+        env["AGENT6_MACHINE_LEVEL"] = level
+        try:
+            subprocess.run(list(notify.on_event), env=env, timeout=notify.timeout_s, check=False)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            print(f"[agent6] machine.notify hook failed: {exc}", file=sys.stderr)
+
+    return fire
+
+
 def _machine_protect_paths(machine_path: Path, cwd: Path) -> tuple[Path, ...]:
     """The machine's own ``.asm.toml`` + ``scripts/`` bundle, to mark read-only
     in run jails. Only paths under the jail-mounted cwd are enforceable (a path
@@ -685,6 +714,9 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
                 # Each agent state writes its own watchable logs.jsonl here, so a
                 # running machine is followable like a run (pruned to keep recent).
                 state_log_root=root / "states",
+                # Operator argv fired on machine.notify/machine.end, on the host
+                # outside the jail (None when [machine.notify].on_event is unset).
+                notify_hook=_build_machine_notify_hook(cfg, spec.machine, root),
             )
             result = drive(spec, journal, world, live=True, exit_on_wait=exit_on_wait)
     except (JournalError, EngineError) as exc:

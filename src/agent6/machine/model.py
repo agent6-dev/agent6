@@ -26,6 +26,7 @@ __all__ = [
     "Edge",
     "MachineError",
     "MachineSpec",
+    "NotifySpec",
     "StateSpec",
     "TerminalState",
     "ToolState",
@@ -143,6 +144,30 @@ class FieldSpec(BaseModel):
 _FieldSpecT = Annotated[FieldSpec, BeforeValidator(_normalize_field)]
 
 
+def _normalize_notify(value: Any) -> Any:
+    if isinstance(value, str):
+        return {"message": value}
+    return value
+
+
+class NotifySpec(BaseModel):
+    """A state's optional `notify`: a templated message emitted on entry.
+
+    Presentation only (§4.3): entering the state journals a `machine.notify`
+    event and fires the operator notify hook; it adds no edge and no control
+    flow. Authors write ``notify = "msg"`` (level defaults to "info") or
+    ``notify = { message = "msg", level = "warn" }``.
+    """
+
+    model_config = _MODEL_CONFIG
+
+    message: str = Field(min_length=1)
+    level: Literal["info", "warn", "error"] = "info"
+
+
+_NotifySpecT = Annotated[NotifySpec, BeforeValidator(_normalize_notify)]
+
+
 class OperatorVar(BaseModel):
     model_config = _MODEL_CONFIG
 
@@ -246,6 +271,8 @@ class AgentState(BaseModel):
     model_config = _MODEL_CONFIG
 
     kind: Literal["agent"]
+    # Optional templated message emitted on entry (§4.3); presentation only.
+    notify: _NotifySpecT | None = None
     # "inherit" (the default) uses the operator's effective worker model, so a
     # machine need not hardcode a model the operator may not have configured,
     # the #1 way an LLM-authored machine passed `machine check` but died at run
@@ -295,6 +322,7 @@ class ToolState(BaseModel):
     model_config = _MODEL_CONFIG
 
     kind: Literal["tool"]
+    notify: _NotifySpecT | None = None
     command: tuple[str, ...] = Field(min_length=1)
     output_schema: str | None = None
     capture: Capture | None = None
@@ -321,6 +349,7 @@ class WaitState(BaseModel):
     model_config = _MODEL_CONFIG
 
     kind: Literal["wait"]
+    notify: _NotifySpecT | None = None
     every_secs: str | None = None
     until: str | None = None
     cron: str | None = None
@@ -331,6 +360,7 @@ class BranchState(BaseModel):
     model_config = _MODEL_CONFIG
 
     kind: Literal["branch"]
+    notify: _NotifySpecT | None = None
     when: tuple[WhenClause, ...] = Field(min_length=1)
 
 
@@ -338,6 +368,7 @@ class TerminalState(BaseModel):
     model_config = _MODEL_CONFIG
 
     kind: Literal["terminal"]
+    notify: _NotifySpecT | None = None
     status: Literal["ok", "failed"]
     reason: str = Field(min_length=1)
 
@@ -388,6 +419,15 @@ class MachineSpec(BaseModel):
                     " decisions set in the global/repo config, never in a"
                     " .asm.toml file"
                 )
+        # The machine notify hook runs an operator argv on the host OUTSIDE the
+        # jail, so it must never come from a (possibly LLM-drafted) machine file.
+        machine_overlay = self.config.get("machine")
+        if isinstance(machine_overlay, dict) and "notify" in machine_overlay:
+            raise ValueError(
+                "machine `[config]` overlay must not declare `[machine.notify]` —"
+                " the notify hook runs an operator argv outside the jail and is"
+                " set only in the global/repo config, never in a .asm.toml file"
+            )
         return self
 
 

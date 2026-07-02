@@ -464,15 +464,28 @@ def _validate_state(
     schemas: dict[str, dict[str, TypeRef]],
     schema_names: frozenset[str],
 ) -> list[str]:
+    # `notify` is on every kind (§4.3): validate its message template up front.
+    problems: list[str] = []
+    if state.notify is not None:
+        problems.extend(
+            _validate_template(
+                state.notify.message,
+                var_types=var_types,
+                schemas=schemas,
+                result_type=None,
+                allow_splice=False,
+                where=f"state {name!r} notify",
+            )
+        )
     if isinstance(state, AgentState):
-        return _validate_agent(name, state, var_types, var_owner, schemas, schema_names)
-    if isinstance(state, ToolState):
-        return _validate_tool(name, state, var_types, var_owner, schemas, schema_names)
-    if isinstance(state, WaitState):
-        return _validate_wait(name, state, var_types, var_owner, var_values, schemas)
-    if isinstance(state, BranchState):
-        return _validate_branch(name, state, var_types, schemas)
-    return []  # TerminalState: shape is fully checked by pydantic
+        problems.extend(_validate_agent(name, state, var_types, var_owner, schemas, schema_names))
+    elif isinstance(state, ToolState):
+        problems.extend(_validate_tool(name, state, var_types, var_owner, schemas, schema_names))
+    elif isinstance(state, WaitState):
+        problems.extend(_validate_wait(name, state, var_types, var_owner, var_values, schemas))
+    elif isinstance(state, BranchState):
+        problems.extend(_validate_branch(name, state, var_types, schemas))
+    return problems  # TerminalState: shape is fully checked by pydantic
 
 
 def _validate_on(name: str, on: dict[str, str], expected: frozenset[str]) -> list[str]:

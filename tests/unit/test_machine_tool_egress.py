@@ -135,6 +135,9 @@ class _RecordingWorld:
     def materialize_poke(self, payload: Any) -> None:  # pragma: no cover
         pass
 
+    def notify(self, kind: str, state: str, message: str, level: str) -> None:  # pragma: no cover
+        pass
+
 
 def test_engine_passes_per_state_allow_network(tmp_path: Path) -> None:
     spec = load_machine(_write(tmp_path, NET_MACHINE))

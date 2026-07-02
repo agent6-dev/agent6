@@ -203,6 +203,33 @@ reason = "fail"
 """
 
 
+# A machine with a `notify` message on a tool state, plus a terminal.
+NOTIFIER = """
+machine = "notifier"
+version = 1
+initial = "work"
+
+[budget]
+max_usd = 1.0
+max_transitions = 100
+
+[vars.operator]
+who = { type = "str", value = "ops" }
+
+[states.work]
+kind = "tool"
+notify = { message = "hi {{ who }}", level = "warn" }
+command = ["noop"]
+timeout_secs = 5
+on = { ok = "done", nonzero = "done", timeout = "done" }
+
+[states.done]
+kind = "terminal"
+status = "ok"
+reason = "finished"
+"""
+
+
 # An unbounded loop, guarded only by max_transitions.
 SPINNER = """
 machine = "spinner"
@@ -326,6 +353,7 @@ class FakeWorld:
     agent_calls: list[AgentRequest] = field(default_factory=list)
     sleep_deadlines: list[float | None] = field(default_factory=list)
     materialized: list[Any] = field(default_factory=list)
+    notifications: list[tuple[str, str, str, str]] = field(default_factory=list)
 
     def run_tool(
         self, argv: tuple[str, ...], timeout_s: float, *, allow_network: bool = False
@@ -347,6 +375,9 @@ class FakeWorld:
 
     def materialize_poke(self, payload: Any) -> None:
         self.materialized.append(payload)
+
+    def notify(self, kind: str, state: str, message: str, level: str) -> None:
+        self.notifications.append((kind, state, message, level))
 
 
 def _ok(stdout: str = "") -> ToolExecResult:
@@ -567,6 +598,33 @@ def test_wait_signal_path(tmp_path: Path) -> None:
     world = FakeWorld({}, wakes=[WaitWake("signal")])
     result = drive(spec, journal, world, live=True)
     assert result == MachineResult("ok", "signalled", "woken", 1)
+
+
+def test_notify_journals_event_and_fires_hook(tmp_path: Path) -> None:
+    from agent6.machine.journal import MachineNotify
+
+    journal, f = _load(tmp_path, NOTIFIER)
+    spec = load_machine(f)
+    world = FakeWorld({"noop": _ok()})
+    result = drive(spec, journal, world, live=True)
+    assert result.status == "ok"
+    # The `notify` message rendered and journaled on entry to `work`.
+    note = next(e for e in journal.read() if isinstance(e, MachineNotify))
+    assert note.state == "work"
+    assert note.message == "hi ops"
+    assert note.level == "warn"
+    # The operator hook fired for the notify AND the terminal end.
+    assert ("notify", "work", "hi ops", "warn") in world.notifications
+    assert ("end", "done", "finished", "ok") in world.notifications
+
+
+def test_notify_does_not_change_replay_path(tmp_path: Path) -> None:
+    # machine.notify is presentation only: replay ignores it and reproduces.
+    journal, f = _load(tmp_path, NOTIFIER)
+    spec = load_machine(f)
+    live = drive(spec, journal, FakeWorld({"noop": _ok()}), live=True)
+    replayed = drive(spec, journal, None, live=False)
+    assert replayed == live
 
 
 def test_wait_forever_blocks_on_signal_only(tmp_path: Path) -> None:

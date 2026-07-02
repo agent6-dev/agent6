@@ -40,6 +40,7 @@ from agent6.machine.journal import (
     MachineBegin,
     MachineEnd,
     MachineJournal,
+    MachineNotify,
     PendingWait,
     Snapshot,
     StepEvent,
@@ -195,6 +196,12 @@ class World(Protocol):
     # the world has no persistent data dir; see LiveWorld.materialize_poke).
     def materialize_poke(self, payload: Any) -> None: ...
 
+    # Fire the out-of-band operator notify hook on a state's ``notify`` message
+    # (``kind="notify"``, ``level`` in info/warn/error) or a terminal
+    # ``machine.end`` (``kind="end"``, ``message`` the reason, ``level`` the
+    # status). Presentation only; a no-op when no hook is configured.
+    def notify(self, kind: str, state: str, message: str, level: str) -> None: ...
+
 
 _SAFE_ENV_KEYS = ("PATH", "LANG", "LC_ALL", "TERM")
 
@@ -251,6 +258,11 @@ class LiveWorld:
     # `.asm.toml` + `scripts/` bundle, so a tool can't rewrite its own machine
     # logic or bundled scripts mid-run (set by the CLI).
     protect_paths: tuple[Path, ...] = ()
+    # Out-of-band operator notify hook, fired on a `notify` message and on the
+    # terminal `machine.end`. The CLI wires it to the operator's configured argv
+    # (`[machine.notify].on_event`), run on the host outside the jail. None means
+    # no hook; the in-page/TUI/CLI front-ends still render the journaled events.
+    notify_hook: Callable[[str, str, str, str], None] | None = None
     # The machine's persistent, writable scratch dir: granted RW in every tool
     # jail and surfaced to scripts as $AGENT6_MACHINE_DATA_DIR. It lives out of
     # the workspace (under the per-repo state dir) and persists across
@@ -350,6 +362,10 @@ class LiveWorld:
         (self.data_dir / "poke.json").write_text(
             json.dumps(payload, sort_keys=True), encoding="utf-8"
         )
+
+    def notify(self, kind: str, state: str, message: str, level: str) -> None:
+        if self.notify_hook is not None:
+            self.notify_hook(kind, state, message, level)
 
 
 # --------------------------------------------------------------------------
@@ -617,17 +633,56 @@ def _execute(
 # --------------------------------------------------------------------------
 
 
-def _end_failed(
-    journal: MachineJournal, state: str, transitions: int, exc: Exception
+def _emit_notify(
+    state: StateSpec,
+    blackboard: Mapping[str, object],
+    journal: MachineJournal,
+    world: World,
+    state_name: str,
+) -> None:
+    """Journal a state's `notify` message on entry and fire the operator hook
+    (§4.3). Presentation only; the render can raise, which the caller converts to
+    a clean failed end. No-op for a state with no `notify`."""
+    if state.notify is None:
+        return
+    message = render_string(parse_template(state.notify.message), blackboard, where="notify")
+    journal.append(
+        MachineNotify(ts=_now_iso(), state=state_name, message=message, level=state.notify.level)
+    )
+    world.notify("notify", state_name, message, state.notify.level)
+
+
+def _emit_end(
+    journal: MachineJournal,
+    world: World,
+    *,
+    status: Literal["ok", "failed"],
+    reason: str,
+    state: str,
+    transitions: int,
 ) -> MachineResult:
-    """Journal a clean failed `MachineEnd` for a runtime state error and return it."""
-    reason = f"state {state!r}: {exc}"
+    """Journal a `machine.end` and fire the operator notify hook for it."""
     journal.append(
         MachineEnd(
-            ts=_now_iso(), status="failed", reason=reason, state=state, transitions=transitions
+            ts=_now_iso(), status=status, reason=reason, state=state, transitions=transitions
         )
     )
-    return MachineResult("failed", reason, state, transitions)
+    world.notify("end", state, reason, status)
+    return MachineResult(status, reason, state, transitions)
+
+
+def _end_failed(
+    journal: MachineJournal, world: World, state: str, transitions: int, exc: Exception
+) -> MachineResult:
+    """Journal a clean failed `MachineEnd` for a runtime state error and return it."""
+    return _emit_end(
+        journal,
+        world,
+        status="failed",
+        reason=f"state {state!r}: {exc}",
+        state=state,
+        transitions=transitions,
+    )
 
 
 def drive(  # noqa: PLR0911, PLR0912, PLR0915
@@ -721,45 +776,36 @@ def drive(  # noqa: PLR0911, PLR0912, PLR0915
                 " longer declares (the file was edited since this instance started);"
                 " archive the instance directory to start fresh."
             )
+        # Emit a state's `notify` on entry (§4.3), before executing it. At-least-
+        # once across a crash: a resume re-enters the current state and re-emits.
+        try:
+            _emit_notify(current, blackboard, journal, world, state)
+        except _STATE_RUNTIME_ERRORS as exc:
+            return _end_failed(journal, world, state, transitions, exc)
         if isinstance(current, TerminalState):
-            journal.append(
-                MachineEnd(
-                    ts=_now_iso(),
-                    status=current.status,
-                    reason=current.reason,
-                    state=state,
-                    transitions=transitions,
-                )
+            result = _emit_end(
+                journal,
+                world,
+                status=current.status,
+                reason=current.reason,
+                state=state,
+                transitions=transitions,
             )
             journal.write_snapshot(Snapshot(seq=transitions, state=state, blackboard=blackboard))
-            return MachineResult(current.status, current.reason, state, transitions)
+            return result
         if transitions >= spec.budget.max_transitions:
             reason = f"max_transitions ({spec.budget.max_transitions}) exceeded"
-            journal.append(
-                MachineEnd(
-                    ts=_now_iso(),
-                    status="failed",
-                    reason=reason,
-                    state=state,
-                    transitions=transitions,
-                )
+            return _emit_end(
+                journal, world, status="failed", reason=reason, state=state, transitions=transitions
             )
-            return MachineResult("failed", reason, state, transitions)
         usd_limit = spec.budget.usd_limit
         if usd_limit is not None and spent_usd >= usd_limit:
             reason = (
                 f"{spec.budget.usd_field_name} (${usd_limit}) exceeded (spent ~${spent_usd:.4f})"
             )
-            journal.append(
-                MachineEnd(
-                    ts=_now_iso(),
-                    status="failed",
-                    reason=reason,
-                    state=state,
-                    transitions=transitions,
-                )
+            return _emit_end(
+                journal, world, status="failed", reason=reason, state=state, transitions=transitions
             )
-            return MachineResult("failed", reason, state, transitions)
 
         try:
             if exit_on_wait and isinstance(current, WaitState):
@@ -783,7 +829,7 @@ def drive(  # noqa: PLR0911, PLR0912, PLR0915
             # command rendering a non-scalar, a dynamic wait interval of zero):
             # halt cleanly with a journaled MachineEnd in BOTH the blocking and
             # the --exit-on-wait paths. Broader EngineError faults still propagate.
-            return _end_failed(journal, state, transitions, exc)
+            return _end_failed(journal, world, state, transitions, exc)
         # Deliver a signal poke's payload to the next tool (both wait paths).
         # Written before the StepEvent, and durable on disk, so crash recovery
         # finds the identical poke.json without re-materializing (§4.3 poke).
@@ -797,7 +843,7 @@ def drive(  # noqa: PLR0911, PLR0912, PLR0915
         try:
             next_blackboard = reduce(current, fact, blackboard)
         except _STATE_RUNTIME_ERRORS as exc:
-            return _end_failed(journal, state, transitions, exc)
+            return _end_failed(journal, world, state, transitions, exc)
         journal.append(
             StepEvent(
                 ts=_now_iso(),

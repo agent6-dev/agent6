@@ -46,6 +46,7 @@ __all__ = [
     "MachineBegin",
     "MachineEnd",
     "MachineJournal",
+    "MachineNotify",
     "PendingWait",
     "Snapshot",
     "StepEvent",
@@ -141,6 +142,23 @@ class StepEvent(BaseModel):
     fact: Fact
 
 
+class MachineNotify(BaseModel):
+    """A state's `notify` message, journaled on entry (§4.3).
+
+    Presentation only: it adds no edge and does not affect the reducer or
+    routing. Front-ends render it as an ephemeral notification; the operator
+    notify hook fires on it out-of-band.
+    """
+
+    model_config = _MODEL_CONFIG
+
+    type: Literal["machine.notify"] = "machine.notify"
+    ts: str
+    state: str
+    message: str
+    level: Literal["info", "warn", "error"] = "info"
+
+
 class MachineEnd(BaseModel):
     model_config = _MODEL_CONFIG
 
@@ -152,7 +170,9 @@ class MachineEnd(BaseModel):
     transitions: int = Field(ge=0)
 
 
-JournalEvent = Annotated[MachineBegin | StepEvent | MachineEnd, Field(discriminator="type")]
+JournalEvent = Annotated[
+    MachineBegin | StepEvent | MachineNotify | MachineEnd, Field(discriminator="type")
+]
 
 _EVENT_ADAPTER: TypeAdapter[Any] = TypeAdapter(JournalEvent)
 

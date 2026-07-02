@@ -437,6 +437,41 @@ reason = "machine budget exhausted"
 Absorbing. Emits a `machine.end` event and returns control to the CLI.
 A machine may have many terminal states (success and failure variants).
 
+#### `notify` (any state)
+
+Any state may carry an optional `notify`, a templated message emitted on
+entry:
+
+```toml
+[states.escalate]
+kind = "wait"
+notify = "needs a human: {{ reason }}"        # or a table with a level
+on = { signal = "resume" }
+
+[states.done]
+kind = "terminal"
+notify = { message = "run finished", level = "info" }   # info | warn | error
+status = "ok"
+reason = "done"
+```
+
+Entering the state journals a `machine.notify` event (message + level)
+and fires the operator notify hook. It is presentation only: no edge, no
+control-flow effect, no blackboard write. The terminal `machine.end` is
+also a notify trigger for front-ends, so a terminal need not set `notify`
+to be surfaced. The message is a template over the blackboard, checked at
+`machine check` like any other. Emission is at-least-once across a crash:
+a resume re-enters the current state and re-emits.
+
+Two independent channels render it. Device-present front-ends (`agent6
+web`, the TUI Machines page, `agent6 watch`) show an ephemeral
+notification. For out-of-band delivery (a phone in a pocket), set the
+operator notify hook `[machine.notify].on_event` (see
+[config.md](config.md)): an operator argv run on the host, outside the
+jail, on every `machine.notify` and `machine.end`, so you fan out to your
+own push channel (ntfy/Pushover/email/Telegram). agent6 owns no push
+infrastructure.
+
 ### 4.4 Templating and list-splicing
 
 Strings may contain `{{ ... }}` interpolations. The contents of an
