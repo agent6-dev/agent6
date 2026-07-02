@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from agent6.config import ConfigError
+from agent6.config import ConfigError, is_loopback_host
 from agent6.config_layer import load_effective
 from agent6.web import run_web
 
@@ -20,20 +20,28 @@ def _cmd_web(
     config_path: Path | None,
     host: str | None,
     port: int | None,
+    allow_non_loopback: bool,
 ) -> int:
     """Serve the web UI. `--host`/`--port` override the `[web]` config section.
 
-    A non-loopback host set in config is already gated by `[web].allow_non_loopback`
-    at load time; a `--host` flag overriding it here inherits the same intent (the
-    operator typed it explicitly), and `run_web` warns on any non-loopback bind."""
+    A non-loopback bind is gated the same whether it comes from `[web].host`
+    (refused at config load) or `--host` (refused here): both need the opt-in,
+    either `--allow-non-loopback` or `[web].allow_non_loopback = true`. Prefer
+    `tailscale serve` in front of a loopback bind over any raw non-loopback bind."""
     try:
         eff = load_effective(Path.cwd(), config_path)
     except ConfigError as exc:
         print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
         return 2
     web = eff.config.web
-    return run_web(
-        target,
-        host=host if host is not None else web.host,
-        port=port if port is not None else web.port,
-    )
+    eff_host = host if host is not None else web.host
+    eff_port = port if port is not None else web.port
+    if not is_loopback_host(eff_host) and not (allow_non_loopback or web.allow_non_loopback):
+        print(
+            f"agent6 web: refusing to bind non-loopback host {eff_host!r} without opt-in."
+            " Pass --allow-non-loopback (or set [web].allow_non_loopback = true), and prefer"
+            " `tailscale serve` in front of a 127.0.0.1 bind.",
+            file=sys.stderr,
+        )
+        return 2
+    return run_web(target, host=eff_host, port=eff_port)

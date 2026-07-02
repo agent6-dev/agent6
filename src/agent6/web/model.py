@@ -26,8 +26,10 @@ from agent6.viewmodel import (
     fold_run,
     machine_state_as_dict,
     newest_state_log,
+    run_mtime,
     run_state_as_dict,
     tail_events,
+    task_snippet,
 )
 
 RUN_SUBDIRS = ("runs", "asks")
@@ -80,6 +82,15 @@ def machine_dir_for(cwd: Path, name: str) -> Path | None:
     return d if d.is_dir() else None
 
 
+def draft_dir_for(cwd: Path, name: str) -> Path | None:
+    """A `machine create` draft dir by name. Its logs.jsonl is a run-style log of
+    the authoring agent, so it is watched through the run endpoints."""
+    if not _safe_component(name):
+        return None
+    d = state_dir_for(cwd) / "machine-drafts" / name
+    return d if d.is_dir() else None
+
+
 def run_dir_paths(cwd: Path) -> list[Path]:
     """Every run/ask directory (unordered): the before/after set for spawn-and-locate."""
     out: list[Path] = []
@@ -99,17 +110,6 @@ def draft_dir_paths(cwd: Path) -> list[Path]:
 # --- hub listing -------------------------------------------------------------
 
 
-def _run_mtime(run_dir: Path) -> float:
-    """Last-activity time of a run: the mtime of its logs.jsonl (not the dir,
-    which a viewer bumps merely by opening it). Falls back to the dir mtime."""
-    for candidate in (run_dir / "logs.jsonl", run_dir):
-        try:
-            return candidate.stat().st_mtime
-        except OSError:
-            continue
-    return 0.0
-
-
 def _run_summary(run_dir: Path) -> dict[str, Any]:
     """A cheap one-line summary for the hub: id, mode, task, status, when, usd.
 
@@ -118,7 +118,7 @@ def _run_summary(run_dir: Path) -> dict[str, Any]:
     directory of many runs."""
     logs = run_dir / "logs.jsonl"
     mode, task, status, usd = "?", "", "running", 0.0
-    mtime = _run_mtime(run_dir)
+    mtime = run_mtime(run_dir)
     if not logs.is_file():
         return {
             "id": run_dir.name,
@@ -154,24 +154,11 @@ def _run_summary(run_dir: Path) -> dict[str, Any]:
     return {
         "id": run_dir.name,
         "mode": mode,
-        "task": _first_task_line(task)[:100],
+        "task": task_snippet(task)[:100],
         "status": status,
         "mtime": mtime,
         "usd": usd,
     }
-
-
-def _first_task_line(task: str) -> str:
-    """First non-blank line of the task, skipping the ask context preamble."""
-    for line in task.splitlines():
-        s = line.strip()
-        if s in {"# agent6 ask", "## Question"} or s.startswith("<"):
-            continue
-        if s == "## Answer":
-            break
-        if s:
-            return s
-    return task.strip()
 
 
 def _list_runs(cwd: Path) -> list[dict[str, Any]]:

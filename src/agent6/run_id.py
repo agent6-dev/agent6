@@ -29,7 +29,13 @@ _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 
 class RunIdError(Exception):
-    """Raised when a user-supplied run id cannot be resolved."""
+    """Raised when a user-supplied run id cannot be resolved. ``ambiguous`` is
+    True when the query matched more than one run (vs no match), so a caller can
+    surface the disambiguation instead of treating it as 'not found'."""
+
+    def __init__(self, message: str, *, ambiguous: bool = False) -> None:
+        super().__init__(message)
+        self.ambiguous = ambiguous
 
 
 def new_friendly_id() -> str:
@@ -71,5 +77,8 @@ def resolve_run_id(runs_dir: Path, query: str) -> str:
         raise RunIdError(f"no run matches {query!r} under {runs_dir}")
     if len(matches) > 1:
         preview = ", ".join(sorted(matches)[:5])
-        raise RunIdError(f"run id {query!r} is ambiguous ({len(matches)} matches): {preview}")
+        raise RunIdError(
+            f"run id {query!r} is ambiguous ({len(matches)} matches): {preview}",
+            ambiguous=True,
+        )
     return matches[0]

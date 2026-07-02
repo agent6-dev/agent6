@@ -32,13 +32,16 @@ from agent6.viewmodel import (
 )
 
 
-def _is_run_target(runs_dir: Path, target: str) -> bool:
-    """True if *target* resolves to a run id (exact or unique prefix)."""
+def _run_intent(runs_dir: Path, target: str) -> tuple[bool, str | None]:
+    """Resolve *target* against runs. Returns (is_run, ambiguity_error):
+    (True, None) it resolves to a run; (False, None) no run matches, so the caller
+    may try a machine; (False, msg) it is an ambiguous run prefix, a run-intent
+    error the caller should surface rather than fall through to machine lookup."""
     try:
         resolve_run_id(runs_dir, target)
-        return True
-    except RunIdError:
-        return False
+    except RunIdError as exc:
+        return (False, str(exc)) if exc.ambiguous else (False, None)
+    return (True, None)
 
 
 def _run_json_snapshot(run_dir: Path) -> int:
@@ -81,14 +84,21 @@ def _machine_watch_tui(machine_dir: Path) -> int:
     return run_machine_watch_tui(machine_dir, spec)
 
 
-def _cmd_watch_target(target: str, *, tui: bool, json_out: bool, since: int) -> int:
+def _cmd_watch_target(target: str, *, tui: bool, json_out: bool, since: int) -> int:  # noqa: PLR0911
     """Resolve *target* to a run or machine and follow it (or snapshot it)."""
     cwd = Path.cwd()
     runs_dir = _runs_dir(cwd)
     machines_dir = _machines_dir(cwd)
 
+    # An ambiguous run prefix is a run-intent error: surface the disambiguation
+    # rather than falling through to machine lookup and printing "no match".
+    is_run, ambiguous = (True, None) if not target else _run_intent(runs_dir, target)
+    if ambiguous is not None:
+        print(f"ERROR: {ambiguous}", file=sys.stderr)
+        return 2
+
     # Empty target, or one that resolves to a run id: watch the run.
-    if not target or _is_run_target(runs_dir, target):
+    if is_run:
         if not json_out:
             return _watch_run(target, tui=tui, since=since)
         run_dir = _resolve_run_dir(runs_dir, target)

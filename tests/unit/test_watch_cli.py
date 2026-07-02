@@ -88,3 +88,17 @@ def test_watch_unknown_target_errors(
     monkeypatch.chdir(tmp_path)
     assert main(["watch", "nope"]) == 2
     assert "no run or machine matches" in capsys.readouterr().err
+
+
+def test_watch_ambiguous_prefix_surfaces_disambiguation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # An ambiguous run prefix must report the ambiguity, not fall through to a
+    # machine lookup and print "no run or machine matches".
+    monkeypatch.chdir(tmp_path)
+    _make_run(tmp_path, "willing-glen-001", [{"type": "run.start"}])
+    _make_run(tmp_path, "willing-glen-002", [{"type": "run.start"}])
+    assert main(["watch", "willing-glen"]) == 2
+    err = capsys.readouterr().err
+    assert "ambiguous" in err
+    assert "no run or machine matches" not in err

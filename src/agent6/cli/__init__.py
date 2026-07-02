@@ -318,7 +318,13 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
     if args.command == "tui":
         return _cmd_tui()
     if args.command == "web":
-        return _cmd_web(args.target, config_path=args.config, host=args.host, port=args.port)
+        return _cmd_web(
+            args.target,
+            config_path=args.config,
+            host=args.host,
+            port=args.port,
+            allow_non_loopback=args.allow_non_loopback,
+        )
     if args.command == "prompt" and args.prompt_command == "show":
         return _cmd_prompt_show(args.config, mode=args.mode)
     if args.command == "resume":

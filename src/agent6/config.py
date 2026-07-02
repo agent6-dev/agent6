@@ -792,6 +792,12 @@ class MachineConfig(BaseModel):
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 
 
+def is_loopback_host(host: str) -> bool:
+    """True iff *host* is a loopback bind (the one source of truth for the web
+    UI's secure-by-default gate; a wildcard like 0.0.0.0/:: is NOT loopback)."""
+    return host in _LOOPBACK_HOSTS
+
+
 class WebConfig(BaseModel):
     """`agent6 web` server bind. Secure by default: loopback only.
 
@@ -812,7 +818,7 @@ class WebConfig(BaseModel):
 
     @model_validator(mode="after")
     def _guard_non_loopback(self) -> WebConfig:
-        if self.host not in _LOOPBACK_HOSTS and not self.allow_non_loopback:
+        if not is_loopback_host(self.host) and not self.allow_non_loopback:
             raise ValueError(
                 f"[web].host = {self.host!r} is not loopback. Binding a non-loopback"
                 " address exposes the web UI's write surface; set [web]"

@@ -241,6 +241,30 @@ def test_run_id_traversal_is_404(server: tuple[WebServer, int]) -> None:
     assert status == 404
 
 
+def test_draft_snapshot_folds_the_draft_log(server: tuple[WebServer, int], tmp_path: Path) -> None:
+    # A machine-create draft is watched through the run endpoints.
+    _srv, port = server
+    draft = resolved_state_dir(tmp_path) / "machine-drafts" / "brave-otter"
+    draft.mkdir(parents=True)
+    (draft / "logs.jsonl").write_text(
+        '{"type": "run.start", "user_task": "author a fixer machine"}\n', encoding="utf-8"
+    )
+    status, body, _ = _get(port, "/api/draft/brave-otter")
+    assert status == 200
+    assert json.loads(body)["user_task"] == "author a fixer machine"
+    # traversal rejected
+    assert _get(port, "/api/draft/..")[0] == 404
+
+
+def test_web_refuses_non_loopback_host_without_optin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `--host 0.0.0.0` must be refused before binding unless opted in.
+    monkeypatch.chdir(tmp_path)
+    assert main(["web", "--host", "0.0.0.0"]) == 2
+    assert "refusing to bind non-loopback" in capsys.readouterr().err
+
+
 def test_new_work_empty_task_rejected(server: tuple[WebServer, int]) -> None:
     _srv, port = server
     status, body = _post(port, "/api/new", {"mode": "run", "task": "   "})

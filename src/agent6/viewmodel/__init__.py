@@ -19,6 +19,11 @@ mirror `RunState` / `MachineState` field-for-field.
 
 from __future__ import annotations
 
+from agent6.viewmodel.listing import (
+    first_task_line,
+    run_mtime,
+    task_snippet,
+)
 from agent6.viewmodel.machine_state import (
     MachineEndView,
     MachineState,
@@ -61,12 +66,15 @@ __all__ = [
     "TransitionView",
     "VerifyView",
     "apply_event",
+    "first_task_line",
     "fold_machine",
     "fold_run",
     "format_log_line",
     "initial_state",
     "machine_state_as_dict",
     "newest_state_log",
+    "run_mtime",
     "run_state_as_dict",
     "tail_events",
+    "task_snippet",
 ]

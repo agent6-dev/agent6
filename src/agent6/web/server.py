@@ -30,7 +30,14 @@ from urllib.parse import unquote, urlsplit
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from agent6 import __version__
-from agent6.frontend.approval import FRONTEND_PID_FILE, clear_frontend_pid, write_frontend_pid
+from agent6.config import is_loopback_host
+from agent6.frontend.approval import (
+    FRONTEND_PID_FILE,
+    clear_frontend_pid,
+    read_worker_pid,
+    worker_is_alive,
+    write_frontend_pid,
+)
 from agent6.machine import MachineError
 from agent6.viewmodel import apply_event, initial_state, run_state_as_dict, tail_events
 from agent6.web import actions, model
@@ -240,7 +247,7 @@ class _Handler(BaseHTTPRequestHandler):
         else:
             self._send_json({"ok": False, "error": err}, status=422)
 
-    def _route(self, path: str) -> None:
+    def _route(self, path: str) -> None:  # noqa: PLR0911
         if path == "/":
             self._send_bytes(PAGE_HTML.encode("utf-8"), "text/html; charset=utf-8")
             return
@@ -262,7 +269,23 @@ class _Handler(BaseHTTPRequestHandler):
         if len(parts) >= 3 and parts[0] == "api" and parts[1] == "machine":
             self._route_machine(parts[2], parts[3] if len(parts) > 3 else "")
             return
+        # /api/draft/<name>[/events]: a `machine create` draft, watched as a run.
+        if len(parts) >= 3 and parts[0] == "api" and parts[1] == "draft":
+            self._route_draft(parts[2], parts[3] if len(parts) > 3 else "")
+            return
         self._send_json({"error": f"not found: {path}"}, status=404)
+
+    def _route_draft(self, name: str, sub: str) -> None:
+        draft_dir = model.draft_dir_for(self.cwd, name)
+        if draft_dir is None:
+            self._send_json({"error": f"no draft {name!r}"}, status=404)
+            return
+        if sub == "":
+            self._send_json(model.run_snapshot(draft_dir))
+        elif sub == "events":
+            self._sse_run(draft_dir)
+        else:
+            self._send_json({"error": f"not found: draft/{name}/{sub}"}, status=404)
 
     def _route_run(self, run_id: str, sub: str) -> None:
         run_dir = model.run_dir_for(self.cwd, run_id)
@@ -357,33 +380,49 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _sse_run_loop(self, run_dir: Path) -> None:
         events: queue.Queue[dict[str, Any] | None] = queue.Queue()
+        stop = threading.Event()
 
         def tail() -> None:
-            for ev in tail_events(run_dir / "logs.jsonl", follow=True, stop_when_finished=True):
+            src = run_dir / "logs.jsonl"
+            for ev in tail_events(
+                src, follow=True, stop_when_finished=True, should_stop=stop.is_set
+            ):
                 events.put(ev)
-            events.put(None)  # sentinel: run ended, tailer done
+            events.put(None)  # sentinel: run ended (or tail cancelled), tailer done
 
         threading.Thread(target=tail, daemon=True).start()
 
-        state = initial_state()
-        last_delta_emit = 0.0
-        while True:
-            try:
-                ev = events.get(timeout=_HEARTBEAT_S)
-            except queue.Empty:
-                if not self._sse_ping():
+        try:
+            state = initial_state()
+            last_delta_emit = 0.0
+            while True:
+                try:
+                    ev = events.get(timeout=_HEARTBEAT_S)
+                except queue.Empty:
+                    if not self._sse_ping():
+                        return
+                    # A run that died without a run.end (crash / went quiet) would
+                    # otherwise pin this worker forever: once its worker.pid points
+                    # at a dead process, send a final snapshot and close.
+                    if read_worker_pid(run_dir) is not None and not worker_is_alive(run_dir):
+                        self._sse_send(run_state_as_dict(state))
+                        return
+                    continue
+                if ev is None:  # run ended: send the final snapshot and close
+                    self._sse_send(run_state_as_dict(state))
                     return
-                continue
-            if ev is None:  # run ended: send the final snapshot and close
-                self._sse_send(run_state_as_dict(state))
-                return
-            state = apply_event(state, ev)
-            now = time.monotonic()
-            if ev.get("type") in _STREAMING_DELTAS and (now - last_delta_emit) < _DELTA_COALESCE_S:
-                continue  # coalesce bursts of text/thinking deltas
-            if not self._sse_send(run_state_as_dict(state)):
-                return
-            last_delta_emit = now
+                state = apply_event(state, ev)
+                now = time.monotonic()
+                if (
+                    ev.get("type") in _STREAMING_DELTAS
+                    and (now - last_delta_emit) < _DELTA_COALESCE_S
+                ):
+                    continue  # coalesce bursts of text/thinking deltas
+                if not self._sse_send(run_state_as_dict(state)):
+                    return
+                last_delta_emit = now
+        finally:
+            stop.set()  # cancel the tailer so it exits on disconnect / dead run, not just run.end
 
     def _sse_machine(self, machine_dir: Path) -> None:
         """Stream a machine: re-fold the journal + the current agent state's
@@ -412,6 +451,8 @@ class _Handler(BaseHTTPRequestHandler):
                     return
                 if idle >= _HEARTBEAT_S:
                     idle = 0.0
+            if payload["machine"].get("ended") is not None:
+                return  # machine terminated: final snapshot sent, close the stream
             time.sleep(_MACHINE_POLL_S)
 
 
@@ -424,10 +465,9 @@ def run_web(target: str, *, host: str, port: int, cwd: Path | None = None) -> in
     except OSError as exc:
         print(f"agent6 web: cannot bind {host}:{port}: {exc}", file=sys.stderr)
         return 2
-    wildcard = {"0.0.0.0", "::"}  # noqa: S104 - literals for display only; the bind host is operator-chosen
-    shown = "127.0.0.1" if host in wildcard else host
+    shown = "127.0.0.1" if host in {"0.0.0.0", "::"} else host  # noqa: S104 - display only
     print(f"agent6 web: serving on http://{shown}:{port}  (Ctrl-C to stop)", file=sys.stderr)
-    if host not in {"127.0.0.1", "localhost", "::1"}:
+    if not is_loopback_host(host):
         print(
             "agent6 web: WARNING bound to a non-loopback address; anyone who can reach"
             f" {host}:{port} can drive this agent. Prefer `tailscale serve` in front of a"

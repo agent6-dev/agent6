@@ -16,6 +16,7 @@ from pathlib import Path
 from agent6.cli._common import _runs_dir
 from agent6.frontend.approval import read_worker_pid, worker_is_alive
 from agent6.run_id import RunIdError, resolve_run_id
+from agent6.viewmodel import run_mtime
 
 
 def event_epoch(value: object) -> float | None:
@@ -175,9 +176,11 @@ def _resolve_run_dir(runs_dir: Path, run_id: str) -> Path | None:
             return None
     if not runs_dir.is_dir():
         return None
+    # Sort by logs.jsonl activity (run_mtime), not dir mtime: a viewer opening a
+    # run writes frontend.pid into its dir and would otherwise float it to latest.
     candidates = sorted(
         (p for p in runs_dir.iterdir() if p.is_dir()),
-        key=lambda p: p.stat().st_mtime,
+        key=run_mtime,
         reverse=True,
     )
     return candidates[0] if candidates else None

@@ -46,6 +46,8 @@ from agent6.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_binding
 from agent6.tui.modals import ConfirmModal
 from agent6.tui.theme import PALETTE_CSS, open_theme_picker, setup_theme
 from agent6.tui.widgets import FORM_CSS, ActionItem
+from agent6.viewmodel import run_mtime as _run_mtime
+from agent6.viewmodel import task_snippet as _task_snippet
 
 # Subdirs (relative to the agent6 dir) that hold watchable run directories.
 _RUN_SUBDIRS = ("runs", "asks")
@@ -101,50 +103,6 @@ def _run_summary(run_dir: Path) -> dict[str, str]:
         with contextlib.suppress(OSError):
             task = transcript.read_text(encoding="utf-8")
     return {"id": run_dir.name, "mode": mode, "task": _task_snippet(task)[:60], "status": status}
-
-
-def _task_snippet(task: str) -> str:
-    """First user-authored line after any seeded ask context blocks."""
-    skip_until: str | None = None
-    for line in task.splitlines():
-        s = line.strip()
-        if skip_until is not None:
-            if s == skip_until:
-                skip_until = None
-            continue
-        if s in {"# agent6 ask", "## Question"}:
-            continue
-        if s == "## Answer":
-            break
-        if s.startswith("<file "):
-            if "</file>" not in s:
-                skip_until = "</file>"
-            continue
-        if s.startswith("<prior-run "):
-            if "</prior-run>" not in s:
-                skip_until = "</prior-run>"
-            continue
-        if s and not s.startswith("<"):
-            return s
-    return task.strip()
-
-
-def _run_mtime(run_dir: Path) -> float:
-    """Last-activity time of a run: the mtime of its ``logs.jsonl`` event log, i.e.
-    when the run process last appended an event.
-
-    NOT the run-directory mtime: the dashboard only READS ``logs.jsonl``, but on
-    every open it writes ``frontend.pid`` (and lazily ``approvals/`` / ``questions/``)
-    into the run dir, which bumps the DIRECTORY mtime. Keying the listed time and
-    the sort off the log instead means merely opening a run to look at it never
-    changes its "when" or its position. Falls back to the dir mtime before the log
-    exists; 0.0 if the run is gone."""
-    for candidate in (run_dir / "logs.jsonl", run_dir):
-        try:
-            return candidate.stat().st_mtime
-        except OSError:
-            continue
-    return 0.0
 
 
 def _list_runs(agent6_dir: Path) -> list[Path]:

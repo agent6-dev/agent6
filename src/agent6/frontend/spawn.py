@@ -108,6 +108,11 @@ def spawn_and_locate(
             )
         except OSError as exc:
             return None, f"failed to start agent6 {label}: {exc}"
+
+        def err_tail() -> str:
+            err.flush()
+            return Path(err.name).read_text(encoding="utf-8", errors="replace")[-600:]
+
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
             found = _located(list_dirs, before)
@@ -119,11 +124,17 @@ def spawn_and_locate(
                 found = _located(list_dirs, before)
                 if found is not None:
                     return found, ""
-                err.flush()
-                tail = Path(err.name).read_text(encoding="utf-8", errors="replace")[-600:]
-                return None, f"agent6 {label} exited ({proc.returncode}) before starting:\n{tail}"
+                return (
+                    None,
+                    f"agent6 {label} exited ({proc.returncode}) before starting:\n{err_tail()}",
+                )
             time.sleep(0.2)
-        return None, f"timed out waiting for `agent6 {label}` to start"
+        return None, f"timed out waiting for `agent6 {label}` to start:\n{err_tail()}"
     finally:
+        # On the success/timeout paths the child is a detached process still
+        # holding this file as its stderr; closing + unlinking is intentional (its
+        # real output is logs.jsonl, this capture only feeds the early-exit /
+        # timeout diagnostic). On Linux the unlinked-but-open inode is freed when
+        # the child exits.
         err.close()
         Path(err.name).unlink(missing_ok=True)

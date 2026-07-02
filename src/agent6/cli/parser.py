@@ -507,6 +507,11 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         metavar="N",
         help="Listen port (default 8901).",
     )
+    web_p.add_argument(
+        "--allow-non-loopback",
+        action="store_true",
+        help="Opt in to bind a non-loopback --host (else a non-loopback bind is refused).",
+    )
 
     prompt_p = sub.add_parser(
         "prompt",

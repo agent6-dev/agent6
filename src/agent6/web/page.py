@@ -240,6 +240,7 @@ async function route() {
     else if (parts[0] === 'run' && parts[1]) { setTab('hub'); renderRun(decodeURIComponent(parts[1])); }
     else if (parts[0] === 'transcript' && parts[1]) { setTab('hub'); await renderTranscript(decodeURIComponent(parts[1])); }
     else if (parts[0] === 'machine' && parts[1]) { setTab('machines'); renderMachine(decodeURIComponent(parts[1])); }
+    else if (parts[0] === 'draft' && parts[1]) { const n = decodeURIComponent(parts[1]); setTab('machines'); renderRun(n, { base: '/api/draft/' + encodeURIComponent(n), readOnly: true, title: 'Machine draft', crumb: 'draft ' + n }); }
     else { view.innerHTML = ''; view.appendChild(el('div', 'empty', 'not found')); }
   } catch (e) {
     view.innerHTML = '';
@@ -278,9 +279,8 @@ function machineControls() {
   const cbtn = el('button', null, 'Create machine');
   cbtn.onclick = async () => {
     if (!ct.value.trim()) return; cbtn.disabled = true;
-    try { const d = await postJSON('/api/machine/create', { task: ct.value }); toast('creating machine (draft ' + (d.draft||'?') + ')'); ct.value=''; }
-    catch (e) { toast(e.message, true); }
-    cbtn.disabled = false;
+    try { const d = await postJSON('/api/machine/create', { task: ct.value }); ct.value=''; if (d.draft) location.hash = '#/draft/' + encodeURIComponent(d.draft); }
+    catch (e) { toast(e.message, true); cbtn.disabled = false; }
   };
   row.appendChild(cbtn);
   wrap.appendChild(row);
@@ -347,14 +347,19 @@ async function renderHub(focus) {
 }
 
 // --- run dashboard -----------------------------------------------------------
-function renderRun(id) {
-  setCrumb(id.slice(0, 16));
+// opts: { base, readOnly, title } — a draft (machine-create authoring log) is
+// watched read-only against /api/draft/<name>; a run is driveable at /api/run/<id>.
+function renderRun(id, opts) {
+  opts = opts || {};
+  const base = opts.base || ('/api/run/' + encodeURIComponent(id));
+  const readOnly = !!opts.readOnly;
+  setCrumb(opts.crumb || id.slice(0, 16));
   view.innerHTML = '';
   const prompts = el('div'); view.appendChild(prompts); // approval/question boxes surface here
   const grid = el('div', 'grid cols2');
-  const cards = { _id: id, _prompts: prompts };
+  const cards = { _id: id, _prompts: prompts, _readOnly: readOnly };
   const mk = (key, title, cls) => { const c = el('div', 'card ' + (cls||'')); c.appendChild(el('h2', null, title)); const body = el('div'); c.appendChild(body); cards[key] = body; grid.appendChild(c); return body; };
-  mk('head', 'Run');
+  mk('head', opts.title || 'Run');
   mk('budget', 'Budget');
   mk('tasks', 'Task graph', 'scroll');
   mk('role', 'Reasoning', 'scroll');
@@ -363,21 +368,23 @@ function renderRun(id) {
   mk('diff', 'Latest commit', 'scroll');
   view.appendChild(grid);
 
-  const actions = el('div', 'row wrap'); actions.style.marginTop = '14px';
-  const steerBtn = el('button', null, '↪ Steer');
-  steerBtn.onclick = async () => {
-    const text = prompt('Steer instruction (blank = continue, "abort" = stop):', '');
-    if (text === null) return;
-    try { await postJSON('/api/run/' + encodeURIComponent(id) + '/steer', { text }); toast('steer sent'); } catch (e) { toast(e.message, true); }
-  };
-  const mergeBtn = el('button', null, '⑃ Merge');
-  mergeBtn.onclick = async () => { try { const d = await postJSON('/api/run/' + encodeURIComponent(id) + '/merge', {}); toast(d.message || 'merged'); } catch (e) { toast(e.message, true); } };
-  const tbtn = el('button', null, 'Transcript →');
-  tbtn.onclick = () => location.hash = '#/transcript/' + encodeURIComponent(id);
-  actions.appendChild(steerBtn); actions.appendChild(mergeBtn); actions.appendChild(tbtn);
-  view.appendChild(actions);
+  if (!readOnly) {
+    const actions = el('div', 'row wrap'); actions.style.marginTop = '14px';
+    const steerBtn = el('button', null, '↪ Steer');
+    steerBtn.onclick = async () => {
+      const text = prompt('Steer instruction (blank = continue, "abort" = stop):', '');
+      if (text === null) return;
+      try { await postJSON('/api/run/' + encodeURIComponent(id) + '/steer', { text }); toast('steer sent'); } catch (e) { toast(e.message, true); }
+    };
+    const mergeBtn = el('button', null, '⑃ Merge');
+    mergeBtn.onclick = async () => { try { const d = await postJSON('/api/run/' + encodeURIComponent(id) + '/merge', {}); toast(d.message || 'merged'); } catch (e) { toast(e.message, true); } };
+    const tbtn = el('button', null, 'Transcript →');
+    tbtn.onclick = () => location.hash = '#/transcript/' + encodeURIComponent(id);
+    actions.appendChild(steerBtn); actions.appendChild(mergeBtn); actions.appendChild(tbtn);
+    view.appendChild(actions);
+  }
 
-  live = new EventSource('/api/run/' + encodeURIComponent(id) + '/events');
+  live = new EventSource(base + '/events');
   live.onmessage = ev => {
     let s; try { s = JSON.parse(ev.data); } catch (_) { return; }
     paintRun(cards, s);
@@ -387,39 +394,57 @@ function renderRun(id) {
 }
 
 // Render the run's unanswered approval / ask_user prompts as actionable boxes.
+// Reconcile by id: keep existing boxes so a repaint (any SSE frame) never wipes a
+// half-typed free-text answer or drops focus; only add new prompts and remove
+// resolved ones.
 function paintPrompts(cards, s) {
   const host = cards._prompts, id = cards._id;
-  host.innerHTML = '';
+  const build = {};
   for (const ap of (s.pending_approvals || [])) {
     if (ap.answered) continue;
-    const box = el('div', 'prompt-box');
-    box.appendChild(el('div', 'q', ap.prompt || 'Approve this action?'));
-    const row = el('div', 'form-row');
-    const yes = el('button', 'primary', 'Approve');
-    const no = el('button', 'danger', 'Deny');
-    const send = ok => async () => { try { await postJSON('/api/run/' + encodeURIComponent(id) + '/approve', { id: ap.id, approved: ok }); } catch (e) { toast(e.message, true); } };
-    yes.onclick = send(true); no.onclick = send(false);
-    row.appendChild(yes); row.appendChild(no); box.appendChild(row); host.appendChild(box);
+    build['ap:' + ap.id] = () => {
+      const box = el('div', 'prompt-box');
+      box.appendChild(el('div', 'q', ap.prompt || 'Approve this action?'));
+      const row = el('div', 'form-row');
+      const yes = el('button', 'primary', 'Approve');
+      const no = el('button', 'danger', 'Deny');
+      const send = ok => async () => { try { await postJSON('/api/run/' + encodeURIComponent(id) + '/approve', { id: ap.id, approved: ok }); } catch (e) { toast(e.message, true); } };
+      yes.onclick = send(true); no.onclick = send(false);
+      row.appendChild(yes); row.appendChild(no); box.appendChild(row);
+      return box;
+    };
   }
   for (const q of (s.pending_questions || [])) {
     if (q.answered) continue;
-    const box = el('div', 'prompt-box');
-    box.appendChild(el('div', 'q', q.question || 'The agent asked a question'));
-    const row = el('div', 'form-row');
-    for (const opt of (q.options || [])) {
-      const b = el('button', null, opt);
-      b.onclick = async () => { try { await postJSON('/api/run/' + encodeURIComponent(id) + '/answer', { id: q.id, answer: opt }); } catch (e) { toast(e.message, true); } };
-      row.appendChild(b);
-    }
-    const inp = el('input', 'field'); inp.placeholder = 'or type an answer…'; inp.style.flex = '1';
-    const send = el('button', 'primary', 'Send');
-    send.onclick = async () => { try { await postJSON('/api/run/' + encodeURIComponent(id) + '/answer', { id: q.id, answer: inp.value }); } catch (e) { toast(e.message, true); } };
-    row.appendChild(inp); row.appendChild(send); box.appendChild(row); host.appendChild(box);
+    build['q:' + q.id] = () => {
+      const box = el('div', 'prompt-box');
+      box.appendChild(el('div', 'q', q.question || 'The agent asked a question'));
+      const row = el('div', 'form-row');
+      for (const opt of (q.options || [])) {
+        const b = el('button', null, opt);
+        b.onclick = async () => { try { await postJSON('/api/run/' + encodeURIComponent(id) + '/answer', { id: q.id, answer: opt }); } catch (e) { toast(e.message, true); } };
+        row.appendChild(b);
+      }
+      const inp = el('input', 'field'); inp.placeholder = 'or type an answer…'; inp.style.flex = '1';
+      const send = el('button', 'primary', 'Send');
+      send.onclick = async () => { try { await postJSON('/api/run/' + encodeURIComponent(id) + '/answer', { id: q.id, answer: inp.value }); } catch (e) { toast(e.message, true); } };
+      row.appendChild(inp); row.appendChild(send); box.appendChild(row);
+      return box;
+    };
+  }
+  const want = new Set(Object.keys(build));
+  for (const child of Array.from(host.children)) {
+    if (!want.has(child.dataset.key)) child.remove(); // resolved / gone
+  }
+  const present = new Set(Array.from(host.children).map(c => c.dataset.key));
+  for (const key of want) {
+    if (present.has(key)) continue; // leave the live box (input + focus) intact
+    const box = build[key](); box.dataset.key = key; host.appendChild(box);
   }
 }
 
 function paintRun(cards, s) {
-  paintPrompts(cards, s);
+  if (!cards._readOnly) paintPrompts(cards, s);
   // header
   cards.head.innerHTML = '';
   const kv = el('div', 'kv');
@@ -537,7 +562,11 @@ function renderMachine(name) {
   view.appendChild(grid);
 
   live = new EventSource('/api/machine/' + encodeURIComponent(name) + '/events');
-  live.onmessage = ev => { try { paintMachine(structBody, pathBody, reasonBody, JSON.parse(ev.data)); } catch (_) {} };
+  live.onmessage = ev => {
+    let data; try { data = JSON.parse(ev.data); } catch (_) { return; }
+    paintMachine(structBody, pathBody, reasonBody, data);
+    if (data.machine && data.machine.ended) closeLive(); // machine done; stop the stream
+  };
 }
 
 function paintMachine(structBody, pathBody, reasonBody, data) {

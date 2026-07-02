@@ -82,9 +82,8 @@ tailnet reach it, over an encrypted tunnel, and `tailscale serve` terminates
 HTTPS. agent6 itself handles no tokens or passwords.
 
 Binding a non-loopback address exposes the write surface, spawning runs and
-answering prompts, to anyone who can reach the port. A non-loopback value in
-[`[web].host`](config.md#web) is refused at config load unless you also set
-`[web].allow_non_loopback = true`, so a copied config cannot silently expose you.
-The `--host` flag is an explicit per-invocation override: it binds whatever you
-type and only prints a loud warning on a non-loopback address. Prefer
-`tailscale serve` over any raw non-loopback bind.
+answering prompts, to anyone who can reach the port. It is refused unless you
+opt in, whether the host comes from [`[web].host`](config.md#web) (needs
+`[web].allow_non_loopback = true`) or `--host` (needs `--allow-non-loopback`), so
+a copied config or command cannot silently expose you. Prefer `tailscale serve`
+in front of a loopback bind over any raw non-loopback bind.
