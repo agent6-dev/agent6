@@ -10,9 +10,14 @@ outdated hardcoded price is worse than no price: reports render unknown models
 as "$?" and the USD budget conversion simply does not apply.
 
 Today OpenRouter publishes per-model pricing on its /models endpoint.
-Anthropic's models API does not include pricing, so anthropic-kind models are
-unpriced here; their runs rely on token ceilings (and OpenRouter-style
-``usage.cost`` reporting where available).
+Anthropic's models API does not include pricing (verified live 2026-07), so a
+direct-Anthropic model id falls back to its OpenRouter listing when one is
+cached: ``claude-haiku-4-5-20251001`` -> ``anthropic/claude-haiku-4.5`` (strip
+the date suffix, dot the trailing version). The price itself is still
+live-fetched from a provider endpoint; only the id spelling is derived, and
+OpenRouter mirrors Anthropic's list prices. A model the derivation cannot map
+stays honestly unpriced, and runs rely on token ceilings (and
+OpenRouter-style ``usage.cost`` reporting where available).
 
 This module is import-light (stdlib + ``agent6.paths``) so ``agent6.budget``
 can use it without dragging in config/httpx2. Reads are cache-file only, never
@@ -24,12 +29,33 @@ from __future__ import annotations
 
 import contextlib
 import json
+import re
 from functools import lru_cache
 from pathlib import Path
 
 from agent6.paths import cache_dir
 
 __all__ = ["lookup_price"]
+
+_CLAUDE_DATE_SUFFIX_RE = re.compile(r"-20\d{6}$")
+_CLAUDE_TRAILING_VERSION_RE = re.compile(r"-(\d+)-(\d+)$")
+
+
+def _openrouter_alias(model: str) -> str | None:
+    """OpenRouter listing id for a direct-Anthropic model id, or None.
+
+    Only derives for bare ``claude-*`` ids (never rewrites an already
+    namespaced id): drop a ``-YYYYMMDD`` snapshot suffix, then dot a trailing
+    ``-N-M`` version (``claude-opus-4-8`` -> ``anthropic/claude-opus-4.8``).
+    Ids the rules don't cover (e.g. legacy version-first ``claude-3-5-sonnet``)
+    return a candidate that simply misses the price map, keeping them
+    honestly unpriced rather than mispriced.
+    """
+    if "/" in model or not model.startswith("claude-"):
+        return None
+    base = _CLAUDE_DATE_SUFFIX_RE.sub("", model)
+    base = _CLAUDE_TRAILING_VERSION_RE.sub(r"-\1.\2", base)
+    return f"anthropic/{base}"
 
 
 def _models_cache_dir() -> Path | None:
@@ -83,4 +109,9 @@ def _load_pricing(state: tuple[tuple[str, float], ...]) -> dict[str, tuple[float
 
 def lookup_price(model: str) -> tuple[float, float] | None:
     """(input, output) USD per 1M tokens for *model*, or None if unknown."""
-    return _load_pricing(_cache_state()).get(model)
+    pricing = _load_pricing(_cache_state())
+    hit = pricing.get(model)
+    if hit is not None:
+        return hit
+    alias = _openrouter_alias(model)
+    return pricing.get(alias) if alias is not None else None

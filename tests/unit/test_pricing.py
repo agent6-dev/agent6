@@ -77,3 +77,46 @@ def test_parse_pricing_openrouter_shape() -> None:
     assert got["moonshotai/kimi-k2.6"] == (pytest.approx(0.68), pytest.approx(3.41))
     assert "no-pricing-model" not in got
     assert "bad-pricing" not in got
+
+
+def test_lookup_price_direct_anthropic_alias(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A direct-Anthropic id resolves through its OpenRouter listing: date
+    # suffix stripped, trailing version dotted, `anthropic/` prefixed.
+    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path))
+    _write_pricing(
+        tmp_path,
+        "openrouter",
+        {
+            "anthropic/claude-haiku-4.5": [1.0, 5.0],
+            "anthropic/claude-opus-4.8": [5.0, 25.0],
+            "anthropic/claude-sonnet-5": [2.0, 10.0],
+        },
+    )
+    assert lookup_price("claude-haiku-4-5-20251001") == (1.0, 5.0)
+    assert lookup_price("claude-opus-4-8") == (5.0, 25.0)
+    assert lookup_price("claude-sonnet-5") == (2.0, 10.0)
+
+
+def test_lookup_price_alias_never_shadows_exact(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path))
+    _write_pricing(
+        tmp_path,
+        "openrouter",
+        {"claude-opus-4-8": [9.0, 9.0], "anthropic/claude-opus-4.8": [5.0, 25.0]},
+    )
+    assert lookup_price("claude-opus-4-8") == (9.0, 9.0)
+
+
+def test_lookup_price_alias_misses_stay_unpriced(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path))
+    _write_pricing(tmp_path, "openrouter", {"anthropic/claude-3.5-sonnet": [3.0, 15.0]})
+    # Legacy version-first naming is deliberately not mapped.
+    assert lookup_price("claude-3-5-sonnet-20241022") is None
+    # Namespaced ids are never rewritten.
+    assert lookup_price("someorg/claude-haiku-4-5") is None

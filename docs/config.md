@@ -73,7 +73,7 @@ for a non-default host); everything else defaults.
 | `extra_headers` | `{}` | Extra HTTP headers on every request (e.g. OpenRouter's `HTTP-Referer` / `X-Title`). Not for secrets; use the auth fields. |
 | `extra_body` | `{}` | Provider-specific JSON merged into every request body (load-bearing keys filtered). See below. |
 | `extra_query` | `{}` | Extra URL query params (e.g. Azure's `api-version`). No secrets here. |
-| `prompt_caching` | `true` | (`anthropic`) Enable Anthropic prompt caching. |
+| `prompt_caching` | `true` | (`anthropic`) Enable Anthropic prompt caching: the system prompt, tool list, and (via rolling breakpoints the loop advances each turn) the growing conversation are all re-read from cache at 0.1x input price. |
 | `http_timeout_s` | `600.0` | Per-HTTP-call timeout (connect + read), seconds. Lower it to fail fast on a stuck endpoint. |
 
 Each endpoint gets its own block, so OpenAI and OpenRouter run side-by-side
@@ -347,6 +347,12 @@ either full-budget axis cap, so an output-heavy workload (e.g. a reasoning
 model whose hidden reasoning dominates output) can spend the whole budget
 instead of halting once a ratio-split output cap is hit. With no price and no
 reported cost the USD limit does nothing, hence best effort.
+
+Price data comes from provider model listings (today OpenRouter's; Anthropic's
+API publishes none), cached under `$XDG_CACHE_HOME/agent6/models/`. A
+direct-Anthropic model id is priced via its OpenRouter listing when that cache
+is present (`claude-opus-4-8` → `anthropic/claude-opus-4.8`, same list
+prices), so USD budgets and cost summaries work on direct Anthropic runs too.
 
 Override per-run from the CLI without editing config: `agent6 run --max-usd 5`,
 `--max-input-tokens`, `--max-output-tokens` (on `run`, `plan`, `resume`).
