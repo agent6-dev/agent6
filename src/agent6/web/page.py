@@ -1,11 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The single self-contained web-UI page: HTML + CSS + vanilla JS, no build step.
+"""The web-UI page: HTML + CSS + vanilla JS, served as one string.
 
 Served verbatim by web.server at `GET /`. It renders the wire form the JSON / SSE
 endpoints emit (the same shape as `agent6 watch --json`); it is a thin renderer,
-so all domain logic stays in the Python read-side. No framework, no bundler, no
-external assets: one string, zero dependencies (the picosnitch model).
+so all domain logic stays in the Python read-side.
 
 Kept as a module-level constant so the server has nothing to read from disk and
 tests can assert against it directly.
@@ -140,7 +139,7 @@ table.tools .args { color: var(--muted); font-family: var(--mono); word-break: b
 
 .cfg { width: 100%; border-collapse: collapse; font-size: 13px; }
 .cfg td, .cfg th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
-.cfg .key { font-family: var(--mono); }
+.cfg .key { font-family: var(--mono); word-break: break-all; }
 .cfg .val { font-family: var(--mono); word-break: break-word; }
 .cfg tr.mod .key { color: var(--accent); }
 .cfg .src { color: var(--muted); white-space: nowrap; }

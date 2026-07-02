@@ -313,8 +313,9 @@ radius.
   (a 401 is caught at setup, not mid-run); the response is only inspected for
   the HTTP status, never executed. Skip it with `--no-verify` for offline or
   local endpoints.
-  agent6 also opens no listening network socket of any kind (MCP is
-  stdio; the egress broker is a private Unix socket).
+  During a run agent6 opens no listening network socket of any kind (MCP is
+  stdio; the egress broker is a private Unix socket). The one accept-side
+  socket is the opt-in `agent6 web` front-end, loopback by default (§7).
 - **Root.** Running an LLM-driven agent as root is dangerous, so agent6
   refuses unless the operator explicitly opts in with `--allow-root` (or
   `AGENT6_ALLOW_ROOT=1`), and prints a loud banner. When invoked through
@@ -343,15 +344,27 @@ lives out of the workspace under `$XDG_STATE_HOME/agent6/<repo-id>/`
 commands run on the repo cwd, and the state dir is outside it, so they
 cannot reach it.
 
-### 7. No agent-owned network surface
+### 7. No agent-owned network surface (except opt-in `agent6 web`)
 
-agent6 does not run an HTTP server, gRPC server, or any other accept-side
-socket. The only sockets it opens are:
+The agent loop does not run an HTTP server, gRPC server, or any other
+accept-side socket. The only sockets it opens are:
 
 - outbound HTTPS to the LLM provider,
 - a per-run Unix domain socket under the run directory
   (`<state-dir>/<repo-id>/runs/<run-id>/`) with mode `0600` for talking to
   its own curator.
+
+The one accept-side socket agent6 can open is the **`agent6 web`** front-end,
+and only when you start it. It binds `127.0.0.1` by default and has no
+app-level auth: remote access is meant to run behind `tailscale serve`, so the
+tailnet/WireGuard identity is the access control (see [the web UI](web.md)).
+Binding a non-loopback host exposes the write surface (spawn runs, answer
+prompts) and is gated behind `[web].allow_non_loopback = true` (off by default).
+The server only ever renders folded view-model state and drives the typed
+front-end contracts, it never serves secrets and never executes arbitrary input:
+new-work spawns fixed argv with the task as one argv element, machine run is
+allow-listed to the authored files, answers write only into the addressed run's
+own answer files, and merge/prune/config-set are fixed agent6 subcommands.
 
 There is no telemetry, no auto-update, and no remote control plane.
 

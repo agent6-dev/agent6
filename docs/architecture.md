@@ -220,9 +220,23 @@ lands in a per-repo `lineage.jsonl` at the state-dir root. Past-turn DAG replay
 (reconstructing the graph at an older `graph_version`) is deferred; a fork copies
 the source's current DAG.
 
+One headless core, three thin front-ends: the CLI, the Textual TUI
+([src/agent6/tui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/tui)),
+and the browser web UI
+([src/agent6/web/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/web),
+`agent6 web`) all fold the same event stream and render their own way. Two shared
+layers sit under all three: the read side
+[src/agent6/viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel)
+(the `RunState`/`MachineState` fold + its `*_as_dict` wire form, exactly what
+`agent6 watch --json` and the web JSON/SSE endpoints emit) and the textual-free
+write bridge
+[src/agent6/frontend/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/frontend)
+(spawn the CLI detached, plus the approval / question / steer answer-file contract
+the workflow process polls). See [the web UI](web.md).
+
 The `logs.jsonl` vocabulary is small and stable: the data contract for
 any external viewer (the fold to render-ready state lives in
-[src/agent6/viewmodel/state.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state.py) as a pure function, shared by the CLI, the TUI, and a future web client):
+[src/agent6/viewmodel/state.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state.py) as a pure function, shared by the CLI, the TUI, and the web client):
 
 | Event                       | Notable fields                              |
 | --------------------------- | ------------------------------------------- |
@@ -244,7 +258,10 @@ any external viewer (the fold to render-ready state lives in
 A `run_command` approval is published as `approval.prompt`; the dashboard
 TUI shows an Allow/Deny modal and writes `approvals/<id>.answer`, which the
 workflow reads (falling back to a stdin prompt with no TUI), then records
-`approval.answer`. The task DAG is not in this stream; it is
+`approval.answer`. The web UI drives the same answer-file contract (via
+[src/agent6/frontend/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/frontend)):
+while a browser watches a run it registers as the run's answer front-end, so
+approval / question / steer prompts bridge to the page. The task DAG is not in this stream; it is
 curator-owned and lives in `graph.jsonl` (read via `agent6 runs
 graph`).
 
@@ -264,6 +281,8 @@ graph`).
 | Provider clients                 | [src/agent6/providers/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/providers)                        |
 | Knowledge graph (curator)        | [src/agent6/graph/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/graph)                                |
 | Event log + view-model fold      | [src/agent6/events.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/events.py) (writer), [src/agent6/viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel) (RunState/MachineState fold), [src/agent6/tui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/tui) (textual render) |
+| Front-end write bridge           | [src/agent6/frontend/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/frontend) (spawn detached + approval/question/steer answer files; shared by CLI, TUI, web) |
+| Web UI (`agent6 web`)            | [src/agent6/web/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/web) (stdlib HTTP server + one embedded page over the view-model + frontend) |
 | Run state on disk                | `<state-dir>/<repo-id>/runs/<run-id>/` (out of the workspace)         |
 
 ## Pre-1.0 stability

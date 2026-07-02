@@ -789,6 +789,39 @@ class MachineConfig(BaseModel):
     snapshot_keep: int = Field(ge=0, default=5)
 
 
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+class WebConfig(BaseModel):
+    """`agent6 web` server bind. Secure by default: loopback only.
+
+    Remote access is expected behind `tailscale serve` (HTTPS + WireGuard) in
+    front of the loopback bind; the tailnet identity is the access control, so
+    there is no app-level auth. Binding a non-loopback address exposes the write
+    surface (spawn runs, answer prompts) to anyone who can reach the port, so it
+    is gated behind `allow_non_loopback = true` and carries no default.
+    """
+
+    model_config = _BASE_MODEL_CONFIG
+
+    host: str = "127.0.0.1"
+    port: int = Field(ge=1, le=65535, default=8901)
+    # Opt-in required to bind a non-loopback host. Off by default so a typo or a
+    # copied config can never silently expose the agent to the local network.
+    allow_non_loopback: bool = False
+
+    @model_validator(mode="after")
+    def _guard_non_loopback(self) -> WebConfig:
+        if self.host not in _LOOPBACK_HOSTS and not self.allow_non_loopback:
+            raise ValueError(
+                f"[web].host = {self.host!r} is not loopback. Binding a non-loopback"
+                " address exposes the web UI's write surface; set [web]"
+                " allow_non_loopback = true to opt in (and prefer `tailscale serve`"
+                " in front of a 127.0.0.1 bind instead)."
+            )
+        return self
+
+
 class Agent6Section(BaseModel):
     model_config = _BASE_MODEL_CONFIG
 
@@ -909,6 +942,7 @@ class Config(BaseModel):
     machine: MachineConfig = Field(default_factory=MachineConfig)
     notify: NotifyConfig = Field(default_factory=NotifyConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
+    web: WebConfig = Field(default_factory=WebConfig)
     # Named config PROFILE: a preset that fills in many settings at once (see
     # agent6.config BUILTIN_PROFILES + user [profiles.<name>] tables). Injected
     # just ABOVE the config layer that selected it, so the profile OVERRIDES that

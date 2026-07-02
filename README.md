@@ -20,8 +20,9 @@ open-ended agent loop.
   vLLM, llama.cpp, LM Studio)
 - Per-step git commits, snapshot-resumable runs, per-turn forkable checkpoints, USD and
   token budgets with hard stops
-- Plan, run, review, and ask modes; a live terminal dashboard; persistent transcripts and
-  a searchable run history
+- Plan, run, review, and ask modes; a live terminal dashboard and a zero-dependency
+  browser UI (`agent6 web`, phone-friendly); persistent transcripts and a searchable
+  run history
 - State machines (`agent6 machine`) for long-running automated tasks: LLM-drafted,
   operator-reviewed, journaled, and replayable
 - Small, fixed LLM tool surface; the only extension point is operator-configured MCP
@@ -54,6 +55,11 @@ agent6 model worker anthropic claude-sonnet-4-6
 cd your-repo
 agent6 run "add a --json output mode to the CLI"
 
+# Watch and drive runs from a terminal, a full-screen TUI, or a browser.
+agent6 watch <run-id>         # plain live event stream (default)
+agent6 tui                    # full-screen dashboard hub
+agent6 web                    # browser UI on http://127.0.0.1:8901 (phone-friendly)
+
 # Audit the effective config, pre-flight the sandbox, resume or fork a run.
 agent6 config show
 agent6 check
@@ -62,7 +68,8 @@ agent6 fork <run-id> --at-turn 7
 ```
 
 That is the whole loop. See [getting started](https://agent6.dev/getting-started/) for the
-full command tour, [configuration](https://agent6.dev/config/) for every field, and the
+full command tour, [the web UI](https://agent6.dev/web/) for driving runs from a phone,
+[configuration](https://agent6.dev/config/) for every field, and the
 [security model](https://agent6.dev/security/) for what the sandbox enforces.
 
 Config is layered: built-in secure defaults, then the global `~/.config/agent6/config.toml`,

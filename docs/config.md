@@ -372,6 +372,19 @@ failure), outside the jail as your user, with `AGENT6_RUN_ID`,
 | `on_complete` | `[]` | argv to run (empty = disabled). |
 | `timeout_s` | `30.0` | Hook timeout. |
 
+## `[web]`
+
+Bind for `agent6 web`, the browser front-end (see [the web UI](web.md)). Secure
+by default: loopback only. Remote access is expected behind `tailscale serve`, so
+there is no app-level auth; binding a non-loopback host exposes the write surface
+(spawn runs, answer prompts) and requires an explicit opt-in.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `web.host` | `127.0.0.1` | Bind address. A non-loopback value requires `allow_non_loopback = true`. |
+| `web.port` | `8901` | Listen port. |
+| `web.allow_non_loopback` | `false` | Opt-in to bind a non-loopback host. Off by default so a typo or copied config can never silently expose the agent. Prefer `tailscale serve` in front of a `127.0.0.1` bind instead. |
+
 ## `[mcp]` + `[[mcp.servers]]` (optional)
 
 Spawn Model Context Protocol servers at run start; their tools appear to the LLM
