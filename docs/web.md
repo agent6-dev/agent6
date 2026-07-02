@@ -81,8 +81,10 @@ The tailnet (WireGuard) identity is the access control: only devices on your
 tailnet reach it, over an encrypted tunnel, and `tailscale serve` terminates
 HTTPS. agent6 itself handles no tokens or passwords.
 
-Binding a non-loopback address directly (`--host` or `[web].host`) exposes the
-write surface, spawning runs and answering prompts, to anyone who can reach the
-port. It is off by default and gated behind
-[`[web].allow_non_loopback = true`](config.md#web). Prefer `tailscale serve` over
-a raw non-loopback bind.
+Binding a non-loopback address exposes the write surface, spawning runs and
+answering prompts, to anyone who can reach the port. A non-loopback value in
+[`[web].host`](config.md#web) is refused at config load unless you also set
+`[web].allow_non_loopback = true`, so a copied config cannot silently expose you.
+The `--host` flag is an explicit per-invocation override: it binds whatever you
+type and only prints a loud warning on a non-loopback address. Prefer
+`tailscale serve` over any raw non-loopback bind.

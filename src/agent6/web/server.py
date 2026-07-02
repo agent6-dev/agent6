@@ -126,14 +126,18 @@ class WebServer(ThreadingHTTPServer):
                 self._watch_counts[key] = n
                 return
             self._watch_counts.pop(key, None)
-        try:
-            owned = (run_dir / FRONTEND_PID_FILE).read_text(encoding="utf-8").strip() == str(
-                os.getpid()
-            )
-        except OSError:
-            owned = False
-        if owned:
-            clear_frontend_pid(run_dir)
+            # Read + clear under the same lock: otherwise a concurrent claim_run
+            # could re-write frontend.pid (to our own pid) between the count
+            # hitting 0 and the clear, and the owned-check would then wrongly
+            # unbridge a viewer that just started streaming.
+            try:
+                owned = (run_dir / FRONTEND_PID_FILE).read_text(encoding="utf-8").strip() == str(
+                    os.getpid()
+                )
+            except OSError:
+                owned = False
+            if owned:
+                clear_frontend_pid(run_dir)
 
 
 class _Handler(BaseHTTPRequestHandler):

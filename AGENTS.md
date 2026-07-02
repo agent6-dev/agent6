@@ -173,7 +173,10 @@ All five must pass; keep the suite green.
   `graph/curator.py`, `graph/client.py`, `sandbox/jail.py` (the launcher
   itself), `providers/token_command.py` (the operator-configured
   `[providers.*].token_command` that mints a provider bearer; argv comes
-  from config, never from LLM output), and a small set of `cli/` helpers (TUI spawn, `$EDITOR` for
+  from config, never from LLM output), `frontend/spawn.py` (the shared front-end
+  bridge: spawns the agent6 CLI detached for run/machine launches and captures
+  `runs merge`/`prune`/`config set`, argv being the agent6 exe + operator-chosen
+  args, never LLM output), and a small set of `cli/` helpers (`$EDITOR` for
   plan editing, `git diff/log` for the review subcommand, `rg` for history
   search, `cli/scriptcheck.py` running ruff/ty with fixed argv to
   statically read generated scripts, which only ever execute via

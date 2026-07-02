@@ -218,6 +218,29 @@ def test_steer_writes_answer_and_request(server: tuple[WebServer, int], tmp_path
     assert (run_dir / "steer.request").exists()
 
 
+def test_approve_id_traversal_is_contained(server: tuple[WebServer, int], tmp_path: Path) -> None:
+    # A malicious answer id must not escape the run's approvals/ dir.
+    _srv, port = server
+    run_dir = resolved_state_dir(tmp_path) / "runs" / "trav-run"
+    run_dir.mkdir(parents=True)
+    (run_dir / "logs.jsonl").write_text("", encoding="utf-8")
+    escape = tmp_path / "pwned.answer"
+    status, _ = _post(
+        port, "/api/run/trav-run/approve", {"id": "../../../../pwned", "approved": True}
+    )
+    assert status != 200
+    assert not escape.exists()
+    # a normal id still works
+    ok_status, ok_body = _post(port, "/api/run/trav-run/approve", {"id": "p1", "approved": True})
+    assert ok_status == 200 and ok_body["ok"] is True
+
+
+def test_run_id_traversal_is_404(server: tuple[WebServer, int]) -> None:
+    _srv, port = server
+    status, _body, _ = _get(port, "/api/run/..")
+    assert status == 404
+
+
 def test_new_work_empty_task_rejected(server: tuple[WebServer, int]) -> None:
     _srv, port = server
     status, body = _post(port, "/api/new", {"mode": "run", "task": "   "})

@@ -863,7 +863,9 @@ def _cmd_machine_watch(machine_id: str) -> int:
             seen_steps = len(ms.transitions)
             newest = newest_state_log(root)
             if newest != cur_log:
-                cur_log, cur_off = newest, 0
+                # Reset the elapsed-time anchor too: each state log re-derives its
+                # own base from its first event, else states 2..N read inflated.
+                cur_log, cur_off, anchor = newest, 0, None
                 if cur_log is not None:
                     print(f"  -- agent state: {cur_log.parent.name} --", file=sys.stderr)
             if cur_log is not None:

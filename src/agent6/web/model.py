@@ -54,17 +54,28 @@ def machines_root(cwd: Path) -> Path:
     return state_dir_for(cwd) / "machines"
 
 
+def _safe_component(name: str) -> bool:
+    """True iff *name* is a single path component (no separator, not `.`/`..`),
+    so a browser-supplied run id or machine name cannot traverse out of its dir."""
+    return bool(name) and "/" not in name and "\\" not in name and name not in {".", ".."}
+
+
 def run_dir_for(cwd: Path, run_id: str) -> Path | None:
     """Locate a run dir by exact id across runs/ and asks/ (no prefix match: the
-    web client always sends the full id from the hub payload)."""
+    web client always sends the full id from the hub payload). Rejects a run_id
+    that is not a single safe path component."""
+    if not _safe_component(run_id):
+        return None
     for sub in RUN_SUBDIRS:
         d = state_dir_for(cwd) / sub / run_id
-        if (d / "logs.jsonl").is_file() or d.is_dir():
+        if d.is_dir():
             return d
     return None
 
 
 def machine_dir_for(cwd: Path, name: str) -> Path | None:
+    if not _safe_component(name):
+        return None
     d = machines_root(cwd) / name
     return d if d.is_dir() else None
 

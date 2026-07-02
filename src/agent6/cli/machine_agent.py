@@ -117,10 +117,11 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
         inner_provider = _build_role_provider(
             cfg, "worker", transcript_sink=TranscriptSink(transcript_dir), budget=budget
         )
-        # An EventSink only when the caller asked for one (events_log set): the
-        # `machine create` driver points it at the draft dir's logs.jsonl so the
-        # TUI can watch the authoring agent's reasoning + tool calls live, exactly
-        # like a run. None for an `agent` state (no watchable log there yet).
+        # An EventSink only when the caller passes events_log: the machine
+        # supervisor points it at this state's per-state
+        # `states/<seq>-<name>/logs.jsonl` (and `machine create` at the draft's
+        # logs.jsonl), so the TUI/web can watch the agent's reasoning + tool
+        # calls live, exactly like a run. None only when no log path is given.
         events_log = req.get("events_log")
         events_sink = EventSink(Path(events_log)) if isinstance(events_log, str) else None
         # stream_text: ALWAYS use the streaming transport. Machine agents run

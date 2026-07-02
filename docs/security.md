@@ -359,12 +359,16 @@ and only when you start it. It binds `127.0.0.1` by default and has no
 app-level auth: remote access is meant to run behind `tailscale serve`, so the
 tailnet/WireGuard identity is the access control (see [the web UI](web.md)).
 Binding a non-loopback host exposes the write surface (spawn runs, answer
-prompts) and is gated behind `[web].allow_non_loopback = true` (off by default).
-The server only ever renders folded view-model state and drives the typed
-front-end contracts, it never serves secrets and never executes arbitrary input:
-new-work spawns fixed argv with the task as one argv element, machine run is
-allow-listed to the authored files, answers write only into the addressed run's
-own answer files, and merge/prune/config-set are fixed agent6 subcommands.
+prompts). A non-loopback `[web].host` in config is refused at load unless
+`[web].allow_non_loopback = true`; the `--host` flag is an explicit override that
+binds what you type and only warns. The server only ever renders folded
+view-model state and drives the typed front-end contracts, it never serves
+secrets and never executes arbitrary input: new-work spawns fixed argv with the
+task as one argv element, machine run is allow-listed to the authored files,
+answers write only into the addressed run's own answer files (the run id and
+answer id are validated to a single path component, so a request cannot escape
+the run's approvals/questions dir), and merge/prune/config-set are fixed agent6
+subcommands.
 
 There is no telemetry, no auto-update, and no remote control plane.
 

@@ -40,6 +40,17 @@ def approvals_dir(run_dir: Path) -> Path:
     return p
 
 
+def _answer_path(directory: Path, answer_id: str) -> Path:
+    """Resolve ``<directory>/<answer_id>.answer``, refusing an id that escapes the
+    directory (a path separator, ``..``, or an absolute path). A front-end always
+    answers an id from a prompt it rendered, but that id crosses a trust boundary
+    in the web server, so containment stays a hard check on the write primitive."""
+    target = directory / f"{answer_id}.answer"
+    if not target.resolve().is_relative_to(directory.resolve()):
+        raise ValueError(f"unsafe answer id: {answer_id!r}")
+    return target
+
+
 def clear_pending_answers(run_dir: Path) -> None:
     """Drop stale bridge state at run/resume START: leftover `*.answer` files
     from a prior session (the id counters reset, so an old answer would be read
@@ -129,8 +140,8 @@ def frontend_is_live(run_dir: Path) -> bool:
 
 def write_answer(run_dir: Path, prompt_id: str, *, approved: bool) -> None:
     """Called by a front-end (TUI or web)."""
-    d = approvals_dir(run_dir)
-    (d / f"{prompt_id}.answer").write_text("yes" if approved else "no", encoding="utf-8")
+    target = _answer_path(approvals_dir(run_dir), prompt_id)
+    target.write_text("yes" if approved else "no", encoding="utf-8")
 
 
 def read_answer(
@@ -170,7 +181,7 @@ def questions_dir(run_dir: Path) -> Path:
 
 def write_question_answer(run_dir: Path, question_id: str, answer: str) -> None:
     """Called by a front-end when the user answers the question."""
-    (questions_dir(run_dir) / f"{question_id}.answer").write_text(answer, encoding="utf-8")
+    _answer_path(questions_dir(run_dir), question_id).write_text(answer, encoding="utf-8")
 
 
 def read_question_answer(

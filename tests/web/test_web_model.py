@@ -47,6 +47,20 @@ def test_reasoning_snapshot_empty_without_state_log(tmp_path: Path) -> None:
     assert model.machine_reasoning_snapshot(md) == {}
 
 
+def test_run_dir_for_rejects_traversal(tmp_path: Path) -> None:
+    _run(tmp_path, "good-run", [{"type": "run.start"}])
+    assert model.run_dir_for(tmp_path, "good-run") is not None
+    for bad in ("..", ".", "", "../good-run", "a/b", "..\\x"):
+        assert model.run_dir_for(tmp_path, bad) is None
+
+
+def test_machine_dir_for_rejects_traversal(tmp_path: Path) -> None:
+    (model.machines_root(tmp_path) / "m1").mkdir(parents=True)
+    assert model.machine_dir_for(tmp_path, "m1") is not None
+    for bad in ("..", "../m1", "a/b", ""):
+        assert model.machine_dir_for(tmp_path, bad) is None
+
+
 def test_hub_payload_shape(tmp_path: Path) -> None:
     _run(tmp_path, "r3", [{"type": "run.start", "mode": "plan"}])
     hub = model.hub_payload(tmp_path)

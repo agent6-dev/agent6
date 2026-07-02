@@ -721,9 +721,9 @@ and a corrupt newest snapshot falls back to the retained tail.
 - **Single writer.** `machine.lock` (flock) guarantees one process per
   machine id; a second invocation refuses rather than double-acting.
 - **Health/visibility.** `agent6 machine status <id>` prints the current
-  state, blackboard, last N events, spend, and next wake. `agent6 machine
-  watch <id>` follows a RUNNING instance live: the state overview with the
-  current state marked, each transition as it lands, and the current agent
+  state, blackboard, last N events, spend, and next wake. `agent6 watch <id>`
+  (the unified watcher) follows a RUNNING instance live: the state overview with
+  the current state marked, each transition as it lands, and the current agent
   state's reasoning streamed from its per-state log. The `agent6 tui` Machines
   page wraps the same view: **Run** opens it on the instance it starts, and
   **Watch** (`w`) attaches to a selected machine's instance. `agent6 machine

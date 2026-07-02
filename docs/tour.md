@@ -53,8 +53,10 @@ The config page shows every setting, its effective value, and where that value c
 
 Beyond one-shot runs, agent6 runs editable state machines: a `.asm.toml` of tool, branch,
 agent, and wait states driven over a journal. Author one, read its graph, and watch it
-execute. Here `repo-digest` collects recent commits, an agent state summarizes them, and a
-tool writes the digest, with the agent's reasoning streamed live like a run.
+execute. Here `code-fixer` runs a fix-loop: an agent state edits the repo to make a
+failing check pass, a tool state re-runs the check, and the machine routes on the
+result until it is green or the attempt budget is spent, with the agent's reasoning
+streamed live like a run.
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox">
   <source src="/screenshots/out/machine-demo.webm" type="video/webm">
