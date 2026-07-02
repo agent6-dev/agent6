@@ -9,7 +9,7 @@ open-ended agent loop.
 
 **Full documentation: [agent6.dev](https://agent6.dev)**
 
-[![The agent6 hub](https://agent6.dev/screenshots/out/01-hub.png)](https://agent6.dev/tour/)
+[![The agent6 hub](https://agent6.dev/screenshots/out/02-run-dashboard.png)](https://agent6.dev/tour/)
 
 ## Features
 
