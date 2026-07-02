@@ -366,10 +366,20 @@ silently expose you. The server only ever renders folded
 view-model state and drives the typed front-end contracts, it never serves
 secrets and never executes arbitrary input: new-work spawns fixed argv with the
 task as one argv element, machine run is allow-listed to the authored files,
-answers write only into the addressed run's own answer files (the run id and
-answer id are validated to a single path component, so a request cannot escape
-the run's approvals/questions dir), and merge/prune/config-set are fixed agent6
+answers write only into the addressed run's own answer files (the run id,
+answer id, and a machine answer's target state dir are each validated to a
+single path component, so a request cannot escape the run's
+approvals/questions dir), and merge/prune/config-set are fixed agent6
 subcommands.
+
+State-changing POSTs also carry a CSRF guard so another site open in the
+operator's browser cannot drive the agent: a POST body must be
+`Content-Type: application/json` (a cross-site `fetch` with that type triggers
+a CORS preflight the server never answers), and any `Origin` header must match
+`Host`. This holds on both the loopback bind and behind `tailscale serve`
+(same-origin requests pass either way). It does not cover DNS rebinding, which
+would need a Host allow-list incompatible with the tailnet hostname; that
+vector stays with the network layer.
 
 The same rules cover the **machine write surface** (`POST
 /api/machine/<name>/{poke,answer,approve,steer}`): the machine name goes through

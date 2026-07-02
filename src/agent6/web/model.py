@@ -56,10 +56,13 @@ def machines_root(cwd: Path) -> Path:
     return state_dir_for(cwd) / "machines"
 
 
-def _safe_component(name: str) -> bool:
+def is_safe_component(name: str) -> bool:
     """True iff *name* is a single path component (no separator, not `.`/`..`),
     so a browser-supplied run id or machine name cannot traverse out of its dir."""
     return bool(name) and "/" not in name and "\\" not in name and name not in {".", ".."}
+
+
+_safe_component = is_safe_component
 
 
 def run_dir_for(cwd: Path, run_id: str) -> Path | None:
@@ -266,11 +269,19 @@ def machine_is_parked(machine_dir: Path) -> bool:
 def machine_reasoning_snapshot(machine_dir: Path) -> dict[str, Any]:
     """The RunState of the machine's most recent agent-state execution: the live
     reasoning + tool calls inside the state the machine is running. Empty when no
-    agent state has produced a log yet."""
+    agent state has produced a log yet.
+
+    Carries ``state_dir`` (the per-state dir name, e.g. ``0001-work``) so a
+    client echoes it back when answering a prompt: prompt ids reset per state
+    (``approval-1`` in every state), so routing an answer to whichever state is
+    newest AT POST TIME would misdeliver it if the machine advanced meanwhile.
+    """
     log = newest_state_log(machine_dir)
     if log is None:
         return {}
-    return run_state_as_dict(fold_run(tail_events(log, follow=False)))
+    snap = run_state_as_dict(fold_run(tail_events(log, follow=False)))
+    snap["state_dir"] = log.parent.name
+    return snap
 
 
 # --- config ------------------------------------------------------------------

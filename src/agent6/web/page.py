@@ -431,16 +431,24 @@ function paintPrompts(cards, s) {
   const host = cards._prompts;
   // base is the POST prefix: runs use /api/run/<id>, machines /api/machine/<name>.
   const base = cards._base || ('/api/run/' + encodeURIComponent(cards._id));
+  // For a machine, the per-state dir the reasoning (and its prompts) came from.
+  // Prompt ids reset per state (approval-1 in every state), so the answer must
+  // carry it AND the box key must include it: when the machine advances to a new
+  // state, the key changes so the stale box is rebuilt rather than reused with a
+  // now-wrong prompt still showing.
+  const state = cards._state || '';
+  const pfx = state ? state + ':' : '';
+  const extra = state ? { state } : {};
   const build = {};
   for (const ap of (s.pending_approvals || [])) {
     if (ap.answered) continue;
-    build['ap:' + ap.id] = () => {
+    build[pfx + 'ap:' + ap.id] = () => {
       const box = el('div', 'prompt-box');
       box.appendChild(el('div', 'q', ap.prompt || 'Approve this action?'));
       const row = el('div', 'form-row');
       const yes = el('button', 'primary', 'Approve');
       const no = el('button', 'danger', 'Deny');
-      const send = ok => async () => { try { await postJSON(base + '/approve', { id: ap.id, approved: ok }); } catch (e) { toast(e.message, true); } };
+      const send = ok => async () => { try { await postJSON(base + '/approve', { id: ap.id, approved: ok, ...extra }); } catch (e) { toast(e.message, true); } };
       yes.onclick = send(true); no.onclick = send(false);
       row.appendChild(yes); row.appendChild(no); box.appendChild(row);
       return box;
@@ -448,18 +456,18 @@ function paintPrompts(cards, s) {
   }
   for (const q of (s.pending_questions || [])) {
     if (q.answered) continue;
-    build['q:' + q.id] = () => {
+    build[pfx + 'q:' + q.id] = () => {
       const box = el('div', 'prompt-box');
       box.appendChild(el('div', 'q', q.question || 'The agent asked a question'));
       const row = el('div', 'form-row');
       for (const opt of (q.options || [])) {
         const b = el('button', null, opt);
-        b.onclick = async () => { try { await postJSON(base + '/answer', { id: q.id, answer: opt }); } catch (e) { toast(e.message, true); } };
+        b.onclick = async () => { try { await postJSON(base + '/answer', { id: q.id, answer: opt, ...extra }); } catch (e) { toast(e.message, true); } };
         row.appendChild(b);
       }
       const inp = el('input', 'field'); inp.placeholder = 'or type an answer…'; inp.style.flex = '1';
       const send = el('button', 'primary', 'Send');
-      send.onclick = async () => { try { await postJSON(base + '/answer', { id: q.id, answer: inp.value }); } catch (e) { toast(e.message, true); } };
+      send.onclick = async () => { try { await postJSON(base + '/answer', { id: q.id, answer: inp.value, ...extra }); } catch (e) { toast(e.message, true); } };
       row.appendChild(inp); row.appendChild(send); box.appendChild(row);
       return box;
     };
@@ -601,7 +609,10 @@ function renderMachine(name) {
   steerBtn.onclick = async () => {
     const text = prompt('Steer the current agent state (blank = continue, "abort" = stop):', '');
     if (text === null) return;
-    try { await postJSON(base + '/steer', { text }); toast('steer sent'); } catch (e) { toast(e.message, true); }
+    // cards._state is set each frame to the agent state currently rendered, so
+    // the steer routes to that state, not whichever is newest at click time.
+    const body = cards._state ? { text, state: cards._state } : { text };
+    try { await postJSON(base + '/steer', body); toast('steer sent'); } catch (e) { toast(e.message, true); }
   };
   controls.appendChild(bell); controls.appendChild(steerBtn);
   view.appendChild(controls);
@@ -669,6 +680,9 @@ function paintMachine(structBody, pathBody, reasonBody, cards, ctx, data) {
   if (data.error) { structBody.innerHTML=''; structBody.appendChild(el('div', 'err', data.error)); return; }
   const m = data.machine || {};
   // Pending approval/question/steer come from the current agent state's RunState.
+  // Track which per-state dir this frame rendered so prompt answers + steer route
+  // to that exact state (ids reset per state; the machine may advance meanwhile).
+  cards._state = (data.reasoning || {}).state_dir || '';
   paintPrompts(cards, data.reasoning || {});
   machineNotify(ctx, m);
   if (m.ended && !ctx.endedNotified) {

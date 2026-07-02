@@ -88,6 +88,19 @@ def _post(port: int, path: str, body: dict[str, object]) -> tuple[int, dict[str,
         conn.close()
 
 
+def _post_raw(
+    port: int, path: str, body: bytes, headers: dict[str, str]
+) -> tuple[int, dict[str, object]]:
+    """POST with caller-controlled headers (for the CSRF checks)."""
+    conn = HTTPConnection("127.0.0.1", port, timeout=10)
+    try:
+        conn.request("POST", path, body, headers)
+        resp = conn.getresponse()
+        return resp.status, json.loads(resp.read())
+    finally:
+        conn.close()
+
+
 def test_page_served(server: tuple[WebServer, int]) -> None:
     _srv, port = server
     status, body, ctype = _get(port, "/")
@@ -413,3 +426,107 @@ def test_sse_run_streams_snapshot(server: tuple[WebServer, int], tmp_path: Path)
         assert snap["finished"] is True
     finally:
         conn.close()
+
+
+# --- CSRF: cross-site state-changing POSTs are refused -----------------------
+
+
+def test_cross_origin_post_refused(server: tuple[WebServer, int], tmp_path: Path) -> None:
+    _srv, port = server
+    _make_machine_with_state(tmp_path, "csrf1", "0000-review")
+    status, body = _post_raw(
+        port,
+        "/api/machine/csrf1/poke",
+        json.dumps({"message": "x"}).encode(),
+        {
+            "Content-Type": "application/json",
+            "Host": f"127.0.0.1:{port}",
+            "Origin": "https://evil.example",
+        },
+    )
+    assert status == 403
+    assert "cross-origin" in str(body.get("error", ""))
+
+
+def test_non_json_content_type_post_refused(server: tuple[WebServer, int], tmp_path: Path) -> None:
+    _srv, port = server
+    inst, _ = _make_machine_with_state(tmp_path, "csrf2", "0000-review")
+    # A JSON body smuggled in as a CORS-simple text/plain request is refused,
+    # and the signal file is NOT written.
+    status, _ = _post_raw(
+        port,
+        "/api/machine/csrf2/poke",
+        json.dumps({"message": "x"}).encode(),
+        {"Content-Type": "text/plain", "Host": f"127.0.0.1:{port}"},
+    )
+    assert status == 403
+    assert not (inst / "signal").exists()
+
+
+def test_same_origin_post_allowed(server: tuple[WebServer, int], tmp_path: Path) -> None:
+    _srv, port = server
+    inst, _ = _make_machine_with_state(tmp_path, "csrf3", "0000-review")
+    status, body = _post_raw(
+        port,
+        "/api/machine/csrf3/poke",
+        json.dumps({"message": "ok"}).encode(),
+        {
+            "Content-Type": "application/json",
+            "Host": f"127.0.0.1:{port}",
+            "Origin": f"http://127.0.0.1:{port}",
+        },
+    )
+    assert status == 200 and body["ok"] is True
+    assert (inst / "signal").exists()
+
+
+# --- machine answers route to the rendered state, not the newest -------------
+
+
+def test_machine_answer_routes_to_named_state_not_newest(
+    server: tuple[WebServer, int], tmp_path: Path
+) -> None:
+    _srv, port = server
+    # Two agent states, each with its own approval-1. The operator was shown the
+    # OLDER state's prompt; the machine has since advanced to a newer state.
+    inst, old_state = _make_machine_with_state(tmp_path, "adv", "0001-work")
+    new_state = inst / "states" / "0002-review"
+    new_state.mkdir(parents=True)
+    (new_state / "logs.jsonl").write_text("", encoding="utf-8")
+    status, body = _post(
+        port,
+        "/api/machine/adv/approve",
+        {"id": "approval-1", "approved": True, "state": "0001-work"},
+    )
+    assert status == 200 and body["ok"] is True
+    # The answer landed in the state the prompt was rendered from, NOT the newest.
+    assert (old_state / "approvals" / "approval-1.answer").read_text(encoding="utf-8") == "yes"
+    assert not (new_state / "approvals" / "approval-1.answer").exists()
+
+
+def test_machine_answer_defaults_to_newest_state_without_hint(
+    server: tuple[WebServer, int], tmp_path: Path
+) -> None:
+    _srv, port = server
+    inst, _old = _make_machine_with_state(tmp_path, "adv2", "0001-work")
+    new_state = inst / "states" / "0002-review"
+    new_state.mkdir(parents=True)
+    (new_state / "logs.jsonl").write_text("", encoding="utf-8")
+    status, body = _post(port, "/api/machine/adv2/answer", {"id": "question-1", "answer": "hi"})
+    assert status == 200 and body["ok"] is True
+    assert (new_state / "questions" / "question-1.answer").read_text(encoding="utf-8") == "hi"
+
+
+def test_machine_answer_state_hint_traversal_is_contained(
+    server: tuple[WebServer, int], tmp_path: Path
+) -> None:
+    _srv, port = server
+    _make_machine_with_state(tmp_path, "adv3", "0001-work")
+    escape = tmp_path / "pwned.answer"
+    status, _ = _post(
+        port,
+        "/api/machine/adv3/approve",
+        {"id": "approval-1", "approved": True, "state": "../../../../pwned"},
+    )
+    assert status != 200
+    assert not escape.exists()

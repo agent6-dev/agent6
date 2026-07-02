@@ -68,16 +68,22 @@ class NewWorkBody(_Body):
 
 class SteerBody(_Body):
     text: str = ""
+    # For a machine: the per-state dir name the prompt was rendered from, so the
+    # answer routes to that state even if the machine has since advanced. Empty
+    # (the default, and always for a run) routes to the newest state.
+    state: str = ""
 
 
 class ApproveBody(_Body):
     id: str
     approved: bool
+    state: str = ""
 
 
 class AnswerBody(_Body):
     id: str
     answer: str
+    state: str = ""
 
 
 class MergeBody(_Body):
@@ -213,6 +219,13 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # BaseHTTPRequestHandler dispatch contract (method name fixed)
         path = unquote(urlsplit(self.path).path)
         try:
+            csrf_err = self._csrf_refusal()
+            if csrf_err is not None:
+                # Close the connection rather than drain an unread body under
+                # HTTP/1.1 keep-alive (a partial read would desync framing).
+                self.close_connection = True
+                self._send_json({"error": csrf_err}, status=403)
+                return
             self._route_post(path)
         except BrokenPipeError:
             pass
@@ -220,6 +233,40 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json({"error": f"bad request: {exc.errors()}"}, status=400)
         except Exception as exc:  # never take the whole server down for one bad request
             self._send_json({"error": str(exc)}, status=500)
+
+    def _csrf_refusal(self) -> str | None:
+        """Reason to refuse this state-changing POST as cross-site, or None.
+
+        The web UI has no app-level auth: on the default loopback bind the OS
+        user is the trust boundary, behind `tailscale serve` the tailnet
+        identity is. Neither stops a page on ANOTHER origin in the operator's
+        browser from POSTing here (classic CSRF). Two standard,
+        deployment-agnostic checks close it:
+
+        - Require `Content-Type: application/json` for a body. A cross-site
+          `fetch` with that type is not a CORS "simple request", so the
+          browser sends a preflight we never answer and the POST is blocked.
+          This shuts the hole where a JSON body rides in as `text/plain`.
+        - If an `Origin` is present, its host:port must equal `Host`. Our own
+          page matches; a cross-site page (Origin: https://evil.example) does
+          not. A missing Origin (curl, the CLI) is allowed -- not
+          browser-driven, so not a CSRF vector.
+
+        Residual: DNS rebinding (an attacker page rebinds its own hostname to
+        127.0.0.1 so its request is same-origin) is not covered here; a Host
+        allow-list would break the tailnet-hostname `tailscale serve` path, so
+        that vector is left to the network layer."""
+        n = int(self.headers.get("Content-Length", "0") or "0")
+        if n > 0:
+            ctype = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+            if ctype != "application/json":
+                return f"POST body must be Content-Type: application/json, not {ctype!r}"
+        origin = self.headers.get("Origin")
+        if origin:
+            host = self.headers.get("Host", "")
+            if urlsplit(origin).netloc != host:
+                return f"cross-origin POST refused (Origin {origin!r} != Host {host!r})"
+        return None
 
     def _read_body(self) -> dict[str, Any]:
         n = int(self.headers.get("Content-Length", "0") or "0")
@@ -292,13 +339,13 @@ class _Handler(BaseHTTPRequestHandler):
             ok, msg = actions.machine_poke(self.cwd, name, data=pb.data, message=pb.message)
         elif verb == "steer":
             body = SteerBody.model_validate(self._read_body())
-            ok, msg = actions.machine_steer(self.cwd, name, body.text)
+            ok, msg = actions.machine_steer(self.cwd, name, body.text, state=body.state)
         elif verb == "approve":
             ab = ApproveBody.model_validate(self._read_body())
-            ok, msg = actions.machine_approve(self.cwd, name, ab.id, ab.approved)
+            ok, msg = actions.machine_approve(self.cwd, name, ab.id, ab.approved, state=ab.state)
         elif verb == "answer":
             qb = AnswerBody.model_validate(self._read_body())
-            ok, msg = actions.machine_answer(self.cwd, name, qb.id, qb.answer)
+            ok, msg = actions.machine_answer(self.cwd, name, qb.id, qb.answer, state=qb.state)
         else:
             self._send_json({"error": f"not found: machine/{name}/{verb}"}, status=404)
             return

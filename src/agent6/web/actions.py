@@ -114,12 +114,25 @@ def steer(cwd: Path, run_id: str, text: str) -> tuple[bool, str]:
     return True, "steer requested"
 
 
-def _machine_state_dir(cwd: Path, name: str) -> Path | None:
-    """The current agent state's per-state dir (where its answer files live), or
-    None when the machine name is unknown or no agent state is active."""
+def _machine_state_dir(cwd: Path, name: str, state: str = "") -> Path | None:
+    """The per-state dir an answer belongs in (where its answer files live), or
+    None when the machine name is unknown or no agent state is active.
+
+    When *state* is given (the dir name the client rendered the prompt from,
+    e.g. ``0001-work``) route to exactly that state, so an answer lands in the
+    state it was shown for even if the machine has since advanced to another
+    state that reuses the same prompt id. Falls back to the newest state when
+    *state* is absent (a bare CLI/older client). *state* is validated as a
+    single existing path component so a request body cannot traverse out.
+    """
     machine_dir = model.machine_dir_for(cwd, name)
     if machine_dir is None:
         return None
+    if state:
+        if not model.is_safe_component(state):
+            return None
+        target = machine_dir / "states" / state
+        return target if target.is_dir() else None
     log = newest_state_log(machine_dir)
     return log.parent if log is not None else None
 
@@ -138,27 +151,34 @@ def machine_poke(cwd: Path, name: str, *, data: Any = None, message: str = "") -
     return True, "poked"
 
 
-def machine_approve(cwd: Path, name: str, prompt_id: str, approved: bool) -> tuple[bool, str]:
-    """Answer a pending approval in the machine's current agent state."""
-    state_dir = _machine_state_dir(cwd, name)
+def machine_approve(
+    cwd: Path, name: str, prompt_id: str, approved: bool, *, state: str = ""
+) -> tuple[bool, str]:
+    """Answer a pending approval in the agent state the prompt was rendered from
+    (``state``; newest when absent)."""
+    state_dir = _machine_state_dir(cwd, name, state)
     if state_dir is None:
         return False, f"no active agent state for machine {name!r}"
     write_answer(state_dir, prompt_id, approved=approved)
     return True, "answered"
 
 
-def machine_answer(cwd: Path, name: str, question_id: str, answer: str) -> tuple[bool, str]:
-    """Answer a pending `ask_user` question in the machine's current agent state."""
-    state_dir = _machine_state_dir(cwd, name)
+def machine_answer(
+    cwd: Path, name: str, question_id: str, answer: str, *, state: str = ""
+) -> tuple[bool, str]:
+    """Answer a pending `ask_user` question in the agent state the prompt was
+    rendered from (``state``; newest when absent)."""
+    state_dir = _machine_state_dir(cwd, name, state)
     if state_dir is None:
         return False, f"no active agent state for machine {name!r}"
     write_question_answer(state_dir, question_id, answer)
     return True, "answered"
 
 
-def machine_steer(cwd: Path, name: str, text: str) -> tuple[bool, str]:
-    """Steer the machine's current agent state (same contract as a run steer)."""
-    state_dir = _machine_state_dir(cwd, name)
+def machine_steer(cwd: Path, name: str, text: str, *, state: str = "") -> tuple[bool, str]:
+    """Steer the agent state the operator is viewing (``state``; newest when
+    absent). Same contract as a run steer."""
+    state_dir = _machine_state_dir(cwd, name, state)
     if state_dir is None:
         return False, f"no active agent state for machine {name!r}"
     write_steer_answer(state_dir, text)
