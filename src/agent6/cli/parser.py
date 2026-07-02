@@ -1016,6 +1016,18 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "machine_id", help="Machine id (directory under the per-repo state dir, machines subdir)."
     )
     machine_poke_id.completer = _complete_machine_ids  # type: ignore[attr-defined]
+    machine_poke_payload = machine_poke.add_mutually_exclusive_group()
+    machine_poke_payload.add_argument(
+        "--data",
+        metavar="JSON",
+        help="A JSON value delivered to the waking wait as its poke payload"
+        " (readable by the next tool at $AGENT6_MACHINE_DATA_DIR/poke.json).",
+    )
+    machine_poke_payload.add_argument(
+        "--message",
+        metavar="TEXT",
+        help="Shorthand for --data with a JSON string payload.",
+    )
     machine_replay = machine_sub.add_parser(
         "replay",
         help="Deterministically replay a machine's journal offline (no world I/O).",

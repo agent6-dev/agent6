@@ -168,10 +168,14 @@ def _check_state(
         if isinstance(state, AgentState):
             return _check_agent(spec, name, state, blackboard)
         if isinstance(state, WaitState):
-            goto = state.on["tick"]
+            # A wait with no timer parks until a signal poke (no `tick` edge);
+            # a timed wait simulates the tick path.
+            forever = state.every_secs is None and state.until is None and state.cron is None
+            label = "signal" if forever else "tick"
+            goto = state.on[label]
             ok = goto in spec.states
-            detail = "tick path" if ok else f"on.tick -> {goto!r} is not a state"
-            return StateCheck(name, "wait", ok, "tick", goto, detail)
+            detail = f"{label} path" if ok else f"on.{label} -> {goto!r} is not a state"
+            return StateCheck(name, "wait", ok, label, goto, detail)
         if isinstance(state, TerminalState):
             return StateCheck(name, "terminal", True, None, None, f"{state.status}: {state.reason}")
     except (EngineError, TemplateError, PredicateError) as exc:

@@ -361,23 +361,46 @@ home for cross-iteration state; the journal records every transition either way.
 ```toml
 [states.poll]
 kind = "wait"
-every_secs = "{{ poll_secs }}"   # exactly one of: every_secs | until | cron
+every_secs = "{{ poll_secs }}"   # at most one of: every_secs | until | cron
 on = { tick = "scan", signal = "scan" }
 ```
 
 `wait` is what makes a machine long-running without burning CPU or
-tokens. A state declares exactly one of `every_secs`, `until` (an
-absolute ISO-8601 instant), or `cron` (a 5-field expression); zero or
-two-or-more is a load error. On entry the engine computes the absolute
-next-wake instant and journals it as a fact *before* sleeping, so a
-replay re-reads that instant and never actually sleeps. In v1 the
-process simply blocks in-process until the instant (or an external
-`signal`, a file/IPC poke, arrives first); because the wake is
-journaled absolutely, the `--exit-on-wait` persisted-wake driver (§6)
-runs the identical file with no format change. (`cron` is parsed as a
-field but the v1 runtime cannot fire it, so `machine check` rejects a
-`cron` wait at load time, fail-loud, rather than letting it surface only
-when the wait is reached. Use `every_secs` or `until`.)
+tokens. A state declares at most one of `every_secs`, `until` (an
+absolute ISO-8601 instant), or `cron` (a 5-field expression); two-or-more
+is a load error. On entry the engine computes the absolute next-wake
+instant and journals it as a fact *before* sleeping, so a replay re-reads
+that instant and never actually sleeps. In v1 the process simply blocks
+in-process until the instant (or an external `signal`, a file/IPC poke,
+arrives first); because the wake is journaled absolutely, the
+`--exit-on-wait` persisted-wake driver (§6) runs the identical file with
+no format change. (`cron` is parsed as a field but the v1 runtime cannot
+fire it, so `machine check` rejects a `cron` wait at load time, fail-loud,
+rather than letting it surface only when the wait is reached. Use
+`every_secs` or `until`.)
+
+**Wait-forever (no timer).** Declare *zero* timers to park indefinitely
+until an operator `signal` poke:
+
+```toml
+[states.park]
+kind = "wait"
+on = { signal = "handle" }        # no timer: a forever wait declares only `signal`
+```
+
+A no-timer wait can never `tick`, so it declares only `signal`; declaring
+a `tick` edge is a load error (an unreachable edge). Under `--exit-on-wait`
+the engine persists a signal-only pending wait (no wake instant) and
+resumes when poked.
+
+**Poke payloads.** `agent6 machine poke <id> [--data <json> | --message
+<text>]` carries an optional payload to the waking `wait`. The payload is
+journaled on the `signal` `WaitFact` (replay-safe) and materialized to
+`$AGENT6_MACHINE_DATA_DIR/poke.json`, where the next `tool` reads it. No
+capture is added to `wait`: the payload flows through the existing tool ->
+capture -> branch pattern (a tool reads `poke.json`, emits JSON captured
+into `[vars.code]`, and a `branch` routes on it). On replay the journaled
+payload reproduces the identical input.
 
 #### `branch`
 
@@ -743,7 +766,7 @@ and a corrupt newest snapshot falls back to the retained tail.
 | `agent6 machine run <file> [--exit-on-wait]` | start (or resume) a machine. Acquires the lock, drives the loop. With `--exit-on-wait`, persist the next wake and exit 0 (status `waiting`) at the first not-ready `wait`, for an external scheduler (systemd timer / cron) to resume. |
 | `agent6 machine status <id>`              | current state, blackboard, spend, next wake. Read-only. |
 | `agent6 watch <id>`                       | follow a running instance live (the unified watcher; the same command follows a run): state overview + current state, each transition as it lands, and the active agent state's reasoning (its per-state `logs.jsonl`). Read-only; Ctrl-C to stop. |
-| `agent6 machine poke <id>`                | signal a waiting instance to wake on its next check. |
+| `agent6 machine poke <id> [--data <json>\|--message <text>]` | signal a waiting instance to wake on its next check; an optional payload reaches the next `tool` at `$AGENT6_MACHINE_DATA_DIR/poke.json` (journaled, replay-safe). |
 | `agent6 machine replay <id>`              | deterministic replay from the journal (no world I/O); backtesting. |
 
 `machine check` is the human-editability payoff: precise, fail-loud
@@ -1000,7 +1023,9 @@ Settled design choices, recorded so the rationale travels with the spec:
 
 - **`wait` runtime**: the format journals an absolute next-wake instant;
   the v1 runtime is plain in-process blocking (§4.3, §6). A
-  persisted-wake/systemd driver can run the identical file later.
+  persisted-wake/systemd driver can run the identical file later. A
+  zero-timer `wait` parks until a `signal` poke; the poke's optional
+  payload is journaled and materialized to `poke.json` for the next tool.
 - **Schema language**: inline `[schemas.*]` TOML (§4.6), not JSON Schema;
   no new dependency, human-editable, one mechanism for both
   `output_schema` validation and navigable record vars.

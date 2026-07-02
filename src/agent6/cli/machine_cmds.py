@@ -729,7 +729,7 @@ def _cmd_machine_replay(machine_id: str) -> int:
     return 0 if result.status in ("ok", "incomplete") else 1
 
 
-def _cmd_machine_status(machine_id: str) -> int:
+def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
     root = _machines_dir(Path.cwd()) / machine_id
     if not root.is_dir():
         print(f"ERROR: no machine instance at {root}", file=sys.stderr)
@@ -767,8 +767,11 @@ def _cmd_machine_status(machine_id: str) -> int:
     print(f"  transitions: {result.transitions}")
     print(f"  spend: ${usd_total:.4f} (in={input_total} tok, out={output_total} tok)")
     if pending is not None:
-        wake = _dt.datetime.fromtimestamp(pending.wake_epoch, tz=_dt.UTC).isoformat()
-        print(f"  next wake: {wake} (waiting in {pending.state!r})")
+        if pending.wake_epoch is not None:
+            wake = _dt.datetime.fromtimestamp(pending.wake_epoch, tz=_dt.UTC).isoformat()
+            print(f"  next wake: {wake} (waiting in {pending.state!r})")
+        else:
+            print(f"  waiting for a signal poke (in {pending.state!r})")
     if snapshot is not None and snapshot.blackboard:
         print("  blackboard:")
         for key, value in snapshot.blackboard.items():
@@ -781,17 +784,30 @@ def _cmd_machine_status(machine_id: str) -> int:
     return 0
 
 
-def _cmd_machine_poke(machine_id: str) -> int:
+def _cmd_machine_poke(
+    machine_id: str, *, data: str | None = None, message: str | None = None
+) -> int:
     root = _machines_dir(Path.cwd()) / machine_id
     if not root.is_dir():
         print(f"ERROR: no machine instance at {root}", file=sys.stderr)
         return 1
+    if message is not None:
+        payload: Any = message
+    elif data is not None:
+        try:
+            payload = json.loads(data)
+        except json.JSONDecodeError as exc:
+            print(f"ERROR: --data is not valid JSON: {exc}", file=sys.stderr)
+            return 2
+    else:
+        payload = None
     try:
-        MachineJournal(root).poke()
+        MachineJournal(root).poke(payload)
     except JournalError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
-    print(f"poked {machine_id}: it will wake on its next signal check")
+    carried = "" if payload is None else " (with payload)"
+    print(f"poked {machine_id}: it will wake on its next signal check{carried}")
     return 0
 
 

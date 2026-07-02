@@ -73,6 +73,7 @@ __all__ = [
     "LiveWorld",
     "MachineResult",
     "ToolExecResult",
+    "WaitWake",
     "World",
     "drive",
 ]
@@ -164,6 +165,18 @@ class AgentExecResult:
     output_tokens: int = 0
 
 
+@dataclass(frozen=True, slots=True)
+class WaitWake:
+    """How a `wait` woke: a clock ``tick`` or an operator ``signal`` poke.
+
+    ``payload`` is the JSON a poke carried (``None`` for a bare poke or a tick);
+    the engine journals it in the :class:`WaitFact` so a replay re-reads it.
+    """
+
+    woke_by: Literal["tick", "signal"]
+    payload: Any = None
+
+
 class World(Protocol):
     """Everything the engine is allowed to observe from the outside."""
 
@@ -175,7 +188,12 @@ class World(Protocol):
 
     def now(self) -> float: ...
 
-    def sleep_until(self, wake_epoch: float) -> Literal["tick", "signal"]: ...
+    # ``wake_epoch`` is None for a wait with no timer: block until a signal poke.
+    def sleep_until(self, wake_epoch: float | None) -> WaitWake: ...
+
+    # Materialize a poke payload where the next tool can read it (a no-op when
+    # the world has no persistent data dir; see LiveWorld.materialize_poke).
+    def materialize_poke(self, payload: Any) -> None: ...
 
 
 _SAFE_ENV_KEYS = ("PATH", "LANG", "LC_ALL", "TERM")
@@ -306,14 +324,32 @@ class LiveWorld:
     def now(self) -> float:
         return time.time()
 
-    def sleep_until(self, wake_epoch: float) -> Literal["tick", "signal"]:
+    def sleep_until(self, wake_epoch: float | None) -> WaitWake:
+        """Block until the wake instant or an operator signal poke, whichever
+        first. ``wake_epoch=None`` is a wait with no timer: park until a poke."""
         while True:
-            if self.journal.take_signal():
-                return "signal"
+            signaled, payload = self.journal.take_signal()
+            if signaled:
+                return WaitWake("signal", payload)
+            if wake_epoch is None:
+                time.sleep(self.poll_interval_s)
+                continue
             remaining = wake_epoch - time.time()
             if remaining <= 0:
-                return "tick"
+                return WaitWake("tick")
             time.sleep(min(remaining, self.poll_interval_s))
+
+    def materialize_poke(self, payload: Any) -> None:
+        """Write a signal poke's payload to ``$AGENT6_MACHINE_DATA_DIR/poke.json``
+        so the next `tool` can read it. A no-op without a data dir. Durable on
+        disk, so crash recovery finds the identical file without re-materializing.
+        """
+        if self.data_dir is None:
+            return
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        (self.data_dir / "poke.json").write_text(
+            json.dumps(payload, sort_keys=True), encoding="utf-8"
+        )
 
 
 # --------------------------------------------------------------------------
@@ -411,6 +447,11 @@ def _route_branch(state: BranchState, blackboard: Mapping[str, object]) -> tuple
 # --------------------------------------------------------------------------
 
 
+def _is_forever(state: WaitState) -> bool:
+    """A `wait` with no timer parks until a signal poke (§4.3), no wake instant."""
+    return state.every_secs is None and state.until is None and state.cron is None
+
+
 def _compute_wake(state: WaitState, blackboard: Mapping[str, object], now: float) -> float:
     if state.every_secs is not None:
         rendered = render_string(parse_template(state.every_secs), blackboard, where="every_secs")
@@ -455,17 +496,18 @@ def _fire_persisted_wait(
     """
     pending = journal.read_pending_wait()
     if pending is None or pending.state != state_name:
-        wake = _compute_wake(state, blackboard, world.now())
+        wake = None if _is_forever(state) else _compute_wake(state, blackboard, world.now())
         pending = PendingWait(state=state_name, wake_epoch=wake)
         journal.write_pending_wait(pending)
-    if journal.take_signal():
+    signaled, payload = journal.take_signal()
+    if signaled:
         journal.clear_pending_wait()
         return (
             "signal",
             state.on["signal"],
-            WaitFact(wake_epoch=pending.wake_epoch, woke_by="signal"),
+            WaitFact(wake_epoch=pending.wake_epoch, woke_by="signal", payload=payload),
         )
-    if world.now() >= pending.wake_epoch:
+    if pending.wake_epoch is not None and world.now() >= pending.wake_epoch:
         journal.clear_pending_wait()
         return "tick", state.on["tick"], WaitFact(wake_epoch=pending.wake_epoch, woke_by="tick")
     return None
@@ -520,9 +562,13 @@ def _execute(
         )
         return label, state.on[label], fact
     if isinstance(state, WaitState):
-        wake = _compute_wake(state, blackboard, world.now())
-        woke_by = world.sleep_until(wake)
-        return woke_by, state.on[woke_by], WaitFact(wake_epoch=wake, woke_by=woke_by)
+        wake = None if _is_forever(state) else _compute_wake(state, blackboard, world.now())
+        woke = world.sleep_until(wake)
+        return (
+            woke.woke_by,
+            state.on[woke.woke_by],
+            WaitFact(wake_epoch=wake, woke_by=woke.woke_by, payload=woke.payload),
+        )
     if isinstance(state, BranchState):
         index, label, goto = _route_branch(state, blackboard)
         return label, goto, BranchFact(clause_index=index)
@@ -720,9 +766,12 @@ def drive(  # noqa: PLR0911, PLR0912, PLR0915
                 fired = _fire_persisted_wait(current, blackboard, journal, world, state)
                 if fired is None:
                     pending = journal.read_pending_wait()
-                    wake = pending.wake_epoch if pending is not None else world.now()
+                    if pending is not None and pending.wake_epoch is not None:
+                        detail = f"until {pending.wake_epoch}"
+                    else:
+                        detail = "until a signal poke"
                     return MachineResult(
-                        "waiting", f"waiting in {state!r} until {wake}", state, transitions
+                        "waiting", f"waiting in {state!r} {detail}", state, transitions
                     )
                 label, goto, fact = fired
             else:
@@ -735,6 +784,11 @@ def drive(  # noqa: PLR0911, PLR0912, PLR0915
             # halt cleanly with a journaled MachineEnd in BOTH the blocking and
             # the --exit-on-wait paths. Broader EngineError faults still propagate.
             return _end_failed(journal, state, transitions, exc)
+        # Deliver a signal poke's payload to the next tool (both wait paths).
+        # Written before the StepEvent, and durable on disk, so crash recovery
+        # finds the identical poke.json without re-materializing (§4.3 poke).
+        if isinstance(fact, WaitFact) and fact.woke_by == "signal":
+            world.materialize_poke(fact.payload)
         # Apply the capture BEFORE journaling the StepEvent. If a malformed output
         # (non-JSON / missing field / mistyped) can't be reduced, the machine halts
         # cleanly here instead of writing a poison fact that would re-crash every

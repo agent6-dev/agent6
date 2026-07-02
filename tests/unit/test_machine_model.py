@@ -402,13 +402,42 @@ def test_list_spliced_inside_larger_string_is_error(tmp_path: Path) -> None:
 # -- wait timing -----------------------------------------------------------
 
 
-def test_wait_requires_exactly_one_timing(tmp_path: Path) -> None:
+def test_wait_rejects_two_timings(tmp_path: Path) -> None:
     body = VALID_MACHINE.replace(
         'every_secs = "{{ poll_secs }}"',
         'every_secs = "{{ poll_secs }}"\nuntil = "2030-01-01T00:00:00Z"',
     )
     problems = _problems(tmp_path, body)
-    assert any("exactly one of `every_secs`" in p for p in problems)
+    assert any("at most one of `every_secs`" in p for p in problems)
+
+
+def test_wait_forever_no_timer_is_valid(tmp_path: Path) -> None:
+    # A wait with no timer parks until a signal poke; it declares only `signal`.
+    body = VALID_MACHINE.replace(
+        'every_secs = "{{ poll_secs }}"\non = { tick = "scan", signal = "scan" }',
+        'on = { signal = "scan" }',
+    )
+    spec = load_machine(_write(tmp_path, body))
+    assert spec.machine == "item-classifier"
+
+
+def test_wait_forever_rejects_tick_edge(tmp_path: Path) -> None:
+    # A no-timer wait can never tick; declaring a `tick` edge is a load error.
+    body = VALID_MACHINE.replace(
+        'every_secs = "{{ poll_secs }}"\non = { tick = "scan", signal = "scan" }',
+        'on = { tick = "scan", signal = "scan" }',
+    )
+    problems = _problems(tmp_path, body)
+    assert any("tick" in p for p in problems)
+
+
+def test_wait_forever_requires_signal_edge(tmp_path: Path) -> None:
+    body = VALID_MACHINE.replace(
+        'every_secs = "{{ poll_secs }}"\non = { tick = "scan", signal = "scan" }',
+        "on = { }",
+    )
+    problems = _problems(tmp_path, body)
+    assert any("missing outcome 'signal'" in p for p in problems)
 
 
 # -- on-table completeness -------------------------------------------------

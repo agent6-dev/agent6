@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import pytest
 
@@ -17,6 +17,7 @@ from agent6.machine.engine import (
     EngineError,
     MachineResult,
     ToolExecResult,
+    WaitWake,
     World,
     drive,
 )
@@ -165,6 +166,43 @@ status = "ok"
 reason = "signalled"
 """
 
+# A wait with no timer: park until a signal poke, then a tool consumes the
+# poke payload it materialized.
+FOREVER = """
+machine = "forever"
+version = 1
+initial = "park"
+
+[budget]
+max_usd = 1.0
+max_transitions = 100
+
+[vars.code]
+last = { type = "json", default = {} }
+
+[states.park]
+kind = "wait"
+on = { signal = "record" }
+
+[states.record]
+kind = "tool"
+command = ["record"]
+capture = { stdout_json = "last" }
+timeout_secs = 5
+on = { ok = "stop_ok", nonzero = "stop_fail", timeout = "stop_fail" }
+
+[states.stop_ok]
+kind = "terminal"
+status = "ok"
+reason = "done"
+
+[states.stop_fail]
+kind = "terminal"
+status = "failed"
+reason = "fail"
+"""
+
+
 # An unbounded loop, guarded only by max_transitions.
 SPINNER = """
 machine = "spinner"
@@ -280,12 +318,14 @@ class FakeWorld:
     """A deterministic :class:`World`: programmed tool results and wakes."""
 
     tool_results: dict[str, ToolExecResult]
-    wakes: list[Literal["tick", "signal"]] = field(default_factory=list)
+    wakes: list[WaitWake] = field(default_factory=list)
     clock: float = 1000.0
     calls: list[tuple[str, ...]] = field(default_factory=list)
     net_calls: list[tuple[tuple[str, ...], bool]] = field(default_factory=list)
     agent_results: list[AgentExecResult] = field(default_factory=list)
     agent_calls: list[AgentRequest] = field(default_factory=list)
+    sleep_deadlines: list[float | None] = field(default_factory=list)
+    materialized: list[Any] = field(default_factory=list)
 
     def run_tool(
         self, argv: tuple[str, ...], timeout_s: float, *, allow_network: bool = False
@@ -301,8 +341,12 @@ class FakeWorld:
     def now(self) -> float:
         return self.clock
 
-    def sleep_until(self, wake_epoch: float) -> Literal["tick", "signal"]:
-        return self.wakes.pop(0) if self.wakes else "tick"
+    def sleep_until(self, wake_epoch: float | None) -> WaitWake:
+        self.sleep_deadlines.append(wake_epoch)
+        return self.wakes.pop(0) if self.wakes else WaitWake("tick")
+
+    def materialize_poke(self, payload: Any) -> None:
+        self.materialized.append(payload)
 
 
 def _ok(stdout: str = "") -> ToolExecResult:
@@ -489,7 +533,7 @@ def test_max_transitions_halts_loop(tmp_path: Path) -> None:
 def test_wait_tick_path(tmp_path: Path) -> None:
     journal, f = _load(tmp_path, WAITER)
     spec = load_machine(f)
-    world = FakeWorld({}, wakes=["tick"])
+    world = FakeWorld({}, wakes=[WaitWake("tick")])
     result = drive(spec, journal, world, live=True)
     assert result == MachineResult("ok", "ticked", "done", 1)
     events = journal.read()
@@ -520,9 +564,68 @@ def test_exit_on_wait_zero_dynamic_interval_fails_cleanly(tmp_path: Path) -> Non
 def test_wait_signal_path(tmp_path: Path) -> None:
     journal, f = _load(tmp_path, WAITER)
     spec = load_machine(f)
-    world = FakeWorld({}, wakes=["signal"])
+    world = FakeWorld({}, wakes=[WaitWake("signal")])
     result = drive(spec, journal, world, live=True)
     assert result == MachineResult("ok", "signalled", "woken", 1)
+
+
+def test_wait_forever_blocks_on_signal_only(tmp_path: Path) -> None:
+    journal, f = _load(tmp_path, FOREVER)
+    spec = load_machine(f)
+    world = FakeWorld(
+        {"record": _ok('{"got": true}')}, wakes=[WaitWake("signal", {"cmd": "go", "n": 2})]
+    )
+    result = drive(spec, journal, world, live=True)
+    assert result == MachineResult("ok", "done", "stop_ok", 2)
+    # A no-timer wait passes None as the deadline (park until a signal).
+    assert world.sleep_deadlines == [None]
+    # The poke payload was materialized for the next tool and journaled.
+    assert world.materialized == [{"cmd": "go", "n": 2}]
+    from agent6.machine.journal import WaitFact
+
+    wait_step = next(
+        e for e in journal.read() if isinstance(e, StepEvent) and isinstance(e.fact, WaitFact)
+    )
+    assert isinstance(wait_step.fact, WaitFact)
+    assert wait_step.fact.wake_epoch is None
+    assert wait_step.fact.payload == {"cmd": "go", "n": 2}
+
+
+def test_wait_forever_payload_reproduces_on_replay(tmp_path: Path) -> None:
+    # The journaled poke payload is a fact: replay rebuilds the identical path.
+    journal, f = _load(tmp_path, FOREVER)
+    spec = load_machine(f)
+    world = FakeWorld({"record": _ok('{"got": true}')}, wakes=[WaitWake("signal", {"cmd": "go"})])
+    live = drive(spec, journal, world, live=True)
+    replayed = drive(spec, journal, None, live=False)
+    assert replayed == live
+
+
+def test_exit_on_wait_forever_parks_until_signal(tmp_path: Path) -> None:
+    journal, f = _load(tmp_path, FOREVER)
+    spec = load_machine(f)
+    # No timer: --exit-on-wait persists a signal-only pending wait (no instant).
+    result = drive(spec, journal, FakeWorld({}), live=True, exit_on_wait=True)
+    assert result.status == "waiting"
+    assert "signal poke" in result.reason
+    pending = journal.read_pending_wait()
+    assert pending is not None
+    assert pending.wake_epoch is None
+    # A poke with a payload fires it on the next scheduler invocation.
+    journal.poke({"cmd": "go"})
+    result = drive(
+        spec,
+        journal,
+        FakeWorld({"record": _ok('{"got": true}')}),
+        live=True,
+        exit_on_wait=True,
+    )
+    assert result == MachineResult("ok", "done", "stop_ok", 2)
+    wait_step = next(e for e in journal.read() if isinstance(e, StepEvent))
+    from agent6.machine.journal import WaitFact
+
+    assert isinstance(wait_step.fact, WaitFact)
+    assert wait_step.fact.payload == {"cmd": "go"}
 
 
 def test_exit_on_wait_arms_and_yields_waiting(tmp_path: Path) -> None:

@@ -257,18 +257,27 @@ def test_snapshot_keep_zero_disables_pruning(tmp_path: Path) -> None:
 
 def test_take_signal_consumes_file(tmp_path: Path) -> None:
     j = _journal(tmp_path)
-    assert j.take_signal() is False
-    j.signal_path.write_text("", encoding="utf-8")
-    assert j.take_signal() is True
-    assert j.take_signal() is False
+    assert j.take_signal() == (False, None)
+    j.signal_path.write_text("", encoding="utf-8")  # a hand-touched empty poke
+    assert j.take_signal() == (True, None)
+    assert j.take_signal() == (False, None)
 
 
 def test_poke_writes_signal_consumed_by_take_signal(tmp_path: Path) -> None:
     j = _journal(tmp_path)
-    assert j.take_signal() is False
+    assert j.take_signal() == (False, None)
     j.poke()
-    assert j.take_signal() is True
-    assert j.take_signal() is False
+    assert j.take_signal() == (True, None)
+    assert j.take_signal() == (False, None)
+
+
+def test_poke_carries_payload(tmp_path: Path) -> None:
+    j = _journal(tmp_path)
+    j.poke({"cmd": "reload", "n": 3})
+    assert j.take_signal() == (True, {"cmd": "reload", "n": 3})
+    # A --message-style string payload round-trips too.
+    j.poke("hello")
+    assert j.take_signal() == (True, "hello")
 
 
 def test_pending_wait_roundtrip_and_clear(tmp_path: Path) -> None:

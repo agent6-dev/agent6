@@ -29,6 +29,7 @@ from agent6.machine.engine import (
     LiveWorld,
     MachineResult,
     ToolExecResult,
+    WaitWake,
     World,
     drive,
 )
@@ -81,6 +82,7 @@ __all__ = [
     "ToolExecResult",
     "ToolState",
     "WaitFact",
+    "WaitWake",
     "World",
     "build_authoring_prompt",
     "drive",

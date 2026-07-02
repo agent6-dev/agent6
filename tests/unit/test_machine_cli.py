@@ -147,7 +147,33 @@ def test_poke_drops_signal_for_waiting_machine(
     assert "poked" in capsys.readouterr().out
     # The signal is now pending for the next take_signal().
     root = resolved_state_dir(tmp_path) / "machines" / "waiter_delayed"
-    assert MachineJournal(root).take_signal() is True
+    assert MachineJournal(root).take_signal() == (True, None)
+
+
+def test_poke_carries_data_payload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    f = _write_machine(tmp_path)
+    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    capsys.readouterr()
+    assert main(["machine", "poke", "waiter_delayed", "--data", '{"cmd": "go"}']) == 0
+    root = resolved_state_dir(tmp_path) / "machines" / "waiter_delayed"
+    assert MachineJournal(root).take_signal() == (True, {"cmd": "go"})
+    # --message wraps a plain string.
+    assert main(["machine", "poke", "waiter_delayed", "--message", "hello"]) == 0
+    assert MachineJournal(root).take_signal() == (True, "hello")
+
+
+def test_poke_rejects_invalid_json_data(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    f = _write_machine(tmp_path)
+    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    capsys.readouterr()
+    assert main(["machine", "poke", "waiter_delayed", "--data", "{not json}"]) == 2
+    assert "not valid JSON" in capsys.readouterr().err
 
 
 def test_poke_missing_instance_errors(

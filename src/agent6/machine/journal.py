@@ -25,6 +25,7 @@ Layout under the per-repo state dir (``machines/<id>/``) (§5.3)::
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Generator
 from contextlib import contextmanager, suppress
@@ -84,8 +85,12 @@ class WaitFact(BaseModel):
     model_config = _MODEL_CONFIG
 
     kind: Literal["wait"] = "wait"
-    wake_epoch: float
+    # ``None`` for a wait with no timer (parks until a `signal` poke, §4.3).
+    wake_epoch: float | None = None
     woke_by: Literal["tick", "signal"]
+    # The poke payload delivered by a `signal` wake, journaled so a replay
+    # re-reads the identical input. ``None`` for a bare poke or a `tick`.
+    payload: Any = None
 
 
 class BranchFact(BaseModel):
@@ -177,7 +182,9 @@ class PendingWait(BaseModel):
     model_config = _MODEL_CONFIG
 
     state: str
-    wake_epoch: float
+    # ``None`` for a wait with no timer: it fires only on a `signal` poke, never
+    # on a wake instant, so ``--exit-on-wait`` parks it until the operator pokes.
+    wake_epoch: float | None = None
 
 
 # --------------------------------------------------------------------------
@@ -319,17 +326,36 @@ class MachineJournal:
                 continue
         return None
 
-    def take_signal(self) -> bool:
-        """Consume a pending operator poke, if any. Returns True if one was present."""
-        if self.signal_path.exists():
-            self.signal_path.unlink()
-            return True
-        return False
+    def take_signal(self) -> tuple[bool, Any]:
+        """Consume a pending operator poke, if any.
 
-    def poke(self) -> None:
-        """Drop a signal file so a blocked or armed `wait` wakes (§6 signal-poke)."""
+        Returns ``(present, payload)``: ``present`` is True when a signal file was
+        consumed; ``payload`` is the JSON the poke carried (``None`` for a bare
+        poke, an empty file, or an unparseable one -- a hand-touched signal is a
+        valid bare wake).
+        """
+        if not self.signal_path.exists():
+            return False, None
+        try:
+            raw = self.signal_path.read_text(encoding="utf-8")
+        except OSError:
+            raw = ""
+        self.signal_path.unlink(missing_ok=True)
+        if not raw.strip():
+            return True, None
+        try:
+            return True, json.loads(raw)
+        except json.JSONDecodeError:
+            return True, None
+
+    def poke(self, payload: Any = None) -> None:
+        """Drop a signal file so a blocked or armed `wait` wakes (§6 signal-poke).
+
+        The optional *payload* travels to the waking `wait` as its `signal`
+        payload (journaled, replay-safe) for the next tool to read.
+        """
         self.root.mkdir(parents=True, exist_ok=True)
-        self.signal_path.write_text("", encoding="utf-8")
+        self.signal_path.write_text(json.dumps(payload), encoding="utf-8")
 
     def read_pending_wait(self) -> PendingWait | None:
         if not self.wait_path.is_file():

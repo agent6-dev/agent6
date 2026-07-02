@@ -689,7 +689,6 @@ def _validate_wait(
     var_values: dict[str, Any],
     schemas: dict[str, dict[str, TypeRef]],
 ) -> list[str]:
-    problems = _validate_on(name, state.on, WAIT_LABELS)
     timings = [
         timing
         for timing, value in (
@@ -699,11 +698,18 @@ def _validate_wait(
         )
         if value is not None
     ]
-    if len(timings) != 1:
-        problems.append(
-            f"state {name!r}: a `wait` must declare exactly one of `every_secs`, `until`,"
-            f" or `cron` (found: {timings or 'none'})"
-        )
+    if len(timings) > 1:
+        problems = [
+            f"state {name!r}: a `wait` may declare at most one of `every_secs`, `until`,"
+            f" or `cron` (found: {timings})"
+        ]
+    elif not timings:
+        # A wait with no timer parks until an operator `signal` poke (§4.3). It
+        # can never `tick`, so it declares only `signal`; declaring `tick` is a
+        # load error (an unreachable edge).
+        problems = _validate_on(name, state.on, WAIT_LABELS - frozenset({"tick"}))
+    else:
+        problems = _validate_on(name, state.on, WAIT_LABELS)
     if state.cron is not None:
         # `cron` is parsed but the v1 runtime cannot fire it -- `machine run`
         # would raise mid-run. Reject it at load so `machine check`/`test`

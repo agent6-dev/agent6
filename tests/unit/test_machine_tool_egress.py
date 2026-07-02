@@ -127,8 +127,13 @@ class _RecordingWorld:
     def now(self) -> float:
         return 1000.0
 
-    def sleep_until(self, wake_epoch: float) -> Any:  # pragma: no cover
-        return "tick"
+    def sleep_until(self, wake_epoch: float | None) -> Any:  # pragma: no cover
+        from agent6.machine.engine import WaitWake
+
+        return WaitWake("tick")
+
+    def materialize_poke(self, payload: Any) -> None:  # pragma: no cover
+        pass
 
 
 def test_engine_passes_per_state_allow_network(tmp_path: Path) -> None:

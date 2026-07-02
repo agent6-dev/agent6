@@ -411,7 +411,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
     if args.command == "machine" and args.machine_command == "status":
         return _cmd_machine_status(args.machine_id)
     if args.command == "machine" and args.machine_command == "poke":
-        return _cmd_machine_poke(args.machine_id)
+        return _cmd_machine_poke(args.machine_id, data=args.data, message=args.message)
     if args.command == "machine" and args.machine_command == "replay":
         return _cmd_machine_replay(args.machine_id)
     if args.command == "machine" and args.machine_command == "create":
