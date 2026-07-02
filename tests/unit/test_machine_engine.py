@@ -819,6 +819,58 @@ def test_agent_without_runner_raises(tmp_path: Path) -> None:
         drive(spec, journal, world, live=True)
 
 
+def test_per_state_agent_log_path_and_prune(tmp_path: Path) -> None:
+    """Each agent-state execution gets its own watchable logs.jsonl at
+    <state_log_root>/<seq>-<state>/, and the dirs are pruned to the most recent
+    state_log_keep so a long-running machine's logs stay bounded."""
+    from agent6.machine.engine import LiveWorld
+
+    journal = MachineJournal(tmp_path / "inst")
+    states_root = tmp_path / "inst" / "states"
+    captured: list[Path | None] = []
+
+    def fake_runner(req: AgentRequest, events_log: Path | None) -> AgentExecResult:
+        captured.append(events_log)
+        if events_log is not None:  # the real subprocess creates the log; simulate it
+            events_log.parent.mkdir(parents=True, exist_ok=True)
+            events_log.write_text("{}\n", encoding="utf-8")
+        return AgentExecResult(reason="finish_run", payload=None)
+
+    world = LiveWorld(
+        cwd=tmp_path,
+        journal=journal,
+        agent_runner=fake_runner,
+        state_log_root=states_root,
+        state_log_keep=3,
+    )
+    for seq in range(5):
+        world.run_agent(AgentRequest(prompt="x", timeout_s=1.0, state_name="s", step_seq=seq))
+
+    # Each call got its own seq-named log path.
+    assert captured[0] == states_root / "0000-s" / "logs.jsonl"
+    assert captured[4] == states_root / "0004-s" / "logs.jsonl"
+    # Pruned to keep=3: only the three most recent state dirs survive on disk.
+    assert sorted(p.name for p in states_root.iterdir()) == ["0002-s", "0003-s", "0004-s"]
+
+
+def test_per_state_log_disabled_without_root(tmp_path: Path) -> None:
+    """No state_log_root -> no per-state log (the create authoring agent and any
+    runner that doesn't want logs get None)."""
+    from agent6.machine.engine import LiveWorld
+
+    seen: list[Path | None] = []
+
+    def fake_runner(req: AgentRequest, events_log: Path | None) -> AgentExecResult:
+        seen.append(events_log)
+        return AgentExecResult(reason="finish_run", payload=None)
+
+    world = LiveWorld(
+        cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), agent_runner=fake_runner
+    )
+    world.run_agent(AgentRequest(prompt="x", timeout_s=1.0, state_name="s", step_seq=0))
+    assert seen == [None]
+
+
 def test_machine_stops_on_best_effort_usd_limit(tmp_path: Path) -> None:
     # Same guard as max_usd; only the run-start price preflight differs.
     body = _SPENDER.replace("max_usd = 0.05", "best_effort_usd_limit = 0.05")

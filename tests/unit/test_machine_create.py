@@ -164,7 +164,7 @@ def _stub_runner(monkeypatch: pytest.MonkeyPatch, results: Iterable[AgentExecRes
     def fake_build(
         cfg: object, root: Path, profile: object, transcript_dir: Path, **_kw: object
     ) -> Callable[[AgentRequest], AgentExecResult]:
-        def run(_request: AgentRequest) -> AgentExecResult:
+        def run(_request: AgentRequest, _events_log: object = None) -> AgentExecResult:
             return next(seq)
 
         return run
@@ -184,7 +184,7 @@ def test_create_inherits_worker_model(tmp_path: Path, monkeypatch: pytest.Monkey
     def fake_build(
         cfg: object, root: Path, profile: object, transcript_dir: Path, **_kw: object
     ) -> Callable[[AgentRequest], AgentExecResult]:
-        def run(request: AgentRequest) -> AgentExecResult:
+        def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
             captured.append(request)
             return AgentExecResult(
                 reason="finish_run", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0
@@ -233,10 +233,9 @@ def test_create_writes_watchable_event_log(tmp_path: Path, monkeypatch: pytest.M
 
     def fake_build(
         cfg: object, root: Path, profile: object, transcript_dir: Path, **kw: object
-    ) -> Callable[[AgentRequest], AgentExecResult]:
-        captured_log.append(kw.get("events_log"))
-
-        def run(_request: AgentRequest) -> AgentExecResult:
+    ) -> Callable[[AgentRequest, object], AgentExecResult]:
+        def run(_request: AgentRequest, events_log: object = None) -> AgentExecResult:
+            captured_log.append(events_log)  # events_log is now per CALL, not per build
             return AgentExecResult(
                 reason="finish_run", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0
             )
@@ -444,7 +443,7 @@ def test_create_retry_prompt_carries_prior_scripts(
     def fake_build(
         cfg: object, root: Path, profile: object, transcript_dir: Path, **_kw: object
     ) -> Callable[[AgentRequest], AgentExecResult]:
-        def run(request: AgentRequest) -> AgentExecResult:
+        def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
             prompts.append(request.prompt)
             return next(responses)
 

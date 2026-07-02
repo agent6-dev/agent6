@@ -272,8 +272,7 @@ def _build_machine_agent_runner(
     transcript_dir: Path,
     protect_paths: tuple[Path, ...] = (),
     commit_identity: CommitIdentity | None = None,
-    events_log: Path | None = None,
-) -> Callable[[AgentRequest], AgentExecResult]:
+) -> Callable[[AgentRequest, Path | None], AgentExecResult]:
     """Build the runner an `agent` state uses to drive a confined agent6 loop.
 
     The machine engine is a host-netns supervisor; each `agent` state runs in
@@ -284,9 +283,13 @@ def _build_machine_agent_runner(
     operator-authored prompt travels in that file, never on the command line.
     ``timeout_secs`` is enforced by killing the subprocess's whole process group
     (true mid-call cancellation, and the per-agent broker is torn down with it).
+
+    ``events_log`` is per CALL: the live World passes each agent-state execution
+    its own ``<instance>/states/<seq>-<state>/logs.jsonl`` and `machine create`
+    passes the draft log, so the subprocess writes a watchable event stream there.
     """
 
-    def run_agent(request: AgentRequest) -> AgentExecResult:
+    def run_agent(request: AgentRequest, events_log: Path | None = None) -> AgentExecResult:
         payload = {
             "cwd": str(cwd),
             "root": str(cwd),
@@ -571,7 +574,7 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
     # mode="run" agent states edit + commit; they need a resolved git identity.
     has_run_agent = any(isinstance(s, AgentState) and s.mode == "run" for s in states)
     tool_states = [s for s in states if isinstance(s, ToolState)]
-    agent_runner: Callable[[AgentRequest], AgentExecResult] | None = None
+    agent_runner: Callable[[AgentRequest, Path | None], AgentExecResult] | None = None
     # Default profile for confinement-free machines: resolve from the host.
     profile: SandboxProfile = detect_env().detected_profile
     # The running machine's own file + scripts bundle are read-only in every
@@ -676,6 +679,9 @@ def _cmd_machine_run(path: Path, *, exit_on_wait: bool = False) -> int:  # noqa:
                 profile=profile,
                 protect_paths=protect_paths,
                 data_dir=data_dir,
+                # Each agent state writes its own watchable logs.jsonl here, so a
+                # running machine is followable like a run (pruned to keep recent).
+                state_log_root=root / "states",
             )
             result = drive(spec, journal, world, live=True, exit_on_wait=exit_on_wait)
     except (JournalError, EngineError) as exc:
@@ -880,9 +886,7 @@ def _cmd_machine_create(  # noqa: PLR0911, PLR0912, PLR0915
     events = EventSink(events_log)
     events.emit("run.start", user_task=task, mode="machine")
     # Authoring drafts a machine; it has no machine [config] overlay of its own.
-    runner = _build_machine_agent_runner(
-        {}, cwd, profile, scratch / "agent_transcripts", events_log=events_log
-    )
+    runner = _build_machine_agent_runner({}, cwd, profile, scratch / "agent_transcripts")
 
     # The drafted machine's agent states inherit this worker model. If it is
     # unpriced (anthropic-direct, local), steer the draft to best_effort_usd_limit
@@ -911,7 +915,10 @@ def _cmd_machine_create(  # noqa: PLR0911, PLR0912, PLR0915
         events.emit("loop.note", text=f"attempt {attempt}/{max_attempts}")
         # model omitted (=None): inherit the operator's effective worker model.
         # mode="machine": authoring system prompt + read-only tools (see loop.py).
-        result = runner(AgentRequest(prompt=prompt, timeout_s=_CREATE_TIMEOUT_S, mode="machine"))
+        result = runner(
+            AgentRequest(prompt=prompt, timeout_s=_CREATE_TIMEOUT_S, mode="machine"),
+            events_log,
+        )
         total_usd += result.usd
         candidate = extract_toml(result.payload)
         if candidate is None:

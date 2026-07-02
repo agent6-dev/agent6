@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import time
 from collections.abc import Callable, Mapping
@@ -136,6 +137,12 @@ class AgentRequest:
     # state that opted into coding work; "machine" for the `machine create`
     # authoring agent. machine_agent maps anything else to "run".
     mode: str = "agent"
+    # Which state, at which transition, this agent invocation is. The live World
+    # uses them to give each agent-state execution its own watchable logs.jsonl
+    # (``<instance>/states/<seq>-<name>/``), so a running machine is followable
+    # like a run. Empty/0 for the `machine create` authoring agent (no state).
+    state_name: str = ""
+    step_seq: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,6 +181,26 @@ class World(Protocol):
 _SAFE_ENV_KEYS = ("PATH", "LANG", "LC_ALL", "TERM")
 
 
+def _state_log_seq(p: Path) -> int:
+    """The numeric transition seq from a ``<seq>-<state>`` per-state log dir name
+    (so the sort is by seq, not lexical -- correct past 9999)."""
+    prefix = p.name.split("-", 1)[0]
+    return int(prefix) if prefix.isdigit() else -1
+
+
+def _prune_state_logs(root: Path, *, keep: int) -> None:
+    """Keep only the most recent *keep-1* per-state log dirs under *root* (leaving
+    room for the one about to be written), so a long-running machine's reasoning
+    logs stay bounded. The journal (the durable audit) keeps the full transition
+    history regardless. Best effort: never let cleanup break a run."""
+    try:
+        dirs = sorted((p for p in root.iterdir() if p.is_dir()), key=_state_log_seq)
+    except OSError:
+        return
+    for stale in dirs[: max(0, len(dirs) - keep + 1)]:
+        shutil.rmtree(stale, ignore_errors=True)
+
+
 @dataclass(frozen=True, slots=True)
 class LiveWorld:
     """Production :class:`World`: tools go through the jail, waits really sleep.
@@ -191,9 +218,17 @@ class LiveWorld:
 
     cwd: Path
     journal: MachineJournal
-    agent_runner: Callable[[AgentRequest], AgentExecResult] | None = None
+    # Per-call ``events_log``: each agent-state execution gets its own logs.jsonl
+    # (None for the rare runner that wants no log). The World derives the path.
+    agent_runner: Callable[[AgentRequest, Path | None], AgentExecResult] | None = None
     poll_interval_s: float = 0.5
     profile: SandboxProfile = "strict"
+    # When set, each agent-state execution writes a watchable event stream to
+    # ``<state_log_root>/<seq>-<state>/logs.jsonl`` (the CLI points it at
+    # ``<instance>/states``), pruned to the most recent ``state_log_keep`` so a
+    # long-running machine's logs stay bounded. None disables per-state logs.
+    state_log_root: Path | None = None
+    state_log_keep: int = 50
     # Paths made read-only in every tool jail, the running machine's own
     # `.asm.toml` + `scripts/` bundle, so a tool can't rewrite its own machine
     # logic or bundled scripts mid-run (set by the CLI).
@@ -257,7 +292,16 @@ class LiveWorld:
     def run_agent(self, request: AgentRequest) -> AgentExecResult:
         if self.agent_runner is None:
             raise EngineError("machine reached an `agent` state but no agent runner is configured")
-        return self.agent_runner(request)
+        return self.agent_runner(request, self._state_log(request))
+
+    def _state_log(self, request: AgentRequest) -> Path | None:
+        """The per-execution event-log path for this agent state, or None when
+        per-state logs are disabled. Prunes to the most recent ``state_log_keep``
+        first so a long-running machine never accumulates them without bound."""
+        if self.state_log_root is None or not request.state_name:
+            return None
+        _prune_state_logs(self.state_log_root, keep=self.state_log_keep)
+        return self.state_log_root / f"{request.step_seq:04d}-{request.state_name}" / "logs.jsonl"
 
     def now(self) -> float:
         return time.time()
@@ -447,7 +491,13 @@ def _agent_outcome(
 
 
 def _execute(
-    spec: MachineSpec, state: StateSpec, blackboard: Mapping[str, object], world: World
+    spec: MachineSpec,
+    state: StateSpec,
+    blackboard: Mapping[str, object],
+    world: World,
+    *,
+    seq: int = 0,
+    state_name: str = "",
 ) -> tuple[str, str, Fact]:
     if isinstance(state, ToolState):
         argv = render_command(state.command, blackboard, where="command")
@@ -494,6 +544,9 @@ def _execute(
                 # Per-state: "agent" (default) is a read-only structured-output
                 # judge; "run" lets the state do real coding work (opt-in).
                 mode=state.mode,
+                # So the live World can give this execution its own watchable log.
+                state_name=state_name,
+                step_seq=seq,
             )
         )
         outcome = _agent_outcome(spec, state, result)
@@ -673,7 +726,9 @@ def drive(  # noqa: PLR0911, PLR0912, PLR0915
                     )
                 label, goto, fact = fired
             else:
-                label, goto, fact = _execute(spec, current, blackboard, world)
+                label, goto, fact = _execute(
+                    spec, current, blackboard, world, seq=transitions, state_name=state
+                )
         except _STATE_RUNTIME_ERRORS as exc:
             # A data-driven state failure (e.g. an absent optional field, a tool
             # command rendering a non-scalar, a dynamic wait interval of zero):

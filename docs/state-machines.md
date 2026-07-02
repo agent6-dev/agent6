@@ -660,20 +660,31 @@ the workspace:
 
 ```
 <state-dir>/<repo-id>/machines/<machine-id>/
-  journal.jsonl          # append-only, fsync'd, one event per line
-  snapshots/<n>.json     # blackboard + current state, atomic temp+rename
-  agents/<state>/<n>/    # nested agent6 run dirs (snapshots, transcripts)
-  machine.lock           # single-writer guard (one process per machine)
+  journal.jsonl              # append-only, fsync'd, one event per line
+  snapshots/<n>.json         # blackboard + current state, atomic temp+rename
+  agent_transcripts/<ts>.json  # full lossless conversation per agent-state run
+  states/<seq>-<state>/logs.jsonl  # per-execution event stream (role.*/tool.*),
+                                   #   the watchable live view; pruned to recent
+  data/                      # persistent writable scratch ($AGENT6_MACHINE_DATA_DIR)
+  machine.lock               # single-writer guard (one process per machine)
 ```
 
-Sizing for long-running machines: both the journal and snapshots grow
+Each `agent` state execution emits a `logs.jsonl` event stream under
+`states/<seq>-<state>/` (the same `role.*_delta` / `tool.*` events a run
+emits), so a running machine is followable live exactly like a run. These
+heavy logs are pruned to the most recent `state_log_keep` (default 50) so a
+long-running machine never accumulates them without bound; the journal stays
+the complete transition history regardless.
+
+Sizing for long-running machines: the journal and snapshots grow
 monotonically, roughly one journal line (~200 B) plus one snapshot (a few
 KB) per transition. A 10-minute-interval machine makes ~150k transitions
 a year (3 per tick on the idle path), on the order of tens of MB of
-journal and a few hundred MB of snapshots. There is no automatic
-rotation in v1; archive or delete an instance directory once its history
-is no longer needed for replay, and size `[budget] max_transitions` as
-the primary runaway guard.
+journal and a few hundred MB of snapshots. The per-state reasoning logs do
+NOT grow with wall-clock time -- only with agent-state executions, and they
+self-prune. There is no automatic rotation of the journal/snapshots in v1;
+archive or delete an instance directory once its history is no longer needed
+for replay, and size `[budget] max_transitions` as the primary runaway guard.
 
 ### 5.4 Idempotency and crash recovery
 
