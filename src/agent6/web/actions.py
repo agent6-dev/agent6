@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 from agent6.frontend.approval import (
     request_steer,
@@ -28,6 +29,8 @@ from agent6.frontend.spawn import (
     spawn_and_locate,
     spawn_detached,
 )
+from agent6.machine import JournalError, MachineJournal
+from agent6.viewmodel import newest_state_log
 from agent6.web import model
 
 # Modes `agent6 web` can start as new work, mapped 1:1 to the CLI subcommand.
@@ -108,6 +111,58 @@ def steer(cwd: Path, run_id: str, text: str) -> tuple[bool, str]:
         return False, f"no run {run_id!r}"
     write_steer_answer(run_dir, text)  # ready before the run reads it
     request_steer(run_dir)
+    return True, "steer requested"
+
+
+def _machine_state_dir(cwd: Path, name: str) -> Path | None:
+    """The current agent state's per-state dir (where its answer files live), or
+    None when the machine name is unknown or no agent state is active."""
+    machine_dir = model.machine_dir_for(cwd, name)
+    if machine_dir is None:
+        return None
+    log = newest_state_log(machine_dir)
+    return log.parent if log is not None else None
+
+
+def machine_poke(cwd: Path, name: str, *, data: Any = None, message: str = "") -> tuple[bool, str]:
+    """Poke a waiting machine, optionally carrying a payload the next tool reads.
+    `data` (any JSON) wins over `message` (a string); neither is a bare wake."""
+    machine_dir = model.machine_dir_for(cwd, name)
+    if machine_dir is None:
+        return False, f"no machine {name!r}"
+    payload: Any = data if data is not None else (message or None)
+    try:
+        MachineJournal(machine_dir).poke(payload)
+    except JournalError as exc:
+        return False, str(exc)
+    return True, "poked"
+
+
+def machine_approve(cwd: Path, name: str, prompt_id: str, approved: bool) -> tuple[bool, str]:
+    """Answer a pending approval in the machine's current agent state."""
+    state_dir = _machine_state_dir(cwd, name)
+    if state_dir is None:
+        return False, f"no active agent state for machine {name!r}"
+    write_answer(state_dir, prompt_id, approved=approved)
+    return True, "answered"
+
+
+def machine_answer(cwd: Path, name: str, question_id: str, answer: str) -> tuple[bool, str]:
+    """Answer a pending `ask_user` question in the machine's current agent state."""
+    state_dir = _machine_state_dir(cwd, name)
+    if state_dir is None:
+        return False, f"no active agent state for machine {name!r}"
+    write_question_answer(state_dir, question_id, answer)
+    return True, "answered"
+
+
+def machine_steer(cwd: Path, name: str, text: str) -> tuple[bool, str]:
+    """Steer the machine's current agent state (same contract as a run steer)."""
+    state_dir = _machine_state_dir(cwd, name)
+    if state_dir is None:
+        return False, f"no active agent state for machine {name!r}"
+    write_steer_answer(state_dir, text)
+    request_steer(state_dir)
     return True, "steer requested"
 
 

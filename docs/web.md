@@ -42,12 +42,28 @@ invocation. Stop it with Ctrl-C.
   answer `ask_user` questions inline.
 - **Transcript**: the full provider-agnostic conversation.
 - **Machines**: the state overview, the path taken, and the current agent
-  state's live reasoning.
+  state's live reasoning. Steer, approve, and answer the current agent state's
+  prompts inline (same controls as a run); send a message to a waiting machine
+  (a `poke` payload the next tool reads); and see `machine.notify`/end as
+  ephemeral banners and OS notifications.
 - **Config**: every setting with its value and source, filterable, click a row
   to set it. Secrets are never shown.
 
 The layout reflows: multi-pane on a wide screen, a single column with a bottom
 nav on a phone.
+
+## Notifications and installing (PWA)
+
+The page ships a web app manifest and a service worker, so it installs as a PWA
+(a phone home-screen app or a desktop app). Click **🔔 Notifications** on a
+machine view to grant permission; a `machine.notify` message or a machine's
+completion then pops an OS notification (foreground on any device, and
+backgrounded on desktop; a backgrounded phone will not wake, which is expected).
+There is no Web Push / VAPID; notifications are the foreground Notification API
+only. Notifications are ephemeral overlays: they never clear or block the
+send/answer inputs (a banner popping mid-type never loses your text or focus).
+For out-of-band delivery to a phone in a pocket, use the operator notify hook
+`[machine.notify].on_event` (see [config.md](config.md)).
 
 ## How it talks to the server
 
@@ -64,8 +80,13 @@ curl -sN localhost:8901/api/run/<id>/events    # SSE: a fresh snapshot per chang
 
 `curl /api/run/<id>` returns exactly what `agent6 watch <id> --json` prints.
 Writes are small JSON `POST`s (`/api/new`, `/api/run/<id>/{steer,approve,answer,merge}`,
-`/api/runs/prune`, `/api/config`, `/api/machine/{create,run}`) that only ever
-drive the typed spawn / answer-file contracts, never arbitrary execution.
+`/api/machine/<name>/{poke,steer,approve,answer}`, `/api/runs/prune`,
+`/api/config`, `/api/machine/{create,run}`) that only ever drive the typed spawn /
+answer-file contracts, never arbitrary execution. A machine's `approve`/`answer`/
+`steer` land in the current agent state's per-state dir; `poke` drops a signal
+(with an optional `message`/`data` payload) on the instance. The machine name and
+every answer id are validated to a single path component, so a request cannot
+traverse out of the instance dir.
 
 ## Remote access (Tailscale)
 

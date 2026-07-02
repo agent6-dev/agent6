@@ -43,7 +43,7 @@ from agent6.frontend.approval import (
 from agent6.machine import MachineError
 from agent6.viewmodel import apply_event, initial_state, run_state_as_dict, tail_events
 from agent6.web import actions, model
-from agent6.web.page import PAGE_HTML
+from agent6.web.page import ICON_SVG, MANIFEST_JSON, PAGE_HTML, SERVICE_WORKER_JS
 
 # SSE tuning: coalesce high-frequency streaming deltas, heartbeat idle streams so
 # a disconnected client is noticed and its worker thread exits.
@@ -90,6 +90,12 @@ class MachineCreateBody(_Body):
 
 class MachineRunBody(_Body):
     file: str
+
+
+class MachinePokeBody(_Body):
+    # A JSON `data` payload wins over a `message` string; neither = a bare wake.
+    message: str = ""
+    data: Any = None
 
 
 class ConfigSetBody(_Body):
@@ -225,7 +231,7 @@ class _Handler(BaseHTTPRequestHandler):
             raise ValueError("request body must be a JSON object")
         return obj
 
-    def _route_post(self, path: str) -> None:
+    def _route_post(self, path: str) -> None:  # noqa: PLR0911
         parts = path.strip("/").split("/")
         # /api/new  /api/runs/prune  /api/config  /api/machine/create  /api/machine/run
         if path == "/api/new":
@@ -256,6 +262,10 @@ class _Handler(BaseHTTPRequestHandler):
         if len(parts) == 4 and parts[0] == "api" and parts[1] == "run":
             self._route_run_post(parts[2], parts[3])
             return
+        # /api/machine/<name>/<verb>
+        if len(parts) == 4 and parts[0] == "api" and parts[1] == "machine":
+            self._route_machine_post(parts[2], parts[3])
+            return
         self._send_json({"error": f"not found: {path}"}, status=404)
 
     def _route_run_post(self, run_id: str, verb: str) -> None:
@@ -276,6 +286,24 @@ class _Handler(BaseHTTPRequestHandler):
             return
         self._ok_or_err(ok, {"message": msg}, msg)
 
+    def _route_machine_post(self, name: str, verb: str) -> None:
+        if verb == "poke":
+            pb = MachinePokeBody.model_validate(self._read_body())
+            ok, msg = actions.machine_poke(self.cwd, name, data=pb.data, message=pb.message)
+        elif verb == "steer":
+            body = SteerBody.model_validate(self._read_body())
+            ok, msg = actions.machine_steer(self.cwd, name, body.text)
+        elif verb == "approve":
+            ab = ApproveBody.model_validate(self._read_body())
+            ok, msg = actions.machine_approve(self.cwd, name, ab.id, ab.approved)
+        elif verb == "answer":
+            qb = AnswerBody.model_validate(self._read_body())
+            ok, msg = actions.machine_answer(self.cwd, name, qb.id, qb.answer)
+        else:
+            self._send_json({"error": f"not found: machine/{name}/{verb}"}, status=404)
+            return
+        self._ok_or_err(ok, {"message": msg}, msg)
+
     def _ok_or_err(self, ok: bool, payload: dict[str, Any], err: str) -> None:
         if ok:
             self._send_json({"ok": True, **payload})
@@ -285,6 +313,15 @@ class _Handler(BaseHTTPRequestHandler):
     def _route(self, path: str) -> None:  # noqa: PLR0911
         if path == "/":
             self._send_bytes(PAGE_HTML.encode("utf-8"), "text/html; charset=utf-8")
+            return
+        if path == "/manifest.webmanifest":
+            self._send_bytes(MANIFEST_JSON.encode("utf-8"), "application/manifest+json")
+            return
+        if path == "/sw.js":
+            self._send_bytes(SERVICE_WORKER_JS.encode("utf-8"), "text/javascript; charset=utf-8")
+            return
+        if path == "/icon.svg":
+            self._send_bytes(ICON_SVG.encode("utf-8"), "image/svg+xml")
             return
         if path == "/api/meta":
             self._send_json({"version": __version__, "target": self.server.target})
@@ -461,8 +498,19 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _sse_machine(self, machine_dir: Path) -> None:
         """Stream a machine: re-fold the journal + the current agent state's
-        reasoning on a poll, pushing the combined snapshot when it changes."""
+        reasoning on a poll, pushing the combined snapshot when it changes. While
+        connected we register as the answer front-end on the INSTANCE dir, so a
+        machine agent state's approval/question/steer prompts bridge to the
+        browser (the state's answer files live in its per-state dir; the liveness
+        gate probes this instance dir)."""
         self._begin_sse()
+        self.server.claim_run(machine_dir)
+        try:
+            self._sse_machine_loop(machine_dir)
+        finally:
+            self.server.release_run(machine_dir)
+
+    def _sse_machine_loop(self, machine_dir: Path) -> None:
         prev = ""
         idle = 0.0
         while True:

@@ -22,6 +22,10 @@ PAGE_HTML = r"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e1116">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon.svg">
 <title>agent6</title>
 <style>
 :root {
@@ -168,6 +172,14 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
   padding: 10px 16px; box-shadow: 0 4px 16px rgba(0,0,0,.4);
 }
 .toast.bad { border-color: var(--err); color: var(--err); }
+.notif-banner { display: flex; align-items: flex-start; gap: 10px; background: var(--surface2); border: 1px solid var(--accent); border-left-width: 4px; border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+.notif-banner.warn { border-color: var(--warn); }
+.notif-banner.error { border-color: var(--err); }
+.notif-banner .grow { flex: 1; min-width: 0; }
+.notif-banner .nb-msg { word-break: break-word; }
+.notif-banner .nb-sub { font-size: 12px; color: var(--muted); }
+.notif-banner .nb-x { cursor: pointer; color: var(--muted); background: none; border: none; min-height: auto; padding: 0 4px; font-size: 16px; }
+.poke-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-top: 10px; }
 
 @media (max-width: 780px) {
   nav.tabs { display: flex; }
@@ -205,6 +217,24 @@ if (localStorage.getItem('a6-theme') === 'light') document.documentElement.class
 function toggleTheme() {
   const on = document.documentElement.classList.toggle('light');
   localStorage.setItem('a6-theme', on ? 'light' : 'dark');
+}
+
+// --- PWA + notifications -----------------------------------------------------
+// Install the service worker so the page is an installable PWA (manifest + SW).
+// No Web Push / VAPID: OS notifications are the foreground Notification API only.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(()=>{}); });
+}
+// Ask for OS-notification permission on a user gesture (browsers block passive
+// requests). A granted permission lets machine.notify/end pop a desktop/PWA
+// notification even when the tab is backgrounded (on desktop).
+function enableNotifications() {
+  if (!('Notification' in window)) { toast('notifications not supported', true); return; }
+  Notification.requestPermission().then(p => toast(p === 'granted' ? 'notifications on' : 'notifications ' + p));
+}
+// Fire an OS notification when permitted; always safe (never throws into a repaint).
+function osNotify(title, body) {
+  try { if ('Notification' in window && Notification.permission === 'granted') new Notification(title, { body: body || '', icon: '/icon.svg' }); } catch (_) {}
 }
 
 // --- helpers -----------------------------------------------------------------
@@ -398,7 +428,9 @@ function renderRun(id, opts) {
 // half-typed free-text answer or drops focus; only add new prompts and remove
 // resolved ones.
 function paintPrompts(cards, s) {
-  const host = cards._prompts, id = cards._id;
+  const host = cards._prompts;
+  // base is the POST prefix: runs use /api/run/<id>, machines /api/machine/<name>.
+  const base = cards._base || ('/api/run/' + encodeURIComponent(cards._id));
   const build = {};
   for (const ap of (s.pending_approvals || [])) {
     if (ap.answered) continue;
@@ -408,7 +440,7 @@ function paintPrompts(cards, s) {
       const row = el('div', 'form-row');
       const yes = el('button', 'primary', 'Approve');
       const no = el('button', 'danger', 'Deny');
-      const send = ok => async () => { try { await postJSON('/api/run/' + encodeURIComponent(id) + '/approve', { id: ap.id, approved: ok }); } catch (e) { toast(e.message, true); } };
+      const send = ok => async () => { try { await postJSON(base + '/approve', { id: ap.id, approved: ok }); } catch (e) { toast(e.message, true); } };
       yes.onclick = send(true); no.onclick = send(false);
       row.appendChild(yes); row.appendChild(no); box.appendChild(row);
       return box;
@@ -422,12 +454,12 @@ function paintPrompts(cards, s) {
       const row = el('div', 'form-row');
       for (const opt of (q.options || [])) {
         const b = el('button', null, opt);
-        b.onclick = async () => { try { await postJSON('/api/run/' + encodeURIComponent(id) + '/answer', { id: q.id, answer: opt }); } catch (e) { toast(e.message, true); } };
+        b.onclick = async () => { try { await postJSON(base + '/answer', { id: q.id, answer: opt }); } catch (e) { toast(e.message, true); } };
         row.appendChild(b);
       }
       const inp = el('input', 'field'); inp.placeholder = 'or type an answer…'; inp.style.flex = '1';
       const send = el('button', 'primary', 'Send');
-      send.onclick = async () => { try { await postJSON('/api/run/' + encodeURIComponent(id) + '/answer', { id: q.id, answer: inp.value }); } catch (e) { toast(e.message, true); } };
+      send.onclick = async () => { try { await postJSON(base + '/answer', { id: q.id, answer: inp.value }); } catch (e) { toast(e.message, true); } };
       row.appendChild(inp); row.appendChild(send); box.appendChild(row);
       return box;
     };
@@ -554,6 +586,26 @@ async function renderTranscript(id) {
 function renderMachine(name) {
   setCrumb(name);
   view.innerHTML = '';
+  const base = '/api/machine/' + encodeURIComponent(name);
+  // Ephemeral notification banners live here; the prompts host holds pending
+  // approval/question boxes; both are APPENDED to, never wiped, so a repaint can
+  // never clear a half-typed answer or the poke box below.
+  const notifs = el('div'); view.appendChild(notifs);
+  const prompts = el('div'); view.appendChild(prompts);
+  const cards = { _prompts: prompts, _base: base };
+
+  const controls = el('div', 'row wrap'); controls.style.marginBottom = '10px';
+  const bell = el('button', null, '🔔 Notifications');
+  bell.onclick = enableNotifications;
+  const steerBtn = el('button', null, '↪ Steer');
+  steerBtn.onclick = async () => {
+    const text = prompt('Steer the current agent state (blank = continue, "abort" = stop):', '');
+    if (text === null) return;
+    try { await postJSON(base + '/steer', { text }); toast('steer sent'); } catch (e) { toast(e.message, true); }
+  };
+  controls.appendChild(bell); controls.appendChild(steerBtn);
+  view.appendChild(controls);
+
   const grid = el('div', 'grid cols2');
   const structCard = el('div', 'card scroll'); structCard.appendChild(el('h2', null, 'States')); const structBody = el('div'); structCard.appendChild(structBody);
   const pathCard = el('div', 'card scroll'); pathCard.appendChild(el('h2', null, 'Path')); const pathBody = el('div'); pathCard.appendChild(pathBody);
@@ -561,17 +613,64 @@ function renderMachine(name) {
   grid.appendChild(structCard); grid.appendChild(pathCard); grid.appendChild(reasonCard);
   view.appendChild(grid);
 
-  live = new EventSource('/api/machine/' + encodeURIComponent(name) + '/events');
+  // The poke ("send message") box: created ONCE so its input survives repaints.
+  const poke = el('div', 'poke-box');
+  poke.appendChild(el('div', 'sub muted', 'Send a message to a waiting machine (poke payload):'));
+  const prow = el('div', 'form-row');
+  const pin = el('input', 'field'); pin.placeholder = 'message…'; pin.style.flex = '1';
+  const psend = el('button', 'primary', 'Send');
+  const doPoke = async () => { try { await postJSON(base + '/poke', { message: pin.value }); toast('poked'); pin.value = ''; } catch (e) { toast(e.message, true); } };
+  psend.onclick = doPoke;
+  pin.onkeydown = e => { if (e.key === 'Enter') doPoke(); };
+  prow.appendChild(pin); prow.appendChild(psend); poke.appendChild(prow);
+  view.appendChild(poke);
+
+  // Notification de-dup across repaints: seed with history on the first frame so
+  // opening a machine does not replay every past notification; banner + OS-notify
+  // only genuinely new ones.
+  const ctx = { notifsHost: notifs, seen: null, endedNotified: false };
+
+  live = new EventSource(base + '/events');
   live.onmessage = ev => {
     let data; try { data = JSON.parse(ev.data); } catch (_) { return; }
-    paintMachine(structBody, pathBody, reasonBody, data);
+    paintMachine(structBody, pathBody, reasonBody, cards, ctx, data);
     if (data.machine && data.machine.ended) closeLive(); // machine done; stop the stream
   };
 }
 
-function paintMachine(structBody, pathBody, reasonBody, data) {
+function machineNotify(ctx, m) {
+  const notes = m.notifications || [];
+  const keyOf = n => (n.ts || '') + '|' + (n.state || '') + '|' + (n.message || '');
+  if (ctx.seen === null) { ctx.seen = new Set(notes.map(keyOf)); return; } // seed history silently
+  for (const n of notes) {
+    const k = keyOf(n);
+    if (ctx.seen.has(k)) continue;
+    ctx.seen.add(k);
+    const banner = el('div', 'notif-banner ' + esc(n.level || 'info'));
+    const g = el('div', 'grow');
+    g.appendChild(el('div', 'nb-msg', n.message || ''));
+    g.appendChild(el('div', 'nb-sub', `${esc(m.machine || '')} · ${esc(n.state || '')}`));
+    const x = el('button', 'nb-x', '×'); x.onclick = () => banner.remove();
+    banner.appendChild(g); banner.appendChild(x);
+    ctx.notifsHost.appendChild(banner);
+    osNotify('agent6: ' + (m.machine || 'machine'), n.message || '');
+  }
+}
+
+function paintMachine(structBody, pathBody, reasonBody, cards, ctx, data) {
   if (data.error) { structBody.innerHTML=''; structBody.appendChild(el('div', 'err', data.error)); return; }
   const m = data.machine || {};
+  // Pending approval/question/steer come from the current agent state's RunState.
+  paintPrompts(cards, data.reasoning || {});
+  machineNotify(ctx, m);
+  if (m.ended && !ctx.endedNotified) {
+    ctx.endedNotified = true;
+    const banner = el('div', 'notif-banner ' + (m.ended.status === 'ok' ? 'info' : 'error'));
+    banner.appendChild(el('div', 'grow', `${esc(m.machine || '')} ended: ${esc(m.ended.status)} (${esc(m.ended.reason)})`));
+    const x = el('button', 'nb-x', '×'); x.onclick = () => banner.remove();
+    banner.appendChild(x); ctx.notifsHost.appendChild(banner);
+    osNotify('agent6: ' + (m.machine || 'machine') + ' ' + m.ended.status, m.ended.reason || '');
+  }
   structBody.innerHTML = '';
   structBody.appendChild(el('div', 'sub muted', `${esc(m.machine)} v${esc(m.version)} · current: ${esc(m.current)}`));
   const tree = el('div', 'tree');
@@ -644,4 +743,39 @@ route();
 </script>
 </body>
 </html>
+"""
+
+
+# The PWA manifest: makes the page installable (phone home-screen, desktop app).
+# start_url "." keeps it relative to wherever the server is mounted (behind
+# `tailscale serve` the path prefix may differ).
+MANIFEST_JSON = r"""{
+  "name": "agent6",
+  "short_name": "agent6",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#0e1116",
+  "theme_color": "#0e1116",
+  "icons": [
+    { "src": "icon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any maskable" }
+  ]
+}
+"""
+
+# A minimal service worker: required (with the manifest) for installability. It is
+# a network passthrough, no caching, no Web Push / VAPID (OS notifications are the
+# foreground Notification API only, fired from the page).
+SERVICE_WORKER_JS = r"""self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
+self.addEventListener('fetch', () => {});
+"""
+
+# The app icon: a self-contained SVG (no raster asset to ship). "maskable"-safe
+# with a full-bleed background.
+ICON_SVG = r"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#0e1116"/>
+  <text x="256" y="330" font-family="ui-monospace, monospace" font-size="300"
+        font-weight="700" text-anchor="middle" fill="#6ea8fe">a6</text>
+</svg>
 """

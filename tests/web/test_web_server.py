@@ -245,6 +245,76 @@ def test_approve_id_traversal_is_contained(server: tuple[WebServer, int], tmp_pa
     assert ok_status == 200 and ok_body["ok"] is True
 
 
+def _make_machine_with_state(cwd: Path, name: str, seq_state: str) -> tuple[Path, Path]:
+    """A machine instance dir + one per-state agent-log dir. Returns (instance, state)."""
+    inst = resolved_state_dir(cwd) / "machines" / name
+    inst.mkdir(parents=True)
+    (inst / "machine.asm.toml").write_text(TINY, encoding="utf-8")
+    (inst / "journal.jsonl").write_text("", encoding="utf-8")
+    state = inst / "states" / seq_state
+    state.mkdir(parents=True)
+    (state / "logs.jsonl").write_text("", encoding="utf-8")
+    return inst, state
+
+
+def test_machine_poke_writes_signal(server: tuple[WebServer, int], tmp_path: Path) -> None:
+    _srv, port = server
+    inst, _ = _make_machine_with_state(tmp_path, "pokable", "0000-review")
+    status, body = _post(port, "/api/machine/pokable/poke", {"message": "reload"})
+    assert status == 200 and body["ok"] is True
+    assert json.loads((inst / "signal").read_text(encoding="utf-8")) == "reload"
+
+
+def test_machine_poke_json_data_payload(server: tuple[WebServer, int], tmp_path: Path) -> None:
+    _srv, port = server
+    inst, _ = _make_machine_with_state(tmp_path, "datapoke", "0000-review")
+    status, body = _post(port, "/api/machine/datapoke/poke", {"data": {"cmd": "go", "n": 2}})
+    assert status == 200 and body["ok"] is True
+    assert json.loads((inst / "signal").read_text(encoding="utf-8")) == {"cmd": "go", "n": 2}
+
+
+def test_machine_answer_writes_to_per_state_dir(
+    server: tuple[WebServer, int], tmp_path: Path
+) -> None:
+    _srv, port = server
+    _inst, state = _make_machine_with_state(tmp_path, "asker", "0003-classify")
+    status, body = _post(port, "/api/machine/asker/answer", {"id": "question-1", "answer": "yes"})
+    assert status == 200 and body["ok"] is True
+    assert (state / "questions" / "question-1.answer").read_text(encoding="utf-8") == "yes"
+
+
+def test_machine_approve_and_steer_target_per_state_dir(
+    server: tuple[WebServer, int], tmp_path: Path
+) -> None:
+    _srv, port = server
+    _inst, state = _make_machine_with_state(tmp_path, "acter", "0001-work")
+    _post(port, "/api/machine/acter/approve", {"id": "approval-1", "approved": False})
+    assert (state / "approvals" / "approval-1.answer").read_text(encoding="utf-8") == "no"
+    _post(port, "/api/machine/acter/steer", {"text": "focus"})
+    assert (state / "steer.answer").read_text(encoding="utf-8") == "focus"
+    assert (state / "steer.request").exists()
+
+
+def test_machine_answer_id_traversal_is_contained(
+    server: tuple[WebServer, int], tmp_path: Path
+) -> None:
+    _srv, port = server
+    _inst, _state = _make_machine_with_state(tmp_path, "travm", "0000-review")
+    escape = tmp_path / "pwned.answer"
+    status, _ = _post(port, "/api/machine/travm/answer", {"id": "../../pwned", "answer": "x"})
+    assert status != 200
+    assert not escape.exists()
+
+
+def test_pwa_assets_served(server: tuple[WebServer, int]) -> None:
+    _srv, port = server
+    st, body, ctype = _get(port, "/manifest.webmanifest")
+    assert st == 200 and "manifest" in ctype
+    assert json.loads(body)["name"] == "agent6"
+    assert _get(port, "/sw.js")[0] == 200
+    assert _get(port, "/icon.svg")[0] == 200
+
+
 def test_run_id_traversal_is_404(server: tuple[WebServer, int]) -> None:
     _srv, port = server
     status, _body, _ = _get(port, "/api/run/..")
