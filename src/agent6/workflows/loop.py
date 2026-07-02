@@ -54,6 +54,9 @@ from agent6.tools.schema import (
     RunVerifyInput,
 )
 from agent6.types import RepoSummary
+from agent6.workflows._cache import (
+    roll_cache_breakpoints as _roll_cache_breakpoints,
+)
 from agent6.workflows._compaction import (
     DROP_BLOCKS_AT_CHARS as _DROP_BLOCKS_AT_CHARS,
 )
@@ -215,10 +218,6 @@ _TOOL_CALL_STOP_REASONS = frozenset({"tool_calls", "tool_use"})
 # (see Workflow._worker_max_tokens). 2 spares a one-off starvation its full
 # recovery room while breaking a reasoning-binge spiral.
 _STARVATION_BACKOFF_AFTER_QUIETS = 2
-
-# cache_control marker on the initial user message
-# so the system + initial context get cached across the loop's turns.
-_CACHE_CONTROL_EPHEMERAL: dict[str, str] = {"type": "ephemeral"}
 
 
 def _summarise_assistant_text_for_commit(
@@ -905,8 +904,8 @@ class Workflow:
         )
 
         # Initial user message - the task + a brief operational header.
-        # cache_control marker on the user message so the prefix stays
-        # cached across the loop's turns (lineage).
+        # Cache breakpoints are placed by _roll_cache_breakpoints each
+        # iteration, so the growing history stays cached across turns.
         dag_hint = _initial_dag_hint(root_id, self.mode, self.config.prompt.decompose)
         if self.mode == "plan":
             instructions = (
@@ -934,16 +933,7 @@ class Workflow:
             )
         initial_user = f"TASK:\n{effective_task}\n\n{instructions}{dag_hint}"
         messages: list[dict[str, Any]] = [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": initial_user,
-                        "cache_control": _CACHE_CONTROL_EPHEMERAL,
-                    }
-                ],
-            }
+            {"role": "user", "content": [{"type": "text", "text": initial_user}]}
         ]
 
         return self._drive_loop(
@@ -1065,6 +1055,11 @@ class Workflow:
             self._maybe_pre_call_nudges(
                 messages, state, iteration=iteration, start_iteration=start_iteration
             )
+            # Advance the rolling cache breakpoints onto the final message so
+            # this call re-reads the previous prefix from cache and writes the
+            # new tail. Runs AFTER compaction + nudges (the tail must be final)
+            # and BEFORE the snapshot (markers persist across resume).
+            _roll_cache_breakpoints(messages)
             # Snapshot BEFORE the LLM call. After this write, a
             # crash anywhere up to the next iteration's snapshot can be
             # resumed by re-running this same call.

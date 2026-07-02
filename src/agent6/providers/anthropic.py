@@ -143,6 +143,36 @@ def _redact_headers(headers: dict[str, str]) -> dict[str, str]:
     return {k: (_REDACTED if k.lower() in _REDACT_HEADER_NAMES else v) for k, v in headers.items()}
 
 
+def strip_cache_control_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return ``messages`` with every ``cache_control`` marker removed.
+
+    The workflow places rolling breakpoints in the message list (see
+    ``agent6.workflows._cache``); when the operator sets
+    ``prompt_caching = false`` this strips them before the request is built.
+    Copy-on-write: unmarked messages pass through untouched, marked blocks are
+    shallow-copied so the caller's list (shared with resume snapshots) is
+    never mutated.
+    """
+    out: list[dict[str, Any]] = []
+    changed = False
+    for msg in messages:
+        content = msg.get("content")
+        if not isinstance(content, list) or not any(
+            isinstance(b, dict) and "cache_control" in b for b in content
+        ):
+            out.append(msg)
+            continue
+        new_content = [
+            {k: v for k, v in b.items() if k != "cache_control"}
+            if isinstance(b, dict) and "cache_control" in b
+            else b
+            for b in content
+        ]
+        out.append({**msg, "content": new_content})
+        changed = True
+    return out if changed else messages
+
+
 def _is_temperature_400(status: int | None, text: str, body: dict[str, Any]) -> bool:
     """True when a 400 says the model rejects ``temperature`` (e.g. claude-opus-4-8:
     "temperature is deprecated for this model") AND temperature is still in the
@@ -319,9 +349,14 @@ class AnthropicProvider:
         )
         version_placement, version_value = _anthropic_version(self.deployment)
 
+        # Breakpoint budget (Anthropic max 4 per request): this provider marks
+        # the system block and the last tool (2); the workflow's rolling pair
+        # in `messages` (agent6.workflows._cache) accounts for the other 2.
         system_blocks: list[dict[str, Any]] = [{"type": "text", "text": system}]
         if self.prompt_caching:
             system_blocks[0]["cache_control"] = {"type": "ephemeral"}
+        else:
+            messages = strip_cache_control_messages(messages)
 
         tool_payload: list[dict[str, Any]] = []
         if tools:
