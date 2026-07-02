@@ -130,14 +130,32 @@ def _task_snippet(task: str) -> str:
     return task.strip()
 
 
+def _run_mtime(run_dir: Path) -> float:
+    """Last-activity time of a run: the mtime of its ``logs.jsonl`` event log, i.e.
+    when the run process last appended an event.
+
+    NOT the run-directory mtime: the dashboard only READS ``logs.jsonl``, but on
+    every open it writes ``tui.pid`` (and lazily ``approvals/`` / ``questions/``)
+    into the run dir, which bumps the DIRECTORY mtime. Keying the listed time and
+    the sort off the log instead means merely opening a run to look at it never
+    changes its "when" or its position. Falls back to the dir mtime before the log
+    exists; 0.0 if the run is gone."""
+    for candidate in (run_dir / "logs.jsonl", run_dir):
+        try:
+            return candidate.stat().st_mtime
+        except OSError:
+            continue
+    return 0.0
+
+
 def _list_runs(agent6_dir: Path) -> list[Path]:
-    """All run directories (runs/ + asks/), newest first by mtime."""
+    """All run directories (runs/ + asks/), newest first by last-activity time."""
     out: list[Path] = []
     for sub in _RUN_SUBDIRS:
         d = agent6_dir / sub
         if d.is_dir():
             out.extend(p for p in d.iterdir() if p.is_dir())
-    out.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0.0, reverse=True)
+    out.sort(key=_run_mtime, reverse=True)
     return out
 
 
@@ -387,12 +405,12 @@ class HomeScreen(Screen[None]):
         # run for cursor positions past the gap.
         survivors: list[Path] = []
         for rd in _list_runs(self.agent6_dir):
-            try:
-                mtime = rd.stat().st_mtime
-            except OSError:
+            if not rd.is_dir():
                 continue  # vanished since the listing snapshot — skip it
             s = _run_summary(rd)
-            when = time.strftime("%m-%d %H:%M", time.localtime(mtime))
+            # last-activity time (logs.jsonl), so opening a run to view it does not
+            # bump its "when" the way the run-dir mtime did.
+            when = time.strftime("%m-%d %H:%M", time.localtime(_run_mtime(rd)))
             # Text cells: task is model/user input and may carry markup brackets.
             table.add_row(when, s["mode"], s["status"], Text(s["id"]), Text(s["task"]))
             survivors.append(rd)
