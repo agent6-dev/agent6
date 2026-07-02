@@ -254,6 +254,41 @@ class ToolCallDetailModal(ModalScreen[None]):
         self.dismiss(None)
 
 
+class TextInputModal(ModalScreen[str | None]):
+    """A one-line text prompt (title + input). Enter submits the text; Esc
+    dismisses with None (cancelled). Used for the machine `poke` message box."""
+
+    DEFAULT_CSS = """
+    TextInputModal { align: center middle; }
+    #ti-box {
+        width: 80%; max-width: 100; height: auto;
+        border: round $accent; padding: 1 2; background: $surface;
+    }
+    #ti-input { margin-top: 1; }
+    """
+
+    BINDINGS: ClassVar = [Binding("escape", "cancel", "Cancel", show=False)]
+
+    def __init__(self, title: str, placeholder: str = "") -> None:
+        super().__init__()
+        self._title = title
+        self._placeholder = placeholder
+
+    def compose(self) -> ComposeResult:
+        with Container(id="ti-box"):
+            yield Static(Text(self._title, style="bold"))
+            yield Input(placeholder=self._placeholder, id="ti-input")
+
+    def on_mount(self) -> None:
+        self.query_one("#ti-input", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self.dismiss(event.value)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class QuestionModal(ModalScreen[str]):
     """An agent->user question (`ask_user`): pick a numbered option (keys 1-9)
     or type a free-text answer. Esc submits empty (the agent gets the default).

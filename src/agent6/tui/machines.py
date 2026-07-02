@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import os
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import ClassVar
@@ -32,6 +33,16 @@ except ImportError as e:  # pragma: no cover - clear runtime message
         " Reinstall agent6, or `pip install textual`."
     ) from e
 
+from agent6.frontend.approval import (
+    clear_frontend_pid,
+    clear_steer_answer,
+    request_steer,
+    write_answer,
+    write_frontend_pid,
+    write_question_answer,
+    write_steer_answer,
+)
+from agent6.frontend.notify import desktop_notify
 from agent6.frontend.spawn import agent6_exe, spawn_and_locate, spawn_detached
 from agent6.machine import (
     MachineError,
@@ -42,9 +53,15 @@ from agent6.machine import (
     validate_semantics,
 )
 from agent6.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
-from agent6.tui.modals import ConfirmModal
+from agent6.tui.modals import ApprovalModal, ConfirmModal, QuestionModal, SteerModal, TextInputModal
 from agent6.tui.theme import PALETTE_CSS, setup_theme
-from agent6.viewmodel import fold_machine, newest_state_log
+from agent6.viewmodel import (
+    MachineState,
+    fold_machine,
+    fold_run,
+    newest_state_log,
+    tail_events,
+)
 
 
 def find_machine_files(repo_cwd: Path) -> list[Path]:
@@ -90,9 +107,17 @@ class MachineWatchScreen(Screen[None]):
     """Live view of a running (or finished) machine: the state overview with the
     current state marked, each transition as it lands, and the active agent
     state's reasoning streamed from its per-state logs.jsonl -- the in-TUI
-    equivalent of `agent6 watch`. Read-only; polls every 0.5s."""
+    equivalent of `agent6 watch`. Polls every 0.5s.
+
+    Interactive: while open it registers as the answer front-end (frontend.pid on
+    the instance dir), so the current agent state's `run_command` approvals and
+    `ask_user` questions pop as modals here; `s` steers that state, `m` sends a
+    message (a poke payload) to a waiting machine, and a `machine.notify` (or the
+    machine's completion) fires a desktop + in-app notification."""
 
     BINDINGS: ClassVar = [
+        Binding("s", "steer", "Steer"),
+        Binding("m", "poke", "Message"),
         Binding("escape", "close", "Back", key_display="Esc/q"),
         Binding("q", "close", "Back", show=False),
     ]
@@ -116,6 +141,11 @@ class MachineWatchScreen(Screen[None]):
         self._cur_off = 0
         self._pending = ""  # accumulated thinking/answer text, flushed in readable chunks
         self._ended = False
+        self._seen_approval_ids: set[str] = set()
+        self._seen_question_ids: set[str] = set()
+        self._seen_notifs = 0
+        self._end_notified = False
+        self._steer_open = False
 
     def compose(self) -> ComposeResult:
         yield Static(id="mw-head")
@@ -131,8 +161,32 @@ class MachineWatchScreen(Screen[None]):
         table.add_column("kind", key="kind")
         for name, state in self._spec.states.items():
             table.add_row("", name, state.kind, key=name)
+        # Register as the answer front-end on the instance dir: a machine agent
+        # state's approval/question/steer prompts bridge here while we watch. Seed
+        # notification history so past notifies are not re-announced on open. The
+        # dir may not exist yet (watching a just-spawned run), so create it first.
+        self._root.mkdir(parents=True, exist_ok=True)
+        write_frontend_pid(self._root, os.getpid())
+        self._seen_notifs = len(fold_machine(self._spec, self._journal.read()).notifications)
         self._poll()
         self.set_interval(0.5, self._poll)
+
+    def on_unmount(self) -> None:
+        # Stop claiming the machine's prompts, but only if frontend.pid is still
+        # ours (a concurrent watcher may own it).
+        try:
+            owned = (self._root / "frontend.pid").read_text(encoding="utf-8").strip() == str(
+                os.getpid()
+            )
+        except OSError:
+            owned = False
+        if owned:
+            clear_frontend_pid(self._root)
+
+    def _state_dir(self) -> Path | None:
+        """The current agent state's per-state dir (where its answer files live)."""
+        log = newest_state_log(self._root)
+        return log.parent if log is not None else None
 
     def action_close(self) -> None:
         # Standalone `agent6 watch <machine> --tui` mounts this directly on the
@@ -141,6 +195,37 @@ class MachineWatchScreen(Screen[None]):
             self.app.pop_screen()
         else:
             self.app.exit()
+
+    def action_steer(self) -> None:
+        """Steer the current agent state: drop a request marker + open the steer
+        box; the state picks it up at its next safe boundary. No-op if none runs."""
+        state_dir = self._state_dir()
+        if state_dir is None or self._steer_open:
+            self.app.notify("no agent state to steer", timeout=4.0)
+            return
+        self._steer_open = True
+        clear_steer_answer(state_dir)
+        request_steer(state_dir)
+        self.app.push_screen(SteerModal(), self._on_steer(state_dir))
+
+    def _on_steer(self, state_dir: Path) -> Callable[[str | None], None]:
+        def cb(answer: str | None) -> None:
+            self._steer_open = False
+            write_steer_answer(state_dir, answer or "")
+
+        return cb
+
+    def action_poke(self) -> None:
+        """Send a message to a waiting machine (a poke payload the next tool reads)."""
+        self.app.push_screen(
+            TextInputModal("Send a message to the machine (poke):", "message…"), self._on_poke
+        )
+
+    def _on_poke(self, message: str | None) -> None:
+        if message is None:
+            return
+        self._journal.poke(message or None)
+        self.app.notify("poked", timeout=3.0)
 
     def _flush_pending(self) -> None:
         text = self._pending.strip()
@@ -185,8 +270,63 @@ class MachineWatchScreen(Screen[None]):
             self._cur_off = self._consume_state_log(self._cur_log, self._cur_off, log)
         self._flush_pending()  # show partial reasoning each tick
 
+        self._dispatch_notifications(ms)
+        self._dispatch_prompts()
+
         if ms.ended is not None:
             self._ended = True
+
+    def _dispatch_notifications(self, ms: MachineState) -> None:
+        """Pop an in-app + desktop notification for each new machine.notify, and
+        once for the machine's completion."""
+        for n in ms.notifications[self._seen_notifs :]:
+            sev = {"warn": "warning", "error": "error"}.get(n.level, "information")
+            self.app.notify(n.message, title=f"{ms.machine} · {n.state}", severity=sev, timeout=8.0)
+            desktop_notify(f"agent6: {ms.machine}", n.message)
+        self._seen_notifs = len(ms.notifications)
+        ended = ms.ended
+        if ended is not None and not self._end_notified:
+            self._end_notified = True
+            self.app.notify(
+                ended.reason,
+                title=f"{ms.machine} {ended.status}",
+                severity="information" if ended.status == "ok" else "error",
+                timeout=8.0,
+            )
+            desktop_notify(f"agent6: {ms.machine} {ended.status}", ended.reason)
+
+    def _dispatch_prompts(self) -> None:
+        """Pop approval/question modals for the current agent state's pending
+        prompts, writing answers back to that state's per-state dir."""
+        state_dir = self._state_dir()
+        if state_dir is None:
+            return
+        rs = fold_run(tail_events(state_dir / "logs.jsonl", follow=False))
+        for ap in rs.pending_approvals:
+            if not ap.answered and ap.id not in self._seen_approval_ids:
+                self._seen_approval_ids.add(ap.id)
+                self.app.push_screen(
+                    ApprovalModal(ap.id, ap.prompt), self._on_approval(state_dir, ap.id)
+                )
+        for qp in rs.pending_questions:
+            if not qp.answered and qp.id not in self._seen_question_ids:
+                self._seen_question_ids.add(qp.id)
+                self.app.push_screen(
+                    QuestionModal(qp.id, qp.question, qp.options),
+                    self._on_question(state_dir, qp.id),
+                )
+
+    def _on_approval(self, state_dir: Path, prompt_id: str) -> Callable[[bool | None], None]:
+        def cb(approved: bool | None) -> None:
+            write_answer(state_dir, prompt_id, approved=bool(approved))
+
+        return cb
+
+    def _on_question(self, state_dir: Path, question_id: str) -> Callable[[str | None], None]:
+        def cb(answer: str | None) -> None:
+            write_question_answer(state_dir, question_id, answer or "")
+
+        return cb
 
     def _consume_state_log(self, path: Path, offset: int, log: RichLog) -> int:
         """Read complete new lines past *offset*: accumulate thinking/answer text in

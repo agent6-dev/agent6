@@ -39,6 +39,7 @@ from agent6.config_layer import (
 )
 from agent6.detect import select_profile
 from agent6.events import EventSink
+from agent6.frontend.notify import desktop_notify
 from agent6.git_ops import CommitIdentity, GitError, verify_git_identity
 from agent6.machine import (
     SCRIPTS_PAYLOAD_KEY,
@@ -899,7 +900,13 @@ def _cmd_machine_watch(machine_id: str) -> int:
         return 0 if ms.ended.status == "ok" else 1
 
     print("\n[agent6] watching (Ctrl-C to stop)...", file=sys.stderr)
+    print(
+        "[agent6] poke a waiting machine from another shell: "
+        f"agent6 machine poke {machine_id} [--message TEXT]",
+        file=sys.stderr,
+    )
     seen_steps = len(ms.transitions)
+    seen_notifs = len(ms.notifications)  # seed with history: don't re-announce past notifies
     cur_log: Path | None = None
     cur_off = 0
     anchor: float | None = None
@@ -909,6 +916,12 @@ def _cmd_machine_watch(machine_id: str) -> int:
             for t in ms.transitions[seen_steps:]:
                 print(f"  [{t.seq:>3}] {t.state} --{t.label}--> {t.goto}", flush=True)
             seen_steps = len(ms.transitions)
+            for n in ms.notifications[seen_notifs:]:
+                # Ring the bell + fire a desktop notification (if notify-send is
+                # present) so an operator watching over ssh is alerted.
+                print(f"\a  🔔 [{n.level}] {n.state}: {n.message}", flush=True)
+                desktop_notify(f"agent6: {ms.machine}", n.message)
+            seen_notifs = len(ms.notifications)
             newest = newest_state_log(root)
             if newest != cur_log:
                 # Reset the elapsed-time anchor too: each state log re-derives its
