@@ -79,21 +79,7 @@ the loop will halt if you exceed it.
   task is done, when the metric plateaued, or when you are blocked.
 </tool-use-rules>
 
-<dag-rules>
-The DAG-as-tool surface (`add_task`, `update_task`, `set_cursor`,
-`list_tasks`) maintains a persistent task breakdown. OPTIONAL - skip
-it entirely for one-shot fixes, single-file edits, or perf-takehome-
-style "make this number smaller" runs. Use it ONLY when the task
-naturally decomposes into 3+ subtasks worth tracking and humans
-watching the TUI benefit from seeing the breakdown.
-
-When you do use it: `add_task(title, parent_id?)` returns an id;
-`update_task(id, status="in_progress")` when you start a subtask;
-`update_task(id, status="passed")` only after verify confirms it.
-`set_cursor(id)` is cosmetic - it updates the TUI's "current task"
-pointer; it is NOT the resume mechanism (the workflow snapshots its
-own state independently before each LLM call).
-</dag-rules>
+__DAG_RULES_BLOCK__
 
 <scope-and-style>
 Project conventions live in AGENTS.md, already included in the repo-priors
@@ -113,6 +99,61 @@ when no test framework is in scope (one-shot script edits, perf
 takehomes that already ship a metric).
 </scope-and-style>
 """
+
+# The `__DAG_RULES_BLOCK__` sentinel in SYSTEM_PROMPT_BASE is replaced at assembly
+# by one of these two blocks (run mode only), keyed on `[prompt].decompose`.
+# Default (False) keeps the DAG optional. True front-loads decomposition: the
+# worker lays the whole task out as ordered subtasks first, then the existing
+# surface-current-task + finish-gate machinery walks it one focused task at a
+# time. Aimed at small/open models that lose track of multi-part tasks; a capable
+# model needs neither, which is why this is opt-in (measured per model).
+DAG_RULES_OPTIONAL = """<dag-rules>
+The DAG-as-tool surface (`add_task`, `update_task`, `set_cursor`,
+`list_tasks`) maintains a persistent task breakdown. OPTIONAL - skip
+it entirely for one-shot fixes, single-file edits, or perf-takehome-
+style "make this number smaller" runs. Use it ONLY when the task
+naturally decomposes into 3+ subtasks worth tracking and humans
+watching the TUI benefit from seeing the breakdown.
+
+When you do use it: `add_task(title, parent_id?)` returns an id;
+`update_task(id, status="in_progress")` when you start a subtask;
+`update_task(id, status="passed")` only after verify confirms it.
+`set_cursor(id)` is cosmetic - it updates the TUI's "current task"
+pointer; it is NOT the resume mechanism (the workflow snapshots its
+own state independently before each LLM call).
+</dag-rules>"""
+
+DAG_RULES_DECOMPOSE = """<decompose-first>
+Before editing anything, break this task into a plan of ordered
+subtasks in the task DAG. This keeps you on one piece at a time instead
+of holding the whole job in your head.
+
+1. PLAN. Call `add_task(title, acceptance=...)` 3-7 times, one subtask
+   per independent component or step the task needs. Cover the WHOLE
+   task -- every distinct requirement gets its own subtask. Make `title`
+   a short imperative and `acceptance` the concrete, verifiable
+   condition that subtask is done (e.g. "verify passes for component X").
+   For anything you must understand before coding, add an investigate
+   subtask ("find where X is handled", "work out the edge cases of Y")
+   and order it first.
+2. WORK ONE AT A TIME. The harness surfaces your current subtask each
+   turn as a `[harness focus]` banner. Do that ONE subtask: for an
+   investigate task, read what you need and carry the finding into the
+   subtasks that depend on it; for a coding task, make the edit and run
+   `run_verify_command`. Only when its acceptance holds, call
+   `update_task(id, status="passed")` -- you are then moved to the next.
+3. KEEP THE LIST HONEST. If you discover new work, `add_task` it rather
+   than doing it inline. If a subtask turns out unnecessary, mark it
+   `obsolete` or `skipped`. Do NOT call `finish_run` until every subtask
+   is passed (or explicitly skipped/obsolete).
+</decompose-first>"""
+
+
+def dag_rules_block(decompose: bool) -> str:
+    """The DAG-rules block for the run-mode system prompt: the decompose-first
+    directive when ``[prompt].decompose`` is on, else the optional-DAG default."""
+    return DAG_RULES_DECOMPOSE if decompose else DAG_RULES_OPTIONAL
+
 
 # Alternate base system prompt used by `agent6 plan`. Replaces
 # the edit-/verify-/dag-/style-rules blocks with planning-mode rules.
@@ -466,6 +507,9 @@ def build_system_prompt(
     override = config.prompt.system_prompt_file
     if mode == "run" and override:
         base = Path(override).expanduser().read_text(encoding="utf-8")
+    # Fill the DAG-rules sentinel (present only in the run-mode default base).
+    # On an override file the sentinel is absent, so this is a no-op there.
+    base = base.replace("__DAG_RULES_BLOCK__", dag_rules_block(config.prompt.decompose))
     parts = [base]
 
     # When the bench harness sets

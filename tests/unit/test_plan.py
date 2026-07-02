@@ -170,6 +170,54 @@ def test_system_prompt_file_override_replaces_run_base_keeps_blocks(tmp_path: Pa
     assert "CUSTOM WORKER" not in plan
 
 
+def test_decompose_swaps_dag_rules_block(tmp_path: Path) -> None:
+    """[prompt].decompose swaps the run-mode 'DAG optional' block for the
+    'decompose first' directive; default keeps the optional block. The sentinel
+    is always filled (never leaks) and only run mode is affected."""
+    repo = RepoSummary(
+        root=tmp_path,
+        branch="main",
+        head_sha="0" * 40,
+        file_count=0,
+        top_level=(),
+        agents_md="",
+        recent_log="",
+    )
+    off = Config.model_validate({"prompt": {"decompose": False}})
+    on = Config.model_validate({"prompt": {"decompose": True}})
+    run_off = loopmod._build_system_prompt(config=off, repo=repo, mode="run")  # pyright: ignore[reportPrivateUsage]
+    run_on = loopmod._build_system_prompt(config=on, repo=repo, mode="run")  # pyright: ignore[reportPrivateUsage]
+    assert "__DAG_RULES_BLOCK__" not in run_off and "__DAG_RULES_BLOCK__" not in run_on
+    assert "<dag-rules>" in run_off and "<decompose-first>" not in run_off
+    assert "<decompose-first>" in run_on and "<dag-rules>" not in run_on
+    # decompose is a run-mode worker feature: other modes never carry either block
+    # or a leaked sentinel.
+    for mode in ("plan", "ask", "machine", "agent"):
+        text = loopmod._build_system_prompt(config=on, repo=repo, mode=mode)  # pyright: ignore[reportPrivateUsage]
+        assert "__DAG_RULES_BLOCK__" not in text and "<decompose-first>" not in text
+
+
+def test_decompose_defaults_off(tmp_path: Path) -> None:
+    assert Config().prompt.decompose is False
+
+
+def test_decompose_hint_is_run_mode_only() -> None:
+    """The decompose-first user-message hint must NOT leak into plan/ask, which
+    also wire a curator (root_id non-None): it references the run-only
+    <decompose-first> block and tells the worker to edit."""
+    hint = loopmod._initial_dag_hint  # pyright: ignore[reportPrivateUsage]
+    rid = "01" + "A" * 24
+    run_dec = hint(rid, "run", True)
+    assert "<decompose-first>" in run_dec and "Do not edit" in run_dec
+    for mode in ("plan", "ask", "machine", "agent"):
+        h = hint(rid, mode, True)
+        assert "<decompose-first>" not in h and "Do not edit before the plan" not in h
+        assert "optional" in h  # falls back to the plain optional-DAG hint
+    # decompose off, or no curator, never emits the directive
+    assert "<decompose-first>" not in hint(rid, "run", False)
+    assert hint(None, "run", True) == ""
+
+
 def test_system_prompt_file_validator_rejects_missing(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="not a readable file"):
         Config.model_validate({"prompt": {"system_prompt_file": str(tmp_path / "nope.txt")}})

@@ -655,6 +655,15 @@ class PromptConfig(BaseModel):
     # any other provider call. Default off keeps crisp prompts/frontier-model
     # runs on the old path.
     revise_prompt: Literal["off", "auto", "interactive"] = "off"
+    # Front-load task decomposition (run mode). When true the worker's system
+    # prompt swaps the "DAG is optional" guidance for a "decompose first"
+    # directive: lay the task out as ordered subtasks before editing, then work
+    # one focused subtask at a time (the existing surface-current-task and
+    # finish-gate machinery walks the frontier). Aimed at small/open models that
+    # lose track of multi-part tasks; a capable model decomposes implicitly and
+    # gains nothing, so the safe default is off. No effect on plan/ask/machine/
+    # agent modes. See docs/config.md for the measured per-model effect.
+    decompose: bool = False
 
     @model_validator(mode="after")
     def _check_system_prompt_file(self) -> PromptConfig:

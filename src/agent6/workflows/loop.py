@@ -451,6 +451,29 @@ def _stuck_on_task_nudge(task_id: str, node: dict[str, Any], turns: int) -> str:
     )
 
 
+def _initial_dag_hint(root_id: str | None, mode: str, decompose: bool) -> str:
+    """The DAG hint appended to the first user message. The decompose-first
+    directive is RUN-MODE ONLY -- it references the run-only ``<decompose-first>``
+    system block and tells the worker to edit, neither of which fits plan/ask
+    (which also wire a curator, so ``root_id`` is non-None there). Every other
+    case gets the optional-DAG hint."""
+    if root_id is None:
+        return ""
+    if mode == "run" and decompose:
+        return (
+            "\n\nThe DAG-as-tool surface is wired (root task id"
+            f" `{root_id}`). START by calling `add_task` several times to"
+            " lay out your whole plan as ordered subtasks (see"
+            " <decompose-first>), then work the first one. Do not edit"
+            " before the plan exists."
+        )
+    return (
+        "\n\nThe DAG-as-tool surface is wired. Root task id is"
+        f" `{root_id}`. Use `add_task` to break this into trackable"
+        " subtasks (or skip the DAG entirely - it's optional)."
+    )
+
+
 def _extract_initial_task(messages: list[dict[str, Any]]) -> str:
     """Recover the original task string from the first user message built
     by ``Workflow.run`` (``"TASK:\\n<task>\\n\\n..."``). Returns empty
@@ -884,13 +907,7 @@ class Workflow:
         # Initial user message - the task + a brief operational header.
         # cache_control marker on the user message so the prefix stays
         # cached across the loop's turns (lineage).
-        dag_hint = ""
-        if root_id is not None:
-            dag_hint = (
-                "\n\nThe DAG-as-tool surface is wired. Root task id is"
-                f" `{root_id}`. Use `add_task` to break this into trackable"
-                " subtasks (or skip the DAG entirely - it's optional)."
-            )
+        dag_hint = _initial_dag_hint(root_id, self.mode, self.config.prompt.decompose)
         if self.mode == "plan":
             instructions = (
                 "Begin planning. Use the read-only tools to gather what you"

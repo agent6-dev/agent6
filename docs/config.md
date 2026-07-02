@@ -276,6 +276,7 @@ Tiered context-compaction thresholds (approximate chars; tokens ≈ chars/4).
 | `system_prompt_file` | `""` | ADVANCED: replace run-mode's static base prompt with this file's contents (the dynamic verify / budget / repo-priors blocks still append). Validated to exist at config load; a startup warning fires if it omits the core tool names. |
 | `structural_priors` | `true` | Include the enriched `<repo-priors>` block (ranked hot symbols, git co-change, tree-sitter outline) in the system prompt. Set `false` for a leaner/cheaper prompt. |
 | `revise_prompt` | `"off"` | One-shot task-prompt revision before the loop: `off` / `auto` / `interactive`. |
+| `decompose` | `false` | Front-load task decomposition (run mode). Swaps the "DAG is optional" guidance for a "decompose first" directive: the worker lays the task out as ordered subtasks before editing, then the surface-current-task + finish-gate machinery walks it one focused subtask at a time. Helps a small model that under-finishes multi-component implementation tasks (measured: mistral-small-3.2-24b textkit +0.53, rpn +0.13 score; flat on a debug task, where dropping-components isn't the failure mode); a capable model decomposes implicitly and only pays the overhead (~2-4x turns/cost), so it ships off. Turn on when driving a small/open model on a multi-component implementation task. No effect on plan/ask/machine/agent modes. |
 
 ### Config profiles
 
