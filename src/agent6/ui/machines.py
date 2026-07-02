@@ -32,7 +32,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
     ) from e
 
 from agent6.machine import MachineError, load_machine, render, validate_semantics
-from agent6.ui._spawn import agent6_exe, spawn_detached
+from agent6.ui._spawn import agent6_exe, spawn_and_locate, spawn_detached
 from agent6.ui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.modals import ConfirmModal
 from agent6.ui.theme import PALETTE_CSS
@@ -46,6 +46,17 @@ def find_machine_files(repo_cwd: Path) -> list[Path]:
     if sub.is_dir():
         found.update(sub.glob("*.asm.toml"))
     return sorted(found)
+
+
+def _list_drafts(agent6_dir: Path) -> list[Path]:
+    """Machine-create draft dirs (newest first). Each holds the watchable
+    logs.jsonl + prompt.txt + the authored candidate."""
+    drafts = agent6_dir / "machine-drafts"
+    if not drafts.is_dir():
+        return []
+    out = [p for p in drafts.iterdir() if p.is_dir()]
+    out.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0.0, reverse=True)
+    return out
 
 
 def _machine_row(path: Path) -> tuple[str, str, str]:
@@ -228,9 +239,10 @@ class MachinesScreen(Screen[None]):
     ]
     COMMANDS: ClassVar = Screen.COMMANDS | {_MachineCommands}
 
-    def __init__(self, repo_cwd: Path) -> None:
+    def __init__(self, repo_cwd: Path, agent6_dir: Path) -> None:
         super().__init__()
         self.repo_cwd = repo_cwd
+        self.agent6_dir = agent6_dir  # per-repo state dir; machine-create drafts live under it
         self._machines: list[Path] = []
 
     def palette_commands(self) -> Iterator[tuple[str, Callable[[], None], str]]:
@@ -326,12 +338,22 @@ class MachinesScreen(Screen[None]):
     def _on_create(self, task: str | None) -> None:
         if not task:
             return
-        err = spawn_detached([agent6_exe(), "machine", "create", task], self.repo_cwd)
-        self.app.notify(
-            err or "creating machine… press Refresh (f) when it finishes.",
-            severity="error" if err else "information",
-            timeout=8.0,
+        # Spawn `agent6 machine create` detached, then open the dashboard on the
+        # draft it produces so the authoring agent's reasoning + tool calls are
+        # watchable live, exactly like a run. The create keeps running detached,
+        # so quitting the dashboard is safe.
+        draft_dir, error = spawn_and_locate(
+            [agent6_exe(), "machine", "create", task],
+            self.repo_cwd,
+            before=set(_list_drafts(self.agent6_dir)),
+            list_dirs=lambda: _list_drafts(self.agent6_dir),
         )
+        if draft_dir is not None:
+            self.app.exit(draft_dir)  # the hub loop opens the dashboard on it
+        else:
+            self.app.notify(
+                error or "Could not start machine create.", severity="error", timeout=8.0
+            )
 
     def action_refresh(self) -> None:
         self._reload()

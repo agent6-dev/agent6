@@ -83,7 +83,7 @@ class _Host(App[None]):
         self._repo = repo_cwd
 
     def on_mount(self) -> None:
-        self.push_screen(MachinesScreen(self._repo))
+        self.push_screen(MachinesScreen(self._repo, self._repo / ".agent6"))
 
 
 def test_machines_menu_items_all_resolve(tmp_path: Path) -> None:
@@ -99,6 +99,31 @@ def test_machines_menu_items_all_resolve(tmp_path: Path) -> None:
                         app, f"action_{item.action}", None
                     )
                     assert resolved is not None, f"no handler for {item.action}"
+
+    asyncio.run(scenario())
+
+
+def test_create_opens_dashboard_on_the_draft(tmp_path: Path, monkeypatch: object) -> None:
+    """Creating a machine spawns `machine create`, locates the draft it produces,
+    and hands that dir to the dashboard via app.exit -- so it is watchable live,
+    not fire-and-forget."""
+    draft = tmp_path / "draft"
+    draft.mkdir()
+
+    def _fake_locate(*_a: object, **_k: object) -> tuple[Path, str]:
+        return draft, ""
+
+    monkeypatch.setattr(machmod, "spawn_and_locate", _fake_locate)  # type: ignore[attr-defined]
+
+    async def scenario() -> None:
+        app = _Host(tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, MachinesScreen)
+            screen._on_create("make a greeter")  # pyright: ignore[reportPrivateUsage]
+            await pilot.pause()
+        assert app.return_value == draft  # handed the draft to the dashboard
 
     asyncio.run(scenario())
 
@@ -176,13 +201,17 @@ def test_machine_run_confirms_then_spawns(tmp_path: Path, monkeypatch: object) -
 
 
 def test_machine_create_spawns_with_task(tmp_path: Path, monkeypatch: object) -> None:
+    """The create modal threads the typed task into `agent6 machine create <task>`
+    (then the draft is located + handed to the dashboard)."""
     captured: list[list[str]] = []
+    draft = tmp_path / "d"
+    draft.mkdir()
 
-    def _fake_spawn(argv: list[str], cwd: Path) -> str:
+    def _fake_locate(argv: list[str], cwd: Path, **_k: object) -> tuple[Path, str]:
         captured.append(list(argv))
-        return ""
+        return draft, ""
 
-    monkeypatch.setattr(machmod, "spawn_detached", _fake_spawn)  # type: ignore[attr-defined]
+    monkeypatch.setattr(machmod, "spawn_and_locate", _fake_locate)  # type: ignore[attr-defined]
 
     async def scenario() -> None:
         app = _Host(tmp_path)

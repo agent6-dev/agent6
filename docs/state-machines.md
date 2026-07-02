@@ -762,6 +762,16 @@ stdout and the command exits non-zero so nothing is clobbered). Scripts
 land in `scripts/` next to the machine file. Status, spend, and notes go
 to stderr.
 
+Each attempt runs in a draft directory under the per-repo state dir
+(`machine-drafts/<id>/`) holding the `prompt.txt` (the operator's task),
+the candidate `.asm.toml`, the agent transcript, and a `logs.jsonl`
+event stream. On a TTY the drafting agent's reasoning streams to stderr;
+the event log makes it watchable from the TUI too: the Machines page's
+"Create" opens the read-only dashboard on the draft and follows the
+authoring agent's reasoning + tool calls live, exactly like watching a
+run. The create keeps running detached, so closing the dashboard does
+not stop it.
+
 Crucially this does not weaken the "machines are operator artifacts"
 invariant (§9): `create` only ever *drafts* a file into the working tree.
 The operator reviews it, fine-tunes the constants/prompts, and commits

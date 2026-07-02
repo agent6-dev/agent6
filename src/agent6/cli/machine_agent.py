@@ -38,6 +38,7 @@ from agent6.cli.providers import (
 )
 from agent6.config_layer import load_effective_with_overlay
 from agent6.detect import detect
+from agent6.events import EventSink
 from agent6.git_ops import set_repo_hook_policy
 from agent6.providers import TranscriptSink
 from agent6.tools.dispatch import ToolDispatcher
@@ -116,12 +117,18 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
         inner_provider = _build_role_provider(
             cfg, "worker", transcript_sink=TranscriptSink(transcript_dir), budget=budget
         )
-        # No EventSink here (a machine agent state has no logs.jsonl).
+        # An EventSink only when the caller asked for one (events_log set): the
+        # `machine create` driver points it at the draft dir's logs.jsonl so the
+        # TUI can watch the authoring agent's reasoning + tool calls live, exactly
+        # like a run. None for an `agent` state (no watchable log there yet).
+        events_log = req.get("events_log")
+        events_sink = EventSink(Path(events_log)) if isinstance(events_log, str) else None
         # stream_text: ALWAYS use the streaming transport. Machine agents run
         # headless (cron / nohup) and produce long generations; the
         # non-streaming path drops the connection mid-body on OpenRouter-style
         # gateways (SSE heartbeats corrupt it, observed as "incomplete chunked
-        # read" on ~14k-token authoring calls).
+        # read" on ~14k-token authoring calls). It is also what feeds the
+        # role.*_delta events to the sink above.
         # console_stream: additionally echo reasoning + answer to stderr at a
         # TTY so `machine create` and live `agent` states are watchable.
         rm = cfg.models.resolve("worker")
@@ -130,7 +137,7 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
             role=r.get("role_label", "agent"),
             model=rm.model if rm is not None else "",
             provider_name=rm.provider if rm is not None else "",
-            events=None,
+            events=events_sink,
             budget=budget,
             stream_text=True,
             console_stream=sys.stderr.isatty() or os.environ.get("AGENT6_FORCE_STREAM") == "1",
@@ -155,7 +162,7 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
             config=cfg,
             sandbox_profile=profile,
             approver=None,
-            events=None,
+            events=events_sink,
             graph_client=None,
             run_root_node_id=None,
             mcp_manager=None,

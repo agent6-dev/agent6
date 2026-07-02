@@ -36,6 +36,7 @@ from agent6.config_layer import (
     repo_config_path_for,
 )
 from agent6.detect import select_profile
+from agent6.events import EventSink
 from agent6.git_ops import CommitIdentity, GitError, verify_git_identity
 from agent6.machine import (
     SCRIPTS_PAYLOAD_KEY,
@@ -271,6 +272,7 @@ def _build_machine_agent_runner(
     transcript_dir: Path,
     protect_paths: tuple[Path, ...] = (),
     commit_identity: CommitIdentity | None = None,
+    events_log: Path | None = None,
 ) -> Callable[[AgentRequest], AgentExecResult]:
     """Build the runner an `agent` state uses to drive a confined agent6 loop.
 
@@ -291,6 +293,10 @@ def _build_machine_agent_runner(
             "overlay": overlay,
             "profile": profile,
             "transcript_dir": str(transcript_dir),
+            # When set, the agent subprocess writes a watchable logs.jsonl here
+            # (role.*_delta + tool.* events), so `machine create` is followable in
+            # the TUI dashboard exactly like a run.
+            "events_log": str(events_log) if events_log is not None else None,
             "protect_paths": [str(p) for p in protect_paths],
             # Resolved on the host (pre-Landlock, so it sees global git config);
             # the confined agent subprocess can't read ~/.gitconfig, so its
@@ -862,8 +868,21 @@ def _cmd_machine_create(  # noqa: PLR0911, PLR0912, PLR0915
 
     scratch = _state_dir(cwd) / "machine-drafts" / new_friendly_id()
     scratch.mkdir(parents=True, exist_ok=True)
+    # Persist the natural-language task that drove this draft, so the draft dir is
+    # self-describing (the agent_transcripts/ embed it inside the authoring prompt,
+    # but a plain prompt.txt is what a human looks for).
+    (scratch / "prompt.txt").write_text(task, encoding="utf-8")
+    # A watchable event log for the draft: the TUI opens the dashboard on this dir
+    # and follows the authoring agent live. The parent owns the run.start header
+    # (the NL task) + the per-attempt markers + the final run.end; each attempt's
+    # subprocess appends its own role.*_delta / tool.* events to the same file.
+    events_log = scratch / "logs.jsonl"
+    events = EventSink(events_log)
+    events.emit("run.start", user_task=task, mode="machine")
     # Authoring drafts a machine; it has no machine [config] overlay of its own.
-    runner = _build_machine_agent_runner({}, cwd, profile, scratch / "agent_transcripts")
+    runner = _build_machine_agent_runner(
+        {}, cwd, profile, scratch / "agent_transcripts", events_log=events_log
+    )
 
     # The drafted machine's agent states inherit this worker model. If it is
     # unpriced (anthropic-direct, local), steer the draft to best_effort_usd_limit
@@ -889,6 +908,7 @@ def _cmd_machine_create(  # noqa: PLR0911, PLR0912, PLR0915
             worker_unpriced=worker_unpriced,
         )
         print(f"machine create: attempt {attempt}/{max_attempts}...", file=sys.stderr)
+        events.emit("loop.note", text=f"attempt {attempt}/{max_attempts}")
         # model omitted (=None): inherit the operator's effective worker model.
         # mode="machine": authoring system prompt + read-only tools (see loop.py).
         result = runner(AgentRequest(prompt=prompt, timeout_s=_CREATE_TIMEOUT_S, mode="machine"))
@@ -924,6 +944,7 @@ def _cmd_machine_create(  # noqa: PLR0911, PLR0912, PLR0915
             # catches e.g. a branch reading a field the schema doesn't declare).
             # Any failure becomes a retry diagnostic so the agent fixes it itself.
             print("machine create: linting + offline-testing scripts...", file=sys.stderr)
+            events.emit("loop.note", text="linting + offline-testing the draft")
             problems = lint_and_typecheck(scratch / "scripts")
             problems.extend(run_offline_tests(scratch, profile))
             report = dry_run(candidate_spec, None)
@@ -944,6 +965,13 @@ def _cmd_machine_create(  # noqa: PLR0911, PLR0912, PLR0915
             break
 
     print(f"machine create: spent ~${total_usd:.4f}", file=sys.stderr)
+    # End the watchable session (the file-write below is fast and event-less);
+    # all_passed marks whether a valid machine was authored, for the TUI status.
+    events.emit(
+        "run.end",
+        all_passed=spec is not None and valid_toml is not None,
+        reason="machine create finished",
+    )
 
     if spec is None or valid_toml is None:
         print(f"FAILED: no valid machine after {max_attempts} attempt(s).", file=sys.stderr)

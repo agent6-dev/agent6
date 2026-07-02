@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from types import SimpleNamespace
@@ -161,7 +162,7 @@ def _stub_runner(monkeypatch: pytest.MonkeyPatch, results: Iterable[AgentExecRes
     seq = iter(results)
 
     def fake_build(
-        cfg: object, root: Path, profile: object, transcript_dir: Path
+        cfg: object, root: Path, profile: object, transcript_dir: Path, **_kw: object
     ) -> Callable[[AgentRequest], AgentExecResult]:
         def run(_request: AgentRequest) -> AgentExecResult:
             return next(seq)
@@ -181,7 +182,7 @@ def test_create_inherits_worker_model(tmp_path: Path, monkeypatch: pytest.Monkey
     captured: list[AgentRequest] = []
 
     def fake_build(
-        cfg: object, root: Path, profile: object, transcript_dir: Path
+        cfg: object, root: Path, profile: object, transcript_dir: Path, **_kw: object
     ) -> Callable[[AgentRequest], AgentExecResult]:
         def run(request: AgentRequest) -> AgentExecResult:
             captured.append(request)
@@ -219,6 +220,58 @@ def test_create_writes_default_path(
     assert written.read_text(encoding="utf-8").startswith('machine = "greeter"')
     assert "wrote draft" in out.err
     assert "spent ~$0.0200" in out.err
+
+
+def test_create_writes_watchable_event_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """machine create writes a logs.jsonl in the draft dir (run.start carrying the
+    NL task + run.end) and points the agent runner at that same path, so the TUI
+    can open the dashboard on the draft and follow the authoring live, like a run."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    _stub_preflight(monkeypatch)
+    captured_log: list[object] = []
+
+    def fake_build(
+        cfg: object, root: Path, profile: object, transcript_dir: Path, **kw: object
+    ) -> Callable[[AgentRequest], AgentExecResult]:
+        captured_log.append(kw.get("events_log"))
+
+        def run(_request: AgentRequest) -> AgentExecResult:
+            return AgentExecResult(
+                reason="finish_run", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0
+            )
+
+        return run
+
+    monkeypatch.setattr(cli, "_build_machine_agent_runner", fake_build)
+    assert main(["machine", "create", "Greet the user"]) == 0
+
+    logs = list((tmp_path / "state").glob("**/machine-drafts/*/logs.jsonl"))
+    assert len(logs) == 1
+    # The runner was pointed at that same log (so the subprocess appends to it).
+    assert captured_log and str(captured_log[0]) == str(logs[0])
+    events = [json.loads(line) for line in logs[0].read_text(encoding="utf-8").splitlines()]
+    assert events[0]["type"] == "run.start"
+    assert events[0]["user_task"] == "Greet the user"  # the dashboard header
+    assert any(e["type"] == "run.end" for e in events)
+
+
+def test_create_saves_the_prompt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The natural-language task is saved to the draft dir as prompt.txt, so the
+    draft is self-describing (otherwise the task only survives embedded inside the
+    authoring transcript)."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    _stub_preflight(monkeypatch)
+    _stub_runner(
+        monkeypatch,
+        [AgentExecResult(reason="finish_run", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0)],
+    )
+    code = main(["machine", "create", "Greet the user warmly"])
+    assert code == 0
+    prompts = list((tmp_path / "state").glob("**/machine-drafts/*/prompt.txt"))
+    assert len(prompts) == 1
+    assert prompts[0].read_text(encoding="utf-8") == "Greet the user warmly"
 
 
 def test_create_retries_then_succeeds(
@@ -389,7 +442,7 @@ def test_create_retry_prompt_carries_prior_scripts(
     )
 
     def fake_build(
-        cfg: object, root: Path, profile: object, transcript_dir: Path
+        cfg: object, root: Path, profile: object, transcript_dir: Path, **_kw: object
     ) -> Callable[[AgentRequest], AgentExecResult]:
         def run(request: AgentRequest) -> AgentExecResult:
             prompts.append(request.prompt)

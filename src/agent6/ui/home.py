@@ -16,7 +16,6 @@ import inspect
 import json
 import os
 import subprocess
-import tempfile
 import time
 from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
@@ -39,7 +38,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 
 # Safe at module top: the textual guard above runs first, so this (which also
 # needs textual) is only reached when textual is present.
-from agent6.ui._spawn import agent6_exe
+from agent6.ui._spawn import agent6_exe, spawn_and_locate
 from agent6.ui.config_page import ConfigScreen
 from agent6.ui.conversation import ConversationScreen
 from agent6.ui.logview import LogScreen
@@ -494,7 +493,7 @@ class HomeScreen(Screen[None]):
         self.app.push_screen(ConfigScreen(self.repo_cwd))
 
     def action_open_machines(self) -> None:
-        self.app.push_screen(MachinesScreen(self.repo_cwd))
+        self.app.push_screen(MachinesScreen(self.repo_cwd, self.agent6_dir))
 
     def action_choose_theme(self) -> None:
         open_theme_picker(self.app)
@@ -558,70 +557,27 @@ class Agent6HomeApp(App[Path | None]):
 def _spawn_and_locate(
     agent6_dir: Path, repo_cwd: Path, mode: str, task: str, *, profile: str = ""
 ) -> tuple[Path | None, str]:
-    """Spawn `agent6 <mode> [--profile <name>] <task>` detached (non-TTY stdout →
-    no nested TUI) and return (run_dir, ""). On failure returns (None,
-    diagnostic). A non-empty *profile* maps to the per-subcommand --profile flag
-    (placed after the mode, before the task); "" => no flag, so the config's
-    [workflow].profile applies. The dir is found by snapshotting existing runs
-    and polling for a NEW one; if the child exits before producing a run dir (no
-    git repo, bad config, …) its stderr tail is surfaced instead of silently
-    waiting out the timeout."""
-    cwd = repo_cwd
+    """Spawn `agent6 <mode> [--profile <name>] <task>` detached and return the new
+    run dir (to be watched by the dashboard), or (None, diagnostic) on failure. A
+    non-empty *profile* maps to the per-subcommand --profile flag (after the mode,
+    before the task); "" => no flag, so the config's [workflow].profile applies."""
     # --profile is a per-subcommand flag, so it goes after <mode> and before the
     # positional <task> -> `agent6 <mode> --profile <name> <task>`.
     argv = [agent6_exe(), mode]
     if profile:
         argv += ["--profile", profile]
     argv.append(task)
-    before = set(_list_runs(agent6_dir))
-    err = tempfile.NamedTemporaryFile(  # noqa: SIM115 - closed in finally
-        mode="w+", suffix=".agent6-launch.err", delete=False
+    return spawn_and_locate(
+        argv,
+        repo_cwd,
+        before=set(_list_runs(agent6_dir)),
+        list_dirs=lambda: _list_runs(agent6_dir),
+        # The hub watches this run on the dashboard, which renders the model's
+        # reasoning + answer from role.*_delta events. Tell the detached (non-TTY)
+        # run to emit those deltas to its logs.jsonl; without this it takes the
+        # non-streaming path and the dashboard shows only worker status.
+        env={**os.environ, "AGENT6_STREAM_TO_LOG": "1"},
     )
-    try:
-        try:
-            proc = subprocess.Popen(
-                argv,
-                cwd=str(cwd),
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=err,
-                start_new_session=True,
-                # The hub watches this run on the dashboard, which renders the
-                # model's reasoning + answer from role.*_delta events. Tell the
-                # detached (non-TTY) run to emit those deltas to its logs.jsonl;
-                # without this it would take the non-streaming path and the
-                # dashboard would show only worker status, never live thinking.
-                env={**os.environ, "AGENT6_STREAM_TO_LOG": "1"},
-            )
-        except OSError as exc:
-            return None, f"failed to start agent6: {exc}"
-        deadline = time.monotonic() + 25.0
-        while time.monotonic() < deadline:
-            found = _located_run(agent6_dir, before)
-            if found is not None:
-                return found, ""
-            if proc.poll() is not None:
-                # Child exited without a run dir, surface why (recheck once in
-                # case the dir landed in the same instant the process exited).
-                found = _located_run(agent6_dir, before)
-                if found is not None:
-                    return found, ""
-                err.flush()
-                tail = Path(err.name).read_text(encoding="utf-8", errors="replace")[-600:]
-                return None, f"agent6 {mode} exited ({proc.returncode}) before starting:\n{tail}"
-            time.sleep(0.2)
-        return None, f"timed out waiting for `agent6 {mode}` to start"
-    finally:
-        err.close()
-        Path(err.name).unlink(missing_ok=True)
-
-
-def _located_run(agent6_dir: Path, before: set[Path]) -> Path | None:
-    """The newest run dir not present in *before*, once its logs.jsonl exists."""
-    for rd in _list_runs(agent6_dir):
-        if rd not in before and (rd / "logs.jsonl").exists():
-            return rd
-    return None
 
 
 def _run_merge_cli(repo_cwd: Path, run_id: str) -> tuple[bool, str]:
