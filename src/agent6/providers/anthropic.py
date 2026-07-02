@@ -651,10 +651,10 @@ class AnthropicProvider:
                     if et == "message_start":
                         msg = evt.get("message", {})
                         u = msg.get("usage", {}) or {}
-                        usage_input = int(u.get("input_tokens", usage_input))
-                        usage_cache_read = int(u.get("cache_read_input_tokens", usage_cache_read))
+                        usage_input = int(u.get("input_tokens") or usage_input)
+                        usage_cache_read = int(u.get("cache_read_input_tokens") or usage_cache_read)
                         usage_cache_creation = int(
-                            u.get("cache_creation_input_tokens", usage_cache_creation)
+                            u.get("cache_creation_input_tokens") or usage_cache_creation
                         )
                     elif et == "content_block_start":
                         idx = int(evt.get("index", 0))
@@ -736,7 +736,7 @@ class AnthropicProvider:
                             stop_reason = str(d.get("stop_reason", "") or "")
                         u = evt.get("usage", {}) or {}
                         if "output_tokens" in u:
-                            usage_output = int(u.get("output_tokens", usage_output))
+                            usage_output = int(u.get("output_tokens") or usage_output)
                     elif et == "message_stop":
                         break
                     elif et == "error":
@@ -831,13 +831,16 @@ def _parse_response(data: dict[str, Any]) -> ProviderResponse:
                 }
             )
     usage = data.get("usage") or {}
+    # `or 0` throughout: a gateway returning null token fields on a 2xx would
+    # make bare int(None) raise TypeError, which escapes the loop's
+    # ProviderError-only retry wrapper and kills the run.
     return ProviderResponse(
         text="".join(text_parts),
         tool_uses=tuple(tool_uses),
         stop_reason=str(data.get("stop_reason", "")),
-        input_tokens=int(usage.get("input_tokens", 0)),
-        output_tokens=int(usage.get("output_tokens", 0)),
-        cache_read_tokens=int(usage.get("cache_read_input_tokens", 0)),
-        cache_creation_tokens=int(usage.get("cache_creation_input_tokens", 0)),
+        input_tokens=int(usage.get("input_tokens") or 0),
+        output_tokens=int(usage.get("output_tokens") or 0),
+        cache_read_tokens=int(usage.get("cache_read_input_tokens") or 0),
+        cache_creation_tokens=int(usage.get("cache_creation_input_tokens") or 0),
         raw=data,
     )

@@ -14,13 +14,14 @@ on the request body and synthesises an OpenAI-shape response.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx2
 import pytest
 
 from agent6.providers import OpenAIProvider, ToolDefinition
 from agent6.providers.openai import (
+    _coerce_text_tool_calls,  # pyright: ignore[reportPrivateUsage]
     anthropic_to_openai_messages,
     tools_to_openai,
 )
@@ -863,3 +864,189 @@ def test_blank_name_tool_use_and_orphan_result_dropped_in_translation() -> None:
     tool_msgs = [m for m in msgs if m["role"] == "tool"]
     assert [tc["function"]["name"] for tc in asst["tool_calls"]] == ["read_file"]
     assert [m["tool_call_id"] for m in tool_msgs] == ["c1"]
+
+
+# --- review findings: translation, 400 adaptation, usage nulls, recovery -----
+
+
+def test_translate_thinking_only_assistant_sends_empty_content() -> None:
+    # A reasoning-starved turn (thinking block, no text, no tool_use) must not
+    # become {"content": null} without tool_calls - strict backends 400 on it.
+    out = anthropic_to_openai_messages(
+        "sys",
+        [
+            {"role": "user", "content": "go"},
+            {"role": "assistant", "content": [{"type": "thinking", "thinking": "hmm"}]},
+            {"role": "user", "content": "continue"},
+        ],
+    )
+    assistant = next(m for m in out if m["role"] == "assistant")
+    assert assistant["content"] == ""
+    assert "tool_calls" not in assistant
+
+
+def test_max_completion_tokens_400_adapts_and_latches(monkeypatch: pytest.MonkeyPatch) -> None:
+    bodies: list[dict[str, Any]] = []
+    responses = [
+        _FakeResponse(status_code=400, payload={}),
+        _FakeResponse(
+            status_code=200, payload=_ok_response({"role": "assistant", "content": "ok"})
+        ),
+        _FakeResponse(
+            status_code=200, payload=_ok_response({"role": "assistant", "content": "ok"})
+        ),
+    ]
+    responses[0].text = (
+        "Unsupported parameter: 'max_tokens' is not supported with this model."
+        " Use 'max_completion_tokens' instead."
+    )
+
+    def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
+        bodies.append(json.loads(kwargs["content"].decode("utf-8")))
+        return responses[len(bodies) - 1]
+
+    monkeypatch.setattr(httpx2, "post", fake_post)
+    provider = OpenAIProvider(api_key="k", model="my-azure-gpt5", deployment="azure")
+    resp = provider.call(system="s", messages=[{"role": "user", "content": "x"}], max_tokens=64)
+    assert resp.text == "ok"
+    assert "max_tokens" in bodies[0] and "max_completion_tokens" not in bodies[0]
+    assert "max_completion_tokens" in bodies[1] and "max_tokens" not in bodies[1]
+    # Latched: the next call builds the right body first time.
+    provider.call(system="s", messages=[{"role": "user", "content": "x"}], max_tokens=64)
+    assert "max_completion_tokens" in bodies[2] and "max_tokens" not in bodies[2]
+
+
+def test_temperature_400_adapts_and_retries(monkeypatch: pytest.MonkeyPatch) -> None:
+    bodies: list[dict[str, Any]] = []
+    responses = [
+        _FakeResponse(status_code=400, payload={}),
+        _FakeResponse(
+            status_code=200, payload=_ok_response({"role": "assistant", "content": "ok"})
+        ),
+    ]
+    responses[0].text = "temperature is not supported with this model"
+
+    def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
+        bodies.append(json.loads(kwargs["content"].decode("utf-8")))
+        return responses[len(bodies) - 1]
+
+    monkeypatch.setattr(httpx2, "post", fake_post)
+    provider = OpenAIProvider(api_key="k", model="my-deployment", deployment="azure")
+    resp = provider.call(
+        system="s", messages=[{"role": "user", "content": "x"}], max_tokens=64, temperature=0.0
+    )
+    assert resp.text == "ok"
+    assert "temperature" in bodies[0]
+    assert "temperature" not in bodies[1]
+
+
+def test_null_usage_fields_do_not_crash(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = {
+        "choices": [{"message": {"role": "assistant", "content": "hi"}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": None, "completion_tokens": None},
+    }
+
+    def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
+        return _FakeResponse(status_code=200, payload=payload)
+
+    monkeypatch.setattr(httpx2, "post", fake_post)
+    provider = OpenAIProvider(api_key="k", model="m")
+    resp = provider.call(system="s", messages=[{"role": "user", "content": "x"}], max_tokens=64)
+    assert resp.input_tokens == 0
+    assert resp.output_tokens == 0
+
+
+def test_fence_recovery_preserves_other_json_fences() -> None:
+    text = (
+        'Call:\n```json\n{"name": "read_file", "arguments": {"path": "a.py"}}\n```\n'
+        'Reference config:\n```json\n{"key": "value"}\n```'
+    )
+    calls, remaining = _coerce_text_tool_calls(text, frozenset({"read_file"}))
+    assert [c["name"] for c in calls] == ["read_file"]
+    assert '"key": "value"' in remaining  # the second fence is content, not a call
+
+
+def test_tool_call_tag_recovery_keeps_malformed_tag_visible() -> None:
+    text = (
+        '<tool_call>{"name": "read_file", "arguments": {"path": "a.py"}}</tool_call>\n'
+        "<tool_call>{not json}</tool_call>"
+    )
+    calls, remaining = _coerce_text_tool_calls(text, frozenset({"read_file"}))
+    assert len(calls) == 1
+    # The malformed second call stays visible so the model can see it failed.
+    assert "{not json}" in remaining
+
+
+def test_streaming_indexless_parallel_tool_calls_get_separate_slots(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lines = [
+        "data: "
+        + json.dumps(
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "id": "a",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "read_file",
+                                        "arguments": '{"path": "a.py"}',
+                                    },
+                                },
+                                {
+                                    "id": "b",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "read_file",
+                                        "arguments": '{"path": "b.py"}',
+                                    },
+                                },
+                            ]
+                        },
+                        "finish_reason": None,
+                    }
+                ]
+            }
+        ),
+        'data: {"choices": [{"delta": {}, "finish_reason": "tool_calls"}],'
+        ' "usage": {"prompt_tokens": 1, "completion_tokens": 1}}',
+        "data: [DONE]",
+    ]
+
+    class _Stream:
+        status_code = 200
+        headers: ClassVar[dict[str, str]] = {}
+
+        def __enter__(self) -> _Stream:
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            return None
+
+        def iter_lines(self) -> list[str]:
+            return lines
+
+        def read(self) -> bytes:
+            return b""
+
+        def close(self) -> None:
+            return None
+
+    def fake_stream(method: str, url: str, **kwargs: Any) -> _Stream:
+        return _Stream()
+
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
+    provider = OpenAIProvider(api_key="k", model="m")
+    resp = provider.call(
+        system="s",
+        messages=[{"role": "user", "content": "x"}],
+        max_tokens=64,
+        text_delta_callback=lambda _: None,
+    )
+    assert len(resp.tool_uses) == 2
+    assert {tu["id"] for tu in resp.tool_uses} == {"a", "b"}
+    assert resp.tool_uses[0]["input"] == {"path": "a.py"}
+    assert resp.tool_uses[1]["input"] == {"path": "b.py"}

@@ -2179,11 +2179,25 @@ class Workflow:
             # empty content is rejected by Anthropic
             # ("messages.N.content: Input should be a valid
             # list") and is wasted context everywhere else.
+            # A THINKING-ONLY turn (reasoning starvation: blocks
+            # but no text/tool_use) counts as empty too - echoed
+            # back it translates to an assistant message with no
+            # content and no tool_calls, which strict
+            # OpenAI-compatible backends reject with a
+            # non-retryable 400, and it is dead context anyway.
             # The nudge becomes a normal user turn appended to
             # the prior assistant turn.
             if messages and messages[-1].get("role") == "assistant":
                 last_content = messages[-1].get("content") or []
-                if not last_content:
+                substantive = isinstance(last_content, list) and any(
+                    isinstance(b, dict)
+                    and (
+                        (b.get("type") == "text" and str(b.get("text", "")).strip())
+                        or b.get("type") == "tool_use"
+                    )
+                    for b in last_content
+                )
+                if not substantive:
                     messages.pop()
             # starvation-specific nudge. When the previous
             # turn ended with stop_reason=length AND reasoning_content

@@ -210,10 +210,38 @@ class OpenAIProvider:
     # triggers one refresh + retry. The object is internally mutable (cache),
     # which is why the otherwise-frozen provider holds only a reference to it.
     credential: CommandToken | None = None
+    # Some OpenAI-compatible backends we cannot fingerprint up front (an Azure
+    # o-series/gpt-5 deployment has an arbitrary deployment name) reject the
+    # legacy ``max_tokens`` with a 400 saying to use ``max_completion_tokens``,
+    # and/or reject any explicit ``temperature``. On that 400 the call adapts
+    # the body and retries once, latching here so the rest of the run builds
+    # the right body first time. 1-element lists because the dataclass is
+    # frozen but the lists are mutable (same pattern as AnthropicProvider).
+    _use_max_completion_tokens: list[bool] = field(default_factory=lambda: [False])
+    _omit_temperature: list[bool] = field(default_factory=lambda: [False])
 
     @property
     def endpoint(self) -> str:
         return self.base_url.rstrip("/") + "/chat/completions"
+
+    def _adapt_body_for_400(self, status: int | None, text: str, body: dict[str, Any]) -> bool:
+        """Mutate ``body`` to satisfy a parameter-rejection 400 and latch the
+        provider so later calls build the right body first time. Covers the
+        two rejections a reasoning deployment we cannot fingerprint up front
+        (an Azure o-series/gpt-5 deployment has an arbitrary name) sends:
+        "use max_completion_tokens" and "temperature is not supported".
+        Returns True when an adaptation was made (caller retries once)."""
+        if status != 400:
+            return False
+        if "max_tokens" in body and "max_completion_tokens" in (text or ""):
+            self._use_max_completion_tokens[0] = True
+            body["max_completion_tokens"] = body.pop("max_tokens")
+            return True
+        if "temperature" in body and "temperature" in (text or "").lower():
+            self._omit_temperature[0] = True
+            body.pop("temperature", None)
+            return True
+        return False
 
     @classmethod
     def from_env(
@@ -297,7 +325,7 @@ class OpenAIProvider:
             self.model
         )
         body: dict[str, Any] = {"messages": oai_messages}
-        if is_openai_direct_reasoning:
+        if is_openai_direct_reasoning or self._use_max_completion_tokens[0]:
             body["max_completion_tokens"] = effective_max_tokens
         else:
             body["max_tokens"] = effective_max_tokens
@@ -391,8 +419,12 @@ class OpenAIProvider:
                 body["reasoning"] = {"effort": effort}
         # OpenAI-direct o-series/reasoning models reject any explicit
         # ``temperature`` (only the server default is accepted), so omit it
-        # there. Other hosts forward it as-is.
-        if temperature is not None and not is_openai_direct_reasoning:
+        # there. Other hosts forward it as-is (until a 400 latches the omit).
+        if (
+            temperature is not None
+            and not is_openai_direct_reasoning
+            and not self._omit_temperature[0]
+        ):
             body["temperature"] = temperature
         if tools:
             body["tools"] = tools_to_openai(tools)
@@ -436,7 +468,14 @@ class OpenAIProvider:
         # expired token self-heals regardless of its cache TTL. Without a
         # credential there is exactly one attempt and the static key is used.
         cred = self.credential
-        max_attempts = 2 if cred is not None else 1
+        # +1 attempt reserved for each one-shot body adaptation (an unknown
+        # reasoning deployment rejecting max_tokens / temperature); mirrors
+        # the AnthropicProvider temperature-400 accounting.
+        max_attempts = (
+            (2 if cred is not None else 1)
+            + (1 if "max_tokens" in body else 0)
+            + (1 if "temperature" in body else 0)
+        )
         for attempt in range(max_attempts):
             headers: dict[str, str] = {"content-type": "application/json"}
             token = cred.token() if cred is not None else self.api_key
@@ -458,6 +497,10 @@ class OpenAIProvider:
                         tool_schemas=tool_schemas,
                     )
                 except ProviderError as exc:
+                    if attempt + 1 < max_attempts and self._adapt_body_for_400(
+                        exc.status_code, str(exc), body
+                    ):
+                        continue
                     if (
                         cred is not None
                         and attempt + 1 < max_attempts
@@ -496,6 +539,10 @@ class OpenAIProvider:
                         response_status=resp.status_code,
                         response_body=resp.text[:8192],
                     )
+                if attempt + 1 < max_attempts and self._adapt_body_for_400(
+                    resp.status_code, resp.text, body
+                ):
+                    continue
                 raise ProviderError(
                     f"OpenAI API error {resp.status_code}: {resp.text[:500]}",
                     status_code=resp.status_code,
@@ -700,7 +747,22 @@ class OpenAIProvider:
                     for tc in raw_tc:
                         if not isinstance(tc, dict):
                             continue
-                        idx = int(tc.get("index", 0))
+                        raw_idx = tc.get("index")
+                        tc_id = str(tc.get("id") or "")
+                        if raw_idx is not None:
+                            idx = int(raw_idx)
+                        elif tc_id and any(s["id"] == tc_id for s in tool_calls.values()):
+                            # Indexless delta continuing a known call: route by id.
+                            idx = next(i for i, s in tool_calls.items() if s["id"] == tc_id)
+                        elif tc_id and tool_calls:
+                            # Indexless chunk carrying a NEW id (a gateway that
+                            # sends whole calls in one chunk without index
+                            # fields): open a fresh slot instead of collapsing
+                            # every call onto slot 0 (which overwrote the first
+                            # call and concatenated both argument strings).
+                            idx = max(tool_calls) + 1
+                        else:
+                            idx = max(tool_calls) if tool_calls else 0
                         slot = tool_calls.setdefault(
                             idx,
                             {
@@ -894,8 +956,14 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
             assistant_msg: dict[str, Any] = {"role": "assistant"}
             if text_chunks:
                 assistant_msg["content"] = "".join(text_chunks)
-            else:
+            elif tool_calls:
                 assistant_msg["content"] = None
+            else:
+                # A thinking-only turn (reasoning starvation) yields neither
+                # text nor tool_calls. Chat Completions requires `content`
+                # unless `tool_calls` is present; `null` without tool_calls
+                # 400s on strict backends (non-retryable), so send "".
+                assistant_msg["content"] = ""
             if tool_calls:
                 assistant_msg["tool_calls"] = tool_calls
             out.append(assistant_msg)
@@ -1153,6 +1221,17 @@ def _extract_tool_call_obj(  # noqa: PLR0911
     return {"name": name, "input": raw_args}
 
 
+def _remove_spans(text: str, spans: list[tuple[int, int]]) -> str:
+    """``text`` with the given non-overlapping ``(start, end)`` spans cut out."""
+    parts: list[str] = []
+    prev = 0
+    for start, end in spans:
+        parts.append(text[prev:start])
+        prev = end
+    parts.append(text[prev:])
+    return "".join(parts).strip()
+
+
 def _coerce_text_tool_calls(  # noqa: PLR0911
     text: str,
     tool_names: frozenset[str],
@@ -1189,19 +1268,25 @@ def _coerce_text_tool_calls(  # noqa: PLR0911
     tag_matches = list(_TOOL_CALL_TAG_RE.finditer(text))
     if tag_matches:
         recovered: list[dict[str, Any]] = []
+        drop_spans: list[tuple[int, int]] = []
         for match in tag_matches:
             obj = _extract_tool_call_obj(match.group(1), tool_names)
             if obj is not None:
                 recovered.append(obj)
+                drop_spans.append(match.span())
         if recovered:
-            remaining = _TOOL_CALL_TAG_RE.sub("", text).strip()
-            return recovered, remaining
+            # Remove ONLY the tags that parsed. A malformed sibling tag stays
+            # in the remaining text so the model can see its failed call
+            # (silently scrubbing it made the model assume the call happened).
+            return recovered, _remove_spans(text, drop_spans)
     # 2) A single fenced JSON object that is itself a tool call.
     fence = _JSON_FENCE_RE.search(text)
     if fence is not None:
         obj = _extract_tool_call_obj(fence.group(1), tool_names)
         if obj is not None:
-            return [obj], _JSON_FENCE_RE.sub("", text).strip()
+            # Remove only the matched fence; other ```json fences may be
+            # legitimate content (a config sample, a reference block).
+            return [obj], _remove_spans(text, [fence.span()])
     # 3) The whole content is exactly one bare JSON tool-call object.
     obj = _extract_tool_call_obj(text, tool_names)
     if obj is not None:
@@ -1319,7 +1404,10 @@ def _parse_response(  # noqa: PLR0912, PLR0915
     details = usage.get("prompt_tokens_details") or {}
     if isinstance(details, dict):
         cached = int(details.get("cached_tokens", 0) or 0)
-    prompt_total = int(usage.get("prompt_tokens", 0))
+    # `or 0` throughout: a gateway returning `"prompt_tokens": null` on a 2xx
+    # would make bare int(None) raise TypeError, which escapes the loop's
+    # ProviderError-only retry wrapper and kills the run.
+    prompt_total = int(usage.get("prompt_tokens") or 0)
     # Clamp cached to the prompt total as the SINGLE source of truth: a
     # misbehaving upstream that reports cached > prompt would otherwise make
     # input_tokens negative (clamped below) AND leave cache_read_tokens -- billed
@@ -1367,7 +1455,7 @@ def _parse_response(  # noqa: PLR0912, PLR0915
         tool_uses=tool_uses,
         stop_reason=stop_reason,
         input_tokens=fresh_input,
-        output_tokens=int(usage.get("completion_tokens", 0)),
+        output_tokens=int(usage.get("completion_tokens") or 0),
         cache_read_tokens=cached,
         cache_creation_tokens=0,
         cost_usd=reported_cost,
