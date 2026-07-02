@@ -150,9 +150,16 @@ def read_answer(
     *,
     timeout_s: float = 600.0,
     poll_s: float = 0.2,
+    live_dir: Path | None = None,
 ) -> bool | None:
-    """Called by the workflow. Returns True/False or None on timeout."""
+    """Called by the workflow. Returns True/False or None on timeout.
+
+    ``live_dir`` overrides which dir the liveness gate probes for ``frontend.pid``
+    (defaults to ``run_dir``). A machine agent state reads answers from its
+    per-state dir but the front-end registers on the instance dir, so it passes
+    the instance dir here."""
     target = approvals_dir(run_dir) / f"{prompt_id}.answer"
+    live = live_dir or run_dir
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         if target.exists():
@@ -160,7 +167,7 @@ def read_answer(
             with contextlib.suppress(FileNotFoundError):
                 target.unlink()  # consume: never re-read on a later prompt/resume
             return txt in {"yes", "y", "true", "1"}
-        if not frontend_is_live(run_dir):
+        if not frontend_is_live(live):
             return None
         time.sleep(poll_s)
     return None
@@ -190,10 +197,13 @@ def read_question_answer(
     *,
     timeout_s: float = 600.0,
     poll_s: float = 0.2,
+    live_dir: Path | None = None,
 ) -> str | None:
     """Called by the workflow. Returns the answer string or None if the TUI
-    died / timed out before answering."""
+    died / timed out before answering. ``live_dir`` overrides the liveness-gate
+    dir (see :func:`read_answer`)."""
     target = questions_dir(run_dir) / f"{question_id}.answer"
+    live = live_dir or run_dir
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         if target.exists():
@@ -201,7 +211,7 @@ def read_question_answer(
             with contextlib.suppress(FileNotFoundError):
                 target.unlink()  # consume: never re-read on a later prompt/resume
             return txt
-        if not frontend_is_live(run_dir):
+        if not frontend_is_live(live):
             return None
         time.sleep(poll_s)
     return None
@@ -252,10 +262,13 @@ def read_steer_answer(
     *,
     timeout_s: float = 600.0,
     poll_s: float = 0.2,
+    live_dir: Path | None = None,
 ) -> str | None:
     """Called by the workflow when the TUI is live. Returns the answer string
-    (consuming the file) or None if the TUI died / timed out before answering."""
+    (consuming the file) or None if the TUI died / timed out before answering.
+    ``live_dir`` overrides the liveness-gate dir (see :func:`read_answer`)."""
     target = run_dir / STEER_ANSWER_FILE
+    live = live_dir or run_dir
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         if target.exists():
@@ -263,7 +276,7 @@ def read_steer_answer(
             with contextlib.suppress(FileNotFoundError):
                 target.unlink()
             return txt
-        if not frontend_is_live(run_dir):
+        if not frontend_is_live(live):
             return None
         time.sleep(poll_s)
     return None

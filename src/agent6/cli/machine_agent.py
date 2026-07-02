@@ -21,6 +21,8 @@ from __future__ import annotations
 import json
 import os
 import sys
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +41,15 @@ from agent6.cli.providers import (
 from agent6.config_layer import load_effective_with_overlay
 from agent6.detect import detect
 from agent6.events import EventSink
+from agent6.frontend.approval import (
+    clear_steer_answer,
+    clear_steer_request,
+    frontend_is_live,
+    read_answer,
+    read_question_answer,
+    read_steer_answer,
+    steer_request_pending,
+)
 from agent6.git_ops import set_repo_hook_policy
 from agent6.providers import TranscriptSink
 from agent6.tools.dispatch import ToolDispatcher
@@ -64,6 +75,82 @@ def _result(
         "input_tokens": inp,
         "output_tokens": out,
     }
+
+
+@dataclass
+class _MachineBridges:
+    """The interactivity bridges for one machine `agent` state.
+
+    Answers are read from the per-state dir, but a front-end registers
+    `frontend.pid` on the instance dir, so the liveness gate probes the instance
+    dir (`live_dir`). Prompt/answer events go to the per-state log the front-end
+    already tails, so its RunState fold surfaces them like a run's.
+    """
+
+    approve: Callable[[str], bool]
+    ask: Callable[[str, tuple[str, ...]], str]
+    steer_requested: Callable[[], bool]
+    steer_clear: Callable[[], None]
+    steer_prompt: Callable[[], str | None]
+
+
+def _build_machine_bridges(
+    instance_dir: Path, state_dir: Path, events: EventSink
+) -> _MachineBridges:
+    """Wire run-level approval/question/steer bridges to a machine agent state.
+
+    A no live front-end (`frontend.pid` on the instance dir) makes each bridge a
+    safe headless default: deny an approval, answer a question with "", no steer.
+    """
+    counters = {"approval": 0, "question": 0}
+
+    def approve(prompt: str) -> bool:
+        counters["approval"] += 1
+        prompt_id = f"approval-{counters['approval']}"
+        events.emit("approval.prompt", id=prompt_id, prompt=prompt)
+        approved: bool | None = None
+        source = "headless"
+        if frontend_is_live(instance_dir):
+            approved = read_answer(state_dir, prompt_id, live_dir=instance_dir)
+            if approved is not None:
+                source = "frontend"
+        if approved is None:
+            approved = False  # headless machine: no operator to ask, deny safely
+        events.emit("approval.answer", id=prompt_id, approved=approved, source=source)
+        return approved
+
+    def ask(question: str, options: tuple[str, ...]) -> str:
+        counters["question"] += 1
+        question_id = f"question-{counters['question']}"
+        events.emit("question.prompt", id=question_id, question=question, options=list(options))
+        answer: str | None = None
+        source = "headless"
+        if frontend_is_live(instance_dir):
+            answer = read_question_answer(state_dir, question_id, live_dir=instance_dir)
+            if answer is not None:
+                source = "frontend"
+        if answer is None:
+            answer = ""
+        events.emit("question.answer", id=question_id, answer=answer, source=source)
+        return answer
+
+    def steer_requested() -> bool:
+        return steer_request_pending(state_dir)
+
+    def steer_clear() -> None:
+        clear_steer_answer(state_dir)
+        clear_steer_request(state_dir)
+
+    def steer_prompt() -> str | None:
+        if not frontend_is_live(instance_dir):
+            clear_steer_request(state_dir)
+            return None
+        answer = read_steer_answer(state_dir, live_dir=instance_dir)
+        if answer is None:
+            clear_steer_request(state_dir)
+        return answer
+
+    return _MachineBridges(approve, ask, steer_requested, steer_clear, steer_prompt)
 
 
 def _run_one(req: dict[str, Any]) -> dict[str, Any]:
@@ -158,11 +245,21 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
         # list) and the loop uses a finish_run-focused prompt.
         mode = r.get("mode", "agent")
         read_only = mode in ("machine", "agent")
+        # Bridge run-level interactivity (approve/ask_user/steer) to a front-end
+        # watching this machine: answers land in the per-state dir, the liveness
+        # gate probes the instance dir where the front-end registers frontend.pid.
+        # Needs a per-state log (events_sink) for the front-end to see the prompt.
+        bridges: _MachineBridges | None = None
+        if events_sink is not None and events_log is not None:
+            state_dir = Path(events_log).parent
+            instance_dir = transcript_dir.parent
+            bridges = _build_machine_bridges(instance_dir, state_dir, events_sink)
         dispatcher = ToolDispatcher(
             root=root,
             config=cfg,
             sandbox_profile=profile,
-            approver=None,
+            approver=bridges.approve if bridges is not None else None,
+            questioner=bridges.ask if bridges is not None else None,
             events=events_sink,
             graph_client=None,
             run_root_node_id=None,
@@ -183,6 +280,9 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
             compact_drop_at_chars=compact_drop,
             compact_summarise_at_chars=compact_summarise,
             context_summary_max_tokens=cfg.context.summary_max_tokens,
+            steer_requested=bridges.steer_requested if bridges is not None else (lambda: False),
+            steer_clear=bridges.steer_clear if bridges is not None else (lambda: None),
+            steer_prompt=bridges.steer_prompt if bridges is not None else (lambda: None),
         )
         result = wf.run(r["prompt"])
         payload = result.finish_payload if result.reason == "finish_run" else None

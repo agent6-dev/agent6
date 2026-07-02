@@ -22,8 +22,12 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from agent6.machine.journal import MachineEnd, StepEvent
+from agent6.machine.journal import MachineEnd, MachineNotify, StepEvent
 from agent6.machine.model import MachineSpec
+
+# How many recent machine.notify events a MachineState carries. Front-ends render
+# them as ephemeral surfaces, so only the tail matters; the journal keeps them all.
+_NOTIFY_KEEP = 20
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +61,16 @@ class MachineEndView:
 
 
 @dataclass(frozen=True, slots=True)
+class NotificationView:
+    """One journaled `machine.notify` (a state's `notify` message), in order."""
+
+    ts: str
+    state: str
+    message: str
+    level: str
+
+
+@dataclass(frozen=True, slots=True)
 class MachineState:
     machine: str
     version: int
@@ -65,6 +79,7 @@ class MachineState:
     states: tuple[MachineStateView, ...]  # spec order, position-flagged
     transitions: tuple[TransitionView, ...]  # the path taken, in order
     ended: MachineEndView | None
+    notifications: tuple[NotificationView, ...]  # recent machine.notify, oldest first
 
 
 def fold_machine(spec: MachineSpec, events: Sequence[object]) -> MachineState:
@@ -98,6 +113,11 @@ def fold_machine(spec: MachineSpec, events: Sequence[object]) -> MachineState:
         if end is not None
         else None
     )
+    notes = [e for e in events if isinstance(e, MachineNotify)]
+    notifications = tuple(
+        NotificationView(ts=n.ts, state=n.state, message=n.message, level=n.level)
+        for n in notes[-_NOTIFY_KEEP:]
+    )
     return MachineState(
         machine=spec.machine,
         version=spec.version,
@@ -106,6 +126,7 @@ def fold_machine(spec: MachineSpec, events: Sequence[object]) -> MachineState:
         states=states,
         transitions=transitions,
         ended=ended,
+        notifications=notifications,
     )
 
 

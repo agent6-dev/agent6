@@ -7,7 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from agent6.machine import load_machine
-from agent6.machine.journal import BranchFact, MachineEnd, StepEvent
+from agent6.machine.journal import BranchFact, MachineEnd, MachineNotify, StepEvent
 from agent6.viewmodel.machine_state import fold_machine, newest_state_log
 
 # A branch -> terminal machine: two states, no I/O, valid to load.
@@ -87,6 +87,22 @@ def test_newest_state_log_picks_highest_seq(tmp_path: Path) -> None:
     (states / "0009-pending").mkdir()
     assert newest_state_log(tmp_path) == states / "0002-review" / "logs.jsonl"
     assert newest_state_log(tmp_path / "absent") is None
+
+
+def test_fold_collects_notifications(tmp_path: Path) -> None:
+    events = [
+        MachineNotify(ts="t1", state="route", message="starting", level="info"),
+        StepEvent(
+            ts="t", seq=0, state="route", label="else", goto="done", fact=BranchFact(clause_index=1)
+        ),
+        MachineNotify(ts="t2", state="done", message="all done", level="warn"),
+        MachineEnd(ts="t", status="ok", reason="routed", state="done", transitions=1),
+    ]
+    ms = fold_machine(_spec(tmp_path), events)
+    assert [(n.state, n.message, n.level) for n in ms.notifications] == [
+        ("route", "starting", "info"),
+        ("done", "all done", "warn"),
+    ]
 
 
 def test_machine_state_as_dict_is_json_serializable(tmp_path: Path) -> None:
