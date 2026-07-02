@@ -13,6 +13,7 @@ validation, and graph -- which is why ui depends on agent6.machine for this page
 from __future__ import annotations
 
 import inspect
+import json
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import ClassVar
@@ -22,16 +23,25 @@ try:
     from textual.app import ComposeResult
     from textual.binding import Binding
     from textual.command import DiscoveryHit, Hit, Hits, Provider
-    from textual.containers import Container, VerticalScroll
+    from textual.containers import Container, Horizontal, VerticalScroll
     from textual.screen import ModalScreen, Screen
-    from textual.widgets import DataTable, Footer, Input, Static
+    from textual.widgets import DataTable, Footer, Input, RichLog, Static
 except ImportError as e:  # pragma: no cover - clear runtime message
     raise ImportError(
         "agent6 TUI requires the 'textual' package (part of the base install)."
         " Reinstall agent6, or `pip install textual`."
     ) from e
 
-from agent6.machine import MachineError, load_machine, render, validate_semantics
+from agent6.machine import (
+    MachineEnd,
+    MachineError,
+    MachineJournal,
+    MachineSpec,
+    StepEvent,
+    load_machine,
+    render,
+    validate_semantics,
+)
 from agent6.ui._spawn import agent6_exe, spawn_and_locate, spawn_detached
 from agent6.ui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.modals import ConfirmModal
@@ -57,6 +67,180 @@ def _list_drafts(agent6_dir: Path) -> list[Path]:
     out = [p for p in drafts.iterdir() if p.is_dir()]
     out.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0.0, reverse=True)
     return out
+
+
+def _watch_position(spec: MachineSpec, events: list[object]) -> tuple[str, set[str]]:
+    """(current state, set of visited states) from the journal -- the goto of the
+    last transition is where the machine is (or about to run), else the initial."""
+    current = spec.initial
+    visited: set[str] = set()
+    for event in events:
+        if isinstance(event, StepEvent):
+            visited.update((event.state, event.goto))
+            current = event.goto
+    return current, visited
+
+
+def _newest_state_log(root: Path) -> Path | None:
+    """The logs.jsonl of the most recent agent-state execution (highest seq)."""
+    states = root / "states"
+    if not states.is_dir():
+        return None
+
+    def seq_of(p: Path) -> int:
+        head = p.name.split("-", 1)[0]
+        return int(head) if head.isdigit() else -1
+
+    for d in sorted((p for p in states.iterdir() if p.is_dir()), key=seq_of, reverse=True):
+        if (d / "logs.jsonl").is_file():
+            return d / "logs.jsonl"
+    return None
+
+
+def _discrete_log_line(evt: dict[str, object]) -> Text | None:
+    """A compact line for a non-streaming agent-log event (tool calls, role start),
+    or None to skip it. Thinking/text deltas are accumulated separately."""
+    t = evt.get("type")
+    if t == "role.call":
+        return Text(f"  → {evt.get('role', '')}/{evt.get('model', '')} thinking…", style="cyan")
+    if t == "tool.call":
+        args = json.dumps(evt.get("args", {}), default=str)
+        if len(args) > 80:
+            args = args[:77] + "…"
+        return Text(f"  ⚙ {evt.get('name', '')} {args}", style="yellow")
+    if t == "tool.result":
+        ok = bool(evt.get("ok"))
+        mark = "✓" if ok else "✗"
+        return Text(f"  {mark} {evt.get('summary', '')}", style="green" if ok else "red")
+    return None
+
+
+class MachineWatchScreen(Screen[None]):
+    """Live view of a running (or finished) machine: the state overview with the
+    current state marked, each transition as it lands, and the active agent
+    state's reasoning streamed from its per-state logs.jsonl -- the in-TUI
+    equivalent of `agent6 machine watch`. Read-only; polls every 0.5s."""
+
+    BINDINGS: ClassVar = [
+        Binding("escape", "close", "Back", key_display="Esc/q"),
+        Binding("q", "close", "Back", show=False),
+    ]
+    CSS = (
+        PALETTE_CSS
+        + """
+    MachineWatchScreen { layers: base; }
+    #mw-head { height: 3; border: round $primary; padding: 0 1; }
+    #mw-states { width: 32%; border: round $primary; }
+    #mw-log { width: 1fr; border: round $primary; padding: 0 1; }
+    """
+    )
+
+    def __init__(self, instance_dir: Path, spec: MachineSpec) -> None:
+        super().__init__()
+        self._root = instance_dir
+        self._spec = spec
+        self._journal = MachineJournal(instance_dir)
+        self._seen_steps = 0
+        self._cur_log: Path | None = None
+        self._cur_off = 0
+        self._pending = ""  # accumulated thinking/answer text, flushed in readable chunks
+        self._ended = False
+
+    def compose(self) -> ComposeResult:
+        yield Static(id="mw-head")
+        with Horizontal():
+            yield DataTable(id="mw-states", cursor_type="none")
+            yield RichLog(id="mw-log", wrap=True, markup=False, highlight=False)
+        yield Footer()
+
+    def on_mount(self) -> None:
+        table = self.query_one("#mw-states", DataTable)
+        table.add_column(" ", key="mark")
+        table.add_column("state", key="state")
+        table.add_column("kind", key="kind")
+        for name, state in self._spec.states.items():
+            table.add_row("", name, state.kind, key=name)
+        self._poll()
+        self.set_interval(0.5, self._poll)
+
+    def action_close(self) -> None:
+        self.app.pop_screen()
+
+    def _flush_pending(self) -> None:
+        text = self._pending.strip()
+        self._pending = ""
+        if text:
+            self.query_one("#mw-log", RichLog).write(Text(f"  {text}", style="dim"))
+
+    def _poll(self) -> None:
+        if self._ended:
+            return
+        events = self._journal.read()
+        current, visited = _watch_position(self._spec, events)
+
+        # Header + state-table markers.
+        steps = [e for e in events if isinstance(e, StepEvent)]
+        end = next((e for e in reversed(events) if isinstance(e, MachineEnd)), None)
+        status = (
+            f"ended: {end.status} ({end.reason})" if end is not None else f"running · {current}"
+        )
+        self.query_one("#mw-head", Static).update(
+            Text(f"machine: {self._spec.machine}   {status}   transitions: {len(steps)}")
+        )
+        table = self.query_one("#mw-states", DataTable)
+        for name in self._spec.states:
+            mark = ">" if name == current else ("·" if name in visited else " ")
+            table.update_cell(name, "mark", mark)
+
+        log = self.query_one("#mw-log", RichLog)
+        # New transitions.
+        for e in steps[self._seen_steps :]:
+            self._flush_pending()
+            log.write(Text(f"[{e.seq}] {e.state} --{e.label}--> {e.goto}", style="bold"))
+        self._seen_steps = len(steps)
+
+        # The current agent state's reasoning (switch logs as states change).
+        newest = _newest_state_log(self._root)
+        if newest != self._cur_log:
+            self._flush_pending()
+            self._cur_log, self._cur_off = newest, 0
+            if newest is not None:
+                log.write(Text(f"-- agent state: {newest.parent.name} --", style="cyan bold"))
+        if self._cur_log is not None:
+            self._cur_off = self._consume_state_log(self._cur_log, self._cur_off, log)
+        self._flush_pending()  # show partial reasoning each tick
+
+        if end is not None:
+            self._ended = True
+
+    def _consume_state_log(self, path: Path, offset: int, log: RichLog) -> int:
+        """Read complete new lines past *offset*: accumulate thinking/answer text in
+        self._pending, write discrete events (tool calls) inline. Returns the new
+        offset (start of any partial trailing line)."""
+        try:
+            with path.open(encoding="utf-8") as fh:
+                fh.seek(offset)
+                while True:
+                    pos = fh.tell()
+                    line = fh.readline()
+                    if not line.endswith("\n"):
+                        return pos
+                    try:
+                        evt = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(evt, dict):
+                        continue
+                    etype = evt.get("type")
+                    if etype in ("role.thinking_delta", "role.text_delta"):
+                        self._pending += str(evt.get("text", ""))
+                        continue
+                    discrete = _discrete_log_line(evt)
+                    if discrete is not None:
+                        self._flush_pending()
+                        log.write(discrete)
+        except OSError:
+            return offset
 
 
 def _machine_row(path: Path) -> tuple[str, str, str]:
@@ -213,6 +397,7 @@ class MachinesScreen(Screen[None]):
             (
                 MenuItem("View", "view", "v"),
                 MenuItem("Run", "run", "r"),
+                MenuItem("Watch", "watch", "w"),
                 MenuItem("Create…", "create", "c"),
                 MenuItem("Refresh", "refresh", "f"),
                 MenuItem("Back", "close", "Esc/q"),
@@ -230,6 +415,7 @@ class MachinesScreen(Screen[None]):
     BINDINGS: ClassVar = [
         Binding("v", "view", "View"),
         Binding("r", "run", "Run"),
+        Binding("w", "watch", "Watch"),
         Binding("c", "create", "Create"),
         Binding("f", "refresh", "Refresh"),
         Binding("question_mark", "help", "Help"),
@@ -312,8 +498,9 @@ class MachinesScreen(Screen[None]):
         self.app.push_screen(
             ConfirmModal(
                 f"Run machine {path.name}?",
-                "Runs `agent6 machine run` (detached): it drives the machine toward a "
-                "terminal or waiting state. Watch it with `agent6 machine status`.",
+                "Runs `agent6 machine run` (detached) and opens the live watch view: "
+                "the state overview, each transition, and the agent state's reasoning. "
+                "The run keeps going if you close the view.",
                 confirm_label="Run",
             ),
             self._on_run_confirm(path),
@@ -324,13 +511,28 @@ class MachinesScreen(Screen[None]):
             if not confirmed:
                 return
             err = spawn_detached([agent6_exe(), "machine", "run", str(path)], self.repo_cwd)
-            self.app.notify(
-                err or f"started: machine run {path.name}",
-                severity="error" if err else "information",
-                timeout=8.0,
-            )
+            if err:
+                self.app.notify(err, severity="error", timeout=8.0)
+                return
+            self._open_watch(path)  # follow it live (it runs detached regardless)
 
         return cb
+
+    def action_watch(self) -> None:
+        """Open the live watch view for the selected machine's instance (whether it
+        is currently running or has finished)."""
+        path = self._selected()
+        if path is not None:
+            self._open_watch(path)
+
+    def _open_watch(self, path: Path) -> None:
+        try:
+            spec = load_machine(path)
+        except MachineError as exc:
+            self.app.notify(f"cannot load {path.name}: {exc}", severity="error", timeout=8.0)
+            return
+        instance = self.agent6_dir / "machines" / spec.machine
+        self.app.push_screen(MachineWatchScreen(instance, spec))
 
     def action_create(self) -> None:
         self.app.push_screen(CreateMachineModal(), self._on_create)

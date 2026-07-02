@@ -724,9 +724,11 @@ and a corrupt newest snapshot falls back to the retained tail.
   state, blackboard, last N events, spend, and next wake. `agent6 machine
   watch <id>` follows a RUNNING instance live: the state overview with the
   current state marked, each transition as it lands, and the current agent
-  state's reasoning streamed from its per-state log. `agent6 machine graph
-  <file>` emits a mermaid or Graphviz-DOT diagram (`--format`, reachability is
-  already computed at load).
+  state's reasoning streamed from its per-state log. The `agent6 tui` Machines
+  page wraps the same view: **Run** opens it on the instance it starts, and
+  **Watch** (`w`) attaches to a selected machine's instance. `agent6 machine
+  graph <file>` emits a mermaid or Graphviz-DOT diagram (`--format`,
+  reachability is already computed at load).
 
 ---
 

@@ -15,10 +15,37 @@ from agent6.ui.machines import (
     CreateMachineModal,
     MachineDetailScreen,
     MachinesScreen,
+    MachineWatchScreen,
     find_machine_files,
     machine_detail_text,
 )
 from agent6.ui.modals import ConfirmModal
+
+# A no-I/O machine that reaches a terminal immediately (branch -> terminal), so a
+# `machine run` produces a finished instance with no model/jail needed.
+TINY = """
+machine = "tiny"
+version = 1
+initial = "route"
+
+[budget]
+max_transitions = 10
+
+[vars.code]
+n = { type = "int", default = 0 }
+
+[states.route]
+kind = "branch"
+when = [
+  { if = "n == 0", goto = "done" },
+  { else = true, goto = "done" },
+]
+
+[states.done]
+kind = "terminal"
+status = "ok"
+reason = "routed"
+"""
 
 WAITER = """
 machine = "waiter_demo"
@@ -101,6 +128,68 @@ def test_machines_menu_items_all_resolve(tmp_path: Path) -> None:
                     assert resolved is not None, f"no handler for {item.action}"
 
     asyncio.run(scenario())
+
+
+def test_watch_screen_shows_states_transitions_and_end(tmp_path: Path, monkeypatch: object) -> None:
+    """The Machines watch screen renders the state overview (current marked `>`,
+    visited `.`), the transition in the log, and the ended status -- the in-TUI
+    equivalent of `machine watch`."""
+    from agent6.cli import main as cli_main
+    from agent6.config_layer import resolved_state_dir
+    from agent6.machine import load_machine
+
+    monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]
+    f = tmp_path / "tiny.asm.toml"
+    f.write_text(TINY, encoding="utf-8")
+    assert cli_main(["machine", "run", str(f)]) == 0
+    instance = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    spec = load_machine(f)
+
+    class _Host(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(MachineWatchScreen(instance, spec))
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            for _ in range(3):  # let a poll or two run
+                await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, MachineWatchScreen)
+            table = screen.query_one("#mw-states", DataTable)
+            assert table.row_count == len(spec.states)
+            assert table.get_cell("done", "mark") == ">"  # current (terminal) state
+            assert table.get_cell("route", "mark") == "·"  # visited
+            from textual.widgets import RichLog
+
+            log = screen.query_one("#mw-log", RichLog)
+            assert len(log.lines) >= 1  # the route->done transition was logged
+
+    asyncio.run(scenario())
+
+
+def test_watch_position_and_discrete_line() -> None:
+    from agent6.machine import MachineSpec
+    from agent6.ui.machines import _discrete_log_line, _watch_position
+
+    spec = MachineSpec.model_validate(
+        {
+            "machine": "m",
+            "version": 1,
+            "initial": "a",
+            "budget": {"max_transitions": 5},
+            "states": {
+                "a": {"kind": "terminal", "status": "ok", "reason": "x"},
+            },
+        }
+    )
+    # No events -> current is the initial state, nothing visited.
+    assert _watch_position(spec, []) == ("a", set())
+    # A tool call renders compactly; a thinking delta is not a discrete line.
+    assert _discrete_log_line({"type": "role.thinking_delta", "text": "hm"}) is None
+    line = _discrete_log_line({"type": "tool.call", "name": "grep", "args": {"q": "x"}})
+    assert line is not None and "grep" in line.plain
 
 
 def test_create_opens_dashboard_on_the_draft(tmp_path: Path, monkeypatch: object) -> None:
