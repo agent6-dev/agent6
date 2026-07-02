@@ -24,7 +24,9 @@ open-ended agent loop.
   browser UI (`agent6 web`, phone-friendly); persistent transcripts and a searchable
   run history
 - State machines (`agent6 machine`) for long-running automated tasks: LLM-drafted,
-  operator-reviewed, journaled, and replayable
+  operator-reviewed, journaled, and replayable; a machine can wait indefinitely
+  for a human, be poked with a payload, steer/answer its agent states from any
+  front-end, and notify you when it needs attention
 - Small, fixed LLM tool surface; the only extension point is operator-configured MCP
   servers, off by default
 - Eight runtime dependencies, no telemetry, no auto-update

@@ -371,6 +371,18 @@ answer id are validated to a single path component, so a request cannot escape
 the run's approvals/questions dir), and merge/prune/config-set are fixed agent6
 subcommands.
 
+The same rules cover the **machine write surface** (`POST
+/api/machine/<name>/{poke,answer,approve,steer}`): the machine name goes through
+the identical single-path-component guard as a run id, and each answer id is
+contained the same way. `poke` writes only the instance signal file (the payload
+is inert JSON the next `tool` reads); `answer`/`approve`/`steer` write only into
+the current agent state's per-state dir under the per-repo state dir. The
+liveness gate registers `frontend.pid` on the instance dir while a browser
+streams, so a machine agent state's prompts bridge to the browser exactly as a
+run's do. The web PWA assets (manifest, service worker, icon) are static; the
+service worker is a no-op passthrough with no Web Push / VAPID and no push
+handler.
+
 There is no telemetry, no auto-update, and no remote control plane.
 
 ### 8. State-machine egress (the supervisor model) + script bundles
@@ -448,6 +460,19 @@ Every surface fails closed:
   `.git` on strict), so a
   tool or agent state cannot rewrite its own logic, add an `allow_network`
   flag, or alter a bundled script mid-run or for a future run.
+- **Notifications.** A machine surfaces attention two ways, neither of which
+  widens the agent's surface. Device-present: each front-end renders a
+  `machine.notify` (a state's `notify` message) as an ephemeral overlay, and
+  `agent6 watch`/the TUI also call `notify-send` with a FIXED argv (exe + two
+  positional data arguments, no shell), so a model-authored message is inert
+  data, never a command. Out-of-band: the operator hook
+  `[machine.notify].on_event` runs an operator-controlled argv on the host,
+  outside the jail, on each `machine.notify` and `machine.end`, with only
+  `AGENT6_MACHINE_*` env (id, dir, event, state, message, level), mirroring
+  `[notify].on_complete`. The hook argv is operator config, never LLM output; a
+  machine `[config]` overlay that sets `[machine.notify]` is rejected at load, so
+  a shared or LLM-drafted machine cannot inject a host command. There is no Web
+  Push / VAPID; the web notification is the foreground Notification API only.
 
 ## Prompt-injection resilience
 

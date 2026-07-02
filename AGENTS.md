@@ -176,16 +176,21 @@ All five must pass; keep the suite green.
   from config, never from LLM output), `frontend/spawn.py` (the shared front-end
   bridge: spawns the agent6 CLI detached for run/machine launches and captures
   `runs merge`/`prune`/`config set`, argv being the agent6 exe + operator-chosen
-  args, never LLM output), and a small set of `cli/` helpers (`$EDITOR` for
+  args, never LLM output), `frontend/notify.py` (fires `notify-send` with a
+  fixed argv, exe + two positional data args, no shell, for the device-present
+  machine notification; the message is inert data, never a command), and a small
+  set of `cli/` helpers (`$EDITOR` for
   plan editing, `git diff/log` for the review subcommand, `rg` for history
   search, `cli/scriptcheck.py` running ruff/ty with fixed argv to
   statically read generated scripts, which only ever execute via
   `run_in_jail`, `cli/system_cmds.py` running `cp`/`rm`/`apparmor_parser`
   via sudo with fixed argv for `agent6 system apparmor` (operator host
-  setup), and the `machine run` supervisor that spawns each agent
+  setup), the `machine run` supervisor that spawns each agent
   state as a fixed-argv `python -m agent6.cli.machine_agent` subprocess
-  whose request travels in a temp file, never on argv). Audit with
-  `rg 'subprocess\.(run|Popen)' src/agent6/`.
+  whose request travels in a temp file, never on argv, and its operator
+  `[machine.notify].on_event` hook, argv from config, never LLM output, run on
+  the host with `AGENT6_MACHINE_*` env, mirroring `[notify].on_complete`). Audit
+  with `rg 'subprocess\.(run|Popen)' src/agent6/`.
 - Config is secure by default: every field has a default, and
   security-sensitive fields default to the safe value
   (`sandbox.agent_network = "providers"`, `sandbox.tool_network = "block"`,
