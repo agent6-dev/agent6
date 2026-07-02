@@ -51,6 +51,7 @@ from agent6.cli.machine_cmds import (
     _cmd_machine_run,
     _cmd_machine_status,
     _cmd_machine_test,
+    _cmd_machine_watch,
 )
 from agent6.cli.mcp_cmds import _cmd_mcp_serve
 from agent6.cli.memory_cmds import (
@@ -401,6 +402,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
         return _cmd_machine_run(args.file, exit_on_wait=args.exit_on_wait)
     if args.command == "machine" and args.machine_command == "status":
         return _cmd_machine_status(args.machine_id)
+    if args.command == "machine" and args.machine_command == "watch":
+        return _cmd_machine_watch(args.machine_id)
     if args.command == "machine" and args.machine_command == "poke":
         return _cmd_machine_poke(args.machine_id)
     if args.command == "machine" and args.machine_command == "replay":

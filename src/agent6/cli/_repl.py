@@ -15,8 +15,8 @@ from typing import Literal
 from agent6.budget import BudgetTracker
 from agent6.cli._common import _runs_dir
 from agent6.cli.plan_watch import (
-    _event_epoch,
-    _format_plain_event,
+    event_epoch,
+    format_plain_event,
 )
 from agent6.cli.runs_cmds import _cmd_diff
 from agent6.config_layer import repo_config_path_for
@@ -151,13 +151,13 @@ def repl_show_recent_events(root: Path, run_id: str, *, n: int) -> None:
         try:
             obj0 = json.loads(lines[0])
             if isinstance(obj0, dict):
-                run_start_ts = _event_epoch(obj0.get("ts"))
+                run_start_ts = event_epoch(obj0.get("ts"))
         except json.JSONDecodeError:
             run_start_ts = None
     tail = lines[-n:]
     print(f"[agent6] /watch: last {len(tail)} events from {run_id}", file=sys.stderr)
     for raw in tail:
-        print(_format_plain_event(raw, run_start_ts=run_start_ts))
+        print(format_plain_event(raw, run_start_ts=run_start_ts))
 
 
 def repl_list_mcp(mcp_manager: MCPManager | None) -> None:

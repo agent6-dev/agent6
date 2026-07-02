@@ -721,9 +721,12 @@ and a corrupt newest snapshot falls back to the retained tail.
 - **Single writer.** `machine.lock` (flock) guarantees one process per
   machine id; a second invocation refuses rather than double-acting.
 - **Health/visibility.** `agent6 machine status <id>` prints the current
-  state, blackboard, last N events, spend, and next wake. `agent6
-  machine graph <file>` emits a mermaid or Graphviz-DOT diagram
-  (`--format`, reachability is already computed at load).
+  state, blackboard, last N events, spend, and next wake. `agent6 machine
+  watch <id>` follows a RUNNING instance live: the state overview with the
+  current state marked, each transition as it lands, and the current agent
+  state's reasoning streamed from its per-state log. `agent6 machine graph
+  <file>` emits a mermaid or Graphviz-DOT diagram (`--format`, reachability is
+  already computed at load).
 
 ---
 
@@ -737,6 +740,7 @@ and a corrupt newest snapshot falls back to the retained tail.
 | `agent6 machine graph <file> [--format mermaid\|dot]` | emit the machine as a diagram. `mermaid` (default) prints `stateDiagram-v2`; `dot` prints Graphviz DOT for `dot -Tsvg`/`dot -Tpng` and the broader Graphviz/`xdot` ecosystem. Reachability is already computed at load, so both are pure renders of the same validated graph. |
 | `agent6 machine run <file> [--exit-on-wait]` | start (or resume) a machine. Acquires the lock, drives the loop. With `--exit-on-wait`, persist the next wake and exit 0 (status `waiting`) at the first not-ready `wait`, for an external scheduler (systemd timer / cron) to resume. |
 | `agent6 machine status <id>`              | current state, blackboard, spend, next wake. Read-only. |
+| `agent6 machine watch <id>`               | follow a running instance live: state overview + current state, each transition as it lands, and the active agent state's reasoning (its per-state `logs.jsonl`). Read-only; Ctrl-C to stop. |
 | `agent6 machine poke <id>`                | signal a waiting instance to wake on its next check. |
 | `agent6 machine replay <id>`              | deterministic replay from the journal (no world I/O); backtesting. |
 

@@ -87,6 +87,74 @@ def test_status_missing_instance_errors(
     assert "no machine instance" in capsys.readouterr().err
 
 
+# A no-I/O machine that reaches a terminal immediately (branch -> terminal), so
+# `machine watch` on it takes the finished path (overview + end) without blocking
+# in the follow loop and without needing a model or the jail.
+TINY = """
+machine = "tiny"
+version = 1
+initial = "route"
+
+[budget]
+max_transitions = 10
+
+[vars.code]
+n = { type = "int", default = 0 }
+
+[states.route]
+kind = "branch"
+when = [
+  { if = "n == 0", goto = "done" },
+  { else = true, goto = "done" },
+]
+
+[states.done]
+kind = "terminal"
+status = "ok"
+reason = "routed"
+"""
+
+
+def test_watch_finished_instance_shows_overview_and_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    f = tmp_path / "tiny.asm.toml"
+    f.write_text(TINY, encoding="utf-8")
+    assert main(["machine", "run", str(f)]) == 0
+    capsys.readouterr()  # drop run output
+    # A finished instance has a journaled MachineEnd, so watch prints the overview
+    # + the final state and returns instead of entering the (blocking) follow loop.
+    code = main(["machine", "watch", "tiny"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "machine: tiny" in out
+    assert "> done" in out  # current state marked
+    assert ". route" in out  # a visited state marked
+    assert "OK: ended in 'done'" in out
+
+
+def test_watch_missing_instance_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    assert main(["machine", "watch", "nope"]) == 1
+    assert "no machine instance" in capsys.readouterr().err
+
+
+def test_newest_state_log_picks_highest_seq(tmp_path: Path) -> None:
+    from agent6.cli.machine_cmds import _newest_state_log  # pyright: ignore[reportPrivateUsage]
+
+    states = tmp_path / "states"
+    for name in ("0000-greet", "0002-review", "0001-greet"):
+        (states / name).mkdir(parents=True)
+        (states / name / "logs.jsonl").write_text("{}\n", encoding="utf-8")
+    # 0009 dir without a log must be ignored (the agent hasn't written yet).
+    (states / "0009-pending").mkdir()
+    assert _newest_state_log(tmp_path) == states / "0002-review" / "logs.jsonl"
+    assert _newest_state_log(tmp_path / "absent") is None
+
+
 def test_poke_drops_signal_for_waiting_machine(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

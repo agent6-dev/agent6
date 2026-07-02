@@ -18,7 +18,7 @@ from agent6.run_id import RunIdError, resolve_run_id
 from agent6.ui.approval import read_worker_pid, worker_is_alive
 
 
-def _event_epoch(value: object) -> float | None:
+def event_epoch(value: object) -> float | None:
     """Parse an event ``ts`` to epoch seconds, or None if unparseable.
 
     EventSink writes ``ts`` as an ISO-8601 string (``datetime.isoformat``),
@@ -217,7 +217,7 @@ def _scan_run_events(events_path: Path) -> dict[str, object]:
                 e = json.loads(line)
             except (json.JSONDecodeError, ValueError):
                 continue
-            ep = _event_epoch(e.get("ts"))
+            ep = event_epoch(e.get("ts"))
             etype = e.get("type")
             if etype == "run.start" and out["start_ep"] is None:
                 out["start_ep"] = ep
@@ -368,7 +368,7 @@ def _cmd_tui() -> int:
             return 0
 
 
-def _format_plain_event(line: str, *, run_start_ts: float | None) -> str:
+def format_plain_event(line: str, *, run_start_ts: float | None) -> str:
     """Pretty-print one logs.jsonl line as `<elapsed> <type> key=val ...`.
 
     Falls back to the raw line on parse error so a corrupt event doesn't
@@ -382,7 +382,7 @@ def _format_plain_event(line: str, *, run_start_ts: float | None) -> str:
         return raw
     if not isinstance(obj, dict):
         return raw
-    ts = _event_epoch(obj.get("ts"))
+    ts = event_epoch(obj.get("ts"))
     event = obj.get("event") or obj.get("type") or "?"
     if ts is not None and run_start_ts is not None:
         elapsed = max(0.0, ts - run_start_ts)
@@ -426,7 +426,7 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0912, PLR0
         if first:
             obj0 = json.loads(first)
             if isinstance(obj0, dict):
-                run_start_ts = _event_epoch(obj0.get("ts"))
+                run_start_ts = event_epoch(obj0.get("ts"))
     except (OSError, json.JSONDecodeError):
         run_start_ts = None
 
@@ -450,7 +450,7 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0912, PLR0
                 print(f"ERROR: read failed: {exc}", file=sys.stderr)
                 return 2
             for line in lines[-since:]:
-                print(_format_plain_event(line, run_start_ts=run_start_ts))
+                print(format_plain_event(line, run_start_ts=run_start_ts))
         else:
             # Seek to end; only show new events going forward.
             fh.seek(0, 2)
@@ -461,7 +461,7 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0912, PLR0
         while True:
             line = fh.readline()
             if line:
-                print(_format_plain_event(line, run_start_ts=run_start_ts), flush=True)
+                print(format_plain_event(line, run_start_ts=run_start_ts), flush=True)
                 continue
             # No new data: check for rotation and sleep briefly.
             try:

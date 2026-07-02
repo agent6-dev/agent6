@@ -13,8 +13,9 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any, Literal
 
@@ -24,6 +25,7 @@ from agent6.cli.egress import (
     _warn_if_unsandboxed,
     resolve_strict_egress_viability,
 )
+from agent6.cli.plan_watch import event_epoch, format_plain_event
 from agent6.cli.scriptcheck import lint_and_typecheck, run_offline_tests
 from agent6.config import (
     Config,
@@ -49,6 +51,7 @@ from agent6.machine import (
     EngineError,
     JournalError,
     LiveWorld,
+    MachineEnd,
     MachineError,
     MachineJournal,
     MachineSpec,
@@ -790,6 +793,134 @@ def _cmd_machine_poke(machine_id: str) -> int:
         return 1
     print(f"poked {machine_id}: it will wake on its next signal check")
     return 0
+
+
+def _machine_end(events: Sequence[Any]) -> MachineEnd | None:
+    """The terminal/failed end of the run, if the journal recorded one."""
+    for event in reversed(events):
+        if isinstance(event, MachineEnd):
+            return event
+    return None
+
+
+def _machine_current_state(spec: MachineSpec, events: Sequence[Any]) -> str:
+    """The state the machine is in (or about to run): the goto of the last
+    journaled transition, else the initial state."""
+    for event in reversed(events):
+        if isinstance(event, StepEvent):
+            return event.goto
+    return spec.initial
+
+
+def _machine_state_overview(spec: MachineSpec, events: Sequence[Any]) -> str:
+    """The list of states with the current one marked (`>`), states already
+    visited marked (`.`), and the rest blank -- the at-a-glance overview."""
+    current = _machine_current_state(spec, events)
+    visited: set[str] = set()
+    for event in events:
+        if isinstance(event, StepEvent):
+            visited.update((event.state, event.goto))
+    lines = [f"machine: {spec.machine} (v{spec.version})  initial={spec.initial}", "states:"]
+    for name, state in spec.states.items():
+        mark = ">" if name == current else ("." if name in visited else " ")
+        lines.append(f"  {mark} {name:<22} [{state.kind}]")
+    return "\n".join(lines)
+
+
+def _newest_state_log(root: Path) -> Path | None:
+    """The logs.jsonl of the most recent agent-state execution (highest seq), or
+    None. That is the state whose reasoning a watcher should be following live."""
+    states = root / "states"
+    if not states.is_dir():
+        return None
+
+    def seq_of(p: Path) -> int:
+        head = p.name.split("-", 1)[0]
+        return int(head) if head.isdigit() else -1
+
+    for d in sorted((p for p in states.iterdir() if p.is_dir()), key=seq_of, reverse=True):
+        log = d / "logs.jsonl"
+        if log.is_file():
+            return log
+    return None
+
+
+def _tail_state_log(
+    path: Path, offset: int, run_start_ts: float | None
+) -> tuple[int, float | None]:
+    """Print complete new lines of *path* past *offset* (the agent's reasoning +
+    tool calls, rendered like a run), returning the new offset (start of any
+    partial trailing line) and the elapsed-time anchor."""
+    try:
+        with path.open(encoding="utf-8") as fh:
+            fh.seek(offset)
+            while True:
+                pos = fh.tell()
+                line = fh.readline()
+                if not line.endswith("\n"):
+                    return pos, run_start_ts  # partial / EOF: resume here next poll
+                if run_start_ts is None:
+                    with contextlib.suppress(json.JSONDecodeError):
+                        run_start_ts = event_epoch(json.loads(line).get("ts"))
+                print("    " + format_plain_event(line, run_start_ts=run_start_ts), flush=True)
+    except OSError:
+        return offset, run_start_ts
+
+
+def _cmd_machine_watch(machine_id: str) -> int:
+    """Follow a running machine: the state overview, each transition as it lands,
+    and the current agent state's live reasoning (its per-state logs.jsonl). Exits
+    when the machine ends/waits, or on Ctrl-C. Read-only."""
+    root = _machines_dir(Path.cwd()) / machine_id
+    if not root.is_dir():
+        print(f"ERROR: no machine instance at {root}", file=sys.stderr)
+        return 1
+    source = root / "machine.asm.toml"
+    try:
+        spec = load_machine(source)
+    except MachineError as exc:
+        print(f"FAIL: {source}", file=sys.stderr)
+        for problem in exc.problems:
+            print(f"  - {problem}", file=sys.stderr)
+        return 1
+    journal = MachineJournal(root)
+    events = journal.read()
+    print(_machine_state_overview(spec, events), flush=True)
+    end = _machine_end(events)
+    if end is not None:
+        print(f"\n{end.status.upper()}: ended in {end.state!r} ({end.reason})")
+        return 0 if end.status == "ok" else 1
+
+    print("\n[agent6] watching (Ctrl-C to stop)...", file=sys.stderr)
+    seen_steps = sum(1 for e in events if isinstance(e, StepEvent))
+    cur_log: Path | None = None
+    cur_off = 0
+    anchor: float | None = None
+    try:
+        while True:
+            events = journal.read()
+            steps = [e for e in events if isinstance(e, StepEvent)]
+            for e in steps[seen_steps:]:
+                print(f"  [{e.seq:>3}] {e.state} --{e.label}--> {e.goto}", flush=True)
+            seen_steps = len(steps)
+            newest = _newest_state_log(root)
+            if newest != cur_log:
+                cur_log, cur_off = newest, 0
+                if cur_log is not None:
+                    print(f"  -- agent state: {cur_log.parent.name} --", file=sys.stderr)
+            if cur_log is not None:
+                cur_off, anchor = _tail_state_log(cur_log, cur_off, anchor)
+            end = _machine_end(events)
+            if end is not None:
+                print(
+                    f"\n{end.status.upper()}: ended in {end.state!r} after"
+                    f" {end.transitions} transitions ({end.reason})"
+                )
+                return 0 if end.status == "ok" else 1
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        print("\n[agent6] machine watch: stopped.", file=sys.stderr)
+        return 0
 
 
 _CREATE_TIMEOUT_S = 900.0

@@ -970,6 +970,15 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "machine_id", help="Machine id (directory under the per-repo state dir, machines subdir)."
     )
     machine_status_id.completer = _complete_machine_ids  # type: ignore[attr-defined]
+    machine_watch = machine_sub.add_parser(
+        "watch",
+        help="Follow a running machine live: the state overview, each transition as it"
+        " lands, and the current agent state's reasoning. Read-only; Ctrl-C to stop.",
+    )
+    machine_watch_id = machine_watch.add_argument(
+        "machine_id", help="Machine id (directory under the per-repo state dir, machines subdir)."
+    )
+    machine_watch_id.completer = _complete_machine_ids  # type: ignore[attr-defined]
     machine_poke = machine_sub.add_parser(
         "poke",
         help="Signal a waiting machine to wake on its next check (drops a signal file).",
