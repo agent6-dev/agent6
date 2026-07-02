@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from agent6.events import EventSink
-from agent6.ui.approval import (
+from agent6.frontend.approval import (
     clear_steer_answer,
     clear_steer_request,
     read_steer_answer,

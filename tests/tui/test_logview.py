@@ -11,7 +11,7 @@ from pathlib import Path
 from textual.app import App
 from textual.widgets import RichLog
 
-from agent6.ui.logview import LogScreen
+from agent6.tui.logview import LogScreen
 from agent6.viewmodel.state import format_log_line
 
 

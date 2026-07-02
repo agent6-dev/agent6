@@ -10,8 +10,8 @@ from pathlib import Path
 from textual.app import App
 from textual.widgets import DataTable, Input
 
-from agent6.ui import machines as machmod
-from agent6.ui.machines import (
+from agent6.tui import machines as machmod
+from agent6.tui.machines import (
     CreateMachineModal,
     MachineDetailScreen,
     MachinesScreen,
@@ -19,7 +19,7 @@ from agent6.ui.machines import (
     find_machine_files,
     machine_detail_text,
 )
-from agent6.ui.modals import ConfirmModal
+from agent6.tui.modals import ConfirmModal
 
 # A no-I/O machine that reaches a terminal immediately (branch -> terminal), so a
 # `machine run` produces a finished instance with no model/jail needed.
@@ -173,7 +173,7 @@ def test_discrete_log_line_renders_tool_events_only() -> None:
     # The shared journal fold (current/visited/transitions) is tested in
     # tests/unit/test_viewmodel_machine_state.py; this covers the TUI-only
     # presentation helper for the per-state agent log.
-    from agent6.ui.machines import _discrete_log_line
+    from agent6.tui.machines import _discrete_log_line
 
     # A tool call renders compactly; a thinking delta is not a discrete line.
     assert _discrete_log_line({"type": "role.thinking_delta", "text": "hm"}) is None
@@ -229,7 +229,7 @@ def test_machines_page_lists_and_views(tmp_path: Path) -> None:
 def test_machines_menu_bar_dispatches_an_item(tmp_path: Path) -> None:
     """Selecting an item from the menu bar (not just the key binding) runs its
     action -- exercises action_menu + on_menu_bar_selected, the dead-menu bug class."""
-    from agent6.ui.menubar import MenuBar, _Dropdown
+    from agent6.tui.menubar import MenuBar, _Dropdown
 
     async def scenario() -> None:
         app = _Host(tmp_path)

@@ -11,7 +11,7 @@ from pathlib import Path
 from textual.app import App
 from textual.widgets import RichLog
 
-from agent6.ui.conversation import ConversationScreen
+from agent6.tui.conversation import ConversationScreen
 
 _TRANSCRIPTS = [
     {

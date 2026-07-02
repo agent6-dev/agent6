@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from agent6.ui.approval import (
+from agent6.frontend.approval import (
     clear_pending_answers,
     request_steer,
     steer_request_pending,

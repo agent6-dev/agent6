@@ -136,7 +136,7 @@ reportUnusedClass = false
 # The headless TUI tests poke internal seams (`_handle_event`, `_tick`) on
 # purpose, so silence the private-usage check here only.
 [[tool.pyright.executionEnvironments]]
-root = "tests/ui"
+root = "tests/tui"
 reportPrivateUsage = false
 
 [tool.pytest.ini_options]

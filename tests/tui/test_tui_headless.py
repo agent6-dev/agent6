@@ -18,8 +18,8 @@ from typing import Any
 from textual.app import App
 from textual.widgets import Button, DataTable, Input, RichLog, TextArea, Tree
 
-from agent6.ui.app import Agent6TUI
-from agent6.ui.modals import (
+from agent6.tui.app import Agent6TUI
+from agent6.tui.modals import (
     ApprovalModal,
     QuestionModal,
     SteerModal,
@@ -270,7 +270,7 @@ def test_render_and_modals(tmp_path: Path) -> None:
 def test_dashboard_back_vs_quit(tmp_path: Path) -> None:
     """Option 3: q (like Esc) backs out to the hub (exit 0); only Ctrl+Q quits the
     hub (QUIT_HUB_CODE). Standalone, every one of them just closes (0)."""
-    from agent6.ui.app import QUIT_HUB_CODE
+    from agent6.tui.app import QUIT_HUB_CODE
 
     async def press(from_hub: bool, key: str) -> int | None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
@@ -388,7 +388,7 @@ def test_dashboard_footer_shows_one_dual_back_key(tmp_path: Path) -> None:
 
 
 def test_steer_request_marker_round_trip(tmp_path: Path) -> None:
-    from agent6.ui.approval import clear_steer_request, request_steer, steer_request_pending
+    from agent6.frontend.approval import clear_steer_request, request_steer, steer_request_pending
 
     assert not steer_request_pending(tmp_path)
     request_steer(tmp_path)
@@ -401,8 +401,8 @@ def test_dashboard_s_key_steers_without_ctrl_c(tmp_path: Path) -> None:
     """The dashboard 's' action drops a steer.request marker (the run picks it up
     at its next boundary) and opens the steer box -- no Ctrl-C needed -- then the
     typed instruction lands in steer.answer for the run to inject."""
-    from agent6.ui.approval import steer_request_pending
-    from agent6.ui.modals import SteerModal
+    from agent6.frontend.approval import steer_request_pending
+    from agent6.tui.modals import SteerModal
 
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")

@@ -211,7 +211,7 @@ def test_steer_prompt_clears_request_marker_on_no_answer(
     on timeout) must clear the `steer.request` marker so the run does NOT
     re-enter the 600s blocking prompt at every later boundary."""
     from agent6.cli import _steer
-    from agent6.ui.approval import request_steer, steer_request_pending
+    from agent6.frontend.approval import request_steer, steer_request_pending
 
     run_dir = tmp_path
     request_steer(run_dir)  # TUI `s`-key dropped the marker
@@ -238,7 +238,7 @@ def test_steer_prompt_keeps_marker_on_real_answer(
     """A genuinely-answered steer still works: prompt() returns the answer and
     leaves clearing to the caller's clear() (which consumes request+answer)."""
     from agent6.cli import _steer
-    from agent6.ui.approval import request_steer, steer_request_pending
+    from agent6.frontend.approval import request_steer, steer_request_pending
 
     run_dir = tmp_path
     request_steer(run_dir)

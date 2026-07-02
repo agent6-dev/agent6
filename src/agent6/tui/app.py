@@ -48,7 +48,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
         " Reinstall agent6, or `pip install textual`."
     ) from e
 
-from agent6.ui.approval import (
+from agent6.frontend.approval import (
     clear_steer_answer,
     clear_tui_pid,
     request_steer,
@@ -57,11 +57,11 @@ from agent6.ui.approval import (
     write_steer_answer,
     write_tui_pid,
 )
-from agent6.ui.conversation import ConversationScreen
-from agent6.ui.logview import LogScreen
-from agent6.ui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
-from agent6.ui.modals import ApprovalModal, QuestionModal, SteerModal, ToolCallDetailModal
-from agent6.ui.theme import PALETTE_CSS, open_theme_picker, setup_theme
+from agent6.tui.conversation import ConversationScreen
+from agent6.tui.logview import LogScreen
+from agent6.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
+from agent6.tui.modals import ApprovalModal, QuestionModal, SteerModal, ToolCallDetailModal
+from agent6.tui.theme import PALETTE_CSS, open_theme_picker, setup_theme
 from agent6.viewmodel.state import (
     MAX_LOG_TAIL,
     ApprovalPrompt,

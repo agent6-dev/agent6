@@ -32,6 +32,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
         " Reinstall agent6, or `pip install textual`."
     ) from e
 
+from agent6.frontend.spawn import agent6_exe, spawn_and_locate, spawn_detached
 from agent6.machine import (
     MachineError,
     MachineJournal,
@@ -40,10 +41,9 @@ from agent6.machine import (
     render,
     validate_semantics,
 )
-from agent6.ui._spawn import agent6_exe, spawn_and_locate, spawn_detached
-from agent6.ui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
-from agent6.ui.modals import ConfirmModal
-from agent6.ui.theme import PALETTE_CSS, setup_theme
+from agent6.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
+from agent6.tui.modals import ConfirmModal
+from agent6.tui.theme import PALETTE_CSS, setup_theme
 from agent6.viewmodel import fold_machine, newest_state_log
 
 

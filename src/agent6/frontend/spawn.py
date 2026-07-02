@@ -2,10 +2,9 @@
 # Copyright 2026 Eric Lesiuta
 """Find the agent6 executable and spawn it detached.
 
-Shared by the hub (new work / merge) and the machines page (run / create) so a
-TUI action shells out to the same CLI a user would run, never doing the work
-in-process. A leaf module (no other ui imports) so both pages depend on it
-without a cycle."""
+Shared by every front-end (TUI hub, machines page, web server) so a UI action
+shells out to the same CLI a user would run, never doing the work in-process. A
+leaf module (only stdlib) so any front-end depends on it without a cycle."""
 
 from __future__ import annotations
 

@@ -19,10 +19,10 @@ from typing import cast
 from rich.text import Text
 from textual.app import App
 
-from agent6.ui.app import Agent6TUI
-from agent6.ui.config_page import ConfigScreen
-from agent6.ui.home import Agent6HomeApp
-from agent6.ui.menubar import Menu, _Dropdown
+from agent6.tui.app import Agent6TUI
+from agent6.tui.config_page import ConfigScreen
+from agent6.tui.home import Agent6HomeApp
+from agent6.tui.menubar import Menu, _Dropdown
 
 
 def _resolve(host: object, action: str) -> Callable[..., object] | None:
@@ -90,7 +90,7 @@ def test_quit_from_menu_exits_home() -> None:
     adir, repo = Path(tempfile.mkdtemp()), Path(tempfile.mkdtemp())
 
     async def scenario() -> None:
-        from agent6.ui.menubar import MenuBar
+        from agent6.tui.menubar import MenuBar
 
         app = Agent6HomeApp(adir, repo)
         async with app.run_test() as pilot:
@@ -147,7 +147,7 @@ def test_q_key_quits_home() -> None:
 def test_menu_dropdown_keys_right_align_to_common_edge() -> None:
     """Dropdown shortcut keys share a right edge (labels left), so they line up in
     a column instead of floating a fixed gap after each varying-width label."""
-    from agent6.ui.menubar import MenuItem, _menu_options
+    from agent6.tui.menubar import MenuItem, _menu_options
 
     items = (
         MenuItem("New run/plan/ask", "a", "n"),

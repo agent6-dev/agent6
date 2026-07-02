@@ -9,7 +9,7 @@ import threading
 import time
 from pathlib import Path
 
-from agent6.ui.approval import (
+from agent6.frontend.approval import (
     clear_tui_pid,
     read_answer,
     tui_is_live,

@@ -73,6 +73,14 @@ from agent6.config_layer import (
 )
 from agent6.detect import select_profile
 from agent6.events import EventSink
+from agent6.frontend.approval import (
+    clear_pending_answers,
+    clear_worker_pid,
+    read_answer,
+    read_question_answer,
+    tui_is_live,
+    write_worker_pid,
+)
 from agent6.git_ops import (
     CommitIdentity,
     GitError,
@@ -101,14 +109,6 @@ from agent6.providers import (
 )
 from agent6.run_id import RunIdError, new_friendly_id, resolve_run_id
 from agent6.tools.dispatch import ToolDispatcher
-from agent6.ui.approval import (
-    clear_pending_answers,
-    clear_worker_pid,
-    read_answer,
-    read_question_answer,
-    tui_is_live,
-    write_worker_pid,
-)
 from agent6.verify_infer import VERIFY_INFER_SYSTEM_PROMPT, infer_verify_command
 from agent6.workflows._run_state import load_resume_snapshot
 from agent6.workflows.loop import ResumeError, RunResult, Workflow
@@ -387,7 +387,7 @@ def _tui_session(run_dir: Path, *, enabled: bool) -> Generator[None]:
         return
     try:
         proc = subprocess.Popen(
-            [sys.executable, "-m", "agent6.ui", "--watch", str(run_dir), "--exit-on-end"]
+            [sys.executable, "-m", "agent6.tui", "--watch", str(run_dir), "--exit-on-end"]
         )
     except OSError as exc:
         print(f"[agent6] could not start TUI ({exc}); continuing without it.", file=sys.stderr)

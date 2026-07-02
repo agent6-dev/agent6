@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.ui import _spawn
+from agent6.frontend import spawn
 
 
 def test_spawn_and_locate_finds_new_log_dir(
@@ -30,8 +30,8 @@ def test_spawn_and_locate_finds_new_log_dir(
     def _popen(*_a: object, **_k: object) -> _Proc:
         return _Proc()
 
-    monkeypatch.setattr(_spawn.subprocess, "Popen", _popen)
-    found, err = _spawn.spawn_and_locate(
+    monkeypatch.setattr(spawn.subprocess, "Popen", _popen)
+    found, err = spawn.spawn_and_locate(
         ["agent6", "x"],
         tmp_path,
         before=set(),
@@ -59,8 +59,8 @@ def test_spawn_and_locate_ignores_preexisting_dirs(
     def _popen(*_a: object, **_k: object) -> _Proc:
         return _Proc()
 
-    monkeypatch.setattr(_spawn.subprocess, "Popen", _popen)
-    found, err = _spawn.spawn_and_locate(
+    monkeypatch.setattr(spawn.subprocess, "Popen", _popen)
+    found, err = spawn.spawn_and_locate(
         ["agent6", "machine", "create", "x"],
         tmp_path,
         before=before,
@@ -76,8 +76,8 @@ def test_spawn_and_locate_surfaces_spawn_failure(
     def _boom(*_a: object, **_k: object) -> object:
         raise OSError("no exec")
 
-    monkeypatch.setattr(_spawn.subprocess, "Popen", _boom)
-    found, err = _spawn.spawn_and_locate(
+    monkeypatch.setattr(spawn.subprocess, "Popen", _boom)
+    found, err = spawn.spawn_and_locate(
         ["agent6", "run", "x"], tmp_path, before=set(), list_dirs=list
     )
     assert found is None

@@ -14,8 +14,8 @@ from datetime import datetime
 from pathlib import Path
 
 from agent6.cli._common import _runs_dir
+from agent6.frontend.approval import read_worker_pid, worker_is_alive
 from agent6.run_id import RunIdError, resolve_run_id
-from agent6.ui.approval import read_worker_pid, worker_is_alive
 
 
 def event_epoch(value: object) -> float | None:
@@ -155,7 +155,7 @@ def _cmd_watch(run_id: str, *, tui: bool = False, since: int = 0) -> int:  # noq
     if not tui:
         return _cmd_watch_plain(target, since=since)
     try:
-        from agent6.ui.app import run_tui  # noqa: PLC0415 - lazy: textual is optional
+        from agent6.tui.app import run_tui  # noqa: PLC0415 - lazy: textual is optional
     except ImportError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         print(
@@ -350,8 +350,8 @@ def _cmd_tui() -> int:
     the home screen and the dashboard, opening a run watches it, then returns
     here on close."""
     try:
-        from agent6.ui.app import QUIT_HUB_CODE, run_tui  # noqa: PLC0415 - lazy: textual optional
-        from agent6.ui.home import run_home  # noqa: PLC0415
+        from agent6.tui.app import QUIT_HUB_CODE, run_tui  # noqa: PLC0415 - lazy: textual optional
+        from agent6.tui.home import run_home  # noqa: PLC0415
     except ImportError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         print("HINT: the TUI needs 'textual' (part of the base install).", file=sys.stderr)

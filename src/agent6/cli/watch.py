@@ -73,7 +73,7 @@ def _machine_watch_tui(machine_dir: Path) -> int:
         print(f"FAIL: {source}: {'; '.join(exc.problems)}", file=sys.stderr)
         return 1
     try:
-        from agent6.ui.machines import run_machine_watch_tui  # noqa: PLC0415
+        from agent6.tui.machines import run_machine_watch_tui  # noqa: PLC0415
     except ImportError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         print("HINT: drop --tui for the plain text follow.", file=sys.stderr)

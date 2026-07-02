@@ -53,9 +53,9 @@ from agent6.config_layer import (
 )
 from agent6.models_cache import cached_models, list_models, resolved_adaptive_values
 from agent6.secrets import resolve_api_key
-from agent6.ui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
-from agent6.ui.theme import open_theme_picker
-from agent6.ui.widgets import (
+from agent6.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
+from agent6.tui.theme import open_theme_picker
+from agent6.tui.widgets import (
     FORM_CSS,
     ActionItem,
     ChoiceField,

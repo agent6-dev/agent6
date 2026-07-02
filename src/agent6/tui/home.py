@@ -38,15 +38,15 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 
 # Safe at module top: the textual guard above runs first, so this (which also
 # needs textual) is only reached when textual is present.
-from agent6.ui._spawn import agent6_exe, spawn_and_locate
-from agent6.ui.config_page import ConfigScreen
-from agent6.ui.conversation import ConversationScreen
-from agent6.ui.logview import LogScreen
-from agent6.ui.machines import MachinesScreen
-from agent6.ui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
-from agent6.ui.modals import ConfirmModal
-from agent6.ui.theme import PALETTE_CSS, open_theme_picker, setup_theme
-from agent6.ui.widgets import FORM_CSS, ActionItem
+from agent6.frontend.spawn import agent6_exe, spawn_and_locate
+from agent6.tui.config_page import ConfigScreen
+from agent6.tui.conversation import ConversationScreen
+from agent6.tui.logview import LogScreen
+from agent6.tui.machines import MachinesScreen
+from agent6.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
+from agent6.tui.modals import ConfirmModal
+from agent6.tui.theme import PALETTE_CSS, open_theme_picker, setup_theme
+from agent6.tui.widgets import FORM_CSS, ActionItem
 
 # Subdirs (relative to the agent6 dir) that hold watchable run directories.
 _RUN_SUBDIRS = ("runs", "asks")

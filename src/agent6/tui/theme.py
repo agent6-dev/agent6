@@ -28,8 +28,8 @@ try:
 except ImportError as e:  # pragma: no cover - clear runtime message
     raise SystemExit("The TUI theme support needs textual: pip install 'agent6[tui]'") from e
 
-from agent6.ui.settings import DEFAULT_THEME, get_theme, save_theme
-from agent6.ui.widgets import FORM_CSS, ChoiceField
+from agent6.tui.settings import DEFAULT_THEME, get_theme, save_theme
+from agent6.tui.widgets import FORM_CSS, ChoiceField
 
 # Branded defaults: a deep, low-saturation dark and a soft light, both with a
 # green focus accent over a blue selection primary (mirrors lazygit's

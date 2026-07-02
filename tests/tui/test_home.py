@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agent6.ui.approval import (
+from agent6.frontend.approval import (
     approvals_dir,
     clear_pending_answers,
     questions_dir,
@@ -16,7 +16,7 @@ from agent6.ui.approval import (
     write_question_answer,
     write_tui_pid,
 )
-from agent6.ui.home import _list_runs, _run_mtime, _run_summary
+from agent6.tui.home import _list_runs, _run_mtime, _run_summary
 
 
 def _write_run(agent6_dir: Path, sub: str, run_id: str, events: list[dict[str, object]]) -> Path:
@@ -168,7 +168,7 @@ def test_refresh_keeps_runs_list_aligned_with_table_when_a_run_vanishes(tmp_path
 
     from textual.widgets import DataTable
 
-    from agent6.ui.home import Agent6HomeApp, HomeScreen
+    from agent6.tui.home import Agent6HomeApp, HomeScreen
 
     a6 = tmp_path / ".agent6"
     for rid in ("r1", "r2", "r3"):
@@ -199,7 +199,7 @@ def test_refresh_keeps_runs_list_aligned_with_table_when_a_run_vanishes(tmp_path
 def test_home_app_lists_runs_and_opens_new_work_modal(tmp_path: Path) -> None:
     import asyncio
 
-    from agent6.ui.home import Agent6HomeApp, _NewWorkModal
+    from agent6.tui.home import Agent6HomeApp, _NewWorkModal
 
     a6 = tmp_path / ".agent6"
     _write_run(a6, "runs", "r1", [{"type": "run.start", "mode": "run", "user_task": "do [x]"}])
@@ -209,7 +209,7 @@ def test_home_app_lists_runs_and_opens_new_work_modal(tmp_path: Path) -> None:
         async with app.run_test() as pilot:
             from textual.widgets import DataTable
 
-            from agent6.ui.home import HomeScreen
+            from agent6.tui.home import HomeScreen
 
             await pilot.pause()  # let on_mount push the HomeScreen
             assert isinstance(app.screen, HomeScreen)  # hub lives on its own screen
@@ -231,7 +231,7 @@ def test_new_work_modal_is_multiline_and_starts_chosen_mode(tmp_path: Path) -> N
 
     from textual.widgets import TextArea
 
-    from agent6.ui.home import Agent6HomeApp, _NewWorkModal
+    from agent6.tui.home import Agent6HomeApp, _NewWorkModal
 
     a6 = tmp_path / ".agent6"
     _write_run(a6, "runs", "r1", [{"type": "run.start", "mode": "run", "user_task": "x"}])
@@ -270,7 +270,7 @@ def test_new_work_modal_yields_chosen_profile(tmp_path: Path) -> None:
 
     from textual.widgets import Select, TextArea
 
-    from agent6.ui.home import Agent6HomeApp, _NewWorkModal
+    from agent6.tui.home import Agent6HomeApp, _NewWorkModal
 
     a6 = tmp_path / ".agent6"
     _write_run(a6, "runs", "r1", [{"type": "run.start", "mode": "run", "user_task": "x"}])
@@ -288,7 +288,7 @@ def test_new_work_modal_yields_chosen_profile(tmp_path: Path) -> None:
             app.screen.query_one("#new-profile", Select).value = "ultra"
             await pilot.pause()
             # Run via a button activation (Esc-free path), like the user clicking.
-            from agent6.ui.widgets import ActionItem
+            from agent6.tui.widgets import ActionItem
 
             next(iter(app.screen.query(ActionItem))).post_message(ActionItem.Activated("run"))
             await pilot.pause()
@@ -306,7 +306,7 @@ def test_spawn_argv_includes_profile_flag_only_when_chosen(
     no real agent6 is spawned; the helper times out fast on the stubbed proc."""
     import subprocess
 
-    from agent6.ui import home
+    from agent6.tui import home
 
     captured: list[list[str]] = []
 
@@ -344,7 +344,7 @@ def test_spawn_sets_stream_to_log_env(tmp_path: Path, monkeypatch: object) -> No
     worker status, never live thinking."""
     import subprocess
 
-    from agent6.ui import home
+    from agent6.tui import home
 
     captured_env: dict[str, str] = {}
 
@@ -375,7 +375,7 @@ def test_run_merge_cli_builds_argv_and_parses_result(tmp_path: Path, monkeypatch
     captured output as (ok, message) -- it never touches git_ops itself."""
     import subprocess
 
-    from agent6.ui import home
+    from agent6.tui import home
 
     captured: list[list[str]] = []
 
@@ -404,9 +404,9 @@ def test_merge_action_confirms_then_shells_out(tmp_path: Path, monkeypatch: obje
 
     from textual.widgets import DataTable
 
-    from agent6.ui import home
-    from agent6.ui.home import Agent6HomeApp
-    from agent6.ui.modals import ConfirmModal
+    from agent6.tui import home
+    from agent6.tui.home import Agent6HomeApp
+    from agent6.tui.modals import ConfirmModal
 
     a6 = tmp_path / ".agent6"
     _write_run(a6, "runs", "r1", [{"type": "run.start", "mode": "run", "user_task": "x"}])
@@ -443,7 +443,7 @@ def test_home_open_run_returns_its_dir(tmp_path: Path) -> None:
 
     from textual.widgets import DataTable
 
-    from agent6.ui.home import Agent6HomeApp
+    from agent6.tui.home import Agent6HomeApp
 
     a6 = tmp_path / ".agent6"
     rd = _write_run(a6, "runs", "r1", [{"type": "run.start", "mode": "run", "user_task": "x"}])
