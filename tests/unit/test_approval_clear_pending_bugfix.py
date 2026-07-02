@@ -3,7 +3,7 @@
 
 #7: a leftover `steer.request` marker from a prior session must be dropped at
     run/resume START, else the resumed run stalls on a phantom steer prompt.
-#22: `tui.pid` must only be cleared when NO live TUI owns it, so a concurrently
+#22: `frontend.pid` must only be cleared when NO live TUI owns it, so a concurrently
     live `agent6 watch` watcher keeps bridging approval/question modals.
 """
 
@@ -14,10 +14,10 @@ from pathlib import Path
 
 from agent6.frontend.approval import (
     clear_pending_answers,
+    frontend_is_live,
     request_steer,
     steer_request_pending,
-    tui_is_live,
-    write_tui_pid,
+    write_frontend_pid,
 )
 
 
@@ -37,14 +37,14 @@ def test_clear_pending_preserves_live_tui_pid(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     # Our own pid is a live process => a live foreign watcher.
-    write_tui_pid(run_dir, os.getpid())
-    assert tui_is_live(run_dir)
+    write_frontend_pid(run_dir, os.getpid())
+    assert frontend_is_live(run_dir)
 
     clear_pending_answers(run_dir)
 
     # A live watcher's pid must survive so its modals stay wired up.
-    assert tui_is_live(run_dir)
-    assert (run_dir / "tui.pid").exists()
+    assert frontend_is_live(run_dir)
+    assert (run_dir / "frontend.pid").exists()
 
 
 def test_clear_pending_drops_stale_tui_pid(tmp_path: Path) -> None:
@@ -52,13 +52,13 @@ def test_clear_pending_drops_stale_tui_pid(tmp_path: Path) -> None:
     run_dir.mkdir()
     # A pid that is (essentially certainly) not a live process.
     dead_pid = _find_dead_pid()
-    write_tui_pid(run_dir, dead_pid)
-    assert not tui_is_live(run_dir)
+    write_frontend_pid(run_dir, dead_pid)
+    assert not frontend_is_live(run_dir)
 
     clear_pending_answers(run_dir)
 
     # A stale (hard-killed) pid must be cleared so the poll doesn't block.
-    assert not (run_dir / "tui.pid").exists()
+    assert not (run_dir / "frontend.pid").exists()
 
 
 def _find_dead_pid() -> int:

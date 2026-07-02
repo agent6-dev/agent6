@@ -76,9 +76,9 @@ from agent6.events import EventSink
 from agent6.frontend.approval import (
     clear_pending_answers,
     clear_worker_pid,
+    frontend_is_live,
     read_answer,
     read_question_answer,
-    tui_is_live,
     write_worker_pid,
 )
 from agent6.git_ops import (
@@ -232,7 +232,7 @@ def _default_stdin_approver(prompt: str) -> bool:
 def _build_approver(run_dir: Path, events: EventSink) -> Callable[[str], bool]:
     """Build the `run_command` approver, bridged to a live TUI when present.
 
-    Emits an `approval.prompt` event; if a TUI is live (it wrote `tui.pid`) the
+    Emits an `approval.prompt` event; if a TUI is live (it wrote `frontend.pid`) the
     answer comes from its Allow/Deny modal via the file bridge
     (`approvals/<id>.answer`), otherwise -- or if the TUI dies / times out -- it
     falls back to the stdin `[y/N]` prompt. Emits `approval.answer` either way.
@@ -246,7 +246,7 @@ def _build_approver(run_dir: Path, events: EventSink) -> Callable[[str], bool]:
         events.emit("approval.prompt", id=prompt_id, prompt=prompt)
         approved: bool | None = None
         source = "stdin"
-        if tui_is_live(run_dir):
+        if frontend_is_live(run_dir):
             approved = read_answer(run_dir, prompt_id)
             if approved is not None:
                 source = "tui"
@@ -290,7 +290,7 @@ def _build_questioner(run_dir: Path, events: EventSink) -> Callable[[str, tuple[
         events.emit("question.prompt", id=question_id, question=question, options=list(options))
         answer: str | None = None
         source = "stdin"
-        if tui_is_live(run_dir):
+        if frontend_is_live(run_dir):
             answer = read_question_answer(run_dir, question_id)
             if answer is not None:
                 source = "tui"
@@ -729,9 +729,9 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         subdir="asks" if mode == "ask" else "runs",
     )
     layout.ensure()
-    # Drop stale approve/ask/steer answers + tui.pid from a prior session (the
+    # Drop stale approve/ask/steer answers + frontend.pid from a prior session (the
     # id counters reset on resume, so an old answer must not be read instead of
-    # re-prompting; a stale tui.pid would otherwise stall the answer-poll).
+    # re-prompting; a stale frontend.pid would otherwise stall the answer-poll).
     clear_pending_answers(layout.run_dir)
     # Record this worker's pid so `agent6 runs show` can probe liveness even while
     # the worker is blocked in a long provider call (which emits no events).
@@ -1311,7 +1311,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     if not layout.run_dir.is_dir():
         print(f"ERROR: no such run dir: {layout.run_dir}", file=sys.stderr)
         return 2
-    # Drop a prior session's stale answer files + tui.pid (the id counters reset
+    # Drop a prior session's stale answer files + frontend.pid (the id counters reset
     # on resume, an old answer must not be read instead of re-prompting).
     clear_pending_answers(layout.run_dir)
     # Record this worker's pid so `agent6 runs show` can probe liveness even while

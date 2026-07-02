@@ -218,7 +218,7 @@ def test_steer_prompt_clears_request_marker_on_no_answer(
     assert steer_request_pending(run_dir)
 
     # TUI is live but the modal yields no answer (dismissed / 600s timeout).
-    monkeypatch.setattr(_steer, "tui_is_live", _tui_live)
+    monkeypatch.setattr(_steer, "frontend_is_live", _tui_live)
     monkeypatch.setattr(_steer, "read_steer_answer", _answer_none)
 
     state = _steer.install_steer_sigint(MagicMock(), run_dir)
@@ -242,7 +242,7 @@ def test_steer_prompt_keeps_marker_on_real_answer(
 
     run_dir = tmp_path
     request_steer(run_dir)
-    monkeypatch.setattr(_steer, "tui_is_live", _tui_live)
+    monkeypatch.setattr(_steer, "frontend_is_live", _tui_live)
     monkeypatch.setattr(_steer, "read_steer_answer", _answer_text)
 
     state = _steer.install_steer_sigint(MagicMock(), run_dir)

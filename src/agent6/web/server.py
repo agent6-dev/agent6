@@ -2,17 +2,16 @@
 # Copyright 2026 Eric Lesiuta
 """The `agent6 web` server: a stdlib HTTP front-end over the shared read-side.
 
-One self-contained page (web.page) rendered by a browser, fed by:
+Serves web.page to a browser, fed by:
   - plain GET JSON endpoints (the same wire form as `agent6 watch --json`), and
   - SSE (`text/event-stream`) streams that re-fold logs.jsonl / the machine
     journal on each change and push a fresh snapshot.
 
-Zero dependencies: `http.server.ThreadingHTTPServer` only, no framework, no build
-step. Binds loopback by default; a non-loopback bind is opt-in (see the `[web]`
-config section) and widens the inbound network surface. The server only ever
-renders folded read-state and (in the write phase) drives the typed
-`agent6.frontend` contracts; it never serves secrets and never executes
-arbitrary input.
+Uses the stdlib `http.server.ThreadingHTTPServer`. Binds loopback by default; a
+non-loopback bind is opt-in (see the `[web]` config section) and widens the
+inbound network surface. The server only ever renders folded read-state and (in
+the write phase) drives the typed `agent6.frontend` contracts; it never serves
+secrets and never executes arbitrary input.
 """
 
 from __future__ import annotations
@@ -31,7 +30,7 @@ from urllib.parse import unquote, urlsplit
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from agent6 import __version__
-from agent6.frontend.approval import TUI_PID_FILE, clear_tui_pid, write_tui_pid
+from agent6.frontend.approval import FRONTEND_PID_FILE, clear_frontend_pid, write_frontend_pid
 from agent6.machine import MachineError
 from agent6.viewmodel import apply_event, initial_state, run_state_as_dict, tail_events
 from agent6.web import actions, model
@@ -93,7 +92,7 @@ class ConfigSetBody(_Body):
 class WebServer(ThreadingHTTPServer):
     """A ThreadingHTTPServer that carries the repo cwd its handlers read from,
     and tracks which runs a browser is actively watching so it can register this
-    process as the answering front-end (tui.pid) only while someone is looking."""
+    process as the answering front-end (frontend.pid) only while someone is looking."""
 
     daemon_threads = True
     allow_reuse_address = True
@@ -107,19 +106,19 @@ class WebServer(ThreadingHTTPServer):
 
     def claim_run(self, run_dir: Path) -> None:
         """A browser opened this run's stream: become the run's answer front-end
-        (write our pid to tui.pid) so its approval/question/steer prompts bridge
-        here. Reference-counted across concurrent viewers."""
+        (write our pid to frontend.pid) so its approval/question/steer prompts
+        bridge here. Reference-counted across concurrent viewers."""
         key = str(run_dir)
         with self._pid_lock:
             n = self._watch_counts.get(key, 0) + 1
             self._watch_counts[key] = n
             if n == 1:
-                write_tui_pid(run_dir, os.getpid())
+                write_frontend_pid(run_dir, os.getpid())
 
     def release_run(self, run_dir: Path) -> None:
         """The last browser watching this run went away: stop claiming its prompts
-        (clear tui.pid, but only if it still points at us) so the run falls back to
-        its headless behaviour instead of blocking on answers no one will give."""
+        (clear frontend.pid, but only if it still points at us) so the run falls
+        back to its headless behaviour instead of blocking on answers no one gives."""
         key = str(run_dir)
         with self._pid_lock:
             n = self._watch_counts.get(key, 1) - 1
@@ -128,11 +127,13 @@ class WebServer(ThreadingHTTPServer):
                 return
             self._watch_counts.pop(key, None)
         try:
-            owned = (run_dir / TUI_PID_FILE).read_text(encoding="utf-8").strip() == str(os.getpid())
+            owned = (run_dir / FRONTEND_PID_FILE).read_text(encoding="utf-8").strip() == str(
+                os.getpid()
+            )
         except OSError:
             owned = False
         if owned:
-            clear_tui_pid(run_dir)
+            clear_frontend_pid(run_dir)
 
 
 class _Handler(BaseHTTPRequestHandler):

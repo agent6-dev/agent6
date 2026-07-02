@@ -61,7 +61,7 @@ def test_approver_uses_tui_answer_when_live(
 ) -> None:
     log = tmp_path / "logs.jsonl"
     events = EventSink(log)
-    monkeypatch.setattr(runmod, "tui_is_live", _live)
+    monkeypatch.setattr(runmod, "frontend_is_live", _live)
     monkeypatch.setattr(runmod, "read_answer", _ans_yes)
     monkeypatch.setattr(runmod, "_default_stdin_approver", _stdin_forbidden)
     approve = runmod._build_approver(tmp_path, events)  # pyright: ignore[reportPrivateUsage]
@@ -77,7 +77,7 @@ def test_approver_falls_back_to_stdin_without_tui(
 ) -> None:
     log = tmp_path / "logs.jsonl"
     events = EventSink(log)
-    monkeypatch.setattr(runmod, "tui_is_live", _dead)
+    monkeypatch.setattr(runmod, "frontend_is_live", _dead)
     monkeypatch.setattr(runmod, "_default_stdin_approver", _stdin_no)
     approve = runmod._build_approver(tmp_path, events)  # pyright: ignore[reportPrivateUsage]
     assert approve("x") is False
@@ -89,7 +89,7 @@ def test_approver_tui_timeout_falls_back_to_stdin(
 ) -> None:
     log = tmp_path / "logs.jsonl"
     events = EventSink(log)
-    monkeypatch.setattr(runmod, "tui_is_live", _live)
+    monkeypatch.setattr(runmod, "frontend_is_live", _live)
     monkeypatch.setattr(runmod, "read_answer", _ans_none)  # TUI died / timed out
     monkeypatch.setattr(runmod, "_default_stdin_approver", _stdin_yes)
     approve = runmod._build_approver(tmp_path, events)  # pyright: ignore[reportPrivateUsage]

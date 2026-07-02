@@ -23,9 +23,9 @@ from agent6.events import EventSink
 from agent6.frontend.approval import (
     clear_steer_answer,
     clear_steer_request,
+    frontend_is_live,
     read_steer_answer,
     steer_request_pending,
-    tui_is_live,
 )
 
 
@@ -150,7 +150,7 @@ def install_steer_sigint(events: EventSink, run_dir: Path) -> SteerState:
             # re-arm against). Otherwise just refresh the timestamp, crucially
             # WITHOUT re-clearing the answer file, which the TUI may have just
             # written (re-clearing it would strand read_steer_answer for 600s).
-            if (now - state["last_ts"]) < window_s or tui_is_live(run_dir):
+            if (now - state["last_ts"]) < window_s or frontend_is_live(run_dir):
                 raise KeyboardInterrupt
             state["last_ts"] = now
             return
@@ -160,7 +160,7 @@ def install_steer_sigint(events: EventSink, run_dir: Path) -> SteerState:
         events.emit("run.steer_requested", source="sigint")
         # With the TUI up, the steer prompt is a modal, don't scribble on the
         # terminal it owns. Otherwise tell the user a prompt is coming.
-        if not tui_is_live(run_dir):
+        if not frontend_is_live(run_dir):
             tty_message(
                 "\n[agent6] steer requested — finishing current step, then will"
                 " prompt. Press Ctrl-C again to abort.\n"
@@ -179,7 +179,7 @@ def install_steer_sigint(events: EventSink, run_dir: Path) -> SteerState:
 
     def prompt() -> str | None:
         # TUI live: the user answers a modal; read its file-bridge result.
-        if tui_is_live(run_dir):
+        if frontend_is_live(run_dir):
             answer = read_steer_answer(run_dir)
             # A dismissed/abandoned modal yields None (read_steer_answer timed out
             # or the TUI died). Clear the request marker on THIS no-answer path so a

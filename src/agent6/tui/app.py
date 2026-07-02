@@ -49,13 +49,13 @@ except ImportError as e:  # pragma: no cover - clear runtime message
     ) from e
 
 from agent6.frontend.approval import (
+    clear_frontend_pid,
     clear_steer_answer,
-    clear_tui_pid,
     request_steer,
     write_answer,
+    write_frontend_pid,
     write_question_answer,
     write_steer_answer,
-    write_tui_pid,
 )
 from agent6.tui.conversation import ConversationScreen
 from agent6.tui.logview import LogScreen
@@ -262,7 +262,7 @@ class Agent6TUI(App[int]):
 
     def on_mount(self) -> None:
         setup_theme(self)  # apply the saved theme before the first paint
-        write_tui_pid(self.run_dir, os.getpid())
+        write_frontend_pid(self.run_dir, os.getpid())
         self.sub_title = f"run · {self.run_dir.name}"  # menu-bar title context
         self.query_one("#tools", DataTable).add_columns("tool", "args", "ok", "summary")
         self._render()  # initial paint; later paints are coalesced in _tick
@@ -277,7 +277,7 @@ class Agent6TUI(App[int]):
 
     def on_unmount(self) -> None:
         self._stop.set()
-        clear_tui_pid(self.run_dir)
+        clear_frontend_pid(self.run_dir)
 
     # --- reader thread -----------------------------------------------
 

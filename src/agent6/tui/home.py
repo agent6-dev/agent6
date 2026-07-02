@@ -134,7 +134,7 @@ def _run_mtime(run_dir: Path) -> float:
     when the run process last appended an event.
 
     NOT the run-directory mtime: the dashboard only READS ``logs.jsonl``, but on
-    every open it writes ``tui.pid`` (and lazily ``approvals/`` / ``questions/``)
+    every open it writes ``frontend.pid`` (and lazily ``approvals/`` / ``questions/``)
     into the run dir, which bumps the DIRECTORY mtime. Keying the listed time and
     the sort off the log instead means merely opening a run to look at it never
     changes its "when" or its position. Falls back to the dir mtime before the log

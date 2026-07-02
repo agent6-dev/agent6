@@ -13,8 +13,8 @@ from agent6.frontend.approval import (
     questions_dir,
     read_question_answer,
     write_answer,
+    write_frontend_pid,
     write_question_answer,
-    write_tui_pid,
 )
 from agent6.tui.home import _list_runs, _run_mtime, _run_summary
 
@@ -105,16 +105,16 @@ def test_list_runs_spans_runs_and_asks(tmp_path: Path) -> None:
 
 def test_run_mtime_is_log_activity_not_dir_mtime(tmp_path: Path) -> None:
     """A run's listed/sorted time is its logs.jsonl mtime (last run activity), not
-    the run-dir mtime. Opening a run writes tui.pid into the dir, bumping the dir
+    the run-dir mtime. Opening a run writes frontend.pid into the dir, bumping the dir
     mtime; that must NOT move the run's 'when' or its sort position."""
     import os
 
     a6 = tmp_path / ".agent6"
     rd = _write_run(a6, "runs", "r1", [{"type": "run.start", "mode": "run"}])
     os.utime(rd / "logs.jsonl", (1000, 1000))  # last real activity
-    # Simulate opening the dashboard: it drops tui.pid in the dir, bumping the dir
+    # Simulate opening the dashboard: it drops frontend.pid in the dir, bumping the dir
     # mtime well past the log's. Pre-fix this became the displayed/sort time.
-    (rd / "tui.pid").write_text("123", encoding="utf-8")
+    (rd / "frontend.pid").write_text("123", encoding="utf-8")
     os.utime(rd, (5000, 5000))
     assert _run_mtime(rd) == 1000.0  # pyright: ignore[reportPrivateUsage]
 
@@ -129,20 +129,20 @@ def test_run_mtime_falls_back_to_dir_before_log_exists(tmp_path: Path) -> None:
 
 
 def test_question_bridge_round_trip(tmp_path: Path) -> None:
-    write_tui_pid(tmp_path, 999999999)  # a live-ish pid so read doesn't early-out
+    write_frontend_pid(tmp_path, 999999999)  # a live-ish pid so read doesn't early-out
     write_question_answer(tmp_path, "q1", "use B")
     assert read_question_answer(tmp_path, "q1", timeout_s=1.0) == "use B"
 
 
 def test_read_question_answer_returns_none_when_no_tui(tmp_path: Path) -> None:
-    # No tui.pid -> tui_is_live False -> immediate None (don't block headless).
+    # No frontend.pid -> frontend_is_live False -> immediate None (don't block headless).
     assert read_question_answer(tmp_path, "q1", timeout_s=1.0) is None
 
 
 def test_read_question_answer_consumes_the_file(tmp_path: Path) -> None:
     # The answer file is unlinked after reading, so a later prompt with the same
     # id (counters reset on resume) can't re-read a stale answer.
-    write_tui_pid(tmp_path, 999999999)
+    write_frontend_pid(tmp_path, 999999999)
     write_question_answer(tmp_path, "q1", "first")
     assert read_question_answer(tmp_path, "q1", timeout_s=1.0) == "first"
     assert not (questions_dir(tmp_path) / "q1.answer").exists()
@@ -151,11 +151,11 @@ def test_read_question_answer_consumes_the_file(tmp_path: Path) -> None:
 def test_clear_pending_answers_wipes_stale_state(tmp_path: Path) -> None:
     write_answer(tmp_path, "approval-1", approved=True)
     write_question_answer(tmp_path, "question-1", "stale")
-    write_tui_pid(tmp_path, 12345)
+    write_frontend_pid(tmp_path, 12345)
     clear_pending_answers(tmp_path)
     assert not (approvals_dir(tmp_path) / "approval-1.answer").exists()
     assert not (questions_dir(tmp_path) / "question-1.answer").exists()
-    assert not (tmp_path / "tui.pid").exists()
+    assert not (tmp_path / "frontend.pid").exists()
 
 
 def test_refresh_keeps_runs_list_aligned_with_table_when_a_run_vanishes(tmp_path: Path) -> None:

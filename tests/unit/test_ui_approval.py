@@ -10,30 +10,30 @@ import time
 from pathlib import Path
 
 from agent6.frontend.approval import (
-    clear_tui_pid,
+    clear_frontend_pid,
+    frontend_is_live,
     read_answer,
-    tui_is_live,
     write_answer,
-    write_tui_pid,
+    write_frontend_pid,
 )
 
 
 def test_no_tui_pid_means_not_live(tmp_path: Path) -> None:
-    assert tui_is_live(tmp_path) is False
+    assert frontend_is_live(tmp_path) is False
 
 
 def test_dead_pid_is_not_live(tmp_path: Path) -> None:
     # PID 1 is init; signal-0 to it from a non-root process raises PermissionError
     # which we treat as "not us" -> dead. PID 0 is invalid -> ProcessLookupError.
-    write_tui_pid(tmp_path, 999999999)  # almost certainly not allocated
-    assert tui_is_live(tmp_path) is False
+    write_frontend_pid(tmp_path, 999999999)  # almost certainly not allocated
+    assert frontend_is_live(tmp_path) is False
 
 
 def test_own_pid_is_live(tmp_path: Path) -> None:
-    write_tui_pid(tmp_path, os.getpid())
-    assert tui_is_live(tmp_path) is True
-    clear_tui_pid(tmp_path)
-    assert tui_is_live(tmp_path) is False
+    write_frontend_pid(tmp_path, os.getpid())
+    assert frontend_is_live(tmp_path) is True
+    clear_frontend_pid(tmp_path)
+    assert frontend_is_live(tmp_path) is False
 
 
 def test_read_answer_returns_none_when_no_tui_and_no_answer(tmp_path: Path) -> None:
@@ -42,7 +42,7 @@ def test_read_answer_returns_none_when_no_tui_and_no_answer(tmp_path: Path) -> N
 
 
 def test_read_answer_picks_up_written_answer(tmp_path: Path) -> None:
-    write_tui_pid(tmp_path, os.getpid())
+    write_frontend_pid(tmp_path, os.getpid())
 
     def writer() -> None:
         time.sleep(0.2)
@@ -56,6 +56,6 @@ def test_read_answer_picks_up_written_answer(tmp_path: Path) -> None:
 
 
 def test_write_answer_no_round_trips(tmp_path: Path) -> None:
-    write_tui_pid(tmp_path, os.getpid())
+    write_frontend_pid(tmp_path, os.getpid())
     write_answer(tmp_path, "x", approved=False)
     assert read_answer(tmp_path, "x", timeout_s=1.0) is False

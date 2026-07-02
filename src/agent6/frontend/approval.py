@@ -1,22 +1,23 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""File-based approval bridge between the workflow process and the TUI.
+"""File-based approval bridge between the workflow process and a front-end.
 
-The workflow process and the TUI run as separate OS processes (the TUI
-just tails JSONL). When an approval is needed:
+The workflow process and a front-end (the Textual TUI or the `agent6 web`
+server) run as separate OS processes; the front-end just tails JSONL and
+answers prompts by writing files. When an approval is needed:
 
 1. The workflow process writes an `approval.prompt` event to logs.jsonl
    and then polls `<run_dir>/approvals/<id>.answer` for a result.
-2. If `<run_dir>/tui.pid` exists and points at a live process, the
-   workflow process waits for the TUI to write the answer file. Otherwise
-   it falls back to a plain stdin prompt.
-3. The TUI (when present) presents a modal, then writes
+2. If `<run_dir>/frontend.pid` exists and points at a live process, the
+   workflow process waits for the front-end to write the answer file.
+   Otherwise it falls back to a plain stdin prompt.
+3. The front-end (when present) presents a modal / control, then writes
    `<run_dir>/approvals/<id>.answer` containing exactly `yes` or `no`.
 
 We use the filesystem rather than a socket because:
 - the JSONL log is already the cross-process contract,
-- the TUI may crash without taking the workflow down with it,
-- it's trivial to mirror in any other UI (including the VS Code extension).
+- the front-end may crash without taking the workflow down with it,
+- any front-end can mirror it (the TUI, the web server, a VS Code extension).
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from pathlib import Path
 
 APPROVAL_DIR_NAME = "approvals"
 QUESTION_DIR_NAME = "questions"
-TUI_PID_FILE = "tui.pid"
+FRONTEND_PID_FILE = "frontend.pid"
 WORKER_PID_FILE = "worker.pid"  # the run's worker process, for `agent6 runs show` liveness
 STEER_ANSWER_FILE = "steer.answer"
 
@@ -43,11 +44,11 @@ def clear_pending_answers(run_dir: Path) -> None:
     """Drop stale bridge state at run/resume START: leftover `*.answer` files
     from a prior session (the id counters reset, so an old answer would be read
     instead of prompting), a leftover `steer.request` marker (which would
-    otherwise trigger a phantom steer prompt that no live TUI answers), and a
-    stale `tui.pid` from a hard-killed TUI (which would otherwise make the
+    otherwise trigger a phantom steer prompt that no live front-end answers), and a
+    stale `frontend.pid` from a hard-killed front-end (which would otherwise make the
     answer-poll block until timeout). Best-effort.
 
-    The `tui.pid` is only dropped when NO live TUI owns it: a concurrently-live
+    The `frontend.pid` is only dropped when NO live front-end owns it: a concurrently-live
     `agent6 watch` watcher must keep bridging the resumed run's approval/question
     modals, so we must not unlink a pid that still points at a running process."""
     for sub in (APPROVAL_DIR_NAME, QUESTION_DIR_NAME):
@@ -58,16 +59,16 @@ def clear_pending_answers(run_dir: Path) -> None:
                     f.unlink()
     clear_steer_answer(run_dir)
     clear_steer_request(run_dir)
-    if not tui_is_live(run_dir):  # only drop a STALE pid (hard-killed TUI)
-        clear_tui_pid(run_dir)
+    if not frontend_is_live(run_dir):  # only drop a STALE pid (hard-killed front-end)
+        clear_frontend_pid(run_dir)
 
 
-def write_tui_pid(run_dir: Path, pid: int) -> None:
-    (run_dir / TUI_PID_FILE).write_text(str(pid), encoding="utf-8")
+def write_frontend_pid(run_dir: Path, pid: int) -> None:
+    (run_dir / FRONTEND_PID_FILE).write_text(str(pid), encoding="utf-8")
 
 
-def clear_tui_pid(run_dir: Path) -> None:
-    p = run_dir / TUI_PID_FILE
+def clear_frontend_pid(run_dir: Path) -> None:
+    p = run_dir / FRONTEND_PID_FILE
     with contextlib.suppress(FileNotFoundError):
         p.unlink()
 
@@ -109,8 +110,8 @@ def worker_is_alive(run_dir: Path) -> bool:
     return pid is not None and _pid_alive(pid)
 
 
-def tui_is_live(run_dir: Path) -> bool:
-    p = run_dir / TUI_PID_FILE
+def frontend_is_live(run_dir: Path) -> bool:
+    p = run_dir / FRONTEND_PID_FILE
     if not p.exists():
         return False
     try:
@@ -127,7 +128,7 @@ def tui_is_live(run_dir: Path) -> bool:
 
 
 def write_answer(run_dir: Path, prompt_id: str, *, approved: bool) -> None:
-    """Called by the TUI."""
+    """Called by a front-end (TUI or web)."""
     d = approvals_dir(run_dir)
     (d / f"{prompt_id}.answer").write_text("yes" if approved else "no", encoding="utf-8")
 
@@ -148,7 +149,7 @@ def read_answer(
             with contextlib.suppress(FileNotFoundError):
                 target.unlink()  # consume: never re-read on a later prompt/resume
             return txt in {"yes", "y", "true", "1"}
-        if not tui_is_live(run_dir):
+        if not frontend_is_live(run_dir):
             return None
         time.sleep(poll_s)
     return None
@@ -168,7 +169,7 @@ def questions_dir(run_dir: Path) -> Path:
 
 
 def write_question_answer(run_dir: Path, question_id: str, answer: str) -> None:
-    """Called by the TUI when the user answers the question modal."""
+    """Called by a front-end when the user answers the question."""
     (questions_dir(run_dir) / f"{question_id}.answer").write_text(answer, encoding="utf-8")
 
 
@@ -189,7 +190,7 @@ def read_question_answer(
             with contextlib.suppress(FileNotFoundError):
                 target.unlink()  # consume: never re-read on a later prompt/resume
             return txt
-        if not tui_is_live(run_dir):
+        if not frontend_is_live(run_dir):
             return None
         time.sleep(poll_s)
     return None
@@ -204,7 +205,7 @@ def read_question_answer(
 
 
 def write_steer_answer(run_dir: Path, answer: str) -> None:
-    """Called by the TUI when the user answers the steer modal."""
+    """Called by a front-end when the user answers the steer prompt."""
     (run_dir / STEER_ANSWER_FILE).write_text(answer, encoding="utf-8")
 
 
@@ -251,7 +252,7 @@ def read_steer_answer(
             with contextlib.suppress(FileNotFoundError):
                 target.unlink()
             return txt
-        if not tui_is_live(run_dir):
+        if not frontend_is_live(run_dir):
             return None
         time.sleep(poll_s)
     return None
