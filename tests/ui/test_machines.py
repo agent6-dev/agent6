@@ -169,23 +169,12 @@ def test_watch_screen_shows_states_transitions_and_end(tmp_path: Path, monkeypat
     asyncio.run(scenario())
 
 
-def test_watch_position_and_discrete_line() -> None:
-    from agent6.machine import MachineSpec
-    from agent6.ui.machines import _discrete_log_line, _watch_position
+def test_discrete_log_line_renders_tool_events_only() -> None:
+    # The shared journal fold (current/visited/transitions) is tested in
+    # tests/unit/test_viewmodel_machine_state.py; this covers the TUI-only
+    # presentation helper for the per-state agent log.
+    from agent6.ui.machines import _discrete_log_line
 
-    spec = MachineSpec.model_validate(
-        {
-            "machine": "m",
-            "version": 1,
-            "initial": "a",
-            "budget": {"max_transitions": 5},
-            "states": {
-                "a": {"kind": "terminal", "status": "ok", "reason": "x"},
-            },
-        }
-    )
-    # No events -> current is the initial state, nothing visited.
-    assert _watch_position(spec, []) == ("a", set())
     # A tool call renders compactly; a thinking delta is not a discrete line.
     assert _discrete_log_line({"type": "role.thinking_delta", "text": "hm"}) is None
     line = _discrete_log_line({"type": "tool.call", "name": "grep", "args": {"q": "x"}})

@@ -35,6 +35,7 @@ depends_on = [
   "agent6.git_ops",
   "agent6.init",
   "agent6.ui",
+  "agent6.viewmodel",
   "agent6.graph.client",
   "agent6.graph.curator",
   "agent6.graph.models",
@@ -80,11 +81,12 @@ path = "agent6.ui"
 depends_on = ["agent6.config_layer", "agent6.machine", "agent6.models_cache", "agent6.paths", "agent6.secrets", "agent6.transcript_render", "agent6.viewmodel"]
 
 [[modules]]
-# The shared view-model: logs.jsonl folded into render-ready RunState. Consumed
-# by the TUI, the CLI watchers, and (later) the web UI; depends on nothing so
-# any front-end can fold the same events without pulling in a UI toolkit.
+# The shared view-model: a run's logs.jsonl folded into RunState, a machine's
+# journal folded into MachineState. Consumed by the TUI, the CLI watchers, and
+# (later) the web UI. The machine fold reads the journal event types + the spec,
+# so it depends on those two leaf machine modules; nothing UI-toolkit-shaped.
 path = "agent6.viewmodel"
-depends_on = []
+depends_on = ["agent6.machine.journal", "agent6.machine.model"]
 
 [[modules]]
 path = "agent6.init"

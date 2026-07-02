@@ -33,11 +33,9 @@ except ImportError as e:  # pragma: no cover - clear runtime message
     ) from e
 
 from agent6.machine import (
-    MachineEnd,
     MachineError,
     MachineJournal,
     MachineSpec,
-    StepEvent,
     load_machine,
     render,
     validate_semantics,
@@ -46,6 +44,7 @@ from agent6.ui._spawn import agent6_exe, spawn_and_locate, spawn_detached
 from agent6.ui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.modals import ConfirmModal
 from agent6.ui.theme import PALETTE_CSS
+from agent6.viewmodel import fold_machine, newest_state_log
 
 
 def find_machine_files(repo_cwd: Path) -> list[Path]:
@@ -67,34 +66,6 @@ def _list_drafts(agent6_dir: Path) -> list[Path]:
     out = [p for p in drafts.iterdir() if p.is_dir()]
     out.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0.0, reverse=True)
     return out
-
-
-def _watch_position(spec: MachineSpec, events: list[object]) -> tuple[str, set[str]]:
-    """(current state, set of visited states) from the journal -- the goto of the
-    last transition is where the machine is (or about to run), else the initial."""
-    current = spec.initial
-    visited: set[str] = set()
-    for event in events:
-        if isinstance(event, StepEvent):
-            visited.update((event.state, event.goto))
-            current = event.goto
-    return current, visited
-
-
-def _newest_state_log(root: Path) -> Path | None:
-    """The logs.jsonl of the most recent agent-state execution (highest seq)."""
-    states = root / "states"
-    if not states.is_dir():
-        return None
-
-    def seq_of(p: Path) -> int:
-        head = p.name.split("-", 1)[0]
-        return int(head) if head.isdigit() else -1
-
-    for d in sorted((p for p in states.iterdir() if p.is_dir()), key=seq_of, reverse=True):
-        if (d / "logs.jsonl").is_file():
-            return d / "logs.jsonl"
-    return None
 
 
 def _discrete_log_line(evt: dict[str, object]) -> Text | None:
@@ -175,32 +146,31 @@ class MachineWatchScreen(Screen[None]):
     def _poll(self) -> None:
         if self._ended:
             return
-        events = self._journal.read()
-        current, visited = _watch_position(self._spec, events)
+        ms = fold_machine(self._spec, self._journal.read())
 
         # Header + state-table markers.
-        steps = [e for e in events if isinstance(e, StepEvent)]
-        end = next((e for e in reversed(events) if isinstance(e, MachineEnd)), None)
         status = (
-            f"ended: {end.status} ({end.reason})" if end is not None else f"running · {current}"
+            f"ended: {ms.ended.status} ({ms.ended.reason})"
+            if ms.ended is not None
+            else f"running · {ms.current}"
         )
         self.query_one("#mw-head", Static).update(
-            Text(f"machine: {self._spec.machine}   {status}   transitions: {len(steps)}")
+            Text(f"machine: {ms.machine}   {status}   transitions: {len(ms.transitions)}")
         )
         table = self.query_one("#mw-states", DataTable)
-        for name in self._spec.states:
-            mark = ">" if name == current else ("·" if name in visited else " ")
-            table.update_cell(name, "mark", mark)
+        for s in ms.states:
+            mark = ">" if s.is_current else ("·" if s.is_visited else " ")
+            table.update_cell(s.name, "mark", mark)
 
         log = self.query_one("#mw-log", RichLog)
         # New transitions.
-        for e in steps[self._seen_steps :]:
+        for t in ms.transitions[self._seen_steps :]:
             self._flush_pending()
-            log.write(Text(f"[{e.seq}] {e.state} --{e.label}--> {e.goto}", style="bold"))
-        self._seen_steps = len(steps)
+            log.write(Text(f"[{t.seq}] {t.state} --{t.label}--> {t.goto}", style="bold"))
+        self._seen_steps = len(ms.transitions)
 
         # The current agent state's reasoning (switch logs as states change).
-        newest = _newest_state_log(self._root)
+        newest = newest_state_log(self._root)
         if newest != self._cur_log:
             self._flush_pending()
             self._cur_log, self._cur_off = newest, 0
@@ -210,7 +180,7 @@ class MachineWatchScreen(Screen[None]):
             self._cur_off = self._consume_state_log(self._cur_log, self._cur_off, log)
         self._flush_pending()  # show partial reasoning each tick
 
-        if end is not None:
+        if ms.ended is not None:
             self._ended = True
 
     def _consume_state_log(self, path: Path, offset: int, log: RichLog) -> int:

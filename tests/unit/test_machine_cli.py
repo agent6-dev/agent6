@@ -142,19 +142,6 @@ def test_watch_missing_instance_errors(
     assert "no machine instance" in capsys.readouterr().err
 
 
-def test_newest_state_log_picks_highest_seq(tmp_path: Path) -> None:
-    from agent6.cli.machine_cmds import _newest_state_log  # pyright: ignore[reportPrivateUsage]
-
-    states = tmp_path / "states"
-    for name in ("0000-greet", "0002-review", "0001-greet"):
-        (states / name).mkdir(parents=True)
-        (states / name / "logs.jsonl").write_text("{}\n", encoding="utf-8")
-    # 0009 dir without a log must be ignored (the agent hasn't written yet).
-    (states / "0009-pending").mkdir()
-    assert _newest_state_log(tmp_path) == states / "0002-review" / "logs.jsonl"
-    assert _newest_state_log(tmp_path / "absent") is None
-
-
 def test_poke_drops_signal_for_waiting_machine(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

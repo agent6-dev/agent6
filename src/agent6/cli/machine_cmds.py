@@ -15,7 +15,7 @@ import sys
 import tempfile
 import time
 import tomllib
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
@@ -51,7 +51,6 @@ from agent6.machine import (
     EngineError,
     JournalError,
     LiveWorld,
-    MachineEnd,
     MachineError,
     MachineJournal,
     MachineSpec,
@@ -71,6 +70,7 @@ from agent6.paths import chown_to_real_user
 from agent6.pricing import lookup_price
 from agent6.run_id import new_friendly_id
 from agent6.types import SandboxProfile
+from agent6.viewmodel import MachineState, fold_machine, newest_state_log
 
 
 def _is_inside(path: Path, root: Path) -> bool:
@@ -795,54 +795,14 @@ def _cmd_machine_poke(machine_id: str) -> int:
     return 0
 
 
-def _machine_end(events: Sequence[Any]) -> MachineEnd | None:
-    """The terminal/failed end of the run, if the journal recorded one."""
-    for event in reversed(events):
-        if isinstance(event, MachineEnd):
-            return event
-    return None
-
-
-def _machine_current_state(spec: MachineSpec, events: Sequence[Any]) -> str:
-    """The state the machine is in (or about to run): the goto of the last
-    journaled transition, else the initial state."""
-    for event in reversed(events):
-        if isinstance(event, StepEvent):
-            return event.goto
-    return spec.initial
-
-
-def _machine_state_overview(spec: MachineSpec, events: Sequence[Any]) -> str:
-    """The list of states with the current one marked (`>`), states already
-    visited marked (`.`), and the rest blank -- the at-a-glance overview."""
-    current = _machine_current_state(spec, events)
-    visited: set[str] = set()
-    for event in events:
-        if isinstance(event, StepEvent):
-            visited.update((event.state, event.goto))
-    lines = [f"machine: {spec.machine} (v{spec.version})  initial={spec.initial}", "states:"]
-    for name, state in spec.states.items():
-        mark = ">" if name == current else ("." if name in visited else " ")
-        lines.append(f"  {mark} {name:<22} [{state.kind}]")
+def _render_overview(ms: MachineState) -> str:
+    """The state list with the current state marked (`>`) and visited ones (`.`)
+    -- the at-a-glance overview, rendered from the shared fold."""
+    lines = [f"machine: {ms.machine} (v{ms.version})  initial={ms.initial}", "states:"]
+    for s in ms.states:
+        mark = ">" if s.is_current else ("." if s.is_visited else " ")
+        lines.append(f"  {mark} {s.name:<22} [{s.kind}]")
     return "\n".join(lines)
-
-
-def _newest_state_log(root: Path) -> Path | None:
-    """The logs.jsonl of the most recent agent-state execution (highest seq), or
-    None. That is the state whose reasoning a watcher should be following live."""
-    states = root / "states"
-    if not states.is_dir():
-        return None
-
-    def seq_of(p: Path) -> int:
-        head = p.name.split("-", 1)[0]
-        return int(head) if head.isdigit() else -1
-
-    for d in sorted((p for p in states.iterdir() if p.is_dir()), key=seq_of, reverse=True):
-        log = d / "logs.jsonl"
-        if log.is_file():
-            return log
-    return None
 
 
 def _tail_state_log(
@@ -884,39 +844,36 @@ def _cmd_machine_watch(machine_id: str) -> int:
             print(f"  - {problem}", file=sys.stderr)
         return 1
     journal = MachineJournal(root)
-    events = journal.read()
-    print(_machine_state_overview(spec, events), flush=True)
-    end = _machine_end(events)
-    if end is not None:
-        print(f"\n{end.status.upper()}: ended in {end.state!r} ({end.reason})")
-        return 0 if end.status == "ok" else 1
+    ms = fold_machine(spec, journal.read())
+    print(_render_overview(ms), flush=True)
+    if ms.ended is not None:
+        print(f"\n{ms.ended.status.upper()}: ended in {ms.ended.state!r} ({ms.ended.reason})")
+        return 0 if ms.ended.status == "ok" else 1
 
     print("\n[agent6] watching (Ctrl-C to stop)...", file=sys.stderr)
-    seen_steps = sum(1 for e in events if isinstance(e, StepEvent))
+    seen_steps = len(ms.transitions)
     cur_log: Path | None = None
     cur_off = 0
     anchor: float | None = None
     try:
         while True:
-            events = journal.read()
-            steps = [e for e in events if isinstance(e, StepEvent)]
-            for e in steps[seen_steps:]:
-                print(f"  [{e.seq:>3}] {e.state} --{e.label}--> {e.goto}", flush=True)
-            seen_steps = len(steps)
-            newest = _newest_state_log(root)
+            ms = fold_machine(spec, journal.read())
+            for t in ms.transitions[seen_steps:]:
+                print(f"  [{t.seq:>3}] {t.state} --{t.label}--> {t.goto}", flush=True)
+            seen_steps = len(ms.transitions)
+            newest = newest_state_log(root)
             if newest != cur_log:
                 cur_log, cur_off = newest, 0
                 if cur_log is not None:
                     print(f"  -- agent state: {cur_log.parent.name} --", file=sys.stderr)
             if cur_log is not None:
                 cur_off, anchor = _tail_state_log(cur_log, cur_off, anchor)
-            end = _machine_end(events)
-            if end is not None:
+            if ms.ended is not None:
                 print(
-                    f"\n{end.status.upper()}: ended in {end.state!r} after"
-                    f" {end.transitions} transitions ({end.reason})"
+                    f"\n{ms.ended.status.upper()}: ended in {ms.ended.state!r} after"
+                    f" {ms.ended.transitions} transitions ({ms.ended.reason})"
                 )
-                return 0 if end.status == "ok" else 1
+                return 0 if ms.ended.status == "ok" else 1
             time.sleep(0.5)
     except KeyboardInterrupt:
         print("\n[agent6] machine watch: stopped.", file=sys.stderr)
