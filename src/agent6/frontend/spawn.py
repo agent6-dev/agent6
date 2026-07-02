@@ -26,6 +26,27 @@ def agent6_exe() -> str:
     return shutil.which("agent6") or "agent6"
 
 
+def run_cli_capture(argv: list[str], cwd: Path, *, timeout_s: float = 120.0) -> tuple[bool, str]:
+    """Run a quick agent6 subcommand synchronously, capturing its output, and
+    return ``(ok, message)``. For the fast, foreground CLI ops a front-end drives
+    the same way a user would: `runs merge`, `runs prune`, `config set`. argv is
+    fixed (the agent6 exe + operator-chosen args), never LLM output."""
+    try:
+        proc = subprocess.run(
+            argv,
+            cwd=str(cwd),
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, f"failed to run {argv[1] if len(argv) > 1 else argv[0]}: {exc}"
+    message = "\n".join(p for p in (proc.stdout.strip(), proc.stderr.strip()) if p)
+    return proc.returncode == 0, message or f"exit {proc.returncode}"
+
+
 def spawn_detached(argv: list[str], cwd: Path) -> str:
     """Spawn *argv* detached (non-TTY stdout, new session). Returns "" on a clean
     launch or an error string. Detached + non-TTY so the child never opens its own

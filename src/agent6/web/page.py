@@ -15,8 +15,9 @@ from __future__ import annotations
 
 # The page is a hash-routed SPA: #/ hub, #/run/<id>, #/machine/<name>,
 # #/transcript/<id>, #/config. Live views open an EventSource against the
-# matching /events endpoint; static views fetch a snapshot. Read-only in this
-# phase; the write side (steer/approve/answer/new-work) is layered on next.
+# matching /events endpoint; static views fetch a snapshot. Writes are small JSON
+# POSTs (new work / steer / approve / answer / merge / prune / config set /
+# machine create+run) to the typed endpoints, never arbitrary execution.
 PAGE_HTML = r"""<!doctype html>
 <html lang="en">
 <head>
@@ -150,6 +151,25 @@ input.filter {
 .empty { color: var(--muted); padding: 24px; text-align: center; }
 .err { color: var(--err); }
 
+textarea.field, select.field, input.field {
+  width: 100%; font: inherit; color: var(--text); background: var(--surface2);
+  border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; min-height: 42px;
+}
+textarea.field { min-height: 72px; resize: vertical; }
+.form-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+button.primary { background: var(--accent); color: #05121f; border-color: var(--accent); font-weight: 600; }
+:root.light button.primary { color: #fff; }
+button.danger:hover { border-color: var(--err); color: var(--err); }
+.prompt-box { background: var(--surface2); border: 1px solid var(--warn); border-radius: 10px; padding: 12px; margin-bottom: 10px; }
+.prompt-box .q { margin-bottom: 8px; }
+.toast {
+  position: fixed; left: 50%; transform: translateX(-50%); z-index: 50;
+  bottom: calc(20px + env(safe-area-inset-bottom)); max-width: 90vw;
+  background: var(--surface); border: 1px solid var(--accent); border-radius: 10px;
+  padding: 10px 16px; box-shadow: 0 4px 16px rgba(0,0,0,.4);
+}
+.toast.bad { border-color: var(--err); color: var(--err); }
+
 @media (max-width: 780px) {
   nav.tabs { display: flex; }
   main { padding: 12px 12px calc(var(--nav-h) + 24px); }
@@ -192,6 +212,13 @@ function toggleTheme() {
 const el = (t, cls, txt) => { const e = document.createElement(t); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
 const esc = s => (s == null ? '' : String(s));
 async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error((await r.json().catch(()=>({error:r.statusText}))).error || r.statusText); return r.json(); }
+async function postJSON(url, body) {
+  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok || data.ok === false) throw new Error(data.error || r.statusText);
+  return data;
+}
+function toast(msg, bad) { const t = el('div', 'toast' + (bad ? ' bad' : ''), msg); document.body.appendChild(t); setTimeout(() => t.remove(), 4000); }
 function fmtUsd(u) { return u ? '$' + Number(u).toFixed(4) : '$0'; }
 function when(ts) { if (!ts) return ''; const d = new Date(ts * 1000); return d.toLocaleString(); }
 function setCrumb(t) { crumb.textContent = t || ''; }
@@ -223,6 +250,44 @@ async function route() {
 window.addEventListener('hashchange', route);
 
 // --- hub ---------------------------------------------------------------------
+function newWorkCard() {
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, 'New work'));
+  const task = el('textarea', 'field'); task.placeholder = 'task / question…';
+  card.appendChild(task);
+  const row = el('div', 'form-row');
+  const mode = el('select', 'field'); mode.style.flex = '0 0 auto'; mode.style.width = 'auto';
+  for (const m of ['run', 'plan', 'ask']) { const o = el('option', null, m); o.value = m; mode.appendChild(o); }
+  row.appendChild(mode);
+  const go = el('button', 'primary', 'Start');
+  go.onclick = async () => {
+    if (!task.value.trim()) return;
+    go.disabled = true;
+    try { const d = await postJSON('/api/new', { mode: mode.value, task: task.value }); if (d.run_id) location.hash = '#/run/' + encodeURIComponent(d.run_id); }
+    catch (e) { toast(e.message, true); go.disabled = false; }
+  };
+  row.appendChild(go);
+  card.appendChild(row);
+  return card;
+}
+
+function machineControls() {
+  const wrap = el('div');
+  const ct = el('textarea', 'field'); ct.placeholder = 'describe a machine to create…'; ct.style.minHeight = '52px';
+  wrap.appendChild(ct);
+  const row = el('div', 'form-row');
+  const cbtn = el('button', null, 'Create machine');
+  cbtn.onclick = async () => {
+    if (!ct.value.trim()) return; cbtn.disabled = true;
+    try { const d = await postJSON('/api/machine/create', { task: ct.value }); toast('creating machine (draft ' + (d.draft||'?') + ')'); ct.value=''; }
+    catch (e) { toast(e.message, true); }
+    cbtn.disabled = false;
+  };
+  row.appendChild(cbtn);
+  wrap.appendChild(row);
+  return wrap;
+}
+
 async function renderHub(focus) {
   setCrumb('');
   const data = await getJSON('/api/hub');
@@ -242,6 +307,9 @@ async function renderHub(focus) {
     runsList.appendChild(it);
   }
   runsCard.appendChild(runsList);
+  const prune = el('button', 'danger'); prune.textContent = 'Prune merged runs'; prune.style.marginTop = '10px';
+  prune.onclick = async () => { try { const d = await postJSON('/api/runs/prune', {}); toast(d.message || 'pruned'); route(); } catch (e) { toast(e.message, true); } };
+  runsCard.appendChild(prune);
 
   const mCard = el('div', 'card');
   mCard.appendChild(el('h2', null, 'Machines'));
@@ -258,11 +326,24 @@ async function renderHub(focus) {
     mList.appendChild(it);
   }
   mCard.appendChild(mList);
+  // Authored machine files: run one, or view its structure.
+  if ((data.machine_files||[]).length) {
+    mCard.appendChild(el('div', 'sub muted', 'run a machine:'));
+    const frow = el('div', 'form-row');
+    for (const mf of data.machine_files) {
+      const b = el('button', null, '▶ ' + mf.name);
+      b.onclick = async () => { try { await postJSON('/api/machine/run', { file: mf.path }); toast('started ' + mf.name); setTimeout(route, 800); } catch (e) { toast(e.message, true); } };
+      frow.appendChild(b);
+    }
+    mCard.appendChild(frow);
+  }
+  mCard.appendChild(machineControls());
 
+  const nCard = newWorkCard();
   const grid = el('div', 'grid cols2');
-  // On the Machines tab (phone), lead with machines; else lead with runs.
+  // On the Machines tab (phone), lead with machines; else lead with new-work + runs.
   if (focus === 'machines') { grid.appendChild(mCard); grid.appendChild(runsCard); }
-  else { grid.appendChild(runsCard); grid.appendChild(mCard); }
+  else { grid.appendChild(nCard); grid.appendChild(runsCard); grid.appendChild(mCard); }
   view.appendChild(grid);
 }
 
@@ -270,8 +351,9 @@ async function renderHub(focus) {
 function renderRun(id) {
   setCrumb(id.slice(0, 16));
   view.innerHTML = '';
+  const prompts = el('div'); view.appendChild(prompts); // approval/question boxes surface here
   const grid = el('div', 'grid cols2');
-  const cards = {};
+  const cards = { _id: id, _prompts: prompts };
   const mk = (key, title, cls) => { const c = el('div', 'card ' + (cls||'')); c.appendChild(el('h2', null, title)); const body = el('div'); c.appendChild(body); cards[key] = body; grid.appendChild(c); return body; };
   mk('head', 'Run');
   mk('budget', 'Budget');
@@ -281,10 +363,19 @@ function renderRun(id) {
   mk('log', 'Event log', 'scroll');
   mk('diff', 'Latest commit', 'scroll');
   view.appendChild(grid);
-  const tbtn = el('button', null, 'Open full transcript →');
-  tbtn.onclick = () => location.hash = '#/transcript/' + encodeURIComponent(id);
+
   const actions = el('div', 'row wrap'); actions.style.marginTop = '14px';
-  actions.appendChild(tbtn);
+  const steerBtn = el('button', null, '↪ Steer');
+  steerBtn.onclick = async () => {
+    const text = prompt('Steer instruction (blank = continue, "abort" = stop):', '');
+    if (text === null) return;
+    try { await postJSON('/api/run/' + encodeURIComponent(id) + '/steer', { text }); toast('steer sent'); } catch (e) { toast(e.message, true); }
+  };
+  const mergeBtn = el('button', null, '⑃ Merge');
+  mergeBtn.onclick = async () => { try { const d = await postJSON('/api/run/' + encodeURIComponent(id) + '/merge', {}); toast(d.message || 'merged'); } catch (e) { toast(e.message, true); } };
+  const tbtn = el('button', null, 'Transcript →');
+  tbtn.onclick = () => location.hash = '#/transcript/' + encodeURIComponent(id);
+  actions.appendChild(steerBtn); actions.appendChild(mergeBtn); actions.appendChild(tbtn);
   view.appendChild(actions);
 
   live = new EventSource('/api/run/' + encodeURIComponent(id) + '/events');
@@ -296,7 +387,40 @@ function renderRun(id) {
   live.onerror = () => { /* EventSource auto-retries a live run; leave last paint up */ };
 }
 
+// Render the run's unanswered approval / ask_user prompts as actionable boxes.
+function paintPrompts(cards, s) {
+  const host = cards._prompts, id = cards._id;
+  host.innerHTML = '';
+  for (const ap of (s.pending_approvals || [])) {
+    if (ap.answered) continue;
+    const box = el('div', 'prompt-box');
+    box.appendChild(el('div', 'q', ap.prompt || 'Approve this action?'));
+    const row = el('div', 'form-row');
+    const yes = el('button', 'primary', 'Approve');
+    const no = el('button', 'danger', 'Deny');
+    const send = ok => async () => { try { await postJSON('/api/run/' + encodeURIComponent(id) + '/approve', { id: ap.id, approved: ok }); } catch (e) { toast(e.message, true); } };
+    yes.onclick = send(true); no.onclick = send(false);
+    row.appendChild(yes); row.appendChild(no); box.appendChild(row); host.appendChild(box);
+  }
+  for (const q of (s.pending_questions || [])) {
+    if (q.answered) continue;
+    const box = el('div', 'prompt-box');
+    box.appendChild(el('div', 'q', q.question || 'The agent asked a question'));
+    const row = el('div', 'form-row');
+    for (const opt of (q.options || [])) {
+      const b = el('button', null, opt);
+      b.onclick = async () => { try { await postJSON('/api/run/' + encodeURIComponent(id) + '/answer', { id: q.id, answer: opt }); } catch (e) { toast(e.message, true); } };
+      row.appendChild(b);
+    }
+    const inp = el('input', 'field'); inp.placeholder = 'or type an answer…'; inp.style.flex = '1';
+    const send = el('button', 'primary', 'Send');
+    send.onclick = async () => { try { await postJSON('/api/run/' + encodeURIComponent(id) + '/answer', { id: q.id, answer: inp.value }); } catch (e) { toast(e.message, true); } };
+    row.appendChild(inp); row.appendChild(send); box.appendChild(row); host.appendChild(box);
+  }
+}
+
 function paintRun(cards, s) {
+  paintPrompts(cards, s);
   // header
   cards.head.innerHTML = '';
   const kv = el('div', 'kv');
@@ -469,11 +593,22 @@ async function renderConfig() {
     const shown = s.adaptive ? (esc(s.effective) + '  (adaptive)') : fmtVal(s.value);
     tr.appendChild(el('td', 'val', shown));
     tr.appendChild(el('td', 'src', esc(s.source)));
+    tr.title = 'click to edit';
+    tr.style.cursor = 'pointer';
+    tr.onclick = () => editConfig(k, s);
     tbl.appendChild(tr); rows.push([k.toLowerCase(), tr]);
   }
   card.appendChild(tbl);
   filter.oninput = () => { const q = filter.value.toLowerCase(); for (const [key, tr] of rows) tr.style.display = key.includes(q) ? '' : 'none'; };
   view.appendChild(card);
+}
+async function editConfig(key, s) {
+  const cur = s.value === null || s.value === undefined ? '' : (Array.isArray(s.value) ? s.value.join(',') : String(s.value));
+  const choicesHint = s.choices ? ' (one of: ' + s.choices.join(', ') + ')' : '';
+  const value = prompt('Set ' + key + choicesHint + ':', cur);
+  if (value === null) return;
+  try { const d = await postJSON('/api/config', { key, value }); toast(d.message || 'set ' + key); renderConfig(); }
+  catch (e) { toast(e.message, true); }
 }
 function fmtVal(v) { if (v === null || v === undefined) return '—'; if (Array.isArray(v)) return '[' + v.join(', ') + ']'; return String(v); }
 

@@ -76,6 +76,17 @@ def _get(port: int, path: str) -> tuple[int, bytes, str]:
         conn.close()
 
 
+def _post(port: int, path: str, body: dict[str, object]) -> tuple[int, dict[str, object]]:
+    conn = HTTPConnection("127.0.0.1", port, timeout=10)
+    try:
+        payload = json.dumps(body).encode()
+        conn.request("POST", path, payload, {"Content-Type": "application/json"})
+        resp = conn.getresponse()
+        return resp.status, json.loads(resp.read())
+    finally:
+        conn.close()
+
+
 def test_page_served(server: tuple[WebServer, int]) -> None:
     _srv, port = server
     status, body, ctype = _get(port, "/")
@@ -173,6 +184,60 @@ def test_config_endpoint(server: tuple[WebServer, int]) -> None:
     assert any(k.startswith("sandbox.") for k in cfg)
     sample = next(iter(cfg.values()))
     assert {"value", "effective", "default", "source", "modified"} <= set(sample)
+
+
+def test_approve_writes_answer_file(server: tuple[WebServer, int], tmp_path: Path) -> None:
+    _srv, port = server
+    run_dir = resolved_state_dir(tmp_path) / "runs" / "appr-run"
+    run_dir.mkdir(parents=True)
+    (run_dir / "logs.jsonl").write_text("", encoding="utf-8")
+    status, body = _post(port, "/api/run/appr-run/approve", {"id": "p1", "approved": True})
+    assert status == 200
+    assert body["ok"] is True
+    assert (run_dir / "approvals" / "p1.answer").read_text(encoding="utf-8") == "yes"
+
+
+def test_answer_writes_question_file(server: tuple[WebServer, int], tmp_path: Path) -> None:
+    _srv, port = server
+    run_dir = resolved_state_dir(tmp_path) / "runs" / "q-run"
+    run_dir.mkdir(parents=True)
+    (run_dir / "logs.jsonl").write_text("", encoding="utf-8")
+    status, body = _post(port, "/api/run/q-run/answer", {"id": "q1", "answer": "option B"})
+    assert status == 200 and body["ok"] is True
+    assert (run_dir / "questions" / "q1.answer").read_text(encoding="utf-8") == "option B"
+
+
+def test_steer_writes_answer_and_request(server: tuple[WebServer, int], tmp_path: Path) -> None:
+    _srv, port = server
+    run_dir = resolved_state_dir(tmp_path) / "runs" / "steer-run"
+    run_dir.mkdir(parents=True)
+    (run_dir / "logs.jsonl").write_text("", encoding="utf-8")
+    status, body = _post(port, "/api/run/steer-run/steer", {"text": "focus on tests"})
+    assert status == 200 and body["ok"] is True
+    assert (run_dir / "steer.answer").read_text(encoding="utf-8") == "focus on tests"
+    assert (run_dir / "steer.request").exists()
+
+
+def test_new_work_empty_task_rejected(server: tuple[WebServer, int]) -> None:
+    _srv, port = server
+    status, body = _post(port, "/api/new", {"mode": "run", "task": "   "})
+    assert status == 422
+    assert body["ok"] is False
+
+
+def test_machine_run_rejects_unknown_file(server: tuple[WebServer, int]) -> None:
+    _srv, port = server
+    status, body = _post(port, "/api/machine/run", {"file": "/etc/passwd"})
+    assert status == 422
+    assert "unknown machine file" in str(body["error"])
+
+
+def test_bad_post_body_is_400(server: tuple[WebServer, int]) -> None:
+    _srv, port = server
+    # extra="forbid": an unknown field fails validation loudly.
+    status, body = _post(port, "/api/new", {"mode": "run", "task": "x", "bogus": 1})
+    assert status == 400
+    assert "bad request" in str(body["error"])
 
 
 def test_sse_run_streams_snapshot(server: tuple[WebServer, int], tmp_path: Path) -> None:

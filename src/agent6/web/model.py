@@ -4,10 +4,9 @@
 
 The web server is a thin renderer: every payload it serves is built here from the
 shared read-side (viewmodel folds, config_layer, transcript_render, the machine
-spec/journal), with no HTTP, no threads, no UI toolkit. Keeping the payloads
-pure makes them unit-testable and keeps the wire form identical to
-`agent6 watch --json` (the run/machine snapshots ARE `run_state_as_dict` /
-`machine_state_as_dict`).
+spec/journal). Pure functions, no HTTP or threads, so the run/machine snapshots
+are exactly `run_state_as_dict` / `machine_state_as_dict` (identical to
+`agent6 watch --json`).
 """
 
 from __future__ import annotations
@@ -68,6 +67,22 @@ def run_dir_for(cwd: Path, run_id: str) -> Path | None:
 def machine_dir_for(cwd: Path, name: str) -> Path | None:
     d = machines_root(cwd) / name
     return d if d.is_dir() else None
+
+
+def run_dir_paths(cwd: Path) -> list[Path]:
+    """Every run/ask directory (unordered): the before/after set for spawn-and-locate."""
+    out: list[Path] = []
+    for sub in RUN_SUBDIRS:
+        d = state_dir_for(cwd) / sub
+        if d.is_dir():
+            out.extend(p for p in d.iterdir() if p.is_dir())
+    return out
+
+
+def draft_dir_paths(cwd: Path) -> list[Path]:
+    """Every machine-create draft directory (where `machine create` writes)."""
+    d = state_dir_for(cwd) / "machine-drafts"
+    return [p for p in d.iterdir() if p.is_dir()] if d.is_dir() else []
 
 
 # --- hub listing -------------------------------------------------------------
@@ -191,9 +206,24 @@ def _machine_mtime(machine_dir: Path) -> float:
     return 0.0
 
 
+def list_machine_files(cwd: Path) -> list[dict[str, str]]:
+    """Authored .asm.toml machine source files (cwd top level + machines/ subdir):
+    the ones a user can run or use as a create starting point."""
+    found: set[Path] = set(cwd.glob("*.asm.toml"))
+    sub = cwd / "machines"
+    if sub.is_dir():
+        found.update(sub.glob("*.asm.toml"))
+    return [{"path": str(p), "name": p.name} for p in sorted(found)]
+
+
 def hub_payload(cwd: Path) -> dict[str, Any]:
-    """The hub: every run and machine instance, summarized for the listing."""
-    return {"runs": _list_runs(cwd), "machines": _list_machines(cwd)}
+    """The hub: every run and machine instance, plus the authored machine files
+    (to run or create from), summarized for the listing."""
+    return {
+        "runs": _list_runs(cwd),
+        "machines": _list_machines(cwd),
+        "machine_files": list_machine_files(cwd),
+    }
 
 
 # --- run snapshot + transcript ----------------------------------------------

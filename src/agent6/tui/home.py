@@ -15,7 +15,6 @@ import contextlib
 import inspect
 import json
 import os
-import subprocess
 import time
 from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
@@ -38,7 +37,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 
 # Safe at module top: the textual guard above runs first, so this (which also
 # needs textual) is only reached when textual is present.
-from agent6.frontend.spawn import agent6_exe, spawn_and_locate
+from agent6.frontend.spawn import agent6_exe, run_cli_capture, spawn_and_locate
 from agent6.tui.config_page import ConfigScreen
 from agent6.tui.conversation import ConversationScreen
 from agent6.tui.logview import LogScreen
@@ -584,20 +583,7 @@ def _run_merge_cli(repo_cwd: Path, run_id: str) -> tuple[bool, str]:
     """Run `agent6 runs merge <run_id>` (capturing output) and return (ok, message).
     The hub shells out to the same CLI a user would, so merging stays a CLI concern
     and the UI never touches git_ops. Synchronous: a merge is a quick git op."""
-    try:
-        proc = subprocess.run(
-            [agent6_exe(), "runs", "merge", run_id],
-            cwd=str(repo_cwd),
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            timeout=120,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return False, f"merge failed to run: {exc}"
-    message = "\n".join(p for p in (proc.stdout.strip(), proc.stderr.strip()) if p)
-    return proc.returncode == 0, message or f"exit {proc.returncode}"
+    return run_cli_capture([agent6_exe(), "runs", "merge", run_id], repo_cwd)
 
 
 def run_home(agent6_dir: Path, repo_cwd: Path) -> Path | None:
