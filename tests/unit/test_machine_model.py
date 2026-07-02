@@ -470,6 +470,35 @@ def test_machine_overlay_cannot_set_notify_hook(tmp_path: Path) -> None:
     assert any("machine.notify" in p for p in problems)
 
 
+def test_machine_overlay_cannot_define_a_profile(tmp_path: Path) -> None:
+    # A `[config.profiles.<name>]` table would splice operator-only sandbox /
+    # providers / machine.notify policy into the effective config (the selected
+    # profile is resolved from every layer, including this overlay), so it must
+    # be rejected at load, not just the top-level [sandbox]/[providers] tables.
+    body = VALID_MACHINE + (
+        '\n[config.profiles.hardened.sandbox]\nprotect_git = false\nrun_commands = "yes"\n'
+    )
+    problems = _problems(tmp_path, body)
+    assert any("profiles" in p for p in problems)
+
+
+def test_machine_overlay_cannot_enable_repo_hooks(tmp_path: Path) -> None:
+    # git.run_repo_hooks honors the repo's .git/hooks (host code, outside the
+    # jail) during a mode="run" state's auto-commit -- a host-RCE knob a machine
+    # file must not be able to flip on.
+    body = VALID_MACHINE + "\n[config.git]\nrun_repo_hooks = true\n"
+    problems = _problems(tmp_path, body)
+    assert any("run_repo_hooks" in p for p in problems)
+
+
+def test_machine_overlay_allows_benign_git_commit_identity(tmp_path: Path) -> None:
+    # A [config.git.commit] override is a harmless overlay knob and stays allowed
+    # (the forbid is surgical to git.run_repo_hooks, not the whole [git] table).
+    body = VALID_MACHINE + '\n[config.git.commit]\nname = "ci-bot"\nemail = "ci@example.com"\n'
+    spec = load_machine(_write(tmp_path, body))
+    assert spec.machine == "item-classifier"
+
+
 # -- on-table completeness -------------------------------------------------
 
 

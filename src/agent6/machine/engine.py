@@ -21,6 +21,7 @@ schema-validated ``finish_run`` payload into the blackboard.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
@@ -353,15 +354,22 @@ class LiveWorld:
 
     def materialize_poke(self, payload: Any) -> None:
         """Write a signal poke's payload to ``$AGENT6_MACHINE_DATA_DIR/poke.json``
-        so the next `tool` can read it. A no-op without a data dir. Durable on
-        disk, so crash recovery finds the identical file without re-materializing.
+        so the next `tool` can read it. A no-op without a data dir.
+
+        Atomic and fsync'd (temp + fsync + rename, like the journal's snapshot /
+        pending-wait writers) and called BEFORE the StepEvent is fsync-appended,
+        so if the step is durable poke.json is too: crash recovery replays the
+        step and finds the identical, non-torn file without re-materializing.
         """
         if self.data_dir is None:
             return
         self.data_dir.mkdir(parents=True, exist_ok=True)
-        (self.data_dir / "poke.json").write_text(
-            json.dumps(payload, sort_keys=True), encoding="utf-8"
-        )
+        dest = self.data_dir / "poke.json"
+        tmp = dest.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+        with tmp.open("r", encoding="utf-8") as fh:
+            os.fsync(fh.fileno())
+        tmp.rename(dest)
 
     def notify(self, kind: str, state: str, message: str, level: str) -> None:
         if self.notify_hook is not None:
@@ -641,8 +649,9 @@ def _emit_notify(
     state_name: str,
 ) -> None:
     """Journal a state's `notify` message on entry and fire the operator hook
-    (§4.3). Presentation only; the render can raise, which the caller converts to
-    a clean failed end. No-op for a state with no `notify`."""
+    (§4.3). Presentation only: the render may raise, and the caller SWALLOWS that
+    (a notify never affects control flow, so it never flips a terminal's real
+    ok/failed status). No-op for a state with no `notify`."""
     if state.notify is None:
         return
     message = render_string(parse_template(state.notify.message), blackboard, where="notify")
@@ -778,10 +787,11 @@ def drive(  # noqa: PLR0911, PLR0912, PLR0915
             )
         # Emit a state's `notify` on entry (§4.3), before executing it. At-least-
         # once across a crash: a resume re-enters the current state and re-emits.
-        try:
+        # `notify` is presentation only (§4.3): a render failure must NEVER affect
+        # control flow, so it is swallowed (never fails the machine, and in
+        # particular never flips a terminal's real ok/failed status).
+        with contextlib.suppress(*_STATE_RUNTIME_ERRORS):
             _emit_notify(current, blackboard, journal, world, state)
-        except _STATE_RUNTIME_ERRORS as exc:
-            return _end_failed(journal, world, state, transitions, exc)
         if isinstance(current, TerminalState):
             result = _emit_end(
                 journal,
@@ -831,8 +841,9 @@ def drive(  # noqa: PLR0911, PLR0912, PLR0915
             # the --exit-on-wait paths. Broader EngineError faults still propagate.
             return _end_failed(journal, world, state, transitions, exc)
         # Deliver a signal poke's payload to the next tool (both wait paths).
-        # Written before the StepEvent, and durable on disk, so crash recovery
-        # finds the identical poke.json without re-materializing (§4.3 poke).
+        # Written atomically + fsync'd BEFORE the StepEvent fsync, so if the step
+        # is durable poke.json is too: crash recovery replays the step and finds
+        # the identical file without re-materializing (§4.3 poke).
         if isinstance(fact, WaitFact) and fact.woke_by == "signal":
             world.materialize_poke(fact.payload)
         # Apply the capture BEFORE journaling the StepEvent. If a malformed output

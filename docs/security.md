@@ -442,7 +442,12 @@ Every surface fails closed:
 - **Operator-gated, machine-declared.** `sandbox.agent_network`/
   `sandbox.tool_network` are read only from the operator's global/repo config; a
   machine's `[config]` overlay (possibly LLM-drafted or shared) is rejected at
-  load if it declares `[providers.*]` or `[sandbox.*]`. A `tool` merely
+  load if it declares `[providers.*]`, `[sandbox.*]`, `[profiles.*]`, or
+  `git.run_repo_hooks` (a profile preset would otherwise splice that same
+  operator-only policy, or a host `[machine.notify]` argv, into the effective
+  config, since the operator's selected profile is resolved from every layer
+  including the overlay; `run_repo_hooks` would honor the repo's `.git/hooks`,
+  running host code outside the jail on a `mode="run"` commit). A `tool` merely
   *declares* `allow_network`; whether `"allow"` is honored is the operator's call
   via `sandbox.tool_network`, and
   every conflict or unenforceable demand is refused at startup naming the state

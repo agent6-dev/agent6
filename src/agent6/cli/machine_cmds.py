@@ -71,7 +71,12 @@ from agent6.paths import chown_to_real_user
 from agent6.pricing import lookup_price
 from agent6.run_id import new_friendly_id
 from agent6.types import SandboxProfile
-from agent6.viewmodel import MachineState, fold_machine, newest_state_log
+from agent6.viewmodel import (
+    MachineState,
+    fold_machine,
+    newest_state_log,
+    notification_key,
+)
 
 
 def _is_inside(path: Path, root: Path) -> bool:
@@ -876,7 +881,7 @@ def _tail_state_log(
         return offset, run_start_ts
 
 
-def _cmd_machine_watch(machine_id: str) -> int:
+def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0912
     """Follow a running machine: the state overview, each transition as it lands,
     and the current agent state's live reasoning (its per-state logs.jsonl). Exits
     when the machine ends/waits, or on Ctrl-C. Read-only."""
@@ -906,7 +911,9 @@ def _cmd_machine_watch(machine_id: str) -> int:
         file=sys.stderr,
     )
     seen_steps = len(ms.transitions)
-    seen_notifs = len(ms.notifications)  # seed with history: don't re-announce past notifies
+    # Dedup by identity, NOT by a count: ms.notifications is a sliding window
+    # (viewmodel caps it), so a count index would miss every notify past the cap.
+    seen_notifs = {notification_key(n) for n in ms.notifications}  # seed history silently
     cur_log: Path | None = None
     cur_off = 0
     anchor: float | None = None
@@ -916,12 +923,15 @@ def _cmd_machine_watch(machine_id: str) -> int:
             for t in ms.transitions[seen_steps:]:
                 print(f"  [{t.seq:>3}] {t.state} --{t.label}--> {t.goto}", flush=True)
             seen_steps = len(ms.transitions)
-            for n in ms.notifications[seen_notifs:]:
+            for n in ms.notifications:
+                key = notification_key(n)
+                if key in seen_notifs:
+                    continue
+                seen_notifs.add(key)
                 # Ring the bell + fire a desktop notification (if notify-send is
                 # present) so an operator watching over ssh is alerted.
                 print(f"\a  🔔 [{n.level}] {n.state}: {n.message}", flush=True)
                 desktop_notify(f"agent6: {ms.machine}", n.message)
-            seen_notifs = len(ms.notifications)
             newest = newest_state_log(root)
             if newest != cur_log:
                 # Reset the elapsed-time anchor too: each state log re-derives its

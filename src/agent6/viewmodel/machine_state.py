@@ -130,6 +130,13 @@ def fold_machine(spec: MachineSpec, events: Sequence[object]) -> MachineState:
     )
 
 
+def notification_key(n: NotificationView) -> tuple[str, str, str]:
+    """A stable identity for a notification, for dedup across the sliding window
+    (front-ends track which they have surfaced by this key, not by a count into
+    the capped `notifications` tuple). Mirrors the web client's ts|state|message."""
+    return (n.ts, n.state, n.message)
+
+
 def newest_state_log(root: Path) -> Path | None:
     """The logs.jsonl of the most recent agent-state execution (highest seq), or
     None. That is the state whose reasoning a watcher should follow live."""

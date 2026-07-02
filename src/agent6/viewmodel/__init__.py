@@ -33,6 +33,7 @@ from agent6.viewmodel.machine_state import (
     fold_machine,
     machine_state_as_dict,
     newest_state_log,
+    notification_key,
 )
 from agent6.viewmodel.state import (
     MAX_LOG_TAIL,
@@ -75,6 +76,7 @@ __all__ = [
     "initial_state",
     "machine_state_as_dict",
     "newest_state_log",
+    "notification_key",
     "run_mtime",
     "run_state_as_dict",
     "tail_events",

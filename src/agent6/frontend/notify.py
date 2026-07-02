@@ -4,9 +4,10 @@
 
 Used by the CLI (`agent6 watch`) and the TUI to surface a machine's
 `machine.notify`/end while an operator is at the machine. Fire-and-forget with a
-FIXED argv (`notify-send <title> <body>`): the two data arguments are positional
-and never reach a shell, so a model-authored notify message is inert data, not a
-command. A missing `notify-send` is a silent no-op (the caller also rings the
+FIXED argv (`notify-send -- <title> <body>`): the `--` end-of-options terminator
+plus positional-only data arguments that never reach a shell means a model-authored
+notify message is inert data, not a command or an option, even if it begins with
+`-`. A missing `notify-send` is a silent no-op (the caller also rings the
 terminal bell / uses the in-app toast). No network, no `notify-send` install is
 required.
 """
@@ -25,7 +26,7 @@ def desktop_notify(title: str, body: str = "") -> bool:
         return False
     try:
         subprocess.Popen(
-            [exe, title, body],
+            [exe, "--", title, body],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )

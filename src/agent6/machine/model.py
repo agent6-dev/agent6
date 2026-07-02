@@ -395,10 +395,11 @@ class MachineSpec(BaseModel):
     # an ordinary agent6 config fragment, most knobs ``agent6 config show``
     # lists are valid, but it MUST NOT carry operator-only security policy
     # (see ``_forbid_protected_overlay_tables``): ``[providers.*]`` (endpoints
-    # + api-key env names + secrets) and ``[sandbox.*]`` (the jail: network
-    # egress incl. allow_urls, run_commands, .git protection) are read
-    # only from the global/repo config, never a (possibly untrusted) machine
-    # file. Unset keys simply read through to the lower layers.
+    # + api-key env names + secrets), ``[sandbox.*]`` (the jail: network
+    # egress incl. allow_urls, run_commands, .git protection), and
+    # ``[profiles.*]`` (presets that DEFINE that same sandbox/providers/notify
+    # policy) are read only from the global/repo config, never a (possibly
+    # untrusted) machine file. Unset keys simply read through to the lower layers.
     config: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -406,17 +407,22 @@ class MachineSpec(BaseModel):
         # A machine file may be LLM-drafted (`machine create`), shared, or
         # otherwise untrusted, yet its `[config]` overlay is the highest
         # config layer at run time. So it must not carry operator-only
-        # security policy: `[providers.*]` (endpoints + api-key env names) or
+        # security policy: `[providers.*]` (endpoints + api-key env names),
         # `[sandbox.*]` (the jail itself, network egress incl. allow_urls,
-        # run_commands, and .git protection). Those are read only from
-        # the global/repo config; an overlay that sets them is rejected at load
-        # so a machine can never weaken the sandbox the operator chose.
-        for table in ("providers", "sandbox"):
+        # run_commands, and .git protection), or `[profiles.*]` (which DEFINE
+        # sandbox/providers/notify presets: the profile the operator selects by
+        # name in the global/repo config is resolved from every layer including
+        # this overlay, so an overlay-defined `[profiles.<selected>]` would splice
+        # operator-only policy, even a host `[machine.notify]` argv, straight into
+        # the effective config). Those are read only from the global/repo config;
+        # an overlay that sets them is rejected at load so a machine can never
+        # weaken the sandbox the operator chose.
+        for table in ("providers", "sandbox", "profiles"):
             if table in self.config:
                 raise ValueError(
                     f"machine `[config]` overlay must not declare `[{table}.*]` —"
-                    " connections/secrets and sandbox policy are operator"
-                    " decisions set in the global/repo config, never in a"
+                    " connections/secrets, sandbox policy, and profile presets are"
+                    " operator decisions set in the global/repo config, never in a"
                     " .asm.toml file"
                 )
         # The machine notify hook runs an operator argv on the host OUTSIDE the
@@ -427,6 +433,19 @@ class MachineSpec(BaseModel):
                 "machine `[config]` overlay must not declare `[machine.notify]` —"
                 " the notify hook runs an operator argv outside the jail and is"
                 " set only in the global/repo config, never in a .asm.toml file"
+            )
+        # `git.run_repo_hooks` decides whether a `mode="run"` state's auto-commit
+        # honors the repo's `.git/hooks/*`, which is repo-controlled code that runs
+        # on the HOST outside the jail (a host-RCE vector). Secure-by-default false;
+        # a machine file must not be able to flip it on. Other `[git]` keys (commit
+        # identity) are harmless overlay knobs and stay allowed.
+        git_overlay = self.config.get("git")
+        if isinstance(git_overlay, dict) and "run_repo_hooks" in git_overlay:
+            raise ValueError(
+                "machine `[config]` overlay must not set `git.run_repo_hooks` —"
+                " honoring the repo's .git/hooks runs repo-controlled code on the"
+                " host outside the jail; it is an operator decision in the"
+                " global/repo config, never in a .asm.toml file"
             )
         return self
 

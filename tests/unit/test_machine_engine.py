@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -200,6 +201,34 @@ reason = "done"
 kind = "terminal"
 status = "failed"
 reason = "fail"
+"""
+
+
+# A terminal whose `notify` template fails to render at runtime (references an
+# optional field that is absent) -- validates at load, raises at render.
+NOTIFY_FAIL = """
+machine = "notify_fail"
+version = 1
+initial = "route"
+
+[budget]
+max_transitions = 10
+
+[schemas.r]
+note = { type = "str", optional = true }
+
+[vars.agent]
+out = { type = "r", default = {} }
+
+[states.route]
+kind = "branch"
+when = [ { else = true, goto = "done" } ]
+
+[states.done]
+kind = "terminal"
+notify = "bye {{ out.note }}"
+status = "ok"
+reason = "finished"
 """
 
 
@@ -616,6 +645,37 @@ def test_notify_journals_event_and_fires_hook(tmp_path: Path) -> None:
     # The operator hook fired for the notify AND the terminal end.
     assert ("notify", "work", "hi ops", "warn") in world.notifications
     assert ("end", "done", "finished", "ok") in world.notifications
+
+
+def test_terminal_notify_render_failure_keeps_status(tmp_path: Path) -> None:
+    # `notify` is presentation only: a render failure on a terminal must NOT flip
+    # the terminal's real ok/failed status (it is swallowed, no control-flow effect).
+    from agent6.machine.journal import MachineNotify
+
+    journal, f = _load(tmp_path, NOTIFY_FAIL)
+    spec = load_machine(f)
+    result = drive(spec, journal, FakeWorld({}), live=True)
+    assert result.status == "ok"
+    assert result.reason == "finished"
+    # The failed render journaled no machine.notify and fired no notify hook.
+    assert not any(isinstance(e, MachineNotify) for e in journal.read())
+    events_ok = journal.read()
+    assert isinstance(events_ok[-1], MachineEnd)
+    assert events_ok[-1].status == "ok"
+
+
+def test_live_world_materializes_poke_atomically(tmp_path: Path) -> None:
+    from agent6.machine.engine import LiveWorld
+
+    data_dir = tmp_path / "data"
+    world = LiveWorld(cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), data_dir=data_dir)
+    world.materialize_poke({"cmd": "go", "n": 2})
+    poke = data_dir / "poke.json"
+    assert json.loads(poke.read_text(encoding="utf-8")) == {"cmd": "go", "n": 2}
+    # No leftover temp file (atomic temp+rename), so a reader never sees a torn file.
+    assert not (data_dir / "poke.json.tmp").exists()
+    # No data dir -> a silent no-op, never a crash.
+    LiveWorld(cwd=tmp_path, journal=MachineJournal(tmp_path / "i")).materialize_poke("x")
 
 
 def test_notify_does_not_change_replay_path(tmp_path: Path) -> None:

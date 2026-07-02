@@ -652,15 +652,19 @@ best_effort_usd_limit = 50.0
 Unset keys read straight through to the lower layers, so a machine only
 states what it wants to change. Two hard rules:
 
-- **No connections/secrets, no sandbox policy.** A `[config.providers.*]`
-  or `[config.sandbox.*]` block is a *load-time* error. Provider endpoints,
-  api-key env names, and secret values live in the global config / secrets
-  store; sandbox policy (network egress incl. `allow_urls`, `run_commands`,
-  `.git` protection) is an operator decision in the global/repo
-  config. A machine file may be LLM-drafted or shared, so it must not be able
-  to widen its own egress or weaken its jail through the overlay. The overlay
-  can only *route to* a provider name that already exists in the effective
-  config.
+- **No connections/secrets, no sandbox policy, no profiles, no repo hooks.** A
+  `[config.providers.*]`, `[config.sandbox.*]`, or `[config.profiles.*]` block,
+  or `git.run_repo_hooks`, is a *load-time* error. Provider endpoints, api-key
+  env names, and secret values live in the global config / secrets store;
+  sandbox policy (network egress incl. `allow_urls`, `run_commands`, `.git`
+  protection), the profile presets that define it, and honoring the repo's
+  `.git/hooks` (host code run outside the jail on a `mode="run"` commit) are
+  operator decisions in the global/repo config. A machine file may be
+  LLM-drafted or shared, so it must not be able to widen its own egress, weaken
+  its jail, or run host code through the overlay, directly or via a
+  `[profiles.<selected>]` preset the operator's profile selection would resolve.
+  The overlay can only *route to* a provider name that already exists in the
+  effective config (and set benign knobs like commit identity).
 - Per-`agent`-state knobs (§4.3) override the overlay for that one state.
   Precedence for an agent loop is therefore: per-state knob > machine
   `[config]` > repo config > global config > built-in default.

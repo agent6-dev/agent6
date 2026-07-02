@@ -641,7 +641,15 @@ function renderMachine(name) {
 function machineNotify(ctx, m) {
   const notes = m.notifications || [];
   const keyOf = n => (n.ts || '') + '|' + (n.state || '') + '|' + (n.message || '');
-  if (ctx.seen === null) { ctx.seen = new Set(notes.map(keyOf)); return; } // seed history silently
+  if (ctx.seen === null) {
+    // First frame: seed history (notifications AND an already-ended machine)
+    // silently, so opening a finished machine does not replay past notifications
+    // or fire a spurious "ended" banner/OS-notify. Only events that happen while
+    // watching fire.
+    ctx.seen = new Set(notes.map(keyOf));
+    if (m.ended) ctx.endedNotified = true;
+    return;
+  }
   for (const n of notes) {
     const k = keyOf(n);
     if (ctx.seen.has(k)) continue;

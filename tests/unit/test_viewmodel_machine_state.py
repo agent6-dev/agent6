@@ -8,7 +8,13 @@ from pathlib import Path
 
 from agent6.machine import load_machine
 from agent6.machine.journal import BranchFact, MachineEnd, MachineNotify, StepEvent
-from agent6.viewmodel.machine_state import fold_machine, newest_state_log
+from agent6.viewmodel.machine_state import (
+    _NOTIFY_KEEP,  # pyright: ignore[reportPrivateUsage]
+    NotificationView,
+    fold_machine,
+    newest_state_log,
+    notification_key,
+)
 
 # A branch -> terminal machine: two states, no I/O, valid to load.
 TINY = """
@@ -103,6 +109,25 @@ def test_fold_collects_notifications(tmp_path: Path) -> None:
         ("route", "starting", "info"),
         ("done", "all done", "warn"),
     ]
+
+
+def test_notifications_are_a_capped_sliding_window(tmp_path: Path) -> None:
+    # notifications is capped to the recent tail: a front-end must dedup by
+    # notification_key, NOT by a count index (which would miss every one past
+    # the cap once the window slides).
+    events = [
+        MachineNotify(ts=f"t{i}", state="route", message=f"n{i}", level="info")
+        for i in range(_NOTIFY_KEEP + 5)
+    ]
+    ms = fold_machine(_spec(tmp_path), events)
+    assert len(ms.notifications) == _NOTIFY_KEEP
+    assert ms.notifications[-1].message == f"n{_NOTIFY_KEEP + 4}"  # newest kept
+    assert ms.notifications[0].message == "n5"  # oldest dropped
+
+
+def test_notification_key_is_stable_identity() -> None:
+    n = NotificationView(ts="t1", state="poll", message="hi", level="warn")
+    assert notification_key(n) == ("t1", "poll", "hi")
 
 
 def test_machine_state_as_dict_is_json_serializable(tmp_path: Path) -> None:

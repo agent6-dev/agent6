@@ -25,6 +25,7 @@ try:
     from textual.binding import Binding
     from textual.command import DiscoveryHit, Hit, Hits, Provider
     from textual.containers import Container, Horizontal, VerticalScroll
+    from textual.notifications import SeverityLevel
     from textual.screen import ModalScreen, Screen
     from textual.widgets import DataTable, Footer, Input, RichLog, Static
 except ImportError as e:  # pragma: no cover - clear runtime message
@@ -36,6 +37,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 from agent6.frontend.approval import (
     clear_frontend_pid,
     clear_steer_answer,
+    frontend_is_live,
     request_steer,
     write_answer,
     write_frontend_pid,
@@ -60,6 +62,7 @@ from agent6.viewmodel import (
     fold_machine,
     fold_run,
     newest_state_log,
+    notification_key,
     tail_events,
 )
 
@@ -141,9 +144,12 @@ class MachineWatchScreen(Screen[None]):
         self._cur_off = 0
         self._pending = ""  # accumulated thinking/answer text, flushed in readable chunks
         self._ended = False
-        self._seen_approval_ids: set[str] = set()
-        self._seen_question_ids: set[str] = set()
-        self._seen_notifs = 0
+        # Dedup prompts by (per-state dir, id): a new agent state resets its ids
+        # to approval-1/question-1, so a bare-id set would mask the second state's.
+        self._seen_prompt_keys: set[str] = set()
+        # Dedup notifications by identity, not a count: ms.notifications is a
+        # sliding window, so a count index would miss every notify past its cap.
+        self._seen_notif_keys: set[tuple[str, str, str]] = set()
         self._end_notified = False
         self._steer_open = False
 
@@ -166,10 +172,20 @@ class MachineWatchScreen(Screen[None]):
         # notification history so past notifies are not re-announced on open. The
         # dir may not exist yet (watching a just-spawned run), so create it first.
         self._root.mkdir(parents=True, exist_ok=True)
-        write_frontend_pid(self._root, os.getpid())
-        self._seen_notifs = len(fold_machine(self._spec, self._journal.read()).notifications)
+        self._ensure_claim()
+        self._seen_notif_keys = {
+            notification_key(n)
+            for n in fold_machine(self._spec, self._journal.read()).notifications
+        }
         self._poll()
         self.set_interval(0.5, self._poll)
+
+    def _ensure_claim(self) -> None:
+        """Claim the instance frontend.pid only when no live front-end owns it, so
+        a concurrent web/TUI watcher is not clobbered. Re-asserted each poll, so if
+        the owner goes away the bridge self-heals to this still-open watcher."""
+        if not frontend_is_live(self._root):
+            write_frontend_pid(self._root, os.getpid())
 
     def on_unmount(self) -> None:
         # Stop claiming the machine's prompts, but only if frontend.pid is still
@@ -236,6 +252,7 @@ class MachineWatchScreen(Screen[None]):
     def _poll(self) -> None:
         if self._ended:
             return
+        self._ensure_claim()  # re-assert the bridge if a peer watcher went away
         ms = fold_machine(self._spec, self._journal.read())
 
         # Header + state-table markers.
@@ -278,12 +295,18 @@ class MachineWatchScreen(Screen[None]):
 
     def _dispatch_notifications(self, ms: MachineState) -> None:
         """Pop an in-app + desktop notification for each new machine.notify, and
-        once for the machine's completion."""
-        for n in ms.notifications[self._seen_notifs :]:
-            sev = {"warn": "warning", "error": "error"}.get(n.level, "information")
+        once for the machine's completion. Dedup by identity (not a count) since
+        ms.notifications is a sliding window."""
+        for n in ms.notifications:
+            key = notification_key(n)
+            if key in self._seen_notif_keys:
+                continue
+            self._seen_notif_keys.add(key)
+            sev: SeverityLevel = (
+                "warning" if n.level == "warn" else "error" if n.level == "error" else "information"
+            )
             self.app.notify(n.message, title=f"{ms.machine} · {n.state}", severity=sev, timeout=8.0)
             desktop_notify(f"agent6: {ms.machine}", n.message)
-        self._seen_notifs = len(ms.notifications)
         ended = ms.ended
         if ended is not None and not self._end_notified:
             self._end_notified = True
@@ -303,14 +326,16 @@ class MachineWatchScreen(Screen[None]):
             return
         rs = fold_run(tail_events(state_dir / "logs.jsonl", follow=False))
         for ap in rs.pending_approvals:
-            if not ap.answered and ap.id not in self._seen_approval_ids:
-                self._seen_approval_ids.add(ap.id)
+            key = f"{state_dir}|{ap.id}"
+            if not ap.answered and key not in self._seen_prompt_keys:
+                self._seen_prompt_keys.add(key)
                 self.app.push_screen(
                     ApprovalModal(ap.id, ap.prompt), self._on_approval(state_dir, ap.id)
                 )
         for qp in rs.pending_questions:
-            if not qp.answered and qp.id not in self._seen_question_ids:
-                self._seen_question_ids.add(qp.id)
+            key = f"{state_dir}|{qp.id}"
+            if not qp.answered and key not in self._seen_prompt_keys:
+                self._seen_prompt_keys.add(key)
                 self.app.push_screen(
                     QuestionModal(qp.id, qp.question, qp.options),
                     self._on_question(state_dir, qp.id),
