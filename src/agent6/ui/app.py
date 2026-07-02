@@ -134,9 +134,12 @@ class Agent6TUI(App[int]):
     #stream { width: 1fr; border: round $primary; padding: 0 1; }
     /* The tool table spans the full width so all four columns stay visible. */
     #tools { height: 20%; border: round $primary; }
-    /* Maximized (press f), the table fills the screen instead of holding its 20%
-       resting height -- textual tags the maximized widget with `-maximized`. */
+    /* Maximized (press f), a pane fills the screen instead of holding its resting
+       size -- textual tags the maximized widget with `-maximized`. The tool table
+       drops its 20% height; the task graph drops its 32% width (else it stays a
+       narrow column when maximized, like the tool table stayed short). */
     #tools.-maximized { height: 1fr; }
+    #plan.-maximized { width: 1fr; }
     /* Log and diff share the tallest row; press f to maximize either full-screen. */
     #body { height: 1fr; }
     #log { width: 1fr; border: round $primary; }

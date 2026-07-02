@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from textual.app import App
-from textual.widgets import Button, DataTable, Input, RichLog, TextArea
+from textual.widgets import Button, DataTable, Input, RichLog, TextArea, Tree
 
 from agent6.ui.app import Agent6TUI
 from agent6.ui.modals import (
@@ -88,6 +88,47 @@ def test_tools_table_maximizes_to_full_height(tmp_path: Path) -> None:
             maxed_h = table.size.height
             assert maxed_h > resting_h * 2  # fills the screen, not the 20% resting band
             assert maxed_h >= 25  # ~full of a 40-row screen (minus menu + footer)
+
+    asyncio.run(scenario())
+
+
+def test_plan_tree_maximizes_to_full_width(tmp_path: Path) -> None:
+    """Pressing `f` on the focused task-graph pane fills the screen WIDTH, not its
+    32% resting width -- the width analogue of the tool-table height bug; the
+    explicit `width: 32%` made the maximized view stay a narrow column until
+    `#plan.-maximized { width: 1fr; }` was added."""
+    (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+
+    async def scenario() -> None:
+        app = Agent6TUI(tmp_path)
+        async with app.run_test(size=(100, 40)) as pilot:
+            app._handle_event(
+                _ev(
+                    type="graph.update",
+                    cursor="t1",
+                    nodes={
+                        "t1": {
+                            "title": "do the thing",
+                            "parent_id": None,
+                            "status": "in_progress",
+                            "children": [],
+                        }
+                    },
+                )
+            )
+            app._tick()
+            await pilot.pause()
+            tree = app.query_one("#plan", Tree)
+            tree.focus()
+            await pilot.pause()
+            resting_w = tree.size.width
+            await pilot.press("f")  # maximize
+            await pilot.pause()
+            assert app.screen.maximized is tree
+            assert tree.has_class("-maximized")
+            maxed_w = tree.size.width
+            assert maxed_w > resting_w * 2  # fills the screen, not the 32% resting column
+            assert maxed_w >= 90  # ~full of a 100-col screen
 
     asyncio.run(scenario())
 
