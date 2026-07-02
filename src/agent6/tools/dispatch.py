@@ -9,6 +9,7 @@ execution goes through agent6.sandbox.jail.run_in_jail. Capability gating
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
@@ -18,6 +19,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Protocol
+
+from pydantic import ValidationError
 
 from agent6.config import Config
 from agent6.events import EventSink
@@ -92,6 +95,44 @@ from agent6.types import CommandResult, JailPolicy, SandboxProfile
 
 class ToolError(Exception):
     """The LLM tried something the tool layer refused."""
+
+
+def _coerce_stringified_args(
+    raw_input: dict[str, Any], exc: ValidationError
+) -> dict[str, Any] | None:
+    """Recover a tool call whose structured argument arrived as a JSON string.
+
+    Weak models occasionally serialize an array/object argument to a string
+    (observed live: haiku 4.5 sending apply_edit ``edits`` as
+    ``'[{...}]\\n</invoke>'``), wasting a full round-trip on a validation
+    error the model must repair. For each top-level field named in the
+    validation error whose provided value is a str, parse the string's head
+    as JSON (``raw_decode`` tolerates trailing junk like a leaked closing
+    tag) and substitute the parsed value when it is a container. Fields the
+    schema really declares as strings are unaffected: a wrong substitution
+    fails re-validation and the caller re-raises the original error. Returns
+    the coerced copy of ``raw_input``, or None when nothing was coercible.
+    """
+    decoder = json.JSONDecoder()
+    coerced: dict[str, Any] | None = None
+    for err in exc.errors():
+        loc = err.get("loc") or ()
+        key = loc[0] if loc else None
+        if not isinstance(key, str):
+            continue
+        val = raw_input.get(key)
+        if not isinstance(val, str):
+            continue
+        try:
+            parsed, _ = decoder.raw_decode(val.strip())
+        except ValueError:
+            continue
+        if not isinstance(parsed, dict | list):
+            continue
+        if coerced is None:
+            coerced = dict(raw_input)
+        coerced[key] = parsed
+    return coerced
 
 
 class OperatorCommandUnexecutable(Exception):
@@ -822,7 +863,22 @@ class ToolDispatcher:
             # ask_user is a run-mode tool (LOOP_EXTRA_TOOLS only); backstop it so
             # a future tool-list regression can't pause a plan/ask/machine loop.
             raise ToolError(f"{name} is not available in {self._mode} mode")
-        return self._handlers[name](raw_input)
+        return self._run_handler(name, raw_input)
+
+    def _run_handler(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        """Execute the handler, retrying once with stringified-JSON args coerced."""
+        try:
+            return self._handlers[name](raw_input)
+        except ValidationError as exc:
+            coerced = _coerce_stringified_args(raw_input, exc)
+            if coerced is None:
+                raise
+            try:
+                return self._handlers[name](coerced)
+            except ValidationError:
+                # The coercion guessed wrong; the original shape error is the
+                # honest one to surface.
+                raise exc from None
 
     def _emit(self, event_type: str, /, **fields: Any) -> None:
         if self._events is not None:

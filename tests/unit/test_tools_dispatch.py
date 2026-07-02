@@ -1271,3 +1271,35 @@ def test_run_command_passes_extra_read_paths_to_policy(
     d = ToolDispatcher(root=tmp_path, config=cfg)
     d.dispatch("run_command", {"argv": ["echo", "hi"]})
     assert "/opt/miniconda3" in captured["ro"]
+
+
+# --- stringified-JSON argument coercion --------------------------------------
+# A weak model sends a structured argument as a JSON string (sometimes with
+# trailing junk). The dispatcher parses the head and retries once instead of
+# burning a round-trip on a validation error.
+
+
+def test_stringified_edits_array_is_coerced(tmp_path: Path) -> None:
+    cfg = _config(tmp_path)
+    (tmp_path / "a.txt").write_text("old text\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    edits_str = '[{"old_string": "old text", "new_string": "new text"}]\n</invoke>'
+    d.dispatch("apply_edit", {"path": "a.txt", "edits": edits_str})
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "new text\n"
+
+
+def test_stringified_coercion_surfaces_original_error_when_wrong(tmp_path: Path) -> None:
+    cfg = _config(tmp_path)
+    (tmp_path / "a.txt").write_text("x\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    # Parses as JSON but has the wrong inner shape: re-validation fails and the
+    # original tuple_type error (not the retry's) reaches the caller.
+    with pytest.raises(ToolError, match=r"tuple_type|valid tuple|list"):
+        d.dispatch("apply_edit", {"path": "a.txt", "edits": '[{"nope": 1}]'})
+
+
+def test_non_json_string_still_fails_validation(tmp_path: Path) -> None:
+    cfg = _config(tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(ToolError):
+        d.dispatch("apply_edit", {"path": "a.txt", "edits": "not json at all"})
