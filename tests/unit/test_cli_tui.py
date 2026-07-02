@@ -134,6 +134,34 @@ def test_should_spawn_tui_gating(monkeypatch: pytest.MonkeyPatch) -> None:
     assert should(no_tui=False, interactive=False, mode="run") is False
 
 
+def test_stream_modes(monkeypatch: pytest.MonkeyPatch) -> None:
+    def modes(*, tui_enabled: bool) -> tuple[bool, bool]:
+        return runmod._stream_modes(tui_enabled=tui_enabled)  # pyright: ignore[reportPrivateUsage]
+
+    monkeypatch.delenv("AGENT6_FORCE_STREAM", raising=False)
+    monkeypatch.delenv("AGENT6_STREAM_TO_LOG", raising=False)
+
+    # Headless, no env: the audited non-streaming path, no console echo.
+    monkeypatch.setattr(runmod.sys, "stderr", _FakeStdout(tty=False))
+    assert modes(tui_enabled=False) == (False, False)
+
+    # Interactive stderr TTY: stream; echo only when the TUI does NOT own the term.
+    monkeypatch.setattr(runmod.sys, "stderr", _FakeStdout(tty=True))
+    assert modes(tui_enabled=False) == (True, True)  # plain ask/plan
+    assert modes(tui_enabled=True) == (True, False)  # the TUI renders the deltas
+
+    # AGENT6_FORCE_STREAM (bench/CI): stream AND echo even when headless.
+    monkeypatch.setattr(runmod.sys, "stderr", _FakeStdout(tty=False))
+    monkeypatch.setenv("AGENT6_FORCE_STREAM", "1")
+    assert modes(tui_enabled=False) == (True, True)
+    monkeypatch.delenv("AGENT6_FORCE_STREAM")
+
+    # AGENT6_STREAM_TO_LOG (hub-watched headless run): emit the delta EVENTS only,
+    # NO console echo -- the dashboard renders them; the stderr temp is discarded.
+    monkeypatch.setenv("AGENT6_STREAM_TO_LOG", "1")
+    assert modes(tui_enabled=False) == (True, False)
+
+
 def test_tui_session_disabled_is_noop(tmp_path: Path) -> None:
     # enabled=False must not spawn anything or touch stdout.
     with runmod._tui_session(tmp_path, enabled=False):  # pyright: ignore[reportPrivateUsage]

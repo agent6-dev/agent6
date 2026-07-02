@@ -337,6 +337,39 @@ def test_spawn_argv_includes_profile_flag_only_when_chosen(
     assert "--profile" not in captured[-1]
 
 
+def test_spawn_sets_stream_to_log_env(tmp_path: Path, monkeypatch: object) -> None:
+    """The hub spawns the run with AGENT6_STREAM_TO_LOG=1 so the detached, non-TTY
+    process emits role.*_delta events into logs.jsonl for the dashboard to render.
+    Without it the run takes the non-streaming path and the dashboard shows only
+    worker status, never live thinking."""
+    import subprocess
+
+    from agent6.ui import home
+
+    captured_env: dict[str, str] = {}
+
+    class _FakeProc:
+        returncode = 0
+
+        def poll(self) -> int:
+            return 0  # "already exited" -> helper bails out immediately
+
+    def _fake_popen(argv: list[str], **kw: object) -> _FakeProc:
+        env = kw.get("env")
+        if isinstance(env, dict):
+            captured_env.update(env)
+        return _FakeProc()
+
+    monkeypatch.setattr(subprocess, "Popen", _fake_popen)  # type: ignore[attr-defined]
+    monkeypatch.setattr(home, "agent6_exe", lambda: "agent6")  # type: ignore[attr-defined]
+    a6 = tmp_path / ".agent6"
+    a6.mkdir()
+    home._spawn_and_locate(a6, tmp_path, "ask", "why?", profile="")
+    assert captured_env.get("AGENT6_STREAM_TO_LOG") == "1"
+    # Still inherits the rest of the environment (PATH etc.), not a bare env.
+    assert "PATH" in captured_env
+
+
 def test_run_merge_cli_builds_argv_and_parses_result(tmp_path: Path, monkeypatch: object) -> None:
     """The hub's merge helper shells out to `agent6 runs merge <id>` and reports the
     captured output as (ok, message) -- it never touches git_ops itself."""

@@ -338,6 +338,33 @@ def _should_spawn_tui(*, no_tui: bool, interactive: bool, mode: str) -> bool:
     )
 
 
+def _stream_modes(*, tui_enabled: bool) -> tuple[bool, bool]:
+    """Return ``(stream_text, console_stream)`` for the worker provider.
+
+    ``stream_text`` makes the provider stream and emit ``role.text_delta`` /
+    ``role.thinking_delta`` events, which the dashboard renders as the model's
+    live reasoning + answer. ``console_stream`` additionally echoes those deltas
+    to stderr.
+
+    Streaming is on for an interactive stderr TTY (so a plain `agent6 ask`/`plan`
+    shows live output) or when forced:
+    - ``AGENT6_FORCE_STREAM=1``: bench/CI -- emit AND echo (the Kimi/OpenRouter
+      gateway corrupts the non-streaming body with SSE heartbeats).
+    - ``AGENT6_STREAM_TO_LOG=1``: set by the `agent6 tui` hub when it spawns a run
+      detached and then watches it on the dashboard. Emit the delta EVENTS only,
+      with NO console echo -- otherwise a long headless run pours its whole
+      reasoning into the hub's discarded stderr temp file.
+    """
+    stream_to_log = os.environ.get("AGENT6_STREAM_TO_LOG") == "1"
+    stream_text = (
+        sys.stderr.isatty() or os.environ.get("AGENT6_FORCE_STREAM") == "1" or stream_to_log
+    )
+    # Echo to stderr only when there is a console to read it: not while the TUI
+    # owns the terminal, and not for a hub-watched headless run (dashboard-only).
+    console_stream = stream_text and not tui_enabled and not stream_to_log
+    return stream_text, console_stream
+
+
 @contextlib.contextmanager
 def _tui_session(run_dir: Path, *, enabled: bool) -> Generator[None]:
     """Run the dashboard TUI as a co-process that owns the terminal.
@@ -808,14 +835,9 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     # streaming on because the gateway emits SSE keep-alive comment
     # heartbeats during long requests, which corrupt the non-streaming
     # response body (resp.json() blows up with JSONDecodeError).
-    stream_text = sys.stderr.isatty() or os.environ.get("AGENT6_FORCE_STREAM") == "1"
     tui_enabled = _should_spawn_tui(no_tui=no_tui, interactive=interactive, mode=mode)
     _warn_if_headless_ask(cfg, tui_enabled=tui_enabled)
-    # Echo the model's reasoning + answer to stderr live whenever the TUI is
-    # NOT owning the terminal (plan / ask / machine create / --no-tui). With the
-    # TUI up it renders the same deltas from the event stream, so console echo
-    # would just fight it for the terminal.
-    console_stream = stream_text and not tui_enabled
+    stream_text, console_stream = _stream_modes(tui_enabled=tui_enabled)
     provider: Provider = _InstrumentedProvider(
         inner=worker_inner,
         role=role,
@@ -1424,12 +1446,9 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     assert rm_worker is not None  # require_runnable validated this
     _warn_if_usd_unenforceable(cfg)
     _warn_if_prompt_override_incomplete(cfg)
-    # Streaming gated on stderr TTY (matches _cmd_run);
-    # AGENT6_FORCE_STREAM=1 forces it on for bench/CI.
-    stream_text = sys.stderr.isatty() or os.environ.get("AGENT6_FORCE_STREAM") == "1"
     tui_enabled = _should_spawn_tui(no_tui=no_tui, interactive=False, mode="run")
     _warn_if_headless_ask(cfg, tui_enabled=tui_enabled)
-    console_stream = stream_text and not tui_enabled
+    stream_text, console_stream = _stream_modes(tui_enabled=tui_enabled)
     provider: Provider = _InstrumentedProvider(
         inner=worker_inner,
         role="worker",

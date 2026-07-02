@@ -14,6 +14,7 @@ from __future__ import annotations
 import contextlib
 import inspect
 import json
+import os
 import subprocess
 import tempfile
 import time
@@ -585,6 +586,12 @@ def _spawn_and_locate(
                 stdout=subprocess.DEVNULL,
                 stderr=err,
                 start_new_session=True,
+                # The hub watches this run on the dashboard, which renders the
+                # model's reasoning + answer from role.*_delta events. Tell the
+                # detached (non-TTY) run to emit those deltas to its logs.jsonl;
+                # without this it would take the non-streaming path and the
+                # dashboard would show only worker status, never live thinking.
+                env={**os.environ, "AGENT6_STREAM_TO_LOG": "1"},
             )
         except OSError as exc:
             return None, f"failed to start agent6: {exc}"
