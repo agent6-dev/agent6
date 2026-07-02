@@ -21,7 +21,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 try:
@@ -143,10 +146,14 @@ def scroll_to(page: Page, y: int, *, wait: int = 1500) -> None:
     page.wait_for_timeout(wait)
 
 
-def drive(page: Page, base: str, mode: str) -> None:
+def drive(page: Page, base: str, mode: str, t0: float) -> float:
     page.goto(base, wait_until="networkidle")
     page.wait_for_selector(".item")
     page.wait_for_timeout(500)
+    # The hub is painted now; everything recorded before this point is the SPA
+    # loading screen. Return its offset so the recording can be trimmed to open
+    # on the hub -- the still users see as the poster frame before pressing play.
+    hub_ready = time.monotonic() - t0
     toast(page, "agent6 web — the hub: runs, machines, new work")
     move_to(page, ".item")
     page.wait_for_timeout(900)
@@ -182,6 +189,26 @@ def drive(page: Page, base: str, mode: str) -> None:
     page.wait_for_timeout(700)
     toast(page, "Drivable from a desktop or a phone", ms=1800)
     page.wait_for_timeout(1500)
+    return hub_ready
+
+
+def write_trimmed(raw: Path, out: Path, trim_s: float) -> None:
+    """Re-encode `raw` dropping the leading `trim_s` seconds so the first frame is
+    the loaded hub, not the SPA loading screen (the poster the browser shows
+    before play). Falls back to a plain move if the trim is negligible or ffmpeg
+    is unavailable (a standalone run without the pipeline's ffmpeg)."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    if trim_s < 0.1 or shutil.which("ffmpeg") is None:
+        raw.replace(out)
+        return
+    # -ss after -i re-encodes from the seek point, so the first output frame is
+    # exactly at trim_s (frame-accurate); matches the overlay step's VP9 settings.
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error", "-i", str(raw), "-ss", f"{trim_s:.3f}",
+         "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "32", "-an", str(out)],
+        check=True,
+    )  # fmt: skip
+    raw.unlink(missing_ok=True)
 
 
 def main() -> None:
@@ -205,13 +232,14 @@ def main() -> None:
         )
         page = context.new_page()
         page.add_init_script(OVERLAY_INIT_SCRIPT)
-        drive(page, args.url, args.mode)
+        t0 = time.monotonic()
+        trim_s = drive(page, args.url, args.mode, t0)
         video = page.video
         context.close()  # flushes the recording
         browser.close()
         if video is not None:
-            Path(video.path()).replace(args.out)
-    print(f"web_demo: wrote {args.out}")
+            write_trimmed(Path(video.path()), args.out, trim_s)
+    print(f"web_demo: wrote {args.out} (trimmed {trim_s:.2f}s loading head)")
 
 
 if __name__ == "__main__":

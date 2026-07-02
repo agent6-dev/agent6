@@ -30,8 +30,10 @@ We commit the **tape, scripts, and seed fixtures only**. Generated media
   `web-phone.webm`). Drives `agent6 web` against the same `seed/` fixtures in a
   headless Chromium via Playwright, at desktop (1280x800) and phone (390x844)
   viewports, with an on-page caption banner per step (the browser analogue of
-  `keystroke_overlay.py`). Deterministic, no key, no live LLM. Needs a
-  Playwright-capable Python; point `$WEB_DEMO_PY` at it (see the script header).
+  `keystroke_overlay.py`). Each video is trimmed (ffmpeg) to drop the SPA
+  loading-screen head so it opens on the hub, the poster frame shown before play.
+  Deterministic, no key, no live LLM. Needs a Playwright-capable Python and
+  ffmpeg; point `$WEB_DEMO_PY` at it (see the script header).
 
 ## Demo videos (record/replay)
 

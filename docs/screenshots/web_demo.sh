@@ -8,8 +8,9 @@
 # Playwright (web_demo.py) to capture web-desktop.webm + web-phone.webm under
 # docs/screenshots/out/ (gitignored). No live LLM calls, no network, no API key.
 #
-# Needs `agent6`, `python3` (agent6 importable), and a Playwright-capable Python
-# with Chromium installed. Point $WEB_DEMO_PY at it, e.g.:
+# Needs `agent6`, `python3` (agent6 importable), `ffmpeg` (trims the loading-screen
+# head so each video opens on the hub), and a Playwright-capable Python with
+# Chromium installed. Point $WEB_DEMO_PY at it, e.g.:
 #   python3 -m venv /tmp/pw && /tmp/pw/bin/pip install playwright \
 #     && /tmp/pw/bin/playwright install chromium
 #   WEB_DEMO_PY=/tmp/pw/bin/python bash docs/screenshots/web_demo.sh
@@ -22,7 +23,7 @@ PORT="${WEB_DEMO_PORT:-8987}"
 PW_PY="${WEB_DEMO_PY:-python3}"
 mkdir -p "$OUT"
 
-for bin in agent6 python3; do
+for bin in agent6 python3 ffmpeg; do
   command -v "$bin" >/dev/null 2>&1 || { echo "web_demo.sh: missing tool: $bin" >&2; exit 1; }
 done
 "$PW_PY" -c "import playwright" 2>/dev/null || {
