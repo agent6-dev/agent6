@@ -1,0 +1,88 @@
+machine = "code-fixer"
+version = 1
+initial = "attempt"
+
+# A real coding loop as a state machine, for the docs demo: an `agent` state
+# (mode="run") edits the repo to make a failing check pass, a `tool` state
+# verifies with a stdlib-only checker, and a `branch` loops until green or the
+# attempt budget is spent. The agent does the work inside one state; the operator
+# owns the control flow. The agent state inherits the operator's worker model, so
+# in the demo it runs against the record/replay proxy (no key) like the CLI run.
+
+[budget]
+max_transitions = 40
+best_effort_usd_limit = 4.0
+
+[vars.operator]
+max_attempts = { type = "int", value = 4 }
+
+[vars.code]
+attempts = { type = "int", default = 0 }       # bumped by scripts/bump.py
+passed   = { type = "bool", default = false }   # set by scripts/verify.py
+summary  = { type = "str", default = "" }       # last verifier message
+
+[vars.agent]
+report = { type = "fix_report", default = {} }  # the agent's finish_run payload
+
+[schemas.verify_result]
+passed  = "bool"
+summary = "str"
+
+[schemas.bump_result]
+attempts = "int"
+
+[schemas.fix_report]
+changed   = { type = "bool" }
+rationale = { type = "str", optional = true }
+
+[states.attempt]
+kind = "agent"
+mode = "run"                    # edit + verify + commit tools (not the default read-only)
+max_output_tokens = 8192
+prompt = """
+A test in this repository is failing. Run the check to see the failure:
+    python3 scripts/verify.py
+It prints a JSON line with "passed" and "summary". The bug is in the SOURCE
+module under the repo root (do not edit anything under scripts/ or the test
+harness). Fix the source so the check passes, then re-run scripts/verify.py to
+confirm. When the check reports passed=true, call finish_run with
+{changed: true, rationale: "<one line on what you fixed>"}.
+"""
+output_schema = "fix_report"
+capture = { finish_json = "report" }
+timeout_secs = 600
+on = { ok = "verify", failed = "verify", budget_exhausted = "giveup", timeout = "verify" }
+
+[states.verify]
+kind = "tool"
+command = ["python3", "scripts/verify.py"]
+output_schema = "verify_result"
+capture = { set = { passed = "{{ result.passed }}", summary = "{{ result.summary }}" } }
+timeout_secs = 120
+on = { ok = "route", nonzero = "route", timeout = "giveup" }
+
+[states.route]
+kind = "branch"
+when = [
+  { if = "passed",                   goto = "success" },
+  { if = "attempts >= max_attempts", goto = "giveup"  },
+  { else = true,                     goto = "bump"    },
+]
+
+[states.bump]
+kind = "tool"
+command = ["python3", "scripts/bump.py", "{{ attempts }}"]
+output_schema = "bump_result"
+capture = { set = { attempts = "{{ result.attempts }}" } }
+timeout_secs = 30
+on = { ok = "attempt", nonzero = "giveup", timeout = "giveup" }
+
+[states.success]
+kind   = "terminal"
+status = "ok"
+reason = "check passes"
+
+[states.giveup]
+kind   = "terminal"
+status = "failed"
+reason = "could not make the check pass within the attempt budget"
