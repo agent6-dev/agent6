@@ -26,6 +26,12 @@ We commit the **tape, scripts, and seed fixtures only**. Generated media
   `tour.webm`.
 - `build_fixtures.py`: dev tool, not run in CI. Rebuilds `seed/` from real runs
   under `$XDG_STATE_HOME/agent6/`, trimming token-delta bloat and scrubbing paths.
+- `web_demo.py` + `web_demo.sh`: the web-UI tour (`web-desktop.webm`,
+  `web-phone.webm`). Drives `agent6 web` against the same `seed/` fixtures in a
+  headless Chromium via Playwright, at desktop (1280x800) and phone (390x844)
+  viewports, with an on-page caption banner per step (the browser analogue of
+  `keystroke_overlay.py`). Deterministic, no key, no live LLM. Needs a
+  Playwright-capable Python; point `$WEB_DEMO_PY` at it (see the script header).
 
 ## Demo videos (record/replay)
 

@@ -115,6 +115,8 @@ ignore = [
 "tests/**" = ["S", "PLR2004", "PLR0915", "PLC0415", "B017"]
 "bench/**" = ["S", "PLR0912", "PLR0915", "PLC0415", "PLW2901", "SIM105", "SIM114", "SIM115", "E501", "PTH"]
 "docs/screenshots/keystroke_overlay.py" = ["PLR0912", "PLR1730"]
+# web_demo.py embeds a block of cursor/animation JS as a string; line length is moot there.
+"docs/screenshots/web_demo.py" = ["E501"]
 
 [tool.pyright]
 include = ["src", "tests"]

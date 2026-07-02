@@ -5,10 +5,20 @@ run is fully drivable from a desktop or a phone: watch it stream, steer it,
 approve prompts, answer questions, read the transcript, and browse, create, run,
 and watch state machines.
 
-It is zero-dependency: a stdlib HTTP server and one self-contained HTML/CSS/JS
-page, no framework and no build step. Like the CLI and TUI, it is a thin renderer
-of the shared view-model, so nothing about how a run is folded or driven is
-re-derived here.
+It uses a stdlib HTTP server and a single HTML/CSS/JS page. Like the CLI and TUI,
+it is a thin renderer of the shared view-model, so nothing about how a run is
+folded or driven is re-derived here.
+
+<video controls muted loop playsinline preload="metadata" class="no-lightbox">
+  <source src="/screenshots/out/web-desktop.webm" type="video/webm">
+</video>
+
+The same UI on a phone (single column, bottom nav):
+
+<video controls muted loop playsinline preload="metadata" class="no-lightbox"
+       style="max-width: 390px">
+  <source src="/screenshots/out/web-phone.webm" type="video/webm">
+</video>
 
 ## Run it
 
@@ -69,8 +79,7 @@ tailscale serve --bg 8901        # HTTPS + WireGuard, reachable on your tailnet
 
 The tailnet (WireGuard) identity is the access control: only devices on your
 tailnet reach it, over an encrypted tunnel, and `tailscale serve` terminates
-HTTPS. This is what keeps the front-end zero-dependency, no tokens or password
-handling in agent6 itself.
+HTTPS. agent6 itself handles no tokens or passwords.
 
 Binding a non-loopback address directly (`--host` or `[web].host`) exposes the
 write surface, spawning runs and answering prompts, to anyone who can reach the
