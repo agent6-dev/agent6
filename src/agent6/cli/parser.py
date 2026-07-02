@@ -479,6 +479,35 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Open the TUI hub: browse runs and start a new run/plan/ask.",
     )
 
+    web_p = sub.add_parser(
+        "web",
+        help=(
+            "Serve the browser UI (loopback by default): watch and drive runs and"
+            " machines from a desktop or phone. Put `tailscale serve` in front for"
+            " remote access."
+        ),
+    )
+    web_target = web_p.add_argument(
+        "target",
+        nargs="?",
+        default="",
+        help="Run id (exact or prefix) or machine name to open on load. Omit for the hub.",
+    )
+    web_target.completer = _complete_watch_targets  # type: ignore[attr-defined]
+    web_p.add_argument(
+        "--host",
+        default=None,
+        metavar="ADDR",
+        help="Bind address (default 127.0.0.1). A non-loopback bind widens the network surface.",
+    )
+    web_p.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Listen port (default 8901).",
+    )
+
     prompt_p = sub.add_parser(
         "prompt",
         help="Inspect the assembled system prompt for this repo + config.",

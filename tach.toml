@@ -35,6 +35,7 @@ depends_on = [
   "agent6.git_ops",
   "agent6.init",
   "agent6.tui",
+  "agent6.web",
   "agent6.frontend",
   "agent6.viewmodel",
   "agent6.graph.client",
@@ -87,6 +88,20 @@ depends_on = ["agent6.config_layer", "agent6.frontend", "agent6.machine", "agent
 # Consumed by the CLI, the TUI, and the web server. Pure stdlib, no UI toolkit.
 path = "agent6.frontend"
 depends_on = []
+
+[[modules]]
+# The web UI: a stdlib HTTP server + one embedded page. Renders the shared
+# view-model folds (viewmodel), the effective config (config_layer), and the
+# conversation (transcript_render), reading run/machine dirs it locates via the
+# machine spec/journal. The write side drives the frontend bridge. No UI toolkit.
+path = "agent6.web"
+depends_on = [
+  "agent6",
+  "agent6.viewmodel",
+  "agent6.config_layer",
+  "agent6.transcript_render",
+  "agent6.machine",
+]
 
 [[modules]]
 # The shared view-model: a run's logs.jsonl folded into RunState, a machine's

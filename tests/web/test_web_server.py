@@ -1,0 +1,208 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Eric Lesiuta
+"""Integration tests for the `agent6 web` server.
+
+Starts the stdlib server on an ephemeral loopback port and drives it with
+`http.client`, asserting the JSON endpoints emit the same wire form as
+`agent6 watch --json` and that SSE streams a folded snapshot. No browser."""
+
+from __future__ import annotations
+
+import json
+import threading
+from collections.abc import Iterator
+from http.client import HTTPConnection
+from pathlib import Path
+
+import pytest
+
+from agent6.cli import main
+from agent6.config_layer import resolved_state_dir
+from agent6.web.server import WebServer
+
+TINY = """
+machine = "tiny"
+version = 1
+initial = "route"
+
+[budget]
+max_transitions = 10
+
+[vars.code]
+n = { type = "int", default = 0 }
+
+[states.route]
+kind = "branch"
+when = [
+  { if = "n == 0", goto = "done" },
+  { else = true, goto = "done" },
+]
+
+[states.done]
+kind = "terminal"
+status = "ok"
+reason = "routed"
+"""
+
+
+def _make_run(cwd: Path, run_id: str, events: list[dict[str, object]]) -> None:
+    runs = resolved_state_dir(cwd) / "runs" / run_id
+    runs.mkdir(parents=True)
+    body = "".join(json.dumps(e) + "\n" for e in events)
+    (runs / "logs.jsonl").write_text(body, encoding="utf-8")
+
+
+@pytest.fixture
+def server(tmp_path: Path) -> Iterator[tuple[WebServer, int]]:
+    """A WebServer bound to an ephemeral loopback port, serving from tmp_path."""
+    srv = WebServer(("127.0.0.1", 0), tmp_path, "")
+    port = srv.server_address[1]
+    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    try:
+        yield srv, port
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def _get(port: int, path: str) -> tuple[int, bytes, str]:
+    conn = HTTPConnection("127.0.0.1", port, timeout=10)
+    try:
+        conn.request("GET", path)
+        resp = conn.getresponse()
+        return resp.status, resp.read(), resp.getheader("Content-Type", "")
+    finally:
+        conn.close()
+
+
+def test_page_served(server: tuple[WebServer, int]) -> None:
+    _srv, port = server
+    status, body, ctype = _get(port, "/")
+    assert status == 200
+    assert "text/html" in ctype
+    assert b"<title>agent6</title>" in body
+
+
+def test_run_snapshot_matches_watch_json(
+    server: tuple[WebServer, int],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _srv, port = server
+    _make_run(
+        tmp_path,
+        "willing-glen-001",
+        [
+            {"type": "run.start", "user_task": "demo"},
+            {"type": "tool.call", "name": "grep", "args": {"q": "x"}},
+            {"type": "tool.result", "name": "grep", "ok": True, "summary": "1 hit"},
+        ],
+    )
+    # The web GET must equal `agent6 watch <id> --json` byte-for-byte in content.
+    status, body, ctype = _get(port, "/api/run/willing-glen-001")
+    assert status == 200
+    assert "application/json" in ctype
+    from_web = json.loads(body)
+
+    monkeypatch.chdir(tmp_path)
+    assert main(["watch", "willing-glen-001", "--json"]) == 0
+    from_cli = json.loads(capsys.readouterr().out)
+    assert from_web == from_cli
+    assert from_web["tool_calls"][0]["name"] == "grep"
+
+
+def test_hub_lists_runs(server: tuple[WebServer, int], tmp_path: Path) -> None:
+    _srv, port = server
+    _make_run(tmp_path, "run-a", [{"type": "run.start", "mode": "run", "user_task": "task a"}])
+    _make_run(
+        tmp_path,
+        "run-b",
+        [
+            {"type": "run.start", "mode": "run", "user_task": "task b"},
+            {"type": "run.end", "all_passed": True},
+        ],
+    )
+    status, body, _ = _get(port, "/api/hub")
+    assert status == 200
+    hub = json.loads(body)
+    ids = {r["id"] for r in hub["runs"]}
+    assert ids == {"run-a", "run-b"}
+    by_id = {r["id"]: r for r in hub["runs"]}
+    assert by_id["run-b"]["status"] == "ok"
+    assert by_id["run-b"]["task"] == "task b"
+
+
+def test_machine_snapshot_matches_watch_json(
+    server: tuple[WebServer, int],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _srv, port = server
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "tiny.asm.toml").write_text(TINY, encoding="utf-8")
+    assert main(["machine", "run", str(tmp_path / "tiny.asm.toml")]) == 0
+    capsys.readouterr()
+
+    status, body, _ = _get(port, "/api/machine/tiny")
+    assert status == 200
+    from_web = json.loads(body)
+
+    assert main(["watch", "tiny", "--json"]) == 0
+    from_cli = json.loads(capsys.readouterr().out)
+    assert from_web == from_cli
+    assert from_web["machine"] == "tiny"
+    assert from_web["ended"]["status"] == "ok"
+
+
+def test_unknown_run_is_404(server: tuple[WebServer, int]) -> None:
+    _srv, port = server
+    status, body, _ = _get(port, "/api/run/nope")
+    assert status == 404
+    assert "no run" in json.loads(body)["error"]
+
+
+def test_config_endpoint(server: tuple[WebServer, int]) -> None:
+    _srv, port = server
+    status, body, _ = _get(port, "/api/config")
+    assert status == 200
+    cfg = json.loads(body)
+    # A per-leaf view keyed by dotted key, each carrying provenance.
+    assert any(k.startswith("sandbox.") for k in cfg)
+    sample = next(iter(cfg.values()))
+    assert {"value", "effective", "default", "source", "modified"} <= set(sample)
+
+
+def test_sse_run_streams_snapshot(server: tuple[WebServer, int], tmp_path: Path) -> None:
+    _srv, port = server
+    _make_run(
+        tmp_path,
+        "stream-run",
+        [
+            {"type": "run.start", "user_task": "streamed"},
+            {"type": "run.end", "all_passed": True},
+        ],
+    )
+    conn = HTTPConnection("127.0.0.1", port, timeout=10)
+    try:
+        conn.request("GET", "/api/run/stream-run/events")
+        resp = conn.getresponse()
+        assert resp.status == 200
+        assert "text/event-stream" in resp.getheader("Content-Type", "")
+        # The tailer emits a snapshot per event then a final one and closes the
+        # stream (stop_when_finished). Drain to EOF and check the last data frame.
+        seen = b""
+        while True:
+            chunk = resp.read(256)
+            if not chunk:
+                break
+            seen += chunk
+        frames = [f for f in seen.split(b"\n\n") if f.startswith(b"data:")]
+        assert frames, "expected at least one SSE data frame"
+        snap = json.loads(frames[-1][len(b"data:") :].strip())
+        assert snap["user_task"] == "streamed"
+        assert snap["finished"] is True
+    finally:
+        conn.close()

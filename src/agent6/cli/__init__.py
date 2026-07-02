@@ -83,6 +83,7 @@ from agent6.cli.runs_cmds import (
 )
 from agent6.cli.system_cmds import _cmd_system_apparmor
 from agent6.cli.watch import _cmd_watch_target
+from agent6.cli.web_cmds import DEFAULT_WEB_HOST, DEFAULT_WEB_PORT, _cmd_web
 
 
 def _first_markdown_line(text: str, max_len: int = 80) -> str:
@@ -316,6 +317,12 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             return _cmd_history_graph(args.run_id)
     if args.command == "tui":
         return _cmd_tui()
+    if args.command == "web":
+        return _cmd_web(
+            args.target,
+            host=args.host if args.host is not None else DEFAULT_WEB_HOST,
+            port=args.port if args.port is not None else DEFAULT_WEB_PORT,
+        )
     if args.command == "prompt" and args.prompt_command == "show":
         return _cmd_prompt_show(args.config, mode=args.mode)
     if args.command == "resume":
