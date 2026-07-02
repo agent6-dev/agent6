@@ -1,0 +1,4 @@
+# Transient: smoke/screen result JSONL (canonical experiment results are
+# force-added with FINDINGS.md) and Python caches.
+results/
+__pycache__/
