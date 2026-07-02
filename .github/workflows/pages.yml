@@ -78,6 +78,16 @@ jobs:
           source .venv/bin/activate
           bash docs/screenshots/generate.sh
 
+      - name: Generate demo videos (machine + CLI)
+        # Both run in replay mode (the default): a real agent6 run whose LLM
+        # calls are served from the committed cassette by llm_proxy.py, so no
+        # API key is needed in CI. Re-recording a cassette (`… record`) is a
+        # local, key-bearing step, never run here.
+        run: |
+          source .venv/bin/activate
+          bash docs/screenshots/machine_demo.sh
+          bash docs/screenshots/cli_demo.sh
+
       - name: Build the site (strict)
         run: >
           uvx --with mkdocs-material==9.7.6 --with mkdocs-glightbox==0.5.2

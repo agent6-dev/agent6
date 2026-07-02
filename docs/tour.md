@@ -49,6 +49,28 @@ The config page shows every setting, its effective value, and where that value c
 
 ![The keys and actions overlay](screenshots/out/08-help.png)
 
+## Watching a state machine
+
+Beyond one-shot runs, agent6 runs editable state machines: a `.asm.toml` of tool, branch,
+agent, and wait states driven over a journal. Author one, read its graph, and watch it
+execute. Here `repo-digest` collects recent commits, an agent state summarizes them, and a
+tool writes the digest, with the agent's reasoning streamed live like a run.
+
+<video controls muted loop playsinline preload="metadata" class="no-lightbox">
+  <source src="/screenshots/out/machine-demo.webm" type="video/webm">
+</video>
+
+## From the terminal
+
+For terminal-first workflows, a run is a detached process you attach to, steer with Ctrl-C,
+and inspect, no TUI required. `agent6 watch` follows a run (or a machine) live as a plain
+no-deps line tail by default; `--tui` opens the full-screen dashboard and `--json` prints a
+one-shot snapshot of the same state.
+
+<video controls muted loop playsinline preload="metadata" class="no-lightbox">
+  <source src="/screenshots/out/cli-demo.webm" type="video/webm">
+</video>
+
 ---
 
 These are regenerated from recorded runs by the
