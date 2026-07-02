@@ -13,7 +13,8 @@ function that returns a new `RunState` (frozen so the TUI can rely on
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from collections.abc import Iterable
+from dataclasses import asdict, dataclass, field, replace
 from typing import Any, Literal
 
 NodeStatus = Literal["pending", "in_progress", "passed", "failed", "skipped", "obsolete"]
@@ -415,3 +416,20 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912
             salient = ""
     line = f"{ts[11:23] if len(ts) > 23 else ts}  {etype:<18}"
     return f"{line} {salient}" if salient else line
+
+
+def fold_run(events: Iterable[dict[str, Any]]) -> RunState:
+    """Reduce a run's whole event stream to one RunState (apply_event from the
+    initial state). The snapshot a one-shot viewer or the JSON wire form builds
+    on; the TUI folds incrementally and a CLI tail renders line-by-line instead."""
+    state = initial_state()
+    for event in events:
+        state = apply_event(state, event)
+    return state
+
+
+def run_state_as_dict(state: RunState) -> dict[str, Any]:
+    """The JSON-able wire form of a RunState, stable field names: what
+    `agent6 watch --json` and a web client serialize. Tuples become lists, nested
+    view dataclasses become dicts."""
+    return asdict(state)

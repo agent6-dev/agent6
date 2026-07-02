@@ -46,12 +46,14 @@ from a stdin REPL.
 
 ## Inspect a run
 
-`agent6 runs <verb> [<run-id>]` inspects or merges a run. The id is a positional argument
-everywhere (an exact id or an unambiguous prefix); omit it for the most recent run.
+`agent6 watch [<target>]` follows live: a run opens the TUI dashboard, a machine streams
+its state overview and reasoning. `agent6 runs <verb> [<run-id>]` inspects or merges a run.
+The id is a positional argument everywhere (an exact id or an unambiguous prefix); omit it
+for the most recent run.
 
 ```sh
+agent6 watch              # follow live: run -> TUI dashboard, machine -> text; --plain / --json
 agent6 runs show          # status, iteration, elapsed, cost; --json for scripts
-agent6 runs watch         # attach the live dashboard; --plain for a text tail
 agent6 runs diff          # the git diff the run produced
 agent6 runs commits       # the per-step commits on the run branch
 agent6 runs merge         # merge the run branch into your branch (squash/merge/ff)

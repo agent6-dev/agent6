@@ -88,7 +88,7 @@ def test_status_missing_instance_errors(
 
 
 # A no-I/O machine that reaches a terminal immediately (branch -> terminal), so
-# `machine watch` on it takes the finished path (overview + end) without blocking
+# `agent6 watch` on it takes the finished path (overview + end) without blocking
 # in the follow loop and without needing a model or the jail.
 TINY = """
 machine = "tiny"
@@ -123,23 +123,16 @@ def test_watch_finished_instance_shows_overview_and_end(
     f.write_text(TINY, encoding="utf-8")
     assert main(["machine", "run", str(f)]) == 0
     capsys.readouterr()  # drop run output
-    # A finished instance has a journaled MachineEnd, so watch prints the overview
-    # + the final state and returns instead of entering the (blocking) follow loop.
-    code = main(["machine", "watch", "tiny"])
+    # A finished instance has a journaled MachineEnd, so the unified `agent6 watch`
+    # (which routes a machine name to the machine follower) prints the overview +
+    # the final state and returns instead of entering the (blocking) follow loop.
+    code = main(["watch", "tiny"])
     assert code == 0
     out = capsys.readouterr().out
     assert "machine: tiny" in out
     assert "> done" in out  # current state marked
     assert ". route" in out  # a visited state marked
     assert "OK: ended in 'done'" in out
-
-
-def test_watch_missing_instance_errors(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    monkeypatch.chdir(tmp_path)
-    assert main(["machine", "watch", "nope"]) == 1
-    assert "no machine instance" in capsys.readouterr().err
 
 
 def test_poke_drops_signal_for_waiting_machine(

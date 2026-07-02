@@ -90,7 +90,7 @@ class MachineWatchScreen(Screen[None]):
     """Live view of a running (or finished) machine: the state overview with the
     current state marked, each transition as it lands, and the active agent
     state's reasoning streamed from its per-state logs.jsonl -- the in-TUI
-    equivalent of `agent6 machine watch`. Read-only; polls every 0.5s."""
+    equivalent of `agent6 watch`. Read-only; polls every 0.5s."""
 
     BINDINGS: ClassVar = [
         Binding("escape", "close", "Back", key_display="Esc/q"),

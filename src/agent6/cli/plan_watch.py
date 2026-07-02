@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 plan`/`runs watch` and run-id resolution helpers."""
+"""`agent6 plan`/`agent6 watch` and run-id resolution helpers."""
 
 from __future__ import annotations
 
@@ -90,7 +90,7 @@ def _cmd_plan_edit(run_id: str) -> int:
 def _most_recent_run_id(runs_dir: Path) -> str | None:
     """Return the directory name (= run id) of the most recently mtime'd run.
 
-    Used by `agent6 runs watch` (no arg), `agent6 run --continue`, and the
+    Used by `agent6 watch` (no arg), `agent6 run --continue`, and the
     history-graph subcommand. Returns None when there are no runs yet (the
     per-repo run-state dir is missing) or when the directory exists but is empty.
     """
@@ -254,7 +254,7 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:
     alone: the worker.pid (probed with signal 0, so liveness is known even while
     the worker is blocked in a long provider call that emits no events) plus the
     last event, current iteration, and elapsed time from logs.jsonl. For a quick
-    or scripted check; `agent6 runs watch` is the live follower.
+    or scripted check; `agent6 watch` is the live follower.
     """
     runs_dir = _runs_dir(Path.cwd())
     target = _resolve_run_dir(runs_dir, run_id)

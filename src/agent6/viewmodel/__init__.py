@@ -25,6 +25,7 @@ from agent6.viewmodel.machine_state import (
     MachineStateView,
     TransitionView,
     fold_machine,
+    machine_state_as_dict,
     newest_state_log,
 )
 from agent6.viewmodel.state import (
@@ -38,8 +39,10 @@ from agent6.viewmodel.state import (
     ToolCallView,
     VerifyView,
     apply_event,
+    fold_run,
     format_log_line,
     initial_state,
+    run_state_as_dict,
 )
 from agent6.viewmodel.tail import tail_events
 
@@ -59,8 +62,11 @@ __all__ = [
     "VerifyView",
     "apply_event",
     "fold_machine",
+    "fold_run",
     "format_log_line",
     "initial_state",
+    "machine_state_as_dict",
     "newest_state_log",
+    "run_state_as_dict",
     "tail_events",
 ]

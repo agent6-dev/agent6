@@ -876,7 +876,7 @@ def _cmd_machine_watch(machine_id: str) -> int:
                 return 0 if ms.ended.status == "ok" else 1
             time.sleep(0.5)
     except KeyboardInterrupt:
-        print("\n[agent6] machine watch: stopped.", file=sys.stderr)
+        print("\n[agent6] watch: stopped.", file=sys.stderr)
         return 0
 
 

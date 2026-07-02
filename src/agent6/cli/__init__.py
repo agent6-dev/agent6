@@ -51,7 +51,6 @@ from agent6.cli.machine_cmds import (
     _cmd_machine_run,
     _cmd_machine_status,
     _cmd_machine_test,
-    _cmd_machine_watch,
 )
 from agent6.cli.mcp_cmds import _cmd_mcp_serve
 from agent6.cli.memory_cmds import (
@@ -66,7 +65,6 @@ from agent6.cli.plan_watch import (
     _cmd_plan_show,
     _cmd_status,
     _cmd_tui,
-    _cmd_watch,
     _most_recent_plan_run_id,
     _most_recent_run_id,
     _resolve_plan_run_id,
@@ -84,6 +82,7 @@ from agent6.cli.runs_cmds import (
     _cmd_prune,
 )
 from agent6.cli.system_cmds import _cmd_system_apparmor
+from agent6.cli.watch import _cmd_watch_target
 
 
 def _first_markdown_line(text: str, max_len: int = 80) -> str:
@@ -287,11 +286,13 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             budget_overrides=_BudgetOverrides.from_args(args),
             profile=getattr(args, "profile", ""),
         )
+    if args.command == "watch":
+        return _cmd_watch_target(
+            args.target, plain=args.plain, json_out=args.json, since=args.since
+        )
     if args.command == "runs":
         if args.runs_command == "show":
             return _cmd_status(args.run_id, as_json=args.json)
-        if args.runs_command == "watch":
-            return _cmd_watch(args.run_id, plain=args.plain, since=args.since)
         if args.runs_command == "diff":
             return _cmd_diff(run_id=args.run_id, stat=args.stat, paths=tuple(args.paths))
         if args.runs_command == "merge":
@@ -402,8 +403,6 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
         return _cmd_machine_run(args.file, exit_on_wait=args.exit_on_wait)
     if args.command == "machine" and args.machine_command == "status":
         return _cmd_machine_status(args.machine_id)
-    if args.command == "machine" and args.machine_command == "watch":
-        return _cmd_machine_watch(args.machine_id)
     if args.command == "machine" and args.machine_command == "poke":
         return _cmd_machine_poke(args.machine_id)
     if args.command == "machine" and args.machine_command == "replay":

@@ -19,6 +19,7 @@ from agent6.cli.completers import (
     _complete_plan_run_ids,
     _complete_providers,
     _complete_run_ids,
+    _complete_watch_targets,
 )
 
 # Commands with a default verb: `plan <task>` == `plan run <task>`, and
@@ -297,19 +298,54 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="List saved asks under the per-repo state dir (asks subdir, newest first) and exit.",
     )
 
+    watch_p = sub.add_parser(
+        "watch",
+        help=(
+            "Follow a run or machine live. A run opens the TUI dashboard"
+            " (--plain for a no-deps line tail); a machine streams its state"
+            " overview, transitions, and reasoning. --json prints a one-shot"
+            " snapshot of the folded state. Omit the target for the most recent run."
+        ),
+    )
+    watch_target = watch_p.add_argument(
+        "target",
+        nargs="?",
+        default="",
+        help="Run id (exact or prefix) or machine name. Omit for the most recent run.",
+    )
+    watch_target.completer = _complete_watch_targets  # type: ignore[attr-defined]
+    watch_p.add_argument(
+        "--plain",
+        action="store_true",
+        help="For a run: a no-deps line tail of logs.jsonl instead of the textual TUI.",
+    )
+    watch_p.add_argument(
+        "--json",
+        action="store_true",
+        help="Print a one-shot JSON snapshot of the folded state and exit (the web wire form).",
+    )
+    watch_p.add_argument(
+        "--since",
+        type=int,
+        default=0,
+        metavar="N",
+        help="With --plain: replay the last N events before following (0 = from end).",
+    )
+
     runs_p = sub.add_parser(
         "runs",
         help=(
-            "Inspect a specific run: show (liveness/progress), watch (follow"
-            " live), diff, transcript, graph. The run id is a positional"
-            " everywhere (exact or unambiguous prefix; omit for the most recent)."
+            "Inspect a specific run: show (liveness/progress), diff, transcript,"
+            " graph. The run id is a positional everywhere (exact or unambiguous"
+            " prefix; omit for the most recent). To follow a run live, use"
+            " `agent6 watch`."
         ),
     )
     runs_sub = runs_p.add_subparsers(dest="runs_command", required=True)
 
     runs_show = runs_sub.add_parser(
         "show",
-        help="One-shot liveness + progress of a run, then exit (vs `watch`, which follows).",
+        help="One-shot liveness + progress of a run, then exit (vs `agent6 watch`, which follows).",
     )
     runs_show_id = runs_show.add_argument(
         "run_id",
@@ -322,38 +358,6 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "--json",
         action="store_true",
         help="Emit the status as a single JSON object (for scripts/monitoring).",
-    )
-
-    runs_watch = runs_sub.add_parser(
-        "watch",
-        help="Read-only live view of a run (defaults to the most recent run).",
-    )
-    runs_watch_id = runs_watch.add_argument(
-        "run_id",
-        nargs="?",
-        default="",
-        help="Run id (omit for the most recent run).",
-    )
-    runs_watch_id.completer = _complete_run_ids  # type: ignore[attr-defined]
-    runs_watch.add_argument(
-        "--plain",
-        action="store_true",
-        help=(
-            "Plain text tail of logs.jsonl (no textual TUI). Useful when"
-            " textual is not installed or in headless terminals. Streams each"
-            " event as a single line `<elapsed> <type> <key=val ...>` and"
-            " follows the file like `tail -f`."
-        ),
-    )
-    runs_watch.add_argument(
-        "--since",
-        type=int,
-        default=0,
-        metavar="N",
-        help=(
-            "With --plain: replay the last N events before starting to follow."
-            " 0 (default) starts at end-of-file."
-        ),
     )
 
     runs_diff = runs_sub.add_parser(
@@ -970,15 +974,6 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "machine_id", help="Machine id (directory under the per-repo state dir, machines subdir)."
     )
     machine_status_id.completer = _complete_machine_ids  # type: ignore[attr-defined]
-    machine_watch = machine_sub.add_parser(
-        "watch",
-        help="Follow a running machine live: the state overview, each transition as it"
-        " lands, and the current agent state's reasoning. Read-only; Ctrl-C to stop.",
-    )
-    machine_watch_id = machine_watch.add_argument(
-        "machine_id", help="Machine id (directory under the per-repo state dir, machines subdir)."
-    )
-    machine_watch_id.completer = _complete_machine_ids  # type: ignore[attr-defined]
     machine_poke = machine_sub.add_parser(
         "poke",
         help="Signal a waiting machine to wake on its next check (drops a signal file).",

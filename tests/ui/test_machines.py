@@ -133,7 +133,7 @@ def test_machines_menu_items_all_resolve(tmp_path: Path) -> None:
 def test_watch_screen_shows_states_transitions_and_end(tmp_path: Path, monkeypatch: object) -> None:
     """The Machines watch screen renders the state overview (current marked `>`,
     visited `.`), the transition in the log, and the ended status -- the in-TUI
-    equivalent of `machine watch`."""
+    equivalent of `agent6 watch`."""
     from agent6.cli import main as cli_main
     from agent6.config_layer import resolved_state_dir
     from agent6.machine import load_machine

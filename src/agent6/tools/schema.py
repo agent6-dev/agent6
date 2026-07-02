@@ -251,7 +251,7 @@ class FinishPlanningInput(_ToolInput):
 
 # DAG-as-tool surface. Lets the agent maintain its own task
 # breakdown in the persistent curator-backed graph. Survives crashes via
-# <run-dir>/graph.jsonl; operator can inspect via `agent6 runs watch`.
+# <run-dir>/graph.jsonl; operator can inspect via `agent6 watch`.
 # DAG manipulation tools.
 # directly through its planner/worker/critic pipeline.
 

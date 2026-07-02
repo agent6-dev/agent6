@@ -48,7 +48,7 @@ def clear_pending_answers(run_dir: Path) -> None:
     answer-poll block until timeout). Best-effort.
 
     The `tui.pid` is only dropped when NO live TUI owns it: a concurrently-live
-    `agent6 runs watch` watcher must keep bridging the resumed run's approval/question
+    `agent6 watch` watcher must keep bridging the resumed run's approval/question
     modals, so we must not unlink a pid that still points at a running process."""
     for sub in (APPROVAL_DIR_NAME, QUESTION_DIR_NAME):
         d = run_dir / sub

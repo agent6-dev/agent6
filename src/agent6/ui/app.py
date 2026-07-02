@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The agent6 run dashboard (`agent6 run` / `agent6 runs watch` / `agent6 tui`).
+"""The agent6 run dashboard (`agent6 run` / `agent6 watch` / `agent6 tui`).
 
 `textual` ships in the base install; importing this module fails clearly if it
 has been stripped out. The CLI imports it lazily.

@@ -87,3 +87,21 @@ def test_newest_state_log_picks_highest_seq(tmp_path: Path) -> None:
     (states / "0009-pending").mkdir()
     assert newest_state_log(tmp_path) == states / "0002-review" / "logs.jsonl"
     assert newest_state_log(tmp_path / "absent") is None
+
+
+def test_machine_state_as_dict_is_json_serializable(tmp_path: Path) -> None:
+    import json
+
+    from agent6.viewmodel.machine_state import machine_state_as_dict
+
+    events = [
+        StepEvent(
+            ts="t", seq=0, state="route", label="else", goto="done", fact=BranchFact(clause_index=1)
+        ),
+        MachineEnd(ts="t", status="ok", reason="routed", state="done", transitions=1),
+    ]
+    d = machine_state_as_dict(fold_machine(_spec(tmp_path), events))
+    assert d["machine"] == "tiny" and d["current"] == "done"
+    assert d["states"][0]["name"] == "route"  # tuple -> list, dataclass -> dict
+    assert d["ended"]["status"] == "ok"
+    json.dumps(d)  # the wire form must serialize

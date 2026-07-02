@@ -12,8 +12,10 @@ from agent6.viewmodel.state import (
     RunState,
     TaskNodeView,
     apply_event,
+    fold_run,
     format_log_line,
     initial_state,
+    run_state_as_dict,
 )
 
 
@@ -270,3 +272,32 @@ def test_log_count_is_monotonic_past_window_cap() -> None:
         s = apply_event(s, {"type": "loop.note", "msg": f"line {i}"})
     assert len(s.log_tail) == MAX_LOG_TAIL  # window stays capped
     assert s.log_count == n  # but the count keeps climbing
+
+
+def test_fold_run_reduces_events_to_a_snapshot() -> None:
+    state = fold_run(
+        [
+            {"type": "run.start", "user_task": "do it"},
+            {"type": "role.call", "role": "worker", "model": "m"},
+            {"type": "role.text_delta", "text": "hi"},
+            {"type": "run.end", "all_passed": True},
+        ]
+    )
+    assert state.user_task == "do it"
+    assert state.finished and state.all_passed
+    assert state.last_role is not None and state.last_role.streamed_text == "hi"
+
+
+def test_run_state_as_dict_is_json_serializable() -> None:
+    import json
+
+    state = fold_run(
+        [
+            {"type": "run.start", "user_task": "t"},
+            {"type": "tool.call", "name": "grep", "args": {"q": "x"}},
+        ]
+    )
+    d = run_state_as_dict(state)
+    assert d["user_task"] == "t"
+    assert d["tool_calls"][0]["name"] == "grep"  # tuple -> list, dataclass -> dict
+    json.dumps(d)  # the wire form must serialize

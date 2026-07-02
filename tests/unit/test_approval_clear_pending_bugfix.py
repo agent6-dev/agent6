@@ -4,7 +4,7 @@
 #7: a leftover `steer.request` marker from a prior session must be dropped at
     run/resume START, else the resumed run stalls on a phantom steer prompt.
 #22: `tui.pid` must only be cleared when NO live TUI owns it, so a concurrently
-    live `agent6 runs watch` watcher keeps bridging approval/question modals.
+    live `agent6 watch` watcher keeps bridging approval/question modals.
 """
 
 from __future__ import annotations
