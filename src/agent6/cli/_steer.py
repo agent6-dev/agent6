@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -68,7 +69,10 @@ def select_revised_prompt(
         if choice in {"q", "quit", "abort"}:
             return None
         if choice in {"e", "edit"}:
+            # $EDITOR may be a command with flags ("code --wait"); split it,
+            # and a missing binary is a choose-again, not a run-killing crash.
             editor = os.environ.get("EDITOR", "vi")
+            editor_argv = shlex.split(editor) or ["vi"]
             with tempfile.NamedTemporaryFile(
                 "w",
                 encoding="utf-8",
@@ -79,7 +83,14 @@ def select_revised_prompt(
                 tmp_path = Path(tmp.name)
                 tmp.write(revised.rstrip() + "\n")
             try:
-                result = subprocess.run([editor, str(tmp_path)], check=False)
+                try:
+                    result = subprocess.run([*editor_argv, str(tmp_path)], check=False)
+                except OSError as exc:
+                    print(
+                        f"[agent6] cannot run $EDITOR ({editor!r}): {exc}; choose again.",
+                        file=sys.stderr,
+                    )
+                    continue
                 if result.returncode != 0:
                     print(
                         f"[agent6] editor exited {result.returncode}; choose again.",
@@ -156,7 +167,12 @@ def install_steer_sigint(events: EventSink, run_dir: Path) -> SteerState:
             return
         state["requested"] = True
         state["last_ts"] = now
-        clear_steer_answer(run_dir)
+        # Drop a STALE answer file (one without a request marker) so it is not
+        # instantly consumed as this new prompt's answer. An answer with a
+        # pending request is a live front-end steer the loop has not consumed
+        # yet; deleting it would silently discard the operator's instruction.
+        if not steer_request_pending(run_dir):
+            clear_steer_answer(run_dir)
         events.emit("run.steer_requested", source="sigint")
         # With the TUI up, the steer prompt is a modal, don't scribble on the
         # terminal it owns. Otherwise tell the user a prompt is coming.
@@ -201,31 +217,41 @@ def install_steer_sigint(events: EventSink, run_dir: Path) -> SteerState:
     return SteerState(requested=requested, clear=clear, prompt=prompt, restore=restore)
 
 
-# Used when there is no controlling terminal at all (fully non-interactive):
-# no SIGINT handler, default Ctrl-C behaviour.
-NULL_STEER = SteerState(
-    requested=lambda: False,
-    clear=lambda: None,
-    prompt=lambda: None,
-    restore=lambda: None,
-)
+def file_bridge_steer(run_dir: Path) -> SteerState:
+    """Steer for a run with no controlling terminal (detached spawn from the
+    TUI hub or the web UI): no SIGINT handler, requests and answers travel
+    only over the front-end file bridge. Without this, a hub-spawned run
+    would never poll the ``steer.request`` marker and every web/TUI steer
+    would be silently lost."""
+
+    def prompt() -> str | None:
+        answer = read_steer_answer(run_dir)
+        # No answer (front-end died or abandoned the prompt): clear the
+        # request marker so it cannot re-trigger another blocking read at the
+        # very next boundary, looping the run.
+        if answer is None:
+            clear_steer_request(run_dir)
+        return answer
+
+    def clear() -> None:
+        clear_steer_answer(run_dir)
+        clear_steer_request(run_dir)
+
+    return SteerState(
+        requested=lambda: steer_request_pending(run_dir),
+        clear=clear,
+        prompt=prompt,
+        restore=lambda: None,
+    )
 
 
 def make_steer_state(events: EventSink, run_dir: Path) -> SteerState:
     """Install the steer SIGINT handler when a controlling terminal exists
-    (covers run/plan/ask with or without the TUI); else a no-op."""
+    (covers run/plan/ask with or without the TUI); else steer purely over the
+    front-end file bridge (detached runs)."""
     try:
         with open("/dev/tty", encoding="utf-8"):  # noqa: PTH123
             pass
     except OSError:
-        return NULL_STEER
+        return file_bridge_steer(run_dir)
     return install_steer_sigint(events, run_dir)
-
-
-# inline-resolved file references in user task strings.
-#
-# A token of the form `@PATH` that resolves to a regular file inside `root`
-# is replaced with the file's contents wrapped in a `<file path=...>` block.
-# Anything that doesn't match (missing files, paths that escape root, email
-# addresses, decorators copied from code, etc.) is left untouched so the
-# transformation never corrupts a hand-written task string.
