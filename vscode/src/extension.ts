@@ -4,7 +4,9 @@
 // agent6: tail run
 //
 // Minimal VS Code extension that tails an agent6 run's structured log
-// (`.agent6/runs/<id>/logs.jsonl`) in an output channel. Read-only.
+// (`<state base>/<repo-id>/runs/<run-id>/logs.jsonl`, in the per-repo state
+// dir, out of the workspace; see src/paths.ts) in an output channel.
+// Read-only.
 //
 // This is intentionally tiny: pick a run dir, follow its logs.jsonl by
 // re-reading appended bytes, pretty-print each event. No tree view, no
@@ -13,6 +15,8 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
+
+import { runsDirFor } from "./paths";
 
 const CHANNEL_NAME = "agent6";
 
@@ -28,20 +32,41 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.window.showErrorMessage("agent6: open a workspace first.");
         return;
       }
+      // agent6 keys per-repo state off the directory it is invoked in
+      // (Path.cwd(), not the git toplevel); the workspace folder matches a
+      // run started at the workspace root.
       const root = folders[0].uri.fsPath;
-      const runsDir = path.join(root, ".agent6", "runs");
+      const runsDir = runsDirFor(root);
       if (!fs.existsSync(runsDir)) {
         vscode.window.showErrorMessage(
-          `agent6: no runs dir at ${runsDir}. Run 'agent6 run ...' first.`,
+          `agent6: no runs dir at ${runsDir}. Start one with 'agent6 run ...' from the workspace root.`,
         );
         return;
       }
-      const runs = fs
+      // Newest first by logs.jsonl mtime, the CLI's definition of recency
+      // (src/agent6/viewmodel/listing.py): run ids start with a random
+      // adjective-noun, so names are not chronological. Runs without a
+      // logs.jsonl yet sort last.
+      const entries = fs
         .readdirSync(runsDir, { withFileTypes: true })
         .filter((d) => d.isDirectory())
-        .map((d) => d.name)
-        .sort()
-        .reverse();
+        .map((d) => ({
+          name: d.name,
+          logsMtime: mtimeOf(path.join(runsDir, d.name, "logs.jsonl")),
+        }));
+      entries.sort((a, b) => {
+        if (a.logsMtime === undefined && b.logsMtime === undefined) {
+          return a.name.localeCompare(b.name);
+        }
+        if (a.logsMtime === undefined) {
+          return 1;
+        }
+        if (b.logsMtime === undefined) {
+          return -1;
+        }
+        return b.logsMtime - a.logsMtime;
+      });
+      const runs = entries.map((e) => e.name);
       if (runs.length === 0) {
         vscode.window.showErrorMessage("agent6: no runs to tail.");
         return;
@@ -66,6 +91,14 @@ export function activate(context: vscode.ExtensionContext): void {
 
 export function deactivate(): void {
   /* nothing */
+}
+
+function mtimeOf(file: string): number | undefined {
+  try {
+    return fs.statSync(file).mtimeMs;
+  } catch {
+    return undefined;
+  }
 }
 
 class JsonlTail {
