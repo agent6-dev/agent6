@@ -14,12 +14,12 @@ open-ended agent loop.
 ## Features
 
 - Sandboxed execution for every LLM-chosen child process, jailed individually
-  (Landlock + seccomp + `pivot_root`), with `.git` rebound read-only and egress confined
-  to your provider
+  with Landlock + seccomp; the default `strict` profile adds namespaces +
+  `pivot_root`, rebinds `.git` read-only, and confines egress to your provider
 - Works with Anthropic and any OpenAI-compatible endpoint (OpenAI, OpenRouter, Ollama,
   vLLM, llama.cpp, LM Studio)
-- Per-step git commits, snapshot-resumable runs, per-turn forkable checkpoints, USD and
-  token budgets with hard stops
+- Per-step git commits, snapshot-resumable runs, per-turn forkable checkpoints, token
+  budgets with hard stops and a best-effort USD ceiling
 - Plan, run, review, and ask modes; a live terminal dashboard and a zero-dependency
   browser UI (`agent6 web`, phone-friendly); persistent transcripts and a searchable
   run history
@@ -42,9 +42,9 @@ uv tool install agent6        # or: pipx install agent6
 ```
 
 agent6 needs **Linux** for the sandbox (kernel 6.7+ for TCP rules), **Python 3.12+**, and
-an API key for at least one provider. macOS and Windows run unsandboxed behind a warning.
-See [installation](https://agent6.dev/installation/) for the full requirements and building
-from source.
+an API key for at least one provider. macOS runs unsandboxed behind a warning; on Windows
+use WSL. See [installation](https://agent6.dev/installation/) for the full requirements and
+building from source.
 
 ## Quick start
 
@@ -98,8 +98,9 @@ uv run ruff check && uv run ruff format --check && \
   uv run pyright && uv run tach check && uv run pytest
 ```
 
-Changes under `sandbox/`, `tools/`, `git_ops.py`, `providers/`, or `graph/curator` must
-include a security review note in the commit message.
+Adding a tool, loosening a security default, dialling a new network destination, or
+changing the jail (`src/agent6/jail/`) requires a `Security review note:` paragraph in
+the commit message.
 
 ## License
 

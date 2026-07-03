@@ -63,13 +63,17 @@ stateDiagram-v2
 
 Notes:
 
-- **One LLM, one history, one loop.** No planner→worker handoff, no
-  critic step, no separate reviewer agent. Multi-step work is the
-  model calling the next tool in the same conversation.
-- **Snapshot before every LLM call.** A `snapshots/<step>.json` is
-  written to the run directory (`<state-dir>/<repo-id>/runs/<run-id>/`,
-  out of the workspace) before each provider request.
-  `agent6 resume <run-id>` rehydrates from the latest snapshot;
+- **One LLM, one history, one loop.** By default there is no
+  planner→worker handoff, no critic step, no separate reviewer agent:
+  multi-step work is the model calling the next tool in the same
+  conversation. The in-loop critic and the adversarial review panel
+  are opt-in (`[review]` config) and layer onto this same history.
+- **Snapshot before every LLM call.** `loop_state.json` is rewritten
+  in the run directory (`<state-dir>/<repo-id>/runs/<run-id>/`,
+  out of the workspace) before each provider request, with a per-turn
+  copy under `checkpoints/<NNNN>.json` (see "Run state on disk").
+  `agent6 resume <run-id>` rehydrates from `loop_state.json`,
+  `agent6 fork --at-turn N` from the matching checkpoint;
   combined with the per-tool transcripts under `transcripts/`, any
   interrupted run can be replayed deterministically up to the model
   call that comes next.
@@ -141,7 +145,7 @@ flowchart TD
     Jail --> ROBinds[strict only: RO bind .git]
     Jail --> Land[Landlock V1 rules]
     Jail --> Sec[seccomp filter]
-    Jail --> Caps[capset 0 + NO_NEW_PRIVS]
+    Jail --> Caps[NO_NEW_PRIVS]
     Land -.-> Child[child process]
     Sec -.-> Child
     ROBinds -.-> Child
@@ -250,6 +254,7 @@ any external viewer (the fold to render-ready state lives in
 | `run.steer_requested`       | `source` (`"sigint"`): mid-run Ctrl-C       |
 | `budget.update`             | totals + caps for input/output tokens       |
 | `approval.prompt`/`.answer` | `id`, `prompt`, `approved`, `source` (`tui`/`stdin`) |
+| `question.prompt`/`.answer` | `id`, `question`, `options` / `id`, `answer`, `source`: the `ask_user` tool and machine questioner states |
 | `loop.*`                    | agent progress: `loop.auto_commit`, `loop.compact.*`, `loop.critic.*`, `loop.metric.*`, `loop.steer.*` |
 | `loop.budget`               | per-iteration usage heartbeat: `iteration`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cost_usd` (read by `agent6 runs show`) |
 | `loop.review.*`             | adversarial review panel: `loop.review.start` (trigger, seats), `loop.review.seat` (seat, model, verdict, findings), `loop.review.panel` (blocked, raw_blocked, decision, n_block, disarmed), `loop.review.skipped` |

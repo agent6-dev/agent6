@@ -3,9 +3,10 @@
 ## Requirements
 
 - **Linux** for the sandbox. The jail uses Landlock, seccomp, and user namespaces, which
-  are Linux-only. macOS and Windows run unsandboxed: the default `profile = "auto"`
-  resolves to `none`, commands run as ordinary subprocesses behind a startup warning, and
-  an explicit `strict` or `hardened` profile is refused.
+  are Linux-only. macOS runs unsandboxed: the default `profile = "auto"` resolves to
+  `none`, commands run as ordinary subprocesses behind a startup warning, and an explicit
+  `strict` or `hardened` profile is refused. On Windows use WSL; the CLI does not run
+  natively there.
 - **Kernel 6.7 or newer** for the Landlock network rules. Older kernels fall back to
   filesystem-only Landlock with a warning.
 - **Unprivileged user namespaces** for the `strict` profile. They are on by default on

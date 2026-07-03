@@ -64,10 +64,10 @@ streamed live like a run.
 
 ## From the terminal
 
-For terminal-first workflows, a run is a detached process you attach to, steer with Ctrl-C,
-and inspect, no TUI required. `agent6 watch` follows a run (or a machine) live as a plain
-no-deps line tail by default; `--tui` opens the full-screen dashboard and `--json` prints a
-one-shot snapshot of the same state.
+For terminal-first workflows, `agent6 run` executes in the foreground: steer it with
+Ctrl-C, no TUI required. Runs started from the TUI or web hub are detached instead, and
+`agent6 watch` attaches to either kind: a plain no-deps line tail by default, `--tui` for
+the full-screen dashboard, `--json` for a one-shot snapshot of the same state.
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox">
   <source src="/screenshots/out/cli-demo.webm" type="video/webm">

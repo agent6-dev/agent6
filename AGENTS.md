@@ -163,14 +163,21 @@ All five must pass; keep the suite green.
 ## Security invariants (do not weaken)
 
 - The tool surface given to the LLM is the fixed set declared in
-  `src/agent6/tools/schema.py`. Adding a tool requires a security review
-  note in the commit message explaining the threat model.
+  `src/agent6/tools/schema.py`, plus tools from operator-configured MCP
+  servers when `[mcp].enabled` is set (default off). Adding a tool
+  requires a security review note in the commit message explaining the
+  threat model.
 - All child processes whose argv depends on LLM output go through
   `agent6.sandbox.jail.run_in_jail`. No direct `subprocess.run` of
   LLM-provided commands anywhere. Modules that shell out with fixed
   argv depending only on operator input may call `subprocess.run`
   / `subprocess.Popen` directly: `git_ops.py`, `detect.py`,
-  `graph/curator.py`, `graph/client.py`, `sandbox/jail.py` (the launcher
+  `graph/curator.py`, `graph/client.py`, `workflows/loop.py` (fixed
+  `git diff <base-sha>` feeding the review panel; the sha is recorded
+  at run setup, never by the LLM), `tools/lsp.py` (the `ty` language
+  server, exe resolved from PATH), `tools/mcp_client.py`
+  (operator-configured `[mcp.servers.*]` server commands),
+  `sandbox/jail.py` (the launcher
   itself), `providers/token_command.py` (the operator-configured
   `[providers.*].token_command` that mints a provider bearer; argv comes
   from config, never from LLM output), `frontend/spawn.py` (the shared front-end
@@ -181,8 +188,11 @@ All five must pass; keep the suite green.
   the device-present machine notification; the message is inert data, never a
   command or an option), and a small
   set of `cli/` helpers (`$EDITOR` for
-  plan editing, `git diff/log` for the review subcommand, `rg` for history
-  search, `cli/scriptcheck.py` running ruff/ty with fixed argv to
+  plan and steer editing, `git diff/log` for the review subcommand and
+  the `runs`/`ask` diff views, argv from the run manifest the CLI wrote
+  outside the jail, `rg` for history
+  search, the fixed-argv `python -m agent6.tui` co-process behind
+  `run --tui`, `cli/scriptcheck.py` running ruff/ty with fixed argv to
   statically read generated scripts, which only ever execute via
   `run_in_jail`, `cli/system_cmds.py` running `cp`/`rm`/`apparmor_parser`
   via sudo with fixed argv for `agent6 system apparmor` (operator host
@@ -211,14 +221,15 @@ All five must pass; keep the suite green.
   `AGENT6_ALLOW_ROOT=1`); under sudo, agent6 reads the real user's
   config/secrets and chowns new per-repo state-dir files back to them. It
   does not drop privileges in-process; the jail is the boundary.
-- Configured `[providers.*]` endpoints are the only network destinations
-  the agent may talk to. The egress allow-list is derived uniformly from each
-  provider's effective `base_url` host (every `api_format` and `deployment`
-  carries the dialled host there; the deployment profile only appends
-  path/model) — see `cli/egress.py:_provider_endpoints`. `base_url` is
-  operator-controlled config for both api_formats, so an operator chooses the
-  destinations and the credential sent there; do not add a code path that dials
-  a host not derived from a provider's `base_url`.
+- Configured `[providers.*]` endpoints, plus any operator-set
+  `sandbox.allow_urls` entries (default empty), are the only network
+  destinations the agent may talk to. The egress allow-list is derived
+  uniformly from each provider's effective `base_url` host (every
+  `api_format` and `deployment` carries the dialled host there; the
+  deployment profile only appends path/model), unioned with `allow_urls`
+  (see `cli/egress.py`). Both are operator-controlled config, so the
+  operator chooses the destinations and the credential sent there; do
+  not add a code path that dials a host not derived from them.
 - The `agent6-jail` Rust binary is part of the security boundary. Changes
   to `src/agent6/jail/src/main.rs` need at minimum a review note covering:
   what mount points changed, what Landlock rules changed, what seccomp

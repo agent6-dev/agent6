@@ -517,8 +517,8 @@ class GitConfig(BaseModel):
     run_repo_hooks: bool = False
     # Security-sensitive: default to the safe (disabled) value. agent6's
     # git_ops layer refuses push / force / history rewrite unconditionally
-    # regardless of these toggles; they exist for the few workflows that
-    # legitimately need them and must be opted into explicitly.
+    # regardless of these toggles; they are reserved (nothing honors them
+    # today) and `agent6 check` flags allow_push=True as a misconfiguration.
     allow_push: bool = False
     allow_force: bool = False
     allow_history_rewrite: bool = False

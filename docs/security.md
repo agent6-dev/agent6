@@ -70,7 +70,7 @@ every child it spawns):
 |---|---|
 | FS read+exec | cwd, `$HOME`, `/usr`, `/etc`, `/tmp`, the system exec dirs `/bin` `/sbin` `/lib` `/lib64` `/dev` (when present), and `/run` + `/proc` when present. The system dirs mirror the jail child's read+exec roots: the launcher opens each from inside this domain to grant the child, so omitting one (notably `/dev` on a merged-`/usr` host) makes the child's execve fail EACCES |
 | FS write | cwd, `/tmp`, the `/dev` char devices, and `/proc` when present |
-| TCP connect (kernel ≥ 6.7) | the *ports* of configured providers: `443` for each `anthropic` entry, the `base_url` port for each `openai` entry (default `443`) |
+| TCP connect (kernel ≥ 6.7) | the *ports* of configured providers: the effective `base_url` port of each entry, `anthropic` and `openai` alike (default `443`) |
 
 Landlock's network hook filters by destination **port only** (it has no
 host/IP primitive), so it blocks connections on other ports but does **not**
@@ -126,8 +126,9 @@ still hard-wired at bind time to one operator-chosen `host:port`, resolved
 per-connect, and the LLM cannot add, widen, or redirect an entry: it is a
 static config field, never written from model output. The default is empty
 (secure by default), entries are validated at config-load time, and the
-field is only consulted under `sandbox.agent_network = "providers"` (ignored
-under `local`/`open`). It widens only the agent path, never a jailed command.
+field is only consulted under `sandbox.agent_network = "providers"` (refused
+at config load under `local`; moot under `open`, which does not confine
+egress). It widens only the agent path, never a jailed command.
 Merge is last-overlay-wins: the most-specific config tier that sets
 `allow_urls` replaces it wholesale, so a repo or machine overlay cannot
 silently *append* to a narrower global allow-list; it must restate the
@@ -137,13 +138,14 @@ full set, keeping the effective allow-list auditable via `config show`.
 ### 2. `agent6-jail` (Rust) for every child command
 
 Every `apply_edit` is in-process, but every `run_verify_command` and
-`run_command` is executed by `agent6-jail`. The jail:
+`run_command` is executed by `agent6-jail`. Under `strict` (the default
+where user namespaces are available) the jail:
 
-- Forks a new user, mount, PID, IPC, UTS, and (in `strict`) network
-  namespace.
+- Forks a new user, mount, PID, IPC, UTS, and network namespace.
 - Sets up a minimal rootfs of bind mounts under a fresh tmpfs and
-  `pivot_root`s into it. The working directory is the only writable
-  mount; everything else is `ro,nosuid,nodev`.
+  `pivot_root`s into it. The working directory, a private `/tmp`, and
+  any `sandbox.extra_rw_paths` are the writable mounts; system paths
+  are bind-mounted read-only.
 - Bind-mounts a curated subset of `/dev`: `null`, `zero`, `urandom`,
   `random`, `full`. `/dev/tty` is not exposed: TTY access lets a
   child write escape sequences to the controlling terminal of the parent.
@@ -152,12 +154,22 @@ Every `apply_edit` is in-process, but every `run_verify_command` and
   than bind-mounting the host `/proc`; the latter would expose host
   process info to the child.
 - Applies Landlock (FS + net rules).
-- Installs a seccomp filter that allows the syscalls a Linux process
-  actually needs (clone, mmap, futex, …) and blocks the dangerous
-  remainder (kexec, bpf, ptrace, mount, …).
-- Drops all capabilities, sets `NO_NEW_PRIVS`, and applies rlimits
-  (CPU, AS, NOFILE, NPROC).
-- Then `execve`s the requested binary.
+- Installs a seccomp deny-list: the dangerous syscalls (ptrace, mount,
+  setns, unshare, kexec, bpf, perf, keyctl, module loading, reboot,
+  clock setting, …) return `EPERM`; everything else is allowed. The
+  namespaces and Landlock carry the confinement; seccomp removes the
+  escape hatches.
+- Sets `NO_NEW_PRIVS`: the kernel then ignores setuid bits, so `sudo`
+  and every setuid binary cannot escalate.
+- Then `execve`s the requested binary, SIGKILLing the jail's whole
+  process group at the policy's wall-clock timeout. That timeout is the
+  only resource limit: the jail sets no rlimits and does not call
+  `capset` (under `strict` the child's namespaced-root already maps to
+  your unprivileged uid; under `hardened` the child keeps the invoking
+  user's capabilities, none for a normal user).
+
+Under `hardened` (§3) the namespace and rootfs steps drop out; Landlock,
+seccomp, `NO_NEW_PRIVS`, and the timeout still apply.
 
 The jail's policy is passed as a JSON document on stdin from
 `agent6.sandbox.jail.run_in_jail`. The Rust side validates it against a
@@ -235,8 +247,8 @@ container is proven by a filesystem marker (`/.dockerenv` or
 The three effective profiles:
 
 - **strict**: full namespaces (user/mount/pid/ipc/uts/net) + `pivot_root` +
-  Landlock + seccomp + `capset(0)` + rlimits + `NO_NEW_PRIVS`.
-- **hardened**: Landlock + seccomp + `capset(0)` + rlimits + `NO_NEW_PRIVS`,
+  Landlock + seccomp + `NO_NEW_PRIVS`.
+- **hardened**: Landlock + seccomp + `NO_NEW_PRIVS`,
   but no namespaces (so it works inside default-seccomp Docker, where the
   container blocks the inner `clone(CLONE_NEW*)`; the container is the blast
   radius).
@@ -249,9 +261,10 @@ expected. "User namespaces available" means `unshare -U -r true` succeeds.
 ### 4. Fixed tool surface
 
 The LLM only ever sees the fixed set declared in
-`src/agent6/tools/schema.py` (enumerated in the README): structured
+`src/agent6/tools/schema.py`: structured
 edits, read-only navigation, fixed-argv verify/metric commands, a
-terminal `finish_run`, a curator-backed task notepad, and the
+terminal `finish_run`, an `ask_user` question channel, a
+curator-backed task notepad, and the
 capability-gated `run_command`. There is no `shell`, no `write_file`
 (writes go through `apply_edit`, an in-process rewriter that refuses
 paths outside cwd), no `web_fetch`, and no `eval`. Adding a tool requires

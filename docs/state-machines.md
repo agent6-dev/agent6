@@ -8,7 +8,7 @@ sandboxed tool calls, timed waits, and branches.
 This document is the specification and reference for the format and its
 runtime. The feature is implemented end-to-end under `src/agent6/machine/`
 and exposed through the `agent6 machine` subcommands: `create`, `check`,
-`graph`, `run`, `status`, `poke`, and `replay` (§7). It does not change
+`test`, `graph`, `run`, `status`, `poke`, and `replay` (§7). It does not change
 the security model, the tool surface, or the stability policy in
 [AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md); §9 records how each invariant is preserved.
 
@@ -108,8 +108,8 @@ exactly like `Config`.
 
 > **Naming.** The suffix is `.asm.toml` ("agent state machine";
 > deliberately vendor-neutral like `AGENTS.md`, so other tools can adopt
-> it). `.a6m.toml` is a documented fallback if the assembly-language
-> `.asm` clash ever bites; the parser keys off the doubled extension.
+> it). The suffix is a convention, not a parser requirement:
+> `load_machine` accepts any path; shell completion globs `*.asm.toml`.
 
 ### 4.1 Top-level shape
 
@@ -228,7 +228,7 @@ text.
 ```toml
 [states.classify]
 kind  = "agent"
-model = "claude-sonnet-4-6"      # any configured provider model
+model = "inherit"                # default: the configured worker model; or pin any provider model
 prompt = """
 Classify the item at path {{ cursor }}.
 Call finish_run with JSON {label, confidence}.
@@ -870,7 +870,9 @@ without breaking that rule.
 boundary decision: the engine does not import the workflow stack.
 Rather than constructing a `Workflow` itself, `engine.drive` runs an
 `agent` state through an injected `agent_runner` callable
-(`Callable[[AgentRequest], AgentExecResult]`). The CLI, which already
+(`Callable[[AgentRequest, Path | None], AgentExecResult]`, the second
+argument being the instance dir for the human-in-the-loop answer
+bridge). The CLI, which already
 depends on both `agent6.machine` and `agent6.workflows`, builds that
 runner and the orchestration around `machine create`/`run`, so
 `agent6.machine` never gains an edge into `agent6.workflows` and the tach
@@ -880,8 +882,12 @@ Files (all `from __future__ import annotations`, strict pyright, pydantic
 only at the parse boundary, `@dataclass(frozen=True, slots=True)` for the
 internal value types):
 
-- `machine/model.py`: pydantic `MachineSpec`/state/var specs, semantic
-  validation, and `finish_run` payload validation.
+- `machine/model.py`: pydantic `MachineSpec`/state/var specs (the parse
+  boundary).
+- `machine/_semantics.py`: semantic validation and `finish_run` payload
+  validation.
+- `machine/dryrun.py`: the pure, no-I/O dry-run behind `agent6 machine
+  test`.
 - `machine/predicate.py`: the allow-list AST predicate evaluator.
 - `machine/template.py`: the single interpolation/splicing engine
   shared by the validator and the runtime.
@@ -995,7 +1001,6 @@ when = [
 
 [states.classify]
 kind  = "agent"
-model = "claude-sonnet-4-6"
 prompt = """
 Classify these pending items: {{ pending | json }}
 Call finish_run with JSON {label:"urgent"|"normal"|"spam", confidence:0..1}.

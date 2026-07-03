@@ -32,9 +32,9 @@ open-ended agent loop.
 
 <div class="a6-card" markdown>
 ### Per-command sandbox
-Each command the model runs is jailed on its own (user namespaces, Landlock, seccomp,
-`pivot_root`), with `.git` rebound read-only and egress limited to your provider. Not one
-coarse container around everything.
+Each command the model runs is jailed on its own with Landlock + seccomp; the default
+`strict` profile adds user namespaces + `pivot_root`, a read-only `.git`, and egress
+limited to your provider. Not one coarse container around everything.
 </div>
 
 <div class="a6-card" markdown>
@@ -102,8 +102,8 @@ uv tool install agent6        # or: pipx install agent6
 ```
 
 agent6 needs Linux for the sandbox (kernel 6.7 or newer for the network rules), Python
-3.12 or newer, and an API key for at least one provider. macOS and Windows run
-unsandboxed behind a startup warning. See [installation](installation.md) for the full
+3.12 or newer, and an API key for at least one provider. macOS runs unsandboxed behind a
+startup warning; on Windows use WSL. See [installation](installation.md) for the full
 requirements.
 
 ## Run

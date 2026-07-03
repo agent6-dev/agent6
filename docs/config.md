@@ -182,7 +182,7 @@ The security boundary. Profiles and the network model are specified in
 
 | Field | Default | Meaning |
 |---|---|---|
-| `profile` | `"auto"` | `auto` / `strict` / `hardened` → effective `strict` / `hardened` / `none`; or explicit `none` to run UNSANDBOXED, allowed only inside a detected container (else refused on a bare host unless `AGENT6_ALLOW_NO_SANDBOX=1`). See SECURITY §3. |
+| `profile` | `"auto"` | `auto` picks the strongest profile the host supports (`strict`, else `hardened`); explicit `strict`/`hardened` are refused where unsupported, never downgraded. Explicit `none` runs UNSANDBOXED, allowed only inside a detected container (else refused on a bare host unless `AGENT6_ALLOW_NO_SANDBOX=1`). See SECURITY §3. |
 | `agent_network` | `"providers"` | The agent's own egress: `providers` / `local` / `open` (SECURITY §1b). |
 | `tool_network` | `"block"` | Jailed-command egress: `block` / `only_explicit_states` / `allow` (SECURITY §8). |
 | `allow_urls` | `[]` | Extra agent egress hosts under `agent_network = "providers"` (`host`, `host:port`, or URL). Edit with `agent6 config add/remove sandbox.allow_urls <host>`. |
@@ -436,6 +436,7 @@ allow-list.
 | `AGENT6_JAIL_BIN` | Path to a specific `agent6-jail` binary (else the bundled one). |
 | `AGENT6_ALLOW_ROOT` | `1` permits running as root (same as `--allow-root`). |
 
-A provider's `api_key_env` (default `ANTHROPIC_API_KEY` etc.) supplies its key.
+A provider's `api_key_env`, when set, names the environment variable that
+supplies its key; omit it to read the key from `secrets.toml`.
 A few additional `AGENT6_*` toggles exist for testing/advanced use; see the
 source if you need them.
