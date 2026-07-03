@@ -22,6 +22,7 @@ from typing import Any
 import httpx2
 import pytest
 
+from agent6.budget import BudgetTracker
 from agent6.providers import AnthropicProvider, ProviderError, TranscriptSink
 from agent6.providers.token_command import CommandToken
 
@@ -483,3 +484,57 @@ def test_streaming_refreshes_token_command_on_401(
     )
     assert seen_auth == ["Bearer tok1", "Bearer tok2"]  # refreshed bearer on retry
     assert "hello" in resp.text
+
+
+def test_streaming_with_budget_requires_usage_tokens(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    budget = BudgetTracker(max_input_tokens=1, max_output_tokens=1)
+    provider = AnthropicProvider(api_key="sk-test", model="claude-test", budget=budget)
+    lines = _sse(
+        [
+            (
+                "message_start",
+                {
+                    "type": "message_start",
+                    "message": {
+                        "id": "msg_1",
+                        "role": "assistant",
+                        "content": [],
+                    },
+                },
+            ),
+            (
+                "content_block_start",
+                {
+                    "type": "content_block_start",
+                    "index": 0,
+                    "content_block": {"type": "text", "text": ""},
+                },
+            ),
+            (
+                "content_block_delta",
+                {
+                    "type": "content_block_delta",
+                    "index": 0,
+                    "delta": {"type": "text_delta", "text": "ok"},
+                },
+            ),
+            ("content_block_stop", {"type": "content_block_stop", "index": 0}),
+            ("message_delta", {"type": "message_delta", "delta": {"stop_reason": "end_turn"}}),
+            ("message_stop", {"type": "message_stop"}),
+        ]
+    )
+
+    def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
+        return _FakeStreamResponse(status_code=200, lines=lines)
+
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
+    with pytest.raises(ProviderError) as exc_info:
+        provider.call(
+            system="sys",
+            messages=[{"role": "user", "content": "x"}],
+            text_delta_callback=lambda _p: None,
+        )
+    assert exc_info.value.status_code == 422
+    assert budget.snapshot()["per_model"] == {}

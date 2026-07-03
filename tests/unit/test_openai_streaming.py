@@ -29,6 +29,7 @@ from unittest import mock
 import httpx2
 import pytest
 
+from agent6.budget import BudgetTracker
 from agent6.providers import ProviderError
 from agent6.providers.openai import OpenAIProvider
 
@@ -334,6 +335,33 @@ def test_streaming_finish_reason_without_done_is_complete() -> None:
         )
     assert resp.text == "done"
     assert resp.stop_reason == "stop"
+
+
+def test_streaming_with_budget_requires_usage_trailer() -> None:
+    provider = OpenAIProvider(
+        api_key="sk-test",
+        model="kimi",
+        budget=BudgetTracker(max_input_tokens=1, max_output_tokens=1),
+    )
+    lines = _chunk(
+        {"choices": [{"index": 0, "delta": {"content": "done"}, "finish_reason": "stop"}]}
+    )
+
+    def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
+        return _FakeStreamResponse(status_code=200, lines=lines)
+
+    with (
+        mock.patch("httpx2.stream", side_effect=fake_stream),
+        pytest.raises(ProviderError) as exc_info,
+    ):
+        provider.call(
+            system="sys",
+            messages=[{"role": "user", "content": "x"}],
+            text_delta_callback=lambda _p: None,
+        )
+    assert exc_info.value.status_code == 422
+    assert provider.budget is not None
+    assert provider.budget.snapshot()["per_model"] == {}
 
 
 def test_no_callback_does_not_stream() -> None:

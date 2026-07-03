@@ -138,6 +138,32 @@ def parse_retry_after(headers: Mapping[str, str]) -> float | None:
     return max(0.0, delta)
 
 
+def _require_metered_usage(usage: object, *, source: str) -> None:
+    """Fail closed when a budgeted Anthropic call cannot be metered.
+
+    Presence alone is not enough: a gateway with usage tracking disabled returns
+    all-zero counts and every turn records zero, so the budget never trips.
+    Require a positive input side, but sum in the cache counters: a fully-cached
+    turn legitimately reports ``input_tokens: 0`` with ``cache_read_input_tokens``
+    > 0, so a plain ``input_tokens > 0`` check would false-reject it."""
+    if isinstance(usage, Mapping):
+        input_tokens = usage.get("input_tokens")
+        output_tokens = usage.get("output_tokens")
+        cache_read = usage.get("cache_read_input_tokens") or 0
+        cache_creation = usage.get("cache_creation_input_tokens") or 0
+        if (
+            isinstance(input_tokens, int)
+            and isinstance(output_tokens, int)
+            and input_tokens + cache_read + cache_creation > 0
+        ):
+            return
+    raise ProviderError(
+        f"{source} reported no usage input tokens (usage.input_tokens missing or 0); "
+        "budgeted runs require provider usage accounting",
+        status_code=422,
+    )
+
+
 def _redact_headers(headers: dict[str, str]) -> dict[str, str]:
     """Return a copy of `headers` with secret-bearing entries redacted."""
     return {k: (_REDACTED if k.lower() in _REDACT_HEADER_NAMES else v) for k, v in headers.items()}
@@ -510,6 +536,8 @@ class AnthropicProvider:
                     response_status=resp.status_code,
                     response_body=data,
                 )
+            if self.budget is not None:
+                _require_metered_usage(data.get("usage"), source="Anthropic response")
             parsed = _parse_response(data)
             if self.budget is not None:
                 self.budget.record(
@@ -571,6 +599,8 @@ class AnthropicProvider:
         usage_output = 0
         usage_cache_read = 0
         usage_cache_creation = 0
+        saw_input_usage = False
+        saw_output_usage = False
 
         sse_lines: list[str] = []  # for transcript audit trail
 
@@ -655,6 +685,8 @@ class AnthropicProvider:
                     if et == "message_start":
                         msg = evt.get("message", {})
                         u = msg.get("usage", {}) or {}
+                        if "input_tokens" in u and u.get("input_tokens") is not None:
+                            saw_input_usage = True
                         usage_input = int(u.get("input_tokens") or usage_input)
                         usage_cache_read = int(u.get("cache_read_input_tokens") or usage_cache_read)
                         usage_cache_creation = int(
@@ -740,6 +772,8 @@ class AnthropicProvider:
                             stop_reason = str(d.get("stop_reason", "") or "")
                         u = evt.get("usage", {}) or {}
                         if "output_tokens" in u:
+                            if u.get("output_tokens") is not None:
+                                saw_output_usage = True
                             usage_output = int(u.get("output_tokens") or usage_output)
                     elif et == "message_stop":
                         saw_message_stop = True
@@ -829,6 +863,14 @@ class AnthropicProvider:
                 response_status=200,
                 response_body=synthesised,
             )
+        if self.budget is not None:
+            if not (saw_input_usage and saw_output_usage):
+                raise ProviderError(
+                    "Anthropic stream omitted usage.input_tokens/output_tokens; "
+                    "budgeted runs require provider usage accounting",
+                    status_code=422,
+                )
+            _require_metered_usage(synthesised.get("usage"), source="Anthropic stream")
         parsed = _parse_response(synthesised)
         if self.budget is not None:
             self.budget.record(

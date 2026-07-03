@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Regression tests for provider bug fixes.
 
-Covers four independently-reported bugs:
+Covers five independently-reported bugs:
 
 * Bug #1 - non-JSON 2xx body in the NON-streaming path is converted to a
   retryable ``ProviderError`` instead of leaking a ``json.JSONDecodeError``
@@ -15,6 +15,8 @@ Covers four independently-reported bugs:
   ``temperature``; other hosts are unchanged.
 * Bug #4 - native tool_calls that arrive with no id get a synthesised
   distinct id so tool_use/tool_result pairing stays one-to-one.
+* Bug #5 - budgeted calls fail closed when the upstream omits token usage
+  accounting instead of recording a zero-token turn.
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ from unittest import mock
 import httpx2
 import pytest
 
+from agent6.budget import BudgetTracker
 from agent6.providers import anthropic as anthropic_mod
 from agent6.providers.anthropic import AnthropicProvider, ProviderError
 from agent6.providers.openai import (
@@ -71,6 +74,119 @@ def test_anthropic_non_json_200_is_provider_error() -> None:
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     assert ei.value.status_code is None
     assert "non-JSON" in str(ei.value)
+
+
+def test_openai_budgeted_response_requires_usage_tokens() -> None:
+    budget = BudgetTracker(max_input_tokens=1, max_output_tokens=1)
+    provider = OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
+    resp = _FakeJSONResponse(
+        status_code=200,
+        text=json.dumps(
+            {
+                "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
+                "usage": {},
+            }
+        ),
+    )
+    with (
+        mock.patch("agent6.providers.openai.http_post", return_value=resp),
+        pytest.raises(ProviderError) as ei,
+    ):
+        provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
+    assert ei.value.status_code == 422
+    assert budget.snapshot()["per_model"] == {}
+
+
+def test_anthropic_budgeted_response_requires_usage_tokens() -> None:
+    budget = BudgetTracker(max_input_tokens=1, max_output_tokens=1)
+    provider = AnthropicProvider(api_key="sk-test", model="claude-3-5-sonnet", budget=budget)
+    resp = _FakeJSONResponse(
+        status_code=200,
+        text=json.dumps(
+            {
+                "content": [{"type": "text", "text": "ok"}],
+                "stop_reason": "end_turn",
+                "usage": {},
+            }
+        ),
+    )
+    with (
+        mock.patch("agent6.providers.anthropic.http_post", return_value=resp),
+        pytest.raises(ProviderError) as ei,
+    ):
+        provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
+    assert ei.value.status_code == 422
+    assert budget.snapshot()["per_model"] == {}
+
+
+def test_openai_budgeted_response_rejects_zero_token_usage() -> None:
+    # Presence is not enough: a gateway with usage tracking off returns 0/0, and
+    # every turn would record zero so the budget never trips. Fail closed.
+    budget = BudgetTracker(max_input_tokens=1, max_output_tokens=1)
+    provider = OpenAIProvider(api_key="sk-test", model="gpt-4o-mini", budget=budget)
+    resp = _FakeJSONResponse(
+        status_code=200,
+        text=json.dumps(
+            {
+                "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 0, "completion_tokens": 0},
+            }
+        ),
+    )
+    with (
+        mock.patch("agent6.providers.openai.http_post", return_value=resp),
+        pytest.raises(ProviderError) as ei,
+    ):
+        provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
+    assert ei.value.status_code == 422
+    assert budget.snapshot()["per_model"] == {}
+
+
+def test_anthropic_budgeted_response_rejects_zero_token_usage() -> None:
+    budget = BudgetTracker(max_input_tokens=1, max_output_tokens=1)
+    provider = AnthropicProvider(api_key="sk-test", model="claude-3-5-sonnet", budget=budget)
+    resp = _FakeJSONResponse(
+        status_code=200,
+        text=json.dumps(
+            {
+                "content": [{"type": "text", "text": "ok"}],
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 0, "output_tokens": 0},
+            }
+        ),
+    )
+    with (
+        mock.patch("agent6.providers.anthropic.http_post", return_value=resp),
+        pytest.raises(ProviderError) as ei,
+    ):
+        provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
+    assert ei.value.status_code == 422
+    assert budget.snapshot()["per_model"] == {}
+
+
+def test_anthropic_budgeted_response_accepts_fully_cached_turn() -> None:
+    # A fully-cached turn legitimately reports input_tokens: 0 with a positive
+    # cache_read count; the metering check must NOT false-reject it.
+    budget = BudgetTracker(max_input_tokens=1_000_000, max_output_tokens=1_000_000)
+    provider = AnthropicProvider(api_key="sk-test", model="claude-3-5-sonnet", budget=budget)
+    resp = _FakeJSONResponse(
+        status_code=200,
+        text=json.dumps(
+            {
+                "content": [{"type": "text", "text": "ok"}],
+                "stop_reason": "end_turn",
+                "usage": {
+                    "input_tokens": 0,
+                    "output_tokens": 5,
+                    "cache_read_input_tokens": 120,
+                    "cache_creation_input_tokens": 0,
+                },
+            }
+        ),
+    )
+    with mock.patch("agent6.providers.anthropic.http_post", return_value=resp):
+        provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
+    assert budget.snapshot()["per_model"] != {}
 
 
 # --------------------------------------------------------------------------

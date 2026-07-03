@@ -52,7 +52,7 @@ import os
 import re
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlsplit
@@ -146,6 +146,26 @@ _REASONING_MODEL_HINTS: tuple[str, ...] = (
     "nemotron",
     "glm",
 )
+
+
+def _require_metered_usage(usage: object, *, source: str) -> None:
+    """Fail closed when a budgeted OpenAI-compatible call cannot be metered.
+
+    Presence alone is not enough: a gateway with usage tracking disabled returns
+    ``prompt_tokens: 0`` and every turn records zero, so the budget never trips.
+    ``prompt_tokens`` is total input (cached + fresh) and is never legitimately 0
+    for a real call, so require it strictly positive; a run must not proceed on a
+    call it cannot meter."""
+    if isinstance(usage, Mapping):
+        prompt = usage.get("prompt_tokens")
+        completion = usage.get("completion_tokens")
+        if isinstance(prompt, int) and isinstance(completion, int) and prompt > 0:
+            return
+    raise ProviderError(
+        f"{source} reported no usage input tokens (usage.prompt_tokens missing or 0); "
+        "budgeted runs require provider usage accounting",
+        status_code=422,
+    )
 
 
 def _is_reasoning_model(model: str) -> bool:
@@ -575,6 +595,8 @@ class OpenAIProvider:
                     response_status=resp.status_code,
                     response_body=data,
                 )
+            if self.budget is not None:
+                _require_metered_usage(data.get("usage"), source="OpenAI response")
             parsed = _parse_response(data, tool_names=tool_names, tool_schemas=tool_schemas)
             if self.budget is not None:
                 self.budget.record(
@@ -893,6 +915,8 @@ class OpenAIProvider:
                 response_status=200,
                 response_body=synthesised,
             )
+        if self.budget is not None:
+            _require_metered_usage(usage, source="OpenAI stream")
         parsed = _parse_response(synthesised, tool_names=tool_names, tool_schemas=tool_schemas)
         if self.budget is not None:
             self.budget.record(
