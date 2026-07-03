@@ -40,7 +40,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from agent6.graph.models import TaskNode
-from agent6.portable import atomic_write, lock_exclusive, unlock
+from agent6.portable import atomic_write, fsync_dir, lock_exclusive, unlock
 
 # ---- run layout -----------------------------------------------------------
 
@@ -400,6 +400,7 @@ def _prune_stale_node_files(layout: RunLayout, node_id: str, *, keep: Path) -> N
             continue
         with contextlib.suppress(OSError):
             stale.unlink()
+            fsync_dir(stale.parent)
 
 
 def load_graph(layout: RunLayout) -> dict[str, TaskNode]:

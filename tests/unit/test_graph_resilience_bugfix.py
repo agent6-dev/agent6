@@ -307,6 +307,7 @@ def test_disk_fault_during_mutation_reraises(
 
 def test_rerooted_node_mutation_leaves_single_md_file(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # An orphan node (its parent file was corrupt -> skipped) is re-rooted by
     # load_graph (parent_id -> None), which moves its canonical .md path from the
@@ -336,11 +337,14 @@ def test_rerooted_node_mutation_leaves_single_md_file(
 
     # Mutate the re-rooted child: write_node now targets the ROOT path and must
     # prune the stale nested file.
+    fsynced_dirs: list[Path] = []
+    monkeypatch.setattr(storage, "fsync_dir", fsynced_dirs.append)
     c2.update_status(UpdateStatusIntent(id=child.id, new_status="in_progress"))
 
     root_path = layout.graph_dir / f"{child.id}.md"
     assert root_path.exists()
     assert not nested_path.exists(), "stale nested .md must be pruned after re-root"
+    assert nested_path.parent in fsynced_dirs
 
     # Exactly one .md on disk for this id, and load_graph yields exactly one node.
     remaining = list(layout.graph_dir.rglob(f"{child.id}.md"))
