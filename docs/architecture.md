@@ -262,8 +262,11 @@ any external viewer (the fold to render-ready state lives in
 
 A `run_command` approval is published as `approval.prompt`; the dashboard
 TUI shows an Allow/Deny modal and writes `approvals/<id>.answer`, which the
-workflow reads (falling back to a stdin prompt with no TUI), then records
-`approval.answer`. The web UI drives the same answer-file contract (via
+workflow reads, then records `approval.answer`. The answer poll falls back
+headless (stdin prompt, or deny for a machine state) only after the front-end
+has stayed dead for 30 consecutive seconds, so a transient drop (a page
+reload, a phone locking its browser) does not convert a pending approval into
+a deny. The web UI drives the same answer-file contract (via
 [src/agent6/frontend/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/frontend)):
 while a browser watches a run it registers as the run's answer front-end, so
 approval / question / steer prompts bridge to the page. The task DAG is not in this stream; it is

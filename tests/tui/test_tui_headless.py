@@ -387,6 +387,89 @@ def test_dashboard_footer_shows_one_dual_back_key(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_dashboard_does_not_clobber_live_frontend_pid(tmp_path: Path) -> None:
+    """A live peer front-end (a web viewer) already owns frontend.pid: the
+    dashboard must not overwrite it on mount or clear it on exit (the web side
+    ref-counts; clobbering strands its viewers)."""
+    import subprocess
+    import sys
+
+    (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+    # A real same-user process stands in for the live peer front-end.
+    peer = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    try:
+        (tmp_path / "frontend.pid").write_text(str(peer.pid), encoding="utf-8")
+
+        async def scenario() -> None:
+            app = Agent6TUI(tmp_path)
+            async with app.run_test() as pilot:
+                await pilot.pause()
+                app._tick()
+                await pilot.pause()
+                assert (tmp_path / "frontend.pid").read_text(encoding="utf-8") == str(peer.pid)
+            # On unmount the pid is not ours, so it must survive.
+            assert (tmp_path / "frontend.pid").read_text(encoding="utf-8") == str(peer.pid)
+
+        asyncio.run(scenario())
+    finally:
+        peer.kill()
+        peer.wait()
+
+
+def test_dashboard_claims_stale_pid_and_self_heals(tmp_path: Path) -> None:
+    """A stale frontend.pid (dead process) is claimed on mount; if a peer owner
+    goes away mid-session the next tick re-claims; unmount clears only our own."""
+    import os
+
+    (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+    (tmp_path / "frontend.pid").write_text("999999999", encoding="utf-8")  # dead
+
+    async def scenario() -> None:
+        app = Agent6TUI(tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert (tmp_path / "frontend.pid").read_text(encoding="utf-8") == str(os.getpid())
+            # A peer owner appears then dies: the tick re-claims the bridge.
+            (tmp_path / "frontend.pid").write_text("999999999", encoding="utf-8")
+            app._tick()
+            await pilot.pause()
+            assert (tmp_path / "frontend.pid").read_text(encoding="utf-8") == str(os.getpid())
+        assert not (tmp_path / "frontend.pid").exists()  # ours, cleared on unmount
+
+    asyncio.run(scenario())
+
+
+def test_resume_reopens_modal_for_reused_prompt_id(tmp_path: Path) -> None:
+    """`agent6 resume` appends a new session whose prompt ids restart at
+    approval-1; a dashboard held across the resume must pop the new session's
+    modal, not swallow it as already seen."""
+    (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+
+    async def scenario() -> None:
+        app = Agent6TUI(tmp_path)
+        async with app.run_test() as pilot:
+            app._handle_event(_ev(type="run.start", user_task="session one", mode="run"))
+            app._handle_event(_ev(type="approval.prompt", id="approval-1", prompt="first?"))
+            app._tick()
+            await pilot.pause()
+            assert isinstance(app.screen, ApprovalModal)
+            await pilot.press("y")
+            await pilot.pause()
+            app._handle_event(_ev(type="approval.answer", id="approval-1", approved=True))
+            # The resume: a fresh run.start, then the new session's approval-1.
+            app._handle_event(_ev(type="run.start", user_task="session one", mode="run"))
+            app._handle_event(_ev(type="approval.prompt", id="approval-1", prompt="again?"))
+            app._tick()
+            await pilot.pause()
+            assert isinstance(app.screen, ApprovalModal)  # re-popped, not swallowed
+            await pilot.press("n")
+            await pilot.pause()
+            answer = (tmp_path / "approvals" / "approval-1.answer").read_text(encoding="utf-8")
+            assert answer == "no"
+
+    asyncio.run(scenario())
+
+
 def test_steer_request_marker_round_trip(tmp_path: Path) -> None:
     from agent6.frontend.approval import clear_steer_request, request_steer, steer_request_pending
 

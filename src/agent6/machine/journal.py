@@ -35,6 +35,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
+from agent6.machine.model import MachineError
 from agent6.portable import lock_exclusive, unlock
 
 __all__ = [
@@ -60,8 +61,17 @@ __all__ = [
 _MODEL_CONFIG = ConfigDict(extra="forbid", frozen=True)
 
 
-class JournalError(Exception):
-    """Raised when an on-disk journal or snapshot is missing or corrupt."""
+class JournalError(MachineError):
+    """Raised when on-disk journal state (journal, pending wait, source, lock) is
+    missing, corrupt, or unusable.
+
+    A `MachineError` subclass so every surface that degrades gracefully on a
+    broken machine file (hub listing, machine page, SSE stream) degrades the
+    same way on a broken journal instead of crashing.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__([message])
 
 
 def _now_iso() -> str:
@@ -353,14 +363,21 @@ class MachineJournal:
         consumed; ``payload`` is the JSON the poke carried (``None`` for a bare
         poke, an empty file, or an unparseable one -- a hand-touched signal is a
         valid bare wake).
+
+        Claims the signal by renaming it to a private consume path first: `poke`
+        renames a fresh signal into place from another process, so a
+        read-then-unlink would destroy a poke that landed in between.
         """
-        if not self.signal_path.exists():
+        consume = self.signal_path.with_suffix(".consuming")
+        try:
+            self.signal_path.rename(consume)
+        except FileNotFoundError:
             return False, None
         try:
-            raw = self.signal_path.read_text(encoding="utf-8")
+            raw = consume.read_text(encoding="utf-8")
         except OSError:
             raw = ""
-        self.signal_path.unlink(missing_ok=True)
+        consume.unlink(missing_ok=True)
         if not raw.strip():
             return True, None
         try:

@@ -787,6 +787,20 @@ def test_exit_on_wait_fires_signal_before_due(tmp_path: Path) -> None:
     assert journal.read_pending_wait() is None
 
 
+def test_blocking_wait_clears_persisted_wait(tmp_path: Path) -> None:
+    # An --exit-on-wait invocation arms wait.json; a later BLOCKING run consumes
+    # the wake via sleep_until. The stale record must be cleared with it: left
+    # behind it suppresses the state's notify (already_parked), feeds a stale
+    # wake_epoch to a later --exit-on-wait run, and pins machine_is_parked.
+    journal, f = _load(tmp_path, WAITER_DELAYED)
+    spec = load_machine(f)
+    drive(spec, journal, FakeWorld({}, clock=1000.0), live=True, exit_on_wait=True)
+    assert journal.read_pending_wait() is not None
+    result = drive(spec, journal, FakeWorld({}, wakes=[WaitWake("tick")]), live=True)
+    assert result == MachineResult("ok", "ticked", "done", 1)
+    assert journal.read_pending_wait() is None
+
+
 def test_exit_on_wait_wake_epoch_computed_once(tmp_path: Path) -> None:
     journal, f = _load(tmp_path, WAITER_DELAYED)
     spec = load_machine(f)

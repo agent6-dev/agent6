@@ -255,11 +255,11 @@ def test_machine_run_confirms_then_spawns(tmp_path: Path, monkeypatch: object) -
     path = _write(tmp_path / "m.asm.toml")
     captured: list[list[str]] = []
 
-    def _fake_spawn(argv: list[str], cwd: Path) -> str:
+    def _fake_spawn(argv: list[str], cwd: Path, **_k: object) -> str:
         captured.append(list(argv))
         return ""
 
-    monkeypatch.setattr(machmod, "spawn_detached", _fake_spawn)  # type: ignore[attr-defined]
+    monkeypatch.setattr(machmod, "spawn_and_confirm", _fake_spawn)  # type: ignore[attr-defined]
 
     async def scenario() -> None:
         app = _Host(tmp_path)
@@ -274,6 +274,115 @@ def test_machine_run_confirms_then_spawns(tmp_path: Path, monkeypatch: object) -
             await pilot.press("y")  # confirm
             await pilot.pause()
             assert captured and captured[-1][-3:] == ["machine", "run", str(path)]
+
+    asyncio.run(scenario())
+
+
+def test_machine_run_refusal_notifies_and_skips_watch(tmp_path: Path, monkeypatch: object) -> None:
+    """A `machine run` refusal (lock held, exit 2) must surface as an error
+    notification, not open a watch screen on nothing."""
+    _write(tmp_path / "m.asm.toml")
+
+    def _fake_spawn(argv: list[str], cwd: Path, **_k: object) -> str:
+        return "agent6 machine exited (1) before starting:\nERROR: lock held"
+
+    monkeypatch.setattr(machmod, "spawn_and_confirm", _fake_spawn)  # type: ignore[attr-defined]
+
+    async def scenario() -> None:
+        app = _Host(tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            table = app.screen.query_one("#machines", DataTable)
+            table.focus()
+            table.move_cursor(row=0)
+            await pilot.press("r")
+            await pilot.pause()
+            await pilot.press("y")  # confirm the run
+            await pilot.pause()
+            assert not isinstance(app.screen, MachineWatchScreen)  # no watch on nothing
+            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            assert any("lock held" in n for n in notes)
+
+    asyncio.run(scenario())
+
+
+def test_watch_screen_survives_corrupt_journal(tmp_path: Path) -> None:
+    """A corrupt journal line must not crash the watch screen every poll tick;
+    the header shows the corruption and polling continues."""
+    from textual.widgets import Static
+
+    from agent6.machine import load_machine
+
+    f = _write(tmp_path / "m.asm.toml", TINY)
+    spec = load_machine(f)
+    instance = tmp_path / ".agent6" / "machines" / "tiny"
+    instance.mkdir(parents=True)
+    (instance / "journal.jsonl").write_text('{"type": "step", "bogus": 1}\n', encoding="utf-8")
+
+    class _WatchHost(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(MachineWatchScreen(instance, spec))
+
+    async def scenario() -> None:
+        app = _WatchHost()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            for _ in range(3):
+                await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, MachineWatchScreen)  # still alive, not crashed
+            head = screen.query_one("#mw-head", Static)
+            assert "journal unreadable" in str(head.render())
+
+    asyncio.run(scenario())
+
+
+def test_watch_screen_tolerates_torn_utf8_state_log(tmp_path: Path) -> None:
+    """A per-state agent log whose tail ends mid multibyte UTF-8 sequence (the
+    writer flushes long lines in several syscalls) must not crash the poll; the
+    complete prefix renders and the torn tail is picked up once completed."""
+    import json as _json
+
+    from textual.widgets import RichLog
+
+    from agent6.machine import load_machine
+
+    f = _write(tmp_path / "m.asm.toml", TINY)
+    spec = load_machine(f)
+    instance = tmp_path / ".agent6" / "machines" / "tiny"
+    state = instance / "states" / "0000-route"
+    state.mkdir(parents=True)
+    (instance / "journal.jsonl").write_text("", encoding="utf-8")
+    full = _json.dumps({"type": "tool.call", "name": "café", "args": {}}, ensure_ascii=False)
+    raw = full.encode("utf-8")
+    cut = raw.rindex(b"\xc3\xa9") + 1  # keep only the first byte of the é sequence
+    (state / "logs.jsonl").write_bytes(
+        _json.dumps({"type": "tool.call", "name": "grep", "args": {}}).encode() + b"\n" + raw[:cut]
+    )
+
+    class _WatchHost(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(MachineWatchScreen(instance, spec))
+
+    async def scenario() -> None:
+        app = _WatchHost()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            for _ in range(3):
+                await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, MachineWatchScreen)  # no UnicodeDecodeError crash
+            log = screen.query_one("#mw-log", RichLog)
+            assert any("grep" in line.text for line in log.lines)
+            assert not any("café" in line.text for line in log.lines)  # torn line held back
+            # Completing the line delivers it on a later poll.
+            with (state / "logs.jsonl").open("ab") as fh:
+                fh.write(raw[cut:] + b"\n")
+            for _ in range(4):
+                await pilot.pause()
+            screen._poll()  # pyright: ignore[reportPrivateUsage]
+            await pilot.pause()
+            assert any("café" in line.text for line in log.lines)
 
     asyncio.run(scenario())
 

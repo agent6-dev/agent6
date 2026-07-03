@@ -47,22 +47,61 @@ def run_cli_capture(argv: list[str], cwd: Path, *, timeout_s: float = 120.0) -> 
     return proc.returncode == 0, message or f"exit {proc.returncode}"
 
 
-def spawn_detached(argv: list[str], cwd: Path) -> str:
-    """Spawn *argv* detached (non-TTY stdout, new session). Returns "" on a clean
-    launch or an error string. Detached + non-TTY so the child never opens its own
-    TUI and the launcher does not block on it."""
+def spawn_and_confirm(
+    argv: list[str],
+    cwd: Path,
+    *,
+    started: Callable[[int], bool],
+    timeout_s: float = 25.0,
+) -> str:
+    """Spawn *argv* detached (non-TTY stdio, new session, so the child never
+    opens its own TUI) with an early-exit stderr capture: return "" once
+    *started(child_pid)* reports the child took ownership of its work, or the
+    stderr tail when the child exits nonzero first / nothing happens by the
+    timeout. A child that exits 0 without the signal is a clean fast completion.
+
+    The machine-run analogue of `spawn_and_locate`: `machine run` refusals (lock
+    held, network refusal, bad bundle) print to stderr and exit nonzero without
+    ever starting, which a fire-and-forget spawn (stderr to /dev/null) silently
+    swallowed."""
+    label = argv[1] if len(argv) > 1 else argv[0]
+    err = tempfile.NamedTemporaryFile(  # noqa: SIM115 - closed in finally
+        mode="w+", suffix=".agent6-launch.err", delete=False
+    )
     try:
-        subprocess.Popen(
-            argv,
-            cwd=str(cwd),
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-    except OSError as exc:
-        return f"failed to start {argv[0]}: {exc}"
-    return ""
+        try:
+            proc = subprocess.Popen(
+                argv,
+                cwd=str(cwd),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=err,
+                start_new_session=True,
+            )
+        except OSError as exc:
+            return f"failed to start agent6 {label}: {exc}"
+
+        def err_tail() -> str:
+            err.flush()
+            return Path(err.name).read_text(encoding="utf-8", errors="replace")[-600:]
+
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            if started(proc.pid):
+                return ""
+            rc = proc.poll()
+            if rc is not None:
+                # Recheck once: the signal may have landed in the same instant.
+                if started(proc.pid) or rc == 0:
+                    return ""
+                return f"agent6 {label} exited ({rc}) before starting:\n{err_tail()}"
+            time.sleep(0.2)
+        return f"timed out waiting for `agent6 {label}` to start:\n{err_tail()}"
+    finally:
+        # Same lifetime note as spawn_and_locate: the detached child keeps the
+        # unlinked-but-open inode as its stderr until it exits.
+        err.close()
+        Path(err.name).unlink(missing_ok=True)
 
 
 def _located(list_dirs: Callable[[], list[Path]], before: set[Path]) -> Path | None:

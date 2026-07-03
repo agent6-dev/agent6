@@ -219,6 +219,17 @@ def test_corrupt_journal_line_raises(tmp_path: Path) -> None:
         j.read()
 
 
+def test_journal_error_is_a_machine_error() -> None:
+    # Surfaces that degrade on a broken machine file (`except MachineError`,
+    # reading exc.problems) must degrade the same way on a broken journal.
+    from agent6.machine.model import MachineError
+
+    exc = JournalError("corrupt journal line 3")
+    assert isinstance(exc, MachineError)
+    assert exc.problems == ["corrupt journal line 3"]
+    assert str(exc) == "corrupt journal line 3"
+
+
 def test_snapshot_write_and_latest(tmp_path: Path) -> None:
     j = _journal(tmp_path)
     j.write_snapshot(Snapshot(seq=0, state="a", blackboard={"n": 1}))
@@ -269,6 +280,28 @@ def test_poke_writes_signal_consumed_by_take_signal(tmp_path: Path) -> None:
     j.poke()
     assert j.take_signal() == (True, None)
     assert j.take_signal() == (False, None)
+
+
+def test_take_signal_preserves_poke_landing_mid_consume(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A poke that renames a fresh signal into place between take_signal's read
+    # and its unlink must survive for the next check (the old read-then-unlink
+    # destroyed it). The claim-by-rename makes the window structural: the racing
+    # poke lands at signal_path while we consume the renamed-away copy.
+    j = _journal(tmp_path)
+    j.poke("first")
+    real_read_text = Path.read_text
+
+    def racing_read_text(self: Path, *args: object, **kwargs: object) -> str:
+        if self.name.startswith("signal"):
+            j.poke("second")  # a poke lands mid-consume
+        return real_read_text(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(Path, "read_text", racing_read_text)
+    assert j.take_signal() == (True, "first")
+    monkeypatch.undo()
+    assert j.take_signal() == (True, "second")  # the mid-consume poke survived
 
 
 def test_poke_carries_payload(tmp_path: Path) -> None:

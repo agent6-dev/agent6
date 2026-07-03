@@ -66,6 +66,47 @@ def test_tail_stops_at_run_end_when_requested(tmp_path: Path) -> None:
     assert [e["type"] for e in out] == ["a", "run.end"]
 
 
+def _torn_utf8_line() -> tuple[bytes, bytes]:
+    """A JSON line split in the middle of a multibyte UTF-8 sequence (the first
+    byte of the é lands in the first chunk)."""
+    full = json.dumps({"type": "role.text_delta", "text": "café"}, ensure_ascii=False).encode()
+    cut = full.rindex(b"\xc3\xa9") + 1
+    return full[:cut], full[cut:]
+
+
+def test_tail_survives_torn_utf8_tail(tmp_path: Path) -> None:
+    # Writers flush >8KB lines in multiple syscalls, so a poll can hit EOF in
+    # the middle of a multibyte UTF-8 sequence. The complete lines must come
+    # through and the torn tail must not raise UnicodeDecodeError.
+    p = tmp_path / "logs.jsonl"
+    head, _rest = _torn_utf8_line()
+    p.write_bytes(json.dumps({"type": "run.start"}).encode() + b"\n" + head)
+    out = list(tail_events(p, follow=False))
+    assert [e["type"] for e in out] == ["run.start"]
+
+
+def test_tail_completes_torn_utf8_line_across_polls(tmp_path: Path) -> None:
+    # Follow mode: the torn byte tail stays pending and yields once the rest of
+    # the line (including the newline) arrives.
+    p = tmp_path / "logs.jsonl"
+    head, rest = _torn_utf8_line()
+    p.write_bytes(json.dumps({"type": "first"}).encode() + b"\n" + head)
+
+    def writer() -> None:
+        time.sleep(0.3)
+        with p.open("ab") as fh:
+            fh.write(rest + b"\n")
+            fh.write(json.dumps({"type": "run.end"}).encode() + b"\n")
+            fh.flush()
+
+    t = threading.Thread(target=writer, daemon=True)
+    t.start()
+    out = list(tail_events(p, follow=True, poll_s=0.05, stop_when_finished=True))
+    t.join(timeout=2)
+    assert [e["type"] for e in out] == ["first", "role.text_delta", "run.end"]
+    assert out[1]["text"] == "café"
+
+
 def test_tail_follows_appended_lines(tmp_path: Path) -> None:
     p = tmp_path / "logs.jsonl"
     p.write_text(json.dumps({"type": "first"}) + "\n", encoding="utf-8")

@@ -38,6 +38,7 @@ from agent6.frontend.approval import (
     clear_frontend_pid,
     clear_steer_answer,
     frontend_is_live,
+    read_worker_pid,
     request_steer,
     write_answer,
     write_frontend_pid,
@@ -45,8 +46,9 @@ from agent6.frontend.approval import (
     write_steer_answer,
 )
 from agent6.frontend.notify import desktop_notify
-from agent6.frontend.spawn import agent6_exe, spawn_and_locate, spawn_detached
+from agent6.frontend.spawn import agent6_exe, spawn_and_confirm, spawn_and_locate
 from agent6.machine import (
+    JournalError,
     MachineError,
     MachineJournal,
     MachineSpec,
@@ -173,9 +175,12 @@ class MachineWatchScreen(Screen[None]):
         # dir may not exist yet (watching a just-spawned run), so create it first.
         self._root.mkdir(parents=True, exist_ok=True)
         self._ensure_claim()
+        try:
+            events = self._journal.read()
+        except JournalError:
+            events = []  # the first poll surfaces the corruption in the header
         self._seen_notif_keys = {
-            notification_key(n)
-            for n in fold_machine(self._spec, self._journal.read()).notifications
+            notification_key(n) for n in fold_machine(self._spec, events).notifications
         }
         self._poll()
         self.set_interval(0.5, self._poll)
@@ -253,7 +258,13 @@ class MachineWatchScreen(Screen[None]):
         if self._ended:
             return
         self._ensure_claim()  # re-assert the bridge if a peer watcher went away
-        ms = fold_machine(self._spec, self._journal.read())
+        try:
+            ms = fold_machine(self._spec, self._journal.read())
+        except JournalError as exc:
+            # A corrupt journal line must not crash the screen every poll tick;
+            # show it and keep polling (an append may heal or end the run).
+            self.query_one("#mw-head", Static).update(Text(f"journal unreadable: {exc}"))
+            return
 
         # Header + state-table markers.
         status = (
@@ -356,18 +367,22 @@ class MachineWatchScreen(Screen[None]):
     def _consume_state_log(self, path: Path, offset: int, log: RichLog) -> int:
         """Read complete new lines past *offset*: accumulate thinking/answer text in
         self._pending, write discrete events (tool calls) inline. Returns the new
-        offset (start of any partial trailing line)."""
+        offset (start of any partial trailing line).
+
+        Byte reads: a poll can hit EOF mid multibyte UTF-8 sequence (the writer
+        flushes long lines in several syscalls), and a text-mode readline would
+        raise UnicodeDecodeError there. Only complete lines are decoded."""
         try:
-            with path.open(encoding="utf-8") as fh:
+            with path.open("rb") as fh:
                 fh.seek(offset)
                 while True:
                     pos = fh.tell()
                     line = fh.readline()
-                    if not line.endswith("\n"):
+                    if not line.endswith(b"\n"):
                         return pos
                     try:
-                        evt = json.loads(line)
-                    except json.JSONDecodeError:
+                        evt = json.loads(line.decode("utf-8"))
+                    except (UnicodeDecodeError, json.JSONDecodeError):
                         continue
                     if not isinstance(evt, dict):
                         continue
@@ -650,7 +665,21 @@ class MachinesScreen(Screen[None]):
         def cb(confirmed: bool | None) -> None:
             if not confirmed:
                 return
-            err = spawn_detached([agent6_exe(), "machine", "run", str(path)], self.repo_cwd)
+            try:
+                spec = load_machine(path)
+            except MachineError as exc:
+                self.app.notify(f"cannot load {path.name}: {exc}", severity="error", timeout=8.0)
+                return
+            # Started = the child wrote its own pid as the instance worker.pid
+            # (it does so right after taking the machine lock). A refusal (lock
+            # held, network refusal, bad bundle) exits nonzero before that and
+            # its stderr surfaces here instead of a watch screen on nothing.
+            instance = self.agent6_dir / "machines" / spec.machine
+            err = spawn_and_confirm(
+                [agent6_exe(), "machine", "run", str(path)],
+                self.repo_cwd,
+                started=lambda pid: read_worker_pid(instance) == pid,
+            )
             if err:
                 self.app.notify(err, severity="error", timeout=8.0)
                 return

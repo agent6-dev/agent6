@@ -378,7 +378,8 @@ override needs `--allow-non-loopback`, so a copied config or command cannot
 silently expose you. The server only ever renders folded
 view-model state and drives the typed front-end contracts, it never serves
 secrets and never executes arbitrary input: new-work spawns fixed argv with the
-task as one argv element, machine run is allow-listed to the authored files,
+task as one argv element behind `--` (so a value starting with `-` cannot be
+read as a flag), machine run is allow-listed to the authored files,
 answers write only into the addressed run's own answer files (the run id,
 answer id, and a machine answer's target state dir are each validated to a
 single path component, so a request cannot escape the run's
@@ -393,6 +394,11 @@ a CORS preflight the server never answers), and any `Origin` header must match
 (same-origin requests pass either way). It does not cover DNS rebinding, which
 would need a Host allow-list incompatible with the tailnet hostname; that
 vector stays with the network layer.
+
+Request framing is bounded: a POST body is capped at 1 MiB (413 over it),
+chunked bodies are refused (411), and any refusal that leaves a body unread
+closes the connection (announced with `Connection: close`) so a keep-alive
+client cannot have the leftover bytes parsed as its next request line.
 
 The same rules cover the **machine write surface** (`POST
 /api/machine/<name>/{poke,answer,approve,steer}`): the machine name goes through

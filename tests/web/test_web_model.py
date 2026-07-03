@@ -34,6 +34,19 @@ def test_run_summary_captures_cost_and_status(tmp_path: Path) -> None:
     assert s["usd"] == 0.0123
 
 
+def test_run_summary_survives_torn_utf8_tail(tmp_path: Path) -> None:
+    # A live writer can leave the log's last line torn mid multibyte UTF-8
+    # sequence; the hub summary must fold the complete lines, not raise.
+    d = model.runs_root(tmp_path) / "torn"
+    d.mkdir(parents=True)
+    full = json.dumps({"type": "role.text_delta", "text": "café"}, ensure_ascii=False).encode()
+    cut = full.rindex(b"\xc3\xa9") + 1  # keep only the first byte of the é
+    head = json.dumps({"type": "run.start", "mode": "run", "user_task": "torn tail"}).encode()
+    (d / "logs.jsonl").write_bytes(head + b"\n" + full[:cut])
+    (s,) = model.hub_payload(tmp_path)["runs"]
+    assert s["task"] == "torn tail"
+
+
 def test_transcript_payload_empty_when_no_transcripts(tmp_path: Path) -> None:
     d = _run(tmp_path, "r2", [{"type": "run.start", "user_task": "x"}])
     payload = model.transcript_payload(d)

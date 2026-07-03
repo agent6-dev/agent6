@@ -29,6 +29,11 @@ def tail_events(  # noqa: PLR0912
     - If *follow* is false, yields existing lines and returns.
     - Skips malformed JSON lines silently (the writer may have a partial
       write in flight; we'll pick it up on the next poll).
+
+    Reads bytes and splits on b"\\n" before decoding: writers flush long lines
+    in multiple syscalls, so a poll can hit EOF mid multibyte UTF-8 sequence and
+    a text-mode read() would raise UnicodeDecodeError. Only complete lines are
+    decoded; the byte tail stays pending until its newline arrives.
     """
     while follow and not path.exists():
         if should_stop is not None and should_stop():
@@ -38,12 +43,12 @@ def tail_events(  # noqa: PLR0912
         return
 
     pos = 0
-    pending = ""
+    pending = b""
     while True:
         if should_stop is not None and should_stop():
             return
         try:
-            with path.open("r", encoding="utf-8") as fh:
+            with path.open("rb") as fh:
                 fh.seek(pos)
                 chunk = fh.read()
                 pos = fh.tell()
@@ -55,7 +60,7 @@ def tail_events(  # noqa: PLR0912
 
         if chunk:
             pending += chunk
-            lines = pending.split("\n")
+            lines = pending.split(b"\n")
             pending = lines[-1]  # last fragment may be incomplete
             for line in lines[:-1]:
                 evt = _parse_event_line(line)
@@ -73,11 +78,11 @@ def tail_events(  # noqa: PLR0912
         time.sleep(poll_s)
 
 
-def _parse_event_line(line: str) -> dict[str, Any] | None:
+def _parse_event_line(line: bytes) -> dict[str, Any] | None:
     if not line.strip():
         return None
     try:
-        evt = json.loads(line)
-    except json.JSONDecodeError:
+        evt = json.loads(line.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
         return None
     return evt if isinstance(evt, dict) else None

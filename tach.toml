@@ -39,7 +39,6 @@ depends_on = [
   "agent6.frontend",
   "agent6.viewmodel",
   "agent6.graph.client",
-  "agent6.graph.curator",
   "agent6.graph.models",
   "agent6.graph.storage",
   "agent6.run_id",
@@ -273,8 +272,10 @@ path = "agent6.machine.graph"
 depends_on = ["agent6.machine.model"]
 
 [[modules]]
+# JournalError subclasses MachineError (machine.model), so a broken journal and
+# a broken machine file degrade through the same catch sites.
 path = "agent6.machine.journal"
-depends_on = ["agent6.portable"]
+depends_on = ["agent6.machine.model", "agent6.portable"]
 
 [[modules]]
 path = "agent6.machine.engine"

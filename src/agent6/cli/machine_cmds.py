@@ -868,15 +868,20 @@ def _tail_state_log(
 ) -> tuple[int, float | None]:
     """Print complete new lines of *path* past *offset* (the agent's reasoning +
     tool calls, rendered like a run), returning the new offset (start of any
-    partial trailing line) and the elapsed-time anchor."""
+    partial trailing line) and the elapsed-time anchor.
+
+    Byte reads: a poll can hit EOF mid multibyte UTF-8 sequence (the writer
+    flushes long lines in several syscalls) and a text-mode readline would raise
+    UnicodeDecodeError there. Only complete lines are decoded."""
     try:
-        with path.open(encoding="utf-8") as fh:
+        with path.open("rb") as fh:
             fh.seek(offset)
             while True:
                 pos = fh.tell()
-                line = fh.readline()
-                if not line.endswith("\n"):
+                raw = fh.readline()
+                if not raw.endswith(b"\n"):
                     return pos, run_start_ts  # partial / EOF: resume here next poll
+                line = raw.decode("utf-8", errors="replace")
                 if run_start_ts is None:
                     with contextlib.suppress(json.JSONDecodeError):
                         run_start_ts = event_epoch(json.loads(line).get("ts"))

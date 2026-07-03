@@ -51,6 +51,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 from agent6.frontend.approval import (
     clear_frontend_pid,
     clear_steer_answer,
+    frontend_is_live,
     request_steer,
     write_answer,
     write_frontend_pid,
@@ -262,7 +263,7 @@ class Agent6TUI(App[int]):
 
     def on_mount(self) -> None:
         setup_theme(self)  # apply the saved theme before the first paint
-        write_frontend_pid(self.run_dir, os.getpid())
+        self._ensure_claim()
         self.sub_title = f"run · {self.run_dir.name}"  # menu-bar title context
         self.query_one("#tools", DataTable).add_columns("tool", "args", "ok", "summary")
         self._render()  # initial paint; later paints are coalesced in _tick
@@ -275,9 +276,26 @@ class Agent6TUI(App[int]):
         self._thread = threading.Thread(target=self._reader_loop, daemon=True)
         self._thread.start()
 
+    def _ensure_claim(self) -> None:
+        """Claim frontend.pid only when no live front-end owns it, so a concurrent
+        web/TUI viewer on the same run is not clobbered. Re-asserted each tick, so
+        if the owner goes away the bridge self-heals to this still-open dashboard
+        (the same pattern as MachineWatchScreen)."""
+        if not frontend_is_live(self.run_dir):
+            write_frontend_pid(self.run_dir, os.getpid())
+
     def on_unmount(self) -> None:
         self._stop.set()
-        clear_frontend_pid(self.run_dir)
+        # Stop claiming the run's prompts, but only if frontend.pid is still ours
+        # (a concurrent viewer may own it).
+        try:
+            owned = (self.run_dir / "frontend.pid").read_text(encoding="utf-8").strip() == str(
+                os.getpid()
+            )
+        except OSError:
+            owned = False
+        if owned:
+            clear_frontend_pid(self.run_dir)
 
     # --- reader thread -----------------------------------------------
 
@@ -289,6 +307,12 @@ class Agent6TUI(App[int]):
 
     def _handle_event(self, event: dict[str, object]) -> None:
         self.state = apply_event(self.state, event)
+        if event.get("type") == "run.start":
+            # A resume appends a new session to the same log and its prompt id
+            # counters restart at approval-1/question-1; a stale seen-set would
+            # swallow the new session's first prompts.
+            self._seen_approval_ids.clear()
+            self._seen_question_ids.clear()
         if self.exit_on_end and event.get("type") == "run.end":
             self._run_ended = True
         # Coalesce: mark dirty and let the 0.2s _tick repaint once. Replaying a
@@ -298,6 +322,7 @@ class Agent6TUI(App[int]):
         self._dirty = True
 
     def _tick(self) -> None:
+        self._ensure_claim()  # re-assert the bridge if a peer viewer went away
         for ap in self.state.pending_approvals:
             if not ap.answered and ap.id not in self._seen_approval_ids:
                 self._seen_approval_ids.add(ap.id)

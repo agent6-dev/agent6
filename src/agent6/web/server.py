@@ -52,6 +52,11 @@ _HEARTBEAT_S = 15.0
 _MACHINE_POLL_S = 0.5
 _STREAMING_DELTAS = frozenset({"role.text_delta", "role.thinking_delta"})
 
+# POST body cap. The typed bodies are a few strings (a task, an answer, a config
+# value); 1 MiB is generous. An uncapped Content-Length would let one request
+# buffer arbitrary bytes in this process.
+_MAX_BODY_BYTES = 1 << 20
+
 
 # Typed POST bodies (pydantic only at this HTTP trust boundary; extra keys are
 # rejected so a malformed request fails loudly rather than silently ignoring a
@@ -226,12 +231,35 @@ class _Handler(BaseHTTPRequestHandler):
                 self.close_connection = True
                 self._send_json({"error": csrf_err}, status=403)
                 return
+            if self.headers.get("Transfer-Encoding"):
+                # Only Content-Length bodies are read; a chunked body would sit
+                # unread on the connection like the early-error cases below.
+                self.close_connection = True
+                self._send_json({"error": "chunked bodies are not supported"}, status=411)
+                return
+            content_length = int(self.headers.get("Content-Length", "0") or "0")
+            if content_length < 0:
+                # A negative length would make rfile.read(n) read to EOF, buffering
+                # arbitrary bytes and parking the worker thread; the > cap check
+                # alone (n < cap) lets it through.
+                self.close_connection = True
+                self._send_json({"error": "negative Content-Length"}, status=400)
+                return
+            if content_length > _MAX_BODY_BYTES:
+                self.close_connection = True
+                self._send_json({"error": f"body larger than {_MAX_BODY_BYTES} bytes"}, status=413)
+                return
             self._route_post(path)
         except BrokenPipeError:
             pass
         except ValidationError as exc:
+            # The body was read (validation runs on the parsed body), so the
+            # connection framing is intact and may stay open.
             self._send_json({"error": f"bad request: {exc.errors()}"}, status=400)
         except Exception as exc:  # never take the whole server down for one bad request
+            # The body may not have been read; a keep-alive reuse would parse the
+            # leftover bytes as the next request line. Close instead.
+            self.close_connection = True
             self._send_json({"error": str(exc)}, status=500)
 
     def _csrf_refusal(self) -> str | None:
@@ -270,7 +298,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _read_body(self) -> dict[str, Any]:
         n = int(self.headers.get("Content-Length", "0") or "0")
-        raw = self.rfile.read(n) if n else b""
+        raw = self.rfile.read(n) if n > 0 else b""
         if not raw:
             return {}
         obj = json.loads(raw)
@@ -287,6 +315,10 @@ class _Handler(BaseHTTPRequestHandler):
             self._ok_or_err(run_id is not None, {"run_id": run_id}, err)
             return
         if path == "/api/runs/prune":
+            # Drain the body (the client posts `{}`) even though prune takes no
+            # params: an unread body would sit on the keep-alive socket and the
+            # next request line would be parsed with it prepended.
+            self._read_body()
             ok, msg = actions.prune_runs(self.cwd)
             self._ok_or_err(ok, {"message": msg}, msg)
             return
@@ -313,7 +345,13 @@ class _Handler(BaseHTTPRequestHandler):
         if len(parts) == 4 and parts[0] == "api" and parts[1] == "machine":
             self._route_machine_post(parts[2], parts[3])
             return
-        self._send_json({"error": f"not found: {path}"}, status=404)
+        self._post_not_found(path)
+
+    def _post_not_found(self, what: str) -> None:
+        """404 for a POST whose body was never read: close the connection so the
+        unread body cannot be parsed as the next request on keep-alive."""
+        self.close_connection = True
+        self._send_json({"error": f"not found: {what}"}, status=404)
 
     def _route_run_post(self, run_id: str, verb: str) -> None:
         if verb == "steer":
@@ -329,7 +367,7 @@ class _Handler(BaseHTTPRequestHandler):
             mb = MergeBody.model_validate(self._read_body())
             ok, msg = actions.merge_run(self.cwd, run_id, mb.strategy)
         else:
-            self._send_json({"error": f"not found: run/{run_id}/{verb}"}, status=404)
+            self._post_not_found(f"run/{run_id}/{verb}")
             return
         self._ok_or_err(ok, {"message": msg}, msg)
 
@@ -347,7 +385,7 @@ class _Handler(BaseHTTPRequestHandler):
             qb = AnswerBody.model_validate(self._read_body())
             ok, msg = actions.machine_answer(self.cwd, name, qb.id, qb.answer, state=qb.state)
         else:
-            self._send_json({"error": f"not found: machine/{name}/{verb}"}, status=404)
+            self._post_not_found(f"machine/{name}/{verb}")
             return
         self._ok_or_err(ok, {"message": msg}, msg)
 
@@ -449,6 +487,10 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        if self.close_connection:
+            # Announce the close (CSRF refusal, unread POST body): without the
+            # header a keep-alive client reuses the socket we are about to shut.
+            self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(body)
 
@@ -503,11 +545,15 @@ class _Handler(BaseHTTPRequestHandler):
 
         def tail() -> None:
             src = run_dir / "logs.jsonl"
-            for ev in tail_events(
-                src, follow=True, stop_when_finished=True, should_stop=stop.is_set
-            ):
-                events.put(ev)
-            events.put(None)  # sentinel: run ended (or tail cancelled), tailer done
+            try:
+                for ev in tail_events(
+                    src, follow=True, stop_when_finished=True, should_stop=stop.is_set
+                ):
+                    events.put(ev)
+            finally:
+                # ALWAYS enqueue the sentinel, even if the tailer raises: without
+                # it the response loop would block on heartbeats forever.
+                events.put(None)  # run ended (or tail cancelled/failed), tailer done
 
         threading.Thread(target=tail, daemon=True).start()
 
@@ -516,7 +562,7 @@ class _Handler(BaseHTTPRequestHandler):
             last_delta_emit = 0.0
             while True:
                 try:
-                    ev = events.get(timeout=_HEARTBEAT_S)
+                    ev: dict[str, Any] | None = events.get(timeout=_HEARTBEAT_S)
                 except queue.Empty:
                     if not self._sse_ping():
                         return
@@ -527,15 +573,22 @@ class _Handler(BaseHTTPRequestHandler):
                         self._sse_send(run_state_as_dict(state))
                         return
                     continue
+                # Fold everything already queued into ONE frame. On connect the
+                # tailer replays the whole history, and a full RunState frame per
+                # historical event is quadratic (13 MB probed on a 502-event run).
+                last_type = ""
+                while ev is not None:
+                    state = apply_event(state, ev)
+                    last_type = str(ev.get("type", ""))
+                    try:
+                        ev = events.get_nowait()
+                    except queue.Empty:
+                        break
                 if ev is None:  # run ended: send the final snapshot and close
                     self._sse_send(run_state_as_dict(state))
                     return
-                state = apply_event(state, ev)
                 now = time.monotonic()
-                if (
-                    ev.get("type") in _STREAMING_DELTAS
-                    and (now - last_delta_emit) < _DELTA_COALESCE_S
-                ):
+                if last_type in _STREAMING_DELTAS and (now - last_delta_emit) < _DELTA_COALESCE_S:
                     continue  # coalesce bursts of text/thinking deltas
                 if not self._sse_send(run_state_as_dict(state)):
                     return

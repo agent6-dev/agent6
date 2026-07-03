@@ -845,6 +845,13 @@ def drive(  # noqa: PLR0911, PLR0912, PLR0915
                 label, goto, fact = _execute(
                     spec, current, blackboard, world, seq=transitions, state_name=state
                 )
+                # A blocking wait consumed a wake that an earlier --exit-on-wait
+                # invocation may have persisted. A stale wait.json would suppress
+                # this state's notify on re-entry (the already_parked guard),
+                # reuse a stale wake_epoch under a later --exit-on-wait, and pin
+                # machine_is_parked in the web UI.
+                if isinstance(current, WaitState):
+                    journal.clear_pending_wait()
         except _STATE_RUNTIME_ERRORS as exc:
             # A data-driven state failure (e.g. an absent optional field, a tool
             # command rendering a non-scalar, a dynamic wait interval of zero):

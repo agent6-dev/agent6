@@ -13,8 +13,11 @@ from agent6.frontend.approval import (
     clear_frontend_pid,
     frontend_is_live,
     read_answer,
+    read_question_answer,
     write_answer,
     write_frontend_pid,
+    write_question_answer,
+    write_steer_answer,
 )
 
 
@@ -59,3 +62,88 @@ def test_write_answer_no_round_trips(tmp_path: Path) -> None:
     write_frontend_pid(tmp_path, os.getpid())
     write_answer(tmp_path, "x", approved=False)
     assert read_answer(tmp_path, "x", timeout_s=1.0) is False
+
+
+# --- liveness grace: a transient front-end drop must not deny the prompt ------
+
+
+def test_read_answer_survives_transient_frontend_drop(tmp_path: Path) -> None:
+    # The front-end is dead at poll time (an SSE drop / page reload) but comes
+    # back within the grace window and answers: the answer must be returned, not
+    # an instant headless None.
+    write_frontend_pid(tmp_path, 999999999)  # dead pid: the gate reads not-live
+
+    def revive_and_answer() -> None:
+        time.sleep(0.2)
+        write_frontend_pid(tmp_path, os.getpid())
+        write_answer(tmp_path, "g1", approved=True)
+
+    t = threading.Thread(target=revive_and_answer, daemon=True)
+    t.start()
+    result = read_answer(tmp_path, "g1", timeout_s=5.0, poll_s=0.05, dead_grace_s=2.0)
+    t.join(timeout=2)
+    assert result is True
+
+
+def test_read_answer_falls_back_after_grace_expires(tmp_path: Path) -> None:
+    # A front-end that stays dead past the grace window falls back headless
+    # (None) well before the answer timeout.
+    write_frontend_pid(tmp_path, 999999999)
+    start = time.monotonic()
+    result = read_answer(tmp_path, "g2", timeout_s=30.0, poll_s=0.05, dead_grace_s=0.3)
+    elapsed = time.monotonic() - start
+    assert result is None
+    assert 0.3 <= elapsed < 5.0  # grace elapsed, timeout not
+
+
+def test_read_question_answer_survives_transient_frontend_drop(tmp_path: Path) -> None:
+    write_frontend_pid(tmp_path, 999999999)
+
+    def revive_and_answer() -> None:
+        time.sleep(0.2)
+        write_frontend_pid(tmp_path, os.getpid())
+        write_question_answer(tmp_path, "q1", "picked")
+
+    t = threading.Thread(target=revive_and_answer, daemon=True)
+    t.start()
+    result = read_question_answer(tmp_path, "q1", timeout_s=5.0, poll_s=0.05, dead_grace_s=2.0)
+    t.join(timeout=2)
+    assert result == "picked"
+
+
+# --- atomic answer writes: the 0.2s poll must never consume a torn file -------
+
+
+def test_answer_writes_leave_no_tmp_and_are_never_torn(tmp_path: Path) -> None:
+    # write_* goes tmp+fsync+rename: a poller keyed on existence can only ever
+    # read the complete text (a plain write_text exposes an empty file first,
+    # which read_answer would consume as deny / "").
+    payload = "y" * 65536
+    target = tmp_path / "questions" / "q9.answer"
+    stop = threading.Event()
+    torn: list[str] = []
+
+    def poller() -> None:
+        while not stop.is_set():
+            try:
+                txt = target.read_text(encoding="utf-8")
+            except FileNotFoundError:
+                continue
+            if txt != payload:
+                torn.append(txt)
+                return
+
+    t = threading.Thread(target=poller, daemon=True)
+    t.start()
+    for _ in range(100):
+        write_question_answer(tmp_path, "q9", payload)
+        target.unlink(missing_ok=True)
+    stop.set()
+    t.join(timeout=5)
+    assert torn == []
+    assert not list((tmp_path / "questions").glob("*.tmp"))
+    write_answer(tmp_path, "a9", approved=True)
+    assert not list((tmp_path / "approvals").glob("*.tmp"))
+    write_steer_answer(tmp_path, "steer text")
+    assert not list(tmp_path.glob("*.tmp"))
+    assert (tmp_path / "steer.answer").read_text(encoding="utf-8") == "steer text"

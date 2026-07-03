@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from agent6.frontend.approval import (
+    read_worker_pid,
     request_steer,
     write_answer,
     write_question_answer,
@@ -26,10 +27,10 @@ from agent6.frontend.approval import (
 from agent6.frontend.spawn import (
     agent6_exe,
     run_cli_capture,
+    spawn_and_confirm,
     spawn_and_locate,
-    spawn_detached,
 )
-from agent6.machine import JournalError, MachineJournal
+from agent6.machine import JournalError, MachineError, MachineJournal, load_machine
 from agent6.viewmodel import newest_state_log
 from agent6.web import model
 
@@ -48,7 +49,9 @@ def spawn_new_work(cwd: Path, mode: str, task: str, profile: str = "") -> tuple[
     argv = [agent6_exe(), mode]
     if profile:
         argv += ["--profile", profile]
-    argv.append(task)
+    # `--` ends option parsing: the body-derived task can start with `-` without
+    # being read as a flag.
+    argv += ["--", task]
     run_dir, err = spawn_and_locate(
         argv,
         cwd,
@@ -65,7 +68,7 @@ def spawn_machine_create(cwd: Path, task: str) -> tuple[str | None, str]:
     if not task.strip():
         return None, "empty task"
     draft, err = spawn_and_locate(
-        [agent6_exe(), "machine", "create", task],
+        [agent6_exe(), "machine", "create", "--", task],
         cwd,
         before=set(model.draft_dir_paths(cwd)),
         list_dirs=lambda: model.draft_dir_paths(cwd),
@@ -76,11 +79,25 @@ def spawn_machine_create(cwd: Path, task: str) -> tuple[str | None, str]:
 def spawn_machine_run(cwd: Path, machine_file: str) -> tuple[bool, str]:
     """Spawn `agent6 machine run <file>` detached. `machine_file` must be one of
     the authored files the hub listed (validated against list_machine_files so the
-    browser cannot point it at an arbitrary path)."""
+    browser cannot point it at an arbitrary path).
+
+    Started = the child wrote its own pid as the instance worker.pid (it does so
+    right after taking the machine lock), so a refusal (lock held, network
+    refusal, bad bundle: nonzero exit before that) surfaces its stderr in the
+    toast instead of a false "started"."""
     allowed = {mf["path"] for mf in model.list_machine_files(cwd)}
     if machine_file not in allowed:
         return False, f"unknown machine file {machine_file!r}"
-    err = spawn_detached([agent6_exe(), "machine", "run", machine_file], cwd)
+    try:
+        spec = load_machine(Path(machine_file))
+    except MachineError as exc:
+        return False, f"invalid machine file: {exc}"
+    instance = model.machines_root(cwd) / spec.machine
+    err = spawn_and_confirm(
+        [agent6_exe(), "machine", "run", machine_file],
+        cwd,
+        started=lambda pid: read_worker_pid(instance) == pid,
+    )
     return (err == ""), (err or "started")
 
 
@@ -187,10 +204,12 @@ def machine_steer(cwd: Path, name: str, text: str, *, state: str = "") -> tuple[
 
 
 def merge_run(cwd: Path, run_id: str, strategy: str = "") -> tuple[bool, str]:
-    """Merge a run's branch: `agent6 runs merge <id> [--strategy S]`."""
-    argv = [agent6_exe(), "runs", "merge", run_id]
+    """Merge a run's branch: `agent6 runs merge <id> [--strategy S]`. `--` before
+    the client-supplied run id so a dashy value cannot be read as a flag."""
+    argv = [agent6_exe(), "runs", "merge"]
     if strategy:
         argv += ["--strategy", strategy]
+    argv += ["--", run_id]
     return run_cli_capture(argv, cwd)
 
 
@@ -201,8 +220,11 @@ def prune_runs(cwd: Path) -> tuple[bool, str]:
 
 def set_config(cwd: Path, key: str, value: str, *, repo: bool = False) -> tuple[bool, str]:
     """Set one config leaf: `agent6 config set <key> <value> [--repo]`. The CLI
-    validates the key and value; the write lands in the global config by default."""
-    argv = [agent6_exe(), "config", "set", key, value]
+    validates the key and value; the write lands in the global config by default.
+    `--` before the body-derived key/value so a dashy value cannot be read as a
+    flag."""
+    argv = [agent6_exe(), "config", "set"]
     if repo:
         argv.append("--repo")
+    argv += ["--", key, value]
     return run_cli_capture(argv, cwd)

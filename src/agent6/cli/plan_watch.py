@@ -413,16 +413,17 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0912, PLR0
         print(f"ERROR: no logs.jsonl in {target}", file=sys.stderr)
         return 2
 
-    # Read the first event for the elapsed-time anchor.
+    # Read the first event for the elapsed-time anchor. Binary readline: a
+    # torn-mid-UTF-8 first line must not crash the watch before it starts.
     run_start_ts: float | None = None
     try:
-        with events_path.open(encoding="utf-8") as fh:
+        with events_path.open("rb") as fh:
             first = fh.readline()
         if first:
-            obj0 = json.loads(first)
+            obj0 = json.loads(first.decode("utf-8"))
             if isinstance(obj0, dict):
                 run_start_ts = event_epoch(obj0.get("ts"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         run_start_ts = None
 
     print(
@@ -430,8 +431,13 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0912, PLR0
         file=sys.stderr,
     )
 
+    # Binary reads throughout: the writer flushes long lines in several
+    # syscalls, so a read can hit EOF mid multibyte UTF-8 sequence and a
+    # text-mode readline would raise UnicodeDecodeError. Complete lines are
+    # decoded (errors="replace"); a partial tail stays buffered until its
+    # newline arrives.
     try:
-        fh = events_path.open(encoding="utf-8")
+        fh = events_path.open("rb")
     except OSError as exc:
         print(f"ERROR: cannot open {events_path}: {exc}", file=sys.stderr)
         return 2
@@ -444,7 +450,8 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0912, PLR0
             except OSError as exc:
                 print(f"ERROR: read failed: {exc}", file=sys.stderr)
                 return 2
-            for line in lines[-since:]:
+            for raw in lines[-since:]:
+                line = raw.decode("utf-8", errors="replace")
                 print(format_plain_event(line, run_start_ts=run_start_ts))
         else:
             # Seek to end; only show new events going forward.
@@ -453,9 +460,15 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0912, PLR0
             current_ino = events_path.stat().st_ino
         except OSError:
             current_ino = -1
+        pending = b""
         while True:
-            line = fh.readline()
-            if line:
+            chunk = fh.readline()
+            if chunk:
+                pending += chunk
+                if not pending.endswith(b"\n"):
+                    continue  # partial line at EOF; the rest arrives next read
+                line = pending.decode("utf-8", errors="replace")
+                pending = b""
                 print(format_plain_event(line, run_start_ts=run_start_ts), flush=True)
                 continue
             # No new data: check for rotation and sleep briefly.
@@ -468,11 +481,12 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0912, PLR0
                 with contextlib.suppress(OSError):
                     fh.close()
                 try:
-                    fh = events_path.open(encoding="utf-8")
+                    fh = events_path.open("rb")
                 except OSError:
                     time.sleep(0.5)
                     continue
                 current_ino = new_ino
+                pending = b""
                 continue
             time.sleep(0.25)
     except KeyboardInterrupt:

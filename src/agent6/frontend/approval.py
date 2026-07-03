@@ -33,6 +33,14 @@ FRONTEND_PID_FILE = "frontend.pid"
 WORKER_PID_FILE = "worker.pid"  # the run's worker process, for `agent6 runs show` liveness
 STEER_ANSWER_FILE = "steer.answer"
 
+# How long the answer polls keep waiting after the front-end liveness gate goes
+# dark before falling back headless (deny / ""). A transient drop (a phone
+# locking its browser, a page reload, a web server restart) re-registers within
+# seconds; without the grace, one 0.2s poll landing in that gap silently denied
+# a pending approval. 30s outlasts a reload while a truly-gone front-end still
+# fails over well before the answer timeout.
+FRONTEND_DEAD_GRACE_S = 30.0
+
 
 def approvals_dir(run_dir: Path) -> Path:
     p = run_dir / APPROVAL_DIR_NAME
@@ -138,10 +146,54 @@ def frontend_is_live(run_dir: Path) -> bool:
     return True
 
 
+def _write_answer_atomic(target: Path, text: str) -> None:
+    """Write an answer file via temp + fsync + rename (the journal.poke pattern).
+
+    The reader polls on existence every 0.2s; a plain write_text exposes an
+    empty/partial file it would consume as deny / ""."""
+    tmp = target.with_suffix(".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    with tmp.open("r", encoding="utf-8") as fh:
+        os.fsync(fh.fileno())
+    tmp.rename(target)
+
+
+def _await_answer(
+    target: Path, live: Path, *, timeout_s: float, poll_s: float, dead_grace_s: float
+) -> str | None:
+    """Poll for *target*, consume it, and return its text.
+
+    Returns None when the front-end registered on *live* stays dead for
+    *dead_grace_s* consecutive seconds (see FRONTEND_DEAD_GRACE_S) or when
+    *timeout_s* elapses. A file that vanishes between polls is not-yet-answered,
+    never an error."""
+    deadline = time.monotonic() + timeout_s
+    dead_since: float | None = None
+    while time.monotonic() < deadline:
+        try:
+            txt = target.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            txt = None
+        if txt is not None:
+            with contextlib.suppress(FileNotFoundError):
+                target.unlink()  # consume: never re-read on a later prompt/resume
+            return txt
+        if frontend_is_live(live):
+            dead_since = None
+        else:
+            now = time.monotonic()
+            if dead_since is None:
+                dead_since = now
+            if now - dead_since >= dead_grace_s:
+                return None
+        time.sleep(poll_s)
+    return None
+
+
 def write_answer(run_dir: Path, prompt_id: str, *, approved: bool) -> None:
     """Called by a front-end (TUI or web)."""
     target = _answer_path(approvals_dir(run_dir), prompt_id)
-    target.write_text("yes" if approved else "no", encoding="utf-8")
+    _write_answer_atomic(target, "yes" if approved else "no")
 
 
 def read_answer(
@@ -151,26 +203,22 @@ def read_answer(
     timeout_s: float = 600.0,
     poll_s: float = 0.2,
     live_dir: Path | None = None,
+    dead_grace_s: float = FRONTEND_DEAD_GRACE_S,
 ) -> bool | None:
-    """Called by the workflow. Returns True/False or None on timeout.
+    """Called by the workflow. Returns True/False, or None on timeout or once the
+    front-end has stayed dead past ``dead_grace_s`` (a shorter drop keeps waiting).
 
     ``live_dir`` overrides which dir the liveness gate probes for ``frontend.pid``
     (defaults to ``run_dir``). A machine agent state reads answers from its
     per-state dir but the front-end registers on the instance dir, so it passes
     the instance dir here."""
     target = approvals_dir(run_dir) / f"{prompt_id}.answer"
-    live = live_dir or run_dir
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
-        if target.exists():
-            txt = target.read_text(encoding="utf-8").strip().lower()
-            with contextlib.suppress(FileNotFoundError):
-                target.unlink()  # consume: never re-read on a later prompt/resume
-            return txt in {"yes", "y", "true", "1"}
-        if not frontend_is_live(live):
-            return None
-        time.sleep(poll_s)
-    return None
+    txt = _await_answer(
+        target, live_dir or run_dir, timeout_s=timeout_s, poll_s=poll_s, dead_grace_s=dead_grace_s
+    )
+    if txt is None:
+        return None
+    return txt.strip().lower() in {"yes", "y", "true", "1"}
 
 
 # --- agent->user question bridge (the `ask_user` tool) -----------------------
@@ -188,7 +236,7 @@ def questions_dir(run_dir: Path) -> Path:
 
 def write_question_answer(run_dir: Path, question_id: str, answer: str) -> None:
     """Called by a front-end when the user answers the question."""
-    _answer_path(questions_dir(run_dir), question_id).write_text(answer, encoding="utf-8")
+    _write_answer_atomic(_answer_path(questions_dir(run_dir), question_id), answer)
 
 
 def read_question_answer(
@@ -198,23 +246,15 @@ def read_question_answer(
     timeout_s: float = 600.0,
     poll_s: float = 0.2,
     live_dir: Path | None = None,
+    dead_grace_s: float = FRONTEND_DEAD_GRACE_S,
 ) -> str | None:
-    """Called by the workflow. Returns the answer string or None if the TUI
-    died / timed out before answering. ``live_dir`` overrides the liveness-gate
-    dir (see :func:`read_answer`)."""
+    """Called by the workflow. Returns the answer string, or None on timeout or
+    once the front-end has stayed dead past ``dead_grace_s``. ``live_dir``
+    overrides the liveness-gate dir (see :func:`read_answer`)."""
     target = questions_dir(run_dir) / f"{question_id}.answer"
-    live = live_dir or run_dir
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
-        if target.exists():
-            txt = target.read_text(encoding="utf-8")
-            with contextlib.suppress(FileNotFoundError):
-                target.unlink()  # consume: never re-read on a later prompt/resume
-            return txt
-        if not frontend_is_live(live):
-            return None
-        time.sleep(poll_s)
-    return None
+    return _await_answer(
+        target, live_dir or run_dir, timeout_s=timeout_s, poll_s=poll_s, dead_grace_s=dead_grace_s
+    )
 
 
 # --- mid-run steering bridge (Ctrl-C while the TUI owns the terminal) --------
@@ -227,7 +267,7 @@ def read_question_answer(
 
 def write_steer_answer(run_dir: Path, answer: str) -> None:
     """Called by a front-end when the user answers the steer prompt."""
-    (run_dir / STEER_ANSWER_FILE).write_text(answer, encoding="utf-8")
+    _write_answer_atomic(run_dir / STEER_ANSWER_FILE, answer)
 
 
 def clear_steer_answer(run_dir: Path) -> None:
@@ -263,20 +303,16 @@ def read_steer_answer(
     timeout_s: float = 600.0,
     poll_s: float = 0.2,
     live_dir: Path | None = None,
+    dead_grace_s: float = FRONTEND_DEAD_GRACE_S,
 ) -> str | None:
     """Called by the workflow when the TUI is live. Returns the answer string
-    (consuming the file) or None if the TUI died / timed out before answering.
-    ``live_dir`` overrides the liveness-gate dir (see :func:`read_answer`)."""
-    target = run_dir / STEER_ANSWER_FILE
-    live = live_dir or run_dir
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
-        if target.exists():
-            txt = target.read_text(encoding="utf-8")
-            with contextlib.suppress(FileNotFoundError):
-                target.unlink()
-            return txt
-        if not frontend_is_live(live):
-            return None
-        time.sleep(poll_s)
-    return None
+    (consuming the file), or None on timeout or once the front-end has stayed
+    dead past ``dead_grace_s``. ``live_dir`` overrides the liveness-gate dir
+    (see :func:`read_answer`)."""
+    return _await_answer(
+        run_dir / STEER_ANSWER_FILE,
+        live_dir or run_dir,
+        timeout_s=timeout_s,
+        poll_s=poll_s,
+        dead_grace_s=dead_grace_s,
+    )

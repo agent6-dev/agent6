@@ -132,7 +132,10 @@ def _run_summary(run_dir: Path) -> dict[str, Any]:
             "usd": 0.0,
         }
     try:
-        with logs.open(encoding="utf-8") as fh:
+        # errors="replace": a live writer can leave a torn multibyte UTF-8 tail;
+        # strict decoding would 500 the whole hub. The mangled line just fails
+        # json.loads and is skipped.
+        with logs.open(encoding="utf-8", errors="replace") as fh:
             for line in fh:
                 try:
                     ev = json.loads(line)
@@ -153,7 +156,7 @@ def _run_summary(run_dir: Path) -> dict[str, Any]:
     if mode == "ask":
         transcript = run_dir / "transcript.md"
         with contextlib.suppress(OSError):
-            task = transcript.read_text(encoding="utf-8")
+            task = transcript.read_text(encoding="utf-8", errors="replace")
     return {
         "id": run_dir.name,
         "mode": mode,
@@ -187,9 +190,15 @@ def _list_machines(cwd: Path) -> list[dict[str, Any]]:
         if not d.is_dir() or not (d / "machine.asm.toml").is_file():
             continue
         entry: dict[str, Any] = {"name": d.name, "mtime": _machine_mtime(d), "status": "—"}
-        with contextlib.suppress(MachineError, OSError):
+        try:
             spec = load_machine(d / "machine.asm.toml")
             ms = fold_machine(spec, MachineJournal(d).read())
+        except (MachineError, OSError):
+            # A corrupt source or journal (JournalError is a MachineError) must
+            # not drop the instance from the hub or 500 the listing; show it as
+            # unreadable so the operator sees something is wrong.
+            entry["status"] = "unreadable"
+        else:
             entry["machine"] = ms.machine
             entry["current"] = ms.current
             entry["status"] = ms.ended.status if ms.ended is not None else "running"

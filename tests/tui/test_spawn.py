@@ -5,6 +5,7 @@ machines page's "create" -- both spawn the CLI detached, then watch the new log 
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -82,3 +83,44 @@ def test_spawn_and_locate_surfaces_spawn_failure(
     )
     assert found is None
     assert "failed to start agent6 run" in err
+
+
+# --- spawn_and_confirm: the machine-run launch with early-exit stderr capture --
+
+
+def test_spawn_and_confirm_surfaces_refusal_stderr(tmp_path: Path) -> None:
+    # A child that prints a refusal and exits nonzero before taking ownership
+    # (lock held, network refusal) must surface its stderr, not "" (started).
+    argv = [sys.executable, "-c", "import sys; sys.stderr.write('lock held'); sys.exit(2)"]
+    err = spawn.spawn_and_confirm(argv, tmp_path, started=lambda _pid: False, timeout_s=10.0)
+    assert "exited (2)" in err
+    assert "lock held" in err
+
+
+def test_spawn_and_confirm_returns_clean_once_started(tmp_path: Path) -> None:
+    # started(pid) flipping true ends the wait with "" while the child runs on.
+    marker = tmp_path / "worker.pid"
+    # The detached child exits on its own shortly after the started() signal.
+    code = (
+        "import os, time, pathlib, sys; "
+        f"pathlib.Path({str(marker)!r}).write_text(str(os.getpid())); "
+        "time.sleep(5)"
+    )
+
+    def started(pid: int) -> bool:
+        try:
+            return int(marker.read_text()) == pid
+        except (OSError, ValueError):
+            return False
+
+    err = spawn.spawn_and_confirm([sys.executable, "-c", code], tmp_path, started=started)
+    assert err == ""
+
+
+def test_spawn_and_confirm_clean_fast_exit_is_ok(tmp_path: Path) -> None:
+    # Exit 0 without the signal is a clean fast completion (an already-ended
+    # machine re-run), not an error.
+    err = spawn.spawn_and_confirm(
+        [sys.executable, "-c", "raise SystemExit(0)"], tmp_path, started=lambda _pid: False
+    )
+    assert err == ""

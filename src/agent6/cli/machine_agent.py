@@ -42,6 +42,7 @@ from agent6.config_layer import load_effective_with_overlay
 from agent6.detect import detect
 from agent6.events import EventSink
 from agent6.frontend.approval import (
+    clear_pending_answers,
     clear_steer_answer,
     clear_steer_request,
     frontend_is_live,
@@ -102,6 +103,11 @@ def _build_machine_bridges(
     A no live front-end (`frontend.pid` on the instance dir) makes each bridge a
     safe headless default: deny an approval, answer a question with "", no steer.
     """
+    # Crash recovery re-executes the same `<seq>-<state>` dir and its prompt-id
+    # counters restart at 1, so an answer file left by the aborted attempt would
+    # satisfy this execution's first prompt unseen. Drop the stale bridge state
+    # first (frontend.pid lives on the instance dir, so this touches none).
+    clear_pending_answers(state_dir)
     counters = {"approval": 0, "question": 0}
 
     def approve(prompt: str) -> bool:

@@ -428,6 +428,232 @@ def test_sse_run_streams_snapshot(server: tuple[WebServer, int], tmp_path: Path)
         conn.close()
 
 
+# --- a corrupt journal degrades, never 500s / kills the stream ---------------
+
+
+def _corrupt_journal(inst: Path) -> None:
+    (inst / "journal.jsonl").write_text('{"type": "step", "bogus": true}\n', encoding="utf-8")
+
+
+def test_corrupt_journal_hub_shows_unreadable(
+    server: tuple[WebServer, int], tmp_path: Path
+) -> None:
+    # One corrupt journal line must not 500 the whole landing page; the entry
+    # stays listed with an unreadable status.
+    _srv, port = server
+    inst, _ = _make_machine_with_state(tmp_path, "sick", "0000-review")
+    _corrupt_journal(inst)
+    _make_run(tmp_path, "healthy-run", [{"type": "run.start", "user_task": "x"}])
+    status, body, _ = _get(port, "/api/hub")
+    assert status == 200
+    hub = json.loads(body)
+    (entry,) = [m for m in hub["machines"] if m["name"] == "sick"]
+    assert entry["status"] == "unreadable"
+
+
+def test_corrupt_journal_machine_snapshot_is_422(
+    server: tuple[WebServer, int], tmp_path: Path
+) -> None:
+    _srv, port = server
+    inst, _ = _make_machine_with_state(tmp_path, "sick2", "0000-review")
+    _corrupt_journal(inst)
+    status, body, _ = _get(port, "/api/machine/sick2")
+    assert status == 422
+    assert "corrupt journal" in json.loads(body)["error"]
+
+
+def test_corrupt_journal_machine_sse_sends_error_frame(
+    server: tuple[WebServer, int], tmp_path: Path
+) -> None:
+    # The SSE stream must emit an in-band error frame and close, never write a
+    # second HTTP status line into the open stream.
+    _srv, port = server
+    inst, _ = _make_machine_with_state(tmp_path, "sick3", "0000-review")
+    _corrupt_journal(inst)
+    conn = HTTPConnection("127.0.0.1", port, timeout=10)
+    try:
+        conn.request("GET", "/api/machine/sick3/events")
+        resp = conn.getresponse()
+        assert resp.status == 200
+        seen = resp.read()  # stream closes after the error frame
+        frames = [f for f in seen.split(b"\n\n") if f.startswith(b"data:")]
+        assert len(frames) == 1
+        assert "corrupt journal" in json.loads(frames[0][len(b"data:") :].strip())["error"]
+        assert b"HTTP/1" not in seen  # no second status line inside the stream
+    finally:
+        conn.close()
+
+
+# --- SSE catch-up folds history into one frame --------------------------------
+
+
+def test_sse_run_catchup_folds_history_into_few_frames(
+    server: tuple[WebServer, int], tmp_path: Path
+) -> None:
+    # Connecting to a run with a long history must not emit one full RunState
+    # frame per historical event (13 MB probed on a 502-event run): the backlog
+    # folds into (almost) one snapshot.
+    _srv, port = server
+    events: list[dict[str, object]] = [{"type": "run.start", "user_task": "big"}]
+    for i in range(150):
+        events.append({"type": "tool.call", "name": f"t{i}", "args": {}})
+        events.append({"type": "tool.result", "name": f"t{i}", "ok": True, "summary": "ok"})
+    events.append({"type": "run.end", "all_passed": True})
+    _make_run(tmp_path, "big-run", events)
+    conn = HTTPConnection("127.0.0.1", port, timeout=10)
+    try:
+        conn.request("GET", "/api/run/big-run/events")
+        resp = conn.getresponse()
+        assert resp.status == 200
+        seen = resp.read()
+        frames = [f for f in seen.split(b"\n\n") if f.startswith(b"data:")]
+        assert 1 <= len(frames) <= 5  # was ~1 per historical event
+        snap = json.loads(frames[-1][len(b"data:") :].strip())
+        assert snap["finished"] is True
+        assert snap["log_count"] == len(events)
+    finally:
+        conn.close()
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_sse_run_closes_even_if_tailer_dies(
+    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The tail thread must ALWAYS enqueue its None sentinel: if it raises (the
+    # injected raise below is intentionally unhandled in that thread), the
+    # stream sends the folded snapshot and closes instead of hanging until the
+    # client gives up.
+    import agent6.web.server as server_mod
+
+    def _boom(*_a: object, **_k: object) -> object:
+        raise RuntimeError("tailer died")
+
+    monkeypatch.setattr(server_mod, "tail_events", _boom)
+    _srv, port = server
+    _make_run(tmp_path, "dead-tail", [{"type": "run.start", "user_task": "x"}])
+    conn = HTTPConnection("127.0.0.1", port, timeout=5)
+    try:
+        conn.request("GET", "/api/run/dead-tail/events")
+        resp = conn.getresponse()
+        assert resp.status == 200
+        seen = resp.read()  # must reach EOF, not time out
+        frames = [f for f in seen.split(b"\n\n") if f.startswith(b"data:")]
+        assert len(frames) == 1  # the final (initial-state) snapshot
+    finally:
+        conn.close()
+
+
+# --- POST hardening -----------------------------------------------------------
+
+
+def test_oversize_post_body_is_413(server: tuple[WebServer, int]) -> None:
+    # Headers only: the server refuses on Content-Length alone, before any body
+    # bytes arrive (actually streaming 1 MiB races the server's early close).
+    _srv, port = server
+    conn = HTTPConnection("127.0.0.1", port, timeout=10)
+    try:
+        conn.putrequest("POST", "/api/new")
+        conn.putheader("Content-Type", "application/json")
+        conn.putheader("Content-Length", str((1 << 20) + 100))
+        conn.endheaders()
+        resp = conn.getresponse()
+        assert resp.status == 413
+        assert "body larger" in json.loads(resp.read())["error"]
+    finally:
+        conn.close()
+
+
+def test_prune_body_is_drained_so_keepalive_is_not_poisoned(
+    server: tuple[WebServer, int],
+) -> None:
+    # The client posts `{}` to prune. If the route does not read that body, the
+    # 2 bytes sit on the keep-alive socket and the next pipelined request line is
+    # parsed with them prepended -> 400 Bad Request. Pipeline prune + a GET on a
+    # single socket and require the GET to be answered cleanly.
+    _srv, port = server
+    sock = socket.create_connection(("127.0.0.1", port), timeout=10)
+    try:
+        body = b"{}"
+        prune = (
+            b"POST /api/runs/prune HTTP/1.1\r\n"
+            b"Host: 127.0.0.1\r\n"
+            b"Content-Type: application/json\r\n"
+            b"Content-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body
+        )
+        follow = b"GET /api/hub HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n"
+        sock.sendall(prune + follow)
+        chunks = []
+        while True:
+            data = sock.recv(4096)
+            if not data:
+                break
+            chunks.append(data)
+        raw = b"".join(chunks)
+    finally:
+        sock.close()
+    # Both requests were answered (prune then GET), the GET returned the hub
+    # payload, and nothing was a 400 framing error: the prune body was drained.
+    # Undrained, the GET line would parse as `{}GET /api/hub...` -> 400 and no
+    # hub JSON.
+    assert raw.count(b"HTTP/1.1 ") == 2, raw
+    assert b" 400 " not in raw, raw
+    assert b'"runs":' in raw, raw  # the GET /api/hub payload came back intact
+
+
+def test_negative_content_length_is_rejected(server: tuple[WebServer, int]) -> None:
+    # A negative Content-Length must not reach rfile.read(n) (which would read to
+    # EOF and park the worker); reject it up front.
+    _srv, port = server
+    status, body = _post_raw(
+        port,
+        "/api/new",
+        b"",
+        {"Content-Type": "application/json", "Content-Length": "-1"},
+    )
+    assert status == 400
+    assert "Content-Length" in str(body["error"])
+
+
+def test_chunked_post_body_is_refused(server: tuple[WebServer, int]) -> None:
+    # Only Content-Length bodies are read; a chunked body would sit unread on
+    # the connection exactly like an undrained early-error body.
+    _srv, port = server
+    status, body = _post_raw(
+        port,
+        "/api/runs/prune",
+        b"",
+        {"Transfer-Encoding": "chunked", "Content-Type": "application/json"},
+    )
+    assert status == 411
+    assert "chunked" in str(body["error"])
+
+
+def test_unknown_post_verb_does_not_poison_keepalive(
+    server: tuple[WebServer, int], tmp_path: Path
+) -> None:
+    # A 404 that leaves the body undrained poisoned the keep-alive connection:
+    # the next request parsed the leftover body as its request line (probed
+    # garbage 400). The server now closes; the client reconnects cleanly.
+    _srv, port = server
+    _make_run(tmp_path, "ka-run", [{"type": "run.start", "user_task": "x"}])
+    conn = HTTPConnection("127.0.0.1", port, timeout=10)
+    try:
+        payload = json.dumps({"text": "hello"}).encode()
+        conn.request(
+            "POST", "/api/run/ka-run/bogusverb", payload, {"Content-Type": "application/json"}
+        )
+        resp = conn.getresponse()
+        assert resp.status == 404
+        resp.read()
+        # Same client object again: must yield a clean 200, not body-garbage 400.
+        conn.request("GET", "/api/hub")
+        resp2 = conn.getresponse()
+        assert resp2.status == 200
+        assert json.loads(resp2.read())["runs"]
+    finally:
+        conn.close()
+
+
 # --- CSRF: cross-site state-changing POSTs are refused -----------------------
 
 
