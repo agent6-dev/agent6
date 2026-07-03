@@ -632,6 +632,12 @@ class OpenAIProvider:
         tool_arg_buf: dict[int, list[str]] = {}
         finish_reason = ""
         usage: dict[str, Any] = {}
+        # Stream-completion tracking: a legit stream ends with `[DONE]` and/or a
+        # non-empty `finish_reason`. A stream that ends with neither was cut off
+        # (gateway timed out the upstream and closed the body cleanly, the same
+        # failure family OpenRouter delivers as a mid-stream `error` frame); its
+        # half-assembled content must NOT be returned as a completed turn.
+        done_seen = False
 
         # idle-since-last-DATA watchdog. ``last_data_at`` is
         # updated only on real SSE ``data:`` lines; heartbeats (``:``)
@@ -706,12 +712,31 @@ class OpenAIProvider:
                     data_str = line[5:].strip()
                     if not data_str or data_str == "[DONE]":
                         if data_str == "[DONE]":
+                            done_seen = True
                             break
                         continue
                     try:
                         evt: dict[str, Any] = json.loads(data_str)
                     except json.JSONDecodeError:
                         continue
+                    # Mid-stream error frame (OpenRouter/OpenAI/LiteLLM deliver an
+                    # upstream 5xx/429 this way, then end the stream). Surface it
+                    # instead of silently returning the partial turn, mirroring the
+                    # Anthropic `error` event. No status_code -> retryable, so
+                    # _call_with_retry re-issues the request.
+                    err = evt.get("error")
+                    if isinstance(err, dict):
+                        if self.transcript_sink is not None:
+                            self.transcript_sink.record(
+                                url=url,
+                                request_headers=stream_headers,
+                                request_body=body,
+                                response_status=0,
+                                response_body=data_str[:8192],
+                            )
+                        raise ProviderError(
+                            f"OpenAI stream error: {err.get('code')}: {err.get('message')}"
+                        )
                     evt_usage = evt.get("usage")
                     if isinstance(evt_usage, dict):
                         usage = evt_usage
@@ -816,6 +841,25 @@ class OpenAIProvider:
             raise ProviderError(f"HTTP error streaming from {url} (openai format): {exc}") from exc
         finally:
             watchdog_stop.set()
+
+        # A stream that ended without `[DONE]` and without any `finish_reason`
+        # was cut off mid-generation (a clean EOF is not a completion signal).
+        # Returning the accumulated partial text / half-built tool call as a
+        # finished turn feeds the loop a bogus silent_finish or a truncated
+        # tool_use; raise a retryable ProviderError so the call is re-issued.
+        if not done_seen and not finish_reason:
+            if self.transcript_sink is not None:
+                self.transcript_sink.record(
+                    url=url,
+                    request_headers=stream_headers,
+                    request_body=body,
+                    response_status=0,
+                    response_body="stream ended without [DONE] or finish_reason (truncated)",
+                )
+            raise ProviderError(
+                f"OpenAI stream from {url} ended prematurely "
+                "(no [DONE], no finish_reason); upstream appears cut off."
+            )
 
         # Finalise tool_call arguments.
         final_tool_calls: list[dict[str, Any]] = []

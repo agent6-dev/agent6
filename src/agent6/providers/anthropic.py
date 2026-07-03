@@ -563,6 +563,10 @@ class AnthropicProvider:
         thinking_acc: dict[int, list[str]] = {}
         signature_acc: dict[int, list[str]] = {}
         stop_reason: str = ""
+        # The stream is complete only when a `message_stop` event arrives. A
+        # clean EOF before it means the connection was cut mid-message; the
+        # accumulated blocks are a truncated turn, not a finished one.
+        saw_message_stop = False
         usage_input = 0
         usage_output = 0
         usage_cache_read = 0
@@ -738,6 +742,7 @@ class AnthropicProvider:
                         if "output_tokens" in u:
                             usage_output = int(u.get("output_tokens") or usage_output)
                     elif et == "message_stop":
+                        saw_message_stop = True
                         break
                     elif et == "error":
                         err = evt.get("error", {}) or {}
@@ -779,6 +784,26 @@ class AnthropicProvider:
             ) from exc
         finally:
             watchdog_stop.set()
+
+        # No `message_stop` means the stream was cut mid-message (a clean EOF is
+        # not a completion signal). The accumulated blocks are a truncated turn,
+        # possibly with text already fanned to the TUI; returning them as a
+        # finished response feeds the loop a bogus went_quiet/silent_finish and
+        # records input tokens for a call that never completed. Raise a retryable
+        # ProviderError so _call_with_retry re-issues the request.
+        if not saw_message_stop:
+            if self.transcript_sink is not None:
+                self.transcript_sink.record(
+                    url=url,
+                    request_headers=stream_headers,
+                    request_body=body,
+                    response_status=0,
+                    response_body="stream ended without message_stop (truncated)",
+                )
+            raise ProviderError(
+                f"Anthropic SSE stream from {url} ended prematurely "
+                "(no message_stop); upstream appears cut off."
+            )
 
         # Synthesise the non-streaming-shaped response body so
         # downstream consumers (transcript replay, assistant_blocks

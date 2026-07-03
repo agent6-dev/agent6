@@ -268,6 +268,74 @@ def test_streaming_httpx_transport_error_raises_provider_error() -> None:
         )
 
 
+def test_streaming_mid_stream_error_frame_raises_not_silent() -> None:
+    """OpenRouter/OpenAI deliver an upstream 5xx as a mid-stream `error` frame
+    then end the stream. It must surface as a (retryable) ProviderError, not be
+    swallowed and returned as a truncated silent_finish."""
+    provider = OpenAIProvider(api_key="sk-test", model="kimi")
+    lines = _chunk(
+        {"choices": [{"index": 0, "delta": {"content": "partial"}, "finish_reason": None}]}
+    )
+    lines += _chunk({"error": {"code": 502, "message": "upstream gateway error"}})
+
+    def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
+        return _FakeStreamResponse(status_code=200, lines=lines)
+
+    with (
+        mock.patch("httpx2.stream", side_effect=fake_stream),
+        pytest.raises(ProviderError, match="stream error: 502"),
+    ):
+        provider.call(
+            system="sys",
+            messages=[{"role": "user", "content": "x"}],
+            text_delta_callback=lambda _p: None,
+        )
+
+
+def test_streaming_premature_end_without_done_or_finish_raises() -> None:
+    """A stream that ends without `[DONE]` and without any `finish_reason` was
+    cut off mid-generation; its partial content must not be returned as a
+    finished turn."""
+    provider = OpenAIProvider(api_key="sk-test", model="kimi")
+    lines = _chunk(
+        {"choices": [{"index": 0, "delta": {"content": "half a sentence"}, "finish_reason": None}]}
+    )
+
+    def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
+        return _FakeStreamResponse(status_code=200, lines=lines)
+
+    with (
+        mock.patch("httpx2.stream", side_effect=fake_stream),
+        pytest.raises(ProviderError, match="ended prematurely"),
+    ):
+        provider.call(
+            system="sys",
+            messages=[{"role": "user", "content": "x"}],
+            text_delta_callback=lambda _p: None,
+        )
+
+
+def test_streaming_finish_reason_without_done_is_complete() -> None:
+    """A gateway that sends a real `finish_reason` but omits `[DONE]` is a
+    completed turn, not a premature end."""
+    provider = OpenAIProvider(api_key="sk-test", model="kimi")
+    lines = _chunk(
+        {"choices": [{"index": 0, "delta": {"content": "done"}, "finish_reason": "stop"}]}
+    )
+
+    def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
+        return _FakeStreamResponse(status_code=200, lines=lines)
+
+    with mock.patch("httpx2.stream", side_effect=fake_stream):
+        resp = provider.call(
+            system="sys",
+            messages=[{"role": "user", "content": "x"}],
+            text_delta_callback=lambda _p: None,
+        )
+    assert resp.text == "done"
+    assert resp.stop_reason == "stop"
+
+
 def test_no_callback_does_not_stream() -> None:
     provider = OpenAIProvider(api_key="sk-test", model="kimi")
 

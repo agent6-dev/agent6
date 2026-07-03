@@ -291,6 +291,66 @@ def test_streaming_callback_exception_does_not_break_stream(
     assert resp.stop_reason == "end_turn"
 
 
+def _truncated_text_stream() -> list[str]:
+    """A stream cut off mid-message: message_start + a text delta, then a clean
+    EOF with no content_block_stop and no message_stop."""
+    return _sse(
+        [
+            (
+                "message_start",
+                {
+                    "message": {
+                        "usage": {
+                            "input_tokens": 500,
+                            "cache_read_input_tokens": 100,
+                            "cache_creation_input_tokens": 0,
+                        }
+                    }
+                },
+            ),
+            (
+                "content_block_start",
+                {"index": 0, "content_block": {"type": "text", "text": ""}},
+            ),
+            (
+                "content_block_delta",
+                {
+                    "index": 0,
+                    "delta": {"type": "text_delta", "text": "I will now edit the file"},
+                },
+            ),
+        ]
+    )
+
+
+def test_streaming_premature_end_without_message_stop_raises(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A clean EOF before `message_stop` is a cut-off turn, not a completed one:
+    it must raise a (retryable) ProviderError so the loop re-issues the request,
+    not return the partial content and record input tokens as if it finished."""
+    sink = TranscriptSink(tmp_path / "transcripts")
+    provider = AnthropicProvider(
+        api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
+    )
+
+    def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
+        return _FakeStreamResponse(status_code=200, lines=_truncated_text_stream())
+
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
+
+    pieces: list[str] = []
+    with pytest.raises(ProviderError, match="ended prematurely"):
+        provider.call(
+            system="sys",
+            messages=[{"role": "user", "content": "x"}],
+            text_delta_callback=pieces.append,
+        )
+    # The delta was fanned to the callback before the cut, but the call itself
+    # must fail rather than report success.
+    assert pieces == ["I will now edit the file"]
+
+
 def test_streaming_propagates_http_error(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     sink = TranscriptSink(tmp_path / "transcripts")
     provider = AnthropicProvider(
