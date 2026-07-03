@@ -259,7 +259,7 @@ def test_streaming_httpx_transport_error_raises_provider_error() -> None:
 
     with (
         mock.patch("httpx2.stream", side_effect=boom),
-        pytest.raises(ProviderError, match="HTTP error streaming OpenAI"),
+        pytest.raises(ProviderError, match="HTTP error streaming from"),
     ):
         provider.call(
             system="sys",

@@ -73,3 +73,50 @@ def test_revalidate_machine_accepts_valid_spec(
 
     assert cc._revalidate_config(target, None, machine=target) is None  # pyright: ignore[reportPrivateUsage]
     assert target.read_text(encoding="utf-8") == _GOOD  # untouched
+
+
+def test_config_add_on_scalar_key_says_not_a_list(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The key is unset in the target file, so the old file-only guard let a
+    # scalar through to revalidation, which printed a self-contradictory
+    # "'local' is not valid ... Input should be 'providers', 'local' or 'open'".
+    from agent6.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    rc = main(["config", "add", "sandbox.agent_network", "local"])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "not a list field" in err
+    assert "Input should be" not in err
+
+
+def test_config_add_on_unset_list_key_still_works(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from agent6.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    rc = main(["config", "add", "sandbox.allow_urls", "https://example.com"])
+    assert rc == 0
+    assert "Added" in capsys.readouterr().out
+
+
+def test_config_add_on_unset_optional_list_key_works(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A `list[str] | None` field (providers.*.token_command, default None) whose
+    # value is unset must not be misread as a scalar: the effective value is
+    # None, which is not proof of scalar-ness. Regression for a guard that
+    # refused `config add` on it with a "not a list field" error.
+    from agent6.cli import main
+    from agent6.paths import global_config_path
+
+    global_config_path().write_text(
+        '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    rc = main(["config", "add", "providers.anthropic.token_command", "aws-vault"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Added" in out

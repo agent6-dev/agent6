@@ -200,3 +200,60 @@ def test_runs_commits_lists_per_step(
     assert rc == 0
     assert "agent6 iter 1: add a" in out
     assert "agent6 iter 2: add b" in out
+
+
+def test_runs_merge_zero_commit_branch_is_a_stated_noop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A run branch with no commits used to print a success line
+    # indistinguishable from a real merge.
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-EMPTY1", commits=[])
+    head_before = _git(tmp_path, "rev-parse", "main")
+    rc = main(["runs", "merge", "run-EMPTY1"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "nothing to merge" in out
+    assert "[agent6] merged" not in out
+    assert _git(tmp_path, "rev-parse", "main") == head_before  # no commit made
+
+
+def test_runs_diff_zero_commit_branch_prints_no_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-EMPTY2", commits=[])
+    rc = main(["runs", "diff", "run-EMPTY2"])
+    assert rc == 0
+    assert "(no changes)" in capfd.readouterr().out
+
+
+def test_runs_diff_with_commits_prints_the_patch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-DIFF01", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    rc = main(["runs", "diff", "run-DIFF01"])
+    assert rc == 0
+    out = capfd.readouterr().out
+    assert "(no changes)" not in out
+    assert "+a" in out  # the real patch still prints
+
+
+def test_runs_diff_neutralizes_poisoned_diff_external(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # A checkout with `[diff] external = CMD` in .git/config must not execute
+    # CMD on the host when the operator runs `agent6 runs diff`; the -c
+    # hardening overrides force the builtin diff.
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-EVIL01", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    marker = tmp_path / "pwned"
+    script = tmp_path / "evil.sh"
+    script.write_text(f"#!/bin/sh\ntouch {marker}\n", encoding="utf-8")
+    script.chmod(0o755)
+    _git(tmp_path, "config", "diff.external", str(script))
+    rc = main(["runs", "diff", "run-EVIL01"])
+    assert rc == 0
+    assert not marker.exists()  # the payload never ran
+    assert "+a" in capfd.readouterr().out  # builtin diff still printed the patch

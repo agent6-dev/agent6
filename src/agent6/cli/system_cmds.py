@@ -81,6 +81,25 @@ def _run_priv(argv: list[str], *, what: str) -> bool:
     return rc == 0
 
 
+def _discard_unloaded_profile() -> None:
+    """apparmor_parser refused the just-copied profile: remove it so `system
+    apparmor status` doesn't report installed for a profile the kernel never
+    loaded. Best effort; say so if the file survives."""
+    _run_priv(["rm", "-f", _APPARMOR_PROFILE_PATH], what="remove the unloaded profile")
+    if Path(_APPARMOR_PROFILE_PATH).is_file():
+        print(
+            f"WARNING: {_APPARMOR_PROFILE_PATH} was left on disk UNLOADED;"
+            " remove it with `agent6 system apparmor remove`.",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            f"Removed {_APPARMOR_PROFILE_PATH} again: apparmor_parser refused to load it,"
+            " so nothing is installed.",
+            file=sys.stderr,
+        )
+
+
 def _cmd_system_apparmor(action: Literal["install", "remove", "status"]) -> int:
     """Install / remove / report the agent6-jail AppArmor profile."""
     installed = Path(_APPARMOR_PROFILE_PATH).is_file()
@@ -142,6 +161,8 @@ def _cmd_system_apparmor(action: Literal["install", "remove", "status"]) -> int:
             ok = _run_priv(
                 ["apparmor_parser", "-r", _APPARMOR_PROFILE_PATH], what="load the profile"
             )
+            if not ok:
+                _discard_unloaded_profile()
     finally:
         with contextlib.suppress(OSError):
             Path(tmp).unlink()

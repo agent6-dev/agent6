@@ -7,6 +7,7 @@ from __future__ import annotations
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from agent6.cli._common import (
     _check_provider_keys,
@@ -150,8 +151,11 @@ def _print_sandbox_reports(reports: list[SandboxReport]) -> int:
 
 @dataclass(frozen=True, slots=True)
 class _DoctorCheck:
+    """One summary row. `status` carries through to the summary line unchanged:
+    INFO (advisory, e.g. "run `agent6 connect`") must never render as PASS."""
+
     name: str
-    ok: bool
+    status: Literal["PASS", "FAIL", "INFO"]
     detail: str
 
 
@@ -175,7 +179,7 @@ def _cmd_check(config_path: Path | None, *, section: str) -> int:
         checks.append(
             _DoctorCheck(
                 name="sandbox",
-                ok=(rc == 0),
+                status="PASS" if rc == 0 else "FAIL",
                 detail="all jail probes passed" if rc == 0 else f"check sandbox exit {rc}",
             )
         )
@@ -191,7 +195,7 @@ def _cmd_check(config_path: Path | None, *, section: str) -> int:
         cfg = None
         if section in {"all", "mcp", "verify", "config"}:
             print(f"== config ==\n[FAIL] cannot load config: {exc}\n")
-            checks.append(_DoctorCheck(name="config_load", ok=False, detail=str(exc)))
+            checks.append(_DoctorCheck(name="config_load", status="FAIL", detail=str(exc)))
 
     if cfg is not None and section in {"all", "config"}:
         print("== config ==")
@@ -209,12 +213,11 @@ def _cmd_check(config_path: Path | None, *, section: str) -> int:
         print()
 
     print("== summary ==")
-    overall_ok = True
+    failed = False
     for c in checks:
-        flag = "PASS" if c.ok else "FAIL"
-        print(f"[{flag}] {c.name}: {c.detail}")
-        overall_ok = overall_ok and c.ok
-    return 0 if overall_ok else 1
+        print(f"[{c.status}] {c.name}: {c.detail}")
+        failed = failed or c.status == "FAIL"
+    return 1 if failed else 0
 
 
 def _check_config_section(cfg: Config) -> list[_DoctorCheck]:
@@ -235,10 +238,12 @@ def _check_config_section(cfg: Config) -> list[_DoctorCheck]:
     try:
         selected = select_profile(cfg.sandbox.profile, env)
         print(f"  -> selected profile: {selected}")
-        out.append(_DoctorCheck(name="config.profile", ok=True, detail=f"selected {selected}"))
+        out.append(
+            _DoctorCheck(name="config.profile", status="PASS", detail=f"selected {selected}")
+        )
     except RuntimeError as exc:
         print(f"  [FAIL] profile selection: {exc}")
-        out.append(_DoctorCheck(name="config.profile", ok=False, detail=str(exc)))
+        out.append(_DoctorCheck(name="config.profile", status="FAIL", detail=str(exc)))
     out.extend(_doctor_check_config(cfg))
     return out
 
@@ -255,13 +260,13 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
         return [
             _DoctorCheck(
                 name="mcp",
-                ok=True,
+                status="PASS",
                 detail="not configured (cfg.mcp.enabled=False or empty servers)",
             )
         ]
     manager = _start_mcp_manager_if_enabled(cfg)
     if manager is None:
-        return [_DoctorCheck(name="mcp", ok=True, detail="no enabled servers")]
+        return [_DoctorCheck(name="mcp", status="PASS", detail="no enabled servers")]
     out: list[_DoctorCheck] = []
     try:
         descriptors = manager.descriptors()
@@ -274,7 +279,9 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
             ok = bool(tools)
             detail = f"{len(tools)} tool(s)" if ok else "started but exposed no tools"
             print(f"[{'PASS' if ok else 'FAIL'}] mcp.{name}: {detail}")
-            out.append(_DoctorCheck(name=f"mcp.{name}", ok=ok, detail=detail))
+            out.append(
+                _DoctorCheck(name=f"mcp.{name}", status="PASS" if ok else "FAIL", detail=detail)
+            )
     finally:
         manager.close()
     return out
@@ -291,8 +298,8 @@ def _doctor_check_verify(cfg: Config) -> list[_DoctorCheck]:
     if not argv:
         # Optional now: `agent6 run`/`plan` infer one (AGENTS.md -> repo signals
         # -> LLM), falling back to a gateless run. Advisory, not a failure.
-        print("[INFO] verify.argv: unset — will be inferred per run (or run gateless)")
-        return [_DoctorCheck(name="verify.argv", ok=True, detail="unset (inferred per run)")]
+        print("[INFO] verify.argv: unset; will be inferred per run (or run gateless)")
+        return [_DoctorCheck(name="verify.argv", status="INFO", detail="unset (inferred per run)")]
     head = argv[0]
     resolved = shutil.which(head)
     ok = resolved is not None
@@ -300,7 +307,7 @@ def _doctor_check_verify(cfg: Config) -> list[_DoctorCheck]:
     print(f"[{'PASS' if ok else 'FAIL'}] verify.head: {detail}")
     print(f"       argv = {argv}")
     print(f"       timeout = {cfg.workflow.verify_timeout_s}s")
-    return [_DoctorCheck(name="verify.head", ok=ok, detail=detail)]
+    return [_DoctorCheck(name="verify.head", status="PASS" if ok else "FAIL", detail=detail)]
 
 
 def _doctor_check_config(cfg: Config) -> list[_DoctorCheck]:
@@ -310,21 +317,31 @@ def _doctor_check_config(cfg: Config) -> list[_DoctorCheck]:
         # Zero providers configured: "all referenced keys resolve" is vacuously
         # true and would signal "ready", but `agent6 run` will reject. Say so.
         detail_env = (
-            "no providers configured yet — run `agent6 connect` (required before `agent6 run`)"
+            "no providers configured yet; run `agent6 connect` (required before `agent6 run`)"
         )
         print(f"[INFO] config.provider_keys: {detail_env}")
-        out.append(_DoctorCheck(name="config.provider_keys", ok=True, detail=detail_env))
+        out.append(_DoctorCheck(name="config.provider_keys", status="INFO", detail=detail_env))
     else:
         env_err = _check_provider_keys(cfg)
         ok_env = env_err is None
         detail_env = "all referenced provider keys resolve" if ok_env else env_err or ""
         print(f"[{'PASS' if ok_env else 'FAIL'}] config.provider_keys: {detail_env}")
-        out.append(_DoctorCheck(name="config.provider_keys", ok=ok_env, detail=detail_env))
+        out.append(
+            _DoctorCheck(
+                name="config.provider_keys",
+                status="PASS" if ok_env else "FAIL",
+                detail=detail_env,
+            )
+        )
 
     ok_git = cfg.git.allow_push is False
     detail_git = "git.allow_push=False (push is blocked, as required)"
     if not ok_git:
-        detail_git = "git.allow_push=True — agent6 never pushes; set this back to false"
+        detail_git = "git.allow_push=True; agent6 never pushes; set it back to false"
     print(f"[{'PASS' if ok_git else 'FAIL'}] config.git_policy: {detail_git}")
-    out.append(_DoctorCheck(name="config.git_policy", ok=ok_git, detail=detail_git))
+    out.append(
+        _DoctorCheck(
+            name="config.git_policy", status="PASS" if ok_git else "FAIL", detail=detail_git
+        )
+    )
     return out

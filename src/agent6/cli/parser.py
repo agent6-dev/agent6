@@ -17,6 +17,7 @@ from agent6.cli.completers import (
     _complete_model_provider,
     _complete_models,
     _complete_plan_run_ids,
+    _complete_profiles,
     _complete_providers,
     _complete_run_ids,
     _complete_watch_targets,
@@ -84,6 +85,17 @@ def _inject_default_verb(argv: list[str]) -> list[str]:
     return [*argv[: ci + 1], default_verb, *rest]
 
 
+def _sub(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+    name: str,
+    *,
+    help: str,
+) -> argparse.ArgumentParser:
+    """``add_parser`` with *help* mirrored as the description, so a leaf
+    ``--help`` opens with the same summary the parent's command list shows."""
+    return subparsers.add_parser(name, help=help, description=help)
+
+
 def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     parser = argparse.ArgumentParser(prog="agent6", description="Sandboxed coding agent.")
     parser.add_argument("--version", action="version", version=f"agent6 {__version__}")
@@ -108,9 +120,9 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
             " agent6 reads your config/secrets and chowns new files back to you."
         ),
     )
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command", required=True, metavar="<command>")
 
-    run_p = sub.add_parser("run", help="Run the single-loop agent on a task.")
+    run_p = _sub(sub, "run", help="Run the single-loop agent on a task.")
     run_p.add_argument(
         "task",
         nargs="?",
@@ -118,13 +130,14 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Task description (in quotes). Omit when using --continue.",
     )
     run_p.add_argument("--run-id", default="", help="Explicit run id (default: generate one).")
-    run_p.add_argument(
+    run_profile = run_p.add_argument(
         "--profile",
         default="",
         help="Config profile preset (quick/standard/ultra/paranoid or a custom"
         " [profiles.<name>]). Overrides the top-level `profile` key; your explicit"
         " settings win.",
     )
+    run_profile.completer = _complete_profiles  # type: ignore[attr-defined]
     run_p.add_argument(
         "--config",
         type=Path,
@@ -162,7 +175,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         action="store_true",
         help=(
             "Open the full-screen dashboard instead of the default headless CLI"
-            " stream. Needs the `tui` extra and a TTY; mutually exclusive with -i."
+            " stream. Needs a TTY; mutually exclusive with -i."
             " (Or run `agent6 tui` and start the run from there.)"
         ),
     )
@@ -179,7 +192,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     run_from_plan.completer = _complete_plan_run_ids  # type: ignore[attr-defined]
     _add_budget_flags(run_p)
 
-    plan_p = sub.add_parser(
+    plan_p = _sub(
+        sub,
         "plan",
         help=(
             "Planning pass: same loop, read-only tools, writes plan.md."
@@ -191,18 +205,19 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     # prior plan. `run` is the implicit default verb injected by
     # `_inject_default_verb` when the first token isn't a known plan verb, so
     # `plan "fix the bug"` and `plan run "fix the bug"` are the same.
-    plan_sub = plan_p.add_subparsers(dest="plan_command", required=True)
-    plan_run = plan_sub.add_parser("run", help="Run a planning pass on a task.")
+    plan_sub = plan_p.add_subparsers(dest="plan_command", required=True, metavar="<subcommand>")
+    plan_run = _sub(plan_sub, "run", help="Run a planning pass on a task.")
     plan_run.add_argument(
         "task",
         nargs="?",
         default="",
-        help="Task description (in quotes). Omit to execute/offer the most recent plan.",
+        help="Task to plan (in quotes). Required; `plan show/edit <id>` inspect prior plans.",
     )
     plan_run.add_argument("--run-id", default="", help="Explicit run id (default: generate one).")
-    plan_run.add_argument(
+    plan_profile = plan_run.add_argument(
         "--profile", default="", help="Config profile preset (see `agent6 run --profile`)."
     )
+    plan_profile.completer = _complete_profiles  # type: ignore[attr-defined]
     plan_run.add_argument(
         "--config",
         type=Path,
@@ -216,17 +231,19 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Explicit config file (layered over global + repo configs).",
     )
     _add_budget_flags(plan_run)
-    plan_show = plan_sub.add_parser("show", help="Print the plan.md for a prior plan run and exit.")
+    plan_show = _sub(plan_sub, "show", help="Print the plan.md for a prior plan run and exit.")
     plan_show_id = plan_show.add_argument("run_id", help="Plan run id (or unambiguous prefix).")
     plan_show_id.completer = _complete_plan_run_ids  # type: ignore[attr-defined]
-    plan_edit = plan_sub.add_parser(
+    plan_edit = _sub(
+        plan_sub,
         "edit",
         help="Open the plan.md for a prior plan run in $EDITOR (default: vi) and exit.",
     )
     plan_edit_id = plan_edit.add_argument("run_id", help="Plan run id (or unambiguous prefix).")
     plan_edit_id.completer = _complete_plan_run_ids  # type: ignore[attr-defined]
 
-    ask_p = sub.add_parser(
+    ask_p = _sub(
+        sub,
         "ask",
         help=(
             "Read-only Q&A: investigate the repo and answer a question in prose"
@@ -237,11 +254,12 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     # `ask <question>` runs a Q&A; `ask list` enumerates saved asks. `query` is
     # the implicit default verb injected by `_inject_default_verb` when the first
     # token isn't a known ask verb, so `ask "why ..."` == `ask query "why ..."`.
-    ask_sub = ask_p.add_subparsers(dest="ask_command", required=True)
-    ask_query = ask_sub.add_parser("query", help="Ask a question (the default verb).")
-    ask_query.add_argument(
+    ask_sub = ask_p.add_subparsers(dest="ask_command", required=True, metavar="<subcommand>")
+    ask_query = _sub(ask_sub, "query", help="Ask a question (the default verb).")
+    ask_profile = ask_query.add_argument(
         "--profile", default="", help="Config profile preset (see `agent6 run --profile`)."
     )
+    ask_profile.completer = _complete_profiles  # type: ignore[attr-defined]
     ask_query.add_argument(
         "task",
         nargs="?",
@@ -293,12 +311,14 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
     _add_budget_flags(ask_query)
-    ask_sub.add_parser(
+    _sub(
+        ask_sub,
         "list",
         help="List saved asks under the per-repo state dir (asks subdir, newest first) and exit.",
     )
 
-    watch_p = sub.add_parser(
+    watch_p = _sub(
+        sub,
         "watch",
         help=(
             "Follow a run or machine live as a plain event stream (no-deps line"
@@ -311,7 +331,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "target",
         nargs="?",
         default="",
-        help="Run id (exact or prefix) or machine name. Omit for the most recent run.",
+        help="Run id (exact or prefix) or machine id. Omit for the most recent run.",
     )
     watch_target.completer = _complete_watch_targets  # type: ignore[attr-defined]
     watch_p.add_argument(
@@ -332,7 +352,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Plain tail only: replay the last N events before following (0 = from end).",
     )
 
-    runs_p = sub.add_parser(
+    runs_p = _sub(
+        sub,
         "runs",
         help=(
             "Inspect a specific run: show (liveness/progress), diff, transcript,"
@@ -341,9 +362,10 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
             " `agent6 watch`."
         ),
     )
-    runs_sub = runs_p.add_subparsers(dest="runs_command", required=True)
+    runs_sub = runs_p.add_subparsers(dest="runs_command", required=True, metavar="<subcommand>")
 
-    runs_show = runs_sub.add_parser(
+    runs_show = _sub(
+        runs_sub,
         "show",
         help="One-shot liveness + progress of a run, then exit (vs `agent6 watch`, which follows).",
     )
@@ -360,7 +382,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Emit the status as a single JSON object (for scripts/monitoring).",
     )
 
-    runs_diff = runs_sub.add_parser(
+    runs_diff = _sub(
+        runs_sub,
         "diff",
         help="Print the git diff produced by a run (manifest.base_sha -> HEAD of run branch).",
     )
@@ -383,7 +406,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Restrict the diff to these paths.",
     )
 
-    runs_merge = runs_sub.add_parser(
+    runs_merge = _sub(
+        runs_sub,
         "merge",
         help="Merge a run's branch into a target (default: the branch it was cut from).",
     )
@@ -413,7 +437,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Commit message for squash or merge (default: a condensed run summary).",
     )
 
-    runs_commits = runs_sub.add_parser(
+    runs_commits = _sub(
+        runs_sub,
         "commits",
         help="List the per-step commits on a run's branch.",
     )
@@ -425,12 +450,14 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     runs_commits_id.completer = _complete_run_ids  # type: ignore[attr-defined]
 
-    runs_sub.add_parser(
+    _sub(
+        runs_sub,
         "prune",
         help="Delete agent6/* run branches that are safely merged; report the rest.",
     )
 
-    runs_tr = runs_sub.add_parser(
+    runs_tr = _sub(
+        runs_sub,
         "transcript",
         help="Render a run's full LLM conversation (the lossless transcripts) as Markdown.",
     )
@@ -462,7 +489,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Restrict to a round-trip seq window, e.g. 3 or 3-7 (default: all).",
     )
 
-    runs_graph = runs_sub.add_parser(
+    runs_graph = _sub(
+        runs_sub,
         "graph",
         help="Render the persisted task graph for a run as a DFS tree.",
     )
@@ -474,12 +502,14 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     runs_graph_id.completer = _complete_run_ids  # type: ignore[attr-defined]
 
-    sub.add_parser(
+    _sub(
+        sub,
         "tui",
         help="Open the TUI hub: browse runs and start a new run/plan/ask.",
     )
 
-    web_p = sub.add_parser(
+    web_p = _sub(
+        sub,
         "web",
         help=(
             "Serve the browser UI (loopback by default): watch and drive runs and"
@@ -491,7 +521,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "target",
         nargs="?",
         default="",
-        help="Run id (exact or prefix) or machine name to open on load. Omit for the hub.",
+        help="Run id (exact or prefix) or machine id to open on load. Omit for the hub.",
     )
     web_target.completer = _complete_watch_targets  # type: ignore[attr-defined]
     web_p.add_argument(
@@ -513,12 +543,16 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Opt in to bind a non-loopback --host (else a non-loopback bind is refused).",
     )
 
-    prompt_p = sub.add_parser(
+    prompt_p = _sub(
+        sub,
         "prompt",
         help="Inspect the assembled system prompt for this repo + config.",
     )
-    prompt_sub = prompt_p.add_subparsers(dest="prompt_command", required=True)
-    prompt_show = prompt_sub.add_parser(
+    prompt_sub = prompt_p.add_subparsers(
+        dest="prompt_command", required=True, metavar="<subcommand>"
+    )
+    prompt_show = _sub(
+        prompt_sub,
         "show",
         help=(
             "Print the exact system prompt the worker receives: the static"
@@ -533,7 +567,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Which mode's prompt to assemble (default: run).",
     )
 
-    resume_p = sub.add_parser("resume", help="Resume a paused run from its snapshot.")
+    resume_p = _sub(sub, "resume", help="Resume a paused run from its snapshot.")
     resume_run = resume_p.add_argument(
         "run_id",
         nargs="?",
@@ -565,7 +599,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     _add_budget_flags(resume_p)
 
-    fork_p = sub.add_parser(
+    fork_p = _sub(
+        sub,
         "fork",
         help=(
             "Clone a run, rolled back to a checkpoint, into a NEW run and continue"
@@ -612,12 +647,16 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     _add_budget_flags(fork_p)
 
-    config_p = sub.add_parser(
+    config_p = _sub(
+        sub,
         "config",
         help="Inspect and materialize the layered config (global + repo + defaults).",
     )
-    config_sub = config_p.add_subparsers(dest="config_command", required=True)
-    config_show = config_sub.add_parser(
+    config_sub = config_p.add_subparsers(
+        dest="config_command", required=True, metavar="<subcommand>"
+    )
+    config_show = _sub(
+        config_sub,
         "show",
         help=(
             "Print every effective config value and where it came from"
@@ -628,11 +667,12 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     config_show.add_argument(
         "--json", action="store_true", dest="as_json", help="Emit JSON instead of a table."
     )
-    config_fill = config_sub.add_parser(
+    config_fill = _sub(
+        config_sub,
         "fill",
         help=(
             "Write the fully-resolved config (every effective value, explicit)"
-            " to a file — the global config by default, or the repo config with"
+            " to a file: the global config by default, or the repo config with"
             " --repo. Handy before tightening defaults or for an audit snapshot."
         ),
     )
@@ -644,11 +684,11 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     config_fill.add_argument(
         "--force", action="store_true", help="Overwrite the target file if it already exists."
     )
-    config_sub.add_parser(
-        "path", help="Print the resolved global + repo config (and secrets) file paths."
+    _sub(
+        config_sub, "path", help="Print the resolved global + repo config (and secrets) file paths."
     )
-    config_get = config_sub.add_parser(
-        "get", help="Print a leaf's effective value and which layer set it."
+    config_get = _sub(
+        config_sub, "get", help="Print a leaf's effective value and which layer set it."
     )
     config_get_key = config_get.add_argument(
         "key", help="Dotted leaf path, e.g. sandbox.agent_network."
@@ -669,7 +709,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ("add", "Append a value to a list field (e.g. sandbox.allow_urls)."),
         ("remove", "Remove a value from a list field."),
     ):
-        p = config_sub.add_parser(verb, help=blurb)
+        p = _sub(config_sub, verb, help=blurb)
         key_arg = p.add_argument("key", help="Dotted leaf path, e.g. sandbox.agent_network.")
         key_arg.completer = _complete_config_keys  # type: ignore[attr-defined]
         if verb != "unset":
@@ -690,7 +730,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         )
         machine_arg.completer = _complete_machine_files  # type: ignore[attr-defined]
 
-    check_p = sub.add_parser(
+    check_p = _sub(
+        sub,
         "check",
         help=(
             "Pre-flight checks: sandbox + config + provider keys + MCP +"
@@ -720,7 +761,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Explicit config file (layered over global + repo configs).",
     )
 
-    connect_p = sub.add_parser(
+    connect_p = _sub(
+        sub,
         "connect",
         help="Interactively add a provider + API key (stored in the global secrets file).",
     )
@@ -744,13 +786,17 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
 
     # `agent6 system <component> <action>`: privileged host/OS setup (uses sudo).
-    system_p = sub.add_parser(
+    system_p = _sub(
+        sub,
         "system",
         help="Host/OS setup that needs privileges (e.g. the AppArmor profile for the"
         " strict sandbox). Uses sudo.",
     )
-    system_sub = system_p.add_subparsers(dest="system_command", required=True)
-    apparmor_p = system_sub.add_parser(
+    system_sub = system_p.add_subparsers(
+        dest="system_command", required=True, metavar="<subcommand>"
+    )
+    apparmor_p = _sub(
+        system_sub,
         "apparmor",
         help="Install/remove the agent6-jail AppArmor profile (Ubuntu 24.04+: lets the"
         " strict sandbox use user namespaces).",
@@ -761,7 +807,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="install the profile and reload AppArmor, remove it, or report its state.",
     )
 
-    model_p = sub.add_parser(
+    model_p = _sub(
+        sub,
         "model",
         help="Show or set which model + thinking level each role uses (planner/worker/reviewer).",
     )
@@ -810,14 +857,14 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Write to the per-repo config instead of the global config.",
     )
 
-    mem_p = sub.add_parser("memory", help="Manage persistent agent memories.")
-    mem_sub = mem_p.add_subparsers(dest="memory_command", required=True)
-    mem_add = mem_sub.add_parser("add", help="Append a new memory entry.")
+    mem_p = _sub(sub, "memory", help="Manage persistent agent memories.")
+    mem_sub = mem_p.add_subparsers(dest="memory_command", required=True, metavar="<subcommand>")
+    mem_add = _sub(mem_sub, "add", help="Append a new memory entry.")
     mem_add.add_argument(
         "scope", choices=("facts", "decisions", "preferences"), help="Memory scope."
     )
     mem_add.add_argument("body", help="Entry body (in quotes).")
-    mem_list = mem_sub.add_parser("list", help="List memory entries.")
+    mem_list = _sub(mem_sub, "list", help="List memory entries.")
     mem_list.add_argument(
         "--scope",
         choices=("facts", "decisions", "preferences"),
@@ -827,26 +874,31 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     mem_list.add_argument(
         "--all", action="store_true", help="Include invalidated entries (default: hide)."
     )
-    mem_inv = mem_sub.add_parser("invalidate", help="Mark a memory entry as invalidated.")
+    mem_inv = _sub(mem_sub, "invalidate", help="Mark a memory entry as invalidated.")
     mem_inv.add_argument("memory_id", help="26-char ULID of the entry to invalidate.")
     mem_inv.add_argument("reason", help="Why this entry is no longer valid.")
 
-    hist_p = sub.add_parser(
+    hist_p = _sub(
+        sub,
         "history",
         help="Cross-run search over persisted transcripts and run data (per-run views: `runs`).",
     )
-    hist_sub = hist_p.add_subparsers(dest="history_command", required=True)
-    hist_search = hist_sub.add_parser("search", help="ripgrep-backed search over all runs.")
+    hist_sub = hist_p.add_subparsers(dest="history_command", required=True, metavar="<subcommand>")
+    hist_search = _sub(hist_sub, "search", help="ripgrep-backed search over all runs.")
     hist_search.add_argument("query", help="Pattern (passed to rg --fixed-strings by default).")
     hist_search.add_argument(
         "--regex", action="store_true", help="Interpret query as a regex instead of fixed string."
     )
     hist_search_run = hist_search.add_argument(
-        "--run", default="", help="Restrict to a single run id (default: all runs)."
+        "--run",
+        default="",
+        metavar="RUN_ID",
+        help="Restrict to a single run id (default: all runs).",
     )
     hist_search_run.completer = _complete_run_ids  # type: ignore[attr-defined]
 
-    init_p = sub.add_parser(
+    init_p = _sub(
+        sub,
         "init",
         help="Optional setup wizard: per-repo config, verify_command, .gitignore, AGENTS.md.",
     )
@@ -869,7 +921,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
 
-    review_p = sub.add_parser(
+    review_p = _sub(
+        sub,
         "review",
         help="Read-only code review of a diff (working tree, branch-vs-base, or arbitrary range).",
     )
@@ -918,12 +971,14 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
 
-    mcp_p = sub.add_parser(
+    mcp_p = _sub(
+        sub,
         "mcp",
         help="MCP (Model Context Protocol) integration. See `agent6 mcp serve --help`.",
     )
-    mcp_sub = mcp_p.add_subparsers(dest="mcp_command", required=True)
-    mcp_serve = mcp_sub.add_parser(
+    mcp_sub = mcp_p.add_subparsers(dest="mcp_command", required=True, metavar="<subcommand>")
+    mcp_serve = _sub(
+        mcp_sub,
         "serve",
         help=(
             "Run agent6 as an MCP stdio server, exposing run_verify /"
@@ -946,12 +1001,16 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Explicit config file (layered over global + repo configs).",
     )
 
-    machine_p = sub.add_parser(
+    machine_p = _sub(
+        sub,
         "machine",
         help="Author-time tooling for agent6 state machines (.asm.toml).",
     )
-    machine_sub = machine_p.add_subparsers(dest="machine_command", required=True)
-    machine_check = machine_sub.add_parser(
+    machine_sub = machine_p.add_subparsers(
+        dest="machine_command", required=True, metavar="<subcommand>"
+    )
+    machine_check = _sub(
+        machine_sub,
         "check",
         help=(
             "Validate a .asm.toml machine file: parse, type-check, reachability,"
@@ -959,7 +1018,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
     machine_check.add_argument("file", type=Path, help="Path to the .asm.toml machine file.")
-    machine_test = machine_sub.add_parser(
+    machine_test = _sub(
+        machine_sub,
         "test",
         help=(
             "Simulate a machine offline: everything `check` does, plus run the"
@@ -976,7 +1036,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         metavar="FIXTURE.toml",
         help="TOML fixture of variable values, overlaid on defaults for branch routing.",
     )
-    machine_graph = machine_sub.add_parser(
+    machine_graph = _sub(
+        machine_sub,
         "graph",
         help="Emit the machine as a state diagram (mermaid or Graphviz dot).",
     )
@@ -987,7 +1048,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         default="mermaid",
         help="Diagram format (default: mermaid).",
     )
-    machine_run = machine_sub.add_parser(
+    machine_run = _sub(
+        machine_sub,
         "run",
         help="Run (or resume) a machine, driving its states to a terminal one.",
     )
@@ -1000,7 +1062,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
             " not-ready wait instead of blocking, for an external scheduler to resume."
         ),
     )
-    machine_status = machine_sub.add_parser(
+    machine_status = _sub(
+        machine_sub,
         "status",
         help="Report a machine instance's current state, spend, and next wake. Read-only.",
     )
@@ -1008,7 +1071,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "machine_id", help="Machine id (directory under the per-repo state dir, machines subdir)."
     )
     machine_status_id.completer = _complete_machine_ids  # type: ignore[attr-defined]
-    machine_poke = machine_sub.add_parser(
+    machine_poke = _sub(
+        machine_sub,
         "poke",
         help="Signal a waiting machine to wake on its next check (drops a signal file).",
     )
@@ -1028,7 +1092,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         metavar="TEXT",
         help="Shorthand for --data with a JSON string payload.",
     )
-    machine_replay = machine_sub.add_parser(
+    machine_replay = _sub(
+        machine_sub,
         "replay",
         help="Deterministically replay a machine's journal offline (no world I/O).",
     )
@@ -1037,7 +1102,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     machine_replay_id.completer = _complete_machine_ids  # type: ignore[attr-defined]
 
-    machine_create = machine_sub.add_parser(
+    machine_create = _sub(
+        machine_sub,
         "create",
         help="Draft a .asm.toml machine from a natural-language task (LLM-assisted).",
     )
@@ -1056,6 +1122,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "--max-attempts",
         type=int,
         default=3,
+        metavar="N",
         help="Maximum draft->check->fix attempts before giving up (default: 3).",
     )
 

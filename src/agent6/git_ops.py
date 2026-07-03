@@ -205,6 +205,17 @@ def is_git_repo(path: Path) -> bool:
     return res.ok and res.stdout.strip() == "true"
 
 
+def paths_dirty(path: Path, rel_paths: tuple[str, ...]) -> bool:
+    """True iff any of ``rel_paths`` has uncommitted changes (untracked,
+    modified, or staged) versus HEAD, i.e. a path-limited commit of just those
+    paths would record something. Unlike whole-tree ``status().is_clean``, this
+    ignores unrelated dirt elsewhere in the worktree."""
+    if not rel_paths:
+        return False
+    res = _run(path, "status", "--porcelain", "--", *rel_paths, check=False)
+    return bool(res.stdout.strip())
+
+
 def status(path: Path) -> GitStatus:
     if not is_git_repo(path):
         raise GitError(f"Not a git repository: {path}")

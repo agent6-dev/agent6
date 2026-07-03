@@ -14,6 +14,7 @@ from agent6.config import (
 )
 from agent6.config_layer import (
     PROVIDER_PRESETS,
+    available_profile_names,
     leaf_keys,
     load_effective,
 )
@@ -23,6 +24,11 @@ def _complete_providers(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: connected provider names + known presets."""
     names = set(_connected_providers(None)) | set(PROVIDER_PRESETS)
     return sorted(n for n in names if n.startswith(prefix))
+
+
+def _complete_profiles(prefix: str, **_kw: object) -> list[str]:
+    """argcomplete: built-in profile presets + configured [profiles.*] names."""
+    return [n for n in available_profile_names(Path.cwd()) if n.startswith(prefix)]
 
 
 def _complete_models(

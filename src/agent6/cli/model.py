@@ -75,7 +75,7 @@ def _prompt_for_provider(config_path: Path | None) -> str:
         if choice is None:
             return ""
         return choice or default
-    print("No providers connected yet — run `agent6 connect` first, or type a name.")
+    print("No providers connected yet; run `agent6 connect` first, or type a name.")
     return _safe_input("Provider: ") or ""
 
 
@@ -114,7 +114,7 @@ def _cmd_model(
         except ConfigError as exc:
             print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
             return 2
-        print("Role assignments (planner/worker fall back to worker when unset):\n")
+        print("Role assignments (planner/reviewer fall back to worker when unset):\n")
         show_roles: tuple[RoleName, ...] = ("planner", "worker", "reviewer")
         for r in show_roles:
             rm = eff.config.models.resolve(r)

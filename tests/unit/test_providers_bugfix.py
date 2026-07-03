@@ -310,3 +310,38 @@ def test_anthropic_temperature_400_retries_without_temperature_then_latches() ->
     with mock.patch("agent6.providers.anthropic.http_post", side_effect=second_call):
         provider.call(system="sys", messages=[{"role": "user", "content": "y"}], temperature=0.0)
     assert "temperature" not in bodies2[0]
+
+
+# --------------------------------------------------------------------------
+# Connection errors name the dialled URL + api format (a bare "HTTP error
+# calling OpenAI" pointed users at the wrong party for local endpoints).
+# --------------------------------------------------------------------------
+def test_openai_connection_error_names_url_and_format() -> None:
+    provider = OpenAIProvider(api_key="", model="llama3", base_url="http://localhost:11434/v1")
+    with (
+        mock.patch(
+            "agent6.providers.openai.http_post",
+            side_effect=httpx2.HTTPError("[Errno 111] Connection refused"),
+        ),
+        pytest.raises(ProviderError) as ei,
+    ):
+        provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
+    msg = str(ei.value)
+    assert "http://localhost:11434/v1/chat/completions" in msg
+    assert "openai format" in msg
+    assert "Connection refused" in msg
+
+
+def test_anthropic_connection_error_names_url_and_format() -> None:
+    provider = AnthropicProvider(api_key="sk-test", model="claude-3-5-sonnet")
+    with (
+        mock.patch(
+            "agent6.providers.anthropic.http_post",
+            side_effect=httpx2.HTTPError("[Errno 111] Connection refused"),
+        ),
+        pytest.raises(ProviderError) as ei,
+    ):
+        provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
+    msg = str(ei.value)
+    assert "api.anthropic.com" in msg
+    assert "anthropic format" in msg

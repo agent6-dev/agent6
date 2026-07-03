@@ -20,10 +20,12 @@ from agent6.config import (
 )
 from agent6.config_layer import load_effective
 from agent6.git_ops import (
+    DIFF_SHOW_SAFETY_FLAGS,
     CommitIdentity,
     GitError,
     branch_exists,
     delete_branch_if_merged,
+    git_hardening_flags,
     is_ancestor,
     is_git_repo,
     list_run_branches,
@@ -35,48 +37,30 @@ from agent6.graph.storage import RunLayout
 from agent6.run_id import RunIdError, resolve_run_id
 
 
-def _cmd_diff(*, run_id: str, stat: bool, paths: tuple[str, ...]) -> int:  # noqa: PLR0911
+def _cmd_diff(*, run_id: str, stat: bool, paths: tuple[str, ...]) -> int:
     """Print the git diff a run produced (manifest.base_sha -> branch HEAD).
 
     Resolves the run id (or unique prefix; empty string means most-recent),
     reads ``manifest.json`` for ``base_sha`` and ``run_branch``, then shells
-    out to ``git diff`` with operator-controlled argv (no LLM input).
+    out to ``git diff`` with operator-controlled argv (no LLM input). The call
+    streams to the terminal, so it cannot go through git_ops._run; it carries
+    the same host-RCE hardening (``git_hardening_flags``: a poisoned
+    ``.git/config`` ``diff.external`` / ``diff.*.textconv`` / ``core.fsmonitor``
+    / repo hook must not execute on the host) plus ``DIFF_SHOW_SAFETY_FLAGS``,
+    which force the builtin diff renderer (git >= 2.53 executes even an EMPTY
+    ``diff.external`` override, so the ``-c`` flags alone would kill the printed
+    patch) and disable the per-file textconv driver the ``-c`` flags do not reach.
     """
     cwd = Path.cwd()
-    runs_dir = _runs_dir(cwd)
-    if not runs_dir.is_dir():
-        print(f"ERROR: no runs directory at {runs_dir}", file=sys.stderr)
-        return 2
-
-    target_id = run_id
-    if not target_id:
-        latest = _most_recent_run_id(runs_dir)
-        if latest is None:
-            print(f"ERROR: no runs under {runs_dir}", file=sys.stderr)
-            return 2
-        target_id = latest
-        print(f"[agent6] diffing most recent run: {target_id}", file=sys.stderr)
-    else:
-        try:
-            target_id = resolve_run_id(runs_dir, target_id)
-        except RunIdError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
-            return 2
-
-    layout = RunLayout(state_dir=_state_dir(cwd), run_id=target_id)
-    if not layout.manifest_path.is_file():
-        print(
-            f"ERROR: run {target_id} has no manifest.json "
-            "(predates manifest support, or was killed before setup)",
-            file=sys.stderr,
-        )
-        return 2
-
-    try:
-        manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        print(f"ERROR: could not read manifest: {exc}", file=sys.stderr)
-        return 2
+    res = _resolve_run_manifest(
+        cwd,
+        run_id,
+        recent_note="diffing most recent run",
+        missing_hint=" (predates manifest support, or was killed before setup)",
+    )
+    if isinstance(res, int):
+        return res
+    _layout, manifest = res
 
     base_sha = str(manifest.get("base_sha") or "")
     run_branch = manifest.get("run_branch")
@@ -85,24 +69,45 @@ def _cmd_diff(*, run_id: str, stat: bool, paths: tuple[str, ...]) -> int:  # noq
         return 2
 
     head_ref = str(run_branch) if run_branch else "HEAD"
-    argv: list[str] = ["git", "diff"]
+    # The logical command; printed without the -c hardening overrides (the
+    # same convention as git_ops error messages), executed with them.
+    args: list[str] = ["diff", *DIFF_SHOW_SAFETY_FLAGS]
     if stat:
-        argv.append("--stat")
-    argv.extend([f"{base_sha}..{head_ref}"])
+        args.append("--stat")
+    args.extend([f"{base_sha}..{head_ref}"])
     if paths:
-        argv.append("--")
-        argv.extend(paths)
+        args.append("--")
+        args.extend(paths)
     print(
-        f"[agent6] {' '.join(argv)}  (base_branch={manifest.get('base_branch')!r})",
+        f"[agent6] git {' '.join(args)}  (base_branch={manifest.get('base_branch')!r})",
         file=sys.stderr,
     )
-    proc = subprocess.run(argv, cwd=cwd, check=False)
+    # A zero-commit run would print the headers and then nothing; probe first
+    # (`--quiet` = exit 0 when identical) and say so. Probe errors (rc > 1,
+    # e.g. a missing sha) fall through so the real diff surfaces git's message.
+    probe_args = ["diff", *DIFF_SHOW_SAFETY_FLAGS, "--quiet", f"{base_sha}..{head_ref}"]
+    if paths:
+        probe_args.extend(["--", *paths])
+    probe = subprocess.run(
+        ["git", *git_hardening_flags(), *probe_args], cwd=cwd, check=False, capture_output=True
+    )
+    if probe.returncode == 0:
+        print("(no changes)")
+        return 0
+    proc = subprocess.run(["git", *git_hardening_flags(), *args], cwd=cwd, check=False)
     return proc.returncode
 
 
-def _resolve_run_manifest(cwd: Path, run_id: str) -> tuple[RunLayout, dict[str, Any]] | int:
+def _resolve_run_manifest(
+    cwd: Path,
+    run_id: str,
+    *,
+    recent_note: str = "using most recent run",
+    missing_hint: str = "",
+) -> tuple[RunLayout, dict[str, Any]] | int:
     """Resolve a run id (or '' for most-recent) to its (layout, manifest), or an exit
-    code on error. Shared by `runs merge` and `runs commits`."""
+    code on error. Shared by `runs diff`/`merge`/`commits`; the two note strings vary
+    per caller."""
     runs_dir = _runs_dir(cwd)
     if not runs_dir.is_dir():
         print(f"ERROR: no runs directory at {runs_dir}", file=sys.stderr)
@@ -114,7 +119,7 @@ def _resolve_run_manifest(cwd: Path, run_id: str) -> tuple[RunLayout, dict[str, 
             print(f"ERROR: no runs under {runs_dir}", file=sys.stderr)
             return 2
         target_id = latest
-        print(f"[agent6] using most recent run: {target_id}", file=sys.stderr)
+        print(f"[agent6] {recent_note}: {target_id}", file=sys.stderr)
     else:
         try:
             target_id = resolve_run_id(runs_dir, target_id)
@@ -123,7 +128,7 @@ def _resolve_run_manifest(cwd: Path, run_id: str) -> tuple[RunLayout, dict[str, 
             return 2
     layout = RunLayout(state_dir=_state_dir(cwd), run_id=target_id)
     if not layout.manifest_path.is_file():
-        print(f"ERROR: run {target_id} has no manifest.json", file=sys.stderr)
+        print(f"ERROR: run {target_id} has no manifest.json{missing_hint}", file=sys.stderr)
         return 2
     try:
         manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
@@ -256,6 +261,10 @@ def _cmd_merge(*, run_id: str, strategy: str | None, into: str | None, message: 
     plan = _plan_merge(cwd, run_id, into, strategy)
     if isinstance(plan, int):
         return plan
+    if plan.base_sha and not list_run_commits(cwd, plan.base_sha, plan.run_branch):
+        # A success line here would be indistinguishable from a real merge.
+        print(f"[agent6] nothing to merge: run branch {plan.run_branch} has no commits.")
+        return 0
     outcome = execute_merge(
         cwd,
         layout=plan.layout,

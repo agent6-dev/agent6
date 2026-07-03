@@ -181,7 +181,7 @@ def _setup_verify_command(root: Path, *, profile: str, ask: _Ask) -> None:
         )
         return
     shown = " ".join(inferred.argv)
-    warn = " — OVERRIDES the current value" if already else ""
+    warn = " (OVERRIDES the current value)" if already else ""
     if not ask(f"  Set workflow.verify_command to `{shown}` (from {inferred.source}){warn}?", True):
         print("  skipped verify_command.")
         return
@@ -238,7 +238,7 @@ def init_workspace(
     # Non-interactive: take every step's default answer.
     ask: _Ask = _ask if interactive else _accept_default
 
-    print(f"agent6 setup — {root}")
+    print(f"agent6 setup: {root}")
     print(f"  per-repo config: {cfg_path}  (out of the repo, under your state dir)")
     print()
 
@@ -263,11 +263,6 @@ def init_workspace(
 
     # 4. AGENTS.md.
     _setup_agents_md(root, profile=detected, ask=ask)
-
-    print()
-    print("Next:")
-    print("  agent6 connect                 # add a provider + API key (global), if not done")
-    print("  agent6 model worker <provider> <model>   # pick your worker model")
-    print("  agent6 config show             # audit the effective config")
-    print('  agent6 run "<task>"            # verify is inferred if you skipped it above')
+    # The CLI wrapper (`cli.init_cmds`) prints the "Next:" pointers after its
+    # git-setup offer, so the advertised commands come last and actually work.
     return 0

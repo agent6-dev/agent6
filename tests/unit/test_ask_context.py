@@ -215,3 +215,16 @@ def test_ask_repl_multi_turn_carries_context(
     assert result.summary == "answer-2"
     # cumulative transcript written
     assert "## Q2" in (layout.run_dir / "transcript.md").read_text(encoding="utf-8")
+
+
+def test_ask_question_snippet_reads_interactive_transcripts(tmp_path: Path) -> None:
+    # REPL transcripts head their sections "## Q1"/"## A1" (not "## Question");
+    # `ask list` used to show "(no question)" for every interactive ask.
+    from agent6.cli._ask import ask_question_snippet, save_ask_repl_transcript
+    from agent6.graph.storage import RunLayout
+
+    layout = RunLayout(state_dir=tmp_path, run_id="ask-x")
+    layout.ensure()
+    save_ask_repl_transcript(layout, [("why is the broker slow?", "because"), ("more?", "sure")])
+    text = (layout.run_dir / "transcript.md").read_text(encoding="utf-8")
+    assert ask_question_snippet(text) == "why is the broker slow?"

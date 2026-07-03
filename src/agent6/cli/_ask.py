@@ -18,6 +18,7 @@ from agent6.cli._common import (
     _state_dir,
 )
 from agent6.cli.plan_watch import _most_recent_run_id
+from agent6.git_ops import DIFF_SHOW_SAFETY_FLAGS, git_hardening_flags
 from agent6.graph.storage import RunLayout
 from agent6.run_id import (
     RunIdError,
@@ -31,11 +32,13 @@ from agent6.workflows.loop import (
 
 
 def ask_question_snippet(transcript: str) -> str:
-    """First non-tag line of the `## Question` section of an ask transcript."""
+    """First non-tag line of the first question section of an ask transcript.
+
+    One-shot asks head it `## Question` (save_ask_transcript); interactive
+    sessions head it `## Q1` (save_ask_repl_transcript). Accept both."""
     lines = transcript.splitlines()
-    try:
-        start = lines.index("## Question") + 1
-    except ValueError:
+    start = next((i + 1 for i, line in enumerate(lines) if line in ("## Question", "## Q1")), None)
+    if start is None:
         return "(no question)"
     return first_task_line(lines[start:]) or "(question)"
 
@@ -144,8 +147,11 @@ def build_ask_run_digest(cwd: Path, run_id: str, *, latest: bool) -> str | None:
     diff = ""
     if base_sha:
         # operator-controlled argv, no LLM input (same as `agent6 runs diff`).
+        # Hardening flags: a poisoned .git/config diff.external or diff.*.textconv
+        # would otherwise run on the host when the operator asks about a prior run.
+        argv = ["git", *git_hardening_flags(), "diff", *DIFF_SHOW_SAFETY_FLAGS]
         proc = subprocess.run(
-            ["git", "diff", f"{base_sha}..{head_ref}"],
+            [*argv, f"{base_sha}..{head_ref}"],
             cwd=cwd,
             capture_output=True,
             text=True,

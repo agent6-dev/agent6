@@ -86,6 +86,9 @@ def _run_static(argv: list[str], cwd: Path, label: str) -> str | None:
     if res.returncode == 0:
         return None
     out = (res.stdout + ("\n" + res.stderr if res.stderr else "")).strip()
+    # Diagnostics name the private temp copy; relativize so they read as bundle
+    # paths (scripts/...), mirroring the run_offline_tests cleanup.
+    out = out.replace(str(cwd.resolve()) + "/", "").replace(str(cwd) + "/", "")
     return f"{label} found problems:\n{_trim(out)}"
 
 
@@ -153,10 +156,13 @@ def run_offline_tests(
         )
         return []
     data_dir = bundle_dir / ".scriptcheck_data"
-    data_dir.mkdir(parents=True, exist_ok=True)
     problems: list[str] = []
     try:
         for test in tests:
+            # Fresh per test, as promised: state a record-style script leaves
+            # behind must not leak into the next test's run.
+            shutil.rmtree(data_dir, ignore_errors=True)
+            data_dir.mkdir(parents=True)
             rel = test.relative_to(bundle_dir).as_posix()
             policy = JailPolicy(
                 cwd=bundle_dir,

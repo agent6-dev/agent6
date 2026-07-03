@@ -111,7 +111,7 @@ def _reject_machine_protected(key: str, machine: Path | None) -> str | None:
     for table in ("providers", "sandbox"):
         if key == table or key.startswith(f"{table}."):
             return (
-                f"machine [config] overlays must not set {table}.* —"
+                f"machine [config] overlays must not set {table}.*:"
                 " connections/secrets and sandbox policy are operator-only (global/repo config)"
             )
     return None
@@ -248,6 +248,26 @@ def _cmd_config_unset(key: str, *, repo: bool, machine: Path | None) -> int:  # 
     return 0
 
 
+def _schema_says_not_a_list(key: str) -> bool:
+    """True when the config schema knows *key* and its value is not a list.
+
+    Guards `config add/remove` on keys the target file does not set yet: the
+    effective (defaults-included) value reveals the leaf's shape, so a scalar
+    like sandbox.agent_network fails with "not a list field" instead of a
+    contradictory revalidation error. Unknown keys and unloadable configs
+    return False; revalidation still rejects those."""
+    try:
+        eff = load_effective(Path.cwd(), None)
+    except ConfigError:
+        return False
+    leaf = effective_leaf(eff, key)
+    # List leaves surface as list or tuple depending on the field's type. A
+    # None effective value is an UNSET optional field (e.g. the list-valued
+    # providers.*.token_command, default None); it doesn't prove the leaf is a
+    # scalar, so fall through and let revalidation reject a genuine scalar.
+    return leaf is not None and leaf[0] is not None and not isinstance(leaf[0], (list, tuple))
+
+
 def _config_list_edit(  # noqa: PLR0911
     key: str, value: str, *, repo: bool, machine: Path | None, add: bool
 ) -> int:
@@ -262,6 +282,9 @@ def _config_list_edit(  # noqa: PLR0911
         return 2
     current = read_toml_leaf(read_toml_file(target), prefix + key)
     if current is None:
+        if _schema_says_not_a_list(key):
+            print(f"ERROR: {key} is not a list field.", file=sys.stderr)
+            return 2
         current = []
     if not isinstance(current, list):
         print(f"ERROR: {key} is not a list field in {target}.", file=sys.stderr)

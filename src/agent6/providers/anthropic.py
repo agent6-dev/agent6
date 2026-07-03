@@ -460,7 +460,7 @@ class AnthropicProvider:
                         response_status=0,
                         response_body=f"HTTPError: {exc}",
                     )
-                raise ProviderError(f"HTTP error calling Anthropic: {exc}") from exc
+                raise ProviderError(f"HTTP error calling {url} (anthropic format): {exc}") from exc
             if cred is not None and attempt + 1 < max_attempts and resp.status_code in (401, 403):
                 cred.invalidate()
                 continue
@@ -774,7 +774,9 @@ class AnthropicProvider:
                     response_status=0,
                     response_body=f"HTTPError: {exc}",
                 )
-            raise ProviderError(f"HTTP error streaming Anthropic: {exc}") from exc
+            raise ProviderError(
+                f"HTTP error streaming from {url} (anthropic format): {exc}"
+            ) from exc
         finally:
             watchdog_stop.set()
 

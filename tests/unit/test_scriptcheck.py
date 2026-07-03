@@ -201,3 +201,36 @@ def test_offline_tests_jail_unavailable_surfaces_diagnostic(
     problems = scriptcheck.run_offline_tests(tmp_path, "strict")
     assert len(problems) == 1
     assert "could not run offline tests" in problems[0]
+
+
+def test_static_diagnostics_relativize_temp_paths(tmp_path: Path) -> None:
+    # ruff diagnostics used to name the private temp copy; they now read as
+    # bundle-relative paths, like the offline-test diagnostics.
+    _need("ruff")
+    _write(tmp_path / "scripts", "bad.py", "print(undefined_name)\n")
+    problems = scriptcheck.lint_and_typecheck(tmp_path / "scripts")
+    assert problems
+    assert "agent6-scriptcheck-" not in problems[0]
+    assert "scripts/bad.py" in problems[0]
+
+
+def test_offline_tests_get_a_fresh_data_dir_per_test(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The docstring promise: state one test's script leaves in
+    # $AGENT6_MACHINE_DATA_DIR must not leak into the next test.
+    _write(tmp_path / "scripts", "a_test.py", "pass\n")
+    _write(tmp_path / "scripts", "b_test.py", "pass\n")
+
+    def _run(policy: JailPolicy) -> CommandResult:
+        data = Path(policy.extra_rw_paths[0])
+        marker = data / "marker"
+        rc = 1 if marker.exists() else 0  # a leaked marker fails the later test
+        marker.write_text("x", encoding="utf-8")
+        return CommandResult(
+            argv=policy.argv, returncode=rc, stdout="", stderr="leaked marker", duration_s=0.0
+        )
+
+    monkeypatch.setattr(scriptcheck, "run_in_jail", _run)
+    assert scriptcheck.run_offline_tests(tmp_path, "hardened") == []
+    assert not (tmp_path / ".scriptcheck_data").exists()  # still cleaned up after

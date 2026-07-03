@@ -526,7 +526,7 @@ class OpenAIProvider:
                         response_status=0,
                         response_body=f"HTTPError: {exc}",
                     )
-                raise ProviderError(f"HTTP error calling OpenAI: {exc}") from exc
+                raise ProviderError(f"HTTP error calling {url} (openai format): {exc}") from exc
             if cred is not None and attempt + 1 < max_attempts and resp.status_code in (401, 403):
                 cred.invalidate()
                 continue
@@ -813,7 +813,7 @@ class OpenAIProvider:
                     response_status=0,
                     response_body=f"HTTPError: {exc}",
                 )
-            raise ProviderError(f"HTTP error streaming OpenAI: {exc}") from exc
+            raise ProviderError(f"HTTP error streaming from {url} (openai format): {exc}") from exc
         finally:
             watchdog_stop.set()
 

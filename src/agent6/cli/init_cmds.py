@@ -14,25 +14,42 @@ from agent6.git_ops import (
     commit_paths,
     init_repo,
     is_git_repo,
+    paths_dirty,
     unignored,
 )
 from agent6.init import _ask, init_workspace
 from agent6.paths import chown_to_real_user
 
+_SCAFFOLD_COMMIT_MESSAGE = "chore: scaffold agent6 config"
+
+
+def _scaffold_rel_paths(root: Path, created: tuple[Path, ...]) -> tuple[str, ...]:
+    """The repo-relative scaffold files git would track. The per-repo config
+    lives out of the workspace under the state dir, so it is never a candidate
+    here; filter to paths under root defensively, then unignored() drops
+    anything the just-written .gitignore covers so we never `git add -f`."""
+    return unignored(
+        root,
+        tuple(
+            str(p.relative_to(root)) for p in created if p.exists() and root in p.resolve().parents
+        ),
+    )
+
 
 def _offer_git_setup(root: Path, created: tuple[Path, ...], *, interactive: bool) -> None:
-    """When *root* is not a git repo, offer to `git init` + commit the scaffold
-    interactively; non-interactively just print a note. agent6 run/plan need a
-    repo, so a fresh `init` in a bare directory shouldn't leave the user one
-    confusing error away from their first run."""
+    """Leave the repo ready for the advertised `agent6 run`: in a non-repo,
+    offer to `git init` + commit the scaffold (non-interactively just print a
+    note); in an existing repo, offer to commit the uncommitted scaffold, which
+    would otherwise make `agent6 run` refuse on a dirty tree."""
     if is_git_repo(root):
+        _offer_scaffold_commit(root, created, interactive=interactive)
         return
     print()
     if not interactive:
-        print(f"Note: {root} is not a git repository — `agent6 run`/`plan` need one.")
+        print(f"Note: {root} is not a git repository; `agent6 run`/`plan` need one.")
         print('  Run: git init && git add -A && git commit -m "initial commit"')
         return
-    if not _ask("This directory is not a git repository — initialise one now?", default=True):
+    if not _ask("This directory is not a git repository. Initialise one now?", default=True):
         print("  Skipped. `agent6 run` needs a repo; run `git init` here first.")
         return
     try:
@@ -41,24 +58,15 @@ def _offer_git_setup(root: Path, created: tuple[Path, ...], *, interactive: bool
         print(f"  git init failed: {exc}")
         return
     print("  created: .git/  (git init)")
-    # Commit only the scaffold git tracks (AGENTS.md, .gitignore). The per-repo
-    # config lives out of the workspace under the state dir, so it is never a
-    # candidate here; filter to paths under root defensively, then unignored()
-    # drops anything the just-written .gitignore covers so we never `add -f`.
-    rel = unignored(
-        root,
-        tuple(
-            str(p.relative_to(root)) for p in created if p.exists() and root in p.resolve().parents
-        ),
-    )
+    rel = _scaffold_rel_paths(root, created)
     if not rel:
-        print("  (nothing to commit — the created files are all gitignored)")
+        print("  (nothing to commit; the created files are all gitignored)")
         return
     if not _ask("Commit the files agent6 just created?", default=True):
         print(f"  Not committed. When ready: git add {' '.join(rel)} && git commit")
         return
     try:
-        commit_paths(root, "chore: scaffold agent6 config", rel)
+        commit_paths(root, _SCAFFOLD_COMMIT_MESSAGE, rel)
         print(f"  committed the agent6 scaffold ({', '.join(rel)})")
     except GitError as exc:
         # Most likely a missing git identity, actionable, not fatal.
@@ -66,10 +74,59 @@ def _offer_git_setup(root: Path, created: tuple[Path, ...], *, interactive: bool
         print("  Set git user.name / user.email, then: git add -A && git commit")
 
 
+def _offer_scaffold_commit(root: Path, created: tuple[Path, ...], *, interactive: bool) -> None:
+    """*root* is already a git repo, so the scaffold init wrote sits uncommitted
+    and `agent6 run` refuses a dirty tree. Offer to commit it (auto-yes when
+    non-interactive, i.e. --yes); when declined or the commit fails, print the
+    exact command so the advertised next step works."""
+    rel = _scaffold_rel_paths(root, created)
+    if not rel:
+        return
+    try:
+        if not paths_dirty(root, rel):
+            # Scaffold already committed; nothing to commit for these paths.
+            # (Whole-tree is_clean would false-trigger on unrelated WIP and then
+            # fail the path-limited commit with "nothing to commit".)
+            return
+    except GitError:
+        return
+    manual = f"git add {' '.join(rel)} && git commit -m '{_SCAFFOLD_COMMIT_MESSAGE}'"
+    print()
+    if interactive and not _ask(
+        "Commit the agent6 scaffold now (`agent6 run` needs a clean tree)?", default=True
+    ):
+        print(f"  Not committed. Before `agent6 run`: {manual}")
+        return
+    try:
+        commit_paths(root, _SCAFFOLD_COMMIT_MESSAGE, rel)
+    except GitError as exc:
+        print(f"  commit failed: {exc}")
+        print(f"  Commit it yourself before `agent6 run`: {manual}")
+        return
+    print(f"  committed the agent6 scaffold ({', '.join(rel)})")
+
+
+def _print_next_steps() -> None:
+    print()
+    print("Next:")
+    print("  agent6 connect                 # add a provider + API key (global), if not done")
+    print("  agent6 model worker <provider> <model>   # pick your worker model")
+    print("  agent6 config show             # audit the effective config")
+    print('  agent6 run "<task>"            # verify is inferred if you skipped it above')
+
+
 def _cmd_init(*, profile: str, assume_yes: bool = False) -> int:
     cwd = Path.cwd()
     target = repo_config_path_for(cwd)
-    interactive = not assume_yes and sys.stdin.isatty()
+    if not assume_yes and not sys.stdin.isatty():
+        # Refuse rather than silently take every default and write files
+        # (matching `agent6 connect`); consent comes from a TTY or --yes.
+        print(
+            "ERROR: no input. stdin is not a TTY; re-run with --yes to accept every default.",
+            file=sys.stderr,
+        )
+        return 2
+    interactive = not assume_yes
     try:
         rc = init_workspace(
             cwd,
@@ -97,6 +154,7 @@ def _cmd_init(*, profile: str, assume_yes: bool = False) -> int:
             (cwd / "AGENTS.md", cwd / ".gitignore"),
             interactive=interactive,
         )
+        _print_next_steps()
     # Don't leave root-owned scaffolding in the user's repo (sudo case).
     chown_to_real_user(target.parent)
     return rc

@@ -99,3 +99,34 @@ def test_remove_reports_failure_if_file_remains(
     monkeypatch.setattr(sc, "_APPARMOR_PROFILE_PATH", str(profile))
     rc = sc._cmd_system_apparmor("remove")  # pyright: ignore[reportPrivateUsage]
     assert rc == 1  # priv_calls mock left the file in place
+
+
+def test_install_removes_profile_when_load_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # cp succeeded but apparmor_parser -r refused: leaving the file installed
+    # would make `system apparmor status` claim a profile the kernel never
+    # loaded. The install removes it again and exits 1.
+    monkeypatch.setattr(sc, "_apparmor_present", lambda: True)
+    dest = tmp_path / "agent6-jail"
+    monkeypatch.setattr(sc, "_APPARMOR_PROFILE_PATH", str(dest))
+    calls: list[list[str]] = []
+
+    def _run_priv(argv: list[str], *, what: str) -> bool:
+        calls.append(argv)
+        if argv[0] == "cp":
+            dest.write_text("x", encoding="utf-8")
+            return True
+        if argv[0] == "apparmor_parser":
+            return False
+        if argv[0] == "rm":
+            dest.unlink(missing_ok=True)
+            return True
+        return True
+
+    monkeypatch.setattr(sc, "_run_priv", _run_priv)
+    rc = sc._cmd_system_apparmor("install")  # pyright: ignore[reportPrivateUsage]
+    assert rc == 1
+    assert ["rm", "-f", str(dest)] in calls
+    assert not dest.is_file()
+    assert "Removed" in capsys.readouterr().err
