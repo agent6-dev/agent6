@@ -1035,8 +1035,14 @@ class Workflow:
         state.gateless_ever_committed = gateless_ever_committed
         if metric_at_ceiling or metric_best_score is not None:
             # Seed a single synthetic sample so `_metric_at_ceiling` and the
-            # plateau guard see the prior best (we persist a summary, not the
-            # full history). `label` marks it as resume-reconstructed.
+            # plateau guard see the prior best (we persist a compact summary, not
+            # the full history, by design). `label` marks it as
+            # resume-reconstructed. A consequence of that summary-only model:
+            # `_metric_plateau_summary` needs several parsed samples to fire, so a
+            # resumed already-plateaued run takes a few measurements to re-arm the
+            # plateau-stop (it never stops early, and the ceiling-stop above is
+            # immediate) -- the predictable trade for not carrying the whole
+            # sample history across resume.
             state.metric_history.append(
                 _MetricSample(
                     label="resumed",

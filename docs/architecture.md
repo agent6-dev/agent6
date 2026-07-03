@@ -233,6 +233,15 @@ lands in a per-repo `lineage.jsonl` at the state-dir root. Past-turn DAG replay
 (reconstructing the graph at an older `graph_version`) is deferred; a fork copies
 the source's current DAG.
 
+The fork's tree is the repo as of that committed sha, nothing more. On a gated
+run (commits fire only on a green verify) an edit not yet committed at the forked
+turn is absent from the fork's tree even though the copied transcript mentions
+it, the same "head_sha is committed history only" posture `resume` documents
+(resume differs only in continuing on the live working tree). The forked run
+picks it back up by re-reading the real on-disk files. Modelling a fork as a
+commit plus the conversation up to that turn is the design choice: predictable
+and cheap, versus snapshotting uncommitted bytes into every checkpoint.
+
 One headless core, three thin front-ends: the CLI, the Textual TUI
 ([src/agent6/tui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/tui)),
 and the browser web UI

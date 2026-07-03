@@ -13,6 +13,19 @@ Phase 1 scope: fork from the latest checkpoint or a recorded `--at-turn N`, and
 copy the curator DAG verbatim. Replaying the journal to reconstruct the DAG as
 of an older `graph_version` is deferred; forking a past turn copies the source's
 current DAG and says so.
+
+The tree a fork starts from: a fork cuts its branch at the checkpoint's committed
+HEAD, so its working tree is the repo exactly as of that commit. That is the whole
+mental model -- a fork is the repo at a commit plus the conversation up to that
+turn. The one thing to know: on a gated run (commits fire only on a green verify),
+an edit made but not yet committed at the forked turn is absent from the fork's
+tree even though the copied transcript mentions it. This is the same "head_sha
+tracks committed history only" posture `resume` documents (resume differs only in
+that it continues on the live working tree, which still holds the edit). The forked
+run picks it back up by re-reading the files it needs and seeing their real on-disk
+content. The committed-sha model is the design choice: a fork is a commit plus a
+conversation, which is predictable and cheap, instead of snapshotting uncommitted
+working-tree bytes into every checkpoint.
 """
 
 from __future__ import annotations
