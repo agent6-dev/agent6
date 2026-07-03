@@ -143,7 +143,7 @@ flowchart TD
     Jail --> NS[user/mount/pid/ipc/uts/net NS]
     Jail --> Pivot[pivot_root into minimal rootfs]
     Jail --> ROBinds[strict only: RO bind .git]
-    Jail --> Land[Landlock V1 rules]
+    Jail --> Land[Landlock FS rules]
     Jail --> Sec[seccomp filter]
     Jail --> Caps[NO_NEW_PRIVS]
     Land -.-> Child[child process]
@@ -181,7 +181,7 @@ event log, transcripts) in-process.
 ```mermaid
 flowchart LR
     Agent[agent6 run<br/>main process] -->|UDS JSON IPC| Curator[graph-curator<br/>subprocess]
-    Curator -->|task graph| Graph[(graph.jsonl, graph/*.md, graph snapshots)]
+    Curator -->|task graph| Graph[(graph.jsonl, graph/*.md, cursor.json)]
     Agent -->|in-process| Rest[(loop_state.json, logs.jsonl, transcripts)]
 ```
 
@@ -205,8 +205,10 @@ Each run's directory `<state-dir>/<repo-id>/runs/<run-id>/` holds:
 - `loop_state.json`: the latest resume snapshot that drives `agent6 resume`,
   written by the main process before each LLM call and at iteration end.
 - `checkpoints/<NNNN>.json`: append-only per-turn snapshots (NNNN =
-  zero-padded `next_iteration`), each the same payload as `loop_state.json`
-  plus the workspace `head_sha` and curator `graph_version` at that turn.
+  zero-padded `next_iteration`), each a byte-identical copy of
+  `loop_state.json` at that turn (the snapshot payload already carries the
+  workspace `head_sha` and curator `graph_version`). `loop_state.json` is the
+  latest-pointer for resume; `checkpoints/` is the per-turn history.
   `agent6 fork --at-turn N` rolls a run back to turn N by cloning the matching
   checkpoint into a new run. Kept in full (a run is dozens of turns); written
   by the main process alongside `loop_state.json`.

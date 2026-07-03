@@ -871,8 +871,9 @@ boundary decision: the engine does not import the workflow stack.
 Rather than constructing a `Workflow` itself, `engine.drive` runs an
 `agent` state through an injected `agent_runner` callable
 (`Callable[[AgentRequest, Path | None], AgentExecResult]`, the second
-argument being the instance dir for the human-in-the-loop answer
-bridge). The CLI, which already
+argument being the per-state event-log path
+(`<instance>/states/<seq>-<state>/logs.jsonl`) each agent-state
+execution streams to). The CLI, which already
 depends on both `agent6.machine` and `agent6.workflows`, builds that
 runner and the orchestration around `machine create`/`run`, so
 `agent6.machine` never gains an edge into `agent6.workflows` and the tach

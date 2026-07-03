@@ -299,8 +299,9 @@ def _warn_if_headless_ask(cfg: Config, *, tui_enabled: bool) -> None:
     if cfg.sandbox.run_commands == "ask" and not tui_enabled and not sys.stdin.isatty():
         print(
             "[agent6] NOTE: sandbox.run_commands='ask' but this run is headless (no TUI,"
-            " no TTY), so run_command calls will be auto-denied. Set"
-            " sandbox.run_commands='yes' (trusted) or 'no' for headless/CI runs.",
+            " no TTY), so run_command calls will be auto-denied. Pass --auto-approve"
+            " (or set sandbox.run_commands='yes') to auto-approve, or 'no' to withhold"
+            " run_command, for headless/CI runs.",
             file=sys.stderr,
         )
 
@@ -1371,8 +1372,9 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     Mirrors ``_cmd_run`` setup but uses the existing run id, refuses
     if no ``loop_state.json`` snapshot exists, and calls ``wf.resume()``
     instead of ``wf.run(task)``. A safety check refuses when the
-    workspace HEAD moved since the snapshot was written, unless
-    ``--force-resume`` is passed.
+    workspace HEAD DIVERGED from the snapshot (a rebase/reset/commit on
+    another line); plain forward movement on the same line resumes
+    cleanly. ``--force-resume`` overrides the refusal.
 
     NOTE: token budget on resume is a FRESH ceiling, not a continuation
     of the prior run's accounting. Each ``agent6 resume`` invocation
@@ -1432,17 +1434,19 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
             print(branch_err, file=sys.stderr)
             return 2
 
-        # Safety check: refuse when the workspace HEAD moved since the run's last
-        # snapshot write (an operator commit, another run, or a rebase would leave
-        # the model reasoning about code that changed under it). The snapshot
-        # records head_sha best-effort ("" when git was unreadable at write time);
-        # skip the check then, and let the loud snapshot load below handle a
+        # Safety check: refuse when the workspace HEAD DIVERGED from the run's last
+        # snapshot (a rebase, reset, or a commit on another line would leave the
+        # model reasoning about code that changed under it). Plain forward movement
+        # on the same line -- the run's own per-step commits -- resumes cleanly. The
+        # snapshot records head_sha best-effort ("" when git was unreadable at write
+        # time); skip the check then, and let the loud snapshot load below handle a
         # corrupt file.
         mismatch = snapshot_head_mismatch(snapshot_path, cwd)
         if mismatch is not None:
             snap_head, current_head = mismatch
             print(
-                "GUARD: the workspace HEAD moved since this run's last snapshot.", file=sys.stderr
+                "GUARD: the workspace HEAD diverged from this run's last snapshot.",
+                file=sys.stderr,
             )
             print(f"  snapshot head: {snap_head}", file=sys.stderr)
             print(f"  current head:  {current_head}", file=sys.stderr)

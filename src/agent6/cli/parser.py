@@ -593,7 +593,9 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     resume_p.add_argument(
         "--force-resume",
         action="store_true",
-        help="Resume even if snapshot commit is missing or worktree has diverged.",
+        help="Resume even if the workspace HEAD diverged from the run's last snapshot "
+        "(a rebase, reset, or a commit on another line; plain forward movement resumes "
+        "without this flag).",
     )
     resume_p.add_argument(
         "--tui",

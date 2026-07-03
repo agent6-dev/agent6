@@ -6,7 +6,7 @@
 //!   - new mount/pid/net/ipc/uts namespaces (user namespace too, so we can mount unprivileged)
 //!   - minimal bind-mounted rootfs (cwd RW, /usr /bin /lib /lib64 RO, tmpfs /tmp)
 //!   - Landlock FS rules
-//!   - seccomp-bpf allowlist
+//!   - seccomp-bpf deny-list (default-allow, EPERM on the dangerous syscalls)
 //!   - PR_SET_NO_NEW_PRIVS
 //! Then forks + execs the child, captures stdout/stderr, prints one JSON result line.
 //!

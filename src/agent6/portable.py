@@ -2,12 +2,12 @@
 # Copyright 2026 Eric Lesiuta
 """Cross-platform primitives for the few places agent6 touches POSIX-only APIs.
 
-Pure stdlib, no agent6 imports. Keeps the Windows/Unix split contained in one
+Pure stdlib, no agent6 imports. Keeps the platform split contained in one
 spot instead of scattering ``sys.platform`` checks through the graph and
 machine journals. The sandbox itself remains Linux-only (see
-``agent6.detect.sandbox_available``); this module only covers the platform-neutral
-plumbing (file locks, durable renames) that must keep working everywhere so the
-agent can run unsandboxed on Windows and macOS.
+``agent6.detect.sandbox_available``), and native Windows is unsupported
+(use WSL); this module keeps the platform-neutral plumbing (file locks,
+durable renames) working so the agent can run unsandboxed on macOS.
 """
 
 from __future__ import annotations

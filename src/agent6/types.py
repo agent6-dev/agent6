@@ -12,10 +12,12 @@ from pathlib import Path
 from typing import Literal
 
 TernaryMode = Literal["no", "ask", "yes"]
-# `none` is the unsandboxed profile selected on hosts without the Linux
-# sandbox (macOS, or any non-Linux platform). It runs child commands as
-# plain subprocesses with no kernel-enforced confinement; it is only ever
-# reached via `select_profile` on a non-Linux host and never from config.
+# `none` is the UNSANDBOXED profile: child commands run as plain subprocesses
+# with no kernel-enforced confinement. Reached when the host has no Linux
+# sandbox (macOS / non-Linux), or as a deliberate operator opt-out on any host
+# via `sandbox.profile = "none"`, `--dangerously-disable-sandbox`, or
+# `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1` (self-authorizing, with a loud warning;
+# see `detect.select_profile`). `auto` never resolves here on Linux.
 SandboxProfile = Literal["strict", "hardened", "none"]
 
 

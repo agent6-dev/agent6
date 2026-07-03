@@ -596,10 +596,11 @@ def _cmd_machine_run(  # noqa: PLR0911, PLR0912, PLR0915
     path: Path, *, exit_on_wait: bool = False, disable_sandbox: bool = False
 ) -> int:
     if disable_sandbox:
-        # Set the env setter (not just this process's config) so the per-state
-        # agent subprocesses, which re-resolve the profile via select_profile,
-        # inherit it and also run unconfined. The env is operator-controlled;
-        # the LLM cannot reach it.
+        # Set the env setter so this supervisor's select_profile resolves to
+        # none; it then passes that profile to each agent subprocess in its
+        # request (the subprocess trusts req["profile"], it does not re-resolve).
+        # Using the env (vs mutating cfg) is the simplest single knob; the env
+        # is operator-controlled and the LLM cannot reach it.
         os.environ["AGENT6_DANGEROUSLY_DISABLE_SANDBOX"] = "1"
     try:
         spec = load_machine(path)

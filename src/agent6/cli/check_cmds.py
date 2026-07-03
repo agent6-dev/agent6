@@ -66,9 +66,9 @@ def _cmd_check_sandbox() -> int:
             "  kernel-enforced isolation."
         )
     if profile == "none":
-        # Non-Linux host: there is no kernel sandbox to test, and running the
-        # boundary probes unconfined would let the /etc-write probe actually
-        # escape onto the host. Report and stop.
+        # No kernel sandbox to test (a non-Linux host, or a deliberate `none`
+        # opt-out), and running the boundary probes unconfined would let the
+        # /etc-write probe actually escape onto the host. Report and stop.
         reports.append(
             SandboxReport(
                 name="jail",

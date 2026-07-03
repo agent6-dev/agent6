@@ -40,7 +40,7 @@ _APPARMOR_PROFILE = """\
 # restriction for the launcher binary ONLY, so the strict sandbox profile works
 # on kernels with kernel.apparmor_restrict_unprivileged_userns=1 (Ubuntu 24.04+).
 # The launcher does its own sandboxing (userns/pivot_root/Landlock/seccomp/
-# capset(0)/NO_NEW_PRIVS), so this adds no AppArmor confinement on top --
+# NO_NEW_PRIVS), so this adds no AppArmor confinement on top --
 # flags=(unconfined). Without it, agent6 falls back to the hardened profile.
 abi <abi/4.0>,
 include <tunables/global>

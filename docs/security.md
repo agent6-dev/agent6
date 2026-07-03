@@ -143,8 +143,8 @@ where user namespaces are available) the jail:
 
 - Forks a new user, mount, PID, IPC, UTS, and network namespace.
 - Sets up a minimal rootfs of bind mounts under a fresh tmpfs and
-  `pivot_root`s into it. The working directory, a private `/tmp`, and
-  any `sandbox.extra_rw_paths` are the writable mounts; system paths
+  `pivot_root`s into it. The working directory and a private `/tmp` are
+  the writable mounts; system paths (and any `sandbox.extra_read_paths`)
   are bind-mounted read-only.
 - Bind-mounts a curated subset of `/dev`: `null`, `zero`, `urandom`,
   `random`, `full`. `/dev/tty` is not exposed: TTY access lets a
@@ -153,7 +153,9 @@ where user namespaces are available) the jail:
   fails on the host kernel, `/proc` is left empty inside the jail rather
   than bind-mounting the host `/proc`; the latter would expose host
   process info to the child.
-- Applies Landlock (FS + net rules).
+- Applies Landlock (FS rules); network confinement is the net namespace above.
+  The agent process (not this jailed child) additionally takes Landlock TCP-port
+  rules under the hardened profile.
 - Installs a seccomp deny-list: the dangerous syscalls (ptrace, mount,
   setns, unshare, kexec, bpf, perf, keyctl, module loading, reboot,
   clock setting, …) return `EPERM`; everything else is allowed. The

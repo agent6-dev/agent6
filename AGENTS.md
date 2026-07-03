@@ -172,9 +172,8 @@ All five must pass; keep the suite green.
   LLM-provided commands anywhere. Modules that shell out with fixed
   argv depending only on operator input may call `subprocess.run`
   / `subprocess.Popen` directly: `git_ops.py`, `detect.py`,
-  `graph/client.py` (spawns the curator subprocess), `workflows/loop.py` (fixed
-  `git diff <base-sha>` feeding the review panel; the sha is recorded
-  at run setup, never by the LLM), `tools/lsp.py` (the `ty` language
+  `graph/client.py` (spawns the curator subprocess),
+  `tools/lsp.py` (the `ty` language
   server, exe resolved from PATH), `tools/mcp_client.py`
   (operator-configured `[mcp.servers.*]` server commands),
   `sandbox/jail.py` (the launcher
@@ -192,7 +191,9 @@ All five must pass; keep the suite green.
   the `runs`/`ask` diff views, argv from the run manifest the CLI wrote
   outside the jail, `rg` for history
   search, the fixed-argv `python -m agent6.tui` co-process behind
-  `run --tui`, `cli/scriptcheck.py` running ruff/ty with fixed argv to
+  `run --tui`, the operator `[notify].on_complete` hook `cli/run.py` fires at
+  run end (argv from config, never LLM output),
+  `cli/scriptcheck.py` running ruff/ty with fixed argv to
   statically read generated scripts, which only ever execute via
   `run_in_jail`, `cli/system_cmds.py` running `cp`/`rm`/`apparmor_parser`
   via sudo with fixed argv for `agent6 system apparmor` (operator host

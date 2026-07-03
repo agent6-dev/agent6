@@ -4,7 +4,7 @@
 
 The graph is the persistent representation of a single `agent6 run`. It lives in
 the run dir (under the per-repo state dir). The curator owns the task GRAPH files
-(graph.jsonl, graph/*.md, snapshots); mutations from worker / planner / critic /
+(graph.jsonl, graph/*.md, cursor.json); mutations from worker / planner / critic /
 alignment-guard agents go through the curator over a Unix-domain socket. The main
 agent process writes the resume snapshot (loop_state.json), the event log
 (logs.jsonl), and transcripts in-process. The run dir stays safe from jailed
@@ -13,7 +13,7 @@ cwd and the state dir is outside it, so safety comes from the out-of-tree
 location, not from curator-exclusivity or a single-writer invariant.
 
 Submodules:
-  - `models`:   pydantic models for nodes, intents, snapshots, resume diffs.
+  - `models`:   pydantic models for task nodes and curator intents.
   - `ulid`:     tiny self-contained ULID generator (no new dep).
   - `storage`:  on-disk format, markdown+YAML-frontmatter per node, jsonl
                 journal, dot generation, atomic writes via fcntl flock +

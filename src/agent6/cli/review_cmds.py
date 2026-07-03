@@ -194,7 +194,11 @@ def _cmd_review(  # noqa: PLR0911
         return 0
 
     log_proc = subprocess.run(
-        [git, "log", "-n", "10", "--oneline"], cwd=root, capture_output=True, text=True, check=False
+        [git, *git_hardening_flags(), "log", "-n", "10", "--oneline"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     recent_log = log_proc.stdout if log_proc.returncode == 0 else ""
 

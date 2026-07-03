@@ -59,9 +59,8 @@ class Environment:
         On Linux, `strict` requires `CLONE_NEWUSER` (and friends) to succeed;
         on hosts where userns is blocked (default-seccomp Docker,
         AppArmor-restricted Ubuntu, locked-down kiosks) we fall back to
-        `hardened`, which keeps Landlock + seccomp + capset + rlimits +
-        NO_NEW_PRIVS but skips namespaces. `hardened` is still real
-        kernel-enforced isolation.
+        `hardened`, which keeps Landlock + seccomp + NO_NEW_PRIVS but skips
+        namespaces. `hardened` is still real kernel-enforced isolation.
         """
         if not self.sandbox_available:
             return "none"
@@ -113,10 +112,12 @@ def sandbox_disabled_by_env() -> bool:
     """True when ``AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`` is set.
 
     The env form of ``--dangerously-disable-sandbox``: a per-invocation SETTER
-    that forces the unsandboxed profile regardless of config. Read in
-    :func:`select_profile`, so it also reaches machine ``agent`` subprocesses
-    that re-resolve the profile (they inherit the env). Never reachable by the
-    LLM (it cannot set the launcher's environment)."""
+    that forces the unsandboxed profile regardless of config, read in
+    :func:`select_profile`. For a ``machine run`` the supervisor calls
+    ``select_profile`` and passes the resolved ``none`` to each agent
+    subprocess in its request (the subprocess trusts ``req["profile"]`` and
+    does not re-resolve). Never reachable by the LLM (it cannot set the
+    launcher's environment)."""
     return os.environ.get("AGENT6_DANGEROUSLY_DISABLE_SANDBOX") == "1"
 
 
@@ -228,7 +229,7 @@ def select_profile(requested: str, env: Environment) -> SandboxProfile:
                 "sandbox.profile = 'strict' requires unprivileged user namespaces "
                 "(`unshare -U -r true`) to succeed, but this host blocks them. "
                 "Set profile = 'hardened' (or 'auto') to run without namespaces "
-                "while keeping Landlock + seccomp + capset + rlimits."
+                "while keeping Landlock + seccomp + NO_NEW_PRIVS."
             )
         return "strict"
     if requested == "hardened":
