@@ -216,12 +216,23 @@ class BudgetTracker:
     def fraction_remaining(self) -> float:
         """Fraction of the budget still available, in ``[0.0, 1.0]``.
 
-        Computed against whichever ceiling is closer to exhaustion (the
-        input or output bucket), so a run that has burned 90% of its
-        output ceiling but only 10% of its input ceiling reports 0.10,
-        the conservative, decision-relevant figure. Used by the workflow
-        to decide whether a metric plateau is worth quitting on or
-        whether enough budget remains to keep pivoting.
+        Computed against whichever ceiling is closest to exhaustion, so a run
+        that has burned 90% of one ceiling but only 10% of another reports 0.10,
+        the conservative, decision-relevant figure. Used by the workflow to
+        decide whether a metric plateau is worth quitting on, whether enough
+        budget remains to keep pivoting, and when to nudge a graceful wind-down
+        (verify + finish_run) before the hard stop.
+
+        The USD ceiling counts too when set: ``max_usd`` is the AUTHORITATIVE
+        spend bound and, unlike the token caps, it includes cache_read /
+        cache_creation cost (which never counts toward the token caps). On a
+        USD-budgeted, cache-heavy run the USD ceiling is what actually
+        hard-stops the run, so leaving it out here reported plenty of budget
+        left while ``record`` was about to raise ``BudgetExceeded`` -- every
+        wind-down threshold stayed un-triggered and the worker was hard-killed
+        mid-edit instead of finishing cleanly. An unpriced model contributes $0
+        to the estimate (max_usd is unenforceable there anyway), so this stays a
+        no-op exactly when the USD bound is a no-op.
         """
         with self._lock:
             input_used = (
@@ -230,7 +241,10 @@ class BudgetTracker:
             output_used = (
                 self._output_total / self.max_output_tokens if self.max_output_tokens > 0 else 1.0
             )
-        used = max(input_used, output_used)
+            used = max(input_used, output_used)
+            if self.max_usd > 0.0:
+                usd_spent, _ = self._estimate_usd_locked()
+                used = max(used, usd_spent / self.max_usd)
         return max(0.0, 1.0 - used)
 
     def snapshot(self) -> dict[str, object]:

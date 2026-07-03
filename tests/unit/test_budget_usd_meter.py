@@ -199,3 +199,43 @@ def test_partial_reported_cost_falls_back_to_table() -> None:
     usd, _ = bt.estimate_usd()
     # Table says 2M @ $3 + 2M @ $15 = $36.
     assert usd == 36.0
+
+
+def test_fraction_remaining_tracks_usd_ceiling() -> None:
+    """`fraction_remaining` must count the USD ceiling, not just the token caps.
+
+    On a USD-budgeted, cache-heavy run the USD ceiling (which alone includes
+    cache cost) is what hard-stops the run; if `fraction_remaining` ignored it,
+    the token fractions would report plenty of budget left and the graceful
+    wind-down nudges would never fire before `BudgetExceeded`.
+    """
+    # Token caps sized huge so only the $5 USD ceiling binds. Cache-heavy turn:
+    # tiny fresh input/output, large cache_read (billed at 0.1x, counting zero
+    # toward the token caps).
+    bt = BudgetTracker(max_input_tokens=10_000_000, max_output_tokens=10_000_000, max_usd=5.0)
+    bt.record(
+        model="claude-sonnet-4-5",
+        input_tokens=100_000,  # $0.30 fresh input
+        output_tokens=100_000,  # $1.50 output
+        cache_read_tokens=10_000_000,  # 10M @ $3*0.1/M = $3.00
+        cache_creation_tokens=0,
+    )
+    usd, _ = bt.estimate_usd()
+    assert usd == pytest.approx(4.8)  # 0.30 + 1.50 + 3.00
+    # Token axes are ~1% used, but 96% of the USD budget is gone, so the
+    # decision-relevant figure is ~0.04, not ~0.99.
+    assert bt.fraction_remaining() == pytest.approx(1.0 - 4.8 / 5.0, abs=1e-6)
+
+
+def test_fraction_remaining_ignores_usd_when_no_ceiling() -> None:
+    """With no USD ceiling set the fraction is token-only (unchanged behaviour)."""
+    bt = BudgetTracker(max_input_tokens=100_000, max_output_tokens=20_000, max_usd=0.0)
+    bt.record(
+        model="claude-sonnet-4-5",
+        input_tokens=50_000,
+        output_tokens=2_000,
+        cache_read_tokens=5_000_000,  # huge cache cost, but no USD ceiling to bind
+        cache_creation_tokens=0,
+    )
+    # 1 - max(50k/100k, 2k/20k) = 1 - 0.5 = 0.5; the cache cost is invisible here.
+    assert bt.fraction_remaining() == pytest.approx(0.5)
