@@ -33,7 +33,11 @@ use seccompiler::{
 };
 use serde::Deserialize;
 
+// deny_unknown_fields: a policy field this binary does not know (version skew
+// between the Python side and a stale or pinned AGENT6_JAIL_BIN) could be a
+// restriction it would silently drop, so refuse instead of running weaker.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Policy {
     #[serde(default = "default_profile")]
     profile: String,
