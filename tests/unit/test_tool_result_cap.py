@@ -65,10 +65,24 @@ def test_oversized_run_command_payload_guidance_points_at_narrowing() -> None:
 
 def test_cap_total_envelope_size_stays_under_cap() -> None:
     """The envelope itself must respect the cap so we do not silently
-    grow the tool_result payload past its budget."""
-    big = "C" * (_TOOL_RESULT_CHAR_CAP * 5)
-    capped = _cap_tool_result(big, tool_name="grep")
-    assert len(capped) <= _TOOL_RESULT_CHAR_CAP
+    grow the tool_result payload past its budget. The head must be sized
+    by ENCODED length: json.dumps re-escapes quotes and backslashes, so a
+    raw-char budget overshoots the cap on escape-heavy content (observed
+    118k chars emitted against the 60k cap)."""
+    for big in (
+        "C" * (_TOOL_RESULT_CHAR_CAP * 5),  # no escaping: raw == encoded
+        '"\\' * (_TOOL_RESULT_CHAR_CAP * 2),  # every char doubles when encoded
+        ('He said "use \\n"\n' * 20_000),  # mixed quotes/backslashes/newlines
+    ):
+        capped = _cap_tool_result(big, tool_name="grep")
+        assert len(capped) <= _TOOL_RESULT_CHAR_CAP
+        parsed = json.loads(capped)  # still a well-formed envelope
+        assert parsed["_tool_result_truncated"] is True
+        assert parsed["total_chars"] == len(big)
+        # A useful amount of head survives; big.startswith proves it is a
+        # clean prefix, not a mid-escape cut.
+        assert parsed["shown_chars"] > _TOOL_RESULT_CHAR_CAP // 4
+        assert big.startswith(parsed["head"])
 
 
 def test_truncation_envelope_for_unknown_tool_still_well_formed() -> None:

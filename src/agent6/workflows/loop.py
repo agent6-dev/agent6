@@ -20,7 +20,6 @@ from __future__ import annotations
 import json
 import os
 import random
-import subprocess
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -29,7 +28,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from agent6.budget import BudgetExceeded, BudgetTracker
 from agent6.config import Config
-from agent6.git_ops import GitError, commit_all, commit_diff
+from agent6.git_ops import GitError, commit_all, commit_diff, diff_since
 from agent6.git_ops import status as git_status
 from agent6.graph.client import CuratorClientError, GraphClient
 from agent6.graph.models import (
@@ -148,9 +147,6 @@ from agent6.workflows._prompt_revision import (
     parse_prompt_revision as _parse_prompt_revision,
 )
 from agent6.workflows._prompts import (
-    CONTEXT_RESTART_NOTICE as _CONTEXT_RESTART_NOTICE,
-)
-from agent6.workflows._prompts import (
     CONTEXT_SUMMARY_SYSTEM_PROMPT as _CONTEXT_SUMMARY_SYSTEM_PROMPT,
 )
 from agent6.workflows._prompts import (
@@ -160,6 +156,9 @@ from agent6.workflows._prompts import (
     PROMPT_REVISION_SYSTEM_PROMPT as _PROMPT_REVISION_SYSTEM_PROMPT,
 )
 from agent6.workflows._prompts import build_system_prompt as _build_system_prompt
+from agent6.workflows._prompts import (
+    context_restart_notice as _context_restart_notice,
+)
 from agent6.workflows._review import ReviewDispatch, run_panel
 from agent6.workflows._review import Seat as ReviewSeat
 from agent6.workflows._run_state import (
@@ -2518,6 +2517,7 @@ class Workflow:
         goal = _metric_goal(metric_cfg)
         if goal is None:
             return None
+        assert metric_cfg is not None  # goal is None otherwise
         score = _coerce_metric_score(result.get("score"))
         raw_returncode = result.get("returncode")
         returncode = raw_returncode if isinstance(raw_returncode, int) else None
@@ -2528,7 +2528,9 @@ class Workflow:
         at_ceiling = (
             goal == "maximize"
             and score is not None
-            and _metric_at_fraction_ceiling(combined, score)
+            # Only count an X/Y ceiling reported on the score-match line, so an
+            # incidental "100/100" progress bar elsewhere cannot latch it.
+            and _metric_at_fraction_ceiling(combined, score, pattern=metric_cfg.pattern)
         )
         sample = _MetricSample(
             label=label,
@@ -2764,7 +2766,7 @@ class Workflow:
         summary = _strip_checkoff(raw) if open_tasks else raw
         restart = {
             "role": "user",
-            "content": [{"type": "text", "text": _CONTEXT_RESTART_NOTICE + summary}],
+            "content": [{"type": "text", "text": _context_restart_notice(self.mode) + summary}],
         }
         messages[:] = [original, restart]
         self._emit("loop.compact.summarise.done", summary_chars=len(summary))
@@ -3078,19 +3080,15 @@ class Workflow:
         )
 
     def _run_diff(self) -> str:
-        """The run's cumulative change (``git diff base_sha``: base commit vs the
-        working tree, so it includes committed AND uncommitted edits). Empty if
-        no base is known or git fails."""
+        """The run's cumulative change: base commit vs the working tree, so it
+        includes committed AND uncommitted edits, with untracked files as
+        additions. Empty if no base is known or git fails. Routed through
+        git_ops so the repo-controlled fsmonitor/diff.external/hooks keys stay
+        neutralized (a raw `git diff` here would run a poisoned `.git/config`
+        payload on the host)."""
         if not self.base_sha:
             return ""
-        proc = subprocess.run(
-            ["git", "diff", self.base_sha],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        return proc.stdout if proc.returncode == 0 else ""
+        return diff_since(self.root, self.base_sha)
 
     def _read_agents_md(self) -> str:
         path = self.root / "AGENTS.md"

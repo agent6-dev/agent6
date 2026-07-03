@@ -80,11 +80,17 @@ def test_compact_skips_tool_result_smaller_than_placeholder() -> None:
 
     tiny = "x" * 50  # < len(placeholder) == 201
     big = "y" * 5000
-    # Oldest-first within one message; keep_recent=2 keeps the last two.
-    msgs: list[dict[str, Any]] = [_user_msg_with_tool_results(tiny, big, big, big)]
+    # Oldest-first; keep_recent=2 keeps the last two, and the final message is
+    # exempt, so the eligible blocks are the two in the first message.
+    msgs: list[dict[str, Any]] = [
+        _user_msg_with_tool_results(tiny, big),
+        _user_msg_with_tool_results(big, big),
+    ]
     compact_old_tool_results(msgs, max_total_bytes=100, keep_recent=2)
-    # The oldest (tiny) block is eligible but must be skipped, not ballooned.
+    # The oldest (tiny) block is eligible but must be skipped, not ballooned;
+    # its eligible sibling is elided as normal.
     assert msgs[0]["content"][0]["content"] == tiny
+    assert "elided" in msgs[0]["content"][1]["content"]
     assert len(PLACEHOLDER) == 201
 
 
@@ -155,17 +161,88 @@ def test_compact_skips_non_tool_result_blocks() -> None:
     assert elided == 1
 
 
+def test_compact_never_elides_unseen_results_in_final_message() -> None:
+    """Compaction runs at top-of-iteration, BEFORE the provider call that
+    delivers the final message's tool_results: the model has never seen them.
+    A turn with 3+ large results must not have its oldest same-turn results
+    replaced by the "re-call the tool" placeholder (which previously sent the
+    model into a paid re-call cycle chasing content it never received)."""
+    big = "x" * 10_000
+    msgs: list[dict[str, Any]] = [
+        {"role": "user", "content": [{"type": "text", "text": "task"}]},
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "tool_use", "id": f"t{i}", "name": "read_file", "input": {}}
+                for i in range(3)
+            ],
+        },
+        _user_msg_with_tool_results(big, big, big),
+    ]
+    elided = compact_old_tool_results(msgs, max_total_bytes=100, keep_recent=2)
+    assert elided == 0
+    assert [c["content"] for c in msgs[2]["content"]] == [big, big, big]
+
+
+def test_compact_elides_seen_results_but_protects_final_message() -> None:
+    # Results the model has already consumed (an assistant turn follows them)
+    # stay eligible; only the undelivered final message is exempt.
+    big = "x" * 10_000
+    msgs: list[dict[str, Any]] = [
+        {"role": "user", "content": [{"type": "text", "text": "task"}]},
+        _user_msg_with_tool_results(big, big, big),  # seen: answered below
+        {"role": "assistant", "content": [{"type": "text", "text": "on it"}]},
+        _user_msg_with_tool_results(big, big, big),  # unseen: awaiting delivery
+    ]
+    elided = compact_old_tool_results(msgs, max_total_bytes=100, keep_recent=2)
+    assert elided == 3
+    assert all("elided" in c["content"] for c in msgs[1]["content"])
+    assert [c["content"] for c in msgs[3]["content"]] == [big, big, big]
+
+
+def test_compact_never_elides_undelivered_results_behind_a_steer_message() -> None:
+    """Undelivered tool_results are not always the final message: an operator
+    steer (or a pre-call nudge) appends a trailing user message after them, so
+    they sit at index -2. They are still unseen (the delivering provider call
+    runs after this compaction), so keying on the final index alone let their
+    older same-turn blocks be elided into a paid re-call cycle. The exemption
+    tracks 'after the last assistant message', which still holds here."""
+    big = "x" * 10_000
+    msgs: list[dict[str, Any]] = [
+        {"role": "user", "content": [{"type": "text", "text": "task"}]},
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "tool_use", "id": f"t{i}", "name": "read_file", "input": {}}
+                for i in range(3)
+            ],
+        },
+        _user_msg_with_tool_results(big, big, big),  # unseen: awaiting delivery
+        {"role": "user", "content": [{"type": "text", "text": "steer: focus on the parser"}]},
+    ]
+    elided = compact_old_tool_results(msgs, max_total_bytes=100, keep_recent=2)
+    assert elided == 0
+    assert [c["content"] for c in msgs[2]["content"]] == [big, big, big]
+
+
 def test_restart_notice_is_dag_aware() -> None:
     """The tier-2 summarise-and-restart notice must point the worker at its
     durable task DAG so cross-compaction task state is recovered."""
-    from agent6.workflows._prompts import (
-        CONTEXT_RESTART_NOTICE as notice,
-    )
+    from agent6.workflows._prompts import context_restart_notice
 
-    # The real tool is ``list_tasks`` (no ``dag_`` prefix); the notice must
-    # name it exactly or the post-compaction recovery call 404s.
-    assert "list_tasks" in notice
-    assert "dag_list_tasks" not in notice
-    assert "DAG" in notice
-    # Still tells the worker not to start over.
-    assert "Do NOT start over" in notice
+    for mode in ("run", "plan"):
+        notice = context_restart_notice(mode)
+        # The real tool is ``list_tasks`` (no ``dag_`` prefix); the notice must
+        # name it exactly or the post-compaction recovery call 404s.
+        assert "list_tasks" in notice
+        assert "dag_list_tasks" not in notice
+        assert "DAG" in notice
+        # Still tells the worker not to start over.
+        assert "Do NOT start over" in notice
+    # ask/machine/agent have no DAG tools: instructing list_tasks there burns a
+    # turn on an unknown-tool error, so the DAG paragraph must be absent.
+    for mode in ("ask", "machine", "agent"):
+        notice = context_restart_notice(mode)
+        assert "list_tasks" not in notice
+        assert "Do NOT start over" in notice
+        assert notice.endswith("PROGRESS SUMMARY:\n")

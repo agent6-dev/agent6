@@ -1481,6 +1481,24 @@ def test_metric_at_fraction_ceiling_detects_maxed_score() -> None:
     assert _metric_at_fraction_ceiling("CYCLES: 1487\n", 1487.0) is False
 
 
+def test_metric_at_fraction_ceiling_requires_the_score_line_when_pattern_given() -> None:
+    from agent6.workflows._metric import (
+        metric_at_fraction_ceiling as _metric_at_fraction_ceiling,
+    )
+
+    # tqdm progress in stderr prints an incidental 100/100 equal to the score;
+    # the real score line has no denominator, so the ceiling must NOT latch.
+    text = "SCORE: 100\n100%|##########| 100/100 [00:03<00:00, 33.1it/s]\n"
+    assert _metric_at_fraction_ceiling(text, 100.0, pattern=r"SCORE: (\d+)") is False
+    # Without the pattern the whole text is scanned (legacy) and it latches;
+    # this contrast is why the score pattern must be threaded through.
+    assert _metric_at_fraction_ceiling(text, 100.0) is True
+    # A genuine maxed fraction ON the score-pattern line still trips it.
+    assert _metric_at_fraction_ceiling("junk 3/3\nSCORE: 27/27\n", 27.0, pattern=r"SCORE: (\d+)")
+    # No score-pattern match at all -> conservative False.
+    assert _metric_at_fraction_ceiling("100/100\n", 100.0, pattern=r"SCORE: (\d+)") is False
+
+
 def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
     """A finish_run on a maximize metric that is already at its provable
     ceiling (SCORE: N/N) is honoured immediately — even with most of the
@@ -1526,7 +1544,10 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
 
     provider = ProviderStub()
     config = SimpleNamespace(
-        workflow=SimpleNamespace(verify_command=("true",), metric=SimpleNamespace(goal="maximize")),
+        workflow=SimpleNamespace(
+            verify_command=("true",),
+            metric=SimpleNamespace(goal="maximize", pattern=r"SCORE:\s*([\d.]+)"),
+        ),
     )
     # Huge ceilings keep fraction_remaining ~1.0: without the ceiling guard
     # the early-finish guard would reject the finish here.
@@ -1607,6 +1628,19 @@ def test_next_metric_target_maximize_returns_nearest_unmet() -> None:
     targets = (0.50, 0.80, 0.95)
     assert _next_metric_target(targets, 0.83, "maximize") == 0.95
     assert _next_metric_target(targets, 0.99, "maximize") is None
+
+
+def test_next_metric_target_equality_is_unmet() -> None:
+    # Thresholds are harvested from strict comparisons (`assert x < N`), which
+    # still FAIL at x == N; a score sitting exactly on the threshold has not
+    # met it and must keep it as the next target.
+    from agent6.workflows._metric import next_metric_target as _next_metric_target
+
+    assert _next_metric_target((1487.0,), 1487.0, "minimize") == 1487.0
+    assert _next_metric_target((0.95,), 0.95, "maximize") == 0.95
+    # Strictly beyond the threshold in the improving direction -> met.
+    assert _next_metric_target((1487.0,), 1486.0, "minimize") is None
+    assert _next_metric_target((0.95,), 0.96, "maximize") is None
 
 
 def test_format_metric_feedback_shows_next_target() -> None:
@@ -2896,3 +2930,38 @@ def test_open_tasks_for_checkoff_excludes_auto_root() -> None:
     wf = _wf(graph_client=graph_client)
     ids = {nid for nid, _ in wf._open_tasks_for_checkoff()}  # pyright: ignore[reportPrivateUsage]
     assert ids == {"01A", "01B"}  # root excluded; passed subtask excluded
+
+
+def test_run_result_docstring_enumerates_every_loop_reason() -> None:
+    # RunResult.reason is a free-form str whose docstring is the enumeration
+    # operators grep against; it silently drifted to omit five reasons. Pin it
+    # to the literal `reason=` values loop.py actually constructs.
+    import ast
+    import inspect
+
+    import agent6.workflows.loop as loopmod
+    from agent6.workflows._run_state import RunResult
+
+    reasons: set[str] = set()
+    for node in ast.walk(ast.parse(inspect.getsource(loopmod))):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
+            continue
+        if node.func.id != "RunResult":
+            continue
+        for kw in node.keywords:
+            if kw.arg == "reason" and isinstance(kw.value, ast.Constant):
+                assert isinstance(kw.value.value, str)
+                reasons.add(kw.value.value)
+    # `reason=finish_kind` is the one non-literal construction; its Literal type
+    # covers exactly these two.
+    reasons |= {"finish_run", "finish_planning"}
+    assert reasons >= {
+        "loop_guard_killed",
+        "verify_settled",
+        "verify_command_unexecutable",
+        "interactive_stop",
+        "finish_planning",
+    }  # the five the docstring omitted
+    doc = RunResult.__doc__ or ""
+    undocumented = {r for r in reasons if r not in doc}
+    assert not undocumented, f"RunResult docstring omits reasons: {sorted(undocumented)}"

@@ -289,11 +289,14 @@ def explore_review(
                 )
             return _verdict_from_obj(obj, seat, model)
         # On the last allowed iteration, a verdict emitted ALONGSIDE tool calls
-        # still counts (don't waste the investigation by abstaining).
+        # still counts (don't waste the investigation by abstaining). With no
+        # verdict, skip the dispatches: no model call follows to consume their
+        # results, so executing them only spends tool time on an abstention.
         if i == max_iters - 1:
             obj = _extract_json(resp.text)
             if obj is not None and ("verdict" in obj or "findings" in obj):
                 return _verdict_from_obj(obj, seat, model)
+            break
         tool_results: list[dict[str, Any]] = []
         for tu in resp.tool_uses:
             name = tu.get("name", "")

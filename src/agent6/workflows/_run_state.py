@@ -16,16 +16,22 @@ from typing import Any
 class RunResult:
     """Final state of a run.
 
-    ``reason`` values:
-      finish_run       - agent called the finish_run tool explicitly.
-      silent_finish    - agent emitted text but no tool_use (talking).
-      went_quiet       - agent emitted neither text nor tool_use.
-      budget_exhausted - BudgetTracker raised; partial progress kept.
-      provider_error   - ProviderError after retry; loop aborted.
-    metric_plateau   - metric run tied prior best after enough samples.
-            prompt_revision_failed - revise_prompt failed before the worker loop.
-      max_iterations   - hit max_iterations cap without finish.
-      steer_abort      - operator typed "abort" at a steering prompt.
+    ``reason`` values (each constructed in loop.py):
+      finish_run        - agent called the finish_run tool explicitly.
+      finish_planning   - plan-mode agent called the finish_planning tool.
+      silent_finish     - agent emitted text but no tool_use (talking).
+      went_quiet        - agent emitted neither text nor tool_use.
+      budget_exhausted  - BudgetTracker raised; partial progress kept.
+      provider_error    - ProviderError after retry; loop aborted.
+      metric_plateau    - metric run tied prior best after enough samples.
+      verify_settled    - verify passed and the worker stopped making changes.
+      verify_command_unexecutable - operator verify/metric command cannot run
+                          in the jail; the model cannot fix operator config.
+      loop_guard_killed - identical tool call repeated past the kill threshold.
+      interactive_stop  - operator chose "stop" at the REPL after_auto_commit hook.
+      steer_abort       - operator typed "abort" at a steering prompt.
+      prompt_revision_failed - revise_prompt failed before the worker loop.
+      max_iterations    - hit max_iterations cap without finish.
     """
 
     completed: bool

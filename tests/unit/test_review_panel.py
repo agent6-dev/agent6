@@ -71,7 +71,9 @@ def _agg(
 
 def test_diff_touched_ranges_parses_paths_and_new_line_ranges() -> None:
     ranges = diff_touched_ranges(SAMPLE_DIFF)
-    assert ranges["foo.py"] == [(10, 14)]
+    # New-side range plus the old-side range of the same hunk (pre-image line
+    # numbers must ground too); a created file has no old side.
+    assert ranges["foo.py"] == [(10, 14), (10, 12)]
     assert ranges["bar.py"] == [(1, 2)]
 
 
@@ -197,6 +199,27 @@ def test_dedup_across_seats_and_against_prior_findings() -> None:
     assert res2.merged_findings == ()  # already injected -> not re-surfaced
 
 
+def test_prior_deduped_block_does_not_count_toward_the_gate() -> None:
+    # A seat whose only surviving block dedups away against prior_findings must
+    # not gate: otherwise blocked=True ships with merged_findings=() and the
+    # worker is rejected while being told "No blocking findings.".
+    f = _block("security", "foo.py:11")
+    prior = (Finding("security", "block", "foo.py:11", "already shown"),)
+    for decision in ("veto", "quorum", "all"):
+        res = aggregate_verdicts(
+            [_seat("m1", f)], _ctx(prior_findings=prior), decision=decision, quorum=1, panel_id="p"
+        )
+        assert res.merged_findings == ()
+        assert res.n_block == 0 and res.blocked is False, decision
+    # A NEW grounded block alongside the deduped one still gates.
+    new = _block("data-loss", "bar.py:1")
+    res2 = aggregate_verdicts(
+        [_seat("m1", f, new)], _ctx(prior_findings=prior), decision="veto", quorum=2, panel_id="p"
+    )
+    assert res2.blocked is True and res2.n_block == 1
+    assert [x.category for x in res2.merged_findings] == ["data-loss"]
+
+
 def test_render_findings_formats_and_empty() -> None:
     assert render_findings(()) == ""
     out = render_findings((Finding("security", "block", "foo.py:11", "leak", "fix it"),))
@@ -218,7 +241,7 @@ def test_added_line_starting_like_a_header_is_not_a_file_header() -> None:
     )
     ranges = diff_touched_ranges(diff)
     assert "evil.py" not in ranges
-    assert ranges["foo.py"] == [(1, 3), (10, 12)]
+    assert ranges["foo.py"] == [(1, 3), (1, 2), (10, 12), (10, 11)]  # new + old side per hunk
 
 
 def test_deleted_line_starting_like_a_header_is_not_a_file_header() -> None:
@@ -235,6 +258,25 @@ def test_deleted_line_starting_like_a_header_is_not_a_file_header() -> None:
     ranges = diff_touched_ranges(diff)
     assert "legacy column note" not in ranges  # the deletion was not read as a header
     assert is_grounded("schema.sql:51", ranges)  # the later hunk still grounds
+
+
+def test_in_place_modification_grounds_old_side_lines() -> None:
+    # A hunk that deletes lines from a kept (not renamed) file: a block citing
+    # the deleted code at its OLD line number must ground. Previously the
+    # old-side range was recorded only when oldpath != newpath, so such a
+    # citation was ungrounded and the block silently downgraded to warn (the
+    # gate failed open on reviews of deleted code).
+    diff = "--- a/mod.py\n+++ b/mod.py\n@@ -100,5 +50,2 @@\n ctx\n-gone1\n-gone2\n-gone3\n ctx2\n"
+    ranges = diff_touched_ranges(diff)
+    assert (100, 104) in ranges["mod.py"]  # old side of the in-place hunk
+    assert is_grounded("mod.py:103", ranges)
+    res = _agg(
+        [_seat("m1", _block("data-loss", "mod.py:103"))],
+        decision="veto",
+        ctx=ReviewContext(diff=diff),
+    )
+    assert res.blocked is True and res.n_block == 1
+    assert res.merged_findings[0].severity == "block"
 
 
 def test_pure_deletion_grounds_on_the_old_path() -> None:

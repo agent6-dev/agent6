@@ -136,6 +136,45 @@ def test_parse_prompt_revision_falls_back_to_plain_text() -> None:
     assert parsed.clarifying_questions == ()
 
 
+def test_parse_prompt_revision_keeps_leading_digits_in_questions() -> None:
+    # Only the list marker is stripped. The old charset lstrip("-*0123456789. ")
+    # also ate leading digits of the question itself ("- 32-bit support
+    # needed?" became "bit support needed?").
+    parsed = loopmod._parse_prompt_revision(  # pyright: ignore[reportPrivateUsage]
+        "<revised_task>t</revised_task>\n"
+        "<clarifying_questions>\n"
+        "- 32-bit support needed?\n"
+        "1. 64-bit only, or both?\n"
+        "2) 100ms latency budget acceptable?\n"
+        "</clarifying_questions>"
+    )
+    assert parsed.clarifying_questions == (
+        "32-bit support needed?",
+        "64-bit only, or both?",
+        "100ms latency budget acceptable?",
+    )
+
+
+def test_parse_prompt_revision_unmarked_question_passes_through() -> None:
+    parsed = loopmod._parse_prompt_revision(  # pyright: ignore[reportPrivateUsage]
+        "<revised_task>t</revised_task>\n"
+        "<clarifying_questions>\n3rd-party deps allowed?\n* none\n</clarifying_questions>"
+    )
+    # No marker: the line (digits included) is kept verbatim; "none" after a
+    # marker is still filtered.
+    assert parsed.clarifying_questions == ("3rd-party deps allowed?",)
+
+
+def test_parse_prompt_revision_keeps_leading_decimal_in_question() -> None:
+    # A question that opens with a bare decimal ("0.5s ...") is NOT a numbered
+    # list item ("0." has no trailing space); its leading digits must survive.
+    parsed = loopmod._parse_prompt_revision(  # pyright: ignore[reportPrivateUsage]
+        "<revised_task>t</revised_task>\n"
+        "<clarifying_questions>\n0.5s latency budget acceptable?\n</clarifying_questions>"
+    )
+    assert parsed.clarifying_questions == ("0.5s latency budget acceptable?",)
+
+
 def test_workflow_auto_revises_task_before_worker_call(tmp_path: Path) -> None:
     worker = MagicMock()
     worker.call.return_value = _finish_resp("done")

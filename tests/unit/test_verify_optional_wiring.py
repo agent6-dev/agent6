@@ -43,3 +43,28 @@ def test_system_prompt_switches_verify_block(tmp_path: Path) -> None:
     gateless = build_system_prompt(config=_cfg(verify=False), repo=repo, mode="run")
     assert "<verify-command>" in with_verify and "<no-verify-command>" not in with_verify
     assert "<no-verify-command>" in gateless and "<verify-command>" not in gateless
+
+
+def test_no_verify_block_wording_matches_the_mode(tmp_path: Path) -> None:
+    """The gateless block must name the mode's real terminal tool and must not
+    claim auto-commits in the read-only modes: plan finishes via
+    `finish_planning`, ask has no terminal tool at all, and neither can edit."""
+    repo = _repo(tmp_path)
+    cfg = _cfg(verify=False)
+    run = build_system_prompt(config=cfg, repo=repo, mode="run")
+    plan = build_system_prompt(config=cfg, repo=repo, mode="plan")
+    ask = build_system_prompt(config=cfg, repo=repo, mode="ask")
+
+    def block(text: str) -> str:
+        start = text.index("<no-verify-command>")
+        return text[start : text.index("</no-verify-command>", start)]
+
+    run_block, plan_block, ask_block = block(run), block(plan), block(ask)
+    assert "finish_run" in run_block and "commits each editing step" in run_block
+    assert "finish_planning" in plan_block
+    assert "finish_run" not in plan_block and "commits" not in plan_block
+    assert "finish_run" not in ask_block and "finish_planning" not in ask_block
+    assert "commits" not in ask_block
+    # All three still disarm stray instructions to call the absent verify tool.
+    for b in (run_block, plan_block, ask_block):
+        assert "Ignore any" in b and "run_verify_command" in b

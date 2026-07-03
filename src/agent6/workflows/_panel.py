@@ -106,9 +106,11 @@ def diff_touched_ranges(diff: str) -> dict[str, list[tuple[int, int]]]:
     """Map each touched path to the line ranges its hunks changed, so a finding's
     ``path:line`` citation can be grounded: a block may only gate if its cited
     line is inside a range the diff changed. New-side ranges key the post-image
-    path; old-side ranges key the pre-image path too, so a deletion (post-image
-    ``/dev/null``) still grounds a citation of the deleted file. A ``+++ `` line
-    only counts as a header when it follows a ``--- `` (an added line whose
+    path; old-side ranges key the pre-image path (for an in-place modification,
+    the same key -- overlapping ranges are harmless), so a citation of deleted
+    code at its OLD line number still grounds whether the whole file was deleted
+    (post-image ``/dev/null``) or lines were removed from a kept file. A ``+++ ``
+    line only counts as a header when it follows a ``--- `` (an added line whose
     content happens to start with ``++ `` is not mistaken for one).
     """
     ranges: dict[str, list[tuple[int, int]]] = {}
@@ -137,7 +139,7 @@ def diff_touched_ranges(diff: str) -> dict[str, list[tuple[int, int]]]:
             n_count = int(m.group(4)) if m.group(4) is not None else 1
             if newpath:
                 ranges.setdefault(newpath, []).append((n_start, n_start + max(n_count, 1) - 1))
-            if oldpath and oldpath != newpath:  # deletions / renames ground on the old path
+            if oldpath:  # old-side range: grounds citations of pre-image (deleted) lines
                 ranges.setdefault(oldpath, []).append((o_start, o_start + max(o_count, 1) - 1))
     return ranges
 
@@ -215,12 +217,22 @@ def _ground_seat(
     return replace(v, findings=tuple(out))
 
 
+def _has_new_block(v: ReviewVerdict, prior_keys: set[tuple[str, str]]) -> bool:
+    """True when the seat carries a surviving block that is NOT an already-
+    injected prior finding. ``prior_findings`` is "for dedup (not re-count)":
+    a block whose key dedups away is dropped from ``merged_findings``, so
+    letting it gate would reject the work while reporting no blocking
+    findings."""
+    return any(f.severity == "block" and _dedup_key(f) not in prior_keys for f in v.findings)
+
+
 def _decide(
     decision: Decision,
     n_block: int,
     quorum: int,
     non_abstain: list[ReviewVerdict],
     n_total: int,
+    prior_keys: set[tuple[str, str]],
 ) -> bool:
     if decision == "advisory" or not non_abstain:
         return False
@@ -237,7 +249,7 @@ def _decide(
         # must be non-abstaining. So a panel that mostly failed to respond does
         # NOT block on one vote, but a fully-responding (or majority-responding)
         # panel that unanimously blocks still gates.
-        if not all(any(f.severity == "block" for f in v.findings) for v in non_abstain):
+        if not all(_has_new_block(v, prior_keys) for v in non_abstain):
             return False
         return len(non_abstain) * 2 > n_total
     return False  # pragma: no cover - exhaustive
@@ -257,7 +269,9 @@ def aggregate_verdicts(
        ``file_line`` is in the diff AND its category is allowed to block (and a
        ``verify-uncovered-correctness`` claim is only coherent when verify
        actually passed). Otherwise it is downgraded to ``warn``.
-    2. Dedup across seats and against ``prior_findings`` by (path, category).
+    2. Dedup across seats and against ``prior_findings`` by (path, category). An
+       already-injected block neither re-surfaces nor counts toward the gate
+       (otherwise a rejection could ship with zero merged findings).
     3. Decide: advisory never blocks; veto blocks on any surviving block; quorum
        needs >= ``quorum`` blocks counting **at most one per distinct model**
        (correlated same-model seats cannot fabricate a quorum); all needs every
@@ -268,7 +282,7 @@ def aggregate_verdicts(
     prior_keys = {_dedup_key(f) for f in ctx.prior_findings}
 
     grounded_seats: list[ReviewVerdict] = []
-    blocking_models: set[str] = set()  # distinct models with >=1 surviving block
+    blocking_models: set[str] = set()  # distinct models with >=1 surviving non-prior block
     n_abstain = 0
     for v in per_seat:
         if v.error is not None:
@@ -277,7 +291,7 @@ def aggregate_verdicts(
             continue
         gv = _ground_seat(v, ctx, ranges)
         grounded_seats.append(gv)
-        if any(f.severity == "block" for f in gv.findings):
+        if _has_new_block(gv, prior_keys):
             blocking_models.add(v.model)
 
     # Merge + dedup all findings (post-grounding); drop ones already injected.
@@ -296,7 +310,7 @@ def aggregate_verdicts(
 
     n_block = len(blocking_models)  # distinct-model blocking seats
     non_abstain = [v for v in grounded_seats if v.error is None]
-    blocked = _decide(decision, n_block, quorum, non_abstain, len(grounded_seats))
+    blocked = _decide(decision, n_block, quorum, non_abstain, len(grounded_seats), prior_keys)
 
     return PanelResult(
         panel_id=panel_id,

@@ -10,9 +10,16 @@ and the small text helpers they use. The loop owns running the reviser call.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from agent6.types import RepoSummary
+
+# One leading list marker ("- ", "* ", "1. ", "2) "). A charset lstrip would
+# also eat leading digits of the question itself ("- 32-bit ..." -> "bit ...").
+# The numeric marker requires trailing whitespace so a bare decimal that opens a
+# question keeps it ("0.5s latency budget OK?" must not become "5s ...").
+_LIST_MARKER_RE = re.compile(r"^\s*(?:[-*]|\d+[.)]\s)\s*")
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,7 +56,7 @@ def parse_prompt_revision(text: str) -> PromptRevision:
     questions_raw = tag_body(text, "clarifying_questions")
     questions: list[str] = []
     for raw_line in questions_raw.splitlines():
-        line = raw_line.strip().lstrip("-*0123456789. ").strip()
+        line = _LIST_MARKER_RE.sub("", raw_line).strip()
         if not line or line.lower() in {"none", "n/a", "no questions"}:
             continue
         questions.append(line)

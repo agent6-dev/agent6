@@ -279,6 +279,39 @@ def test_explore_review_abstains_when_no_verdict_in_budget() -> None:
     assert v.error is not None and provider.calls == 3  # bounded, abstains (never false-pass)
 
 
+def test_explore_review_skips_dispatch_on_final_iteration() -> None:
+    from agent6.workflows._review import explore_review
+
+    # The last allowed model call returns tool_uses and no verdict: the seat is
+    # about to abstain, and no model call follows to consume the results, so the
+    # final round's tools must not be executed (pure waste).
+    tu = {"name": "grep", "id": "t1", "input": {"pattern": "x"}}
+    provider = _ExploreProvider(
+        [
+            _ExploreResp(tool_uses=(tu,), raw={"content": [{"type": "tool_use", **tu}]})
+            for _ in range(3)
+        ]
+    )
+    dispatched: list[str] = []
+
+    def dispatch(name: str, inp: dict[str, Any]) -> dict[str, Any]:
+        dispatched.append(name)
+        return {"ok": True}
+
+    v = explore_review(
+        cast(Provider, provider),
+        _ctx(),
+        seat="s",
+        model="m1",
+        tools=[],
+        dispatch=dispatch,
+        max_iters=3,
+    )
+    assert v.error == "explore: no verdict within max_iters"
+    assert provider.calls == 3  # every model call still happens
+    assert dispatched == ["grep", "grep"]  # rounds 1-2 only; final round skipped
+
+
 def test_run_panel_routes_explore_tier_seats() -> None:
     tu = {"name": "grep", "id": "t1", "input": {"pattern": "x"}}
     prov = _ExploreProvider(

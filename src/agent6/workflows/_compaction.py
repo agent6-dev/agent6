@@ -53,8 +53,6 @@ def cap_tool_result(content: str, *, tool_name: str) -> str:
     returned a partial result, let me call it again"."""
     if len(content) <= TOOL_RESULT_CHAR_CAP:
         return content
-    head_budget = TOOL_RESULT_CHAR_CAP - 1_000  # reserve room for envelope
-    head = content[:head_budget]
     if tool_name == "read_file":
         guidance = (
             "Use `read_file` again with `offset` and `limit` to read the rest"
@@ -73,17 +71,34 @@ def cap_tool_result(content: str, *, tool_name: str) -> str:
             "Re-call with arguments that produce less output. Do NOT re-call"
             " with identical arguments expecting different output."
         )
-    return json.dumps(
-        {
-            "_tool_result_truncated": True,
-            "tool": tool_name,
-            "shown_chars": len(head),
-            "total_chars": len(content),
-            "head": head,
-            "guidance": guidance,
-        },
-        ensure_ascii=False,
-    )
+
+    def envelope(head_len: int) -> str:
+        head = content[:head_len]
+        return json.dumps(
+            {
+                "_tool_result_truncated": True,
+                "tool": tool_name,
+                "shown_chars": len(head),
+                "total_chars": len(content),
+                "head": head,
+                "guidance": guidance,
+            },
+            ensure_ascii=False,
+        )
+
+    # Size the head by ENCODED length: json.dumps re-escapes quotes/backslashes,
+    # so a raw-char budget overshoots the cap on escape-heavy content (observed
+    # 118k emitted against the 60k cap). Encoded length is monotone in head
+    # length and the empty head always fits, so bisect for the largest head
+    # whose envelope fits (~16 dumps passes).
+    lo, hi = 0, TOOL_RESULT_CHAR_CAP
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if len(envelope(mid)) <= TOOL_RESULT_CHAR_CAP:
+            lo = mid
+        else:
+            hi = mid - 1
+    return envelope(lo)
 
 
 _CHECKOFF_FENCE_RE = re.compile(r"```checkoff\s*\n(.*?)\n```", re.DOTALL)
@@ -154,8 +169,14 @@ def compact_old_tool_results(
     threshold. Walks messages oldest-first, replaces each tool_result's
     ``content`` with a short placeholder, stops once total size is back
     under ``max_total_bytes``. The most recent ``keep_recent`` are always
-    preserved. Idempotent on already-elided entries. Returns the number
-    of entries elided (for telemetry).
+    preserved, as is every tool_result in the last tool_result-bearing message:
+    the loop compacts at top-of-iteration, before the provider call that would
+    deliver that batch, so the model has never seen it and the placeholder's
+    "re-call the tool" guidance would trigger a paid re-call cycle. (Keying on
+    the final message alone is not enough: a trailing steer or nudge user
+    message pushes the fresh, still undelivered results off the final index, and
+    one turn can carry several such blocks.) Idempotent on already-elided
+    entries. Returns the number of entries elided (for telemetry).
     """
     pointers: list[tuple[int, int, int]] = []  # (msg_idx, item_idx, size)
     total = 0
@@ -175,10 +196,19 @@ def compact_old_tool_results(
 
     if total <= max_total_bytes or len(pointers) <= keep_recent:
         return 0
+    # The undelivered batch is always in the last tool_result-bearing message:
+    # at top-of-iteration only text-only steer/nudge user messages can trail the
+    # fresh results, and the delivering provider call runs after this compaction.
+    # Exempt that whole message -- see docstring. Keying on the final message
+    # index alone missed a trailing steer/nudge, and one turn can carry several
+    # such blocks, so this is broader than keep_recent or the final index.
+    last_tool_result_idx = max(msg_idx for msg_idx, _, _ in pointers)
     elided_count = 0
     for msg_idx, item_idx, size in pointers[:-keep_recent]:
         if total <= max_total_bytes:
             break
+        if msg_idx == last_tool_result_idx:
+            continue
         item = messages[msg_idx]["content"][item_idx]
         current = item.get("content")
         if isinstance(current, str) and current.startswith("<elided by context compaction"):

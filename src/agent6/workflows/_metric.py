@@ -87,16 +87,19 @@ def next_metric_target(
     current: float | None,
     goal: Literal["minimize", "maximize"],
 ) -> float | None:
-    """The nearest threshold the current score has not yet met: the
-    largest ``<`` bound still above the score (minimize) or the smallest
-    ``>`` bound still below it (maximize). None when all are met or there
-    is nothing to aim at."""
+    """The nearest threshold the current score has not yet met. A target is
+    met only when the score is STRICTLY beyond it in the improving direction:
+    the thresholds come from strict comparisons (``assert x < N``), which
+    still fail at ``x == N``, so equality is unmet. Returns the largest
+    not-yet-undercut ``<`` bound (minimize) or the smallest not-yet-exceeded
+    ``>`` bound (maximize); None when all are met or there is nothing to aim
+    at."""
     if not targets or current is None:
         return None
     if goal == "minimize":
-        unmet = [t for t in targets if t < current]
+        unmet = [t for t in targets if t <= current]
         return max(unmet) if unmet else None
-    unmet = [t for t in targets if t > current]
+    unmet = [t for t in targets if t >= current]
     return min(unmet) if unmet else None
 
 
@@ -106,7 +109,7 @@ def next_metric_target(
 METRIC_FRACTION_RE = re.compile(r"([0-9]+(?:\.[0-9]+)?)\s*/\s*([0-9]+(?:\.[0-9]+)?)")
 
 
-def metric_at_fraction_ceiling(text: str, score: float) -> bool:
+def metric_at_fraction_ceiling(text: str, score: float, *, pattern: str | None = None) -> bool:
     """True if ``text`` reports ``score`` as a maxed-out ``X/Y`` fraction.
 
     Many graders print a bounded score as ``X/Y`` (``SCORE: 27/27``,
@@ -118,8 +121,26 @@ def metric_at_fraction_ceiling(text: str, score: float) -> bool:
     fires on an exact ``score/score`` match, so partial scores (``26/27``)
     and unbounded metrics (raw cycle counts, which never print a
     denominator) are unaffected.
+
+    ``pattern`` is the metric score regex (``[workflow.metric].pattern``,
+    the one the score was parsed with). When given, only fractions on the
+    line of the score match count, so an incidental fraction elsewhere in
+    the output (a tqdm ``100/100`` in stderr) cannot latch the ceiling for
+    the run. Without it the whole text is scanned (legacy: for callers that
+    do not know the score's source pattern).
     """
-    for num_s, den_s in METRIC_FRACTION_RE.findall(text):
+    scan = text
+    if pattern is not None:
+        try:
+            m = re.search(pattern, text)
+        except re.error:  # mirror parse_metric_score: a bad pattern means no score line
+            return False
+        if m is None:
+            return False
+        start = text.rfind("\n", 0, m.start()) + 1
+        end = text.find("\n", m.end())
+        scan = text[start:] if end == -1 else text[start:end]
+    for num_s, den_s in METRIC_FRACTION_RE.findall(scan):
         try:
             num = float(num_s)
             den = float(den_s)

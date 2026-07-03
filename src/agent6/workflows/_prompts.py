@@ -157,9 +157,10 @@ def dag_rules_block(decompose: bool) -> str:
 
 # Alternate base system prompt used by `agent6 plan`. Replaces
 # the edit-/verify-/dag-/style-rules blocks with planning-mode rules.
-# The verify and metric blocks below are still appended unchanged so the
-# planner can call `run_verify_command` to confirm the verify chain is
-# wired and `run_metric_command` (when configured) to baseline a score.
+# The verify block below is still appended unchanged so the planner can
+# call `run_verify_command` to confirm the verify chain is wired. The
+# metric block is not: PLAN_EXTRA_TOOLS does not expose
+# `run_metric_command` (planning never iterates a metric).
 PLAN_SYSTEM_PROMPT_BASE = """<role>
 You are agent6 in PLAN mode, a sandboxed planning agent. You receive a
 task in the first user message; your job is to PLAN how to execute it,
@@ -346,15 +347,33 @@ the timeout.
 </verify-command>
 """
 
-V2_NO_VERIFY_BLOCK = """<no-verify-command>
+V2_NO_VERIFY_BLOCK_TEMPLATE = """<no-verify-command>
 No verify command is configured for this run, so `run_verify_command` is not
-available and there is no automated pass/fail gate. Make the smallest correct
-edits the task needs and call `finish_run` with a short summary when done.
-agent6 commits each editing step automatically. You MAY run the project's tests
-via `run_command` to check your work, but it is not required. Ignore any other
-instruction to call `run_verify_command`.
+available and there is no automated pass/fail gate.{mode_guidance} Ignore any
+other instruction to call `run_verify_command`.
 </no-verify-command>
 """
+
+
+def no_verify_block(mode: Literal["run", "plan", "ask", "machine", "agent"]) -> str:
+    """The <no-verify-command> block, worded for the mode's tool surface.
+
+    The terminal tool is `finish_run` in run mode and `finish_planning` in
+    plan mode; ask has none (it answers with its final message). The edit +
+    auto-commit guidance applies only in run mode, the one editing mode."""
+    if mode == "run":
+        guidance = (
+            " Make the smallest correct edits the task needs and call `finish_run`"
+            " with a short summary when done. agent6 commits each editing step"
+            " automatically. You MAY run the project's tests via `run_command` to"
+            " check your work, but it is not required."
+        )
+    elif mode == "plan":
+        guidance = " Call `finish_planning` with your plan when done."
+    else:
+        guidance = ""
+    return V2_NO_VERIFY_BLOCK_TEMPLATE.format(mode_guidance=guidance)
+
 
 V2_METRIC_BLOCK_TEMPLATE = """<metric-command>
 This run has a continuous-score metric (call via `run_metric_command`):
@@ -458,17 +477,31 @@ CONTEXT_SUMMARY_SYSTEM_PROMPT = (
 
 # Prepended to the post-compaction restart message so the worker knows the
 # history was summarised rather than lost, and continues rather than restarting.
-CONTEXT_RESTART_NOTICE = (
+_CONTEXT_RESTART_HEAD = (
     "[harness context restart] The earlier conversation was compacted to free"
     " up context. Everything you had done up to this point is captured in the"
     " progress summary below — trust it for prior results and continue the task"
-    " from here. Do NOT start over.\n\n"
+    " from here. Do NOT start over."
+)
+_CONTEXT_RESTART_DAG = (
     "Your task DAG is durable curator-owned state and was NOT compacted: call"
     " `list_tasks` to recover the full task breakdown, each task's status,"
     " and the current cursor, then resume from the first unfinished task."
     " Treat the DAG as the authoritative record of what is done vs. pending —"
-    " the summary below is only a narrative supplement.\n\nPROGRESS SUMMARY:\n"
+    " the summary below is only a narrative supplement."
 )
+
+
+def context_restart_notice(mode: Literal["run", "plan", "ask", "machine", "agent"]) -> str:
+    """The post-compaction restart preamble. The DAG-recovery paragraph is
+    included only for modes whose tool surface has the DAG tools (run, plan):
+    in ask/machine/agent `list_tasks` does not exist, so instructing the worker
+    to call it burns a turn on an unknown-tool error."""
+    parts = [_CONTEXT_RESTART_HEAD]
+    if mode in ("run", "plan"):
+        parts.append(_CONTEXT_RESTART_DAG)
+    parts.append("PROGRESS SUMMARY:\n")
+    return "\n\n".join(parts)
 
 
 def build_system_prompt(
@@ -484,9 +517,10 @@ def build_system_prompt(
     after the first call is ~10% of full input rate for the cached prefix.
 
     ``mode="plan"`` swaps the base block for the planning-mode
-    prompt; the verify/metric/repo/co-change/hot-symbols blocks below
-    are appended unchanged so the planner sees the same project context
-    an executor would.
+    prompt; the verify/repo/co-change/hot-symbols blocks below are
+    appended unchanged so the planner sees the same project context an
+    executor would. The metric block is run-mode only (the other modes
+    do not expose `run_metric_command`).
     """
     base = (
         ASK_SYSTEM_PROMPT_BASE
@@ -550,9 +584,11 @@ def build_system_prompt(
             )
         )
     else:
-        parts.append(V2_NO_VERIFY_BLOCK)
+        parts.append(no_verify_block(mode))
 
-    if config.workflow.metric is not None:
+    # Run mode only: plan/ask do not expose `run_metric_command`, and the
+    # "harness automatically runs this metric" behaviour is the run loop's.
+    if mode == "run" and config.workflow.metric is not None:
         m = config.workflow.metric
         parts.append(
             V2_METRIC_BLOCK_TEMPLATE.format(
