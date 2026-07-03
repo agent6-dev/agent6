@@ -30,6 +30,7 @@ from agent6.cli._common import (
     _BudgetOverrides,
     _check_provider_keys,
     _explicit_usd_flag_error,
+    _SandboxOverrides,
     _start_mcp_manager_if_enabled,
     _state_dir,
     detect_env,
@@ -111,6 +112,7 @@ from agent6.providers import (
 )
 from agent6.run_id import RunIdError, new_friendly_id, resolve_run_id
 from agent6.tools.dispatch import ToolDispatcher
+from agent6.types import SandboxProfile
 from agent6.verify_infer import VERIFY_INFER_SYSTEM_PROMPT, infer_verify_command
 from agent6.workflows._run_state import load_resume_snapshot
 from agent6.workflows.loop import ResumeError, RunResult, Workflow
@@ -259,6 +261,31 @@ def _build_approver(run_dir: Path, events: EventSink) -> Callable[[str], bool]:
         return approved
 
     return approve
+
+
+def _confirm_unconfined_autorun(selected_profile: SandboxProfile, cfg: Config) -> bool:
+    """The one genuinely dangerous combination: the sandbox is OFF and
+    run_command is auto-approved, so the agent can run any command on the host
+    with no confinement and no prompt. Get one explicit consent at startup when
+    interactive; proceed with a loud warning when not (the explicit opt-outs
+    are already the consent, and machines/CI must not block). Not a per-command
+    guard -- once unconfined, guarding individual commands would be theatre.
+
+    Returns True to proceed, False to abort.
+    """
+    if selected_profile != "none" or cfg.sandbox.run_commands != "yes":
+        return True
+    print(
+        "[agent6] DANGER: the sandbox is DISABLED and run_command is"
+        " AUTO-APPROVED. The agent can run ANY command on this host with no"
+        " confinement and no prompt.",
+        file=sys.stderr,
+    )
+    if not sys.stdin.isatty():
+        print("[agent6] proceeding (non-interactive).", file=sys.stderr)
+        return True
+    answer = _tty_prompt("Continue? [y/N]: ")
+    return (answer or "").strip().lower() in {"y", "yes"}
 
 
 def _warn_if_headless_ask(cfg: Config, *, tui_enabled: bool) -> None:
@@ -623,6 +650,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     tui: bool = False,
     mode: Literal["run", "plan", "ask"] = "run",
     budget_overrides: _BudgetOverrides | None = None,
+    sandbox_overrides: _SandboxOverrides | None = None,
     profile: str = "",
 ) -> int:
     """Single-loop agent: one provider, one LLM driving via tool
@@ -642,6 +670,8 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         set_repo_hook_policy(cfg.git.run_repo_hooks)
         if budget_overrides is not None:
             cfg = budget_overrides.apply(cfg)
+        if sandbox_overrides is not None:
+            cfg = sandbox_overrides.apply(cfg)
     except ConfigError as exc:
         print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
         return 2
@@ -671,6 +701,9 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         print(f"REFUSING: {exc}", file=sys.stderr)
         return 2
     _warn_if_unsandboxed(selected_profile)
+    if not _confirm_unconfined_autorun(selected_profile, cfg):
+        print("[agent6] aborted.", file=sys.stderr)
+        return 1
 
     net_err = _check_network_profile(cfg, selected_profile)
     if net_err is not None:
@@ -1330,6 +1363,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     force: bool,
     tui: bool = False,
     budget_overrides: _BudgetOverrides | None = None,
+    sandbox_overrides: _SandboxOverrides | None = None,
     profile: str = "",
 ) -> int:
     """Resume a paused/crashed run from its snapshot.
@@ -1440,6 +1474,8 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
             set_repo_hook_policy(cfg.git.run_repo_hooks)
             if budget_overrides is not None:
                 cfg = budget_overrides.apply(cfg)
+            if sandbox_overrides is not None:
+                cfg = sandbox_overrides.apply(cfg)
             cfg.require_runnable("worker")
         except ConfigError as exc:
             print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
@@ -1452,6 +1488,9 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
             print(f"REFUSING: {exc}", file=sys.stderr)
             return 2
         _warn_if_unsandboxed(selected_profile)
+        if not _confirm_unconfined_autorun(selected_profile, cfg):
+            print("[agent6] aborted.", file=sys.stderr)
+            return 1
 
         net_err = _check_network_profile(cfg, selected_profile)
         if net_err is not None:

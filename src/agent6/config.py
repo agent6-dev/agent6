@@ -342,10 +342,12 @@ class ModelsConfig(BaseModel):
 class SandboxConfig(BaseModel):
     model_config = _BASE_MODEL_CONFIG
 
-    # "none" is the explicit UNSANDBOXED opt-out (no Landlock/seccomp/namespaces);
-    # allowed in a detected container ("the container is the sandbox"), refused on
-    # a bare host unless AGENT6_ALLOW_NO_SANDBOX=1. `auto` never resolves to none
-    # on Linux -- see detect.select_profile.
+    # "none" is the explicit UNSANDBOXED opt-out (no Landlock/seccomp/namespaces),
+    # self-authorizing: an operator-only, LLM-unreachable config value, so writing
+    # it is the consent (the loud run-startup warning is the safety net). The
+    # per-invocation forms are `--dangerously-disable-sandbox` /
+    # AGENT6_DANGEROUSLY_DISABLE_SANDBOX. `auto` never resolves to none on Linux
+    # (only by detection on a non-Linux host) -- see detect.select_profile.
     profile: Literal["auto", "strict", "hardened", "none"] = "auto"
     # Where the agent PROCESS (its own LLM/provider HTTP) may connect:
     #  - `providers`: only the configured `[providers.*]` endpoints, plus any
@@ -1069,6 +1071,30 @@ class Config(BaseModel):
             budget["max_input_tokens"] = max_input_tokens
         if max_output_tokens is not None:
             budget["max_output_tokens"] = max_output_tokens
+        return Config.model_validate(data)
+
+    def with_sandbox_overrides(
+        self,
+        *,
+        disable_sandbox: bool = False,
+        auto_approve: bool = False,
+    ) -> Config:
+        """Return a copy with per-invocation sandbox overrides from CLI flags.
+
+        ``disable_sandbox`` forces ``sandbox.profile = "none"`` (unconfined).
+        ``auto_approve`` upgrades ``run_commands`` ``"ask" -> "yes"`` but never
+        resurrects a withheld ``"no"`` (a per-invocation flag must not grant a
+        capability the standing policy denied). Both are operator-supplied
+        (flag/env); the LLM can reach neither.
+        """
+        if not disable_sandbox and not auto_approve:
+            return self
+        data = self.model_dump(mode="python")
+        sandbox = data.setdefault("sandbox", {})
+        if disable_sandbox:
+            sandbox["profile"] = "none"
+        if auto_approve and self.sandbox.run_commands != "no":
+            sandbox["run_commands"] = "yes"
         return Config.model_validate(data)
 
     def with_machine_agent_overrides(

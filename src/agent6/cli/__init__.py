@@ -22,7 +22,12 @@ from agent6.cli._ask import (
 from agent6.cli._ask import (
     seed_files as _seed_files,
 )
-from agent6.cli._common import _BudgetOverrides, _enforce_root_policy, _runs_dir
+from agent6.cli._common import (
+    _BudgetOverrides,
+    _enforce_root_policy,
+    _runs_dir,
+    _SandboxOverrides,
+)
 from agent6.cli.check_cmds import _cmd_check
 from agent6.cli.config_cmds import (
     _cmd_config_add,
@@ -170,6 +175,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
                 force=False,
                 tui=args.tui,
                 budget_overrides=_BudgetOverrides.from_args(args),
+                sandbox_overrides=_SandboxOverrides.from_args(args),
             )
         if args.from_plan:
             if args.task:
@@ -234,6 +240,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             interactive=args.interactive,
             tui=args.tui,
             budget_overrides=_BudgetOverrides.from_args(args),
+            sandbox_overrides=_SandboxOverrides.from_args(args),
             profile=getattr(args, "profile", ""),
         )
     if args.command == "plan":
@@ -253,6 +260,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             run_id=args.run_id,
             mode="plan",
             budget_overrides=_BudgetOverrides.from_args(args),
+            sandbox_overrides=_SandboxOverrides.from_args(args),
             profile=getattr(args, "profile", ""),
         )
     if args.command == "ask":
@@ -285,6 +293,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             mode="ask",
             interactive=repl,
             budget_overrides=_BudgetOverrides.from_args(args),
+            sandbox_overrides=_SandboxOverrides.from_args(args),
             profile=getattr(args, "profile", ""),
         )
     if args.command == "watch":
@@ -334,6 +343,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             force=args.force_resume,
             tui=args.tui,
             budget_overrides=_BudgetOverrides.from_args(args),
+            sandbox_overrides=_SandboxOverrides.from_args(args),
         )
     if args.command == "fork":
         return _cmd_fork(
@@ -407,7 +417,11 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
     if args.command == "machine" and args.machine_command == "graph":
         return _cmd_machine_graph(args.file, fmt=args.format)
     if args.command == "machine" and args.machine_command == "run":
-        return _cmd_machine_run(args.file, exit_on_wait=args.exit_on_wait)
+        return _cmd_machine_run(
+            args.file,
+            exit_on_wait=args.exit_on_wait,
+            disable_sandbox=args.dangerously_disable_sandbox,
+        )
     if args.command == "machine" and args.machine_command == "status":
         return _cmd_machine_status(args.machine_id)
     if args.command == "machine" and args.machine_command == "poke":

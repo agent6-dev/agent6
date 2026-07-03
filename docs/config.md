@@ -182,11 +182,11 @@ The security boundary. Profiles and the network model are specified in
 
 | Field | Default | Meaning |
 |---|---|---|
-| `profile` | `"auto"` | `auto` picks the strongest profile the host supports (`strict`, else `hardened`); explicit `strict`/`hardened` are refused where unsupported, never downgraded. Explicit `none` runs UNSANDBOXED, allowed only inside a detected container (else refused on a bare host unless `AGENT6_ALLOW_NO_SANDBOX=1`). See SECURITY §3. |
+| `profile` | `"auto"` | `auto` picks the strongest profile the host supports (`strict`, else `hardened`; never `none` on Linux); explicit `strict`/`hardened` are refused where unsupported, never downgraded. Explicit `none` runs UNSANDBOXED (self-authorizing, loud warning); the per-invocation forms are `--dangerously-disable-sandbox` / `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`. See SECURITY §3. |
 | `agent_network` | `"providers"` | The agent's own egress: `providers` / `local` / `open` (SECURITY §1b). |
 | `tool_network` | `"block"` | Jailed-command egress: `block` / `only_explicit_states` / `allow` (SECURITY §8). |
 | `allow_urls` | `[]` | Extra agent egress hosts under `agent_network = "providers"` (`host`, `host:port`, or URL). Edit with `agent6 config add/remove sandbox.allow_urls <host>`. |
-| `run_commands` | `"ask"` | Whether the LLM gets `run_command`: `yes` / `no` / `ask`. |
+| `run_commands` | `"ask"` | Whether the LLM gets `run_command`: `yes` (auto-approve; also `--auto-approve`) / `no` (withheld) / `ask` (prompt each call). `yes` stays safe because the command is still jailed. |
 | `protect_git` | `true` | Strict only: re-bind `.git/` read-only in the jail. On the hardened profile the cwd is blanket read-write (no mount namespace to carve), so `.git` is writable by jailed commands there; that is gated by `run_commands`, recoverable (branch-per-run, commits through git_ops), and bounded by the surrounding container. |
 | `extra_read_paths` | `[]` | Extra absolute paths a jailed command may **read + execute** (not write), beyond the system defaults (`/usr /bin /lib …`) and the workspace. Use it for a project whose toolchain/interpreter lives outside the repo: a system conda/virtualenv, a Go/Rust/Node toolchain, a shared data dir. Granted under `hardened` **and** `strict`. Loosens confinement (the child can read more of the host), so list only what the build/test needs. |
 

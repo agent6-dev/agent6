@@ -76,6 +76,38 @@ def _add_budget_flags(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_sandbox_flags(parser: argparse.ArgumentParser, *, auto_approve: bool = True) -> None:
+    """Add the per-invocation sandbox/approval override flags.
+
+    ``--dangerously-disable-sandbox`` runs the agent's commands UNCONFINED on
+    the host (equivalent to a one-off ``sandbox.profile = "none"``); the env
+    ``AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`` does the same. ``--auto-approve``
+    auto-approves ``run_command`` for this run (``sandbox.run_commands = yes``),
+    which stays safe because the command is still jailed; pass ``auto_approve``
+    False on commands (like ``machine run``) where approvals are config-driven.
+    """
+    parser.add_argument(
+        "--dangerously-disable-sandbox",
+        action="store_true",
+        help=(
+            "Run the agent's commands UNCONFINED on the host (no Landlock/"
+            "seccomp/namespaces). Only for a disposable or already-isolated"
+            " machine; the host becomes the only boundary."
+        ),
+    )
+    if auto_approve:
+        parser.add_argument(
+            "--auto-approve",
+            action="store_true",
+            help=(
+                "Auto-approve run_command for this run instead of prompting"
+                " (same as sandbox.run_commands = yes). Safe while sandboxed;"
+                " combined with --dangerously-disable-sandbox it hands the agent"
+                " unprompted host access."
+            ),
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class _BudgetOverrides:
     """Per-run budget overrides parsed from ``--max-*`` flags."""
@@ -97,6 +129,33 @@ class _BudgetOverrides:
             max_usd=self.max_usd,
             max_input_tokens=self.max_input_tokens,
             max_output_tokens=self.max_output_tokens,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _SandboxOverrides:
+    """Per-invocation sandbox/approval overrides from CLI flags.
+
+    ``--dangerously-disable-sandbox`` runs unconfined; ``--auto-approve``
+    auto-approves ``run_command``. The env setter for the sandbox is read in
+    ``detect.select_profile`` (so it also reaches machine subprocesses), so
+    ``from_args`` reads only the flags. Flags and env are structurally
+    LLM-unreachable."""
+
+    disable_sandbox: bool = False
+    auto_approve: bool = False
+
+    @classmethod
+    def from_args(cls, args: argparse.Namespace) -> _SandboxOverrides:
+        return cls(
+            disable_sandbox=bool(getattr(args, "dangerously_disable_sandbox", False)),
+            auto_approve=bool(getattr(args, "auto_approve", False)),
+        )
+
+    def apply(self, cfg: Config) -> Config:
+        return cfg.with_sandbox_overrides(
+            disable_sandbox=self.disable_sandbox,
+            auto_approve=self.auto_approve,
         )
 
 

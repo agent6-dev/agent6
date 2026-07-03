@@ -8,7 +8,7 @@ import argparse
 from pathlib import Path
 
 from agent6 import __version__
-from agent6.cli._common import _add_budget_flags
+from agent6.cli._common import _add_budget_flags, _add_sandbox_flags
 from agent6.cli.completers import (
     _complete_config_keys,
     _complete_config_values,
@@ -191,6 +191,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     run_from_plan.completer = _complete_plan_run_ids  # type: ignore[attr-defined]
     _add_budget_flags(run_p)
+    _add_sandbox_flags(run_p)
 
     plan_p = _sub(
         sub,
@@ -231,6 +232,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Explicit config file (layered over global + repo configs).",
     )
     _add_budget_flags(plan_run)
+    _add_sandbox_flags(plan_run)
     plan_show = _sub(plan_sub, "show", help="Print the plan.md for a prior plan run and exit.")
     plan_show_id = plan_show.add_argument("run_id", help="Plan run id (or unambiguous prefix).")
     plan_show_id.completer = _complete_plan_run_ids  # type: ignore[attr-defined]
@@ -311,6 +313,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
     _add_budget_flags(ask_query)
+    _add_sandbox_flags(ask_query)
     _sub(
         ask_sub,
         "list",
@@ -598,6 +601,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Open the full-screen dashboard instead of the headless stream (like `run --tui`).",
     )
     _add_budget_flags(resume_p)
+    _add_sandbox_flags(resume_p)
 
     fork_p = _sub(
         sub,
@@ -1062,6 +1066,9 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
             " not-ready wait instead of blocking, for an external scheduler to resume."
         ),
     )
+    # Sandbox only; a machine's approvals are config-driven (its states set
+    # run_commands), so --auto-approve is not offered here.
+    _add_sandbox_flags(machine_run, auto_approve=False)
     machine_status = _sub(
         machine_sub,
         "status",

@@ -111,8 +111,9 @@ model = "$MODEL"
 # UNSANDBOXED: the container is the isolation. agent6's jail fights the container
 # here (couldn't exec the conda interpreter under hardened/strict), so we opt out
 # of the kernel sandbox entirely -- the standard SWE-bench setup where Docker is
-# the boundary. profile="none" is allowed because in_container is detected; on a
-# bare host it would refuse without AGENT6_ALLOW_NO_SANDBOX=1.
+# the boundary. profile="none" is self-authorizing (an operator-only config
+# value); the per-invocation forms are --dangerously-disable-sandbox /
+# AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1.
 profile = "none"
 agent_network = "providers"
 tool_network = "block"

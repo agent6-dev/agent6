@@ -224,7 +224,7 @@ You *set* the `sandbox.profile` field; it resolves against the host to an
 *effective profile*: what actually runs. `auto` is never itself an effective
 profile (it is resolved away), and `auto` never resolves to `none` on Linux. No
 silent downgrade: an explicit request the host can't satisfy is refused, not
-weakened. `none` (unsandboxed) is a deliberate, gated opt-out; see its rows below.
+weakened. `none` (unsandboxed) is a deliberate opt-out; see below.
 
 | `sandbox.profile` | Host | Effective profile |
 |---|---|---|
@@ -235,14 +235,29 @@ weakened. `none` (unsandboxed) is a deliberate, gated opt-out; see its rows belo
 | `strict` | anything else | ⛔ refuse to run |
 | `hardened` | Linux (user namespaces or not) | `hardened` |
 | `hardened` | non-Linux (macOS / Windows) | ⛔ refuse to run |
-| `none` *(explicit opt-out)* | a detected container | `none` (the container is the boundary) |
-| `none` | a bare host | ⛔ refuse unless `AGENT6_ALLOW_NO_SANDBOX=1` |
+| `none` *(explicit opt-out)* | any host | `none` (the environment is the boundary) |
 
-The `none` opt-out runs commands unsandboxed. It is allowed automatically only
-inside a **detected container**, where the container is the blast radius. A
-container is proven by a filesystem marker (`/.dockerenv` or
-`/run/.containerenv`), not a forgeable env var. On a bare host it is refused unless the operator confirms with
-`AGENT6_ALLOW_NO_SANDBOX=1`. Always with a loud startup warning.
+`auto` reaches `none` only by **detection** (a non-Linux host, where there is
+no kernel sandbox); on Linux it always resolves to strict/hardened, so a run
+never ends up unconfined by accident.
+
+Unsandboxing is instead an **explicit, operator-only** choice, and it
+self-authorizes: `sandbox.profile = "none"` in config, the
+`--dangerously-disable-sandbox` flag, and `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`
+each run the agent unconfined, on any host, with a loud startup warning. There
+is no second gate: `sandbox.profile` and the env are unreachable by the LLM
+(it cannot edit the launcher's argv or environment), so writing one of them is
+the consent. Intended for a disposable or already-isolated machine (a VM, a
+container), where that environment is the blast radius. The flag and env are
+per-invocation and never sync across machines; config `none` is standing.
+
+When the sandbox is off **and** `run_command` is auto-approved
+(`run_commands = "yes"` or `--auto-approve`), the agent can run any command on
+the host with no confinement and no prompt. That one combination adds a startup
+confirmation: an interactive `Continue? [y/N]` when a terminal is present, or a
+loud warning and proceed when not (CI / `machine run`, where the explicit
+opt-outs are the consent). It is a one-time consent gate, not a per-command
+guard: once unconfined, guarding individual commands would be theatre.
 
 The three effective profiles:
 

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config import ConfigError, load_config
+from agent6.config import Config, ConfigError, load_config
 
 _VALID_TOML = """
 [agent6]
@@ -79,6 +79,26 @@ def test_security_field_defaults_to_safe_value(tmp_path: Path) -> None:
     body = _VALID_TOML.replace("allow_push = false\n", "")
     cfg = load_config(_write(tmp_path, body))
     assert cfg.git.allow_push is False
+
+
+def test_with_sandbox_overrides_disable_forces_none() -> None:
+    cfg = Config()
+    assert cfg.sandbox.profile == "auto"
+    assert cfg.with_sandbox_overrides(disable_sandbox=True).sandbox.profile == "none"
+
+
+def test_with_sandbox_overrides_auto_approve_upgrades_ask_only() -> None:
+    ask = Config()
+    assert ask.sandbox.run_commands == "ask"
+    assert ask.with_sandbox_overrides(auto_approve=True).sandbox.run_commands == "yes"
+    # A per-invocation flag must not resurrect a withheld capability.
+    withheld = Config.model_validate({"sandbox": {"run_commands": "no"}})
+    assert withheld.with_sandbox_overrides(auto_approve=True).sandbox.run_commands == "no"
+
+
+def test_with_sandbox_overrides_noop_returns_self() -> None:
+    cfg = Config()
+    assert cfg.with_sandbox_overrides() is cfg
 
 
 def test_invalid_enum_literal(tmp_path: Path) -> None:

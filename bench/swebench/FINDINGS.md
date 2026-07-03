@@ -160,13 +160,13 @@ setups. Validated empirically (`agent6 check sandbox` + a direct jail-exec probe
 | **privileged docker** | strict | ✅ all probes pass | strict works |
 | **podman rootless** | strict | ✅ all probes pass | strict works |
 
-**New: careful unsandboxed opt-in** (`4b68266`). `profile = "none"` is now valid;
-in a *detected container* it runs unsandboxed (loud startup warning — "the
-container is the sandbox"), on a *bare host* it is REFUSED unless
-`AGENT6_ALLOW_NO_SANDBOX=1`. **`auto` never resolves to none on Linux** — opting
-out is always an explicit, typed choice. +5 tests. The SWE-bench harness now sets
-`profile = "none"`, and **verify works end-to-end** (validated: 0 jail errors, real
-patches, the agent running tests).
+**New: careful unsandboxed opt-in.** `profile = "none"` runs the agent
+unsandboxed with a loud startup warning. It is self-authorizing (an
+operator-only, LLM-unreachable config value); the per-invocation forms are
+`--dangerously-disable-sandbox` / `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`.
+**`auto` never resolves to none on Linux** — opting out is always an explicit,
+typed choice. The SWE-bench harness sets `profile = "none"`, and **verify works
+end-to-end** (validated: 0 jail errors, real patches, the agent running tests).
 
 **Minor sandbox findings (maintainer follow-ups):**
 - hardened in unprivileged docker FAILED the `/etc`-write boundary probe (isolation
