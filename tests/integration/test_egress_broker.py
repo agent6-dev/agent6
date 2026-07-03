@@ -28,6 +28,16 @@ from agent6.sandbox.broker import (
     start_egress_broker,
 )
 
+# These tests run an in-process echo-server thread before start_egress_broker
+# forks, so CPython 3.12+ warns about fork-in-a-threaded-process. The forked
+# broker child only splices sockets via selectors and leaves through
+# os._exit, taking no locks, and production forks before any thread exists
+# (enter_network_isolation enforces single-threadedness right after). Scoped
+# suppression, not a global filter.
+pytestmark = pytest.mark.filterwarnings(
+    "ignore:This process.*is multi-threaded, use of fork:DeprecationWarning"
+)
+
 
 def _userns_available() -> bool:
     res = subprocess.run(
