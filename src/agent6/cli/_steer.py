@@ -121,9 +121,10 @@ def tty_message(text: str) -> None:
             print(text, file=sys.stderr, flush=True)
 
 
-def tty_prompt(text: str) -> str | None:
+def tty_prompt(text: str, *, fall_back_to_stdin: bool = True) -> str | None:
     """Prompt on the controlling terminal directly (see ``tty_message``).
-    Falls back to stdin when /dev/tty is unavailable."""
+    Falls back to stdin when /dev/tty is unavailable, unless the caller must
+    never consume piped stdin (``fall_back_to_stdin=False``: return None)."""
     try:
         with open("/dev/tty", "r+", encoding="utf-8") as tty:  # noqa: PTH123
             tty.write(text)
@@ -131,6 +132,8 @@ def tty_prompt(text: str) -> str | None:
             line = tty.readline()
             return line.rstrip("\n") if line else None
     except OSError:
+        if not fall_back_to_stdin:
+            return None
         try:
             return input(text)
         except (EOFError, KeyboardInterrupt):

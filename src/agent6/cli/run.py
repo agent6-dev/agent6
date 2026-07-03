@@ -42,6 +42,9 @@ from agent6.cli._steer import (
 from agent6.cli._steer import (
     select_revised_prompt as _select_revised_prompt,
 )
+from agent6.cli._steer import (
+    tty_prompt as _tty_prompt,
+)
 from agent6.cli.egress import (
     _check_network_profile,
     _maybe_apply_agent_landlock,
@@ -220,10 +223,11 @@ def _require_git_repo(cwd: Path) -> bool:
 
 
 def _default_stdin_approver(prompt: str) -> bool:
-    """Plain TTY fallback for tool approval (used when no TUI is live)."""
-    try:
-        ans = input(f"{prompt} [y/N]: ")
-    except (EOFError, KeyboardInterrupt):
+    """Plain-terminal fallback for tool approval (no live TUI, or its answer
+    timed out). Routed via /dev/tty so the prompt stays visible when a TUI has
+    redirected the std streams to its console log; plain stdin without one."""
+    ans = _tty_prompt(f"{prompt} [y/N]: ")
+    if ans is None:
         return False
     return ans.strip().lower() in {"y", "yes"}
 
@@ -302,15 +306,14 @@ def _build_questioner(run_dir: Path, events: EventSink) -> Callable[[str, tuple[
 
 
 def _default_stdin_questioner(question: str, options: tuple[str, ...]) -> str:
-    """Numbered stdin prompt; headless (no TTY / EOF) returns "" so a run never
-    hangs waiting on an operator that isn't there."""
-    if not sys.stdin.isatty():
-        return ""
+    """Numbered terminal prompt via /dev/tty (visible under a TUI's stream
+    redirect); headless (no controlling terminal) returns "" so a run never
+    hangs or consumes piped stdin meant for something else."""
     lines = [question, *(f"  {i}) {opt}" for i, opt in enumerate(options, start=1))]
-    try:
-        ans = input("\n".join(lines) + "\n> ").strip()
-    except EOFError:
+    ans = _tty_prompt("\n".join(lines) + "\n> ", fall_back_to_stdin=False)
+    if ans is None:
         return ""
+    ans = ans.strip()
     if ans.isdigit() and 1 <= int(ans) <= len(options):
         return options[int(ans) - 1]
     return ans
@@ -339,7 +342,11 @@ def _should_spawn_tui(*, tui: bool, interactive: bool, mode: str) -> bool:
         print("[agent6] --tui needs a TTY; continuing in CLI mode.", file=sys.stderr)
         return False
     if not _tui_available():
-        print("[agent6] --tui needs the `tui` extra; continuing in CLI mode.", file=sys.stderr)
+        print(
+            "[agent6] --tui needs 'textual' (part of the base install; this environment"
+            " is missing it); continuing in CLI mode.",
+            file=sys.stderr,
+        )
         return False
     return True
 
@@ -530,10 +537,11 @@ def _write_run_manifest(
         manifest["parent_run_id"] = parent_run_id
         manifest["forked_from_turn"] = forked_from_turn
         manifest["forked_from_sha"] = forked_from_sha
-    layout.manifest_path.write_text(
-        json.dumps(manifest, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    # tmp+replace: the TUI hub and `runs show` poll this file on live runs, and
+    # a bare write_text lets them read a truncated JSON mid-rewrite.
+    tmp = layout.manifest_path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(layout.manifest_path)
 
 
 def _infer_verify_if_unset(
@@ -752,6 +760,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                 stashed = True
             except GitError as exc:
                 print(f"ERROR: could not auto-stash before run: {exc}", file=sys.stderr)
+                clear_worker_pid(layout.run_dir)
                 return 2
         elif cfg.git.require_clean_worktree:
             print(
@@ -760,270 +769,330 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                 "[git].require_clean_worktree=false to override.",
                 file=sys.stderr,
             )
+            clear_worker_pid(layout.run_dir)
             return 2
 
-    # Cut a fresh branch named after the run id so it is 1:1 with the run
-    # (find it from any run id, `agent6 runs diff <id>`, or just delete the
-    # branch to discard everything the agent did). The name is the unique
-    # run id, never a timestamp+task-slug that collides into a pile of
-    # near-duplicate `agent6/<ts>-<same-task>` branches on re-runs. Only real
-    # `run` mode branches: `plan`/`ask` make no commits, so a branch for them
-    # is pure litter. create_branch is idempotent (reuses an existing branch).
+    egress_broker = None
+    egress_sock_dir = None
     run_branch: str | None = None
-    if cfg.git.branch_per_run and mode == "run":
-        run_branch = f"agent6/{effective_run_id}"
-        try:
-            create_branch(cwd, run_branch)
-        except GitError as exc:
-            print(f"ERROR: could not cut run branch {run_branch}: {exc}", file=sys.stderr)
+    try:
+        # Cut a fresh branch named after the run id so it is 1:1 with the run
+        # (find it from any run id, `agent6 runs diff <id>`, or just delete the
+        # branch to discard everything the agent did). The name is the unique
+        # run id, never a timestamp+task-slug that collides into a pile of
+        # near-duplicate `agent6/<ts>-<same-task>` branches on re-runs. Only real
+        # `run` mode branches: `plan`/`ask` make no commits, so a branch for them
+        # is pure litter. create_branch is idempotent (reuses an existing branch).
+        if cfg.git.branch_per_run and mode == "run":
+            run_branch = f"agent6/{effective_run_id}"
+            try:
+                create_branch(cwd, run_branch)
+            except GitError as exc:
+                print(f"ERROR: could not cut run branch {run_branch}: {exc}", file=sys.stderr)
+                return 2
+
+        # Write the run manifest. This is the canonical record of where the
+        # run started (base_sha + base_branch), which model+provider drove
+        # it, and the user_task it was given. `agent6 runs diff <run-id>` and
+        # any future tooling that wants to reproduce a run reads from here.
+        _write_run_manifest(
+            layout,
+            run_id=effective_run_id,
+            user_task=task,
+            base_sha=base_sha,
+            base_branch=base_branch,
+            run_branch=run_branch,
+            cfg=cfg,
+            mode=mode,
+            effective_profile=profile or cfg.profile,
+        )
+
+        transcript_sink = TranscriptSink(layout.transcripts_dir)
+        events = EventSink(layout.logs_path)
+
+        egress_broker, egress_sock_dir, egress_err = _maybe_start_egress(cfg, selected_profile)
+        if egress_err is not None:
+            print(f"REFUSING: {egress_err}", file=sys.stderr)
+            return 2
+        if egress_broker is not None:
+            print(
+                f"[agent6] provider-only egress: confined to host network "
+                f"namespace via broker pid {egress_broker.pid}",
+                file=sys.stderr,
+            )
+
+        landlock_err = _maybe_apply_agent_landlock(cfg, selected_profile, env)
+        if landlock_err is not None:
+            print(f"REFUSING: {landlock_err}", file=sys.stderr)
             return 2
 
-    # Write the run manifest. This is the canonical record of where the
-    # run started (base_sha + base_branch), which model+provider drove
-    # it, and the user_task it was given. `agent6 runs diff <run-id>` and
-    # any future tooling that wants to reproduce a run reads from here.
-    _write_run_manifest(
-        layout,
-        run_id=effective_run_id,
-        user_task=task,
-        base_sha=base_sha,
-        base_branch=base_branch,
-        run_branch=run_branch,
-        cfg=cfg,
-        mode=mode,
-        effective_profile=profile or cfg.profile,
-    )
-
-    transcript_sink = TranscriptSink(layout.transcripts_dir)
-    events = EventSink(layout.logs_path)
-
-    egress_broker, egress_sock_dir, egress_err = _maybe_start_egress(cfg, selected_profile)
-    if egress_err is not None:
-        print(f"REFUSING: {egress_err}", file=sys.stderr)
-        return 2
-    if egress_broker is not None:
-        print(
-            f"[agent6] provider-only egress: confined to host network "
-            f"namespace via broker pid {egress_broker.pid}",
-            file=sys.stderr,
+        # ask gets a small default USD ceiling so an exploratory question can't run
+        # away; an explicit [budget].best_effort_usd_limit or --max-usd overrides it.
+        usd_limit = cfg.budget.best_effort_usd_limit
+        ask_max_usd = usd_limit or (_ASK_DEFAULT_MAX_USD if mode == "ask" else 0.0)
+        budget = BudgetTracker(
+            max_input_tokens=cfg.budget.max_input_tokens,
+            max_output_tokens=cfg.budget.max_output_tokens,
+            max_usd=ask_max_usd,
         )
 
-    landlock_err = _maybe_apply_agent_landlock(cfg, selected_profile, env)
-    if landlock_err is not None:
-        print(f"REFUSING: {landlock_err}", file=sys.stderr)
-        # The egress broker is already running at this point; tear it down so
-        # the refusal doesn't leak the broker process + its socket dir.
-        _stop_egress(egress_broker, egress_sock_dir)
-        return 2
-
-    # ask gets a small default USD ceiling so an exploratory question can't run
-    # away; an explicit [budget].best_effort_usd_limit or --max-usd overrides it.
-    usd_limit = cfg.budget.best_effort_usd_limit
-    ask_max_usd = usd_limit or (_ASK_DEFAULT_MAX_USD if mode == "ask" else 0.0)
-    budget = BudgetTracker(
-        max_input_tokens=cfg.budget.max_input_tokens,
-        max_output_tokens=cfg.budget.max_output_tokens,
-        max_usd=ask_max_usd,
-    )
-
-    # Workflow uses ONE provider for everything (the worker role, or the
-    # planner role in plan mode). No critic/triage/planner/reviewer/escalation
-    # cascade inside the loop.
-    worker_inner = _build_role_provider(cfg, role, transcript_sink=transcript_sink, budget=budget)
-    rm_worker = cfg.models.resolve(role)
-    assert rm_worker is not None  # require_runnable validated this
-    _warn_if_usd_unenforceable(cfg)
-    _warn_if_prompt_override_incomplete(cfg)
-    # Enable SSE streaming when stderr is a TTY (covers TUI
-    # and interactive shell use). Bench/CI runs pipe stderr, so they
-    # stay on the audited non-streaming code path UNLESS the operator
-    # sets AGENT6_FORCE_STREAM=1, the Kimi/OpenRouter bench needs
-    # streaming on because the gateway emits SSE keep-alive comment
-    # heartbeats during long requests, which corrupt the non-streaming
-    # response body (resp.json() blows up with JSONDecodeError).
-    tui_enabled = _should_spawn_tui(tui=tui, interactive=interactive, mode=mode)
-    _warn_if_headless_ask(cfg, tui_enabled=tui_enabled)
-    stream_text, console_stream = _stream_modes(tui_enabled=tui_enabled)
-    provider: Provider = _InstrumentedProvider(
-        inner=worker_inner,
-        role=role,
-        model=rm_worker.model,
-        provider_name=rm_worker.provider,
-        events=events,
-        budget=budget,
-        stream_text=stream_text,
-        console_stream=console_stream,
-    )
-
-    critic_provider = _build_critic_provider(
-        cfg, transcript_sink=transcript_sink, budget=budget, events=events
-    )
-    prompt_reviser_provider = _build_prompt_reviser_provider(
-        cfg, transcript_sink=transcript_sink, budget=budget, events=events
-    )
-    summariser_provider = _build_summariser_provider(
-        cfg, transcript_sink=transcript_sink, budget=budget, events=events
-    )
-    # The grounded review panel runs at the critic trigger WHEN explicitly
-    # configured (any review_* key); otherwise critic!=off keeps the legacy single
-    # critic, so a pre-panel before_finish/periodic config still gates as before.
-    review_seats = (
-        build_review_seats(
-            cfg,
-            transcript_sink=transcript_sink,
+        # Workflow uses ONE provider for everything (the worker role, or the
+        # planner role in plan mode). No critic/triage/planner/reviewer/escalation
+        # cascade inside the loop.
+        worker_inner = _build_role_provider(
+            cfg, role, transcript_sink=transcript_sink, budget=budget
+        )
+        rm_worker = cfg.models.resolve(role)
+        assert rm_worker is not None  # require_runnable validated this
+        _warn_if_usd_unenforceable(cfg)
+        _warn_if_prompt_override_incomplete(cfg)
+        # Enable SSE streaming when stderr is a TTY (covers TUI
+        # and interactive shell use). Bench/CI runs pipe stderr, so they
+        # stay on the audited non-streaming code path UNLESS the operator
+        # sets AGENT6_FORCE_STREAM=1, the Kimi/OpenRouter bench needs
+        # streaming on because the gateway emits SSE keep-alive comment
+        # heartbeats during long requests, which corrupt the non-streaming
+        # response body (resp.json() blows up with JSONDecodeError).
+        tui_enabled = _should_spawn_tui(tui=tui, interactive=interactive, mode=mode)
+        _warn_if_headless_ask(cfg, tui_enabled=tui_enabled)
+        # The interactive revision prompt reads the terminal; with the TUI owning
+        # it the prompt would land invisibly in the console log and contend for
+        # stdin. Skip revision for this run instead.
+        effective_revise_prompt = cfg.prompt.revise_prompt
+        if effective_revise_prompt == "interactive" and tui_enabled:
+            print(
+                "[agent6] prompt.revise_prompt='interactive' needs the terminal; the TUI"
+                " owns it. Skipping prompt revision for this run.",
+                file=sys.stderr,
+            )
+            effective_revise_prompt = "off"
+        stream_text, console_stream = _stream_modes(tui_enabled=tui_enabled)
+        provider: Provider = _InstrumentedProvider(
+            inner=worker_inner,
+            role=role,
+            model=rm_worker.model,
+            provider_name=rm_worker.provider,
+            events=events,
             budget=budget,
-            n=cfg.review.panel_size,
-            personas=cfg.review.personas,
+            stream_text=stream_text,
+            console_stream=console_stream,
         )
-        if cfg.review.trigger != "off" and review_panel_configured(cfg)
-        else []
-    )
 
-    # Verify is optional: if unset, infer one for this run (AGENTS.md -> repo
-    # signals -> a cheap LLM call) and inject it in-memory. Never persisted.
-    cfg = _infer_verify_if_unset(
-        cfg, cwd, mode=mode, events=events, transcript_sink=transcript_sink, budget=budget
-    )
-
-    # AF_UNIX paths have a 108-char limit (Linux sun_path), which
-    # bench setups with long BENCH_ROOT (and any future overlay-mount
-    # paths) blew through. Bind the socket under a short /tmp dir and
-    # leave a symlink under run_dir for observability. Cleaned up in
-    # the finally block. See bench/improvement_plan.md audit cross-cutting.
-    sock_path = layout.run_dir / "curator.sock"  # rebound to the /tmp socket inside the try
-
-    # Steering (mid-run Ctrl-C -> a stdin prompt) needs the terminal; skip it
-    # when the TUI owns it (then default Ctrl-C aborts cleanly). Double-Ctrl-C
-    # within 2s still raises KeyboardInterrupt for the hard-abort path below.
-    steer_state = _make_steer_state(events, layout.run_dir)
-
-    result = None
-    interrupted = False
-    dispatcher: ToolDispatcher | None = None
-    # Spawned inside the try so the finally below always tears them down even
-    # if a spawn itself fails (otherwise curator/MCP procs + the /tmp socket
-    # dir leak past the only cleanup path).
-    curator_proc: subprocess.Popen[bytes] | None = None
-    sock_tmpdir: Path | None = None
-    mcp_manager = None
-    try:
-        # Spawn the curator + connect a GraphClient so the agent
-        # has access to the DAG-as-tool surface.
-        sock_tmpdir = Path(tempfile.mkdtemp(prefix="agent6-sock-"))
-        sock_path = sock_tmpdir / "curator.sock"
-        sock_link = layout.run_dir / "curator.sock"
-        with contextlib.suppress(FileNotFoundError):
-            sock_link.unlink()
-        sock_link.symlink_to(sock_path)
-        curator_proc = spawn_curator(state_dir, effective_run_id, sock_path, subdir=layout.subdir)
-        print(f"[agent6] run id: {effective_run_id}", file=sys.stderr)
-
-        # Spawn any configured MCP servers BEFORE the workflow
-        # starts so their tools are visible from iteration 1. The manager
-        # owns its subprocesses; we close it in the finally block.
-        mcp_manager = _start_mcp_manager_if_enabled(cfg)
-
-        with GraphClient(sock_path) as graph_client:
-            dispatcher = ToolDispatcher(
-                root=cwd,
-                config=cfg,
-                sandbox_profile=selected_profile,
-                approver=_build_approver(layout.run_dir, events),
-                questioner=_build_questioner(layout.run_dir, events),
-                events=events,
-                graph_client=graph_client,
-                run_root_node_id=None,  # Workflow seeds the root + calls set_run_root_node_id
-                mcp_manager=mcp_manager,
-                mode=mode,
-            )
-            compact_drop, compact_summarise = resolve_compaction_thresholds(
-                cfg, rm_worker, log=_eprint if mode == "ask" else print
-            )
-            wf = Workflow(
-                root=cwd,
-                config=cfg,
-                provider=provider,
-                dispatcher=dispatcher,
-                logger=_eprint if mode == "ask" else print,
-                events=events,
-                graph_client=graph_client,
-                steer_requested=steer_state.requested,
-                steer_clear=steer_state.clear,
-                steer_prompt=steer_state.prompt,
+        critic_provider = _build_critic_provider(
+            cfg, transcript_sink=transcript_sink, budget=budget, events=events
+        )
+        prompt_reviser_provider = _build_prompt_reviser_provider(
+            cfg, transcript_sink=transcript_sink, budget=budget, events=events
+        )
+        summariser_provider = _build_summariser_provider(
+            cfg, transcript_sink=transcript_sink, budget=budget, events=events
+        )
+        # The grounded review panel runs at the critic trigger WHEN explicitly
+        # configured (any review_* key); otherwise critic!=off keeps the legacy single
+        # critic, so a pre-panel before_finish/periodic config still gates as before.
+        review_seats = (
+            build_review_seats(
+                cfg,
+                transcript_sink=transcript_sink,
                 budget=budget,
-                # `agent6 ask` (under asks/) is not resumable -- `agent6 resume`
-                # only looks under runs/ -- so don't write an orphan snapshot.
-                resume_state_path=(None if mode == "ask" else layout.run_dir / "loop_state.json"),
-                mode=mode,
-                plan_output_path=(layout.run_dir / "plan.md" if mode == "plan" else None),
-                after_auto_commit=(
-                    _build_repl_hook(
-                        cwd,
-                        budget,
-                        run_id=effective_run_id,
-                        mcp_manager=mcp_manager,
-                    )
-                    if interactive and mode == "run"
-                    else (lambda _i, _s: "continue")
-                ),
-                critic_provider=critic_provider,
-                critic_mode=cfg.review.trigger,
-                critic_period=cfg.review.period,
-                review_seats=review_seats,
-                review_decision=cfg.review.decision,
-                review_quorum=cfg.review.quorum,
-                review_max_total_rejections=cfg.review.max_total_rejections,
-                review_budget_fraction=cfg.review.budget_fraction,
-                review_concurrency=cfg.review.concurrency,
-                base_sha=base_sha,
-                prompt_reviser_provider=prompt_reviser_provider,
-                revise_prompt=cfg.prompt.revise_prompt,
-                temperature=_role_temperature(cfg, role),
-                critic_temperature=_role_temperature(cfg, "reviewer"),
-                prompt_reviser_temperature=_role_temperature(cfg, "reviewer"),
-                prompt_revision_selector=(
-                    _select_revised_prompt if cfg.prompt.revise_prompt == "interactive" else None
-                ),
-                summariser_provider=summariser_provider,
-                compact_drop_at_chars=compact_drop,
-                compact_summarise_at_chars=compact_summarise,
-                context_summary_max_tokens=cfg.context.summary_max_tokens,
+                n=cfg.review.panel_size,
+                personas=cfg.review.personas,
             )
-            try:
-                with _tui_session(layout.run_dir, enabled=tui_enabled):
-                    if mode == "ask" and interactive:
-                        result = _run_ask_repl(wf, budget, layout, first_question=task)
-                    else:
-                        result = wf.run(task)
-            except KeyboardInterrupt:
-                interrupted = True
-                print("\n[agent6] run interrupted", file=sys.stderr)
-    except CuratorClientError as exc:
-        print(f"ERROR: curator failed to start: {exc}", file=sys.stderr)
-        return 1
+            if cfg.review.trigger != "off" and review_panel_configured(cfg)
+            else []
+        )
+
+        # Verify is optional: if unset, infer one for this run (AGENTS.md -> repo
+        # signals -> a cheap LLM call) and inject it in-memory. Never persisted.
+        cfg = _infer_verify_if_unset(
+            cfg, cwd, mode=mode, events=events, transcript_sink=transcript_sink, budget=budget
+        )
+
+        # AF_UNIX paths have a 108-char limit (Linux sun_path), which
+        # bench setups with long BENCH_ROOT (and any future overlay-mount
+        # paths) blew through. Bind the socket under a short /tmp dir and
+        # leave a symlink under run_dir for observability. Cleaned up in
+        # the finally block. See bench/improvement_plan.md audit cross-cutting.
+        sock_path = layout.run_dir / "curator.sock"  # rebound to the /tmp socket inside the try
+
+        # Steering (mid-run Ctrl-C -> a stdin prompt) needs the terminal; skip it
+        # when the TUI owns it (then default Ctrl-C aborts cleanly). Double-Ctrl-C
+        # within 2s still raises KeyboardInterrupt for the hard-abort path below.
+        steer_state = _make_steer_state(events, layout.run_dir)
+
+        result = None
+        interrupted = False
+        dispatcher: ToolDispatcher | None = None
+        # Spawned inside the try so the finally below always tears them down even
+        # if a spawn itself fails (otherwise curator/MCP procs + the /tmp socket
+        # dir leak past the only cleanup path).
+        curator_proc: subprocess.Popen[bytes] | None = None
+        sock_tmpdir: Path | None = None
+        mcp_manager = None
+        try:
+            # Spawn the curator + connect a GraphClient so the agent
+            # has access to the DAG-as-tool surface.
+            sock_tmpdir = Path(tempfile.mkdtemp(prefix="agent6-sock-"))
+            sock_path = sock_tmpdir / "curator.sock"
+            sock_link = layout.run_dir / "curator.sock"
+            with contextlib.suppress(FileNotFoundError):
+                sock_link.unlink()
+            sock_link.symlink_to(sock_path)
+            curator_proc = spawn_curator(
+                state_dir, effective_run_id, sock_path, subdir=layout.subdir
+            )
+            print(f"[agent6] run id: {effective_run_id}", file=sys.stderr)
+
+            # Spawn any configured MCP servers BEFORE the workflow
+            # starts so their tools are visible from iteration 1. The manager
+            # owns its subprocesses; we close it in the finally block.
+            mcp_manager = _start_mcp_manager_if_enabled(cfg)
+
+            with GraphClient(sock_path) as graph_client:
+                dispatcher = ToolDispatcher(
+                    root=cwd,
+                    config=cfg,
+                    sandbox_profile=selected_profile,
+                    approver=_build_approver(layout.run_dir, events),
+                    questioner=_build_questioner(layout.run_dir, events),
+                    events=events,
+                    graph_client=graph_client,
+                    run_root_node_id=None,  # Workflow seeds the root + calls set_run_root_node_id
+                    mcp_manager=mcp_manager,
+                    mode=mode,
+                )
+                compact_drop, compact_summarise = resolve_compaction_thresholds(
+                    cfg, rm_worker, log=_eprint if mode == "ask" else print
+                )
+                wf = Workflow(
+                    root=cwd,
+                    config=cfg,
+                    provider=provider,
+                    dispatcher=dispatcher,
+                    logger=_eprint if mode == "ask" else print,
+                    events=events,
+                    graph_client=graph_client,
+                    steer_requested=steer_state.requested,
+                    steer_clear=steer_state.clear,
+                    steer_prompt=steer_state.prompt,
+                    budget=budget,
+                    # `agent6 ask` (under asks/) is not resumable -- `agent6 resume`
+                    # only looks under runs/ -- so don't write an orphan snapshot.
+                    resume_state_path=(
+                        None if mode == "ask" else layout.run_dir / "loop_state.json"
+                    ),
+                    mode=mode,
+                    plan_output_path=(layout.run_dir / "plan.md" if mode == "plan" else None),
+                    after_auto_commit=(
+                        _build_repl_hook(
+                            cwd,
+                            budget,
+                            run_id=effective_run_id,
+                            mcp_manager=mcp_manager,
+                        )
+                        if interactive and mode == "run"
+                        else (lambda _i, _s: "continue")
+                    ),
+                    critic_provider=critic_provider,
+                    critic_mode=cfg.review.trigger,
+                    critic_period=cfg.review.period,
+                    review_seats=review_seats,
+                    review_decision=cfg.review.decision,
+                    review_quorum=cfg.review.quorum,
+                    review_max_total_rejections=cfg.review.max_total_rejections,
+                    review_budget_fraction=cfg.review.budget_fraction,
+                    review_concurrency=cfg.review.concurrency,
+                    base_sha=base_sha,
+                    prompt_reviser_provider=prompt_reviser_provider,
+                    revise_prompt=effective_revise_prompt,
+                    temperature=_role_temperature(cfg, role),
+                    critic_temperature=_role_temperature(cfg, "reviewer"),
+                    prompt_reviser_temperature=_role_temperature(cfg, "reviewer"),
+                    prompt_revision_selector=(
+                        _select_revised_prompt if effective_revise_prompt == "interactive" else None
+                    ),
+                    summariser_provider=summariser_provider,
+                    compact_drop_at_chars=compact_drop,
+                    compact_summarise_at_chars=compact_summarise,
+                    context_summary_max_tokens=cfg.context.summary_max_tokens,
+                )
+                try:
+                    with _tui_session(layout.run_dir, enabled=tui_enabled):
+                        if mode == "ask" and interactive:
+                            result = _run_ask_repl(wf, budget, layout, first_question=task)
+                        else:
+                            result = wf.run(task)
+                except KeyboardInterrupt:
+                    interrupted = True
+                    print("\n[agent6] run interrupted", file=sys.stderr)
+        except CuratorClientError as exc:
+            print(f"ERROR: curator failed to start: {exc}", file=sys.stderr)
+            return 1
+        finally:
+            if curator_proc is not None:
+                curator_proc.terminate()
+                try:
+                    curator_proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    curator_proc.kill()
+            steer_state.restore()
+            # Clean up the /tmp socket dir + symlink under run_dir.
+            with contextlib.suppress(FileNotFoundError):
+                (layout.run_dir / "curator.sock").unlink()
+            if sock_tmpdir is not None:
+                shutil.rmtree(sock_tmpdir, ignore_errors=True)
+            if dispatcher is not None:
+                dispatcher.close()
+            if mcp_manager is not None:
+                mcp_manager.close()
+            if not interrupted and result is not None and result.completed and cfg.git.auto_merge:
+                _finalize_auto_merge(cwd, layout=layout, cfg=cfg)
+            # Never leave root-owned run state in the user's repo (sudo case).
+            chown_to_real_user(state_dir)
+
+        if interrupted:
+            return 130
+        if result is None:
+            return 1
+
+        if mode == "ask":
+            # The answer IS result.summary (kept whole in ask mode). stdout gets
+            # just the answer (clean for piping); cost + saved-path go to stderr.
+            # The REPL already printed + saved each turn, so only the one-shot path
+            # prints/saves here.
+            if not interactive:
+                print(result.summary)
+                _save_ask_transcript(layout, question=task, answer=result.summary)
+                print(
+                    f"\n[agent6] answer saved to {layout.run_dir / 'transcript.md'}",
+                    file=sys.stderr,
+                )
+            print(budget.format_summary(), file=sys.stderr)
+            return 0 if result.completed else 1
+
+        print()
+        print(
+            f"[agent6] result: completed={result.completed} reason={result.reason} "
+            f"iterations={result.iterations} tool_calls={result.tool_calls}"
+        )
+        print(f"  summary: {result.summary[:500]}")
+        print()
+        print(budget.format_summary())
+        _fire_notify_hook(
+            cfg.notify,
+            run_id=layout.run_id,
+            run_dir=layout.run_dir,
+            ok=result.completed,
+            reason=result.reason,
+        )
+        return _run_exit_code(result)
     finally:
-        if curator_proc is not None:
-            curator_proc.terminate()
-            try:
-                curator_proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                curator_proc.kill()
-        steer_state.restore()
+        # Single owner of worker.pid, egress-broker, and auto-stash
+        # finalization. Refusal returns, Ctrl-C during verify inference, and
+        # setup-window crashes used to skip these, leaving a stale pid, a
+        # leaked broker process, and the user's stashed work silently hidden.
         clear_worker_pid(layout.run_dir)
-        # Clean up the /tmp socket dir + symlink under run_dir.
-        with contextlib.suppress(FileNotFoundError):
-            (layout.run_dir / "curator.sock").unlink()
-        if sock_tmpdir is not None:
-            shutil.rmtree(sock_tmpdir, ignore_errors=True)
-        if dispatcher is not None:
-            dispatcher.close()
-        if mcp_manager is not None:
-            mcp_manager.close()
         _stop_egress(egress_broker, egress_sock_dir)
-        if not interrupted and result is not None and result.completed and cfg.git.auto_merge:
-            _finalize_auto_merge(cwd, layout=layout, cfg=cfg)
-        # Never leave root-owned run state in the user's repo (sudo case).
-        chown_to_real_user(state_dir)
         if stashed:
             _finalize_auto_stash(
                 cwd,
@@ -1031,40 +1100,6 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                 run_branch=run_branch,
                 auto_pop=cfg.git.auto_stash_pop,
             )
-
-    if interrupted:
-        return 130
-    if result is None:
-        return 1
-
-    if mode == "ask":
-        # The answer IS result.summary (kept whole in ask mode). stdout gets
-        # just the answer (clean for piping); cost + saved-path go to stderr.
-        # The REPL already printed + saved each turn, so only the one-shot path
-        # prints/saves here.
-        if not interactive:
-            print(result.summary)
-            _save_ask_transcript(layout, question=task, answer=result.summary)
-            print(f"\n[agent6] answer saved to {layout.run_dir / 'transcript.md'}", file=sys.stderr)
-        print(budget.format_summary(), file=sys.stderr)
-        return 0 if result.completed else 1
-
-    print()
-    print(
-        f"[agent6] result: completed={result.completed} reason={result.reason} "
-        f"iterations={result.iterations} tool_calls={result.tool_calls}"
-    )
-    print(f"  summary: {result.summary[:500]}")
-    print()
-    print(budget.format_summary())
-    _fire_notify_hook(
-        cfg.notify,
-        run_id=layout.run_id,
-        run_dir=layout.run_dir,
-        ok=result.completed,
-        reason=result.reason,
-    )
-    return _run_exit_code(result)
 
 
 def _finalize_auto_merge(cwd: Path, *, layout: RunLayout, cfg: Config) -> None:
@@ -1339,326 +1374,346 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     # the worker is blocked in a long provider call (which emits no events).
     write_worker_pid(layout.run_dir, os.getpid())
 
-    snapshot_path = layout.run_dir / "loop_state.json"
-    if not snapshot_path.is_file():
-        print(
-            f"ERROR: no resume snapshot at {snapshot_path}; nothing to resume.",
-            file=sys.stderr,
-        )
-        return 2
-
-    # Friendly no-repo guard BEFORE any git-touching resume-diff (which would
-    # otherwise print zeroed-out heads first, then the real error).
-    if not _require_git_repo(cwd):
-        return 2
-
-    # Get onto the run's branch before diffing or committing. A fork cuts
-    # agent6/<id> without checking it out; do it here so the loop's commits land
-    # on the run branch and the resume-diff below references the right HEAD.
-    branch_err = _ensure_on_run_branch(cwd, layout)
-    if branch_err is not None:
-        print(branch_err, file=sys.stderr)
-        return 2
-
-    # Safety check: refuse when the workspace HEAD moved since the run's last
-    # snapshot write (an operator commit, another run, or a rebase would leave
-    # the model reasoning about code that changed under it). The snapshot
-    # records head_sha best-effort ("" when git was unreadable at write time);
-    # skip the check then, and let the loud snapshot load below handle a
-    # corrupt file.
-    mismatch = snapshot_head_mismatch(snapshot_path, cwd)
-    if mismatch is not None:
-        snap_head, current_head = mismatch
-        print("GUARD: the workspace HEAD moved since this run's last snapshot.", file=sys.stderr)
-        print(f"  snapshot head: {snap_head}", file=sys.stderr)
-        print(f"  current head:  {current_head}", file=sys.stderr)
-        if not force:
+    egress_broker = None
+    egress_sock_dir = None
+    try:
+        snapshot_path = layout.run_dir / "loop_state.json"
+        if not snapshot_path.is_file():
             print(
-                "REFUSING to resume. Re-run with --force-resume to override.",
+                f"ERROR: no resume snapshot at {snapshot_path}; nothing to resume.",
                 file=sys.stderr,
             )
+            return 2
+
+        # Friendly no-repo guard BEFORE any git-touching resume-diff (which would
+        # otherwise print zeroed-out heads first, then the real error).
+        if not _require_git_repo(cwd):
+            return 2
+
+        # Get onto the run's branch before diffing or committing. A fork cuts
+        # agent6/<id> without checking it out; do it here so the loop's commits land
+        # on the run branch and the resume-diff below references the right HEAD.
+        branch_err = _ensure_on_run_branch(cwd, layout)
+        if branch_err is not None:
+            print(branch_err, file=sys.stderr)
+            return 2
+
+        # Safety check: refuse when the workspace HEAD moved since the run's last
+        # snapshot write (an operator commit, another run, or a rebase would leave
+        # the model reasoning about code that changed under it). The snapshot
+        # records head_sha best-effort ("" when git was unreadable at write time);
+        # skip the check then, and let the loud snapshot load below handle a
+        # corrupt file.
+        mismatch = snapshot_head_mismatch(snapshot_path, cwd)
+        if mismatch is not None:
+            snap_head, current_head = mismatch
+            print(
+                "GUARD: the workspace HEAD moved since this run's last snapshot.", file=sys.stderr
+            )
+            print(f"  snapshot head: {snap_head}", file=sys.stderr)
+            print(f"  current head:  {current_head}", file=sys.stderr)
+            if not force:
+                print(
+                    "REFUSING to resume. Re-run with --force-resume to override.",
+                    file=sys.stderr,
+                )
+                return 1
+
+        # The original run's manifest drives resume: `mode` (a plan run resumes
+        # read-only with the plan tools, never as a write run), `profile` (resume
+        # has no --profile flag), and `base_sha` (the review-panel diff base).
+        manifest: dict[str, Any] = {}
+        with contextlib.suppress(OSError, ValueError):
+            loaded = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                manifest = loaded
+        mode: Literal["run", "plan"] = "plan" if manifest.get("mode") == "plan" else "run"
+        workflow_section = manifest.get("workflow")
+        manifest_profile = (
+            str(workflow_section.get("profile") or "") if isinstance(workflow_section, dict) else ""
+        )
+        resume_base_sha = str(manifest.get("base_sha") or "")
+        try:
+            cfg = load_effective(
+                Path.cwd(), config_path, profile=profile or manifest_profile
+            ).config
+            set_repo_hook_policy(cfg.git.run_repo_hooks)
+            if budget_overrides is not None:
+                cfg = budget_overrides.apply(cfg)
+            cfg.require_runnable("worker")
+        except ConfigError as exc:
+            print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
+            return 2
+
+        env = detect_env()
+        try:
+            selected_profile = select_profile(cfg.sandbox.profile, env)
+        except RuntimeError as exc:
+            print(f"REFUSING: {exc}", file=sys.stderr)
+            return 2
+        _warn_if_unsandboxed(selected_profile)
+
+        net_err = _check_network_profile(cfg, selected_profile)
+        if net_err is not None:
+            print(f"REFUSING: {net_err}", file=sys.stderr)
+            return 2
+        # strict can be selected because the jail launcher has userns, yet this
+        # process can't create one for the egress broker (surgical AppArmor profile).
+        # Downgrade auto->hardened, or refuse an explicit strict, with guidance.
+        selected_profile, egress_err = resolve_strict_egress_viability(cfg, selected_profile)
+        if egress_err is not None:
+            print(egress_err, file=sys.stderr)
+            return 2
+
+        missing = _check_provider_keys(cfg)
+        usd_err = _explicit_usd_flag_error(
+            budget_overrides.max_usd if budget_overrides else None, cfg
+        )
+        if usd_err is not None:
+            print(f"REFUSING: {usd_err}", file=sys.stderr)
+            return 2
+        if missing is not None:
+            print(missing, file=sys.stderr)
+            return 2
+
+        identity = CommitIdentity(
+            name=cfg.git.commit.name,
+            email=cfg.git.commit.email,
+            coauthor=cfg.git.commit.coauthor,
+        )
+        # (no-repo guard already ran above, before the resume head guard)
+        try:
+            verify_git_identity(cwd, identity)
+        except GitError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
+
+        transcript_sink = TranscriptSink(layout.transcripts_dir)
+        events = EventSink(layout.logs_path)
+
+        egress_broker, egress_sock_dir, egress_err = _maybe_start_egress(cfg, selected_profile)
+        if egress_err is not None:
+            print(f"REFUSING: {egress_err}", file=sys.stderr)
+            return 2
+        if egress_broker is not None:
+            print(
+                f"[agent6] provider-only egress: confined to host network "
+                f"namespace via broker pid {egress_broker.pid}",
+                file=sys.stderr,
+            )
+
+        landlock_err = _maybe_apply_agent_landlock(cfg, selected_profile, env)
+        if landlock_err is not None:
+            print(f"REFUSING: {landlock_err}", file=sys.stderr)
+            # The egress broker is already running; the outer finally tears it
+            # down (and its socket dir) so this refusal does not leak it.
+            return 2
+
+        budget = BudgetTracker(
+            max_input_tokens=cfg.budget.max_input_tokens,
+            max_output_tokens=cfg.budget.max_output_tokens,
+            max_usd=cfg.budget.best_effort_usd_limit,
+        )
+
+        worker_inner = _build_role_provider(
+            cfg, "worker", transcript_sink=transcript_sink, budget=budget
+        )
+        rm_worker = cfg.models.resolve("worker")
+        assert rm_worker is not None  # require_runnable validated this
+        _warn_if_usd_unenforceable(cfg)
+        _warn_if_prompt_override_incomplete(cfg)
+        tui_enabled = _should_spawn_tui(tui=tui, interactive=False, mode=mode)
+        _warn_if_headless_ask(cfg, tui_enabled=tui_enabled)
+        stream_text, console_stream = _stream_modes(tui_enabled=tui_enabled)
+        provider: Provider = _InstrumentedProvider(
+            inner=worker_inner,
+            role="worker",
+            model=rm_worker.model,
+            provider_name=rm_worker.provider,
+            events=events,
+            budget=budget,
+            stream_text=stream_text,
+            console_stream=console_stream,
+        )
+
+        critic_provider = _build_critic_provider(
+            cfg, transcript_sink=transcript_sink, budget=budget, events=events
+        )
+        summariser_provider = _build_summariser_provider(
+            cfg, transcript_sink=transcript_sink, budget=budget, events=events
+        )
+        review_seats = (
+            build_review_seats(
+                cfg,
+                transcript_sink=transcript_sink,
+                budget=budget,
+                n=cfg.review.panel_size,
+                personas=cfg.review.personas,
+            )
+            if cfg.review.trigger != "off" and review_panel_configured(cfg)
+            else []
+        )
+        # Resume reuses the verify command the ORIGINAL run resolved (stored in the
+        # snapshot), so the tool list, prompt, and commit branch stay consistent with
+        # the frozen system prompt -- never re-inferring (which could flip and
+        # diverge). Fall back to re-inference only for a pre-field snapshot, and only
+        # when the operator hasn't since pinned a command in config.
+        if not cfg.workflow.verify_command:
+            snap_verify: tuple[str, ...] | None = None
+            if snapshot_path.is_file():
+                try:
+                    snap_verify = load_resume_snapshot(snapshot_path).verify_command
+                except (ValueError, OSError, KeyError):
+                    snap_verify = None
+            if snap_verify is None:  # older snapshot: re-infer as the original did
+                cfg = _infer_verify_if_unset(
+                    cfg,
+                    cwd,
+                    mode=mode,
+                    events=events,
+                    transcript_sink=transcript_sink,
+                    budget=budget,
+                )
+            elif snap_verify:  # () means the original run was gateless: stay gateless
+                cfg = cfg.with_inferred_verify(snap_verify)
+                print(
+                    f"[agent6] reusing this run's verify command: {' '.join(snap_verify)}",
+                    file=sys.stderr,
+                )
+
+        sock_path = layout.run_dir / "curator.sock"  # rebound to the /tmp socket inside the try
+
+        steer_state = _make_steer_state(events, layout.run_dir)
+
+        result = None
+        interrupted = False
+        dispatcher: ToolDispatcher | None = None
+        # Spawned inside the try so the finally below always tears them down even
+        # if a spawn itself fails (otherwise curator/MCP procs + the /tmp socket
+        # dir leak past the only cleanup path).
+        curator_proc: subprocess.Popen[bytes] | None = None
+        sock_tmpdir: Path | None = None
+        mcp_manager = None
+        try:
+            sock_tmpdir = Path(tempfile.mkdtemp(prefix="agent6-sock-"))
+            sock_path = sock_tmpdir / "curator.sock"
+            sock_link = layout.run_dir / "curator.sock"
+            with contextlib.suppress(FileNotFoundError):
+                sock_link.unlink()
+            sock_link.symlink_to(sock_path)
+            curator_proc = spawn_curator(state_dir, run_id, sock_path, subdir=layout.subdir)
+            print(f"[agent6] resume run id: {run_id}", file=sys.stderr)
+
+            mcp_manager = _start_mcp_manager_if_enabled(cfg)
+
+            with GraphClient(sock_path) as graph_client:
+                dispatcher = ToolDispatcher(
+                    root=cwd,
+                    config=cfg,
+                    sandbox_profile=selected_profile,
+                    approver=_build_approver(layout.run_dir, events),
+                    questioner=_build_questioner(layout.run_dir, events),
+                    events=events,
+                    graph_client=graph_client,
+                    run_root_node_id=None,
+                    mcp_manager=mcp_manager,
+                    mode=mode,
+                )
+                compact_drop, compact_summarise = resolve_compaction_thresholds(
+                    cfg, rm_worker, log=print
+                )
+                wf = Workflow(
+                    root=cwd,
+                    config=cfg,
+                    provider=provider,
+                    dispatcher=dispatcher,
+                    logger=print,
+                    events=events,
+                    graph_client=graph_client,
+                    steer_requested=steer_state.requested,
+                    steer_clear=steer_state.clear,
+                    steer_prompt=steer_state.prompt,
+                    budget=budget,
+                    resume_state_path=snapshot_path,
+                    mode=mode,
+                    plan_output_path=(layout.run_dir / "plan.md" if mode == "plan" else None),
+                    critic_provider=critic_provider,
+                    critic_mode=cfg.review.trigger,
+                    critic_period=cfg.review.period,
+                    review_seats=review_seats,
+                    review_decision=cfg.review.decision,
+                    review_quorum=cfg.review.quorum,
+                    review_max_total_rejections=cfg.review.max_total_rejections,
+                    review_budget_fraction=cfg.review.budget_fraction,
+                    review_concurrency=cfg.review.concurrency,
+                    base_sha=resume_base_sha,
+                    temperature=_role_temperature(cfg, "worker"),
+                    critic_temperature=_role_temperature(cfg, "reviewer"),
+                    summariser_provider=summariser_provider,
+                    compact_drop_at_chars=compact_drop,
+                    compact_summarise_at_chars=compact_summarise,
+                    context_summary_max_tokens=cfg.context.summary_max_tokens,
+                )
+                try:
+                    with _tui_session(layout.run_dir, enabled=tui_enabled):
+                        result = wf.resume()
+                except ResumeError as exc:
+                    print(f"ERROR: {exc}", file=sys.stderr)
+                    return 1
+                except KeyboardInterrupt:
+                    interrupted = True
+                    print("\n[agent6] resume interrupted", file=sys.stderr)
+        except CuratorClientError as exc:
+            print(f"ERROR: curator failed to start: {exc}", file=sys.stderr)
+            return 1
+        finally:
+            if curator_proc is not None:
+                curator_proc.terminate()
+                try:
+                    curator_proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    curator_proc.kill()
+            steer_state.restore()
+            with contextlib.suppress(FileNotFoundError):
+                (layout.run_dir / "curator.sock").unlink()
+            if sock_tmpdir is not None:
+                shutil.rmtree(sock_tmpdir, ignore_errors=True)
+            if dispatcher is not None:
+                dispatcher.close()
+            if mcp_manager is not None:
+                mcp_manager.close()
+            # Egress teardown is owned by the outer finally (a single call).
+            # Doing it here too would reap the broker pid, then the auto-merge
+            # git subprocesses and the notify hook below could recycle it before
+            # the outer close() signalled the pid again.
+            if not interrupted and result is not None and result.completed and cfg.git.auto_merge:
+                _finalize_auto_merge(cwd, layout=layout, cfg=cfg)
+            # Never leave root-owned run state in the user's repo (sudo case).
+            chown_to_real_user(state_dir)
+
+        if interrupted:
+            return 130
+        if result is None:
             return 1
 
-    # The original run's manifest drives resume: `mode` (a plan run resumes
-    # read-only with the plan tools, never as a write run), `profile` (resume
-    # has no --profile flag), and `base_sha` (the review-panel diff base).
-    manifest: dict[str, Any] = {}
-    with contextlib.suppress(OSError, ValueError):
-        loaded = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
-        if isinstance(loaded, dict):
-            manifest = loaded
-    mode: Literal["run", "plan"] = "plan" if manifest.get("mode") == "plan" else "run"
-    workflow_section = manifest.get("workflow")
-    manifest_profile = (
-        str(workflow_section.get("profile") or "") if isinstance(workflow_section, dict) else ""
-    )
-    resume_base_sha = str(manifest.get("base_sha") or "")
-    try:
-        cfg = load_effective(Path.cwd(), config_path, profile=profile or manifest_profile).config
-        set_repo_hook_policy(cfg.git.run_repo_hooks)
-        if budget_overrides is not None:
-            cfg = budget_overrides.apply(cfg)
-        cfg.require_runnable("worker")
-    except ConfigError as exc:
-        print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
-        return 2
-
-    env = detect_env()
-    try:
-        selected_profile = select_profile(cfg.sandbox.profile, env)
-    except RuntimeError as exc:
-        print(f"REFUSING: {exc}", file=sys.stderr)
-        return 2
-    _warn_if_unsandboxed(selected_profile)
-
-    net_err = _check_network_profile(cfg, selected_profile)
-    if net_err is not None:
-        print(f"REFUSING: {net_err}", file=sys.stderr)
-        return 2
-    # strict can be selected because the jail launcher has userns, yet this
-    # process can't create one for the egress broker (surgical AppArmor profile).
-    # Downgrade auto->hardened, or refuse an explicit strict, with guidance.
-    selected_profile, egress_err = resolve_strict_egress_viability(cfg, selected_profile)
-    if egress_err is not None:
-        print(egress_err, file=sys.stderr)
-        return 2
-
-    missing = _check_provider_keys(cfg)
-    usd_err = _explicit_usd_flag_error(budget_overrides.max_usd if budget_overrides else None, cfg)
-    if usd_err is not None:
-        print(f"REFUSING: {usd_err}", file=sys.stderr)
-        return 2
-    if missing is not None:
-        print(missing, file=sys.stderr)
-        return 2
-
-    identity = CommitIdentity(
-        name=cfg.git.commit.name,
-        email=cfg.git.commit.email,
-        coauthor=cfg.git.commit.coauthor,
-    )
-    # (no-repo guard already ran above, before the resume head guard)
-    try:
-        verify_git_identity(cwd, identity)
-    except GitError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 2
-
-    transcript_sink = TranscriptSink(layout.transcripts_dir)
-    events = EventSink(layout.logs_path)
-
-    egress_broker, egress_sock_dir, egress_err = _maybe_start_egress(cfg, selected_profile)
-    if egress_err is not None:
-        print(f"REFUSING: {egress_err}", file=sys.stderr)
-        return 2
-    if egress_broker is not None:
+        print()
         print(
-            f"[agent6] provider-only egress: confined to host network "
-            f"namespace via broker pid {egress_broker.pid}",
-            file=sys.stderr,
+            f"[agent6] result: completed={result.completed} reason={result.reason} "
+            f"iterations={result.iterations} tool_calls={result.tool_calls}"
         )
-
-    landlock_err = _maybe_apply_agent_landlock(cfg, selected_profile, env)
-    if landlock_err is not None:
-        print(f"REFUSING: {landlock_err}", file=sys.stderr)
-        # The egress broker is already running; tear it down so the refusal
-        # doesn't leak the broker process + its socket dir.
-        _stop_egress(egress_broker, egress_sock_dir)
-        return 2
-
-    budget = BudgetTracker(
-        max_input_tokens=cfg.budget.max_input_tokens,
-        max_output_tokens=cfg.budget.max_output_tokens,
-        max_usd=cfg.budget.best_effort_usd_limit,
-    )
-
-    worker_inner = _build_role_provider(
-        cfg, "worker", transcript_sink=transcript_sink, budget=budget
-    )
-    rm_worker = cfg.models.resolve("worker")
-    assert rm_worker is not None  # require_runnable validated this
-    _warn_if_usd_unenforceable(cfg)
-    _warn_if_prompt_override_incomplete(cfg)
-    tui_enabled = _should_spawn_tui(tui=tui, interactive=False, mode=mode)
-    _warn_if_headless_ask(cfg, tui_enabled=tui_enabled)
-    stream_text, console_stream = _stream_modes(tui_enabled=tui_enabled)
-    provider: Provider = _InstrumentedProvider(
-        inner=worker_inner,
-        role="worker",
-        model=rm_worker.model,
-        provider_name=rm_worker.provider,
-        events=events,
-        budget=budget,
-        stream_text=stream_text,
-        console_stream=console_stream,
-    )
-
-    critic_provider = _build_critic_provider(
-        cfg, transcript_sink=transcript_sink, budget=budget, events=events
-    )
-    summariser_provider = _build_summariser_provider(
-        cfg, transcript_sink=transcript_sink, budget=budget, events=events
-    )
-    review_seats = (
-        build_review_seats(
-            cfg,
-            transcript_sink=transcript_sink,
-            budget=budget,
-            n=cfg.review.panel_size,
-            personas=cfg.review.personas,
+        print(f"  summary: {result.summary[:500]}")
+        print()
+        print(budget.format_summary())
+        _fire_notify_hook(
+            cfg.notify,
+            run_id=layout.run_id,
+            run_dir=layout.run_dir,
+            ok=result.completed,
+            reason=result.reason,
         )
-        if cfg.review.trigger != "off" and review_panel_configured(cfg)
-        else []
-    )
-    # Resume reuses the verify command the ORIGINAL run resolved (stored in the
-    # snapshot), so the tool list, prompt, and commit branch stay consistent with
-    # the frozen system prompt -- never re-inferring (which could flip and
-    # diverge). Fall back to re-inference only for a pre-field snapshot, and only
-    # when the operator hasn't since pinned a command in config.
-    if not cfg.workflow.verify_command:
-        snap_verify: tuple[str, ...] | None = None
-        if snapshot_path.is_file():
-            try:
-                snap_verify = load_resume_snapshot(snapshot_path).verify_command
-            except (ValueError, OSError, KeyError):
-                snap_verify = None
-        if snap_verify is None:  # older snapshot: re-infer as the original did
-            cfg = _infer_verify_if_unset(
-                cfg, cwd, mode=mode, events=events, transcript_sink=transcript_sink, budget=budget
-            )
-        elif snap_verify:  # () means the original run was gateless: stay gateless
-            cfg = cfg.with_inferred_verify(snap_verify)
-            print(
-                f"[agent6] reusing this run's verify command: {' '.join(snap_verify)}",
-                file=sys.stderr,
-            )
-
-    sock_path = layout.run_dir / "curator.sock"  # rebound to the /tmp socket inside the try
-
-    steer_state = _make_steer_state(events, layout.run_dir)
-
-    result = None
-    interrupted = False
-    dispatcher: ToolDispatcher | None = None
-    # Spawned inside the try so the finally below always tears them down even
-    # if a spawn itself fails (otherwise curator/MCP procs + the /tmp socket
-    # dir leak past the only cleanup path).
-    curator_proc: subprocess.Popen[bytes] | None = None
-    sock_tmpdir: Path | None = None
-    mcp_manager = None
-    try:
-        sock_tmpdir = Path(tempfile.mkdtemp(prefix="agent6-sock-"))
-        sock_path = sock_tmpdir / "curator.sock"
-        sock_link = layout.run_dir / "curator.sock"
-        with contextlib.suppress(FileNotFoundError):
-            sock_link.unlink()
-        sock_link.symlink_to(sock_path)
-        curator_proc = spawn_curator(state_dir, run_id, sock_path, subdir=layout.subdir)
-        print(f"[agent6] resume run id: {run_id}", file=sys.stderr)
-
-        mcp_manager = _start_mcp_manager_if_enabled(cfg)
-
-        with GraphClient(sock_path) as graph_client:
-            dispatcher = ToolDispatcher(
-                root=cwd,
-                config=cfg,
-                sandbox_profile=selected_profile,
-                approver=_build_approver(layout.run_dir, events),
-                questioner=_build_questioner(layout.run_dir, events),
-                events=events,
-                graph_client=graph_client,
-                run_root_node_id=None,
-                mcp_manager=mcp_manager,
-                mode=mode,
-            )
-            compact_drop, compact_summarise = resolve_compaction_thresholds(
-                cfg, rm_worker, log=print
-            )
-            wf = Workflow(
-                root=cwd,
-                config=cfg,
-                provider=provider,
-                dispatcher=dispatcher,
-                logger=print,
-                events=events,
-                graph_client=graph_client,
-                steer_requested=steer_state.requested,
-                steer_clear=steer_state.clear,
-                steer_prompt=steer_state.prompt,
-                budget=budget,
-                resume_state_path=snapshot_path,
-                mode=mode,
-                plan_output_path=(layout.run_dir / "plan.md" if mode == "plan" else None),
-                critic_provider=critic_provider,
-                critic_mode=cfg.review.trigger,
-                critic_period=cfg.review.period,
-                review_seats=review_seats,
-                review_decision=cfg.review.decision,
-                review_quorum=cfg.review.quorum,
-                review_max_total_rejections=cfg.review.max_total_rejections,
-                review_budget_fraction=cfg.review.budget_fraction,
-                review_concurrency=cfg.review.concurrency,
-                base_sha=resume_base_sha,
-                temperature=_role_temperature(cfg, "worker"),
-                critic_temperature=_role_temperature(cfg, "reviewer"),
-                summariser_provider=summariser_provider,
-                compact_drop_at_chars=compact_drop,
-                compact_summarise_at_chars=compact_summarise,
-                context_summary_max_tokens=cfg.context.summary_max_tokens,
-            )
-            try:
-                with _tui_session(layout.run_dir, enabled=tui_enabled):
-                    result = wf.resume()
-            except ResumeError as exc:
-                print(f"ERROR: {exc}", file=sys.stderr)
-                return 1
-            except KeyboardInterrupt:
-                interrupted = True
-                print("\n[agent6] resume interrupted", file=sys.stderr)
-    except CuratorClientError as exc:
-        print(f"ERROR: curator failed to start: {exc}", file=sys.stderr)
-        return 1
+        return _run_exit_code(result)
     finally:
-        if curator_proc is not None:
-            curator_proc.terminate()
-            try:
-                curator_proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                curator_proc.kill()
-        steer_state.restore()
+        # Single owner of worker.pid + egress teardown for every resume exit
+        # path; refusals and Ctrl-C during verify inference used to leak both.
         clear_worker_pid(layout.run_dir)
-        with contextlib.suppress(FileNotFoundError):
-            (layout.run_dir / "curator.sock").unlink()
-        if sock_tmpdir is not None:
-            shutil.rmtree(sock_tmpdir, ignore_errors=True)
-        if dispatcher is not None:
-            dispatcher.close()
-        if mcp_manager is not None:
-            mcp_manager.close()
         _stop_egress(egress_broker, egress_sock_dir)
-        if not interrupted and result is not None and result.completed and cfg.git.auto_merge:
-            _finalize_auto_merge(cwd, layout=layout, cfg=cfg)
-        # Never leave root-owned run state in the user's repo (sudo case).
-        chown_to_real_user(state_dir)
-
-    if interrupted:
-        return 130
-    if result is None:
-        return 1
-
-    print()
-    print(
-        f"[agent6] result: completed={result.completed} reason={result.reason} "
-        f"iterations={result.iterations} tool_calls={result.tool_calls}"
-    )
-    print(f"  summary: {result.summary[:500]}")
-    print()
-    print(budget.format_summary())
-    _fire_notify_hook(
-        cfg.notify,
-        run_id=layout.run_id,
-        run_dir=layout.run_dir,
-        ok=result.completed,
-        reason=result.reason,
-    )
-    return _run_exit_code(result)
