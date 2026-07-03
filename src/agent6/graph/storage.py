@@ -149,12 +149,17 @@ def _atomic_write(path: Path, data: str | bytes) -> None:
 
 
 def _append_line(path: Path, line: str) -> None:
-    """Append one line atomically (single write())."""
+    """Append one line durably; raise on a short write instead of losing bytes."""
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = (line if line.endswith("\n") else line + "\n").encode("utf-8")
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
     try:
-        os.write(fd, payload)
+        view = memoryview(payload)
+        while view:
+            written = os.write(fd, view)
+            if written <= 0:
+                raise OSError(f"short write appending to {path}")
+            view = view[written:]
         os.fsync(fd)
     finally:
         os.close(fd)

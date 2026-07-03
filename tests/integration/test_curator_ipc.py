@@ -12,7 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from agent6.graph.client import GraphClient, spawn_curator
+from agent6.graph.client import CuratorClientError, GraphClient, spawn_curator
+from agent6.graph.ipc import send_message
 from agent6.graph.models import (
     AddSubtaskIntent,
     SetCursorIntent,
@@ -131,3 +132,92 @@ def test_curator_entrypoint_exists() -> None:
     )
     assert proc.returncode == 2
     assert "usage:" in proc.stderr
+
+
+def test_server_survives_client_vanishing_before_reply(curator_proc) -> None:  # type: ignore[no-untyped-def]
+    # A client that sends a mutation and dies before reading the reply must
+    # not kill the curator: the mutation is already persisted, so the server
+    # drops the connection and keeps serving the next one.
+    sock_path, proc = curator_proc
+    raw = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    raw.connect(str(sock_path))
+    send_message(
+        raw,
+        {
+            "id": 1,
+            "intent": {
+                "op": "add_subtask",
+                "parent_id": None,
+                "draft": {"title": "orphaned reply", "created_by": "planner"},
+            },
+        },
+    )
+    raw.close()  # vanish without reading the reply
+    deadline = time.monotonic() + 3.0
+    state: dict[str, object] = {}
+    while time.monotonic() < deadline:
+        try:
+            with GraphClient(sock_path) as client:
+                state = client.get_state()
+            break
+        except CuratorClientError:
+            time.sleep(0.05)
+    assert proc.poll() is None, "curator died on a vanished client"
+    nodes = state.get("nodes")
+    assert isinstance(nodes, dict) and len(nodes) == 1
+
+
+def test_server_survives_client_reset_after_reply_queued(curator_proc) -> None:  # type: ignore[no-untyped-def]
+    # Harder timing than the test above: wait until the reply has actually
+    # arrived (so the server has replied and looped back into recv), THEN close
+    # without reading it. The unread reply makes the kernel RST the socket, so
+    # the server's next recv raises ConnectionResetError -- an OSError, not the
+    # IpcError the reply-send path tolerates. The curator must survive it.
+    import select
+
+    sock_path, proc = curator_proc
+    raw = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    raw.connect(str(sock_path))
+    send_message(
+        raw,
+        {
+            "id": 1,
+            "intent": {
+                "op": "add_subtask",
+                "parent_id": None,
+                "draft": {"title": "reset after reply", "created_by": "planner"},
+            },
+        },
+    )
+    # Block until the reply bytes are readable, then abandon them unread.
+    readable, _, _ = select.select([raw], [], [], 3.0)
+    assert readable, "curator never sent the reply"
+    raw.close()  # RST: unread data in the receive buffer
+    deadline = time.monotonic() + 3.0
+    state: dict[str, object] = {}
+    while time.monotonic() < deadline:
+        try:
+            with GraphClient(sock_path) as client:
+                state = client.get_state()
+            break
+        except CuratorClientError:
+            time.sleep(0.05)
+    assert proc.poll() is None, "curator died on a client reset between requests"
+    nodes = state.get("nodes")
+    assert isinstance(nodes, dict) and len(nodes) == 1
+
+
+def test_client_wraps_transport_failure(curator_proc) -> None:  # type: ignore[no-untyped-def]
+    # A dead curator surfaces as CuratorClientError (the class contract), not
+    # a raw BrokenPipeError/IpcError that crashes degrade-gracefully callers.
+    sock_path, proc = curator_proc
+    client = GraphClient(sock_path)
+    client.connect()
+    try:
+        proc.terminate()
+        proc.wait(timeout=3)
+        with pytest.raises(CuratorClientError):
+            client.get_state()
+            client.get_state()  # first call may drain a buffered reply; second cannot
+    finally:
+        client.close()

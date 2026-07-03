@@ -24,10 +24,15 @@ import socket
 from typing import Any
 
 _LEN_BYTES = 8
+# One cap for both directions. Also protects the 8-digit decimal header, which
+# would silently desync framing at 10^8 bytes.
+MAX_MESSAGE_BYTES = 16 * 1024 * 1024
 
 
 def send_message(sock: socket.socket, payload: dict[str, Any]) -> None:
     body = json.dumps(payload, sort_keys=True).encode("utf-8")
+    if len(body) > MAX_MESSAGE_BYTES:
+        raise IpcError(f"message too large to frame: {len(body)} bytes (cap {MAX_MESSAGE_BYTES})")
     header = f"{len(body):0{_LEN_BYTES}d}".encode("ascii")
     sock.sendall(header + body)
 
@@ -40,7 +45,7 @@ def recv_message(sock: socket.socket) -> dict[str, Any] | None:
         length = int(header.decode("ascii"))
     except ValueError as exc:
         raise IpcError(f"bad length header: {header!r}") from exc
-    if length < 0 or length > (16 * 1024 * 1024):
+    if length < 0 or length > MAX_MESSAGE_BYTES:
         raise IpcError(f"message length out of range: {length}")
     body = _recv_exact(sock, length)
     if body is None:

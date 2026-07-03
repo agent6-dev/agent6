@@ -17,7 +17,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any
 
-from agent6.graph.ipc import recv_message, send_message
+from agent6.graph.ipc import IpcError, recv_message, send_message
 from agent6.graph.models import (
     AddDependencyIntent,
     AddSubtaskIntent,
@@ -84,8 +84,14 @@ class GraphClient:
         if self._sock is None:
             raise CuratorClientError("client not connected")
         req_id = next(self._ids)
-        send_message(self._sock, {"id": req_id, "intent": intent})
-        reply = recv_message(self._sock)
+        # Wrap transport faults so callers only ever see CuratorClientError,
+        # as the class contract promises: a dead curator degrades the DAG
+        # tools, it must not crash loop paths that catch CuratorClientError.
+        try:
+            send_message(self._sock, {"id": req_id, "intent": intent})
+            reply = recv_message(self._sock)
+        except (OSError, IpcError) as exc:
+            raise CuratorClientError(f"curator connection failed: {exc}") from exc
         if reply is None:
             raise CuratorClientError("curator closed the connection")
         if reply.get("id") != req_id:

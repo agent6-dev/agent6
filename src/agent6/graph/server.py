@@ -8,16 +8,20 @@ This is the `graph-curator` subprocess entrypoint, spawned as
 agent6 application code, application code goes through
 `agent6.graph.client.GraphClient`, which speaks the same wire protocol.
 
-The server is single-threaded by design: every mutation already takes an
-fcntl flock on the run directory, and the protocol overhead is negligible
-compared to LLM round-trips. Concurrency would only add hazard surface.
+Request handling is single-threaded by design: every mutation already takes
+an fcntl flock on the run directory, and the protocol overhead is negligible
+compared to LLM round-trips. Concurrency would only add hazard surface. The
+one extra thread (the orphan watchdog) never touches curator state.
 """
 
 from __future__ import annotations
 
 import contextlib
+import os
 import socket
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -98,22 +102,52 @@ def serve(layout: RunLayout, sock_path: Path) -> None:
             sock_path.unlink()
 
 
-def _serve_connection(curator: GraphCurator, conn: socket.socket) -> None:
+def _reply(conn: socket.socket, payload: dict[str, Any]) -> bool:
+    """Send one reply; False when the client is gone (write failed).
+
+    A reply-send failure must not kill the server: by the time we reply, the
+    mutation (if any) is already durably persisted and in-memory equals disk,
+    so a client that died before reading its answer costs nothing. An
+    oversized reply (IpcError from the frame cap) is reported in-band so the
+    connection framing stays intact.
+    """
+    try:
+        send_message(conn, payload)
+        return True
+    except IpcError as exc:
+        with contextlib.suppress(OSError, IpcError):
+            send_message(
+                conn,
+                {"id": payload.get("id", 0), "ok": False, "error": f"reply too large: {exc}"},
+            )
+            return True
+        return False
+    except OSError:
+        return False
+
+
+def _serve_connection(curator: GraphCurator, conn: socket.socket) -> None:  # noqa: PLR0911, PLR0912
     while True:
         try:
             msg = recv_message(conn)
         except IpcError as exc:
-            send_message(conn, {"id": 0, "ok": False, "error": f"ipc: {exc}"})
+            _reply(conn, {"id": 0, "ok": False, "error": f"ipc: {exc}"})
+            return
+        except OSError:
+            # The client vanished between requests (e.g. it died after we queued
+            # a reply it never read -> the kernel RSTs the socket, so this recv
+            # raises ConnectionResetError). Nothing is in flight and the graph is
+            # already persisted; drop the connection and stay alive, mirroring
+            # _reply's send-side tolerance. Letting it propagate kills the curator
+            # for the rest of the run.
             return
         if msg is None:
             return
         req_id = msg.get("id")
         intent_dict = msg.get("intent")
         if not isinstance(req_id, int) or not isinstance(intent_dict, dict):
-            send_message(
-                conn,
-                {"id": 0, "ok": False, "error": "envelope must be {id, intent}"},
-            )
+            if not _reply(conn, {"id": 0, "ok": False, "error": "envelope must be {id, intent}"}):
+                return
             continue
         try:
             result = _handle_one(curator, intent_dict)
@@ -122,7 +156,8 @@ def _serve_connection(curator: GraphCurator, conn: socket.socket) -> None:
             # CuratorError/ValidationError checks BEFORE the in-memory
             # self._nodes write (see curator.py), so reaching here means nothing
             # was applied -- safe to report and stay alive.
-            send_message(conn, {"id": req_id, "ok": False, "error": str(exc)})
+            if not _reply(conn, {"id": req_id, "ok": False, "error": str(exc)}):
+                return
             continue
         except OSError:
             # A disk fault mid-mutation (ENOSPC/EROFS/permission) can leave the
@@ -141,12 +176,14 @@ def _serve_connection(curator: GraphCurator, conn: socket.socket) -> None:
             # state, so it stays alive and reports the error in-band.
             if not _is_read_only(intent_dict):
                 raise
-            send_message(
+            if not _reply(
                 conn,
                 {"id": req_id, "ok": False, "error": f"curator internal error: {exc}"},
-            )
+            ):
+                return
             continue
-        send_message(conn, {"id": req_id, "ok": True, "result": result})
+        if not _reply(conn, {"id": req_id, "ok": True, "result": result}):
+            return
 
 
 def _is_read_only(intent_dict: dict[str, Any]) -> bool:
@@ -166,11 +203,30 @@ def main(argv: tuple[str, ...] | None = None) -> int:
     state_dir, run_id, sock_path = Path(args[0]), args[1], Path(args[2])
     subdir = args[3] if len(args) == 4 else "runs"
     layout = RunLayout(state_dir=state_dir, run_id=run_id, subdir=subdir)
+    _exit_when_orphaned(os.getppid())
     try:
         serve(layout, sock_path)
     except KeyboardInterrupt:
         return 0
     return 0
+
+
+def _exit_when_orphaned(parent_pid: int) -> None:
+    """Exit when the spawning agent process dies without terminating us.
+
+    The normal teardown is the parent's finally block (terminate + wait). A
+    SIGKILLed parent skips it and would leave this process blocked in accept()
+    forever; when that happens we get reparented, getppid() changes, and this
+    watchdog exits. os._exit: state is on disk after every mutation, nothing
+    to flush."""
+
+    def watch() -> None:
+        while True:
+            time.sleep(5.0)
+            if os.getppid() != parent_pid:
+                os._exit(0)
+
+    threading.Thread(target=watch, name="orphan-watchdog", daemon=True).start()
 
 
 if __name__ == "__main__":
