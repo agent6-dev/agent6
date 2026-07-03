@@ -2451,7 +2451,8 @@ class Workflow:
             # Fork checkpoint extras: the workspace HEAD + curator DAG version at
             # this turn, so `agent6 fork --at-turn N` can cut the new run's branch
             # at the right sha and clone the DAG as of that version. Plain resume
-            # ignores both. Best-effort: a checkpoint is recovery state, so an
+            # reads head_sha (its divergence guard) but ignores graph_version.
+            # Best-effort: a checkpoint is recovery state, so an
             # unreadable git/curator degrades to "" / 0 rather than crashing.
             "head_sha": self._checkpoint_head_sha(),
             "graph_version": self._checkpoint_graph_version(),

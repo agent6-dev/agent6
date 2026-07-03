@@ -91,6 +91,7 @@ from agent6.git_ops import (
     branch_exists,
     create_branch,
     delete_branch_if_merged,
+    is_ancestor,
     is_git_repo,
     restore_stash,
     set_repo_hook_policy,
@@ -1337,12 +1338,23 @@ def _ensure_on_run_branch(cwd: Path, layout: RunLayout) -> str | None:
 
 
 def snapshot_head_mismatch(snapshot_path: Path, repo_root: Path) -> tuple[str, str] | None:
-    """(snapshot head, current head) when the workspace HEAD moved since the
-    run's last snapshot write, else None.
+    """(snapshot head, current head) when the workspace HEAD DIVERGED from the
+    run's last snapshot, else None.
 
-    Best-effort by design: the snapshot records head_sha as "" when git was
-    unreadable at write time, and a corrupt snapshot file is left for the
-    loud resume-snapshot load to report; both skip the check.
+    Divergence, not mere movement: the run's own per-step commits advance HEAD
+    forward from the snapshot between snapshot writes (a turn commits, then a
+    critic/metric call runs before the next snapshot), so a kill in that window
+    leaves HEAD ahead of the recorded head_sha on the SAME line. That must
+    resume cleanly. Only refuse when HEAD is not a descendant of the snapshot
+    head -- an operator commit on another line, a rebase, a reset, or a
+    snapshot commit that git-gc made unreachable -- i.e. the model would resume
+    against code that changed under it. Working-tree (uncommitted) divergence
+    is not checked; only committed history.
+
+    Best-effort: the snapshot records head_sha as "" when git was unreadable at
+    write time (skip), a corrupt snapshot file is left for the loud
+    resume-snapshot load to report (skip), and a non-repo raises nothing here
+    (the caller's _require_git_repo already ran).
     """
     snap_head = ""
     with contextlib.suppress(OSError, ValueError):
@@ -1351,10 +1363,17 @@ def snapshot_head_mismatch(snapshot_path: Path, repo_root: Path) -> tuple[str, s
             snap_head = str(loaded.get("head_sha") or "")
     if not snap_head:
         return None
-    current_head = git_status(repo_root).head_sha
-    if current_head and current_head != snap_head:
-        return (snap_head, current_head)
-    return None
+    try:
+        current_head = git_status(repo_root).head_sha
+    except GitError:
+        return None
+    if not current_head or current_head == snap_head:
+        return None
+    if is_ancestor(repo_root, snap_head, current_head):
+        # HEAD moved forward from the snapshot on the same line (the run's own
+        # commits): not divergence.
+        return None
+    return (snap_head, current_head)
 
 
 def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915

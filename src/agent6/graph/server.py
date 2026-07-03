@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import shutil
 import socket
 import sys
 import threading
@@ -203,7 +204,7 @@ def main(argv: tuple[str, ...] | None = None) -> int:
     state_dir, run_id, sock_path = Path(args[0]), args[1], Path(args[2])
     subdir = args[3] if len(args) == 4 else "runs"
     layout = RunLayout(state_dir=state_dir, run_id=run_id, subdir=subdir)
-    _exit_when_orphaned(os.getppid())
+    _exit_when_orphaned(os.getppid(), sock_path)
     try:
         serve(layout, sock_path)
     except KeyboardInterrupt:
@@ -211,19 +212,23 @@ def main(argv: tuple[str, ...] | None = None) -> int:
     return 0
 
 
-def _exit_when_orphaned(parent_pid: int) -> None:
+def _exit_when_orphaned(parent_pid: int, sock_path: Path) -> None:
     """Exit when the spawning agent process dies without terminating us.
 
     The normal teardown is the parent's finally block (terminate + wait). A
     SIGKILLed parent skips it and would leave this process blocked in accept()
     forever; when that happens we get reparented, getppid() changes, and this
-    watchdog exits. os._exit: state is on disk after every mutation, nothing
-    to flush."""
+    watchdog exits. It first removes the parent's per-spawn socket dir, which
+    the SIGKILLed parent's `shutil.rmtree` finally never reached. os._exit:
+    state is on disk after every mutation, nothing to flush."""
 
     def watch() -> None:
         while True:
             time.sleep(5.0)
             if os.getppid() != parent_pid:
+                # The socket lives in a private mkdtemp dir the parent owns; it
+                # is unreachable now, so reclaim it before we go.
+                shutil.rmtree(sock_path.parent, ignore_errors=True)
                 os._exit(0)
 
     threading.Thread(target=watch, name="orphan-watchdog", daemon=True).start()

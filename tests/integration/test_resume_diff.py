@@ -51,18 +51,48 @@ def test_aligned_head_passes(tmp_path: Path) -> None:
     assert snapshot_head_mismatch(snap, repo) is None
 
 
-def test_moved_head_is_reported(tmp_path: Path) -> None:
+def test_own_forward_commit_is_allowed(tmp_path: Path) -> None:
+    # The run's own per-step commit advances HEAD forward from the snapshot on
+    # the same line (a kill after the commit but before the next snapshot
+    # refresh). HEAD is a descendant of snap_head, so resume must proceed.
     repo = _init_repo(tmp_path)
     old_head = _git(repo, "rev-parse", "HEAD")
     snap = _write_snapshot(tmp_path, {"head_sha": old_head})
     (repo / "b.txt").write_text("new\n")
     _git(repo, "add", "b.txt")
-    _git(repo, "commit", "-q", "-m", "user added b")
+    _git(repo, "commit", "-q", "-m", "the run's own step commit")
+    assert snapshot_head_mismatch(snap, repo) is None
+
+
+def test_diverged_head_is_reported(tmp_path: Path) -> None:
+    # An amend rewrites HEAD to a new sha and orphans the snapshot commit, so
+    # HEAD is NOT a descendant of snap_head: genuine divergence, refuse.
+    repo = _init_repo(tmp_path)
+    old_head = _git(repo, "rev-parse", "HEAD")
+    snap = _write_snapshot(tmp_path, {"head_sha": old_head})
+    (repo / "a.txt").write_text("rewritten\n")
+    _git(repo, "add", "a.txt")
+    _git(repo, "commit", "-q", "--amend", "-m", "amended init")
     mismatch = snapshot_head_mismatch(snap, repo)
     assert mismatch is not None
     snap_head, current_head = mismatch
     assert snap_head == old_head
     assert current_head == _git(repo, "rev-parse", "HEAD")
+
+
+def test_reset_backward_is_reported(tmp_path: Path) -> None:
+    # Operator reset the branch back: HEAD is an ancestor of snap_head, not a
+    # descendant, so the snapshot's work is no longer present. Refuse.
+    repo = _init_repo(tmp_path)
+    (repo / "b.txt").write_text("second\n")
+    _git(repo, "add", "b.txt")
+    _git(repo, "commit", "-q", "-m", "second")
+    snap_head = _git(repo, "rev-parse", "HEAD")
+    snap = _write_snapshot(tmp_path, {"head_sha": snap_head})
+    _git(repo, "reset", "--hard", "HEAD~1")
+    mismatch = snapshot_head_mismatch(snap, repo)
+    assert mismatch is not None
+    assert mismatch[0] == snap_head
 
 
 def test_blank_head_sha_skips_check(tmp_path: Path) -> None:
