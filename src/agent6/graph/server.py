@@ -32,7 +32,6 @@ from agent6.graph.models import (
     RecordCommitIntent,
     ReorderChildrenIntent,
     SetCursorIntent,
-    SnapshotNodeIntent,
     UpdateStatusIntent,
 )
 from agent6.graph.storage import RunLayout
@@ -44,7 +43,6 @@ _INTENT_TABLE = {
     "obsolete": ObsoleteIntent,
     "reorder_children": ReorderChildrenIntent,
     "record_commit": RecordCommitIntent,
-    "snapshot_node": SnapshotNodeIntent,
     "set_cursor": SetCursorIntent,
 }
 
@@ -54,7 +52,7 @@ _INTENT_TABLE = {
 # MEMORY *before* it calls write_node (see curator.py), so a non-validation
 # fault on the write path can leave in-memory state ahead of disk; those must
 # fail-safe (die -> respawn reloads consistent on-disk state), not stay alive.
-_READ_ONLY_OPS = frozenset({"get_state", "compute_resume_diff"})
+_READ_ONLY_OPS = frozenset({"get_state"})
 
 
 def _handle_one(curator: GraphCurator, intent_dict: dict[str, Any]) -> Any:
@@ -67,19 +65,11 @@ def _handle_one(curator: GraphCurator, intent_dict: dict[str, Any]) -> Any:
             "cursor": curator.cursor(),
             "graph_version": curator.graph_version,
         }
-    if op == "compute_resume_diff":
-        repo_root = intent_dict.get("repo_root")
-        run_id = intent_dict.get("run_id")
-        if not isinstance(repo_root, str) or not isinstance(run_id, str):
-            raise CuratorError("compute_resume_diff requires str repo_root and run_id")
-        diff = curator.compute_resume_diff(run_id, Path(repo_root))
-        return diff.model_dump(mode="json")
     intent_cls = _INTENT_TABLE.get(op)
     if intent_cls is None:
         raise CuratorError(f"unknown op {op!r}")
     intent = intent_cls.model_validate(intent_dict)
-    method_name = op
-    method = getattr(curator, method_name)
+    method = getattr(curator, op)
     result = method(intent)
     if result is None:
         return None

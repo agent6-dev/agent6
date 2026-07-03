@@ -17,42 +17,27 @@ Mutations are validated structurally, then applied as:
   4. (if topology changed) atomically regenerate `graph.dot`
   5. bump `graph_version`
 
-The flock around every mutation makes the sequence safe against accidental
-parallel curator instances (which we explicitly forbid, but defending against
-in code is cheap and worth it).
-
-Note on `subprocess.run`: this module shells out to `git` with FIXED, hard-coded
-argv (e.g. `git cat-file -e`, `git diff --name-only`). These are *trusted-input*
-calls \u2014 the only variables are commit SHAs validated upstream by `git_ops` \u2014
-so they do not need to be routed through `agent6.sandbox.jail.run_in_jail`,
-which exists specifically to confine *LLM-supplied* commands. Running the
-curator's own git plumbing inside the jail would be circular (the jail itself
-needs git to inspect the repo).
+The flock around every mutation prevents interleaved file writes from
+accidental parallel curator instances (which we explicitly forbid). It does
+not merge their in-memory state: each instance caches the graph at
+construction, so a second live instance would still lose updates. One curator
+per run is the invariant; the lock only bounds the damage if it is broken.
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
-import subprocess
 import sys
 from datetime import UTC, datetime
-from pathlib import Path
 
 from agent6.graph.models import (
     AddDependencyIntent,
     AddSubtaskIntent,
-    CommittedDelta,
-    NodeSnapshot,
     ObsoleteIntent,
     RecordCommitIntent,
     ReorderChildrenIntent,
-    ResumeDiff,
     SetCursorIntent,
-    SnapshotNodeIntent,
     TaskNode,
-    TouchedFile,
-    UncommittedFileDiff,
     UpdateStatusIntent,
 )
 from agent6.graph.storage import (
@@ -60,12 +45,10 @@ from agent6.graph.storage import (
     flock,
     load_graph,
     read_cursor,
-    read_snapshot,
     write_cursor,
     write_dot,
     write_journal,
     write_node,
-    write_snapshot,
 )
 from agent6.graph.ulid import new_ulid
 
@@ -76,14 +59,6 @@ class CuratorError(Exception):
 
 def _now() -> datetime:
     return datetime.now(tz=UTC)
-
-
-def _sha256_file(p: Path) -> str:
-    h = hashlib.sha256()
-    with p.open("rb") as f:
-        for chunk in iter(lambda: f.read(1 << 16), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 class GraphCurator:
@@ -285,131 +260,6 @@ class GraphCurator:
             write_cursor(self._layout, intent.id)
             self._post_mutation({"op": "set_cursor", "id": intent.id}, regen_dot=False)
 
-    # ---- snapshot + resume-diff ------------------------------------------
-
-    def snapshot_node(self, intent: SnapshotNodeIntent) -> NodeSnapshot:
-        with flock(self._layout.lock_path):
-            self.get(intent.id)
-            snap = NodeSnapshot(
-                head_sha=intent.head_sha,
-                branch=intent.branch,
-                uncommitted_touched=intent.uncommitted_touched,
-                graph_version=self._graph_version,
-            )
-            write_snapshot(self._layout, intent.id, snap)
-            self._post_mutation(
-                {"op": "snapshot_node", "id": intent.id, "head_sha": intent.head_sha},
-                regen_dot=False,
-            )
-            return snap
-
-    def compute_resume_diff(self, run_id: str, repo_root: Path) -> ResumeDiff:
-        """Compare the most-recent snapshot against the current worktree.
-
-        Returns a ``ResumeDiff`` describing the committed delta + any
-        uncommitted-file divergence. Caller (the alignment guard) decides what
-        to do with it; this function does not mutate anything.
-        """
-        cursor = self.cursor()
-        if cursor is None:
-            # No in-flight node: nothing to diff. Use empty placeholders.
-            empty_snap = NodeSnapshot(
-                head_sha="0" * 40, branch="", uncommitted_touched=(), graph_version=0
-            )
-            current_head = _git_head_sha(repo_root)
-            return ResumeDiff(
-                run_id=run_id,
-                snapshot_head=empty_snap.head_sha,
-                current_head=current_head,
-                committed_delta=CommittedDelta(
-                    from_sha=empty_snap.head_sha, to_sha=current_head, files=()
-                ),
-                uncommitted_diff=(),
-                snapshot_missing=True,
-                guard_summary="no cursor recorded; nothing to diff",
-            )
-        snap = read_snapshot(self._layout, cursor)
-        current_head = _git_head_sha(repo_root)
-        if snap is None:
-            return ResumeDiff(
-                run_id=run_id,
-                snapshot_head="",
-                current_head=current_head,
-                committed_delta=CommittedDelta(from_sha="", to_sha=current_head, files=()),
-                uncommitted_diff=(),
-                snapshot_missing=True,
-                guard_summary=f"no snapshot recorded for cursor {cursor}",
-            )
-        # Verify the snapshot's head SHA still exists in the object store.
-        exists = (
-            subprocess.run(
-                ["git", "cat-file", "-e", snap.head_sha],
-                cwd=repo_root,
-                capture_output=True,
-                check=False,
-            ).returncode
-            == 0
-        )
-        if not exists:
-            return ResumeDiff(
-                run_id=run_id,
-                snapshot_head=snap.head_sha,
-                current_head=current_head,
-                committed_delta=CommittedDelta(
-                    from_sha=snap.head_sha, to_sha=current_head, files=()
-                ),
-                uncommitted_diff=(),
-                snapshot_missing=True,
-                guard_summary=(
-                    f"snapshot commit {snap.head_sha} is no longer reachable; use --force-resume"
-                ),
-            )
-        # Compute the committed delta with name-only.
-        delta_proc = subprocess.run(
-            ["git", "diff", "--name-only", f"{snap.head_sha}..HEAD"],
-            cwd=repo_root,
-            capture_output=True,
-            check=False,
-            text=True,
-        )
-        delta_files = tuple(p for p in delta_proc.stdout.splitlines() if p.strip())
-        committed_delta = CommittedDelta(
-            from_sha=snap.head_sha, to_sha=current_head, files=delta_files
-        )
-        # Re-hash each uncommitted_touched file and compare.
-        uncommitted: list[UncommittedFileDiff] = []
-        for touched in snap.uncommitted_touched:
-            p = repo_root / touched.path
-            if not p.is_file():
-                uncommitted.append(
-                    UncommittedFileDiff(
-                        path=touched.path,
-                        expected_sha256=touched.sha256,
-                        actual_sha256="",
-                        note="missing",
-                    )
-                )
-                continue
-            actual = _sha256_file(p)
-            if actual != touched.sha256:
-                uncommitted.append(
-                    UncommittedFileDiff(
-                        path=touched.path,
-                        expected_sha256=touched.sha256,
-                        actual_sha256=actual,
-                        note="modified since snapshot",
-                    )
-                )
-        return ResumeDiff(
-            run_id=run_id,
-            snapshot_head=snap.head_sha,
-            current_head=current_head,
-            committed_delta=committed_delta,
-            uncommitted_diff=tuple(uncommitted),
-            snapshot_missing=False,
-            guard_summary="",
-        )
-
     # ---- internals --------------------------------------------------------
 
     def _post_mutation(self, entry: dict[str, object], *, regen_dot: bool = True) -> None:
@@ -459,35 +309,3 @@ class GraphCurator:
                 continue  # dangling depends_on edge (target missing): not a cycle
             stack.extend(node.depends_on)
         return False
-
-
-def _git_head_sha(repo_root: Path) -> str:
-    proc = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=repo_root,
-        capture_output=True,
-        check=False,
-        text=True,
-    )
-    if proc.returncode != 0:
-        return ""
-    return proc.stdout.strip()
-
-
-def hash_uncommitted(repo_root: Path, paths: tuple[str, ...]) -> tuple[TouchedFile, ...]:
-    """Helper: compute TouchedFile entries for the given workspace-relative paths."""
-    out: list[TouchedFile] = []
-    for rel in paths:
-        p = repo_root / rel
-        if not p.is_file():
-            continue
-        st = p.stat()
-        out.append(
-            TouchedFile(
-                path=rel,
-                sha256=_sha256_file(p),
-                size=st.st_size,
-                mtime=st.st_mtime,
-            )
-        )
-    return tuple(out)

@@ -172,7 +172,7 @@ All five must pass; keep the suite green.
   LLM-provided commands anywhere. Modules that shell out with fixed
   argv depending only on operator input may call `subprocess.run`
   / `subprocess.Popen` directly: `git_ops.py`, `detect.py`,
-  `graph/curator.py`, `graph/client.py`, `workflows/loop.py` (fixed
+  `graph/client.py` (spawns the curator subprocess), `workflows/loop.py` (fixed
   `git diff <base-sha>` feeding the review panel; the sha is recorded
   at run setup, never by the LLM), `tools/lsp.py` (the `ty` language
   server, exe resolved from PATH), `tools/mcp_client.py`

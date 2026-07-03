@@ -78,7 +78,6 @@ def test_layout_ensure_creates_dirs(tmp_path: Path) -> None:
     layout = RunLayout(state_dir=tmp_path / ".agent6", run_id="run1")
     layout.ensure()
     assert layout.graph_dir.is_dir()
-    assert layout.snapshots_dir.is_dir()
     assert layout.transcripts_dir.is_dir()
 
 

@@ -21,13 +21,10 @@ from agent6.graph.ipc import recv_message, send_message
 from agent6.graph.models import (
     AddDependencyIntent,
     AddSubtaskIntent,
-    NodeSnapshot,
     ObsoleteIntent,
     RecordCommitIntent,
     ReorderChildrenIntent,
-    ResumeDiff,
     SetCursorIntent,
-    SnapshotNodeIntent,
     TaskNode,
     UpdateStatusIntent,
 )
@@ -117,21 +114,8 @@ class GraphClient:
     def record_commit(self, intent: RecordCommitIntent) -> TaskNode:
         return TaskNode.model_validate(self._call(intent.model_dump(mode="json")))
 
-    def snapshot_node(self, intent: SnapshotNodeIntent) -> NodeSnapshot:
-        return NodeSnapshot.model_validate(self._call(intent.model_dump(mode="json")))
-
     def set_cursor(self, intent: SetCursorIntent) -> None:
         self._call(intent.model_dump(mode="json"))
-
-    def compute_resume_diff(self, run_id: str, repo_root: Path) -> ResumeDiff:
-        result = self._call(
-            {
-                "op": "compute_resume_diff",
-                "run_id": run_id,
-                "repo_root": str(repo_root),
-            }
-        )
-        return ResumeDiff.model_validate(result)
 
     def get_state(self) -> dict[str, Any]:
         result = self._call({"op": "get_state"})

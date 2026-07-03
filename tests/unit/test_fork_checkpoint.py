@@ -137,7 +137,7 @@ def test_list_checkpoint_turns_empty_for_old_run(tmp_path: Path) -> None:
 
 
 def _seed_source_run(
-    state_dir: Path, run_id: str, *, head_sha: str, turns: tuple[int, ...]
+    state_dir: Path, run_id: str, *, head_sha: str, turns: tuple[int, ...], mode: str = "run"
 ) -> RunLayout:
     """Lay down a source run dir with a manifest, graph DAG, and checkpoints."""
     layout = RunLayout(state_dir=state_dir, run_id=run_id)
@@ -147,7 +147,7 @@ def _seed_source_run(
             {
                 "version": 2,
                 "run_id": run_id,
-                "mode": "run",
+                "mode": mode,
                 "user_task": "do the thing",
                 "base_sha": "basesha000",
                 "base_branch": "main",
@@ -177,6 +177,23 @@ def _seed_source_run(
         layout.checkpoint_path(turns[-1]).read_text(encoding="utf-8"), encoding="utf-8"
     )
     return layout
+
+
+def test_fork_preserves_source_run_mode(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Forking a plan run must resume in plan mode. Stamping mode="run" would pair
+    # the frozen planning system prompt (which drives finish_planning) with
+    # run-mode mutating tools and auto-commits.
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state_dir = _state_dir(repo)
+    _seed_source_run(state_dir, "plan-src-AAAA11", head_sha=head, turns=(1, 2), mode="plan")
+
+    rc = _cmd_fork(None, "plan-src", new_run_id="plan-fork-BBBB22", no_run=True)
+    assert rc == 0
+
+    dst = RunLayout(state_dir=state_dir, run_id="plan-fork-BBBB22")
+    assert json.loads(dst.manifest_path.read_text(encoding="utf-8"))["mode"] == "plan"
 
 
 def test_fork_cleans_up_run_dir_when_branch_cut_fails(
@@ -434,13 +451,13 @@ def test_fork_without_id_forks_most_recent_run(
     assert manifest["parent_run_id"] == "only-run-AAAA11"  # the only/most-recent run
 
 
-def test_fork_continue_forces_resume_past_alignment_guard(
+def test_fork_continue_resumes_without_force(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The default `agent6 fork` continue path just cut + checked out the branch
-    # at the fork sha, so the worktree is aligned by construction. It must pass
-    # force=True to _cmd_resume; otherwise a source run with no DAG cursor trips
-    # the snapshot_missing guard and the fork refuses to continue.
+    # The default `agent6 fork` continue path just cloned the checkpoint and cut
+    # the branch at its head_sha, so the resume head guard passes by
+    # construction. force stays OFF so a genuinely misaligned fork still
+    # refuses instead of resuming against the wrong worktree.
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
@@ -456,7 +473,7 @@ def test_fork_continue_forces_resume_past_alignment_guard(
     monkeypatch.setattr("agent6.cli.fork._cmd_resume", _fake_resume)
     rc = _cmd_fork(None, "src", new_run_id="child-BBBB22")  # default: continue
     assert rc == 0
-    assert captured["force"] is True
+    assert captured["force"] is False
     assert captured["run_id"] == "child-BBBB22"
 
 

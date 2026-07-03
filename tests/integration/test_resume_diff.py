@@ -1,20 +1,19 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for `GraphCurator.compute_resume_diff` against a real git repo."""
+"""Tests for the resume head guard (`snapshot_head_mismatch`) against a real git repo.
+
+The guard is what makes `agent6 resume` refuse when the workspace HEAD moved
+since the run's last `loop_state.json` write. It reads the snapshot's
+`head_sha` field directly (best-effort) and compares it to the current HEAD.
+"""
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
-from agent6.graph.curator import GraphCurator, hash_uncommitted
-from agent6.graph.models import (
-    AddSubtaskIntent,
-    SetCursorIntent,
-    SnapshotNodeIntent,
-    TaskNodeDraft,
-)
-from agent6.graph.storage import RunLayout
+from agent6.cli.run import snapshot_head_mismatch
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -39,73 +38,58 @@ def _init_repo(tmp_path: Path) -> Path:
     return repo
 
 
-def _setup_curator_with_snapshot(repo: Path) -> tuple[GraphCurator, str]:
-    layout = RunLayout(state_dir=repo / ".agent6", run_id="run1")
-    curator = GraphCurator(layout)
-    node = curator.add_subtask(
-        AddSubtaskIntent(
-            parent_id=None,
-            draft=TaskNodeDraft(title="t", created_by="planner"),
-        )
-    )
-    curator.set_cursor(SetCursorIntent(id=node.id))
+def _write_snapshot(tmp_path: Path, payload: object) -> Path:
+    path = tmp_path / "loop_state.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def test_aligned_head_passes(tmp_path: Path) -> None:
+    repo = _init_repo(tmp_path)
     head = _git(repo, "rev-parse", "HEAD")
-    touched = hash_uncommitted(repo, ("a.txt",))
-    curator.snapshot_node(
-        SnapshotNodeIntent(id=node.id, head_sha=head, branch="main", uncommitted_touched=touched)
-    )
-    return curator, node.id
+    snap = _write_snapshot(tmp_path, {"head_sha": head})
+    assert snapshot_head_mismatch(snap, repo) is None
 
 
-def test_resume_diff_clean_workspace(tmp_path: Path) -> None:
+def test_moved_head_is_reported(tmp_path: Path) -> None:
     repo = _init_repo(tmp_path)
-    curator, _ = _setup_curator_with_snapshot(repo)
-    diff = curator.compute_resume_diff("run1", repo)
-    assert diff.snapshot_missing is False
-    assert diff.committed_delta.files == ()
-    assert diff.uncommitted_diff == ()
-
-
-def test_resume_diff_detects_user_commit(tmp_path: Path) -> None:
-    repo = _init_repo(tmp_path)
-    curator, _ = _setup_curator_with_snapshot(repo)
+    old_head = _git(repo, "rev-parse", "HEAD")
+    snap = _write_snapshot(tmp_path, {"head_sha": old_head})
     (repo / "b.txt").write_text("new\n")
     _git(repo, "add", "b.txt")
     _git(repo, "commit", "-q", "-m", "user added b")
-    diff = curator.compute_resume_diff("run1", repo)
-    assert "b.txt" in diff.committed_delta.files
-    assert diff.snapshot_missing is False
+    mismatch = snapshot_head_mismatch(snap, repo)
+    assert mismatch is not None
+    snap_head, current_head = mismatch
+    assert snap_head == old_head
+    assert current_head == _git(repo, "rev-parse", "HEAD")
 
 
-def test_resume_diff_detects_uncommitted_modification(tmp_path: Path) -> None:
+def test_blank_head_sha_skips_check(tmp_path: Path) -> None:
+    # A snapshot written while git was unreadable records "": no basis to
+    # refuse, resume proceeds.
     repo = _init_repo(tmp_path)
-    curator, _ = _setup_curator_with_snapshot(repo)
-    (repo / "a.txt").write_text("modified by user\n")
-    diff = curator.compute_resume_diff("run1", repo)
-    assert len(diff.uncommitted_diff) == 1
-    assert diff.uncommitted_diff[0].path == "a.txt"
-    assert diff.uncommitted_diff[0].note == "modified since snapshot"
+    snap = _write_snapshot(tmp_path, {"head_sha": ""})
+    assert snapshot_head_mismatch(snap, repo) is None
 
 
-def test_resume_diff_snapshot_commit_gone(tmp_path: Path) -> None:
+def test_pre_head_sha_snapshot_skips_check(tmp_path: Path) -> None:
     repo = _init_repo(tmp_path)
-    curator, _ = _setup_curator_with_snapshot(repo)
-    # Rewrite history so the snapshot SHA is unreachable, then GC it.
-    (repo / "a.txt").write_text("changed\n")
-    _git(repo, "add", "a.txt")
-    _git(repo, "commit", "--amend", "-q", "-m", "amended")
-    subprocess.run(
-        ["git", "reflog", "expire", "--expire=now", "--all"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "gc", "--prune=now", "--quiet"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-    )
-    diff = curator.compute_resume_diff("run1", repo)
-    assert diff.snapshot_missing is True
-    assert "--force-resume" in diff.guard_summary
+    snap = _write_snapshot(tmp_path, {"version": 1, "messages": []})
+    assert snapshot_head_mismatch(snap, repo) is None
+
+
+def test_corrupt_snapshot_skips_check(tmp_path: Path) -> None:
+    # The guard stays quiet on a corrupt or missing file; the resume snapshot
+    # load reports it loudly right after.
+    repo = _init_repo(tmp_path)
+    snap = tmp_path / "loop_state.json"
+    snap.write_text("{not json", encoding="utf-8")
+    assert snapshot_head_mismatch(snap, repo) is None
+    assert snapshot_head_mismatch(tmp_path / "missing.json", repo) is None
+
+
+def test_non_dict_snapshot_skips_check(tmp_path: Path) -> None:
+    repo = _init_repo(tmp_path)
+    snap = _write_snapshot(tmp_path, ["not", "a", "dict"])
+    assert snapshot_head_mismatch(snap, repo) is None

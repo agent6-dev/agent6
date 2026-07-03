@@ -97,7 +97,6 @@ from agent6.git_ops import (
     status as git_status,
 )
 from agent6.graph.client import CuratorClientError, GraphClient, spawn_curator
-from agent6.graph.curator import GraphCurator
 from agent6.graph.storage import RunLayout
 from agent6.paths import (
     chown_to_real_user,
@@ -1268,6 +1267,27 @@ def _ensure_on_run_branch(cwd: Path, layout: RunLayout) -> str | None:
     return None
 
 
+def snapshot_head_mismatch(snapshot_path: Path, repo_root: Path) -> tuple[str, str] | None:
+    """(snapshot head, current head) when the workspace HEAD moved since the
+    run's last snapshot write, else None.
+
+    Best-effort by design: the snapshot records head_sha as "" when git was
+    unreadable at write time, and a corrupt snapshot file is left for the
+    loud resume-snapshot load to report; both skip the check.
+    """
+    snap_head = ""
+    with contextlib.suppress(OSError, ValueError):
+        loaded = json.loads(snapshot_path.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            snap_head = str(loaded.get("head_sha") or "")
+    if not snap_head:
+        return None
+    current_head = git_status(repo_root).head_sha
+    if current_head and current_head != snap_head:
+        return (snap_head, current_head)
+    return None
+
+
 def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     config_path: Path | None,
     run_id: str,
@@ -1281,8 +1301,9 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
 
     Mirrors ``_cmd_run`` setup but uses the existing run id, refuses
     if no ``loop_state.json`` snapshot exists, and calls ``wf.resume()``
-    instead of ``wf.run(task)``. A safety check (``compute_resume_diff``)
-    refuses on snapshot-missing unless ``--force-resume`` is passed.
+    instead of ``wf.run(task)``. A safety check refuses when the
+    workspace HEAD moved since the snapshot was written, unless
+    ``--force-resume`` is passed.
 
     NOTE: token budget on resume is a FRESH ceiling, not a continuation
     of the prior run's accounting. Each ``agent6 resume`` invocation
@@ -1339,18 +1360,18 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
         print(branch_err, file=sys.stderr)
         return 2
 
-    # Safety check: refuse on snapshot-commit divergence unless --force-resume.
-    curator = GraphCurator(layout)
-    diff = curator.compute_resume_diff(run_id, cwd)
-    print(f"Run: {run_id}")
-    print(f"  snapshot head: {diff.snapshot_head}")
-    print(f"  current head:  {diff.current_head}")
-    if diff.committed_delta.files:
-        print(f"  committed delta: {len(diff.committed_delta.files)} file(s)")
-    if diff.uncommitted_diff:
-        print(f"  uncommitted diverged: {len(diff.uncommitted_diff)} file(s)")
-    if diff.snapshot_missing:
-        print(f"\nGUARD: {diff.guard_summary}", file=sys.stderr)
+    # Safety check: refuse when the workspace HEAD moved since the run's last
+    # snapshot write (an operator commit, another run, or a rebase would leave
+    # the model reasoning about code that changed under it). The snapshot
+    # records head_sha best-effort ("" when git was unreadable at write time);
+    # skip the check then, and let the loud snapshot load below handle a
+    # corrupt file.
+    mismatch = snapshot_head_mismatch(snapshot_path, cwd)
+    if mismatch is not None:
+        snap_head, current_head = mismatch
+        print("GUARD: the workspace HEAD moved since this run's last snapshot.", file=sys.stderr)
+        print(f"  snapshot head: {snap_head}", file=sys.stderr)
+        print(f"  current head:  {current_head}", file=sys.stderr)
         if not force:
             print(
                 "REFUSING to resume. Re-run with --force-resume to override.",
@@ -1358,15 +1379,20 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
             )
             return 1
 
-    # `agent6 resume` has no --profile flag, so re-apply the profile the original
-    # run used (persisted in the manifest), unless one is passed explicitly.
-    manifest_profile = ""
-    with contextlib.suppress(OSError, ValueError, KeyError, AttributeError):
-        manifest_profile = (
-            json.loads(layout.manifest_path.read_text(encoding="utf-8"))
-            .get("workflow", {})
-            .get("profile", "")
-        )
+    # The original run's manifest drives resume: `mode` (a plan run resumes
+    # read-only with the plan tools, never as a write run), `profile` (resume
+    # has no --profile flag), and `base_sha` (the review-panel diff base).
+    manifest: dict[str, Any] = {}
+    with contextlib.suppress(OSError, ValueError):
+        loaded = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            manifest = loaded
+    mode: Literal["run", "plan"] = "plan" if manifest.get("mode") == "plan" else "run"
+    workflow_section = manifest.get("workflow")
+    manifest_profile = (
+        str(workflow_section.get("profile") or "") if isinstance(workflow_section, dict) else ""
+    )
+    resume_base_sha = str(manifest.get("base_sha") or "")
     try:
         cfg = load_effective(Path.cwd(), config_path, profile=profile or manifest_profile).config
         set_repo_hook_policy(cfg.git.run_repo_hooks)
@@ -1411,7 +1437,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
         email=cfg.git.commit.email,
         coauthor=cfg.git.commit.coauthor,
     )
-    # (no-repo guard already ran above, before compute_resume_diff)
+    # (no-repo guard already ran above, before the resume head guard)
     try:
         verify_git_identity(cwd, identity)
     except GitError as exc:
@@ -1453,7 +1479,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     assert rm_worker is not None  # require_runnable validated this
     _warn_if_usd_unenforceable(cfg)
     _warn_if_prompt_override_incomplete(cfg)
-    tui_enabled = _should_spawn_tui(tui=tui, interactive=False, mode="run")
+    tui_enabled = _should_spawn_tui(tui=tui, interactive=False, mode=mode)
     _warn_if_headless_ask(cfg, tui_enabled=tui_enabled)
     stream_text, console_stream = _stream_modes(tui_enabled=tui_enabled)
     provider: Provider = _InstrumentedProvider(
@@ -1484,14 +1510,6 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
         if cfg.review.trigger != "off" and review_panel_configured(cfg)
         else []
     )
-    resume_base_sha = ""
-    try:
-        resume_base_sha = json.loads(layout.manifest_path.read_text(encoding="utf-8")).get(
-            "base_sha", ""
-        )
-    except (OSError, ValueError):
-        resume_base_sha = ""
-
     # Resume reuses the verify command the ORIGINAL run resolved (stored in the
     # snapshot), so the tool list, prompt, and commit branch stay consistent with
     # the frozen system prompt -- never re-inferring (which could flip and
@@ -1506,7 +1524,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
                 snap_verify = None
         if snap_verify is None:  # older snapshot: re-infer as the original did
             cfg = _infer_verify_if_unset(
-                cfg, cwd, mode="run", events=events, transcript_sink=transcript_sink, budget=budget
+                cfg, cwd, mode=mode, events=events, transcript_sink=transcript_sink, budget=budget
             )
         elif snap_verify:  # () means the original run was gateless: stay gateless
             cfg = cfg.with_inferred_verify(snap_verify)
@@ -1551,6 +1569,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
                 graph_client=graph_client,
                 run_root_node_id=None,
                 mcp_manager=mcp_manager,
+                mode=mode,
             )
             compact_drop, compact_summarise = resolve_compaction_thresholds(
                 cfg, rm_worker, log=print
@@ -1568,6 +1587,8 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
                 steer_prompt=steer_state.prompt,
                 budget=budget,
                 resume_state_path=snapshot_path,
+                mode=mode,
+                plan_output_path=(layout.run_dir / "plan.md" if mode == "plan" else None),
                 critic_provider=critic_provider,
                 critic_mode=cfg.review.trigger,
                 critic_period=cfg.review.period,

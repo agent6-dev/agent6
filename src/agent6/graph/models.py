@@ -72,63 +72,6 @@ class TaskNode(BaseModel):
     notes: str = ""
 
 
-class TouchedFile(BaseModel):
-    """One uncommitted file the agent touched, captured in a snapshot."""
-
-    model_config = _MODEL_CONFIG
-
-    path: str
-    sha256: str
-    size: int
-    mtime: float
-
-
-class NodeSnapshot(BaseModel):
-    """`<run-dir>/snapshots/<node-id>.json` content."""
-
-    model_config = _MODEL_CONFIG
-
-    head_sha: str = Field(min_length=4)
-    branch: str
-    uncommitted_touched: tuple[TouchedFile, ...] = ()
-    graph_version: int
-
-
-class CommittedDelta(BaseModel):
-    """Changes the user (or anyone) committed between snapshot and resume."""
-
-    model_config = _MODEL_CONFIG
-
-    from_sha: str
-    to_sha: str
-    files: tuple[str, ...] = ()
-
-
-class UncommittedFileDiff(BaseModel):
-    """One uncommitted file whose state changed since the snapshot."""
-
-    model_config = _MODEL_CONFIG
-
-    path: str
-    expected_sha256: str
-    actual_sha256: str
-    note: str = ""
-
-
-class ResumeDiff(BaseModel):
-    """Aggregate of what changed in the workspace since a run was paused."""
-
-    model_config = _MODEL_CONFIG
-
-    run_id: str
-    snapshot_head: str
-    current_head: str
-    committed_delta: CommittedDelta
-    uncommitted_diff: tuple[UncommittedFileDiff, ...] = ()
-    snapshot_missing: bool = False
-    guard_summary: str = ""
-
-
 # ---- curator intent payloads ---------------------------------------------
 
 
@@ -179,16 +122,6 @@ class RecordCommitIntent(BaseModel):
     op: Literal["record_commit"] = "record_commit"
     id: str
     sha: str
-
-
-class SnapshotNodeIntent(BaseModel):
-    model_config = _MODEL_CONFIG
-
-    op: Literal["snapshot_node"] = "snapshot_node"
-    id: str
-    head_sha: str
-    branch: str
-    uncommitted_touched: tuple[TouchedFile, ...] = ()
 
 
 class SetCursorIntent(BaseModel):

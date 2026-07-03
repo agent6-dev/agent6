@@ -14,13 +14,12 @@ tree: a node with children has a sibling directory of the same id.
       graph.jsonl          # append-only journal of every mutation
       graph.dot            # derived; rebuilt on every mutation
       cursor.json          # which node is currently in_progress; for resume
-      snapshots/<node>.json
 
 All writes go through `_atomic_write`, which writes a tmp file in the same
 directory, fsyncs it, then renames into place and fsyncs the parent directory.
 The curator additionally holds an fcntl flock on `.lock` for the full duration
-of a mutation, so concurrent intents serialize cleanly even though we never
-expect more than one curator process per run.
+of a mutation, which prevents interleaved file writes if the one-curator-per-
+run invariant is ever broken (it does not merge the instances' cached state).
 
 YAML is parsed by hand (no PyYAML dep), the frontmatter we emit is restricted
 to a single-level mapping of scalars and lists-of-strings, which is trivial to
@@ -39,7 +38,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from agent6.graph.models import NodeSnapshot, TaskNode
+from agent6.graph.models import TaskNode
 from agent6.portable import fsync_dir, lock_exclusive, unlock
 
 # ---- run layout -----------------------------------------------------------
@@ -89,10 +88,6 @@ class RunLayout:
         return self.run_dir / ".lock"
 
     @property
-    def snapshots_dir(self) -> Path:
-        return self.run_dir / "snapshots"
-
-    @property
     def checkpoints_dir(self) -> Path:
         """Append-only per-turn resume checkpoints (``<NNNN>.json``).
 
@@ -123,7 +118,6 @@ class RunLayout:
     def ensure(self) -> None:
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.graph_dir.mkdir(exist_ok=True)
-        self.snapshots_dir.mkdir(exist_ok=True)
         self.transcripts_dir.mkdir(exist_ok=True)
         self.checkpoints_dir.mkdir(exist_ok=True)
 
@@ -464,18 +458,6 @@ def read_cursor(layout: RunLayout) -> str | None:
     if cursor is None or isinstance(cursor, str):
         return cursor
     raise ValueError(f"malformed cursor.json: {raw!r}")
-
-
-def write_snapshot(layout: RunLayout, node_id: str, snap: NodeSnapshot) -> None:
-    path = layout.snapshots_dir / f"{node_id}.json"
-    _atomic_write(path, snap.model_dump_json(indent=2))
-
-
-def read_snapshot(layout: RunLayout, node_id: str) -> NodeSnapshot | None:
-    path = layout.snapshots_dir / f"{node_id}.json"
-    if not path.is_file():
-        return None
-    return NodeSnapshot.model_validate_json(path.read_text(encoding="utf-8"))
 
 
 def list_checkpoint_turns(layout: RunLayout) -> list[int]:

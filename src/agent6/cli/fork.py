@@ -34,8 +34,8 @@ from agent6.run_id import RunIdError, new_friendly_id, resolve_run_id
 from agent6.workflows._run_state import load_checkpoint
 
 # Curator-owned DAG artifacts copied verbatim into the fork (Phase 1). Each is a
-# top-level entry under the run dir; `graph/` and `snapshots/` are directories.
-_DAG_ARTIFACTS: tuple[str, ...] = ("graph", "graph.jsonl", "graph.dot", "cursor.json", "snapshots")
+# top-level entry under the run dir; `graph/` is a directory.
+_DAG_ARTIFACTS: tuple[str, ...] = ("graph", "graph.jsonl", "graph.dot", "cursor.json")
 
 
 def _lineage_entry(*, child: str, parent: str, turn: int, sha: str, ts: str) -> dict[str, object]:
@@ -142,11 +142,13 @@ def _cmd_fork(  # noqa: PLR0911
     # Read the source manifest to carry base_sha / base_branch forward.
     src_base_sha = ""
     src_base_branch = ""
+    src_mode = "run"
     try:
         sm = json.loads(src.manifest_path.read_text(encoding="utf-8"))
         src_base_sha = str(sm.get("base_sha", "")) or ""
         src_base_branch = str(sm.get("base_branch", "")) or ""
         src_user_task = str(sm.get("user_task", "")) or ""
+        src_mode = str(sm.get("mode", "run")) or "run"
     except (OSError, ValueError):
         src_user_task = ""
 
@@ -176,6 +178,7 @@ def _cmd_fork(  # noqa: PLR0911
         base_sha=src_base_sha,
         base_branch=src_base_branch,
         user_task=src_user_task,
+        mode=src_mode,
         cfg=cfg,
     )
     if rc != 0:
@@ -183,18 +186,17 @@ def _cmd_fork(  # noqa: PLR0911
 
     if no_run:
         print(f"[agent6] fork created (not started): {child_id}", file=sys.stderr)
-        print(f"  resume it with: agent6 resume {child_id} --force-resume", file=sys.stderr)
+        print(f"  resume it with: agent6 resume {child_id}", file=sys.stderr)
         return 0
 
-    # Continue the new run from turn N by reusing the resume path. force=True: the
-    # fork JUST cut agent6/<child> at the checkpoint sha and checked it out, so the
-    # worktree is aligned by construction. Without this, the resume alignment guard
-    # refuses any fork whose source run never set a DAG cursor (compute_resume_diff
-    # reports snapshot_missing when cursor is None) -- i.e. most simple runs.
+    # Continue the new run from turn N by reusing the resume path. The fork just
+    # cloned the checkpoint (its head_sha) and cut agent6/<child> at that same
+    # sha, so the resume head guard passes by construction; force stays off so a
+    # real mismatch (a broken fork) still refuses.
     return _cmd_resume(
         config_path,
         child_id,
-        force=True,
+        force=False,
         tui=tui,
         budget_overrides=budget_overrides,
     )
@@ -211,6 +213,7 @@ def _materialize_fork(
     base_sha: str,
     base_branch: str,
     user_task: str,
+    mode: str,
     cfg: Config,
 ) -> int:
     """Write the fork's state on disk: clone the checkpoint + DAG, the manifest,
@@ -237,7 +240,7 @@ def _materialize_fork(
         base_branch=base_branch,
         run_branch=run_branch,
         cfg=cfg,
-        mode="run",
+        mode=mode,
         parent_run_id=src.run_id,
         forked_from_turn=forked_from_turn,
         forked_from_sha=forked_from_sha,
