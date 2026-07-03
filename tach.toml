@@ -30,6 +30,7 @@ depends_on = [
   "agent6.types",
   "agent6.providers", "agent6", "agent6.tools",
   "agent6.memory",
+  "agent6.portable",
   "agent6.budget",
   "agent6.events",
   "agent6.git_ops",

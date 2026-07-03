@@ -106,6 +106,7 @@ from agent6.graph.storage import RunLayout
 from agent6.paths import (
     chown_to_real_user,
 )
+from agent6.portable import lock_exclusive, unlock
 from agent6.pricing import lookup_price
 from agent6.providers import (
     Provider,
@@ -141,6 +142,55 @@ def _eprint(msg: str) -> None:
     """Loop logger that writes to stderr (used for `ask`, whose stdout is the
     answer and must stay clean for piping)."""
     print(msg, file=sys.stderr)
+
+
+def _acquire_single_writer(run_dir: Path) -> int | None:
+    """Take a non-blocking exclusive lock on ``<run-dir>/worker.lock``.
+
+    One run's shared state (``loop_state.json``, ``checkpoints/``, the curator
+    DAG, the run branch) has exactly one authoritative writer. A second
+    ``agent6 run``/``resume``/``fork`` targeting the SAME run dir would spawn a
+    second curator whose independent in-memory cache silently clobbers the
+    first's parent->child links (a lost update), and would interleave commits on
+    the run branch. This is the run-level analogue of ``machine_lock``.
+
+    Returns the held fd on success (the caller keeps the process alive to hold
+    it, and passes it to ``_release_single_writer`` at teardown), or ``None``
+    when another live process holds it (the caller refuses). A crashed writer
+    leaves no lock -- flock releases on process death -- so resume-after-crash is
+    never blocked by a stale lock.
+    """
+    run_dir.mkdir(parents=True, exist_ok=True)
+    fd = os.open(run_dir / "worker.lock", os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        lock_exclusive(fd, blocking=False)
+    except OSError:
+        os.close(fd)
+        return None
+    return fd
+
+
+def _release_single_writer(fd: int | None) -> None:
+    """Release + close a lock fd from ``_acquire_single_writer`` (no-op on None).
+
+    Explicit close matters: the fd is a raw int (``os.open``), so it does not
+    self-close on GC. A leaked fd would keep the flock held and wrongly refuse a
+    later same-dir run in the same process (tests, embedding)."""
+    if fd is None:
+        return
+    with contextlib.suppress(OSError):
+        unlock(fd)
+    with contextlib.suppress(OSError):
+        os.close(fd)
+
+
+_SINGLE_WRITER_BUSY = (
+    "REFUSING: run {rid!r} is already being driven by another agent6 process "
+    "(its worker.lock is held). Concurrent run/resume of the same run would "
+    "corrupt its state (a second curator clobbers the task graph, and commits "
+    "interleave on the run branch). Wait for that process to finish; a crashed "
+    "one releases the lock automatically."
+)
 
 
 def _warn_if_usd_unenforceable(cfg: Config) -> None:
@@ -771,6 +821,13 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         subdir="asks" if mode == "ask" else "runs",
     )
     layout.ensure()
+    # One authoritative writer per run dir. Acquire BEFORE touching any shared
+    # run state (clearing answers, the worker pid, the curator) so a second
+    # process refuses cleanly instead of clobbering the live run.
+    worker_lock_fd = _acquire_single_writer(layout.run_dir)
+    if worker_lock_fd is None:
+        print(_SINGLE_WRITER_BUSY.format(rid=effective_run_id), file=sys.stderr)
+        return 2
     # Drop stale approve/ask/steer answers + frontend.pid from a prior session (the
     # id counters reset on resume, so an old answer must not be read instead of
     # re-prompting; a stale frontend.pid would otherwise stall the answer-poll).
@@ -796,6 +853,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
             except GitError as exc:
                 print(f"ERROR: could not auto-stash before run: {exc}", file=sys.stderr)
                 clear_worker_pid(layout.run_dir)
+                _release_single_writer(worker_lock_fd)
                 return 2
         elif cfg.git.require_clean_worktree:
             print(
@@ -805,6 +863,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                 file=sys.stderr,
             )
             clear_worker_pid(layout.run_dir)
+            _release_single_writer(worker_lock_fd)
             return 2
 
     egress_broker = None
@@ -1135,6 +1194,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                 run_branch=run_branch,
                 auto_pop=cfg.git.auto_stash_pop,
             )
+        _release_single_writer(worker_lock_fd)
 
 
 def _finalize_auto_merge(cwd: Path, *, layout: RunLayout, cfg: Config) -> None:
@@ -1421,6 +1481,12 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     layout = RunLayout(state_dir=state_dir, run_id=run_id)
     if not layout.run_dir.is_dir():
         print(f"ERROR: no such run dir: {layout.run_dir}", file=sys.stderr)
+        return 2
+    # One authoritative writer per run dir (see _acquire_single_writer). Refuse a
+    # second resume of a still-live run before touching any shared state.
+    worker_lock_fd = _acquire_single_writer(layout.run_dir)
+    if worker_lock_fd is None:
+        print(_SINGLE_WRITER_BUSY.format(rid=run_id), file=sys.stderr)
         return 2
     # Drop a prior session's stale answer files + frontend.pid (the id counters reset
     # on resume, an old answer must not be read instead of re-prompting).
@@ -1779,3 +1845,4 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
         # path; refusals and Ctrl-C during verify inference used to leak both.
         clear_worker_pid(layout.run_dir)
         _stop_egress(egress_broker, egress_sock_dir)
+        _release_single_writer(worker_lock_fd)

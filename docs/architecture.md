@@ -192,6 +192,13 @@ directory safe from jailed commands is its location: it lives out of the
 workspace (`<state-dir>/<repo-id>/`), unreachable from the repo cwd that
 jailed commands run on.
 
+One curator per run is an invariant: two live curators on one run dir cache the
+graph independently, so a second one's write silently drops the first's
+parent→child links. `agent6 run`/`resume`/`fork` therefore take a run-level
+single-writer flock on `<run-dir>/worker.lock` (the analogue of `machine.lock`)
+before spawning the curator; a second process on the same run refuses. A crashed
+writer releases the lock on death, so resume-after-crash is never blocked.
+
 ## Run state on disk
 
 Each run's directory `<state-dir>/<repo-id>/runs/<run-id>/` holds:
