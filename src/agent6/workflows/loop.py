@@ -37,6 +37,7 @@ from agent6.graph.models import (
     TaskNodeDraft,
     UpdateStatusIntent,
 )
+from agent6.portable import atomic_write
 from agent6.providers import Provider, ProviderError, ToolDefinition
 from agent6.tools.dispatch import OperatorCommandUnexecutable, ToolDispatcher, ToolError
 from agent6.tools.schema import (
@@ -2469,20 +2470,13 @@ class Workflow:
         # abort an otherwise-healthy run whose edits + commits are already on disk
         # independently. Warn once, then continue.
         try:
-            self.resume_state_path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self.resume_state_path.with_suffix(self.resume_state_path.suffix + ".tmp")
-            tmp.write_text(blob, encoding="utf-8")
-            tmp.replace(self.resume_state_path)
-            # ALSO append a per-turn checkpoint (never overwritten) so a fork can
-            # roll back to turn N. loop_state.json stays the "latest" pointer for
-            # resume. Keep all checkpoints for now (a run is dozens of turns);
-            # bound disk only if long runs prove it matters.
+            # Write the append-only checkpoint first, then advance loop_state.json
+            # as the latest pointer. If the second write fails, default fork still
+            # follows loop_state.json, while explicit --at-turn can use the durable
+            # checkpoint.
             cp_dir = self.resume_state_path.parent / "checkpoints"
-            cp_dir.mkdir(parents=True, exist_ok=True)
-            cp_path = cp_dir / f"{next_iteration:04d}.json"
-            cp_tmp = cp_path.with_suffix(cp_path.suffix + ".tmp")
-            cp_tmp.write_text(blob, encoding="utf-8")
-            cp_tmp.replace(cp_path)
+            atomic_write(cp_dir / f"{next_iteration:04d}.json", blob)
+            atomic_write(self.resume_state_path, blob)
         except OSError as exc:
             if not self._snapshot_write_failed:
                 self._snapshot_write_failed = True

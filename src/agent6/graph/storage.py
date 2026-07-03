@@ -15,8 +15,9 @@ tree: a node with children has a sibling directory of the same id.
       graph.dot            # derived; rebuilt on every mutation
       cursor.json          # which node is currently in_progress; for resume
 
-All writes go through `_atomic_write`, which writes a tmp file in the same
-directory, fsyncs it, then renames into place and fsyncs the parent directory.
+All replacement writes go through `agent6.portable.atomic_write`, which writes a
+tmp file in the same directory, fsyncs it, then renames into place and fsyncs
+the parent directory.
 The curator additionally holds an fcntl flock on `.lock` for the full duration
 of a mutation, which prevents interleaved file writes if the one-curator-per-
 run invariant is ever broken (it does not merge the instances' cached state).
@@ -39,7 +40,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from agent6.graph.models import TaskNode
-from agent6.portable import fsync_dir, lock_exclusive, unlock
+from agent6.portable import atomic_write, lock_exclusive, unlock
 
 # ---- run layout -----------------------------------------------------------
 
@@ -131,21 +132,7 @@ class RunLayout:
 
 def _atomic_write(path: Path, data: str | bytes) -> None:
     """Write data via tmp file + rename, fsyncing both file and parent dir."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    if isinstance(data, bytes):
-        with tmp.open("wb") as fb:
-            fb.write(data)
-            fb.flush()
-            os.fsync(fb.fileno())
-    else:
-        with tmp.open("w", encoding="utf-8") as ft:
-            ft.write(data)
-            ft.flush()
-            os.fsync(ft.fileno())
-    tmp.replace(path)
-    # fsync parent dir so the rename is durable (no-op on Windows).
-    fsync_dir(path.parent)
+    atomic_write(path, data)
 
 
 def _append_line(path: Path, line: str) -> None:

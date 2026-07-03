@@ -36,7 +36,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from agent6.machine.model import MachineError
-from agent6.portable import lock_exclusive, unlock
+from agent6.portable import atomic_write, lock_exclusive, unlock
 
 __all__ = [
     "AgentFact",
@@ -312,11 +312,7 @@ class MachineJournal:
         """
         self.snapshots_dir.mkdir(parents=True, exist_ok=True)
         dest = self.snapshots_dir / f"{snapshot.seq}.json"
-        tmp = dest.with_suffix(".json.tmp")
-        tmp.write_text(snapshot.model_dump_json(indent=2) + "\n", encoding="utf-8")
-        with tmp.open("r", encoding="utf-8") as fh:
-            os.fsync(fh.fileno())
-        tmp.rename(dest)
+        atomic_write(dest, snapshot.model_dump_json(indent=2) + "\n")
         if self.snapshot_keep <= 0:
             return
         with suppress(OSError):
@@ -397,11 +393,7 @@ class MachineJournal:
         dropping the payload.
         """
         self.root.mkdir(parents=True, exist_ok=True)
-        tmp = self.signal_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(payload), encoding="utf-8")
-        with tmp.open("r", encoding="utf-8") as fh:
-            os.fsync(fh.fileno())
-        tmp.rename(self.signal_path)
+        atomic_write(self.signal_path, json.dumps(payload))
 
     def read_pending_wait(self) -> PendingWait | None:
         if not self.wait_path.is_file():
@@ -414,11 +406,7 @@ class MachineJournal:
     def write_pending_wait(self, pending: PendingWait) -> None:
         """Persist the armed next-wake instant atomically (temp file + rename)."""
         self.root.mkdir(parents=True, exist_ok=True)
-        tmp = self.wait_path.with_suffix(".json.tmp")
-        tmp.write_text(pending.model_dump_json(indent=2) + "\n", encoding="utf-8")
-        with tmp.open("r", encoding="utf-8") as fh:
-            os.fsync(fh.fileno())
-        tmp.rename(self.wait_path)
+        atomic_write(self.wait_path, pending.model_dump_json(indent=2) + "\n")
 
     def clear_pending_wait(self) -> None:
         self.wait_path.unlink(missing_ok=True)
@@ -446,7 +434,7 @@ def machine_lock(root: Path) -> Generator[None]:
 def write_source(root: Path, text: str) -> None:
     """Persist the exact `.asm.toml` source the run started from (for replay)."""
     root.mkdir(parents=True, exist_ok=True)
-    (root / "machine.asm.toml").write_text(text, encoding="utf-8")
+    atomic_write(root / "machine.asm.toml", text)
 
 
 def read_source(root: Path) -> str:

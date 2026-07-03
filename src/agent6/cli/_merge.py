@@ -30,6 +30,7 @@ from agent6.git_ops import (
     squash_merge,
 )
 from agent6.graph.storage import RunLayout
+from agent6.portable import atomic_write
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,7 +56,7 @@ def record_merge_in_manifest(layout: RunLayout, *, merged_into: str, merged_sha:
     manifest["merged_sha"] = merged_sha
     manifest["merged_ts"] = _dt.datetime.now(tz=_dt.UTC).isoformat(timespec="seconds")
     with contextlib.suppress(OSError):
-        layout.manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+        atomic_write(layout.manifest_path, json.dumps(manifest, indent=2) + "\n")
 
 
 def restore_checkout(cwd: Path, original: str, target: str) -> None:

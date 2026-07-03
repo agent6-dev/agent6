@@ -60,6 +60,7 @@ depends_on = [
   "agent6.config",
   "agent6.providers",
   "agent6.budget",  # loop workflow needs BudgetExceeded
+  "agent6.portable",
   "agent6.graph.client",
   "agent6.graph.models",
 ]
@@ -280,7 +281,7 @@ depends_on = ["agent6.machine.model", "agent6.portable"]
 
 [[modules]]
 path = "agent6.machine.engine"
-depends_on = ["agent6.machine.model", "agent6.machine._semantics", "agent6.machine.template", "agent6.machine.predicate", "agent6.machine.journal", "agent6.sandbox", "agent6.types"]
+depends_on = ["agent6.machine.model", "agent6.machine._semantics", "agent6.machine.template", "agent6.machine.predicate", "agent6.machine.journal", "agent6.sandbox", "agent6.types", "agent6.portable"]
 
 [[modules]]
 path = "agent6.machine.dryrun"

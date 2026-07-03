@@ -43,6 +43,7 @@ from agent6.config import Config, ConfigError
 from agent6.config_layer import load_effective
 from agent6.git_ops import GitError, create_branch_at
 from agent6.graph.storage import RunLayout, append_jsonl, list_checkpoint_turns
+from agent6.portable import atomic_write
 from agent6.run_id import RunIdError, new_friendly_id, resolve_run_id
 from agent6.workflows._run_state import load_checkpoint
 
@@ -75,34 +76,68 @@ def _select_checkpoint_path(src: RunLayout, at_turn: int | None) -> Path | None:
     Returns the latest checkpoint by default, the ``--at-turn N`` one when given,
     or degrades to ``loop_state.json`` for a pre-checkpoint (old) run.
     """
+    legacy = src.run_dir / "loop_state.json"
     source_id = src.run_id
     turns = list_checkpoint_turns(src)
-    if not turns:
-        # Pre-checkpoint (old) run: degrade to the latest snapshot only.
-        legacy = src.run_dir / "loop_state.json"
-        if not legacy.is_file():
-            print(
-                f"ERROR: {source_id} has no checkpoints and no loop_state.json; nothing to fork.",
-                file=sys.stderr,
-            )
-            return None
-        if at_turn is not None:
+    if at_turn is None:
+        return _select_latest_checkpoint_path(src, turns, legacy)
+    return _select_explicit_checkpoint_path(src, turns, legacy, at_turn, source_id)
+
+
+def _select_latest_checkpoint_path(src: RunLayout, turns: list[int], legacy: Path) -> Path | None:
+    if legacy.is_file():
+        return legacy
+    if turns:
+        return src.checkpoint_path(turns[-1])
+    print(
+        f"ERROR: {src.run_id} has no checkpoints and no loop_state.json; nothing to fork.",
+        file=sys.stderr,
+    )
+    return None
+
+
+def _select_explicit_checkpoint_path(
+    src: RunLayout,
+    turns: list[int],
+    legacy: Path,
+    at_turn: int,
+    source_id: str,
+) -> Path | None:
+    if at_turn in turns:
+        return src.checkpoint_path(at_turn)
+    if legacy.is_file():
+        legacy_turn = _snapshot_turn(legacy)
+        if legacy_turn == at_turn:
+            return legacy
+        if not turns:
             print(
                 f"NOTE: {source_id} predates the checkpoint store; --at-turn is unavailable. "
                 "Forking from its latest snapshot (loop_state.json).",
                 file=sys.stderr,
             )
-        return legacy
-    if at_turn is None:
-        return src.checkpoint_path(turns[-1])
-    if at_turn in turns:
-        return src.checkpoint_path(at_turn)
+            return legacy
     avail = ", ".join(str(t) for t in turns)
     print(
         f"ERROR: no checkpoint at turn {at_turn} for {source_id}. Available turns: {avail}",
         file=sys.stderr,
     )
     return None
+
+
+def _snapshot_turn(path: Path) -> int | None:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(raw, dict):
+        return None
+    value = raw.get("next_iteration")
+    if not isinstance(value, str | int):
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
 
 
 def _cmd_fork(  # noqa: PLR0911
@@ -240,8 +275,8 @@ def _materialize_fork(
     # Seed the new run's resume pointer + origin checkpoint from the chosen
     # checkpoint, then clone the curator DAG verbatim.
     blob = checkpoint_path.read_text(encoding="utf-8")
-    (dst.run_dir / "loop_state.json").write_text(blob, encoding="utf-8")
-    dst.checkpoint_path(0).write_text(blob, encoding="utf-8")
+    atomic_write(dst.run_dir / "loop_state.json", blob)
+    atomic_write(dst.checkpoint_path(0), blob)
     _copy_dag(src, dst)
 
     run_branch = f"agent6/{dst.run_id}"

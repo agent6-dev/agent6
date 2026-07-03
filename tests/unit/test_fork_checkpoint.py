@@ -288,6 +288,58 @@ def test_fork_clones_state_writes_lineage_and_branch(
     assert sorted(list_checkpoint_turns(src)) == [1, 2, 3]
 
 
+def test_latest_fork_uses_loop_state_when_checkpoint_is_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Default fork mirrors resume's latest pointer even if a crash left the
+    matching per-turn checkpoint absent."""
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state_dir = _state_dir(repo)
+    src = _seed_source_run(state_dir, "src-AAAA11", head_sha=head, turns=(1, 2))
+    latest_payload = {
+        "version": 1,
+        "system": "sys",
+        "messages": [{"role": "user", "content": "turn 3 from loop_state"}],
+        "tool_calls": 0,
+        "next_iteration": 3,
+        "root_task_id": "root",
+        "head_sha": head,
+        "graph_version": 3,
+    }
+    src.run_dir.joinpath("loop_state.json").write_text(json.dumps(latest_payload), encoding="utf-8")
+
+    rc = _cmd_fork(None, "src", new_run_id="child-BBBB22", no_run=True)
+
+    assert rc == 0
+    dst = RunLayout(state_dir=state_dir, run_id="child-BBBB22")
+    assert load_checkpoint(dst.checkpoint_path(0)).payload["messages"][0]["content"] == (
+        "turn 3 from loop_state"
+    )
+
+
+def test_latest_fork_does_not_run_ahead_of_loop_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A crash after checkpoint write but before loop_state write leaves a newer
+    checkpoint on disk; default fork must still mirror resume."""
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state_dir = _state_dir(repo)
+    src = _seed_source_run(state_dir, "src-AAAA11", head_sha=head, turns=(1, 2, 3))
+    src.run_dir.joinpath("loop_state.json").write_text(
+        src.checkpoint_path(2).read_text(encoding="utf-8"), encoding="utf-8"
+    )
+
+    rc = _cmd_fork(None, "src", new_run_id="child-BBBB22", no_run=True)
+
+    assert rc == 0
+    dst = RunLayout(state_dir=state_dir, run_id="child-BBBB22")
+    assert load_checkpoint(dst.checkpoint_path(0)).payload["messages"][0]["content"] == "turn 2"
+
+
 def test_fork_at_turn_selects_that_checkpoint(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -106,7 +106,7 @@ from agent6.graph.storage import RunLayout
 from agent6.paths import (
     chown_to_real_user,
 )
-from agent6.portable import lock_exclusive, unlock
+from agent6.portable import atomic_write, lock_exclusive, unlock
 from agent6.pricing import lookup_price
 from agent6.providers import (
     Provider,
@@ -616,11 +616,9 @@ def _write_run_manifest(
         manifest["parent_run_id"] = parent_run_id
         manifest["forked_from_turn"] = forked_from_turn
         manifest["forked_from_sha"] = forked_from_sha
-    # tmp+replace: the TUI hub and `runs show` poll this file on live runs, and
-    # a bare write_text lets them read a truncated JSON mid-rewrite.
-    tmp = layout.manifest_path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    tmp.replace(layout.manifest_path)
+    # Durable temp+replace: the TUI hub and `runs show` poll this file on live
+    # runs, and resume/fork need the manifest after a crash.
+    atomic_write(layout.manifest_path, json.dumps(manifest, indent=2) + "\n")
 
 
 def _infer_verify_if_unset(

@@ -2441,6 +2441,31 @@ def test_save_resume_snapshot_atomic_no_partial_tmp(tmp_path: Path) -> None:
     assert cp_leftovers == ["0001.json"], f"unexpected checkpoint leftovers: {cp_leftovers}"
 
 
+def test_save_resume_snapshot_uses_durable_atomic_writer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Resume state must go through the durable writer, not plain write_text."""
+    writes: list[Path] = []
+
+    def _fake_atomic_write(path: Path, data: str | bytes) -> None:
+        writes.append(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(data, bytes):
+            path.write_bytes(data)
+        else:
+            path.write_text(data, encoding="utf-8")
+
+    monkeypatch.setattr("agent6.workflows.loop.atomic_write", _fake_atomic_write)
+    snap_path = tmp_path / "loop_state.json"
+    wf = _wf(resume_state_path=snap_path)
+
+    wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
+        system="s", messages=[], tool_calls=0, next_iteration=9, root_task_id=None, state=_state()
+    )
+
+    assert writes == [tmp_path / "checkpoints" / "0009.json", snap_path]
+
+
 def test_load_resume_snapshot_rejects_version_mismatch(tmp_path: Path) -> None:
     """A snapshot with a wrong version must raise ValueError."""
     import json as _json
