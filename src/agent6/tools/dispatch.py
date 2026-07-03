@@ -958,10 +958,19 @@ class ToolDispatcher:
         else:
             targets = [p for p in sp.abs_path.rglob("*") if p.is_file()]
             skip_base = sp.abs_path
+        root_resolved = self._root.resolve()
         for path in targets:
             if skip_base is not None and any(
                 part.startswith(".") for part in path.relative_to(skip_base).parts
             ):
+                continue
+            # Contain each target like read_file contains its leaf: rglob yields
+            # in-repo symlinks whose destination can be anywhere on the host, and
+            # this read runs in-process (outside the jail). Resolve and require
+            # the real file to still be under root; skip escapees.
+            try:
+                path.resolve().relative_to(root_resolved)
+            except (OSError, ValueError):
                 continue
             if time.monotonic() > deadline:
                 # Bound total wall-clock: a pathological pattern/large tree can't

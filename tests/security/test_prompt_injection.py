@@ -144,6 +144,30 @@ def test_read_file_follows_symlink_but_rejects_escape(tmp_path: Path) -> None:
         outside.unlink(missing_ok=True)
 
 
+def test_grep_skips_symlink_escaping_root_but_searches_in_repo_links(tmp_path: Path) -> None:
+    """Recursive grep must contain every target it reads, not just the base
+    path: an in-tree symlink to an outside file is skipped (the read runs
+    in-process, outside the jail), while a symlink to an in-repo file still
+    matches."""
+    outside = tmp_path.parent / "agent6_secret_outside.txt"
+    outside.write_text("GREP-ESCAPE-SECRET", encoding="utf-8")
+    try:
+        (tmp_path / "leak").symlink_to(outside)
+        (tmp_path / "sub").mkdir()
+        (tmp_path / "sub" / "nested_leak").symlink_to(outside)
+        (tmp_path / "real.txt").write_text("GREP-ESCAPE-SECRET in repo", encoding="utf-8")
+        (tmp_path / "inlink").symlink_to(tmp_path / "real.txt")
+        d = _dispatcher(tmp_path)
+        result = d.dispatch("grep", {"path": ".", "pattern": "GREP-ESCAPE-SECRET"})
+        paths = {hit["path"] for hit in result["hits"]}
+        assert "leak" not in paths
+        assert "sub/nested_leak" not in paths
+        assert "real.txt" in paths
+        assert "inlink" in paths
+    finally:
+        outside.unlink(missing_ok=True)
+
+
 # --- Unknown / hijacked tool names --------------------------------------------
 
 _FAKE_TOOLS = [
