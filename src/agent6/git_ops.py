@@ -124,7 +124,20 @@ def set_repo_hook_policy(honor: bool) -> None:
     _hook_policy["honor_repo_hooks"] = honor
 
 
-def _git_hardening() -> tuple[str, ...]:
+# Flags that force git's builtin diff/show renderer so a poisoned `.git/config`
+# cannot run a host command: `--no-ext-diff` disables the `diff.external` driver,
+# `--no-textconv` the per-file `diff.<d>.textconv` driver (neither is covered by
+# the `-c` overrides above). Single source of truth so no diff/show call site
+# drifts. Place AFTER the subcommand, alongside `git_hardening_flags()` before it.
+DIFF_SHOW_SAFETY_FLAGS: tuple[str, ...] = ("--no-ext-diff", "--no-textconv")
+
+
+def git_hardening_flags() -> tuple[str, ...]:
+    """The `-c` overrides every agent6 git invocation must carry (see
+    _GIT_EGRESS_HARDENING). Public so the few callers that shell out to git
+    outside this module (`agent6 review`/`runs diff` collectors) apply the
+    same hardening; place them BEFORE the subcommand. Diff/show callers also add
+    DIFF_SHOW_SAFETY_FLAGS after the subcommand."""
     if _hook_policy["honor_repo_hooks"]:
         return _GIT_EGRESS_HARDENING
     # /dev/null is not a directory, so git finds (and runs) no hooks there.
@@ -140,9 +153,17 @@ def _run(
     env = None
     if env_extra:
         env = {**os.environ, **env_extra}
-    hardening = _git_hardening()
+    hardening = git_hardening_flags()
+    # A poisoned `.git/config` reaches a host command two ways on a diff/show:
+    # `diff.external` and per-file `diff.<d>.textconv`. The `-c` overrides above
+    # cover neither cleanly (and git 2.53 dies rc=128 on the empty `diff.external`
+    # override), so force the builtin renderer with DIFF_SHOW_SAFETY_FLAGS.
+    argv = list(args)
+    if argv and argv[0] in ("diff", "show"):
+        argv[1:1] = DIFF_SHOW_SAFETY_FLAGS
+    full_argv = (_git(), *hardening, *argv)
     proc = subprocess.run(
-        [_git(), *hardening, *args],
+        full_argv,
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -150,7 +171,7 @@ def _run(
         env=env,
     )
     result = CommandResult(
-        argv=(_git(), *hardening, *args),
+        argv=full_argv,
         returncode=proc.returncode,
         stdout=proc.stdout,
         stderr=proc.stderr,

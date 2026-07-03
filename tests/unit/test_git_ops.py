@@ -14,6 +14,7 @@ from agent6.git_ops import (
     GitError,
     GitSafetyError,
     commit_all,
+    commit_diff,
     condense_commit_message,
     create_branch,
     create_branch_at,
@@ -117,8 +118,59 @@ def test_git_ops_neutralizes_repo_diff_external(tmp_path: Path) -> None:
         check=True,
     )
     (tmp_path / "README.md").write_text("changed\n", encoding="utf-8")
-    diff_since(tmp_path, "HEAD")
+    out = diff_since(tmp_path, "HEAD")
     assert not marker.exists(), "repo diff.external command executed on the host"
+    # git >= 2.53 tries to run the empty `-c diff.external=` override and a full
+    # patch dies (safe, but empty); --no-ext-diff keeps the patch. Assert the
+    # diff still comes back so a broken-but-safe regression can't hide here.
+    assert "README.md" in out, "diff.external neutralization silently emptied the diff"
+
+
+def test_commit_diff_survives_poisoned_diff_external(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    marker = tmp_path / "PWNED_SHOW"
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "config", "diff.external", f"touch {marker} ;"],
+        check=True,
+    )
+    (tmp_path / "README.md").write_text("changed\n", encoding="utf-8")
+    sha = commit_all(tmp_path, "change readme")
+    out = commit_diff(tmp_path, sha)
+    assert not marker.exists(), "repo diff.external command executed on the host"
+    assert "README.md" in out, "git show honored the external diff and lost the patch"
+
+
+def _poison_textconv(repo: Path, marker: Path) -> None:
+    # A per-file textconv driver bound via .gitattributes. `-c diff.external=`
+    # and `--no-ext-diff` do NOT disable textconv; only `--no-textconv` does.
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "diff.pwn.textconv", f"touch {marker} ; cat"],
+        check=True,
+    )
+    (repo / ".gitattributes").write_text("* diff=pwn\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", ".gitattributes"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "attrs"], check=True)
+
+
+def test_git_ops_neutralizes_repo_diff_textconv(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    marker = tmp_path / "PWNED_TEXTCONV_DIFF"
+    _poison_textconv(tmp_path, marker)
+    (tmp_path / "README.md").write_text("changed\n", encoding="utf-8")
+    out = diff_since(tmp_path, "HEAD")
+    assert not marker.exists(), "repo diff.*.textconv command executed on the host"
+    assert "README.md" in out, "textconv neutralization silently emptied the diff"
+
+
+def test_commit_diff_survives_poisoned_textconv(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    marker = tmp_path / "PWNED_TEXTCONV_SHOW"
+    _poison_textconv(tmp_path, marker)
+    (tmp_path / "README.md").write_text("changed\n", encoding="utf-8")
+    sha = commit_all(tmp_path, "change readme")
+    out = commit_diff(tmp_path, sha)
+    assert not marker.exists(), "git show ran the repo textconv driver on the host"
+    assert "README.md" in out, "git show lost the patch under --no-textconv"
 
 
 def test_slugify_basic() -> None:

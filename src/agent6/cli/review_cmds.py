@@ -17,6 +17,7 @@ from agent6.config import (
     ConfigError,
 )
 from agent6.config_layer import load_effective
+from agent6.git_ops import DIFF_SHOW_SAFETY_FLAGS, git_hardening_flags
 from agent6.providers import (
     ProviderError,
     TranscriptSink,
@@ -44,27 +45,39 @@ def _collect_review_diff(
     documented read-only, so we register ONLY the currently-untracked paths and
     ``git reset`` them afterward (in a ``finally``), restoring the index exactly
     as we found it. Staged/tracked changes are never touched.
+
+    Every invocation carries git_ops' hardening flags plus ``--no-ext-diff
+    --no-textconv``: without them, a checkout with a poisoned ``.git/config``
+    (``diff.external``/``diff.*.textconv``/``core.fsmonitor``) would run its
+    payload on the host the moment the operator reviews it.
     """
+    hardening = git_hardening_flags()
     if base:
-        diff_args = [git, "diff", f"{base}..{head}"]
+        diff_args = [git, *hardening, "diff", *DIFF_SHOW_SAFETY_FLAGS, f"{base}..{head}"]
         if paths:
             diff_args.extend(["--", *paths])
         return subprocess.run(diff_args, cwd=root, capture_output=True, text=True, check=False)
 
     status = subprocess.run(
-        [git, "status", "--porcelain", "-z"], cwd=root, capture_output=True, text=True, check=False
+        [git, *hardening, "status", "--porcelain", "-z"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     untracked = [entry[3:] for entry in status.stdout.split("\0") if entry.startswith("?? ")]
     if untracked:
-        subprocess.run([git, "add", "-N", "--", *untracked], cwd=root, check=False)
+        subprocess.run([git, *hardening, "add", "-N", "--", *untracked], cwd=root, check=False)
     try:
-        diff_args = [git, "diff", "HEAD"]
+        diff_args = [git, *hardening, "diff", *DIFF_SHOW_SAFETY_FLAGS, "HEAD"]
         if paths:
             diff_args.extend(["--", *paths])
         return subprocess.run(diff_args, cwd=root, capture_output=True, text=True, check=False)
     finally:
         if untracked:
-            subprocess.run([git, "reset", "-q", "--", *untracked], cwd=root, check=False)
+            subprocess.run(
+                [git, *hardening, "reset", "-q", "--", *untracked], cwd=root, check=False
+            )
 
 
 def _run_review_panel(
