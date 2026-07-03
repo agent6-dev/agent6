@@ -15,6 +15,7 @@ from agent6.git_ops import (
     GitSafetyError,
     commit_all,
     commit_diff,
+    commit_paths,
     condense_commit_message,
     create_branch,
     create_branch_at,
@@ -47,6 +48,36 @@ def _init_repo(path: Path) -> None:
     (path / "README.md").write_text("hi\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(path), "commit", "-q", "-m", "init"], check=True)
+
+
+def test_commit_paths_ignores_unrelated_staged_work(tmp_path: Path) -> None:
+    # `agent6 init` scaffolds AGENTS.md + .gitignore and commits them. If the
+    # user has other work already staged, that must NOT be swept into the
+    # scaffold commit.
+    _init_repo(tmp_path)
+    (tmp_path / "wip.txt").write_text("in progress\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "wip.txt"], check=True)
+    (tmp_path / "AGENTS.md").write_text("# scaffold\n", encoding="utf-8")
+    (tmp_path / ".gitignore").write_text(".agent6/\n", encoding="utf-8")
+
+    commit_paths(tmp_path, "chore: scaffold", ("AGENTS.md", ".gitignore"))
+
+    committed = subprocess.run(
+        ["git", "-C", str(tmp_path), "show", "--name-only", "--format=", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    assert set(committed) == {"AGENTS.md", ".gitignore"}
+    assert "wip.txt" not in committed
+    # wip.txt is still staged, uncommitted.
+    staged = subprocess.run(
+        ["git", "-C", str(tmp_path), "diff", "--cached", "--name-only"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    assert staged == ["wip.txt"]
 
 
 def test_status_handles_unborn_head(tmp_path: Path) -> None:

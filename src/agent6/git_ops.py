@@ -369,17 +369,19 @@ def commit_paths(
     trailers: dict[str, str] | None = None,
     identity: CommitIdentity | None = None,
 ) -> str:
-    """Stage only `paths` (repo-relative) and commit. Returns the new HEAD sha.
+    """Stage only `paths` (repo-relative) and commit JUST those paths. Returns
+    the new HEAD sha.
 
-    Useful when callers must NOT touch unrelated WIP changes in the worktree
-    (e.g. the startup `.gitignore` auto-update, which runs before the
-    dirty-worktree pre-flight and therefore must not sweep up the user's
-    in-progress edits).
+    The commit is path-limited (``git commit -- <paths>``), so unrelated
+    changes the user already STAGED stay staged and uncommitted, and unrelated
+    WIP in the worktree is never swept in. Used by `agent6 init`'s scaffold
+    commit and the startup `.gitignore` auto-update, which must not fold the
+    user's in-progress work into their commit.
     """
     if not paths:
         raise GitError("commit_paths requires at least one path")
     _run(path, "add", "--", *paths)
-    return _commit(path, message, trailers=trailers, identity=identity)
+    return _commit(path, message, trailers=trailers, identity=identity, only_paths=paths)
 
 
 def _identity_env(identity: CommitIdentity | None) -> dict[str, str] | None:
@@ -401,6 +403,7 @@ def _commit(
     *,
     trailers: dict[str, str] | None,
     identity: CommitIdentity | None,
+    only_paths: tuple[str, ...] | None = None,
 ) -> str:
     merged_trailers = dict(trailers or {})
     env_extra = _identity_env(identity)
@@ -410,7 +413,13 @@ def _commit(
     if merged_trailers:
         trailer_lines = "\n".join(f"{k}: {v}" for k, v in merged_trailers.items())
         full_message = f"{message}\n\n{trailer_lines}"
-    _run(path, "commit", "-m", full_message, env_extra=env_extra)
+    argv = ["commit", "-m", full_message]
+    if only_paths is not None:
+        # Path-limited commit: record only these paths (from the worktree),
+        # disregarding anything else already staged. Callers that want the
+        # whole index (commit_all, record_commit) pass no only_paths.
+        argv.extend(["--", *only_paths])
+    _run(path, *argv, env_extra=env_extra)
     return _run(path, "rev-parse", "HEAD").stdout.strip()
 
 
