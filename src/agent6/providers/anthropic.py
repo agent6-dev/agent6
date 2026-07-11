@@ -55,9 +55,10 @@ DEFAULT_MAX_TOKENS = 8192
 # 180s is generous: real reasoning bursts emit token-level deltas every few
 # seconds even mid-thinking. Three minutes of only heartbeats means wedged.
 _STREAM_IDLE_TIMEOUT_S = 180.0
-# The watchdog also polls should_abort each tick, so keep it short: this bounds
-# how long a Stop waits to interrupt a long in-flight turn.
-_STREAM_WATCHDOG_TICK_S = 1.0
+# The watchdog also polls should_abort/should_interrupt each tick, so keep it
+# short: this bounds how long a Stop/steer/detach waits to end a long in-flight
+# turn. A quarter second reads as immediate without the impatient second Ctrl-C.
+_STREAM_WATCHDOG_TICK_S = 0.25
 
 
 def _anthropic_version(deployment: str) -> tuple[str, str]:

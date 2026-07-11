@@ -100,9 +100,10 @@ DEFAULT_MAX_TOKENS = 8192
 # event every few seconds even mid-reasoning (token-level streaming).
 # Going 3 minutes with only heartbeats means the upstream is wedged.
 _STREAM_IDLE_TIMEOUT_S = 180.0
-# The watchdog also polls should_abort each tick, so keep it short: this bounds
-# how long a Stop waits to interrupt a long in-flight turn.
-_STREAM_WATCHDOG_TICK_S = 1.0
+# The watchdog also polls should_abort/should_interrupt each tick, so keep it
+# short: this bounds how long a Stop/steer/detach waits to end a long in-flight
+# turn. A quarter second reads as immediate without the impatient second Ctrl-C.
+_STREAM_WATCHDOG_TICK_S = 0.25
 
 # Kimi-K2-Thinking, DeepSeek-R1, QwQ, and similar reasoning
 # models stream a separate ``reasoning_content`` (or ``reasoning``)
