@@ -242,13 +242,17 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
             .map_err(io_err)?;
         }
     }
-    // /tmp -> tmpfs
+    // /tmp -> tmpfs. HOME points here (dispatch sets HOME=/tmp/agent6-home so
+    // toolchain caches have a writable root), and go's build cache alone needs
+    // several hundred MB for stdlib artifacts -- at 64m `go test` died ENOSPC
+    // and models burned budgets fighting the sandbox. 1g is a hard ceiling on
+    // RAM-backed pages, not an allocation; a run that needs none uses none.
     mount(
         Some(""),
         &new_root.join("tmp"),
         Some("tmpfs"),
         MsFlags::empty(),
-        Some("size=64m"),
+        Some("size=1g"),
     )
     .map_err(io_err)?;
     // Operator tool dirs (uv etc.) at their REAL locations, RO. After /tmp so a dir
@@ -444,15 +448,18 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
     fs::create_dir_all(&put_old)?;
     pivot_root(&new_root, &put_old).map_err(io_err)?;
     chdir("/").map_err(io_err)?;
-    umount2(Path::new("/.old_root"), MntFlags::MNT_DETACH).map_err(io_err)?;
-    fs::remove_dir("/.old_root").ok();
 
     // We are in the forked child (called from main after fork), which IS in the
-    // new PID namespace. Try to mount a fresh /proc so the child sees only its
-    // own PID namespace. If the kernel refuses (some userns setups error with
-    // "VFS: Mount too revealing"), we log to stderr and continue with an EMPTY
-    // /proc. We deliberately do NOT bind-mount the host /proc as a fallback
-    // because that would expose every host PID and /proc/sys tunable.
+    // new PID namespace. Mount a fresh /proc so the child sees only its own
+    // PID namespace. ORDER MATTERS: this must happen while /.old_root is still
+    // attached -- the kernel permits a userns proc mount only when the mount
+    // namespace already contains a fully-visible proc instance, and the host's
+    // /.old_root/proc is that instance. Mounting after the detach fails EPERM
+    // ("mount too revealing" rule) and left /proc EMPTY, which breaks any tool
+    // that reads /proc/self (observed: go cannot resolve GOROOT via
+    // /proc/self/exe). If the kernel still refuses, log and continue with an
+    // empty /proc; we deliberately do NOT bind-mount the host /proc as a
+    // fallback because that would expose every host PID and /proc/sys tunable.
     let proc_target = Path::new("/proc");
     if let Err(e) = mount(
         Some("proc"),
@@ -465,6 +472,9 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
             "[agent6-jail] warning: fresh /proc mount failed ({e}); /proc will be empty inside the jail"
         );
     }
+
+    umount2(Path::new("/.old_root"), MntFlags::MNT_DETACH).map_err(io_err)?;
+    fs::remove_dir("/.old_root").ok();
 
     chdir("/workspace").map_err(io_err)?;
     Ok(())
@@ -506,6 +516,19 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
         ruleset = ruleset
             .add_rule(PathBeneath::new(fd, access_all))
             .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("rule /tmp: {e}")))?;
+    }
+    // /proc is the jail's OWN freshly-mounted procfs (private PID namespace,
+    // see setup_rootfs), so reading it reveals only jail-local processes and
+    // read-only kernel views -- the same exposure every container runtime
+    // grants. Read WITHOUT execute. Without this rule every /proc read dies
+    // EACCES and toolchains fail in confusing ways: go resolves GOROOT via
+    // /proc/self/exe (observed: go 1.26 "cannot find GOROOT", the model then
+    // rewrites verify.sh to fight the sandbox), python reads /proc/cpuinfo,
+    // ps needs the listing.
+    if let Ok(fd) = PathFd::new("/proc") {
+        ruleset = ruleset
+            .add_rule(PathBeneath::new(fd, access_read))
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("rule /proc: {e}")))?;
     }
     for ro in ["/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/dev"] {
         if let Ok(fd) = PathFd::new(ro) {
