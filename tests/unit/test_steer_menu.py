@@ -91,7 +91,8 @@ def test_pause_menu_slash_commands(tmp_path: Path, capsys: pytest.CaptureFixture
     assert pause_menu(tmp_path, input_fn=_feed(["/stop"])) == "abort"
     assert pause_menu(tmp_path, input_fn=_feed(["/detach"])) == "detach"
     assert pause_menu(tmp_path, input_fn=_feed(["/continue"])) == ""
-    assert pause_menu(tmp_path, input_fn=_feed(["q"])) == "abort"  # bare words still work
+    # Bare keywords are gone: a plain word is a steering instruction now.
+    assert pause_menu(tmp_path, input_fn=_feed(["q"])) == "q"
     # Unknown slash command re-prompts (does not steer with a typo).
     out = pause_menu(tmp_path, input_fn=_feed(["/statsu", "real steer"]))
     assert out == "real steer"
@@ -100,13 +101,97 @@ def test_pause_menu_slash_commands(tmp_path: Path, capsys: pytest.CaptureFixture
     assert pause_menu(tmp_path, input_fn=_feed([])) is None
 
 
-def test_pause_menu_completer_cycles_commands() -> None:
-    from agent6.ui.cli._steer_menu import _complete  # pyright: ignore[reportPrivateUsage]
+def test_pause_menu_prefixes_and_word_rule(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A unique prefix fires the command, an ambiguous one re-asks, and a line
+    with spaces is always a steering instruction (no quoting needed)."""
+    from agent6.ui.cli._steer_menu import pause_menu
 
-    matches = []
-    state = 0
-    while (m := _complete("/st", state)) is not None:
-        matches.append(m)
-        state += 1
-    assert matches == ["/status", "/stop"]
+    (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+    # /sta is uniquely /status; /st matches /status and /stop -> re-ask.
+    assert pause_menu(tmp_path, input_fn=_feed(["/sta", "/st", "/stop"])) == "abort"
+    printed = capsys.readouterr().out
+    assert "running" in printed  # /sta printed the status line
+    assert "ambiguous" in printed and "/status" in printed and "/stop" in printed
+    # A multi-word line starting with "/" is a steer, never a command.
+    assert pause_menu(tmp_path, input_fn=_feed(["/stop hammering the API"])) == (
+        "/stop hammering the API"
+    )
+    # /h is the /help alias.
+    assert pause_menu(tmp_path, input_fn=_feed(["/h", "go"])) == "go"
+    assert "/detach" in capsys.readouterr().out
+
+
+def test_pause_menu_compact_requests_compaction(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from agent6.ui.bridge.approval import compact_request_pending
+    from agent6.ui.cli._steer_menu import pause_menu
+
+    (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+    assert pause_menu(tmp_path, input_fn=_feed(["/compact"])) is None  # EOF -> continue
+    assert compact_request_pending(tmp_path) is True
+    assert "compaction requested" in capsys.readouterr().out
+
+
+def test_pause_menu_status_shows_ctx_and_profile(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """/status includes the context fill (tokens + % of the model window) and
+    the sandbox profile the run started with."""
+    import json
+
+    from agent6.ui.cli._steer_menu import pause_menu
+
+    (tmp_path / "logs.jsonl").write_text(
+        "".join(
+            json.dumps(e) + "\n"
+            for e in (
+                {"type": "run.start", "user_task": "polish", "mode": "run"},
+                {
+                    "type": "role.call",
+                    "role": "worker",
+                    "provider": "anthropic",
+                    "model": "claude-sonnet-4-5",
+                },
+                {"type": "role.result", "role": "worker", "tokens_in": 90_000, "tokens_out": 10},
+            )
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "manifest.json").write_text(json.dumps({"profile": "paranoid"}), encoding="utf-8")
+    assert pause_menu(tmp_path, input_fn=_feed(["/status"])) is None
+    printed = capsys.readouterr().out
+    assert "ctx 90,000 tok" in printed
+    assert "(45%)" in printed  # 90k of the 200k sonnet window
+    assert "profile paranoid" in printed
+
+
+def test_pause_menu_completer_cycles_commands(monkeypatch: pytest.MonkeyPatch) -> None:
+    import readline
+
+    from agent6.ui.cli._steer_menu import (
+        COMMANDS,
+        _complete,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    def _cycle(text: str) -> list[str]:
+        matches: list[str] = []
+        state = 0
+        while (m := _complete(text, state)) is not None:
+            matches.append(m)
+            state += 1
+        return matches
+
+    monkeypatch.setattr(readline, "get_line_buffer", lambda: "/st")
+    monkeypatch.setattr(readline, "get_begidx", lambda: 0)
+    assert _cycle("/st") == ["/status", "/stop"]
     assert _complete("plain text", 0) is None  # only slash commands complete
+    # Tab on an empty line lists every command.
+    monkeypatch.setattr(readline, "get_line_buffer", lambda: "")
+    assert _cycle("") == list(COMMANDS)
+    # Tab inside steer text is inert: only the first word completes.
+    monkeypatch.setattr(readline, "get_line_buffer", lambda: "fix the /st")
+    monkeypatch.setattr(readline, "get_begidx", lambda: 8)
+    assert _complete("/st", 0) is None
