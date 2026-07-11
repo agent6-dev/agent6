@@ -16,7 +16,8 @@ from agent6.tools.errors import ToolError
 # so we defend in cheap layers: cap the pattern length; statically reject the
 # classic nested-unbounded-quantifier shape AND the common single-quantifier
 # catastrophic shapes (overlapping alternation under a repeat like '(a|a)*' /
-# '(a|ab)*', and adjacent unbounded quantifiers over the same atom like 'a*a*');
+# '(a|ab)*', adjacent unbounded quantifiers over the same atom like 'a*a*', and a
+# bounded-but-variable inner repeat under an unbounded outer like '(a{1,2})+');
 # and bound total grep wall-clock across files AND lines. The static screen is
 # conservative (it may reject a safe pattern; the caller can rephrase) and not
 # exhaustive. RESIDUAL: a catastrophic pattern not recognised by the screen can
@@ -233,6 +234,78 @@ def _has_adjacent_unbounded_quantifiers(pattern: str) -> bool:
     return False
 
 
+def _quantifier_is_bounded_variable(pattern: str, k: int) -> bool:
+    """At index *k*, is there a BOUNDED but variable-length quantifier ``{m,n}``
+    with a finite upper bound ``n >= 2`` and ``m != n`` (e.g. ``{1,2}``,
+    ``{2,4}``)? Such a repeat lets one atom match several lengths, so tiling a
+    long run is ambiguous. ``{m}`` (fixed) and ``{m,}`` (unbounded, caught by the
+    nested-unbounded screen) are excluded."""
+    if k >= len(pattern) or pattern[k] != "{":
+        return False
+    close = pattern.find("}", k)
+    if close == -1:
+        return False
+    lo, sep, hi = pattern[k + 1 : close].partition(",")
+    if not sep or hi == "" or not (lo.isdigit() and hi.isdigit()):
+        return False
+    return int(hi) >= 2 and int(lo) != int(hi)
+
+
+def _body_is_single_bounded_variable_repeat(body: str) -> bool:
+    """True when *body* is exactly one atom followed by a bounded-variable
+    quantifier and nothing else -- ``a{1,2}``, ``\\w{2,5}``, ``(ab){1,3}``,
+    ``(?:x){0,2}``. That is the shape that backtracks catastrophically once an
+    unbounded outer quantifier repeats it; ``foo{2,4}bar`` (fixed boundaries
+    around it) is not, so it is left alone."""
+    if body.startswith("?:"):
+        body = body[2:]
+    n = len(body)
+    if n == 0:
+        return False
+    c = body[0]
+    if c == "\\":
+        i = 2
+    elif c == "[":
+        i = _skip_char_class(body, 0)
+    elif c == "(":
+        i = _group_body_end(body, 0)
+        if i == -1:
+            return False
+    else:
+        i = 1
+    if not _quantifier_is_bounded_variable(body, i):
+        return False
+    return body.find("}", i) == n - 1  # the quantifier is the entire tail
+
+
+def _has_bounded_variable_repeat_under_quantifier(pattern: str) -> bool:
+    """True for ``(a{1,2})+`` / ``(\\w{2,5})*`` … a group that is a single
+    bounded-variable repeat, followed by an unbounded quantifier. The inner
+    ``{1,2}`` slips past the nested-UNBOUNDED screen (it is bounded), but the
+    outer ``+`` over a variable-length group still backtracks exponentially."""
+    j, n = 0, len(pattern)
+    while j < n:
+        c = pattern[j]
+        if c == "\\":
+            j += 2
+            continue
+        if c == "[":
+            j = _skip_char_class(pattern, j)
+            continue
+        if c == "(":
+            k = _group_body_end(pattern, j)
+            if (
+                k != -1
+                and _quantifier_is_unbounded(pattern, k)
+                and _body_is_single_bounded_variable_repeat(pattern[j + 1 : k - 1])
+            ):
+                return True
+            j += 1
+            continue
+        j += 1
+    return False
+
+
 def reject_pathological_regex(pattern: str) -> None:
     """Raise ToolError if *pattern* is over-long or matches a catastrophic
     shape; otherwise return (it may still be compiled)."""
@@ -257,4 +330,9 @@ def reject_pathological_regex(pattern: str) -> None:
             "grep pattern has adjacent unbounded quantifiers over the same atom "
             "(e.g. 'a*a*') that can cause catastrophic backtracking; collapse them "
             "into a single repeat."
+        )
+    if _has_bounded_variable_repeat_under_quantifier(pattern):
+        raise ToolError(
+            "grep pattern repeats a variable-length group (e.g. '(a{1,2})+') that can "
+            "cause catastrophic backtracking; rewrite it without the nested repeat."
         )
