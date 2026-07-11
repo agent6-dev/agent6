@@ -5,25 +5,23 @@
 Rich input that stays INLINE (never the alternate screen), so the terminal's
 native scrollback and copy/paste keep working:
 
-- ``radio_select``: arrow-key single choice for ask_user options, by default with
-  a "type your own answer" free-text escape. With ``allow_back`` it also reports
-  series navigation (``RadioNav.BACK`` / ``RadioNav.SKIP``) so a caller can walk a
-  question series one question at a time; that series flow lives in
-  ``_interact._ask_series_tty``.
+- ``radio_select``: arrow-key single choice for ask_user options, always with a
+  "type your own answer" free-text escape.
+- ``ask_navigate``: arrow-key forward/back navigator over a multi-question series —
+  answer in any order, go back to change one, then submit.
 - ``ptk_prompt``: a line editor with slash-command completion + history
   auto-suggest, for the steer / command line.
 
-Off a tty ``radio_select`` returns ``RadioNav.CANCEL`` and ``ptk_prompt`` returns
-``None``, so every caller keeps its plain fallback. The radio widget is a
-non-full-screen ``Application`` with ``erase_when_done`` (not ``radiolist_dialog``,
-which takes over the whole screen and destroys scrollback); the caller prints the
-chosen answer as an ordinary line so it lands in scrollback."""
+Both return ``None`` when there is no controlling terminal, so every caller keeps
+its plain fallback. The radio widget is a non-full-screen ``Application`` with
+``erase_when_done`` (not ``radiolist_dialog``, which takes over the whole screen
+and destroys scrollback); the caller prints the chosen answer as an ordinary line
+so it lands in scrollback."""
 
 from __future__ import annotations
 
-import enum
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from prompt_toolkit import PromptSession
@@ -41,44 +39,16 @@ def on_tty() -> bool:
     return sys.stdin.isatty() and sys.stdout.isatty()
 
 
-class RadioNav(enum.Enum):
-    """Non-answer outcomes of ``radio_select``."""
-
-    BACK = enum.auto()  # left arrow: go to the previous question
-    SKIP = enum.auto()  # esc in a series: leave this question unanswered, move on
-    CANCEL = enum.auto()  # Ctrl-C (or esc outside a series, or no tty): abandon
-
-
-_FREE_TEXT = "Type your own answer..."
-
-
-def radio_select(
-    question: str,
-    options: Sequence[str],
-    *,
-    prefix: str = "",
-    initial: int = 0,
-    allow_back: bool = False,
-    free_text: bool = True,
-) -> str | RadioNav:
-    """Inline arrow-key single choice over ``options``. With ``free_text`` (the
-    default) a final "type your own answer" entry opens a line editor so the
-    operator is never boxed into the listed choices; backing out of it (Ctrl-C /
-    Ctrl-D) returns to the radio rather than cancelling. ``initial`` preselects an
-    entry (revisiting an answered question). With ``allow_back`` the widget is part
-    of a series: left returns ``RadioNav.BACK`` and esc ``RadioNav.SKIP``; otherwise
-    esc cancels. Returns the chosen or typed answer, or a ``RadioNav``
-    (``CANCEL`` when there is no tty, so the caller keeps its plain fallback)."""
+def radio_select(question: str, options: Sequence[str], *, prefix: str = "") -> str | None:
+    """Inline arrow-key single choice over ``options``, ALWAYS with a final "type
+    your own answer" entry so the operator is never boxed into the listed choices
+    (choose it to enter free text / a message to the agent). Returns the chosen
+    option, the typed answer, or ``None`` (no tty / cancelled) to fall back."""
     if not options or not on_tty():
-        return RadioNav.CANCEL
-    entries = [*options, _FREE_TEXT] if free_text else list(options)
-    custom_idx = len(options) if free_text else None
-    state = {"i": min(max(initial, 0), len(entries) - 1)}
-    hint = (
-        "  ↑/↓ move · enter select · ← back · esc skip"
-        if allow_back
-        else "  ↑/↓ move · enter select · esc cancel"
-    )
+        return None
+    custom_idx = len(options)
+    entries = [*options, "Type your own answer..."]
+    state = {"i": 0}
 
     def render() -> list[tuple[str, str]]:
         lines: list[tuple[str, str]] = [("bold", f"{prefix}{question}\n")]
@@ -87,7 +57,7 @@ def radio_select(
             bullet = "●" if picked else "○"
             cls = "class:sel" if picked else ("class:custom" if idx == custom_idx else "")
             lines.append((cls, f"  {bullet} {opt}\n"))
-        lines.append(("class:hint", hint))
+        lines.append(("class:hint", "  ↑/↓ move · enter select · esc cancel"))
         return lines
 
     kb = KeyBindings()
@@ -107,41 +77,109 @@ def radio_select(
         event.app.exit(result=state["i"])
 
     @kb.add("c-c")
-    def _cancel(event: Any) -> None:
-        event.app.exit(result=RadioNav.CANCEL)
-
     @kb.add("escape")
-    def _skip(event: Any) -> None:
-        event.app.exit(result=RadioNav.SKIP if allow_back else RadioNav.CANCEL)
+    def _cancel(event: Any) -> None:
+        event.app.exit(result=None)
 
-    if allow_back:
+    window = Window(FormattedTextControl(render, focusable=True), dont_extend_height=True)
+    app: Application[int | None] = Application(
+        layout=Layout(window),
+        key_bindings=kb,
+        style=Style.from_dict(
+            {"sel": "reverse", "custom": "italic fg:#8888ff", "hint": "italic fg:#888888"}
+        ),
+        full_screen=False,  # inline: scrollback preserved
+        erase_when_done=True,  # drop the widget; the caller prints the chosen line
+        mouse_support=False,
+    )
+    idx = app.run()
+    if idx is None:
+        return None
+    if idx == custom_idx:  # "type your own" -> a free-text line editor
+        typed = ptk_prompt(f"{prefix}{question}\n> ")
+        return typed.strip() if typed is not None else None
+    return options[idx]
 
-        @kb.add("left")
-        def _back(event: Any) -> None:
-            event.app.exit(result=RadioNav.BACK)
+
+def ask_navigate(questions: Sequence[str], answer: Callable[[int], str | None]) -> list[str] | None:
+    """Inline forward/back navigator over a question series: one "question -> answer"
+    row per question plus a submit row. ↑/↓ move between questions FREELY (answer in
+    any order, go back to change one); enter answers the selected question (via
+    ``answer(i)``, which opens that question's radio / line editor) and auto-advances
+    to the next unanswered; the ✓ submit row (or esc) submits. Returns the answers,
+    or ``None`` with no tty so the caller keeps the plain numbered fallback."""
+    if not questions or not on_tty():
+        return None
+    n = len(questions)
+    answers = ["" for _ in questions]
+    answered = [False] * n
+    sel = {"i": 0}
+
+    def render() -> list[tuple[str, str]]:
+        lines: list[tuple[str, str]] = [
+            ("bold", "Answer these (↑/↓ move · enter to answer · esc/✓ submit):\n")
+        ]
+        for i, q in enumerate(questions):
+            picked = i == sel["i"]
+            mark = "▸" if picked else " "
+            shown = answers[i] if answered[i] else "(not answered)"
+            cls = "class:sel" if picked else ("" if answered[i] else "class:todo")
+            lines.append((cls, f"  {mark} {q}  →  {shown}\n"))
+        at_submit = sel["i"] == n
+        lines.append(
+            ("class:ok" if at_submit else "class:hint", f"  {'▸' if at_submit else ' '} ✓ submit\n")
+        )
+        lines.append(("class:hint", "  ↑/↓ move · enter answer/submit · esc submit as-is"))
+        return lines
+
+    kb = KeyBindings()
+
+    @kb.add("up")
+    @kb.add("c-p")
+    def _up(event: Any) -> None:
+        sel["i"] = (sel["i"] - 1) % (n + 1)
+
+    @kb.add("down")
+    @kb.add("c-n")
+    def _down(event: Any) -> None:
+        sel["i"] = (sel["i"] + 1) % (n + 1)
+
+    @kb.add("enter")
+    def _pick(event: Any) -> None:
+        event.app.exit(result=sel["i"])
+
+    @kb.add("c-c")
+    @kb.add("c-d")
+    @kb.add("escape")
+    def _submit(event: Any) -> None:
+        event.app.exit(result=n)
 
     style = Style.from_dict(
-        {"sel": "reverse", "custom": "italic fg:#8888ff", "hint": "italic fg:#888888"}
+        {
+            "sel": "reverse",
+            "todo": "fg:#cc8800",
+            "ok": "bold fg:#22aa22",
+            "hint": "italic fg:#888888",
+        }
     )
     while True:
         window = Window(FormattedTextControl(render, focusable=True), dont_extend_height=True)
-        app: Application[int | RadioNav] = Application(
+        app: Application[int] = Application(
             layout=Layout(window),
             key_bindings=kb,
             style=style,
-            full_screen=False,  # inline: scrollback preserved
-            erase_when_done=True,  # drop the widget; the caller prints the chosen line
+            full_screen=False,
+            erase_when_done=True,
             mouse_support=False,
         )
-        got = app.run()
-        if isinstance(got, RadioNav):
-            return got
-        if got == custom_idx:  # "type your own" -> a free-text line editor
-            typed = ptk_prompt(f"{prefix}{question}\n> ")
-            if typed is None:  # backed out of the editor: re-show the radio
-                continue
-            return typed.strip()
-        return options[got]
+        chosen = app.run()
+        if chosen >= n:  # the submit row (or esc/ctrl-c/ctrl-d, which submit as-is)
+            return answers
+        new = answer(chosen)
+        if new is not None:
+            answers[chosen] = new
+            answered[chosen] = True
+            sel["i"] = next((j for j in range(n) if not answered[j]), n)  # next unanswered / submit
 
 
 def ptk_prompt(
