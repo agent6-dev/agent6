@@ -42,9 +42,6 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 
 from agent6.config.layer import (
     PROVIDER_PRESETS,
-    ConfigSetting,
-    ConfigView,
-    build_config_view,
     load_effective,
     provider_choices,
     set_config_table,
@@ -62,6 +59,11 @@ from agent6.ui.tui.widgets import (
     TypeaheadField,
     choice_field,
     focus_neighbor,
+)
+from agent6.ui.viewmodel.config_view import (
+    ConfigSetting,
+    ConfigView,
+    build_config_view,
 )
 
 

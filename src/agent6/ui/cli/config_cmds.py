@@ -21,11 +21,9 @@ from agent6.config.io import (
 )
 from agent6.config.layer import (
     effective_leaf,
-    format_value,
     load_effective,
     load_effective_with_overlay,
     materialize,
-    render_show,
     repo_config_path_for,
 )
 from agent6.machine import MachineError, load_machine
@@ -35,6 +33,7 @@ from agent6.paths import (
     global_config_path,
     secrets_path,
 )
+from agent6.ui.viewmodel.config_view import format_value, render_show
 
 
 def _cmd_config_show(config_path: Path | None, *, as_json: bool) -> int:

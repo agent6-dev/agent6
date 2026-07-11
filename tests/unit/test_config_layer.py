@@ -10,15 +10,17 @@ import pytest
 
 from agent6.config import ConfigError, load_config
 from agent6.config.layer import (
-    ConfigSetting,
-    ConfigView,
-    build_config_view,
     load_effective,
     materialize,
-    render_show,
     repo_config_path_for,
     set_config_value,
     unset_config_value,
+)
+from agent6.ui.viewmodel.config_view import (
+    ConfigSetting,
+    ConfigView,
+    build_config_view,
+    render_show,
 )
 
 _GLOBAL = """\
