@@ -25,6 +25,7 @@ from agent6.ui.viewmodel.transcript import (
     CALL,
     COMMIT,
     DONE,
+    OPERATOR,
     RESULT,
     THINK,
     TranscriptItem,
@@ -46,6 +47,7 @@ StyleName = Literal[
     "done-fail",
     "body",
     "done-detail",
+    "operator",
 ]
 Span = tuple[str, StyleName]
 Line = list[Span]
@@ -105,6 +107,12 @@ def item_lines(item: TranscriptItem, *, detail: DetailLevel) -> list[Line]:
         lines.extend([(ln, "text")] for ln in item.body.split("\n"))
     elif item.kind == "tool":
         lines.extend(_tool_lines(item, expanded=detail == "expanded"))
+    elif item.kind == "operator":
+        # The operator's own words (steer / resume follow-up): always shown in
+        # full at every detail level -- it is the other half of the dialogue.
+        body_lines = item.body.split("\n")
+        lines.append([(f"{OPERATOR} ", "operator"), (body_lines[0], "operator")])
+        lines.extend([(f"  {ln}", "operator")] for ln in body_lines[1:])
     elif item.kind == "commit":
         lines.append([(f"{COMMIT} commit  {item.detail}", "commit")])
     elif item.kind == "marker":

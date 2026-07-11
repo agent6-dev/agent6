@@ -328,3 +328,32 @@ def test_resume_start_unfinishes_the_run() -> None:
     s = apply_event(s, {"type": "loop.resume.start"})
     assert not s.finished and s.end_reason == ""
     assert run_status_label(s) == "running"
+
+
+def test_role_result_tracks_context_tokens_and_provider() -> None:
+    """role.call carries the provider; role.result folds the call's full prompt
+    (fresh + cache read + cache write) into ctx_tokens -- the context size the
+    ctx% readout is computed from. The value survives the next role.call (no
+    per-turn blink) and an error result without usage keeps the last known."""
+    from agent6.ui.viewmodel.state import apply_event, initial_state
+
+    s = initial_state()
+    s = apply_event(s, {"type": "role.call", "role": "worker", "model": "m", "provider": "p"})
+    assert s.last_role is not None and s.last_role.provider == "p"
+    assert s.last_role.ctx_tokens == 0  # nothing measured yet
+    s = apply_event(
+        s,
+        {
+            "type": "role.result",
+            "role": "worker",
+            "ok": True,
+            "tokens_in": 1_000,
+            "cache_read": 40_000,
+            "cache_creation": 2_000,
+        },
+    )
+    assert s.last_role is not None and s.last_role.ctx_tokens == 43_000
+    s = apply_event(s, {"type": "role.call", "role": "worker", "model": "m", "provider": "p"})
+    assert s.last_role is not None and s.last_role.ctx_tokens == 43_000  # carried over
+    s = apply_event(s, {"type": "role.result", "role": "worker", "ok": False, "error": "boom"})
+    assert s.last_role is not None and s.last_role.ctx_tokens == 43_000  # kept on error

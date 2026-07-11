@@ -138,7 +138,7 @@ def test_tools_table_maximizes_to_full_height(tmp_path: Path) -> None:
             table.focus()
             await pilot.pause()
             resting_h = table.size.height
-            await pilot.press("f")  # maximize
+            app._dash.action_fullscreen()  # View menu / palette action (no bare letter)
             await pilot.pause()
             assert app.screen.maximized is table
             assert table.has_class("-maximized")
@@ -180,7 +180,7 @@ def test_plan_tree_maximizes_to_full_width(tmp_path: Path) -> None:
             tree.focus()
             await pilot.pause()
             resting_w = tree.size.width
-            await pilot.press("f")  # maximize
+            app._dash.action_fullscreen()  # View menu / palette action (no bare letter)
             await pilot.pause()
             assert app.screen.maximized is tree
             assert tree.has_class("-maximized")
@@ -339,9 +339,9 @@ def test_render_and_modals(tmp_path: Path) -> None:
 
 def test_back_and_quit_exit_codes(tmp_path: Path) -> None:
     """Esc leaves the run view for the hub (exit 0) from both the conversation and
-    the dashboard; q works on the dashboard only (the conversation's steer bar owns
-    plain letters); Ctrl+Q quits the hub (QUIT_HUB_CODE) from anywhere. Standalone,
-    every one of them just closes (0)."""
+    the dashboard (their composer bars own plain letters, so there is no q alias);
+    Ctrl+Q quits the hub (QUIT_HUB_CODE) from anywhere. Standalone, every one of
+    them just closes (0)."""
     from agent6.ui.tui.app import QUIT_HUB_CODE
 
     async def press(from_hub: bool, *keys: str) -> int | None:
@@ -356,7 +356,6 @@ def test_back_and_quit_exit_codes(tmp_path: Path) -> None:
 
     assert asyncio.run(press(True, "escape")) == 0  # conversation Esc -> back to the hub
     assert asyncio.run(press(True, "ctrl+d", "escape")) == 0  # dashboard Esc -> the hub
-    assert asyncio.run(press(True, "ctrl+d", "q")) == 0  # dashboard q backs out too
     assert asyncio.run(press(True, "ctrl+q")) == QUIT_HUB_CODE  # only Ctrl+Q quits the hub
     assert asyncio.run(press(False, "escape")) == 0  # standalone: just close
     assert asyncio.run(press(False, "ctrl+q")) == 0  # standalone: just close
@@ -376,7 +375,7 @@ def test_dashboard_pane_maximize_and_restore(tmp_path: Path) -> None:
             diff = app._dash.query_one("#diff")
             diff.focus()
             await pilot.pause()
-            await pilot.press("f")  # maximize the focused pane
+            app._dash.action_fullscreen()  # maximize the focused pane
             await pilot.pause()
             assert app.screen.maximized is diff
             await pilot.press("escape")  # Esc restores, does NOT exit to the hub
@@ -384,10 +383,10 @@ def test_dashboard_pane_maximize_and_restore(tmp_path: Path) -> None:
             assert app.screen.maximized is None
             assert app.return_value is None  # still running; Esc was consumed by minimize
             diff.focus()
-            await pilot.press("f")
+            app._dash.action_fullscreen()
             await pilot.pause()
             assert app.screen.maximized is diff
-            await pilot.press("f")  # f toggles back too
+            app._dash.action_fullscreen()  # the action toggles back too
             await pilot.pause()
             assert app.screen.maximized is None
 
@@ -412,7 +411,8 @@ def test_dashboard_diff_pane_scrolls(tmp_path: Path) -> None:
             diff = app._dash.query_one("#diff")
             assert diff.max_scroll_y > 0  # content overflows the pane -> scrollable
             diff.focus()
-            await pilot.press("f")  # maximize, then it must still scroll
+            await pilot.pause()  # focus() defers; land it before maximizing
+            app._dash.action_fullscreen()  # maximize, then it must still scroll
             await pilot.pause()
             assert app.screen.maximized is diff
             assert diff.max_scroll_y > 0
@@ -447,20 +447,30 @@ def test_dashboard_inline_log_is_a_bounded_gapless_window(tmp_path: Path) -> Non
     asyncio.run(scenario())
 
 
-def test_dashboard_footer_shows_one_dual_back_key(tmp_path: Path) -> None:
-    """Back is a single 'Esc/q' footer entry (q and Esc both back out), not two
-    separate Esc/q entries -- via key_display on the shown binding + a hidden q."""
+def test_conversation_and_dashboard_footers_match(tmp_path: Path) -> None:
+    """The two run views share one shortcut scheme: identical footer entries in
+    the same order (only the Ctrl+D label differs: Dashboard vs Conversation),
+    Ctrl+D leftmost, and no plain-letter keys (the composer bars own letters)."""
     from textual.widgets._footer import FooterKey
 
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
         app = Agent6TUI(tmp_path, from_hub=True)
         async with app.run_test(size=(120, 30)) as pilot:
-            await _show_dashboard(pilot)
             await pilot.pause()
-            displays = [fk.key_display for fk in app.screen.query(FooterKey)]
-            assert displays.count("Esc/q") == 1  # exactly one combined Back entry
-            assert "q" not in displays  # the q alias is hidden, not a 2nd entry
+            conv = [(fk.key_display, fk.description) for fk in app.screen.query(FooterKey)]
+            await pilot.press("ctrl+d")
+            await pilot.pause()
+            dash = [(fk.key_display, fk.description) for fk in app.screen.query(FooterKey)]
+            assert [k for k, _ in conv] == [k for k, _ in dash]  # same keys, same order
+            assert conv[0][0] == "^d" and conv[0][1] == "Dashboard"  # leftmost toggle
+            assert dash[0][1] == "Conversation"
+            toggles = ("Dashboard", "Conversation")
+            assert [lbl for _, lbl in conv if lbl not in toggles] == [
+                lbl for _, lbl in dash if lbl not in toggles
+            ]
+            # No plain single-letter shortcuts on either view.
+            assert all(len(k) > 1 for k, _ in conv + dash)
 
     asyncio.run(scenario())
 
@@ -558,10 +568,10 @@ def test_steer_request_marker_round_trip(tmp_path: Path) -> None:
     assert not steer_request_pending(tmp_path)
 
 
-def test_dashboard_s_key_steers_without_ctrl_c(tmp_path: Path) -> None:
-    """The dashboard 's' focuses the docked composer bar -- no Ctrl-C, no popup --
-    and Enter drops the steer.request marker + the instruction together, for the
-    run to inject at its next boundary."""
+def test_dashboard_bar_is_default_focus_and_steers(tmp_path: Path) -> None:
+    """The dashboard opens ready to type -- the composer bar is the default focus
+    (like the conversation) -- and Enter drops the steer.request marker + the
+    instruction together, for the run to inject at its next boundary."""
     from agent6.ui.bridge.approval import steer_request_pending
     from agent6.ui.tui.conversation import SteerInput
 
@@ -570,11 +580,9 @@ def test_dashboard_s_key_steers_without_ctrl_c(tmp_path: Path) -> None:
         app = Agent6TUI(tmp_path)
         async with app.run_test(size=(100, 30)) as pilot:
             await _show_dashboard(pilot)
-            assert not steer_request_pending(tmp_path)
-            await pilot.press("s")
             bar = app._dash.query_one("#dash-input", SteerInput)
             await _settle_focus(pilot, bar)
-            assert app.focused is bar  # s jumps to the bar; nothing written yet
+            assert app.focused is bar  # default focus: type at once, no popup
             assert not steer_request_pending(tmp_path)
             await pilot.press("g", "o")
             await pilot.press("enter")
@@ -631,9 +639,9 @@ def test_finished_run_bar_resumes_with_the_instruction(tmp_path: Path, monkeypat
     asyncio.run(scenario())
 
 
-def test_dashboard_stop_action_aborts_via_bridge(tmp_path: Path) -> None:
-    """The dedicated Stop action (x) confirms, then writes an abort over the file
-    bridge -- separate from steering, which never stops the run."""
+def test_stop_now_aborts_via_bridge(tmp_path: Path) -> None:
+    """Run > Stop now confirms, then writes an abort over the file bridge -- the
+    stream watchdog interrupts the in-flight turn."""
     from agent6.ui.bridge.approval import steer_request_pending
     from agent6.ui.tui.modals import ConfirmModal
 
@@ -642,13 +650,75 @@ def test_dashboard_stop_action_aborts_via_bridge(tmp_path: Path) -> None:
         app = Agent6TUI(tmp_path)
         async with app.run_test(size=(100, 30)) as pilot:
             await pilot.pause()
-            app.action_stop()
+            app.action_stop_now()
             await pilot.pause()
             assert isinstance(app.screen, ConfirmModal)  # confirms before stopping
             await pilot.press("y")  # confirm
             await pilot.pause()
             assert (tmp_path / "steer.answer").read_text(encoding="utf-8") == "abort"
             assert steer_request_pending(tmp_path)
+
+    asyncio.run(scenario())
+
+
+def test_stop_after_step_drops_the_marker(tmp_path: Path) -> None:
+    """Run > Stop after this step confirms, then drops the stop.request marker the
+    loop honors at its next completed-iteration boundary."""
+    from agent6.ui.bridge.approval import stop_request_pending
+    from agent6.ui.tui.modals import ConfirmModal
+
+    async def scenario() -> None:
+        (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+        app = Agent6TUI(tmp_path)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            assert not stop_request_pending(tmp_path)
+            app.action_stop_step()
+            await pilot.pause()
+            assert isinstance(app.screen, ConfirmModal)  # confirms before stopping
+            await pilot.press("y")  # confirm
+            await pilot.pause()
+            assert stop_request_pending(tmp_path)  # marker for the boundary stop
+            assert not (tmp_path / "steer.answer").exists()  # no mid-turn abort
+
+    asyncio.run(scenario())
+
+
+def test_context_pct_readout_in_top_line_and_bar(tmp_path: Path, monkeypatch: Any) -> None:
+    """With the model's context window known, the dashboard's top line shows
+    `ctx: NN%` and the composer bar's subtitle carries the same readout."""
+    from agent6.ui.tui import app as app_mod
+    from agent6.ui.tui.conversation import SteerInput
+
+    def _window(_provider: str, _model: str) -> int:
+        return 100_000
+
+    monkeypatch.setattr(app_mod, "context_window", _window)
+    (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+
+    async def scenario() -> None:
+        app = Agent6TUI(tmp_path)
+        async with app.run_test(size=(150, 40)) as pilot:
+            await _show_dashboard(pilot)
+            app._handle_event(_ev(type="run.start", user_task="x", mode="run"))
+            app._handle_event(_ev(type="role.call", role="worker", model="m", provider="p"))
+            app._handle_event(
+                _ev(
+                    type="role.result",
+                    role="worker",
+                    ok=True,
+                    tokens_in=1_000,
+                    cache_read=40_000,
+                    cache_creation=0,
+                )
+            )
+            app._tick()
+            await pilot.pause()
+            assert app.context_pct() == 41
+            top = str(app._dash.query_one("#top", Static).render())
+            assert "ctx: 41%" in top
+            bar = app._dash.query_one("#dash-input", SteerInput)
+            assert "ctx 41%" in (bar.border_subtitle or "")
 
     asyncio.run(scenario())
 
@@ -699,7 +769,9 @@ def test_historical_steer_request_does_not_grab_the_bar_on_open(tmp_path: Path) 
     async def scenario() -> None:
         app = Agent6TUI(tmp_path)
         async with app.run_test() as pilot:
-            await _show_dashboard(pilot)  # the dashboard bar starts unfocused
+            await _show_dashboard(pilot)
+            app._dash.query_one("#log").focus()  # park focus off the default-focused bar
+            await pilot.pause()
             for _ in range(50):  # let the reader thread replay the existing log
                 await pilot.pause()
                 if app.state.steer_requests >= 1:
@@ -719,9 +791,9 @@ def test_historical_steer_request_does_not_grab_the_bar_on_open(tmp_path: Path) 
 
 
 def test_toggle_and_log_viewer_keys(tmp_path: Path) -> None:
-    # Ctrl+D flips conversation <-> dashboard (t flips back too); l toggles the
-    # log viewer open/closed from the dashboard (LogScreen binds l -> close), and
-    # the dashboard's keys are screen-scoped so nothing stacks under a viewer.
+    # Ctrl+D flips conversation <-> dashboard even with a composer bar focused
+    # (the default focus on both); the log viewer opens from the View menu (the
+    # run views have no bare letters) and closes with its own keys.
     from agent6.ui.tui.app import DashboardScreen
     from agent6.ui.tui.logview import LogScreen
 
@@ -737,18 +809,21 @@ def test_toggle_and_log_viewer_keys(tmp_path: Path) -> None:
             await pilot.press("ctrl+d")  # show the dashboard
             await pilot.pause()
             assert isinstance(app.screen, DashboardScreen)
+            from agent6.ui.tui.conversation import SteerInput
+
+            assert isinstance(app.focused, SteerInput)  # the bar is the default focus
             depth = len(app.screen_stack)
-            await pilot.press("l")  # open the log
+            app._dash.action_view_logs()  # View menu / palette action (no bare letters)
             await pilot.pause()
             assert isinstance(app.screen, LogScreen)
-            await pilot.press("l")  # LogScreen binds l -> close: one-key toggle
+            await pilot.press("l")  # LogScreen (no input box) keeps its letters
             await pilot.pause()
             assert isinstance(app.screen, DashboardScreen)
             assert len(app.screen_stack) == depth
-            await pilot.press("t")  # t flips back to the conversation
+            await pilot.press("ctrl+d")  # flip back to the conversation (bar focused)
             await pilot.pause()
             assert app.screen is app._conv
-            await pilot.press("ctrl+d")  # and Ctrl+D flips again
+            await pilot.press("ctrl+d")  # and again to the dashboard
             await pilot.pause()
             assert isinstance(app.screen, DashboardScreen)
 

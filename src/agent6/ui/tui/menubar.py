@@ -166,19 +166,22 @@ class HelpScreen(Screen[None]):
     """A full-screen keys & actions page generated from a screen's menus and its
     LIVE key bindings, so it is always complete and accurate: every menu action
     with its shortcut, every visible footer binding a menu doesn't cover, and the
-    screen's extra interaction hints. Sections flow into up-to-3 columns sized to
-    the terminal when the page opens. Esc/q (or ? again) closes."""
+    screen's extra interaction hints. Sections flow into up-to-3 centered columns
+    and REFLOW when the terminal resizes. Esc/q (or ? again) closes."""
 
     BINDINGS: ClassVar = [Binding("escape,q,question_mark,f1", "dismiss", "Close", show=False)]
     CSS = """
     HelpScreen { background: $surface; }
     #help-title { dock: top; height: 1; padding: 0 1; background: $panel; text-style: bold; }
     #help-foot { dock: bottom; height: 1; padding: 0 1; background: $panel; color: $text-muted; }
-    #help-scroll { height: 1fr; padding: 0 2 1 2; }
-    #help-columns { height: auto; }
+    /* The column block is centered as one unit (auto width inside the
+       centering scroll container). */
+    #help-scroll { height: 1fr; padding: 1 2; align-horizontal: center; }
+    #help-columns { width: auto; height: auto; }
     /* Columns hug their content; the Statics must be width:auto too (their 1fr
-       default collapses to 0 inside an auto-width parent). */
-    .help-col { width: auto; height: auto; margin-right: 6; }
+       default collapses to 0 inside an auto-width parent). Symmetric margins =
+       a 6-cell gap between columns and 3 outside, so centering stays true. */
+    .help-col { width: auto; height: auto; margin: 0 3; }
     .help-col Static { width: auto; }
     .help-menu { text-style: bold; color: $accent; padding-top: 1; }
     """
@@ -226,7 +229,7 @@ class HelpScreen(Screen[None]):
         sections = self._sections()
         sizes = [len(rows) + 1 for _, rows in sections]  # +1 per heading
         total = sum(sizes)
-        ncols = min(max(1, self.app.size.width // 50), 3, len(sections))
+        ncols = min(max(1, self.size.width // 50), 3, len(sections))
         prefix = list(accumulate(sizes))
         breaks = sorted(
             {
@@ -269,6 +272,11 @@ class HelpScreen(Screen[None]):
 
     def on_mount(self) -> None:
         self.query_one("#help-scroll", VerticalScroll).focus()  # PgUp/PgDn scroll at once
+
+    def on_resize(self) -> None:
+        # Reflow: the column count is computed from the width at compose time,
+        # so a terminal resize rebuilds the page (cheap: a few dozen Statics).
+        self.refresh(recompose=True)
 
 
 class _MenuTitle(Static):

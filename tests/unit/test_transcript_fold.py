@@ -113,3 +113,23 @@ def test_stopped_run_done_reads_as_stopped_not_failed() -> None:
     # failure -- the CLI/TUI done line shows item.name for a not-ok run.
     (done,) = fold_transcript([{"type": "run.end", "reason": "steer_abort", "all_passed": False}])
     assert done.kind == "done" and done.ok is False and done.name == "stopped"
+
+
+def test_operator_steer_text_becomes_an_operator_item() -> None:
+    """The loop's steer injection (a typed steer, or the follow-up a resume was
+    started with) shows in the conversation as an operator turn; old logs that
+    carry only a char count yield nothing."""
+    from agent6.ui.viewmodel.transcript import OPERATOR, TranscriptFold
+    from agent6.ui.viewmodel.transcript_style import item_lines
+
+    fold = TranscriptFold()
+    items = fold.feed({"type": "loop.steer.injected", "chars": 9, "text": "try it\nagain"})
+    assert [i.kind for i in items] == ["operator"]
+    assert items[0].body == "try it\nagain"
+    # Rendered at every detail level, glyph + the operator's own words.
+    for level in ("hidden", "collapsed", "expanded"):
+        lines = item_lines(items[0], detail=level)
+        flat = "".join(chunk for line in lines for chunk, _ in line)
+        assert f"{OPERATOR} try it" in flat and "again" in flat
+    # An old log without the text field adds no item.
+    assert fold.feed({"type": "loop.steer.injected", "chars": 9}) == []

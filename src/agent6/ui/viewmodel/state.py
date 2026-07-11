@@ -90,6 +90,13 @@ class RoleCall:
     role: str
     model: str
     in_flight: bool
+    # The provider that dialled the model (role.call carries it); pairs with
+    # `model` for the registry's context-window lookup.
+    provider: str = ""
+    # Context size at the LAST COMPLETED call: the full prompt in tokens
+    # (fresh input + cache reads + cache writes -- input_tokens is normalised
+    # to fresh-only across providers). 0 until a result lands.
+    ctx_tokens: int = 0
     # Live SSE text accumulator. Reset on every role.call,
     # appended-to on each role.text_delta, frozen on role.result.
     streamed_text: str = ""
@@ -175,6 +182,14 @@ STREAM_DELTA_EVENTS = frozenset({"role.thinking_delta", "role.text_delta"})
 LOG_NOISE_EVENTS = frozenset({"loop.tool.call", "loop.budget"})
 
 
+def _as_int(value: object) -> int:
+    """An event field as an int; 0 for anything unusable (untrusted log data)."""
+    try:
+        return int(value)  # type: ignore[arg-type]  # int() rejects bad types itself
+    except (TypeError, ValueError):
+        return 0
+
+
 def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PLR0911, PLR0912, PLR0915
     """Fold one event into the run state. Pure function."""
     etype = event.get("type", "")
@@ -220,12 +235,17 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
             )
 
         case "role.call":
+            prior = state.last_role
             return replace(
                 state,
                 last_role=RoleCall(
                     role=str(event.get("role", "")),
                     model=str(event.get("model", "")),
                     in_flight=True,
+                    provider=str(event.get("provider", "")),
+                    # Keep the last known context size until this call's result
+                    # lands, so the readout doesn't blink to nothing per turn.
+                    ctx_tokens=prior.ctx_tokens if prior is not None else 0,
                     streamed_text="",
                     streamed_thinking="",
                 ),
@@ -263,7 +283,18 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
             last = state.last_role
             if last is None:
                 return state
-            return replace(state, last_role=replace(last, in_flight=False))
+            # The full prompt of this call = the context size right now.
+            ctx = (
+                _as_int(event.get("tokens_in"))
+                + _as_int(event.get("cache_read"))
+                + _as_int(event.get("cache_creation"))
+            )
+            return replace(
+                state,
+                last_role=replace(
+                    last, in_flight=False, ctx_tokens=ctx if ctx > 0 else last.ctx_tokens
+                ),
+            )
 
         case "tool.call":
             raw_args = event.get("args", {}) or {}

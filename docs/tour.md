@@ -26,15 +26,15 @@ live. A live run keeps a steer bar at the bottom.
 
 `Ctrl+D` toggles the dashboard: the task graph beside the model's live reasoning, then
 the tool calls with their results, and the event log and latest commit diff side by
-side. A budget bar runs along the foot, and `f` maximizes the focused pane to full
-screen.
+side. The composer bar runs along the foot (type to steer, or to resume a finished
+run with a follow-up), and the View menu maximizes the focused pane to full screen.
 
 ![The run dashboard](screenshots/out/02-run-dashboard.png)
 
 ## Event log
 
-`l` opens the JSONL event stream the dashboard is built from, scrollable over the whole
-run.
+The View menu's Full log opens the JSONL event stream the dashboard is built from,
+scrollable over the whole run.
 
 ![The event log](screenshots/out/09-logs.png)
 

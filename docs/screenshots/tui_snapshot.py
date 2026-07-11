@@ -32,7 +32,7 @@ from pathlib import Path
 from agent6.ui.tui.app import Agent6TUI
 
 # Keypresses to reach each screen from the conversation the app opens on.
-_KEYS: dict[str, list[str]] = {"transcript": [], "dashboard": ["ctrl+d"], "log": ["ctrl+d", "l"]}
+_KEYS: dict[str, list[str]] = {"transcript": [], "dashboard": ["ctrl+d"], "log": ["ctrl+d"]}
 
 
 def _find_chromium() -> str | None:
@@ -86,10 +86,13 @@ async def _snapshot(run_dir: Path, out: Path, screen: str) -> None:
         app._tick()  # force the coalesced repaint (same as the headless tests)
         await pilot.pause()
         for key in _KEYS.get(screen, []):
-            await pilot.press(key)  # toggle to the dashboard / open the log
+            await pilot.press(key)  # toggle to the dashboard
             await pilot.pause()
         app._tick()  # the dashboard repaints only while it is the top screen
         await pilot.pause()
+        if screen == "log":
+            app._dash.action_view_logs()  # View-menu action (no bare letters)
+            await pilot.pause()
         svg = out if out.suffix == ".svg" else out.with_suffix(".svg")
         app.save_screenshot(str(svg))
         if out.suffix == ".png":

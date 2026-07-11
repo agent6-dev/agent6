@@ -3452,7 +3452,7 @@ class Workflow:
             self._log("  detach - stopping to resume in the background")
             return "detach"
         self._log(f"  injecting steering instruction ({len(steer_text)} chars)")
-        self._emit("loop.steer.injected", chars=len(steer_text))
+        self._emit("loop.steer.injected", chars=len(steer_text), text=steer_text)
         messages.append(
             {
                 "role": "user",

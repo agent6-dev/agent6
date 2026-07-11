@@ -290,3 +290,34 @@ def test_conversation_screen_esc_backs_out(tmp_path: Path) -> None:
             assert not isinstance(app.screen, ConversationScreen)  # backed out
 
     asyncio.run(scenario())
+
+
+def test_jump_to_bottom_pill_shows_when_scrolled_up(tmp_path: Path) -> None:
+    """The floating jump pill appears only while the transcript is scrolled up
+    (never displacing layout: it overlays), and clicking home again via its
+    action returns to the tail and hides it."""
+    from agent6.ui.tui.conversation import _JumpButton
+
+    logs = tmp_path / "logs.jsonl"
+    many = [dict(e) for _ in range(30) for e in _EVENTS[:-1]]  # a tall transcript
+    _write(logs, [*many, _EVENTS[-1]])
+
+    async def scenario() -> None:
+        app = _Host(logs)
+        async with app.run_test(size=(90, 24)) as pilot:
+            await pilot.pause()
+            await pilot.pause()
+            jump = app.screen.query_one("#conv-jump", _JumpButton)
+            scroll = app.screen.query_one("#conv-scroll", VerticalScroll)
+            assert scroll.max_scroll_y > 0  # tall enough to scroll
+            assert not jump.display  # following the tail: hidden
+            await pilot.press("ctrl+home")
+            await pilot.pause()
+            await pilot.pause()
+            assert jump.display  # scrolled up: shown
+            await pilot.press("ctrl+end")
+            await pilot.pause()
+            await pilot.pause()
+            assert not jump.display  # back at the tail: hidden
+
+    asyncio.run(scenario())

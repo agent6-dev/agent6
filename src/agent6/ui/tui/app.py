@@ -25,6 +25,7 @@ from __future__ import annotations
 import contextlib
 import inspect
 import os
+import subprocess
 import threading
 import time
 from collections.abc import Callable, Iterable, Iterator
@@ -37,9 +38,11 @@ try:
     from textual.app import App, ComposeResult, SystemCommand
     from textual.binding import Binding
     from textual.command import DiscoveryHit, Hit, Hits, Provider
-    from textual.containers import Horizontal, VerticalScroll
+    from textual.containers import Horizontal, ScrollableContainer, VerticalScroll
     from textual.css.query import NoMatches
     from textual.screen import Screen
+    from textual.scroll_view import ScrollView
+    from textual.widget import Widget
     from textual.widgets import (
         DataTable,
         Footer,
@@ -53,12 +56,14 @@ except ImportError as e:  # pragma: no cover - clear runtime message
         " Reinstall agent6, or `pip install textual`."
     ) from e
 
+from agent6.models.registry import context_window
 from agent6.ui.bridge.approval import (
     clear_frontend_pid,
     clear_steer_answer,
     frontend_is_live,
     request_compact,
     request_steer,
+    request_stop,
     set_session_allow,
     write_answer,
     write_frontend_pid,
@@ -66,7 +71,8 @@ from agent6.ui.bridge.approval import (
     write_steer_answer,
 )
 from agent6.ui.bridge.spawn import agent6_exe, spawn_and_locate, spawn_detached_resume
-from agent6.ui.tui.conversation import ConversationScreen, SteerInput
+from agent6.ui.tui import clipboard
+from agent6.ui.tui.conversation import RUN_MENU, ConversationScreen, SteerInput
 from agent6.ui.tui.copy_method import open_copy_method_picker
 from agent6.ui.tui.logview import LogScreen
 from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
@@ -76,6 +82,7 @@ from agent6.ui.tui.modals import (
     QuestionModal,
     ToolCallDetailModal,
 )
+from agent6.ui.tui.settings import get_copy_method
 from agent6.ui.tui.theme import PALETTE_CSS, open_theme_picker, setup_theme
 from agent6.ui.viewmodel.format import TASK_STATUS_GLYPH, format_cost
 from agent6.ui.viewmodel.state import (
@@ -176,26 +183,17 @@ class DashboardScreen(Screen[None]):
     MENUS: ClassVar = (
         Menu(
             "File",
-            (MenuItem("Back", "to_hub", "Esc/q"), MenuItem("Quit", "quit_hub", "ctrl+q")),
+            (MenuItem("Back", "to_hub"), MenuItem("Quit", "quit_hub", "ctrl+q")),
         ),
-        Menu(
-            "Run",
-            (
-                MenuItem("Steer the run", "steer", "s"),
-                MenuItem("Compact context now", "compact"),
-                MenuItem("Stop the run", "stop", "x"),
-                MenuItem("Resume the run", "resume", "R"),
-                MenuItem("Fork the run", "fork", "k"),
-            ),
-        ),
+        RUN_MENU,  # shared verbatim with the primary conversation view
         Menu(
             "View",
             (
                 MenuItem("Next pane", "focus_next_pane", "tab"),
                 MenuItem("Prev pane", "focus_prev_pane", "shift+tab"),
-                MenuItem("Maximize pane", "fullscreen", "f"),
-                MenuItem("Full log…", "view_logs", "l"),
-                MenuItem("Conversation…", "toggle_dashboard", "t"),
+                MenuItem("Maximize pane", "fullscreen"),
+                MenuItem("Full log…", "view_logs"),
+                MenuItem("Conversation…", "toggle_dashboard"),
                 MenuItem("Theme…", "choose_theme"),
                 MenuItem("Copy method…", "choose_copy_method"),
             ),
@@ -203,36 +201,24 @@ class DashboardScreen(Screen[None]):
         Menu(
             "Help",
             (
-                MenuItem("Keys & actions", "help", "question_mark"),
+                MenuItem("Keys & actions", "help"),
                 MenuItem("Command palette", "command_palette", "ctrl+p"),
             ),
         ),
     )
+    # The composer bar is the default focus, so -- exactly like the conversation
+    # view -- there are no plain-letter shortcuts: the same priority-bound set,
+    # in the same footer order, on both screens. Run control lives in the Run
+    # menu and the palette. `?` opens help when focus is not in the bar.
     BINDINGS: ClassVar = [
-        # Footer order: page action, then meta (Help, Back, Menu) -- matching the
-        # home + config footers. The dashboard is one level below the hub, so q
-        # (like Esc) backs out TO the hub; only the root hub quits on q. Ctrl+Q is
-        # the app-wide hard quit (bound on the App so it works from any screen).
-        # (Esc on an open modal cancels it first -- the modal consumes the key.)
-        Binding("s", "steer", "Steer", show=True),
-        Binding("x", "stop", "Stop", show=True),
-        Binding("R", "resume", "Resume", show=False),  # Shift+R: no accidental resume
-        Binding("k", "fork", "Fork", show=False),
-        Binding("l", "view_logs", "Full log", show=True),
-        # t and Ctrl+D both flip back to the conversation (Ctrl+D is the same
-        # key the conversation uses, t stays for dashboard muscle memory).
-        Binding("t", "toggle_dashboard", "Conversation", show=True),
-        Binding("ctrl+d", "toggle_dashboard", "Conversation", show=False),
-        # No g/G scroll keys: every pane is a focusable scroll container, so the
-        # native PgUp/PgDn + Home/End already scroll whichever pane is focused --
-        # the same keys as the log/conversation viewers.
-        Binding("f", "fullscreen", "Fullscreen", show=True),
-        Binding("question_mark", "help", "Help"),
-        # q and Esc both back out to the hub; shown as one "Esc/q Back" footer entry.
-        Binding("escape", "to_hub", "Back", key_display="Esc/q"),
-        Binding("q", "to_hub", "Back", show=False),
-        # No tab/shift+tab bindings here: the default Screen's own tab bindings
-        # (closer to focus) shadow screen-level ones, and they already move panes.
+        Binding("ctrl+d", "toggle_dashboard", "Conversation", priority=True),
+        Binding("ctrl+c", "copy", "Copy", priority=True),
+        Binding("escape", "to_hub", "Back", key_display="Esc", priority=True),
+        Binding("pageup", "page_up", "Scroll up", priority=True, show=False),
+        Binding("pagedown", "page_down", "Scroll down", priority=True, show=False),
+        Binding("ctrl+home", "scroll_top", "Top", priority=True, show=False),
+        Binding("ctrl+end", "scroll_bottom", "End", priority=True, show=False),
+        Binding("question_mark", "help", "Help", show=False),
         *menu_bindings(MENUS),
     ]
 
@@ -292,27 +278,16 @@ class DashboardScreen(Screen[None]):
     def on_mount(self) -> None:
         self.query_one("#tools", DataTable).add_columns("tool", "args", "ok", "summary")
         self.render_state()  # initial paint; later paints are coalesced in the app's tick
+        # Like the conversation: open ready to type (Tab moves out to the panes).
+        self.query_one("#dash-input", SteerInput).focus()
 
     # --- actions ------------------------------------------------------
-
-    def action_steer(self) -> None:
-        """Jump to the docked composer bar (no popup): type + Enter steers."""
-        self.query_one("#dash-input", SteerInput).focus()
 
     def on_steer_input_submitted(self, message: SteerInput.Submitted) -> None:
         self._tui.submit_instruction(message.text)
 
-    def action_compact(self) -> None:
-        self._tui.action_compact()
-
-    def action_stop(self) -> None:
-        self._tui.action_stop()
-
-    def action_resume(self) -> None:
-        self._tui.action_resume()
-
-    def action_fork(self) -> None:
-        self._tui.action_fork()
+    def action_toggle_dashboard(self) -> None:
+        self._tui.action_toggle_dashboard()
 
     def action_to_hub(self) -> None:
         self._tui.action_to_hub()
@@ -320,16 +295,48 @@ class DashboardScreen(Screen[None]):
     def action_quit_hub(self) -> None:
         self._tui.action_quit_hub()
 
-    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        """Hide the run-control keys from the footer when they can't apply:
-        steer/stop only on a live run, resume/fork only on a finished one. A
-        finished run advertising 'Stop' (and vice versa) was misleading."""
-        del parameters
-        if action in ("steer", "stop", "compact"):
-            return self._tui.run_controllable()
-        if action in ("resume", "fork"):
-            return bool(self._tui.state.finished)
-        return True
+    def action_copy(self) -> None:
+        """Copy the mouse selection via the copy_method preference (the same
+        Ctrl+C the conversation has; textual's built-in copy would emit a bare
+        OSC 52, which multiplexers like tmux swallow)."""
+        text = self.get_selected_text()
+        if not text or not text.strip():
+            self.notify("nothing selected")
+            return
+        driver = self.app._driver  # pyright: ignore[reportPrivateUsage]
+
+        def emit(seq: str) -> None:
+            if driver is not None:
+                driver.write(seq)
+
+        try:
+            status = clipboard.emit_clipboard(
+                text, clipboard.resolve_method(get_copy_method()), emit
+            )
+        except (OSError, subprocess.CalledProcessError) as exc:
+            self.notify(f"copy failed: {exc}", severity="error")
+            return
+        self.notify(f"copied selection — {status}")
+
+    def _scroll_target(self) -> Widget:
+        """The pane the shared scroll keys drive: the focused scrollable if any
+        (Tab reaches every pane), else the log -- the dashboard's main scrollback."""
+        focused = self.focused
+        if isinstance(focused, (ScrollView, ScrollableContainer)):
+            return focused
+        return self.query_one("#log", RichLog)
+
+    def action_page_up(self) -> None:
+        self._scroll_target().scroll_page_up()
+
+    def action_page_down(self) -> None:
+        self._scroll_target().scroll_page_down()
+
+    def action_scroll_top(self) -> None:
+        self._scroll_target().scroll_home(animate=False)
+
+    def action_scroll_bottom(self) -> None:
+        self._scroll_target().scroll_end(animate=False)
 
     def action_focus_next_pane(self) -> None:
         # Local action wrapping the App's framework action so it resolves from a
@@ -354,9 +361,6 @@ class DashboardScreen(Screen[None]):
             LogScreen(self._tui.logs_path, title=f"logs · {self._tui.run_dir.name}")
         )
 
-    def action_toggle_dashboard(self) -> None:
-        self._tui.action_toggle_dashboard()
-
     def on_screen_resume(self) -> None:
         # The conversation stamps its own sub_title; re-stamp ours when the
         # toggle (or a closing viewer) brings the dashboard back on top.
@@ -373,7 +377,9 @@ class DashboardScreen(Screen[None]):
             for item in menu.items:
                 if item.action == "command_palette":
                     continue
-                handler = getattr(self, f"action_{item.action}", None)
+                handler = getattr(self, f"action_{item.action}", None) or getattr(
+                    self.app, f"action_{item.action}", None
+                )
                 if handler is not None:
                     yield (item.label, handler, menu.title)
 
@@ -447,7 +453,11 @@ class DashboardScreen(Screen[None]):
         if s.finished != self._footer_finished:
             self._footer_finished = s.finished
             self.refresh_bindings()
-            self.query_one("#dash-input", SteerInput).set_mode(live=not s.finished)
+        # Relabel every paint: mode flips on finished, and the context readout
+        # in the subtitle moves with the run.
+        self.query_one("#dash-input", SteerInput).set_mode(
+            live=not s.finished, ctx_pct=tui.context_pct()
+        )
         role = s.last_role
         # Live heartbeat: a spinner + seconds since the last event, shown while
         # the run is active. Silent thinking / the resume gap now visibly tick.
@@ -472,8 +482,10 @@ class DashboardScreen(Screen[None]):
         used = s.budget.input_total + s.budget.output_total
         cap = s.budget.input_cap + s.budget.output_cap
         budget = f"   budget: {min(used / cap, 1.0):.0%}" if cap > 0 else ""
+        pct = tui.context_pct()
+        ctx = f"   ctx: {pct}%" if pct is not None else ""
         self.query_one("#top", Static).update(
-            f"[b]agent6[/]  {step}   role: {escape(role_line)}   cost: {cost}{budget}"
+            f"[b]agent6[/]  {step}   role: {escape(role_line)}   cost: {cost}{ctx}{budget}"
             f"   {finished}\n"
             f"task: {escape(s.user_task[:120])}"
         )
@@ -654,6 +666,9 @@ class Agent6TUI(App[int]):
         self.last_event_at = time.monotonic()
         self._heartbeat_at = 0.0
         self.spin = 0
+        # (provider, model) -> context window (None = unknown); the registry
+        # lookup can touch the model-listing cache file, so ask it once.
+        self._ctx_windows: dict[tuple[str, str], int | None] = {}
         self._dash = DashboardScreen()
         self._conv = ConversationScreen(
             self.logs_path, title=f"conversation · {run_dir.name}", primary=True
@@ -842,11 +857,12 @@ class Agent6TUI(App[int]):
         request_compact(self.run_dir)
         self.notify("compaction requested — applies at the next safe boundary")
 
-    def action_stop(self) -> None:
-        """Stop the run (a separate action from steering). Confirms first, then
-        writes an abort over the file bridge; the run stops -- mid-response once
-        the abort watcher lands -- and can be resumed later."""
+    def action_stop_now(self) -> None:
+        """Stop the run immediately: confirm, then write the abort answer over
+        the file bridge -- the stream watchdog interrupts the in-flight turn and
+        the run ends (resumable)."""
         if not self.run_controllable():
+            self.notify("run is not live -- nothing to stop", severity="warning")
             return
 
         def _confirmed(yes: bool | None) -> None:
@@ -855,8 +871,32 @@ class Agent6TUI(App[int]):
 
         self.push_screen(
             ConfirmModal(
-                "Stop the run?",
-                "It ends now and can be resumed later with `agent6 resume`.",
+                "Stop the run now?",
+                "Interrupts the current step; the run ends at once and can be resumed "
+                "later with `agent6 resume`.",
+                confirm_label="Stop now",
+            ),
+            _confirmed,
+        )
+
+    def action_stop_step(self) -> None:
+        """Stop AFTER the current step completes: drop the stop.request marker
+        the loop honors at its next completed-iteration boundary, so the step's
+        tool results and auto-commit land before the run ends (resumable)."""
+        if not self.run_controllable():
+            self.notify("run is not live -- nothing to stop", severity="warning")
+            return
+
+        def _confirmed(yes: bool | None) -> None:
+            if yes:
+                request_stop(self.run_dir)
+                self.notify("stopping after this step…")
+
+        self.push_screen(
+            ConfirmModal(
+                "Stop after this step?",
+                "The current step finishes (its tool results and auto-commit land), "
+                "then the run stops. Resume later with `agent6 resume`.",
                 confirm_label="Stop",
             ),
             _confirmed,
@@ -894,6 +934,21 @@ class Agent6TUI(App[int]):
             else (err or "fork failed")
         )
         self.call_from_thread(self.notify, msg, severity="information" if new_dir else "error")
+
+    def context_pct(self) -> int | None:
+        """Context-window fill (percent) at the last completed model call: the
+        call's full prompt tokens over the model's window (bundled priors, else
+        the provider listing cache). None until both sides are known."""
+        role = self.state.last_role
+        if role is None or role.ctx_tokens <= 0 or not role.model:
+            return None
+        key = (role.provider, role.model)
+        if key not in self._ctx_windows:
+            self._ctx_windows[key] = context_window(role.provider, role.model)
+        window = self._ctx_windows[key]
+        if not window:
+            return None
+        return min(100, round(100 * role.ctx_tokens / window))
 
     def run_controllable(self) -> bool:
         """Steer/Stop are no-ops once the run is over: finished (the case that

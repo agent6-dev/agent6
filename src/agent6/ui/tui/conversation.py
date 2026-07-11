@@ -35,7 +35,7 @@ import contextlib
 import inspect
 import os
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import ClassVar, cast
 
@@ -46,6 +46,7 @@ from textual.binding import Binding
 from textual.command import DiscoveryHit, Hit, Hits, Provider
 from textual.containers import Vertical, VerticalScroll
 from textual.css.query import NoMatches
+from textual.geometry import Offset
 from textual.message import Message
 from textual.screen import Screen
 from textual.timer import Timer
@@ -53,6 +54,8 @@ from textual.widgets import Footer, Static, TextArea
 
 from agent6.ui.bridge.approval import clear_steer_answer, request_steer, write_steer_answer
 from agent6.ui.tui import clipboard
+from agent6.ui.tui.copy_method import open_copy_method_picker
+from agent6.ui.tui.logview import LogScreen
 from agent6.ui.tui.menubar import (
     HelpScreen,
     Menu,
@@ -61,6 +64,7 @@ from agent6.ui.tui.menubar import (
     menu_bindings,
 )
 from agent6.ui.tui.settings import get_copy_method
+from agent6.ui.tui.theme import open_theme_picker
 from agent6.ui.viewmodel.tail import LogTail
 from agent6.ui.viewmodel.transcript import (
     THINK,
@@ -102,6 +106,7 @@ _STYLE_RICH: dict[StyleName, str] = {
     "done-fail": "bold yellow",
     "body": "",
     "done-detail": "dim",
+    "operator": "bold magenta",
 }
 
 
@@ -129,7 +134,46 @@ class _ChromeStatic(Static):
     ALLOW_SELECT = False
 
 
+_JUMP_LABEL = "↓ bottom · Ctrl+End"
+
+
+class _JumpButton(Static):
+    """A small floating jump-to-bottom pill (the claude-code affordance): shown
+    while the transcript is scrolled up; click -- or Ctrl+End -- snaps back to
+    the live tail. Floats on the dropdown layer (the _Dropdown recipe), so it
+    never displaces the layout."""
+
+    ALLOW_SELECT = False
+    DEFAULT_CSS = """
+    _JumpButton {
+        layer: dropdown; overlay: screen; constrain: none inside;
+        display: none; width: auto; height: 1; padding: 0 1;
+        background: $panel; color: $accent;
+    }
+    _JumpButton:hover { background: $primary 30%; }
+    """
+
+    def on_click(self) -> None:
+        handler = getattr(self.screen, "action_scroll_bottom", None)
+        if callable(handler):
+            handler()
+
+
 _INPUT_MAX_ROWS = 6  # the steer bar grows to this many rows, then scrolls internally
+
+# The run-control menu, shared verbatim by the two run views (this primary
+# conversation and the dashboard) so they cannot drift. Every action resolves on
+# the Agent6TUI app (each screen's on_menu_bar_selected falls back to the app).
+RUN_MENU = Menu(
+    "Run",
+    (
+        MenuItem("Compact context now", "compact"),
+        MenuItem("Stop after this step", "stop_step"),
+        MenuItem("Stop now", "stop_now"),
+        MenuItem("Resume the run", "resume"),
+        MenuItem("Fork the run", "fork"),
+    ),
+)
 
 
 class SteerInput(TextArea):
@@ -137,6 +181,8 @@ class SteerInput(TextArea):
     Shift+Enter insert a newline instead) and grows with its content up to
     _INPUT_MAX_ROWS. Two modes (set_mode): steer a LIVE run, or type the
     follow-up instruction a FINISHED run is resumed with."""
+
+    ALLOW_MAXIMIZE = False  # a full-screen composer is never what Maximize means
 
     class Submitted(Message):
         def __init__(self, text: str) -> None:
@@ -147,12 +193,14 @@ class SteerInput(TextArea):
         self.set_mode(live=True)
         self._resize()
 
-    def set_mode(self, *, live: bool) -> None:
-        """Relabel for the run's state: steering (live) vs resuming (finished)."""
+    def set_mode(self, *, live: bool, ctx_pct: int | None = None) -> None:
+        """Relabel for the run's state: steering (live) vs resuming (finished),
+        plus the context-window fill when known (the claude-code-style readout
+        right where you type)."""
         self.border_title = "steer the run" if live else "continue the run"
-        self.border_subtitle = (
-            "Enter sends · Ctrl-J newline" if live else "Enter resumes · Ctrl-J newline"
-        )
+        keys = "Enter sends · Ctrl-J newline" if live else "Enter resumes · Ctrl-J newline"
+        ctx = f"ctx {ctx_pct}% · " if ctx_pct is not None else ""
+        self.border_subtitle = f"{ctx}{keys}"
 
     def on_key(self, event: events.Key) -> None:
         if event.key == "enter":
@@ -176,18 +224,22 @@ class SteerInput(TextArea):
 
 
 class _ConvCommands(Provider):
-    """Command-palette entries for the conversation view's less-common actions, so
-    they stay reachable while the steer bar has focus (which owns the letter keys)."""
+    """The conversation view's menu actions in the Ctrl+P palette, from the same
+    per-instance menus as the menu bar -- so every action stays reachable while
+    the composer bar has focus (which owns the letter keys), and the two
+    surfaces never drift. Run-menu items resolve on the Agent6TUI host app."""
 
-    def _commands(self) -> list[tuple[str, Callable[[], None], str]]:
+    def _commands(self) -> Iterator[tuple[str, Callable[[], object], str]]:
         conv = cast("ConversationScreen", self.screen)
-        return [
-            ("Cycle detail level", conv.action_cycle_detail, "none / collapsed / expanded"),
-            ("Reload the log", conv.action_reload, "re-read from the start"),
-            ("Copy via terminal", conv.action_suspend_copy, "drop to the shell to select + copy"),
-            ("Copy via pager", conv.action_pager, "open the transcript in $PAGER"),
-            ("Save transcript to a file", conv.action_write_file, "write to a temp file"),
-        ]
+        for menu in conv._menus:  # pyright: ignore[reportPrivateUsage]
+            for item in menu.items:
+                if item.action == "command_palette":
+                    continue
+                handler = getattr(conv, f"action_{item.action}", None) or getattr(
+                    conv.app, f"action_{item.action}", None
+                )
+                if handler is not None:
+                    yield (item.label, handler, menu.title)
 
     async def discover(self) -> Hits:
         for name, runnable, help_text in self._commands():
@@ -228,10 +280,13 @@ class ConversationScreen(Screen[None]):
         MenuItem("Scroll → top", "scroll_top"),
         MenuItem("Scroll → end", "scroll_bottom"),
         MenuItem("Reload the log", "reload"),
+        MenuItem("Full log…", "view_logs"),
         MenuItem("Copy selection / all", "copy"),
         MenuItem("Copy via terminal", "suspend_copy"),
         MenuItem("Copy via pager", "pager"),
         MenuItem("Save transcript to file", "write_file"),
+        MenuItem("Theme…", "choose_theme"),
+        MenuItem("Copy method…", "choose_copy_method"),
     )
     _HELP_MENU: ClassVar = Menu(
         "Help",
@@ -243,28 +298,32 @@ class ConversationScreen(Screen[None]):
     # The class-level MENUS is the pushed-viewer shape (Esc dismisses back to
     # wherever it was opened). The PRIMARY view (the run app's main screen)
     # replaces it per-instance in __init__: File matches the dashboard's
-    # (Back = to the hub, Quit) and View gains the dashboard toggle. The menu
-    # TITLES are identical in both shapes, so menu_bindings stays class-level.
+    # (Back = to the hub, Quit), Run appears (the same RUN_MENU the dashboard
+    # shows), and View gains the dashboard toggle. menu_bindings unions the
+    # openers for both shapes, so Alt+r works only where Run exists.
     MENUS: ClassVar = (
         Menu("File", (MenuItem("Back", "close"),)),
         Menu("View", _VIEW_ITEMS),
         _HELP_MENU,
     )
 
-    # The steer bar owns plain letters + Enter, so the transcript's nav actions are
-    # priority bindings (fire before the bar). Everything else lives in the menu bar
-    # (which shows the shortcuts from these bindings) and the command palette.
+    # The composer bar owns plain letters + Enter, so every shortcut here is a
+    # priority binding (fires before the bar) on a modified key -- the same set,
+    # in the same footer order, as the dashboard. Everything else lives in the
+    # menu bar (which shows the shortcuts from these bindings) and the palette.
+    # `?` opens help too, when focus is not in the bar.
     BINDINGS: ClassVar = [
-        Binding("escape", "close", "Back", key_display="Esc", priority=True),
-        Binding("ctrl+c", "copy", "Copy", priority=True),
         # Primary view only (check_action hides it on pushed viewers): flip
         # between the conversation and the dashboard.
         Binding("ctrl+d", "toggle_dashboard", "Dashboard", priority=True),
+        Binding("ctrl+c", "copy", "Copy", priority=True),
+        Binding("escape", "close", "Back", key_display="Esc", priority=True),
         Binding("pageup", "page_up", "Scroll up", priority=True, show=False),
         Binding("pagedown", "page_down", "Scroll down", priority=True, show=False),
         Binding("ctrl+home", "scroll_top", "Top", priority=True, show=False),
         Binding("ctrl+end", "scroll_bottom", "End", priority=True, show=False),
-        *menu_bindings(MENUS),
+        Binding("question_mark", "help", "Help", show=False),
+        *menu_bindings((*MENUS, Menu("Run", ()))),  # + the Alt+r opener (primary shape)
     ]
     COMMANDS: ClassVar = {_ConvCommands}
 
@@ -288,6 +347,7 @@ class ConversationScreen(Screen[None]):
                         MenuItem("Quit", "quit_hub", "ctrl+q"),
                     ),
                 ),
+                RUN_MENU,
                 Menu("View", (*self._VIEW_ITEMS, MenuItem("Dashboard…", "toggle_dashboard"))),
                 self._HELP_MENU,
             )
@@ -310,6 +370,7 @@ class ConversationScreen(Screen[None]):
                 yield Static(id="conv-body")  # renders as Content -> selectable
             yield _ChromeStatic("", id="conv-live")  # chrome: not part of a selection
         yield SteerInput(id="conv-input")  # steer bar (hidden unless the run is live)
+        yield _JumpButton(_JUMP_LABEL, id="conv-jump")  # floats; shown when scrolled up
         yield Footer()  # Footer is ALLOW_SELECT=False in textual already
 
     def on_mount(self) -> None:
@@ -317,6 +378,24 @@ class ConversationScreen(Screen[None]):
         self.app.sub_title = self._title
         self._reload()
         self._timer = self.set_interval(0.3, self._poll)
+        # The jump pill follows the scroll position (mouse wheel included) and
+        # content growth (the poll calls _sync_jump too).
+        self.watch(self._scroll(), "scroll_y", self._sync_jump, init=False)
+
+    def _sync_jump(self, *_: object) -> None:
+        """Show the jump-to-bottom pill while scrolled up, pinned to the scroll
+        area's bottom-right corner (an overlay: never part of the layout)."""
+        with contextlib.suppress(NoMatches):
+            jump = self.query_one("#conv-jump", _JumpButton)
+            scroll = self._scroll()
+            show = scroll.max_scroll_y > 0 and not self._at_bottom(scroll)
+            jump.display = show
+            if show:
+                region = scroll.region
+                width = len(_JUMP_LABEL) + 2  # + the 1-cell padding each side
+                jump.absolute_offset = Offset(
+                    max(region.x, region.right - width - 2), max(region.y, region.bottom - 2)
+                )
 
     def on_unmount(self) -> None:
         self.app.sub_title = self._prev_subtitle
@@ -460,6 +539,7 @@ class ConversationScreen(Screen[None]):
         # bottom, silently dropping follow mode even when nothing new was appended.
         if following:
             scroll.scroll_end(animate=False)
+        self._sync_jump()
 
     def _bar_shown(self) -> bool:
         # The primary view keeps the bar even after the run ends (Enter then
@@ -469,12 +549,15 @@ class ConversationScreen(Screen[None]):
 
     def _sync_input(self) -> None:
         """Show the composer bar (steer when live, continue when finished on the
-        primary view) and keep its labels matching the run's state."""
+        primary view) and keep its labels matching the run's state. The context
+        readout comes from the Agent6TUI host (pushed viewers have no fold)."""
         with contextlib.suppress(NoMatches):
             bar = self.query_one("#conv-input", SteerInput)
             bar.display = self._bar_shown()
             if bar.display:
-                bar.set_mode(live=self._live)
+                pct_fn = getattr(self.app, "context_pct", None)
+                pct = pct_fn() if callable(pct_fn) else None
+                bar.set_mode(live=self._live, ctx_pct=pct if isinstance(pct, int) else None)
 
     def focus_bar(self) -> None:
         """Focus the composer bar if it is shown (an external steer request
@@ -590,6 +673,17 @@ class ConversationScreen(Screen[None]):
 
     def action_reload(self) -> None:
         self._reload()
+
+    def action_view_logs(self) -> None:
+        """Open the raw event log of this run (the audit-log companion view)."""
+        run_id = self._logs_path.parent.name
+        self.app.push_screen(LogScreen(self._logs_path, title=f"logs · {run_id}"))
+
+    def action_choose_theme(self) -> None:
+        open_theme_picker(self.app)
+
+    def action_choose_copy_method(self) -> None:
+        open_copy_method_picker(self.app)
 
     def action_cycle_detail(self) -> None:
         """Cycle the transcript's detail level (hidden -> collapsed -> expanded), keeping

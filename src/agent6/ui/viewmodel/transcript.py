@@ -26,6 +26,7 @@ RESULT = "⎿"  # its result, on the line below
 COMMIT = "✎"  # an auto-commit
 THINK = "·"  # a reasoning block
 DONE = "●"  # run start / final verdict
+OPERATOR = "❯"  # noqa: RUF001 -- deliberate prompt glyph, not a mistyped >
 
 # Tool names the loop treats as terminal; their call is folded into the final
 # verdict rather than shown as an ordinary step. Kept as literals so viewmodel
@@ -43,7 +44,7 @@ _END_REASON_LABEL = {
     "max_iterations": "hit iteration cap",
 }
 
-ItemKind = Literal["thinking", "text", "tool", "commit", "marker", "done"]
+ItemKind = Literal["thinking", "text", "tool", "commit", "marker", "done", "operator"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,6 +143,15 @@ class TranscriptFold:
             self._commits += 1
             n = len(str(event.get("patch", "")).splitlines())
             return [TranscriptItem("commit", detail=f"{n} lines")]
+        if etype == "loop.steer.injected":
+            # The operator's typed instruction (a steer, or the follow-up a
+            # resume was started with), shown in the conversation like any
+            # other turn. Older logs carry only a char count -- no item then.
+            out = self._flush_message()
+            text = str(event.get("text", "")).strip()
+            if text:
+                out.append(TranscriptItem("operator", body=text))
+            return out
         if etype == "run.end":
             out = self._flush_message()
             counts = f"{self._tools} tools · {self._commits} commit(s)"
