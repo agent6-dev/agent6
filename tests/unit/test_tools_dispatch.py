@@ -743,7 +743,7 @@ def test_grep_skips_dotdirs_by_default_but_searches_explicit_ones(tmp_path: Path
 
 
 def test_grep_screen_flags_catastrophic_shapes_only() -> None:
-    from agent6.tools.dispatch import (
+    from agent6.tools._grep_safety import (
         _has_nested_unbounded_quantifier as nested,  # pyright: ignore[reportPrivateUsage]
     )
 

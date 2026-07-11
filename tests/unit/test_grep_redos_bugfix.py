@@ -16,12 +16,12 @@ from __future__ import annotations
 
 import pytest
 
-from agent6.tools.dispatch import (
-    ToolError,
+from agent6.tools._grep_safety import (
     _has_adjacent_unbounded_quantifiers,  # pyright: ignore[reportPrivateUsage]
     _has_overlapping_alternation_under_quantifier,  # pyright: ignore[reportPrivateUsage]
-    _reject_pathological_regex,  # pyright: ignore[reportPrivateUsage]
+    reject_pathological_regex,
 )
+from agent6.tools.errors import ToolError
 
 CATASTROPHIC = [
     "(a|a)*$",
@@ -51,13 +51,13 @@ SAFE = [
 @pytest.mark.parametrize("pat", CATASTROPHIC)
 def test_reject_catastrophic_single_quantifier(pat: str) -> None:
     with pytest.raises(ToolError, match="backtracking"):
-        _reject_pathological_regex(pat)
+        reject_pathological_regex(pat)
 
 
 @pytest.mark.parametrize("pat", SAFE)
 def test_safe_patterns_pass(pat: str) -> None:
     # Must not raise.
-    _reject_pathological_regex(pat)
+    reject_pathological_regex(pat)
 
 
 def test_overlapping_alternation_detector_precision() -> None:
