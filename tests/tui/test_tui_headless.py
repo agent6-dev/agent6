@@ -12,6 +12,7 @@ modal writes the right bridge file.
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from typing import Any
 
@@ -549,5 +550,41 @@ def test_dashboard_stop_action_aborts_via_bridge(tmp_path: Path) -> None:
             await pilot.pause()
             assert (tmp_path / "steer.answer").read_text(encoding="utf-8") == "abort"
             assert steer_request_pending(tmp_path)
+
+    asyncio.run(scenario())
+
+
+def test_historical_steer_request_does_not_pop_a_modal_on_open(tmp_path: Path) -> None:
+    # A CLI Ctrl-C that DETACHED leaves run.steer_requested in the log. Opening the
+    # TUI must not pop a stale (already-handled) steer modal for it -- only a request
+    # that arrives AFTER the TUI is watching should prompt.
+    (tmp_path / "logs.jsonl").write_text(
+        "".join(
+            json.dumps(e) + "\n"
+            for e in (
+                _ev(type="run.start", user_task="fix it"),
+                _ev(type="run.steer_requested", source="sigint"),
+                _ev(type="role.call", role="worker", model="kimi"),
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    async def scenario() -> None:
+        app = Agent6TUI(tmp_path)
+        async with app.run_test() as pilot:
+            for _ in range(50):  # let the reader thread replay the existing log
+                await pilot.pause()
+                if app.state.steer_requests >= 1:
+                    break
+            app._tick()
+            await pilot.pause()
+            assert app.state.steer_requests == 1  # the historical event WAS folded
+            assert not isinstance(app.screen, SteerModal)  # but it did NOT pop a modal
+            # a NEW steer request (a live Ctrl-C while watching) still prompts
+            app._handle_event(_ev(type="run.steer_requested", source="sigint"))
+            app._tick()
+            await pilot.pause()
+            assert isinstance(app.screen, SteerModal)
 
     asyncio.run(scenario())

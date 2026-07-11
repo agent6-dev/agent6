@@ -280,6 +280,12 @@ class Agent6TUI(App[int]):
         self._ensure_claim()
         self.sub_title = f"run · {self.run_dir.name}"  # menu-bar title context
         self.query_one("#tools", DataTable).add_columns("tool", "args", "ok", "summary")
+        # A steer request already in the log is historical (e.g. a CLI Ctrl-C that
+        # detached, whose run.steer_requested replays on open); only prompt for ones
+        # that arrive AFTER we start watching, so opening a run never pops a stale,
+        # already-handled steer modal.
+        with contextlib.suppress(OSError):
+            self._seen_steer = self.logs_path.read_bytes().count(b'"run.steer_requested"')
         self._render()  # initial paint; later paints are coalesced in _tick
         # Auto-spawn close: the reader thread sets `_run_ended` on `run.end`; we
         # poll it from a timer in the app's OWN loop and exit there. Exit()
