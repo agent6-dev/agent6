@@ -11,10 +11,10 @@ from agent6.frontend.approval import (
     approvals_dir,
     clear_pending_answers,
     questions_dir,
-    read_question_answer,
+    read_question_answers,
     write_answer,
     write_frontend_pid,
-    write_question_answer,
+    write_question_answers,
 )
 from agent6.tui.home import _list_runs, _run_mtime, _run_summary
 
@@ -130,27 +130,27 @@ def test_run_mtime_falls_back_to_dir_before_log_exists(tmp_path: Path) -> None:
 
 def test_question_bridge_round_trip(tmp_path: Path) -> None:
     write_frontend_pid(tmp_path, 999999999)  # a live-ish pid so read doesn't early-out
-    write_question_answer(tmp_path, "q1", "use B")
-    assert read_question_answer(tmp_path, "q1", timeout_s=1.0) == "use B"
+    write_question_answers(tmp_path, "q1", ["use B"])
+    assert read_question_answers(tmp_path, "q1", timeout_s=1.0) == ("use B",)
 
 
 def test_read_question_answer_returns_none_when_no_tui(tmp_path: Path) -> None:
     # No frontend.pid -> frontend_is_live False -> immediate None (don't block headless).
-    assert read_question_answer(tmp_path, "q1", timeout_s=1.0) is None
+    assert read_question_answers(tmp_path, "q1", timeout_s=1.0) is None
 
 
 def test_read_question_answer_consumes_the_file(tmp_path: Path) -> None:
     # The answer file is unlinked after reading, so a later prompt with the same
     # id (counters reset on resume) can't re-read a stale answer.
     write_frontend_pid(tmp_path, 999999999)
-    write_question_answer(tmp_path, "q1", "first")
-    assert read_question_answer(tmp_path, "q1", timeout_s=1.0) == "first"
+    write_question_answers(tmp_path, "q1", ["first"])
+    assert read_question_answers(tmp_path, "q1", timeout_s=1.0) == ("first",)
     assert not (questions_dir(tmp_path) / "q1.answer").exists()
 
 
 def test_clear_pending_answers_wipes_stale_state(tmp_path: Path) -> None:
     write_answer(tmp_path, "approval-1", approved=True)
-    write_question_answer(tmp_path, "question-1", "stale")
+    write_question_answers(tmp_path, "question-1", ["stale"])
     write_frontend_pid(tmp_path, 12345)
     clear_pending_answers(tmp_path)
     assert not (approvals_dir(tmp_path) / "approval-1.answer").exists()

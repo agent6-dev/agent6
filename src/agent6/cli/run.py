@@ -83,7 +83,7 @@ from agent6.frontend.approval import (
     clear_worker_pid,
     frontend_is_live,
     read_answer,
-    read_question_answer,
+    read_question_answers,
     session_allow_set,
     set_session_allow,
     write_worker_pid,
@@ -118,6 +118,7 @@ from agent6.providers import (
 )
 from agent6.run_id import RunIdError, new_friendly_id, resolve_run_id
 from agent6.tools.dispatch import ToolDispatcher
+from agent6.tools.schema import UserQuestion
 from agent6.types import SandboxProfile
 from agent6.verify_infer import VERIFY_INFER_SYSTEM_PROMPT, infer_verify_command
 from agent6.workflows._run_state import load_resume_snapshot
@@ -394,7 +395,9 @@ def _warn_if_headless_ask(cfg: Config, *, tui_enabled: bool) -> None:
         )
 
 
-def _build_questioner(run_dir: Path, events: EventSink) -> Callable[[str, tuple[str, ...]], str]:
+def _build_questioner(
+    run_dir: Path, events: EventSink
+) -> Callable[[tuple[UserQuestion, ...]], tuple[str, ...]]:
     """Build the `ask_user` questioner, bridged to a live TUI when present.
 
     Emits a `question.prompt` event; if a TUI is live the answer comes from its
@@ -403,36 +406,74 @@ def _build_questioner(run_dir: Path, events: EventSink) -> Callable[[str, tuple[
     no TTY) gets an empty answer rather than hanging. Emits `question.answer`."""
     counter = {"n": 0}
 
-    def ask(question: str, options: tuple[str, ...]) -> str:
+    def ask(questions: tuple[UserQuestion, ...]) -> tuple[str, ...]:
         counter["n"] += 1
         question_id = f"question-{counter['n']}"
-        events.emit("question.prompt", id=question_id, question=question, options=list(options))
-        answer: str | None = None
+        events.emit(
+            "question.prompt",
+            id=question_id,
+            questions=[{"question": q.question, "options": list(q.options)} for q in questions],
+        )
+        answers: tuple[str, ...] | None = None
         source = "stdin"
         if frontend_is_live(run_dir):
-            answer = read_question_answer(run_dir, question_id)
-            if answer is not None:
+            answers = read_question_answers(run_dir, question_id)
+            if answers is not None:
                 source = "tui"
-        if answer is None:
-            answer = _default_stdin_questioner(question, options)
-        events.emit("question.answer", id=question_id, answer=answer, source=source)
-        return answer
+        if answers is None:
+            answers = _default_stdin_questioner(questions)
+        events.emit("question.answer", id=question_id, answers=list(answers), source=source)
+        return answers
 
     return ask
 
 
-def _default_stdin_questioner(question: str, options: tuple[str, ...]) -> str:
-    """Numbered terminal prompt via /dev/tty (visible under a TUI's stream
-    redirect); headless (no controlling terminal) returns "" so a run never
-    hangs or consumes piped stdin meant for something else."""
-    lines = [question, *(f"  {i}) {opt}" for i, opt in enumerate(options, start=1))]
+def _ask_one_stdin(q: UserQuestion, prefix: str = "") -> str | None:
+    """Prompt one question on /dev/tty; a digit picks an option, else free text.
+    None means no terminal (headless)."""
+    lines = [
+        f"{prefix}{q.question}",
+        *(f"  {i}) {opt}" for i, opt in enumerate(q.options, start=1)),
+    ]
     ans = _tty_prompt("\n".join(lines) + "\n> ", fall_back_to_stdin=False)
     if ans is None:
-        return ""
+        return None
     ans = ans.strip()
-    if ans.isdigit() and 1 <= int(ans) <= len(options):
-        return options[int(ans) - 1]
+    if ans.isdigit() and 1 <= int(ans) <= len(q.options):
+        return q.options[int(ans) - 1]
     return ans
+
+
+def _default_stdin_questioner(questions: tuple[UserQuestion, ...]) -> tuple[str, ...]:
+    """Ask each question on /dev/tty (visible under a TUI's stream redirect). For a
+    series, print a summary afterwards and let the operator revise any answer (type
+    its number) before submitting (blank). Headless (no controlling terminal)
+    returns "" for each so a run never hangs or eats piped stdin."""
+    answers: list[str] = []
+    multi = len(questions) > 1
+    for i, q in enumerate(questions, start=1):
+        prefix = f"[{i}/{len(questions)}] " if multi else ""
+        ans = _ask_one_stdin(q, prefix)
+        if ans is None:
+            return tuple("" for _ in questions)  # no tty: never block
+        answers.append(ans)
+    while multi:  # review + revise loop; blank submits
+        summary = "\n".join(
+            f"  {n}) {q.question} -> {a or '(empty)'}"
+            for n, (q, a) in enumerate(zip(questions, answers, strict=True), start=1)
+        )
+        pick = _tty_prompt(
+            f"Review:\n{summary}\nEnter to submit, or a number to change that answer: ",
+            fall_back_to_stdin=False,
+        )
+        if pick is None or not pick.strip():
+            break
+        if pick.strip().isdigit() and 1 <= int(pick.strip()) <= len(questions):
+            j = int(pick.strip()) - 1
+            revised = _ask_one_stdin(questions[j])
+            if revised is not None:
+                answers[j] = revised
+    return tuple(answers)
 
 
 def _tui_available() -> bool:

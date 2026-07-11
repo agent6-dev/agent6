@@ -22,7 +22,7 @@ from agent6.frontend.approval import (
     request_steer,
     set_session_allow,
     write_answer,
-    write_question_answer,
+    write_question_answers,
     write_steer_answer,
 )
 from agent6.frontend.spawn import (
@@ -116,12 +116,14 @@ def approve(
     return True, "answered"
 
 
-def answer_question(cwd: Path, run_id: str, question_id: str, answer: str) -> tuple[bool, str]:
-    """Answer a pending `ask_user` question."""
+def answer_question(
+    cwd: Path, run_id: str, question_id: str, answers: list[str]
+) -> tuple[bool, str]:
+    """Answer a pending `ask_user` prompt (one answer per question, by index)."""
     run_dir = model.run_dir_for(cwd, run_id)
     if run_dir is None:
         return False, f"no run {run_id!r}"
-    write_question_answer(run_dir, question_id, answer)
+    write_question_answers(run_dir, question_id, answers)
     return True, "answered"
 
 
@@ -190,14 +192,14 @@ def machine_approve(
 
 
 def machine_answer(
-    cwd: Path, name: str, question_id: str, answer: str, *, state: str = ""
+    cwd: Path, name: str, question_id: str, answers: list[str], *, state: str = ""
 ) -> tuple[bool, str]:
-    """Answer a pending `ask_user` question in the agent state the prompt was
-    rendered from (``state``; newest when absent)."""
+    """Answer a pending `ask_user` prompt in the agent state the prompt was rendered
+    from (``state``; newest when absent). One answer per question, by index."""
     state_dir = _machine_state_dir(cwd, name, state)
     if state_dir is None:
         return False, f"no active agent state for machine {name!r}"
-    write_question_answer(state_dir, question_id, answer)
+    write_question_answers(state_dir, question_id, answers)
     return True, "answered"
 
 

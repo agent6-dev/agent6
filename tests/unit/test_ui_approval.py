@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import threading
 import time
@@ -13,10 +14,10 @@ from agent6.frontend.approval import (
     clear_frontend_pid,
     frontend_is_live,
     read_answer,
-    read_question_answer,
+    read_question_answers,
     write_answer,
     write_frontend_pid,
-    write_question_answer,
+    write_question_answers,
     write_steer_answer,
 )
 
@@ -102,13 +103,13 @@ def test_read_question_answer_survives_transient_frontend_drop(tmp_path: Path) -
     def revive_and_answer() -> None:
         time.sleep(0.2)
         write_frontend_pid(tmp_path, os.getpid())
-        write_question_answer(tmp_path, "q1", "picked")
+        write_question_answers(tmp_path, "q1", ["picked"])
 
     t = threading.Thread(target=revive_and_answer, daemon=True)
     t.start()
-    result = read_question_answer(tmp_path, "q1", timeout_s=5.0, poll_s=0.05, dead_grace_s=2.0)
+    result = read_question_answers(tmp_path, "q1", timeout_s=5.0, poll_s=0.05, dead_grace_s=2.0)
     t.join(timeout=2)
-    assert result == "picked"
+    assert result == ("picked",)
 
 
 # --- atomic answer writes: the 0.2s poll must never consume a torn file -------
@@ -119,6 +120,9 @@ def test_answer_writes_leave_no_tmp_and_are_never_torn(tmp_path: Path) -> None:
     # read the complete text (a plain write_text exposes an empty file first,
     # which read_answer would consume as deny / "").
     payload = "y" * 65536
+    # The answer file holds json.dumps([payload]) now, so the complete on-disk
+    # content the poller must only ever see is that JSON list, not the bare string.
+    expected = json.dumps([payload])
     target = tmp_path / "questions" / "q9.answer"
     stop = threading.Event()
     torn: list[str] = []
@@ -129,14 +133,14 @@ def test_answer_writes_leave_no_tmp_and_are_never_torn(tmp_path: Path) -> None:
                 txt = target.read_text(encoding="utf-8")
             except FileNotFoundError:
                 continue
-            if txt != payload:
+            if txt != expected:
                 torn.append(txt)
                 return
 
     t = threading.Thread(target=poller, daemon=True)
     t.start()
     for _ in range(100):
-        write_question_answer(tmp_path, "q9", payload)
+        write_question_answers(tmp_path, "q9", [payload])
         target.unlink(missing_ok=True)
     stop.set()
     t.join(timeout=5)

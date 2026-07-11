@@ -21,9 +21,11 @@ from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Static, TextArea
+
+from agent6.viewmodel.state import Question
 
 # Uniform arrow-key focus navigation for every consequential modal: Tab already
 # moves focus; these make the arrows do the same, so the dialogs navigate the way
@@ -305,82 +307,90 @@ class TextInputModal(ModalScreen[str | None]):
         self.dismiss(None)
 
 
-class QuestionModal(ModalScreen[str]):
-    """An agent->user question (`ask_user`): pick a numbered option (keys 1-9)
-    or type a free-text answer. Esc submits empty (the agent gets the default).
-
-    Result string = the chosen option text or the typed answer.
+class QuestionModal(ModalScreen["tuple[str, ...] | None"]):
+    """An `ask_user` prompt: one or more related questions the operator answers
+    together and reviews before submitting. Each question has an answer field; its
+    option buttons fill that field (or type free text). Submit (ctrl+s) returns all
+    answers aligned to the questions; Esc submits empties (the agent gets defaults).
     """
 
     DEFAULT_CSS = """
     QuestionModal { align: center middle; }
     #question-box {
-        width: 80%; max-width: 100; height: auto; max-height: 80%;
+        width: 80%; max-width: 100; height: auto; max-height: 90%;
         border: round $accent; padding: 1 2; background: $surface;
     }
-    #question-options { height: auto; }
-    #question-options Button {
-        width: 100%; height: 1; margin-top: 1; text-align: left;
-        border: none; background: transparent; color: $accent;
+    #question-list { height: auto; }
+    .q-text { margin-top: 1; }
+    /* Options are full-width rows; clicking one fills that question's answer field
+       below. Keep the Button's default height (a borderless height:1 button collapses
+       its label to nothing). */
+    .q-opts { height: auto; }
+    .q-opts Button { width: 100%; }
+    #question-submit {
+        margin-top: 1; height: 1; border: none; background: transparent; color: $accent;
     }
-    #question-options Button:focus { background: $primary; color: $text; text-style: bold; }
-    #question-input { margin-top: 1; }
+    #question-submit:focus { background: $primary; color: $text; text-style: bold; }
     """
 
     BINDINGS: ClassVar = [
         *_ARROW_NAV,
+        Binding("ctrl+s", "submit", "Submit", show=True),
         Binding("escape", "skip", "Skip", show=True),
     ]
 
-    def __init__(self, question_id: str, question: str, options: tuple[str, ...]) -> None:
+    def __init__(self, question_id: str, questions: tuple[Question, ...]) -> None:
         super().__init__()
         self.question_id = question_id
-        self.question_text = question
-        self.options = options
+        self.questions = questions
 
     def compose(self) -> ComposeResult:
+        multi = len(self.questions) > 1
         with Vertical(id="question-box"):
-            body = Text()
-            body.append("The agent is asking:\n\n", style="bold")
-            body.append(self.question_text)  # plain append: never parsed as markup
-            yield Static(body)
-            with Vertical(id="question-options"):
-                # Buttons (not str labels) carry Text so a model-authored option
-                # with '[...]' can't crash markup parsing.
-                for i, opt in enumerate(self.options[:9], start=1):
-                    label = Text(f"{i}. ")
-                    label.append(opt)
-                    yield Button(label, id=f"opt-{i}")
-            yield Input(placeholder="…or type your own answer (Enter)", id="question-input")
+            head = Text()
+            head.append("The agent is asking", style="bold")
+            head.append(" -- answer, then Submit (ctrl+s):" if multi else ":")
+            yield Static(head)
+            with VerticalScroll(id="question-list"):
+                for qi, q in enumerate(self.questions):
+                    body = Text()
+                    if multi:
+                        body.append(f"{qi + 1}. ", style="bold")
+                    body.append(q.question)  # plain append: never parsed as markup
+                    yield Static(body, classes="q-text")
+                    if q.options:
+                        # Buttons carry Text so an option with '[...]' can't crash
+                        # markup parsing; pressing one fills that answer field.
+                        with Vertical(classes="q-opts"):
+                            for oi, opt in enumerate(q.options):
+                                yield Button(Text(opt), id=f"opt-{qi}-{oi}")
+                    yield Input(placeholder="pick above or type an answer", id=f"ans-{qi}")
+            yield Button("Submit (ctrl+s)", id="question-submit")
 
     def on_mount(self) -> None:
-        # Focus the first option if any, else the free-text field.
-        if self.options:
-            self.query_one("#opt-1", Button).focus()
-        else:
-            self.query_one("#question-input", Input).focus()
-
-    def on_key(self, event: object) -> None:
-        # Number keys 1-9 pick the matching option directly -- but NOT while the
-        # free-text answer field is focused, or a numeric custom answer ("2") would
-        # be hijacked as option 2. (on_key is a raw handler that fires even over a
-        # focused Input, unlike a Binding, which the Input would swallow.)
-        if isinstance(self.focused, Input):
-            return
-        key = getattr(event, "key", "")
-        if key.isdigit() and key != "0":
-            idx = int(key)
-            if idx <= len(self.options):
-                self.dismiss(self.options[idx - 1])
+        self.query_one("#ans-0", Input).focus()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id or ""
-        if bid.startswith("opt-"):
-            idx = int(bid.removeprefix("opt-"))
-            self.dismiss(self.options[idx - 1])
+        if bid == "question-submit":
+            self.action_submit()
+        elif bid.startswith("opt-"):  # opt-{qi}-{oi}: fill that question's field
+            _, qi, oi = bid.split("-")
+            self.query_one(f"#ans-{qi}", Input).value = self.questions[int(qi)].options[int(oi)]
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        self.dismiss(event.value)
+        # Enter advances to the next field, or submits on the last one.
+        idx = int((event.input.id or "ans-0").removeprefix("ans-"))
+        if idx + 1 < len(self.questions):
+            self.query_one(f"#ans-{idx + 1}", Input).focus()
+        else:
+            self.action_submit()
+
+    def action_submit(self) -> None:
+        answers = tuple(
+            self.query_one(f"#ans-{qi}", Input).value.strip() for qi in range(len(self.questions))
+        )
+        self.dismiss(answers)
 
     def action_skip(self) -> None:
-        self.dismiss("")
+        self.dismiss(tuple("" for _ in self.questions))

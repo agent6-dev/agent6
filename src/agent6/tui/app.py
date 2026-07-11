@@ -56,7 +56,7 @@ from agent6.frontend.approval import (
     set_session_allow,
     write_answer,
     write_frontend_pid,
-    write_question_answer,
+    write_question_answers,
     write_steer_answer,
 )
 from agent6.frontend.spawn import agent6_exe, spawn_and_locate, spawn_detached_resume
@@ -367,9 +367,7 @@ class Agent6TUI(App[int]):
         for qp in self.state.pending_questions:
             if not qp.answered and qp.id not in self._seen_question_ids:
                 self._seen_question_ids.add(qp.id)
-                self.push_screen(
-                    QuestionModal(qp.id, qp.question, qp.options), self._on_question(qp)
-                )
+                self.push_screen(QuestionModal(qp.id, qp.questions), self._on_question(qp))
         # Pop a steer modal once per Ctrl-C (steer_requests is monotonic).
         if self.state.steer_requests > self._seen_steer and not self._steer_open:
             self._seen_steer = self.state.steer_requests
@@ -403,8 +401,8 @@ class Agent6TUI(App[int]):
         return cb
 
     def _on_question(self, qp: QuestionPrompt):  # type: ignore[no-untyped-def]
-        def cb(answer: str | None) -> None:
-            write_question_answer(self.run_dir, qp.id, answer or "")
+        def cb(answers: tuple[str, ...] | None) -> None:
+            write_question_answers(self.run_dir, qp.id, answers or ())
 
         return cb
 

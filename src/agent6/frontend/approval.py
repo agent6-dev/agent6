@@ -23,8 +23,10 @@ We use the filesystem rather than a socket because:
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import time
+from collections.abc import Sequence
 from pathlib import Path
 
 APPROVAL_DIR_NAME = "approvals"
@@ -253,12 +255,15 @@ def questions_dir(run_dir: Path) -> Path:
     return p
 
 
-def write_question_answer(run_dir: Path, question_id: str, answer: str) -> None:
-    """Called by a front-end when the user answers the question."""
-    _write_answer_atomic(_answer_path(questions_dir(run_dir), question_id), answer)
+def write_question_answers(run_dir: Path, question_id: str, answers: Sequence[str]) -> None:
+    """Called by a front-end when the user answers the question(s). Answers align to
+    the prompt's `questions` by index and are stored as a JSON list."""
+    _write_answer_atomic(
+        _answer_path(questions_dir(run_dir), question_id), json.dumps(list(answers))
+    )
 
 
-def read_question_answer(
+def read_question_answers(
     run_dir: Path,
     question_id: str,
     *,
@@ -266,14 +271,22 @@ def read_question_answer(
     poll_s: float = 0.2,
     live_dir: Path | None = None,
     dead_grace_s: float = FRONTEND_DEAD_GRACE_S,
-) -> str | None:
-    """Called by the workflow. Returns the answer string, or None on timeout or
-    once the front-end has stayed dead past ``dead_grace_s``. ``live_dir``
-    overrides the liveness-gate dir (see :func:`read_answer`)."""
+) -> tuple[str, ...] | None:
+    """Called by the workflow. Returns the answers tuple (aligned to the prompt's
+    questions), or None on timeout or once the front-end has stayed dead past
+    ``dead_grace_s``. ``live_dir`` overrides the liveness-gate dir (see
+    :func:`read_answer`)."""
     target = questions_dir(run_dir) / f"{question_id}.answer"
-    return _await_answer(
+    raw = _await_answer(
         target, live_dir or run_dir, timeout_s=timeout_s, poll_s=poll_s, dead_grace_s=dead_grace_s
     )
+    if raw is None:
+        return None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return (raw,)  # a bare free-text answer (not JSON) -> single answer
+    return tuple(str(x) for x in data) if isinstance(data, list) else (str(data),)
 
 
 # --- mid-run steering bridge (Ctrl-C while the TUI owns the terminal) --------

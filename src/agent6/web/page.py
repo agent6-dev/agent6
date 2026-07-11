@@ -550,18 +550,27 @@ function paintPrompts(cards, s) {
   for (const q of (s.pending_questions || [])) {
     if (q.answered) continue;
     build[pfx + 'q:' + q.id] = () => {
+      // One or more related questions answered together; option buttons FILL that
+      // question's field, and a single Submit posts all answers (review first).
       const box = el('div', 'prompt-box');
-      box.appendChild(el('div', 'q', q.question || 'The agent asked a question'));
-      const row = el('div', 'form-row');
-      for (const opt of (q.options || [])) {
-        const b = el('button', null, opt);
-        b.onclick = async () => { try { await postJSON(base + '/answer', { id: q.id, answer: opt, ...extra }); } catch (e) { toast(e.message, true); } };
-        row.appendChild(b);
-      }
-      const inp = el('input', 'field'); inp.placeholder = 'or type an answer…'; inp.style.flex = '1';
-      const send = el('button', 'primary', 'Send');
-      send.onclick = async () => { try { await postJSON(base + '/answer', { id: q.id, answer: inp.value, ...extra }); } catch (e) { toast(e.message, true); } };
-      row.appendChild(inp); row.appendChild(send); box.appendChild(row);
+      const qs = q.questions || [];
+      const inputs = [];
+      qs.forEach((sub, qi) => {
+        const label = (qs.length > 1 ? (qi + 1) + '. ' : '') + (sub.question || 'The agent asked a question');
+        box.appendChild(el('div', 'q', label));
+        const row = el('div', 'form-row');
+        const inp = el('input', 'field'); inp.placeholder = 'pick above or type an answer…'; inp.style.flex = '1';
+        for (const opt of (sub.options || [])) {
+          const b = el('button', null, opt);
+          b.onclick = () => { inp.value = opt; };
+          row.appendChild(b);
+        }
+        row.appendChild(inp); box.appendChild(row);
+        inputs.push(inp);
+      });
+      const send = el('button', 'primary', qs.length > 1 ? 'Submit all' : 'Send');
+      send.onclick = async () => { try { await postJSON(base + '/answer', { id: q.id, answers: inputs.map(i => i.value.trim()), ...extra }); } catch (e) { toast(e.message, true); } };
+      box.appendChild(send);
       return box;
     };
   }

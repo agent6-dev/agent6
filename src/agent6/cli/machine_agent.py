@@ -48,7 +48,7 @@ from agent6.frontend.approval import (
     clear_steer_request,
     frontend_is_live,
     read_answer,
-    read_question_answer,
+    read_question_answers,
     read_steer_answer,
     session_allow_set,
     steer_request_pending,
@@ -56,6 +56,7 @@ from agent6.frontend.approval import (
 from agent6.git_ops import set_repo_hook_policy
 from agent6.providers import TranscriptSink
 from agent6.tools.dispatch import ToolDispatcher
+from agent6.tools.schema import UserQuestion
 from agent6.types import SandboxProfile
 from agent6.workflows.loop import Workflow
 
@@ -91,7 +92,7 @@ class _MachineBridges:
     """
 
     approve: Callable[[str], bool]
-    ask: Callable[[str, tuple[str, ...]], str]
+    ask: Callable[[tuple[UserQuestion, ...]], tuple[str, ...]]
     steer_requested: Callable[[], bool]
     steer_clear: Callable[[], None]
     steer_prompt: Callable[[], str | None]
@@ -131,20 +132,24 @@ def _build_machine_bridges(
         events.emit("approval.answer", id=prompt_id, approved=approved, source=source)
         return approved
 
-    def ask(question: str, options: tuple[str, ...]) -> str:
+    def ask(questions: tuple[UserQuestion, ...]) -> tuple[str, ...]:
         counters["question"] += 1
         question_id = f"question-{counters['question']}"
-        events.emit("question.prompt", id=question_id, question=question, options=list(options))
-        answer: str | None = None
+        events.emit(
+            "question.prompt",
+            id=question_id,
+            questions=[{"question": q.question, "options": list(q.options)} for q in questions],
+        )
+        answers: tuple[str, ...] | None = None
         source = "headless"
         if frontend_is_live(instance_dir):
-            answer = read_question_answer(state_dir, question_id, live_dir=instance_dir)
-            if answer is not None:
+            answers = read_question_answers(state_dir, question_id, live_dir=instance_dir)
+            if answers is not None:
                 source = "frontend"
-        if answer is None:
-            answer = ""
-        events.emit("question.answer", id=question_id, answer=answer, source=source)
-        return answer
+        if answers is None:
+            answers = tuple("" for _ in questions)
+        events.emit("question.answer", id=question_id, answers=list(answers), source=source)
+        return answers
 
     def steer_requested() -> bool:
         return steer_request_pending(state_dir)

@@ -104,15 +104,23 @@ class ApprovalPrompt:
 
 
 @dataclass(frozen=True, slots=True)
-class QuestionPrompt:
-    """An agent->user question (the `ask_user` tool). `options` are selectable
-    presets; the user may also type a free-text answer."""
+class Question:
+    """One question within an `ask_user` prompt. `options` are selectable presets;
+    the user may also type a free-text answer."""
 
-    id: str
     question: str
     options: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class QuestionPrompt:
+    """An agent->user `ask_user` prompt: one or more related questions the operator
+    answers together (reviewing before submitting). `answers` align to `questions`."""
+
+    id: str
+    questions: tuple[Question, ...] = ()
     answered: bool = False
-    answer: str = ""
+    answers: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -328,20 +336,24 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
             return replace(state, pending_approvals=new)
 
         case "question.prompt":
-            opts = event.get("options", ()) or ()
-            qp = QuestionPrompt(
-                id=str(event.get("id", "")),
-                question=str(event.get("question", "")),
-                options=tuple(str(o) for o in opts) if isinstance(opts, (list, tuple)) else (),
+            raw_qs = event.get("questions", ()) or ()
+            questions = tuple(
+                Question(
+                    question=str(q.get("question", "")),
+                    options=tuple(str(o) for o in (q.get("options", ()) or ())),
+                )
+                for q in raw_qs
+                if isinstance(q, dict)
             )
+            qp = QuestionPrompt(id=str(event.get("id", "")), questions=questions)
             return replace(state, pending_questions=(*state.pending_questions, qp))
 
         case "question.answer":
             wanted = str(event.get("id", ""))
+            raw_ans = event.get("answers", ()) or ()
+            answers = tuple(str(a) for a in raw_ans) if isinstance(raw_ans, (list, tuple)) else ()
             new_q = tuple(
-                replace(q, answered=True, answer=str(event.get("answer", "")))
-                if q.id == wanted
-                else q
+                replace(q, answered=True, answers=answers) if q.id == wanted else q
                 for q in state.pending_questions
             )
             return replace(state, pending_questions=new_q)
@@ -458,9 +470,12 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912
         case "approval.answer":
             salient = f"id={event.get('id')} approved={event.get('approved')}"
         case "question.prompt":
-            salient = str(event.get("question", ""))[:80]
+            qs = event.get("questions", []) or []
+            first = str(qs[0].get("question", "")) if qs and isinstance(qs[0], dict) else ""
+            salient = (f"[{len(qs)}] " if len(qs) > 1 else "") + first[:80]
         case "question.answer":
-            salient = f"id={event.get('id')} answer={str(event.get('answer', ''))[:40]}"
+            ans = event.get("answers", []) or []
+            salient = f"id={event.get('id')} answers={len(ans)}"
         case "run.end":
             salient = f"all_passed={event.get('all_passed')}"
         case _:

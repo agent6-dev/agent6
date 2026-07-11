@@ -407,20 +407,30 @@ class FindReferencesLspInput(_ToolInput):
     symbol: str = Field(min_length=1)
 
 
-class AskUserInput(_ToolInput):
-    TOOL_NAME: ClassVar[str] = "ask_user"
-    TOOL_DESCRIPTION: ClassVar[str] = (
-        "Ask the operator a question and wait for their answer. Use SPARINGLY —"
-        " only for a genuine decision you cannot make from the repo + task (e.g."
-        " a product choice, an ambiguous requirement). Provide 2-4 `options` when"
-        " the answer is a choice; the user can also type a free-text reply."
-        ' Returns {"answer": <string>}. In a non-interactive/headless run there'
-        " is no operator, so this returns an empty answer immediately — never"
-        " block waiting on it for steps you could decide yourself."
-    )
+class UserQuestion(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     question: str = Field(min_length=1)
     options: tuple[str, ...] = ()
+
+
+class AskUserInput(_ToolInput):
+    TOOL_NAME: ClassVar[str] = "ask_user"
+    TOOL_DESCRIPTION: ClassVar[str] = (
+        "Ask the operator one or more related questions and wait for the answers."
+        " Use SPARINGLY — only for a genuine decision you cannot make from the repo +"
+        " task (a product choice, an ambiguous requirement). BATCH related decisions"
+        " into ONE call: the operator answers them together and reviews before"
+        " submitting, so prefer this over many separate ask_user calls. `questions`"
+        ' is an ARRAY of objects (NOT a JSON-encoded string), each {"question":'
+        ' "...", "options": ["...", ...]}; give 2-4 `options` when the answer is a'
+        " choice (the operator may also type free text)."
+        ' Returns {"answers": [<string>, ...]} aligned to `questions`. In a'
+        " non-interactive/headless run there is no operator, so each answer comes back"
+        " empty immediately — never block on it for steps you could decide yourself."
+    )
+
+    questions: tuple[UserQuestion, ...] = Field(min_length=1, max_length=8)
 
 
 ApplyEditInput.model_rebuild()

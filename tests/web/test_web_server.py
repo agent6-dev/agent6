@@ -225,9 +225,11 @@ def test_answer_writes_question_file(server: tuple[WebServer, int], tmp_path: Pa
     run_dir = resolved_state_dir(tmp_path) / "runs" / "q-run"
     run_dir.mkdir(parents=True)
     (run_dir / "logs.jsonl").write_text("", encoding="utf-8")
-    status, body = _post(port, "/api/run/q-run/answer", {"id": "q1", "answer": "option B"})
+    status, body = _post(port, "/api/run/q-run/answer", {"id": "q1", "answers": ["option B"]})
     assert status == 200 and body["ok"] is True
-    assert (run_dir / "questions" / "q1.answer").read_text(encoding="utf-8") == "option B"
+    assert (run_dir / "questions" / "q1.answer").read_text(encoding="utf-8") == json.dumps(
+        ["option B"]
+    )
 
 
 def test_steer_writes_answer_and_request(server: tuple[WebServer, int], tmp_path: Path) -> None:
@@ -291,9 +293,13 @@ def test_machine_answer_writes_to_per_state_dir(
 ) -> None:
     _srv, port = server
     _inst, state = _make_machine_with_state(tmp_path, "asker", "0003-classify")
-    status, body = _post(port, "/api/machine/asker/answer", {"id": "question-1", "answer": "yes"})
+    status, body = _post(
+        port, "/api/machine/asker/answer", {"id": "question-1", "answers": ["yes"]}
+    )
     assert status == 200 and body["ok"] is True
-    assert (state / "questions" / "question-1.answer").read_text(encoding="utf-8") == "yes"
+    assert (state / "questions" / "question-1.answer").read_text(encoding="utf-8") == json.dumps(
+        ["yes"]
+    )
 
 
 def test_machine_approve_and_steer_target_per_state_dir(
@@ -314,7 +320,7 @@ def test_machine_answer_id_traversal_is_contained(
     _srv, port = server
     _inst, _state = _make_machine_with_state(tmp_path, "travm", "0000-review")
     escape = tmp_path / "pwned.answer"
-    status, _ = _post(port, "/api/machine/travm/answer", {"id": "../../pwned", "answer": "x"})
+    status, _ = _post(port, "/api/machine/travm/answer", {"id": "../../pwned", "answers": ["x"]})
     assert status != 200
     assert not escape.exists()
 
@@ -738,9 +744,11 @@ def test_machine_answer_defaults_to_newest_state_without_hint(
     new_state = inst / "states" / "0002-review"
     new_state.mkdir(parents=True)
     (new_state / "logs.jsonl").write_text("", encoding="utf-8")
-    status, body = _post(port, "/api/machine/adv2/answer", {"id": "question-1", "answer": "hi"})
+    status, body = _post(port, "/api/machine/adv2/answer", {"id": "question-1", "answers": ["hi"]})
     assert status == 200 and body["ok"] is True
-    assert (new_state / "questions" / "question-1.answer").read_text(encoding="utf-8") == "hi"
+    assert (new_state / "questions" / "question-1.answer").read_text(
+        encoding="utf-8"
+    ) == json.dumps(["hi"])
 
 
 def test_machine_answer_state_hint_traversal_is_contained(

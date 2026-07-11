@@ -26,6 +26,7 @@ from agent6.tui.modals import (
     SteerModal,
     ToolCallDetailModal,
 )
+from agent6.viewmodel.state import Question
 
 
 def _ev(**fields: Any) -> dict[str, object]:
@@ -33,15 +34,15 @@ def _ev(**fields: Any) -> dict[str, object]:
 
 
 def test_question_modal_digit_in_freetext_is_not_hijacked() -> None:
-    """A digit typed into the free-text answer field must land in the Input, not
-    be hijacked as a numbered option pick -- while digit quick-select still works
-    when an option Button is focused (regression: on_key fired over the Input)."""
-    result: dict[str, str | None] = {}
+    """A digit typed into an answer field is plain text: the multi-question modal
+    has no digit quick-select. An option button fills its question's field (never
+    dismisses); ctrl+s submits the collected answers as a tuple."""
+    result: dict[str, tuple[str, ...] | None] = {}
 
     class _Host(App[None]):
         def on_mount(self) -> None:
             self.push_screen(
-                QuestionModal("q1", "pick?", ("alpha", "beta")),
+                QuestionModal("q1", (Question(question="pick?", options=("alpha", "beta")),)),
                 lambda v: result.__setitem__("v", v),
             )
 
@@ -51,17 +52,21 @@ def test_question_modal_digit_in_freetext_is_not_hijacked() -> None:
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, QuestionModal)
-            modal.query_one("#question-input", Input).focus()
+            modal.query_one("#ans-0", Input).focus()
             await pilot.pause()
-            await pilot.press("2")  # pre-fix this dismissed the modal as option 2
+            await pilot.press("2")  # a digit is just text now, not an option pick
             await pilot.pause()
-            assert isinstance(app.screen, QuestionModal)  # still open
+            assert isinstance(app.screen, QuestionModal)  # still open (no digit-select)
             assert "v" not in result
-            assert modal.query_one("#question-input", Input).value == "2"  # digit typed
-            modal.query_one("#opt-1", Button).focus()  # back on an option button
-            await pilot.press("1")
+            assert modal.query_one("#ans-0", Input).value == "2"  # digit typed as text
+            # An option button fills that question's field; it does not dismiss.
+            modal.query_one("#opt-0-0", Button).press()
             await pilot.pause()
-            assert result.get("v") == "alpha"  # quick-select still works
+            assert isinstance(app.screen, QuestionModal)  # still open (fill, not submit)
+            assert modal.query_one("#ans-0", Input).value == "alpha"  # filled from the option
+            await pilot.press("ctrl+s")  # submit collects the answers
+            await pilot.pause()
+            assert result.get("v") == ("alpha",)  # tuple of answers, aligned to questions
 
     asyncio.run(scenario())
 
@@ -265,31 +270,45 @@ def test_render_and_modals(tmp_path: Path) -> None:
             await pilot.pause()
             assert (tmp_path / "steer.answer").read_text(encoding="utf-8") == ""
 
-            # Question modal (ask_user): markup-hostile options render, and a
-            # number key selects the matching option -> bridge file written.
+            # Question modal (ask_user): markup-hostile options render; clicking an
+            # option fills its answer field, and ctrl+s writes the bridge file (a
+            # JSON list of answers aligned to the questions).
             app._handle_event(
                 _ev(
                     type="question.prompt",
                     id="q1",
-                    question="which [approach]?",
-                    options=["use [A]", "use [B]"],
+                    questions=[
+                        {"question": "which [approach]?", "options": ["use [A]", "use [B]"]}
+                    ],
                 )
             )
             app._tick()
             await pilot.pause()
             assert isinstance(app.screen, QuestionModal)
-            await pilot.press("2")
+            app.screen.query_one("#opt-0-1", Button).press()  # fill ans-0 with the 2nd option
             await pilot.pause()
-            assert (tmp_path / "questions" / "q1.answer").read_text(encoding="utf-8") == "use [B]"
+            await pilot.press("ctrl+s")  # submit
+            await pilot.pause()
+            assert (tmp_path / "questions" / "q1.answer").read_text(encoding="utf-8") == json.dumps(
+                ["use [B]"]
+            )
 
             # Question modal: a typed free-text answer is sent verbatim.
-            app._handle_event(_ev(type="question.prompt", id="q2", question="name?", options=[]))
+            app._handle_event(
+                _ev(
+                    type="question.prompt",
+                    id="q2",
+                    questions=[{"question": "name?", "options": []}],
+                )
+            )
             app._tick()
             await pilot.pause()
             await pilot.press("z", "z")
             await pilot.press("enter")
             await pilot.pause()
-            assert (tmp_path / "questions" / "q2.answer").read_text(encoding="utf-8") == "zz"
+            assert (tmp_path / "questions" / "q2.answer").read_text(encoding="utf-8") == json.dumps(
+                ["zz"]
+            )
 
     asyncio.run(scenario())
 
@@ -679,5 +698,36 @@ def test_task_filter_scopes_tools_log_and_diff(tmp_path: Path) -> None:
             app._tick()
             await pilot.pause()
             assert [tc.name for tc in app._visible_tools] == ["apply_edit"]
+
+    asyncio.run(scenario())
+
+
+def test_question_modal_multi_collects_all_answers() -> None:
+    """A prompt with several questions: each has its own answer field, option
+    buttons fill their own field, and Submit (ctrl+s) returns every answer as a
+    tuple aligned to the questions."""
+    result: dict[str, tuple[str, ...] | None] = {}
+    qs = (
+        Question(question="Framework?", options=("React", "Vue")),
+        Question(question="Component name?", options=()),
+    )
+
+    class _Host(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(QuestionModal("q1", qs), lambda v: result.__setitem__("v", v))
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, QuestionModal)
+            modal.query_one("#opt-0-1", Button).press()  # pick "Vue" for the first question
+            await pilot.pause()
+            assert modal.query_one("#ans-0", Input).value == "Vue"
+            modal.query_one("#ans-1", Input).value = "widget"  # type the second answer
+            await pilot.press("ctrl+s")
+            await pilot.pause()
+            assert result.get("v") == ("Vue", "widget")  # both, aligned to the questions
 
     asyncio.run(scenario())

@@ -16,9 +16,10 @@ from agent6.events import EventSink
 from agent6.frontend.approval import (
     write_answer,
     write_frontend_pid,
-    write_question_answer,
+    write_question_answers,
     write_steer_answer,
 )
+from agent6.tools.schema import UserQuestion
 
 
 def _dirs(tmp_path: Path) -> tuple[Path, Path, EventSink]:
@@ -35,7 +36,7 @@ def test_stale_answers_cleared_before_state_reexecution(tmp_path: Path) -> None:
     instance, state, events = _dirs(tmp_path)
     write_frontend_pid(instance, os.getpid())
     write_answer(state, "approval-1", approved=True)  # stale: from the aborted attempt
-    write_question_answer(state, "question-1", "stale")
+    write_question_answers(state, "question-1", ["stale"])
     _build_machine_bridges(instance, state, events)
     assert not (state / "approvals" / "approval-1.answer").exists()
     assert not (state / "questions" / "question-1.answer").exists()
@@ -48,7 +49,7 @@ def test_headless_defaults_when_no_frontend(tmp_path: Path) -> None:
     b = _build_machine_bridges(instance, state, events)
     # No frontend.pid on the instance dir: deny approvals, empty answers, no steer.
     assert b.approve("run rm -rf?") is False
-    assert b.ask("pick", ("a", "b")) == ""
+    assert b.ask((UserQuestion(question="pick", options=("a", "b")),)) == ("",)
     assert b.steer_requested() is False
     assert b.steer_prompt() is None
 
@@ -65,8 +66,8 @@ def test_question_answer_read_from_per_state_dir(tmp_path: Path) -> None:
     instance, state, events = _dirs(tmp_path)
     write_frontend_pid(instance, os.getpid())
     b = _build_machine_bridges(instance, state, events)
-    write_question_answer(state, "question-1", "chosen")
-    assert b.ask("which?", ("chosen", "other")) == "chosen"
+    write_question_answers(state, "question-1", ["chosen"])
+    assert b.ask((UserQuestion(question="which?", options=("chosen", "other")),)) == ("chosen",)
 
 
 def test_steer_request_and_answer_bridge(tmp_path: Path) -> None:

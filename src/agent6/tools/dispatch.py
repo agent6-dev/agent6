@@ -89,6 +89,7 @@ from agent6.tools.schema import (
     RunCommandInput,
     RunMetricInput,
     RunVerifyInput,
+    UserQuestion,
 )
 from agent6.types import CommandResult, JailPolicy, SandboxProfile
 
@@ -641,25 +642,28 @@ def _default_approver(prompt: str) -> bool:  # pragma: no cover — interactive
 
 
 class _Questioner(Protocol):
-    def __call__(self, question: str, options: tuple[str, ...], /) -> str: ...
+    def __call__(self, questions: tuple[UserQuestion, ...], /) -> tuple[str, ...]: ...
 
 
 def _default_questioner(  # pragma: no cover — interactive
-    question: str, options: tuple[str, ...]
-) -> str:
-    """Fallback for `ask_user` when no TUI/CLI bridge is wired: a numbered stdin
-    prompt. A non-TTY/headless stdin returns "" immediately so a run never hangs
-    (mirrors run.py's _default_stdin_questioner)."""
+    questions: tuple[UserQuestion, ...],
+) -> tuple[str, ...]:
+    """Fallback for `ask_user` when no TUI/CLI bridge is wired: numbered stdin
+    prompts, one per question. A non-TTY/headless stdin returns "" for each so a run
+    never hangs (mirrors run.py's _default_stdin_questioner)."""
     if not sys.stdin.isatty():
-        return ""
-    lines = [question, *(f"  {i}) {opt}" for i, opt in enumerate(options, start=1))]
-    try:
-        ans = input("\n".join(lines) + "\n> ").strip()
-    except EOFError:
-        return ""
-    if ans.isdigit() and 1 <= int(ans) <= len(options):
-        return options[int(ans) - 1]
-    return ans
+        return tuple("" for _ in questions)
+    answers: list[str] = []
+    for q in questions:
+        lines = [q.question, *(f"  {i}) {opt}" for i, opt in enumerate(q.options, start=1))]
+        try:
+            ans = input("\n".join(lines) + "\n> ").strip()
+        except EOFError:
+            ans = ""
+        if ans.isdigit() and 1 <= int(ans) <= len(q.options):
+            ans = q.options[int(ans) - 1]
+        answers.append(ans)
+    return tuple(answers)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1333,12 +1337,13 @@ class ToolDispatcher:
         return self._run_argv_in_jail(args.argv, label="run_command")
 
     def _ask_user(self, raw: dict[str, Any]) -> dict[str, Any]:
-        """Pose a question to the operator and return their answer. The injected
-        questioner does the actual prompting (TUI modal / stdin / headless skip)
-        and owns the question.prompt/answer events; this handler just validates."""
+        """Pose one or more questions to the operator and return the answers. The
+        injected questioner does the actual prompting (TUI modal / stdin / headless
+        skip) and owns the question.prompt/answer events; this handler just
+        validates. Answers align to `questions` by index."""
         args = AskUserInput.model_validate(raw)
-        answer = self._questioner(args.question, args.options)
-        return {"answer": answer}
+        answers = self._questioner(args.questions)
+        return {"answers": list(answers)}
 
     def _finish_run(self, raw: dict[str, Any]) -> dict[str, Any]:
         """Signal the workflow to terminate. The workflow checks

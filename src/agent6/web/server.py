@@ -88,7 +88,7 @@ class ApproveBody(_Body):
 
 class AnswerBody(_Body):
     id: str
-    answer: str
+    answers: list[str]  # one per question in the ask_user prompt, by index
     state: str = ""
 
 
@@ -363,7 +363,7 @@ class _Handler(BaseHTTPRequestHandler):
             ok, msg = actions.approve(self.cwd, run_id, ab.id, ab.approved, session=ab.session)
         elif verb == "answer":
             qb = AnswerBody.model_validate(self._read_body())
-            ok, msg = actions.answer_question(self.cwd, run_id, qb.id, qb.answer)
+            ok, msg = actions.answer_question(self.cwd, run_id, qb.id, qb.answers)
         elif verb == "merge":
             mb = MergeBody.model_validate(self._read_body())
             ok, msg = actions.merge_run(self.cwd, run_id, mb.strategy)
@@ -386,7 +386,7 @@ class _Handler(BaseHTTPRequestHandler):
             )
         elif verb == "answer":
             qb = AnswerBody.model_validate(self._read_body())
-            ok, msg = actions.machine_answer(self.cwd, name, qb.id, qb.answer, state=qb.state)
+            ok, msg = actions.machine_answer(self.cwd, name, qb.id, qb.answers, state=qb.state)
         else:
             self._post_not_found(f"machine/{name}/{verb}")
             return

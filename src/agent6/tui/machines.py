@@ -43,7 +43,7 @@ from agent6.frontend.approval import (
     set_session_allow,
     write_answer,
     write_frontend_pid,
-    write_question_answer,
+    write_question_answers,
     write_steer_answer,
 )
 from agent6.frontend.notify import desktop_notify
@@ -349,7 +349,7 @@ class MachineWatchScreen(Screen[None]):
             if not qp.answered and key not in self._seen_prompt_keys:
                 self._seen_prompt_keys.add(key)
                 self.app.push_screen(
-                    QuestionModal(qp.id, qp.question, qp.options),
+                    QuestionModal(qp.id, qp.questions),
                     self._on_question(state_dir, qp.id),
                 )
 
@@ -361,9 +361,11 @@ class MachineWatchScreen(Screen[None]):
 
         return cb
 
-    def _on_question(self, state_dir: Path, question_id: str) -> Callable[[str | None], None]:
-        def cb(answer: str | None) -> None:
-            write_question_answer(state_dir, question_id, answer or "")
+    def _on_question(
+        self, state_dir: Path, question_id: str
+    ) -> Callable[[tuple[str, ...] | None], None]:
+        def cb(answers: tuple[str, ...] | None) -> None:
+            write_question_answers(state_dir, question_id, answers or ())
 
         return cb
 
