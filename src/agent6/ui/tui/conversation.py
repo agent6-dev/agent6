@@ -41,14 +41,11 @@ from agent6.ui.tui import clipboard
 from agent6.ui.tui.settings import get_copy_method
 from agent6.ui.viewmodel.tail import LogTail
 from agent6.ui.viewmodel.transcript import (
-    CALL,
-    COMMIT,
-    DONE,
-    RESULT,
     THINK,
     TranscriptFold,
     TranscriptItem,
 )
+from agent6.ui.viewmodel.transcript_style import StyleName, item_lines
 
 _LIVE_TAIL = 1600  # chars of the in-progress turn kept in the live pane
 
@@ -57,37 +54,40 @@ def _tail(text: str, n: int) -> str:
     return text if len(text) <= n else "…" + text[-n:]
 
 
+# Semantic style name -> Rich style. The CLI has the sibling ANSI map; both skins
+# render item_lines(), so the structure and which element is coloured live in ONE
+# place (transcript_style) and can't drift.
+_STYLE_RICH: dict[StyleName, str] = {
+    "thinking": "dim italic",
+    "text": "",
+    "call": "bold cyan",
+    "arg": "dim",
+    "ok": "green",
+    "fail": "red",
+    "detail": "dim",
+    "tail": "dim",
+    "commit": "magenta",
+    "marker": "dim italic",
+    "done-ok": "bold green",
+    "done-fail": "bold yellow",
+    "body": "",
+    "done-detail": "dim",
+}
+
+
 def _item_renderables(item: TranscriptItem, *, show_thinking: bool) -> list[Text]:
-    """Render one folded conversation item as styled Rich lines (the TUI skin)."""
+    """The TUI skin over the shared item_lines(): one Rich Text per line, mapping
+    each span's semantic style, with a blank line after the item for spacing."""
+    lines = item_lines(item, show_thinking=show_thinking)
+    if not lines:
+        return []
     out: list[Text] = []
-    if item.kind == "thinking":
-        if show_thinking:
-            out = [Text(f"{THINK} {item.body}", style="dim italic"), Text("")]
-    elif item.kind == "text":
-        out = [Text(item.body), Text("")]
-    elif item.kind == "tool":
-        head = Text(f"{CALL} {item.name}", style="bold cyan")
-        if item.arg:
-            head.append(f"  {item.arg}", style="dim")
-        result = Text(f"  {RESULT} ", style="green" if item.ok else "red")
-        result.append(item.detail, style="dim")
-        out = [head, result]
-        if item.tail:
-            out.append(Text(f"     {' '.join(item.tail.split())[:160]}", style="dim red"))
-        out.append(Text(""))
-    elif item.kind == "commit":
-        out = [Text(f"{COMMIT} commit  {item.detail}", style="magenta"), Text("")]
-    elif item.kind == "marker":
-        out = [Text(f"── {item.body} ──", style="dim italic"), Text("")]
-    elif item.kind == "done":
-        badge = (
-            Text(f"{DONE} done", style="bold green")
-            if item.ok
-            else Text(f"{DONE} {item.name or 'stopped'}", style="bold yellow")
-        )
-        if item.body:
-            badge.append(f"  {item.body}", style="default")
-        out = [Text(""), badge, Text(item.detail, style="dim"), Text("")]
+    for line in lines:
+        text = Text()
+        for chunk, style in line:
+            text.append(chunk, style=_STYLE_RICH[style] or None)
+        out.append(text)
+    out.append(Text(""))  # one blank line after the item
     return out
 
 

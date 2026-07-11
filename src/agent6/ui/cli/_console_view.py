@@ -24,14 +24,12 @@ from typing import Any, TextIO
 
 from agent6.ui.cli._task_tree import tree_lines_from_event_nodes
 from agent6.ui.viewmodel.transcript import (
-    CALL,
-    COMMIT,
     DONE,
-    RESULT,
     THINK,
     TranscriptFold,
     TranscriptItem,
 )
+from agent6.ui.viewmodel.transcript_style import StyleName, item_lines
 
 _ANSI = {
     "dim": "\033[2m",
@@ -42,6 +40,27 @@ _ANSI = {
     "red": "\033[31m",
     "yellow": "\033[33m",
     "magenta": "\033[35m",
+    "italic": "\033[3m",
+}
+
+# Semantic style name -> ANSI escape. The TUI has the sibling Rich map; both skins
+# render item_lines() (viewmodel.transcript_style), so the structure and which
+# element is coloured live in ONE place and can't drift.
+_STYLE_ANSI: dict[StyleName, str] = {
+    "thinking": _ANSI["dim"] + _ANSI["italic"],
+    "text": "",
+    "call": _ANSI["bold"] + _ANSI["cyan"],
+    "arg": _ANSI["dim"],
+    "ok": _ANSI["green"],
+    "fail": _ANSI["red"],
+    "detail": _ANSI["dim"],
+    "tail": _ANSI["dim"],
+    "commit": _ANSI["magenta"],
+    "marker": _ANSI["dim"] + _ANSI["italic"],
+    "done-ok": _ANSI["bold"] + _ANSI["green"],
+    "done-fail": _ANSI["bold"] + _ANSI["yellow"],
+    "body": "",
+    "done-detail": _ANSI["dim"],
 }
 
 _FLUSH_EVERY_S = 0.03  # coalesce streaming-delta flushes; see ConsoleView._raw
@@ -158,36 +177,16 @@ class ConsoleView:
 
     # -- structural items ---------------------------------------------------
     def _render(self, item: TranscriptItem) -> None:
-        if item.kind == "thinking":
-            self._line("  " + self._c("dim", THINK + " " + item.body) + "\n")
-        elif item.kind == "text":
-            self._line("".join(f"  {ln}\n" for ln in item.body.splitlines()))
-        elif item.kind == "tool":
-            head = "  " + self._c("cyan", CALL) + " " + self._c("bold", item.name)
-            if item.arg:
-                head += "  " + self._c("dim", item.arg)
-            self._line(head + "\n")
-            mark = self._c("green" if item.ok else "red", RESULT)
-            self._line("    " + mark + " " + self._c("dim", item.detail) + "\n")
-            if item.tail:
-                self._line("      " + self._c("dim", " ".join(item.tail.split())[:100]) + "\n")
-        elif item.kind == "commit":
-            self._line(
-                "  "
-                + self._c("magenta", COMMIT + " commit")
-                + self._c("dim", f"  {item.detail}")
-                + "\n"
+        """The CLI skin over the shared item_lines(): map each span's semantic style
+        to ANSI, behind a two-space left gutter (a blank spec line stays blank)."""
+        for line in item_lines(item, show_thinking=True):
+            rendered = "".join(
+                f"{_STYLE_ANSI[style]}{text}{_ANSI['reset']}"
+                if self._color and _STYLE_ANSI[style]
+                else text
+                for text, style in line
             )
-        elif item.kind == "marker":
-            self._line("  " + self._c("dim", f"── {item.body} ──") + "\n")
-        elif item.kind == "done":
-            badge = (
-                self._c("green", DONE + " done")
-                if item.ok
-                else self._c("yellow", DONE + f" {item.name or 'stopped'}")
-            )
-            self._line("\n" + badge + (f"  {item.body}" if item.body else "") + "\n")
-            self._line("  " + self._c("dim", item.detail) + "\n")
+            self._line(("  " + rendered if rendered else "") + "\n")
 
     # -- output helpers -----------------------------------------------------
     def _c(self, name: str, text: str) -> str:
