@@ -23,7 +23,6 @@ from agent6.ui.tui.app import Agent6TUI
 from agent6.ui.tui.modals import (
     ApprovalModal,
     QuestionModal,
-    SteerModal,
     ToolCallDetailModal,
 )
 from agent6.ui.viewmodel.state import Question
@@ -264,23 +263,19 @@ def test_render_and_modals(tmp_path: Path) -> None:
             await pilot.pause()
             assert (tmp_path / "approvals" / "ap2.answer").read_text(encoding="utf-8") == "no"
 
-            # Steer modal: a typed (multi-line) instruction, sent with Ctrl+S.
+            # An external steer request routes to the docked composer bar (no
+            # popup): the bar takes focus, typing + Enter answers over the bridge.
+            from agent6.ui.tui.conversation import SteerInput
+
             app._handle_event(_ev(type="run.steer_requested", source="sigint"))
             app._tick()
             await pilot.pause()
-            assert isinstance(app.screen, SteerModal)
+            bar = app._dash.query_one("#dash-input", SteerInput)
+            assert app.focused is bar
             await pilot.press("f", "i", "x")
-            await pilot.press("ctrl+s")
+            await pilot.press("enter")
             await pilot.pause()
             assert (tmp_path / "steer.answer").read_text(encoding="utf-8") == "fix"
-
-            # Steer modal: Escape == continue (empty answer).
-            app._handle_event(_ev(type="run.steer_requested", source="sigint"))
-            app._tick()
-            await pilot.pause()
-            await pilot.press("escape")
-            await pilot.pause()
-            assert (tmp_path / "steer.answer").read_text(encoding="utf-8") == ""
 
             # Question modal (ask_user): markup-hostile options render; clicking an
             # option fills its answer field, and ctrl+s writes the bridge file (a
@@ -547,26 +542,76 @@ def test_steer_request_marker_round_trip(tmp_path: Path) -> None:
 
 
 def test_dashboard_s_key_steers_without_ctrl_c(tmp_path: Path) -> None:
-    """The dashboard 's' action drops a steer.request marker (the run picks it up
-    at its next boundary) and opens the steer box -- no Ctrl-C needed -- then the
-    typed instruction lands in steer.answer for the run to inject."""
+    """The dashboard 's' focuses the docked composer bar -- no Ctrl-C, no popup --
+    and Enter drops the steer.request marker + the instruction together, for the
+    run to inject at its next boundary."""
     from agent6.ui.bridge.approval import steer_request_pending
-    from agent6.ui.tui.modals import SteerModal
+    from agent6.ui.tui.conversation import SteerInput
 
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
         app = Agent6TUI(tmp_path)
         async with app.run_test(size=(100, 30)) as pilot:
-            await pilot.pause()
+            await _show_dashboard(pilot)
             assert not steer_request_pending(tmp_path)
-            app.action_steer()
+            await pilot.press("s")
+            await pilot.pause()
+            bar = app._dash.query_one("#dash-input", SteerInput)
+            assert app.focused is bar  # s jumps to the bar; nothing written yet
+            assert not steer_request_pending(tmp_path)
+            await pilot.press("g", "o")
+            await pilot.press("enter")
             await pilot.pause()
             assert steer_request_pending(tmp_path)  # marker dropped for the run
-            assert isinstance(app.screen, SteerModal)  # steer box opened
-            await pilot.press("g", "o")
-            await pilot.press("ctrl+s")
-            await pilot.pause()
             assert (tmp_path / "steer.answer").read_text(encoding="utf-8") == "go"
+
+    asyncio.run(scenario())
+
+
+def test_finished_run_bar_resumes_with_the_instruction(tmp_path: Path, monkeypatch: Any) -> None:
+    """Typing into the composer bar of a FINISHED run seeds the steer files and
+    spawns a detached resume: the follow-up is injected at the resumed session's
+    first boundary (the claude-code follow-up flow)."""
+    from agent6.ui.bridge.approval import steer_request_pending
+    from agent6.ui.tui import app as app_mod
+    from agent6.ui.tui.conversation import SteerInput
+
+    spawned: list[str] = []
+
+    def _fake_resume(_cwd: Path, rid: str) -> str:
+        spawned.append(rid)
+        return ""
+
+    monkeypatch.setattr(app_mod, "spawn_detached_resume", _fake_resume)
+    (tmp_path / "logs.jsonl").write_text(
+        "".join(
+            json.dumps(e) + "\n"
+            for e in (
+                _ev(type="run.start", user_task="x", mode="run"),
+                _ev(type="run.end", reason="completed", all_passed=True),
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    async def scenario() -> None:
+        app = Agent6TUI(tmp_path)
+        async with app.run_test(size=(120, 40)) as pilot:
+            for _ in range(50):
+                await pilot.pause()
+                if app.state.finished:
+                    break
+            await pilot.pause()
+            bar = app._conv.query_one("#conv-input", SteerInput)
+            assert bar.display  # the primary view keeps the bar after run.end
+            assert bar.border_title == "continue the run"  # relabelled for resume
+            bar.post_message(SteerInput.Submitted("also add tests"))
+            await pilot.pause()
+            await pilot.pause()
+            assert steer_request_pending(tmp_path)  # seeded for the resumed session
+            answer = (tmp_path / "steer.answer").read_text(encoding="utf-8")
+            assert answer == "also add tests"
+            assert spawned == [tmp_path.name]  # the detached resume was spawned
 
     asyncio.run(scenario())
 
@@ -593,10 +638,12 @@ def test_dashboard_stop_action_aborts_via_bridge(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_historical_steer_request_does_not_pop_a_modal_on_open(tmp_path: Path) -> None:
+def test_historical_steer_request_does_not_grab_the_bar_on_open(tmp_path: Path) -> None:
     # A CLI Ctrl-C that DETACHED leaves run.steer_requested in the log. Opening the
-    # TUI must not pop a stale (already-handled) steer modal for it -- only a request
-    # that arrives AFTER the TUI is watching should prompt.
+    # TUI must not treat that stale (already-handled) request as live -- only one
+    # that arrives AFTER the TUI is watching should route to the composer bar.
+    from agent6.ui.tui.conversation import SteerInput
+
     (tmp_path / "logs.jsonl").write_text(
         "".join(
             json.dumps(e) + "\n"
@@ -612,6 +659,7 @@ def test_historical_steer_request_does_not_pop_a_modal_on_open(tmp_path: Path) -
     async def scenario() -> None:
         app = Agent6TUI(tmp_path)
         async with app.run_test() as pilot:
+            await _show_dashboard(pilot)  # the dashboard bar starts unfocused
             for _ in range(50):  # let the reader thread replay the existing log
                 await pilot.pause()
                 if app.state.steer_requests >= 1:
@@ -619,12 +667,13 @@ def test_historical_steer_request_does_not_pop_a_modal_on_open(tmp_path: Path) -
             app._tick()
             await pilot.pause()
             assert app.state.steer_requests == 1  # the historical event WAS folded
-            assert not isinstance(app.screen, SteerModal)  # but it did NOT pop a modal
-            # a NEW steer request (a live Ctrl-C while watching) still prompts
+            bar = app._dash.query_one("#dash-input", SteerInput)
+            assert app.focused is not bar  # but it did NOT grab the composer
+            # a NEW steer request (a live Ctrl-C while watching) still routes here
             app._handle_event(_ev(type="run.steer_requested", source="sigint"))
             app._tick()
             await pilot.pause()
-            assert isinstance(app.screen, SteerModal)
+            assert app.focused is bar
 
     asyncio.run(scenario())
 

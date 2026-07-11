@@ -42,7 +42,6 @@ try:
     from textual.widgets import (
         DataTable,
         Footer,
-        ProgressBar,
         RichLog,
         Static,
         Tree,
@@ -65,7 +64,7 @@ from agent6.ui.bridge.approval import (
     write_steer_answer,
 )
 from agent6.ui.bridge.spawn import agent6_exe, spawn_and_locate, spawn_detached_resume
-from agent6.ui.tui.conversation import ConversationScreen
+from agent6.ui.tui.conversation import ConversationScreen, SteerInput
 from agent6.ui.tui.copy_method import open_copy_method_picker
 from agent6.ui.tui.logview import LogScreen
 from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
@@ -73,7 +72,6 @@ from agent6.ui.tui.modals import (
     ApprovalModal,
     ConfirmModal,
     QuestionModal,
-    SteerModal,
     ToolCallDetailModal,
 )
 from agent6.ui.tui.theme import PALETTE_CSS, open_theme_picker, setup_theme
@@ -133,8 +131,9 @@ class _ScrollPane(VerticalScroll):
 
 class DashboardScreen(Screen[None]):
     """The run dashboard panes: task graph, live stream, tool table, log window,
-    diff/verify, budget. Presentation only -- it renders the app's folded RunState
-    and dispatches run control back through the app (see the module docstring)."""
+    diff/verify, and the composer bar. Presentation only -- it renders the app's
+    folded RunState and dispatches run control back through the app (see the
+    module docstring)."""
 
     CSS = """
     /* Top row: the task graph is usually a few nodes, so it stays compact beside
@@ -157,11 +156,14 @@ class DashboardScreen(Screen[None]):
     #diff { width: 1fr; border: round $primary; padding: 0 1; }
     /* The stream/diff bodies fill their scroll pane so long content scrolls. */
     #stream-body, #diff-body { width: 1fr; height: auto; }
-    #budget { width: 1fr; height: 3; border: round $primary; padding: 0 1; }
+    /* The composer bar (the same widget as the conversation's): auto-grows with
+       its content, squeezing the 1fr #body row above. */
+    #dash-input { height: auto; max-height: 8; margin: 0 1; border: round $primary; }
+    #dash-input:focus { border: round $accent; }
     /* One card background everywhere. Tree/DataTable/RichLog default to $surface
        but the Static-based stream/diff panes are transparent (screen background),
        so set it explicitly to keep every card the same. */
-    #plan, #stream, #tools, #log, #diff { background: $surface; }
+    #plan, #stream, #tools, #log, #diff, #dash-input { background: $surface; }
     /* Uniform resting border (matches the home table + config card); the focused
        panel goes $accent. */
     #plan:focus, #stream:focus, #tools:focus, #log:focus, #diff:focus { border: round $accent; }
@@ -278,7 +280,10 @@ class DashboardScreen(Screen[None]):
             )
             with _ScrollPane(id="diff"):
                 yield Static("", id="diff-body")
-        yield ProgressBar(id="budget", total=100, show_eta=False)
+        # The composer bar (steer a live run / type the follow-up a finished one
+        # resumes with) sits where the budget bar used to; the budget readout
+        # lives in the top status line now.
+        yield SteerInput(id="dash-input")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -288,7 +293,11 @@ class DashboardScreen(Screen[None]):
     # --- actions ------------------------------------------------------
 
     def action_steer(self) -> None:
-        self._tui.action_steer()
+        """Jump to the docked composer bar (no popup): type + Enter steers."""
+        self.query_one("#dash-input", SteerInput).focus()
+
+    def on_steer_input_submitted(self, message: SteerInput.Submitted) -> None:
+        self._tui.submit_instruction(message.text)
 
     def action_stop(self) -> None:
         self._tui.action_stop()
@@ -427,10 +436,12 @@ class DashboardScreen(Screen[None]):
         tui = self._tui
         s = tui.state
         # The finished flag gates which run-control keys the footer shows; when it
-        # flips (run ends, or a resume un-finishes it), re-ask check_action.
+        # flips (run ends, or a resume un-finishes it), re-ask check_action and
+        # relabel the composer bar (steer <-> continue).
         if s.finished != self._footer_finished:
             self._footer_finished = s.finished
             self.refresh_bindings()
+            self.query_one("#dash-input", SteerInput).set_mode(live=not s.finished)
         role = s.last_role
         # Live heartbeat: a spinner + seconds since the last event, shown while
         # the run is active. Silent thinking / the resume gap now visibly tick.
@@ -450,8 +461,14 @@ class DashboardScreen(Screen[None]):
             )
             finished = f"[b {color}]{escape(run_status_label(s))}[/]"
         cost = f"[b]{format_cost(s.budget.usd_total, partial=s.budget.usd_partial)}[/]"
+        # The token-budget consumption, up here as a readout (the bottom bar it
+        # used to be gave that row to the composer).
+        used = s.budget.input_total + s.budget.output_total
+        cap = s.budget.input_cap + s.budget.output_cap
+        budget = f"   budget: {min(used / cap, 1.0):.0%}" if cap > 0 else ""
         self.query_one("#top", Static).update(
-            f"[b]agent6[/]  {step}   role: {escape(role_line)}   cost: {cost}   {finished}\n"
+            f"[b]agent6[/]  {step}   role: {escape(role_line)}   cost: {cost}{budget}"
+            f"   {finished}\n"
             f"task: {escape(s.user_task[:120])}"
         )
 
@@ -500,18 +517,6 @@ class DashboardScreen(Screen[None]):
                 label.stylize("bold reverse")
             tree.root.add_leaf(label, data=tv.id)
         tree.root.expand()
-
-        bar = self.query_one("#budget", ProgressBar)
-        used = s.budget.input_total + s.budget.output_total
-        cap = s.budget.input_cap + s.budget.output_cap
-        if cap > 0:
-            bar.total = cap
-            bar.progress = min(used, cap)
-        bar.tooltip = (
-            f"in {s.budget.input_total}/{s.budget.input_cap}  "
-            f"out {s.budget.output_total}/{s.budget.output_cap}  "
-            f"{format_cost(s.budget.usd_total, partial=s.budget.usd_partial)}"
-        )
 
         # A task selected in the #plan tree filters tools/log/diff to it. sel=None
         # is the unfiltered live view; the border titles show which task when set.
@@ -629,7 +634,6 @@ class Agent6TUI(App[int]):
         self._seen_approval_ids: set[str] = set()
         self._seen_question_ids: set[str] = set()
         self._seen_steer = 0
-        self._steer_open = False
         self._dirty = False  # an event arrived; _tick coalesces the repaint
         self._stop = threading.Event()
         # When True (the auto-spawned co-process of `agent6 run`), close the
@@ -732,11 +736,11 @@ class Agent6TUI(App[int]):
             if not qp.answered and qp.id not in self._seen_question_ids:
                 self._seen_question_ids.add(qp.id)
                 self.push_screen(QuestionModal(qp.id, qp.questions), self._on_question(qp))
-        # Pop a steer modal once per Ctrl-C (steer_requests is monotonic).
-        if self.state.steer_requests > self._seen_steer and not self._steer_open:
+        # Route an external steer request to the composer bar, once per Ctrl-C
+        # (steer_requests is monotonic).
+        if self.state.steer_requests > self._seen_steer:
             self._seen_steer = self.state.steer_requests
-            self._steer_open = True
-            self.push_screen(SteerModal(), self._on_steer)
+            self._steer_request_to_bar()
         # Heartbeat: while the run is active but silent, advance the spinner and
         # repaint ~1/s so the "working… Ns" timer ticks -- an attached viewer can
         # see the run is alive (thinking / resuming), not hung.
@@ -755,11 +759,10 @@ class Agent6TUI(App[int]):
             with contextlib.suppress(NoMatches):
                 self._dash.render_state()
         # Exit only once the run ended AND nothing is still awaiting an answer,
-        # so a final approval/question/steer isn't dropped on the way out.
+        # so a final approval/question isn't dropped on the way out.
         if (
             self.exit_on_end
             and self.run_ended
-            and not self._steer_open
             and all(ap.answered for ap in self.state.pending_approvals)
             and all(q.answered for q in self.state.pending_questions)
         ):
@@ -779,36 +782,60 @@ class Agent6TUI(App[int]):
 
         return cb
 
-    def _on_steer(self, answer: str | None) -> None:
-        self._steer_open = False
-        write_steer_answer(self.run_dir, answer or "")
+    # --- run control (dispatched from the composer bars, keys, and menus) --
 
-    # --- run control (dispatched from the dashboard's keys and menus) --
-
-    def action_steer(self) -> None:
-        """Steer the run WITHOUT Ctrl-C: open the steer box and drop a request
-        marker the run picks up at its next safe boundary (after the current step,
-        never mid tool-call), then injects your instruction into the next step.
-        The run keeps going -- no stop/resume. Submit blank to cancel."""
-        if self._steer_open or not self.run_controllable():
-            return
-        self._steer_open = True
-        clear_steer_answer(self.run_dir)  # discard any stale answer -> run waits for this one
+    def _seed_steer(self, text: str) -> None:
+        """Write the steer request + instruction over the file bridge (the same
+        seam the old steer dialog used): discard any stale answer, mark the
+        request, and provide the answer in one shot."""
+        clear_steer_answer(self.run_dir)
         request_steer(self.run_dir)
-        self.push_screen(SteerModal(), self._on_steer)
+        write_steer_answer(self.run_dir, text)
+
+    def submit_instruction(self, text: str) -> None:
+        """A composer-bar line. Live: inject it at the run's next safe boundary
+        (after the current step, never mid tool-call) -- the run keeps going.
+        Finished: resume THIS run with the instruction (the claude-code
+        follow-up)."""
+        if self.run_controllable():
+            self._seed_steer(text)
+            self.notify("steering the run…")
+        else:
+            self.resume_with_instruction(text)
+
+    def resume_with_instruction(self, text: str) -> None:
+        """Resume this run with *text* as its first steering instruction: seed
+        the steer files, then spawn the detached resume -- the new session's
+        steer poll picks them up at its first boundary and injects the text."""
+        self._seed_steer(text)
+        err = spawn_detached_resume(Path.cwd(), self.run_dir.name)
+        self.notify(
+            err or f"resuming {self.run_dir.name} with your instruction…",
+            severity="error" if err else "information",
+        )
+
+    def _steer_request_to_bar(self) -> None:
+        """An external steer request (a CLI Ctrl-C on an attached run, `agent6
+        steer`): route it to the visible composer bar instead of a popup --
+        focus it and say why. With a viewer or modal on top, the notice alone
+        points the operator at the bar."""
+        if self.screen is self._conv:
+            self._conv.focus_bar()
+        elif self.screen is self._dash:
+            with contextlib.suppress(NoMatches):
+                self._dash.query_one("#dash-input", SteerInput).focus()
+        self.notify("the run asked for steering — type an instruction and press Enter")
 
     def action_stop(self) -> None:
         """Stop the run (a separate action from steering). Confirms first, then
         writes an abort over the file bridge; the run stops -- mid-response once
         the abort watcher lands -- and can be resumed later."""
-        if self._steer_open or not self.run_controllable():
+        if not self.run_controllable():
             return
 
         def _confirmed(yes: bool | None) -> None:
             if yes:
-                clear_steer_answer(self.run_dir)
-                request_steer(self.run_dir)
-                write_steer_answer(self.run_dir, "abort")
+                self._seed_steer("abort")
 
         self.push_screen(
             ConfirmModal(

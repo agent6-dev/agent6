@@ -11,8 +11,9 @@ Completed turns scroll in the main pane; a docked live pane at the bottom stream
 the turn IN PROGRESS (a reasoning model can think for 30-60s before it produces a
 tool call, so without this the view looks frozen). Follows live: new turns append
 and, unless the operator scrolled up to read, the pane sticks to the bottom.
-A live run opens with the steer bar focused: type + Enter sends a steer, Ctrl-J
-newlines. Ctrl+C copies the mouse selection (or the whole transcript) via the
+A composer bar sits at the bottom, focused on open: on a live run Enter sends a
+steer (Ctrl-J newlines); on a finished run (primary view only) Enter RESUMES the
+run with the typed follow-up. Ctrl+C copies the mouse selection (or the whole transcript) via the
 ``copy_method`` UI preference; PageUp/PageDown scroll, Ctrl+Home/End jump to
 top/bottom. As the run app's PRIMARY screen (`agent6 run --tui` opens here)
 Ctrl+D toggles the dashboard and Esc leaves for the hub; as a pushed read-only
@@ -132,8 +133,10 @@ _INPUT_MAX_ROWS = 6  # the steer bar grows to this many rows, then scrolls inter
 
 
 class SteerInput(TextArea):
-    """The bottom steer bar: a TextArea that submits on Enter (Ctrl+J / Shift+Enter
-    insert a newline instead) and grows with its content up to _INPUT_MAX_ROWS."""
+    """The bottom composer bar: a TextArea that submits on Enter (Ctrl+J /
+    Shift+Enter insert a newline instead) and grows with its content up to
+    _INPUT_MAX_ROWS. Two modes (set_mode): steer a LIVE run, or type the
+    follow-up instruction a FINISHED run is resumed with."""
 
     class Submitted(Message):
         def __init__(self, text: str) -> None:
@@ -141,9 +144,15 @@ class SteerInput(TextArea):
             super().__init__()
 
     def on_mount(self) -> None:
-        self.border_title = "steer the run"
-        self.border_subtitle = "Enter sends · Ctrl-J newline"
+        self.set_mode(live=True)
         self._resize()
+
+    def set_mode(self, *, live: bool) -> None:
+        """Relabel for the run's state: steering (live) vs resuming (finished)."""
+        self.border_title = "steer the run" if live else "continue the run"
+        self.border_subtitle = (
+            "Enter sends · Ctrl-J newline" if live else "Enter resumes · Ctrl-J newline"
+        )
 
     def on_key(self, event: events.Key) -> None:
         if event.key == "enter":
@@ -452,32 +461,54 @@ class ConversationScreen(Screen[None]):
         if following:
             scroll.scroll_end(animate=False)
 
+    def _bar_shown(self) -> bool:
+        # The primary view keeps the bar even after the run ends (Enter then
+        # RESUMES the run with the typed follow-up); a pushed viewer shows it
+        # only while there is a live run to steer.
+        return self._live or self._primary
+
     def _sync_input(self) -> None:
-        """Show the steer bar only while the run is live (a finished or historical
-        run has nothing to steer)."""
+        """Show the composer bar (steer when live, continue when finished on the
+        primary view) and keep its labels matching the run's state."""
         with contextlib.suppress(NoMatches):
-            self.query_one("#conv-input", SteerInput).display = self._live
+            bar = self.query_one("#conv-input", SteerInput)
+            bar.display = self._bar_shown()
+            if bar.display:
+                bar.set_mode(live=self._live)
+
+    def focus_bar(self) -> None:
+        """Focus the composer bar if it is shown (an external steer request
+        routes here instead of popping a dialog)."""
+        with contextlib.suppress(NoMatches):
+            bar = self.query_one("#conv-input", SteerInput)
+            if bar.display:
+                bar.focus()
 
     def _focus_default(self) -> None:
-        """A live run opens with the steer bar focused (type to steer immediately);
-        a finished or historical one focuses the scrollback for keyboard nav."""
-        if self._live:
+        """Open with the composer bar focused when it is shown (type to steer a
+        live run, or a follow-up to resume a finished one, immediately); a
+        historical viewer focuses the scrollback for keyboard nav."""
+        if self._bar_shown():
             with contextlib.suppress(NoMatches):
                 self.query_one("#conv-input", SteerInput).focus()
                 return
         self._scroll().focus()
 
     def on_steer_input_submitted(self, message: SteerInput.Submitted) -> None:
-        """A line typed into the steer bar: drop a steer request + the instruction
-        over the file bridge (the same seam the dashboard's steer box uses). The run
-        picks it up at its next safe boundary and injects it; it keeps running."""
-        if not self._live:
-            return
+        """A line typed into the composer bar. Live: drop a steer request + the
+        instruction over the file bridge (the run injects it at its next safe
+        boundary and keeps going). Finished (primary view): resume THIS run with
+        the instruction pre-seeded -- the claude-code follow-up."""
         run_dir = self._logs_path.parent
-        clear_steer_answer(run_dir)  # discard any stale answer -> the run waits for this one
-        request_steer(run_dir)
-        write_steer_answer(run_dir, message.text)
-        self.notify("steering the run…")
+        if self._live:
+            clear_steer_answer(run_dir)  # discard any stale answer -> the run waits for this one
+            request_steer(run_dir)
+            write_steer_answer(run_dir, message.text)
+            self.notify("steering the run…")
+        elif self._primary:
+            resume = getattr(self.app, "resume_with_instruction", None)  # the Agent6TUI host
+            if callable(resume):
+                resume(message.text)
 
     # -- copy ---------------------------------------------------------------
     def _emit(self, seq: str) -> None:
