@@ -27,7 +27,7 @@ from agent6.config import (
     NotifyConfig,
     RoleName,
 )
-from agent6.config_layer import (
+from agent6.config.layer import (
     load_effective,
 )
 from agent6.detect import select_profile

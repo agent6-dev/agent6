@@ -134,7 +134,7 @@ def test_watch_screen_shows_states_transitions_and_end(tmp_path: Path, monkeypat
     """The Machines watch screen renders the state overview (current marked `>`,
     visited `.`), the transition in the log, and the ended status -- the in-TUI
     equivalent of `agent6 watch`."""
-    from agent6.config_layer import resolved_state_dir
+    from agent6.config.layer import resolved_state_dir
     from agent6.machine import load_machine
     from agent6.ui.cli import main as cli_main
 

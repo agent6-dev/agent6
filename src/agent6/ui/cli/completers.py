@@ -10,7 +10,7 @@ from pathlib import Path
 from agent6.config import (
     ConfigError,
 )
-from agent6.config_layer import (
+from agent6.config.layer import (
     PROVIDER_PRESETS,
     available_profile_names,
     leaf_keys,

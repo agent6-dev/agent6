@@ -1,0 +1,74 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Eric Lesiuta
+"""Config package: the models (`model`), file IO (`io`), and the layered
+resolve/view/write (`layer`). The Config models are the package's public API and
+are re-exported here, so `from agent6.config import Config` keeps working; the IO
+and layering live at `agent6.config.io` / `agent6.config.layer`."""
+
+from __future__ import annotations
+
+from agent6.config.model import (
+    Agent6Section,
+    AnthropicProviderEntry,
+    BudgetConfig,
+    Config,
+    ConfigError,
+    ContextConfig,
+    GitCommitConfig,
+    GitConfig,
+    MachineConfig,
+    MachineNotifyConfig,
+    MCPConfig,
+    MCPServerEntry,
+    MetricConfig,
+    ModelsConfig,
+    NotifyConfig,
+    OpenAIProviderEntry,
+    PromptConfig,
+    ProviderEntry,
+    ReviewConfig,
+    RoleModel,
+    RoleName,
+    SandboxConfig,
+    ThinkingLevel,
+    WebConfig,
+    WorkflowConfig,
+    is_loopback_host,
+    load_config,
+    resolve_profile,
+    validate_base_url,
+    validate_config,
+)
+
+__all__ = [
+    "Agent6Section",
+    "AnthropicProviderEntry",
+    "BudgetConfig",
+    "Config",
+    "ConfigError",
+    "ContextConfig",
+    "GitCommitConfig",
+    "GitConfig",
+    "MCPConfig",
+    "MCPServerEntry",
+    "MachineConfig",
+    "MachineNotifyConfig",
+    "MetricConfig",
+    "ModelsConfig",
+    "NotifyConfig",
+    "OpenAIProviderEntry",
+    "PromptConfig",
+    "ProviderEntry",
+    "ReviewConfig",
+    "RoleModel",
+    "RoleName",
+    "SandboxConfig",
+    "ThinkingLevel",
+    "WebConfig",
+    "WorkflowConfig",
+    "is_loopback_host",
+    "load_config",
+    "resolve_profile",
+    "validate_base_url",
+    "validate_config",
+]

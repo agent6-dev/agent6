@@ -13,7 +13,7 @@ from agent6.config import (
     AnthropicProviderEntry,
     Config,
 )
-from agent6.config_layer import (
+from agent6.config.layer import (
     resolved_state_dir,
 )
 from agent6.detect import Environment, detect

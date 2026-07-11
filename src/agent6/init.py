@@ -24,7 +24,7 @@ import re
 from collections.abc import Callable
 from pathlib import Path
 
-from agent6.config_layer import (
+from agent6.config.layer import (
     effective_leaf,
     load_effective,
     repo_config_path_for,

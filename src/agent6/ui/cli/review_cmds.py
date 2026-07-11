@@ -14,7 +14,7 @@ from agent6.config import (
     Config,
     ConfigError,
 )
-from agent6.config_layer import load_effective
+from agent6.config.layer import load_effective
 from agent6.git_ops import DIFF_SHOW_SAFETY_FLAGS, git_hardening_flags
 from agent6.providers import (
     ProviderError,

@@ -13,7 +13,7 @@ from agent6.config import (
     ConfigError,
     RoleName,
 )
-from agent6.config_layer import (
+from agent6.config.layer import (
     load_effective,
     repo_config_path_for,
     set_config_table,

@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from agent6.config import SandboxConfig, validate_config
-from agent6.config_layer import resolved_state_dir
+from agent6.config.layer import resolved_state_dir
 from agent6.sandbox.broker import Endpoint
 from agent6.ui.cli.egress import (
     _allow_url_endpoints,  # pyright: ignore[reportPrivateUsage]

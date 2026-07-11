@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Literal
 
 from agent6.budget import BudgetTracker
-from agent6.config_layer import repo_config_path_for
+from agent6.config.layer import repo_config_path_for
 from agent6.git_ops import (
     GitError,
     revert_head,

@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for agent6.config_io scalar/table serialization + leaf surgery."""
+"""Tests for agent6.config.io scalar/table serialization + leaf surgery."""
 
 from __future__ import annotations
 
 import tomllib
 from pathlib import Path
 
-from agent6.config_io import (
+from agent6.config.io import (
     _toml_repr,  # pyright: ignore[reportPrivateUsage]
     parse_cli_value,  # pyright: ignore[reportPrivateUsage]
     upsert_toml_leaf,  # pyright: ignore[reportPrivateUsage]

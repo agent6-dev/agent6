@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config_layer import resolved_state_dir
+from agent6.config.layer import resolved_state_dir
 from agent6.ui.cli._ask import (
     build_ask_run_digest as _build_ask_run_digest,
 )

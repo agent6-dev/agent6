@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent6.config import Config
-from agent6.config_layer import resolved_state_dir
+from agent6.config.layer import resolved_state_dir
 from agent6.detect import Environment, probe_userns_supported
 from agent6.providers.egress import clear_routes, parse_endpoint, register_route
 from agent6.sandbox import (

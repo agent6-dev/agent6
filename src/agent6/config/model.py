@@ -60,7 +60,7 @@ RoleName = Literal["worker", "reviewer", "planner"]
 ThinkingLevel = Literal["off", "low", "medium", "high"]
 
 
-def _validate_base_url(url: str) -> None:
+def validate_base_url(url: str) -> None:
     """Reject a ``[providers.*].base_url`` that is not an http(s) URL with a host.
 
     Unlike ``sandbox.allow_urls`` (which accepts a bare ``host``), a provider's
@@ -217,7 +217,7 @@ class _ProviderBase(BaseModel):
     @classmethod
     def _check_base_url(cls, v: str) -> str:
         if v:
-            _validate_base_url(v)
+            validate_base_url(v)
         return v
 
     @field_validator("token_command")
@@ -1260,7 +1260,7 @@ def validate_config(raw: dict[str, object], *, source: str = "<config>") -> Conf
     """Validate an already-parsed (and possibly layer-merged) config dict.
 
     Shared by :func:`load_config` and the layered loader
-    (``agent6.config_layer``) so both surface identical field-pointing
+    (``agent6.config.layer``) so both surface identical field-pointing
     errors.
     """
     try:

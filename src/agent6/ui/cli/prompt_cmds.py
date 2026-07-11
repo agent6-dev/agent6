@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Literal
 
 from agent6.config import ConfigError
-from agent6.config_layer import load_effective
+from agent6.config.layer import load_effective
 from agent6.workflows import system_prompt_for
 
 

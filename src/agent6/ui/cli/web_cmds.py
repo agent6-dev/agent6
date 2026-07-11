@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 from agent6.config import ConfigError, is_loopback_host
-from agent6.config_layer import load_effective
+from agent6.config.layer import load_effective
 from agent6.ui.web import run_web
 
 

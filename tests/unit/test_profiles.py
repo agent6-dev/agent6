@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from agent6.config import ConfigError
-from agent6.config_layer import load_effective, repo_config_path_for
+from agent6.config.layer import load_effective, repo_config_path_for
 
 
 def _write_repo_config(repo: Path, toml: str) -> None:

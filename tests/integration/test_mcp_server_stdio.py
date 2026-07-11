@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config_layer import resolved_state_dir
+from agent6.config.layer import resolved_state_dir
 
 
 def _userns_available() -> bool:

@@ -13,7 +13,7 @@ from agent6.config import (
     Config,
     ConfigError,
 )
-from agent6.config_layer import (
+from agent6.config.layer import (
     load_effective,
 )
 from agent6.detect import apparmor_userns_restricted, select_profile

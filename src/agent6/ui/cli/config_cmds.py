@@ -12,14 +12,14 @@ from agent6 import models_cache
 from agent6.config import (
     ConfigError,
 )
-from agent6.config_io import (
+from agent6.config.io import (
     parse_cli_value,
     read_toml_file,
     read_toml_leaf,
     remove_toml_leaf,
     upsert_toml_leaf,
 )
-from agent6.config_layer import (
+from agent6.config.layer import (
     effective_leaf,
     format_value,
     load_effective,

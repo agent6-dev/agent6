@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for agent6.config_layer (layering, source map, show, fill)."""
+"""Tests for agent6.config.layer (layering, source map, show, fill)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from agent6.config import ConfigError, load_config
-from agent6.config_layer import (
+from agent6.config.layer import (
     ConfigSetting,
     ConfigView,
     build_config_view,
@@ -197,7 +197,7 @@ def test_flag_layer_wins(repo: Path, tmp_path: Path) -> None:
 
 
 def test_overlay_is_highest_layer(repo: Path) -> None:
-    from agent6.config_layer import load_effective_with_overlay
+    from agent6.config.layer import load_effective_with_overlay
 
     overlay = {"sandbox": {"run_commands": "no"}, "review": {"trigger": "periodic"}}
     eff = load_effective_with_overlay(repo, overlay)
@@ -212,14 +212,14 @@ def test_overlay_is_highest_layer(repo: Path) -> None:
 
 
 def test_empty_overlay_matches_load_effective(repo: Path) -> None:
-    from agent6.config_layer import load_effective_with_overlay
+    from agent6.config.layer import load_effective_with_overlay
 
     eff = load_effective_with_overlay(repo, {})
     assert eff.config.sandbox.run_commands == "yes"
 
 
 def test_overlay_forbids_state_dir(repo: Path) -> None:
-    from agent6.config_layer import load_effective_with_overlay
+    from agent6.config.layer import load_effective_with_overlay
 
     overlay = {"agent6": {"state_dir": "/other"}}
     with pytest.raises(ConfigError, match="state_dir"):
@@ -230,7 +230,7 @@ def test_overlay_forbids_state_dir(repo: Path) -> None:
 def test_global_state_dir_rejects_relative(repo: Path, bad: str) -> None:
     # The raw pre-model read of the GLOBAL config must reject a non-absolute
     # state_dir (it is the base the per-repo config + run state live under).
-    from agent6.config_layer import _global_state_dir  # pyright: ignore[reportPrivateUsage]
+    from agent6.config.layer import _global_state_dir  # pyright: ignore[reportPrivateUsage]
 
     gpath = repo.parent / "g" / "config.toml"
     gpath.write_text(f'[agent6]\nstate_dir = "{bad}"\n', encoding="utf-8")
@@ -239,7 +239,7 @@ def test_global_state_dir_rejects_relative(repo: Path, bad: str) -> None:
 
 
 def test_global_state_dir_accepts_absolute(repo: Path) -> None:
-    from agent6.config_layer import _global_state_dir  # pyright: ignore[reportPrivateUsage]
+    from agent6.config.layer import _global_state_dir  # pyright: ignore[reportPrivateUsage]
 
     gpath = repo.parent / "g" / "config.toml"
     gpath.write_text('[agent6]\nstate_dir = "/srv/agent6-state"\n', encoding="utf-8")
@@ -249,7 +249,7 @@ def test_global_state_dir_accepts_absolute(repo: Path) -> None:
 def test_deep_merge_replaces_provider_when_kind_changes() -> None:
     # A lower layer's kind-specific keys must not survive a kind change, or they
     # surface as a confusing extra_forbidden error under the new kind.
-    from agent6.config_layer import _deep_merge  # pyright: ignore[reportPrivateUsage]
+    from agent6.config.layer import _deep_merge  # pyright: ignore[reportPrivateUsage]
 
     base = {"providers": {"p": {"api_format": "anthropic", "api_key_env": "X"}}}
     override = {"providers": {"p": {"api_format": "openai", "base_url": "Y"}}}
@@ -258,7 +258,7 @@ def test_deep_merge_replaces_provider_when_kind_changes() -> None:
 
 
 def test_deep_merge_still_merges_when_kind_unchanged() -> None:
-    from agent6.config_layer import _deep_merge  # pyright: ignore[reportPrivateUsage]
+    from agent6.config.layer import _deep_merge  # pyright: ignore[reportPrivateUsage]
 
     base = {"providers": {"p": {"api_format": "openai", "base_url": "Y", "api_key_env": "X"}}}
     override = {"providers": {"p": {"base_url": "Z"}}}

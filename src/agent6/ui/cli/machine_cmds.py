@@ -23,8 +23,8 @@ from agent6.config import (
     Config,
     ConfigError,
 )
-from agent6.config_io import upsert_toml_leaf
-from agent6.config_layer import (
+from agent6.config.io import upsert_toml_leaf
+from agent6.config.layer import (
     load_effective,
     load_effective_with_overlay,
     repo_config_path_for,

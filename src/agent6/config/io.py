@@ -13,7 +13,7 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from agent6.config import ConfigError
+from agent6.config.model import ConfigError
 
 
 def _toml_value(value: str | bool) -> str:

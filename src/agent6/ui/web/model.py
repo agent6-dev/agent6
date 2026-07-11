@@ -16,7 +16,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from agent6.config_layer import load_effective, render_show, resolved_state_dir
+from agent6.config.layer import load_effective, render_show, resolved_state_dir
 from agent6.machine import JournalError, MachineError, MachineJournal, load_machine
 from agent6.transcript_render import fold_conversation, load_transcripts
 from agent6.ui.viewmodel import (

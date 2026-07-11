@@ -16,7 +16,7 @@ import pytest
 from textual.app import App
 from textual.widgets import DataTable, Input, OptionList
 
-from agent6.config_layer import load_effective
+from agent6.config.layer import load_effective
 from agent6.ui.tui.config_page import ConfigScreen, EditModal, HelpScreen
 from agent6.ui.tui.menubar import MenuBar
 
@@ -159,7 +159,7 @@ def test_edit_unset_reverts_to_default(repo: Path) -> None:
     removing the override (not by writing the default value back)."""
 
     async def scenario() -> None:
-        from agent6.config_layer import effective_leaf
+        from agent6.config.layer import effective_leaf
 
         app = _Host(repo)
         async with app.run_test() as pilot:
@@ -854,7 +854,7 @@ def test_edit_base_url_prefills_preset_for_known_provider(repo: Path) -> None:
     know the host."""
 
     async def scenario() -> None:
-        from agent6.config_layer import set_config_table
+        from agent6.config.layer import set_config_table
         from agent6.ui.tui.config_page import EditModal
 
         # An openrouter provider with NO base_url -> effective default api.openai.com.

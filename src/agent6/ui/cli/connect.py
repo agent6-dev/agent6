@@ -15,9 +15,9 @@ from agent6.config import (
     AnthropicProviderEntry,
     OpenAIProviderEntry,
     ProviderEntry,
-    _validate_base_url,
+    validate_base_url,
 )
-from agent6.config_layer import (
+from agent6.config.layer import (
     PROVIDER_PRESETS,
     repo_config_path_for,
     set_config_table,
@@ -75,7 +75,7 @@ def _prompt_base_url(default_url: str) -> str:
         url = input(f"Base URL [{default_url}]: ").strip() or default_url
     except EOFError:
         url = default_url
-    _validate_base_url(url)
+    validate_base_url(url)
     return url
 
 

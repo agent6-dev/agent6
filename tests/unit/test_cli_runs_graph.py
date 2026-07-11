@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config_layer import resolved_state_dir
+from agent6.config.layer import resolved_state_dir
 from agent6.graph.models import TaskNode
 from agent6.graph.storage import RunLayout, write_node
 from agent6.ui.cli import main

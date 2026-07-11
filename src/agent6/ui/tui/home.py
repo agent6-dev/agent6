@@ -60,7 +60,7 @@ def _available_profiles(repo_cwd: Path) -> list[str]:
     custom ``[profiles.<name>]`` tables). Delegates to ``config_layer`` -- the
     TUI's config entry point (see config_page.py) -- so the dropdown and the
     ``--profile`` CLI flag resolve against the same source."""
-    from agent6.config_layer import available_profile_names  # noqa: PLC0415
+    from agent6.config.layer import available_profile_names  # noqa: PLC0415
 
     return available_profile_names(repo_cwd, None)
 

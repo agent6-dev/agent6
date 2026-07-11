@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config_layer import load_effective, repo_config_path_for
+from agent6.config.layer import load_effective, repo_config_path_for
 from agent6.init import init_workspace
 
 

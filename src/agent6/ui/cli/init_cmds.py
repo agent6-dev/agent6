@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from agent6.config import ConfigError
-from agent6.config_layer import repo_config_path_for
+from agent6.config.layer import repo_config_path_for
 from agent6.git_ops import (
     GitError,
     commit_paths,

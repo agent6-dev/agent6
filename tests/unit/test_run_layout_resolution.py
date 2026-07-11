@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config_layer import resolved_state_dir
+from agent6.config.layer import resolved_state_dir
 from agent6.run_id import RunIdError
 from agent6.ui.cli._common import resolve_run_layout
 

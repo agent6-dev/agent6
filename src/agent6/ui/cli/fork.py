@@ -37,7 +37,7 @@ import sys
 from pathlib import Path
 
 from agent6.config import Config, ConfigError
-from agent6.config_layer import load_effective
+from agent6.config.layer import load_effective
 from agent6.git_ops import GitError, create_branch_at
 from agent6.graph.storage import RunLayout, append_jsonl, list_checkpoint_turns
 from agent6.portable import atomic_write

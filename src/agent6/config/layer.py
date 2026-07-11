@@ -37,7 +37,13 @@ from typing import Annotated, Any, Literal, Union, get_args, get_origin
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
-from agent6.config import (
+from agent6.config.io import (
+    parse_cli_value,
+    remove_toml_leaf,
+    upsert_toml_leaf,
+    upsert_toml_table,
+)
+from agent6.config.model import (
     BUILTIN_PROFILES,
     AnthropicProviderEntry,
     Config,
@@ -46,12 +52,6 @@ from agent6.config import (
     OpenAIProviderEntry,
     resolve_profile,
     validate_config,
-)
-from agent6.config_io import (
-    parse_cli_value,
-    remove_toml_leaf,
-    upsert_toml_leaf,
-    upsert_toml_table,
 )
 from agent6.paths import (
     chown_to_real_user,

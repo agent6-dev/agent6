@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from agent6.budget import BudgetTracker
-from agent6.config_layer import load_effective_with_overlay
+from agent6.config.layer import load_effective_with_overlay
 from agent6.detect import detect
 from agent6.events import EventSink
 from agent6.git_ops import set_repo_hook_policy

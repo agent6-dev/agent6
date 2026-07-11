@@ -40,7 +40,7 @@ try:
 except ImportError as e:  # pragma: no cover - clear runtime message
     raise SystemExit("The config page needs textual: pip install 'agent6[tui]'") from e
 
-from agent6.config_layer import (
+from agent6.config.layer import (
     PROVIDER_PRESETS,
     ConfigSetting,
     ConfigView,

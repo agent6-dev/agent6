@@ -210,7 +210,7 @@ def test_cmd_history_transcript_end_to_end(
 ) -> None:
     """`agent6 runs transcript <run>` resolves the run, folds its transcripts,
     and prints the conversation (full tool I/O), with --json as the raw escape."""
-    from agent6.config_layer import resolved_state_dir
+    from agent6.config.layer import resolved_state_dir
     from agent6.ui.cli.history_cmds import (
         _cmd_history_transcript,  # pyright: ignore[reportPrivateUsage]
     )
@@ -244,7 +244,7 @@ def test_cmd_history_transcript_end_to_end(
 def test_cmd_history_transcript_latest_uses_log_activity_not_dir_touch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.config_layer import resolved_state_dir
+    from agent6.config.layer import resolved_state_dir
     from agent6.ui.cli.history_cmds import (
         _cmd_history_transcript,  # pyright: ignore[reportPrivateUsage]
     )
