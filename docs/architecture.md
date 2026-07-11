@@ -24,7 +24,7 @@ almost always a sign of the wrong design.
 
 - **cli** ([src/agent6/ui/cli/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/cli)): argument parsing,
   optional TUI spawn, top-level dispatch. Picks a workflow. Config is
-  resolved by [config_layer.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config_layer.py) (built-in
+  resolved by [config/layer.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/layer.py) (built-in
   secure defaults < global `~/.config/agent6/config.toml` < per-repo
   config < `--config FILE`), with paths + sudo/root
   resolution in [paths.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/paths.py) and API keys in
@@ -298,7 +298,7 @@ graph`).
 
 | Concern                          | File / dir                                                            |
 | -------------------------------- | --------------------------------------------------------------------- |
-| Config schema                    | [src/agent6/config.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config.py)                          |
+| Config schema                    | [src/agent6/config/model.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/model.py)                          |
 | Tool surface                     | [src/agent6/tools/schema.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/schema.py)              |
 | Tool dispatch                    | [src/agent6/tools/dispatch.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/dispatch.py)          |
 | agent loop                       | [src/agent6/workflows/loop.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/loop.py)          |
