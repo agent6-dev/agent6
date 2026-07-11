@@ -26,7 +26,7 @@ from agent6.ui.bridge.approval import (
     steer_answer_is_abort,
 )
 from agent6.ui.bridge.spawn import spawn_detached_resume
-from agent6.ui.cli._ptk_reader import ask_navigate, on_tty, ptk_prompt, radio_select
+from agent6.ui.cli._ptk_reader import RadioNav, on_tty, ptk_prompt, radio_select
 from agent6.ui.cli._steer import (
     tty_message as _tty_message,
 )
@@ -247,16 +247,17 @@ def build_questioner(
 def ask_one_stdin(q: UserQuestion, prefix: str = "") -> str | None:
     """Prompt one question. On a tty the prompt_toolkit widgets own it: options are
     an inline arrow-key radio (always with a "type your own answer" free-text escape),
-    free text is a line editor, and a cancel (esc / Ctrl-C, including cancelling the
-    free-text) returns None so the caller (e.g. the navigator) treats it as
-    unanswered rather than re-asking. Off a tty it falls back to a numbered / plain
-    /dev/tty prompt. None means no answer (cancelled / headless)."""
+    free text is a line editor, and a cancel (esc / Ctrl-C) returns None so the
+    caller treats it as unanswered rather than re-asking. Off a tty it falls back
+    to a numbered / plain /dev/tty prompt. None means no answer (cancelled /
+    headless)."""
     if on_tty():
         if q.options:
             picked = radio_select(q.question, q.options, prefix=prefix)
-            if picked is not None:
-                _tty_message(f"{prefix}{q.question} -> {picked}\n")  # land it in scrollback
-            return picked  # None == cancelled: a real cancel, not a fallthrough to re-ask
+            if isinstance(picked, RadioNav):  # cancelled: no fallthrough to re-ask
+                return None
+            _tty_message(f"{prefix}{q.question} -> {picked}\n")  # land it in scrollback
+            return picked
         typed = ptk_prompt(f"{prefix}{q.question}\n> ")
         return typed.strip() if typed is not None else None
     # No tty for the widgets (e.g. a TUI stream redirect): the numbered /dev/tty prompt.
@@ -273,16 +274,70 @@ def ask_one_stdin(q: UserQuestion, prefix: str = "") -> str | None:
     return ans
 
 
+def _ask_series_tty(questions: tuple[UserQuestion, ...]) -> tuple[str, ...] | None:
+    """One question at a time on the tty: each is an arrow-key radio (with the
+    free-text escape) or a line editor; left goes back a question, esc skips one
+    (empty answer), Ctrl-C abandons the series (returns None, unanswered). A review
+    screen confirms before submitting; the submitted answers are then printed as
+    plain lines so they land in scrollback (the widgets erase themselves)."""
+    n = len(questions)
+    answers = [""] * n
+    i = 0
+    while True:
+        if i == n:  # every question visited: review, then submit or walk back
+            summary = "\n".join(
+                f"  {q.question} -> {a or '(empty)'}"
+                for q, a in zip(questions, answers, strict=True)
+            )
+            picked = radio_select(
+                f"Review answers:\n{summary}",
+                ("Submit", "Go back and revise"),
+                allow_back=True,
+                free_text=False,
+            )
+            if picked is RadioNav.CANCEL:
+                return None
+            if picked == "Submit":
+                _tty_message(summary + "\n")
+                return tuple(answers)
+            i = n - 1  # "Go back and revise", left, or esc: revise from the last question
+            continue
+        q = questions[i]
+        counter = f" ({i + 1}/{n})"
+        if q.options:
+            picked = radio_select(
+                q.question + counter,
+                q.options,
+                initial=q.options.index(answers[i]) if answers[i] in q.options else 0,
+                allow_back=i > 0,
+            )
+            if picked is RadioNav.CANCEL:
+                return None
+            if picked is RadioNav.BACK:
+                i -= 1
+                continue
+            if picked is not RadioNav.SKIP:
+                answers[i] = picked
+        else:
+            try:
+                typed = ptk_prompt(f"{q.question}{counter}\n> ", interrupt_aborts=True)
+            except KeyboardInterrupt:
+                return None
+            if typed is not None:  # Ctrl-D skips: keep the current answer
+                answers[i] = typed.strip()
+        i += 1
+
+
 def default_stdin_questioner(questions: tuple[UserQuestion, ...]) -> tuple[str, ...] | None:
     """Ask a question series on the terminal. A single question is a radio (always
-    with a "type your own answer" escape) or a line editor. A series uses the inline
-    forward/back navigator (``ask_navigate``): move between questions freely, answer
-    in any order, go back to change one, then submit. Without a tty for the navigator
-    (e.g. a TUI stream redirect) it falls back to sequential /dev/tty prompts + a
-    numbered review; fully headless returns None so the caller answers empty rather
-    than hanging or eating piped stdin."""
+    with a "type your own answer" escape) or a line editor. A series goes one
+    question at a time (``_ask_series_tty``): answering auto-advances, left goes
+    back, esc skips, and a review screen confirms before submitting. Without a tty
+    for the widgets (e.g. a TUI stream redirect) it falls back to sequential
+    /dev/tty prompts + a numbered review; fully headless returns None so the caller
+    answers empty rather than hanging or eating piped stdin."""
     if len(questions) <= 1:
-        # A single question (or, degenerately, none): ask it directly, no navigator.
+        # A single question (or, degenerately, none): ask it directly, no series.
         single: list[str] = []
         for q in questions:
             ans = ask_one_stdin(q)
@@ -290,12 +345,11 @@ def default_stdin_questioner(questions: tuple[UserQuestion, ...]) -> tuple[str, 
                 return None
             single.append(ans)
         return tuple(single)
-    # Multiple on a tty: the inline forward/back navigator, answering each question
-    # through the same radio / line editor (with its "type your own" escape).
-    navigated = ask_navigate([q.question for q in questions], lambda i: ask_one_stdin(questions[i]))
-    if navigated is not None:
-        return tuple(navigated)
-    # No tty for the navigator: sequential /dev/tty asks, then a numbered review; a
+    # Multiple on a tty: one question at a time through the same radio / line
+    # editor (with its "type your own" escape), then a review screen.
+    if on_tty():
+        return _ask_series_tty(questions)
+    # No tty for the widgets: sequential /dev/tty asks, then a numbered review; a
     # fully headless run returns None on the first ask.
     answers: list[str] = []
     for i, q in enumerate(questions, start=1):

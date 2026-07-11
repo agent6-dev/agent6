@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 
 from agent6.ui.cli import _ptk_reader
+from agent6.ui.cli._ptk_reader import RadioNav
 
 
 def _drive(monkeypatch: pytest.MonkeyPatch, keys: str, fn: Callable[[], Any]) -> Any:
@@ -32,32 +33,33 @@ def test_radio_select_arrows_to_option(monkeypatch: pytest.MonkeyPatch) -> None:
     assert got == "b"
 
 
+def test_radio_select_initial_preselects(monkeypatch: pytest.MonkeyPatch) -> None:
+    # revisiting an answered question: the cursor starts on the previous answer.
+    got = _drive(monkeypatch, "\r", lambda: _ptk_reader.radio_select("pick", ["a", "b"], initial=1))
+    assert got == "b"
+
+
 def test_radio_select_ctrl_c_cancels(monkeypatch: pytest.MonkeyPatch) -> None:
-    # ctrl-c -> None so the caller falls back to the plain prompt.
-    assert _drive(monkeypatch, "\x03", lambda: _ptk_reader.radio_select("pick", ["a", "b"])) is None
+    # ctrl-c -> CANCEL so the caller treats the question as unanswered.
+    got = _drive(monkeypatch, "\x03", lambda: _ptk_reader.radio_select("pick", ["a", "b"]))
+    assert got is RadioNav.CANCEL
 
 
-def test_ask_navigate_answers_each_then_submits(monkeypatch: pytest.MonkeyPatch) -> None:
-    # enter answers q0 (answer() -> "A0"), auto-advances to q1, enter answers it, then
-    # auto-advances to the submit row; enter submits.
-    result = _drive(
-        monkeypatch,
-        "\r\r\r",
-        lambda: _ptk_reader.ask_navigate(["q0", "q1"], lambda i: f"A{i}"),
+def test_radio_select_series_back_and_skip(monkeypatch: pytest.MonkeyPatch) -> None:
+    # in a series (allow_back): left goes back a question, esc skips this one.
+    back = _drive(
+        monkeypatch, "\x1b[D", lambda: _ptk_reader.radio_select("pick", ["a"], allow_back=True)
     )
-    assert result == ["A0", "A1"]
-
-
-def test_ask_navigate_back_nav_then_submit_leaves_unanswered_empty(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # answer q0 (auto-advance to q1), go BACK up to q0, ctrl-c submits as-is -> q1 empty.
-    result = _drive(
-        monkeypatch,
-        "\r\x1b[A\x03",
-        lambda: _ptk_reader.ask_navigate(["q0", "q1"], lambda _i: "X"),
+    assert back is RadioNav.BACK
+    skip = _drive(
+        monkeypatch, "\x1b", lambda: _ptk_reader.radio_select("pick", ["a"], allow_back=True)
     )
-    assert result == ["X", ""]
+    assert skip is RadioNav.SKIP
+
+
+def test_radio_select_esc_cancels_outside_a_series(monkeypatch: pytest.MonkeyPatch) -> None:
+    got = _drive(monkeypatch, "\x1b", lambda: _ptk_reader.radio_select("pick", ["a", "b"]))
+    assert got is RadioNav.CANCEL
 
 
 def test_radio_select_offers_free_text(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -69,6 +71,29 @@ def test_radio_select_offers_free_text(monkeypatch: pytest.MonkeyPatch) -> None:
         lambda: _ptk_reader.radio_select("pick", ["a", "b"]),
     )
     assert got == "my own answer"
+
+
+def test_radio_select_free_text_backout_returns_to_radio(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Ctrl-C in the free-text editor backs out to the radio (cursor kept on the
+    # free-text entry) instead of cancelling; up + enter then picks "b".
+    got = _drive(
+        monkeypatch,
+        "\x1b[B\x1b[B\r\x03\x1b[A\r",
+        lambda: _ptk_reader.radio_select("pick", ["a", "b"]),
+    )
+    assert got == "b"
+
+
+def test_radio_select_no_free_text_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    # free_text=False (the review screen): the last entry is a real option.
+    got = _drive(
+        monkeypatch,
+        "\x1b[B\r",
+        lambda: _ptk_reader.radio_select("go?", ["Submit", "Revise"], free_text=False),
+    )
+    assert got == "Revise"
 
 
 def test_ptk_prompt_reads_a_line(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -87,8 +112,7 @@ def test_ptk_prompt_ctrl_c_aborts_only_when_requested(monkeypatch: pytest.Monkey
 
 
 def test_widgets_fall_back_without_a_tty(monkeypatch: pytest.MonkeyPatch) -> None:
-    # No controlling terminal: both return None so the caller uses the plain path.
+    # No controlling terminal: both report it so the caller uses the plain path.
     monkeypatch.setattr(_ptk_reader, "on_tty", lambda: False)
-    assert _ptk_reader.radio_select("q", ["a"]) is None
-    assert _ptk_reader.ask_navigate(["q"], lambda _i: "X") is None
+    assert _ptk_reader.radio_select("q", ["a"]) is RadioNav.CANCEL
     assert _ptk_reader.ptk_prompt("q> ") is None

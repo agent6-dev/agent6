@@ -78,15 +78,16 @@ def test_ask_one_stdin_prompts_and_maps_a_digit_to_its_option() -> None:
 def test_ask_one_stdin_cancel_on_tty_returns_none_not_a_reprompt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # On a tty, cancelling the radio (esc, or aborting its "type your own" free-text)
-    # returns None so the navigator treats it as unanswered -- it must NOT fall through
-    # to a numbered /dev/tty re-prompt for the same question.
+    # On a tty, cancelling the radio (esc / Ctrl-C) returns None so the caller treats
+    # it as unanswered -- it must NOT fall through to a numbered /dev/tty re-prompt
+    # for the same question.
     from agent6.ui.cli import _interact as interact_mod
+    from agent6.ui.cli._ptk_reader import RadioNav
 
     fell_back = {"hit": False}
 
-    def _cancelled(*_a: Any, **_k: Any) -> str | None:  # radio ran, user cancelled
-        return None
+    def _cancelled(*_a: Any, **_k: Any) -> object:  # radio ran, user cancelled
+        return RadioNav.CANCEL
 
     def _boom(*_a: Any, **_k: Any) -> str:
         fell_back["hit"] = True
@@ -98,6 +99,72 @@ def test_ask_one_stdin_cancel_on_tty_returns_none_not_a_reprompt(
     got = interact_mod.ask_one_stdin(UserQuestion(question="pick", options=("a", "b")))
     assert got is None
     assert not fell_back["hit"]  # the numbered fallback was NOT invoked
+
+
+def _series(
+    monkeypatch: pytest.MonkeyPatch, radio_script: list[Any], prompt_script: list[str | None]
+) -> Any:
+    """Patch the widgets with scripted results and return the _interact module, so
+    the one-question-at-a-time series logic is tested without a terminal."""
+    from agent6.ui.cli import _interact as interact_mod
+
+    radios, prompts = list(radio_script), list(prompt_script)
+    monkeypatch.setattr(interact_mod, "on_tty", lambda: True)
+    monkeypatch.setattr(interact_mod, "radio_select", lambda *_a, **_k: radios.pop(0))
+    monkeypatch.setattr(interact_mod, "ptk_prompt", lambda *_a, **_k: prompts.pop(0))
+    monkeypatch.setattr(interact_mod, "_tty_message", lambda *_a, **_k: None)
+    return interact_mod
+
+
+def test_series_answers_in_order_then_submits(monkeypatch: pytest.MonkeyPatch) -> None:
+    # q0 is a radio, q1 free text; the review screen submits.
+    mod = _series(monkeypatch, ["a", "Submit"], ["hello"])
+    qs = (UserQuestion(question="q0", options=("a", "b")), UserQuestion(question="q1"))
+    assert mod.default_stdin_questioner(qs) == ("a", "hello")
+
+
+def test_series_back_revises_the_previous_answer(monkeypatch: pytest.MonkeyPatch) -> None:
+    # answer q0, go BACK from q1, re-answer q0, answer q1, submit.
+    from agent6.ui.cli._ptk_reader import RadioNav
+
+    mod = _series(monkeypatch, ["a", RadioNav.BACK, "b", "c", "Submit"], [])
+    qs = (
+        UserQuestion(question="q0", options=("a", "b")),
+        UserQuestion(question="q1", options=("c", "d")),
+    )
+    assert mod.default_stdin_questioner(qs) == ("b", "c")
+
+
+def test_series_skip_leaves_an_empty_answer(monkeypatch: pytest.MonkeyPatch) -> None:
+    from agent6.ui.cli._ptk_reader import RadioNav
+
+    mod = _series(monkeypatch, [RadioNav.SKIP, "x", "Submit"], [])
+    qs = (
+        UserQuestion(question="q0", options=("a", "b")),
+        UserQuestion(question="q1", options=("x", "y")),
+    )
+    assert mod.default_stdin_questioner(qs) == ("", "x")
+
+
+def test_series_review_can_go_back_and_revise(monkeypatch: pytest.MonkeyPatch) -> None:
+    # "Go back and revise" at the review returns to the last question.
+    mod = _series(monkeypatch, ["a", "c", "Go back and revise", "d", "Submit"], [])
+    qs = (
+        UserQuestion(question="q0", options=("a", "b")),
+        UserQuestion(question="q1", options=("c", "d")),
+    )
+    assert mod.default_stdin_questioner(qs) == ("a", "d")
+
+
+def test_series_ctrl_c_abandons_unanswered(monkeypatch: pytest.MonkeyPatch) -> None:
+    from agent6.ui.cli._ptk_reader import RadioNav
+
+    mod = _series(monkeypatch, [RadioNav.CANCEL], [])
+    qs = (
+        UserQuestion(question="q0", options=("a", "b")),
+        UserQuestion(question="q1", options=("c", "d")),
+    )
+    assert mod.default_stdin_questioner(qs) is None
 
 
 def test_stdin_questioner_returns_none_without_a_terminal() -> None:
