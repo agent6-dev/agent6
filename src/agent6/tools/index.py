@@ -53,12 +53,6 @@ from tree_sitter import Parser, Query, QueryCursor
 from tree_sitter_language_pack import get_language
 
 
-class IndexError(RuntimeError):
-    """Raised on unrecoverable index errors. Currently unused, individual
-    file failures are absorbed silently so one bad file does not poison
-    the whole index."""
-
-
 @dataclass(frozen=True, slots=True)
 class Symbol:
     """A definition site. `path` is absolute; `line`/`col` are 0-indexed."""
@@ -630,7 +624,6 @@ class SymbolIndex:
 
 
 __all__ = [
-    "IndexError",
     "Reference",
     "Symbol",
     "SymbolIndex",

@@ -8,10 +8,8 @@ import sys
 from pathlib import Path
 
 from agent6.memory import (
-    MemoryError as Agent6MemoryError,
-)
-from agent6.memory import (
     MemoryScope,
+    MemoryStoreError,
 )
 from agent6.memory import (
     add as memory_add,
@@ -28,7 +26,7 @@ from agent6.ui.cli._common import _state_dir
 def _cmd_memory_add(scope: MemoryScope, body: str) -> int:
     try:
         entry = memory_add(_state_dir(Path.cwd()), scope, body)
-    except Agent6MemoryError as exc:
+    except MemoryStoreError as exc:
         print(f"MEMORY ERROR: {exc}", file=sys.stderr)
         return 2
     print(f"{entry.scope} {entry.id} created at {entry.created_at}")
@@ -38,7 +36,7 @@ def _cmd_memory_add(scope: MemoryScope, body: str) -> int:
 def _cmd_memory_list(scope: MemoryScope | None, *, include_invalidated: bool) -> int:
     try:
         entries = memory_list(_state_dir(Path.cwd()), scope)
-    except Agent6MemoryError as exc:
+    except MemoryStoreError as exc:
         print(f"MEMORY ERROR: {exc}", file=sys.stderr)
         return 2
     if not entries:
@@ -60,7 +58,7 @@ def _cmd_memory_list(scope: MemoryScope | None, *, include_invalidated: bool) ->
 def _cmd_memory_invalidate(memory_id: str, reason: str) -> int:
     try:
         entry = memory_invalidate(_state_dir(Path.cwd()), memory_id, reason)
-    except Agent6MemoryError as exc:
+    except MemoryStoreError as exc:
         print(f"MEMORY ERROR: {exc}", file=sys.stderr)
         return 2
     print(f"invalidated {entry.scope} {entry.id} at {entry.invalidated_at}")

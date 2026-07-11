@@ -9,9 +9,7 @@ from pathlib import Path
 import pytest
 
 from agent6.memory import (
-    MemoryError as Agent6MemoryError,
-)
-from agent6.memory import (
+    MemoryStoreError,
     add,
     invalidate,
     list_entries,
@@ -30,7 +28,7 @@ def test_add_persists_and_roundtrips(tmp_path: Path) -> None:
 
 
 def test_add_rejects_empty_body(tmp_path: Path) -> None:
-    with pytest.raises(Agent6MemoryError):
+    with pytest.raises(MemoryStoreError):
         add(tmp_path, "facts", "   \n")
 
 
@@ -59,13 +57,13 @@ def test_invalidate_preserves_body(tmp_path: Path) -> None:
 def test_invalidate_twice_fails(tmp_path: Path) -> None:
     e = add(tmp_path, "facts", "x")
     invalidate(tmp_path, e.id, "wrong")
-    with pytest.raises(Agent6MemoryError):
+    with pytest.raises(MemoryStoreError):
         invalidate(tmp_path, e.id, "still wrong")
 
 
 def test_invalidate_unknown_id_fails(tmp_path: Path) -> None:
     add(tmp_path, "facts", "x")
-    with pytest.raises(Agent6MemoryError):
+    with pytest.raises(MemoryStoreError):
         invalidate(tmp_path, "0" * 26, "missing")
 
 

@@ -46,7 +46,7 @@ _ID_RE = re.compile(r"^### ([0-9A-HJKMNP-TV-Z]{26})\s*$")
 _KEY_RE = re.compile(r"^([a-z_]+):\s*(.+)$")
 
 
-class MemoryError(Exception):
+class MemoryStoreError(Exception):
     """Memory-store operation failed."""
 
 
@@ -70,7 +70,7 @@ def _memories_dir(state_dir: Path) -> Path:
 
 def _scope_path(state_dir: Path, scope: MemoryScope) -> Path:
     if scope not in _SCOPES:
-        raise MemoryError(f"unknown memory scope: {scope!r} (want one of {_SCOPES})")
+        raise MemoryStoreError(f"unknown memory scope: {scope!r} (want one of {_SCOPES})")
     return _memories_dir(state_dir) / f"{scope}.md"
 
 
@@ -151,7 +151,7 @@ def add(state_dir: Path, scope: MemoryScope, body: str) -> MemoryEntry:
     """Append a new entry. Returns the persisted entry (with assigned id)."""
     body = body.strip()
     if not body:
-        raise MemoryError("memory body must be non-empty")
+        raise MemoryStoreError("memory body must be non-empty")
     path = _scope_path(state_dir, scope)
     entries = _parse_file(path, scope)
     entry = MemoryEntry(id=new_ulid(), scope=scope, created_at=_now(), body=body)
@@ -172,7 +172,7 @@ def invalidate(state_dir: Path, memory_id: str, reason: str) -> MemoryEntry:
     """Mark `memory_id` invalidated. Body is preserved."""
     reason = reason.strip()
     if not reason:
-        raise MemoryError("invalidation reason must be non-empty")
+        raise MemoryStoreError("invalidation reason must be non-empty")
     for scope in _SCOPES:
         path = _scope_path(state_dir, scope)
         entries = _parse_file(path, scope)
@@ -180,7 +180,7 @@ def invalidate(state_dir: Path, memory_id: str, reason: str) -> MemoryEntry:
             if e.id != memory_id:
                 continue
             if e.invalidated_at:
-                raise MemoryError(f"memory {memory_id} already invalidated")
+                raise MemoryStoreError(f"memory {memory_id} already invalidated")
             updated = MemoryEntry(
                 id=e.id,
                 scope=scope,
@@ -192,4 +192,4 @@ def invalidate(state_dir: Path, memory_id: str, reason: str) -> MemoryEntry:
             entries[i] = updated
             atomic_write(path, _render_file(scope, entries))
             return updated
-    raise MemoryError(f"no memory with id {memory_id!r}")
+    raise MemoryStoreError(f"no memory with id {memory_id!r}")
