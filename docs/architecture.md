@@ -105,8 +105,12 @@ Notes:
   resets the counter, so a healthy run never sees it.
 - **Context compaction.** Long runs are kept inside the model's context
   window in two tiers (thresholds in `[context]`): at
-  `drop_at_chars` the oldest tool_results are replaced by a
-  short "re-call if needed" placeholder; at `summarise_at_chars`
+  `drop_at_chars` the oldest tool_results are replaced by a short
+  placeholder naming the elided call (`read_file src/x.py ...`), with
+  reads of files the worker edited in the last few turns elided last
+  (a placeholder there would force a paid re-read before the next
+  edit; it is a priority, not an exemption, so the bound holds); at
+  `summarise_at_chars`
   the elided history is summarised by the `reviewer` model and the
   conversation restarts from (task + summary). The curator-owned task
   DAG survives the restart: agent6 re-surfaces the current task into the

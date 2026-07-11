@@ -246,3 +246,114 @@ def test_restart_notice_is_dag_aware() -> None:
         assert "list_tasks" not in notice
         assert "Do NOT start over" in notice
         assert notice.endswith("PROGRESS SUMMARY:\n")
+
+
+# --- read-waste reduction: identity placeholders + hot-file protection ------
+
+
+def _assistant_tool_use(uid: str, name: str, tool_input: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "role": "assistant",
+        "content": [{"type": "tool_use", "id": uid, "name": name, "input": tool_input}],
+    }
+
+
+def _tool_result_msg(uid: str, content: str) -> dict[str, Any]:
+    return {
+        "role": "user",
+        "content": [{"type": "tool_result", "tool_use_id": uid, "content": content}],
+    }
+
+
+def test_elision_placeholder_names_the_call() -> None:
+    from agent6.workflows._compaction import ELISION_PREFIX, elision_placeholder
+
+    p = elision_placeholder("read_file", {"path": "src/x.py", "offset": 10, "limit": 50})
+    assert p.startswith(ELISION_PREFIX)
+    assert "read_file src/x.py" in p and "offset=10" in p
+    g = elision_placeholder("grep", {"pattern": "def foo"})
+    assert "grep pattern 'def foo'" in g
+    # Unknown pairing (orphan result) falls back to the generic marker.
+    from agent6.workflows._compaction import ELISION_PLACEHOLDER
+
+    assert elision_placeholder("", None) == ELISION_PLACEHOLDER
+    assert elision_placeholder("read_file", "not-a-dict") == ELISION_PLACEHOLDER
+    # A pathological arg is clipped, keeping the placeholder short.
+    long = elision_placeholder("read_file", {"path": "x" * 5000})
+    assert len(long) < 500
+
+
+def test_recently_edited_paths_extraction() -> None:
+    from agent6.workflows._compaction import recently_edited_paths
+
+    unified = "--- a/pkg/mod.py\n+++ b/pkg/mod.py\n@@ -1,1 +1,1 @@\n-a\n+b\n"
+    v4a = "*** Begin Patch\n*** Update File: pkg/v4a.py\n@@\n-a\n+b\n*** End Patch\n"
+    msgs: list[dict[str, Any]] = [
+        _assistant_tool_use("e1", "apply_edit", {"path": "edited.py", "edits": []}),
+        _assistant_tool_use("e2", "apply_patch", {"path": "explicit.py", "patch": "x"}),
+        _assistant_tool_use("e3", "apply_patch", {"path": "", "patch": unified}),
+        _assistant_tool_use("e4", "apply_patch", {"patch": v4a}),
+        _assistant_tool_use("r1", "read_file", {"path": "only-read.py"}),
+    ]
+    got = recently_edited_paths(msgs)
+    assert got == frozenset({"edited.py", "explicit.py", "pkg/mod.py", "pkg/v4a.py"})
+    # The window is per assistant TURN: an edit older than last_turns drops out.
+    windowed = recently_edited_paths(
+        [
+            _assistant_tool_use("e1", "apply_edit", {"path": "old.py", "edits": []}),
+            _assistant_tool_use("t2", "read_file", {"path": "a"}),
+            _assistant_tool_use("t3", "read_file", {"path": "b"}),
+        ],
+        last_turns=2,
+    )
+    assert windowed == frozenset()
+
+
+def test_compact_elides_protected_reads_last_but_bound_still_holds() -> None:
+    def build() -> list[dict[str, Any]]:
+        return [
+            _assistant_tool_use("r1", "read_file", {"path": "hot.py"}),
+            _tool_result_msg("r1", "H" * 1000),
+            _assistant_tool_use("r2", "read_file", {"path": "cold.py"}),
+            _tool_result_msg("r2", "C" * 1000),
+            _assistant_tool_use("r3", "grep", {"pattern": "x"}),
+            _tool_result_msg("r3", "G" * 1000),
+            _assistant_tool_use("r4", "list_dir", {"path": "."}),
+            _tool_result_msg("r4", "L" * 1000),
+        ]
+
+    # Budget forces ONE elision: with hot.py protected, the (older) hot read
+    # survives and the cold read goes first.
+    msgs = build()
+    n = compact_old_tool_results(
+        msgs, max_total_bytes=3500, keep_recent=2, protect_paths=frozenset({"hot.py"})
+    )
+    assert n == 1
+    assert msgs[1]["content"][0]["content"] == "H" * 1000
+    assert "cold.py" in msgs[3]["content"][0]["content"]
+    # Tighter budget: protection is a priority, not an exemption; the hot read
+    # is elided too and the bound holds.
+    msgs2 = build()
+    n2 = compact_old_tool_results(
+        msgs2, max_total_bytes=2500, keep_recent=2, protect_paths=frozenset({"hot.py"})
+    )
+    assert n2 == 2
+    assert "hot.py" in msgs2[1]["content"][0]["content"]
+
+
+def test_compact_placeholder_carries_tool_identity() -> None:
+    msgs = [
+        _assistant_tool_use("r1", "read_file", {"path": "src/lib.py"}),
+        _tool_result_msg("r1", "X" * 1000),
+        _assistant_tool_use("r2", "grep", {"pattern": "q"}),
+        _tool_result_msg("r2", "Y" * 1000),
+        _assistant_tool_use("r3", "list_dir", {"path": "."}),
+        _tool_result_msg("r3", "Z" * 1000),
+        _assistant_tool_use("r4", "outline", {"path": "a.py"}),
+        _tool_result_msg("r4", "W" * 1000),
+    ]
+    n = compact_old_tool_results(msgs, max_total_bytes=3000, keep_recent=2)
+    assert n >= 1
+    elided = msgs[1]["content"][0]["content"]
+    assert elided.startswith("<elided by context compaction")
+    assert "read_file src/lib.py" in elided

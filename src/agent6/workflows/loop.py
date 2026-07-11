@@ -75,6 +75,9 @@ from agent6.workflows._compaction import (
     parse_checkoff as _parse_checkoff,
 )
 from agent6.workflows._compaction import (
+    recently_edited_paths as _recently_edited_paths,
+)
+from agent6.workflows._compaction import (
     strip_checkoff as _strip_checkoff,
 )
 from agent6.workflows._context import load_repo_summary
@@ -2675,7 +2678,10 @@ class Workflow:
         untouched (tier-1 elision already ran) and the run continues.
         """
         n_dropped = _compact_old_tool_results(
-            messages, max_total_bytes=self.compact_drop_at_chars, keep_recent=2
+            messages,
+            max_total_bytes=self.compact_drop_at_chars,
+            keep_recent=2,
+            protect_paths=_recently_edited_paths(messages),
         )
         if n_dropped:
             self._log(f"LOOP: compaction elided {n_dropped} old tool_result blocks")

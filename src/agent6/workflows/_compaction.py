@@ -20,11 +20,54 @@ import json
 import re
 from typing import Any
 
+# Stable prefix shared by every placeholder variant: idempotency checks and
+# tests key on it.
+ELISION_PREFIX = "<elided by context compaction"
+
 ELISION_PLACEHOLDER = (
     "<elided by context compaction: this tool_result has been replaced "
     "with this short marker to keep the loop's cumulative input bounded. "
     "Re-call the tool with the same args if you still need the content.>"
 )
+
+# How much of a tool arg the placeholder echoes. Placeholders stay in context,
+# so the identity hint must stay short.
+_ELISION_HINT_MAX_CHARS = 120
+
+
+def elision_placeholder(tool_name: str, tool_input: Any) -> str:
+    """Identity-bearing tier-1 placeholder.
+
+    Names the elided call (tool + its key argument) so the model can re-issue
+    or skip it without scanning up for the paired tool_use block; a bare
+    marker made weak models lose track of WHAT was elided and re-read the
+    wrong files. Unknown tool (orphan result) falls back to the generic
+    marker.
+    """
+    if not tool_name or not isinstance(tool_input, dict):
+        return ELISION_PLACEHOLDER
+    hint = ""
+    if tool_name == "read_file":
+        hint = str(tool_input.get("path", ""))
+        offset = tool_input.get("offset")
+        limit = tool_input.get("limit")
+        if offset or limit:
+            hint += f" (offset={offset}, limit={limit})"
+    elif tool_name == "grep":
+        hint = f"pattern {str(tool_input.get('pattern', ''))!r}"
+    elif tool_name in ("list_dir", "outline"):
+        hint = str(tool_input.get("path", ""))
+    elif tool_name in ("find_definition", "find_references"):
+        hint = str(tool_input.get("name", ""))
+    if len(hint) > _ELISION_HINT_MAX_CHARS:
+        hint = hint[:_ELISION_HINT_MAX_CHARS] + "..."
+    described = f"{tool_name} {hint}".rstrip()
+    return (
+        f"{ELISION_PREFIX}: the result of {described} was replaced with this "
+        f"short marker to keep the loop's cumulative input bounded. Re-call "
+        f"{tool_name} with the same args if you still need the content.>"
+    )
+
 
 # per-tool-result cap. was a hard 20_000 char slice
 # applied mid-JSON, which produced a malformed result the model could
@@ -159,43 +202,124 @@ def context_chars(messages: list[dict[str, Any]]) -> int:
     return total
 
 
-def compact_old_tool_results(
-    messages: list[dict[str, Any]],
-    *,
-    max_total_bytes: int,
-    keep_recent: int = 2,
-) -> int:
-    """Elide old tool_result blocks once cumulative content exceeds the
-    threshold. Walks messages oldest-first, replaces each tool_result's
-    ``content`` with a short placeholder, stops once total size is back
-    under ``max_total_bytes``. The most recent ``keep_recent`` are always
-    preserved, as is every tool_result in the last tool_result-bearing message:
-    the loop compacts at top-of-iteration, before the provider call that would
-    deliver that batch, so the model has never seen it and the placeholder's
-    "re-call the tool" guidance would trigger a paid re-call cycle. (Keying on
-    the final message alone is not enough: a trailing steer or nudge user
-    message pushes the fresh, still undelivered results off the final index, and
-    one turn can carry several such blocks.) Idempotent on already-elided
-    entries. Returns the number of entries elided (for telemetry).
+# First target header in a unified diff (`+++ b/PATH`) or a v4a patch
+# (`*** Update|Add File: PATH`). apply_patch is one-file-per-call, so the
+# first match is the file.
+_PATCH_TARGET_RE = re.compile(
+    r"^(?:\+\+\+ b/(?P<u>\S+)|\*\*\* (?:Update|Add) File: (?P<v>.+))$", re.MULTILINE
+)
+
+
+def recently_edited_paths(messages: list[dict[str, Any]], *, last_turns: int = 8) -> frozenset[str]:
+    """Paths targeted by apply_edit / apply_patch in the last *last_turns*
+    assistant messages: the files the worker is actively editing. Tier-1
+    elision deprioritises their read_file results (see
+    ``compact_old_tool_results``), because a placeholder there triggers a paid
+    re-read before the very next edit. Best-effort: an apply_patch without a
+    ``path`` argument falls back to the patch headers; an unparseable patch
+    just goes unprotected.
     """
-    pointers: list[tuple[int, int, int]] = []  # (msg_idx, item_idx, size)
+    out: set[str] = set()
+    seen_assistant = 0
+    for msg in reversed(messages):
+        if msg.get("role") != "assistant":
+            continue
+        seen_assistant += 1
+        if seen_assistant > last_turns:
+            break
+        content = msg.get("content")
+        if not isinstance(content, list):
+            continue
+        for item in content:
+            if not isinstance(item, dict) or item.get("type") != "tool_use":
+                continue
+            name = item.get("name")
+            tool_input = item.get("input")
+            if name not in ("apply_edit", "apply_patch") or not isinstance(tool_input, dict):
+                continue
+            path = str(tool_input.get("path", "") or "")
+            if not path and name == "apply_patch":
+                m = _PATCH_TARGET_RE.search(str(tool_input.get("patch", "")))
+                path = ((m.group("u") or m.group("v") or "") if m else "").strip()
+            if path:
+                out.add(path)
+    return frozenset(out)
+
+
+def _tool_use_index(messages: list[dict[str, Any]]) -> dict[str, tuple[str, Any]]:
+    """id -> (tool name, input) for every tool_use block, pairing each
+    tool_result to the call that produced it (placeholder identity + hot-file
+    protection)."""
+    out: dict[str, tuple[str, Any]] = {}
+    for msg in messages:
+        content = msg.get("content")
+        if not isinstance(content, list):
+            continue
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "tool_use":
+                out[str(item.get("id", ""))] = (str(item.get("name", "")), item.get("input"))
+    return out
+
+
+def _tool_result_pointers(
+    messages: list[dict[str, Any]],
+) -> tuple[list[tuple[int, int, int]], int]:
+    """((msg_idx, item_idx, size) per tool_result, total size) in order."""
+    pointers: list[tuple[int, int, int]] = []
     total = 0
     for msg_idx, msg in enumerate(messages):
         content = msg.get("content")
         if not isinstance(content, list):
             continue
         for item_idx, item in enumerate(content):
-            if not isinstance(item, dict):
-                continue
-            if item.get("type") != "tool_result":
+            if not isinstance(item, dict) or item.get("type") != "tool_result":
                 continue
             raw_content = item.get("content")
             size = len(raw_content) if isinstance(raw_content, str) else len(str(raw_content))
             pointers.append((msg_idx, item_idx, size))
             total += size
+    return pointers, total
 
+
+def compact_old_tool_results(
+    messages: list[dict[str, Any]],
+    *,
+    max_total_bytes: int,
+    keep_recent: int = 2,
+    protect_paths: frozenset[str] = frozenset(),
+) -> int:
+    """Elide old tool_result blocks once cumulative content exceeds the
+    threshold. Walks messages oldest-first, replaces each tool_result's
+    ``content`` with a short identity-bearing placeholder, stops once total
+    size is back under ``max_total_bytes``. The most recent ``keep_recent``
+    are always preserved, as is every tool_result in the last
+    tool_result-bearing message: the loop compacts at top-of-iteration, before
+    the provider call that would deliver that batch, so the model has never
+    seen it and the placeholder's "re-call the tool" guidance would trigger a
+    paid re-call cycle. (Keying on the final message alone is not enough: a
+    trailing steer or nudge user message pushes the fresh, still undelivered
+    results off the final index, and one turn can carry several such blocks.)
+
+    ``protect_paths`` (the actively-edited set from ``recently_edited_paths``)
+    deprioritises rather than exempts: read_file results for those paths are
+    elided only after every other candidate, so the hot file's content
+    survives as long as the budget allows but the hard bound still holds.
+
+    Idempotent on already-elided entries. Returns the number of entries elided
+    (for telemetry).
+    """
+    tool_uses = _tool_use_index(messages)
+    pointers, total = _tool_result_pointers(messages)
     if total <= max_total_bytes or len(pointers) <= keep_recent:
         return 0
+
+    def _is_protected(msg_idx: int, item_idx: int) -> bool:
+        item = messages[msg_idx]["content"][item_idx]
+        name, tool_input = tool_uses.get(str(item.get("tool_use_id", "")), ("", None))
+        if name != "read_file" or not isinstance(tool_input, dict):
+            return False
+        return str(tool_input.get("path", "")) in protect_paths
+
     # The undelivered batch is always in the last tool_result-bearing message:
     # at top-of-iteration only text-only steer/nudge user messages can trail the
     # fresh results, and the delivering provider call runs after this compaction.
@@ -203,21 +327,29 @@ def compact_old_tool_results(
     # index alone missed a trailing steer/nudge, and one turn can carry several
     # such blocks, so this is broader than keep_recent or the final index.
     last_tool_result_idx = max(msg_idx for msg_idx, _, _ in pointers)
+    candidates = pointers[:-keep_recent]
+    if protect_paths:
+        # Protected reads go last, each group staying oldest-first.
+        candidates = [c for c in candidates if not _is_protected(c[0], c[1])] + [
+            c for c in candidates if _is_protected(c[0], c[1])
+        ]
     elided_count = 0
-    for msg_idx, item_idx, size in pointers[:-keep_recent]:
+    for msg_idx, item_idx, size in candidates:
         if total <= max_total_bytes:
             break
         if msg_idx == last_tool_result_idx:
             continue
         item = messages[msg_idx]["content"][item_idx]
         current = item.get("content")
-        if isinstance(current, str) and current.startswith("<elided by context compaction"):
+        if isinstance(current, str) and current.startswith(ELISION_PREFIX):
             continue
-        if size <= len(ELISION_PLACEHOLDER):
+        name, tool_input = tool_uses.get(str(item.get("tool_use_id", "")), ("", None))
+        placeholder = elision_placeholder(name, tool_input)
+        if size <= len(placeholder):
             # Replacing content already smaller than the placeholder would GROW
             # the total, defeating the point; skip it.
             continue
-        item["content"] = ELISION_PLACEHOLDER
-        total -= size - len(ELISION_PLACEHOLDER)
+        item["content"] = placeholder
+        total -= size - len(placeholder)
         elided_count += 1
     return elided_count
