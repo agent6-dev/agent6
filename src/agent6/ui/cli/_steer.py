@@ -29,6 +29,7 @@ from agent6.ui.bridge.approval import (
     steer_answer_is_abort,
     steer_request_pending,
 )
+from agent6.ui.cli._steer_menu import normalize_steer_choice, pause_menu, readline_capable
 
 
 @dataclass
@@ -109,20 +110,6 @@ def select_revised_prompt(
             print("[agent6] edited prompt was empty; choose again.", file=sys.stderr)
             continue
         print("[agent6] choose accept, original, edit, or quit.", file=sys.stderr)
-
-
-def _normalize_steer_choice(line: str | None) -> str | None:
-    """Map a mid-run menu line to a canonical action: None/'' continue,
-    'abort' stop, 'detach' keep-running-in-background, else the instruction."""
-    if line is None:
-        return None
-    choice = line.strip()
-    low = choice.lower()
-    if low in ("q", "quit", "stop", "abort"):
-        return "abort"
-    if low in ("d", "detach"):
-        return "detach"
-    return choice
 
 
 def tty_message(text: str) -> None:
@@ -236,7 +223,11 @@ def install_steer_sigint(events: EventSink, run_dir: Path) -> SteerState:
                 state["requested"] = False
                 clear_steer_request(run_dir)
             return answer
-        return _normalize_steer_choice(
+        if readline_capable():
+            # The interactive pause menu: readline editing, history, and
+            # Tab-completed slash commands (/status, /tasks, /stop, ...).
+            return pause_menu(run_dir)
+        return normalize_steer_choice(
             tty_prompt("[agent6] paused: [enter] continue · type to steer · q stop · d detach: ")
         )
 
