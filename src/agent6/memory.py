@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Literal
 
 from agent6.graph.ulid import new_ulid
+from agent6.portable import atomic_write
 
 MemoryScope = Literal["facts", "decisions", "preferences"]
 _SCOPES: tuple[MemoryScope, ...] = ("facts", "decisions", "preferences")
@@ -146,13 +147,6 @@ def _render_file(scope: MemoryScope, entries: list[MemoryEntry]) -> str:
     return "\n".join(out).rstrip() + "\n"
 
 
-def _atomic_write(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    tmp.replace(path)
-
-
 def add(state_dir: Path, scope: MemoryScope, body: str) -> MemoryEntry:
     """Append a new entry. Returns the persisted entry (with assigned id)."""
     body = body.strip()
@@ -162,7 +156,7 @@ def add(state_dir: Path, scope: MemoryScope, body: str) -> MemoryEntry:
     entries = _parse_file(path, scope)
     entry = MemoryEntry(id=new_ulid(), scope=scope, created_at=_now(), body=body)
     entries.append(entry)
-    _atomic_write(path, _render_file(scope, entries))
+    atomic_write(path, _render_file(scope, entries))
     return entry
 
 
@@ -196,6 +190,6 @@ def invalidate(state_dir: Path, memory_id: str, reason: str) -> MemoryEntry:
                 body=e.body,
             )
             entries[i] = updated
-            _atomic_write(path, _render_file(scope, entries))
+            atomic_write(path, _render_file(scope, entries))
             return updated
     raise MemoryError(f"no memory with id {memory_id!r}")

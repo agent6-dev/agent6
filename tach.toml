@@ -197,7 +197,7 @@ depends_on = []
 
 [[modules]]
 path = "agent6.memory"
-depends_on = ["agent6.graph.ulid"]
+depends_on = ["agent6.graph.ulid", "agent6.portable"]
 
 [[modules]]
 path = "agent6.graph"
