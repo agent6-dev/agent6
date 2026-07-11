@@ -11,7 +11,7 @@ import pytest
 
 from agent6 import secrets
 from agent6.config.layer import resolved_state_dir
-from agent6.models_cache import KeyProbeResult
+from agent6.models.cache import KeyProbeResult
 from agent6.ui.cli import main
 
 

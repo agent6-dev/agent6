@@ -10,7 +10,7 @@ import httpx2
 import pytest
 
 from agent6.config import AnthropicProviderEntry, OpenAIProviderEntry
-from agent6.models_cache import probe_provider_key
+from agent6.models.cache import probe_provider_key
 
 
 class _FakeResp:
@@ -32,7 +32,7 @@ def _patch_get(monkeypatch: pytest.MonkeyPatch, resp_or_exc: Any) -> list[str]:
             raise resp_or_exc
         return resp_or_exc
 
-    monkeypatch.setattr("agent6.models_cache.httpx2.get", _get)
+    monkeypatch.setattr("agent6.models.cache.httpx2.get", _get)
     return urls
 
 

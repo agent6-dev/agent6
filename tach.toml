@@ -20,9 +20,9 @@ depends_on = [
   "agent6.config",
   "agent6.config.io",
   "agent6.config.layer",
-  "agent6.models_cache",
+  "agent6.models.cache",
   "agent6.paths",
-  "agent6.pricing",
+  "agent6.models.pricing",
   "agent6.secrets",
   "agent6.detect",
   "agent6.sandbox",
@@ -83,7 +83,7 @@ depends_on = []
 
 [[modules]]
 path = "agent6.ui.tui"
-depends_on = ["agent6.config.layer", "agent6.ui.bridge", "agent6.machine", "agent6.models_cache", "agent6.paths", "agent6.secrets", "agent6.ui.viewmodel"]
+depends_on = ["agent6.config.layer", "agent6.ui.bridge", "agent6.machine", "agent6.models.cache", "agent6.paths", "agent6.secrets", "agent6.ui.viewmodel"]
 
 [[modules]]
 # The shared, textual-free write bridge: spawn the CLI detached, and the
@@ -130,10 +130,10 @@ depends_on = []
 
 [[modules]]
 path = "agent6.budget"
-depends_on = ["agent6.pricing"]
+depends_on = ["agent6.models.pricing"]
 
 [[modules]]
-path = "agent6.pricing"
+path = "agent6.models.pricing"
 depends_on = ["agent6.paths"]
 
 [[modules]]
@@ -181,7 +181,7 @@ path = "agent6.config.layer"
 depends_on = ["agent6.config.model", "agent6.config.io", "agent6.paths"]
 
 [[modules]]
-path = "agent6.models_cache"
+path = "agent6.models.cache"
 depends_on = ["agent6.config", "agent6.paths", "agent6.providers"]
 
 [[modules]]

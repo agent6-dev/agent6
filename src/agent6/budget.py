@@ -30,7 +30,7 @@ this module). Tokens stay the authoritative ceiling because token
 counts are exact and provider-returned; the USD cap is a more
 operator-friendly knob that translates once at startup.
 
-This module is import-light (stdlib + agent6.pricing, which is itself
+This module is import-light (stdlib + agent6.models.pricing, which is itself
 stdlib + cache-file reads); the AnthropicProvider wires it in via
 constructor.
 """
@@ -40,11 +40,11 @@ from __future__ import annotations
 import threading
 from dataclasses import dataclass, field
 
-from agent6.pricing import lookup_price
+from agent6.models.pricing import lookup_price
 
 # There is NO static price table. Prices come from the provider's own models
-# endpoint, fetched + cached by agent6.models_cache and read back through
-# agent6.pricing.lookup_price. A model without a published price is reported
+# endpoint, fetched + cached by agent6.models.cache and read back through
+# agent6.models.pricing.lookup_price. A model without a published price is reported
 # as "$? (unknown price)" and the USD->token budget conversion does not apply
 # to it: an unknown price is honest, an outdated hardcoded one is wrong.
 
@@ -57,7 +57,7 @@ def usd_budget_to_tokens(
     """Convert an operator-friendly USD cap into (max_input_tokens,
     max_output_tokens) for a given worker model's pricing.
 
-    Pricing comes from the provider-fetched cache (agent6.pricing). Returns
+    Pricing comes from the provider-fetched cache (agent6.models.pricing). Returns
     None when the model has no known price: the USD->token tightening simply
     does not apply, the operator token ceilings stand as configured, and the
     runtime `max_usd` ceiling still enforces wherever the provider reports
@@ -392,7 +392,7 @@ class BudgetTracker:
         )
         if any_unknown:
             # The figure is a lower bound; at least one model has no cached
-            # provider price (see agent6.pricing: no static fallback).
+            # provider price (see agent6.models.pricing: no static fallback).
             budget_line += "+ (some models unpriced; figure is a lower bound)"
         lines.append(budget_line)
         if snap.exhausted:

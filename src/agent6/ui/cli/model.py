@@ -18,7 +18,7 @@ from agent6.config.layer import (
     repo_config_path_for,
     set_config_table,
 )
-from agent6.models_cache import list_models
+from agent6.models.cache import list_models
 from agent6.paths import global_config_path
 from agent6.secrets import resolve_api_key
 

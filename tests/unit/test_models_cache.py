@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for the live + cached provider model listing (agent6.models_cache)."""
+"""Tests for the live + cached provider model listing (agent6.models.cache)."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ from pathlib import Path
 import httpx2
 import pytest
 
-from agent6 import models_cache
 from agent6.config import AnthropicProviderEntry, OpenAIProviderEntry
+from agent6.models import cache as models_cache
 
 
 @pytest.fixture

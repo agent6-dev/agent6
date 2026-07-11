@@ -3,7 +3,7 @@
 """Unit tests for the USD-to-tokens budget converter (~budget.py).
 
 Pricing has no static table: it comes from the provider-fetched models cache
-(agent6.pricing reads $AGENT6_CACHE_HOME/models/*.json). Tests inject prices
+(agent6.models.pricing reads $AGENT6_CACHE_HOME/models/*.json). Tests inject prices
 by writing a real cache file, exercising the same path production uses.
 """
 

@@ -3,7 +3,7 @@
 """Cache-only model price lookups (USD per 1M tokens, (input, output)).
 
 There is NO static price table and no fallback rate: a price either came from
-a provider's own models endpoint (fetched + cached by ``agent6.models_cache``,
+a provider's own models endpoint (fetched + cached by ``agent6.models.cache``,
 which stores it alongside the model list under
 ``$XDG_CACHE_HOME/agent6/models/<provider>.json``) or it is unknown. An
 outdated hardcoded price is worse than no price: reports render unknown models

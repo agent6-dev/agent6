@@ -76,7 +76,7 @@ def _write_cache(
         path.parent.mkdir(parents=True, exist_ok=True)
         body: dict[str, object] = {"models": models}
         if pricing:
-            # Consumed by agent6.pricing.lookup_price (USD per 1M tokens,
+            # Consumed by agent6.models.pricing.lookup_price (USD per 1M tokens,
             # [input, output]). Only providers that publish pricing on their
             # models endpoint (OpenRouter does, Anthropic does not) get this
             # key; there is deliberately no static fallback anywhere.

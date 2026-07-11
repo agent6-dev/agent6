@@ -8,7 +8,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-from agent6 import models_cache
 from agent6.config import (
     ConfigError,
 )
@@ -27,6 +26,7 @@ from agent6.config.layer import (
     repo_config_path_for,
 )
 from agent6.machine import MachineError, load_machine
+from agent6.models import cache as models_cache
 from agent6.paths import (
     chown_to_real_user,
     effective_user,

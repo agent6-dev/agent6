@@ -49,11 +49,11 @@ from agent6.git_ops import (
     status as git_status,
 )
 from agent6.graph.client import CuratorClientError, GraphClient, spawn_curator
+from agent6.models.pricing import lookup_price
 from agent6.paths import (
     chown_to_real_user,
 )
 from agent6.portable import atomic_write, lock_exclusive, unlock
-from agent6.pricing import lookup_price
 from agent6.providers import (
     Provider,
     TranscriptSink,

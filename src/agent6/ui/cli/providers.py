@@ -8,7 +8,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from agent6 import models_cache
 from agent6.budget import BudgetTracker
 from agent6.config import (
     AnthropicProviderEntry,
@@ -18,6 +17,7 @@ from agent6.config import (
     ThinkingLevel,
 )
 from agent6.events import EventSink
+from agent6.models import cache as models_cache
 from agent6.providers import (
     AnthropicProvider,
     CommandToken,

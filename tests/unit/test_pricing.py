@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for cache-fetched model pricing (agent6.pricing + models_cache)."""
+"""Tests for cache-fetched model pricing (agent6.models.pricing + models_cache)."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from agent6.models_cache import _parse_pricing  # pyright: ignore[reportPrivateUsage]
-from agent6.pricing import lookup_price
+from agent6.models.cache import _parse_pricing  # pyright: ignore[reportPrivateUsage]
+from agent6.models.pricing import lookup_price
 
 
 def _write_pricing(cache: Path, name: str, pricing: dict[str, list[float]]) -> None:

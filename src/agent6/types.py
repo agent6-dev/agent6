@@ -2,7 +2,9 @@
 # Copyright 2026 Eric Lesiuta
 """Internal value types, frozen dataclasses, constructed by us only.
 
-Compare with `agent6.models` which holds pydantic models at LLM/config boundaries.
+Compare with the pydantic models at the trust boundaries: `agent6.config.model`
+(config), `agent6.providers.types` (LLM I/O), `agent6.tools.schema` (tool
+inputs), `agent6.machine.model` (machine files).
 """
 
 from __future__ import annotations
