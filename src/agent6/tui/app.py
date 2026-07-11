@@ -165,8 +165,8 @@ class Agent6TUI(App[int]):
             "View",
             (
                 MenuItem("Steer the run", "steer", "s"),
-                MenuItem("Next pane", "focus_next", "Tab"),
-                MenuItem("Prev pane", "focus_previous", "Shift+Tab"),
+                MenuItem("Next pane", "app.focus_next", "Tab"),
+                MenuItem("Prev pane", "app.focus_previous", "Shift+Tab"),
                 MenuItem("Maximize pane", "fullscreen", "f"),
                 MenuItem("Full log…", "view_logs", "l"),
                 MenuItem("Conversation…", "view_transcript", "t"),
@@ -202,8 +202,8 @@ class Agent6TUI(App[int]):
         Binding("escape", "to_hub", "Back", key_display="Esc/q"),
         Binding("q", "to_hub", "Back", show=False),
         Binding("ctrl+q", "quit_hub", "Quit", show=False),
-        Binding("tab", "focus_next", "Next pane", show=False),
-        Binding("shift+tab", "focus_previous", "Prev pane", show=False),
+        Binding("tab", "app.focus_next", "Next pane", show=False),
+        Binding("shift+tab", "app.focus_previous", "Prev pane", show=False),
         *menu_bindings(MENUS),
     ]
 
