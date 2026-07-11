@@ -411,14 +411,6 @@ there is no app-level auth; binding a non-loopback host exposes the write surfac
 | `web.port` | `7658` | Listen port. |
 | `web.allow_non_loopback` | `false` | Opt-in to bind a non-loopback host. Off by default so a typo or copied config can never silently expose the agent. Prefer `tailscale serve` in front of a `127.0.0.1` bind instead. |
 
-## `[cli]`
-
-The interactive input mode for `agent6 run` on a plain terminal.
-
-| Field | Default | Meaning |
-|---|---|---|
-| `cli.input` | `"modal"` | `modal` (the default) prompts only when needed: an `ask_user` question (arrow-key radio plus a navigable review), a Ctrl-C steer, or the after-commit REPL, all with slash-command completion and history. `bar` keeps a persistent input bar at the bottom during a run, with output scrolling above it; a line typed there steers the run. Both stay inline (no alternate screen), so scrollback and copy/paste are preserved, and both fall back to a plain prompt without a tty or prompt_toolkit. |
-
 ## `[mcp]` + `[[mcp.servers]]` (optional)
 
 Spawn Model Context Protocol servers at run start; their tools appear to the LLM

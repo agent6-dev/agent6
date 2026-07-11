@@ -26,7 +26,6 @@ from agent6.ui.bridge.approval import (
     steer_answer_is_abort,
 )
 from agent6.ui.bridge.spawn import spawn_detached_resume
-from agent6.ui.cli._ptk_reader import ask_navigate, on_tty, ptk_prompt, radio_select
 from agent6.ui.cli._steer import (
     tty_message as _tty_message,
 )
@@ -36,7 +35,6 @@ from agent6.ui.cli._steer import (
 from agent6.ui.cli.egress import EgressGuard
 
 if TYPE_CHECKING:
-    from agent6.ui.cli._bar import BarController
     from agent6.ui.cli._console_view import ConsoleView
 
 
@@ -45,18 +43,6 @@ def _pause(cv: ConsoleView | None) -> contextlib.AbstractContextManager[None]:
     cannot erase the question and the operator's keystrokes. No-op when headless
     (no ConsoleView: a TUI-bridged, detached, or piped run)."""
     return cv.pause() if cv is not None else contextlib.nullcontext()
-
-
-def _prompt_terminal[T](
-    bar: BarController | None, cv: ConsoleView | None, fn: Callable[[], T]
-) -> T:
-    """Run a blocking terminal prompt `fn`. In bar mode route it through the bar's
-    main thread (with the bar suspended) so it owns the terminal; otherwise run it
-    under a spinner pause. Keeps the questioner/approver agnostic of the live view."""
-    if bar is not None:
-        return bar.prompt(fn)
-    with _pause(cv):
-        return fn()
 
 
 def default_stdin_approver(prompt: str) -> str:
@@ -119,10 +105,7 @@ def _wait_for_reply(run_dir: Path, read_once: Callable[[], object | None]) -> ob
 
 
 def build_approver(
-    run_dir: Path,
-    events: EventSink,
-    console_view: ConsoleView | None = None,
-    bar: BarController | None = None,
+    run_dir: Path, events: EventSink, console_view: ConsoleView | None = None
 ) -> Callable[[str], bool]:
     """Build the `run_command` approver, bridged to a live TUI when present.
 
@@ -163,7 +146,8 @@ def build_approver(
             if approved is not None:
                 source = "tui"
         if approved is None:
-            answer = _prompt_terminal(bar, console_view, lambda: default_stdin_approver(prompt))
+            with _pause(console_view):
+                answer = default_stdin_approver(prompt)
             if answer == "session":
                 set_session_allow(run_dir)
             approved = answer != "no"
@@ -185,10 +169,7 @@ def spawn_detached(guard: EgressGuard, cwd: Path, run_id: str) -> str:
 
 
 def build_questioner(
-    run_dir: Path,
-    events: EventSink,
-    console_view: ConsoleView | None = None,
-    bar: BarController | None = None,
+    run_dir: Path, events: EventSink, console_view: ConsoleView | None = None
 ) -> Callable[[tuple[UserQuestion, ...]], tuple[str, ...]]:
     """Build the `ask_user` questioner, bridged to a live TUI when present.
 
@@ -223,21 +204,20 @@ def build_questioner(
             if answers is not None:
                 source = "tui"
         if answers is None:
-            stdin_answers = _prompt_terminal(
-                bar, console_view, lambda: default_stdin_questioner(questions)
-            )
-            if stdin_answers is None:
-                # No front-end and no controlling terminal: nobody saw the
-                # question. Answer empty so the run never hangs, and say so
-                # where a watcher will see it instead of failing silently.
-                answers = tuple("" for _ in questions)
-                source = "headless-default"
-                _tty_message(
-                    "[agent6] ask_user: no front-end attached and no terminal;"
-                    " returning empty answers\n"
-                )
-            else:
-                answers = stdin_answers
+            with _pause(console_view):
+                stdin_answers = default_stdin_questioner(questions)
+                if stdin_answers is None:
+                    # No front-end and no controlling terminal: nobody saw the
+                    # question. Answer empty so the run never hangs, and say so
+                    # where a watcher will see it instead of failing silently.
+                    answers = tuple("" for _ in questions)
+                    source = "headless-default"
+                    _tty_message(
+                        "[agent6] ask_user: no front-end attached and no terminal;"
+                        " returning empty answers\n"
+                    )
+                else:
+                    answers = stdin_answers
         events.emit("question.answer", id=question_id, answers=list(answers), source=source)
         return answers
 
@@ -245,21 +225,8 @@ def build_questioner(
 
 
 def ask_one_stdin(q: UserQuestion, prefix: str = "") -> str | None:
-    """Prompt one question. On a tty the prompt_toolkit widgets own it: options are
-    an inline arrow-key radio (always with a "type your own answer" free-text escape),
-    free text is a line editor, and a cancel (esc / Ctrl-C, including cancelling the
-    free-text) returns None so the caller (e.g. the navigator) treats it as
-    unanswered rather than re-asking. Off a tty it falls back to a numbered / plain
-    /dev/tty prompt. None means no answer (cancelled / headless)."""
-    if on_tty():
-        if q.options:
-            picked = radio_select(q.question, q.options, prefix=prefix)
-            if picked is not None:
-                _tty_message(f"{prefix}{q.question} -> {picked}\n")  # land it in scrollback
-            return picked  # None == cancelled: a real cancel, not a fallthrough to re-ask
-        typed = ptk_prompt(f"{prefix}{q.question}\n> ")
-        return typed.strip() if typed is not None else None
-    # No tty for the widgets (e.g. a TUI stream redirect): the numbered /dev/tty prompt.
+    """Prompt one question on /dev/tty; a digit picks an option, else free text.
+    None means no terminal (headless)."""
     lines = [
         f"{prefix}{q.question}",
         *(f"  {i}) {opt}" for i, opt in enumerate(q.options, start=1)),
@@ -274,36 +241,20 @@ def ask_one_stdin(q: UserQuestion, prefix: str = "") -> str | None:
 
 
 def default_stdin_questioner(questions: tuple[UserQuestion, ...]) -> tuple[str, ...] | None:
-    """Ask a question series on the terminal. A single question is a radio (always
-    with a "type your own answer" escape) or a line editor. A series uses the inline
-    forward/back navigator (``ask_navigate``): move between questions freely, answer
-    in any order, go back to change one, then submit. Without a tty for the navigator
-    (e.g. a TUI stream redirect) it falls back to sequential /dev/tty prompts + a
-    numbered review; fully headless returns None so the caller answers empty rather
-    than hanging or eating piped stdin."""
-    if len(questions) <= 1:
-        # A single question (or, degenerately, none): ask it directly, no navigator.
-        single: list[str] = []
-        for q in questions:
-            ans = ask_one_stdin(q)
-            if ans is None:
-                return None
-            single.append(ans)
-        return tuple(single)
-    # Multiple on a tty: the inline forward/back navigator, answering each question
-    # through the same radio / line editor (with its "type your own" escape).
-    navigated = ask_navigate([q.question for q in questions], lambda i: ask_one_stdin(questions[i]))
-    if navigated is not None:
-        return tuple(navigated)
-    # No tty for the navigator: sequential /dev/tty asks, then a numbered review; a
-    # fully headless run returns None on the first ask.
+    """Ask each question on /dev/tty (visible under a TUI's stream redirect). For a
+    series, print a summary afterwards and let the operator revise any answer (type
+    its number) before submitting (blank). Returns None without a controlling
+    terminal (headless) so the caller can answer empty -- never hanging or eating
+    piped stdin -- and say so."""
     answers: list[str] = []
+    multi = len(questions) > 1
     for i, q in enumerate(questions, start=1):
-        ans = ask_one_stdin(q, f"[{i}/{len(questions)}] ")
+        prefix = f"[{i}/{len(questions)}] " if multi else ""
+        ans = ask_one_stdin(q, prefix)
         if ans is None:
-            return None  # no tty at all: never block
+            return None  # no tty: never block
         answers.append(ans)
-    while True:  # numbered review + revise loop; blank submits
+    while multi:  # review + revise loop; blank submits
         summary = "\n".join(
             f"  {n}) {q.question} -> {a or '(empty)'}"
             for n, (q, a) in enumerate(zip(questions, answers, strict=True), start=1)

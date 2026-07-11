@@ -896,19 +896,6 @@ class WebConfig(BaseModel):
         return self
 
 
-class CliConfig(BaseModel):
-    """`agent6 run` interactive input mode. ``modal`` (default) prompts only when
-    needed -- an ask_user question, a Ctrl-C steer, the after-commit REPL. ``bar``
-    keeps a persistent prompt_toolkit input bar at the bottom of a live run, with
-    the output scrolling above it (inline, so terminal scrollback and copy/paste
-    are preserved); a line typed there steers the run. Both fall back to a plain
-    prompt when there is no tty or prompt_toolkit."""
-
-    model_config = _BASE_MODEL_CONFIG
-
-    input: Literal["modal", "bar"] = "modal"
-
-
 class Agent6Section(BaseModel):
     model_config = _BASE_MODEL_CONFIG
 
@@ -1030,7 +1017,6 @@ class Config(BaseModel):
     notify: NotifyConfig = Field(default_factory=NotifyConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     web: WebConfig = Field(default_factory=WebConfig)
-    cli: CliConfig = Field(default_factory=CliConfig)
     # Named config PROFILE: a preset that fills in many settings at once (see
     # agent6.config BUILTIN_PROFILES + user [profiles.<name>] tables). Injected
     # just ABOVE the config layer that selected it, so the profile OVERRIDES that

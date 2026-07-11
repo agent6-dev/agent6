@@ -75,31 +75,6 @@ def test_ask_one_stdin_prompts_and_maps_a_digit_to_its_option() -> None:
     assert _drive_pty(child, b"2) beta", b"2\n") == 0
 
 
-def test_ask_one_stdin_cancel_on_tty_returns_none_not_a_reprompt(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # On a tty, cancelling the radio (esc, or aborting its "type your own" free-text)
-    # returns None so the navigator treats it as unanswered -- it must NOT fall through
-    # to a numbered /dev/tty re-prompt for the same question.
-    from agent6.ui.cli import _interact as interact_mod
-
-    fell_back = {"hit": False}
-
-    def _cancelled(*_a: Any, **_k: Any) -> str | None:  # radio ran, user cancelled
-        return None
-
-    def _boom(*_a: Any, **_k: Any) -> str:
-        fell_back["hit"] = True
-        return "SHOULD-NOT-BE-USED"
-
-    monkeypatch.setattr(interact_mod, "on_tty", lambda: True)
-    monkeypatch.setattr(interact_mod, "radio_select", _cancelled)
-    monkeypatch.setattr(interact_mod, "_tty_prompt", _boom)
-    got = interact_mod.ask_one_stdin(UserQuestion(question="pick", options=("a", "b")))
-    assert got is None
-    assert not fell_back["hit"]  # the numbered fallback was NOT invoked
-
-
 def test_stdin_questioner_returns_none_without_a_terminal() -> None:
     # A new session has no controlling terminal, the true headless case; run it
     # in a subprocess so an interactively-run pytest (which HAS a /dev/tty)
