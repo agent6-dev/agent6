@@ -69,7 +69,9 @@ def run_one(
     pred_path.parent.mkdir(parents=True, exist_ok=True)
     work = out_dir / "runs" / model_label(model) / iid
     if work.exists():
-        shutil.rmtree(work, ignore_errors=True)
+        # the container writes /out as root; a plain rmtree fails silently
+        # and the mkdir below then collides
+        subprocess.run(["sudo", "rm", "-rf", "--", str(work)], check=True)
     work.mkdir(parents=True)
     (work / "problem.txt").write_text(inst["problem_statement"], encoding="utf-8")
 
@@ -100,6 +102,8 @@ def run_one(
         f"AGENT6_SB_MAX_USD={max_usd}",
         "-e",
         f"AGENT6_SB_TIMEOUT={timeout_s}",
+        "-e",
+        f"AGENT6_SB_WHEEL={wheel.name}",
         *review_env,
         "-v",
         f"{uv}:/usr/local/bin/uv:ro",

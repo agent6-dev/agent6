@@ -21,12 +21,17 @@ export AGENT6_ALLOW_ROOT=1               # SWE-bench images run as root; the con
 MODEL="${AGENT6_SB_MODEL:?set AGENT6_SB_MODEL}"
 MAX_USD="${AGENT6_SB_MAX_USD:-3.0}"
 TIMEOUT_S="${AGENT6_SB_TIMEOUT:-1500}"
-WHL=$(ls /mnt/wheel/*.whl | head -1)
+# exact wheel chosen by the orchestrator; fallback: newest by version, never
+# lexicographic-first (a stale old wheel sorts first and its config schema
+# rejects current keys)
+WHL="/mnt/wheel/${AGENT6_SB_WHEEL:-$(basename "$(ls /mnt/wheel/*.whl | sort -V | tail -1)")}"
 
-# agent6's best_effort_usd_limit is a no-op for providers it can't price
-# (Anthropic returns no pricing), so we ALSO bound spend by token caps derived
-# from MAX_USD x list price (85% input / 15% output, SWE-bench is input-heavy).
-# This is the real enforcer for unpriced providers and a backstop for the rest.
+# agent6 prices Anthropic via its OpenRouter alias (models/pricing.py), so
+# best_effort_usd_limit is the real enforcer for every model here; the token
+# caps below are LOOSE BACKSTOPS against a pricing regression only. They were
+# once an 85/15 budget split, which starved a thinking model's output at 10k
+# tokens before its first commit (observed: sonnet-5, 2 empty predictions);
+# each cap now independently allows roughly the whole budget in that currency.
 case "$MODEL" in
   claude-opus-*)    IN_PRICE=5 ; OUT_PRICE=25 ;;
   claude-sonnet-*)  IN_PRICE=3 ; OUT_PRICE=15 ;;
@@ -36,8 +41,8 @@ case "$MODEL" in
   deepseek/*)       IN_PRICE=0.09 ; OUT_PRICE=0.18 ;;
   *)                IN_PRICE=1 ; OUT_PRICE=5 ;;
 esac
-MAX_IN=$(/opt/miniconda3/envs/testbed/bin/python -c "print(max(50000,int($MAX_USD*0.85/$IN_PRICE*1e6)))")
-MAX_OUT=$(/opt/miniconda3/envs/testbed/bin/python -c "print(max(8000,int($MAX_USD*0.15/$OUT_PRICE*1e6)))")
+MAX_IN=$(/opt/miniconda3/envs/testbed/bin/python -c "print(max(50000,int($MAX_USD*2.0/$IN_PRICE*1e6)))")
+MAX_OUT=$(/opt/miniconda3/envs/testbed/bin/python -c "print(max(8000,int($MAX_USD*1.0/$OUT_PRICE*1e6)))")
 
 uv python install 3.14 >/dev/null 2>&1
 uv tool install --python 3.14 "$WHL" >/dev/null 2>&1
@@ -85,7 +90,15 @@ CONDA_PY="${CONDA_PY:-python3}"
 if [ -z "${AGENT6_SB_VERIFY:-}" ]; then
   if [ -f /testbed/tests/runtests.py ]; then
     AGENT6_SB_VERIFY="$CONDA_PY tests/runtests.py --verbosity 1"
+  elif "$CONDA_PY" -m pytest --version >/dev/null 2>&1; then
+    AGENT6_SB_VERIFY="$CONDA_PY -m pytest -q"
+  elif [ -x /testbed/bin/test ]; then
+    # A repo that ships its own top-level test runner (and whose env lacks
+    # pytest); use it rather than a dead `pytest` that runs no tests and lets
+    # a wrong patch pass unchecked.
+    AGENT6_SB_VERIFY="$CONDA_PY bin/test"
   else
+    echo "[in_container] WARNING: pytest absent and no ./bin/test; verify may not run tests" >&2
     AGENT6_SB_VERIFY="$CONDA_PY -m pytest -q"
   fi
 fi
@@ -163,10 +176,22 @@ except subprocess.TimeoutExpired:
     print("[in_container] agent6 run timed out")
 PYEOF
 
-# The model's patch = everything changed under /testbed vs the base commit,
-# excluding agent6's own artifacts (which live outside /testbed anyway).
+# The model's patch = changes to files TRACKED at the base commit. `git add -u`
+# (not -A) deliberately ignores untracked files, so a build/test the agent ran
+# that generated artifacts (sklearn dumped 2000 .txt files) does not pollute
+# the patch. SWE-bench gold patches edit existing source; a genuinely new
+# source file is rare and not worth capturing thousands of build outputs for.
 mkdir -p /out
-git -C /testbed add -A
+git -C /testbed add -u
 git -C /testbed diff --cached "$BASE" -- . ':(exclude).agent6' ':(exclude)agent6.toml' \
     > /out/patch.diff
 echo "[in_container] patch lines: $(wc -l < /out/patch.diff)"
+
+# Export the run's agent6 state (logs.jsonl + provider transcripts) so
+# tool-call failures are diagnosable after the container is gone (observed:
+# kimi-k2.7 malformed-JSON grep args, undiagnosable from run.log alone).
+STATE_DIR="${AGENT6_STATE_HOME:-${XDG_STATE_HOME:-/root/.local/state}/agent6}"
+if [ -d "$STATE_DIR" ]; then
+  mkdir -p /out/state
+  cp -r "$STATE_DIR"/. /out/state/ 2>/dev/null || true
+fi

@@ -212,7 +212,11 @@ start_ns=$(date +%s%N)
 set +e
 # Current CLI takes only a positional `task` arg; legacy --yes /
 # --no-tui flags have been removed.
-( cd "$WORKDIR" && "$AGENT6_BIN" --config agent6.toml run "$task_text" ) \
+# Wall-clock ceiling: a metric run stops on the USD/token budget, but a model
+# that streams cheap reasoning without acting (observed: glm-5.2 emitted ~99k
+# thinking deltas, 0 edits, evading the budget cap) would otherwise spin for
+# hours. Kill at AGENT6_PERF_WALL_S (default 90 min) so the run always ends.
+( cd "$WORKDIR" && timeout "${AGENT6_PERF_WALL_S:-5400}" "$AGENT6_BIN" --config agent6.toml run "$task_text" ) \
   > "$LOGDIR/agent6.stdout" 2> "$LOGDIR/agent6.stderr"
 ag_exit=$?
 set -e

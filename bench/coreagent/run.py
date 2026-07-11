@@ -51,6 +51,7 @@ TASKS: dict[str, str] = {
     "rpn": "rpn",
     "ledger": "ledger",
     "bugs": "shapes",  # DEBUG task: fix bugs in shapes.py
+    "eventflow": "eventflow",  # DEBUG task: 5-module pipeline, spec-vs-suite gap
     "needle": "report",  # read 5 ref files (forces compaction), retain all 5 rules
 }
 
@@ -63,6 +64,16 @@ def task_prompt(task: str, module: str) -> str:
             " satisfy EVERY rule so ./verify.sh passes (stdlib unittest). Do not"
             " modify the test file or verify.sh. Run verify, fix what fails, and"
             " call finish_run when the whole suite passes."
+        )
+    if task == "eventflow":
+        return (
+            "Read spec.md. The pipeline modules (config.py, parser.py, sessions.py,"
+            " stats.py, report.py) contain several bugs. Find and fix EVERY bug so"
+            " the code conforms to spec.md. ./verify.sh runs the committed unittest"
+            " suite, but it covers only a SUBSET of the spec: a green suite does"
+            " not mean the code is correct. Check every module against the spec."
+            " Do not modify test_eventflow.py or verify.sh. Call finish_run when"
+            " you are confident the code matches the spec."
         )
     if task == "bugs":
         return (
@@ -93,6 +104,71 @@ CONDITIONS: dict[str, str] = {
     # this once A/B'd was measured inert and scrapped -- see FINDINGS.md; tier-2
     # almost never fires because tier-1 keeps context bounded below its trigger.
     "compact_tight": "[context]\ndrop_at_chars = 18000\nsummarise_at_chars = 36000\n",
+    # Skills/prompt-style thrust: conditions swap the static base prompt for a
+    # rendered file under prompts/ ({ROOT} is filled with this directory at run
+    # time). base_rendered.md is byte-equivalent to the shipped run-mode base;
+    # each variant appends one block so the A/B isolates that block.
+    # moose: positive control -- a trivially detectable marker instruction that
+    # proves the prompt channel delivers (canary gate, not a hypothesis).
+    # Measured 2026-07-10: appended at the base's END, BOTH qwen3-coder-30b and
+    # mistral-small-3.2 ignored it completely (0/12, 0/27 prose turns).
+    "moose": '[prompt]\nsystem_prompt_file = "{ROOT}/prompts/moose.md"\n',
+    "moose_top": '[prompt]\nsystem_prompt_file = "{ROOT}/prompts/moose_top.md"\n',
+    # moose_user: same marker instruction as a TASK-PROMPT suffix (see
+    # USER_SUFFIX) -- the channel `--skill`/steer-injected content rides.
+    "moose_user": "",
+    # H1 terse style, 3 arms: baseline / one-line concise control / distilled
+    # caveman ruleset. The honest delta is ruleset vs terse_line (caveman's own
+    # eval design); compliance is measured from transcripts, never assumed.
+    "terse_line": '[prompt]\nsystem_prompt_file = "{ROOT}/prompts/terse_line.md"\n',
+    "terse_ruleset": '[prompt]\nsystem_prompt_file = "{ROOT}/prompts/terse_ruleset.md"\n',
+    # H3 negative control: a realistic 14-skill index, all irrelevant --
+    # measures pure presence/distraction cost of a skills index block.
+    "index_irrelevant": '[prompt]\nsystem_prompt_file = "{ROOT}/prompts/index_irrelevant.md"\n',
+    # H4: superpowers systematic-debugging SKILL.md injected whole (the
+    # `always`-skill delivery shape); pair with the `bugs` task only.
+    "skill_debug": '[prompt]\nsystem_prompt_file = "{ROOT}/prompts/skill_debug.md"\n',
+    # H5: existing knob, never measured per-dollar on small models.
+    "priors_off": "[prompt]\nstructural_priors = false\n",
+    # H2 delivery mechanism (needs an agent6 with the skills feature): the
+    # same systematic-debugging content as skill_debug, delivered as an
+    # always-skill vs an indexed on-demand skill (does the model call
+    # use_skill unprompted?). skillpacks/ is the fixture skill dir
+    # (superpowers, MIT).
+    "skill_always": (
+        '[skills]\nextra_dirs = ["{ROOT}/skillpacks"]\n'
+        '[skills.state]\nsystematic-debugging = "always"\n'
+    ),
+    "skill_ondemand": '[skills]\nextra_dirs = ["{ROOT}/skillpacks"]\n',
+    # H3b: length-matched NEUTRAL padding (~same bytes as the irrelevant
+    # index). If this reproduces the index harm on mistral, the effect is
+    # plain prompt-length sensitivity, not the skills index specifically.
+    "padding_neutral": '[prompt]\nsystem_prompt_file = "{ROOT}/prompts/padding_neutral.md"\n',
+    # Native spec-recheck finish gate: the skill mechanism's one-turn bounce
+    # as a loop feature ([workflow].spec_recheck_on_finish). A/B against
+    # baseline on eventflow (spec-vs-suite gap) and textkit (suite IS the
+    # spec: measures the pure cost of a wasted bounce).
+    # Header-less on purpose: extends the base block's trailing [workflow].
+    "spec_recheck": "spec_recheck_on_finish = true\n",
+    # Bootstrap question: with the using-superpowers meta-skill injected
+    # always-on (verbatim, no harness tool-mapping added), does the model
+    # start invoking use_skill for a matching indexed skill? Compare the
+    # organic use_skill call rate against skill_ondemand.
+    "skill_bootstrap": (
+        '[skills]\nextra_dirs = ["{ROOT}/skillpacks"]\n'
+        '[skills.state]\nusing-superpowers = "always"\n'
+    ),
+}
+
+# Condition -> extra text appended to the task prompt (the USER channel, vs the
+# system-prompt channel above). Both channels need positive-control coverage:
+# skills content can be delivered over either.
+USER_SUFFIX: dict[str, str] = {
+    "moose_user": (
+        "\n\nMANDATORY STYLE MARKER: End every reply that contains prose "
+        "(any non-code text) with the single word MOOSE on its own line. "
+        "Never omit it."
+    ),
 }
 
 
@@ -104,9 +180,13 @@ def _provider_block(provider: str, model: str, verify: list[str]) -> str:
         f"[models.{role}]\nprovider = {json.dumps(provider)}\nmodel = {json.dumps(model)}\n"
         for role in ("worker", "planner", "reviewer")
     )
+    # [workflow] is deliberately the LAST section: a condition fragment
+    # WITHOUT a section header (see CONDITIONS) legally extends it, whereas a
+    # second [workflow] header would be invalid TOML (cannot declare twice).
     return (
-        f"{roles}\n[workflow]\nverify_command = {verify_toml}\n"
-        f'verify_timeout_s = 60.0\n\n[sandbox]\nrun_commands = "yes"\n\n'
+        f'{roles}\n[sandbox]\nrun_commands = "yes"\n\n'
+        f"[workflow]\nverify_command = {verify_toml}\n"
+        f"verify_timeout_s = 60.0\n"
     )
 
 
@@ -261,7 +341,8 @@ def one_run(
     cfg.write_text(
         # `bash verify.sh` (not ./verify.sh): the jail PATH is /usr/bin:/bin and
         # an exec-bit-less script can't be run directly, but bash can read it.
-        _provider_block(provider, model, ["bash", "verify.sh"]) + CONDITIONS[condition],
+        _provider_block(provider, model, ["bash", "verify.sh"])
+        + CONDITIONS[condition].format(ROOT=ROOT),
         encoding="utf-8",
     )
 
@@ -273,6 +354,9 @@ def one_run(
 
     env = dict(os.environ)
     env["XDG_STATE_HOME"] = str(state_home)
+    # Isolate the data dir too: skills installed on the host must never leak
+    # into a bench run's <skills> index; skill arms opt in via extra_dirs.
+    env["AGENT6_DATA_HOME"] = str(state_home / "data")
     env["AGENT6_FORCE_STREAM"] = "1"
     env["HOME"] = os.environ["HOME"]  # keep ~/.config/agent6 providers+secrets
 
@@ -286,7 +370,7 @@ def one_run(
     cmd = [
         AGENT6_BIN,
         "run",
-        task_prompt(task, module),
+        task_prompt(task, module) + USER_SUFFIX.get(condition, ""),
         "--config",
         str(cfg),
         "--run-id",
