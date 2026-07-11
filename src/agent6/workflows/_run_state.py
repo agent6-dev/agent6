@@ -9,7 +9,30 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
+
+# Every way a run can end. The loop constructs all of these except
+# "ask_repl_empty" (an interactive ask session that ended before any question
+# was asked, ui/cli/_ask.py). Typed so a new outcome must be declared here
+# before a RunResult can carry it.
+RunReason = Literal[
+    "finish_run",
+    "finish_planning",
+    "silent_finish",
+    "went_quiet",
+    "budget_exhausted",
+    "provider_error",
+    "metric_plateau",
+    "verify_settled",
+    "verify_command_unexecutable",
+    "loop_guard_killed",
+    "interactive_stop",
+    "steer_abort",
+    "detached",
+    "prompt_revision_failed",
+    "max_iterations",
+    "ask_repl_empty",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,10 +57,11 @@ class RunResult:
                           `resume` to continue the run in the background.
       prompt_revision_failed - revise_prompt failed before the worker loop.
       max_iterations    - hit max_iterations cap without finish.
+      ask_repl_empty    - interactive ask session ended with no question asked.
     """
 
     completed: bool
-    reason: str
+    reason: RunReason
     summary: str
     iterations: int
     tool_calls: int

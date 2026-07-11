@@ -9,10 +9,11 @@ and `agent6 resume`); everything else completed=False is exit 1, success is 0.
 from __future__ import annotations
 
 from agent6.ui.cli.run import _run_exit_code  # pyright: ignore[reportPrivateUsage]
+from agent6.workflows._run_state import RunReason
 from agent6.workflows.loop import RunResult
 
 
-def _result(*, completed: bool, reason: str) -> RunResult:
+def _result(*, completed: bool, reason: RunReason) -> RunResult:
     return RunResult(completed=completed, reason=reason, summary="", iterations=1, tool_calls=1)
 
 
