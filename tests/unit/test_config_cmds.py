@@ -274,3 +274,175 @@ def test_config_set_submodel_inline_table_completed_by_a_lower_layer(
     gpath.write_text('[models.worker]\nmodel = "m"\n', encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     assert main(["config", "set", "--repo", "models.worker", '{ provider = "p" }']) == 0
+
+
+# --- `config fix`: drop invalid entries, print what was dropped and where -------
+
+
+def test_config_fix_drops_a_bad_value_and_keeps_valid_ones(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # prompt.decompose = true is invalid (now Literal["auto","on","off"]); the valid
+    # budget entry beside it must survive the repair.
+    from agent6.paths import global_config_path
+    from agent6.ui.cli import main
+
+    gpath = global_config_path()
+    gpath.parent.mkdir(parents=True, exist_ok=True)
+    gpath.write_text(
+        "[prompt]\ndecompose = true\n[budget]\nbest_effort_usd_limit = 5.0\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    rc = main(["config", "fix"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "prompt.decompose" in out and "global" in out  # named the entry + its layer
+    text = gpath.read_text(encoding="utf-8")
+    assert "decompose" not in text  # the invalid entry is gone
+    assert "best_effort_usd_limit" in text  # the valid one stays
+    assert main(["config", "show"]) == 0  # config is valid now
+
+
+def test_config_fix_drops_an_unknown_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from agent6.paths import global_config_path
+    from agent6.ui.cli import main
+
+    gpath = global_config_path()
+    gpath.parent.mkdir(parents=True, exist_ok=True)
+    gpath.write_text("[sandbox]\nprotct_git = true\n", encoding="utf-8")  # typo of protect_git
+    monkeypatch.chdir(tmp_path)
+
+    rc = main(["config", "fix"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "sandbox.protct_git" in out
+    assert "protct_git" not in gpath.read_text(encoding="utf-8")
+
+
+def test_config_fix_labels_a_repo_layer_entry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from agent6.config.layer import repo_config_path_for
+    from agent6.ui.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    rpath = repo_config_path_for(tmp_path)
+    rpath.parent.mkdir(parents=True, exist_ok=True)
+    rpath.write_text("[prompt]\ndecompose = true\n", encoding="utf-8")
+
+    rc = main(["config", "fix"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "prompt.decompose" in out and "repo" in out
+    assert "decompose" not in rpath.read_text(encoding="utf-8")
+
+
+def test_config_fix_on_valid_config_reports_nothing_to_fix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from agent6.paths import global_config_path
+    from agent6.ui.cli import main
+
+    gpath = global_config_path()
+    gpath.parent.mkdir(parents=True, exist_ok=True)
+    before = "[budget]\nbest_effort_usd_limit = 5.0\n"
+    gpath.write_text(before, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    rc = main(["config", "fix"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "nothing to fix" in out.lower()
+    assert gpath.read_text(encoding="utf-8") == before  # untouched
+
+
+def test_config_fix_repairs_both_layers_and_labels_each(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from agent6.config.layer import repo_config_path_for
+    from agent6.paths import global_config_path
+    from agent6.ui.cli import main
+
+    gpath = global_config_path()
+    gpath.parent.mkdir(parents=True, exist_ok=True)
+    gpath.write_text("[prompt]\ndecompose = true\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    rpath = repo_config_path_for(tmp_path)
+    rpath.parent.mkdir(parents=True, exist_ok=True)
+    rpath.write_text('[sandbox]\nrun_commands = "bogus"\n', encoding="utf-8")
+
+    rc = main(["config", "fix"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "prompt.decompose" in out and "global" in out
+    assert "sandbox.run_commands" in out and "repo" in out
+    assert "decompose" not in gpath.read_text(encoding="utf-8")
+    assert "bogus" not in rpath.read_text(encoding="utf-8")
+
+
+def test_config_fix_machine_overlay_leaves_the_spec_untouched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from agent6.ui.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    mfile = tmp_path / "m.asm.toml"
+    mfile.write_text(_GOOD + "[config.prompt]\ndecompose = true\n", encoding="utf-8")
+
+    rc = main(["config", "fix", "--machine-file", str(mfile)])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "prompt.decompose" in out
+    text = mfile.read_text(encoding="utf-8")
+    assert "decompose" not in text  # the invalid overlay entry is gone
+    assert 'machine = "m"' in text  # the machine spec itself is untouched
+
+
+def test_config_fix_reports_an_entry_it_cannot_auto_remove(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A non-absolute agent6.state_dir is rejected before the model loads (it locates
+    # the per-repo config dir), so fix cannot drop it as a plain leaf. It must SAY so
+    # and exit non-zero, never silently report a still-broken config as fixed.
+    from agent6.paths import global_config_path
+    from agent6.ui.cli import main
+
+    gpath = global_config_path()
+    gpath.parent.mkdir(parents=True, exist_ok=True)
+    gpath.write_text('[agent6]\nstate_dir = "not-absolute"\n', encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    rc = main(["config", "fix"])
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "state_dir" in err
+
+
+def test_config_fix_drops_an_unknown_top_level_table(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A leftover [cli] table (from a removed feature) is an unknown TOP-LEVEL table:
+    # pydantic reports extra_forbidden at "cli" (not "cli.input"), and the WHOLE table
+    # must be dropped -- removing just the leaf would leave an empty [cli] that is
+    # still invalid. Regression for `config fix` reporting it unfixable.
+    from agent6.paths import global_config_path
+    from agent6.ui.cli import main
+
+    gpath = global_config_path()
+    gpath.parent.mkdir(parents=True, exist_ok=True)
+    gpath.write_text(
+        '[cli]\ninput = "bar"\n[budget]\nbest_effort_usd_limit = 5.0\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    rc = main(["config", "fix"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "cli" in out  # named the removed table
+    text = gpath.read_text(encoding="utf-8")
+    assert "[cli]" not in text  # the whole table is gone, not just a leaf line
+    assert "best_effort_usd_limit" in text  # the valid section stays
+    assert main(["config", "show"]) == 0  # config is valid now

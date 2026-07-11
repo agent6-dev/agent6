@@ -10,8 +10,27 @@ from pathlib import Path
 from agent6.config.io import (
     _toml_repr,  # pyright: ignore[reportPrivateUsage]
     parse_cli_value,  # pyright: ignore[reportPrivateUsage]
+    remove_toml_table,
     upsert_toml_leaf,  # pyright: ignore[reportPrivateUsage]
 )
+
+
+def test_remove_toml_table_drops_header_body_and_subtables(tmp_path: Path) -> None:
+    path = tmp_path / "c.toml"
+    path.write_text(
+        '[cli]\ninput = "bar"\n[cli.sub]\nx = 1\n[budget]\nmax_usd = 1.0\n', encoding="utf-8"
+    )
+    assert remove_toml_table(path, "cli") is True
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    assert "cli" not in data  # header, body, and [cli.sub] all gone
+    assert data["budget"] == {"max_usd": 1.0}  # the sibling table is untouched
+
+
+def test_remove_toml_table_absent_returns_false(tmp_path: Path) -> None:
+    path = tmp_path / "c.toml"
+    path.write_text("[budget]\nmax_usd = 1.0\n", encoding="utf-8")
+    assert remove_toml_table(path, "cli") is False
+    assert path.read_text(encoding="utf-8") == "[budget]\nmax_usd = 1.0\n"
 
 
 def test_toml_repr_serializes_nested_dict_as_inline_table() -> None:

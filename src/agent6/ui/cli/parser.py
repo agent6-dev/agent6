@@ -760,6 +760,25 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         )
         machine_arg.completer = _complete_machine_files  # type: ignore[attr-defined]
 
+    config_fix = _sub(
+        config_sub,
+        "fix",
+        help=(
+            "Drop invalid config entries (unknown keys, stale values) from the global"
+            " and repo config, printing each and whether it was global or repo. Repairs"
+            " a machine file's [config] overlay instead with --machine-file."
+        ),
+    )
+    config_fix_machine = config_fix.add_argument(
+        "--machine-file",
+        dest="machine_file",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="Repair a machine file's [config] overlay instead of the global/repo config.",
+    )
+    config_fix_machine.completer = _complete_machine_files  # type: ignore[attr-defined]
+
     check_p = _sub(
         sub,
         "check",

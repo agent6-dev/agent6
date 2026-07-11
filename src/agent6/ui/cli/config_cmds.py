@@ -16,10 +16,13 @@ from agent6.config.io import (
     read_toml_file,
     read_toml_leaf,
     remove_toml_leaf,
+    remove_toml_table,
     upsert_toml_leaf,
 )
 from agent6.config.layer import (
+    InvalidEntry,
     effective_leaf,
+    find_invalid_entries,
     load_effective,
     load_effective_with_overlay,
     materialize,
@@ -365,3 +368,53 @@ def _cmd_config_add(key: str, value: str, *, repo: bool, machine: Path | None) -
 
 def _cmd_config_remove(key: str, value: str, *, repo: bool, machine: Path | None) -> int:
     return _config_list_edit(key, value, repo=repo, machine=machine, add=False)
+
+
+_MAX_FIX_PASSES = 25  # backstop; each pass drops >=1 leaf, so this is never reached
+
+
+def _cmd_config_fix(*, machine: Path | None) -> int:
+    """Drop every invalid entry from the config, printing what it was and where it
+    lived (global / repo, or a machine's [config] overlay with --machine-file).
+
+    Removing one entry can reveal another it shadowed, so it re-diagnoses until the
+    config is clean or nothing droppable remains. An entry it cannot drop as a plain
+    leaf (a non-absolute state_dir, a bad built-in default) is reported, not hidden.
+    """
+    repo_root = Path.cwd()
+    removed: list[InvalidEntry] = []
+    touched: set[Path] = set()
+    diag = find_invalid_entries(repo_root, machine=machine)
+    passes = 0
+    while diag.removable and passes < _MAX_FIX_PASSES:
+        for entry in diag.removable:
+            if entry.is_table:
+                remove_toml_table(entry.path, entry.file_key)
+            else:
+                remove_toml_leaf(entry.path, entry.file_key)
+            touched.add(entry.path)
+            removed.append(entry)
+        passes += 1
+        diag = find_invalid_entries(repo_root, machine=machine)
+    for path in touched:
+        chown_to_real_user(path)
+    for entry in removed:
+        what = (
+            f"[{entry.leaf}] (whole table)"
+            if entry.is_table
+            else f"{entry.leaf} = {format_value(entry.value)}"
+        )
+        print(f"Removed {what}  [{entry.layer}: {entry.path}]")
+    if diag.blocked:
+        print(
+            "ERROR: config still invalid (not an auto-removable entry); fix it by hand:\n"
+            f"{diag.blocked}",
+            file=sys.stderr,
+        )
+        return 2
+    if not removed:
+        print("Config is valid; nothing to fix.")
+        return 0
+    n = len(removed)
+    print(f"Fixed the config: dropped {n} invalid entr{'y' if n == 1 else 'ies'}.")
+    return 0

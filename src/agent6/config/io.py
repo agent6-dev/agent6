@@ -178,6 +178,33 @@ def remove_toml_leaf(path: Path, dotted_key: str) -> bool:
     return False
 
 
+def remove_toml_table(path: Path, table: str) -> bool:
+    """Delete a whole ``[table]`` section (its header, body, and any ``[table.sub]``
+    subtables) from *path*. Returns True if the table was present. Used by
+    ``config fix`` to drop an unknown/extra top-level table (e.g. a leftover
+    ``[cli]`` from a removed feature), where deleting a single leaf would leave an
+    empty-but-still-invalid table behind."""
+    if not path.is_file():
+        return False
+    lines = path.read_text(encoding="utf-8").splitlines()
+    kept: list[str] = []
+    dropping = False
+    removed = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            name = stripped.strip("[]").strip()
+            dropping = name == table or name.startswith(f"{table}.")
+            removed = removed or dropping
+        if not dropping:
+            kept.append(line)
+    if not removed:
+        return False
+    out = "\n".join(kept).rstrip("\n") + "\n" if any(ln.strip() for ln in kept) else ""
+    path.write_text(out, encoding="utf-8")
+    return True
+
+
 def read_toml_file(path: Path) -> dict[str, Any]:
     """Parse *path* as TOML, or return an empty dict if it does not exist.
 

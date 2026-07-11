@@ -33,8 +33,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, get_args
 
+from pydantic import ValidationError
+
 from agent6.config.io import (
     parse_cli_value,
+    read_toml_file,
+    read_toml_leaf,
     remove_toml_leaf,
     upsert_toml_leaf,
     upsert_toml_table,
@@ -356,6 +360,139 @@ def load_effective_with_overlay(repo_root: Path, overlay: dict[str, Any]) -> Eff
     # under `machine run` / `config --machine` instead of failing validation.
     layers = _apply_profile(layers, "")
     return _effective_from_layers(layers, source="(merged config layers + machine overlay)")
+
+
+@dataclass(frozen=True, slots=True)
+class InvalidEntry:
+    """One invalid config leaf that `config fix` can drop, and where it lives."""
+
+    leaf: str  # dotted config leaf, e.g. "prompt.decompose" (or a table name, e.g. "cli")
+    value: Any  # the offending value, read back from the file
+    layer: LayerName  # "global" | "repo" | "machine"
+    path: Path  # the file to edit
+    file_key: str  # dotted key WITHIN that file (leaf, or "config."+leaf for a machine overlay)
+    is_table: bool = False  # True when the whole [leaf] table must be dropped, not one leaf
+
+
+@dataclass(frozen=True, slots=True)
+class ConfigDiagnosis:
+    """The result of diagnosing the on-disk config for `config fix`.
+
+    Empty ``removable`` + ``None`` ``blocked`` means the config is valid.
+    """
+
+    removable: tuple[InvalidEntry, ...]  # invalid leaves that map to a file (droppable)
+    blocked: str | None  # invalid in a way fix can't auto-drop (a message), or None
+
+
+def _fix_scope_layers(repo_root: Path, machine: Path | None) -> list[Layer]:
+    """The layers `config fix` repairs: global + repo, or a machine's [config]
+    overlay on top of them when *machine* is given. Profiles are applied (and
+    [profiles] tables stripped) exactly as load_effective does, so validation and
+    provenance match a real load."""
+    layers = discover_layers(repo_root, None)
+    if machine is not None:
+        overlay = read_toml_file(machine).get("config", {})
+        if isinstance(overlay, dict) and overlay:
+            _forbid_repo_state_dir("machine overlay", overlay)
+            layers = [*layers, Layer("machine", machine, overlay)]
+    return _apply_profile(layers, "")
+
+
+def _merge_with_origin(layers: list[Layer]) -> tuple[dict[str, Any], dict[str, Layer]]:
+    """Deep-merge *layers* low->high and map each dotted leaf to the Layer that set
+    it (the highest one), so an invalid leaf names its own file."""
+    merged: dict[str, Any] = {}
+    origin: dict[str, Layer] = {}
+    for layer in layers:
+        merged = _deep_merge(merged, layer.data)
+        for leaf in flatten_leaves(layer.data):
+            origin[leaf] = layer
+    return merged, origin
+
+
+def _removable_for(loc: str, origin: dict[str, Layer]) -> tuple[str, Layer, bool] | None:
+    """The ``(file_key, layer, is_table)`` to drop for a validation error at *loc*,
+    or None when no config file is at fault (a built-in default). Handles three
+    shapes: *loc* IS a file leaf; *loc* is UNDER a file leaf (walk down to the
+    longest present prefix); and *loc* is an ANCESTOR table of file leaves -- an
+    unknown/extra whole table reported at the table (e.g. a leftover ``[cli]`` is
+    reported as ``extra_forbidden`` at ``cli`` while the file holds ``cli.input``),
+    which must be dropped whole."""
+    parts = loc.split(".") if loc else []
+    for i in range(len(parts), 0, -1):
+        cand = ".".join(parts[:i])
+        if cand in origin:
+            return cand, origin[cand], False
+    prefix = f"{loc}." if loc else ""
+    child = next((k for k in origin if prefix and k.startswith(prefix)), None)
+    if child is not None:
+        return loc, origin[child], True  # an extra whole table -> drop the table
+    return None
+
+
+def _diagnose_errors(
+    exc: ValidationError, origin: dict[str, Layer], *, only_layer: str | None
+) -> ConfigDiagnosis:
+    """Turn per-leaf validation errors into droppable entries + a blocked note for
+    anything fix cannot drop (an error from a default/profile, or -- when scoped to
+    a machine overlay -- an error that lives in the global/repo config instead)."""
+    removable: list[InvalidEntry] = []
+    blocked: list[str] = []
+    seen: set[str] = set()
+    for issue in exc.errors():
+        loc = ".".join(str(part) for part in issue["loc"])
+        note = f"  - {loc or '<root>'}: {issue['msg']}"
+        match = _removable_for(loc, origin)
+        if match is None:
+            blocked.append(note)
+            continue
+        key, layer, is_table = match
+        if key in seen:
+            continue
+        seen.add(key)
+        if layer.path is None or (only_layer is not None and layer.name != only_layer):
+            blocked.append(note)
+            continue
+        file_key = f"config.{key}" if layer.name == "machine" else key
+        value = read_toml_leaf(read_toml_file(layer.path), file_key)
+        removable.append(
+            InvalidEntry(
+                leaf=key,
+                value=value,
+                layer=layer.name,
+                path=layer.path,
+                file_key=file_key,
+                is_table=is_table,
+            )
+        )
+    return ConfigDiagnosis(tuple(removable), "\n".join(blocked) if blocked else None)
+
+
+def find_invalid_entries(repo_root: Path, *, machine: Path | None = None) -> ConfigDiagnosis:
+    """Diagnose the on-disk config for `agent6 config fix`.
+
+    Returns the invalid leaves that can be dropped from a config FILE (each with its
+    provenance), plus a ``blocked`` message when the config is invalid in a way fix
+    cannot repair by dropping a leaf (a non-absolute ``state_dir``, a value only a
+    built-in default/profile carries, unreadable TOML). Empty + None == valid.
+
+    With *machine* set, only the machine file's ``[config]`` overlay entries are
+    droppable; a global/repo problem surfaced by the merge is reported, not touched.
+    """
+    only = "machine" if machine is not None else None
+    try:
+        layers = _fix_scope_layers(repo_root, machine)
+        merged, origin = _merge_with_origin(layers)
+    except ConfigError as exc:
+        return ConfigDiagnosis((), str(exc))
+    try:
+        Config.model_validate(merged)
+    except ConfigError as exc:  # a model-level validator raised a standalone ConfigError
+        return ConfigDiagnosis((), str(exc))
+    except ValidationError as exc:
+        return _diagnose_errors(exc, origin, only_layer=only)
+    return ConfigDiagnosis((), None)
 
 
 def leaf_keys(eff: EffectiveConfig) -> list[str]:

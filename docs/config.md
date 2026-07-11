@@ -34,6 +34,11 @@ table below), so a repo needs nothing repo-specific to run.
   (`--repo`, or `--machine-file FILE` for a machine `[config]` overlay). Every edit is
   re-validated and rolled back if it would produce an invalid config.
 - `agent6 config fill [--repo]`: materialize every resolved value into one file.
+- `agent6 config fix`: drop invalid entries (unknown keys, stale values left by a
+  schema change) from the global and repo config, printing each and whether it was
+  global or repo. Use `--machine-file FILE` to repair a machine `[config]` overlay
+  instead. Removals apply immediately (no dry-run); an entry it cannot drop as a
+  plain leaf (a non-absolute `state_dir`) is reported, not silently left.
 - `agent6 check`: validate config + sandbox + provider keys without running.
 
 ---

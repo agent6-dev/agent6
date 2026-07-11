@@ -32,6 +32,7 @@ from agent6.ui.cli.check_cmds import _cmd_check
 from agent6.ui.cli.config_cmds import (
     _cmd_config_add,
     _cmd_config_fill,
+    _cmd_config_fix,
     _cmd_config_get,
     _cmd_config_path,
     _cmd_config_remove,
@@ -383,6 +384,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             return _cmd_config_remove(
                 args.key, args.value, repo=args.repo, machine=args.machine_file
             )
+        if args.config_command == "fix":
+            return _cmd_config_fix(machine=args.machine_file)
     if args.command == "check":
         return _cmd_check(args.config, section=args.section)
     if args.command == "connect":
