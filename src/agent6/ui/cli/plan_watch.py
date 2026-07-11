@@ -355,7 +355,8 @@ def _print_task_tree(run_dir: Path) -> None:
     """Show the run's task DAG when it decomposed into subtasks. Makes the plan
     visible for a headless run (no TUI #plan pane), the decompose case the user
     could not see. A single root (no decomposition) is not worth the block."""
-    from agent6.graph.storage import RunLayout, load_graph  # noqa: PLC0415
+    from agent6.graph.storage import load_graph  # noqa: PLC0415
+    from agent6.run_layout import RunLayout  # noqa: PLC0415
     from agent6.ui.cli._task_tree import task_tree_lines  # noqa: PLC0415
 
     with contextlib.suppress(Exception):

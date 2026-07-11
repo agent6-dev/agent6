@@ -29,8 +29,8 @@ from agent6.git_ops import (
     set_repo_hook_policy,
     squash_merge,
 )
-from agent6.graph.storage import RunLayout
 from agent6.portable import atomic_write
+from agent6.run_layout import RunLayout
 
 
 @dataclass(frozen=True, slots=True)

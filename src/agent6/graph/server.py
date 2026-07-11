@@ -40,7 +40,7 @@ from agent6.graph.models import (
     SetCursorIntent,
     UpdateStatusIntent,
 )
-from agent6.graph.storage import RunLayout
+from agent6.run_layout import RunLayout
 
 _INTENT_TABLE = {
     "add_subtask": AddSubtaskIntent,

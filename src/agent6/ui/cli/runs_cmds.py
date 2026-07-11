@@ -30,8 +30,8 @@ from agent6.git_ops import (
     verify_git_identity,
 )
 from agent6.git_ops import status as git_status
-from agent6.graph.storage import RunLayout
 from agent6.run_id import RunIdError, resolve_run_id
+from agent6.run_layout import RunLayout
 from agent6.ui.cli._common import _runs_dir, _state_dir
 from agent6.ui.cli._merge import execute_merge
 from agent6.ui.cli.plan_watch import _most_recent_run_id

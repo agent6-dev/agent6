@@ -169,7 +169,7 @@ def test_ask_repl_multi_turn_carries_context(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
 
-    from agent6.graph.storage import RunLayout
+    from agent6.run_layout import RunLayout
     from agent6.ui.cli._ask import run_ask_repl as _run_ask_repl
     from agent6.workflows.loop import RunResult
 
@@ -220,7 +220,7 @@ def test_ask_repl_multi_turn_carries_context(
 def test_ask_question_snippet_reads_interactive_transcripts(tmp_path: Path) -> None:
     # REPL transcripts head their sections "## Q1"/"## A1" (not "## Question");
     # `ask list` used to show "(no question)" for every interactive ask.
-    from agent6.graph.storage import RunLayout
+    from agent6.run_layout import RunLayout
     from agent6.ui.cli._ask import ask_question_snippet, save_ask_repl_transcript
 
     layout = RunLayout(state_dir=tmp_path, run_id="ask-x")

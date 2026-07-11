@@ -21,7 +21,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from agent6.graph.storage import RunLayout, list_checkpoint_turns
+from agent6.graph.storage import list_checkpoint_turns
+from agent6.run_layout import RunLayout
 from agent6.ui.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli.fork import _cmd_fork  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli.run import _cmd_resume  # pyright: ignore[reportPrivateUsage]

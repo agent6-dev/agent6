@@ -39,9 +39,10 @@ from pathlib import Path
 from agent6.config import Config, ConfigError
 from agent6.config.layer import load_effective
 from agent6.git_ops import GitError, create_branch_at
-from agent6.graph.storage import RunLayout, append_jsonl, list_checkpoint_turns
+from agent6.graph.storage import append_jsonl, list_checkpoint_turns
 from agent6.portable import atomic_write
 from agent6.run_id import RunIdError, new_friendly_id, resolve_run_id
+from agent6.run_layout import RunLayout
 from agent6.ui.cli._common import _BudgetOverrides, _state_dir
 from agent6.ui.cli.plan_watch import _most_recent_run_id
 from agent6.ui.cli.run import _cmd_resume, _write_run_manifest

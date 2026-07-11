@@ -49,7 +49,6 @@ from agent6.git_ops import (
     status as git_status,
 )
 from agent6.graph.client import CuratorClientError, GraphClient, spawn_curator
-from agent6.graph.storage import RunLayout
 from agent6.paths import (
     chown_to_real_user,
 )
@@ -60,6 +59,7 @@ from agent6.providers import (
     TranscriptSink,
 )
 from agent6.run_id import RunIdError, new_friendly_id, resolve_run_id
+from agent6.run_layout import RunLayout
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.schema import UserQuestion
 from agent6.types import SandboxProfile

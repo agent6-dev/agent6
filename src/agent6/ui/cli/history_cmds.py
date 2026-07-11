@@ -10,8 +10,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from agent6.graph.storage import RunLayout, load_graph
+from agent6.graph.storage import load_graph
 from agent6.run_id import RunIdError
+from agent6.run_layout import RunLayout
 from agent6.transcript_render import fold_conversation, load_transcripts, render_markdown
 from agent6.ui.cli._common import (
     _runs_dir,

@@ -12,7 +12,8 @@ import pytest
 
 from agent6.config.layer import resolved_state_dir
 from agent6.graph.models import TaskNode
-from agent6.graph.storage import RunLayout, write_node
+from agent6.graph.storage import write_node
+from agent6.run_layout import RunLayout
 from agent6.ui.cli import main
 
 
