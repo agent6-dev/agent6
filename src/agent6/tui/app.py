@@ -177,8 +177,8 @@ class Agent6TUI(App[int]):
         Menu(
             "View",
             (
-                MenuItem("Next pane", "app.focus_next", "Tab"),
-                MenuItem("Prev pane", "app.focus_previous", "Shift+Tab"),
+                MenuItem("Next pane", "focus_next_pane", "Tab"),
+                MenuItem("Prev pane", "focus_prev_pane", "Shift+Tab"),
                 MenuItem("Maximize pane", "fullscreen", "f"),
                 MenuItem("Full log…", "view_logs", "l"),
                 MenuItem("Conversation…", "view_transcript", "t"),
@@ -215,8 +215,8 @@ class Agent6TUI(App[int]):
         Binding("escape", "to_hub", "Back", key_display="Esc/q"),
         Binding("q", "to_hub", "Back", show=False),
         Binding("ctrl+q", "quit_hub", "Quit", show=False),
-        Binding("tab", "app.focus_next", "Next pane", show=False),
-        Binding("shift+tab", "app.focus_previous", "Prev pane", show=False),
+        Binding("tab", "focus_next_pane", "Next pane", show=False),
+        Binding("shift+tab", "focus_prev_pane", "Prev pane", show=False),
         *menu_bindings(MENUS),
     ]
 
@@ -391,7 +391,7 @@ class Agent6TUI(App[int]):
         marker the run picks up at its next safe boundary (after the current step,
         never mid tool-call), then injects your instruction into the next step.
         The run keeps going -- no stop/resume. Submit blank to cancel."""
-        if self._steer_open or self._run_ended:
+        if self._steer_open or not self._run_controllable():
             return
         self._steer_open = True
         clear_steer_answer(self.run_dir)  # discard any stale answer -> run waits for this one
@@ -402,7 +402,7 @@ class Agent6TUI(App[int]):
         """Stop the run (a separate action from steering). Confirms first, then
         writes an abort over the file bridge; the run stops -- mid-response once
         the abort watcher lands -- and can be resumed later."""
-        if self._run_ended:
+        if self._steer_open or not self._run_controllable():
             return
 
         def _confirmed(yes: bool | None) -> None:
@@ -419,6 +419,20 @@ class Agent6TUI(App[int]):
             ),
             _confirmed,
         )
+
+    def _run_controllable(self) -> bool:
+        """Steer/Stop are no-ops once the run is over: finished (the case that
+        matters for `agent6 watch`, where `_run_ended` never trips) or the
+        co-process app closing on run.end."""
+        return not self._run_ended and not self.state.finished
+
+    def action_focus_next_pane(self) -> None:
+        # Local action wrapping the App's framework action so it resolves from a
+        # menu item / palette entry (a namespaced `app.focus_next` does not).
+        self.action_focus_next()
+
+    def action_focus_prev_pane(self) -> None:
+        self.action_focus_previous()
 
     # --- command palette ---------------------------------------------
 
