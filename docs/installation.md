@@ -52,18 +52,21 @@ uv run agent6 --help
 ## Shell completion
 
 One command installs tab-completion (it detects the shell you are running,
-even one started from another shell, or pass `bash`/`zsh`/`fish` explicitly;
-rerunning is safe and refreshes it):
+even one started from another shell, or pass `bash`/`zsh`/`fish`/`xonsh`
+explicitly; rerunning is safe and refreshes it):
 
 ```sh
 agent6 completions
 ```
 
 Bash/zsh get a marker-guarded source line in their rc file pointing at a
-script under the agent6 config dir; fish gets a native completions file.
+script under the agent6 config dir; fish and xonsh get a file in their
+auto-loaded native locations (`fish/completions`, `xonsh/rc.d`), no rc edit.
 `agent6 completions --print bash` emits the script instead, for `eval` or a
-dotfiles repo. (The underlying [argcomplete](https://kislyuk.github.io/argcomplete/)
-`register-python-argcomplete` also works when it is on your PATH.)
+dotfiles repo. (For bash/zsh/fish the underlying
+[argcomplete](https://kislyuk.github.io/argcomplete/)
+`register-python-argcomplete` also works when it is on your PATH; the xonsh
+completer is agent6's own, driving the same argcomplete protocol.)
 
 ## Check the install
 

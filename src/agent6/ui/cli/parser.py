@@ -550,17 +550,20 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "completions",
         help=(
             "Install shell tab-completion for agent6 (detects your shell from"
-            " $SHELL; bash/zsh get a guarded source line in their rc, fish a"
-            " native completions file). --print emits the script instead, for"
-            " `eval` or manual setup."
+            " $SHELL; bash/zsh get a guarded source line in their rc, fish and"
+            " xonsh a native auto-loaded file). --print emits the script"
+            " instead, for `eval` or manual setup."
         ),
     )
     completions_p.add_argument(
         "shell",
         nargs="?",
-        default="",
-        choices=["", "bash", "zsh", "fish"],
-        metavar="{bash,zsh,fish}",
+        # None (not ""): argparse validates a *string* default against choices,
+        # and an empty-string choice leaks into completion output as a bogus
+        # description-only candidate.
+        default=None,
+        choices=["bash", "zsh", "fish", "xonsh"],
+        metavar="{bash,zsh,fish,xonsh}",
         help="Target shell (default: detect from $SHELL).",
     )
     completions_p.add_argument(

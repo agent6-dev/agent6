@@ -24,7 +24,7 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def test_print_emits_the_registration(capsys: pytest.CaptureFixture[str], home: Path) -> None:
-    for shell in ("bash", "zsh", "fish"):
+    for shell in ("bash", "zsh", "fish", "xonsh"):
         assert cmd_completions(shell, print_only=True) == 0
         out = capsys.readouterr().out
         assert "agent6" in out and out.strip()  # the shellcode names the executable
@@ -71,9 +71,9 @@ def test_unknown_shell_is_a_clear_error(
 ) -> None:
     monkeypatch.setenv("SHELL", "/bin/tcsh")
     assert detect_shell() == "tcsh"
-    assert cmd_completions("", print_only=False) == 2
+    assert cmd_completions(None, print_only=False) == 2
     err = capsys.readouterr().err
-    assert "tcsh" in err and "bash|zsh|fish" in err
+    assert "tcsh" in err and "bash|zsh|fish|xonsh" in err
 
 
 def test_detects_shell_from_env(
@@ -82,6 +82,36 @@ def test_detects_shell_from_env(
     monkeypatch.setenv("SHELL", "/usr/bin/zsh")
     assert cmd_completions("", print_only=True) == 0
     assert "agent6" in capsys.readouterr().out
+
+
+def test_xonsh_writes_autoloaded_completer(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert cmd_completions("xonsh", print_only=False) == 0
+    target = home / ".config" / "xonsh" / "rc.d" / "agent6.xsh"
+    code = target.read_text(encoding="utf-8")
+    # The completer drives the argcomplete protocol against the live agent6,
+    # so the file must parse as Python and set the protocol request.
+    import ast
+
+    ast.parse(code)
+    assert "_ARGCOMPLETE_STDOUT_FILENAME" in code
+    assert "COMP_LINE" in code
+    assert 'add_one_completer("agent6"' in code
+    out = capsys.readouterr().out
+    assert "xonsh loads it automatically" in out
+    assert "activate now" not in out  # rc.d needs no activation step
+
+
+def test_xonsh_detected_in_process_walk(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    proc = home / "proc"
+    for pid, comm, ppid in ((50, "uv", 40), (40, "xonsh", 30), (30, "bash", 1)):
+        d = proc / str(pid)
+        d.mkdir(parents=True)
+        (d / "comm").write_text(comm + "\n", encoding="utf-8")
+        (d / "stat").write_text(f"{pid} ({comm}) S {ppid} 0 0 0", encoding="utf-8")
+    monkeypatch.setattr("agent6.ui.cli.completions_cmd._PROC", proc)
+    monkeypatch.setattr("os.getppid", lambda: 50)
+    monkeypatch.setenv("SHELL", "/bin/bash")
+    assert detect_shell() == "xonsh"
 
 
 def test_detects_shell_from_process_tree(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
