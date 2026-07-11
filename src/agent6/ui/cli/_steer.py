@@ -29,6 +29,7 @@ from agent6.ui.bridge.approval import (
     steer_answer_is_abort,
     steer_request_pending,
 )
+from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._steer_menu import normalize_steer_choice, pause_menu, readline_capable
 
 
@@ -40,6 +41,9 @@ class SteerState:
     restore: Callable[[], None]
     # Polled during a streaming call so a Stop interrupts a long turn promptly.
     abort_pending: Callable[[], bool]
+    # Polled during a streaming call: True aborts the in-flight model call so
+    # the steer prompt runs now instead of at the next between-step boundary.
+    interrupt: Callable[[], bool]
 
 
 def select_revised_prompt(
@@ -158,30 +162,41 @@ def tty_prompt(text: str, *, fall_back_to_stdin: bool = True) -> str | None:
         return None
 
 
-def install_steer_sigint(events: EventSink, run_dir: Path) -> SteerState:
-    """Install a SIGINT handler that asks the workflow to steer.
+def install_steer_sigint(
+    events: EventSink, run_dir: Path, console_view: ConsoleView | None = None
+) -> SteerState:
+    """Install a SIGINT handler with escalating stages.
 
-    * 1st SIGINT, set the "steer requested" flag and emit
-      ``run.steer_requested``. The workflow notices at its next safe boundary
-      (between steps) and prompts: through a TUI modal when the TUI is live,
-      otherwise on the controlling terminal (``/dev/tty``, so the prompt is
-      visible even when the TUI has redirected the run's std streams to a log).
-    * Any further SIGINT while a steer is still pending, raise KeyboardInterrupt
-      to stop the run now (a between-step boundary can be a whole response away).
+    * 1st Ctrl-C: pause at the next safe boundary (between steps; the
+      in-flight model call finishes first). Emits ``run.steer_requested``;
+      the prompt is a TUI modal when the TUI is live, otherwise the readline
+      pause menu on the controlling terminal (``/dev/tty``, so it is visible
+      even when the TUI has redirected the run's std streams to a log).
+    * 2nd Ctrl-C: interrupt the in-flight model call and prompt now.
+    * 3rd Ctrl-C (or Ctrl-C at the pause prompt itself): KeyboardInterrupt,
+      stopping the run (resumable with ``agent6 resume``).
+
+    ``console_view``, when given, has its heartbeat spinner suspended for the
+    prompt's duration: the spinner's per-tick line-erase otherwise wipes the
+    readline line and its Tab completions.
 
     Returns callables for the workflow plus a ``restore`` hook to put the
     previous handler back when the run is done.
     """
-    state: dict[str, Any] = {"requested": False}
+    state: dict[str, Any] = {"stage": 0, "prompting": False}
 
     def _handler(_signum: int, _frame: Any) -> None:
-        # A steer is checked at the next between-step boundary, which can be up to
-        # a full model response away (a reasoning model may think for 30-60s). So
-        # once a steer is pending, ANY further Ctrl-C means "stop now" -- no 2s
-        # double-tap window to hit, which felt like the prompt was hanging.
-        if state["requested"]:
+        # A boundary can be a whole model response away (a reasoning model may
+        # think for 30-60s), hence the escalation; at the pause prompt itself a
+        # Ctrl-C stops the run, as the pause banner promised.
+        if state["prompting"] or state["stage"] >= 2:
             raise KeyboardInterrupt
-        state["requested"] = True
+        if state["stage"] == 1:
+            state["stage"] = 2
+            if not frontend_is_live(run_dir):
+                tty_message("\n[agent6] interrupting this step. Ctrl-C again to stop the run.\n")
+            return
+        state["stage"] = 1
         # Drop a STALE answer file (one without a request marker) so it is not
         # instantly consumed as this new prompt's answer. An answer with a
         # pending request is a live front-end steer the loop has not consumed
@@ -193,18 +208,24 @@ def install_steer_sigint(events: EventSink, run_dir: Path) -> SteerState:
         # terminal it owns. Otherwise tell the user a prompt is coming.
         if not frontend_is_live(run_dir):
             tty_message(
-                "\n[agent6] pausing: steer / continue / stop / detach in a moment."
-                " Ctrl-C again to stop now.\n"
+                "\n[agent6] pausing after this step: steer / continue / stop / detach."
+                " Ctrl-C again to interrupt now.\n"
             )
 
     previous = signal.signal(signal.SIGINT, _handler)
 
     def requested() -> bool:
-        # Either a Ctrl-C (the SIGINT flag) OR a TUI `s`-key steer request marker.
-        return bool(state["requested"]) or steer_request_pending(run_dir)
+        # Either a Ctrl-C (any stage) OR a front-end steer request marker.
+        return state["stage"] >= 1 or steer_request_pending(run_dir)
+
+    def interrupt() -> bool:
+        # A double Ctrl-C aborts the in-flight call; so does a front-end steer
+        # (the instruction is already typed, injecting it beats finishing a
+        # step it may contradict).
+        return state["stage"] >= 2 or steer_request_pending(run_dir)
 
     def clear() -> None:
-        state["requested"] = False
+        state["stage"] = 0
         clear_steer_answer(run_dir)
         clear_steer_request(run_dir)
 
@@ -217,19 +238,27 @@ def install_steer_sigint(events: EventSink, run_dir: Path) -> SteerState:
             # persisting `steer.request` cannot re-trigger another 600s blocking
             # read at the very next boundary, looping the run. A genuinely-answered
             # steer leaves clearing to the caller's clear() (with the answer already
-            # consumed). The SIGINT flag is also cleared so a stale Ctrl-C request
+            # consumed). The SIGINT stage is also cleared so a stale Ctrl-C request
             # doesn't immediately re-arm the same dead prompt.
             if answer is None:
-                state["requested"] = False
+                state["stage"] = 0
                 clear_steer_request(run_dir)
             return answer
-        if readline_capable():
-            # The interactive pause menu: readline editing, history, and
-            # Tab-completed slash commands (/status, /tasks, /stop, ...).
-            return pause_menu(run_dir)
-        return normalize_steer_choice(
-            tty_prompt("[agent6] paused: [enter] continue · type to steer · q stop · d detach: ")
-        )
+        pause = console_view.pause if console_view is not None else contextlib.nullcontext
+        state["prompting"] = True
+        try:
+            with pause():
+                if readline_capable():
+                    # The interactive pause menu: readline editing, history, and
+                    # Tab-completed slash commands (/status, /tasks, /stop, ...).
+                    return pause_menu(run_dir)
+                return normalize_steer_choice(
+                    tty_prompt(
+                        "[agent6] paused: [enter] continue · type to steer · q stop · d detach: "
+                    )
+                )
+        finally:
+            state["prompting"] = False
 
     def restore() -> None:
         with contextlib.suppress(Exception):
@@ -241,6 +270,7 @@ def install_steer_sigint(events: EventSink, run_dir: Path) -> SteerState:
         prompt=prompt,
         restore=restore,
         abort_pending=lambda: steer_answer_is_abort(run_dir),
+        interrupt=interrupt,
     )
 
 
@@ -270,10 +300,13 @@ def file_bridge_steer(run_dir: Path) -> SteerState:
         prompt=prompt,
         restore=lambda: None,
         abort_pending=lambda: steer_answer_is_abort(run_dir),
+        interrupt=lambda: steer_request_pending(run_dir),
     )
 
 
-def make_steer_state(events: EventSink, run_dir: Path) -> SteerState:
+def make_steer_state(
+    events: EventSink, run_dir: Path, console_view: ConsoleView | None = None
+) -> SteerState:
     """Install the steer SIGINT handler when a controlling terminal exists
     (covers run/plan/ask with or without the TUI); else steer purely over the
     front-end file bridge (detached runs)."""
@@ -282,4 +315,4 @@ def make_steer_state(events: EventSink, run_dir: Path) -> SteerState:
             pass
     except OSError:
         return file_bridge_steer(run_dir)
-    return install_steer_sigint(events, run_dir)
+    return install_steer_sigint(events, run_dir, console_view)

@@ -525,10 +525,10 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         # the finally block. See bench/improvement_plan.md audit cross-cutting.
         sock_path = layout.run_dir / "curator.sock"  # rebound to the /tmp socket inside the try
 
-        # Steering (mid-run Ctrl-C -> a stdin prompt) needs the terminal; skip it
-        # when the TUI owns it (then default Ctrl-C aborts cleanly). Double-Ctrl-C
-        # within 2s still raises KeyboardInterrupt for the hard-abort path below.
-        steer_state = _make_steer_state(events, layout.run_dir)
+        # Steering (mid-run Ctrl-C -> the pause menu) needs the terminal; the
+        # console view's heartbeat spinner is suspended for the prompt so its
+        # line-erase cannot wipe the readline line.
+        steer_state = _make_steer_state(events, layout.run_dir, console_view)
 
         result = None
         interrupted = False
@@ -595,7 +595,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                     stop_requested=lambda: stop_request_pending(layout.run_dir),
                     stop_clear=lambda: clear_stop_request(layout.run_dir),
                     should_abort=steer_state.abort_pending,
-                    should_interrupt=steer_state.requested,
+                    should_interrupt=steer_state.interrupt,
                     budget=budget,
                     state_dir=state_dir,
                     # `agent6 ask` (under asks/) is not resumable -- `agent6 resume`

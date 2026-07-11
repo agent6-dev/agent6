@@ -20,7 +20,7 @@ from agent6.ui.bridge.approval import (
     steer_request_pending,
     write_steer_answer,
 )
-from agent6.ui.cli._steer import file_bridge_steer, make_steer_state
+from agent6.ui.cli._steer import file_bridge_steer, install_steer_sigint, make_steer_state
 
 
 def test_prompt_consumes_bridged_answer(tmp_path: Path) -> None:
@@ -29,6 +29,7 @@ def test_prompt_consumes_bridged_answer(tmp_path: Path) -> None:
     write_steer_answer(tmp_path, "focus on the tests")
     request_steer(tmp_path)
     assert steer.requested() is True
+    assert steer.interrupt() is True  # a typed front-end steer injects now
     assert steer.prompt() == "focus on the tests"
     steer.clear()
     assert steer.requested() is False
@@ -86,3 +87,90 @@ def test_steer_answer_is_abort_peeks_without_consuming(tmp_path: Path) -> None:
     # would kill the streaming watchdog thread (and its idle-hang detection).
     (tmp_path / "steer.answer").write_bytes(b"\xff\xfe not utf8")
     assert not steer_answer_is_abort(tmp_path)
+
+
+def _silent_banner(text: str) -> None:
+    """tty_message stand-in: keep test output off the developer's terminal."""
+
+
+def test_sigint_escalates_boundary_interrupt_stop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Ctrl-C stages: 1st pauses at the next between-step boundary (the
+    in-flight call finishes), 2nd interrupts the in-flight call, 3rd stops."""
+    import signal
+
+    monkeypatch.setattr("agent6.ui.cli._steer.tty_message", _silent_banner)
+    events = EventSink(tmp_path / "logs.jsonl")
+    steer = install_steer_sigint(events, tmp_path)
+    try:
+        assert steer.requested() is False
+        signal.raise_signal(signal.SIGINT)  # 1st: graceful pause
+        assert steer.requested() is True
+        assert steer.interrupt() is False
+        signal.raise_signal(signal.SIGINT)  # 2nd: abort the in-flight call
+        assert steer.interrupt() is True
+        with pytest.raises(KeyboardInterrupt):  # 3rd: stop the run
+            signal.raise_signal(signal.SIGINT)
+        steer.clear()
+        assert steer.requested() is False
+        assert steer.interrupt() is False
+    finally:
+        steer.restore()
+
+
+def test_sigint_at_the_pause_prompt_stops(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """At the pause prompt itself a Ctrl-C stops the run outright, whatever the
+    stage: the banner promised it, and there is nothing in flight to interrupt."""
+    import signal
+
+    monkeypatch.setattr("agent6.ui.cli._steer.tty_message", _silent_banner)
+    monkeypatch.setattr("agent6.ui.cli._steer.readline_capable", lambda: False)
+
+    def prompt_hit_by_ctrl_c(text: str, **_kw: object) -> str | None:
+        signal.raise_signal(signal.SIGINT)
+        return ""
+
+    monkeypatch.setattr("agent6.ui.cli._steer.tty_prompt", prompt_hit_by_ctrl_c)
+    events = EventSink(tmp_path / "logs.jsonl")
+    steer = install_steer_sigint(events, tmp_path)
+    try:
+        signal.raise_signal(signal.SIGINT)  # stage 1: the boundary pause
+        with pytest.raises(KeyboardInterrupt):
+            steer.prompt()
+    finally:
+        steer.restore()
+
+
+def test_prompt_pauses_the_console_spinner(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The pause menu runs inside ConsoleView.pause(): the heartbeat spinner's
+    per-tick line-erase otherwise wipes the readline line and its completions."""
+    import contextlib
+    from collections.abc import Generator
+    from typing import cast
+
+    from agent6.ui.cli._console_view import ConsoleView
+
+    calls: list[str] = []
+
+    class FakeView:
+        @contextlib.contextmanager
+        def pause(self) -> Generator[None]:
+            calls.append("pause")
+            yield
+            calls.append("resume")
+
+    monkeypatch.setattr("agent6.ui.cli._steer.readline_capable", lambda: True)
+
+    def fake_menu(run_dir: Path) -> str | None:
+        calls.append("prompt")
+        return "steer text"
+
+    monkeypatch.setattr("agent6.ui.cli._steer.pause_menu", fake_menu)
+    events = EventSink(tmp_path / "logs.jsonl")
+    steer = install_steer_sigint(events, tmp_path, cast(ConsoleView, FakeView()))
+    try:
+        assert steer.prompt() == "steer text"
+    finally:
+        steer.restore()
+    assert calls == ["pause", "prompt", "resume"]

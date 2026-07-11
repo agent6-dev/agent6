@@ -533,7 +533,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
 
         sock_path = layout.run_dir / "curator.sock"  # rebound to the /tmp socket inside the try
 
-        steer_state = _make_steer_state(events, layout.run_dir)
+        steer_state = _make_steer_state(events, layout.run_dir, console_view)
 
         result = None
         interrupted = False
@@ -596,7 +596,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
                     stop_requested=lambda: stop_request_pending(layout.run_dir),
                     stop_clear=lambda: clear_stop_request(layout.run_dir),
                     should_abort=steer_state.abort_pending,
-                    should_interrupt=steer_state.requested,
+                    should_interrupt=steer_state.interrupt,
                     budget=budget,
                     resume_state_path=snapshot_path,
                     mode=mode,
