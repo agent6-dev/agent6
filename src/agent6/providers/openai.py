@@ -60,7 +60,9 @@ from urllib.parse import urlsplit
 import httpx2
 
 from agent6.budget import BudgetTracker
-from agent6.providers.anthropic import (
+from agent6.providers.egress import http_post, http_stream
+from agent6.providers.token_command import CommandToken
+from agent6.providers.types import (
     ProviderAborted,
     ProviderError,
     ProviderInterrupted,
@@ -69,8 +71,6 @@ from agent6.providers.anthropic import (
     TranscriptSink,
     parse_retry_after,
 )
-from agent6.providers.egress import http_post, http_stream
-from agent6.providers.token_command import CommandToken
 from agent6.providers.wire import AuthStyle, Deployment, auth_header, request_url
 
 OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1"

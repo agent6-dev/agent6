@@ -22,7 +22,7 @@ import threading
 import time
 from collections.abc import Sequence
 
-from agent6.providers.anthropic import ProviderError
+from agent6.providers.types import ProviderError
 
 _DEFAULT_RUN_TIMEOUT_S = 30.0
 

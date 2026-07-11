@@ -16,7 +16,7 @@ import httpx2
 import pytest
 
 from agent6.providers import AnthropicProvider, ProviderError, TranscriptSink
-from agent6.providers import anthropic as anth_module
+from agent6.providers.types import _redact_headers  # pyright: ignore[reportPrivateUsage]
 
 
 class _FakeResponse:
@@ -111,7 +111,7 @@ def test_transcript_redacts_api_key_on_network_error(
 
 
 def test_redact_headers_unit() -> None:
-    out = anth_module._redact_headers(  # pyright: ignore[reportPrivateUsage]
+    out = _redact_headers(  # pyright: ignore[reportPrivateUsage]
         {"x-api-key": "secret", "Authorization": "Bearer t", "Other": "keep"}
     )
     assert out["x-api-key"] == "<REDACTED>"

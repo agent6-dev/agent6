@@ -15,8 +15,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 
-from agent6.providers.anthropic import (
-    AnthropicProvider,
+from agent6.providers.anthropic import AnthropicProvider
+from agent6.providers.openai import OpenAIProvider
+from agent6.providers.token_command import CommandToken
+from agent6.providers.types import (
     ProviderAborted,
     ProviderError,
     ProviderInterrupted,
@@ -24,8 +26,6 @@ from agent6.providers.anthropic import (
     ToolDefinition,
     TranscriptSink,
 )
-from agent6.providers.openai import OpenAIProvider
-from agent6.providers.token_command import CommandToken
 
 
 @runtime_checkable

@@ -148,7 +148,7 @@ def test_egress_allowlist_derives_from_anthropic_base_url() -> None:
 
 
 def test_api_key_header_is_redacted_in_transcripts() -> None:
-    from agent6.providers.anthropic import _redact_headers  # pyright: ignore[reportPrivateUsage]
+    from agent6.providers.types import _redact_headers  # pyright: ignore[reportPrivateUsage]
 
     redacted = _redact_headers({"api-key": "secret", "x-api-key": "s2", "content-type": "json"})
     assert redacted["api-key"] == "<REDACTED>"
