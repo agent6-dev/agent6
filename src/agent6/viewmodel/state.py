@@ -112,6 +112,7 @@ class RunState:
     log_count: int = 0  # monotonic total log lines ever (log_tail is windowed)
     finished: bool = False
     all_passed: bool | None = None
+    end_reason: str = ""  # run.end reason: finish_run | steer_abort | provider_error | ...
     latest_diff: str = ""  # patch of the most recent auto-commit (diff.updated)
     # Monotonic count of mid-run steer requests (Ctrl-C). The TUI compares it
     # against its own "seen" count to pop a steer modal exactly once per press.
@@ -310,6 +311,7 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
                 state,
                 finished=True,
                 all_passed=bool(event.get("all_passed", False)),
+                end_reason=str(event.get("reason", "") or ""),
             )
 
         case _:
@@ -434,8 +436,26 @@ def fold_run(events: Iterable[dict[str, Any]]) -> RunState:
     return state
 
 
+def run_status_label(state: RunState) -> str:
+    """The header status word, distinguishing a stop from a finish from an error --
+    all three set finished=True, so the reason is what tells them apart. A user who
+    stopped a run must not see a bare 'finished' (which reads as 'it completed')."""
+    if not state.finished:
+        return "running"
+    if state.end_reason == "steer_abort":
+        return "stopped"
+    if state.all_passed:
+        return "finished · all passed"
+    if state.end_reason and state.end_reason != "finish_run":
+        return f"ended · {state.end_reason.replace('_', ' ')}"
+    return "finished"
+
+
 def run_state_as_dict(state: RunState) -> dict[str, Any]:
     """The JSON-able wire form of a RunState, stable field names: what
     `agent6 watch --json` and a web client serialize. Tuples become lists, nested
-    view dataclasses become dicts."""
-    return asdict(state)
+    view dataclasses become dicts. `status_label` is a computed convenience the
+    web/CLI render verbatim so the label logic lives in one place."""
+    d = asdict(state)
+    d["status_label"] = run_status_label(state)
+    return d

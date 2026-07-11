@@ -94,3 +94,10 @@ def test_interleaved_tool_calls_pair_by_name() -> None:
 def test_unmatched_tool_result_is_dropped() -> None:
     # A result with no matching pending call must not crash or emit a bogus item.
     assert fold_transcript([{"type": "tool.result", "name": "ghost", "ok": True}]) == []
+
+
+def test_stopped_run_done_reads_as_stopped_not_failed() -> None:
+    # A steer_abort run must render "stopped", not the raw "steer_abort" nor a
+    # failure -- the CLI/TUI done line shows item.name for a not-ok run.
+    (done,) = fold_transcript([{"type": "run.end", "reason": "steer_abort", "all_passed": False}])
+    assert done.kind == "done" and done.ok is False and done.name == "stopped"

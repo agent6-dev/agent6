@@ -50,6 +50,7 @@ from agent6.viewmodel.state import (
     format_log_line,
     initial_state,
     run_state_as_dict,
+    run_status_label,
 )
 from agent6.viewmodel.tail import LogTail, tail_events
 from agent6.viewmodel.transcript import (
@@ -89,6 +90,7 @@ __all__ = [
     "notification_key",
     "run_mtime",
     "run_state_as_dict",
+    "run_status_label",
     "salient_arg",
     "tail_events",
     "task_snippet",

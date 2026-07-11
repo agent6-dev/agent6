@@ -146,7 +146,12 @@ def _run_summary(run_dir: Path) -> dict[str, Any]:
                     mode = str(ev.get("mode", mode))
                     task = str(ev.get("user_task", ""))
                 elif etype == "run.end":
-                    status = "ok" if ev.get("all_passed") else "done"
+                    if ev.get("all_passed"):
+                        status = "ok"
+                    elif ev.get("reason") == "steer_abort":
+                        status = "stopped"  # not a failure: the operator stopped it
+                    else:
+                        status = "done"
                 elif etype == "budget.update":
                     usd = float(ev.get("usd_total", usd) or 0.0)
         if status == "running" and (time.time() - logs.stat().st_mtime) > _STALE_AFTER_S:

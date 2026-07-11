@@ -31,6 +31,17 @@ DONE = "●"  # run start / final verdict
 # stays free of a tools import (layering).
 _FINISH_TOOLS = frozenset({"finish_run", "finish_planning"})
 
+# Friendly word for a run.end reason on the terminal/TUI "done" line, so a stop
+# reads as "stopped" (not the raw "steer_abort") and an error names itself.
+_END_REASON_LABEL = {
+    "steer_abort": "stopped",
+    "finish_run": "checks failed",
+    "provider_error": "provider error",
+    "budget_exhausted": "budget exhausted",
+    "went_quiet": "went quiet",
+    "max_iterations": "hit iteration cap",
+}
+
 ItemKind = Literal["thinking", "text", "tool", "commit", "marker", "done"]
 
 
@@ -120,13 +131,14 @@ class TranscriptFold:
         if etype == "run.end":
             out = self._flush_message()
             counts = f"{self._tools} tools · {self._commits} commit(s)"
+            reason = str(event.get("reason", ""))
             out.append(
                 TranscriptItem(
                     "done",
                     body=self._finish,
                     ok=bool(event.get("all_passed")),
                     detail=counts,
-                    name=str(event.get("reason", "")),
+                    name=_END_REASON_LABEL.get(reason, reason),
                 )
             )
             return out

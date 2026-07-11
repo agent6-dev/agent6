@@ -16,6 +16,7 @@ from agent6.viewmodel.state import (
     format_log_line,
     initial_state,
     run_state_as_dict,
+    run_status_label,
 )
 
 
@@ -301,3 +302,19 @@ def test_run_state_as_dict_is_json_serializable() -> None:
     assert d["user_task"] == "t"
     assert d["tool_calls"][0]["name"] == "grep"  # tuple -> list, dataclass -> dict
     json.dumps(d)  # the wire form must serialize
+
+
+def test_run_status_label_distinguishes_stop_finish_error() -> None:
+    # All of these set finished=True; the reason is what a user needs to tell them
+    # apart. A stopped run must never read as a bare "finished" (looks completed).
+    def end(reason: str, all_passed: bool) -> RunState:
+        s = apply_event(initial_state(), {"type": "run.start", "user_task": "t"})
+        return apply_event(s, {"type": "run.end", "reason": reason, "all_passed": all_passed})
+
+    assert run_status_label(initial_state()) == "running"
+    assert run_status_label(end("steer_abort", False)) == "stopped"
+    assert run_status_label(end("finish_run", True)) == "finished · all passed"
+    assert run_status_label(end("finish_run", False)) == "finished"
+    assert run_status_label(end("provider_error", False)) == "ended · provider error"
+    # and the computed label rides along on the wire dict for the web client
+    assert run_state_as_dict(end("steer_abort", False))["status_label"] == "stopped"

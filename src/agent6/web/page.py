@@ -585,7 +585,7 @@ function paintRun(cards, s) {
   const add = (k, v) => { kv.appendChild(el('div', 'k', k)); kv.appendChild(el('div', 'v', v)); };
   add('task', s.user_task || '(none)');
   add('id', s.run_id || '');
-  add('state', s.finished ? (s.all_passed ? 'finished · all passed' : 'finished') : 'running');
+  add('state', s.status_label || (s.finished ? 'finished' : 'running'));
   cards.head.appendChild(kv);
   if (s.last_role) {
     const r = s.last_role;

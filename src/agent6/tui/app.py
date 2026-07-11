@@ -76,6 +76,7 @@ from agent6.viewmodel.state import (
     RunState,
     apply_event,
     initial_state,
+    run_status_label,
 )
 from agent6.viewmodel.tail import tail_events
 
@@ -532,11 +533,13 @@ class Agent6TUI(App[int]):
         )
         done_n = sum(1 for t in s.tasks if t.status in ("passed", "skipped"))
         step = f"tasks: {done_n}/{len(s.tasks)}" if s.tasks else "tasks: —"
-        finished = (
-            "[b green]done[/]"
-            if s.finished and s.all_passed
-            else ("[b red]done (failed)[/]" if s.finished else "")
-        )
+        if not s.finished:
+            finished = ""
+        else:  # colour the shared status label: green passed, yellow stopped, red else
+            color = (
+                "green" if s.all_passed else "yellow" if s.end_reason == "steer_abort" else "red"
+            )
+            finished = f"[b {color}]{escape(run_status_label(s))}[/]"
         cost_prefix = "~" if s.budget.usd_partial else ""
         cost = f"[b]{cost_prefix}${s.budget.usd_total:.4f}[/]"
         self.query_one("#top", Static).update(
