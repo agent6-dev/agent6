@@ -50,8 +50,6 @@ import contextlib
 import json
 import os
 import re
-import threading
-import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -60,12 +58,11 @@ from urllib.parse import urlsplit
 import httpx2
 
 from agent6.budget import BudgetTracker
-from agent6.providers.egress import http_post, http_stream
+from agent6.providers._stream import SseCall, StreamClock
+from agent6.providers.egress import http_post
 from agent6.providers.token_command import CommandToken
 from agent6.providers.types import (
-    ProviderAborted,
     ProviderError,
-    ProviderInterrupted,
     ProviderResponse,
     ToolDefinition,
     TranscriptSink,
@@ -75,40 +72,6 @@ from agent6.providers.wire import AuthStyle, Deployment, auth_header, request_ur
 
 OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_MAX_TOKENS = 8192
-
-# SSE idle-since-last-DATA watchdog.
-#
-# httpx2's ``timeout`` (whether float or ``httpx2.Timeout`` with ``read=``)
-# is reset on EVERY received byte. OpenRouter (and other gateways
-# fronted by Cloudflare) emits ``:`` SSE comment heartbeats every
-# ~15s while a request is in flight. Those heartbeats reset the
-# read-timeout indefinitely. If the upstream model truly hangs (we
-# observed Kimi K2.6 sessions held in ESTABLISHED state with 0 bytes
-# in the recv-queue for 800+ seconds while connection-level heartbeats
-# continued), the harness never times out -- the orchestrator is
-# parked in ``poll_schedule_timeout`` forever, eating wall-clock with
-# no progress and no spend cap to save it.
-#
-# Fix: track time since the last meaningful SSE ``data:`` line
-# (anything that isn't a heartbeat comment). If that goes past
-# ``_STREAM_IDLE_TIMEOUT_S``, close the response from a watchdog
-# thread; the blocking ``iter_lines`` then raises an ``httpx2.HTTPError``
-# that we re-raise as ``ProviderError`` with a descriptive message so
-# the loop can retry-or-quit at its own layer.
-# Two phases, because "no data yet" and "data stopped" mean different things:
-#  - Before the FIRST data line, the gap is prefill / time-to-first-token, which
-#    legitimately runs long on a big context or a slow model, so be patient.
-#  - Once tokens have started, real models emit a data event every few seconds
-#    even mid-reasoning; a 45s gap then means the stream wedged (the exact case
-#    a user hit: text streamed, then 0 bytes for minutes behind heartbeats).
-# Recovering a mid-stream wedge in 45s instead of 180s is 4x faster with no
-# false-positive on prefill.
-_STREAM_FIRST_DATA_TIMEOUT_S = 120.0
-_STREAM_IDLE_TIMEOUT_S = 45.0
-# The watchdog also polls should_abort/should_interrupt each tick, so keep it
-# short: this bounds how long a Stop/steer/detach waits to end a long in-flight
-# turn. A quarter second reads as immediate without the impatient second Ctrl-C.
-_STREAM_WATCHDOG_TICK_S = 0.25
 
 # Kimi-K2-Thinking, DeepSeek-R1, QwQ, and similar reasoning
 # models stream a separate ``reasoning_content`` (or ``reasoning``)
@@ -624,7 +587,7 @@ class OpenAIProvider:
             return parsed
         raise ProviderError("OpenAI auth retry exhausted")  # pragma: no cover
 
-    def _call_streaming(  # noqa: PLR0912, PLR0915
+    def _call_streaming(  # noqa: PLR0915
         self,
         *,
         url: str,
@@ -639,7 +602,9 @@ class OpenAIProvider:
     ) -> ProviderResponse:
         """SSE streaming variant of the OpenAI Chat Completions call.
 
-        Differences from Anthropic SSE we need to handle:
+        The stream lifecycle (idle watchdog, operator stop/steer, teardown
+        classification) is ``providers._stream.SseCall``; this method owns
+        the Chat Completions event shape:
 
         * Single ``data:`` line per frame (no ``event:`` typing); frames
           are JSON objects with a ``choices`` array carrying ``delta``.
@@ -677,254 +642,135 @@ class OpenAIProvider:
         # half-assembled content must NOT be returned as a completed turn.
         done_seen = False
 
-        # idle-since-last-DATA watchdog. ``last_data_at`` is
-        # updated only on real SSE ``data:`` lines; heartbeats (``:``)
-        # do not count. A background thread closes the response if the
-        # idle threshold is exceeded; the blocking ``iter_lines`` then
-        # raises and we surface a descriptive ProviderError.
-        last_data_at = time.monotonic()
-        seen_data = threading.Event()  # set on the first data line; picks the timeout
-        idle_killed = threading.Event()
-        aborted = threading.Event()
-        interrupted = threading.Event()
-        watchdog_stop = threading.Event()
-        # Mutable holder so the watchdog can reach the response without
-        # racing on assignment (the ``with`` block runs in a different
-        # frame from the watchdog closure).
-        resp_holder: dict[str, httpx2.Response] = {}
-
-        def _watchdog() -> None:
-            while not watchdog_stop.wait(_STREAM_WATCHDOG_TICK_S):
-                resp = resp_holder.get("resp")
-                if resp is None:
-                    continue
-                should_stop = False
-                if should_abort is not None:
-                    # A poll failure must not kill the watchdog -- that would also
-                    # disable idle-hang detection. Treat it as "not aborting".
-                    with contextlib.suppress(Exception):
-                        should_stop = should_abort()
-                if should_stop:
-                    aborted.set()
-                    with contextlib.suppress(Exception):
-                        resp.close()
-                    return
-                # A steer request (Ctrl-C / TUI `s`) closes the stream so a long
-                # thinking turn reaches the loop's steer boundary at once.
-                should_steer = False
-                if should_interrupt is not None:
-                    with contextlib.suppress(Exception):
-                        should_steer = should_interrupt()
-                if should_steer:
-                    interrupted.set()
-                    with contextlib.suppress(Exception):
-                        resp.close()
-                    return
-                timeout = (
-                    _STREAM_IDLE_TIMEOUT_S if seen_data.is_set() else _STREAM_FIRST_DATA_TIMEOUT_S
-                )
-                if time.monotonic() - last_data_at <= timeout:
-                    continue
-                idle_killed.set()
-                with contextlib.suppress(Exception):
-                    resp.close()
-                return
-
-        watchdog = threading.Thread(
-            target=_watchdog, name="agent6-openai-sse-watchdog", daemon=True
+        call = SseCall(
+            api_label="OpenAI",
+            api_format="openai",
+            url=url,
+            headers=stream_headers,
+            body=body,
+            timeout_s=self.timeout_s,
+            transcript_sink=self.transcript_sink,
+            should_abort=should_abort,
+            should_interrupt=should_interrupt,
         )
-        watchdog.start()
 
-        try:
-            with http_stream(
-                "POST",
-                url,
-                headers=stream_headers,
-                content=json.dumps(body).encode("utf-8"),
-                timeout=self.timeout_s,
-            ) as resp:
-                resp_holder["resp"] = resp
-                if resp.status_code >= 400:
-                    error_body = resp.read().decode("utf-8", errors="replace")[:8192]
-                    if self.transcript_sink is not None:
-                        self.transcript_sink.record(
-                            url=url,
-                            request_headers=stream_headers,
-                            request_body=body,
-                            response_status=resp.status_code,
-                            response_body=error_body,
-                        )
+        def consume(resp: httpx2.Response, clock: StreamClock) -> None:  # noqa: PLR0912, PLR0915
+            nonlocal finish_reason, usage, done_seen
+            for raw_line in resp.iter_lines():
+                line = raw_line.strip()
+                if not line:
+                    continue
+                # SSE comment heartbeats (OpenRouter, etc). Deliberately NOT
+                # marked on the clock -- heartbeats are exactly the bytes that
+                # mask an upstream hang from httpx2's read timeout.
+                if line.startswith(":"):
+                    continue
+                if not line.startswith("data:"):
+                    continue
+                # Real SSE data line. Reset the idle clock; the watchdog is
+                # satisfied as long as we keep seeing these at all (even
+                # ``[DONE]`` counts as progress). NOTE: mark_output (the switch
+                # to the short mid-stream idle timeout) happens later, only on
+                # the first real CONTENT token -- an empty role/keepalive delta
+                # arrives immediately and must not end the generous prefill
+                # budget before the model has actually started producing output.
+                clock.mark_data()
+                data_str = line[5:].strip()
+                if not data_str or data_str == "[DONE]":
+                    if data_str == "[DONE]":
+                        done_seen = True
+                        return
+                    continue
+                try:
+                    evt: dict[str, Any] = json.loads(data_str)
+                except json.JSONDecodeError:
+                    continue
+                # Mid-stream error frame (OpenRouter/OpenAI/LiteLLM deliver an
+                # upstream 5xx/429 this way, then end the stream). Surface it
+                # instead of silently returning the partial turn, mirroring the
+                # Anthropic `error` event. No status_code -> retryable, so
+                # _call_with_retry re-issues the request.
+                err = evt.get("error")
+                if isinstance(err, dict):
+                    call.record(status=0, response=data_str[:8192])
                     raise ProviderError(
-                        f"OpenAI API error {resp.status_code}: {error_body[:500]}",
-                        status_code=resp.status_code,
-                        retry_after_s=parse_retry_after(resp.headers),
+                        f"OpenAI stream error: {err.get('code')}: {err.get('message')}"
                     )
-                for raw_line in resp.iter_lines():
-                    line = raw_line.strip()
-                    if not line:
+                evt_usage = evt.get("usage")
+                if isinstance(evt_usage, dict):
+                    usage = evt_usage
+                choices = evt.get("choices") or []
+                if not choices:
+                    continue
+                choice = choices[0]
+                if not isinstance(choice, dict):
+                    continue
+                fr = choice.get("finish_reason")
+                if fr:
+                    finish_reason = str(fr)
+                delta = choice.get("delta") or {}
+                if not isinstance(delta, dict):
+                    continue
+                content = delta.get("content")
+                if isinstance(content, str) and content:
+                    clock.mark_output()  # real output: the mid-stream idle budget applies
+                    # Accumulation is unconditional; the callback is optional
+                    # (streaming may be triggered by thinking_delta alone).
+                    text_parts.append(content)
+                    if text_delta_callback is not None:
+                        with contextlib.suppress(Exception):
+                            text_delta_callback(content)
+                reasoning = delta.get("reasoning_content") or delta.get("reasoning")
+                if isinstance(reasoning, str) and reasoning:
+                    clock.mark_output()  # streamed reasoning counts as output too
+                    reasoning_parts.append(reasoning)
+                    if thinking_delta_callback is not None:
+                        with contextlib.suppress(Exception):
+                            thinking_delta_callback(reasoning)
+                raw_tc = delta.get("tool_calls") or []
+                if not isinstance(raw_tc, list):
+                    continue
+                if raw_tc:
+                    clock.mark_output()  # tool-call tokens are real output
+                for tc in raw_tc:
+                    if not isinstance(tc, dict):
                         continue
-                    # SSE comment heartbeats (OpenRouter, etc).
-                    # Deliberately do NOT update last_data_at
-                    # here -- heartbeats are exactly the bytes that mask
-                    # an upstream hang from httpx2's read timeout.
-                    if line.startswith(":"):
-                        continue
-                    if not line.startswith("data:"):
-                        continue
-                    # Real SSE data line. Reset the idle clock; the
-                    # watchdog is satisfied as long as we keep seeing
-                    # these at all (even ``[DONE]`` counts as progress). NOTE:
-                    # seen_data (the switch to the short mid-stream idle timeout)
-                    # is set later, only on the first real CONTENT token -- an
-                    # empty role/keepalive delta arrives immediately and must not
-                    # end the generous prefill budget before the model has
-                    # actually started producing output.
-                    last_data_at = time.monotonic()
-                    data_str = line[5:].strip()
-                    if not data_str or data_str == "[DONE]":
-                        if data_str == "[DONE]":
-                            done_seen = True
-                            break
-                        continue
-                    try:
-                        evt: dict[str, Any] = json.loads(data_str)
-                    except json.JSONDecodeError:
-                        continue
-                    # Mid-stream error frame (OpenRouter/OpenAI/LiteLLM deliver an
-                    # upstream 5xx/429 this way, then end the stream). Surface it
-                    # instead of silently returning the partial turn, mirroring the
-                    # Anthropic `error` event. No status_code -> retryable, so
-                    # _call_with_retry re-issues the request.
-                    err = evt.get("error")
-                    if isinstance(err, dict):
-                        if self.transcript_sink is not None:
-                            self.transcript_sink.record(
-                                url=url,
-                                request_headers=stream_headers,
-                                request_body=body,
-                                response_status=0,
-                                response_body=data_str[:8192],
-                            )
-                        raise ProviderError(
-                            f"OpenAI stream error: {err.get('code')}: {err.get('message')}"
-                        )
-                    evt_usage = evt.get("usage")
-                    if isinstance(evt_usage, dict):
-                        usage = evt_usage
-                    choices = evt.get("choices") or []
-                    if not choices:
-                        continue
-                    choice = choices[0]
-                    if not isinstance(choice, dict):
-                        continue
-                    fr = choice.get("finish_reason")
-                    if fr:
-                        finish_reason = str(fr)
-                    delta = choice.get("delta") or {}
-                    if not isinstance(delta, dict):
-                        continue
-                    content = delta.get("content")
-                    if isinstance(content, str) and content:
-                        seen_data.set()  # real output: the mid-stream idle budget applies now
-                        # Accumulation is unconditional; the callback is optional
-                        # (streaming may be triggered by thinking_delta alone).
-                        text_parts.append(content)
-                        if text_delta_callback is not None:
-                            with contextlib.suppress(Exception):
-                                text_delta_callback(content)
-                    reasoning = delta.get("reasoning_content") or delta.get("reasoning")
-                    if isinstance(reasoning, str) and reasoning:
-                        seen_data.set()  # streamed reasoning counts as output too
-                        reasoning_parts.append(reasoning)
-                        if thinking_delta_callback is not None:
-                            with contextlib.suppress(Exception):
-                                thinking_delta_callback(reasoning)
-                    raw_tc = delta.get("tool_calls") or []
-                    if not isinstance(raw_tc, list):
-                        continue
-                    if raw_tc:
-                        seen_data.set()  # tool-call tokens are real output
-                    for tc in raw_tc:
-                        if not isinstance(tc, dict):
-                            continue
-                        raw_idx = tc.get("index")
-                        tc_id = str(tc.get("id") or "")
-                        if raw_idx is not None:
-                            idx = int(raw_idx)
-                        elif tc_id and any(s["id"] == tc_id for s in tool_calls.values()):
-                            # Indexless delta continuing a known call: route by id.
-                            idx = next(i for i, s in tool_calls.items() if s["id"] == tc_id)
-                        elif tc_id and tool_calls:
-                            # Indexless chunk carrying a NEW id (a gateway that
-                            # sends whole calls in one chunk without index
-                            # fields): open a fresh slot instead of collapsing
-                            # every call onto slot 0 (which overwrote the first
-                            # call and concatenated both argument strings).
-                            idx = max(tool_calls) + 1
-                        else:
-                            idx = max(tool_calls) if tool_calls else 0
-                        slot = tool_calls.setdefault(
-                            idx,
-                            {
-                                "id": "",
-                                "type": "function",
-                                "function": {"name": "", "arguments": ""},
-                            },
-                        )
-                        if tc.get("id"):
-                            slot["id"] = str(tc["id"])
-                        func = tc.get("function") or {}
-                        if isinstance(func, dict):
-                            name = func.get("name")
-                            if isinstance(name, str) and name:
-                                slot["function"]["name"] = name
-                            args_piece = func.get("arguments")
-                            if isinstance(args_piece, str) and args_piece:
-                                tool_arg_buf.setdefault(idx, []).append(args_piece)
-        except httpx2.HTTPError as exc:
-            if interrupted.is_set():
-                watchdog_stop.set()
-                raise ProviderInterrupted("steer requested mid-stream") from exc
-            if aborted.is_set():
-                watchdog_stop.set()
-                raise ProviderAborted("run stopped by operator") from exc
-            if idle_killed.is_set():
-                # Convert the watchdog-induced HTTPError into a
-                # purpose-specific ProviderError so the loop's error
-                # path can log a meaningful reason rather than a
-                # generic "ReadError" / "connection closed".
-                watchdog_stop.set()
-                phase_s = (
-                    _STREAM_IDLE_TIMEOUT_S if seen_data.is_set() else _STREAM_FIRST_DATA_TIMEOUT_S
-                )
-                where = "mid-stream" if seen_data.is_set() else "before any data (prefill)"
-                if self.transcript_sink is not None:
-                    self.transcript_sink.record(
-                        url=url,
-                        request_headers=stream_headers,
-                        request_body=body,
-                        response_status=0,
-                        response_body=(
-                            f"SSE idle watchdog: no data event for {phase_s:.0f}s {where} "
-                            f"(only heartbeats). Upstream model appears wedged."
-                        ),
+                    raw_idx = tc.get("index")
+                    tc_id = str(tc.get("id") or "")
+                    if raw_idx is not None:
+                        idx = int(raw_idx)
+                    elif tc_id and any(s["id"] == tc_id for s in tool_calls.values()):
+                        # Indexless delta continuing a known call: route by id.
+                        idx = next(i for i, s in tool_calls.items() if s["id"] == tc_id)
+                    elif tc_id and tool_calls:
+                        # Indexless chunk carrying a NEW id (a gateway that
+                        # sends whole calls in one chunk without index
+                        # fields): open a fresh slot instead of collapsing
+                        # every call onto slot 0 (which overwrote the first
+                        # call and concatenated both argument strings).
+                        idx = max(tool_calls) + 1
+                    else:
+                        idx = max(tool_calls) if tool_calls else 0
+                    slot = tool_calls.setdefault(
+                        idx,
+                        {
+                            "id": "",
+                            "type": "function",
+                            "function": {"name": "", "arguments": ""},
+                        },
                     )
-                raise ProviderError(
-                    f"OpenAI SSE stream idle for >{phase_s:.0f}s {where} "
-                    "(only heartbeats received); upstream model appears wedged."
-                ) from exc
-            watchdog_stop.set()
-            if self.transcript_sink is not None:
-                self.transcript_sink.record(
-                    url=url,
-                    request_headers=stream_headers,
-                    request_body=body,
-                    response_status=0,
-                    response_body=f"HTTPError: {exc}",
-                )
-            raise ProviderError(f"HTTP error streaming from {url} (openai format): {exc}") from exc
-        finally:
-            watchdog_stop.set()
+                    if tc.get("id"):
+                        slot["id"] = str(tc["id"])
+                    func = tc.get("function") or {}
+                    if isinstance(func, dict):
+                        name = func.get("name")
+                        if isinstance(name, str) and name:
+                            slot["function"]["name"] = name
+                        args_piece = func.get("arguments")
+                        if isinstance(args_piece, str) and args_piece:
+                            tool_arg_buf.setdefault(idx, []).append(args_piece)
+
+        call.run(consume)
 
         # A stream that ended without `[DONE]` and without any `finish_reason`
         # was cut off mid-generation (a clean EOF is not a completion signal).
@@ -932,14 +778,10 @@ class OpenAIProvider:
         # finished turn feeds the loop a bogus silent_finish or a truncated
         # tool_use; raise a retryable ProviderError so the call is re-issued.
         if not done_seen and not finish_reason:
-            if self.transcript_sink is not None:
-                self.transcript_sink.record(
-                    url=url,
-                    request_headers=stream_headers,
-                    request_body=body,
-                    response_status=0,
-                    response_body="stream ended without [DONE] or finish_reason (truncated)",
-                )
+            call.record(
+                status=0,
+                response="stream ended without [DONE] or finish_reason (truncated)",
+            )
             raise ProviderError(
                 f"OpenAI stream from {url} ended prematurely "
                 "(no [DONE], no finish_reason); upstream appears cut off."
@@ -969,14 +811,7 @@ class OpenAIProvider:
             ],
             "usage": usage,
         }
-        if self.transcript_sink is not None:
-            self.transcript_sink.record(
-                url=url,
-                request_headers=stream_headers,
-                request_body=body,
-                response_status=200,
-                response_body=synthesised,
-            )
+        call.record(status=200, response=synthesised)
         if self.budget is not None:
             _require_metered_usage(usage, source="OpenAI stream")
         parsed = _parse_response(synthesised, tool_names=tool_names, tool_schemas=tool_schemas)

@@ -405,13 +405,13 @@ def test_streaming_idle_watchdog_kills_heartbeat_only_stream(
     import threading
     import time
 
-    from agent6.providers import openai as openai_mod
+    from agent6.providers import _stream as stream_mod
 
     # Only heartbeats, no data line ever: this is the prefill-wedge case, so the
     # FIRST-data timeout governs (the mid-stream idle timeout only applies after
     # tokens start).
-    monkeypatch.setattr(openai_mod, "_STREAM_FIRST_DATA_TIMEOUT_S", 0.3)
-    monkeypatch.setattr(openai_mod, "_STREAM_WATCHDOG_TICK_S", 0.05)
+    monkeypatch.setattr(stream_mod, "STREAM_FIRST_DATA_TIMEOUT_S", 0.3)
+    monkeypatch.setattr(stream_mod, "STREAM_WATCHDOG_TICK_S", 0.05)
 
     provider = OpenAIProvider(api_key="sk-test", model="kimi")
 
@@ -469,11 +469,11 @@ def test_streaming_idle_watchdog_mid_stream_uses_the_short_timeout(
     import threading
     import time
 
-    from agent6.providers import openai as openai_mod
+    from agent6.providers import _stream as stream_mod
 
-    monkeypatch.setattr(openai_mod, "_STREAM_IDLE_TIMEOUT_S", 0.3)
-    monkeypatch.setattr(openai_mod, "_STREAM_FIRST_DATA_TIMEOUT_S", 30.0)
-    monkeypatch.setattr(openai_mod, "_STREAM_WATCHDOG_TICK_S", 0.05)
+    monkeypatch.setattr(stream_mod, "STREAM_IDLE_TIMEOUT_S", 0.3)
+    monkeypatch.setattr(stream_mod, "STREAM_FIRST_DATA_TIMEOUT_S", 30.0)
+    monkeypatch.setattr(stream_mod, "STREAM_WATCHDOG_TICK_S", 0.05)
 
     provider = OpenAIProvider(api_key="sk-test", model="kimi")
 
@@ -529,10 +529,10 @@ def test_streaming_idle_watchdog_does_not_fire_when_data_flows(
     """Real SSE ``data:`` lines must reset the idle clock so
     a healthy long stream does not get killed.
     """
-    from agent6.providers import openai as openai_mod
+    from agent6.providers import _stream as stream_mod
 
-    monkeypatch.setattr(openai_mod, "_STREAM_IDLE_TIMEOUT_S", 0.5)
-    monkeypatch.setattr(openai_mod, "_STREAM_WATCHDOG_TICK_S", 0.05)
+    monkeypatch.setattr(stream_mod, "STREAM_IDLE_TIMEOUT_S", 0.5)
+    monkeypatch.setattr(stream_mod, "STREAM_WATCHDOG_TICK_S", 0.05)
 
     provider = OpenAIProvider(api_key="sk-test", model="kimi")
 
@@ -576,11 +576,11 @@ def test_empty_role_delta_stays_in_the_prefill_budget(monkeypatch: pytest.Monkey
     import threading
     import time
 
-    from agent6.providers import openai as openai_mod
+    from agent6.providers import _stream as stream_mod
 
-    monkeypatch.setattr(openai_mod, "_STREAM_FIRST_DATA_TIMEOUT_S", 0.6)
-    monkeypatch.setattr(openai_mod, "_STREAM_IDLE_TIMEOUT_S", 0.2)
-    monkeypatch.setattr(openai_mod, "_STREAM_WATCHDOG_TICK_S", 0.05)
+    monkeypatch.setattr(stream_mod, "STREAM_FIRST_DATA_TIMEOUT_S", 0.6)
+    monkeypatch.setattr(stream_mod, "STREAM_IDLE_TIMEOUT_S", 0.2)
+    monkeypatch.setattr(stream_mod, "STREAM_WATCHDOG_TICK_S", 0.05)
     provider = OpenAIProvider(api_key="sk-test", model="kimi")
 
     class _RoleThenSilent:

@@ -30,7 +30,7 @@ import httpx2
 import pytest
 
 from agent6.budget import BudgetTracker
-from agent6.providers import anthropic as anthropic_mod
+from agent6.providers import _stream as stream_mod
 from agent6.providers.anthropic import AnthropicProvider, ProviderError
 from agent6.providers.openai import (
     OpenAIProvider,
@@ -231,8 +231,8 @@ class _PingOnlyStreamResponse:
 def test_anthropic_streaming_idle_watchdog_fires(monkeypatch: pytest.MonkeyPatch) -> None:
     # Ping-only, no data event ever = the prefill-wedge case, so the FIRST-data
     # timeout governs. Make it fire fast so the test runs in well under a second.
-    monkeypatch.setattr(anthropic_mod, "_STREAM_FIRST_DATA_TIMEOUT_S", 0.05)
-    monkeypatch.setattr(anthropic_mod, "_STREAM_WATCHDOG_TICK_S", 0.01)
+    monkeypatch.setattr(stream_mod, "STREAM_FIRST_DATA_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(stream_mod, "STREAM_WATCHDOG_TICK_S", 0.01)
 
     provider = AnthropicProvider(api_key="sk-test", model="claude-3-5-sonnet")
 

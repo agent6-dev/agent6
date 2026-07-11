@@ -12,8 +12,6 @@ from __future__ import annotations
 import contextlib
 import json
 import os
-import threading
-import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -21,11 +19,10 @@ from typing import TYPE_CHECKING, Any
 import httpx2
 
 from agent6.budget import BudgetTracker
-from agent6.providers.egress import http_post, http_stream
+from agent6.providers._stream import SseCall, StreamClock
+from agent6.providers.egress import http_post
 from agent6.providers.types import (
-    ProviderAborted,
     ProviderError,
-    ProviderInterrupted,
     ProviderResponse,
     ToolDefinition,
     TranscriptSink,
@@ -43,30 +40,6 @@ ANTHROPIC_VERSION = "2023-06-01"
 # a Vertex-specific value; see _anthropic_version.
 ANTHROPIC_VERTEX_VERSION = "vertex-2023-10-16"
 DEFAULT_MAX_TOKENS = 8192
-
-# Idle-since-last-data watchdog for the SSE streaming path. ``http_stream``
-# forwards ``timeout`` to httpx2 as a per-read gap that resets on every byte;
-# Anthropic ``ping`` heartbeats are bytes, so a wedged-but-pinging upstream
-# would otherwise block ``iter_lines`` forever with no spend cap (budget is
-# only recorded after the loop completes). We track time since the last
-# MEANINGFUL data event (anything that isn't a ``ping``) and have a daemon
-# thread close the response once it goes past ``_STREAM_IDLE_TIMEOUT_S``; the
-# blocking ``iter_lines`` then raises an ``httpx2.HTTPError`` we convert to a
-# retryable ProviderError. Mirrors the OpenAI provider's watchdog; the constants
-# are duplicated in both providers for now (a shared providers/_stream.py would
-# consolidate the watchdog and these constants).
-#
-# Two phases (see the OpenAI provider for the rationale): a generous budget for
-# prefill / time-to-first-token (legitimately long on a big context), then a
-# short idle once tokens have started -- a 45s mid-stream gap means the stream
-# wedged, and recovering in 45s instead of 180s is 4x faster with no
-# false-positive on prefill.
-_STREAM_FIRST_DATA_TIMEOUT_S = 120.0
-_STREAM_IDLE_TIMEOUT_S = 45.0
-# The watchdog also polls should_abort/should_interrupt each tick, so keep it
-# short: this bounds how long a Stop/steer/detach waits to end a long in-flight
-# turn. A quarter second reads as immediate without the impatient second Ctrl-C.
-_STREAM_WATCHDOG_TICK_S = 0.25
 
 
 def _anthropic_version(deployment: str) -> tuple[str, str]:
@@ -425,7 +398,7 @@ class AnthropicProvider:
             return parsed
         raise ProviderError("Anthropic auth retry exhausted")  # pragma: no cover
 
-    def _call_streaming(  # noqa: PLR0912, PLR0915
+    def _call_streaming(  # noqa: PLR0915
         self,
         *,
         url: str,
@@ -438,11 +411,13 @@ class AnthropicProvider:
     ) -> ProviderResponse:
         """SSE streaming variant.
 
-        Iterates the Anthropic Messages SSE stream, fans text_delta and
-        thinking_delta deltas to their callbacks as they arrive, and at
-        message_stop returns a ProviderResponse whose .raw is shaped
-        identically to a non-streaming response so callers (Workflow,
-        transcript replay) don't need a streaming-aware code path.
+        The stream lifecycle (idle watchdog, operator stop/steer, teardown
+        classification) is ``providers._stream.SseCall``; this method owns the
+        Anthropic Messages event shape. It fans text_delta and thinking_delta
+        deltas to their callbacks as they arrive, and at message_stop returns
+        a ProviderResponse whose .raw is shaped identically to a non-streaming
+        response so callers (Workflow, transcript replay) don't need a
+        streaming-aware code path.
         """
         body = dict(body)
         # Direct enables streaming with a body flag; Vertex selects it via the
@@ -479,275 +454,158 @@ class AnthropicProvider:
         saw_input_usage = False
         saw_output_usage = False
 
-        # Background watchdog. It closes the response (unblocking the blocking
-        # ``iter_lines`` below, which then raises) in two cases: an idle-since-
-        # last-data hang past the threshold (``ping`` heartbeats do NOT count --
-        # they mask an upstream hang from httpx2's read timeout), or the operator
-        # stopping the run mid-turn (``should_abort``). The ``except`` turns each
-        # into a purpose-specific error.
-        last_data_at = time.monotonic()
-        seen_data = threading.Event()  # set on the first data event; picks the timeout
-        idle_killed = threading.Event()
-        aborted = threading.Event()
-        interrupted = threading.Event()
-        watchdog_stop = threading.Event()
-        # Mutable holder so the watchdog can reach the response without racing
-        # on assignment (the ``with`` body runs in a different frame).
-        resp_holder: dict[str, httpx2.Response] = {}
-
-        def _watchdog() -> None:
-            while not watchdog_stop.wait(_STREAM_WATCHDOG_TICK_S):
-                resp = resp_holder.get("resp")
-                if resp is None:
-                    continue
-                should_stop = False
-                if should_abort is not None:
-                    # A poll failure must not kill the watchdog -- that would also
-                    # disable idle-hang detection. Treat it as "not aborting".
-                    with contextlib.suppress(Exception):
-                        should_stop = should_abort()
-                if should_stop:
-                    aborted.set()
-                    with contextlib.suppress(Exception):
-                        resp.close()
-                    return
-                # A steer request (Ctrl-C / TUI `s`) closes the stream so a long
-                # thinking turn reaches the loop's steer boundary at once.
-                should_steer = False
-                if should_interrupt is not None:
-                    with contextlib.suppress(Exception):
-                        should_steer = should_interrupt()
-                if should_steer:
-                    interrupted.set()
-                    with contextlib.suppress(Exception):
-                        resp.close()
-                    return
-                timeout = (
-                    _STREAM_IDLE_TIMEOUT_S if seen_data.is_set() else _STREAM_FIRST_DATA_TIMEOUT_S
-                )
-                if time.monotonic() - last_data_at <= timeout:
-                    continue
-                idle_killed.set()
-                with contextlib.suppress(Exception):
-                    resp.close()
-                return
-
-        watchdog = threading.Thread(
-            target=_watchdog, name="agent6-anthropic-sse-watchdog", daemon=True
+        call = SseCall(
+            api_label="Anthropic",
+            api_format="anthropic",
+            url=url,
+            headers=stream_headers,
+            body=body,
+            timeout_s=self.timeout_s,
+            transcript_sink=self.transcript_sink,
+            should_abort=should_abort,
+            should_interrupt=should_interrupt,
         )
-        watchdog.start()
 
-        try:
-            with http_stream(
-                "POST",
-                url,
-                headers=stream_headers,
-                content=json.dumps(body).encode("utf-8"),
-                timeout=self.timeout_s,
-            ) as resp:
-                resp_holder["resp"] = resp
-                if resp.status_code >= 400:
-                    error_body = resp.read().decode("utf-8", errors="replace")[:8192]
-                    if self.transcript_sink is not None:
-                        self.transcript_sink.record(
-                            url=url,
-                            request_headers=stream_headers,
-                            request_body=body,
-                            response_status=resp.status_code,
-                            response_body=error_body,
+        def consume(resp: httpx2.Response, clock: StreamClock) -> None:  # noqa: PLR0912, PLR0915
+            nonlocal stop_reason, saw_message_stop, usage_input, usage_output
+            nonlocal usage_cache_read, usage_cache_creation, saw_input_usage, saw_output_usage
+            event_type = ""
+            for line in resp.iter_lines():
+                if not line:
+                    event_type = ""
+                    continue
+                if line.startswith("event:"):
+                    event_type = line[6:].strip()
+                    continue
+                if not line.startswith("data:"):
+                    continue
+                data_str = line[5:].strip()
+                if not data_str:
+                    continue
+                try:
+                    evt: dict[str, Any] = json.loads(data_str)
+                except json.JSONDecodeError:
+                    continue
+                et = event_type or str(evt.get("type", ""))
+                # Reset the idle clock on every MEANINGFUL event. ``ping``
+                # heartbeats are deliberately excluded: they are exactly the
+                # bytes that would otherwise mask a wedged upstream. mark_output
+                # (the switch to the short mid-stream idle timeout) fires only
+                # when actual content starts (content_block_* below), NOT on
+                # message_start -- that metadata arrives before the model has
+                # produced anything, and ending the generous prefill budget
+                # there would false-kill a long silent reason.
+                if et != "ping":
+                    clock.mark_data()
+                if et in ("content_block_start", "content_block_delta"):
+                    clock.mark_output()
+                if et == "message_start":
+                    msg = evt.get("message", {})
+                    u = msg.get("usage", {}) or {}
+                    if "input_tokens" in u and u.get("input_tokens") is not None:
+                        saw_input_usage = True
+                    usage_input = int(u.get("input_tokens") or usage_input)
+                    usage_cache_read = int(u.get("cache_read_input_tokens") or usage_cache_read)
+                    usage_cache_creation = int(
+                        u.get("cache_creation_input_tokens") or usage_cache_creation
+                    )
+                elif et == "content_block_start":
+                    idx = int(evt.get("index", 0))
+                    cb = evt.get("content_block", {}) or {}
+                    btype = cb.get("type")
+                    if btype == "text":
+                        text_acc[idx] = [str(cb.get("text", ""))]
+                    elif btype == "thinking":
+                        thinking_acc[idx] = [str(cb.get("thinking", ""))]
+                        signature_acc[idx] = [str(cb.get("signature", ""))]
+                    elif btype == "redacted_thinking":
+                        # Opaque encrypted block, pass straight through.
+                        content_blocks.append(
+                            {"type": "redacted_thinking", "data": cb.get("data", "")}
                         )
+                    elif btype == "tool_use":
+                        tool_acc[idx] = {
+                            "type": "tool_use",
+                            "id": cb.get("id", ""),
+                            "name": cb.get("name", ""),
+                            "input": cb.get("input", {}) or {},
+                        }
+                        json_partial[idx] = []
+                elif et == "content_block_delta":
+                    idx = int(evt.get("index", 0))
+                    d = evt.get("delta", {}) or {}
+                    dt = d.get("type")
+                    if dt == "text_delta":
+                        piece = str(d.get("text", ""))
+                        text_acc.setdefault(idx, []).append(piece)
+                        if piece and text_delta_callback is not None:
+                            # Callback failure must never break the
+                            # stream, cosmetic surface.
+                            with contextlib.suppress(Exception):
+                                text_delta_callback(piece)
+                    elif dt == "thinking_delta":
+                        piece = str(d.get("thinking", ""))
+                        thinking_acc.setdefault(idx, []).append(piece)
+                        if piece and thinking_delta_callback is not None:
+                            with contextlib.suppress(Exception):
+                                thinking_delta_callback(piece)
+                    elif dt == "signature_delta":
+                        signature_acc.setdefault(idx, []).append(str(d.get("signature", "")))
+                    elif dt == "input_json_delta":
+                        json_partial.setdefault(idx, []).append(str(d.get("partial_json", "")))
+                elif et == "content_block_stop":
+                    idx = int(evt.get("index", 0))
+                    if idx in text_acc:
+                        content_blocks.append(
+                            {
+                                "type": "text",
+                                "text": "".join(text_acc.pop(idx)),
+                            }
+                        )
+                    elif idx in thinking_acc:
+                        block_out: dict[str, Any] = {
+                            "type": "thinking",
+                            "thinking": "".join(thinking_acc.pop(idx)),
+                        }
+                        sig = "".join(signature_acc.pop(idx, []))
+                        if sig:
+                            block_out["signature"] = sig
+                        content_blocks.append(block_out)
+                    elif idx in tool_acc:
+                        tu = tool_acc.pop(idx)
+                        partial = "".join(json_partial.pop(idx, []))
+                        if partial:
+                            try:
+                                tu["input"] = json.loads(partial)
+                            except json.JSONDecodeError:
+                                # Stream truncated mid-JSON; surface
+                                # what we have rather than dropping
+                                # the tool_use entirely.
+                                tu["input"] = {"_partial_json": partial}
+                        content_blocks.append(tu)
+                elif et == "message_delta":
+                    d = evt.get("delta", {}) or {}
+                    if "stop_reason" in d:
+                        stop_reason = str(d.get("stop_reason", "") or "")
+                    u = evt.get("usage", {}) or {}
+                    if "output_tokens" in u:
+                        if u.get("output_tokens") is not None:
+                            saw_output_usage = True
+                        usage_output = int(u.get("output_tokens") or usage_output)
+                elif et == "message_stop":
+                    saw_message_stop = True
+                    return
+                elif et == "error":
+                    err = evt.get("error", {}) or {}
+                    # Record the frame before raising so the upstream failure
+                    # is auditable in the transcript (parity with the OpenAI
+                    # provider's mid-stream error handling).
+                    call.record(status=0, response=data_str[:8192])
                     raise ProviderError(
-                        f"Anthropic API error {resp.status_code}: {error_body[:500]}",
-                        status_code=resp.status_code,
-                        retry_after_s=parse_retry_after(resp.headers),
+                        f"Anthropic stream error: {err.get('type')}: {err.get('message')}"
                     )
-                event_type: str = ""
-                for line in resp.iter_lines():
-                    if not line:
-                        event_type = ""
-                        continue
-                    if line.startswith("event:"):
-                        event_type = line[6:].strip()
-                        continue
-                    if not line.startswith("data:"):
-                        continue
-                    data_str = line[5:].strip()
-                    if not data_str:
-                        continue
-                    try:
-                        evt: dict[str, Any] = json.loads(data_str)
-                    except json.JSONDecodeError:
-                        continue
-                    et = event_type or str(evt.get("type", ""))
-                    # Reset the idle clock on every MEANINGFUL event. ``ping``
-                    # heartbeats are deliberately excluded: they are exactly
-                    # the bytes that would otherwise mask a wedged upstream.
-                    # seen_data (the switch to the short mid-stream idle timeout)
-                    # is set only when actual content starts (content_block_*
-                    # below), NOT on message_start -- that metadata arrives before
-                    # the model has produced anything, and ending the generous
-                    # prefill budget there would false-kill a long silent reason.
-                    if et != "ping":
-                        last_data_at = time.monotonic()
-                    if et in ("content_block_start", "content_block_delta"):
-                        seen_data.set()
-                    if et == "message_start":
-                        msg = evt.get("message", {})
-                        u = msg.get("usage", {}) or {}
-                        if "input_tokens" in u and u.get("input_tokens") is not None:
-                            saw_input_usage = True
-                        usage_input = int(u.get("input_tokens") or usage_input)
-                        usage_cache_read = int(u.get("cache_read_input_tokens") or usage_cache_read)
-                        usage_cache_creation = int(
-                            u.get("cache_creation_input_tokens") or usage_cache_creation
-                        )
-                    elif et == "content_block_start":
-                        idx = int(evt.get("index", 0))
-                        cb = evt.get("content_block", {}) or {}
-                        btype = cb.get("type")
-                        if btype == "text":
-                            text_acc[idx] = [str(cb.get("text", ""))]
-                        elif btype == "thinking":
-                            thinking_acc[idx] = [str(cb.get("thinking", ""))]
-                            signature_acc[idx] = [str(cb.get("signature", ""))]
-                        elif btype == "redacted_thinking":
-                            # Opaque encrypted block, pass straight through.
-                            content_blocks.append(
-                                {"type": "redacted_thinking", "data": cb.get("data", "")}
-                            )
-                        elif btype == "tool_use":
-                            tool_acc[idx] = {
-                                "type": "tool_use",
-                                "id": cb.get("id", ""),
-                                "name": cb.get("name", ""),
-                                "input": cb.get("input", {}) or {},
-                            }
-                            json_partial[idx] = []
-                    elif et == "content_block_delta":
-                        idx = int(evt.get("index", 0))
-                        d = evt.get("delta", {}) or {}
-                        dt = d.get("type")
-                        if dt == "text_delta":
-                            piece = str(d.get("text", ""))
-                            text_acc.setdefault(idx, []).append(piece)
-                            if piece and text_delta_callback is not None:
-                                # Callback failure must never break the
-                                # stream, cosmetic surface.
-                                with contextlib.suppress(Exception):
-                                    text_delta_callback(piece)
-                        elif dt == "thinking_delta":
-                            piece = str(d.get("thinking", ""))
-                            thinking_acc.setdefault(idx, []).append(piece)
-                            if piece and thinking_delta_callback is not None:
-                                with contextlib.suppress(Exception):
-                                    thinking_delta_callback(piece)
-                        elif dt == "signature_delta":
-                            signature_acc.setdefault(idx, []).append(str(d.get("signature", "")))
-                        elif dt == "input_json_delta":
-                            json_partial.setdefault(idx, []).append(str(d.get("partial_json", "")))
-                    elif et == "content_block_stop":
-                        idx = int(evt.get("index", 0))
-                        if idx in text_acc:
-                            content_blocks.append(
-                                {
-                                    "type": "text",
-                                    "text": "".join(text_acc.pop(idx)),
-                                }
-                            )
-                        elif idx in thinking_acc:
-                            block_out: dict[str, Any] = {
-                                "type": "thinking",
-                                "thinking": "".join(thinking_acc.pop(idx)),
-                            }
-                            sig = "".join(signature_acc.pop(idx, []))
-                            if sig:
-                                block_out["signature"] = sig
-                            content_blocks.append(block_out)
-                        elif idx in tool_acc:
-                            tu = tool_acc.pop(idx)
-                            partial = "".join(json_partial.pop(idx, []))
-                            if partial:
-                                try:
-                                    tu["input"] = json.loads(partial)
-                                except json.JSONDecodeError:
-                                    # Stream truncated mid-JSON; surface
-                                    # what we have rather than dropping
-                                    # the tool_use entirely.
-                                    tu["input"] = {"_partial_json": partial}
-                            content_blocks.append(tu)
-                    elif et == "message_delta":
-                        d = evt.get("delta", {}) or {}
-                        if "stop_reason" in d:
-                            stop_reason = str(d.get("stop_reason", "") or "")
-                        u = evt.get("usage", {}) or {}
-                        if "output_tokens" in u:
-                            if u.get("output_tokens") is not None:
-                                saw_output_usage = True
-                            usage_output = int(u.get("output_tokens") or usage_output)
-                    elif et == "message_stop":
-                        saw_message_stop = True
-                        break
-                    elif et == "error":
-                        err = evt.get("error", {}) or {}
-                        # Record the frame before raising so the upstream failure
-                        # is auditable in the transcript (parity with the OpenAI
-                        # provider's mid-stream error handling).
-                        if self.transcript_sink is not None:
-                            self.transcript_sink.record(
-                                url=url,
-                                request_headers=stream_headers,
-                                request_body=body,
-                                response_status=0,
-                                response_body=data_str[:8192],
-                            )
-                        raise ProviderError(
-                            f"Anthropic stream error: {err.get('type')}: {err.get('message')}"
-                        )
-        except httpx2.HTTPError as exc:
-            watchdog_stop.set()
-            if interrupted.is_set():
-                # The operator asked to steer; the watchdog closed the stream so the
-                # loop reaches its steer boundary without waiting out the turn.
-                raise ProviderInterrupted("steer requested mid-stream") from exc
-            if aborted.is_set():
-                # The operator stopped the run; the watchdog closed the stream.
-                raise ProviderAborted("run stopped by operator") from exc
-            if idle_killed.is_set():
-                # Convert the watchdog-induced HTTPError into a purpose-specific
-                # ProviderError so the loop's retry/quit path can log a
-                # meaningful reason rather than a generic "ReadError".
-                phase_s = (
-                    _STREAM_IDLE_TIMEOUT_S if seen_data.is_set() else _STREAM_FIRST_DATA_TIMEOUT_S
-                )
-                where = "mid-stream" if seen_data.is_set() else "before any data (prefill)"
-                if self.transcript_sink is not None:
-                    self.transcript_sink.record(
-                        url=url,
-                        request_headers=stream_headers,
-                        request_body=body,
-                        response_status=0,
-                        response_body=(
-                            f"SSE idle watchdog: no data event for {phase_s:.0f}s {where} "
-                            f"(only heartbeats). Upstream model appears wedged."
-                        ),
-                    )
-                raise ProviderError(
-                    f"Anthropic SSE stream idle for >{phase_s:.0f}s {where} "
-                    "(only heartbeats received); upstream appears wedged."
-                ) from exc
-            if self.transcript_sink is not None:
-                self.transcript_sink.record(
-                    url=url,
-                    request_headers=stream_headers,
-                    request_body=body,
-                    response_status=0,
-                    response_body=f"HTTPError: {exc}",
-                )
-            raise ProviderError(
-                f"HTTP error streaming from {url} (anthropic format): {exc}"
-            ) from exc
-        finally:
-            watchdog_stop.set()
+
+        call.run(consume)
 
         # No `message_stop` means the stream was cut mid-message (a clean EOF is
         # not a completion signal). The accumulated blocks are a truncated turn,
@@ -756,14 +614,7 @@ class AnthropicProvider:
         # records input tokens for a call that never completed. Raise a retryable
         # ProviderError so _call_with_retry re-issues the request.
         if not saw_message_stop:
-            if self.transcript_sink is not None:
-                self.transcript_sink.record(
-                    url=url,
-                    request_headers=stream_headers,
-                    request_body=body,
-                    response_status=0,
-                    response_body="stream ended without message_stop (truncated)",
-                )
+            call.record(status=0, response="stream ended without message_stop (truncated)")
             raise ProviderError(
                 f"Anthropic SSE stream from {url} ended prematurely "
                 "(no message_stop); upstream appears cut off."
@@ -785,14 +636,7 @@ class AnthropicProvider:
                 "cache_creation_input_tokens": usage_cache_creation,
             },
         }
-        if self.transcript_sink is not None:
-            self.transcript_sink.record(
-                url=url,
-                request_headers=stream_headers,
-                request_body=body,
-                response_status=200,
-                response_body=synthesised,
-            )
+        call.record(status=200, response=synthesised)
         if self.budget is not None:
             if not (saw_input_usage and saw_output_usage):
                 raise ProviderError(
