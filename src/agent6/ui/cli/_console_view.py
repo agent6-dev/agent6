@@ -15,8 +15,10 @@ which is shared with the TUI and web skins.
 
 from __future__ import annotations
 
+import contextlib
 import sys
 import time
+from collections.abc import Generator
 from threading import Event, RLock, Thread
 from typing import Any, TextIO
 
@@ -69,6 +71,7 @@ class ConsoleView:
         self._last_output_at = time.monotonic()
         self._active = False  # run is between run.start and run.end (a turn or a tool)
         self._status_active = False  # a transient spinner line is on screen now
+        self._paused = False  # True while an interactive /dev/tty prompt owns the line
         self._spin = 0
         self._stop = Event()
         self._heartbeat: Thread | None = None
@@ -233,6 +236,8 @@ class ConsoleView:
         run never looks hung. Runs only on a real terminal."""
         while not self._stop.wait(_HEARTBEAT_TICK_S):
             with self._lock:
+                if self._paused:
+                    continue  # an interactive prompt owns the terminal: draw nothing
                 idle = time.monotonic() - self._last_output_at
                 if not self._active or idle < _STALL_AFTER_S:
                     self._clear_status()  # output flowing or turn done: no spinner
@@ -259,6 +264,23 @@ class ConsoleView:
             self._clear_status()
             self._out.write(msg if msg.endswith("\n") else msg + "\n")
             self._out.flush()
+
+    @contextlib.contextmanager
+    def pause(self) -> Generator[None]:
+        """Suspend the heartbeat spinner and clear its line so an interactive
+        /dev/tty prompt (ask_user, a run_command approval) can own the terminal,
+        then restore. Without this the spinner's per-tick line-erase wipes the
+        question and the operator's keystrokes. The lock is released across the
+        yield so the blocking prompt cannot stall feed()/notice()."""
+        with self._lock:
+            self._paused = True
+            self._clear_status()
+            self._out.flush()
+        try:
+            yield
+        finally:
+            with self._lock:
+                self._paused = False
 
     def close(self) -> None:
         """Stop the heartbeat thread and clear any spinner line. Safe to call more

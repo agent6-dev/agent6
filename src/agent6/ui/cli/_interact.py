@@ -6,10 +6,12 @@
 
 from __future__ import annotations
 
+import contextlib
 import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from agent6.events import EventSink
 from agent6.tools.schema import UserQuestion
@@ -31,6 +33,16 @@ from agent6.ui.cli._steer import (
     tty_prompt as _tty_prompt,
 )
 from agent6.ui.cli.egress import EgressGuard
+
+if TYPE_CHECKING:
+    from agent6.ui.cli._console_view import ConsoleView
+
+
+def _pause(cv: ConsoleView | None) -> contextlib.AbstractContextManager[None]:
+    """Pause the live console spinner around an interactive /dev/tty prompt so it
+    cannot erase the question and the operator's keystrokes. No-op when headless
+    (no ConsoleView: a TUI-bridged, detached, or piped run)."""
+    return cv.pause() if cv is not None else contextlib.nullcontext()
 
 
 def default_stdin_approver(prompt: str) -> str:
@@ -92,7 +104,9 @@ def _wait_for_reply(run_dir: Path, read_once: Callable[[], object | None]) -> ob
             time.sleep(1.0)  # no front-end yet; poll for one to reattach
 
 
-def build_approver(run_dir: Path, events: EventSink) -> Callable[[str], bool]:
+def build_approver(
+    run_dir: Path, events: EventSink, console_view: ConsoleView | None = None
+) -> Callable[[str], bool]:
     """Build the `run_command` approver, bridged to a live TUI when present.
 
     Emits an `approval.prompt` event; if a TUI is live (it wrote `frontend.pid`) the
@@ -132,7 +146,8 @@ def build_approver(run_dir: Path, events: EventSink) -> Callable[[str], bool]:
             if approved is not None:
                 source = "tui"
         if approved is None:
-            answer = default_stdin_approver(prompt)
+            with _pause(console_view):
+                answer = default_stdin_approver(prompt)
             if answer == "session":
                 set_session_allow(run_dir)
             approved = answer != "no"
@@ -154,7 +169,7 @@ def spawn_detached(guard: EgressGuard, cwd: Path, run_id: str) -> str:
 
 
 def build_questioner(
-    run_dir: Path, events: EventSink
+    run_dir: Path, events: EventSink, console_view: ConsoleView | None = None
 ) -> Callable[[tuple[UserQuestion, ...]], tuple[str, ...]]:
     """Build the `ask_user` questioner, bridged to a live TUI when present.
 
@@ -189,19 +204,20 @@ def build_questioner(
             if answers is not None:
                 source = "tui"
         if answers is None:
-            stdin_answers = default_stdin_questioner(questions)
-            if stdin_answers is None:
-                # No front-end and no controlling terminal: nobody saw the
-                # question. Answer empty so the run never hangs, and say so
-                # where a watcher will see it instead of failing silently.
-                answers = tuple("" for _ in questions)
-                source = "headless-default"
-                _tty_message(
-                    "[agent6] ask_user: no front-end attached and no terminal;"
-                    " returning empty answers\n"
-                )
-            else:
-                answers = stdin_answers
+            with _pause(console_view):
+                stdin_answers = default_stdin_questioner(questions)
+                if stdin_answers is None:
+                    # No front-end and no controlling terminal: nobody saw the
+                    # question. Answer empty so the run never hangs, and say so
+                    # where a watcher will see it instead of failing silently.
+                    answers = tuple("" for _ in questions)
+                    source = "headless-default"
+                    _tty_message(
+                        "[agent6] ask_user: no front-end attached and no terminal;"
+                        " returning empty answers\n"
+                    )
+                else:
+                    answers = stdin_answers
         events.emit("question.answer", id=question_id, answers=list(answers), source=source)
         return answers
 

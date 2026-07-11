@@ -224,3 +224,26 @@ def test_notice_clears_the_spinner_before_printing() -> None:
         assert "\x1b[2K" in v  # the spinner line was erased before the notice
     finally:
         view.close()
+
+
+def test_pause_suspends_the_heartbeat_spinner() -> None:
+    """An interactive /dev/tty prompt (ask_user, a run_command approval) wraps the
+    read in console_view.pause() so the spinner stops erasing the question and the
+    operator's keystrokes; it resumes once the prompt returns."""
+    import time
+
+    out = _FakeTTY()
+    view = ConsoleView(out, color=False)  # type: ignore[arg-type]
+    try:
+        view.feed({"type": "tool.call", "name": "ask_user", "args": {}})
+        time.sleep(_STALL_WAIT_S)  # a tool is in flight + output silent: spinner up
+        assert "working…" in out.getvalue()
+        with view.pause():
+            marker = len(out.chunks)  # after pause() cleared the spinner line
+            time.sleep(1.2)  # a couple ticks: the prompt owns the terminal now
+            assert "working" not in "".join(out.chunks[marker:])  # no spinner redraws
+        resume = len(out.chunks)
+        time.sleep(1.2)  # after the prompt the heartbeat is free to spin again
+        assert "working" in "".join(out.chunks[resume:])
+    finally:
+        view.close()
