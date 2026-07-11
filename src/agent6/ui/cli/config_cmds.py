@@ -26,7 +26,7 @@ from agent6.config.layer import (
     repo_config_path_for,
 )
 from agent6.machine import MachineError, load_machine
-from agent6.models import cache as models_cache
+from agent6.models import registry as models_registry
 from agent6.paths import (
     chown_to_real_user,
     effective_user,
@@ -42,7 +42,7 @@ def _cmd_config_show(config_path: Path | None, *, as_json: bool) -> int:
     except ConfigError as exc:
         print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
         return 2
-    resolved = models_cache.resolved_adaptive_values(eff.config)
+    resolved = models_registry.resolved_adaptive_values(eff.config)
     print(render_show(eff, as_json=as_json, resolved=resolved), end="")
     return 0
 

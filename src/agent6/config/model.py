@@ -608,7 +608,7 @@ class ContextConfig(BaseModel):
     # Default ``None`` == ADAPTIVE: agent6 sizes both thresholds from the worker
     # model's context window (tier-1 at ~45%, tier-2 at ~80% of it), resolving
     # the window from a bundled table of tested models + the live model cache
-    # (see ``models_cache.compaction_thresholds``). Pin them by setting BOTH
+    # (see ``models.registry.compaction_thresholds``). Pin them by setting BOTH
     # explicitly (e.g. a self-hosted model agent6 can't size); leave BOTH unset
     # to stay adaptive. When the window is unknown the historical 256k/768k
     # fixed defaults apply.

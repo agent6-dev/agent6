@@ -48,7 +48,8 @@ from agent6.config.layer import (
     set_config_value,
     unset_config_value,
 )
-from agent6.models.cache import cached_models, list_models, resolved_adaptive_values
+from agent6.models.cache import cached_models, list_models
+from agent6.models.registry import resolved_adaptive_values
 from agent6.secrets import resolve_api_key
 from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.theme import open_theme_picker

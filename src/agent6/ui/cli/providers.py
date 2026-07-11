@@ -17,7 +17,7 @@ from agent6.config import (
     ThinkingLevel,
 )
 from agent6.events import EventSink
-from agent6.models import cache as models_cache
+from agent6.models import registry as models_registry
 from agent6.providers import (
     AnthropicProvider,
     CommandToken,
@@ -46,14 +46,14 @@ def resolve_compaction_thresholds(
     summarise_override = cfg.context.summarise_at_chars
     provider = rm.provider if rm is not None else ""
     model = rm.model if rm is not None else ""
-    drop, summarise = models_cache.compaction_thresholds(
+    drop, summarise = models_registry.compaction_thresholds(
         provider,
         model,
         drop_override=drop_override,
         summarise_override=summarise_override,
     )
     if log is not None and drop_override is None:
-        ctx = models_cache.context_window(provider, model) if model else None
+        ctx = models_registry.context_window(provider, model) if model else None
         src = (
             f"adaptive from {model} (context {ctx:,} tok)"
             if ctx

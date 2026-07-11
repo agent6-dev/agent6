@@ -13,6 +13,7 @@ import pytest
 
 from agent6.config import AnthropicProviderEntry, OpenAIProviderEntry
 from agent6.models import cache as models_cache
+from agent6.models import registry as models_registry
 
 
 @pytest.fixture
@@ -114,7 +115,7 @@ def test_unsafe_provider_name_still_fetches(
     assert not (cache_home / "models").exists()  # nothing written outside
 
 
-# --- context window + adaptive compaction sizing --------------------------
+# --- context-window reads (file format owned here, policy in registry) -----
 
 
 def _ok_full(models: list[dict[str, object]]) -> object:
@@ -142,36 +143,7 @@ def test_caches_context_length_and_reads_it_back(
     models_cache.list_models("vendorx", entry, "k")
     cached = json.loads((cache_home / "models" / "vendorx.json").read_text())
     assert cached["context"] == {"vendor/big": 200000, "vendor/small": 8192}
-    # context_window reads the cache (no network), for a model not in the table
-    assert models_cache.context_window("vendorx", "vendor/big") == 200000
-    assert models_cache.context_window("vendorx", "vendor/nocontext") is None
-
-
-def test_context_window_bundled_and_normalized(cache_home: Path) -> None:
-    # Bundled table: exact + a dated/tagged id normalised to the canonical key.
-    assert models_cache.context_window("anthropic", "claude-sonnet-4-6") == 200_000
-    assert models_cache.context_window("anthropic", "claude-haiku-4-5-20251001") == 200_000
-    assert models_cache.context_window("openrouter", "qwen/qwen3-coder:free") == 1_048_576
-    assert models_cache.context_window("openrouter", "vendor/totally-unknown") is None
-
-
-def test_compaction_thresholds_explicit_override_wins(cache_home: Path) -> None:
-    assert models_cache.compaction_thresholds(
-        "openrouter", "moonshotai/kimi-k2.6", drop_override=111, summarise_override=222
-    ) == (111, 222)
-
-
-def test_compaction_thresholds_adaptive_from_window(cache_home: Path) -> None:
-    drop, summarise = models_cache.compaction_thresholds(
-        "openrouter", "moonshotai/kimi-k2.6", drop_override=None, summarise_override=None
-    )
-    assert drop == int(262_144 * 4 * 0.45)
-    assert summarise == int(262_144 * 4 * 0.80)
-    assert drop < summarise  # tier-2 escalates above tier-1
-
-
-def test_compaction_thresholds_fixed_fallback_when_unknown(cache_home: Path) -> None:
-    # No bundled entry, empty cache -> historical 256k/768k (behaviour preserved).
-    assert models_cache.compaction_thresholds(
-        "openrouter", "vendor/totally-unknown", drop_override=None, summarise_override=None
-    ) == (256_000, 768_000)
+    # The narrow reader and the registry both see the write (no network).
+    assert models_cache.cached_context_window("vendorx", ("vendor/big",)) == 200000
+    assert models_registry.context_window("vendorx", "vendor/big") == 200000
+    assert models_registry.context_window("vendorx", "vendor/nocontext") is None
