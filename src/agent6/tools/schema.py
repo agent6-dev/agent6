@@ -417,20 +417,34 @@ class UserQuestion(BaseModel):
 class AskUserInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "ask_user"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Ask the operator one or more related questions and wait for the answers."
-        " Use SPARINGLY — only for a genuine decision you cannot make from the repo +"
-        " task (a product choice, an ambiguous requirement). BATCH related decisions"
-        " into ONE call: the operator answers them together and reviews before"
-        " submitting, so prefer this over many separate ask_user calls. `questions`"
-        ' is an ARRAY of objects (NOT a JSON-encoded string), each {"question":'
-        ' "...", "options": ["...", ...]}; give 2-4 `options` when the answer is a'
-        " choice (the operator may also type free text)."
-        ' Returns {"answers": [<string>, ...]} aligned to `questions`. In a'
-        " non-interactive/headless run there is no operator, so each answer comes back"
-        " empty immediately — never block on it for steps you could decide yourself."
+        "Ask the operator one or more questions and wait for the answers. CALL THIS"
+        " whenever the task asks you to confirm, ask, check with, or get input from the"
+        " operator, or for a genuine decision you cannot make from the repo + task (a"
+        " product choice, an ambiguous requirement). Do NOT just write the question as"
+        " text and stop -- the operator only sees a question you send through THIS tool."
+        " Batch related questions into ONE call (they are answered together and reviewed"
+        ' before submitting). `questions` is an ARRAY of objects, each {"question":'
+        ' "...", "options": ["...", ...]}; a single question may also be passed flat as'
+        ' {"question": "..."}. Give 2-4 `options` when the answer is a choice (the'
+        ' operator may also type free text). Returns {"answers": [<string>, ...]}'
+        " aligned to `questions`. A live TUI/web front-end answers; only a headless run"
+        " with nobody watching returns empty answers, so ask freely when input is wanted."
     )
 
     questions: tuple[UserQuestion, ...] = Field(min_length=1, max_length=8)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_flat_single_question(cls, data: Any) -> Any:
+        # A model that sends a lone question flat (question=..., options=...) rather
+        # than wrapping it in `questions` still works -- fold it into the list.
+        if isinstance(data, dict) and "questions" not in data and "question" in data:
+            q: dict[str, Any] = {"question": data.get("question")}
+            if "options" in data:
+                q["options"] = data.get("options")
+            data = {k: v for k, v in data.items() if k not in ("question", "options")}
+            data["questions"] = [q]
+        return data
 
 
 ApplyEditInput.model_rebuild()

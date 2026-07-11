@@ -1329,3 +1329,15 @@ def test_operator_tool_paths_extends_path_and_mounts_are_nonsystem() -> None:
     for m in mounts:
         assert not _under_system_root(m), m
         assert m.is_dir()
+
+
+def test_ask_user_accepts_flat_single_question(tmp_path: Path) -> None:
+    # A model that sends a lone question flat (not wrapped in `questions`) still works.
+    cfg = _config(tmp_path)
+
+    def questioner(questions: tuple[UserQuestion, ...]) -> tuple[str, ...]:
+        return tuple(q.options[0] if q.options else "typed" for q in questions)
+
+    d = ToolDispatcher(root=tmp_path, config=cfg, questioner=questioner)
+    out = d.dispatch("ask_user", {"question": "Which theme?", "options": ["dark", "light"]})
+    assert out == {"answers": ["dark"]}
