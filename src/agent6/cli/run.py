@@ -1266,6 +1266,15 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
             err = spawn_detached_resume(cwd, layout.run_id)
             if err:
                 print(f"[agent6] {err}", file=sys.stderr)
+            elif cfg.sandbox.run_commands == "ask" and not session_allow_set(layout.run_dir):
+                # Detached + ask has no terminal to prompt: it denies commands until a
+                # front-end reattaches. Point at the two ways to keep it moving.
+                print(
+                    f"[agent6] detached; run_commands=ask denies commands with no"
+                    f" front-end -- reattach (agent6 watch {layout.run_id}) to approve,"
+                    " or pick 'Allow session' before detaching to run unattended.",
+                    file=sys.stderr,
+                )
 
 
 def _finalize_auto_merge(cwd: Path, *, layout: RunLayout, cfg: Config) -> None:
