@@ -1965,7 +1965,7 @@ def test_current_task_id_prefers_open_cursor() -> None:
 def test_first_ready_subtask_respects_deps_and_order() -> None:
     """The frontier skips a subtask whose dependency is not yet done, and a
     passed/obsolete dependency unblocks it; roots and done tasks never surface."""
-    from agent6.workflows.loop import _first_ready_subtask  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._dag_focus import first_ready_subtask as _first_ready_subtask
 
     nodes = {
         "root": {"parent_id": None, "status": "in_progress", "title": "r"},
@@ -1987,9 +1987,11 @@ def test_first_ready_subtask_prefers_leaf_over_decomposed_parent() -> None:
     """A subtask with open children is a container -- the frontier surfaces its
     first ready leaf, not the parent, so a decompose moves focus forward. A cursor
     still pointing at the parent falls through to the leaf too."""
-    from agent6.workflows.loop import (
-        _current_task_id,  # pyright: ignore[reportPrivateUsage]
-        _first_ready_subtask,  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._dag_focus import (
+        current_task_id as _current_task_id,
+    )
+    from agent6.workflows._dag_focus import (
+        first_ready_subtask as _first_ready_subtask,
     )
 
     nodes = {
