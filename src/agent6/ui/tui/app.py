@@ -823,7 +823,11 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         # dashboard covered or torn down, so querying its widgets raises; defer
         # the paint (dirty stays set) until it is back on top. Structural events
         # rebuild the panes; deltas/heartbeat repaint only the light parts.
-        if not self._stop.is_set() and self.screen is self._dash:
+        # Read screen_stack, not App.screen: the interval outlives the stack
+        # during shutdown, and a tick landing after the last screen pops must be
+        # a no-op, not a ScreenStackError crash.
+        stack = self.screen_stack
+        if not self._stop.is_set() and stack and stack[-1] is self._dash:
             if self._dirty:
                 self._dirty = self._light_dirty = False
                 with contextlib.suppress(NoMatches):
@@ -892,9 +896,12 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         steer`): route it to the visible composer bar instead of a popup --
         focus it and say why. With a viewer or modal on top, the notice alone
         points the operator at the bar."""
-        if self.screen is self._conv:
+        stack = self.screen_stack
+        if not stack:  # shutdown race: the tick fired after the last screen popped
+            return
+        if stack[-1] is self._conv:
             self._conv.focus_bar()
-        elif self.screen is self._dash:
+        elif stack[-1] is self._dash:
             with contextlib.suppress(NoMatches):
                 self._dash.query_one("#dash-input", SteerInput).focus()
         self.notify("the run asked for steering — type an instruction and press Enter")

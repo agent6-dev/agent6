@@ -7,13 +7,24 @@ from __future__ import annotations
 import asyncio
 import bisect
 import json
+import time
 from pathlib import Path
+from typing import Any
 
 from textual.app import App
 from textual.containers import VerticalScroll
 from textual.widgets import Static
 
 from agent6.ui.tui.conversation import ConversationScreen, SteerInput
+
+
+async def _wait_for(pilot: Any, cond: Any, what: str, timeout: float = 10.0) -> None:
+    """Wait for the 0.5s follow poll (and rendering) by condition, not by a
+    fixed sleep that loses the race on a loaded machine."""
+    deadline = time.monotonic() + timeout
+    while not cond():
+        assert time.monotonic() < deadline, f"timed out waiting for {what}"
+        await pilot.pause(0.05)
 
 
 def _following(scroll: VerticalScroll) -> bool:
@@ -98,9 +109,7 @@ def test_conversation_screen_follows_live(tmp_path: Path) -> None:
             with logs.open("a", encoding="utf-8") as fh:
                 for event in _EVENTS:
                     fh.write(json.dumps(event) + "\n")
-            await asyncio.sleep(0.7)  # let the 0.5s follow poll fire
-            await pilot.pause()
-            assert _nlines(app) > before  # the appended turns appeared
+            await _wait_for(pilot, lambda: _nlines(app) > before, "the appended turns")
 
     asyncio.run(scenario())
 
@@ -188,10 +197,13 @@ def test_follow_survives_the_live_pane_growing(tmp_path: Path) -> None:
             await pilot.pause()
             scroll = app.screen.query_one("#conv-scroll", VerticalScroll)
             assert _following(scroll)  # _reload pins to the bottom
+            overflow_before = scroll.max_scroll_y
             with logs.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps({"type": "role.thinking_delta", "text": "x " * 300}) + "\n")
-            await asyncio.sleep(0.5)  # let the poll fire + grow the live pane
-            await pilot.pause()
+            # The growing live pane shrinks the viewport, so the overflow grows.
+            await _wait_for(
+                pilot, lambda: scroll.max_scroll_y > overflow_before, "the live pane to grow"
+            )
             assert _following(scroll)  # still following despite the live pane growing
 
     asyncio.run(scenario())
@@ -262,9 +274,7 @@ def test_conversation_live_pane_shows_the_in_progress_turn(tmp_path: Path) -> No
             # a completed turn (role.result) hands off to the scrollback and hides it
             with logs.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps({"type": "role.result", "role": "worker"}) + "\n")
-            await asyncio.sleep(0.5)
-            await pilot.pause()
-            assert not live.display
+            await _wait_for(pilot, lambda: not live.display, "the live pane handoff")
 
     asyncio.run(scenario())
 

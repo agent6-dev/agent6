@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -32,29 +33,31 @@ def _ev(**fields: Any) -> dict[str, object]:
     return dict(fields)
 
 
+async def _wait_for(pilot: Any, cond: Any, what: str, timeout: float = 10.0) -> None:
+    """Deadline-based condition wait. Iteration-capped pause loops spin through
+    in milliseconds under load while the awaited work lags behind, then fall
+    through silently and fail at some later assert; a wall-clock deadline with
+    a loud timeout fails at the wait that actually missed."""
+    deadline = time.monotonic() + timeout
+    while not cond():
+        assert time.monotonic() < deadline, f"timed out waiting for {what}"
+        await pilot.pause(0.05)
+
+
 async def _show_dashboard(pilot: Any) -> None:
     """The app opens on the conversation view; flip to the dashboard (Ctrl+D)
     so the pane tests drive the dashboard like before. Waits for each screen to
     actually be on top: startup pushes the screens asynchronously, and a Ctrl+D
     fired before the conversation lands would type into the wrong screen."""
     app = pilot.app
-    for _ in range(20):
-        await pilot.pause()
-        if app.screen is app._conv:
-            break
+    await _wait_for(pilot, lambda: app.screen is app._conv, "the conversation screen")
     await pilot.press("ctrl+d")
-    for _ in range(20):
-        await pilot.pause()
-        if app.screen is app._dash:
-            break
+    await _wait_for(pilot, lambda: app.screen is app._dash, "the dashboard screen")
 
 
 async def _settle_focus(pilot: Any, widget: Any) -> None:
     """Wait for a deferred focus() (Widget.focus defers via call_later) to land."""
-    for _ in range(10):
-        if pilot.app.focused is widget:
-            return
-        await pilot.pause()
+    await _wait_for(pilot, lambda: pilot.app.focused is widget, f"focus on {widget}")
 
 
 def test_question_modal_digit_in_freetext_is_not_hijacked() -> None:
@@ -998,23 +1001,53 @@ def test_dashboard_heartbeat_ticks_while_active(tmp_path: Path) -> None:
         "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
     )
 
+    import re
+
+    def _seconds(text: str) -> int:
+        m = re.search(r"working… (\d+)s", text)
+        return int(m.group(1)) if m else 0
+
     async def scenario() -> str:
         app = Agent6TUI(tmp_path)
         async with app.run_test(size=(120, 40)) as pilot:
             await _show_dashboard(pilot)
-            for _ in range(15):  # ~3s: let the reader fold + the heartbeat tick
-                await pilot.pause(0.2)
-            app._tick()  # pyright: ignore[reportPrivateUsage]
-            await pilot.pause()
+
+            def advanced() -> bool:
+                app._tick()  # pyright: ignore[reportPrivateUsage]
+                return _seconds(str(app._dash.query_one("#stream-body", Static).render())) >= 1
+
+            # The heartbeat needs real wall time (>=1s since the last event);
+            # poll until it shows instead of betting on a fixed budget.
+            await _wait_for(pilot, advanced, "the working… heartbeat to advance", timeout=15.0)
             return str(app._dash.query_one("#stream-body", Static).render())
 
     text = asyncio.run(scenario())
     assert "working…" in text
-    # A number of seconds is shown and it is > 0 (the heartbeat advanced).
-    import re
+    assert _seconds(text) >= 1  # the heartbeat advanced
 
-    m = re.search(r"working… (\d+)s", text)
-    assert m is not None and int(m.group(1)) >= 1
+
+def test_tick_survives_an_empty_screen_stack(tmp_path: Path) -> None:
+    """The 0.2s _tick interval races shutdown: teardown pops every screen, and a
+    tick landing in that window hit the raising App.screen property, crashing the
+    app (ScreenStackError surfaced at run_test exit -- the load-only flake that
+    took down a different TUI test each full-suite run). A tick on an empty stack
+    must be a no-op, including the steer-request routing path."""
+
+    async def scenario() -> None:
+        (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+        app = Agent6TUI(tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            # Empty the stack only around the synchronous tick (restored after),
+            # so run_test teardown still sees the screens it expects to pop.
+            stack = app._screen_stack  # pyright: ignore[reportPrivateUsage]
+            saved = list(stack)
+            stack.clear()
+            app._seen_steer = -1  # pyright: ignore[reportPrivateUsage]
+            app._tick()  # pyright: ignore[reportPrivateUsage]
+            stack.extend(saved)
+
+    asyncio.run(scenario())
 
 
 def test_dashboard_follows_live_appends_after_attach(tmp_path: Path) -> None:
@@ -1043,8 +1076,13 @@ def test_dashboard_follows_live_appends_after_attach(tmp_path: Path) -> None:
         app = Agent6TUI(tmp_path)
         async with app.run_test(size=(120, 40)) as pilot:
             await _show_dashboard(pilot)
-            for _ in range(8):
-                await pilot.pause(0.2)
+
+            def rows() -> int:
+                app._tick()  # pyright: ignore[reportPrivateUsage]
+                return app._dash.query_one("#tools", DataTable).row_count
+
+            # Wait through the reader thread's initial fold, not a fixed budget.
+            await _wait_for(pilot, lambda: rows() >= 1, "the attach-time fold", timeout=15.0)
             before = app._dash.query_one("#tools", DataTable).row_count
             # The background process appends a new turn AFTER we attached.
             append(
@@ -1053,12 +1091,7 @@ def test_dashboard_follows_live_appends_after_attach(tmp_path: Path) -> None:
                     {"type": "tool.result", "name": "apply_edit", "ok": True, "summary": "applied"},
                 ]
             )
-            for _ in range(10):  # > tail poll (0.25s) + tick (0.2s)
-                await pilot.pause(0.2)
-            app._tick()  # pyright: ignore[reportPrivateUsage]
-            await pilot.pause()
-            after = app._dash.query_one("#tools", DataTable).row_count
-            assert after > before, f"live append not followed: {before} -> {after}"
-            return after
+            await _wait_for(pilot, lambda: rows() > before, "the appended turn", timeout=15.0)
+            return app._dash.query_one("#tools", DataTable).row_count
 
     assert asyncio.run(scenario()) == 2
