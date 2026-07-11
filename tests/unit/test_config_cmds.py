@@ -124,14 +124,14 @@ def test_config_add_on_unset_optional_list_key_works(
     assert "Added" in out
 
 
-def test_config_error_names_the_layer_holding_a_stale_value(
+def test_config_set_keeps_a_valid_write_despite_a_stale_value_elsewhere(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # A value left invalid by a schema change (prompt.decompose = true, once a
-    # bool, now Literal["auto","on","off"]) makes the config fail to load. The
-    # error must name the exact file it is in and the command to fix it -- so it is
-    # self-service -- and `config set` of an unrelated key surfaces that same
-    # actionable error rather than blocking with a bare one.
+    # A value left invalid by a schema change (prompt.decompose = true, once a bool,
+    # now Literal["auto","on","off"]) must NOT block setting an unrelated valid key:
+    # the write is kept (not reverted) and a WARNING names the exact file + command
+    # to fix the stale value, so it is self-service. The old strict behaviour made a
+    # broken config impossible to fix through `config set`.
     from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
@@ -140,14 +140,137 @@ def test_config_error_names_the_layer_holding_a_stale_value(
     monkeypatch.chdir(tmp_path)
 
     rc = main(["config", "set", "budget.best_effort_usd_limit", "5"])
-    err = capsys.readouterr().err
-    assert rc == 2  # strict: a broken config blocks the write (fail loud)...
-    assert "prompt.decompose" in err  # ...but the message names the real problem,
-    assert str(gpath) in err  # the exact file it is in,
-    assert "config set prompt.decompose <value>" in err  # and how to fix it.
+    captured = capsys.readouterr()
+    assert rc == 0  # the valid write is kept...
+    assert "Set budget" in captured.out  # ...it succeeded,
+    assert "prompt.decompose" in captured.err  # ...and a warning names the stale value,
+    assert str(gpath) in captured.err  # the exact file,
+    assert "config set prompt.decompose <value>" in captured.err  # and how to fix it.
 
-    # Overwriting the offending value clears it; then the unrelated set works.
+    # Overwriting the offending value clears the warning; the write is clean.
     assert main(["config", "set", "prompt.decompose", "off"]) == 0
-    capsys.readouterr()
-    assert main(["config", "set", "budget.best_effort_usd_limit", "5"]) == 0
-    assert "Set budget" in capsys.readouterr().out
+    assert "WARNING" not in capsys.readouterr().err
+
+
+def test_config_set_rejects_a_newly_invalid_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Setting an invalid VALUE still fails loud and reverts, so a typo cannot land in
+    # the config even though a stale value elsewhere no longer blocks a valid write.
+    from agent6.paths import global_config_path
+    from agent6.ui.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    rc = main(["config", "set", "prompt.decompose", "bogus"])
+    assert rc == 2  # the write itself is invalid -> reverted + fail loud
+    assert "prompt.decompose" in capsys.readouterr().err
+    gpath = global_config_path()
+    assert not gpath.is_file() or "decompose" not in gpath.read_text(encoding="utf-8")
+
+
+def test_config_set_reverts_a_write_that_trips_a_non_pydantic_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A write that trips a STANDALONE ConfigError (not a pydantic per-leaf error) --
+    # e.g. a non-absolute agent6.state_dir -- must still revert. Such errors carry no
+    # "  - <leaf>:" line, so the before/after comparison must count full error content
+    # (else the invalid write is silently kept and bricks the config).
+    from agent6.ui.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    rc = main(["config", "set", "agent6.state_dir", "not-absolute"])
+    assert rc == 2
+    assert "absolute" in capsys.readouterr().err.lower()
+
+
+def test_config_set_keeps_a_write_on_an_already_invalid_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # config set reverts only a write that BROKE a previously-valid config. When the
+    # config was ALREADY invalid (a value left stale by a schema change), the write is
+    # kept + warned so the config stays fixable -- the deliberate tradeoff being that a
+    # still-invalid value on an already-broken config is warned, not reverted. A valid
+    # value then lands and clears the error.
+    from agent6.paths import global_config_path
+    from agent6.ui.cli import main
+
+    gpath = global_config_path()
+    gpath.write_text("[prompt]\ndecompose = true\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["config", "set", "prompt.decompose", "enabled"]) == 0  # kept, not reverted
+    assert "WARNING" in capsys.readouterr().err
+    assert main(["config", "set", "prompt.decompose", "on"]) == 0  # a valid value clears it
+    assert "WARNING" not in capsys.readouterr().err
+
+
+def test_config_set_global_keeps_a_valid_write_shadowed_by_a_stale_repo_layer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The exact motivating case: prompt.decompose is stale in the REPO layer; setting a
+    # VALID value GLOBALLY (which the repo still shadows) must be KEPT + warn, NEVER
+    # reverted -- the leaf appears in the merged error but this write is not its cause.
+    from agent6.config.layer import repo_config_path_for
+    from agent6.paths import global_config_path
+    from agent6.ui.cli import main
+
+    repo_cfg = repo_config_path_for(tmp_path)
+    repo_cfg.parent.mkdir(parents=True, exist_ok=True)
+    repo_cfg.write_text("[prompt]\ndecompose = true\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    rc = main(["config", "set", "prompt.decompose", "auto"])
+    captured = capsys.readouterr()
+    assert rc == 0  # the valid global write is KEPT, not reverted over the repo's stale value
+    assert "WARNING" in captured.err  # ...but warns the repo layer still shadows it
+    assert '"auto"' in global_config_path().read_text(encoding="utf-8")
+
+
+def test_config_set_allows_a_cross_field_write_valid_given_a_set_sibling(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A value whose validity depends on a SIBLING (a cross-field @model_validator) must
+    # be accepted once that sibling is set. The up-front pre-check validates the leaf
+    # in isolation (siblings at defaults), so it must NOT attribute the resulting
+    # parent-table error to the written child, or it would wrongly reject e.g.
+    # sandbox.tool_network='allow' after sandbox.agent_network='open' is already set.
+    from agent6.ui.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    assert main(["config", "set", "sandbox.agent_network", "open"]) == 0
+    assert main(["config", "set", "sandbox.tool_network", "allow"]) == 0  # not over-rejected
+
+
+def test_config_set_sub_leaf_on_an_existing_provider(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # providers.<name> is a discriminated union on api_format, so a leaf's isolated dict
+    # lacks the union tag and errors on the parent providers.<name>; the pre-check must
+    # not attribute that to the written child, or every providers.<name>.* set on an
+    # already-complete provider would be rejected.
+    from agent6.paths import global_config_path
+    from agent6.ui.cli import main
+
+    gpath = global_config_path()
+    gpath.parent.mkdir(parents=True, exist_ok=True)
+    gpath.write_text(
+        '[providers.op]\napi_format = "openai"\nbase_url = "https://x.test/v1"\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    assert main(["config", "set", "providers.op.base_url", "https://y.test/v1"]) == 0
+
+
+def test_config_set_submodel_inline_table_completed_by_a_lower_layer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An inline-table value for a submodel key that a LOWER layer completes must be
+    # accepted: the isolated pre-check sees only the partial table (missing a required
+    # child), so it must not attribute that descendant error to the written key.
+    from agent6.paths import global_config_path
+    from agent6.ui.cli import main
+
+    gpath = global_config_path()
+    gpath.parent.mkdir(parents=True, exist_ok=True)
+    gpath.write_text('[models.worker]\nmodel = "m"\n', encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    assert main(["config", "set", "--repo", "models.worker", '{ provider = "p" }']) == 0

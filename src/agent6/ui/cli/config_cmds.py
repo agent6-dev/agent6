@@ -134,38 +134,75 @@ def _machine_is_valid(text: str | None) -> bool:
     return True
 
 
-def _revalidate_config(target: Path, prior_text: str | None, *, machine: Path | None) -> str | None:
-    """Re-validate the config after a write; restore *prior_text* on failure.
+def _restore_file(target: Path, text: str | None) -> None:
+    """Put *target* back to *text*, or delete it when *text* is None."""
+    if text is None:
+        target.unlink(missing_ok=True)
+    else:
+        target.write_text(text, encoding="utf-8")
 
-    Returns a ready-to-print error message when the edit produced an invalid
-    config (so the caller fails loud and the file is left untouched), else None.
-    The message names the offending layer file and the command to fix it (built
-    in ``agent6.config.layer``), so a stale value in any layer is self-service.
+
+def _merged_config_error() -> str | None:
+    """Validate the merged config as it sits on disk; the ConfigError message, or
+    None when it is valid."""
+    try:
+        load_effective(Path.cwd(), None)
+        return None
+    except ConfigError as exc:
+        return str(exc)
+
+
+def _revalidate_layered(target: Path, prior_text: str | None, *, was_valid: bool) -> str | None:
+    """Re-validate after a plain (global/repo) config write: revert only if this write
+    BROKE a previously-valid config. If the config was already invalid -- a value left
+    stale in a different, unedited layer -- keep the write and warn (a global set that
+    the repo layer shadows hits this), so an already-broken config stays fixable through
+    `config set` instead of the old catch-22 where one stale value blocked every write.
     """
+    after = _merged_config_error()
+    if after is None:
+        return None  # valid -> success
+    if was_valid:
+        _restore_file(target, prior_text)  # the write broke a valid config -> fail loud
+        return after
+    print(
+        "WARNING: the config is still invalid because of a value in another layer;"
+        f" fix that one on its own:\n{after}",
+        file=sys.stderr,
+    )
+    return None
+
+
+def _revalidate_config(
+    target: Path, prior_text: str | None, *, machine: Path | None, was_valid: bool = False
+) -> str | None:
+    """Re-validate the config after a write; restore *prior_text* on real failure.
+
+    Returns a ready-to-print error message when THIS edit broke a previously-valid
+    config (so the caller fails loud and the file is reverted), else None. A value
+    left stale in a different, unedited layer never blocks an otherwise-valid write;
+    *was_valid* is whether the merged config loaded before this write (see
+    :func:`_revalidate_layered`). The machine path keeps its own spec guard.
+    """
+    if machine is None:
+        return _revalidate_layered(target, prior_text, was_valid=was_valid)
     err: str | None = None
     try:
-        if machine is not None:
-            data = read_toml_file(target)
-            overlay = data.get("config", {})
-            load_effective_with_overlay(Path.cwd(), overlay if isinstance(overlay, dict) else {})
-            # Validate the WHOLE machine spec too (not just the [config] overlay)
-            # so `config set --machine-file` can't BREAK a runnable machine. We only
-            # block when the edit made a previously-VALID machine invalid -- a
-            # machine that was already invalid (or a brand-new stub) is left for
-            # the author to finish; `machine check` is the gate for runnability.
-            if "states" in data and _machine_is_valid(prior_text):
-                load_machine(target)
-        else:
-            load_effective(Path.cwd(), None)
+        data = read_toml_file(target)
+        overlay = data.get("config", {})
+        load_effective_with_overlay(Path.cwd(), overlay if isinstance(overlay, dict) else {})
+        # Validate the WHOLE machine spec too (not just the [config] overlay) so
+        # `config set --machine-file` can't BREAK a runnable machine. Block only
+        # when the edit made a previously-VALID machine invalid; a machine already
+        # invalid (or a brand-new stub) is left for the author to finish.
+        if "states" in data and _machine_is_valid(prior_text):
+            load_machine(target)
     except ConfigError as exc:
         err = str(exc)
     except MachineError as exc:
         err = "; ".join(exc.problems)
     if err is not None:
-        if prior_text is None:
-            target.unlink(missing_ok=True)
-        else:
-            target.write_text(prior_text, encoding="utf-8")
+        _restore_file(target, prior_text)
         return err
     return None
 
@@ -205,12 +242,13 @@ def _cmd_config_set(key: str, value: str, *, repo: bool, machine: Path | None) -
     target.parent.mkdir(parents=True, exist_ok=True)
     prior = target.read_text(encoding="utf-8") if target.is_file() else None
     parsed = parse_cli_value(value)
+    was_valid = machine is None and _merged_config_error() is None  # loads BEFORE this write?
     try:
         upsert_toml_leaf(target, prefix + key, parsed)
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
-    if err := _revalidate_config(target, prior, machine=machine):
+    if err := _revalidate_config(target, prior, machine=machine, was_valid=was_valid):
         print(f"ERROR: {err}", file=sys.stderr)
         return 2
     chown_to_real_user(target.parent)
@@ -233,6 +271,7 @@ def _cmd_config_unset(key: str, *, repo: bool, machine: Path | None) -> int:  # 
         print(f"ERROR: {target} does not exist; nothing to unset.", file=sys.stderr)
         return 2
     prior = target.read_text(encoding="utf-8")
+    was_valid = machine is None and _merged_config_error() is None  # loads BEFORE this unset?
     try:
         removed = remove_toml_leaf(target, prefix + key)
     except ValueError as exc:
@@ -241,7 +280,7 @@ def _cmd_config_unset(key: str, *, repo: bool, machine: Path | None) -> int:  # 
     if not removed:
         print(f"{key} is not set in {target}; nothing to unset.")
         return 0
-    if err := _revalidate_config(target, prior, machine=machine):
+    if err := _revalidate_config(target, prior, machine=machine, was_valid=was_valid):
         print(f"ERROR: unsetting {key} left an invalid config:\n{err}", file=sys.stderr)
         return 2
     chown_to_real_user(target)
@@ -304,12 +343,13 @@ def _config_list_edit(  # noqa: PLR0911
         items = [x for x in items if x != parsed]
     target.parent.mkdir(parents=True, exist_ok=True)
     prior = target.read_text(encoding="utf-8") if target.is_file() else None
+    was_valid = machine is None and _merged_config_error() is None  # loads BEFORE this edit?
     try:
         upsert_toml_leaf(target, prefix + key, items)
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
-    if err := _revalidate_config(target, prior, machine=machine):
+    if err := _revalidate_config(target, prior, machine=machine, was_valid=was_valid):
         print(f"ERROR: {value!r} is not valid for {key}:\n{err}", file=sys.stderr)
         return 2
     chown_to_real_user(target.parent)
