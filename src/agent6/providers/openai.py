@@ -61,6 +61,7 @@ import httpx2
 
 from agent6.budget import BudgetTracker
 from agent6.providers.anthropic import (
+    ProviderAborted,
     ProviderError,
     ProviderResponse,
     ToolDefinition,
@@ -98,7 +99,9 @@ DEFAULT_MAX_TOKENS = 8192
 # event every few seconds even mid-reasoning (token-level streaming).
 # Going 3 minutes with only heartbeats means the upstream is wedged.
 _STREAM_IDLE_TIMEOUT_S = 180.0
-_STREAM_WATCHDOG_TICK_S = 5.0
+# The watchdog also polls should_abort each tick, so keep it short: this bounds
+# how long a Stop waits to interrupt a long in-flight turn.
+_STREAM_WATCHDOG_TICK_S = 1.0
 
 # Kimi-K2-Thinking, DeepSeek-R1, QwQ, and similar reasoning
 # models stream a separate ``reasoning_content`` (or ``reasoning``)
@@ -300,6 +303,7 @@ class OpenAIProvider:
         reasoning_effort: str | None = None,
         text_delta_callback: Callable[[str], None] | None = None,
         thinking_delta_callback: Callable[[str], None] | None = None,
+        should_abort: Callable[[], bool] | None = None,
     ) -> ProviderResponse:
         # extended_thinking is Anthropic-shaped (`budget_tokens`).
         # OpenAI reasoning models use `reasoning_effort` instead; no
@@ -513,6 +517,7 @@ class OpenAIProvider:
                         body=body,
                         text_delta_callback=text_delta_callback,
                         thinking_delta_callback=thinking_delta_callback,
+                        should_abort=should_abort,
                         tool_names=tool_names,
                         tool_schemas=tool_schemas,
                     )
@@ -618,6 +623,7 @@ class OpenAIProvider:
         body: dict[str, Any],
         text_delta_callback: Callable[[str], None] | None = None,
         thinking_delta_callback: Callable[[str], None] | None = None,
+        should_abort: Callable[[], bool] | None = None,
         tool_names: frozenset[str] = frozenset(),
         tool_schemas: dict[str, dict[str, Any]] | None = None,
     ) -> ProviderResponse:
@@ -668,6 +674,7 @@ class OpenAIProvider:
         # raises and we surface a descriptive ProviderError.
         last_data_at = time.monotonic()
         idle_killed = threading.Event()
+        aborted = threading.Event()
         watchdog_stop = threading.Event()
         # Mutable holder so the watchdog can reach the response without
         # racing on assignment (the ``with`` block runs in a different
@@ -676,10 +683,15 @@ class OpenAIProvider:
 
         def _watchdog() -> None:
             while not watchdog_stop.wait(_STREAM_WATCHDOG_TICK_S):
-                if time.monotonic() - last_data_at <= _STREAM_IDLE_TIMEOUT_S:
-                    continue
                 resp = resp_holder.get("resp")
                 if resp is None:
+                    continue
+                if should_abort is not None and should_abort():
+                    aborted.set()
+                    with contextlib.suppress(Exception):
+                        resp.close()
+                    return
+                if time.monotonic() - last_data_at <= _STREAM_IDLE_TIMEOUT_S:
                     continue
                 idle_killed.set()
                 with contextlib.suppress(Exception):
@@ -829,6 +841,9 @@ class OpenAIProvider:
                             if isinstance(args_piece, str) and args_piece:
                                 tool_arg_buf.setdefault(idx, []).append(args_piece)
         except httpx2.HTTPError as exc:
+            if aborted.is_set():
+                watchdog_stop.set()
+                raise ProviderAborted("run stopped by operator") from exc
             if idle_killed.is_set():
                 # Convert the watchdog-induced HTTPError into a
                 # purpose-specific ProviderError so the loop's error

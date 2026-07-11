@@ -17,6 +17,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from agent6.providers.anthropic import (
     AnthropicProvider,
+    ProviderAborted,
     ProviderError,
     ProviderResponse,
     ToolDefinition,
@@ -52,6 +53,7 @@ class Provider(Protocol):
         reasoning_effort: str | None = ...,
         text_delta_callback: Callable[[str], None] | None = ...,
         thinking_delta_callback: Callable[[str], None] | None = ...,
+        should_abort: Callable[[], bool] | None = ...,
     ) -> ProviderResponse: ...
 
 
@@ -60,6 +62,7 @@ __all__ = [
     "CommandToken",
     "OpenAIProvider",
     "Provider",
+    "ProviderAborted",
     "ProviderError",
     "ProviderResponse",
     "ToolDefinition",

@@ -25,6 +25,7 @@ from agent6.frontend.approval import (
     clear_steer_request,
     frontend_is_live,
     read_steer_answer,
+    steer_answer_is_abort,
     steer_request_pending,
 )
 
@@ -35,6 +36,8 @@ class SteerState:
     clear: Callable[[], None]
     prompt: Callable[[], str | None]
     restore: Callable[[], None]
+    # Polled during a streaming call so a Stop interrupts a long turn promptly.
+    abort_pending: Callable[[], bool]
 
 
 def select_revised_prompt(
@@ -226,7 +229,13 @@ def install_steer_sigint(events: EventSink, run_dir: Path) -> SteerState:
         with contextlib.suppress(Exception):
             signal.signal(signal.SIGINT, previous)
 
-    return SteerState(requested=requested, clear=clear, prompt=prompt, restore=restore)
+    return SteerState(
+        requested=requested,
+        clear=clear,
+        prompt=prompt,
+        restore=restore,
+        abort_pending=lambda: steer_answer_is_abort(run_dir),
+    )
 
 
 def file_bridge_steer(run_dir: Path) -> SteerState:
@@ -254,6 +263,7 @@ def file_bridge_steer(run_dir: Path) -> SteerState:
         clear=clear,
         prompt=prompt,
         restore=lambda: None,
+        abort_pending=lambda: steer_answer_is_abort(run_dir),
     )
 
 

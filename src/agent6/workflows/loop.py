@@ -38,7 +38,7 @@ from agent6.graph.models import (
     UpdateStatusIntent,
 )
 from agent6.portable import atomic_write
-from agent6.providers import Provider, ProviderError, ToolDefinition
+from agent6.providers import Provider, ProviderAborted, ProviderError, ToolDefinition
 from agent6.tools.dispatch import OperatorCommandUnexecutable, ToolDispatcher, ToolError
 from agent6.tools.schema import (
     ALL_TOOLS,
@@ -760,6 +760,9 @@ class Workflow:
     steer_requested: Callable[[], bool] = field(default=lambda: False)
     steer_clear: Callable[[], None] = field(default=lambda: None)
     steer_prompt: Callable[[], str | None] = field(default=lambda: None)
+    # Polled DURING a streaming model call (not just between steps): True once the
+    # operator has asked to stop, so a long reasoning turn aborts promptly.
+    should_abort: Callable[[], bool] = field(default=lambda: False)
     # Hook invoked once per successful auto-commit (after the
     # commit lands). Returning "stop" exits the loop cleanly with
     # completed=True, reason="interactive_stop"; "continue" (the default)
@@ -1097,6 +1100,16 @@ class Workflow:
                     completed=False,
                     reason="budget_exhausted",
                     summary=f"budget exhausted at iter {iteration}: {exc}",
+                    iterations=iteration,
+                    tool_calls=state.tool_calls,
+                )
+            except ProviderAborted:
+                self._log(f"LOOP: operator stopped the run mid-turn at iter {iteration}")
+                self._emit("run.end", reason="steer_abort", iterations=iteration, all_passed=False)
+                return RunResult(
+                    completed=False,
+                    reason="steer_abort",
+                    summary=f"operator stopped the run at iter {iteration}",
                     iterations=iteration,
                     tool_calls=state.tool_calls,
                 )
@@ -3008,7 +3021,10 @@ class Workflow:
                     tools=tools,
                     max_tokens=max_tokens,
                     temperature=self.temperature,
+                    should_abort=self.should_abort,
                 )
+            except ProviderAborted:
+                raise  # operator stopped the run: end it, never retry
             except ProviderError as exc:
                 last_exc = exc
                 non_retryable = exc.status_code in _NON_RETRYABLE_HTTP_STATUSES

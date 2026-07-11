@@ -57,6 +57,18 @@ def test_instrumented_provider_forwards_reasoning_effort() -> None:
     assert kwargs["reasoning_effort"] == "off"
 
 
+def test_instrumented_provider_forwards_should_abort() -> None:
+    inner = MagicMock()
+    inner.call.return_value = _resp()
+    wrapper = _wrap(inner)
+
+    def _abort() -> bool:
+        return True
+
+    wrapper.call(system="s", messages=[{"role": "user", "content": "hi"}], should_abort=_abort)
+    assert inner.call.call_args.kwargs["should_abort"] is _abort
+
+
 def test_instrumented_provider_defaults_reasoning_effort_to_none() -> None:
     inner = MagicMock()
     inner.call.return_value = _resp()

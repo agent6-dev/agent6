@@ -120,6 +120,20 @@ def test_call_with_retry_reraises_after_retries_exhausted() -> None:
     assert provider.call.call_count == 2
 
 
+def test_call_with_retry_never_retries_an_abort() -> None:
+    """ProviderAborted (operator stop) bubbles immediately, never retried."""
+    from agent6.providers import ProviderAborted
+
+    provider = MagicMock()
+    provider.call.side_effect = [ProviderAborted("stopped"), _resp("late")]
+    wf = _wf(provider=provider, provider_retry_count=3)
+    with pytest.raises(ProviderAborted):
+        wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
+    assert provider.call.call_count == 1  # not retried
+    # and should_abort is threaded to the provider
+    assert provider.call.call_args.kwargs["should_abort"] is wf.should_abort
+
+
 def test_call_with_retry_honors_retry_after(monkeypatch: pytest.MonkeyPatch) -> None:
     """A 429 carrying retry_after_s waits at least that long, not the (shorter)
     self-computed backoff."""

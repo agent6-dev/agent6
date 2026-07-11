@@ -275,6 +275,18 @@ def clear_steer_answer(run_dir: Path) -> None:
         (run_dir / STEER_ANSWER_FILE).unlink()
 
 
+def steer_answer_is_abort(run_dir: Path) -> bool:
+    """Non-blocking peek: True if a pending steer answer is a stop. Lets a long
+    streaming model turn bail immediately instead of only at the between-step
+    boundary. Does NOT consume the answer -- the boundary still handles it if the
+    stream ends first."""
+    try:
+        answer = (run_dir / STEER_ANSWER_FILE).read_text(encoding="utf-8").strip().lower()
+    except OSError:
+        return False
+    return answer in ("abort", "stop")
+
+
 # A steer can also be INITIATED from the TUI (the `s` key) without Ctrl-C: the
 # dashboard drops this marker, the run notices it at its next safe boundary (same
 # as the SIGINT flag), prompts via the modal, and clears it. Decoupled from

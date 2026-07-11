@@ -65,3 +65,18 @@ def test_make_steer_state_without_tty_uses_bridge(
     # The old null steer answered False here even with a request pending.
     request_steer(tmp_path)
     assert steer.requested() is True
+
+
+def test_steer_answer_is_abort_peeks_without_consuming(tmp_path: Path) -> None:
+    """The non-blocking stop peek: True only for abort/stop, and it never consumes
+    the answer (the between-step boundary still handles it)."""
+    from agent6.frontend.approval import steer_answer_is_abort
+
+    assert not steer_answer_is_abort(tmp_path)  # no answer file yet
+    write_steer_answer(tmp_path, "focus on the parser")
+    assert not steer_answer_is_abort(tmp_path)  # a steering instruction is not a stop
+    write_steer_answer(tmp_path, "abort")
+    assert steer_answer_is_abort(tmp_path)
+    write_steer_answer(tmp_path, "  STOP  ")
+    assert steer_answer_is_abort(tmp_path)
+    assert (tmp_path / "steer.answer").exists()  # peek did not consume it

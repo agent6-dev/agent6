@@ -1072,6 +1072,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                     steer_requested=steer_state.requested,
                     steer_clear=steer_state.clear,
                     steer_prompt=steer_state.prompt,
+                    should_abort=steer_state.abort_pending,
                     budget=budget,
                     # `agent6 ask` (under asks/) is not resumable -- `agent6 resume`
                     # only looks under runs/ -- so don't write an orphan snapshot.
@@ -1782,6 +1783,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
                     steer_requested=steer_state.requested,
                     steer_clear=steer_state.clear,
                     steer_prompt=steer_state.prompt,
+                    should_abort=steer_state.abort_pending,
                     budget=budget,
                     resume_state_path=snapshot_path,
                     mode=mode,

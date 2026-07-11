@@ -55,7 +55,9 @@ DEFAULT_MAX_TOKENS = 8192
 # 180s is generous: real reasoning bursts emit token-level deltas every few
 # seconds even mid-thinking. Three minutes of only heartbeats means wedged.
 _STREAM_IDLE_TIMEOUT_S = 180.0
-_STREAM_WATCHDOG_TICK_S = 5.0
+# The watchdog also polls should_abort each tick, so keep it short: this bounds
+# how long a Stop waits to interrupt a long in-flight turn.
+_STREAM_WATCHDOG_TICK_S = 1.0
 
 
 def _anthropic_version(deployment: str) -> tuple[str, str]:
@@ -108,6 +110,11 @@ class ProviderError(Exception):
         super().__init__(*args)
         self.status_code = status_code
         self.retry_after_s = retry_after_s
+
+
+class ProviderAborted(ProviderError):
+    """The operator stopped the run mid-call (a streaming turn was interrupted).
+    A distinct type so the loop ends the run instead of retrying like a fault."""
 
 
 def parse_retry_after(headers: Mapping[str, str]) -> float | None:
@@ -355,6 +362,7 @@ class AnthropicProvider:
         reasoning_effort: str | None = None,
         text_delta_callback: Callable[[str], None] | None = None,
         thinking_delta_callback: Callable[[str], None] | None = None,
+        should_abort: Callable[[], bool] | None = None,
     ) -> ProviderResponse:
         # ``reasoning_effort`` is the OpenAI-reasoning-model knob; Anthropic
         # extended thinking uses a different shape and is configured on the
@@ -455,6 +463,7 @@ class AnthropicProvider:
                         body=body,
                         text_delta_callback=text_delta_callback,
                         thinking_delta_callback=thinking_delta_callback,
+                        should_abort=should_abort,
                     )
                 except ProviderError as exc:
                     if _is_temperature_400(exc.status_code, str(exc), body):
@@ -558,6 +567,7 @@ class AnthropicProvider:
         body: dict[str, Any],
         text_delta_callback: Callable[[str], None] | None = None,
         thinking_delta_callback: Callable[[str], None] | None = None,
+        should_abort: Callable[[], bool] | None = None,
     ) -> ProviderResponse:
         """SSE streaming variant.
 
@@ -604,14 +614,15 @@ class AnthropicProvider:
 
         sse_lines: list[str] = []  # for transcript audit trail
 
-        # idle-since-last-data watchdog. ``last_data_at`` is updated only on
-        # meaningful SSE events; ``ping`` heartbeats do NOT count (they are
-        # exactly the bytes that mask an upstream hang from httpx2's read
-        # timeout). A background thread closes the response once the idle
-        # threshold is exceeded; the blocking ``iter_lines`` then raises and
-        # we surface a descriptive, retryable ProviderError.
+        # Background watchdog. It closes the response (unblocking the blocking
+        # ``iter_lines`` below, which then raises) in two cases: an idle-since-
+        # last-data hang past the threshold (``ping`` heartbeats do NOT count --
+        # they mask an upstream hang from httpx2's read timeout), or the operator
+        # stopping the run mid-turn (``should_abort``). The ``except`` turns each
+        # into a purpose-specific error.
         last_data_at = time.monotonic()
         idle_killed = threading.Event()
+        aborted = threading.Event()
         watchdog_stop = threading.Event()
         # Mutable holder so the watchdog can reach the response without racing
         # on assignment (the ``with`` body runs in a different frame).
@@ -619,10 +630,15 @@ class AnthropicProvider:
 
         def _watchdog() -> None:
             while not watchdog_stop.wait(_STREAM_WATCHDOG_TICK_S):
-                if time.monotonic() - last_data_at <= _STREAM_IDLE_TIMEOUT_S:
-                    continue
                 resp = resp_holder.get("resp")
                 if resp is None:
+                    continue
+                if should_abort is not None and should_abort():
+                    aborted.set()
+                    with contextlib.suppress(Exception):
+                        resp.close()
+                    return
+                if time.monotonic() - last_data_at <= _STREAM_IDLE_TIMEOUT_S:
                     continue
                 idle_killed.set()
                 with contextlib.suppress(Exception):
@@ -785,6 +801,9 @@ class AnthropicProvider:
                         )
         except httpx2.HTTPError as exc:
             watchdog_stop.set()
+            if aborted.is_set():
+                # The operator stopped the run; the watchdog closed the stream.
+                raise ProviderAborted("run stopped by operator") from exc
             if idle_killed.is_set():
                 # Convert the watchdog-induced HTTPError into a purpose-specific
                 # ProviderError so the loop's retry/quit path can log a
