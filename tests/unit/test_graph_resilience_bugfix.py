@@ -33,7 +33,7 @@ from agent6.graph.ipc import recv_message, send_message
 from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft
 from agent6.graph.server import _serve_connection  # pyright: ignore[reportPrivateUsage]
 from agent6.graph.storage import load_graph, node_md_path
-from agent6.run_layout import RunLayout
+from agent6.runs.layout import RunLayout
 
 
 def _layout(tmp_path: Path) -> RunLayout:

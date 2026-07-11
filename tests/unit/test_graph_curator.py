@@ -19,7 +19,7 @@ from agent6.graph.models import (
     TaskNodeDraft,
     UpdateStatusIntent,
 )
-from agent6.run_layout import RunLayout
+from agent6.runs.layout import RunLayout
 
 
 def _layout(tmp_path: Path) -> RunLayout:

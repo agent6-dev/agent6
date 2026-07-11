@@ -13,7 +13,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from agent6.run_id import RunIdError, resolve_run_id
+from agent6.runs.id import RunIdError, resolve_run_id
 from agent6.ui.bridge.approval import read_worker_pid, worker_is_alive
 from agent6.ui.cli._common import _runs_dir, _state_dir
 from agent6.ui.cli._console_view import ConsoleView
@@ -356,7 +356,7 @@ def _print_task_tree(run_dir: Path) -> None:
     visible for a headless run (no TUI #plan pane), the decompose case the user
     could not see. A single root (no decomposition) is not worth the block."""
     from agent6.graph.storage import load_graph  # noqa: PLC0415
-    from agent6.run_layout import RunLayout  # noqa: PLC0415
+    from agent6.runs.layout import RunLayout  # noqa: PLC0415
     from agent6.ui.cli._task_tree import task_tree_lines  # noqa: PLC0415
 
     with contextlib.suppress(Exception):

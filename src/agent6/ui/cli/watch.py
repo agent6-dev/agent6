@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 from agent6.machine import MachineError, MachineJournal, load_machine
-from agent6.run_id import RunIdError, resolve_run_id
+from agent6.runs.id import RunIdError, resolve_run_id
 from agent6.ui.cli._common import _machines_dir, _runs_dir
 from agent6.ui.cli.machine_cmds import _cmd_machine_watch
 from agent6.ui.cli.plan_watch import _cmd_watch as _watch_run

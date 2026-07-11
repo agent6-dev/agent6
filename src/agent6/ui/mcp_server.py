@@ -37,7 +37,7 @@ from agent6 import __version__
 from agent6.config import Config
 from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.graph.storage import load_graph
-from agent6.run_layout import RunLayout
+from agent6.runs.layout import RunLayout
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 from agent6.ui.viewmodel import run_mtime
 

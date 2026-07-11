@@ -58,8 +58,8 @@ from agent6.providers import (
     Provider,
     TranscriptSink,
 )
-from agent6.run_id import RunIdError, new_friendly_id, resolve_run_id
-from agent6.run_layout import RunLayout
+from agent6.runs.id import RunIdError, new_friendly_id, resolve_run_id
+from agent6.runs.layout import RunLayout
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.schema import UserQuestion
 from agent6.types import SandboxProfile

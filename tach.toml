@@ -43,8 +43,8 @@ depends_on = [
   "agent6.graph.client",
   "agent6.graph.models",
   "agent6.graph.storage",
-  "agent6.run_id",
-  "agent6.run_layout",
+  "agent6.runs.id",
+  "agent6.runs.layout",
   "agent6.ui.mcp_server",
   "agent6.machine",
   "agent6.verify_infer",
@@ -213,7 +213,7 @@ path = "agent6.graph.ulid"
 depends_on = []
 
 [[modules]]
-path = "agent6.run_id"
+path = "agent6.runs.id"
 depends_on = ["agent6._data", "agent6.graph.ulid"]
 
 [[modules]]
@@ -228,17 +228,17 @@ depends_on = [
   "agent6.config.layer",
   "agent6.tools",
   "agent6.graph.storage",
-  "agent6.run_layout",
+  "agent6.runs.layout",
   "agent6.ui.viewmodel",
 ]
 
 [[modules]]
-path = "agent6.run_layout"
+path = "agent6.runs.layout"
 depends_on = []
 
 [[modules]]
 path = "agent6.graph.storage"
-depends_on = ["agent6.graph.models", "agent6.portable", "agent6.run_layout"]
+depends_on = ["agent6.graph.models", "agent6.portable", "agent6.runs.layout"]
 
 [[modules]]
 path = "agent6.graph.curator"
@@ -254,7 +254,7 @@ depends_on = ["agent6.graph.ipc", "agent6.graph.models"]
 
 [[modules]]
 path = "agent6.graph.server"
-depends_on = ["agent6.graph.curator", "agent6.graph.ipc", "agent6.graph.models", "agent6.run_layout"]
+depends_on = ["agent6.graph.curator", "agent6.graph.ipc", "agent6.graph.models", "agent6.runs.layout"]
 
 [[modules]]
 path = "agent6.machine"

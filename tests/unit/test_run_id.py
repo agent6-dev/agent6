@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.run_id import RunIdError, new_friendly_id, resolve_run_id
+from agent6.runs.id import RunIdError, new_friendly_id, resolve_run_id
 
 _PATTERN = re.compile(r"^[a-z]+-[a-z]+-[0-9A-Z]{6}$")
 

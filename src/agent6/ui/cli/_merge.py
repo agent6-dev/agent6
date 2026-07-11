@@ -30,7 +30,7 @@ from agent6.git_ops import (
     squash_merge,
 )
 from agent6.portable import atomic_write
-from agent6.run_layout import RunLayout
+from agent6.runs.layout import RunLayout
 
 
 @dataclass(frozen=True, slots=True)
