@@ -282,9 +282,10 @@ def steer_answer_is_abort(run_dir: Path) -> bool:
     stream ends first."""
     try:
         answer = (run_dir / STEER_ANSWER_FILE).read_text(encoding="utf-8").strip().lower()
-    except OSError:
+    except (OSError, ValueError):  # missing/unreadable, or non-UTF-8: not an abort
         return False
-    return answer in ("abort", "stop")
+    # Same stop-words the between-step boundary honors (_normalize_steer_choice).
+    return answer in ("abort", "stop", "q", "quit")
 
 
 # A steer can also be INITIATED from the TUI (the `s` key) without Ctrl-C: the

@@ -79,4 +79,10 @@ def test_steer_answer_is_abort_peeks_without_consuming(tmp_path: Path) -> None:
     assert steer_answer_is_abort(tmp_path)
     write_steer_answer(tmp_path, "  STOP  ")
     assert steer_answer_is_abort(tmp_path)
+    write_steer_answer(tmp_path, "quit")
+    assert steer_answer_is_abort(tmp_path)  # same stop-words as the boundary
     assert (tmp_path / "steer.answer").exists()  # peek did not consume it
+    # A non-UTF-8 answer must read as "no abort", never raise -- a raising peek
+    # would kill the streaming watchdog thread (and its idle-hang detection).
+    (tmp_path / "steer.answer").write_bytes(b"\xff\xfe not utf8")
+    assert not steer_answer_is_abort(tmp_path)

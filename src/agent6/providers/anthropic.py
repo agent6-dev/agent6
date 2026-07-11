@@ -633,7 +633,13 @@ class AnthropicProvider:
                 resp = resp_holder.get("resp")
                 if resp is None:
                     continue
-                if should_abort is not None and should_abort():
+                should_stop = False
+                if should_abort is not None:
+                    # A poll failure must not kill the watchdog -- that would also
+                    # disable idle-hang detection. Treat it as "not aborting".
+                    with contextlib.suppress(Exception):
+                        should_stop = should_abort()
+                if should_stop:
                     aborted.set()
                     with contextlib.suppress(Exception):
                         resp.close()

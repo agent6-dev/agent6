@@ -1104,6 +1104,7 @@ class Workflow:
                     tool_calls=state.tool_calls,
                 )
             except ProviderAborted:
+                self.steer_clear()  # consume the stop; don't leave it on disk to re-read
                 self._log(f"LOOP: operator stopped the run mid-turn at iter {iteration}")
                 self._emit("run.end", reason="steer_abort", iterations=iteration, all_passed=False)
                 return RunResult(
