@@ -61,7 +61,13 @@ from agent6.frontend.approval import (
 from agent6.tui.conversation import ConversationScreen
 from agent6.tui.logview import LogScreen
 from agent6.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
-from agent6.tui.modals import ApprovalModal, QuestionModal, SteerModal, ToolCallDetailModal
+from agent6.tui.modals import (
+    ApprovalModal,
+    ConfirmModal,
+    QuestionModal,
+    SteerModal,
+    ToolCallDetailModal,
+)
 from agent6.tui.theme import PALETTE_CSS, open_theme_picker, setup_theme
 from agent6.viewmodel.state import (
     MAX_LOG_TAIL,
@@ -162,9 +168,15 @@ class Agent6TUI(App[int]):
             (MenuItem("Back", "to_hub", "Esc/q"), MenuItem("Quit", "quit_hub", "ctrl+q")),
         ),
         Menu(
-            "View",
+            "Run",
             (
                 MenuItem("Steer the run", "steer", "s"),
+                MenuItem("Stop the run", "stop", "x"),
+            ),
+        ),
+        Menu(
+            "View",
+            (
                 MenuItem("Next pane", "app.focus_next", "Tab"),
                 MenuItem("Prev pane", "app.focus_previous", "Shift+Tab"),
                 MenuItem("Maximize pane", "fullscreen", "f"),
@@ -189,7 +201,8 @@ class Agent6TUI(App[int]):
         # (like Esc) backs out TO the hub; only the root hub quits on q. Ctrl+Q is
         # the app-wide hard quit. (Esc on an open modal cancels it first -- the
         # modal consumes the key.)
-        Binding("s", "steer", "Steer/stop", show=True),
+        Binding("s", "steer", "Steer", show=True),
+        Binding("x", "stop", "Stop", show=True),
         Binding("l", "view_logs", "Full log", show=True),
         Binding("t", "view_transcript", "Conversation", show=True),
         # g=top / G=end, matching vi and the LogScreen/ConversationScreen viewers
@@ -384,6 +397,28 @@ class Agent6TUI(App[int]):
         clear_steer_answer(self.run_dir)  # discard any stale answer -> run waits for this one
         request_steer(self.run_dir)
         self.push_screen(SteerModal(), self._on_steer)
+
+    def action_stop(self) -> None:
+        """Stop the run (a separate action from steering). Confirms first, then
+        writes an abort over the file bridge; the run stops -- mid-response once
+        the abort watcher lands -- and can be resumed later."""
+        if self._run_ended:
+            return
+
+        def _confirmed(yes: bool | None) -> None:
+            if yes:
+                clear_steer_answer(self.run_dir)
+                request_steer(self.run_dir)
+                write_steer_answer(self.run_dir, "abort")
+
+        self.push_screen(
+            ConfirmModal(
+                "Stop the run?",
+                "It ends now and can be resumed later with `agent6 resume`.",
+                confirm_label="Stop",
+            ),
+            _confirmed,
+        )
 
     # --- command palette ---------------------------------------------
 

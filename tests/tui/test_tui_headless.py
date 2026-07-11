@@ -65,26 +65,28 @@ def test_question_modal_digit_in_freetext_is_not_hijacked() -> None:
     asyncio.run(scenario())
 
 
-def test_steer_modal_arrow_keys_move_focus() -> None:
-    """Arrow keys navigate the steer dialog like Tab, so the TUI is consistent."""
+def test_modal_arrow_keys_move_focus() -> None:
+    """Arrow keys move focus in a modal like Tab (the app.focus_next fix). Tested
+    on the button-only approval dialog, where no text field consumes the arrows."""
 
     class _Host(App[None]):
         def on_mount(self) -> None:
-            self.push_screen(SteerModal(), lambda _v: None)
+            self.push_screen(ApprovalModal("a", "allow?"), lambda _v: None)
 
     async def scenario() -> None:
         app = _Host()
         async with app.run_test() as pilot:
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, SteerModal)
-            assert isinstance(modal.focused, Input)  # starts on the instruction field
-            await pilot.press("down")  # arrow moves focus off the input, onto a button
+            assert isinstance(modal, ApprovalModal)
+            first = modal.focused
+            assert isinstance(first, Button)
+            await pilot.press("right")  # arrow moves focus to the other button
             await pilot.pause()
-            assert isinstance(modal.focused, Button)
-            await pilot.press("up")  # and back
+            assert isinstance(modal.focused, Button) and modal.focused is not first
+            await pilot.press("left")  # and back
             await pilot.pause()
-            assert isinstance(modal.focused, Input)
+            assert modal.focused is first
 
     asyncio.run(scenario())
 
@@ -244,13 +246,13 @@ def test_render_and_modals(tmp_path: Path) -> None:
             await pilot.pause()
             assert (tmp_path / "approvals" / "ap2.answer").read_text(encoding="utf-8") == "no"
 
-            # Steer modal: typed instruction + Enter is sent verbatim.
+            # Steer modal: a typed (multi-line) instruction, sent with Ctrl+S.
             app._handle_event(_ev(type="run.steer_requested", source="sigint"))
             app._tick()
             await pilot.pause()
             assert isinstance(app.screen, SteerModal)
             await pilot.press("f", "i", "x")
-            await pilot.press("enter")
+            await pilot.press("ctrl+s")
             await pilot.pause()
             assert (tmp_path / "steer.answer").read_text(encoding="utf-8") == "fix"
 
@@ -522,8 +524,30 @@ def test_dashboard_s_key_steers_without_ctrl_c(tmp_path: Path) -> None:
             assert steer_request_pending(tmp_path)  # marker dropped for the run
             assert isinstance(app.screen, SteerModal)  # steer box opened
             await pilot.press("g", "o")
-            await pilot.press("enter")
+            await pilot.press("ctrl+s")
             await pilot.pause()
             assert (tmp_path / "steer.answer").read_text(encoding="utf-8") == "go"
+
+    asyncio.run(scenario())
+
+
+def test_dashboard_stop_action_aborts_via_bridge(tmp_path: Path) -> None:
+    """The dedicated Stop action (x) confirms, then writes an abort over the file
+    bridge -- separate from steering, which never stops the run."""
+    from agent6.frontend.approval import steer_request_pending
+    from agent6.tui.modals import ConfirmModal
+
+    async def scenario() -> None:
+        (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+        app = Agent6TUI(tmp_path)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            app.action_stop()
+            await pilot.pause()
+            assert isinstance(app.screen, ConfirmModal)  # confirms before stopping
+            await pilot.press("y")  # confirm
+            await pilot.pause()
+            assert (tmp_path / "steer.answer").read_text(encoding="utf-8") == "abort"
+            assert steer_request_pending(tmp_path)
 
     asyncio.run(scenario())

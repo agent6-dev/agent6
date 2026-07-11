@@ -151,9 +151,10 @@ class ConfirmModal(ModalScreen[bool]):
 
 
 class SteerModal(ModalScreen[str]):
-    """Mid-run Ctrl-C prompt: continue, abort, or inject a steering instruction.
+    """Steer the run: inject a multi-line instruction, or continue as-is. Stopping
+    is a separate action -- this dialog never stops the run.
 
-    Result string: "" = continue, "abort" = stop, anything else = instruction.
+    Result string: "" = continue, anything else = the steering instruction.
     """
 
     DEFAULT_CSS = """
@@ -162,10 +163,10 @@ class SteerModal(ModalScreen[str]):
         width: 80%; max-width: 100; height: auto;
         border: round $accent; padding: 1 2; background: $surface;
     }
-    #steer-input { margin-top: 1; }
+    #steer-input { height: 8; margin-top: 1; border: round $primary; background: $surface; }
     #steer-buttons { height: auto; align: center middle; margin-top: 1; }
     #steer-buttons Button {
-        margin: 0 2; min-width: 14; height: 1; border: none;
+        margin: 0 2; min-width: 16; height: 1; border: none;
         background: transparent; color: $accent;
     }
     #steer-buttons Button:focus { background: $primary; color: $text; text-style: bold; }
@@ -173,6 +174,7 @@ class SteerModal(ModalScreen[str]):
 
     BINDINGS: ClassVar = [
         *_ARROW_NAV,
+        Binding("ctrl+s", "send", "Send", show=False),
         Binding("escape", "cont", "Continue", show=False),
     ]
 
@@ -180,27 +182,24 @@ class SteerModal(ModalScreen[str]):
         with Container(id="steer-box"):
             body = Text()
             body.append("Steer this run\n\n", style="bold")
-            body.append("Type an instruction and Send it, Continue as-is, or Stop the run.")
+            body.append("Type an instruction (multi-line) then Send it, or Continue as-is.")
             yield Static(body)
-            yield Input(placeholder="instruction (blank = continue)", id="steer-input")
+            yield TextArea(id="steer-input", soft_wrap=True)
             with Horizontal(id="steer-buttons"):
-                yield Button("Send", id="send", variant="primary")
+                yield Button("Send  (Ctrl+S)", id="send", variant="primary")
                 yield Button("Continue", id="continue", variant="success")
-                yield Button("Stop", id="abort", variant="error")
 
     def on_mount(self) -> None:
-        self.query_one("#steer-input", Input).focus()
+        self.query_one("#steer-input", TextArea).focus()
 
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        self.dismiss(event.value)
+    def _text(self) -> str:
+        return self.query_one("#steer-input", TextArea).text.strip()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "abort":
-            self.dismiss("abort")
-        elif event.button.id == "send":
-            self.dismiss(self.query_one("#steer-input", Input).value)
-        else:
-            self.dismiss("")
+        self.dismiss(self._text() if event.button.id == "send" else "")
+
+    def action_send(self) -> None:
+        self.dismiss(self._text())
 
     def action_cont(self) -> None:
         self.dismiss("")
