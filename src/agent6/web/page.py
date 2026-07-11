@@ -181,6 +181,13 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
 .notif-banner .nb-x { cursor: pointer; color: var(--muted); background: none; border: none; min-height: auto; padding: 0 4px; font-size: 16px; }
 .poke-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-top: 10px; }
 
+.overlay {
+  position: fixed; inset: 0; z-index: 60; padding: 16px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.55);
+}
+.overlay .card { max-height: 90vh; overflow: auto; }
+
 @media (max-width: 780px) {
   nav.tabs { display: flex; }
   main { padding: 12px 12px calc(var(--nav-h) + 24px); }
@@ -430,6 +437,31 @@ async function renderHub(focus) {
 }
 
 // --- run dashboard -----------------------------------------------------------
+// A multi-line steer dialog (browser prompt() is single-line). onResult(text|null):
+// the instruction to send (may be multi-line), or null to cancel. Steering never
+// stops the run -- that is the separate Stop button.
+function steerDialog(title, onResult) {
+  const back = el('div'); back.className = 'overlay';
+  const box = el('div', 'card'); box.style.width = 'min(680px, 92vw)';
+  box.appendChild(el('h2', null, title));
+  const ta = el('textarea', 'field'); ta.placeholder = 'instruction (blank = continue)';
+  ta.style.minHeight = '120px'; box.appendChild(ta);
+  const row = el('div', 'form-row');
+  const send = el('button', 'primary', 'Send'), cont = el('button', null, 'Continue'), cancel = el('button', null, 'Cancel');
+  row.appendChild(send); row.appendChild(cont); row.appendChild(cancel); box.appendChild(row);
+  back.appendChild(box); document.body.appendChild(back); ta.focus();
+  const close = (r) => { back.remove(); document.removeEventListener('keydown', onKey); onResult(r); };
+  function onKey(e) { if (e.key === 'Escape') close(null); }
+  document.addEventListener('keydown', onKey);
+  send.onclick = () => close(ta.value); cont.onclick = () => close(''); cancel.onclick = () => close(null);
+  back.onclick = (e) => { if (e.target === back) close(null); };
+}
+
+async function stopRun(base, label) {
+  if (!confirm('Stop ' + label + '? It ends now and can be resumed later.')) return;
+  try { await postJSON(base + '/steer', { text: 'abort' }); toast('stopping…'); } catch (e) { toast(e.message, true); }
+}
+
 // opts: { base, readOnly, title } — a draft (machine-create authoring log) is
 // watched read-only against /api/draft/<name>; a run is driveable at /api/run/<id>.
 function renderRun(id, opts) {
@@ -449,23 +481,23 @@ function renderRun(id, opts) {
   mk('tools', 'Tool calls', 'scroll');
   mk('log', 'Event log', 'scroll');
   mk('diff', 'Latest commit', 'scroll');
-  view.appendChild(grid);
-
-  if (!readOnly) {
-    const actions = el('div', 'row wrap'); actions.style.marginTop = '14px';
+  if (!readOnly) {  // controls at the TOP so Steer/Stop are reachable without scrolling
+    const actions = el('div', 'row wrap'); actions.style.marginBottom = '14px';
     const steerBtn = el('button', null, '↪ Steer');
-    steerBtn.onclick = async () => {
-      const text = prompt('Steer instruction (blank = continue, "abort" = stop):', '');
+    steerBtn.onclick = () => steerDialog('Steer this run', async (text) => {
       if (text === null) return;
       try { await postJSON('/api/run/' + encodeURIComponent(id) + '/steer', { text }); toast('steer sent'); } catch (e) { toast(e.message, true); }
-    };
+    });
+    const stopBtn = el('button', 'danger', '■ Stop');
+    stopBtn.onclick = () => stopRun('/api/run/' + encodeURIComponent(id), 'the run');
     const mergeBtn = el('button', null, '⑃ Merge');
     mergeBtn.onclick = async () => { try { const d = await postJSON('/api/run/' + encodeURIComponent(id) + '/merge', {}); toast(d.message || 'merged'); } catch (e) { toast(e.message, true); } };
     const tbtn = el('button', null, 'Transcript →');
     tbtn.onclick = () => location.hash = '#/transcript/' + encodeURIComponent(id);
-    actions.appendChild(steerBtn); actions.appendChild(mergeBtn); actions.appendChild(tbtn);
+    actions.appendChild(steerBtn); actions.appendChild(stopBtn); actions.appendChild(mergeBtn); actions.appendChild(tbtn);
     view.appendChild(actions);
   }
+  view.appendChild(grid);
 
   live = new EventSource(base + '/events');
   live.onmessage = ev => {
@@ -659,14 +691,13 @@ function renderMachine(name) {
   const bell = el('button', null, '🔔 Notifications');
   bell.onclick = enableNotifications;
   const steerBtn = el('button', null, '↪ Steer');
-  steerBtn.onclick = async () => {
-    const text = prompt('Steer the current agent state (blank = continue, "abort" = stop):', '');
+  steerBtn.onclick = () => steerDialog('Steer the current agent state', async (text) => {
     if (text === null) return;
     // cards._state is set each frame to the agent state currently rendered, so
     // the steer routes to that state, not whichever is newest at click time.
     const body = cards._state ? { text, state: cards._state } : { text };
     try { await postJSON(base + '/steer', body); toast('steer sent'); } catch (e) { toast(e.message, true); }
-  };
+  });
   controls.appendChild(bell); controls.appendChild(steerBtn);
   view.appendChild(controls);
 
