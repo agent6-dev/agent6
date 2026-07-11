@@ -3372,9 +3372,9 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: Path) -> 
     mistral-small repeating one failure nine times) gets a root-cause nudge at
     the 4th identical consecutive failure and one escalation at the 7th; the
     signature ignores cosmetic drift like line numbers."""
-    from agent6.workflows.loop import (  # pyright: ignore[reportPrivateUsage]
-        _NO_PROGRESS_ESCALATION,
-        _NO_PROGRESS_NUDGE,
+    from agent6.workflows.loop import (
+        _NO_PROGRESS_ESCALATION,  # pyright: ignore[reportPrivateUsage]
+        _NO_PROGRESS_NUDGE,  # pyright: ignore[reportPrivateUsage]
     )
 
     class ProviderStub:
@@ -3967,9 +3967,9 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: Path) -> None:
     grep tripping 'not valid JSON' repeatedly) is nudged, escalated, then
     stopped as reason=tool_error_stuck instead of looping to the cap
     (observed: kimi re-issuing malformed grep until timeout)."""
-    from agent6.workflows.loop import (  # pyright: ignore[reportPrivateUsage]
-        _TOOL_ERROR_ESCALATION,
-        _TOOL_ERROR_NUDGE,
+    from agent6.workflows.loop import (
+        _TOOL_ERROR_ESCALATION,  # pyright: ignore[reportPrivateUsage]
+        _TOOL_ERROR_NUDGE,  # pyright: ignore[reportPrivateUsage]
     )
 
     class ProviderStub:

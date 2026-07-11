@@ -24,6 +24,8 @@ RunReason = Literal[
     "provider_error",
     "metric_plateau",
     "verify_settled",
+    "no_progress",
+    "tool_error_stuck",
     "verify_command_unexecutable",
     "loop_guard_killed",
     "interactive_stop",

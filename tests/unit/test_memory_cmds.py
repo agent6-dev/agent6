@@ -9,9 +9,9 @@ from pathlib import Path
 import pytest
 
 from agent6.ui.cli.memory_cmds import (
-    _cmd_memory_add,
-    _cmd_memory_invalidate,
-    _cmd_memory_list,
+    _cmd_memory_add,  # pyright: ignore[reportPrivateUsage]
+    _cmd_memory_invalidate,  # pyright: ignore[reportPrivateUsage]
+    _cmd_memory_list,  # pyright: ignore[reportPrivateUsage]
 )
 
 

@@ -10,12 +10,12 @@ from pathlib import Path
 import pytest
 
 from agent6.ui.cli.skills_cmds import (
-    _cmd_skills_disable,
-    _cmd_skills_enable,
-    _cmd_skills_install,
-    _cmd_skills_list,
-    _cmd_skills_remove,
-    _cmd_skills_update,
+    _cmd_skills_disable,  # pyright: ignore[reportPrivateUsage]
+    _cmd_skills_enable,  # pyright: ignore[reportPrivateUsage]
+    _cmd_skills_install,  # pyright: ignore[reportPrivateUsage]
+    _cmd_skills_list,  # pyright: ignore[reportPrivateUsage]
+    _cmd_skills_remove,  # pyright: ignore[reportPrivateUsage]
+    _cmd_skills_update,  # pyright: ignore[reportPrivateUsage]
     resolved_skill_names_for_completion,
 )
 
@@ -203,7 +203,7 @@ class TestRemoveListComplete:
 class TestSkillsTaskPrefix:
     def test_prefix_contains_skill_and_unknown_errors(self, env: Path) -> None:
         from agent6.config.layer import load_effective
-        from agent6.ui.cli.run import _skills_task_prefix
+        from agent6.ui.cli.run import _skills_task_prefix  # pyright: ignore[reportPrivateUsage]
 
         src = _write_skill_file(env / "src" / "SKILL.md", "tidy")
         assert _cmd_skills_install(str(src), force=False) == 0
