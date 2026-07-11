@@ -94,7 +94,10 @@ def _build_wf(repo: Path, provider: MagicMock, **kwargs: Any) -> Workflow:
     dispatcher.dispatch.return_value = {"content": "hi\n"}
     return Workflow(
         root=repo,
-        config=MagicMock(prompt=MagicMock(system_prompt_file="")),
+        config=MagicMock(
+            prompt=MagicMock(system_prompt_file=""),
+            workflow=MagicMock(verify_command=(), require_verify_to_finish=False),
+        ),
         provider=provider,
         dispatcher=dispatcher,
         logger=_silent,

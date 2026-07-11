@@ -578,6 +578,13 @@ class WorkflowConfig(BaseModel):
     # Setting too low for slow legitimate tests will cause false-positive
     # failures, so leave at 600 unless the verify is reliably fast.
     verify_timeout_s: float = Field(gt=0.0, default=600.0)
+    # When true, finish_run is refused while the last verify is red (or a verify
+    # command is configured but was never run): the worker must get verify green
+    # or explicitly stop. Default false keeps finish_run always honorable, but
+    # even then a finish over a red verify is reported honestly (run.end
+    # all_passed=False -> "finished", never "passed"); this flag turns the honest
+    # signal into a hard gate for operators who want it.
+    require_verify_to_finish: bool = False
     # Optional. None means "no metric; ``run_metric_command`` is unavailable".
     metric: MetricConfig | None = None
 

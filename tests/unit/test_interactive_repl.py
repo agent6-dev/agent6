@@ -158,7 +158,10 @@ def test_after_auto_commit_default_continues() -> None:
 
     wf = Workflow(
         root=Path("/tmp"),
-        config=MagicMock(prompt=MagicMock(system_prompt_file="")),
+        config=MagicMock(
+            prompt=MagicMock(system_prompt_file=""),
+            workflow=MagicMock(verify_command=(), require_verify_to_finish=False),
+        ),
         provider=MagicMock(),
         dispatcher=MagicMock(),
         logger=lambda _m: None,
@@ -179,7 +182,10 @@ def test_after_auto_commit_field_is_overridable() -> None:
 
     wf = Workflow(
         root=Path("/tmp"),
-        config=MagicMock(prompt=MagicMock(system_prompt_file="")),
+        config=MagicMock(
+            prompt=MagicMock(system_prompt_file=""),
+            workflow=MagicMock(verify_command=(), require_verify_to_finish=False),
+        ),
         provider=MagicMock(),
         dispatcher=MagicMock(),
         logger=lambda _m: None,

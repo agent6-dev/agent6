@@ -31,7 +31,10 @@ def _silent(_: str) -> None:
 def _wf(**kw: Any) -> Workflow:
     defaults: dict[str, Any] = {
         "root": Path("/tmp"),
-        "config": MagicMock(prompt=MagicMock(system_prompt_file="")),
+        "config": MagicMock(
+            prompt=MagicMock(system_prompt_file=""),
+            workflow=MagicMock(verify_command=(), require_verify_to_finish=False),
+        ),
         "provider": MagicMock(),
         "dispatcher": MagicMock(),
         "logger": _silent,
@@ -58,7 +61,11 @@ def test_snapshot_persists_completion_scalars(tmp_path: Path) -> None:
     and load back, instead of resetting to their fresh-run defaults."""
     snap = tmp_path / "loop_state.json"
     config = SimpleNamespace(
-        workflow=SimpleNamespace(verify_command=(), metric=SimpleNamespace(goal="maximize"))
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            verify_command=(),
+            metric=SimpleNamespace(goal="maximize"),
+        )
     )
     wf = _wf(resume_state_path=snap, config=config)
     state = _LoopState(original_task="t", tool_calls=2)
@@ -106,7 +113,11 @@ def test_resume_seeds_state_from_snapshot_scalars() -> None:
     the loop saw the restored at-ceiling history (no early-finish rejection).
     """
     config = SimpleNamespace(
-        workflow=SimpleNamespace(verify_command=(), metric=SimpleNamespace(goal="maximize"))
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            verify_command=(),
+            metric=SimpleNamespace(goal="maximize"),
+        )
     )
     provider = MagicMock()
     provider.call.return_value = SimpleNamespace(
@@ -166,7 +177,9 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
     _git_repo(repo)
     snap = repo / "loop_state.json"
     config = SimpleNamespace(
-        workflow=SimpleNamespace(verify_command=(), metric=SimpleNamespace(goal=None))
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False, verify_command=(), metric=SimpleNamespace(goal=None)
+        )
     )
     provider = MagicMock()
     # Iter 1: a run_command tool_use (non-idempotent side effect).
@@ -295,7 +308,11 @@ def test_final_checkpoint_commits_dirty_worktree_on_gated_run(tmp_path: Path) ->
     repo = tmp_path / "repo"
     _git_repo(repo)
     config = SimpleNamespace(
-        workflow=SimpleNamespace(verify_command=("pytest", "-q"), metric=SimpleNamespace(goal=None))
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            verify_command=("pytest", "-q"),
+            metric=SimpleNamespace(goal=None),
+        )
     )
     wf = _wf(root=repo, config=config, mode="run")
     # Worker edited a file via run_command; never re-verified, never committed.
@@ -325,7 +342,11 @@ def test_final_checkpoint_noop_when_clean_or_not_run_mode(tmp_path: Path) -> Non
     repo = tmp_path / "repo"
     _git_repo(repo)
     config = SimpleNamespace(
-        workflow=SimpleNamespace(verify_command=("pytest",), metric=SimpleNamespace(goal=None))
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            verify_command=("pytest",),
+            metric=SimpleNamespace(goal=None),
+        )
     )
     head = sp.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True

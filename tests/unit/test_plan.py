@@ -398,7 +398,10 @@ def test_dispatcher_refuses_mutations_in_ask_mode(tmp_path: Path) -> None:
 def _wf(**kw: Any) -> Workflow:
     defaults: dict[str, Any] = {
         "root": Path("/tmp"),
-        "config": MagicMock(prompt=MagicMock(system_prompt_file="")),
+        "config": MagicMock(
+            prompt=MagicMock(system_prompt_file=""),
+            workflow=MagicMock(verify_command=(), require_verify_to_finish=False),
+        ),
         "provider": MagicMock(),
         "dispatcher": MagicMock(),
         "logger": _silent,

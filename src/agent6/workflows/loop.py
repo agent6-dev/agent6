@@ -282,6 +282,18 @@ _DAG_MUTATING_TOOLS = frozenset({"add_task", "update_task", "set_cursor"})
 # honoured. Only SUBTASKS gate -- the always-pending auto-root would deadlock.
 _TASK_FINISH_PATIENCE = 3
 
+# Opt-in hard finish gate (`require_verify_to_finish`): how many times to bounce a
+# finish_run over a red/stale verify before honouring it anyway (as an honest
+# all_passed=False "finished"). Bounded so a task that genuinely can't pass can't
+# pin the loop to the iteration cap.
+_VERIFY_FINISH_PATIENCE = 3
+_VERIFY_FINISH_GATE = (
+    "[harness] finish_run refused: the verify command is not green"
+    " (require_verify_to_finish is on). Run run_verify_command, fix what it"
+    " reports, and only call finish_run once it passes. If this task genuinely"
+    " cannot pass verify, say so and stop rather than finishing."
+)
+
 # surface-current-task: keep a small/weak worker on ONE task at a time. Each turn
 # the loop computes the current task -- the curator cursor when it still points at
 # an open subtask (the worker's explicit choice wins), else the first
@@ -671,6 +683,10 @@ class _LoopState:
     # Last verify result the panel grounds against (None = no verify yet).
     last_verify_ok: bool | None = None
     last_verify_tail: str = ""
+    # True once the tree has been edited since the last green verify (spans
+    # iterations, unlike the per-iteration edit_since_verify_pass). Makes a
+    # stale earlier pass not count as "currently green" for the finish gate.
+    edited_since_verify: bool = False
     # Degenerate-loop guard: a back-to-back streak of the same (tool, args)
     # signature. Reset on any change so a normal re-read after edits is fine.
     last_tool_signature: str | None = None
@@ -681,6 +697,7 @@ class _LoopState:
     plateau_nudges_used: int = 0
     metric_finish_nudges_used: int = 0
     task_finish_nudges_used: int = 0
+    verify_finish_nudges_used: int = 0
     plan_finish_nudged: bool = False
     # A turn that ends in a prose question with no tool_use is nudged ONCE to
     # call ask_user (or finish_run) instead of narrating; then silent_finish is
@@ -1250,6 +1267,7 @@ class Workflow:
                             # This verify validated the current tree; any earlier
                             # edit is now covered.
                             edit_since_verify_pass = False
+                            state.edited_since_verify = False
                         elif rc is not None:
                             verify_just_failed = True
                         if rc is not None:
@@ -1278,6 +1296,7 @@ class Workflow:
                         # Invalidate a same-turn earlier verify pass: the commit
                         # gate must not label this edited tree "verify passed".
                         edit_since_verify_pass = True
+                        state.edited_since_verify = True
                     if name in _DAG_MUTATING_TOOLS:
                         dag_mutated_this_iter = True  # snapshot once after the turn
                 except ToolError as exc:
@@ -1594,6 +1613,32 @@ class Workflow:
                         nudges_used=state.task_finish_nudges_used,
                     )
 
+            # Opt-in hard finish gate: refuse finish_run while verify is red/stale
+            # (bounded, so a genuinely-unpassable task can't pin the loop). The
+            # honest all_passed=False signal below applies whether or not this is
+            # on; this just gives the worker a few pushes to get green first.
+            if (
+                finish_signal is not None
+                and finish_kind == "finish_run"
+                and self.mode == "run"
+                and self._tree_is_verify_green(state) is False
+                and self.config.workflow.require_verify_to_finish
+                and state.verify_finish_nudges_used < _VERIFY_FINISH_PATIENCE
+            ):
+                state.verify_finish_nudges_used += 1
+                finish_signal = None
+                finish_payload = None
+                tool_results.append({"type": "text", "text": _VERIFY_FINISH_GATE})
+                self._log(
+                    f"  finish_run gated: verify not green (nudge"
+                    f" #{state.verify_finish_nudges_used}) at iter {iteration}"
+                )
+                self._emit(
+                    "loop.verify_finish.gated",
+                    iteration=iteration,
+                    nudges_used=state.verify_finish_nudges_used,
+                )
+
             if critic_text:
                 tool_results.append(
                     {
@@ -1841,7 +1886,16 @@ class Workflow:
             if finish_signal is not None:
                 self._log(f"LOOP: {finish_kind} called at iter {iteration}")
                 self._final_checkpoint(iteration)
-                self._emit_run_end_passed(reason=finish_kind, iterations=iteration)
+                # Honest finish: finish_planning is always a clean finish, but a
+                # finish_run over a red/stale verify is "finished", not "passed"
+                # -- all_passed reflects the actual verify state, never just "the
+                # model called finish_run".
+                if finish_kind == "finish_run" and self._tree_is_verify_green(state) is False:
+                    self._emit(
+                        "run.end", reason=finish_kind, iterations=iteration, all_passed=False
+                    )
+                else:
+                    self._emit_run_end_passed(reason=finish_kind, iterations=iteration)
                 return RunResult(
                     completed=True,
                     reason=finish_kind,
@@ -2426,6 +2480,16 @@ class Workflow:
         completed -- otherwise a finish_run-only ask/run reads ``tasks 0/1``."""
         self._pass_pending_root_tasks()
         self._emit("run.end", reason=reason, iterations=iterations, all_passed=True)
+
+    def _tree_is_verify_green(self, state: _LoopState) -> bool | None:
+        """Is the current tree in a verified-green state? None when no verify
+        command is configured (nothing to gate on); else True iff the last verify
+        was green AND nothing has been edited since. Grounds both the honest
+        finish signal and the opt-in hard finish gate, so 'passed' can never mean
+        'finished over a red or stale verify'."""
+        if not self.config.workflow.verify_command:
+            return None
+        return state.last_verify_ok is True and not state.edited_since_verify
 
     def _emit_graph_snapshot(self) -> None:
         """Emit the current task DAG so a live viewer (the TUI) can render it.

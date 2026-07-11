@@ -223,6 +223,7 @@ The security boundary. Profiles and the network model are specified in
 |---|---|---|
 | `verify_command` | `[]` | argv defining "a step succeeded" (run with no shell; wrap a pipeline as `["sh","-c","a && b"]`). **Optional**: when unset, `agent6 run`/`plan` infer one per run (AGENTS.md `## Verify command` section → repo manifests (package.json/Makefile/pyproject/Cargo/go.mod) → a cheap model call), inject it in-memory (never written to config), and print it. With none inferable, the run is *gateless* (per-step commits, no green gate). Set it to pin a deterministic one. |
 | `verify_timeout_s` | `600.0` | Per-call timeout for `verify_command` / `metric.command`. |
+| `require_verify_to_finish` | `false` | When true, `finish_run` is refused while the last verify is red (or a verify command is configured but never run): the worker must get verify green or explicitly stop. Bounded (a few nudges, then honoured). Independent of this flag, a finish over a red/stale verify is always reported honestly (`run.end all_passed=false` -> "finished", never "passed"). |
 
 ## `[review]`
 
