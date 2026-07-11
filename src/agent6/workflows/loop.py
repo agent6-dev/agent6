@@ -614,6 +614,11 @@ class Workflow:
     # summarise-and-restart. The marker travels the same file bridge as steer.
     compact_requested: Callable[[], bool] = field(default=lambda: False)
     compact_clear: Callable[[], None] = field(default=lambda: None)
+    # Operator "stop after this step": polled at each completed-iteration
+    # boundary (post tool results + auto-commit), ending the run cleanly there.
+    # The mid-turn immediate stop stays the steer "abort" answer.
+    stop_requested: Callable[[], bool] = field(default=lambda: False)
+    stop_clear: Callable[[], None] = field(default=lambda: None)
     # Polled DURING a streaming model call (not just between steps): True once the
     # operator has asked to stop, so a long reasoning turn aborts promptly.
     should_abort: Callable[[], bool] = field(default=lambda: False)
@@ -979,6 +984,21 @@ class Workflow:
             result = self._turn_stop_checks(state, turn)
             if result is not None:
                 return result
+            # Operator "stop after this step" (a front-end's stop.request
+            # marker): honored here at the completed-iteration boundary, so the
+            # step's tool results and auto-commit have all landed. The
+            # per-iteration snapshot is the resume point, as with an abort.
+            if self.stop_requested():
+                self.stop_clear()
+                self._log(f"LOOP: operator stop at the step boundary (iter {iteration})")
+                self._emit("run.end", reason="steer_abort", iterations=iteration, all_passed=False)
+                return RunResult(
+                    completed=False,
+                    reason="steer_abort",
+                    summary=f"operator stopped the run after step {iteration}",
+                    iterations=iteration,
+                    tool_calls=state.tool_calls,
+                )
             # Poll the steering flag between iterations. The operator can press
             # Ctrl-C once to drop a steering instruction into the conversation;
             # a second Ctrl-C within 2s raises KeyboardInterrupt and aborts.

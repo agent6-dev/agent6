@@ -80,6 +80,10 @@ def clear_pending_answers(run_dir: Path) -> None:
                     f.unlink()
     clear_steer_answer(run_dir)
     clear_steer_request(run_dir)
+    # A leftover stop/compact marker from the prior session would instantly
+    # re-stop (or re-compact) the fresh one.
+    clear_stop_request(run_dir)
+    clear_compact_request(run_dir)
     if not frontend_is_live(run_dir):  # only drop a STALE pid (hard-killed front-end)
         clear_frontend_pid(run_dir)
 
@@ -373,6 +377,27 @@ def steer_request_pending(run_dir: Path) -> bool:
 def clear_steer_request(run_dir: Path) -> None:
     with contextlib.suppress(FileNotFoundError):
         (run_dir / STEER_REQUEST_FILE).unlink()
+
+
+STOP_REQUEST_FILE = "stop.request"
+
+
+def request_stop(run_dir: Path) -> None:
+    """Front-end "stop after this step": drop a marker the run polls at each
+    completed-iteration boundary and honors by ending the run cleanly there
+    (the finished step's tool results and auto-commit land first). The
+    immediate stop stays the steer "abort" answer, which interrupts mid-turn."""
+    with contextlib.suppress(OSError):
+        (run_dir / STOP_REQUEST_FILE).write_text("", encoding="utf-8")
+
+
+def stop_request_pending(run_dir: Path) -> bool:
+    return (run_dir / STOP_REQUEST_FILE).exists()
+
+
+def clear_stop_request(run_dir: Path) -> None:
+    with contextlib.suppress(FileNotFoundError):
+        (run_dir / STOP_REQUEST_FILE).unlink()
 
 
 COMPACT_REQUEST_FILE = "compact.request"

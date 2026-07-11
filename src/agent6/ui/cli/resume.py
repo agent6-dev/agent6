@@ -50,10 +50,12 @@ from agent6.ui.bridge.approval import (
     clear_away_mode,
     clear_compact_request,
     clear_pending_answers,
+    clear_stop_request,
     clear_worker_pid,
     compact_request_pending,
     request_steer,
     session_allow_set,
+    stop_request_pending,
     write_steer_answer,
     write_worker_pid,
 )
@@ -591,6 +593,8 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
                     # pattern as steer, honored at the next pre-call boundary.
                     compact_requested=lambda: compact_request_pending(layout.run_dir),
                     compact_clear=lambda: clear_compact_request(layout.run_dir),
+                    stop_requested=lambda: stop_request_pending(layout.run_dir),
+                    stop_clear=lambda: clear_stop_request(layout.run_dir),
                     should_abort=steer_state.abort_pending,
                     should_interrupt=steer_state.requested,
                     budget=budget,

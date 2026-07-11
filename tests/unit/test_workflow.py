@@ -2303,6 +2303,76 @@ def test_compact_request_forces_a_tier2_restart() -> None:
     assert wf._maybe_compact(small) is False  # pyright: ignore[reportPrivateUsage]
 
 
+def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: Path) -> None:
+    """A front-end's stop.request ("stop after this step") ends the run at the
+    completed-iteration boundary -- after the step's tool results land -- with
+    the resumable steer_abort shape, and consumes the marker."""
+    from agent6.events import EventSink
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            del kwargs
+            self.calls += 1
+            tid = f"t{self.calls}"
+            return ProviderResponse(
+                text="working",
+                tool_uses=({"id": tid, "name": "noop", "input": {}},),
+                stop_reason="tool_use",
+                input_tokens=1,
+                output_tokens=1,
+                cache_read_tokens=0,
+                cache_creation_tokens=0,
+                raw={
+                    "content": [
+                        {"type": "text", "text": "working"},
+                        {"type": "tool_use", "id": tid, "name": "noop", "input": {}},
+                    ]
+                },
+            )
+
+    class DispatcherStub:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+            del name, raw_input
+            return {"ok": True}
+
+    provider = ProviderStub()
+    pending = {"stop": True}
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False, verify_command=("true",), metric=None
+        ),
+        prompt=SimpleNamespace(decompose=False),
+    )
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        provider=provider,
+        dispatcher=DispatcherStub(),
+        events=EventSink(tmp_path / "logs.jsonl"),
+        stop_requested=lambda: pending["stop"],
+        stop_clear=lambda: pending.__setitem__("stop", False),
+        max_iterations=30,
+        loop_guard_kill_threshold=0,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK: x"}]}]
+    with patch("agent6.workflows.loop.commit_all", return_value="abc1234567890"):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="system",
+            messages=messages,
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+        )
+    assert result.reason == "steer_abort"  # the resumable stopped shape
+    assert "stopped the run after step 1" in result.summary
+    assert provider.calls == 1  # the step completed; no second turn started
+    assert pending["stop"] is False  # the marker was consumed
+
+
 def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: Path) -> None:
     """Integration: a tier-2 restart mid-run wipes the focus banner, and the loop's
     `if self._maybe_compact(messages): state.surfaced_task_id = None` edge makes the
