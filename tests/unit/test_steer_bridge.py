@@ -75,12 +75,12 @@ def test_steer_answer_is_abort_peeks_without_consuming(tmp_path: Path) -> None:
     assert not steer_answer_is_abort(tmp_path)  # no answer file yet
     write_steer_answer(tmp_path, "focus on the parser")
     assert not steer_answer_is_abort(tmp_path)  # a steering instruction is not a stop
-    write_steer_answer(tmp_path, "abort")
-    assert steer_answer_is_abort(tmp_path)
-    write_steer_answer(tmp_path, "  STOP  ")
-    assert steer_answer_is_abort(tmp_path)
-    write_steer_answer(tmp_path, "quit")
-    assert steer_answer_is_abort(tmp_path)  # same stop-words as the boundary
+    write_steer_answer(tmp_path, "stop")
+    # Even "stop" is a steer instruction, not a stop -- the Stop button writes
+    # "abort", and the between-step boundary stops only on "abort". Consistency.
+    assert not steer_answer_is_abort(tmp_path)
+    write_steer_answer(tmp_path, "  ABORT  ")
+    assert steer_answer_is_abort(tmp_path)  # exactly the Stop contract, case/space-insensitive
     assert (tmp_path / "steer.answer").exists()  # peek did not consume it
     # A non-UTF-8 answer must read as "no abort", never raise -- a raising peek
     # would kill the streaming watchdog thread (and its idle-hang detection).
