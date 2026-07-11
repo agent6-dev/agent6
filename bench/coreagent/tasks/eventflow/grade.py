@@ -36,10 +36,10 @@ GROUPS: dict[str, list[tuple[str, str]]] = {
     "parser_validation": [
         (
             "reject_3dp",
-            'import contextlib\n'
-            'ok = False\n'
+            "import contextlib\n"
+            "ok = False\n"
             'try: ev("2026-01-02T00:00:00|a|x|1.234")\n'
-            'except ValueError: ok = True\n'
+            "except ValueError: ok = True\n"
             "assert ok",
         ),
         (
@@ -165,8 +165,7 @@ GROUPS: dict[str, list[tuple[str, str]]] = {
         ),
         (
             "cents_padded",
-            'lines = report.top_users({"a": 305})\n'
-            'assert lines[0] == "a 3.05", lines',
+            'lines = report.top_users({"a": 305})\nassert lines[0] == "a 3.05", lines',
         ),
         (
             "top_n_respects_config",
@@ -210,6 +209,7 @@ def main() -> int:
             code = PRELUDE + "\n" + snippet
             proc = subprocess.run(
                 [sys.executable, "-c", code],
+                check=False,
                 cwd=worktree,
                 capture_output=True,
                 text=True,

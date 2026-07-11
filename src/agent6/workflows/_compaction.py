@@ -33,7 +33,8 @@ ELISION_PREFIX = "<elided by context compaction"
 ELISION_PLACEHOLDER = (
     "<elided by context compaction: this tool_result has been replaced "
     "with this short marker to keep the loop's cumulative input bounded. "
-    "Re-call the tool with the same args if you still need the content.>"
+    "If you still need it, re-read only the part you need with a targeted "
+    "read_file offset/limit; do not re-issue the identical call.>"
 )
 
 # Gist placeholders share ELISION_PREFIX (idempotency walks key on it) but are
@@ -74,8 +75,9 @@ def elision_placeholder(tool_name: str, tool_input: Any) -> str:
     described = f"{tool_name} {hint}".rstrip()
     return (
         f"{ELISION_PREFIX}: the result of {described} was replaced with this "
-        f"short marker to keep the loop's cumulative input bounded. Re-call "
-        f"{tool_name} with the same args if you still need the content.>"
+        f"short marker to keep the loop's cumulative input bounded. If you "
+        f"still need it, re-read only the part you need ({tool_name} with a "
+        f"targeted offset/limit); do not re-issue the identical call.>"
     )
 
 
@@ -125,8 +127,8 @@ def elision_gist_placeholder(path: str, gist: str) -> str:
     """Tier-1 placeholder that keeps a distilled gist of the elided read."""
     return (
         f"{ELISION_GIST_PREFIX}: the result of read_file {path} was replaced "
-        f"by this distilled gist; re-call read_file with the same args only "
-        f"if the gist is not enough.\ngist: {gist}>"
+        f"by this distilled gist; if the gist is not enough, re-read only "
+        f"the part you need (read_file with a targeted offset/limit).\ngist: {gist}>"
     )
 
 

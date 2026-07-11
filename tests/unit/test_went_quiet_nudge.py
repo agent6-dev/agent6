@@ -132,6 +132,10 @@ def test_went_quiet_nudges_then_succeeds(tmp_path: Path) -> None:
     provider = MagicMock()
     provider.call.side_effect = [
         _empty_resp(),
+        # early prose finishes on an untouched tree bounce twice off the
+        # no-work gate before one is honored
+        _resp_text("done"),
+        _resp_text("done"),
         _resp_text("done"),
     ]
     wf = _build_wf(repo, provider, went_quiet_max_nudges=2)
@@ -139,12 +143,11 @@ def test_went_quiet_nudges_then_succeeds(tmp_path: Path) -> None:
 
     assert result.completed is True
     assert result.reason == "silent_finish"
-    assert provider.call.call_count == 2
+    assert provider.call.call_count == 4
     last_args = provider.call.call_args_list[-1]
     final_messages: list[dict[str, Any]] = last_args.kwargs.get("messages") or last_args.args[1]
     nudges = _nudge_blocks(final_messages)
-    assert len(nudges) == 1
-    assert "empty" in nudges[0].lower()
+    assert any("empty" in n.lower() for n in nudges)
 
 
 def test_starvation_injects_nudge_without_suppressing_reasoning(tmp_path: Path) -> None:
@@ -160,21 +163,22 @@ def test_starvation_injects_nudge_without_suppressing_reasoning(tmp_path: Path) 
     provider.call.side_effect = [
         _starved_resp(),
         _resp_text("done"),
+        _resp_text("done"),
+        _resp_text("done"),
     ]
     wf = _build_wf(repo, provider, went_quiet_max_nudges=2)
     result = wf.run("do something")
 
     assert result.completed is True
-    assert provider.call.call_count == 2
+    assert provider.call.call_count == 4
     # The loop must never drive reasoning_effort itself anymore.
     efforts = [c.kwargs.get("reasoning_effort") for c in provider.call.call_args_list]
-    assert efforts == [None, None]
+    assert efforts == [None, None, None, None]
     # The starvation-specific nudge is still injected.
     last_args = provider.call.call_args_list[-1]
     final_messages: list[dict[str, Any]] = last_args.kwargs.get("messages") or last_args.args[1]
     nudges = _nudge_blocks(final_messages)
-    assert len(nudges) == 1
-    assert "stop reasoning" in nudges[0].lower()
+    assert any("stop reasoning" in n.lower() for n in nudges)
 
 
 def test_went_quiet_drops_empty_assistant_turn(tmp_path: Path) -> None:
@@ -184,7 +188,12 @@ def test_went_quiet_drops_empty_assistant_turn(tmp_path: Path) -> None:
     _init_repo(repo)
 
     provider = MagicMock()
-    provider.call.side_effect = [_empty_resp(), _resp_text("done")]
+    provider.call.side_effect = [
+        _empty_resp(),
+        _resp_text("done"),
+        _resp_text("done"),
+        _resp_text("done"),
+    ]
     wf = _build_wf(repo, provider, went_quiet_max_nudges=1)
     wf.run("task")
 

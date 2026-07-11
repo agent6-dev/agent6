@@ -599,6 +599,12 @@ class WorkflowConfig(BaseModel):
     # all_passed=False -> "finished", never "passed"); this flag turns the honest
     # signal into a hard gate for operators who want it.
     require_verify_to_finish: bool = False
+    # Opt-in: bounce the FIRST finish_run over a green verify once, with a
+    # directive to re-check every spec requirement (the committed suite may
+    # cover a subset). Targets the finish-on-green-but-incomplete failure
+    # mode measured on bench/coreagent's eventflow task; costs about one
+    # extra turn per run when on. See docs/config.md for the measurements.
+    spec_recheck_on_finish: bool = False
     # Optional. None means "no metric; ``run_metric_command`` is unavailable".
     metric: MetricConfig | None = None
 

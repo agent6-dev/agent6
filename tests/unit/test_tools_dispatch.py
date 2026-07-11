@@ -169,6 +169,18 @@ def test_raw_arguments_sentinel_gives_a_clear_json_error(tmp_path: Path) -> None
         d.dispatch("grep", {"_raw_arguments": '{"pattern": "\\d+"'})
 
 
+def test_runaway_raw_arguments_name_the_truncation(tmp_path: Path) -> None:
+    # A huge unterminated argument string is a runaway generation cut off by
+    # the output-token ceiling (observed: kimi-k2.7 emitting a 117KB grep
+    # pattern of one alternation repeated). "Resend" feedback makes such a
+    # model regenerate the same runaway; the error must name the truncation
+    # and direct a much smaller call instead.
+    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    runaway = '{"pattern": "' + "setup_show|" * 3000
+    with pytest.raises(ToolError, match="cut off mid-generation"):
+        d.dispatch("grep", {"_raw_arguments": runaway})
+
+
 def test_ask_user_routes_to_questioner(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     seen: dict[str, object] = {}

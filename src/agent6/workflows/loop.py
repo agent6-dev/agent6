@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import shutil
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -164,6 +165,21 @@ from agent6.workflows._nudges import (
     MEMORY_FLIP_NUDGE as _MEMORY_FLIP_NUDGE,
 )
 from agent6.workflows._nudges import (
+    NO_PROGRESS_ESCALATE_AFTER as _NO_PROGRESS_ESCALATE_AFTER,
+)
+from agent6.workflows._nudges import (
+    NO_PROGRESS_ESCALATION as _NO_PROGRESS_ESCALATION,
+)
+from agent6.workflows._nudges import (
+    NO_PROGRESS_NUDGE as _NO_PROGRESS_NUDGE,
+)
+from agent6.workflows._nudges import (
+    NO_PROGRESS_NUDGE_AFTER as _NO_PROGRESS_NUDGE_AFTER,
+)
+from agent6.workflows._nudges import (
+    NO_PROGRESS_STOP_AFTER as _NO_PROGRESS_STOP_AFTER,
+)
+from agent6.workflows._nudges import (
     PLAN_BUDGET_NUDGE as _PLAN_BUDGET_NUDGE,
 )
 from agent6.workflows._nudges import (
@@ -185,7 +201,34 @@ from agent6.workflows._nudges import (
     RUN_BUDGET_NUDGE_GATELESS as _RUN_BUDGET_NUDGE_GATELESS,
 )
 from agent6.workflows._nudges import (
+    SILENT_NO_WORK_NUDGE as _SILENT_NO_WORK_NUDGE,
+)
+from agent6.workflows._nudges import (
+    SILENT_NO_WORK_PATIENCE as _SILENT_NO_WORK_PATIENCE,
+)
+from agent6.workflows._nudges import (
+    SPEC_RECHECK_NUDGE as _SPEC_RECHECK_NUDGE,
+)
+from agent6.workflows._nudges import (
     TASK_FINISH_PATIENCE as _TASK_FINISH_PATIENCE,
+)
+from agent6.workflows._nudges import (
+    TOOL_ERROR_ESCALATE_AFTER as _TOOL_ERROR_ESCALATE_AFTER,
+)
+from agent6.workflows._nudges import (
+    TOOL_ERROR_ESCALATION as _TOOL_ERROR_ESCALATION,
+)
+from agent6.workflows._nudges import (
+    TOOL_ERROR_NUDGE as _TOOL_ERROR_NUDGE,
+)
+from agent6.workflows._nudges import (
+    TOOL_ERROR_NUDGE_AFTER as _TOOL_ERROR_NUDGE_AFTER,
+)
+from agent6.workflows._nudges import (
+    TOOL_ERROR_STOP_AFTER as _TOOL_ERROR_STOP_AFTER,
+)
+from agent6.workflows._nudges import (
+    VERIFY_BROKEN_NUDGE as _VERIFY_BROKEN_NUDGE,
 )
 from agent6.workflows._nudges import (
     VERIFY_FINISH_GATE as _VERIFY_FINISH_GATE,
@@ -204,6 +247,15 @@ from agent6.workflows._nudges import (
 )
 from agent6.workflows._nudges import (
     ends_with_question as _ends_with_question,
+)
+from agent6.workflows._nudges import (
+    tool_error_signature as _tool_error_signature,
+)
+from agent6.workflows._nudges import (
+    verify_did_not_run as _verify_did_not_run,
+)
+from agent6.workflows._nudges import (
+    verify_failure_signature as _verify_failure_signature,
 )
 from agent6.workflows._panel import Decision as ReviewDecision
 from agent6.workflows._panel import ReviewContext, render_findings
@@ -257,6 +309,12 @@ from agent6.workflows._toolset import build_readonly_review_tools
 from agent6.workflows._toolset import (
     tool_definitions as _tool_definitions,
 )
+
+# A re-served tool result must exceed this many bytes before the back-to-back
+# dedupe elides it; below it the stub would not save enough to matter and the
+# small results (finish/dag echoes) should pass through verbatim.
+_DEDUPE_MIN_CHARS = 500
+
 
 if TYPE_CHECKING:
     from agent6.events import EventSink
@@ -414,6 +472,13 @@ class _LoopState:
     # Last verify result the panel grounds against (None = no verify yet).
     last_verify_ok: bool | None = None
     last_verify_tail: str = ""
+    # No-progress spiral guard: consecutive verify failures sharing one
+    # normalized signature. Green verify or a new signature resets the streak
+    # (and the nudge allowance -- a NEW stuck point may nudge again).
+    verify_fail_signature: str = ""
+    verify_fail_streak: int = 0
+    verify_broken_warned: bool = False
+    no_progress_nudges_used: int = 0
     # True once the tree has been edited since the last green verify (spans
     # iterations, unlike the per-iteration edit_since_verify_pass). Makes a
     # stale earlier pass not count as "currently green" for the finish gate.
@@ -422,6 +487,20 @@ class _LoopState:
     # signature. Reset on any change so a normal re-read after edits is fine.
     last_tool_signature: str | None = None
     repeat_streak: int = 0
+    # Byte-for-byte content of the immediately-previous tool result, to elide
+    # a back-to-back identical re-serve (a spiral re-reading the same 60KB
+    # file). None until the first result lands.
+    last_tool_result_content: str | None = None
+    # Tool-error spiral: consecutive same-signature tool errors, reset by any
+    # tool success or a different error.
+    last_tool_error_sig: str | None = None
+    tool_error_streak: int = 0
+    tool_error_nudges_used: int = 0
+    # argv[0] of the last erroring run_command, so a repeated-tool-error spiral
+    # can tell whether the failing tool exists on the host (a sandbox-
+    # reachability problem) vs a real error.
+    last_error_command_binary: str = ""
+    sandbox_reachability_warned: bool = False
     repeat_warning_emitted_at: int = 0
     # Intervention nudge counters (each capped by a module-level patience const).
     went_quiet_nudges_used: int = 0
@@ -429,6 +508,9 @@ class _LoopState:
     metric_finish_nudges_used: int = 0
     task_finish_nudges_used: int = 0
     verify_finish_nudges_used: int = 0
+    spec_recheck_done: bool = False
+    ever_edited: bool = False
+    silent_no_work_nudges_used: int = 0
     plan_finish_nudged: bool = False
     # A turn that ends in a prose question with no tool_use is nudged ONCE to
     # call ask_user (or finish_run) instead of narrating; then silent_finish is
@@ -513,6 +595,8 @@ class _TurnState:
     critic_text: str | None = None
     plateau_should_stop: bool = False
     verify_settled_stop: bool = False
+    no_progress_stop: bool = False
+    tool_error_stop: bool = False
 
 
 @dataclass
@@ -969,6 +1053,7 @@ class Workflow:
             self._turn_notices(state, turn)
             self._turn_metric_plateau(state, turn)
             self._turn_verify_settled(state, turn)
+            self._turn_no_progress(state, turn)
             messages.append({"role": "user", "content": turn.tool_results})
             # Snapshot AFTER the executed tools (assistant turn + tool_results
             # are now in `messages`) so a crash before iteration N+1's pre-call
@@ -1168,13 +1253,52 @@ class Workflow:
                 state.last_tool_signature = sig
                 state.repeat_streak = 1
             self._emit("loop.tool.call", name=name, iteration=turn.iteration)
+            served = None
             try:
                 result = self.dispatcher.dispatch(name, tool_input)
                 content = json.dumps(result, ensure_ascii=False)
                 self._note_tool_effects(state, turn, name, result)
+                # Dedupe a back-to-back identical (name, args) call whose result
+                # bytes are unchanged: serve a short stub instead of re-sending
+                # the full payload, so a re-read spiral cannot grow the context.
+                # The call still dispatched (a CHANGED result serves in full);
+                # only the redundant re-serve is elided.
+                if (
+                    state.repeat_streak >= 2
+                    and content == state.last_tool_result_content
+                    and len(content) > _DEDUPE_MIN_CHARS
+                ):
+                    served = json.dumps(
+                        {
+                            "repeated": (
+                                f"Identical to your previous {name} call --"
+                                f" result unchanged ({len(content)} bytes elided)."
+                                " Do not re-issue the same call; if you need"
+                                " different data, change the arguments, otherwise"
+                                " act on what you already have."
+                            )
+                        }
+                    )
+                state.last_tool_result_content = content
+                # A successful tool call is progress: clear any error spiral.
+                state.tool_error_streak = 0
+                state.last_tool_error_sig = None
+                state.tool_error_nudges_used = 0
             except ToolError as exc:
                 content = json.dumps({"error": str(exc)})
+                state.last_tool_result_content = content
                 self._log(f"  tool_error: {name}: {exc}")
+                if name == "run_command":
+                    argv = tool_input.get("argv") or []
+                    state.last_error_command_binary = str(argv[0]) if argv else ""
+                sig = _tool_error_signature(name, str(exc))
+                if sig == state.last_tool_error_sig:
+                    state.tool_error_streak += 1
+                else:
+                    state.last_tool_error_sig = sig
+                    state.tool_error_streak = 1
+                    state.tool_error_nudges_used = 0
+                self._maybe_tool_error_ladder(state, turn)
             except OperatorCommandUnexecutable as exc:
                 return self._unexecutable_abort(
                     exc, iteration=turn.iteration, tool_calls=state.tool_calls
@@ -1183,11 +1307,61 @@ class Workflow:
                 {
                     "type": "tool_result",
                     "tool_use_id": tu_id,
-                    "content": _cap_tool_result(content, tool_name=name),
+                    "content": _cap_tool_result(
+                        served if served is not None else content, tool_name=name
+                    ),
                 }
             )
             self._capture_finish(turn, name, tool_input)
         return None
+
+    def _note_verify_result(
+        self, state: _LoopState, turn: _TurnState, result: dict[str, Any]
+    ) -> None:
+        """Verify bookkeeping: pass/fail flags, the grounding tail, and the
+        no-progress streak (consecutive fails sharing one signature)."""
+        rc = result.get("returncode")
+        if rc == 0:
+            turn.verify_just_passed = True
+            if state.last_verify_ok is False:
+                turn.verify_flipped_green = True
+            # This verify validated the current tree; any earlier
+            # edit is now covered.
+            turn.edit_since_verify_pass = False
+            state.edited_since_verify = False
+        elif rc is not None:
+            turn.verify_just_failed = True
+            state.verify_ever_failed = True
+            # A verify that exited instantly without running any tests (runner
+            # absent) is a broken verify, not a real failure: flag it once so
+            # the model does not "fix" working code or finish unchecked.
+            if not state.verify_broken_warned and _verify_did_not_run(
+                str(result.get("stdout", "")),
+                str(result.get("stderr", "")),
+                float(result.get("duration_s", 0.0) or 0.0),
+            ):
+                state.verify_broken_warned = True
+                turn.tool_results.append({"type": "text", "text": _VERIFY_BROKEN_NUDGE})
+                self._emit("loop.verify_broken.nudge", iteration=turn.iteration)
+        if rc is None:
+            return
+        state.last_verify_ok = rc == 0
+        tail = f"{result.get('stdout', '')}\n{result.get('stderr', '')}"
+        state.last_verify_tail = tail.strip()[-2000:]
+        if rc == 0:
+            state.verify_fail_signature = ""
+            state.verify_fail_streak = 0
+            state.no_progress_nudges_used = 0
+            return
+        sig = _verify_failure_signature(
+            str(result.get("stdout", "")), str(result.get("stderr", ""))
+        )
+        if sig == state.verify_fail_signature:
+            state.verify_fail_streak += 1
+        else:
+            state.verify_fail_signature = sig
+            state.verify_fail_streak = 1
+            state.no_progress_nudges_used = 0
 
     def _note_tool_effects(
         self, state: _LoopState, turn: _TurnState, name: str, result: dict[str, Any]
@@ -1197,22 +1371,7 @@ class Workflow:
         verify-pass presumes correctness, verify-red is the hard signal),
         manual metric samples, tree edits, and DAG mutations."""
         if name == "run_verify_command":
-            rc = result.get("returncode")
-            if rc == 0:
-                turn.verify_just_passed = True
-                if state.last_verify_ok is False:
-                    turn.verify_flipped_green = True
-                # This verify validated the current tree; any earlier
-                # edit is now covered.
-                turn.edit_since_verify_pass = False
-                state.edited_since_verify = False
-            elif rc is not None:
-                turn.verify_just_failed = True
-                state.verify_ever_failed = True
-            if rc is not None:
-                state.last_verify_ok = rc == 0
-                tail = f"{result.get('stdout', '')}\n{result.get('stderr', '')}"
-                state.last_verify_tail = tail.strip()[-2000:]
+            self._note_verify_result(state, turn, result)
         elif name == "run_metric_command":
             if turn.verify_just_passed:
                 turn.metric_after_verify_pass = True
@@ -1231,6 +1390,7 @@ class Workflow:
             state.memory_written = True
         if name in ("apply_edit", "apply_patch"):
             turn.edited = True
+            state.ever_edited = True
             # Invalidate a same-turn earlier verify pass: the commit
             # gate must not label this edited tree "verify passed".
             turn.edit_since_verify_pass = True
@@ -1447,6 +1607,7 @@ class Workflow:
         self._gate_metric_early_finish(state, turn)
         self._gate_task_finish(state, turn)
         self._gate_verify_green(state, turn)
+        self._gate_spec_recheck(state, turn)
         self._gate_memory_finish(state, turn)
 
     def _gate_before_finish_critic(
@@ -1594,6 +1755,26 @@ class Workflow:
             iteration=turn.iteration,
             nudges_used=state.verify_finish_nudges_used,
         )
+
+    def _gate_spec_recheck(self, state: _LoopState, turn: _TurnState) -> None:
+        """Opt-in one-shot bounce of a finish over a GREEN verify: re-check the
+        spec, the suite may be a subset (see _nudges rationale). A never-green
+        or red tree is the verify gates' territory, not this one's."""
+        if not (
+            turn.finish_signal is not None
+            and turn.finish_kind == "finish_run"
+            and self.mode == "run"
+            and self.config.workflow.spec_recheck_on_finish
+            and not state.spec_recheck_done
+            and self._tree_is_verify_green(state) is True
+        ):
+            return
+        state.spec_recheck_done = True
+        turn.finish_signal = None
+        turn.finish_payload = None
+        turn.tool_results.append({"type": "text", "text": _SPEC_RECHECK_NUDGE})
+        self._log(f"  finish_run gated: spec recheck at iter {turn.iteration}")
+        self._emit("loop.spec_recheck.gated", iteration=turn.iteration)
 
     def _gate_memory_finish(self, state: _LoopState, turn: _TurnState) -> None:
         """Memory write-side backstop: defer the first finish_run ONCE when the
@@ -1785,11 +1966,127 @@ class Workflow:
                 idle=state.verify_settled_idle,
             )
 
-    def _turn_stop_checks(self, state: _LoopState, turn: _TurnState) -> RunResult | None:
+    def _maybe_tool_error_ladder(self, state: _LoopState, turn: _TurnState) -> None:
+        """Nudge/escalate/stop on a streak of identical tool errors (a call
+        that keeps failing the same way -- malformed args, bad path). Fires
+        inside the dispatch loop, only on a plain run-mode streak; metric runs
+        defer to their own machinery, mirroring the verify no-progress guard."""
+        non_metric_run = self.mode == "run" and _metric_goal(self.config.workflow.metric) is None
+        if not non_metric_run:
+            return
+        streak = state.tool_error_streak
+        if streak >= _TOOL_ERROR_STOP_AFTER and state.tool_error_nudges_used >= 2:
+            turn.tool_error_stop = True
+            return
+        reach = self._sandbox_unreachable_note(state)
+        if streak >= _TOOL_ERROR_ESCALATE_AFTER and state.tool_error_nudges_used == 1:
+            state.tool_error_nudges_used = 2
+            turn.tool_results.append({"type": "text", "text": _TOOL_ERROR_ESCALATION + reach})
+            self._emit("loop.tool_error.nudge", iteration=turn.iteration, streak=streak, level=2)
+        elif streak >= _TOOL_ERROR_NUDGE_AFTER and state.tool_error_nudges_used == 0:
+            state.tool_error_nudges_used = 1
+            turn.tool_results.append({"type": "text", "text": _TOOL_ERROR_NUDGE + reach})
+            self._emit("loop.tool_error.nudge", iteration=turn.iteration, streak=streak, level=1)
+
+    def _sandbox_unreachable_note(self, state: _LoopState) -> str:
+        """When the spiraling command is a tool that exists on the host but keeps
+        failing in the jail, name it as a sandbox-reachability problem and how to
+        fix it (the model relays this to the operator). Empty when it does not
+        apply. No tool list: the sole signal is host-existence of this binary."""
+        binary = state.last_error_command_binary
+        if not binary or shutil.which(binary) is None:
+            return ""
+        if not state.sandbox_reachability_warned:
+            state.sandbox_reachability_warned = True
+            self._emit("loop.sandbox_tool_unreachable", binary=binary)
+            self._log(f"LOOP: sandbox tool unreachable: {binary} exists on host, fails in jail")
+        return (
+            f"\n\nNOTE: `{binary}` is installed on this machine but keeps failing"
+            " INSIDE agent6's sandbox -- this is almost certainly a sandbox-"
+            " reachability problem (a per-user or version-manager install whose"
+            " config/toolchain the sandbox does not expose), NOT a problem with"
+            " agent6 or your code. Tell the operator to either fix the install so"
+            f" `{binary}` runs from a clean environment, run agent6 with"
+            " --dangerously-disable-sandbox, or add the tool's real directory to"
+            " sandbox.extra_read_paths. Do not keep probing for it."
+        )
+
+    def _turn_no_progress(self, state: _LoopState, turn: _TurnState) -> None:
+        """Inject the spiral-guard nudges: fires only on a PLAIN run-mode
+        streak of identical verify failures (see _nudges rationale). Metric
+        runs are excluded: repeated verify failures while searching for an
+        optimization are expected there, and the metric plateau / early-finish
+        / ceiling machinery owns when such a run stops -- firing here would
+        truncate the budgeted search and end the run completed=false."""
+        non_metric_run = self.mode == "run" and _metric_goal(self.config.workflow.metric) is None
+        if not non_metric_run or not turn.verify_just_failed:
+            return
+        streak = state.verify_fail_streak
+        if streak >= _NO_PROGRESS_STOP_AFTER and state.no_progress_nudges_used >= 2:
+            # Both nudges delivered and the identical failure persists: stop in
+            # the stop checks rather than burn the rest of the budget.
+            turn.no_progress_stop = True
+            return
+        if streak >= _NO_PROGRESS_ESCALATE_AFTER and state.no_progress_nudges_used == 1:
+            state.no_progress_nudges_used = 2
+            turn.tool_results.append({"type": "text", "text": _NO_PROGRESS_ESCALATION})
+            self._emit("loop.no_progress.nudge", iteration=turn.iteration, streak=streak, level=2)
+        elif streak >= _NO_PROGRESS_NUDGE_AFTER and state.no_progress_nudges_used == 0:
+            state.no_progress_nudges_used = 1
+            turn.tool_results.append({"type": "text", "text": _NO_PROGRESS_NUDGE})
+            self._emit("loop.no_progress.nudge", iteration=turn.iteration, streak=streak, level=1)
+
+    def _turn_stop_checks(  # noqa: PLR0911 - a flat precedence ladder of terminal checks
+        self, state: _LoopState, turn: _TurnState
+    ) -> RunResult | None:
         """Terminal checks, run after the turn's tool_results are in
         ``messages`` and the post-tools snapshot is written, in precedence
         order: verify-settled stop, metric-plateau stop, loop-guard kill, then
         honouring a finish call that survived the gates."""
+        if turn.tool_error_stop:
+            self._log(
+                f"LOOP: tool_error stop at iter {turn.iteration} (streak {state.tool_error_streak})"
+            )
+            self._final_checkpoint(turn.iteration)
+            self._emit(
+                "run.end", reason="tool_error_stuck", iterations=turn.iteration, all_passed=False
+            )
+            return RunResult(
+                completed=False,
+                reason="tool_error_stuck",
+                summary=(
+                    "stopped: the same tool call failed"
+                    f" {state.tool_error_streak} times with the identical error"
+                    " despite two harness interventions; resume with a different"
+                    " approach"
+                ),
+                iterations=turn.iteration,
+                tool_calls=state.tool_calls,
+            )
+        if turn.no_progress_stop:
+            self._log(
+                f"LOOP: no_progress stop at iter {turn.iteration}"
+                f" (streak {state.verify_fail_streak})"
+            )
+            self._final_checkpoint(turn.iteration)
+            self._emit(
+                "run.end",
+                reason="no_progress",
+                iterations=turn.iteration,
+                all_passed=False,
+            )
+            return RunResult(
+                completed=False,
+                reason="no_progress",
+                summary=(
+                    "stopped: the same verify failure persisted through"
+                    f" {state.verify_fail_streak} consecutive runs despite two"
+                    " harness interventions; resume with a new approach or a"
+                    " bigger budget"
+                ),
+                iterations=turn.iteration,
+                tool_calls=state.tool_calls,
+            )
         if turn.verify_settled_stop:
             self._log(
                 f"LOOP: verify_settled at iter {turn.iteration} (idle {state.verify_settled_idle})"
@@ -2065,6 +2362,35 @@ class Workflow:
         it through the same gates as an explicit finish_run. Returns None (with
         a nudge appended to ``messages``) when a gate sends the worker back to
         work; the silent_finish RunResult once every gate lets it through."""
+        # An EARLY prose turn on an untouched tree is a stall, not an
+        # implicit finish (observed: kimi answering a SWE-bench problem in
+        # prose at iteration 2, ending the run patchless). Bounded to the
+        # first iterations: an engaged run that read its fill and answers in
+        # prose is a legitimate implicit finish and must not be taxed.
+        if (
+            self.mode == "run"
+            and iteration <= 3
+            and not state.ever_edited
+            and not state.verify_ever_passed
+            and state.silent_no_work_nudges_used < _SILENT_NO_WORK_PATIENCE
+        ):
+            state.silent_no_work_nudges_used += 1
+            messages.append(
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": _SILENT_NO_WORK_NUDGE}],
+                }
+            )
+            self._log(
+                f"  silent finish rejected: no work yet (nudge"
+                f" #{state.silent_no_work_nudges_used}) at iter {iteration}"
+            )
+            self._emit(
+                "loop.silent_no_work.nudge",
+                iteration=iteration,
+                nudges_used=state.silent_no_work_nudges_used,
+            )
+            return None
         # Same before_finish critic gate as an explicit finish_run tool_use.
         # Without this, an agent that stops emitting tool calls bypasses
         # critic review entirely. The rejection cap is shared with the

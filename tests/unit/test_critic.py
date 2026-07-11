@@ -191,7 +191,11 @@ def test_before_finish_critic_revokes_finish_and_injects_critique() -> None:
     worker = MagicMock()
     worker.call.side_effect = [
         _resp_with_tool_use("attempting to finish", _finish_tool_use("tu1", "wrap up")),
-        _resp("ok, looks good"),  # silent_finish second iter
+        # iters 2-3: early prose on an untouched tree is bounced by the
+        # (free, pre-critic) no-work gate; the critic sees the iter-4 prose.
+        _resp("ok, looks good"),
+        _resp("ok, looks good"),
+        _resp("ok, looks good"),
     ]
     critic = MagicMock()
     critic.call.side_effect = [
@@ -225,8 +229,9 @@ def test_before_finish_critic_revokes_finish_and_injects_critique() -> None:
         root_task_id=None,
     )
 
-    # Loop ran two iterations: first finish was revoked, second was silent.
-    assert result.iterations == 2
+    # First finish revoked by the critic; the early prose turns bounce off
+    # the no-work gate (no critic spend); the iter-4 prose exits.
+    assert result.iterations == 4
     assert result.reason == "silent_finish"
     assert critic.call.call_count == 2
     # The user message appended after iter 1 must carry the critic block.
@@ -404,6 +409,9 @@ def test_silent_finish_critic_revokes_and_continues() -> None:
     # iter 2: silent_finish, critic SATISFIED -> loop exits.
     worker = MagicMock()
     worker.call.side_effect = [
+        # iters 1-2 bounce off the pre-critic no-work gate
+        _resp("still nothing done"),
+        _resp("still nothing done"),
         _resp("I think I'm done already"),
         _resp("ok now actually done"),
     ]
@@ -430,12 +438,12 @@ def test_silent_finish_critic_revokes_and_continues() -> None:
         start_iteration=1,
         root_task_id=None,
     )
-    assert result.iterations == 2
+    assert result.iterations == 4
     assert result.reason == "silent_finish"
     assert result.summary == "ok now actually done"
     assert critic.call.call_count == 2
-    # critique injected as a user msg at index 2.
-    iter1_user_msg = messages[2]
+    # critique injected as a user msg after the iter-3 assistant turn.
+    iter1_user_msg = messages[6]
     assert iter1_user_msg["role"] == "user"
     text_blocks = [b for b in iter1_user_msg["content"] if b.get("type") == "text"]
     assert any("[critic]" in b["text"] for b in text_blocks)
@@ -447,6 +455,9 @@ def test_silent_finish_critic_cap_lets_finish_through() -> None:
     critic must hit the rejection cap and accept the finish."""
     worker = MagicMock()
     worker.call.side_effect = [
+        # iters 1-2 bounce off the pre-critic no-work gate
+        _resp("done v0a"),
+        _resp("done v0b"),
         _resp("done v1"),
         _resp("done v2"),
         _resp("done v3"),
@@ -472,7 +483,7 @@ def test_silent_finish_critic_cap_lets_finish_through() -> None:
         start_iteration=1,
         root_task_id=None,
     )
-    assert result.iterations == 3
+    assert result.iterations == 5
     assert result.reason == "silent_finish"
     assert result.summary == "done v3"
     assert critic.call.call_count == 3
@@ -508,7 +519,8 @@ def test_silent_finish_critic_off_bypasses() -> None:
             root_task_id=None,
         )
         assert result.reason == "silent_finish"
-        assert result.iterations == 1
+        # the (critic-independent) early no-work gate bounces twice first
+        assert result.iterations == 3
         # periodic/on_verify_fail don't fire on silent_finish either -
         # critic was wired but had no trigger condition matched.
         assert critic.call.call_count == 0, f"mode={mode} called critic unexpectedly"

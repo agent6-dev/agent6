@@ -63,6 +63,7 @@ def test_snapshot_persists_completion_scalars(tmp_path: Path) -> None:
     config = SimpleNamespace(
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
             verify_command=(),
             metric=SimpleNamespace(goal="maximize"),
         )
@@ -115,6 +116,7 @@ def test_resume_seeds_state_from_snapshot_scalars() -> None:
     config = SimpleNamespace(
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
             verify_command=(),
             metric=SimpleNamespace(goal="maximize"),
         )
@@ -178,7 +180,10 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
     snap = repo / "loop_state.json"
     config = SimpleNamespace(
         workflow=SimpleNamespace(
-            require_verify_to_finish=False, verify_command=(), metric=SimpleNamespace(goal=None)
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=(),
+            metric=SimpleNamespace(goal=None),
         )
     )
     provider = MagicMock()
@@ -310,6 +315,7 @@ def test_final_checkpoint_commits_dirty_worktree_on_gated_run(tmp_path: Path) ->
     config = SimpleNamespace(
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
             verify_command=("pytest", "-q"),
             metric=SimpleNamespace(goal=None),
         )
@@ -344,6 +350,7 @@ def test_final_checkpoint_noop_when_clean_or_not_run_mode(tmp_path: Path) -> Non
     config = SimpleNamespace(
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
             verify_command=("pytest",),
             metric=SimpleNamespace(goal=None),
         )

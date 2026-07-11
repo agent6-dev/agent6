@@ -72,13 +72,13 @@ def _user_msg_with_tool_results(*contents: str) -> dict[str, Any]:
 
 
 def test_compact_skips_tool_result_smaller_than_placeholder() -> None:
-    # Eliding a tool_result already smaller than the 201-char placeholder would
+    # Eliding a tool_result already smaller than the 263-char placeholder would
     # GROW cumulative size, not shrink it. Such blocks must be left intact.
     from agent6.workflows._compaction import (
         ELISION_PLACEHOLDER as PLACEHOLDER,
     )
 
-    tiny = "x" * 50  # < len(placeholder) == 201
+    tiny = "x" * 50  # < len(placeholder) == 263
     big = "y" * 5000
     # Oldest-first; keep_recent=2 keeps the last two, and the final message is
     # exempt, so the eligible blocks are the two in the first message.
@@ -91,7 +91,7 @@ def test_compact_skips_tool_result_smaller_than_placeholder() -> None:
     # its eligible sibling is elided as normal.
     assert msgs[0]["content"][0]["content"] == tiny
     assert "elided" in msgs[0]["content"][1]["content"]
-    assert len(PLACEHOLDER) == 201
+    assert len(PLACEHOLDER) == 263
 
 
 def test_compact_noop_when_under_threshold() -> None:

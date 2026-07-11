@@ -575,6 +575,22 @@ class ToolDispatcher:
         # schema error about "_raw_arguments extra fields" would misdirect the
         # model; tell it plainly the JSON was malformed so it resends in one shot.
         if set(raw_input) == {"_raw_arguments"}:
+            raw = raw_input.get("_raw_arguments")
+            raw_len = len(raw) if isinstance(raw, str) else 0
+            if raw_len > 20_000:
+                # Not a formatting slip: the arguments ran away (observed:
+                # kimi-k2.7 emitting a 117KB grep pattern of one alternation
+                # repeated until the output-token ceiling cut the JSON string
+                # mid-way). "Resend" feedback makes such a model regenerate
+                # the same runaway; name the actual problem instead.
+                raise ToolError(
+                    f"{name}: the arguments were cut off mid-generation"
+                    f" ({raw_len // 1000} KB, truncated before the JSON closed)."
+                    " Do NOT resend the same call. Emit a much smaller call:"
+                    " short literal values only (e.g. a grep pattern under 200"
+                    " characters, one or two alternations), and split broad"
+                    " searches into several small ones."
+                )
             raise ToolError(
                 f"{name}: the arguments were not valid JSON. Resend the call with a"
                 " single valid JSON object of arguments."

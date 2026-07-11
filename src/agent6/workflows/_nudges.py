@@ -9,6 +9,140 @@ injection; this module owns the tuning values and the words.
 
 from __future__ import annotations
 
+import hashlib
+import re
+
+# No-progress spiral guard (run mode). Observed on mistral-small (2026-07-11):
+# nine consecutive verify failures with the IDENTICAL normalized error while
+# the worker kept editing the same file, spending a third of the run's budget
+# repeating one failure. The guard fires only on that pathological pattern
+# (N consecutive fails, one signature), so a healthy run never pays for it:
+# a green verify or a DIFFERENT failure (real progress through the error
+# list) resets the streak. Signatures ignore line numbers, addresses, and
+# durations so cosmetic drift between otherwise-identical failures does not
+# defeat the detector.
+NO_PROGRESS_NUDGE_AFTER = 4
+NO_PROGRESS_ESCALATE_AFTER = 7
+# Third stage: measured (guard2 waves, n=14) -- the detector fired on exactly
+# the doomed runs and never on a healthy one, but nudged runs still burned to
+# the iteration cap at score 0. Ten consecutive identical failures (both
+# nudges delivered and unheeded) is past any observed recovery; stop the run
+# honestly instead of burning the remaining budget on a proven non-strategy.
+NO_PROGRESS_STOP_AFTER = 10
+
+# Tool-error spiral guard (run mode). Distinct from the verify streak: this
+# counts consecutive tool calls that raise the SAME error (name + error text
+# with digits stripped, so a runaway that varies its args but trips the same
+# "arguments not valid JSON" / "pattern too long" error still accumulates).
+# Observed on SWE-bench: kimi re-issuing malformed grep calls until the run
+# timed out. Any successful tool call, or a different error, resets it.
+TOOL_ERROR_NUDGE_AFTER = 3
+TOOL_ERROR_ESCALATE_AFTER = 5
+TOOL_ERROR_STOP_AFTER = 8
+
+TOOL_ERROR_NUDGE = (
+    "[harness tool-error] The same tool call has failed several times in a"
+    " row with the SAME error. The call itself is wrong (malformed arguments,"
+    " a bad path, or the wrong tool), not the code. Stop repeating it: re-read"
+    " the tool's requirements, fix the call shape, or use a different tool."
+)
+TOOL_ERROR_ESCALATION = (
+    "[harness tool-error] The identical tool error persists. Do not send this"
+    " call again. Switch approach entirely: a smaller/simpler call, a"
+    " different tool, or proceed with what you already have."
+)
+
+
+# A verify command that exited nonzero almost instantly with one of these
+# signatures did not RUN the tests -- the runner itself is absent/broken.
+# Treating that as a normal red misleads the model into "fixing" passing code
+# or finishing on an unchecked patch (observed on SWE-bench sympy testbeds:
+# `python -m pytest` with pytest absent, exit 1 in 0.0s, across three models).
+_VERIFY_DEAD_SIGNATURES = (
+    "no module named pytest",
+    "no module named _pytest",
+    "no module named nose",
+    "command not found",
+    "no such file or directory",
+    "can't open file",
+    "is not recognized as an internal or external command",
+    "modulenotfounderror",
+    "importerror while loading conftest",
+)
+
+VERIFY_BROKEN_NUDGE = (
+    "[harness verify-broken] The verify command exited immediately WITHOUT"
+    " running any tests -- its output indicates the test runner itself is"
+    " missing or misconfigured, not that tests failed. Do NOT treat this as a"
+    " real test failure and do NOT change working code to satisfy it. Find the"
+    " project's actual test command yourself (check setup.cfg / tox.ini /"
+    " pyproject for the test config, a bin/test or runtests script, or the"
+    " right module) and run it with run_command, then continue."
+)
+
+
+def verify_did_not_run(stdout_tail: str, stderr_tail: str, duration_s: float) -> bool:
+    """True when a FAILED verify almost certainly did not execute any tests
+    (the runner is absent), so the loop can flag it instead of passing the
+    blind failure to the model. Requires a fast exit to avoid flagging a real
+    suite that happens to import-error deep in a long run."""
+    if duration_s > 3.0:
+        return False
+    blob = f"{stdout_tail}\n{stderr_tail}".lower()
+    return any(sig in blob for sig in _VERIFY_DEAD_SIGNATURES)
+
+
+def tool_error_signature(name: str, error_text: str) -> str:
+    """Stable signature of a tool error, insensitive to varying numbers so a
+    runaway that changes its args but trips the same error still matches."""
+    return f"{name}:{re.sub(r'[0-9]+', '#', error_text)[:200]}"
+
+
+NO_PROGRESS_NUDGE = (
+    "[harness no-progress] The verify command has failed several times in a"
+    " row with the SAME error; your edits are not changing the outcome. Stop"
+    " editing. Re-read the failure output above and the code path it"
+    " exercises, state the root cause in one sentence, then make ONE fix"
+    " aimed at that cause, not at the symptom."
+)
+
+NO_PROGRESS_ESCALATION = (
+    "[harness no-progress] The identical verify failure persists after"
+    " further edits. Step back: re-read the relevant part of the spec and"
+    " the failing test. If earlier edits may have made things worse, restore"
+    " a file's last committed state (read it with `git show HEAD:<path>`,"
+    " then apply_edit it back) and make one minimal fix for the stated root"
+    " cause."
+)
+
+_SIG_NOISE = re.compile(r"line \d+|0x[0-9a-fA-F]+|\d+\.\d+s\b|:\d+:|/tmp/\S+|\bin \d+(\.\d+)?s\b")
+
+
+def verify_failure_signature(stdout_tail: str, stderr_tail: str) -> str:
+    """Stable hash of a verify failure, insensitive to cosmetic drift."""
+    tail = f"{stdout_tail}\n{stderr_tail}".strip()[-800:]
+    digest = hashlib.md5(
+        _SIG_NOISE.sub("#", tail).encode("utf-8", "replace"), usedforsecurity=False
+    )
+    return digest.hexdigest()
+
+
+# Opt-in spec-recheck finish gate ([workflow].spec_recheck_on_finish).
+# Measured motivation (bench/coreagent eventflow, 2026-07-11): when the
+# committed suite covers only a subset of the spec, models finish on the
+# first green verify with requirements unmet; injecting a re-check directive
+# via a skill raised scores on every model tested (haiku 0.907->0.960 with
+# the variance collapsing to zero). This gate is the same mechanism as a
+# one-turn native bounce: the FIRST finish_run over a green verify is
+# revoked once with the directive below. Off by default until the A/B
+# quantifies the cost on tasks whose suite IS the full spec.
+SPEC_RECHECK_NUDGE = (
+    "[harness spec-check] Verify is green, but the test suite may cover only"
+    " part of the requirements. Before finishing: re-read the task and its"
+    " spec, check EACH stated requirement against your implementation, and"
+    " fix anything unmet. Then call finish_run again."
+)
+
 # Plan-mode wrap-up: nudge once the budget fraction drops below the threshold,
 # or after this many iterations without having finished (or even started) a
 # plan at all. A plan rarely needs more than a handful of reads.
@@ -82,6 +216,24 @@ PLAN_BUDGET_NUDGE = (
     " finish_planning immediately with the best plan you have — a concise, even"
     " rough, plan that is actually delivered is far more useful than an"
     " exhaustive one you never emit. Do not call any other tool first."
+)
+
+
+# Silent finish before any work (run mode). Observed on SWE-bench with
+# kimi-k2.7: the model answered the problem statement in PROSE at iteration
+# 2 (a chat-tuned habit), no edit or verify had happened, and the loop
+# accepted it as an implicit finish -- the whole run ended patchless with
+# the budget unspent. An EARLY prose turn (first iterations) on an untouched
+# tree is a stall, not a finish; steer back to the tools a bounded number of
+# times. Later prose finishes stay honored: a run that read its fill and
+# answers in prose is the legitimate implicit-finish path.
+SILENT_NO_WORK_PATIENCE = 2
+SILENT_NO_WORK_NUDGE = (
+    "[harness] You replied with prose, but no tool call, and you have not"
+    " changed anything yet. Text alone cannot finish this task. Use your"
+    " tools: read_file/grep/outline to explore, apply_edit or apply_patch to"
+    " change code, run_verify_command to check. If you are truly blocked,"
+    " call finish_run and say why."
 )
 
 

@@ -58,6 +58,15 @@ def _state(**kw: Any) -> Any:
     return _LoopState(**defaults)
 
 
+def _turn(**kw: Any) -> Any:
+    """A bare _TurnState for direct turn-phase method tests."""
+    from agent6.workflows.loop import _TurnState  # pyright: ignore[reportPrivateUsage]
+
+    defaults: dict[str, Any] = {"iteration": 1, "resp": None}
+    defaults.update(kw)
+    return _TurnState(**defaults)
+
+
 def _resp(text: str = "ok") -> ProviderResponse:
     return ProviderResponse(
         text=text,
@@ -482,6 +491,7 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(tmp_path: Path) -> None:
     config = SimpleNamespace(
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
         ),
@@ -544,6 +554,7 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: Path) -
     config = SimpleNamespace(
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
         ),
@@ -613,7 +624,10 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(tmp_path
     provider = ProviderStub()
     config = SimpleNamespace(
         workflow=SimpleNamespace(
-            require_verify_to_finish=False, verify_command=("true",), metric=None
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=("true",),
+            metric=None,
         ),
         prompt=SimpleNamespace(decompose=False),
     )
@@ -656,6 +670,7 @@ def test_worker_max_tokens_starvation_backoff() -> None:
     metric_cfg = SimpleNamespace(
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
         )
@@ -672,7 +687,10 @@ def test_worker_max_tokens_starvation_backoff() -> None:
     plain = _wf(
         config=SimpleNamespace(
             workflow=SimpleNamespace(
-                require_verify_to_finish=False, verify_command=("true",), metric=None
+                require_verify_to_finish=False,
+                spec_recheck_on_finish=False,
+                verify_command=("true",),
+                metric=None,
             )
         )
     )
@@ -723,6 +741,7 @@ def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: Path) -> None
     config = SimpleNamespace(
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
         )
@@ -791,6 +810,7 @@ def test_drive_loop_finishes_on_metric_plateau(tmp_path: Path) -> None:
     config = SimpleNamespace(
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
         ),
@@ -869,6 +889,7 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: Path) -> None:
     config = SimpleNamespace(
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
         ),
@@ -960,6 +981,7 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: Pa
     config = SimpleNamespace(
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
         ),
@@ -1160,6 +1182,7 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: Path) -> None:
     config = SimpleNamespace(
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
         )
@@ -1216,6 +1239,7 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(tmp_path: P
     config = SimpleNamespace(
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
         )
@@ -1253,6 +1277,7 @@ def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: Path) -> None:
     config = SimpleNamespace(
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
         )
@@ -1302,6 +1327,7 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: Path) -> Non
     config = SimpleNamespace(
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
         )
@@ -1406,6 +1432,7 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: Path) -> N
     config = SimpleNamespace(
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
         ),
@@ -1475,6 +1502,7 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: Path) -> No
     config = SimpleNamespace(
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
         ),
@@ -1532,6 +1560,7 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: Path) -> None:
     config = SimpleNamespace(
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
         ),
@@ -1642,6 +1671,7 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
     config = SimpleNamespace(
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="maximize", pattern=r"SCORE:\s*([\d.]+)"),
         ),
@@ -1766,6 +1796,7 @@ def test_worker_max_tokens_lifts_cap_on_metric_runs() -> None:
     config = SimpleNamespace(
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
         ),
@@ -1783,6 +1814,7 @@ def test_worker_max_tokens_keeps_default_without_metric() -> None:
     config = SimpleNamespace(
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal=None),
         )
@@ -1800,6 +1832,7 @@ def test_worker_max_tokens_keeps_default_in_plan_mode() -> None:
     config = SimpleNamespace(
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
             verify_command=("true",),
             metric=SimpleNamespace(goal="minimize"),
         ),
@@ -2342,7 +2375,10 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: Path) -> None:
     pending = {"stop": True}
     config = SimpleNamespace(
         workflow=SimpleNamespace(
-            require_verify_to_finish=False, verify_command=("true",), metric=None
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=("true",),
+            metric=None,
         ),
         prompt=SimpleNamespace(decompose=False),
     )
@@ -2431,7 +2467,10 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: Path) -> 
     )
     config = SimpleNamespace(
         workflow=SimpleNamespace(
-            require_verify_to_finish=False, verify_command=("true",), metric=None
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=("true",),
+            metric=None,
         ),
         prompt=SimpleNamespace(decompose=False),
     )
@@ -2994,7 +3033,10 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: Path) -> None:
     summ = SummariserStub()
     config = SimpleNamespace(
         workflow=SimpleNamespace(
-            require_verify_to_finish=False, verify_command=("true",), metric=None
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=("true",),
+            metric=None,
         ),
         prompt=SimpleNamespace(decompose=False),
     )
@@ -3094,7 +3136,10 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: Path) -> None:
     provider = ProviderStub()
     config = SimpleNamespace(
         workflow=SimpleNamespace(
-            require_verify_to_finish=False, verify_command=(), metric=SimpleNamespace(goal=None)
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=(),
+            metric=SimpleNamespace(goal=None),
         )
     )
     wf = _wf(
@@ -3132,6 +3177,7 @@ def test_resume_snapshot_carries_verify_command(tmp_path: Path) -> None:
     config = SimpleNamespace(
         workflow=SimpleNamespace(
             require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
             verify_command=("pytest", "-q"),
             metric=SimpleNamespace(goal=None),
         )
@@ -3175,7 +3221,12 @@ def test_save_resume_snapshot_degrades_on_unwritable_state_dir(tmp_path: Path) -
     snap = blocker / "loop_state.json"  # parent "blocker" is a file -> mkdir fails
     logs: list[str] = []
     config = SimpleNamespace(
-        workflow=SimpleNamespace(require_verify_to_finish=False, verify_command=(), metric=None),
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=(),
+            metric=None,
+        ),
     )
     wf = _wf(resume_state_path=snap, config=config, logger=logs.append)
     # Must not raise, twice (the second call must not re-warn).
@@ -3278,7 +3329,12 @@ def test_question_nudge_then_accept(tmp_path: Path) -> None:
 
     provider = ProviderStub()
     config = SimpleNamespace(
-        workflow=SimpleNamespace(require_verify_to_finish=False, verify_command=(), metric=None)
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=(),
+            metric=None,
+        )
     )
     wf = _wf(
         root=tmp_path,
@@ -3309,3 +3365,892 @@ def test_ends_with_question_detection() -> None:
     assert not _ends_with_question("Done. All tests pass.")
     assert not _ends_with_question("")
     assert _ends_with_question("Should I proceed?  ")  # trailing space tolerated
+
+
+def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: Path) -> None:
+    """A worker whose edits keep producing the SAME verify failure (observed:
+    mistral-small repeating one failure nine times) gets a root-cause nudge at
+    the 4th identical consecutive failure and one escalation at the 7th; the
+    signature ignores cosmetic drift like line numbers."""
+    from agent6.workflows.loop import (  # pyright: ignore[reportPrivateUsage]
+        _NO_PROGRESS_ESCALATION,
+        _NO_PROGRESS_NUDGE,
+    )
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.nudges = 0
+            self.escalations = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            last = str(kwargs["messages"][-1])
+            if _NO_PROGRESS_NUDGE[:28] in last:
+                self.nudges += 1
+            if _NO_PROGRESS_ESCALATION[:28] in last:
+                self.escalations += 1
+            if self.calls >= 18:
+                return _tool_resp("finish_run", {"summary": "stuck"}, tool_id="f")
+            if self.calls % 2 == 1:
+                return _tool_resp(
+                    "apply_edit",
+                    {"path": "f.py", "edits": [{"old_string": "a", "new_string": "b"}]},
+                    tool_id=f"e{self.calls}",
+                )
+            return _tool_resp("run_verify_command", tool_id=f"v{self.calls}")
+
+    class DispatcherStub:
+        def __init__(self) -> None:
+            self.verifies = 0
+
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+            if name == "run_verify_command":
+                self.verifies += 1
+                return {
+                    "returncode": 1,
+                    "stdout": "",
+                    # line number drifts run to run; the signature must not care
+                    "stderr": (
+                        f'File "t.py", line {40 + self.verifies}\nAssertionError: want 3 got 2'
+                    ),
+                    "duration_s": 0.1,
+                }
+            if name == "apply_edit":
+                return {"applied": True, "path": "f.py"}
+            return {"ok": True}
+
+    provider = ProviderStub()
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=("true",),
+            metric=SimpleNamespace(goal=None),
+        )
+    )
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        mode="run",
+        provider=provider,
+        dispatcher=DispatcherStub(),
+        max_iterations=40,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
+    with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            messages=messages,
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+        )
+    assert provider.nudges == 1
+    assert provider.escalations == 1
+    assert result.completed is True
+
+
+def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: Path) -> None:
+    """Distinct failures mean real progress through the error list; the guard
+    must stay quiet."""
+    from agent6.workflows.loop import _NO_PROGRESS_NUDGE  # pyright: ignore[reportPrivateUsage]
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.nudges = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            if _NO_PROGRESS_NUDGE[:28] in str(kwargs["messages"][-1]):
+                self.nudges += 1
+            if self.calls >= 20:
+                return _tool_resp("finish_run", {"summary": "done"}, tool_id="f")
+            return _tool_resp("run_verify_command", tool_id=f"v{self.calls}")
+
+    class DispatcherStub:
+        def __init__(self) -> None:
+            self.verifies = 0
+
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+            if name == "run_verify_command":
+                self.verifies += 1
+                return {
+                    "returncode": 1,
+                    "stdout": "",
+                    "stderr": f"AssertionError: case {self.verifies} failed",
+                    "duration_s": 0.1,
+                }
+            return {"ok": True}
+
+    provider = ProviderStub()
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=("true",),
+            metric=SimpleNamespace(goal=None),
+        )
+    )
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        mode="run",
+        provider=provider,
+        dispatcher=DispatcherStub(),
+        max_iterations=30,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
+    with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
+        wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            messages=messages,
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+        )
+    assert provider.nudges == 0
+
+
+def test_verify_failure_signature_normalizes_cosmetics() -> None:
+    from agent6.workflows._nudges import verify_failure_signature
+
+    a = verify_failure_signature("", 'File "t.py", line 41\nAssertionError: want 3 got 2')
+    b = verify_failure_signature("", 'File "t.py", line 97\nAssertionError: want 3 got 2')
+    c = verify_failure_signature("", 'File "t.py", line 41\nAssertionError: want 5 got 1')
+    assert a == b
+    assert a != c
+    d = verify_failure_signature("ran in 3.21s at 0x7f01ab", "")
+    e = verify_failure_signature("ran in 0.07s at 0x9921cd", "")
+    assert d == e
+
+
+def _spec_recheck_wf(tmp_path: Path, provider: Any, dispatcher: Any, *, on: bool) -> Any:
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=on,
+            verify_command=("true",),
+            metric=SimpleNamespace(goal=None),
+        )
+    )
+    return _wf(
+        root=tmp_path,
+        config=config,
+        mode="run",
+        provider=provider,
+        dispatcher=dispatcher,
+        max_iterations=20,
+    )
+
+
+class _GreenDispatcher:
+    def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        if name == "run_verify_command":
+            return {"returncode": 0, "stdout": "ok", "stderr": "", "duration_s": 0.1}
+        return {"ok": True}
+
+
+def test_drive_loop_spec_recheck_bounces_first_green_finish(tmp_path: Path) -> None:
+    """With the knob on, the FIRST finish_run over a green verify is bounced
+    once with the spec-recheck directive (the eventflow failure mode: a green
+    subset-suite taken as done while spec requirements remain unmet); the
+    second finish goes through."""
+    from agent6.workflows.loop import _SPEC_RECHECK_NUDGE  # pyright: ignore[reportPrivateUsage]
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.nudges = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            if _SPEC_RECHECK_NUDGE[:26] in str(kwargs["messages"][-1]):
+                self.nudges += 1
+            if self.calls == 1:
+                return _tool_resp("run_verify_command", tool_id="v1")
+            return _tool_resp("finish_run", {"summary": "done"}, tool_id=f"f{self.calls}")
+
+    provider = ProviderStub()
+    wf = _spec_recheck_wf(tmp_path, provider, _GreenDispatcher(), on=True)
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo"}]}]
+    with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            messages=messages,
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+        )
+    assert provider.nudges == 1
+    assert result.completed is True
+    assert result.reason == "finish_run"
+
+
+def test_drive_loop_spec_recheck_off_by_default_and_when_disabled(tmp_path: Path) -> None:
+    from agent6.workflows.loop import _SPEC_RECHECK_NUDGE  # pyright: ignore[reportPrivateUsage]
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.nudges = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            if _SPEC_RECHECK_NUDGE[:26] in str(kwargs["messages"][-1]):
+                self.nudges += 1
+            if self.calls == 1:
+                return _tool_resp("run_verify_command", tool_id="v1")
+            return _tool_resp("finish_run", {"summary": "done"}, tool_id="f")
+
+    provider = ProviderStub()
+    wf = _spec_recheck_wf(tmp_path, provider, _GreenDispatcher(), on=False)
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo"}]}]
+    with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            messages=messages,
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+        )
+    assert provider.nudges == 0
+    assert result.completed is True
+
+
+def test_drive_loop_spec_recheck_silent_without_green_verify(tmp_path: Path) -> None:
+    """A finish over a never-green tree is the verify-green gate's territory;
+    the spec recheck targets exactly the green-but-incomplete case."""
+    from agent6.workflows.loop import _SPEC_RECHECK_NUDGE  # pyright: ignore[reportPrivateUsage]
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.nudges = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            if _SPEC_RECHECK_NUDGE[:26] in str(kwargs["messages"][-1]):
+                self.nudges += 1
+            return _tool_resp("finish_run", {"summary": "done"}, tool_id="f")
+
+    provider = ProviderStub()
+    wf = _spec_recheck_wf(tmp_path, provider, _GreenDispatcher(), on=True)
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo"}]}]
+    with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
+        wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            messages=messages,
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+        )
+    assert provider.nudges == 0
+
+
+def test_drive_loop_no_progress_stops_after_unheeded_interventions(tmp_path: Path) -> None:
+    """Ten consecutive identical failures with both nudges delivered ends the
+    run honestly (reason=no_progress) instead of burning to the iteration cap
+    (measured: nudged mistral runs ran to 77 iters at score 0 without this)."""
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            if self.calls % 2 == 1:
+                return _tool_resp(
+                    "apply_edit",
+                    {"path": "f.py", "edits": [{"old_string": "a", "new_string": "b"}]},
+                    tool_id=f"e{self.calls}",
+                )
+            return _tool_resp("run_verify_command", tool_id=f"v{self.calls}")
+
+    class DispatcherStub:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+            if name == "run_verify_command":
+                return {
+                    "returncode": 1,
+                    "stdout": "",
+                    "stderr": "AssertionError: want 3 got 2",
+                    "duration_s": 0.1,
+                }
+            if name == "apply_edit":
+                return {"applied": True, "path": "f.py"}
+            return {"ok": True}
+
+    provider = ProviderStub()
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=("true",),
+            metric=SimpleNamespace(goal=None),
+        )
+    )
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        mode="run",
+        provider=provider,
+        dispatcher=DispatcherStub(),
+        max_iterations=60,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
+    with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            messages=messages,
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+        )
+    assert result.completed is False
+    assert result.reason == "no_progress"
+    assert result.iterations < 30  # stopped well before the 60-iteration cap
+
+
+def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: Path) -> None:
+    """A prose-only turn before ANY edit or green verify is a stall, not an
+    implicit finish (observed: kimi answering a SWE-bench problem statement
+    in prose at iteration 2, ending the run patchless). Two nudges steer back
+    to the tools; a third prose turn is then honored as silent_finish."""
+    from agent6.workflows.loop import _SILENT_NO_WORK_NUDGE  # pyright: ignore[reportPrivateUsage]
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.nudges = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            if _SILENT_NO_WORK_NUDGE[:22] in str(kwargs["messages"][-1]):
+                self.nudges += 1
+            return _resp("Here is my analysis of the problem.")
+
+    provider = ProviderStub()
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=("true",),
+            metric=SimpleNamespace(goal=None),
+        )
+    )
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        mode="run",
+        provider=provider,
+        dispatcher=MagicMock(),
+        max_iterations=10,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
+    with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            messages=messages,
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+        )
+    assert provider.nudges == 2
+    assert result.reason == "silent_finish"
+    assert result.completed is True
+
+
+def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: Path) -> None:
+    """Once an edit has landed, a prose wrap-up is the normal implicit finish
+    and must not be bounced by the no-work gate."""
+    from agent6.workflows.loop import _SILENT_NO_WORK_NUDGE  # pyright: ignore[reportPrivateUsage]
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.nudges = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            if _SILENT_NO_WORK_NUDGE[:22] in str(kwargs["messages"][-1]):
+                self.nudges += 1
+            if self.calls == 1:
+                return _tool_resp(
+                    "apply_edit",
+                    {"path": "f.py", "edits": [{"old_string": "a", "new_string": "b"}]},
+                    tool_id="e1",
+                )
+            return _resp("Done: applied the fix.")
+
+    class DispatcherStub:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+            return {"applied": True, "path": "f.py"}
+
+    provider = ProviderStub()
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=("true",),
+            metric=SimpleNamespace(goal=None),
+        )
+    )
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        mode="run",
+        provider=provider,
+        dispatcher=DispatcherStub(),
+        max_iterations=10,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
+    with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            messages=messages,
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+        )
+    assert provider.nudges == 0
+    assert result.reason == "silent_finish"
+
+
+def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: Path) -> None:
+    """On a metric-optimization run, repeated identical verify failures during
+    search are expected, and the metric plateau/early-finish machinery owns
+    when the run stops. The no-progress guard must NOT fire (it would truncate
+    the budgeted search and end the run completed=false)."""
+    from agent6.workflows.loop import _NO_PROGRESS_NUDGE  # pyright: ignore[reportPrivateUsage]
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.nudges = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            if _NO_PROGRESS_NUDGE[:28] in str(kwargs["messages"][-1]):
+                self.nudges += 1
+            if self.calls >= 18:
+                return _tool_resp("finish_run", {"summary": "done"}, tool_id="f")
+            if self.calls % 2 == 1:
+                return _tool_resp(
+                    "apply_edit",
+                    {"path": "f.py", "edits": [{"old_string": "a", "new_string": "b"}]},
+                    tool_id=f"e{self.calls}",
+                )
+            return _tool_resp("run_verify_command", tool_id=f"v{self.calls}")
+
+    class DispatcherStub:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+            if name == "run_verify_command":
+                return {
+                    "returncode": 1,
+                    "stdout": "",
+                    "stderr": "AssertionError: want 3 got 2",
+                    "duration_s": 0.1,
+                }
+            if name == "apply_edit":
+                return {"applied": True, "path": "f.py"}
+            return {"ok": True}
+
+    provider = ProviderStub()
+    # metric configured -> this is an optimization run
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=("true",),
+            metric=SimpleNamespace(goal="minimize"),
+        )
+    )
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        mode="run",
+        provider=provider,
+        dispatcher=DispatcherStub(),
+        max_iterations=40,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
+    with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            messages=messages,
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+        )
+    assert provider.nudges == 0
+    assert result.reason != "no_progress"
+
+
+def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: Path) -> None:
+    """A back-to-back identical (name,args) call whose result bytes are
+    identical to the previous one is served a short stub instead of the full
+    payload (observed: kimi re-serving a 60KB read_file result 10-12x, growing
+    context to 125K tokens). The call still dispatches; a CHANGED result is
+    served in full."""
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            if self.calls <= 3:
+                return _tool_resp("read_file", {"path": "big.py"}, tool_id=f"r{self.calls}")
+            return _tool_resp("finish_run", {"summary": "done"}, tool_id="f")
+
+    big = "X" * 4000
+
+    class DispatcherStub:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+            if name == "read_file":
+                return {"content": big, "size": len(big)}
+            return {"ok": True}
+
+    provider = ProviderStub()
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=("true",),
+            metric=SimpleNamespace(goal=None),
+        )
+    )
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        mode="run",
+        provider=provider,
+        dispatcher=DispatcherStub(),
+        max_iterations=10,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nread"}]}]
+    with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
+        wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            messages=messages,
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+        )
+    # collect the served tool_result contents for read_file
+    served = []
+    for m in messages:
+        if m.get("role") == "user" and isinstance(m.get("content"), list):
+            for b in m["content"]:
+                if isinstance(b, dict) and b.get("type") == "tool_result":
+                    served.append(b["content"])
+    # first read served in full (contains the payload); the 2nd/3rd deduped
+    full = [c for c in served if big[:200] in c]
+    stubs = [c for c in served if "identical" in c.lower() and big[:200] not in c]
+    assert len(full) == 1, f"expected exactly one full payload, got {len(full)}"
+    assert len(stubs) >= 1, f"expected the repeats deduped to a stub, got {stubs}"
+
+
+def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: Path) -> None:
+    """A run that keeps issuing a call failing with the SAME error (a runaway
+    grep tripping 'not valid JSON' repeatedly) is nudged, escalated, then
+    stopped as reason=tool_error_stuck instead of looping to the cap
+    (observed: kimi re-issuing malformed grep until timeout)."""
+    from agent6.workflows.loop import (  # pyright: ignore[reportPrivateUsage]
+        _TOOL_ERROR_ESCALATION,
+        _TOOL_ERROR_NUDGE,
+    )
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.nudges = 0
+            self.escs = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            last = str(kwargs["messages"][-1])
+            if _TOOL_ERROR_NUDGE[:26] in last:
+                self.nudges += 1
+            if _TOOL_ERROR_ESCALATION[:26] in last:
+                self.escs += 1
+            # keep issuing grep with a slightly different (runaway) pattern each
+            # time — same ERROR signature, different args
+            return _tool_resp(
+                "grep", {"pattern": "x|" * self.calls, "path": "."}, tool_id=f"g{self.calls}"
+            )
+
+    from agent6.tools.errors import ToolError as _TE
+
+    class DispatcherStub:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+            raise _TE("grep: the arguments were not valid JSON. Resend the call.")
+
+    provider = ProviderStub()
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=("true",),
+            metric=SimpleNamespace(goal=None),
+        )
+    )
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        mode="run",
+        provider=provider,
+        dispatcher=DispatcherStub(),
+        max_iterations=40,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nsearch"}]}]
+    with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            messages=messages,
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+        )
+    assert provider.nudges == 1
+    assert provider.escs == 1
+    assert result.reason == "tool_error_stuck"
+    assert result.completed is False
+    assert result.iterations < 20
+
+
+def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: Path) -> None:
+    """A successful tool call between errors clears the streak, so intermittent
+    errors never trip the ladder."""
+    from agent6.tools.errors import ToolError as _TE
+    from agent6.workflows.loop import _TOOL_ERROR_NUDGE  # pyright: ignore[reportPrivateUsage]
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.nudges = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            if _TOOL_ERROR_NUDGE[:26] in str(kwargs["messages"][-1]):
+                self.nudges += 1
+            if self.calls >= 12:
+                return _tool_resp("finish_run", {"summary": "ok"}, tool_id="f")
+            return _tool_resp("grep", {"pattern": "p", "path": "."}, tool_id=f"g{self.calls}")
+
+    class DispatcherStub:
+        def __init__(self) -> None:
+            self.n = 0
+
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+            self.n += 1
+            if self.n % 2 == 0:  # alternate error / success
+                return {"hits": [], "content": "ok"}
+            raise _TE("grep: bad pattern")
+
+    provider = ProviderStub()
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=("true",),
+            metric=SimpleNamespace(goal=None),
+        )
+    )
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        mode="run",
+        provider=provider,
+        dispatcher=DispatcherStub(),
+        max_iterations=20,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ngo"}]}]
+    with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            messages=messages,
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+        )
+    assert provider.nudges == 0
+    assert result.reason != "tool_error_stuck"
+
+
+def test_note_verify_result_flags_a_dead_verify(tmp_path: Path) -> None:
+    """A failing verify that exited instantly because the runner is absent is
+    flagged once with the verify-broken nudge (observed: sympy `python -m
+    pytest` with pytest missing, exit 1 in 0.0s); a legitimate slow test
+    failure is not flagged."""
+    from agent6.workflows.loop import _VERIFY_BROKEN_NUDGE  # pyright: ignore[reportPrivateUsage]
+
+    wf = _wf(root=tmp_path, config=MagicMock(), provider=MagicMock(), dispatcher=MagicMock())
+    st = _state()
+    turn = _turn(iteration=1)
+    # dead verify: instant, "No module named pytest"
+    wf._note_verify_result(  # pyright: ignore[reportPrivateUsage]
+        st,
+        turn,
+        {"returncode": 1, "stdout": "", "stderr": "No module named pytest", "duration_s": 0.02},
+    )
+    texts = [b["text"] for b in turn.tool_results if b.get("type") == "text"]
+    assert any(_VERIFY_BROKEN_NUDGE[:24] in t for t in texts)
+    assert st.verify_broken_warned is True
+
+    # a second dead verify does not re-warn
+    turn2 = _turn(iteration=2)
+    wf._note_verify_result(  # pyright: ignore[reportPrivateUsage]
+        st,
+        turn2,
+        {"returncode": 1, "stdout": "", "stderr": "No module named pytest", "duration_s": 0.02},
+    )
+    assert not any("verify-broken" in b.get("text", "") for b in turn2.tool_results)
+
+
+def test_note_verify_result_does_not_flag_real_failure(tmp_path: Path) -> None:
+    from agent6.workflows.loop import _VERIFY_BROKEN_NUDGE  # pyright: ignore[reportPrivateUsage]
+
+    wf = _wf(root=tmp_path, config=MagicMock(), provider=MagicMock(), dispatcher=MagicMock())
+    st = _state()
+    turn = _turn(iteration=1)
+    # a real test failure: took real time, ordinary assertion output
+    wf._note_verify_result(  # pyright: ignore[reportPrivateUsage]
+        st,
+        turn,
+        {
+            "returncode": 1,
+            "stdout": "5 failed, 200 passed",
+            "stderr": "AssertionError: x != y",
+            "duration_s": 12.4,
+        },
+    )
+    texts = [b.get("text", "") for b in turn.tool_results]
+    assert not any(_VERIFY_BROKEN_NUDGE[:24] in t for t in texts)
+    assert st.verify_broken_warned is False
+
+
+def test_tool_error_spiral_names_a_host_present_tool(tmp_path: Path) -> None:
+    """When a run_command keeps failing with the same error and its binary
+    exists on the host, the spiral nudge names it as a sandbox-reachability
+    problem with the fix (the model relays this to the operator). Uses a real
+    host binary (python3) so shutil.which finds it."""
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.reach_hits = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            if "sandbox-\n" in str(kwargs["messages"][-1]) or "reachability" in str(
+                kwargs["messages"][-1]
+            ):
+                self.reach_hits += 1
+            return _tool_resp(
+                "run_command", {"argv": ["python3", "-c", "x"]}, tool_id=f"c{self.calls}"
+            )
+
+    from agent6.tools.errors import ToolError as _TE
+
+    class DispatcherStub:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+            raise _TE("python3: boom in the sandbox")
+
+    provider = ProviderStub()
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=("true",),
+            metric=SimpleNamespace(goal=None),
+        )
+    )
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        mode="run",
+        provider=provider,
+        dispatcher=DispatcherStub(),
+        max_iterations=20,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ngo"}]}]
+    with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            messages=messages,
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+        )
+    assert provider.reach_hits >= 1
+    assert result.reason == "tool_error_stuck"
+
+
+def test_tool_error_spiral_silent_for_nonexistent_binary(tmp_path: Path) -> None:
+    """A spiral on a command whose binary is NOT on the host gets the plain
+    tool-error nudge, no sandbox-reachability note (it is a real bad call)."""
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.reach_hits = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            if "reachability" in str(kwargs["messages"][-1]):
+                self.reach_hits += 1
+            return _tool_resp(
+                "run_command",
+                {"argv": ["totally-not-a-real-binary-xyz", "x"]},
+                tool_id=f"c{self.calls}",
+            )
+
+    from agent6.tools.errors import ToolError as _TE
+
+    class DispatcherStub:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+            raise _TE("totally-not-a-real-binary-xyz: not found")
+
+    provider = ProviderStub()
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=("true",),
+            metric=SimpleNamespace(goal=None),
+        )
+    )
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        mode="run",
+        provider=provider,
+        dispatcher=DispatcherStub(),
+        max_iterations=20,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ngo"}]}]
+    with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
+        wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            messages=messages,
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+        )
+    assert provider.reach_hits == 0

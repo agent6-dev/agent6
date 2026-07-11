@@ -48,6 +48,12 @@ class RunResult:
       provider_error    - ProviderError after retry; loop aborted.
       metric_plateau    - metric run tied prior best after enough samples.
       verify_settled    - verify passed and the worker stopped making changes.
+      no_progress       - the same verify failure survived ten consecutive
+                          runs and two harness interventions; stopped to save
+                          the remaining budget (resumable).
+      tool_error_stuck  - the same tool call failed with the identical error
+                          eight times through two interventions; stopped to
+                          save the remaining budget (resumable).
       verify_command_unexecutable - operator verify/metric command cannot run
                           in the jail; the model cannot fix operator config.
       loop_guard_killed - identical tool call repeated past the kill threshold.

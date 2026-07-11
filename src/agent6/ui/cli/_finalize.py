@@ -46,6 +46,25 @@ def run_exit_code(result: RunResult) -> int:
     return 1
 
 
+def _sandbox_unreachable_tools(layout: RunLayout) -> list[str]:
+    """Binaries the run flagged as host-present but jail-broken
+    (loop.sandbox_tool_unreachable events), for the operator diagnostic."""
+    out: list[str] = []
+    try:
+        for line in layout.logs_path.read_text(encoding="utf-8").splitlines():
+            if '"loop.sandbox_tool_unreachable"' not in line:
+                continue
+            try:
+                binary = json.loads(line).get("binary")
+            except ValueError:
+                continue
+            if isinstance(binary, str) and binary and binary not in out:
+                out.append(binary)
+    except OSError:
+        pass
+    return out
+
+
 def print_run_end(
     result: RunResult, *, layout: RunLayout, budget: BudgetTracker, console_stream: bool
 ) -> None:
@@ -63,6 +82,19 @@ def print_run_end(
         if result.summary:
             print(f"  {result.summary}")
     print()
+    for binary in _sandbox_unreachable_tools(layout):
+        print(
+            f"WARNING: `{binary}` is installed on this machine but did not work"
+            " inside agent6's sandbox."
+        )
+        print(
+            "  Likely a per-user / version-manager install (rustup, pyenv, nvm, ...)"
+            " whose config or toolchain the sandbox does not expose -- not an agent6"
+            " bug. Fix options:"
+        )
+        print(f"    - make `{binary}` run from a clean shell (a system-wide install)")
+        print("    - run with --dangerously-disable-sandbox")
+        print("    - add its real directory to [sandbox].extra_read_paths")
     print(budget.format_summary())
     run_branch = ""
     with contextlib.suppress(OSError, ValueError):
