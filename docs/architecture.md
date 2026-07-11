@@ -116,6 +116,16 @@ Notes:
   found, then marks the finished ones `passed` and queues the new ones in
   the DAG -- so task state stays accurate even though weak models rarely
   call `update_task` themselves.
+- **Cross-run memory.** At run start the loop loads the active entries
+  from the per-repo memory store (`<state-dir>/<repo-id>/memories/`,
+  written by `agent6 memory add` or a previous run) and injects them as a
+  size-capped `<memories>` block after the repo priors; newest entries win
+  when the cap trims. The worker persists new knowledge with `add_memory`
+  and retires stale entries with `invalidate_memory` (non-destructive; the
+  body stays on disk for `agent6 memory list --all`). Run mode only: plan
+  and ask read memories but cannot write them, machine modes see neither.
+  A resumed run keeps the `<memories>` block frozen in its snapshot, like
+  the rest of its system prompt.
 - **`finish_run(summary)`** is the only terminal tool. Calling it
   emits a `run.end` event and returns control to the CLI.
 
@@ -312,6 +322,7 @@ graph`).
 | Event log + view-model fold      | [src/agent6/events.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/events.py) (writer), [src/agent6/ui/viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/viewmodel) (RunState/MachineState fold), [src/agent6/ui/tui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/tui) (textual render) |
 | Front-end write bridge           | [src/agent6/ui/bridge/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/bridge) (spawn detached + approval/question/steer answer files; shared by CLI, TUI, web) |
 | Web UI (`agent6 web`)            | [src/agent6/ui/web/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/web) (stdlib HTTP server + one embedded page over the view-model + frontend) |
+| Cross-run memory store           | [src/agent6/memory.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/memory.py) (store), `<state-dir>/<repo-id>/memories/` (data) |
 | Run state on disk                | `<state-dir>/<repo-id>/runs/<run-id>/` (out of the workspace)         |
 
 ## Pre-1.0 stability

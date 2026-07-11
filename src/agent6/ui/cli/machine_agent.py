@@ -46,6 +46,7 @@ from agent6.ui.bridge.approval import (
     session_allow_set,
     steer_request_pending,
 )
+from agent6.ui.cli._common import _state_dir
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli.egress import (
     _check_network_profile,
@@ -273,6 +274,11 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
             state_dir = Path(events_log).parent
             instance_dir = transcript_dir.parent
             bridges = _build_machine_bridges(instance_dir, state_dir, events_sink)
+        # The REPO's state dir (not this state's per-state dir above): a
+        # mode="run" agent state participates in cross-run memory like any
+        # other run; for read-only states the dispatcher mode guard and the
+        # machine/agent prompt assembly keep it inert.
+        repo_state_dir = _state_dir(root)
         dispatcher = ToolDispatcher(
             root=root,
             config=cfg,
@@ -285,6 +291,7 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
             mcp_manager=None,
             extra_protect_paths=protect,
             mode="machine" if read_only else "run",
+            state_dir=repo_state_dir,
         )
         compact_drop, compact_summarise = resolve_compaction_thresholds(
             cfg, rm, log=lambda msg: print(msg, file=sys.stderr)
@@ -296,6 +303,7 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
             dispatcher=dispatcher,
             logger=lambda msg: print(msg, file=sys.stderr),
             mode=mode if mode in ("machine", "agent") else "run",
+            state_dir=repo_state_dir,
             compact_drop_at_chars=compact_drop,
             compact_summarise_at_chars=compact_summarise,
             context_summary_max_tokens=cfg.context.summary_max_tokens,

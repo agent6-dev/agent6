@@ -37,6 +37,8 @@ from agent6.graph.models import (
     TaskNodeDraft,
     UpdateStatusIntent,
 )
+from agent6.memory import MemoryEntry, MemoryStoreError
+from agent6.memory import list_entries as memory_list_entries
 from agent6.portable import atomic_write
 from agent6.providers import (
     Provider,
@@ -513,6 +515,12 @@ class Workflow:
     # quitting on. None in test / MCP paths; the loop degrades to fixed
     # count-based heuristics when it is unset.
     budget: BudgetTracker | None = None
+    # Per-repo state dir holding the cross-run memory store
+    # (<state_dir>/memories/). When set, active memories are injected into
+    # the system prompt at run start; the CLI wires the same path into the
+    # dispatcher so add_memory / invalidate_memory persist across runs.
+    # None (bench / tests / one-off embedders) runs memory-less.
+    state_dir: Path | None = None
     # Hard cap on assistant turns. Each turn = one provider.call. With the
     # default tool-use-loop pattern, agents take 30-100 turns on a non-
     # trivial task; 200 is well above that without being unbounded.
@@ -686,7 +694,9 @@ class Workflow:
         self._emit("run.start", user_task=user_task[:200], mode=self.mode)
         self._log("LOOP: LOAD_CONTEXT")
         repo = self._load_repo_summary()
-        system = _build_system_prompt(config=self.config, repo=repo, mode=self.mode)
+        system = _build_system_prompt(
+            config=self.config, repo=repo, mode=self.mode, memories=self._load_memories()
+        )
 
         try:
             effective_task = self._maybe_revise_prompt(user_task, repo)
@@ -2371,6 +2381,27 @@ class Workflow:
         # co-change / symbol outline), a leaner prompt that leans on on-demand tools.
         disp = self.dispatcher if self.config.prompt.structural_priors else None
         return load_repo_summary(self.root, dispatcher=disp)
+
+    def _load_memories(self) -> tuple[MemoryEntry, ...]:
+        """Active cross-run memories for the system prompt.
+
+        () when no state_dir is wired, and for machine/agent modes (their
+        prompt assembly drops repo context, memories included). An unreadable
+        store logs loudly and returns () rather than aborting the run,
+        mirroring the snapshot-write policy: memory is context, not
+        correctness.
+        """
+        if self.state_dir is None or self.mode in ("machine", "agent"):
+            return ()
+        try:
+            entries = memory_list_entries(self.state_dir)
+        except (MemoryStoreError, OSError) as exc:
+            self._log(f"LOOP: WARNING: cross-run memories unavailable: {exc}")
+            return ()
+        active = tuple(e for e in entries if e.is_active)
+        if active:
+            self._log(f"LOOP: memories: {len(active)} active")
+        return active
 
     def _save_resume_snapshot(
         self,

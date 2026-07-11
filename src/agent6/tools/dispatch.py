@@ -32,6 +32,9 @@ from agent6.graph.models import (
     TaskNodeDraft,
     UpdateStatusIntent,
 )
+from agent6.memory import MemoryStoreError
+from agent6.memory import add as memory_add
+from agent6.memory import invalidate as memory_invalidate
 from agent6.sandbox.jail import JailUnavailableError, run_in_jail
 from agent6.tools._agent6_docs import (
     list_agent6_docs as _list_agent6_docs,
@@ -75,6 +78,7 @@ from agent6.tools.patch_apply import (
 )
 from agent6.tools.schema import (
     ALL_TOOLS,
+    AddMemoryInput,
     Agent6DocsInput,
     ApplyEditInput,
     ApplyPatchInput,
@@ -90,6 +94,7 @@ from agent6.tools.schema import (
     FinishPlanningInput,
     FinishRunInput,
     GrepInput,
+    InvalidateMemoryInput,
     ListDirInput,
     OutlineInput,
     ReadFileInput,
@@ -329,6 +334,7 @@ class ToolDispatcher:
         mcp_manager: MCPManager | None = None,
         extra_protect_paths: tuple[Path, ...] = (),
         mode: Literal["run", "plan", "ask", "machine"] = "run",
+        state_dir: Path | None = None,
     ) -> None:
         self._root = root.resolve()
         self._config = config
@@ -355,6 +361,11 @@ class ToolDispatcher:
         # prefix to the manager. Discovered tool names are also added
         # to ``available_tool_names()`` so the workflow exposes them.
         self._mcp_manager = mcp_manager
+        # Per-repo state dir holding the cross-run memory store
+        # (<state_dir>/memories/). None (tests, review/one-off dispatchers)
+        # leaves add_memory / invalidate_memory unwired: they raise ToolError,
+        # like the DAG tools without a curator.
+        self._state_dir = state_dir
         self._handlers: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
             Agent6DocsInput.TOOL_NAME: self._agent6_docs,
             ReadFileInput.TOOL_NAME: self._read_file,
@@ -385,6 +396,10 @@ class ToolDispatcher:
             DagUpdateTaskInput.TOOL_NAME: self._dag_update_task,
             DagSetCursorInput.TOOL_NAME: self._dag_set_cursor,
             DagListTasksInput.TOOL_NAME: self._dag_list_tasks,
+            # Cross-run memory. Handlers raise ToolError if no
+            # state_dir was wired.
+            AddMemoryInput.TOOL_NAME: self._add_memory,
+            InvalidateMemoryInput.TOOL_NAME: self._invalidate_memory,
         }
         self._available = {cls.TOOL_NAME for cls in ALL_TOOLS}
         self._index: SymbolIndex | None = None
@@ -524,9 +539,14 @@ class ToolDispatcher:
             # machine-authoring + machine agent-state loops never run commands
             # (unlike `ask`, which allows read-only run_command investigation).
             raise ToolError(f"{name} is not available in {self._mode} mode (read-only)")
-        if self._mode != "run" and name == AskUserInput.TOOL_NAME:
-            # ask_user is a run-mode tool (LOOP_EXTRA_TOOLS only); backstop it so
-            # a future tool-list regression can't pause a plan/ask/machine loop.
+        if self._mode != "run" and name in {
+            AskUserInput.TOOL_NAME,
+            AddMemoryInput.TOOL_NAME,
+            InvalidateMemoryInput.TOOL_NAME,
+        }:
+            # Run-mode tools (LOOP_EXTRA_TOOLS only); backstop them so a future
+            # tool-list regression can't pause a plan/ask/machine loop
+            # (ask_user) or let it write cross-run memories.
             raise ToolError(f"{name} is not available in {self._mode} mode")
         return self._run_handler(name, raw_input)
 
@@ -1051,6 +1071,31 @@ class ToolDispatcher:
                 }
             )
         return {"tasks": out, "count": len(out)}
+
+    # Cross-run memory handlers. Writes go through trusted code
+    # (agent6.memory) to fixed markdown files under <state_dir>/memories/,
+    # outside the workspace and the jail; the LLM controls only the scope
+    # (schema-validated literal) and the note text, which is inert data.
+
+    def _add_memory(self, raw: dict[str, Any]) -> dict[str, Any]:
+        if self._state_dir is None:
+            raise ToolError("add_memory: no memory store wired for this run")
+        args = AddMemoryInput.model_validate(raw)
+        try:
+            entry = memory_add(self._state_dir, args.scope, args.body)
+        except MemoryStoreError as exc:
+            raise ToolError(f"add_memory: {exc}") from exc
+        return {"id": entry.id, "scope": entry.scope, "created_at": entry.created_at}
+
+    def _invalidate_memory(self, raw: dict[str, Any]) -> dict[str, Any]:
+        if self._state_dir is None:
+            raise ToolError("invalidate_memory: no memory store wired for this run")
+        args = InvalidateMemoryInput.model_validate(raw)
+        try:
+            entry = memory_invalidate(self._state_dir, args.memory_id, args.reason)
+        except MemoryStoreError as exc:
+            raise ToolError(f"invalidate_memory: {exc}") from exc
+        return {"id": entry.id, "invalidated_at": entry.invalidated_at}
 
     def _run_metric(self, _raw: dict[str, Any]) -> dict[str, Any]:
         """Run ``cfg.workflow.metric.command`` in the jail.

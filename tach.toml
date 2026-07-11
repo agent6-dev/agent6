@@ -64,6 +64,7 @@ depends_on = [
   "agent6.portable",
   "agent6.graph.client",
   "agent6.graph.models",
+  "agent6.memory",  # cross-run memories injected into the system prompt
 ]
 
 [[modules]]
@@ -140,8 +141,9 @@ depends_on = [ "agent6.types"]
 path = "agent6.tools"
 # Dispatch.py drives the curator over a GraphClient (graph.client) using the
 # graph.models intent types, for the DAG-as-tool handlers (add_task /
-# update_task / set_cursor / list_tasks).
-depends_on = ["agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.config", "agent6.events", "agent6.graph.client", "agent6.graph.models"]
+# update_task / set_cursor / list_tasks), and the memory store for the
+# cross-run memory handlers (add_memory / invalidate_memory).
+depends_on = ["agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.config", "agent6.events", "agent6.graph.client", "agent6.graph.models", "agent6.memory"]
 
 [[modules]]
 path = "agent6.tools.schema"

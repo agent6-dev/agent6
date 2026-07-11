@@ -554,6 +554,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
                     run_root_node_id=None,
                     mcp_manager=mcp_manager,
                     mode=mode,
+                    state_dir=state_dir,
                 )
                 loop_log = _loop_logger(mode, console_view)
                 compact_drop, compact_summarise = resolve_compaction_thresholds(

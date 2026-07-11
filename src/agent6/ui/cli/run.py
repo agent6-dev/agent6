@@ -565,6 +565,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                     run_root_node_id=None,  # Workflow seeds the root + calls set_run_root_node_id
                     mcp_manager=mcp_manager,
                     mode=mode,
+                    state_dir=state_dir,
                 )
                 loop_log = _loop_logger(mode, console_view)
                 compact_drop, compact_summarise = resolve_compaction_thresholds(
@@ -584,6 +585,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                     should_abort=steer_state.abort_pending,
                     should_interrupt=steer_state.requested,
                     budget=budget,
+                    state_dir=state_dir,
                     # `agent6 ask` (under asks/) is not resumable -- `agent6 resume`
                     # only looks under runs/ -- so don't write an orphan snapshot.
                     resume_state_path=(

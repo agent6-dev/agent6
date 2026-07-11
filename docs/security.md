@@ -298,11 +298,26 @@ The LLM only ever sees the fixed set declared in
 `src/agent6/tools/schema.py`: structured
 edits, read-only navigation, fixed-argv verify/metric commands, a
 terminal `finish_run`, an `ask_user` question channel, a
-curator-backed task notepad, and the
+curator-backed task notepad, a cross-run memory notepad, and the
 capability-gated `run_command`. There is no `shell`, no `write_file`
 (writes go through `apply_edit`, an in-process rewriter that refuses
 paths outside cwd), no `web_fetch`, and no `eval`. Adding a tool requires
 a security review note in the commit message; see [AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md).
+
+The memory notepad (`add_memory` / `invalidate_memory`, run mode only) is
+the one tool pair whose writes outlive the run: notes land in fixed
+markdown files under `<state-dir>/<repo-id>/memories/` (trusted code
+picks the path; the model supplies only a schema-validated scope and the
+note text) and active notes are injected into the system prompt of later
+runs on the same repo. That makes it a persistence channel for prompt
+injection: a poisoned note can try to steer future runs. The mitigations
+are that notes are inert data (never executed, never an argv), the
+injected block is size-capped and framed as untrusted context, and the
+store is fully operator-auditable: `agent6 memory list --all` shows every
+entry including invalidated ones, and `agent6 memory invalidate` retires
+one without deleting the audit trail. Memories do not weaken any boundary
+in this document: sandbox, egress, and git policy come from config, not
+from prompt content.
 
 ### 5. Git invariants
 

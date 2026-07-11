@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -322,6 +322,44 @@ class DagListTasksInput(_ToolInput):
     )
 
 
+# Cross-run memory surface. Lets the agent persist repo-scoped notes
+# (agent6.memory store under <state_dir>/memories/) that future runs see in
+# the <memories> system-prompt block. Run mode only (LOOP_EXTRA_TOOLS).
+
+
+class AddMemoryInput(_ToolInput):
+    TOOL_NAME: ClassVar[str] = "add_memory"
+    TOOL_DESCRIPTION: ClassVar[str] = (
+        "Record a durable note that FUTURE agent runs on this repository will"
+        " see in the <memories> block of their system prompt. `scope` is one"
+        " of: facts (a stable observation about this codebase you had to"
+        " discover), decisions (a choice the operator confirmed or you"
+        " committed to), preferences (how the operator wants things done)."
+        " `body` is ONE self-contained statement naming the concrete files,"
+        " commands, or numbers. Do NOT record task progress (the task graph"
+        " owns that), secrets, or anything a future run can read straight"
+        " from the repo. Returns the new memory's 26-char id."
+    )
+
+    scope: Literal["facts", "decisions", "preferences"]
+    body: str = Field(min_length=1, max_length=2000)
+
+
+class InvalidateMemoryInput(_ToolInput):
+    TOOL_NAME: ClassVar[str] = "invalidate_memory"
+    TOOL_DESCRIPTION: ClassVar[str] = (
+        "Mark a memory from the <memories> block as no longer true, so future"
+        " runs stop seeing it. Non-destructive: the entry stays on disk for"
+        " the operator's audit trail (`agent6 memory list --all`). Use when"
+        " the repository or the operator contradicts a recorded memory."
+        " `memory_id` is the 26-char id shown in the block; `reason` says"
+        " what changed."
+    )
+
+    memory_id: str = Field(min_length=26, max_length=26)
+    reason: str = Field(min_length=1, max_length=500)
+
+
 class OutlineInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "outline"
     TOOL_DESCRIPTION: ClassVar[str] = (
@@ -465,11 +503,12 @@ ALL_TOOLS: tuple[type[_ToolInput], ...] = (
 )
 
 # Extra tools exposed only to the single-loop workflow (run_metric,
-# finish_run, dag_*). Kept separate from ALL_TOOLS so the read-only
+# finish_run, dag_*, memory). Kept separate from ALL_TOOLS so the read-only
 # ToolDispatcher surface used by tests and external callers does not
 # advertise loop-only control tools.
 # adds the DAG tools (add_task / update_task / set_cursor /
-# list_tasks).
+# list_tasks) and the cross-run memory tools (add_memory /
+# invalidate_memory).
 LOOP_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     RunMetricInput,
     FinishRunInput,
@@ -478,6 +517,8 @@ LOOP_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     DagUpdateTaskInput,
     DagSetCursorInput,
     DagListTasksInput,
+    AddMemoryInput,
+    InvalidateMemoryInput,
 )
 
 # Tool list for plan mode (`agent6 plan`). Excludes the
