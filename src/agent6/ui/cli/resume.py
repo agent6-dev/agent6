@@ -363,11 +363,26 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
         # The original run's manifest drives resume: `mode` (a plan run resumes
         # read-only with the plan tools, never as a write run), `profile` (resume
         # has no --profile flag), and `base_sha` (the review-panel diff base).
-        manifest: dict[str, Any] = {}
-        with contextlib.suppress(OSError, ValueError):
+        # `mode` is security-relevant: a missing/corrupt manifest must NOT fall
+        # open to the more-privileged "run" (write) mode. A valid run always
+        # wrote a manifest, so anything else here is a damaged run dir -- fail
+        # loud rather than silently escalating a plan run to a write run.
+        try:
             loaded = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
-            if isinstance(loaded, dict):
-                manifest = loaded
+        except OSError as exc:
+            print(f"ERROR: cannot read run manifest {layout.manifest_path}: {exc}", file=sys.stderr)
+            return 2
+        except ValueError as exc:
+            print(f"ERROR: run manifest {layout.manifest_path} is corrupt: {exc}", file=sys.stderr)
+            return 2
+        if not isinstance(loaded, dict):
+            print(
+                f"ERROR: run manifest {layout.manifest_path} is malformed"
+                f" (expected a JSON object, got {type(loaded).__name__}).",
+                file=sys.stderr,
+            )
+            return 2
+        manifest: dict[str, Any] = loaded
         mode: Literal["run", "plan"] = "plan" if manifest.get("mode") == "plan" else "run"
         workflow_section = manifest.get("workflow")
         manifest_profile = (

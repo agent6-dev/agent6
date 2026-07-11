@@ -141,6 +141,19 @@ def test_list_checkpoint_turns_empty_for_old_run(tmp_path: Path) -> None:
     assert list_checkpoint_turns(layout) == []
 
 
+def test_load_checkpoint_rejects_malformed_shapes(tmp_path: Path) -> None:
+    """A wrong-shape checkpoint (null / list / missing key) fails with a clean
+    ValueError, which fork's loader catches, instead of an AttributeError."""
+    cp = tmp_path / "0001.json"
+    for bad in ("null", "[]", '"x"'):
+        cp.write_text(bad, encoding="utf-8")
+        with pytest.raises(ValueError, match="expected a JSON object"):
+            load_checkpoint(cp)
+    cp.write_text(json.dumps({"version": 1}), encoding="utf-8")  # missing next_iteration
+    with pytest.raises(ValueError, match="malformed checkpoint"):
+        load_checkpoint(cp)
+
+
 # --- fork command -----------------------------------------------------------
 
 

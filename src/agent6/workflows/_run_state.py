@@ -134,40 +134,65 @@ class _Checkpoint:
     payload: dict[str, Any]
 
 
-def load_checkpoint(path: Path) -> _Checkpoint:
-    """Load a per-turn checkpoint. Raises on bad shape (fail loudly)."""
+def _load_state_object(path: Path, what: str) -> dict[str, Any]:
+    """Read a state JSON file and require the top-level shape to be an object.
+
+    Valid JSON that is null, a list, or a scalar (a truncated/tampered state
+    file) otherwise reached ``raw.get(...)`` / ``raw[...]`` and surfaced as an
+    ``AttributeError``/``TypeError`` traceback the callers do not catch. Failing
+    with a clean ``ValueError`` routes it to the same loud message as a version
+    mismatch or a JSON decode error."""
     raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(
+            f"malformed {what} at {path}: expected a JSON object, got {type(raw).__name__}"
+        )
+    return raw
+
+
+def load_checkpoint(path: Path) -> _Checkpoint:
+    """Load a per-turn checkpoint. Raises ValueError on bad shape (fail loudly)."""
+    raw = _load_state_object(path, "checkpoint")
     version = raw.get("version")
     if version != SNAPSHOT_VERSION:
         raise ValueError(
             f"checkpoint version mismatch at {path}: {version!r} != {SNAPSHOT_VERSION}"
         )
-    return _Checkpoint(
-        turn=int(raw["next_iteration"]),
-        head_sha=str(raw.get("head_sha", "")),
-        graph_version=int(raw.get("graph_version", 0)),
-        payload=raw,
-    )
+    try:
+        return _Checkpoint(
+            turn=int(raw["next_iteration"]),
+            head_sha=str(raw.get("head_sha", "")),
+            graph_version=int(raw.get("graph_version", 0)),
+            payload=raw,
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"malformed checkpoint at {path}: {exc}") from exc
 
 
 def load_resume_snapshot(path: Path) -> _ResumeSnapshot:
-    """Load and validate a resume snapshot. Raises on bad shape."""
-    raw = json.loads(path.read_text(encoding="utf-8"))
+    """Load and validate a resume snapshot. Raises ValueError on bad shape."""
+    raw = _load_state_object(path, "resume snapshot")
     version = raw.get("version")
     if version != SNAPSHOT_VERSION:
         raise ValueError(f"snapshot version mismatch at {path}: {version!r} != {SNAPSHOT_VERSION}")
     vc = raw.get("verify_command")  # additive field; absent in older snapshots
     best = raw.get("metric_best_score")  # additive; absent in older snapshots
-    return _ResumeSnapshot(
-        system=raw["system"],
-        messages=raw["messages"],
-        tool_calls=int(raw["tool_calls"]),
-        next_iteration=int(raw["next_iteration"]),
-        root_task_id=raw.get("root_task_id"),
-        verify_command=tuple(vc) if isinstance(vc, list) else None,
-        review_rejections_total=int(raw.get("review_rejections_total", 0)),
-        verify_ever_passed=bool(raw.get("verify_ever_passed", False)),
-        gateless_ever_committed=bool(raw.get("gateless_ever_committed", False)),
-        metric_best_score=float(best) if isinstance(best, int | float) else None,
-        metric_at_ceiling=bool(raw.get("metric_at_ceiling", False)),
-    )
+    try:
+        messages = raw["messages"]
+        if not isinstance(messages, list):
+            raise ValueError(f"'messages' must be a list, got {type(messages).__name__}")
+        return _ResumeSnapshot(
+            system=raw["system"],
+            messages=messages,
+            tool_calls=int(raw["tool_calls"]),
+            next_iteration=int(raw["next_iteration"]),
+            root_task_id=raw.get("root_task_id"),
+            verify_command=tuple(vc) if isinstance(vc, list) else None,
+            review_rejections_total=int(raw.get("review_rejections_total", 0)),
+            verify_ever_passed=bool(raw.get("verify_ever_passed", False)),
+            gateless_ever_committed=bool(raw.get("gateless_ever_committed", False)),
+            metric_best_score=float(best) if isinstance(best, int | float) else None,
+            metric_at_ceiling=bool(raw.get("metric_at_ceiling", False)),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"malformed resume snapshot at {path}: {exc}") from exc

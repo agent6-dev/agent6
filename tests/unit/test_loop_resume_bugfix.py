@@ -106,6 +106,31 @@ def test_old_snapshot_without_scalars_loads_with_safe_defaults(tmp_path: Path) -
     assert loaded.metric_at_ceiling is False
 
 
+def test_malformed_snapshot_shapes_fail_loud(tmp_path: Path) -> None:
+    """A valid-JSON but wrong-shape snapshot (null / list / scalar / missing key
+    / non-list messages) raises a clean ValueError, not an AttributeError or a
+    deferred mid-loop crash the resume callers don't catch."""
+    import pytest
+
+    snap = tmp_path / "loop_state.json"
+    for bad in ("null", "[]", "123", '"str"'):
+        snap.write_text(bad, encoding="utf-8")
+        with pytest.raises(ValueError, match="expected a JSON object"):
+            load_resume_snapshot(snap)
+    # valid object, wrong internals: missing required key, and a non-list messages
+    snap.write_text(json.dumps({"version": 1, "system": "s"}), encoding="utf-8")
+    with pytest.raises(ValueError, match="malformed resume snapshot"):
+        load_resume_snapshot(snap)
+    snap.write_text(
+        json.dumps(
+            {"version": 1, "system": "s", "messages": "oops", "tool_calls": 0, "next_iteration": 1}
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="messages"):
+        load_resume_snapshot(snap)
+
+
 def test_resume_seeds_state_from_snapshot_scalars() -> None:
     """_drive_loop restores verify_ever_passed and a synthetic at-ceiling metric
     sample so the metric/verify-settled stop logic doesn't regress on resume.
