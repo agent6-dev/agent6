@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 
 from textual.app import App
-from textual.widgets import RichLog
+from textual.widgets import RichLog, Static
 
 from agent6.tui.conversation import ConversationScreen
 
@@ -77,6 +77,35 @@ def test_conversation_screen_follows_live(tmp_path: Path) -> None:
             await asyncio.sleep(0.7)  # let the 0.5s follow poll fire
             await pilot.pause()
             assert len(body.lines) > before  # the appended turns appeared
+
+    asyncio.run(scenario())
+
+
+def test_conversation_live_pane_shows_the_in_progress_turn(tmp_path: Path) -> None:
+    # A turn that is still thinking (no role.result yet) shows in the live pane,
+    # so a long reasoning generation doesn't look frozen.
+    logs = tmp_path / "logs.jsonl"
+    _write(
+        logs,
+        [
+            {"type": "run.start", "user_task": "do X"},
+            {"type": "role.call", "role": "worker"},
+            {"type": "role.thinking_delta", "role": "worker", "text": "still reasoning"},
+        ],
+    )
+
+    async def scenario() -> None:
+        app = _Host(logs)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            live = app.screen.query_one("#conv-live", Static)
+            assert live.display  # the in-progress turn is shown live
+            # a completed turn (role.result) hands off to the scrollback and hides it
+            with logs.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps({"type": "role.result", "role": "worker"}) + "\n")
+            await asyncio.sleep(0.5)
+            await pilot.pause()
+            assert not live.display
 
     asyncio.run(scenario())
 
