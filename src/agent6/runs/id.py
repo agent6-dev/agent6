@@ -38,6 +38,21 @@ class RunIdError(Exception):
         self.ambiguous = ambiguous
 
 
+def validate_explicit_run_id(run_id: str) -> str:
+    """Return *run_id* if it is a safe single path component, else raise.
+
+    A run id becomes a directory name under the state dir (``state_dir/<subdir>/
+    <run_id>``). An operator ``--run-id`` with a separator, ``..``, or an
+    absolute path would place run state outside the state dir; reject those so an
+    explicit id can only ever name a run, never a traversal. Generated ids are
+    slug-safe by construction and skip this."""
+    if not run_id or run_id in (".", "..") or "/" in run_id or "\\" in run_id:
+        raise RunIdError(
+            f"invalid --run-id {run_id!r}: must be a single name with no '/', '\\', or '..'"
+        )
+    return run_id
+
+
 def new_friendly_id() -> str:
     """Return a new ``<adj>-<noun>-<suffix>`` run id."""
 

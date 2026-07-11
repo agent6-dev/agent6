@@ -41,7 +41,7 @@ from agent6.config.layer import load_effective
 from agent6.git_ops import GitError, create_branch_at
 from agent6.graph.storage import append_jsonl, list_checkpoint_turns
 from agent6.portable import atomic_write
-from agent6.runs.id import RunIdError, new_friendly_id, resolve_run_id
+from agent6.runs.id import RunIdError, new_friendly_id, resolve_run_id, validate_explicit_run_id
 from agent6.runs.layout import RunLayout
 from agent6.ui.cli._common import _BudgetOverrides, _state_dir
 from agent6.ui.cli._manifest import write_run_manifest as _write_run_manifest
@@ -142,7 +142,7 @@ def _snapshot_turn(path: Path) -> int | None:
         return None
 
 
-def _cmd_fork(  # noqa: PLR0911
+def _cmd_fork(  # noqa: PLR0911, PLR0912, PLR0915
     config_path: Path | None,
     source_run_id: str,
     *,
@@ -217,6 +217,12 @@ def _cmd_fork(  # noqa: PLR0911
         print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
         return 2
 
+    if new_run_id:
+        try:
+            validate_explicit_run_id(new_run_id)
+        except RunIdError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
     child_id = new_run_id or new_friendly_id()
     rc = _materialize_fork(
         cwd=cwd,

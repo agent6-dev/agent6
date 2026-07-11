@@ -9,9 +9,23 @@ from pathlib import Path
 
 import pytest
 
-from agent6.runs.id import RunIdError, new_friendly_id, resolve_run_id
+from agent6.runs.id import (
+    RunIdError,
+    new_friendly_id,
+    resolve_run_id,
+    validate_explicit_run_id,
+)
 
 _PATTERN = re.compile(r"^[a-z]+-[a-z]+-[0-9A-Z]{6}$")
+
+
+def test_validate_explicit_run_id_rejects_traversal() -> None:
+    for bad in ("../escape", "..", ".", "a/b", "/abs/path", "x\\y", ""):
+        with pytest.raises(RunIdError):
+            validate_explicit_run_id(bad)
+    # A normal slug (and the generated shape) passes through unchanged.
+    assert validate_explicit_run_id("my-run-1") == "my-run-1"
+    assert validate_explicit_run_id(new_friendly_id())
 
 
 def test_new_friendly_id_shape() -> None:

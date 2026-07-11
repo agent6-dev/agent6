@@ -43,7 +43,7 @@ from agent6.providers import (
     Provider,
     TranscriptSink,
 )
-from agent6.runs.id import new_friendly_id
+from agent6.runs.id import RunIdError, new_friendly_id, validate_explicit_run_id
 from agent6.runs.layout import RunLayout
 from agent6.sandbox.detect import ProfileUnavailableError, select_profile
 from agent6.skills import discover_skills, resolve_states, skill_search_dirs
@@ -351,6 +351,12 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
 
     # Layout: standard run-dir scaffolding for transcripts + logs. ask sessions
     # live under the per-repo state dir (asks subdir) to stay separate from real runs.
+    if run_id:
+        try:
+            validate_explicit_run_id(run_id)
+        except RunIdError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
     effective_run_id = run_id or new_friendly_id()
     state_dir = _state_dir(cwd)
     layout = RunLayout(
@@ -358,6 +364,17 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         run_id=effective_run_id,
         subdir="asks" if mode == "ask" else "runs",
     )
+    # An explicit --run-id that already has a run is a resume, not a fresh start:
+    # reusing the dir would write a new manifest + loop_state beside the old run's
+    # graph/checkpoints/transcripts (mixed state). Refuse and point at resume.
+    # (ask sessions are transient Q&A, so reusing their dir is fine.)
+    if run_id and mode != "ask" and layout.manifest_path.exists():
+        print(
+            f"ERROR: run {run_id!r} already exists. Use `agent6 resume {run_id}` to "
+            "continue it, or choose a different --run-id.",
+            file=sys.stderr,
+        )
+        return 2
     layout.ensure()
     # One authoritative writer per run dir. Acquire BEFORE touching any shared
     # run state (clearing answers, the worker pid, the curator) so a second
