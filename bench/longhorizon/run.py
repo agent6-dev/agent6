@@ -421,6 +421,7 @@ def one_sequence(
     condition: str,
     rep: int,
     budget_scale: float,
+    timeout_scale: float,
     label: str,
 ) -> list[dict[str, Any]]:
     spec = TASKS[task]
@@ -459,8 +460,13 @@ def one_sequence(
 
         budget_flags: list[str]
         if provider == "anthropic":
-            # Anthropic is unpriced: --max-usd is refused. Cap tokens instead.
-            budget_flags = ["--max-input-tokens", "6000000", "--max-output-tokens", "600000"]
+            # Anthropic legs are bounded by raw tokens rather than --max-usd.
+            # 2.0M in / 200k out per leg is generous for these tasks yet caps a
+            # haiku leg near $3 worst-case ($1/M in + $5/M out); prompt caching
+            # and early finishes land well under. budget_scale dials the wave.
+            bi = int(2_000_000 * budget_scale)
+            bo = int(200_000 * budget_scale)
+            budget_flags = ["--max-input-tokens", str(bi), "--max-output-tokens", str(bo)]
         else:
             budget_flags = ["--max-usd", str(round(leg.max_usd * budget_scale, 2))]
 
@@ -484,7 +490,7 @@ def one_sequence(
                 env=env,
                 capture_output=True,
                 text=True,
-                timeout=leg.timeout_s,
+                timeout=int(leg.timeout_s * timeout_scale),
                 check=False,
             )
             status = proc.returncode
@@ -537,6 +543,12 @@ def main() -> None:
     ap.add_argument("--reps", type=int, default=3)
     ap.add_argument("--parallel", type=int, default=3)
     ap.add_argument("--budget-scale", type=float, default=1.0)
+    ap.add_argument(
+        "--timeout-scale",
+        type=float,
+        default=1.0,
+        help="Multiply every leg's timeout_s (raise for slow single-turn models like kimi).",
+    )
     ap.add_argument("--label", required=True)
     args = ap.parse_args()
 
@@ -559,6 +571,7 @@ def main() -> None:
             condition=c,
             rep=r,
             budget_scale=args.budget_scale,
+            timeout_scale=args.timeout_scale,
             label=args.label,
         )
         for t in tasks
