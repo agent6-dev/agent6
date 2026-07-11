@@ -287,6 +287,26 @@ def _default_stdin_approver(prompt: str) -> bool:
     return ans.strip().lower() in {"y", "yes"}
 
 
+def _confirm_run_on_run_branch(base_branch: str) -> bool:
+    """The checkout is on another run's branch (agent6/<id>); a new run would branch
+    off it. Confirm before proceeding. A non-interactive caller (a detached TUI/web
+    run) has no terminal to prompt, so it warns and proceeds."""
+    warning = (
+        f"[agent6] You are on run branch '{base_branch}', not a base branch. A new run\n"
+        "  branches off it -- you may have meant to merge it (agent6 runs merge) or\n"
+        "  switch back (git switch <base>) first."
+    )
+    if not sys.stdin.isatty():
+        print(warning + " Proceeding (non-interactive).", file=sys.stderr)
+        return True
+    print(warning, file=sys.stderr)
+    try:
+        ans = input("  Start a new run here anyway? [y/N]: ")
+    except (EOFError, KeyboardInterrupt):
+        return False
+    return ans.strip().lower() in {"y", "yes"}
+
+
 def _build_approver(run_dir: Path, events: EventSink) -> Callable[[str], bool]:
     """Build the `run_command` approver, bridged to a live TUI when present.
 
@@ -811,6 +831,21 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
             return 2
         base_sha = pre_status.head_sha
         base_branch = pre_status.branch
+        # Starting a run while checked out on ANOTHER run's branch (agent6/<id>) is
+        # usually a slip -- the operator forgot to merge or switch back -- so the new
+        # run would pile on top of an unmerged one. Confirm; they may instead intend
+        # to continue that line with a fresh session, in which case proceed.
+        if (
+            mode == "run"
+            and base_branch.startswith("agent6/")
+            and not _confirm_run_on_run_branch(base_branch)
+        ):
+            print(
+                "[agent6] aborted. Merge (agent6 runs merge) or switch branches first,"
+                " then re-run.",
+                file=sys.stderr,
+            )
+            return 2
 
     # Layout: standard run-dir scaffolding for transcripts + logs. ask sessions
     # live under the per-repo state dir (asks subdir) to stay separate from real runs.
