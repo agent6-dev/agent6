@@ -11,10 +11,11 @@ We commit the **tape, scripts, and seed fixtures only**. Generated media
 ## Files
 
 - `tour.tape`: vhs script for the PNGs. Drives hub -> config -> search -> help ->
-  dashboard -> transcript -> logs and captures one PNG per stop.
+  log -> conversation -> dashboard and captures one PNG per stop.
 - `reel.tape`: vhs script for the `tour.webm` video. One TUI session (hub, into a
-  run, transcript, log, config, search, help) with no `Screenshot` commands (they
-  stall the video clock). Holds are paced by how dense each screen is.
+  run's conversation, Ctrl+D dashboard, back to hub, log, config, search, help)
+  with no `Screenshot` commands (they stall the video clock). Holds are paced by
+  how dense each screen is.
 - `keystroke_overlay.py`: overlays animated keystroke toasts on the recording,
   parsing the tape and scaling the keypress timeline to the actual duration.
 - `seed/`: committed, sanitized run fixtures (trimmed `logs.jsonl` + a few

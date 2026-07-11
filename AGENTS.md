@@ -226,8 +226,12 @@ All five must pass; keep the suite green.
   the host with `AGENT6_MACHINE_*` env, mirroring `[notify].on_complete`, and
   `ui/cli/skills_cmds.py` running `git clone --depth 1 -- <url>` with fixed
   argv for `agent6 skills install`, the URL operator-supplied on the CLI and
-  nothing fetched ever executed). Audit
-  with `rg 'subprocess\.(run|Popen)' src/agent6/`.
+  nothing fetched ever executed), `ui/tui/clipboard.py` (fixed-argv
+  `tmux set-buffer -w` with the copied transcript text as one inert data
+  argument), and `ui/tui/conversation.py` (the operator's `$PAGER`, argv from
+  the environment, transcript text on stdin). Audit
+  with `rg 'subprocess\.(run|Popen)' src/agent6/`;
+  `tests/security/test_subprocess_allowlist.py` pins the file list.
 - Config is secure by default: every field has a default, and
   security-sensitive fields default to the safe value
   (`sandbox.agent_network = "providers"`, `sandbox.tool_network = "block"`,
