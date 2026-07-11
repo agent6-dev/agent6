@@ -150,3 +150,59 @@ def test_curator_reload_preserves_state(tmp_path: Path) -> None:
     again = c2.get(n.id)
     assert again.status == "in_progress"
     assert c2.graph_version == v_before
+
+
+class TestConnectLiveness:
+    """connect(): a verifiably-alive curator earns patience past the base
+    timeout (a loaded host can need >5s just to start the interpreter); a
+    dead one fails immediately instead of burning the whole deadline."""
+
+    def test_alive_curator_extends_patience(self, tmp_path: Path) -> None:
+        import socket as socket_mod
+        import threading
+        import time as time_mod
+
+        from agent6.graph.client import GraphClient
+
+        sock_path = tmp_path / "late.sock"
+
+        def bind_late() -> None:
+            time_mod.sleep(0.5)
+            srv = socket_mod.socket(socket_mod.AF_UNIX, socket_mod.SOCK_STREAM)
+            srv.bind(str(sock_path))
+            srv.listen(1)
+            # keep the listener alive long enough for the client to connect
+            time_mod.sleep(2.0)
+            srv.close()
+
+        t = threading.Thread(target=bind_late, daemon=True)
+        t.start()
+        client = GraphClient(sock_path, alive=lambda: True)
+        # base timeout far below the bind delay: only the liveness probe
+        # can carry the wait across it
+        client.connect(timeout_s=0.05)
+        assert client._sock is not None  # pyright: ignore[reportPrivateUsage]
+        client.close()
+        t.join()
+
+    def test_dead_curator_fails_immediately(self, tmp_path: Path) -> None:
+        import time as time_mod
+
+        from agent6.graph.client import CuratorClientError, GraphClient
+
+        client = GraphClient(tmp_path / "never.sock", alive=lambda: False)
+        start = time_mod.monotonic()
+        with pytest.raises(CuratorClientError, match="exited during startup"):
+            client.connect(timeout_s=5.0)
+        assert time_mod.monotonic() - start < 1.0
+
+    def test_no_probe_keeps_base_timeout(self, tmp_path: Path) -> None:
+        import time as time_mod
+
+        from agent6.graph.client import CuratorClientError, GraphClient
+
+        client = GraphClient(tmp_path / "never.sock")
+        start = time_mod.monotonic()
+        with pytest.raises(CuratorClientError, match="could not connect"):
+            client.connect(timeout_s=0.2)
+        assert 0.15 < time_mod.monotonic() - start < 2.0

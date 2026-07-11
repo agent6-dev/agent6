@@ -556,7 +556,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
 
             mcp_manager = _start_mcp_manager_if_enabled(cfg)
 
-            with GraphClient(sock_path) as graph_client:
+            with GraphClient(sock_path, alive=lambda: curator_proc.poll() is None) as graph_client:
                 dispatcher = ToolDispatcher(
                     root=cwd,
                     config=cfg,

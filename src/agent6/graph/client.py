@@ -14,6 +14,7 @@ import socket
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 from types import TracebackType
 from typing import Any
@@ -39,20 +40,35 @@ class CuratorClientError(Exception):
     """The curator rejected an intent or the connection failed."""
 
 
+# Hard cap on connect patience while the curator process is verifiably alive.
+# A loaded host can take well past the base timeout just to exec the
+# interpreter (observed: 8 concurrent bench runs starved startup beyond 5s);
+# only a genuinely wedged-but-alive curator hits this ceiling.
+_STARTUP_CEILING_S = 60.0
+
+
 class GraphClient:
     """Synchronous client; one instance per workflow."""
 
-    def __init__(self, sock_path: Path) -> None:
+    def __init__(self, sock_path: Path, *, alive: Callable[[], bool] | None = None) -> None:
         self._sock_path = sock_path
         self._sock: socket.socket | None = None
         self._ids = itertools.count(1)
+        # Liveness probe for the curator process (the spawner's Popen.poll).
+        # None = liveness unknowable; connect() then keeps the base timeout.
+        self._alive = alive
 
     # ---- lifecycle --------------------------------------------------------
 
     def connect(self, *, timeout_s: float = 5.0) -> None:
-        deadline = time.monotonic() + timeout_s
+        """Wait for the curator socket. ``timeout_s`` bounds the wait when the
+        curator's liveness is unknowable; with an ``alive`` probe, a process
+        that is still running earns patience up to ``_STARTUP_CEILING_S``
+        (condition-based, not a guess), while one that has exited fails
+        immediately instead of burning the whole deadline."""
+        start = time.monotonic()
         last_exc: OSError | None = None
-        while time.monotonic() < deadline:
+        while True:
             try:
                 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 sock.connect(str(self._sock_path))
@@ -67,7 +83,17 @@ class GraphClient:
                 return
             except OSError as exc:
                 last_exc = exc
-                time.sleep(0.02)
+            waited = time.monotonic() - start
+            if self._alive is not None:
+                if not self._alive():
+                    raise CuratorClientError(
+                        f"curator exited during startup (socket {self._sock_path}): {last_exc}"
+                    )
+                if waited >= _STARTUP_CEILING_S:
+                    break
+            elif waited >= timeout_s:
+                break
+            time.sleep(0.02)
         raise CuratorClientError(f"could not connect to curator at {self._sock_path}: {last_exc}")
 
     def close(self) -> None:
