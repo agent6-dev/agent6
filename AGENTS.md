@@ -86,7 +86,9 @@ principles the Zen doesn't cover:
   it ossifies, rather than threading one more local or piling on another
   branch. The patterns we use (see `workflows/loop.py` + its `_prompts` /
   `_metric` / `_compaction` / `_critic` / `_symbol_outline` siblings, the
-  `ui/cli/_steer|_ask|_repl` split of `run.py`, the `tools/_edit_diag` /
+  `ui/cli` split of `run.py` into `resume.py` plus the `_preflight` /
+  `_interact` / `_live` / `_finalize` / `_manifest` / `_single_writer` /
+  `_task_refs` siblings, the `tools/_edit_diag` /
   `_agent6_docs` / `_result_format` split of `dispatch.py`, and
   `machine/model.py` -> `_semantics.py`):
   - Lift cohesive pure-helper / constant groups into sibling `_name.py`
