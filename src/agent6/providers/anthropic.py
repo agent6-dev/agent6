@@ -52,9 +52,13 @@ DEFAULT_MAX_TOKENS = 8192
 # constants are duplicated here rather than imported because openai.py imports
 # from this module (importing back would be a cycle).
 #
-# 180s is generous: real reasoning bursts emit token-level deltas every few
-# seconds even mid-thinking. Three minutes of only heartbeats means wedged.
-_STREAM_IDLE_TIMEOUT_S = 180.0
+# Two phases (see the OpenAI provider for the rationale): a generous budget for
+# prefill / time-to-first-token (legitimately long on a big context), then a
+# short idle once tokens have started -- a 45s mid-stream gap means the stream
+# wedged, and recovering in 45s instead of 180s is 4x faster with no
+# false-positive on prefill.
+_STREAM_FIRST_DATA_TIMEOUT_S = 120.0
+_STREAM_IDLE_TIMEOUT_S = 45.0
 # The watchdog also polls should_abort/should_interrupt each tick, so keep it
 # short: this bounds how long a Stop/steer/detach waits to end a long in-flight
 # turn. A quarter second reads as immediate without the impatient second Ctrl-C.
@@ -632,6 +636,7 @@ class AnthropicProvider:
         # stopping the run mid-turn (``should_abort``). The ``except`` turns each
         # into a purpose-specific error.
         last_data_at = time.monotonic()
+        seen_data = threading.Event()  # set on the first data event; picks the timeout
         idle_killed = threading.Event()
         aborted = threading.Event()
         interrupted = threading.Event()
@@ -667,7 +672,10 @@ class AnthropicProvider:
                     with contextlib.suppress(Exception):
                         resp.close()
                     return
-                if time.monotonic() - last_data_at <= _STREAM_IDLE_TIMEOUT_S:
+                timeout = (
+                    _STREAM_IDLE_TIMEOUT_S if seen_data.is_set() else _STREAM_FIRST_DATA_TIMEOUT_S
+                )
+                if time.monotonic() - last_data_at <= timeout:
                     continue
                 idle_killed.set()
                 with contextlib.suppress(Exception):
@@ -727,6 +735,7 @@ class AnthropicProvider:
                     # the bytes that would otherwise mask a wedged upstream.
                     if et != "ping":
                         last_data_at = time.monotonic()
+                        seen_data.set()  # past prefill: mid-stream idle timeout now applies
                     if et == "message_start":
                         msg = evt.get("message", {})
                         u = msg.get("usage", {}) or {}
@@ -841,6 +850,10 @@ class AnthropicProvider:
                 # Convert the watchdog-induced HTTPError into a purpose-specific
                 # ProviderError so the loop's retry/quit path can log a
                 # meaningful reason rather than a generic "ReadError".
+                phase_s = (
+                    _STREAM_IDLE_TIMEOUT_S if seen_data.is_set() else _STREAM_FIRST_DATA_TIMEOUT_S
+                )
+                where = "mid-stream" if seen_data.is_set() else "before any data (prefill)"
                 if self.transcript_sink is not None:
                     self.transcript_sink.record(
                         url=url,
@@ -848,13 +861,12 @@ class AnthropicProvider:
                         request_body=body,
                         response_status=0,
                         response_body=(
-                            f"SSE idle watchdog: no data event for "
-                            f"{_STREAM_IDLE_TIMEOUT_S:.0f}s "
+                            f"SSE idle watchdog: no data event for {phase_s:.0f}s {where} "
                             f"(only heartbeats). Upstream model appears wedged."
                         ),
                     )
                 raise ProviderError(
-                    f"Anthropic SSE stream idle for >{_STREAM_IDLE_TIMEOUT_S:.0f}s "
+                    f"Anthropic SSE stream idle for >{phase_s:.0f}s {where} "
                     "(only heartbeats received); upstream appears wedged."
                 ) from exc
             if self.transcript_sink is not None:

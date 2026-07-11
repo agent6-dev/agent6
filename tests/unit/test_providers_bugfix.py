@@ -229,8 +229,9 @@ class _PingOnlyStreamResponse:
 
 
 def test_anthropic_streaming_idle_watchdog_fires(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Make the watchdog fire fast so the test runs in well under a second.
-    monkeypatch.setattr(anthropic_mod, "_STREAM_IDLE_TIMEOUT_S", 0.05)
+    # Ping-only, no data event ever = the prefill-wedge case, so the FIRST-data
+    # timeout governs. Make it fire fast so the test runs in well under a second.
+    monkeypatch.setattr(anthropic_mod, "_STREAM_FIRST_DATA_TIMEOUT_S", 0.05)
     monkeypatch.setattr(anthropic_mod, "_STREAM_WATCHDOG_TICK_S", 0.01)
 
     provider = AnthropicProvider(api_key="sk-test", model="claude-3-5-sonnet")

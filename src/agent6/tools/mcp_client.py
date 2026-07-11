@@ -125,6 +125,10 @@ class _MCPServer:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
                 bufsize=0,
+                # Its own session: a terminal Ctrl-C signals the foreground
+                # process group, and an MCP server that dies with it breaks its
+                # tools for the rest of the run.
+                start_new_session=True,
             )
         except (OSError, FileNotFoundError) as exc:
             raise MCPError(f"could not spawn MCP server {self.name!r}: {exc}") from exc

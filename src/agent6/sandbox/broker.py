@@ -172,6 +172,11 @@ def enter_network_isolation() -> None:
     except OSError as exc:
         raise EgressBrokerError(f"failed to write namespace id maps: {exc}") from exc
     _bring_up_loopback()
+    # Mark the environment so an agent6 child accidentally spawned from inside
+    # this namespace (where no provider is reachable) can refuse loudly instead
+    # of burning provider retries; children that must escape the namespace go
+    # through the pre-forked host spawner (agent6.sandbox.host_spawn).
+    os.environ["AGENT6_NETNS_ISOLATED"] = "1"
 
 
 # --------------------------------------------------------------------------
@@ -180,7 +185,7 @@ def enter_network_isolation() -> None:
 
 
 def _run_broker_child(listeners: list[tuple[Endpoint, socket.socket]]) -> None:  # pragma: no cover
-    _set_parent_death_signal()
+    set_parent_death_signal()
 
     def _exit(_signum: int, _frame: object) -> None:
         os._exit(0)
@@ -188,7 +193,7 @@ def _run_broker_child(listeners: list[tuple[Endpoint, socket.socket]]) -> None: 
     signal.signal(signal.SIGTERM, _exit)
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     keep = {ls.fileno() for _, ls in listeners}
-    _close_inherited_fds(keep)
+    close_inherited_fds(keep)
 
     sel = selectors.DefaultSelector()
     for ep, ls in listeners:
@@ -261,16 +266,18 @@ def _pump_one_way(src: socket.socket, dst: socket.socket) -> None:  # pragma: no
             dst.shutdown(socket.SHUT_WR)
 
 
-def _set_parent_death_signal() -> None:  # pragma: no cover
-    """Ask the kernel to SIGTERM us if the agent process dies."""
+def set_parent_death_signal() -> None:  # pragma: no cover
+    """Ask the kernel to SIGTERM us if the agent process dies. Shared by the
+    pre-forked helper children (broker, host spawner)."""
     pr_set_pdeathsig = 1
     with contextlib.suppress(OSError):
         libc = ctypes.CDLL("libc.so.6", use_errno=True)
         libc.prctl(pr_set_pdeathsig, signal.SIGTERM)
 
 
-def _close_inherited_fds(keep: set[int]) -> None:  # pragma: no cover
-    """Close fds inherited from the agent except the listening sockets."""
+def close_inherited_fds(keep: set[int]) -> None:  # pragma: no cover
+    """Close fds inherited from the agent except *keep*. Shared by the
+    pre-forked helper children (broker, host spawner)."""
     try:
         entries = list(Path("/proc/self/fd").iterdir())
     except OSError:

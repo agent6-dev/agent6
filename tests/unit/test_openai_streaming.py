@@ -407,7 +407,10 @@ def test_streaming_idle_watchdog_kills_heartbeat_only_stream(
 
     from agent6.providers import openai as openai_mod
 
-    monkeypatch.setattr(openai_mod, "_STREAM_IDLE_TIMEOUT_S", 0.3)
+    # Only heartbeats, no data line ever: this is the prefill-wedge case, so the
+    # FIRST-data timeout governs (the mid-stream idle timeout only applies after
+    # tokens start).
+    monkeypatch.setattr(openai_mod, "_STREAM_FIRST_DATA_TIMEOUT_S", 0.3)
     monkeypatch.setattr(openai_mod, "_STREAM_WATCHDOG_TICK_S", 0.05)
 
     provider = OpenAIProvider(api_key="sk-test", model="kimi")
@@ -455,6 +458,69 @@ def test_streaming_idle_watchdog_kills_heartbeat_only_stream(
     elapsed = time.monotonic() - started
     # Should fire well under 2s with a 0.3s threshold + 0.05s tick.
     assert elapsed < 2.0, f"watchdog took {elapsed:.2f}s"
+
+
+def test_streaming_idle_watchdog_mid_stream_uses_the_short_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Once tokens have started, a stall trips the SHORT mid-stream timeout, not
+    the long prefill budget -- the user's case (text streamed, then wedged). The
+    prefill timeout is set long here to prove the short one is what fired."""
+    import threading
+    import time
+
+    from agent6.providers import openai as openai_mod
+
+    monkeypatch.setattr(openai_mod, "_STREAM_IDLE_TIMEOUT_S", 0.3)
+    monkeypatch.setattr(openai_mod, "_STREAM_FIRST_DATA_TIMEOUT_S", 30.0)
+    monkeypatch.setattr(openai_mod, "_STREAM_WATCHDOG_TICK_S", 0.05)
+
+    provider = OpenAIProvider(api_key="sk-test", model="kimi")
+
+    class _DataThenStallResponse:
+        def __init__(self) -> None:
+            self.status_code = 200
+            self._closed = threading.Event()
+
+        def __enter__(self) -> _DataThenStallResponse:
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            return None
+
+        def close(self) -> None:
+            self._closed.set()
+
+        def read(self) -> bytes:
+            return b""
+
+        def iter_lines(self):
+            # One real data line (tokens started -> short timeout now applies),
+            # then only heartbeats until the watchdog closes us.
+            yield 'data: {"choices":[{"index":0,"delta":{"content":"hello"}}]}'
+            yield ""
+            while not self._closed.is_set():
+                yield ":OPENROUTER PROCESSING"
+                yield ""
+                if self._closed.wait(0.05):
+                    raise httpx2.ReadError("connection closed by watchdog")
+            raise httpx2.ReadError("connection closed by watchdog")
+
+    def fake_stream(method: str, url: str, **kwargs: Any) -> _DataThenStallResponse:
+        return _DataThenStallResponse()
+
+    started = time.monotonic()
+    with (
+        mock.patch("httpx2.stream", side_effect=fake_stream),
+        pytest.raises(ProviderError, match="mid-stream"),
+    ):
+        provider.call(
+            system="sys",
+            messages=[{"role": "user", "content": "x"}],
+            text_delta_callback=lambda _p: None,
+        )
+    # Fires on the 0.3s mid-stream timeout, not the 30s prefill budget.
+    assert time.monotonic() - started < 3.0
 
 
 def test_streaming_idle_watchdog_does_not_fire_when_data_flows(

@@ -321,16 +321,23 @@ class QuestionModal(ModalScreen["tuple[str, ...] | None"]):
         border: round $accent; padding: 1 2; background: $surface;
     }
     #question-list { height: auto; }
-    .q-text { margin-top: 1; }
-    /* Options are full-width rows; clicking one fills that question's answer field
-       below. Keep the Button's default height (a borderless height:1 button collapses
-       its label to nothing). */
+    .q-text { margin-top: 1; text-style: bold; }
+    /* Options are chips: clicking one fills that question's answer field below.
+       A visible border + panel fill reads as pressable (a borderless full-width
+       label read as a heading); auto width so short options sit compact, and
+       they wrap across rows rather than one tall column. Keep the default height
+       (a borderless height:1 button collapses its label to nothing). */
     .q-opts { height: auto; }
-    .q-opts Button { width: 100%; }
-    #question-submit {
-        margin-top: 1; height: 1; border: none; background: transparent; color: $accent;
+    .q-opts Button {
+        width: auto; min-width: 8; margin: 0 1 0 0;
+        border: round $primary; background: $panel; color: $foreground;
     }
-    #question-submit:focus { background: $primary; color: $text; text-style: bold; }
+    .q-opts Button:focus { border: round $accent; background: $primary; text-style: bold; }
+    .q-ans { margin-top: 0; }
+    #question-submit {
+        margin-top: 1; background: $primary; color: $text; text-style: bold;
+    }
+    #question-submit:focus { background: $accent; }
     """
 
     BINDINGS: ClassVar = [
@@ -349,7 +356,7 @@ class QuestionModal(ModalScreen["tuple[str, ...] | None"]):
         with Vertical(id="question-box"):
             head = Text()
             head.append("The agent is asking", style="bold")
-            head.append(" -- answer, then Submit (ctrl+s):" if multi else ":")
+            head.append(". Answer, then Submit (ctrl+s):" if multi else ":")
             yield Static(head)
             with VerticalScroll(id="question-list"):
                 for qi, q in enumerate(self.questions):
@@ -360,11 +367,16 @@ class QuestionModal(ModalScreen["tuple[str, ...] | None"]):
                     yield Static(body, classes="q-text")
                     if q.options:
                         # Buttons carry Text so an option with '[...]' can't crash
-                        # markup parsing; pressing one fills that answer field.
-                        with Vertical(classes="q-opts"):
+                        # markup parsing; pressing one fills that answer field. A
+                        # Horizontal row of auto-width chips wraps compactly.
+                        with Horizontal(classes="q-opts"):
                             for oi, opt in enumerate(q.options):
                                 yield Button(Text(opt), id=f"opt-{qi}-{oi}")
-                    yield Input(placeholder="pick above or type an answer", id=f"ans-{qi}")
+                    yield Input(
+                        placeholder="pick above or type an answer",
+                        id=f"ans-{qi}",
+                        classes="q-ans",
+                    )
             yield Button("Submit (ctrl+s)", id="question-submit")
 
     def on_mount(self) -> None:

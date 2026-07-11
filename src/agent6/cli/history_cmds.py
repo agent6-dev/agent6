@@ -15,7 +15,7 @@ from agent6.cli._common import (
     _state_dir,
     resolve_run_layout,
 )
-from agent6.graph.models import TaskNode
+from agent6.cli._task_tree import task_tree_lines
 from agent6.graph.storage import RunLayout, load_graph
 from agent6.run_id import RunIdError
 from agent6.transcript_render import fold_conversation, load_transcripts, render_markdown
@@ -93,32 +93,11 @@ def _cmd_history_graph(run_id: str) -> int:
         print(f"ERROR: run {target_id} has no persisted graph nodes", file=sys.stderr)
         return 2
 
-    roots = sorted(
-        (n for n in nodes.values() if n.parent_id is None),
-        key=lambda n: n.created_at,
-    )
     print(f"Run id: {target_id}")
     print()
-    for root in roots:
-        _print_node_dfs(root, nodes, depth=0)
+    for line in task_tree_lines(nodes, show_commit=True):
+        print(line)
     return 0
-
-
-def _print_node_dfs(node: TaskNode, nodes: dict[str, TaskNode], *, depth: int) -> None:
-    """Depth-first, left-to-right print of one TaskNode subtree."""
-
-    indent = "  " * depth
-    status = f"[{node.status}]"
-    commit = f"  (commit: {node.commit_sha[:7]})" if node.commit_sha else ""
-    print(f"{indent}{status} {node.title}{commit}")
-    # Children are ordered by insertion (curator preserves order); walk them
-    # left-to-right, recursing fully into each before moving to the next.
-    for child_id in node.children:
-        child = nodes.get(child_id)
-        if child is None:
-            print(f"{indent}  [MISSING] <child id {child_id} not found>")
-            continue
-        _print_node_dfs(child, nodes, depth=depth + 1)
 
 
 def _parse_seq_window(spec: str) -> tuple[int, int] | None:

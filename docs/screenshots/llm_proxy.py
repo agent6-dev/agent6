@@ -160,11 +160,17 @@ class Handler(BaseHTTPRequestHandler):
             # SSE: flush per event for a live streaming feel; close-framed.
             self.send_header("Connection", "close")
             self.end_headers()
-            for event in body.split(b"\n\n"):
+            stall_ms = int(os.environ.get("AGENT6_PROXY_STALL_MS", "0"))
+            stall_at = int(os.environ.get("AGENT6_PROXY_STALL_AT", "3"))
+            for i, event in enumerate(body.split(b"\n\n")):
                 if not event:
                     continue
                 self.wfile.write(event + b"\n\n")
                 self.wfile.flush()
+                # Simulate a wedged upstream: pause once, partway through a
+                # streamed response (AGENT6_PROXY_STALL_MS, off by default).
+                if stall_ms and i == stall_at:
+                    time.sleep(stall_ms / 1000.0)
                 if CHUNK_MS:
                     time.sleep(CHUNK_MS / 1000.0)
         else:

@@ -30,7 +30,7 @@ def test_run_summary_captures_cost_and_status(tmp_path: Path) -> None:
     (s,) = model.hub_payload(tmp_path)["runs"]
     assert s["mode"] == "run"
     assert s["task"] == "the task"
-    assert s["status"] == "ok"
+    assert s["status"] == "passed"
     assert s["usd"] == 0.0123
 
 

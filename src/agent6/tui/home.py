@@ -11,9 +11,7 @@ thin driver over the CLI + the same file/event contract the dashboard reads.
 
 from __future__ import annotations
 
-import contextlib
 import inspect
-import json
 import os
 import time
 from collections.abc import Callable, Iterable, Iterator
@@ -46,14 +44,12 @@ from agent6.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_binding
 from agent6.tui.modals import ConfirmModal
 from agent6.tui.theme import PALETTE_CSS, open_theme_picker, setup_theme
 from agent6.tui.widgets import FORM_CSS, ActionItem
+from agent6.viewmodel import RunSummary, summarize_run_dir
 from agent6.viewmodel import run_mtime as _run_mtime
 from agent6.viewmodel import task_snippet as _task_snippet
 
 # Subdirs (relative to the agent6 dir) that hold watchable run directories.
 _RUN_SUBDIRS = ("runs", "asks")
-# A "running" run whose logs.jsonl hasn't been touched in this long reads as
-# crashed/killed (a long reasoning burst still appends within minutes).
-_STALE_AFTER_S = 600.0
 # The new-work profile dropdown's first entry: "" => no --profile, so the run
 # uses [workflow].profile from config (or the plain defaults).
 _DEFAULT_PROFILE_LABEL = "(config default)"
@@ -69,40 +65,28 @@ def _available_profiles(repo_cwd: Path) -> list[str]:
     return available_profile_names(repo_cwd, None)
 
 
-def _run_summary(run_dir: Path) -> dict[str, str]:
-    """A cheap one-line summary of a run for the listing: mode, task, status.
+# Colors for the shared status words, so a dead run cannot read as a neutral
+# "done" in the listing. Unlisted words ("finished", "?") render plain.
+_STATUS_STYLE = {
+    "running": "bold cyan",
+    "stale": "dim",
+    "passed": "green",
+    "stopped": "yellow",
+    "failed": "bold red",
+}
 
-    Reads only the first event (run.start) + scans for run.end, so it stays fast
-    on a directory of many runs."""
-    logs = run_dir / "logs.jsonl"
-    mode, task, status = "?", "", "running"
-    if not logs.is_file():
-        return {"id": run_dir.name, "mode": mode, "task": "(no logs)", "status": "—"}
-    try:
-        with logs.open(encoding="utf-8") as fh:
-            for line in fh:
-                try:
-                    ev = json.loads(line)
-                except ValueError:
-                    continue
-                etype = ev.get("type")
-                if etype == "run.start":
-                    mode = str(ev.get("mode", mode))
-                    task = str(ev.get("user_task", ""))
-                elif etype == "run.end":
-                    status = "ok" if ev.get("all_passed") else "done"
-        # A "running" run whose log has been quiet for a while is almost
-        # certainly a crashed/killed process, not active work, say so rather
-        # than showing "running" forever.
-        if status == "running" and (time.time() - logs.stat().st_mtime) > _STALE_AFTER_S:
-            status = "stale"
-    except OSError:
-        pass
-    if mode == "ask":
-        transcript = run_dir / "transcript.md"
-        with contextlib.suppress(OSError):
-            task = transcript.read_text(encoding="utf-8")
-    return {"id": run_dir.name, "mode": mode, "task": _task_snippet(task)[:60], "status": status}
+
+def _status_cell(summary: RunSummary) -> Text:
+    label = summary.status
+    if summary.reason:
+        label = f"{summary.status} · {summary.reason.replace('_', ' ')}"
+    return Text(label, style=_STATUS_STYLE.get(summary.status, ""))
+
+
+def _cost_cell(cost_usd: float) -> str:
+    if cost_usd <= 0:
+        return ""
+    return f"${cost_usd:.2f}" if cost_usd >= 0.995 else f"${cost_usd:.4f}"
 
 
 def _list_runs(agent6_dir: Path) -> list[Path]:
@@ -343,7 +327,7 @@ class HomeScreen(Screen[None]):
     def on_mount(self) -> None:
         table = self.query_one("#runs", DataTable)
         table.cursor_type = "row"
-        table.add_columns("when", "mode", "status", "id", "task")
+        table.add_columns("when", "mode", "status", "cost", "id", "task")
         self.action_refresh()
         table.focus()
 
@@ -364,12 +348,19 @@ class HomeScreen(Screen[None]):
         for rd in _list_runs(self.agent6_dir):
             if not rd.is_dir():
                 continue  # vanished since the listing snapshot — skip it
-            s = _run_summary(rd)
+            s = summarize_run_dir(rd)
             # last-activity time (logs.jsonl), so opening a run to view it does not
             # bump its "when" the way the run-dir mtime did.
             when = time.strftime("%m-%d %H:%M", time.localtime(_run_mtime(rd)))
             # Text cells: task is model/user input and may carry markup brackets.
-            table.add_row(when, s["mode"], s["status"], Text(s["id"]), Text(s["task"]))
+            table.add_row(
+                when,
+                s.mode,
+                _status_cell(s),
+                _cost_cell(s.cost_usd),
+                Text(s.run_id),
+                Text(_task_snippet(s.task)[:60]),
+            )
             survivors.append(rd)
         self._runs = survivors
         # Useful context in the header sub-title rather than a duplicate hint bar.

@@ -15,6 +15,7 @@ tailers feed the same `TranscriptFold` one event at a time.
 
 from __future__ import annotations
 
+import shlex
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -61,19 +62,32 @@ class TranscriptItem:
 _PRIMARY_ARGS = ("path", "file", "pattern", "query", "command", "cmd", "url", "title", "summary")
 
 
+def _clip(text: str, n: int = 60) -> str:
+    return text if len(text) <= n else text[: n - 3] + "…"
+
+
 def salient_arg(args: Any) -> str:
     """The one argument worth showing beside a tool name (best effort). Takes
     untrusted event data, so a non-dict `args` is tolerated, not assumed away."""
     if not isinstance(args, dict) or not args:
         return ""
+    # argv (run_command): a shell-style line, not a Python list repr.
+    argv = args.get("argv")
+    if isinstance(argv, (list, tuple)) and argv:
+        return _clip(shlex.join(str(a) for a in argv))
+    # ask_user: the question text, not the nested {questions:[{...}]} repr.
+    questions = args.get("questions")
+    if isinstance(questions, (list, tuple)) and questions:
+        first = questions[0]
+        q = first.get("question", "") if isinstance(first, dict) else str(first)
+        more = f" (+{len(questions) - 1})" if len(questions) > 1 else ""
+        return _clip(str(q)) + more
     for key in _PRIMARY_ARGS:
         value = args.get(key)
         if isinstance(value, (str, int)):
-            text = str(value)
-            return text if len(text) <= 60 else text[:57] + "…"
+            return _clip(str(value))
     key, value = next(iter(args.items()))
-    text = f"{key}={value}"
-    return text if len(text) <= 60 else text[:57] + "…"
+    return _clip(f"{key}={value}")
 
 
 class TranscriptFold:
@@ -132,10 +146,14 @@ class TranscriptFold:
             out = self._flush_message()
             counts = f"{self._tools} tools · {self._commits} commit(s)"
             reason = str(event.get("reason", ""))
+            # Pair the finish summary with the done line ONLY on a clean finish.
+            # On a failure/stop the summary is from an EARLIER finish_run call and
+            # pairing it (e.g. "provider error  Plan seeded.") misreads as success.
+            body = self._finish if reason in ("", "finish_run") else ""
             out.append(
                 TranscriptItem(
                     "done",
-                    body=self._finish,
+                    body=body,
                     ok=bool(event.get("all_passed")),
                     detail=counts,
                     name=_END_REASON_LABEL.get(reason, reason),
@@ -167,7 +185,15 @@ class TranscriptFold:
         else:
             ok = event.get("ok") in (True, "True")
             detail = str(event.get("summary", "")).strip()
-        tail = "" if ok else str(event.get("stderr_tail") or event.get("stdout_tail") or "").strip()
+        # A failed tool shows why (stderr, else stdout). run_command succeeds
+        # silently otherwise, so show a short stdout tail on success too: the
+        # operator asked to run it to SEE the output (git status, a version).
+        if not ok:
+            tail = str(event.get("stderr_tail") or event.get("stdout_tail") or "").strip()
+        elif name in ("run_command", "run_metric_command"):
+            tail = str(event.get("stdout_tail") or "").strip()
+        else:
+            tail = ""
         return [TranscriptItem("tool", name=name, arg=arg, ok=ok, detail=detail, tail=tail)]
 
 

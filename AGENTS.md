@@ -182,7 +182,10 @@ All five must pass; keep the suite green.
   server, exe resolved from PATH), `tools/mcp_client.py`
   (operator-configured `[mcp.servers.*]` server commands),
   `sandbox/jail.py` (the launcher
-  itself), `providers/token_command.py` (the operator-configured
+  itself), `sandbox/host_spawn.py` (the pre-forked detach helper: spawns
+  `agent6 resume <run_id>` in the host namespaces, argv built from the agent6
+  exe captured at fork time, requests only from the trusted parent over a
+  close-on-exec pipe, never LLM output), `providers/token_command.py` (the operator-configured
   `[providers.*].token_command` that mints a provider bearer; argv comes
   from config, never from LLM output), `frontend/spawn.py` (the shared front-end
   bridge: spawns the agent6 CLI detached for run/machine launches and captures

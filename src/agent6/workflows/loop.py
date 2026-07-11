@@ -356,6 +356,25 @@ _PLAN_BUDGET_NUDGE = (
 )
 
 
+_QUESTION_NUDGE = (
+    "[harness] You ended your turn by asking a question, but you did not call a"
+    " tool, so nobody can answer it and the run is about to end. If you need the"
+    " operator's input, call `ask_user` with the question (a front-end delivers"
+    " it and returns the answer). If you have enough to proceed, do the work. If"
+    " you are truly done, call `finish_run`. Do not just write the question as"
+    " text again."
+)
+
+
+def _ends_with_question(text: str) -> bool:
+    """Best-effort: the model's prose ends by asking the operator something. The
+    last non-empty line ending in '?' catches the common 'Should I proceed?' /
+    'Which option do you want?' close that a model writes instead of calling
+    ask_user."""
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    return bool(lines) and lines[-1].endswith("?")
+
+
 def _is_empty_tool_call_response(resp: Any) -> bool:
     """A self-contradictory provider response: the finish/stop reason says the
     model stopped to make a tool call, but no tool_use and no text came back.
@@ -421,7 +440,7 @@ def _current_task_id(nodes: dict[str, Any], cursor: str | None) -> str | None:
     return _first_ready_subtask(nodes)
 
 
-def _current_task_banner(task_id: str, node: dict[str, Any]) -> str:
+def _current_task_banner(task_id: str, node: dict[str, Any], *, decompose: bool = False) -> str:
     """The per-turn focus directive naming the current task and its acceptance."""
     title = str(node.get("title", "")).strip() or "(untitled)"
     lines = [f"[harness focus] Current task ({task_id}): {title}"]
@@ -437,6 +456,13 @@ def _current_task_banner(task_id: str, node: dict[str, Any]) -> str:
         " next task. If you find unrelated work, add_task it instead of switching"
         " to it now."
     )
+    # Decompose runs plan recursively: invite a finer plan for a task that turns
+    # out large, at the point the model has the most context to plan it.
+    if decompose and not node.get("children"):
+        lines.append(
+            "If this task is itself large or multi-step, add child subtasks under"
+            f" it (parent_id={task_id}) breaking it into finer steps, then do those."
+        )
     return "\n".join(lines)
 
 
@@ -656,6 +682,10 @@ class _LoopState:
     metric_finish_nudges_used: int = 0
     task_finish_nudges_used: int = 0
     plan_finish_nudged: bool = False
+    # A turn that ends in a prose question with no tool_use is nudged ONCE to
+    # call ask_user (or finish_run) instead of narrating; then silent_finish is
+    # accepted so a model that ignores the nudge cannot loop the run.
+    question_nudged: bool = False
     # verify-settled completion (run mode): once verify has passed -- or, on a
     # gateless run, once an edit has been committed -- count no-progress
     # iterations; nudge then stop a worker that spins after success.
@@ -2002,12 +2032,8 @@ class Workflow:
                 )
             except Exception as exc:
                 self._log(f"LOOP: mark in_progress skipped: {exc}")
-        messages.append(
-            {
-                "role": "user",
-                "content": [{"type": "text", "text": _current_task_banner(current_id, node)}],
-            }
-        )
+        banner = _current_task_banner(current_id, node, decompose=self.config.prompt.decompose)
+        messages.append({"role": "user", "content": [{"type": "text", "text": banner}]})
         state.surfaced_task_id = current_id
         self._log(f"LOOP: surfaced current task {current_id}")
         self._emit("loop.task.surfaced", task_id=current_id)
@@ -2015,7 +2041,7 @@ class Workflow:
         # that emits graph.update, so refresh the live view here.
         self._emit_graph_snapshot()
 
-    def _handle_no_tool_use(  # noqa: PLR0912, PLR0915
+    def _handle_no_tool_use(  # noqa: PLR0911, PLR0912, PLR0915
         self, resp: Any, messages: list[dict[str, Any]], state: _LoopState, *, iteration: int
     ) -> RunResult | None:
         """Handle a turn with no tool_use. Either a silent finish (the agent
@@ -2144,6 +2170,19 @@ class Workflow:
                     trigger="silent_finish",
                 )
                 messages.append({"role": "user", "content": [{"type": "text", "text": task_nudge}]})
+                return None
+            # Question-nudge (run mode, once): the model ended by asking the
+            # operator something in prose without calling ask_user, so the run
+            # would silently finish with an unanswered question. Nudge once to
+            # call ask_user / finish_run; if it asks again, accept the finish
+            # (bounded, so a stubborn model cannot loop the run).
+            if self.mode == "run" and not state.question_nudged and _ends_with_question(text):
+                state.question_nudged = True
+                self._log(f"  silent_finish nudged: ended on a question at iter {iteration}")
+                self._emit("loop.question_nudge", iteration=iteration)
+                messages.append(
+                    {"role": "user", "content": [{"type": "text", "text": _QUESTION_NUDGE}]}
+                )
                 return None
             self._log(
                 f"LOOP: silent_finish at iter {iteration} - agent emitted text but no tool_use"

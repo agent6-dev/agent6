@@ -16,7 +16,7 @@ from agent6.frontend.approval import (
     write_frontend_pid,
     write_question_answers,
 )
-from agent6.tui.home import _list_runs, _run_mtime, _run_summary
+from agent6.tui.home import _list_runs, _run_mtime
 
 
 def _write_run(agent6_dir: Path, sub: str, run_id: str, events: list[dict[str, object]]) -> Path:
@@ -24,75 +24,6 @@ def _write_run(agent6_dir: Path, sub: str, run_id: str, events: list[dict[str, o
     rd.mkdir(parents=True)
     (rd / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     return rd
-
-
-def test_run_summary_reads_mode_task_status(tmp_path: Path) -> None:
-    rd = _write_run(
-        tmp_path / ".agent6",
-        "runs",
-        "r1",
-        [
-            {"type": "run.start", "mode": "run", "user_task": "fix [the] bug"},
-            {"type": "tool.call", "name": "read_file"},
-            {"type": "run.end", "all_passed": True},
-        ],
-    )
-    s = _run_summary(rd)  # pyright: ignore[reportPrivateUsage]
-    assert s["mode"] == "run"
-    assert s["task"] == "fix [the] bug"
-    assert s["status"] == "ok"
-
-
-def test_run_summary_skips_seeded_ask_file_block(tmp_path: Path) -> None:
-    rd = _write_run(
-        tmp_path / ".agent6",
-        "asks",
-        "a1",
-        [
-            {
-                "type": "run.start",
-                "mode": "ask",
-                "user_task": '<file path="a.py">\nprint("a")\n</file>\n\nwhat does this do?',
-            },
-            {"type": "run.end", "all_passed": True},
-        ],
-    )
-    s = _run_summary(rd)  # pyright: ignore[reportPrivateUsage]
-    assert s["task"] == "what does this do?"
-
-
-def test_run_summary_reads_ask_question_from_transcript_when_log_task_is_truncated(
-    tmp_path: Path,
-) -> None:
-    rd = _write_run(
-        tmp_path / ".agent6",
-        "asks",
-        "a1",
-        [
-            {
-                "type": "run.start",
-                "mode": "ask",
-                "user_task": '<file path="a.py">\nprint("a")',
-            },
-            {"type": "run.end", "all_passed": True},
-        ],
-    )
-    (rd / "transcript.md").write_text(
-        "# agent6 ask\n\n"
-        "## Question\n\n"
-        '<file path="a.py">\nprint("a")\n</file>\n\n'
-        "what does this do?\n\n"
-        "## Answer\n\n"
-        "It prints a.\n",
-        encoding="utf-8",
-    )
-    s = _run_summary(rd)  # pyright: ignore[reportPrivateUsage]
-    assert s["task"] == "what does this do?"
-
-
-def test_run_summary_running_when_no_end(tmp_path: Path) -> None:
-    rd = _write_run(tmp_path / ".agent6", "runs", "r2", [{"type": "run.start", "mode": "plan"}])
-    assert _run_summary(rd)["status"] == "running"  # pyright: ignore[reportPrivateUsage]
 
 
 def test_list_runs_spans_runs_and_asks(tmp_path: Path) -> None:

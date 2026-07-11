@@ -29,6 +29,7 @@ depends_on = [
   "agent6.workflows",
   "agent6.types",
   "agent6.providers", "agent6", "agent6.tools",
+  "agent6.tools.schema",
   "agent6.memory",
   "agent6.portable",
   "agent6.budget",
@@ -81,7 +82,7 @@ depends_on = []
 
 [[modules]]
 path = "agent6.tui"
-depends_on = ["agent6.config_layer", "agent6.frontend", "agent6.machine", "agent6.models_cache", "agent6.paths", "agent6.secrets", "agent6.transcript_render", "agent6.viewmodel"]
+depends_on = ["agent6.config_layer", "agent6.frontend", "agent6.machine", "agent6.models_cache", "agent6.paths", "agent6.secrets", "agent6.viewmodel"]
 
 [[modules]]
 # The shared, textual-free write bridge: spawn the CLI detached, and the

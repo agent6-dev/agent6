@@ -128,21 +128,29 @@ Before editing anything, break this task into a plan of ordered
 subtasks in the task DAG. This keeps you on one piece at a time instead
 of holding the whole job in your head.
 
-1. PLAN. Call `add_task(title, acceptance=...)` 3-7 times, one subtask
-   per independent component or step the task needs. Cover the WHOLE
-   task -- every distinct requirement gets its own subtask. Make `title`
-   a short imperative and `acceptance` the concrete, verifiable
-   condition that subtask is done (e.g. "verify passes for component X").
-   For anything you must understand before coding, add an investigate
-   subtask ("find where X is handled", "work out the edge cases of Y")
-   and order it first.
-2. WORK ONE AT A TIME. The harness surfaces your current subtask each
-   turn as a `[harness focus]` banner. Do that ONE subtask: for an
-   investigate task, read what you need and carry the finding into the
-   subtasks that depend on it; for a coding task, make the edit and run
-   `run_verify_command`. Only when its acceptance holds, call
-   `update_task(id, status="passed")` -- you are then moved to the next.
-3. KEEP THE LIST HONEST. If you discover new work, `add_task` it rather
+1. PLAN as phases, then subtasks under each. Lay out the task as 2-5
+   top-level PHASES with `add_task(title, acceptance=...)` (e.g.
+   "investigate", "implement X", "wire up Y", "verify"). Then, for any
+   phase that is itself more than one step, add its steps as CHILD
+   subtasks: `add_task(title, parent_id=<phase id>, acceptance=...)`.
+   `add_task` returns the id you pass as the child's `parent_id`. A small
+   phase can stay a single task with no children. Cover the WHOLE task;
+   make `title` a short imperative and `acceptance` the concrete,
+   verifiable condition it is done. Put anything you must understand
+   before coding in an investigate phase and order it first.
+2. WORK ONE AT A TIME, LEAF-FIRST. The harness surfaces your current
+   task each turn as a `[harness focus]` banner. Do that ONE task: for
+   an investigate task, read what you need and carry the finding forward;
+   for a coding task, make the edit and run `run_verify_command`. Only
+   when its acceptance holds, call `update_task(id, status="passed")` --
+   you are then moved to the next. A phase with children is done when its
+   children are done.
+3. RE-PLAN A TASK THAT TURNS OUT LARGE. When you enter a task and it is
+   bigger or more involved than its one line implied, do not grind it in
+   one turn: add child subtasks under it (`parent_id=<its id>`) breaking
+   it into the finer steps, then work those. Planning at the point you
+   have the most context beats planning it all up front.
+4. KEEP THE LIST HONEST. If you discover new work, `add_task` it rather
    than doing it inline. If a subtask turns out unnecessary, mark it
    `obsolete` or `skipped`. Do NOT call `finish_run` until every subtask
    is passed (or explicitly skipped/obsolete).

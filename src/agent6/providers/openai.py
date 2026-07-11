@@ -95,11 +95,16 @@ DEFAULT_MAX_TOKENS = 8192
 # thread; the blocking ``iter_lines`` then raises an ``httpx2.HTTPError``
 # that we re-raise as ``ProviderError`` with a descriptive message so
 # the loop can retry-or-quit at its own layer.
-#
-# 180s is generous: real Kimi K2.6 reasoning bursts produce a data
-# event every few seconds even mid-reasoning (token-level streaming).
-# Going 3 minutes with only heartbeats means the upstream is wedged.
-_STREAM_IDLE_TIMEOUT_S = 180.0
+# Two phases, because "no data yet" and "data stopped" mean different things:
+#  - Before the FIRST data line, the gap is prefill / time-to-first-token, which
+#    legitimately runs long on a big context or a slow model, so be patient.
+#  - Once tokens have started, real models emit a data event every few seconds
+#    even mid-reasoning; a 45s gap then means the stream wedged (the exact case
+#    a user hit: text streamed, then 0 bytes for minutes behind heartbeats).
+# Recovering a mid-stream wedge in 45s instead of 180s is 4x faster with no
+# false-positive on prefill.
+_STREAM_FIRST_DATA_TIMEOUT_S = 120.0
+_STREAM_IDLE_TIMEOUT_S = 45.0
 # The watchdog also polls should_abort/should_interrupt each tick, so keep it
 # short: this bounds how long a Stop/steer/detach waits to end a long in-flight
 # turn. A quarter second reads as immediate without the impatient second Ctrl-C.
@@ -678,6 +683,7 @@ class OpenAIProvider:
         # idle threshold is exceeded; the blocking ``iter_lines`` then
         # raises and we surface a descriptive ProviderError.
         last_data_at = time.monotonic()
+        seen_data = threading.Event()  # set on the first data line; picks the timeout
         idle_killed = threading.Event()
         aborted = threading.Event()
         interrupted = threading.Event()
@@ -714,7 +720,10 @@ class OpenAIProvider:
                     with contextlib.suppress(Exception):
                         resp.close()
                     return
-                if time.monotonic() - last_data_at <= _STREAM_IDLE_TIMEOUT_S:
+                timeout = (
+                    _STREAM_IDLE_TIMEOUT_S if seen_data.is_set() else _STREAM_FIRST_DATA_TIMEOUT_S
+                )
+                if time.monotonic() - last_data_at <= timeout:
                     continue
                 idle_killed.set()
                 with contextlib.suppress(Exception):
@@ -766,6 +775,7 @@ class OpenAIProvider:
                     # watchdog is satisfied as long as we keep seeing
                     # these at all (even ``[DONE]`` counts as progress).
                     last_data_at = time.monotonic()
+                    seen_data.set()  # past prefill: mid-stream idle timeout now applies
                     data_str = line[5:].strip()
                     if not data_str or data_str == "[DONE]":
                         if data_str == "[DONE]":
@@ -876,6 +886,10 @@ class OpenAIProvider:
                 # path can log a meaningful reason rather than a
                 # generic "ReadError" / "connection closed".
                 watchdog_stop.set()
+                phase_s = (
+                    _STREAM_IDLE_TIMEOUT_S if seen_data.is_set() else _STREAM_FIRST_DATA_TIMEOUT_S
+                )
+                where = "mid-stream" if seen_data.is_set() else "before any data (prefill)"
                 if self.transcript_sink is not None:
                     self.transcript_sink.record(
                         url=url,
@@ -883,13 +897,12 @@ class OpenAIProvider:
                         request_body=body,
                         response_status=0,
                         response_body=(
-                            f"SSE idle watchdog: no data event for "
-                            f"{_STREAM_IDLE_TIMEOUT_S:.0f}s "
+                            f"SSE idle watchdog: no data event for {phase_s:.0f}s {where} "
                             f"(only heartbeats). Upstream model appears wedged."
                         ),
                     )
                 raise ProviderError(
-                    f"OpenAI SSE stream idle for >{_STREAM_IDLE_TIMEOUT_S:.0f}s "
+                    f"OpenAI SSE stream idle for >{phase_s:.0f}s {where} "
                     "(only heartbeats received); upstream model appears wedged."
                 ) from exc
             watchdog_stop.set()

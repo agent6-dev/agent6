@@ -405,7 +405,7 @@ there is no app-level auth; binding a non-loopback host exposes the write surfac
 | Field | Default | Meaning |
 |---|---|---|
 | `web.host` | `127.0.0.1` | Bind address. A non-loopback value requires `allow_non_loopback = true`. |
-| `web.port` | `8901` | Listen port. |
+| `web.port` | `7658` | Listen port. |
 | `web.allow_non_loopback` | `false` | Opt-in to bind a non-loopback host. Off by default so a typo or copied config can never silently expose the agent. Prefer `tailscale serve` in front of a `127.0.0.1` bind instead. |
 
 ## `[mcp]` + `[[mcp.servers]]` (optional)

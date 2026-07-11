@@ -18,7 +18,7 @@ The same UI on a phone (single column, bottom nav):
 ## Run it
 
 ```bash
-agent6 web            # serve the hub on http://127.0.0.1:8901
+agent6 web            # serve the hub on http://127.0.0.1:7658
 agent6 web <run-id>   # open a run on load
 agent6 web <machine>  # open a machine instance on load
 ```
@@ -63,12 +63,12 @@ a push service you already use.
 The page reads the same wire form as `agent6 watch --json`:
 
 ```bash
-curl -s localhost:8901/api/hub                 # runs + machines + machine files
-curl -s localhost:8901/api/run/<id>            # a run's state, as JSON
-curl -s localhost:8901/api/run/<id>/transcript # the conversation turns
-curl -s localhost:8901/api/machine/<name>      # a machine's state, as JSON
-curl -s localhost:8901/api/config              # effective config (no secrets)
-curl -sN localhost:8901/api/run/<id>/events    # SSE: a fresh snapshot per change
+curl -s localhost:7658/api/hub                 # runs + machines + machine files
+curl -s localhost:7658/api/run/<id>            # a run's state, as JSON
+curl -s localhost:7658/api/run/<id>/transcript # the conversation turns
+curl -s localhost:7658/api/machine/<name>      # a machine's state, as JSON
+curl -s localhost:7658/api/config              # effective config (no secrets)
+curl -sN localhost:7658/api/run/<id>/events    # SSE: a fresh snapshot per change
 ```
 
 `curl /api/run/<id>` returns exactly what `agent6 watch <id> --json` prints.
@@ -87,8 +87,8 @@ The server binds `127.0.0.1` by default and has no app-level auth. For remote
 access, put [Tailscale](https://tailscale.com) in front of the loopback bind:
 
 ```bash
-agent6 web                       # keep it on 127.0.0.1:8901
-tailscale serve --bg 8901        # HTTPS + WireGuard, reachable on your tailnet
+agent6 web                       # keep it on 127.0.0.1:7658
+tailscale serve --bg 7658        # HTTPS + WireGuard, reachable on your tailnet
 ```
 
 The tailnet (WireGuard) identity is the access control: only devices on your

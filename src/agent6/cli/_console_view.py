@@ -17,9 +17,10 @@ from __future__ import annotations
 
 import sys
 import time
-from threading import RLock
+from threading import Event, RLock, Thread
 from typing import Any, TextIO
 
+from agent6.cli._task_tree import tree_lines_from_event_nodes
 from agent6.viewmodel.transcript import (
     CALL,
     COMMIT,
@@ -42,6 +43,9 @@ _ANSI = {
 }
 
 _FLUSH_EVERY_S = 0.03  # coalesce streaming-delta flushes; see ConsoleView._raw
+_HEARTBEAT_TICK_S = 0.5  # how often the spinner refreshes
+_STALL_AFTER_S = 1.5  # show the heartbeat once output has been silent this long
+_SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
 
 class ConsoleView:
@@ -57,6 +61,20 @@ class ConsoleView:
         self._lock = RLock()
         self._phase: str | None = None  # None | "thinking" | "text": the open prose block
         self._last_flush = 0.0
+        self._plan_count = 0  # tasks shown in the last plan block; reprint when it grows
+        # Live heartbeat: a turn can stream text then wedge mid-token (a stalled
+        # SSE stream) or pause between turns with nothing on screen. A background
+        # thread shows a spinner + "working… Ns" during silence so the run never
+        # looks hung; only on a real terminal (no spinner in a pipe or a test).
+        self._last_output_at = time.monotonic()
+        self._active = False  # run is between run.start and run.end (a turn or a tool)
+        self._status_active = False  # a transient spinner line is on screen now
+        self._spin = 0
+        self._stop = Event()
+        self._heartbeat: Thread | None = None
+        if self._out.isatty():
+            self._heartbeat = Thread(target=self._heartbeat_loop, daemon=True)
+            self._heartbeat.start()
 
     def __call__(self, event: dict[str, Any]) -> None:
         self.feed(event)
@@ -64,6 +82,15 @@ class ConsoleView:
     def feed(self, event: dict[str, Any]) -> None:
         etype = event.get("type", "")
         with self._lock:
+            # The heartbeat spins whenever the run is active and output has gone
+            # silent -- covering BOTH a thinking provider call AND a long tool /
+            # verify command running in the jail (which happens between role.result
+            # and the next role.call, so a role-only flag would miss it and the
+            # CLI would look frozen through a whole test suite).
+            if etype in ("run.start", "role.call", "tool.call"):
+                self._active = True
+            elif etype in ("run.end", "run.steer_requested"):
+                self._active = False
             if etype in ("role.thinking_delta", "role.text_delta"):
                 self._stream(str(event.get("text", "")), thinking=etype == "role.thinking_delta")
                 return
@@ -79,6 +106,9 @@ class ConsoleView:
                 task = " ".join(str(event.get("user_task", "")).split())
                 self._line(self._c("bold", self._c("cyan", DONE) + " " + task) + "\n")
                 return
+            if etype == "graph.update":
+                self._render_plan(event)
+                return
             for item in self._fold.feed(event):
                 self._end_block()
                 self._render(item)
@@ -93,6 +123,7 @@ class ConsoleView:
             self._phase = want
             self._raw("  " + (self._dim() + THINK + " " if thinking else ""))
             piece = piece.lstrip()
+        self._last_output_at = time.monotonic()  # a delta is real progress
         # keep wrapped lines under the block's indent; dim (thinking) spans them all
         self._raw(piece.replace("\n", "\n    " if thinking else "\n  "))
 
@@ -103,6 +134,24 @@ class ConsoleView:
             self._raw("\n")
             self._flush()  # show the completed prose block now
         self._phase = None
+
+    def _render_plan(self, event: dict[str, Any]) -> None:
+        """Print the decomposed task tree when it first appears and each time it
+        grows (new subtasks as the model explores), so a headless run's plan is
+        visible in the stream, not only in the TUI pane. A single root (no
+        decomposition) is not a plan worth a block."""
+        nodes = event.get("nodes", {}) or {}
+        if not isinstance(nodes, dict) or len(nodes) <= 1 or len(nodes) <= self._plan_count:
+            return
+        self._plan_count = len(nodes)
+        cursor = event.get("cursor")
+        lines = tree_lines_from_event_nodes(nodes, cursor if isinstance(cursor, str) else None)
+        if not lines:
+            return
+        self._end_block()
+        self._line("\n" + self._c("bold", f"plan ({len(nodes)} tasks)") + "\n")
+        for line in lines:
+            self._line(self._c("dim", "  " + line) + "\n")
 
     # -- structural items ---------------------------------------------------
     def _render(self, item: TranscriptItem) -> None:
@@ -147,11 +196,23 @@ class ConsoleView:
     def _reset(self) -> str:
         return _ANSI["reset"] if self._color else ""
 
+    def _clear_status(self) -> None:
+        """Erase the transient spinner line so real output prints cleanly. Caller
+        holds the lock (or is the constructor before the thread starts)."""
+        if self._status_active:
+            self._out.write("\r\x1b[2K")  # carriage return + erase whole line
+            self._status_active = False
+
     def _raw(self, text: str) -> None:
+        # Low-level writer, used by streaming deltas AND internal block-closing;
+        # it clears the spinner but does NOT bump _last_output_at (that tracks
+        # real model output -- set by _stream / _line -- so closing a block from
+        # the heartbeat can't reset the idle timer and suppress the spinner).
         # Streaming path: flush at most every _FLUSH_EVERY_S. A per-token flush on
         # a slow terminal (SSH, a busy emulator) backpressures the SSE read in the
         # same thread and can stall the stream; ~30ms is imperceptible and cuts
         # thousands of flushes to a few dozen a second.
+        self._clear_status()
         self._out.write(text)
         now = time.monotonic()
         if now - self._last_flush >= _FLUSH_EVERY_S:
@@ -159,10 +220,46 @@ class ConsoleView:
             self._last_flush = now
 
     def _line(self, text: str) -> None:
-        # Structural lines (tool call/result, commit, verdict) are discrete: show
-        # them at once.
+        # Structural lines (tool call/result, commit, verdict) are discrete model
+        # progress: show them at once and reset the idle timer.
+        self._clear_status()
+        self._last_output_at = time.monotonic()
         self._out.write(text)
         self._flush()
+
+    def _heartbeat_loop(self) -> None:
+        """Refresh a transient "⠋ working… Ns" line while a turn is in flight and
+        output has gone silent (a stalled stream, or a between-turn pause), so the
+        run never looks hung. Runs only on a real terminal."""
+        while not self._stop.wait(_HEARTBEAT_TICK_S):
+            with self._lock:
+                idle = time.monotonic() - self._last_output_at
+                if not self._active or idle < _STALL_AFTER_S:
+                    self._clear_status()  # output flowing or turn done: no spinner
+                    if self._status_active is False:
+                        self._out.flush()
+                    continue
+                # Silent mid-turn: close any open prose block so the cursor sits on
+                # a clean line, then draw/refresh the spinner in place.
+                if self._phase is not None:
+                    self._end_block()
+                self._spin += 1
+                glyph = _SPINNER[self._spin % len(_SPINNER)]
+                hint = "  (Ctrl-C to steer or stop)" if idle >= 20 else ""
+                body = f"{glyph} working… {int(idle)}s{hint}"
+                self._out.write("\r\x1b[2K" + (self._c("dim", body) if self._color else body))
+                self._out.flush()
+                self._status_active = True
+
+    def close(self) -> None:
+        """Stop the heartbeat thread and clear any spinner line. Safe to call more
+        than once; the daemon thread also dies with the process."""
+        self._stop.set()
+        if self._heartbeat is not None:
+            self._heartbeat.join(timeout=1.0)
+        with self._lock:
+            self._clear_status()
+            self._out.flush()
 
     def _flush(self) -> None:
         self._out.flush()

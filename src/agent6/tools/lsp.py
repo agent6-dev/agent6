@@ -176,6 +176,10 @@ class LspClient:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
                 cwd=str(self._root),
+                # Its own session: a terminal Ctrl-C signals the foreground
+                # process group, and a language server that dies with it breaks
+                # the symbol tools for the rest of the run.
+                start_new_session=True,
             )
         except OSError as exc:
             raise LspError(f"LSP unavailable: failed to spawn {argv[0]}: {exc}") from exc

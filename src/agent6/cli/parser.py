@@ -165,9 +165,9 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "--interactive",
         action="store_true",
         help=(
-            "REPL mode: after each successful auto-commit, prompt on"
-            " stdin for one of /continue (default), /cost, /undo (git"
-            " revert HEAD), /help, /quit. Requires a TTY."
+            "REPL mode: after each successful auto-commit, prompt on stdin for"
+            " one of /continue (default), /diff, /cost, /undo (git revert HEAD),"
+            " /watch, /mcp, /init, /help, /quit. Requires a TTY."
         ),
     )
     run_p.add_argument(
@@ -376,13 +376,20 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         sub,
         "runs",
         help=(
-            "Inspect a specific run: show (liveness/progress), diff, transcript,"
-            " graph. The run id is a positional everywhere (exact or unambiguous"
-            " prefix; omit for the most recent). To follow a run live, use"
-            " `agent6 watch`."
+            "List this repo's runs (`agent6 runs`, or `runs list`) or inspect one:"
+            " show (liveness/progress), diff, transcript, graph. The run id is a"
+            " positional everywhere (exact or unambiguous prefix; omit for the"
+            " most recent). To follow a run live, use `agent6 watch`."
         ),
     )
-    runs_sub = runs_p.add_subparsers(dest="runs_command", required=True, metavar="<subcommand>")
+    # No subcommand = list: "show me my runs" is the obvious bare meaning.
+    runs_sub = runs_p.add_subparsers(dest="runs_command", required=False, metavar="<subcommand>")
+
+    _sub(
+        runs_sub,
+        "list",
+        help="List runs newest-first: when, status (+ failure reason), mode, cost, id, task.",
+    )
 
     runs_show = _sub(
         runs_sub,
@@ -555,7 +562,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         type=int,
         default=None,
         metavar="N",
-        help="Listen port (default 8901).",
+        help="Listen port (default 7658).",
     )
     web_p.add_argument(
         "--allow-non-loopback",

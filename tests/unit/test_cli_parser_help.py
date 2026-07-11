@@ -55,12 +55,24 @@ def test_every_subparser_has_a_description() -> None:
 def test_bare_parent_command_error_names_subcommand_not_dest(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # `agent6 runs` used to leak the argparse dest ("runs_command").
+    # A parent whose subcommand is required must name "<subcommand>", not leak
+    # the argparse dest ("plan_command"). (`runs` no longer errors here: bare
+    # `agent6 runs` lists runs.)
     with pytest.raises(SystemExit):
-        build_parser().parse_args(["runs"])
+        build_parser().parse_args(["plan"])
     err = capsys.readouterr().err
     assert "<subcommand>" in err
-    assert "runs_command" not in err
+    assert "plan_command" not in err
+
+
+def test_bare_agent6_prints_help_not_an_error(capsys: pytest.CaptureFixture[str]) -> None:
+    from agent6.cli import main
+
+    rc = main([])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "usage: agent6" in out
+    assert "<command>" in out
 
 
 def test_no_em_dashes_in_parser_help() -> None:

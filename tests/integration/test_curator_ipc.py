@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import os
+import signal
 import socket
 import subprocess
 import sys
@@ -51,6 +53,25 @@ def curator_proc(tmp_path: Path):  # type: ignore[no-untyped-def]
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait()
+
+
+def test_curator_survives_terminal_sigint(curator_proc) -> None:  # type: ignore[no-untyped-def]
+    """The curator runs in its own session (a terminal Ctrl-C signals the whole
+    foreground process group) and ignores SIGINT, so the run's graph outlives an
+    operator interrupt instead of leaving every later DAG op on a dead socket."""
+    sock_path, proc = curator_proc
+    assert os.getsid(proc.pid) == proc.pid  # session leader: not in the tty's group
+    os.kill(proc.pid, signal.SIGINT)  # a stray direct SIGINT is ignored too
+    time.sleep(0.3)
+    assert proc.poll() is None
+    with GraphClient(sock_path) as client:
+        root = client.add_subtask(
+            AddSubtaskIntent(
+                parent_id=None,
+                draft=TaskNodeDraft(title="still alive", created_by="planner"),
+            )
+        )
+    assert root.title == "still alive"
 
 
 def test_curator_ipc_roundtrip(curator_proc) -> None:  # type: ignore[no-untyped-def]

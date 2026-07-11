@@ -600,7 +600,10 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(tmp_path
             raise AssertionError(f"unexpected tool: {name}")
 
     provider = ProviderStub()
-    config = SimpleNamespace(workflow=SimpleNamespace(verify_command=("true",), metric=None))
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(verify_command=("true",), metric=None),
+        prompt=SimpleNamespace(decompose=False),
+    )
     wf = _wf(
         root=tmp_path,
         config=config,
@@ -1940,6 +1943,26 @@ def test_current_task_banner_carries_title_acceptance_paths() -> None:
     # Absent acceptance/paths are simply omitted, not rendered empty.
     bare = _current_task_banner("01X", {"title": "t"})
     assert "Acceptance:" not in bare and "Relevant paths:" not in bare
+    # Decompose invites a finer plan for a large childless task (recursion);
+    # off by default, and never once the task already has children.
+    assert "child subtasks" not in bare
+    rec = _current_task_banner("01X", {"title": "t"}, decompose=True)
+    assert "child subtasks under it (parent_id=01X)" in rec
+    has_kids = _current_task_banner("01X", {"title": "t", "children": ["01Y"]}, decompose=True)
+    assert "child subtasks" not in has_kids
+
+
+def test_decompose_prompt_describes_nested_phases() -> None:
+    from agent6.workflows._prompts import (  # pyright: ignore[reportPrivateUsage]
+        DAG_RULES_DECOMPOSE,
+        dag_rules_block,
+    )
+
+    assert dag_rules_block(True) == DAG_RULES_DECOMPOSE
+    # Phases with child subtasks (parent_id), and the re-plan-when-large rule.
+    assert "phases" in DAG_RULES_DECOMPOSE.lower()
+    assert "parent_id" in DAG_RULES_DECOMPOSE
+    assert "large" in DAG_RULES_DECOMPOSE.lower()
 
 
 class _FakeCurator:
@@ -2235,7 +2258,10 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: Path) -> 
             "a": {"parent_id": "root", "status": "pending", "title": "audit providers"},
         }
     )
-    config = SimpleNamespace(workflow=SimpleNamespace(verify_command=("true",), metric=None))
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(verify_command=("true",), metric=None),
+        prompt=SimpleNamespace(decompose=False),
+    )
     wf = _wf(
         root=tmp_path,
         config=config,
@@ -2793,7 +2819,10 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: Path) -> None:
 
     events = EventSink(tmp_path / "logs.jsonl")
     summ = SummariserStub()
-    config = SimpleNamespace(workflow=SimpleNamespace(verify_command=("true",), metric=None))
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(verify_command=("true",), metric=None),
+        prompt=SimpleNamespace(decompose=False),
+    )
     wf = _wf(
         root=tmp_path,
         config=config,
@@ -3033,3 +3062,67 @@ def test_run_result_docstring_enumerates_every_loop_reason() -> None:
     doc = RunResult.__doc__ or ""
     undocumented = {r for r in reasons if r not in doc}
     assert not undocumented, f"RunResult docstring omits reasons: {sorted(undocumented)}"
+
+
+def test_question_nudge_then_accept(tmp_path: Path) -> None:
+    """A run-mode turn that ends by asking a prose question with no tool call is
+    nudged ONCE to call ask_user; if the model then acts it recovers, and if it
+    keeps asking the run accepts silent_finish (bounded, no loop)."""
+    from agent6.workflows.loop import _QUESTION_NUDGE  # pyright: ignore[reportPrivateUsage]
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.turns = 0
+            self.saw_nudge = False
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.turns += 1
+            # After the nudge, the last user message carries _QUESTION_NUDGE.
+            msgs = kwargs.get("messages", [])
+            last = msgs[-1] if msgs else {}
+            blocks = last.get("content", []) if isinstance(last, dict) else []
+            text = " ".join(b.get("text", "") for b in blocks if isinstance(b, dict))
+            if _QUESTION_NUDGE in text:
+                self.saw_nudge = True
+                return _tool_resp("ask_user", {"questions": [{"question": "A?"}]}, tool_id="q1")
+            if self.turns == 1:
+                return _resp("Which theme should I add?")  # prose question, no tool
+            return _resp("Anything else you want?")  # would-be second question
+
+    class DispatcherStub:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+            if name == "ask_user":
+                return {"answers": ["dracula"]}
+            raise AssertionError(f"unexpected tool: {name}")
+
+    provider = ProviderStub()
+    config = SimpleNamespace(workflow=SimpleNamespace(verify_command=(), metric=None))
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        provider=provider,
+        dispatcher=DispatcherStub(),
+        max_iterations=10,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nadd a theme"}]}]
+    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        system="s",
+        messages=messages,
+        tools=[],
+        tool_calls=0,
+        start_iteration=1,
+        root_task_id=None,
+    )
+    # Turn 1 asked a question -> nudged -> turn 2 called ask_user -> turn 3 asked
+    # again, but the one-shot nudge is spent, so it silently finished.
+    assert provider.saw_nudge
+    assert result.reason == "silent_finish"
+
+
+def test_ends_with_question_detection() -> None:
+    from agent6.workflows.loop import _ends_with_question  # pyright: ignore[reportPrivateUsage]
+
+    assert _ends_with_question("I found two options.\nWhich do you prefer?")
+    assert not _ends_with_question("Done. All tests pass.")
+    assert not _ends_with_question("")
+    assert _ends_with_question("Should I proceed?  ")  # trailing space tolerated

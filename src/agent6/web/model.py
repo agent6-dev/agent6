@@ -11,9 +11,7 @@ are exactly `run_state_as_dict` / `machine_state_as_dict` (identical to
 
 from __future__ import annotations
 
-import contextlib
 import json
-import time
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -26,14 +24,13 @@ from agent6.viewmodel import (
     fold_run,
     machine_state_as_dict,
     newest_state_log,
-    run_mtime,
     run_state_as_dict,
+    summarize_run_dir,
     tail_events,
     task_snippet,
 )
 
 RUN_SUBDIRS = ("runs", "asks")
-_STALE_AFTER_S = 600.0
 
 
 # --- directory layout --------------------------------------------------------
@@ -114,61 +111,19 @@ def draft_dir_paths(cwd: Path) -> list[Path]:
 
 
 def _run_summary(run_dir: Path) -> dict[str, Any]:
-    """A cheap one-line summary for the hub: id, mode, task, status, when, usd.
-
-    Single pass over logs.jsonl reading run.start (mode/task), the last run.end
-    (status), and the last budget.update (usd cost), so it stays fast over a
-    directory of many runs."""
-    logs = run_dir / "logs.jsonl"
-    mode, task, status, usd = "?", "", "running", 0.0
-    mtime = run_mtime(run_dir)
-    if not logs.is_file():
-        return {
-            "id": run_dir.name,
-            "mode": mode,
-            "task": "(no logs)",
-            "status": "—",
-            "mtime": mtime,
-            "usd": 0.0,
-        }
-    try:
-        # errors="replace": a live writer can leave a torn multibyte UTF-8 tail;
-        # strict decoding would 500 the whole hub. The mangled line just fails
-        # json.loads and is skipped.
-        with logs.open(encoding="utf-8", errors="replace") as fh:
-            for line in fh:
-                try:
-                    ev = json.loads(line)
-                except ValueError:
-                    continue
-                etype = ev.get("type")
-                if etype == "run.start":
-                    mode = str(ev.get("mode", mode))
-                    task = str(ev.get("user_task", ""))
-                elif etype == "run.end":
-                    if ev.get("all_passed"):
-                        status = "ok"
-                    elif ev.get("reason") == "steer_abort":
-                        status = "stopped"  # not a failure: the operator stopped it
-                    else:
-                        status = "done"
-                elif etype == "budget.update":
-                    usd = float(ev.get("usd_total", usd) or 0.0)
-        if status == "running" and (time.time() - logs.stat().st_mtime) > _STALE_AFTER_S:
-            status = "stale"
-    except OSError:
-        pass
-    if mode == "ask":
-        transcript = run_dir / "transcript.md"
-        with contextlib.suppress(OSError):
-            task = transcript.read_text(encoding="utf-8", errors="replace")
+    """The hub's one-line run summary, from the shared scanner: id, mode, task,
+    status (+ reason detail), when, usd. The status words come from
+    ``viewmodel.status_word``, so a provider_error death reads "failed" here
+    exactly as in the TUI hub and `agent6 runs list`."""
+    s = summarize_run_dir(run_dir)
     return {
-        "id": run_dir.name,
-        "mode": mode,
-        "task": task_snippet(task)[:100],
-        "status": status,
-        "mtime": mtime,
-        "usd": usd,
+        "id": s.run_id,
+        "mode": s.mode,
+        "task": task_snippet(s.task)[:100],
+        "status": s.status,
+        "reason": s.reason,
+        "mtime": s.mtime,
+        "usd": s.cost_usd,
     }
 
 

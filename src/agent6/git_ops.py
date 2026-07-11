@@ -25,6 +25,11 @@ class GitError(Exception):
     """Generic git failure."""
 
 
+# Upper bound on any single git invocation. Local ops finish in well under a
+# second; this only fires on a pathological hang (stuck filesystem, held lock).
+_GIT_TIMEOUT_S = 120.0
+
+
 class GitSafetyError(GitError):
     """Refused to perform a destructive git operation."""
 
@@ -150,9 +155,10 @@ def _run(
     check: bool = True,
     env_extra: dict[str, str] | None = None,
 ) -> CommandResult:
-    env = None
-    if env_extra:
-        env = {**os.environ, **env_extra}
+    # GIT_TERMINAL_PROMPT=0: a git op that would otherwise block on a
+    # username/password prompt (a network remote without cached creds) fails
+    # fast instead of hanging with no output. Local ops are unaffected.
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", **(env_extra or {})}
     hardening = git_hardening_flags()
     # A poisoned `.git/config` reaches a host command two ways on a diff/show:
     # `diff.external` and per-file `diff.<d>.textconv`. The `-c` overrides above
@@ -162,14 +168,24 @@ def _run(
     if argv and argv[0] in ("diff", "show"):
         argv[1:1] = DIFF_SHOW_SAFETY_FLAGS
     full_argv = (_git(), *hardening, *argv)
-    proc = subprocess.run(
-        full_argv,
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
+    try:
+        proc = subprocess.run(
+            full_argv,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+            # A local git op is fast; a bound turns a pathological hang (a wedged
+            # NFS/filesystem, an index.lock held by a crashed process) into a
+            # loud error instead of a silent freeze with no feedback.
+            timeout=_GIT_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise GitError(
+            f"git {' '.join(args)} timed out after {_GIT_TIMEOUT_S:.0f}s"
+            " (a stuck filesystem or a held .git/index.lock?)"
+        ) from exc
     result = CommandResult(
         argv=full_argv,
         returncode=proc.returncode,

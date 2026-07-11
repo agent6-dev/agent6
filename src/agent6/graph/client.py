@@ -29,6 +29,10 @@ from agent6.graph.models import (
     UpdateStatusIntent,
 )
 
+# Per-call send/recv deadline: a wedged curator must surface as an error, not a
+# hang. Generous -- a real round-trip is milliseconds.
+_CALL_TIMEOUT_S = 30.0
+
 
 class CuratorClientError(Exception):
     """The curator rejected an intent or the connection failed."""
@@ -51,6 +55,13 @@ class GraphClient:
             try:
                 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 sock.connect(str(self._sock_path))
+                # Bound every later send/recv: a wedged curator (a stuck fsync,
+                # flock contention) would otherwise block a DAG op forever. A
+                # timeout raises socket.timeout (an OSError), which _call wraps as
+                # CuratorClientError -- the already-handled "curator unavailable"
+                # path, so the run degrades instead of hanging. 30s is far above a
+                # local-socket + local-file round-trip; only a genuine wedge hits it.
+                sock.settimeout(_CALL_TIMEOUT_S)
                 self._sock = sock
                 return
             except OSError as exc:
@@ -162,4 +173,9 @@ def spawn_curator(
             subdir,
         ],
         stdin=subprocess.DEVNULL,
+        # Its own session: a terminal Ctrl-C signals the whole foreground
+        # process group, and a curator that died with it left every later DAG
+        # op failing on a dead socket for the rest of the run. Lifecycle stays
+        # with the caller (terminate + wait) and the server's orphan watchdog.
+        start_new_session=True,
     )

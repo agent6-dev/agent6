@@ -64,7 +64,7 @@ from agent6.cli.memory_cmds import (
     _cmd_memory_list,
 )
 from agent6.cli.model import _cmd_model
-from agent6.cli.parser import _inject_default_verb, build_parser
+from agent6.cli.parser import _command_index, _inject_default_verb, build_parser
 from agent6.cli.plan_watch import (
     _cmd_plan_edit,
     _cmd_plan_show,
@@ -83,6 +83,7 @@ from agent6.cli.run import (
 from agent6.cli.runs_cmds import (
     _cmd_commits,
     _cmd_diff,
+    _cmd_list,
     _cmd_merge,
     _cmd_prune,
 )
@@ -137,6 +138,11 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
     parser = build_parser()
     argcomplete.autocomplete(parser)
     raw = sys.argv[1:] if argv is None else argv
+    # Bare `agent6` (no command, no -h/--version): print help rather than the
+    # terse argparse "required: <command>" error. The boring, expected thing.
+    if _command_index(raw) is None and not any(a in ("-h", "--help", "--version") for a in raw):
+        parser.print_help()
+        return 0
     args = parser.parse_args(_inject_default_verb(raw))
     # `agent6 system ...` is a privileged host-setup command that legitimately
     # runs as root (it writes /etc and reloads AppArmor); it does not run the
@@ -302,6 +308,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             args.target, tui=args.tui, json_out=args.json, since=args.since, raw=args.raw
         )
     if args.command == "runs":
+        if args.runs_command in (None, "list"):
+            return _cmd_list()
         if args.runs_command == "show":
             return _cmd_status(args.run_id, as_json=args.json)
         if args.runs_command == "diff":

@@ -13,6 +13,7 @@ import pytest
 
 from agent6.cli import machine_agent
 from agent6.cli.egress import (
+    EgressGuard,
     _check_network_profile,  # pyright: ignore[reportPrivateUsage]
     _is_loopback,  # pyright: ignore[reportPrivateUsage]
     _maybe_start_egress,  # pyright: ignore[reportPrivateUsage]
@@ -101,11 +102,23 @@ def test_refusal_allow_auto_tools_on_hardened_ok() -> None:
 
 
 def test_egress_open_does_nothing() -> None:
-    assert _maybe_start_egress(_cfg("open", "block"), "strict") == (None, None, None)
+    assert _maybe_start_egress(_cfg("open", "block"), "strict") == (EgressGuard(), None)
 
 
 def test_egress_non_strict_defers_to_landlock() -> None:
-    assert _maybe_start_egress(_cfg("providers", "block"), "hardened") == (None, None, None)
+    assert _maybe_start_egress(_cfg("providers", "block"), "hardened") == (EgressGuard(), None)
+
+
+def test_egress_refuses_inherited_isolation(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A child spawned from inside enter_network_isolation() can never reach a
+    # provider; it must refuse with the cause, not die later as provider_error.
+    monkeypatch.setenv("AGENT6_NETNS_ISOLATED", "1")
+    guard, err = _maybe_start_egress(_cfg("providers", "block"), "strict")
+    assert guard == EgressGuard()
+    assert err is not None and "inherited" in err
+    # Even the unconfined mode refuses: the namespace has no routes at all.
+    guard, err = _maybe_start_egress(_cfg("open", "block"), "strict")
+    assert err is not None and "inherited" in err
 
 
 def test_egress_local_refuses_non_local_provider() -> None:
@@ -117,8 +130,8 @@ def test_egress_local_refuses_non_local_provider() -> None:
             "sandbox": {"agent_network": "local"},
         }
     )
-    broker, sock_dir, err = _maybe_start_egress(cfg, "strict")
-    assert broker is None and sock_dir is None
+    guard, err = _maybe_start_egress(cfg, "strict")
+    assert guard == EgressGuard()
     assert err is not None and "loopback" in err and "openrouter.ai" in err
 
 
@@ -144,8 +157,8 @@ def test_egress_reaps_broker_when_isolation_fails(monkeypatch: pytest.MonkeyPatc
 
     monkeypatch.setattr(eg, "start_egress_broker", _fake_start)
     monkeypatch.setattr(eg, "enter_network_isolation", _boom)
-    broker, sock_dir, err = _maybe_start_egress(_cfg("providers", "block"), "strict")
-    assert broker is None and sock_dir is None
+    guard, err = _maybe_start_egress(_cfg("providers", "block"), "strict")
+    assert guard == EgressGuard()
     assert err is not None and "confinement" in err
     assert closed["n"] == 1  # the forked broker was closed, not leaked
 
@@ -341,7 +354,7 @@ def test_egress_fails_closed_and_cleans_up_on_socket_error(
             "sandbox": {"agent_network": "providers"},
         }
     )
-    broker, sock_dir, err = _maybe_start_egress(cfg, "strict")
-    assert broker is None and sock_dir is None
+    guard, err = _maybe_start_egress(cfg, "strict")
+    assert guard == EgressGuard()
     assert err is not None and "too many open files" in err
     assert not sock.exists()  # the socket dir was cleaned up, not leaked

@@ -203,7 +203,7 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
     if net_err is not None:
         print(f"REFUSING: {net_err}", file=sys.stderr)
         return _result("error", None, None)
-    broker, sock_dir, egress_err = _maybe_start_egress(cfg, profile)
+    egress_guard, egress_err = _maybe_start_egress(cfg, profile)
     if egress_err is not None:
         print(f"REFUSING: {egress_err}", file=sys.stderr)
         return _result("error", None, None)
@@ -309,7 +309,7 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
         payload = result.finish_payload if result.reason == "finish_run" else None
         return _result(result.reason, payload, budget)
     finally:
-        _stop_egress(broker, sock_dir)
+        _stop_egress(egress_guard)
 
 
 def main() -> int:

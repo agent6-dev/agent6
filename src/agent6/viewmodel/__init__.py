@@ -20,8 +20,11 @@ mirror `RunState` / `MachineState` field-for-field.
 from __future__ import annotations
 
 from agent6.viewmodel.listing import (
+    RunSummary,
     first_task_line,
     run_mtime,
+    status_word,
+    summarize_run_dir,
     task_snippet,
 )
 from agent6.viewmodel.machine_state import (
@@ -72,6 +75,7 @@ __all__ = [
     "QuestionPrompt",
     "RoleCall",
     "RunState",
+    "RunSummary",
     "TaskNodeView",
     "ToolCallView",
     "TranscriptFold",
@@ -92,6 +96,8 @@ __all__ = [
     "run_state_as_dict",
     "run_status_label",
     "salient_arg",
+    "status_word",
+    "summarize_run_dir",
     "tail_events",
     "task_snippet",
 ]

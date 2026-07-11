@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from textual.app import App
-from textual.widgets import Button, DataTable, Input, RichLog, TextArea, Tree
+from textual.widgets import Button, DataTable, Input, RichLog, Static, TextArea, Tree
 
 from agent6.tui.app import Agent6TUI
 from agent6.tui.modals import (
@@ -403,11 +403,11 @@ def test_dashboard_inline_log_is_a_bounded_gapless_window(tmp_path: Path) -> Non
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             for i in range(100):
-                app._handle_event(_ev(type="loop.tool.call", name=f"pre{i}"))
+                app._handle_event(_ev(type="tool.call", name=f"pre{i}"))
             app._tick()
             await pilot.pause()
             for i in range(MAX_LOG_TAIL + 100):
-                app._handle_event(_ev(type="loop.tool.call", name=f"burst{i}"))
+                app._handle_event(_ev(type="tool.call", name=f"burst{i}"))
             app._tick()
             await pilot.pause()
             log = app.query_one("#log", RichLog)
@@ -731,3 +731,81 @@ def test_question_modal_multi_collects_all_answers() -> None:
             assert result.get("v") == ("Vue", "widget")  # both, aligned to the questions
 
     asyncio.run(scenario())
+
+
+def test_dashboard_heartbeat_ticks_while_active(tmp_path: Path) -> None:
+    """An attached dashboard on a live-but-silent run shows a ticking "working…
+    Ns" heartbeat, so a thinking / resuming run reads as alive, not hung. The
+    elapsed count advances across ticks even with no new events."""
+    import json
+
+    events = [
+        {"type": "run.start", "run_id": "live-01", "mode": "run", "user_task": "t"},
+        {"type": "role.call", "role": "worker", "model": "m", "provider": "p"},
+    ]
+    (tmp_path / "logs.jsonl").write_text(
+        "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
+    )
+
+    async def scenario() -> str:
+        app = Agent6TUI(tmp_path)
+        async with app.run_test(size=(120, 40)) as pilot:
+            for _ in range(15):  # ~3s: let the reader fold + the heartbeat tick
+                await pilot.pause(0.2)
+            app._tick()  # pyright: ignore[reportPrivateUsage]
+            await pilot.pause()
+            return str(app.query_one("#stream-body", Static).render())
+
+    text = asyncio.run(scenario())
+    assert "working…" in text
+    # A number of seconds is shown and it is > 0 (the heartbeat advanced).
+    import re
+
+    m = re.search(r"working… (\d+)s", text)
+    assert m is not None and int(m.group(1)) >= 1
+
+
+def test_dashboard_follows_live_appends_after_attach(tmp_path: Path) -> None:
+    """The detach->attach symptom the user hit: after opening on a live run, NEW
+    events appended by the background process must appear (not a frozen snapshot).
+    Attach on a partial log, append more, and assert the new tool row shows."""
+    import json
+
+    logs = tmp_path / "logs.jsonl"
+
+    def append(events: list[dict[str, object]]) -> None:
+        with logs.open("a", encoding="utf-8") as fh:
+            for e in events:
+                fh.write(json.dumps(e) + "\n")
+
+    logs.write_text("", encoding="utf-8")
+    append(
+        [
+            {"type": "run.start", "run_id": "live-02", "mode": "run", "user_task": "t"},
+            {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}},
+            {"type": "tool.result", "name": "read_file", "ok": True, "summary": "1 byte"},
+        ]
+    )
+
+    async def scenario() -> int:
+        app = Agent6TUI(tmp_path)
+        async with app.run_test(size=(120, 40)) as pilot:
+            for _ in range(8):
+                await pilot.pause(0.2)
+            before = app.query_one("#tools", DataTable).row_count
+            # The background process appends a new turn AFTER we attached.
+            append(
+                [
+                    {"type": "tool.call", "name": "apply_edit", "args": {"path": "a.py"}},
+                    {"type": "tool.result", "name": "apply_edit", "ok": True, "summary": "applied"},
+                ]
+            )
+            for _ in range(10):  # > tail poll (0.25s) + tick (0.2s)
+                await pilot.pause(0.2)
+            app._tick()  # pyright: ignore[reportPrivateUsage]
+            await pilot.pause()
+            after = app.query_one("#tools", DataTable).row_count
+            assert after > before, f"live append not followed: {before} -> {after}"
+            return after
+
+    assert asyncio.run(scenario()) == 2

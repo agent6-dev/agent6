@@ -75,6 +75,18 @@ def test_salient_arg_prefers_a_primary_key() -> None:
     assert isinstance(TranscriptItem("marker", body="reset"), TranscriptItem)
 
 
+def test_salient_arg_renders_argv_as_a_shell_line() -> None:
+    # Not a Python list repr: the operator reads it as a command; a token with a
+    # space is quoted the way a shell needs.
+    assert salient_arg({"argv": ["cargo", "build", "--release"]}) == "cargo build --release"
+    assert salient_arg({"argv": ["echo", "a b"]}) == "echo 'a b'"
+
+
+def test_salient_arg_renders_ask_user_questions_as_text() -> None:
+    args = {"questions": [{"question": "Which theme?"}, {"question": "Apply to TUI?"}]}
+    assert salient_arg(args) == "Which theme? (+1)"
+
+
 def test_interleaved_tool_calls_pair_by_name() -> None:
     # A concurrent explore-tier review panel can interleave tool.call/tool.result
     # across tools; each result must pair with its own call by name, not with the

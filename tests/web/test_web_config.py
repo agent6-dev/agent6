@@ -13,7 +13,7 @@ from agent6.config import Config, WebConfig
 def test_web_defaults_are_loopback() -> None:
     w = WebConfig()
     assert w.host == "127.0.0.1"
-    assert w.port == 8901
+    assert w.port == 7658
     assert w.allow_non_loopback is False
 
 

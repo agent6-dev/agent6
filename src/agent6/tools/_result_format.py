@@ -78,4 +78,14 @@ def summarize_result(name: str, result: dict[str, Any]) -> str:  # noqa: PLR0911
         return f"patched path={result.get('path')} bytes={result['bytes_written']}"
     if "returncode" in result:
         return f"exit={result['returncode']} in {result.get('duration_s', 0):.1f}s"
-    return name
+    if "title" in result and "status" in result:
+        # DAG task tools: the title is what a human scans for, not the ULID.
+        return f"{result['status']}: {str(result['title'])[:60]}"
+    if "tasks" in result and isinstance(result["tasks"], list):
+        return f"{len(result['tasks'])} tasks"
+    if "answers" in result and isinstance(result["answers"], list):
+        answered = sum(1 for a in result["answers"] if str(a).strip())
+        return f"{answered}/{len(result['answers'])} answered"
+    # Nothing structured to say: "ok" -- echoing the tool name back (the old
+    # fallback) doubled the name column with noise on every DAG/finish call.
+    return "ok"

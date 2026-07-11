@@ -35,6 +35,59 @@ from agent6.git_ops import (
 from agent6.git_ops import status as git_status
 from agent6.graph.storage import RunLayout
 from agent6.run_id import RunIdError, resolve_run_id
+from agent6.viewmodel import summarize_run_dir, task_snippet
+
+# ANSI styles for the shared status words (viewmodel.status_word), tty only:
+# a listing where a provider_error death reads as plain text is how dead runs
+# went unnoticed.
+_STATUS_SGR = {
+    "running": "1;36",
+    "stale": "2",
+    "passed": "32",
+    "stopped": "33",
+    "failed": "1;31",
+}
+
+
+def _styled_status(status: str, reason: str, *, color: bool) -> tuple[str, str]:
+    """(possibly-colored label, plain label) -- the plain form drives width math."""
+    label = status if not reason else f"{status} · {reason.replace('_', ' ')}"
+    sgr = _STATUS_SGR.get(status)
+    if color and sgr:
+        return f"\x1b[{sgr}m{label}\x1b[0m", label
+    return label, label
+
+
+def _cmd_list() -> int:
+    """List this repo's runs (runs/ + asks/), newest first: when, status (with
+    the failure reason), mode, cost, id, task. The listing twin of the TUI/web
+    hubs, built on the same shared summary."""
+    import time  # noqa: PLC0415
+
+    cwd = Path.cwd()
+    dirs: list[Path] = []
+    for sub in ("runs", "asks"):
+        d = _state_dir(cwd) / sub
+        if d.is_dir():
+            dirs.extend(p for p in d.iterdir() if p.is_dir())
+    if not dirs:
+        print('no runs yet. Start one with `agent6 run "<task>"`.')
+        return 0
+    summaries = sorted((summarize_run_dir(d) for d in dirs), key=lambda s: s.mtime, reverse=True)
+    color = sys.stdout.isatty()
+    rows: list[tuple[str, str, str, str, str, str, str]] = []
+    for s in summaries:
+        when = time.strftime("%m-%d %H:%M", time.localtime(s.mtime))
+        styled, plain = _styled_status(s.status, s.reason, color=color)
+        cost = "" if s.cost_usd <= 0 else f"${s.cost_usd:.4f}"
+        rows.append((when, styled, plain, s.mode, cost, s.run_id, task_snippet(s.task)[:60]))
+    status_w = max(6, *(len(plain) for _, _, plain, *_ in rows))
+    id_w = max(2, *(len(r[5]) for r in rows))
+    print(f"{'when':<11}  {'status':<{status_w}}  {'mode':<4}  {'cost':<8}  {'id':<{id_w}}  task")
+    for when, styled, plain, mode, cost, run_id, task in rows:
+        pad = " " * (status_w - len(plain))
+        print(f"{when:<11}  {styled}{pad}  {mode:<4}  {cost:<8}  {run_id:<{id_w}}  {task}")
+    return 0
 
 
 def _cmd_diff(*, run_id: str, stat: bool, paths: tuple[str, ...]) -> int:

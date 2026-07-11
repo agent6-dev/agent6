@@ -21,6 +21,7 @@ import contextlib
 import inspect
 import os
 import threading
+import time
 from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 from typing import Any, ClassVar
@@ -258,6 +259,14 @@ class Agent6TUI(App[int]):
         # watch` leaves this False and keeps following.
         self.exit_on_end = exit_on_end
         self._run_ended = False
+        self._footer_finished = False  # last state.finished the footer bindings reflect
+        # Live heartbeat: a run can be silent for a whole reasoning turn (or the
+        # resume context-rebuild gap). Track when the last event landed and
+        # repaint ~1/s while active so an elapsed timer + spinner visibly tick --
+        # the difference between "thinking" and "hung" the user could not see.
+        self._last_event_at = time.monotonic()
+        self._heartbeat_at = 0.0
+        self._spin = 0
 
     # --- layout -------------------------------------------------------
 
@@ -344,6 +353,7 @@ class Agent6TUI(App[int]):
 
     def _handle_event(self, event: dict[str, object]) -> None:
         self.state = apply_event(self.state, event)
+        self._last_event_at = time.monotonic()  # feeds the live "working… Ns" heartbeat
         if event.get("type") == "run.start":
             # A resume appends a new session to the same log and its prompt id
             # counters restart at approval-1/question-1; a stale seen-set would
@@ -373,6 +383,15 @@ class Agent6TUI(App[int]):
             self._seen_steer = self.state.steer_requests
             self._steer_open = True
             self.push_screen(SteerModal(), self._on_steer)
+        # Heartbeat: while the run is active but silent, advance the spinner and
+        # repaint ~1/s so the "working… Ns" timer ticks -- an attached viewer can
+        # see the run is alive (thinking / resuming), not hung.
+        if not self.state.finished and not self._run_ended:
+            now = time.monotonic()
+            if now - self._heartbeat_at >= 1.0:
+                self._heartbeat_at = now
+                self._spin += 1
+                self._dirty = True
         # Coalesced repaint: once per tick, and only when the dashboard is the
         # active, mounted screen. A modal (transcript/log) or shutdown leaves the
         # dashboard widgets covered or torn down, so querying them raises; defer
@@ -482,6 +501,17 @@ class Agent6TUI(App[int]):
         matters for `agent6 watch`, where `_run_ended` never trips) or the
         co-process app closing on run.end."""
         return not self._run_ended and not self.state.finished
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        """Hide the run-control keys from the footer when they can't apply:
+        steer/stop only on a live run, resume/fork only on a finished one. A
+        finished run advertising 'Stop' (and vice versa) was misleading."""
+        del parameters
+        if action in ("steer", "stop"):
+            return self._run_controllable()
+        if action in ("resume", "fork"):
+            return bool(self.state.finished)
+        return True
 
     def action_focus_next_pane(self) -> None:
         # Local action wrapping the App's framework action so it resolves from a
@@ -611,10 +641,20 @@ class Agent6TUI(App[int]):
 
     def _render(self) -> None:  # noqa: PLR0912, PLR0915
         s = self.state
+        # The finished flag gates which run-control keys the footer shows; when it
+        # flips (run ends, or a resume un-finishes it), re-ask check_action.
+        if s.finished != self._footer_finished:
+            self._footer_finished = s.finished
+            self.refresh_bindings()
         role = s.last_role
-        role_line = (
-            f"{role.role} / {role.model} {'…' if role.in_flight else ''}" if role else "(idle)"
-        )
+        # Live heartbeat: a spinner + seconds since the last event, shown while
+        # the run is active. Silent thinking / the resume gap now visibly tick.
+        active = not s.finished and not self._run_ended
+        beat = ""
+        if active and role is not None:
+            spinner = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[self._spin % 10]
+            beat = f" {spinner} {int(time.monotonic() - self._last_event_at)}s"
+        role_line = f"{role.role} / {role.model}{beat}" if role else "(idle)"
         done_n = sum(1 for t in s.tasks if t.status in ("passed", "skipped"))
         step = f"tasks: {done_n}/{len(s.tasks)}" if s.tasks else "tasks: —"
         if not s.finished:
@@ -635,16 +675,30 @@ class Agent6TUI(App[int]):
         # never parsed as markup.
         stream = self.query_one("#stream-body", Static)
         st = Text()
-        if role is not None and role.in_flight:
+        streaming = (
+            role is not None and role.in_flight and (role.streamed_thinking or role.streamed_text)
+        )
+        if s.finished:
+            # The end story, not a stale "idle": how it ended + the closing summary.
+            color = (
+                "green" if s.all_passed else "yellow" if s.end_reason == "steer_abort" else "red"
+            )
+            st.append(run_status_label(s) + "\n", style=f"bold {color}")
+            if s.finish_summary:
+                st.append(s.finish_summary, style="dim")
+        elif streaming:
+            assert role is not None
             if role.streamed_thinking:
                 st.append("💭 ", style="bold")
                 st.append(role.streamed_thinking[-1200:] + "\n", style="dim")
             if role.streamed_text:
                 st.append(role.streamed_text[-1200:])
-            if not role.streamed_thinking and not role.streamed_text:
-                st.append(f"{role.role} working…", style="dim italic")
-        elif role is not None:
-            st.append(f"{role.role} idle", style="dim")
+        elif active and role is not None:
+            # No live deltas: the model is thinking, or a resume is rebuilding
+            # context. A ticking heartbeat, never a stale "idle" or blank.
+            spinner = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[self._spin % 10]
+            secs = int(time.monotonic() - self._last_event_at)
+            st.append(f"{spinner} {role.role} working… {secs}s", style="dim italic")
         else:
             st.append("(waiting for the model…)", style="dim")
         stream.update(st)

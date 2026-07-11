@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import sys
 import threading
 import time
@@ -860,7 +861,11 @@ class ToolDispatcher:
         # model), so a prompt injection cannot suppress the event or fake
         # success; rejection reasons come from these hardcoded guards, not from
         # model-supplied content.
-        self._emit("tool.call", name=name, args=_truncate_args(raw_input))
+        # The finish tools' `summary` is the human end-of-run statement (shown on
+        # the done line + in `watch`); keep it whole. Generic args stay clipped.
+        max_chars = 2000 if name in ("finish_run", "finish_planning") else 200
+        preview = _truncate_args(raw_input, max_value_chars=max_chars)
+        self._emit("tool.call", name=name, args=preview)
         try:
             result = self._dispatch_inner(name, raw_input)
         except ToolError as exc:
@@ -1331,7 +1336,9 @@ class ToolDispatcher:
         args = RunCommandInput.model_validate(raw)
         _refuse_mutating_git_command(args.argv)
         if self._config.sandbox.run_commands == "ask":
-            ok = self._approver(f"Allow run_command {args.argv!r}?")
+            # A shell-style command line, not a Python tuple repr: the operator
+            # is approving a command, so show it the way they would type it.
+            ok = self._approver(f"Allow run_command: {shlex.join(args.argv)}")
             if not ok:
                 raise ToolError("run_command denied by user")
         return self._run_argv_in_jail(args.argv, label="run_command")

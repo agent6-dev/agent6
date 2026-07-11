@@ -87,12 +87,13 @@ def test_history_graph_renders_dfs_order(
     assert rc == 0
     lines = [line for line in out.splitlines() if line and not line.startswith("Run id:")]
     # Strict DFS: root, then step1, then deep-left sub1a, then sub1b, then step2.
+    # Status is a glyph, shared with the TUI tree / web task graph / runs show.
     assert lines == [
-        "[pending] root task",
-        "  [passed] step 1  (commit: abcdef1)",
-        "    [pending] sub 1a",
-        "    [pending] sub 1b",
-        "  [failed] step 2",
+        "· root task",
+        "  ✓ step 1  (abcdef1)",
+        "    · sub 1a",
+        "    · sub 1b",
+        "  ✗ step 2",
     ]
 
 
@@ -111,7 +112,7 @@ def test_history_graph_uses_most_recent_when_no_arg(
     rc = main(["runs", "graph"])
     captured = capsys.readouterr()
     assert rc == 0
-    assert "[pending] root task" in captured.out
+    assert "· root task" in captured.out
     assert "newer-run-BBBB22" in captured.err
 
 

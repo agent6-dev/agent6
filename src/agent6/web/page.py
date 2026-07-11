@@ -94,9 +94,9 @@ main { padding: 16px; max-width: 1200px; margin: 0 auto; }
 .wrap { flex-wrap: wrap; }
 .muted { color: var(--muted); }
 .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); }
-.pill.ok { color: var(--ok); border-color: var(--ok); }
-.pill.done { color: var(--accent); border-color: var(--accent); }
-.pill.running { color: var(--warn); border-color: var(--warn); }
+.pill.ok, .pill.passed { color: var(--ok); border-color: var(--ok); }
+.pill.running { color: var(--accent); border-color: var(--accent); }
+.pill.stopped { color: var(--warn); border-color: var(--warn); }
 .pill.stale, .pill.failed { color: var(--err); border-color: var(--err); }
 
 .list { display: flex; flex-direction: column; gap: 8px; }
@@ -273,6 +273,19 @@ aside.rail { display: none; }
 const view = document.getElementById('view');
 const crumb = document.getElementById('crumb');
 let live = null; // the active EventSource, closed on navigation
+// Live heartbeat for a run that is active but silent (thinking / resuming): a
+// 1s ticker updates "#hb-line" with a spinner + elapsed so it reads as alive,
+// not hung. hbState is refreshed by each paintRun; hbTimer runs while on a run.
+let hbState = { active: false, role: 'worker', last: 0, spin: 0 };
+let hbTimer = null;
+const HB_FRAMES = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏';
+function hbTick() {
+  const line = document.getElementById('hb-line');
+  if (!line || !hbState.active) return;
+  const secs = Math.floor((Date.now() - hbState.last) / 1000);
+  const glyph = HB_FRAMES[hbState.spin % HB_FRAMES.length];
+  line.textContent = `${glyph} ${hbState.role} working… ${secs}s`;
+}
 let activeOverlayClose = null; // an open modal dialog's dismisser, closed on navigation
 
 // --- theme -------------------------------------------------------------------
@@ -314,9 +327,13 @@ function toast(msg, bad) { const t = el('div', 'toast' + (bad ? ' bad' : ''), ms
 function fmtUsd(u) { return u ? '$' + Number(u).toFixed(4) : '$0'; }
 function when(ts) { if (!ts) return ''; const d = new Date(ts * 1000); return d.toLocaleString(); }
 function setCrumb(t) { crumb.textContent = t || ''; }
-function closeLive() { if (live) { live.close(); live = null; } }
+function closeLive() {
+  if (live) { live.close(); live = null; }
+  if (hbTimer) { clearInterval(hbTimer); hbTimer = null; }
+  hbState.active = false;
+}
 function closeOverlay() { if (activeOverlayClose) activeOverlayClose(); }
-function pill(status) { const p = el('span', 'pill ' + esc(status), esc(status)); return p; }
+function pill(status, label) { const p = el('span', 'pill ' + esc(status), esc(label || status)); return p; }
 
 function setTab(name) {
   document.querySelectorAll('nav.tabs a, aside.rail .rail-nav a').forEach(a => a.classList.toggle('active', a.dataset.tab === name));
@@ -395,9 +412,9 @@ async function renderHub(focus) {
     it.onclick = () => location.hash = '#/run/' + encodeURIComponent(r.id);
     const g = el('div', 'grow');
     g.appendChild(el('div', 'title', r.task || '(no task)'));
-    g.appendChild(el('div', 'sub', `${esc(r.mode)} · ${r.id.slice(0,12)} · ${when(r.mtime)} · ${fmtUsd(r.usd)}`));
+    g.appendChild(el('div', 'sub', `${esc(r.mode)} · ${esc(r.id)} · ${when(r.mtime)} · ${fmtUsd(r.usd)}`));
     it.appendChild(g);
-    it.appendChild(pill(r.status));
+    it.appendChild(pill(r.status, r.reason ? r.status + ' · ' + String(r.reason).replaceAll('_', ' ') : r.status));
     runsList.appendChild(it);
   }
   runsCard.appendChild(runsList);
@@ -474,7 +491,7 @@ function renderRun(id, opts) {
   opts = opts || {};
   const base = opts.base || ('/api/run/' + encodeURIComponent(id));
   const readOnly = !!opts.readOnly;
-  setCrumb(opts.crumb || id.slice(0, 16));
+  setCrumb(opts.crumb || id);
   view.innerHTML = '';
   const prompts = el('div'); view.appendChild(prompts); // approval/question boxes surface here
   const grid = el('div', 'grid run-grid');
@@ -510,8 +527,10 @@ function renderRun(id, opts) {
   live.onmessage = ev => {
     let s; try { s = JSON.parse(ev.data); } catch (_) { return; }
     paintRun(cards, s);
+    hbState.spin++;
     if (s.finished) closeLive(); // run is done; stop the stream so it doesn't reconnect
   };
+  if (!hbTimer) hbTimer = setInterval(() => { hbState.spin++; hbTick(); }, 1000);
   live.onerror = () => { /* EventSource auto-retries a live run; leave last paint up */ };
 }
 
@@ -628,12 +647,29 @@ function paintRun(cards, s) {
   }
   cards.tasks.appendChild(tree);
 
-  // reasoning (thinking + streamed text)
+  // reasoning (thinking + streamed text); on an ended run the pane tells the
+  // end story. On a live-but-silent run (thinking / resuming) a heartbeat ticks
+  // via hbTick() so it reads as alive, not hung (the detach->attach symptom).
   cards.role.innerHTML = '';
-  if (s.last_role && (s.last_role.streamed_thinking || s.last_role.streamed_text)) {
+  const streaming = s.last_role && (s.last_role.streamed_thinking || s.last_role.streamed_text);
+  if (streaming) {
     if (s.last_role.streamed_thinking) { const t = el('pre', 'think'); t.textContent = s.last_role.streamed_thinking; cards.role.appendChild(t); }
     if (s.last_role.streamed_text) { const t = el('pre'); t.textContent = s.last_role.streamed_text; cards.role.appendChild(t); }
-  } else { cards.role.appendChild(el('div', 'muted', 'waiting for the model…')); }
+  } else if (s.finished) {
+    cards.role.appendChild(el('div', 'sub', s.status_label || 'finished'));
+    if (s.finish_summary) { const t = el('pre'); t.textContent = s.finish_summary; cards.role.appendChild(t); }
+  } else if (s.last_role) {
+    const hb = el('div', 'muted'); hb.id = 'hb-line'; cards.role.appendChild(hb);
+  } else {
+    cards.role.appendChild(el('div', 'muted', 'waiting for the model…'));
+  }
+  hbState = {
+    active: !s.finished && !!s.last_role && !streaming,
+    role: (s.last_role && s.last_role.role) || 'worker',
+    last: Date.now(),
+    spin: 0,
+  };
+  hbTick();
   cards.role.scrollTop = cards.role.scrollHeight;
 
   // tools
@@ -676,7 +712,7 @@ function renderDiff(text) {
 
 // --- transcript --------------------------------------------------------------
 async function renderTranscript(id) {
-  setCrumb('transcript ' + id.slice(0, 12));
+  setCrumb('transcript ' + id);
   view.innerHTML = '';
   const base = '/api/run/' + encodeURIComponent(id);
   const card = el('div', 'card scroll'); card.style.maxHeight = '78vh';

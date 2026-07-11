@@ -19,6 +19,7 @@ from __future__ import annotations
 import contextlib
 import os
 import shutil
+import signal
 import socket
 import sys
 import threading
@@ -204,11 +205,13 @@ def main(argv: tuple[str, ...] | None = None) -> int:
     state_dir, run_id, sock_path = Path(args[0]), args[1], Path(args[2])
     subdir = args[3] if len(args) == 4 else "runs"
     layout = RunLayout(state_dir=state_dir, run_id=run_id, subdir=subdir)
+    # The spawner puts this process in its own session so a terminal Ctrl-C
+    # (delivered to the whole foreground group) never reaches it; ignore
+    # SIGINT too so a stray direct signal cannot kill the run's graph either.
+    # Shutdown is the parent's terminate() or the orphan watchdog.
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
     _exit_when_orphaned(os.getppid(), sock_path)
-    try:
-        serve(layout, sock_path)
-    except KeyboardInterrupt:
-        return 0
+    serve(layout, sock_path)
     return 0
 
 

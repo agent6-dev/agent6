@@ -13,9 +13,12 @@ function that returns a new `RunState` (frozen so the TUI can rely on
 
 from __future__ import annotations
 
+import shlex
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any, Literal
+
+from agent6.viewmodel.listing import status_word
 
 NodeStatus = Literal["pending", "in_progress", "passed", "failed", "skipped", "obsolete"]
 
@@ -141,6 +144,7 @@ class RunState:
     finished: bool = False
     all_passed: bool | None = None
     end_reason: str = ""  # run.end reason: finish_run | steer_abort | provider_error | ...
+    finish_summary: str = ""  # the finish tool's summary: the agent's closing statement
     latest_diff: str = ""  # patch of the most recent auto-commit (diff.updated)
     # Monotonic count of mid-run steer requests (Ctrl-C). The TUI compares it
     # against its own "seen" count to pop a steer modal exactly once per press.
@@ -164,12 +168,19 @@ _STREAM_TAIL = 6000
 # log_tail and the full LogScreen skip them; otherwise a reasoning model floods the
 # log with thousands of contentless "role.thinking_delta" lines.
 STREAM_DELTA_EVENTS = frozenset({"role.thinking_delta", "role.text_delta"})
+# Loop-side mirrors of events already rendered (tool.call carries the args,
+# budget.update the totals); they doubled every tool call and budget tick in
+# the log view without adding a field worth reading.
+LOG_NOISE_EVENTS = frozenset({"loop.tool.call", "loop.budget"})
 
 
 def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PLR0911, PLR0912, PLR0915
     """Fold one event into the run state. Pure function."""
     etype = event.get("type", "")
-    if etype not in STREAM_DELTA_EVENTS:  # deltas are live-stream only, not audit log
+    if not state.run_id and event.get("run_id"):
+        state = replace(state, run_id=str(event["run_id"]))
+    if etype not in STREAM_DELTA_EVENTS and etype not in LOG_NOISE_EVENTS:
+        # Deltas are live-stream only; noise mirrors add no readable field.
         # cursor_task_id is the focus task (graph.update lands before a turn's calls).
         entry = LogLine(format_log_line(event), state.cursor_task_id)
         new_log = _push_bounded(state.log_tail, entry, MAX_LOG_TAIL)
@@ -255,16 +266,23 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
 
         case "tool.call":
             raw_args = event.get("args", {}) or {}
+            name = str(event.get("name", ""))
             tc = ToolCallView(
-                name=str(event.get("name", "")),
+                name=name,
                 args_preview=_render_args(raw_args),
                 args_full=_render_args(raw_args, max_value=4000),
                 ok=None,
                 task_id=state.cursor_task_id,
             )
+            # The finish tools' summary is the agent's closing statement; keep it
+            # so an ended run's panes can render the end story, not a dead one.
+            finish_summary = state.finish_summary
+            if name in ("finish_run", "finish_planning") and isinstance(raw_args, dict):
+                finish_summary = str(raw_args.get("summary", "")).strip() or finish_summary
             return replace(
                 state,
                 tool_calls=_push_bounded(state.tool_calls, tc, _MAX_TOOL_HISTORY),
+                finish_summary=finish_summary,
             )
 
         case "tool.result":
@@ -420,6 +438,18 @@ def _push_bounded[T](existing: tuple[T, ...], item: T, cap: int) -> tuple[T, ...
     return new
 
 
+def _render_arg_value(key: str, value: Any) -> str:
+    """One arg value, human-shaped: argv as a shell line, ask_user's questions as
+    their text, everything else as its string / repr."""
+    if key == "argv" and isinstance(value, (list, tuple)) and value:
+        return shlex.join(str(a) for a in value)
+    if key == "questions" and isinstance(value, (list, tuple)) and value:
+        first = value[0]
+        q = first.get("question", "") if isinstance(first, dict) else str(first)
+        return str(q) + (f" (+{len(value) - 1})" if len(value) > 1 else "")
+    return value if isinstance(value, str) else repr(value)
+
+
 def _render_args(args: dict[str, Any], *, max_value: int = 80) -> str:
     """Render an args dict as `k=v, ...`, truncating each value to *max_value*
     chars. The inline table uses the tight default; the detail modal renders with
@@ -427,14 +457,14 @@ def _render_args(args: dict[str, Any], *, max_value: int = 80) -> str:
     one pathological value still can't bloat the bounded history."""
     pairs: list[str] = []
     for k, v in args.items():
-        s = repr(v) if not isinstance(v, str) else v
+        s = _render_arg_value(k, v)
         if len(s) > max_value:
             s = s[:max_value] + "…"
         pairs.append(f"{k}={s}")
     return ", ".join(pairs)
 
 
-def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912
+def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
     ts = str(event.get("ts", ""))
     etype = str(event.get("type", "?"))
     # Compact one-line representation: timestamp, type, salient field.
@@ -460,9 +490,25 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912
             salient = f"{event.get('role', '')}/{event.get('model', '')}"
         case "role.result":
             role = event.get("role", "")
-            tin = event.get("tokens_in")
-            tout = event.get("tokens_out")
-            salient = f"{role} in={tin} out={tout}"
+            if event.get("error"):
+                # The error is the load-bearing field on a failed turn: this
+                # line is how a dead run gets diagnosed from the log view.
+                salient = f"{role} error: {str(event.get('error'))[:160]}"
+            else:
+                tin = event.get("tokens_in")
+                tout = event.get("tokens_out")
+                salient = f"{role} in={tin} out={tout}"
+        case "loop.provider.retry":
+            salient = f"attempt {event.get('attempt')}: {str(event.get('error', ''))[:160]}"
+        case "loop.resume.start":
+            salient = f"iteration={event.get('iteration')} messages={event.get('messages')}"
+        case "budget.update":
+            salient = (
+                f"in={event.get('input_total')} out={event.get('output_total')}"
+                f" ${event.get('usd_total')}"
+            )
+        case "run.start":
+            salient = str(event.get("user_task", ""))[:80]
         case "verify.end":
             salient = f"exit={event.get('exit_code')} dur={event.get('duration_s')}s"
         case "approval.prompt":
@@ -477,7 +523,7 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912
             ans = event.get("answers", []) or []
             salient = f"id={event.get('id')} answers={len(ans)}"
         case "run.end":
-            salient = f"all_passed={event.get('all_passed')}"
+            salient = f"{event.get('reason', '')} all_passed={event.get('all_passed')}"
         case _:
             salient = ""
     line = f"{ts[11:23] if len(ts) > 23 else ts}  {etype:<18}"
@@ -497,16 +543,19 @@ def fold_run(events: Iterable[dict[str, Any]]) -> RunState:
 def run_status_label(state: RunState) -> str:
     """The header status word, distinguishing a stop from a finish from an error --
     all three set finished=True, so the reason is what tells them apart. A user who
-    stopped a run must not see a bare 'finished' (which reads as 'it completed')."""
-    if not state.finished:
-        return "running"
-    if state.end_reason == "steer_abort":
-        return "stopped"
-    if state.all_passed:
-        return "finished · all passed"
-    if state.end_reason and state.end_reason != "finish_run":
-        return f"ended · {state.end_reason.replace('_', ' ')}"
-    return "finished"
+    stopped a run must not see a bare 'finished' (which reads as 'it completed').
+    The decision lives in ``viewmodel.summary.status_word`` so listings and
+    headers can never disagree about how a run ended."""
+    word, reason = status_word(
+        finished=state.finished, all_passed=bool(state.all_passed), end_reason=state.end_reason
+    )
+    labels = {
+        "running": "running",
+        "stopped": "stopped",
+        "passed": "finished · all passed",
+        "finished": "finished",
+    }
+    return labels.get(word) or f"ended · {reason.replace('_', ' ')}"
 
 
 def run_state_as_dict(state: RunState) -> dict[str, Any]:

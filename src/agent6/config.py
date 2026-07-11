@@ -847,7 +847,7 @@ class WebConfig(BaseModel):
     model_config = _BASE_MODEL_CONFIG
 
     host: str = "127.0.0.1"
-    port: int = Field(ge=1, le=65535, default=8901)
+    port: int = Field(ge=1, le=65535, default=7658)
     # Opt-in required to bind a non-loopback host. Off by default so a typo or a
     # copied config can never silently expose the agent to the local network.
     allow_non_loopback: bool = False

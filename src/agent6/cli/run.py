@@ -46,9 +46,13 @@ from agent6.cli._steer import (
     select_revised_prompt as _select_revised_prompt,
 )
 from agent6.cli._steer import (
+    tty_message as _tty_message,
+)
+from agent6.cli._steer import (
     tty_prompt as _tty_prompt,
 )
 from agent6.cli.egress import (
+    EgressGuard,
     _check_network_profile,
     _maybe_apply_agent_landlock,
     _maybe_start_egress,
@@ -126,6 +130,7 @@ from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.schema import UserQuestion
 from agent6.types import SandboxProfile
 from agent6.verify_infer import VERIFY_INFER_SYSTEM_PROMPT, infer_verify_command
+from agent6.viewmodel import status_word
 from agent6.workflows._run_state import load_resume_snapshot
 from agent6.workflows.loop import ResumeError, RunResult, Workflow
 
@@ -146,6 +151,59 @@ def _run_exit_code(result: RunResult) -> int:
     if result.reason == "budget_exhausted":
         return _EXIT_BUDGET_EXHAUSTED
     return 1
+
+
+def _loop_logger(mode: str, console_stream: bool) -> Callable[[str], None]:
+    """The workflow's text logger.
+
+    When the live ConsoleView is rendering the product stream (foreground run),
+    the loop's internal state narration (``LOOP: LOAD_CONTEXT``, ``mode=run
+    system=N chars``, ``DAG root task seeded``, ``compaction: …``) is pure noise
+    on top of the glyph stream, so it is suppressed unless ``AGENT6_DEBUG=1``.
+    Genuine notices (auto-commit, tool errors, critic decisions) always pass.
+    Headless/`ask` keep the full trace (their stdout is the log, not a stream)."""
+    base = _eprint if mode == "ask" else print
+    if not console_stream or os.environ.get("AGENT6_DEBUG") == "1":
+        return base
+
+    def _filtered(msg: str) -> None:
+        stripped = msg.removeprefix("[agent6] ")
+        if "LOOP:" in msg or stripped.startswith("compaction:"):
+            return
+        base(msg)
+
+    return _filtered
+
+
+def _print_run_end(
+    result: RunResult, *, layout: RunLayout, budget: BudgetTracker, console_stream: bool
+) -> None:
+    """One composed end-of-run block: outcome, summary, cost, and the next step.
+
+    Replaces the old `result: completed=True reason=... iterations=...` repr line
+    plus a re-print of the summary. When the live ConsoleView already rendered the
+    `● done <summary>` terminator (console_stream), this omits the summary and
+    just adds what the stream lacks: cost and the branch / next-step footer."""
+    word, reason = status_word(finished=True, all_passed=result.completed, end_reason=result.reason)
+    if not console_stream:
+        # Headless: no ConsoleView ran, so this block is the only end output.
+        headline = word if not reason else f"{word} · {reason.replace('_', ' ')}"
+        print(f"\n{headline}")
+        if result.summary:
+            print(f"  {result.summary}")
+    print()
+    print(budget.format_summary())
+    run_branch = ""
+    with contextlib.suppress(OSError, ValueError):
+        run_branch = json.loads(layout.manifest_path.read_text(encoding="utf-8")).get(
+            "run_branch", ""
+        )
+    if result.completed and run_branch:
+        print(f"\nchanges are on {run_branch}")
+        print(f"  merge with:  agent6 runs merge {layout.run_id}")
+        print(f"  inspect:     agent6 runs diff {layout.run_id}")
+    elif not result.completed:
+        print(f"\nresume with:  agent6 resume {layout.run_id}")
 
 
 def _eprint(msg: str) -> None:
@@ -457,6 +515,17 @@ def _warn_if_headless_ask(cfg: Config, *, tui_enabled: bool) -> None:
         )
 
 
+def _spawn_detached(guard: EgressGuard, cwd: Path, run_id: str) -> str:
+    """Spawn the detached background resume for this run.
+
+    Under network isolation a direct spawn inherits the empty namespace and the
+    resume's provider egress is dead on arrival, so it goes through the
+    pre-forked host spawner; without isolation the direct spawn is fine."""
+    if guard.detach_spawner is not None:
+        return guard.detach_spawner.spawn_resume(cwd, run_id)
+    return spawn_detached_resume(cwd, run_id)
+
+
 def _build_questioner(
     run_dir: Path, events: EventSink
 ) -> Callable[[tuple[UserQuestion, ...]], tuple[str, ...]]:
@@ -493,7 +562,19 @@ def _build_questioner(
             if answers is not None:
                 source = "tui"
         if answers is None:
-            answers = _default_stdin_questioner(questions)
+            stdin_answers = _default_stdin_questioner(questions)
+            if stdin_answers is None:
+                # No front-end and no controlling terminal: nobody saw the
+                # question. Answer empty so the run never hangs, and say so
+                # where a watcher will see it instead of failing silently.
+                answers = tuple("" for _ in questions)
+                source = "headless-default"
+                _tty_message(
+                    "[agent6] ask_user: no front-end attached and no terminal;"
+                    " returning empty answers\n"
+                )
+            else:
+                answers = stdin_answers
         events.emit("question.answer", id=question_id, answers=list(answers), source=source)
         return answers
 
@@ -516,18 +597,19 @@ def _ask_one_stdin(q: UserQuestion, prefix: str = "") -> str | None:
     return ans
 
 
-def _default_stdin_questioner(questions: tuple[UserQuestion, ...]) -> tuple[str, ...]:
+def _default_stdin_questioner(questions: tuple[UserQuestion, ...]) -> tuple[str, ...] | None:
     """Ask each question on /dev/tty (visible under a TUI's stream redirect). For a
     series, print a summary afterwards and let the operator revise any answer (type
-    its number) before submitting (blank). Headless (no controlling terminal)
-    returns "" for each so a run never hangs or eats piped stdin."""
+    its number) before submitting (blank). Returns None without a controlling
+    terminal (headless) so the caller can answer empty -- never hanging or eating
+    piped stdin -- and say so."""
     answers: list[str] = []
     multi = len(questions) > 1
     for i, q in enumerate(questions, start=1):
         prefix = f"[{i}/{len(questions)}] " if multi else ""
         ans = _ask_one_stdin(q, prefix)
         if ans is None:
-            return tuple("" for _ in questions)  # no tty: never block
+            return None  # no tty: never block
         answers.append(ans)
     while multi:  # review + revise loop; blank submits
         summary = "\n".join(
@@ -1037,8 +1119,8 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
             _release_single_writer(worker_lock_fd)
             return 2
 
-    egress_broker = None
-    egress_sock_dir = None
+    egress_guard = EgressGuard()
+    console_view: ConsoleView | None = None
     run_branch: str | None = None
     detach_requested = False
     try:
@@ -1076,14 +1158,16 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         transcript_sink = TranscriptSink(layout.transcripts_dir)
         events = EventSink(layout.logs_path)
 
-        egress_broker, egress_sock_dir, egress_err = _maybe_start_egress(cfg, selected_profile)
+        egress_guard, egress_err = _maybe_start_egress(
+            cfg, selected_profile, with_detach_spawner=True
+        )
         if egress_err is not None:
             print(f"REFUSING: {egress_err}", file=sys.stderr)
             return 2
-        if egress_broker is not None:
+        if egress_guard.broker is not None:
             print(
                 f"[agent6] provider-only egress: confined to host network "
-                f"namespace via broker pid {egress_broker.pid}",
+                f"namespace via broker pid {egress_guard.broker.pid}",
                 file=sys.stderr,
             )
 
@@ -1134,7 +1218,8 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
             effective_revise_prompt = "off"
         stream_text, console_stream = _stream_modes(tui_enabled=tui_enabled)
         if console_stream:
-            events.subscribe(ConsoleView(sys.stderr))
+            console_view = ConsoleView(sys.stderr)
+            events.subscribe(console_view)
         provider: Provider = _InstrumentedProvider(
             inner=worker_inner,
             role=role,
@@ -1228,15 +1313,16 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                     mcp_manager=mcp_manager,
                     mode=mode,
                 )
+                loop_log = _loop_logger(mode, console_stream)
                 compact_drop, compact_summarise = resolve_compaction_thresholds(
-                    cfg, rm_worker, log=_eprint if mode == "ask" else print
+                    cfg, rm_worker, log=loop_log
                 )
                 wf = Workflow(
                     root=cwd,
                     config=cfg,
                     provider=provider,
                     dispatcher=dispatcher,
-                    logger=_eprint if mode == "ask" else print,
+                    logger=loop_log,
                     events=events,
                     graph_client=graph_client,
                     steer_requested=steer_state.requested,
@@ -1346,18 +1432,11 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
             # Keep going in the background: the outer finally releases this run's
             # worker lock, then spawns a detached `resume` that picks it up.
             detach_requested = True
-            print(f"\n[agent6] detached — {layout.run_id} continues in the background.")
+            print(f"\n[agent6] detached: {layout.run_id} continues in the background.")
             print(f"          reattach:  agent6 watch {layout.run_id}")
             return 0
 
-        print()
-        print(
-            f"[agent6] result: completed={result.completed} reason={result.reason} "
-            f"iterations={result.iterations} tool_calls={result.tool_calls}"
-        )
-        print(f"  summary: {result.summary[:500]}")
-        print()
-        print(budget.format_summary())
+        _print_run_end(result, layout=layout, budget=budget, console_stream=console_stream)
         _fire_notify_hook(
             cfg.notify,
             run_id=layout.run_id,
@@ -1371,8 +1450,10 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         # finalization. Refusal returns, Ctrl-C during verify inference, and
         # setup-window crashes used to skip these, leaving a stale pid, a
         # leaked broker process, and the user's stashed work silently hidden.
+        if console_view is not None:
+            console_view.close()  # stop the heartbeat thread, clear any spinner line
         clear_worker_pid(layout.run_dir)
-        _stop_egress(egress_broker, egress_sock_dir)
+        _stop_egress(egress_guard)
         if stashed:
             _finalize_auto_stash(
                 cwd,
@@ -1387,9 +1468,11 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
             # the detached `resume` acquires it.
             if cfg.sandbox.run_commands == "ask" and not session_allow_set(layout.run_dir):
                 _prompt_detach_away_mode(layout.run_dir)
-            err = spawn_detached_resume(cwd, layout.run_id)
+            err = _spawn_detached(egress_guard, cwd, layout.run_id)
             if err:
                 print(f"[agent6] {err}", file=sys.stderr)
+        if egress_guard.detach_spawner is not None:
+            egress_guard.detach_spawner.close()
 
 
 def _finalize_auto_merge(cwd: Path, *, layout: RunLayout, cfg: Config) -> None:
@@ -1692,8 +1775,8 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     # the worker is blocked in a long provider call (which emits no events).
     write_worker_pid(layout.run_dir, os.getpid())
 
-    egress_broker = None
-    egress_sock_dir = None
+    egress_guard = EgressGuard()
+    console_view: ConsoleView | None = None
     detach_requested = False
     cfg: Config | None = None  # bound below; the finally reads it (detach away-mode)
     try:
@@ -1818,14 +1901,16 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
         transcript_sink = TranscriptSink(layout.transcripts_dir)
         events = EventSink(layout.logs_path)
 
-        egress_broker, egress_sock_dir, egress_err = _maybe_start_egress(cfg, selected_profile)
+        egress_guard, egress_err = _maybe_start_egress(
+            cfg, selected_profile, with_detach_spawner=True
+        )
         if egress_err is not None:
             print(f"REFUSING: {egress_err}", file=sys.stderr)
             return 2
-        if egress_broker is not None:
+        if egress_guard.broker is not None:
             print(
                 f"[agent6] provider-only egress: confined to host network "
-                f"namespace via broker pid {egress_broker.pid}",
+                f"namespace via broker pid {egress_guard.broker.pid}",
                 file=sys.stderr,
             )
 
@@ -1853,7 +1938,8 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
         _warn_if_headless_ask(cfg, tui_enabled=tui_enabled)
         stream_text, console_stream = _stream_modes(tui_enabled=tui_enabled)
         if console_stream:
-            events.subscribe(ConsoleView(sys.stderr))
+            console_view = ConsoleView(sys.stderr)
+            events.subscribe(console_view)
         provider: Provider = _InstrumentedProvider(
             inner=worker_inner,
             role="worker",
@@ -1947,15 +2033,16 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
                     mcp_manager=mcp_manager,
                     mode=mode,
                 )
+                loop_log = _loop_logger(mode, console_stream)
                 compact_drop, compact_summarise = resolve_compaction_thresholds(
-                    cfg, rm_worker, log=print
+                    cfg, rm_worker, log=loop_log
                 )
                 wf = Workflow(
                     root=cwd,
                     config=cfg,
                     provider=provider,
                     dispatcher=dispatcher,
-                    logger=print,
+                    logger=loop_log,
                     events=events,
                     graph_client=graph_client,
                     steer_requested=steer_state.requested,
@@ -2029,18 +2116,11 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
 
         if result.reason == "detached":
             detach_requested = True
-            print(f"\n[agent6] detached — {layout.run_id} continues in the background.")
+            print(f"\n[agent6] detached: {layout.run_id} continues in the background.")
             print(f"          reattach:  agent6 watch {layout.run_id}")
             return 0
 
-        print()
-        print(
-            f"[agent6] result: completed={result.completed} reason={result.reason} "
-            f"iterations={result.iterations} tool_calls={result.tool_calls}"
-        )
-        print(f"  summary: {result.summary[:500]}")
-        print()
-        print(budget.format_summary())
+        _print_run_end(result, layout=layout, budget=budget, console_stream=console_stream)
         _fire_notify_hook(
             cfg.notify,
             run_id=layout.run_id,
@@ -2052,12 +2132,16 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     finally:
         # Single owner of worker.pid + egress teardown for every resume exit
         # path; refusals and Ctrl-C during verify inference used to leak both.
+        if console_view is not None:
+            console_view.close()  # stop the heartbeat thread, clear any spinner line
         clear_worker_pid(layout.run_dir)
-        _stop_egress(egress_broker, egress_sock_dir)
+        _stop_egress(egress_guard)
         _release_single_writer(worker_lock_fd)
         if detach_requested and cfg is not None:
             if cfg.sandbox.run_commands == "ask" and not session_allow_set(layout.run_dir):
                 _prompt_detach_away_mode(layout.run_dir)
-            err = spawn_detached_resume(cwd, layout.run_id)
+            err = _spawn_detached(egress_guard, cwd, layout.run_id)
             if err:
                 print(f"[agent6] {err}", file=sys.stderr)
+        if egress_guard.detach_spawner is not None:
+            egress_guard.detach_spawner.close()

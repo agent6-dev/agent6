@@ -111,6 +111,23 @@ machine run`, each `agent` state runs in its own subprocess that performs this
 same broker setup for itself (the engine is a thin host-netns supervisor), so a
 machine agent's egress is confined exactly as a normal run's is.
 
+Because the namespace is inherited by every later child, a detached background
+resume cannot be spawned from inside it (its own broker would dial from an
+empty netns and every provider call dies locally). Two guards cover this:
+
+- **Host spawner** (`sandbox/host_spawn.py`): `agent6 run`/`resume` pre-fork a
+  second helper child next to the broker, before isolation. On detach the
+  isolated parent writes `{run_id, cwd}` over a pipe and the helper, still in
+  the host namespaces, spawns the detached `agent6 resume <run_id>` and
+  confirms. The helper only ever executes the agent6 executable captured at
+  fork time with a `resume` argv; the request pipe exists only in the trusted
+  operator process (close-on-exec), so neither the argv nor the channel is
+  reachable from LLM output.
+- **Inherited-namespace refusal**: `enter_network_isolation` marks the
+  environment (`AGENT6_NETNS_ISOLATED=1`); an agent6 child that finds the mark
+  refuses to run with the cause stated, instead of burning provider retries
+  into an opaque `provider_error`.
+
 Curator and other `AF_UNIX`-based helpers are unaffected (unix sockets
 cross the netns boundary). MCP servers that need their own outbound
 network access will not have it under `providers`; that is a

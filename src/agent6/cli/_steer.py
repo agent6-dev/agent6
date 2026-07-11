@@ -8,6 +8,7 @@ selection. Independent of the run command; run.py wires it in.
 from __future__ import annotations
 
 import contextlib
+import io
 import os
 import shlex
 import signal
@@ -139,14 +140,19 @@ def tty_message(text: str) -> None:
 
 def tty_prompt(text: str, *, fall_back_to_stdin: bool = True) -> str | None:
     """Prompt on the controlling terminal directly (see ``tty_message``).
-    Falls back to stdin when /dev/tty is unavailable, unless the caller must
-    never consume piped stdin (``fall_back_to_stdin=False``: return None)."""
+    Falls back to stdin when there is no controlling terminal, unless the
+    caller must never consume piped stdin (``fall_back_to_stdin=False``:
+    return None)."""
     try:
-        with open("/dev/tty", "r+", encoding="utf-8") as tty:  # noqa: PTH123
-            tty.write(text)
-            tty.flush()
-            line = tty.readline()
-            return line.rstrip("\n") if line else None
+        # The getpass recipe: O_RDWR on the device + an unbuffered FileIO.
+        # A plain open("/dev/tty", "r+") NEVER works -- buffered update mode
+        # requires a seekable stream and a tty is not -- so every /dev/tty
+        # prompt silently used the stdin fallback (or, without the fallback,
+        # returned no answer at all).
+        fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
+        tty = io.TextIOWrapper(
+            io.FileIO(fd, "r+"), encoding="utf-8", errors="replace", write_through=True
+        )
     except OSError:
         if not fall_back_to_stdin:
             return None
@@ -154,6 +160,15 @@ def tty_prompt(text: str, *, fall_back_to_stdin: bool = True) -> str | None:
             return input(text)
         except (EOFError, KeyboardInterrupt):
             return None
+    try:
+        with tty:
+            tty.write(text)
+            line = tty.readline()
+            return line.rstrip("\n") if line else None
+    except OSError:
+        # The terminal vanished mid-prompt; the text already printed, so do
+        # not prompt again on stdin.
+        return None
 
 
 def install_steer_sigint(events: EventSink, run_dir: Path) -> SteerState:
@@ -191,8 +206,8 @@ def install_steer_sigint(events: EventSink, run_dir: Path) -> SteerState:
         # terminal it owns. Otherwise tell the user a prompt is coming.
         if not frontend_is_live(run_dir):
             tty_message(
-                "\n[agent6] will prompt (steer / continue / stop / detach) once the"
-                " current model response finishes. Ctrl-C again to stop now.\n"
+                "\n[agent6] pausing: steer / continue / stop / detach in a moment."
+                " Ctrl-C again to stop now.\n"
             )
 
     previous = signal.signal(signal.SIGINT, _handler)
@@ -222,7 +237,7 @@ def install_steer_sigint(events: EventSink, run_dir: Path) -> SteerState:
                 clear_steer_request(run_dir)
             return answer
         return _normalize_steer_choice(
-            tty_prompt("[agent6] paused — [enter] continue · type to steer · q stop · d detach: ")
+            tty_prompt("[agent6] paused: [enter] continue · type to steer · q stop · d detach: ")
         )
 
     def restore() -> None:

@@ -4,26 +4,45 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 from agent6.config import Config
 from agent6.config_layer import resolved_state_dir
 from agent6.detect import Environment, probe_userns_supported
+from agent6.frontend.spawn import agent6_exe
 from agent6.providers.egress import clear_routes, parse_endpoint, register_route
 from agent6.sandbox import (
     BrokerHandle,
     EgressBrokerError,
     Endpoint,
+    HostSpawner,
     LandlockNotSupportedError,
     apply_agent_landlock,
     enter_network_isolation,
+    fork_host_spawner,
     start_egress_broker,
 )
 from agent6.sandbox.jail import _locate_jail_binary
 from agent6.types import SandboxProfile
+
+
+@dataclass(frozen=True, slots=True)
+class EgressGuard:
+    """What `_maybe_start_egress` established for one run.
+
+    ``broker`` + ``sock_dir`` are torn down by `_stop_egress`. The
+    ``detach_spawner`` (run/resume only) must OUTLIVE that teardown: the detach
+    branch uses it after `_stop_egress`, then closes it last.
+    """
+
+    broker: BrokerHandle | None = None
+    sock_dir: Path | None = None
+    detach_spawner: HostSpawner | None = None
 
 
 def _provider_endpoints(cfg: Config) -> set[Endpoint]:
@@ -174,68 +193,90 @@ def resolve_strict_egress_viability(
 
 
 def _maybe_start_egress(
-    cfg: Config, selected_profile: SandboxProfile
-) -> tuple[BrokerHandle | None, Path | None, str | None]:
+    cfg: Config, selected_profile: SandboxProfile, *, with_detach_spawner: bool = False
+) -> tuple[EgressGuard, str | None]:
     """Confine the agent process's egress via the broker, if configured.
 
-    Returns ``(broker, sock_dir, error)``. ``error`` non-None ⇒ the caller must
-    refuse the run. Only acts on the ``strict`` profile under
+    Returns ``(guard, error)``. ``error`` non-None ⇒ the caller must refuse the
+    run. Only acts on the ``strict`` profile under
     ``agent_network ∈ {providers, local}``, on ``open`` nothing is confined,
     and on ``hardened`` the agent-process Landlock (see
     :func:`_maybe_apply_agent_landlock`) provides port-level confinement
     instead. ``local`` restricts to loopback provider endpoints and refuses any
     non-local provider.
 
+    ``with_detach_spawner`` (run/resume) also pre-forks the host spawner so a
+    later detach can launch the background resume OUTSIDE the network
+    namespace; a resume spawned from inside it inherits the empty namespace
+    and every provider call dies locally.
+
     Must run before any network object is built and while single-threaded
     (``unshare(CLONE_NEWUSER)``). On success the process is left inside an empty
     network namespace whose only routes are the broker's per-endpoint sockets.
     """
+    if os.environ.get("AGENT6_NETNS_ISOLATED"):
+        # Inherited from a parent agent6's enter_network_isolation: no provider
+        # is reachable from here, ever. Refuse with the cause instead of letting
+        # the run burn provider retries into an opaque `provider_error`.
+        return EgressGuard(), (
+            "this process inherited agent6's isolated network namespace from a"
+            " parent agent6 process, so no provider is reachable. Background"
+            " work must be spawned through the pre-forked host spawner"
+            " (agent6.sandbox.host_spawn); start runs from a regular shell."
+        )
     mode = cfg.sandbox.agent_network
     if mode == "open" or selected_profile != "strict":
-        return None, None, None
+        return EgressGuard(), None
     if mode == "local":
         eps = _provider_endpoints(cfg)
         non_local = sorted(f"{e.host}:{e.port}" for e in eps if not _is_loopback(e.host))
         if non_local:
-            return (
-                None,
-                None,
+            return EgressGuard(), (
                 "sandbox.agent_network = 'local' permits only loopback providers,"
                 f" but these are non-local: {', '.join(non_local)}. Use a local"
-                " model (e.g. Ollama) or set agent_network = 'providers'.",
+                " model (e.g. Ollama) or set agent_network = 'providers'."
             )
         endpoints = eps
     else:  # providers
         endpoints = _provider_endpoints(cfg) | _allow_url_endpoints(cfg)
     sock_dir = Path(tempfile.mkdtemp(prefix="agent6-egress-"))
     broker: BrokerHandle | None = None
+    spawner: HostSpawner | None = None
     try:
+        if with_detach_spawner:
+            spawner = fork_host_spawner([agent6_exe()])
         broker = start_egress_broker(endpoints, sock_dir=sock_dir)
         enter_network_isolation()
     except (EgressBrokerError, OSError) as exc:
         # OSError covers a socket bind/listen failure inside start_egress_broker
         # (resource exhaustion, permissions) AND a failure of
-        # enter_network_isolation AFTER the broker child has been forked. Fail
-        # closed: reap the broker if it started, clean up the socket dir, and
+        # enter_network_isolation AFTER the helper children have been forked.
+        # Fail closed: reap whatever started, clean up the socket dir, and
         # refuse the run rather than leak a process/dir or run unconfined.
+        if spawner is not None:
+            spawner.close()
         if broker is not None:
             broker.close()
         shutil.rmtree(sock_dir, ignore_errors=True)
-        return None, None, f"could not establish agent-network confinement: {exc}"
+        return EgressGuard(), f"could not establish agent-network confinement: {exc}"
     for ep in endpoints:
         uds = broker.uds_for(ep.host, ep.port)
         if uds is not None:
             register_route(ep.host, ep.port, uds)
-    return broker, sock_dir, None
+    return EgressGuard(broker=broker, sock_dir=sock_dir, detach_spawner=spawner), None
 
 
-def _stop_egress(broker: BrokerHandle | None, sock_dir: Path | None) -> None:
-    """Tear down the egress broker and clear its routes. Idempotent."""
-    if broker is not None:
-        broker.close()
+def _stop_egress(guard: EgressGuard) -> None:
+    """Tear down the egress broker and clear its routes. Idempotent.
+
+    Leaves ``guard.detach_spawner`` alive: the detach branch runs AFTER this
+    teardown and still needs it; the caller closes it last.
+    """
+    if guard.broker is not None:
+        guard.broker.close()
     clear_routes()
-    if sock_dir is not None:
-        shutil.rmtree(sock_dir, ignore_errors=True)
+    if guard.sock_dir is not None:
+        shutil.rmtree(guard.sock_dir, ignore_errors=True)
 
 
 def _maybe_apply_agent_landlock(

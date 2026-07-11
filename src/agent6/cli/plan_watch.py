@@ -13,7 +13,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from agent6.cli._common import _runs_dir
+from agent6.cli._common import _runs_dir, _state_dir
 from agent6.cli._console_view import ConsoleView
 from agent6.frontend.approval import read_worker_pid, worker_is_alive
 from agent6.run_id import RunIdError, resolve_run_id
@@ -243,7 +243,7 @@ def _print_fork_lineage(manifest: dict[str, object]) -> None:
     print(f"forked from: {parent}@turn {manifest.get('forked_from_turn')}{sha_note}")
 
 
-def _cmd_status(run_id: str, *, as_json: bool = False) -> int:
+def _cmd_status(run_id: str, *, as_json: bool = False) -> int:  # noqa: PLR0915
     """One-shot liveness + progress summary for a run, then exit (no follower).
 
     Answers "is this run still alive, and what is it doing?" from the run dir
@@ -342,7 +342,27 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:
         cost = ev["cost_usd"]
         cost_s = f"  cost ~${cost:.4f}" if isinstance(cost, (int, float)) else ""
         print(f"usage:      in={ev['input_tokens'] or 0} out={ev['output_tokens'] or 0}{cost_s}")
+    _print_task_tree(target)
     return 0
+
+
+def _print_task_tree(run_dir: Path) -> None:
+    """Show the run's task DAG when it decomposed into subtasks. Makes the plan
+    visible for a headless run (no TUI #plan pane), the decompose case the user
+    could not see. A single root (no decomposition) is not worth the block."""
+    from agent6.cli._task_tree import task_tree_lines  # noqa: PLC0415
+    from agent6.graph.storage import RunLayout, load_graph  # noqa: PLC0415
+
+    with contextlib.suppress(Exception):
+        layout = RunLayout(state_dir=_state_dir(Path.cwd()), run_id=run_dir.name)
+        nodes = load_graph(layout)
+        if len(nodes) <= 1:
+            return
+        lines = task_tree_lines(nodes, show_commit=True)
+        if lines:
+            print("\nplan:")
+            for line in lines:
+                print(f"  {line}")
 
 
 def _cmd_tui() -> int:
@@ -422,6 +442,8 @@ def _watch_transcript(target: Path) -> int:
             view.feed(event)
     except KeyboardInterrupt:
         print("\n[agent6] watch: stopped.", file=sys.stderr)
+    finally:
+        view.close()  # stop the heartbeat thread, clear any spinner line
     return 0
 
 
