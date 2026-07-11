@@ -143,6 +143,44 @@ def test_idle_kill_after_output_reports_mid_stream(monkeypatch: pytest.MonkeyPat
         _call(api_label="Anthropic", api_format="anthropic").run(consume)
 
 
+def test_idle_budget_prefers_the_thinking_phase_over_mid_stream() -> None:
+    # A display:omitted thinking block streams only pings; the patient thinking
+    # budget must win over the tight mid-stream budget while it is open, else a
+    # long reason false-kills (the sonnet stylebook regression).
+    clock = StreamClock()
+    assert clock.idle_budget() == (
+        stream_mod.STREAM_FIRST_DATA_TIMEOUT_S,
+        "before any data (prefill)",
+    )
+    clock.mark_output()
+    assert clock.idle_budget() == (stream_mod.STREAM_IDLE_TIMEOUT_S, "mid-stream")
+    clock.enter_thinking()
+    assert clock.idle_budget() == (stream_mod.STREAM_THINKING_IDLE_TIMEOUT_S, "mid-thinking")
+    clock.exit_thinking()
+    assert clock.idle_budget() == (stream_mod.STREAM_IDLE_TIMEOUT_S, "mid-stream")
+
+
+def test_idle_kill_in_thinking_reports_mid_thinking(monkeypatch: pytest.MonkeyPatch) -> None:
+    # With output already seen, a wedged thinking block is bounded by the
+    # thinking budget, not the (here deliberately huge) mid-stream one.
+    monkeypatch.setattr(stream_mod, "STREAM_THINKING_IDLE_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(stream_mod, "STREAM_IDLE_TIMEOUT_S", 30.0)
+    monkeypatch.setattr(stream_mod, "STREAM_FIRST_DATA_TIMEOUT_S", 30.0)
+    monkeypatch.setattr(stream_mod, "STREAM_WATCHDOG_TICK_S", 0.01)
+
+    def consume(resp: httpx2.Response, clock: StreamClock) -> None:
+        for _line in resp.iter_lines():
+            clock.mark_data()
+            clock.mark_output()
+            clock.enter_thinking()
+
+    with (
+        mock.patch("httpx2.stream", side_effect=_serve(_ParkedResponse(["data: x"]))),
+        pytest.raises(ProviderError, match=r"Anthropic SSE stream idle .* mid-thinking"),
+    ):
+        _call(api_label="Anthropic", api_format="anthropic").run(consume)
+
+
 def test_abort_classifies_as_provider_aborted(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(stream_mod, "STREAM_WATCHDOG_TICK_S", 0.01)
     with (

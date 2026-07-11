@@ -24,16 +24,20 @@ blocking ``iter_lines`` then raises an ``httpx2.HTTPError`` that
 :meth:`SseCall.run` re-raises as a descriptive error so the loop can
 retry-or-quit at its own layer.
 
-Two idle phases, because "no data yet" and "data stopped" mean different
-things:
+Three idle phases, because "no data yet", "data stopped", and "thinking" mean
+different things:
 
 - Before the first real output token the gap is prefill / time-to-first-token,
   which legitimately runs long on a big context or a slow model, so be patient
   (``STREAM_FIRST_DATA_TIMEOUT_S``).
-- Once tokens have started, real models emit a data event every few seconds
-  even mid-reasoning; a 45s gap then means the stream wedged. Recovering a
-  mid-stream wedge in 45s instead of 180s is 4x faster with no false-positive
-  on prefill (``STREAM_IDLE_TIMEOUT_S``).
+- Once real output has started, models emit a data event every few seconds; a
+  45s gap then means the stream wedged. Recovering a mid-stream wedge in 45s
+  instead of 180s is 4x faster (``STREAM_IDLE_TIMEOUT_S``).
+- Inside a display:omitted extended-thinking block (Anthropic adaptive thinking
+  on Sonnet 5 / Opus 4.7+ / Fable 5) the stream is ping-only by design while the
+  model reasons, so neither budget above applies; wait out a generous thinking
+  budget instead (``STREAM_THINKING_IDLE_TIMEOUT_S``). The consume loop brackets
+  the block with ``enter_thinking()`` / ``exit_thinking()``.
 """
 
 from __future__ import annotations
@@ -59,6 +63,12 @@ from agent6.providers.types import (
 
 STREAM_FIRST_DATA_TIMEOUT_S = 120.0
 STREAM_IDLE_TIMEOUT_S = 45.0
+# A display:omitted extended-thinking block streams only ``ping`` heartbeats
+# while the model reasons (no content deltas), so the tight mid-stream budget
+# above would false-kill a long think. While inside a thinking block the
+# watchdog waits this much instead; a genuine wedge is still bounded, just less
+# tightly. Tunable if a max-effort model ever reasons past it in one block.
+STREAM_THINKING_IDLE_TIMEOUT_S = 300.0
 # The watchdog also polls should_abort/should_interrupt each tick, so keep it
 # short: this bounds how long a Stop/steer/detach waits to end a long in-flight
 # turn. A quarter second reads as immediate without the impatient second Ctrl-C.
@@ -72,14 +82,17 @@ class StreamClock:
     marked, they are exactly the bytes that mask a wedged upstream.
     ``mark_output()`` when the model has produced real content (text /
     reasoning / tool tokens), which ends the generous prefill budget and
-    starts the short mid-stream idle budget.
+    starts the short mid-stream idle budget. ``enter_thinking()`` /
+    ``exit_thinking()`` bracket a display:omitted thinking block, whose
+    ping-only stream needs the patient thinking budget rather than either.
     """
 
-    __slots__ = ("_seen_output", "last_data_at")
+    __slots__ = ("_in_thinking", "_seen_output", "last_data_at")
 
     def __init__(self) -> None:
         self.last_data_at = time.monotonic()
         self._seen_output = threading.Event()
+        self._in_thinking = threading.Event()
 
     def mark_data(self) -> None:
         self.last_data_at = time.monotonic()
@@ -89,6 +102,22 @@ class StreamClock:
 
     def seen_output(self) -> bool:
         return self._seen_output.is_set()
+
+    def enter_thinking(self) -> None:
+        self._in_thinking.set()
+
+    def exit_thinking(self) -> None:
+        self._in_thinking.clear()
+
+    def idle_budget(self) -> tuple[float, str]:
+        """The active idle timeout and a label for it: a thinking block gets the
+        patient budget, before real output it is prefill, after it the tight
+        mid-stream budget."""
+        if self._in_thinking.is_set():
+            return (STREAM_THINKING_IDLE_TIMEOUT_S, "mid-thinking")
+        if self._seen_output.is_set():
+            return (STREAM_IDLE_TIMEOUT_S, "mid-stream")
+        return (STREAM_FIRST_DATA_TIMEOUT_S, "before any data (prefill)")
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,9 +193,7 @@ class SseCall:
                     with contextlib.suppress(Exception):
                         resp.close()
                     return
-                timeout = (
-                    STREAM_IDLE_TIMEOUT_S if clock.seen_output() else STREAM_FIRST_DATA_TIMEOUT_S
-                )
+                timeout, _ = clock.idle_budget()
                 if time.monotonic() - clock.last_data_at <= timeout:
                     continue
                 idle_killed.set()
@@ -209,10 +236,7 @@ class SseCall:
                 # Convert the watchdog-induced HTTPError into a purpose-specific
                 # ProviderError so the loop's retry/quit path can log a meaningful
                 # reason rather than a generic "ReadError" / "connection closed".
-                phase_s = (
-                    STREAM_IDLE_TIMEOUT_S if clock.seen_output() else STREAM_FIRST_DATA_TIMEOUT_S
-                )
-                where = "mid-stream" if clock.seen_output() else "before any data (prefill)"
+                phase_s, where = clock.idle_budget()
                 self.record(
                     status=0,
                     response=(

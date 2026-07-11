@@ -455,6 +455,12 @@ class AnthropicProvider:
                     if btype == "text":
                         text_acc[idx] = [str(cb.get("text", ""))]
                     elif btype == "thinking":
+                        # A thinking block streams only ping heartbeats under
+                        # display:omitted; tell the watchdog to wait out the
+                        # patient thinking budget until it closes, else the tight
+                        # mid-stream budget false-kills a long reason (see
+                        # providers/_stream.py idle phases).
+                        clock.enter_thinking()
                         thinking_acc[idx] = [str(cb.get("thinking", ""))]
                         signature_acc[idx] = [str(cb.get("signature", ""))]
                     elif btype == "redacted_thinking":
@@ -502,6 +508,9 @@ class AnthropicProvider:
                             }
                         )
                     elif idx in thinking_acc:
+                        # Thinking done; real output (or the next block) resumes
+                        # normal idle budgeting.
+                        clock.exit_thinking()
                         block_out: dict[str, Any] = {
                             "type": "thinking",
                             "thinking": "".join(thinking_acc.pop(idx)),
