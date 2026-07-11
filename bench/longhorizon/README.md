@@ -1,0 +1,93 @@
+# longhorizon bench — compaction, memory, and dependency use on long tasks
+
+The evaluation vehicle bench/coreagent's FINDINGS called for: its short
+test-graded tasks never trigger realistic compaction, so tier-1 elision
+costs, summary fidelity, and every cross-run channel stayed unmeasurable.
+This harness runs agent6 on genuinely long, multi-leg task sequences and
+measures exactly those:
+
+- **Tier-1 compaction losses** — do elisions cause re-reads and forgotten
+  spec details? Gates the deferred facts-ledger: build it only if these
+  losses are real.
+- **Cross-run memory value** — does the `<memories>` block make a second
+  run on the same repo cheaper or better? (add_memory / invalidate_memory
+  shipped 2026-07-06.)
+- **add_dependency use** — does any model create DAG edges unprompted, and
+  does it correlate with better sequencing? (Standing decision: rip the
+  tool out if useless.)
+
+## How it runs
+
+Each (model x condition x task x rep) cell is a SEQUENCE: all of a task's
+legs run in one throwaway git workdir, in order; a leg may first overlay
+extra files (`tasks/<t>/<inject>/`, new requirements landing mid-project).
+Legs share the per-repo agent6 state dir, so cross-run channels carry over;
+the `fresh_state` condition gives each leg a private state dir instead —
+that pair is the memory A/B. Every leg is graded by the task's
+authoritative HIDDEN grader (`tasks/<t>/grade.py`, never shipped into the
+agent's repo) with partial credit and per-component scores, and recorded as
+one JSON line in `results/<label>.jsonl`.
+
+Prompts stay NEUTRAL about the DAG, dependencies, and memories: whether the
+agent uses those channels is part of what the bench measures.
+
+## Tasks (`tasks/<name>/`)
+
+| task | shape | legs | measures |
+|------|-------|------|----------|
+| `stylebook` | implement a 10-rule text auditor; each rule is one ~4k-char authoritative doc, with deliberate cross-file couplings (R01<->R09/R10, R08<->R09) | 1 | retention: per-rule component scores = which early-read rules survive elision |
+| `relay` | 6-module event pipeline with a strict interface chain (incl. a ping count threaded through stages 3->6) | 1 | organic length, interface retention, add_dependency shape |
+| `orchard` | leg 1: fix a price whose root cause is a SOURCE table behind a generated file (verify regenerates, hand-edits get clobbered); leg 2: WEEKEND tier touching the same generator + the cents/half-up convention | 2 | memory value: leg-2 iterations/score/trap-edits, baseline vs fresh_state |
+
+Graders were validated against reference solutions (reference scores 1.0,
+stub 0.0, targeted mutants dent exactly their component; references live
+outside the repo, in the authoring session's scratchpad). `orchard`'s
+rounding component includes an engineered half-up vs banker's divergence
+(F-310: shelf 790 -> weekend 909; float `round()` gives 908).
+
+## Conditions (`CONDITIONS` in run.py)
+
+- `baseline` — shipped defaults (adaptive thresholds; memories on).
+- `window16k` / `window32k` / `window64k` — `[context]` thresholds pinned to
+  what the shipped adaptive fractions (45%/80%) resolve to on that window.
+  That is the regime a small/open-model user gets BY DEFAULT, not an
+  artificial squeeze; on a 256k model baseline compaction never fires, so
+  these rungs are the compaction A/B. A tidy reader stays under the 32k
+  rung's 58k-char drop threshold on these tasks; 16k (local serving) is
+  where tier-1 provably engages.
+- `fresh_state` — private state dir per leg: the no-cross-run-memory
+  control for sequences.
+
+## Metrics per leg (from the run's logs.jsonl + the grader)
+
+`score`/`component_scores` (partial credit; per-rule retention curve on
+stylebook), `drops_total`/`drop_events`/`first_drop_at_tool_call` (tier-1),
+`compactions` (tier-2), `redundant_reads`/`repeat_path_reads` and their
+`_post_drop`/`_post_compact` splits, `memory_writes`/`memory_invalidations`
+plus a post-leg store snapshot (`memories_ids`/`memories_bytes`),
+`deps_added`/`deps_in_graph`, `trap_edits` (edit calls touching orchard's
+generated file), `iterations`, `usd`, `tokens`, `wall_s`, `end_reason`,
+`tampered`.
+
+## Running
+
+```bash
+# compaction A/B on the retention task
+python3 run.py --model moonshotai/kimi-k2.6 --provider openrouter \
+    --tasks stylebook,relay --conditions baseline,window32k \
+    --reps 3 --parallel 3 --label wave1
+
+# memory A/B on the sequence task
+python3 run.py --model qwen/qwen3-coder-30b-a3b-instruct \
+    --tasks orchard --conditions baseline,fresh_state \
+    --reps 4 --parallel 3 --label mem1
+
+python3 stats.py results/wave1.jsonl              # cells + deltas
+python3 stats.py results/wave1.jsonl --components # per-rule retention curve
+```
+
+Providers + secrets come from the layered global `~/.config/agent6` config;
+the harness pins the three model roles and wires `["bash", "verify.sh"]` as
+the verify command. Anthropic models (unpriced) get token caps instead of
+`--max-usd`. Results are append-only JSONL; each record carries every knob,
+so any cell is reproducible from (model, condition, task, leg).
