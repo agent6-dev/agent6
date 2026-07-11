@@ -124,6 +124,10 @@ def initial_state() -> RunState:
 
 _MAX_TOOL_HISTORY = 50
 MAX_LOG_TAIL = 400  # public: the inline log RichLog caps to this so it stays a gapless window
+# Live streamed reasoning/text is the frontier of an in-flight call; keep only the
+# tail so a 25k-char reasoning burst doesn't bloat every SSE frame or re-render.
+# The full turn is preserved in the transcript, which the conversation view folds.
+_STREAM_TAIL = 6000
 
 
 def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PLR0911, PLR0912, PLR0915
@@ -174,7 +178,7 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
                 return state
             return replace(
                 state,
-                last_role=replace(last, streamed_text=last.streamed_text + piece),
+                last_role=replace(last, streamed_text=(last.streamed_text + piece)[-_STREAM_TAIL:]),
             )
 
         case "role.thinking_delta":
@@ -187,7 +191,9 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
                 return state
             return replace(
                 state,
-                last_role=replace(last, streamed_thinking=last.streamed_thinking + piece),
+                last_role=replace(
+                    last, streamed_thinking=(last.streamed_thinking + piece)[-_STREAM_TAIL:]
+                ),
             )
 
         case "role.result":
