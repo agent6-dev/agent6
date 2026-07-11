@@ -324,7 +324,8 @@ async function postJSON(url, body) {
   return data;
 }
 function toast(msg, bad) { const t = el('div', 'toast' + (bad ? ' bad' : ''), msg); document.body.appendChild(t); setTimeout(() => t.remove(), 4000); }
-function fmtUsd(u) { return u ? '$' + Number(u).toFixed(4) : '$0'; }
+// Mirrors viewmodel/format.py format_cost precision (cents >= $1, else 4dp); keep in sync.
+function fmtUsd(u) { if (!u) return '$0'; return u >= 0.995 ? '$' + Number(u).toFixed(2) : '$' + Number(u).toFixed(4); }
 function when(ts) { if (!ts) return ''; const d = new Date(ts * 1000); return d.toLocaleString(); }
 function setCrumb(t) { crumb.textContent = t || ''; }
 function closeLive() {

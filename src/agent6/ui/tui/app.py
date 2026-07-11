@@ -72,7 +72,7 @@ from agent6.ui.tui.modals import (
     ToolCallDetailModal,
 )
 from agent6.ui.tui.theme import PALETTE_CSS, open_theme_picker, setup_theme
-from agent6.ui.viewmodel.format import TASK_STATUS_GLYPH
+from agent6.ui.viewmodel.format import TASK_STATUS_GLYPH, format_cost
 from agent6.ui.viewmodel.state import (
     MAX_LOG_TAIL,
     ApprovalPrompt,
@@ -658,8 +658,7 @@ class Agent6TUI(App[int]):
                 "green" if s.all_passed else "yellow" if s.end_reason == "steer_abort" else "red"
             )
             finished = f"[b {color}]{escape(run_status_label(s))}[/]"
-        cost_prefix = "~" if s.budget.usd_partial else ""
-        cost = f"[b]{cost_prefix}${s.budget.usd_total:.4f}[/]"
+        cost = f"[b]{format_cost(s.budget.usd_total, partial=s.budget.usd_partial)}[/]"
         self.query_one("#top", Static).update(
             f"[b]agent6[/]  {step}   role: {escape(role_line)}   cost: {cost}   {finished}\n"
             f"task: {escape(s.user_task[:120])}"
@@ -720,7 +719,7 @@ class Agent6TUI(App[int]):
         bar.tooltip = (
             f"in {s.budget.input_total}/{s.budget.input_cap}  "
             f"out {s.budget.output_total}/{s.budget.output_cap}  "
-            f"{'~' if s.budget.usd_partial else ''}${s.budget.usd_total:.4f}"
+            f"{format_cost(s.budget.usd_total, partial=s.budget.usd_partial)}"
         )
 
         # A task selected in the #plan tree filters tools/log/diff to it. sel=None

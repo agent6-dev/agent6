@@ -36,6 +36,7 @@ from agent6.ui.cli._common import _runs_dir, _state_dir
 from agent6.ui.cli._merge import execute_merge
 from agent6.ui.cli.plan_watch import _most_recent_run_id
 from agent6.ui.viewmodel import summarize_run_dir, task_snippet
+from agent6.ui.viewmodel.format import format_cost
 
 # ANSI styles for the shared status words (viewmodel.status_word), tty only:
 # a listing where a provider_error death reads as plain text is how dead runs
@@ -79,7 +80,7 @@ def _cmd_list() -> int:
     for s in summaries:
         when = time.strftime("%m-%d %H:%M", time.localtime(s.mtime))
         styled, plain = _styled_status(s.status, s.reason, color=color)
-        cost = "" if s.cost_usd <= 0 else f"${s.cost_usd:.4f}"
+        cost = "" if s.cost_usd <= 0 else format_cost(s.cost_usd)
         rows.append((when, styled, plain, s.mode, cost, s.run_id, task_snippet(s.task)[:60]))
     status_w = max(6, *(len(plain) for _, _, plain, *_ in rows))
     id_w = max(2, *(len(r[5]) for r in rows))

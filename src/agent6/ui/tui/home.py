@@ -47,6 +47,7 @@ from agent6.ui.tui.widgets import FORM_CSS, ActionItem
 from agent6.ui.viewmodel import RunSummary, summarize_run_dir
 from agent6.ui.viewmodel import run_mtime as _run_mtime
 from agent6.ui.viewmodel import task_snippet as _task_snippet
+from agent6.ui.viewmodel.format import format_cost
 
 # Subdirs (relative to the agent6 dir) that hold watchable run directories.
 _RUN_SUBDIRS = ("runs", "asks")
@@ -84,9 +85,7 @@ def _status_cell(summary: RunSummary) -> Text:
 
 
 def _cost_cell(cost_usd: float) -> str:
-    if cost_usd <= 0:
-        return ""
-    return f"${cost_usd:.2f}" if cost_usd >= 0.995 else f"${cost_usd:.4f}"
+    return "" if cost_usd <= 0 else format_cost(cost_usd)
 
 
 def _list_runs(agent6_dir: Path) -> list[Path]:

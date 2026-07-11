@@ -18,6 +18,7 @@ from agent6.ui.bridge.approval import read_worker_pid, worker_is_alive
 from agent6.ui.cli._common import _runs_dir, _state_dir
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.viewmodel import run_mtime, tail_events
+from agent6.ui.viewmodel.format import format_cost
 
 
 def event_epoch(value: object) -> float | None:
@@ -340,7 +341,11 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:  # noqa: PLR0915
     print(f"elapsed:    {_fmt_dur(elapsed)}")
     if ev["input_tokens"] is not None or ev["cost_usd"] is not None:
         cost = ev["cost_usd"]
-        cost_s = f"  cost ~${cost:.4f}" if isinstance(cost, (int, float)) else ""
+        cost_s = (
+            f"  cost {format_cost(cost, partial=bool(ev.get('usd_partial')))}"
+            if isinstance(cost, (int, float))
+            else ""
+        )
         print(f"usage:      in={ev['input_tokens'] or 0} out={ev['output_tokens'] or 0}{cost_s}")
     _print_task_tree(target)
     return 0

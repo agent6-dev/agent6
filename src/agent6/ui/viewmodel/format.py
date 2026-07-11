@@ -21,3 +21,13 @@ TASK_STATUS_GLYPH = {
     "skipped": "–",  # noqa: RUF001
     "obsolete": "×",  # noqa: RUF001
 }
+
+
+def format_cost(usd: float, *, partial: bool = False) -> str:
+    """Render a USD cost identically on every surface: cents at >= $1, four
+    decimals below (so small runs aren't all '$0.00'), with a leading '~' when
+    the figure is a known under-estimate (a model without price data). Surfaces
+    had drifted between 2- and 4-decimal and disagreed on the '~' marker. The web
+    SPA mirrors this in page.py's fmtUsd."""
+    prefix = "~" if partial else ""
+    return f"{prefix}${usd:.2f}" if usd >= 0.995 else f"{prefix}${usd:.4f}"
