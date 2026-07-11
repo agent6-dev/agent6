@@ -168,6 +168,7 @@ from agent6.ui.cli.providers import (
     _role_temperature,
     build_review_seats,
     resolve_compaction_thresholds,
+    resolve_decompose,
     review_panel_configured,
 )
 from agent6.workflows.loop import Workflow
@@ -211,7 +212,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
             cfg = sandbox_overrides.apply(cfg)
         if decompose:  # --decompose: plan-first for this run (overrides config)
             cfg = cfg.model_copy(
-                update={"prompt": cfg.prompt.model_copy(update={"decompose": True})}
+                update={"prompt": cfg.prompt.model_copy(update={"decompose": "on"})}
             )
     except ConfigError as exc:
         print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
@@ -571,6 +572,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                 compact_drop, compact_summarise = resolve_compaction_thresholds(
                     cfg, rm_worker, log=loop_log
                 )
+                cfg = resolve_decompose(cfg, rm_worker, log=loop_log)
                 wf = Workflow(
                     root=cwd,
                     config=cfg,

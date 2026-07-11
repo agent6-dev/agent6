@@ -63,6 +63,23 @@ def resolve_compaction_thresholds(
     return drop, summarise
 
 
+def resolve_decompose(
+    cfg: Config, rm: RoleModel | None, *, log: Callable[[str], None] | None = None
+) -> Config:
+    """Pin ``prompt.decompose = "auto"`` to on/off for this run.
+
+    On only when the worker model *rm* has a measured decompose win in the
+    capability registry; explicit on/off (config or ``--decompose``) passes
+    through untouched. The engine treats any value other than "on" as off,
+    so this resolution is what makes "auto" real."""
+    if cfg.prompt.decompose != "auto":
+        return cfg
+    on = rm is not None and models_registry.decompose_default(rm.model)
+    if on and log is not None and rm is not None:
+        log(f"decompose: auto-enabled for {rm.model} (measured win, bench/coreagent)")
+    return cfg.with_decompose("on" if on else "off")
+
+
 def _build_role_provider(
     cfg: Config,
     role: RoleName,

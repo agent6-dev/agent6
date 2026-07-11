@@ -735,7 +735,7 @@ class Workflow:
         # Initial user message - the task + a brief operational header.
         # Cache breakpoints are placed by _roll_cache_breakpoints each
         # iteration, so the growing history stays cached across turns.
-        dag_hint = _initial_dag_hint(root_id, self.mode, self.config.prompt.decompose)
+        dag_hint = _initial_dag_hint(root_id, self.mode, self.config.prompt.decompose == "on")
         if self.mode == "plan":
             instructions = (
                 "Begin planning. Use the read-only tools to gather what you"
@@ -1917,7 +1917,9 @@ class Workflow:
                 )
             except Exception as exc:
                 self._log(f"LOOP: mark in_progress skipped: {exc}")
-        banner = _current_task_banner(current_id, node, decompose=self.config.prompt.decompose)
+        banner = _current_task_banner(
+            current_id, node, decompose=self.config.prompt.decompose == "on"
+        )
         messages.append({"role": "user", "content": [{"type": "text", "text": banner}]})
         state.surfaced_task_id = current_id
         self._log(f"LOOP: surfaced current task {current_id}")

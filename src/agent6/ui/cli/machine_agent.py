@@ -58,6 +58,7 @@ from agent6.ui.cli.providers import (
     _build_role_provider,
     _InstrumentedProvider,
     resolve_compaction_thresholds,
+    resolve_decompose,
 )
 from agent6.workflows.loop import Workflow
 
@@ -274,11 +275,6 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
             state_dir = Path(events_log).parent
             instance_dir = transcript_dir.parent
             bridges = _build_machine_bridges(instance_dir, state_dir, events_sink)
-        # The REPO's state dir (not this state's per-state dir above): a
-        # mode="run" agent state participates in cross-run memory like any
-        # other run; for read-only states the dispatcher mode guard and the
-        # machine/agent prompt assembly keep it inert.
-        repo_state_dir = _state_dir(root)
         dispatcher = ToolDispatcher(
             root=root,
             config=cfg,
@@ -291,11 +287,16 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
             mcp_manager=None,
             extra_protect_paths=protect,
             mode="machine" if read_only else "run",
-            state_dir=repo_state_dir,
+            # The REPO's state dir (not this state's per-state dir above): a
+            # mode="run" agent state participates in cross-run memory like any
+            # other run; for read-only states the dispatcher mode guard and
+            # the machine/agent prompt assembly keep it inert.
+            state_dir=_state_dir(root),
         )
         compact_drop, compact_summarise = resolve_compaction_thresholds(
             cfg, rm, log=lambda msg: print(msg, file=sys.stderr)
         )
+        cfg = resolve_decompose(cfg, rm, log=lambda msg: print(msg, file=sys.stderr))
         wf = Workflow(
             root=root,
             config=cfg,
@@ -303,7 +304,7 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
             dispatcher=dispatcher,
             logger=lambda msg: print(msg, file=sys.stderr),
             mode=mode if mode in ("machine", "agent") else "run",
-            state_dir=repo_state_dir,
+            state_dir=_state_dir(root),
             compact_drop_at_chars=compact_drop,
             compact_summarise_at_chars=compact_summarise,
             context_summary_max_tokens=cfg.context.summary_max_tokens,

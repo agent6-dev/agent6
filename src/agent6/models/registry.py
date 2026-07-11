@@ -20,8 +20,10 @@ from agent6.models.cache import cached_context_window
 
 __all__ = [
     "BUNDLED_CONTEXT_WINDOWS",
+    "DECOMPOSE_WIN_MODEL_FAMILIES",
     "compaction_thresholds",
     "context_window",
+    "decompose_default",
     "resolved_adaptive_values",
 ]
 
@@ -118,12 +120,33 @@ def compaction_thresholds(
     return drop, summarise
 
 
+# Model families with a MEASURED decompose-first win
+# (bench/coreagent/FINDINGS.md, thrust 2): forcing up-front decomposition
+# converted premature finishes into full component coverage
+# (mistral-small-3.2-24b: textkit +0.53, rpn +0.13, ledger +0.18). Every other
+# benched model (qwen3-coder-30b, qwen3.6-35b, claude-haiku-4-5) sat at the
+# score ceiling and paid a 2-4x iteration tax, so ``prompt.decompose = "auto"``
+# resolves to on ONLY for these families and unknown models stay off. Grow
+# this list with bench evidence, not vibes.
+DECOMPOSE_WIN_MODEL_FAMILIES: tuple[str, ...] = ("mistral-small-3.2",)
+
+
+def decompose_default(model_id: str) -> bool:
+    """True when ``prompt.decompose = "auto"`` should enable decompose-first
+    prompting for *model_id*: its family has a measured win in bench/coreagent.
+    Family matching ignores the org prefix and any date/``:tag`` suffix, so
+    ``mistralai/mistral-small-3.2-24b-instruct:free`` matches
+    ``mistral-small-3.2``."""
+    family = _normalize_model_id(model_id).rsplit("/", 1)[-1].lower()
+    return family.startswith(DECOMPOSE_WIN_MODEL_FAMILIES)
+
+
 def resolved_adaptive_values(cfg: Config) -> dict[str, object]:
     """Config settings whose effective value is resolved at runtime, so a UI
     (`config show`, the TUI/web config page) can display the real number rather
-    than the unset/adaptive placeholder. Currently the adaptive compaction
-    thresholds, sized from the worker model's context window; empty when no
-    worker model is configured."""
+    than the unset/adaptive placeholder: the adaptive compaction thresholds,
+    sized from the worker model's context window, and the auto decompose
+    decision. Empty when no worker model is configured."""
     rm = cfg.models.resolve("worker")
     if rm is None:
         return {}
@@ -133,7 +156,10 @@ def resolved_adaptive_values(cfg: Config) -> dict[str, object]:
         drop_override=cfg.context.drop_at_chars,
         summarise_override=cfg.context.summarise_at_chars,
     )
-    return {
+    out: dict[str, object] = {
         "context.drop_at_chars": drop,
         "context.summarise_at_chars": summarise,
     }
+    if cfg.prompt.decompose == "auto":
+        out["prompt.decompose"] = "on" if decompose_default(rm.model) else "off"
+    return out

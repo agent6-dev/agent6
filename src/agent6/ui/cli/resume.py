@@ -147,6 +147,7 @@ from agent6.ui.cli.providers import (
     _role_temperature,
     build_review_seats,
     resolve_compaction_thresholds,
+    resolve_decompose,
     review_panel_configured,
 )
 from agent6.workflows._run_state import load_resume_snapshot
@@ -560,6 +561,10 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
                 compact_drop, compact_summarise = resolve_compaction_thresholds(
                     cfg, rm_worker, log=loop_log
                 )
+                # Same pin the original run applied: the frozen system prompt
+                # already carries its decompose block; this keeps the loop's
+                # banner/hint reads consistent with it.
+                cfg = resolve_decompose(cfg, rm_worker, log=loop_log)
                 wf = Workflow(
                     root=cwd,
                     config=cfg,

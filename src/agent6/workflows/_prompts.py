@@ -636,7 +636,10 @@ def build_system_prompt(
         base = Path(override).expanduser().read_text(encoding="utf-8")
     # Fill the DAG-rules sentinel (present only in the run-mode default base).
     # On an override file the sentinel is absent, so this is a no-op there.
-    base = base.replace("__DAG_RULES_BLOCK__", dag_rules_block(config.prompt.decompose))
+    # "auto" is pinned to on/off by the CLI (resolve_decompose) before the
+    # workflow starts; an unresolved "auto" reaching here (bench/embedders)
+    # conservatively renders the optional block.
+    base = base.replace("__DAG_RULES_BLOCK__", dag_rules_block(config.prompt.decompose == "on"))
     parts = [base]
 
     # When the bench harness sets

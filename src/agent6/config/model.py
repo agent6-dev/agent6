@@ -665,15 +665,19 @@ class PromptConfig(BaseModel):
     # any other provider call. Default off keeps crisp prompts/frontier-model
     # runs on the old path.
     revise_prompt: Literal["off", "auto", "interactive"] = "off"
-    # Front-load task decomposition (run mode). When true the worker's system
+    # Front-load task decomposition (run mode). When on the worker's system
     # prompt swaps the "DAG is optional" guidance for a "decompose first"
     # directive: lay the task out as ordered subtasks before editing, then work
     # one focused subtask at a time (the existing surface-current-task and
-    # finish-gate machinery walks the frontier). Aimed at small/open models that
+    # finish-gate machinery walks the frontier). Helps small/open models that
     # lose track of multi-part tasks; a capable model decomposes implicitly and
-    # gains nothing, so the safe default is off. No effect on plan/ask/machine/
-    # agent modes. See docs/config.md for the measured per-model effect.
-    decompose: bool = False
+    # only pays the 2-4x turn overhead. "auto" (default) enables it ONLY for
+    # worker models with a measured win in the capability registry
+    # (models.registry.decompose_default); the CLI pins auto to on/off at run
+    # start via ``with_decompose``, and the engine treats any value other than
+    # "on" as off. No effect on plan/ask/machine/agent modes. See
+    # docs/config.md for the measured per-model effect.
+    decompose: Literal["auto", "on", "off"] = "auto"
 
     @model_validator(mode="after")
     def _check_system_prompt_file(self) -> PromptConfig:
@@ -1156,6 +1160,17 @@ class Config(BaseModel):
             return self
         data = self.model_dump(mode="python")
         data.setdefault("workflow", {})["verify_command"] = list(argv)
+        return Config.model_validate(data)
+
+    def with_decompose(self, value: Literal["on", "off"]) -> Config:
+        """Return a copy with ``prompt.decompose`` pinned to *value*.
+
+        Used by the CLI to resolve ``"auto"`` (from the model-capability
+        registry) before the workflow starts, so the engine only ever sees
+        on/off. IN-MEMORY only, like ``with_inferred_verify``.
+        """
+        data = self.model_dump(mode="python")
+        data.setdefault("prompt", {})["decompose"] = value
         return Config.model_validate(data)
 
     def require_runnable(self, role: RoleName = "worker") -> None:

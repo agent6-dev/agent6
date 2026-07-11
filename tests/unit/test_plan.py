@@ -183,13 +183,16 @@ def test_decompose_swaps_dag_rules_block(tmp_path: Path) -> None:
         agents_md="",
         recent_log="",
     )
-    off = Config.model_validate({"prompt": {"decompose": False}})
-    on = Config.model_validate({"prompt": {"decompose": True}})
+    off = Config.model_validate({"prompt": {"decompose": "off"}})
+    on = Config.model_validate({"prompt": {"decompose": "on"}})
+    auto = Config()  # unresolved "auto" reaching the engine renders like off
     run_off = loopmod._build_system_prompt(config=off, repo=repo, mode="run")  # pyright: ignore[reportPrivateUsage]
     run_on = loopmod._build_system_prompt(config=on, repo=repo, mode="run")  # pyright: ignore[reportPrivateUsage]
+    run_auto = loopmod._build_system_prompt(config=auto, repo=repo, mode="run")  # pyright: ignore[reportPrivateUsage]
     assert "__DAG_RULES_BLOCK__" not in run_off and "__DAG_RULES_BLOCK__" not in run_on
     assert "<dag-rules>" in run_off and "<decompose-first>" not in run_off
     assert "<decompose-first>" in run_on and "<dag-rules>" not in run_on
+    assert "<dag-rules>" in run_auto and "<decompose-first>" not in run_auto
     # decompose is a run-mode worker feature: other modes never carry either block
     # or a leaked sentinel.
     for mode in ("plan", "ask", "machine", "agent"):
@@ -197,8 +200,8 @@ def test_decompose_swaps_dag_rules_block(tmp_path: Path) -> None:
         assert "__DAG_RULES_BLOCK__" not in text and "<decompose-first>" not in text
 
 
-def test_decompose_defaults_off(tmp_path: Path) -> None:
-    assert Config().prompt.decompose is False
+def test_decompose_defaults_auto(tmp_path: Path) -> None:
+    assert Config().prompt.decompose == "auto"
 
 
 def test_decompose_hint_is_run_mode_only() -> None:
