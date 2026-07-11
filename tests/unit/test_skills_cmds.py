@@ -113,6 +113,43 @@ class TestUpdate:
     def test_update_unknown_name(self, env: Path) -> None:
         assert _cmd_skills_update("ghost") == 2
 
+    def test_update_skips_when_local_source_gone(
+        self, env: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        src = _write_skill_file(env / "src" / "SKILL.md", "tidy")
+        assert _cmd_skills_install(str(src), force=False) == 0
+        src.unlink()  # the source file the operator installed from is deleted
+        capsys.readouterr()
+        assert _cmd_skills_update("tidy") == 0  # a vanished source is a skip, not an abort
+        out = capsys.readouterr().out
+        assert "skipped" in out and "gone from origin" in out
+        assert (_installed(env, "tidy") / "SKILL.md").is_file()  # left intact
+
+    def test_update_dir_install_reinstalls(
+        self, env: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        repo = env / "pack"
+        _write_skill_file(repo / "SKILL.md", "dd")
+        assert _cmd_skills_install(str(repo), force=False) == 0
+        capsys.readouterr()
+        assert _cmd_skills_update("dd") == 0  # dir-kind origin must not read_text a directory
+        assert "unchanged" in capsys.readouterr().out
+
+    def test_update_repo_style_dir_install(
+        self, env: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # a repo with skills/*/SKILL.md records the repo root as each skill's
+        # origin; update must find the skill in its subdir, not the root.
+        repo = env / "pack"
+        _write_skill_file(repo / "skills" / "aa" / "SKILL.md", "aa")
+        _write_skill_file(repo / "skills" / "bb" / "SKILL.md", "bb")
+        assert _cmd_skills_install(str(repo), force=False) == 0
+        capsys.readouterr()
+        assert _cmd_skills_update("") == 0
+        out = capsys.readouterr().out
+        assert "aa" in out and "bb" in out and "unchanged" in out
+        assert "gone from origin" not in out
+
 
 class TestStateCommands:
     def _install_tidy(self, env: Path) -> None:

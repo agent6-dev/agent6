@@ -271,6 +271,48 @@ def _cmd_skills_install(url: str, *, force: bool) -> int:
     return 0
 
 
+def _refetch_skill(name: str, origin: dict[str, str]) -> str:
+    """Re-install one skill in place from its recorded origin. Return "" on
+    success or a short skip note when the source no longer exists.
+
+    Dispatch on the recorded `kind`, not on whether a path happens to exist: a
+    local file or dir that was moved or deleted is a clean skip, not a failed
+    HTTP fetch of the path.
+    """
+    url, kind = origin["url"], origin.get("kind", "skillmd")
+    if kind == "git":
+        with tempfile.TemporaryDirectory(prefix="agent6-skill-") as tmp:
+            clone = Path(tmp) / "repo"
+            sha = _git_clone(url, clone)
+            src = next((d for d in _repo_skill_dirs(clone) if d.name == name), None)
+            if src is None:
+                return "(gone from origin)"
+            _install_skill_dir(src, url=url, kind="git", source_sha=sha, force=True)
+        return ""
+    if kind == "dir":
+        root = Path(url)
+        candidates = _repo_skill_dirs(root)
+        # A repo-style install records the repo root as the origin and finds the
+        # skill in a subdir by name; a single-dir install records the dir itself.
+        if candidates == [root]:
+            src = root
+        else:
+            src = next((d for d in candidates if d.name == name), None)
+        if src is None:
+            return "(gone from origin)"
+        _install_skill_dir(src, url=url, kind="dir", source_sha="", force=True)
+        return ""
+    # skillmd: a single SKILL.md, either a remote URL or a local file.
+    if url.startswith(("http://", "https://")):
+        text = _fetch_url(url)
+    elif Path(url).is_file():
+        text = Path(url).read_text(encoding="utf-8")
+    else:
+        return "(gone from origin)"
+    _install_skill_text(text, url=url, force=True)
+    return ""
+
+
 def _cmd_skills_update(name: str) -> int:
     base = _installed_dir()
     if name and not (base / name).is_dir():
@@ -295,32 +337,14 @@ def _cmd_skills_update(name: str) -> int:
             continue
         before = origin.get("sha256", "")
         try:
-            if origin.get("kind") == "git":
-                with tempfile.TemporaryDirectory(prefix="agent6-skill-") as tmp:
-                    clone = Path(tmp) / "repo"
-                    sha = _git_clone(origin["url"], clone)
-                    src = next(
-                        (d for d in _repo_skill_dirs(clone) if d.name == skill_dir.name),
-                        None,
-                    )
-                    if src is None:
-                        _row(skill_dir.name, "skipped", dim=True, note="(gone from origin)")
-                        counts["skipped"] += 1
-                        continue
-                    _install_skill_dir(
-                        src, url=origin["url"], kind="git", source_sha=sha, force=True
-                    )
-            else:
-                _install_skill_text(
-                    _fetch_url(origin["url"])
-                    if not Path(origin["url"]).exists()
-                    else Path(origin["url"]).read_text(encoding="utf-8"),
-                    url=origin["url"],
-                    force=True,
-                )
+            note = _refetch_skill(skill_dir.name, origin)
         except (OSError, ValueError, httpx2.HTTPError, subprocess.CalledProcessError) as exc:
             print(f"SKILLS ERROR: {skill_dir.name}: {exc}", file=sys.stderr)
             return 2
+        if note:
+            _row(skill_dir.name, "skipped", dim=True, note=note)
+            counts["skipped"] += 1
+            continue
         after = _read_origin(base / skill_dir.name) or {}
         if after.get("sha256", "") != before:
             _row(skill_dir.name, "updated", dim=False)
