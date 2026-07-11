@@ -667,21 +667,42 @@ function renderDiff(text) {
 // --- transcript --------------------------------------------------------------
 async function renderTranscript(id) {
   setCrumb('transcript ' + id.slice(0, 12));
-  const data = await getJSON('/api/run/' + encodeURIComponent(id) + '/transcript');
   view.innerHTML = '';
-  const card = el('div', 'card');
+  const base = '/api/run/' + encodeURIComponent(id);
+  const card = el('div', 'card scroll'); card.style.maxHeight = '78vh';
   card.appendChild(el('h2', null, 'Transcript'));
-  if (!data.turns.length) { card.appendChild(el('div', 'empty', 'no transcript recorded')); view.appendChild(card); return; }
-  for (const t of data.turns) {
-    if (t.role === 'marker') { card.appendChild(el('div', 'muted', '— ' + t.text + ' —')); continue; }
-    const turn = el('div', 'turn ' + t.role);
-    turn.appendChild(el('div', 'who', t.role + (t.seq ? '  · seq ' + t.seq : '')));
-    if (t.thinking) { const th = el('pre', 'think'); th.textContent = t.thinking; turn.appendChild(th); }
-    if (t.text) { const p = el('pre'); p.textContent = t.text; turn.appendChild(p); }
-    for (const [name, args] of t.tool_calls || []) turn.appendChild(el('pre', 'mono muted', '→ ' + name + '(' + args + ')'));
-    card.appendChild(turn);
-  }
-  view.appendChild(card);
+  const body = el('div'); card.appendChild(body); view.appendChild(card);
+
+  const paint = async () => {
+    if (!card.isConnected) return; // navigated away: don't fetch or paint stale
+    let data; try { data = await getJSON(base + '/transcript'); } catch (_) { return; }
+    if (!card.isConnected) return;
+    const atBottom = card.scrollTop + card.clientHeight >= card.scrollHeight - 40;
+    body.innerHTML = '';
+    if (!data.turns.length) { body.appendChild(el('div', 'empty', 'no transcript recorded')); return; }
+    for (const t of data.turns) {
+      if (t.role === 'marker') { body.appendChild(el('div', 'muted', '— ' + t.text + ' —')); continue; }
+      const turn = el('div', 'turn ' + t.role);
+      turn.appendChild(el('div', 'who', t.role + (t.seq ? '  · seq ' + t.seq : '')));
+      if (t.thinking) { const th = el('pre', 'think'); th.textContent = t.thinking; turn.appendChild(th); }
+      if (t.text) { const p = el('pre'); p.textContent = t.text; turn.appendChild(p); }
+      for (const [name, args] of t.tool_calls || []) turn.appendChild(el('pre', 'mono muted', '→ ' + name + '(' + args + ')'));
+      body.appendChild(turn);
+    }
+    if (atBottom) card.scrollTop = card.scrollHeight; // follow the tail unless scrolled up
+  };
+  await paint();
+
+  // Live-follow: the RunState /events stream is a change signal; re-fold the
+  // transcript on it (debounced) and stop once the run finishes. route()'s
+  // closeLive tears the stream down on navigation.
+  let pending = false;
+  live = new EventSource(base + '/events');
+  live.onmessage = ev => {
+    let s; try { s = JSON.parse(ev.data); } catch (_) { return; }
+    if (!pending) { pending = true; setTimeout(() => { pending = false; paint(); }, 1200); }
+    if (s.finished) { closeLive(); setTimeout(paint, 1300); } // one final fold after last writes flush
+  };
 }
 
 // --- machine watch -----------------------------------------------------------
