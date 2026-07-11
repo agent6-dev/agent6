@@ -8,6 +8,7 @@ response; serialization order matches the curator's single-threaded model.
 
 from __future__ import annotations
 
+import contextlib
 import itertools
 import socket
 import subprocess
@@ -102,6 +103,13 @@ class GraphClient:
             send_message(self._sock, {"id": req_id, "intent": intent})
             reply = recv_message(self._sock)
         except (OSError, IpcError) as exc:
+            # A timeout/fault can leave the socket mid-frame; every later _call
+            # would then fail the reply-id check forever. Drop the socket so
+            # subsequent calls fail cleanly ("client not connected") instead of
+            # desyncing on a half-consumed frame.
+            with contextlib.suppress(OSError):
+                self._sock.close()
+            self._sock = None
             raise CuratorClientError(f"curator connection failed: {exc}") from exc
         if reply is None:
             raise CuratorClientError("curator closed the connection")

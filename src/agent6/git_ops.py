@@ -9,6 +9,7 @@ but the destructive operations are not exposed as a code path here at all.
 
 from __future__ import annotations
 
+import contextlib
 import datetime as _dt
 import os
 import re
@@ -182,6 +183,12 @@ def _run(
             timeout=_GIT_TIMEOUT_S,
         )
     except subprocess.TimeoutExpired as exc:
+        # subprocess SIGKILLs the timed-out git; if it died mid-commit/add it
+        # leaves .git/index.lock, and every later git op then fails "Unable to
+        # create '.git/index.lock'". The child is dead, so clearing the stale
+        # lock is safe and lets the run's remaining git ops recover.
+        with contextlib.suppress(OSError):
+            (cwd / ".git" / "index.lock").unlink(missing_ok=True)
         raise GitError(
             f"git {' '.join(args)} timed out after {_GIT_TIMEOUT_S:.0f}s"
             " (a stuck filesystem or a held .git/index.lock?)"
