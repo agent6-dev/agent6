@@ -153,24 +153,27 @@ def _run_exit_code(result: RunResult) -> int:
     return 1
 
 
-def _loop_logger(mode: str, console_stream: bool) -> Callable[[str], None]:
+def _loop_logger(mode: str, console_view: ConsoleView | None) -> Callable[[str], None]:
     """The workflow's text logger.
 
     When the live ConsoleView is rendering the product stream (foreground run),
-    the loop's internal state narration (``LOOP: LOAD_CONTEXT``, ``mode=run
-    system=N chars``, ``DAG root task seeded``, ``compaction: …``) is pure noise
-    on top of the glyph stream, so it is suppressed unless ``AGENT6_DEBUG=1``.
-    Genuine notices (auto-commit, tool errors, critic decisions) always pass.
-    Headless/`ask` keep the full trace (their stdout is the log, not a stream)."""
-    base = _eprint if mode == "ask" else print
-    if not console_stream or os.environ.get("AGENT6_DEBUG") == "1":
-        return base
+    notices go THROUGH it (``console_view.notice``) so each clears the spinner
+    line first and writes to the same stream under the same lock -- otherwise a
+    notice printed to stdout while the stderr spinner is up garbles the line. The
+    loop's internal state narration (``LOOP: LOAD_CONTEXT``, ``compaction: …``)
+    is pure noise on the glyph stream, so it is suppressed unless
+    ``AGENT6_DEBUG=1``; genuine notices (auto-commit, tool errors, critic
+    decisions) pass. Headless/`ask` keep the full trace on their own stream (the
+    log, not a live stream)."""
+    if console_view is None:
+        return _eprint if mode == "ask" else print
+    debug = os.environ.get("AGENT6_DEBUG") == "1"
 
     def _filtered(msg: str) -> None:
         stripped = msg.removeprefix("[agent6] ")
-        if "LOOP:" in msg or stripped.startswith("compaction:"):
+        if not debug and ("LOOP:" in msg or stripped.startswith("compaction:")):
             return
-        base(msg)
+        console_view.notice(msg)
 
     return _filtered
 
@@ -1313,7 +1316,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                     mcp_manager=mcp_manager,
                     mode=mode,
                 )
-                loop_log = _loop_logger(mode, console_stream)
+                loop_log = _loop_logger(mode, console_view)
                 compact_drop, compact_summarise = resolve_compaction_thresholds(
                     cfg, rm_worker, log=loop_log
                 )
@@ -2033,7 +2036,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
                     mcp_manager=mcp_manager,
                     mode=mode,
                 )
-                loop_log = _loop_logger(mode, console_stream)
+                loop_log = _loop_logger(mode, console_view)
                 compact_drop, compact_summarise = resolve_compaction_thresholds(
                     cfg, rm_worker, log=loop_log
                 )

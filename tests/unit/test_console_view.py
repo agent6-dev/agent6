@@ -204,3 +204,23 @@ def test_cli_heartbeat_silent_on_a_non_tty() -> None:
     time.sleep(_STALL_WAIT_S)
     assert "working…" not in buf.getvalue()
     view.close()
+
+
+def test_notice_clears_the_spinner_before_printing() -> None:
+    """A workflow notice (auto-commit, critic) routes through the ConsoleView so
+    it clears the spinner line first and writes to the same stream -- no garble
+    with the stderr heartbeat on a shared terminal."""
+    import time
+
+    out = _FakeTTY()
+    view = ConsoleView(out, color=False)  # type: ignore[arg-type]
+    try:
+        view.feed({"type": "role.call", "role": "worker", "model": "m"})
+        time.sleep(_STALL_WAIT_S)  # spinner up
+        assert "working…" in out.getvalue()
+        view.notice("[agent6]   auto-commit: abc123")
+        v = out.getvalue()
+        assert "auto-commit: abc123" in v
+        assert "\x1b[2K" in v  # the spinner line was erased before the notice
+    finally:
+        view.close()

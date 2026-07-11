@@ -251,6 +251,15 @@ class ConsoleView:
                 self._out.flush()
                 self._status_active = True
 
+    def notice(self, msg: str) -> None:
+        """Print a workflow notice (auto-commit, critic, tool_error) on the SAME
+        stream as the stream/spinner, clearing the spinner first under the lock so
+        the notice can't collide with a spinner write on a shared terminal."""
+        with self._lock:
+            self._clear_status()
+            self._out.write(msg if msg.endswith("\n") else msg + "\n")
+            self._out.flush()
+
     def close(self) -> None:
         """Stop the heartbeat thread and clear any spinner line. Safe to call more
         than once; the daemon thread also dies with the process."""
