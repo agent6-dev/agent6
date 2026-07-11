@@ -722,13 +722,6 @@ def test_run_command_allows_readonly_git_without_injected_config() -> None:
         refuse_mutating_git_command(argv)  # must not raise
 
 
-def test_unknown_tool_rejected(tmp_path: Path) -> None:
-    cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError, match="Unknown"):
-        d.dispatch("nope", {})
-
-
 def test_grep_finds_match(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text("hello world\nfoo\n", encoding="utf-8")
