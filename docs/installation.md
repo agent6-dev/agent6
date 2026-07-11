@@ -51,8 +51,9 @@ uv run agent6 --help
 
 ## Shell completion
 
-One command installs tab-completion (it detects your shell from `$SHELL`, or
-pass `bash`/`zsh`/`fish` explicitly; rerunning is safe and refreshes it):
+One command installs tab-completion (it detects the shell you are running,
+even one started from another shell, or pass `bash`/`zsh`/`fish` explicitly;
+rerunning is safe and refreshes it):
 
 ```sh
 agent6 completions

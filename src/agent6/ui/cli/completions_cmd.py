@@ -9,12 +9,15 @@ registration, and the default action INSTALLS it. For bash/zsh the script is
 written under the agent6 config dir and one marker-guarded ``source`` line is
 appended to the shell's rc file (idempotent: rerunning refreshes the script and
 never duplicates the block). Fish gets a file in its native completions dir --
-no rc edit needed. The shell is detected from ``$SHELL``; pass ``bash``,
-``zsh``, or ``fish`` explicitly when that is wrong or unset.
+no rc edit, and fish picks it up automatically. The shell is detected by
+walking up the process tree to the nearest known shell (a fish started from
+bash leaves ``$SHELL=bash``), falling back to ``$SHELL``; pass ``bash``,
+``zsh``, or ``fish`` explicitly when both are wrong.
 
 A child process cannot restart the shell that launched it, so instead of
-pretending to, the last line prints exactly what to run (``source <rc>`` or
-``exec $SHELL``) to activate the completions in the current session.
+pretending to, the bash/zsh install ends by printing exactly what to run
+(``source <rc>`` or ``exec $SHELL``) to activate the completions in the
+current session.
 """
 
 from __future__ import annotations
@@ -30,10 +33,34 @@ from agent6.paths import global_config_dir
 SHELLS = ("bash", "zsh", "fish")
 _MARK_BEGIN = "# >>> agent6 completions >>>"
 _MARK_END = "# <<< agent6 completions <<<"
+_PROC = Path("/proc")  # patched in tests
 
 
 def detect_shell() -> str:
-    """The login shell's basename from ``$SHELL`` ("" when unset)."""
+    """The interactive shell this command was launched from.
+
+    Walks up the process tree (Linux ``/proc``) to the nearest ancestor that
+    is a known shell: ``$SHELL`` is the login shell, not the running one (a
+    fish started from bash keeps ``$SHELL=bash``), and the direct parent can
+    be a wrapper like ``uv``. Falls back to ``$SHELL``'s basename when the
+    walk finds nothing (macOS, no ``/proc``)."""
+    pid = os.getppid()
+    for _ in range(10):
+        try:
+            comm = (_PROC / str(pid) / "comm").read_text(encoding="utf-8").strip()
+            stat = (_PROC / str(pid) / "stat").read_text(encoding="utf-8")
+        except OSError:
+            break
+        if comm in SHELLS:
+            return comm
+        # stat: "pid (comm) state ppid ..."; comm may contain spaces/parens,
+        # so split at the LAST ")". ppid is the second field after it.
+        try:
+            pid = int(stat.rsplit(")", 1)[1].split()[1])
+        except (IndexError, ValueError):
+            break
+        if pid <= 1:
+            break
     return Path(os.environ.get("SHELL", "")).name
 
 
@@ -76,14 +103,13 @@ def _install_fish(code: str) -> int:
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(code, encoding="utf-8")
     print(f"[agent6] wrote {target} (fish loads it automatically)")
-    print("[agent6] activate now with: exec $SHELL")
     return 0
 
 
 def cmd_completions(shell_arg: str, *, print_only: bool) -> int:
     shell = shell_arg or detect_shell()
     if shell not in SHELLS:
-        detected = f" (detected {shell!r} from $SHELL)" if shell else ""
+        detected = f" (detected {shell!r})" if shell else ""
         print(
             f"ERROR: unsupported or unknown shell{detected}."
             f" Pass one of: agent6 completions {'|'.join(SHELLS)}",

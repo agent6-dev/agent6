@@ -17,6 +17,9 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / ".config" / "agent6"))
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     monkeypatch.delenv("ZDOTDIR", raising=False)
+    # Point the process-tree walk at an empty dir so detection falls back to
+    # $SHELL deterministically (the real tree ends in whatever shell runs pytest).
+    monkeypatch.setattr("agent6.ui.cli.completions_cmd._PROC", tmp_path / "no-proc")
     return tmp_path
 
 
@@ -58,7 +61,9 @@ def test_fish_writes_native_completions_file(
     assert cmd_completions("fish", print_only=False) == 0
     target = home / ".config" / "fish" / "completions" / "agent6.fish"
     assert "agent6" in target.read_text(encoding="utf-8")
-    assert "fish loads it automatically" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "fish loads it automatically" in out
+    assert "activate now" not in out  # fish needs no activation step
 
 
 def test_unknown_shell_is_a_clear_error(
@@ -77,3 +82,20 @@ def test_detects_shell_from_env(
     monkeypatch.setenv("SHELL", "/usr/bin/zsh")
     assert cmd_completions("", print_only=True) == 0
     assert "agent6" in capsys.readouterr().out
+
+
+def test_detects_shell_from_process_tree(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """$SHELL is the login shell, not the running one (a fish started from
+    bash keeps $SHELL=bash). The walk returns the nearest shell ancestor,
+    skipping non-shell wrappers like uv."""
+    proc = home / "proc"
+    # agent6 <- uv(50) <- fish(40) <- bash(30) <- init
+    for pid, comm, ppid in ((50, "uv", 40), (40, "fish", 30), (30, "bash", 1)):
+        d = proc / str(pid)
+        d.mkdir(parents=True)
+        (d / "comm").write_text(comm + "\n", encoding="utf-8")
+        (d / "stat").write_text(f"{pid} ({comm}) S {ppid} 0 0 0", encoding="utf-8")
+    monkeypatch.setattr("agent6.ui.cli.completions_cmd._PROC", proc)
+    monkeypatch.setattr("os.getppid", lambda: 50)
+    monkeypatch.setenv("SHELL", "/bin/bash")
+    assert detect_shell() == "fish"
