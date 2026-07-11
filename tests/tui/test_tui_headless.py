@@ -521,8 +521,11 @@ def test_dashboard_claims_stale_pid_and_self_heals(tmp_path: Path) -> None:
         async with app.run_test() as pilot:
             await pilot.pause()
             assert (tmp_path / "frontend.pid").read_text(encoding="utf-8") == str(os.getpid())
-            # A peer owner appears then dies: the tick re-claims the bridge.
+            # A peer owner appears then dies: the next PROBE re-claims the
+            # bridge (the liveness check is throttled to ~2s, so age the window
+            # rather than wait it out).
             (tmp_path / "frontend.pid").write_text("999999999", encoding="utf-8")
+            app._claim_checked_at = 0.0
             app._tick()
             await pilot.pause()
             assert (tmp_path / "frontend.pid").read_text(encoding="utf-8") == str(os.getpid())

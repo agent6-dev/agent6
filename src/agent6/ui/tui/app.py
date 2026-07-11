@@ -87,6 +87,7 @@ from agent6.ui.tui.theme import PALETTE_CSS, MuxPointerShapes, open_theme_picker
 from agent6.ui.viewmodel.format import TASK_STATUS_GLYPH, format_cost
 from agent6.ui.viewmodel.state import (
     MAX_LOG_TAIL,
+    STREAM_DELTA_EVENTS,
     ApprovalPrompt,
     QuestionPrompt,
     RunState,
@@ -233,6 +234,12 @@ class DashboardScreen(Screen[None]):
         self._last_log_count = 0
         self._visible_tools: tuple[ToolCallView, ...] = ()  # the tool rows on screen now
         self._footer_finished = False  # last state.finished the footer bindings reflect
+        # What each pane last rendered (strong refs; the fold's replace() keeps
+        # untouched fields identical, so `is` says "nothing to redo"). Rebuilding
+        # the tree/table/diff on every structural event was most of the burst cost.
+        self._rendered_tree: tuple[object, object] | None = None
+        self._rendered_tools: tuple[object, object] | None = None
+        self._rendered_diff: tuple[object, object, object, object] | None = None
 
     @property
     def _tui(self) -> Agent6TUI:
@@ -328,10 +335,10 @@ class DashboardScreen(Screen[None]):
         return self.query_one("#log", RichLog)
 
     def action_page_up(self) -> None:
-        self._scroll_target().scroll_page_up()
+        self._scroll_target().scroll_page_up(animate=False)  # instant, like the viewers
 
     def action_page_down(self) -> None:
-        self._scroll_target().scroll_page_down()
+        self._scroll_target().scroll_page_down(animate=False)
 
     def action_scroll_top(self) -> None:
         self._scroll_target().scroll_home(animate=False)
@@ -445,7 +452,11 @@ class DashboardScreen(Screen[None]):
 
     # --- rendering ---------------------------------------------------
 
-    def render_state(self) -> None:  # noqa: PLR0912, PLR0915
+    def render_heartbeat(self) -> None:
+        """The CHEAP once-a-second repaint: the top status line, the composer
+        bar's labels, and the live stream pane. The full pane rebuild
+        (render_state) runs only when events actually arrive -- rebuilding the
+        task tree and tool table every heartbeat was most of the idle churn."""
         tui = self._tui
         s = tui.state
         # The finished flag gates which run-control keys the footer shows; when it
@@ -523,19 +534,10 @@ class DashboardScreen(Screen[None]):
             st.append("(waiting for the model…)", style="dim")
         stream.update(st)
 
-        # Task DAG: the worker's live add_task/update_task breakdown (graph.update
-        # snapshots), indented by depth, cursor marked.
-        tree = self.query_one("#plan", Tree)
-        tree.clear()
-        for tv in s.tasks:
-            icon = _TASK_ICONS.get(tv.status, "·")
-            indent = "  " * tv.depth
-            marker = "▸ " if tv.is_cursor else ""
-            label = Text(f"{indent}{marker}{icon} {tv.title}")
-            if tv.id == self._selected_task_id:  # the task the panes are filtered to
-                label.stylize("bold reverse")
-            tree.root.add_leaf(label, data=tv.id)
-        tree.root.expand()
+    def render_state(self) -> None:  # noqa: PLR0912, PLR0915
+        self.render_heartbeat()
+        tui = self._tui
+        s = tui.state
 
         # A task selected in the #plan tree filters tools/log/diff to it. sel=None
         # is the unfiltered live view; the border titles show which task when set.
@@ -543,16 +545,39 @@ class DashboardScreen(Screen[None]):
         sel_title = next((t.title for t in s.tasks if t.id == sel), "") if sel else ""
         filt = f" · task: {sel_title[:28]}" if sel else ""
 
+        # Task DAG: the worker's live add_task/update_task breakdown (graph.update
+        # snapshots), indented by depth, cursor marked. Rebuilt only when the
+        # tasks tuple (or the selection highlight) actually changed.
+        if self._rendered_tree is None or not (
+            self._rendered_tree[0] is s.tasks and self._rendered_tree[1] == sel
+        ):
+            self._rendered_tree = (s.tasks, sel)
+            tree = self.query_one("#plan", Tree)
+            tree.clear()
+            for tv in s.tasks:
+                icon = _TASK_ICONS.get(tv.status, "·")
+                indent = "  " * tv.depth
+                marker = "▸ " if tv.is_cursor else ""
+                label = Text(f"{indent}{marker}{icon} {tv.title}")
+                if tv.id == sel:  # the task the panes are filtered to
+                    label.stylize("bold reverse")
+                tree.root.add_leaf(label, data=tv.id)
+            tree.root.expand()
+
         table = self.query_one("#tools", DataTable)
-        table.clear()
-        tools = [tc for tc in s.tool_calls if sel is None or tc.task_id == sel]
-        self._visible_tools = tuple(tools[-_TOOL_TABLE_ROWS:])
-        for tc in self._visible_tools:
-            ok = "…" if tc.ok is None else ("✓" if tc.ok else "✗")
-            table.add_row(
-                Text(tc.name), Text(tc.args_preview[:90]), ok, Text(tc.result_summary[:40])
-            )
-        table.border_title = f"tools{filt}" if sel else ""
+        if self._rendered_tools is None or not (
+            self._rendered_tools[0] is s.tool_calls and self._rendered_tools[1] == sel
+        ):
+            self._rendered_tools = (s.tool_calls, sel)
+            table.clear()
+            tools = [tc for tc in s.tool_calls if sel is None or tc.task_id == sel]
+            self._visible_tools = tuple(tools[-_TOOL_TABLE_ROWS:])
+            for tc in self._visible_tools:
+                ok = "…" if tc.ok is None else ("✓" if tc.ok else "✗")
+                table.add_row(
+                    Text(tc.name), Text(tc.args_preview[:90]), ok, Text(tc.result_summary[:40])
+                )
+            table.border_title = f"tools{filt}" if sel else ""
 
         # Log. Diff on the monotonic log_count, not len(log_tail): log_tail is a
         # sliding window, so a length-based diff freezes once it saturates.
@@ -586,6 +611,13 @@ class DashboardScreen(Screen[None]):
         # Diff: the latest auto-commit or live verify output -- or, when a task is
         # selected, the commits made while it was in focus. Built as rich Text to
         # avoid markup parsing of diff/verify bodies (which contain brackets).
+        # Skipped whenever none of its inputs changed.
+        diff_key = (sel, s.recent_diffs, s.last_verify, s.latest_diff)
+        if self._rendered_diff is not None and all(
+            a is b for a, b in zip(self._rendered_diff, diff_key, strict=True)
+        ):
+            return
+        self._rendered_diff = diff_key
         diff_widget = self.query_one("#diff-body", Static)
         self.query_one("#diff").border_title = f"diff{filt}" if sel else ""
         verify = s.last_verify
@@ -655,7 +687,9 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         self._seen_approval_ids: set[str] = set()
         self._seen_question_ids: set[str] = set()
         self._seen_steer = 0
-        self._dirty = False  # an event arrived; _tick coalesces the repaint
+        self._dirty = False  # a structural event arrived; _tick coalesces the repaint
+        self._light_dirty = False  # only stream deltas / heartbeat: light repaint
+        self._claim_checked_at = 0.0  # last frontend.pid liveness probe (file IO)
         self._stop = threading.Event()
         # When True (the auto-spawned co-process of `agent6 run`), close the
         # dashboard once the run ends so the parent command returns; `agent6
@@ -747,11 +781,21 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         # Coalesce: mark dirty and let the 0.2s _tick repaint once. Replaying a
         # finished run floods hundreds of events on open; rendering each one would
         # rebuild the whole dashboard per event (UI thrash, and vhs can't capture
-        # the burst, so the tour video skipped past the dashboard).
-        self._dirty = True
+        # the burst, so the tour video skipped past the dashboard). Streaming
+        # deltas only move the live stream pane, so they take the LIGHT repaint
+        # (a reasoning burst was triggering full tree/table rebuilds 5x/s).
+        if event.get("type") in STREAM_DELTA_EVENTS:
+            self._light_dirty = True
+        else:
+            self._dirty = True
 
     def _tick(self) -> None:
-        self._ensure_claim()  # re-assert the bridge if a peer viewer went away
+        # Re-assert the bridge if a peer viewer went away. Throttled: the probe
+        # reads frontend.pid + signals the process, needless 5x a second.
+        now = time.monotonic()
+        if now - self._claim_checked_at >= 2.0:
+            self._claim_checked_at = now
+            self._ensure_claim()
         for ap in self.state.pending_approvals:
             if not ap.answered and ap.id not in self._seen_approval_ids:
                 self._seen_approval_ids.add(ap.id)
@@ -765,23 +809,29 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         if self.state.steer_requests > self._seen_steer:
             self._seen_steer = self.state.steer_requests
             self._steer_request_to_bar()
-        # Heartbeat: while the run is active but silent, advance the spinner and
-        # repaint ~1/s so the "working… Ns" timer ticks -- an attached viewer can
-        # see the run is alive (thinking / resuming), not hung.
+        # Heartbeat: while the run is active but silent, advance the spinner
+        # ~1/s so the "working… Ns" timer ticks -- an attached viewer can see
+        # the run is alive (thinking / resuming), not hung.
         if not self.state.finished and not self.run_ended:
             now = time.monotonic()
             if now - self._heartbeat_at >= 1.0:
                 self._heartbeat_at = now
                 self.spin += 1
-                self._dirty = True
+                self._light_dirty = True
         # Coalesced repaint: once per tick, and only when the dashboard is the
         # active, mounted screen. A pushed viewer, a modal, or shutdown leaves the
         # dashboard covered or torn down, so querying its widgets raises; defer
-        # the paint (dirty stays set) until it is back on top.
-        if self._dirty and not self._stop.is_set() and self.screen is self._dash:
-            self._dirty = False
-            with contextlib.suppress(NoMatches):
-                self._dash.render_state()
+        # the paint (dirty stays set) until it is back on top. Structural events
+        # rebuild the panes; deltas/heartbeat repaint only the light parts.
+        if not self._stop.is_set() and self.screen is self._dash:
+            if self._dirty:
+                self._dirty = self._light_dirty = False
+                with contextlib.suppress(NoMatches):
+                    self._dash.render_state()
+            elif self._light_dirty:
+                self._light_dirty = False
+                with contextlib.suppress(NoMatches):
+                    self._dash.render_heartbeat()
         # Exit only once the run ended AND nothing is still awaiting an answer,
         # so a final approval/question isn't dropped on the way out.
         if (

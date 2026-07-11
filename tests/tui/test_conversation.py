@@ -20,10 +20,13 @@ def _following(scroll: VerticalScroll) -> bool:
     return scroll.max_scroll_y - scroll.scroll_y <= 2.0
 
 
+def _body_text(app: App[None]) -> str:
+    # The scrollback is a sequence of chunk Statics (selectable), in DOM order.
+    return "\n".join(str(w.content) for w in app.screen.query(".conv-chunk").results(Static))
+
+
 def _nlines(app: App[None]) -> int:
-    # The scrollback is a Static (selectable); count its non-blank rendered lines.
-    body = app.screen.query_one("#conv-body", Static)
-    return len([ln for ln in str(body.content).splitlines() if ln.strip()])
+    return len([ln for ln in _body_text(app).splitlines() if ln.strip()])
 
 
 _EVENTS: list[dict[str, object]] = [
@@ -63,7 +66,7 @@ def test_conversation_screen_cycles_detail_level(tmp_path: Path) -> None:
             assert isinstance(screen, ConversationScreen)
 
             def body_text() -> str:
-                return str(screen.query_one("#conv-body", Static).content)
+                return _body_text(app)
 
             assert _nlines(app) > 0  # the conversation rendered
             # Collapsed default: the first line of the reasoning as a one-line
@@ -271,8 +274,7 @@ def test_conversation_screen_empty(tmp_path: Path) -> None:
         app = _Host(tmp_path / "missing.jsonl")  # no log file
         async with app.run_test() as pilot:
             await pilot.pause()
-            body = app.screen.query_one("#conv-body", Static)
-            assert "no conversation yet" in str(body.content)  # the placeholder
+            assert "no conversation yet" in _body_text(app)  # the placeholder
 
     asyncio.run(scenario())
 

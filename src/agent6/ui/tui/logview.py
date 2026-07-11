@@ -161,10 +161,10 @@ class LogScreen(Screen[None]):
         self._reload()
 
     def action_page_up(self) -> None:
-        self._scroll().scroll_page_up()
+        self._scroll().scroll_page_up(animate=False)  # instant: animation reads as lag
 
     def action_page_down(self) -> None:
-        self._scroll().scroll_page_down()
+        self._scroll().scroll_page_down(animate=False)
 
     def action_scroll_top(self) -> None:
         self._scroll().scroll_home(animate=False)

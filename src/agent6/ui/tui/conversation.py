@@ -74,6 +74,11 @@ from agent6.ui.viewmodel.transcript import (
 from agent6.ui.viewmodel.transcript_style import DetailLevel, StyleName, item_lines
 
 _LIVE_TAIL = 1600  # chars of the in-progress turn kept in the live pane
+# Sealed-chunk size for the transcript body. The body is a SEQUENCE of Static
+# chunks, not one widget: appending to a single Static re-wraps the WHOLE
+# transcript every poll (185ms at ~1800 lines, and growing -- the live-run input
+# lag), while only the small tail chunk ever changes here.
+_CHUNK_LINES = 200
 
 # The single detail shortcut cycles through these in order.
 _DETAIL_CYCLE: dict[DetailLevel, DetailLevel] = {
@@ -129,7 +134,7 @@ def _item_renderables(item: TranscriptItem, *, detail: DetailLevel) -> list[Text
 class _ChromeStatic(Static):
     """A Static that never joins a text selection, so dragging over the title or
     the live pane doesn't grab their text (or stall the auto-scroll) mid-select.
-    Only the transcript body (`#conv-body`) is selectable/copyable."""
+    Only the transcript body (the `.conv-chunk` Statics) is selectable/copyable."""
 
     ALLOW_SELECT = False
 
@@ -196,11 +201,16 @@ class SteerInput(TextArea):
     def set_mode(self, *, live: bool, ctx_pct: int | None = None) -> None:
         """Relabel for the run's state: steering (live) vs resuming (finished),
         plus the context-window fill when known (the claude-code-style readout
-        right where you type)."""
-        self.border_title = "steer the run" if live else "continue the run"
+        right where you type). Only writes on a real change: this runs on every
+        heartbeat, and same-value style writes still cost a refresh."""
+        title = "steer the run" if live else "continue the run"
         keys = "Enter sends · Ctrl-J newline" if live else "Enter resumes · Ctrl-J newline"
         ctx = f"ctx {ctx_pct}% · " if ctx_pct is not None else ""
-        self.border_subtitle = f"{ctx}{keys}"
+        subtitle = f"{ctx}{keys}"
+        if self.border_title != title:
+            self.border_title = title
+        if self.border_subtitle != subtitle:
+            self.border_subtitle = subtitle
 
     def on_key(self, event: events.Key) -> None:
         if event.key == "enter":
@@ -220,7 +230,10 @@ class SteerInput(TextArea):
 
     def _resize(self) -> None:
         rows = min(max(self.document.line_count, 1), _INPUT_MAX_ROWS)
-        self.styles.height = rows + 2  # + the rounded border
+        height = rows + 2  # + the rounded border
+        current = self.styles.height
+        if current is None or current.value != height:  # only relayout on a real change
+            self.styles.height = height
 
 
 class _ConvCommands(Provider):
@@ -260,7 +273,7 @@ class ConversationScreen(Screen[None]):
     ConversationScreen { background: $surface; }
     #conv-main { height: 1fr; }
     #conv-scroll { height: 1fr; }
-    #conv-body { height: auto; padding: 0 1; pointer: text; }  /* selectable: I-beam */
+    .conv-chunk { height: auto; padding: 0 1; pointer: text; }  /* selectable: I-beam */
     #conv-live {
         height: auto; max-height: 12; padding: 0 1;
         border-top: solid $border; background: $surface;
@@ -356,9 +369,13 @@ class ConversationScreen(Screen[None]):
         self._detail: DetailLevel = "collapsed"  # one shortcut cycles none/collapsed/expanded
         self._tail = LogTail(logs_path)
         self._fold = TranscriptFold()
-        self._content = Text()  # accumulated completed-turn lines (selectable)
+        self._content = Text()  # the WHOLE transcript (copy + anchor bookkeeping)
         self._item_starts: list[int] = []  # logical start line of each rendered item (anchor)
         self._content_lines = 0  # total logical lines in _content
+        # The not-yet-sealed tail of the transcript: the only widget content the
+        # live appends re-render (see _CHUNK_LINES).
+        self._tail_text = Text()
+        self._tail_lines = 0
         self._live_think: list[str] = []
         self._live_text: list[str] = []
         self._live = False  # run.start seen and no run.end yet -> the steer bar shows
@@ -369,7 +386,10 @@ class ConversationScreen(Screen[None]):
         yield MenuBar(self._menus)  # top row: menus + "agent6 — <run>", like every screen
         with Vertical(id="conv-main"):
             with VerticalScroll(id="conv-scroll"):
-                yield Static(id="conv-body")  # renders as Content -> selectable
+                # The transcript body: sealed chunks are mounted above this
+                # active tail as the log grows (each renders as Content ->
+                # selectable; only the tail is ever re-rendered).
+                yield Static(id="conv-tail", classes="conv-chunk")
             yield _ChromeStatic("", id="conv-live")  # chrome: not part of a selection
         yield SteerInput(id="conv-input")  # steer bar (hidden unless the run is live)
         yield _JumpButton(_JUMP_LABEL, id="conv-jump")  # floats; shown when scrolled up
@@ -391,7 +411,8 @@ class ConversationScreen(Screen[None]):
             jump = self.query_one("#conv-jump", _JumpButton)
             scroll = self._scroll()
             show = scroll.max_scroll_y > 0 and not self._at_bottom(scroll)
-            jump.display = show
+            if jump.display != show:  # a same-value write still costs a relayout
+                jump.display = show
             if show:
                 region = scroll.region
                 width = len(_JUMP_LABEL) + 2  # + the 1-cell padding each side
@@ -453,8 +474,27 @@ class ConversationScreen(Screen[None]):
             self._content.append_text(line)
             self._content.append("\n")
             self._content_lines += 1
+            self._tail_text.append_text(line)
+            self._tail_text.append("\n")
+            self._tail_lines += 1
             wrote = True
         return wrote
+
+    def _tail_widget(self) -> Static:
+        return self.query_one("#conv-tail", Static)
+
+    def _flush_tail(self) -> None:
+        """Push the tail chunk to its widget, sealing it into an immutable chunk
+        above once it is big enough -- so a growing transcript never re-renders
+        more than the last ~_CHUNK_LINES lines."""
+        tail = self._tail_widget()
+        tail.update(self._tail_text)
+        if self._tail_lines >= _CHUNK_LINES:
+            sealed = Static(self._tail_text, classes="conv-chunk conv-sealed")
+            self._scroll().mount(sealed, before=tail)
+            self._tail_text = Text()
+            self._tail_lines = 0
+            tail.update(self._tail_text)
 
     def _track_live(self, event: dict[str, object]) -> None:
         etype = event.get("type")
@@ -498,6 +538,9 @@ class ConversationScreen(Screen[None]):
         self._content = Text()
         self._item_starts = []
         self._content_lines = 0
+        self._tail_text = Text()
+        self._tail_lines = 0
+        self.query(".conv-sealed").remove()  # rebuilt below by _flush_tail
         self._live_think.clear()
         self._live_text.clear()
         self._live = False
@@ -506,8 +549,12 @@ class ConversationScreen(Screen[None]):
             self._track_live(event)
             for item in self._fold.feed(event):
                 wrote = self._append(item) or wrote
-        empty = Text("(no conversation yet — it appears as the run streams)", style="dim italic")
-        self.query_one("#conv-body", Static).update(self._content if wrote else empty)
+        if wrote:
+            self._flush_tail()
+        else:
+            self._tail_widget().update(
+                Text("(no conversation yet — it appears as the run streams)", style="dim italic")
+            )
         self._render_live()
         self._sync_input()
         self._scroll().scroll_end(animate=False)
@@ -533,7 +580,7 @@ class ConversationScreen(Screen[None]):
             for item in self._fold.feed(event):
                 wrote = self._append(item) or wrote
         if wrote:
-            self.query_one("#conv-body", Static).update(self._content)
+            self._flush_tail()
         self._render_live()
         self._sync_input()
         # Re-pin AFTER the live pane / steer bar have (re)sized this frame: growing
@@ -555,7 +602,9 @@ class ConversationScreen(Screen[None]):
         readout comes from the Agent6TUI host (pushed viewers have no fold)."""
         with contextlib.suppress(NoMatches):
             bar = self.query_one("#conv-input", SteerInput)
-            bar.display = self._bar_shown()
+            shown = self._bar_shown()
+            if bar.display != shown:  # a same-value write still costs a relayout
+                bar.display = shown
             if bar.display:
                 pct_fn = getattr(self.app, "context_pct", None)
                 pct = pct_fn() if callable(pct_fn) else None
@@ -610,18 +659,19 @@ class ConversationScreen(Screen[None]):
         return self._content.plain, "whole transcript"
 
     def _body_selection(self) -> str | None:
-        """Selected text from the transcript BODY only, so a drag that strays over
-        the footer or live pane never copies their text -- Textual's screen-wide
-        get_selected_text() would otherwise include them (they are chrome)."""
-        try:
-            body = self.query_one("#conv-body", Static)
-        except NoMatches:
-            return None
-        selection = self.selections.get(body)
-        if selection is None:
-            return None
-        grabbed = body.get_selection(selection)
-        return grabbed[0] if grabbed is not None else None
+        """Selected text from the transcript BODY only (its chunk Statics, in
+        document order), so a drag that strays over the footer or live pane
+        never copies their text -- Textual's screen-wide get_selected_text()
+        would otherwise include them (they are chrome)."""
+        parts: list[str] = []
+        for chunk in self.query(".conv-chunk"):
+            selection = self.selections.get(chunk)
+            if selection is None:
+                continue
+            grabbed = chunk.get_selection(selection)
+            if grabbed is not None:
+                parts.append(grabbed[0])
+        return "\n".join(parts) if parts else None
 
     def get_selected_text(self) -> str | None:
         """Copy the transcript body only. Textual's screen-wide gather -- used by
@@ -696,7 +746,7 @@ class ConversationScreen(Screen[None]):
         """The visual (wrapped) row where each rendered item begins, at the current
         body width. One pass over the content, so it is cheap enough for a
         user-initiated re-render even on a long transcript."""
-        width = max(1, self.query_one("#conv-body", Static).content_size.width)
+        width = max(1, self._tail_widget().content_size.width)
         starts: list[int] = []
         visual = 0
         nxt = 0
@@ -732,10 +782,10 @@ class ConversationScreen(Screen[None]):
         self._scroll().scroll_end(animate=False)
 
     def action_page_up(self) -> None:
-        self._scroll().scroll_page_up()
+        self._scroll().scroll_page_up(animate=False)  # instant: animation reads as lag
 
     def action_page_down(self) -> None:
-        self._scroll().scroll_page_down()
+        self._scroll().scroll_page_down(animate=False)
 
     def action_close(self) -> None:
         if self._primary:
