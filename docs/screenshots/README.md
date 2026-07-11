@@ -26,6 +26,11 @@ We commit the **tape, scripts, and seed fixtures only**. Generated media
   `tour.webm`.
 - `build_fixtures.py`: dev tool, not run in CI. Rebuilds `seed/` from real runs
   under `$XDG_STATE_HOME/agent6/`, trimming token-delta bloat and scrubbing paths.
+- `tui_snapshot.py`: dev tool, not run in CI. Snapshots a TUI screen (dashboard /
+  log / transcript) of any run dir to an SVG (or PNG, if a chromium /
+  `rsvg-convert` is found) via Textual's headless Pilot -- to "see" the TUI while
+  iterating on it, without a terminal. `uv run python docs/screenshots/tui_snapshot.py
+  <run_dir> <out.(svg|png)> [screen]`.
 - `web_demo.py` + `web_demo.sh`: the web-UI tour (`web-desktop.webm`,
   `web-phone.webm`). Drives `agent6 web` against the same `seed/` fixtures in a
   headless Chromium via Playwright, at desktop (1280x800) and phone (390x844)
