@@ -33,6 +33,14 @@ def _ev(**fields: Any) -> dict[str, object]:
     return dict(fields)
 
 
+async def _show_dashboard(pilot: Any) -> None:
+    """The app opens on the conversation view; flip to the dashboard (Ctrl+D)
+    so the pane tests drive the dashboard like before."""
+    await pilot.pause()
+    await pilot.press("ctrl+d")
+    await pilot.pause()
+
+
 def test_question_modal_digit_in_freetext_is_not_hijacked() -> None:
     """A digit typed into an answer field is plain text: the multi-question modal
     has no digit quick-select. An option button fills its question's field (never
@@ -106,6 +114,7 @@ def test_tools_table_maximizes_to_full_height(tmp_path: Path) -> None:
     async def scenario() -> None:
         app = Agent6TUI(tmp_path)
         async with app.run_test(size=(100, 40)) as pilot:
+            await _show_dashboard(pilot)
             app._handle_event(_ev(type="tool.call", name="grep", args={"pattern": "x"}))
             app._tick()
             await pilot.pause()
@@ -134,6 +143,7 @@ def test_plan_tree_maximizes_to_full_width(tmp_path: Path) -> None:
     async def scenario() -> None:
         app = Agent6TUI(tmp_path)
         async with app.run_test(size=(100, 40)) as pilot:
+            await _show_dashboard(pilot)
             app._handle_event(
                 _ev(
                     type="graph.update",
@@ -174,6 +184,7 @@ def test_tool_row_enter_opens_detail_with_full_args(tmp_path: Path) -> None:
     async def scenario() -> None:
         app = Agent6TUI(tmp_path)
         async with app.run_test() as pilot:
+            await _show_dashboard(pilot)
             app._handle_event(_ev(type="tool.call", name="run_command", args={"cmd": long_val}))
             app._handle_event(
                 _ev(type="tool.result", name="run_command", ok=True, summary="lots of output")
@@ -200,6 +211,7 @@ def test_render_and_modals(tmp_path: Path) -> None:
     async def scenario() -> None:
         app = Agent6TUI(tmp_path)
         async with app.run_test() as pilot:
+            await _show_dashboard(pilot)
             # Render with bracket-laden (markup-hostile) content must not crash —
             # exercises the header, the plan TREE (step titles), the tool TABLE
             # (names/args), the stream pane and the diff pane, all of which carry
@@ -313,24 +325,28 @@ def test_render_and_modals(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_dashboard_back_vs_quit(tmp_path: Path) -> None:
-    """Option 3: q (like Esc) backs out to the hub (exit 0); only Ctrl+Q quits the
-    hub (QUIT_HUB_CODE). Standalone, every one of them just closes (0)."""
+def test_back_and_quit_exit_codes(tmp_path: Path) -> None:
+    """Esc leaves the run view for the hub (exit 0) from both the conversation and
+    the dashboard; q works on the dashboard only (the conversation's steer bar owns
+    plain letters); Ctrl+Q quits the hub (QUIT_HUB_CODE) from anywhere. Standalone,
+    every one of them just closes (0)."""
     from agent6.ui.tui.app import QUIT_HUB_CODE
 
-    async def press(from_hub: bool, key: str) -> int | None:
+    async def press(from_hub: bool, *keys: str) -> int | None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
         app = Agent6TUI(tmp_path, from_hub=from_hub)
         async with app.run_test(size=(100, 30)) as pilot:
             await pilot.pause()
-            await pilot.press(key)
-            await pilot.pause()
+            for key in keys:
+                await pilot.press(key)
+                await pilot.pause()
         return app.return_value
 
-    assert asyncio.run(press(True, "escape")) == 0  # back to the hub
-    assert asyncio.run(press(True, "q")) == 0  # q backs out to the hub too now
+    assert asyncio.run(press(True, "escape")) == 0  # conversation Esc -> back to the hub
+    assert asyncio.run(press(True, "ctrl+d", "escape")) == 0  # dashboard Esc -> the hub
+    assert asyncio.run(press(True, "ctrl+d", "q")) == 0  # dashboard q backs out too
     assert asyncio.run(press(True, "ctrl+q")) == QUIT_HUB_CODE  # only Ctrl+Q quits the hub
-    assert asyncio.run(press(False, "q")) == 0  # standalone: just close
+    assert asyncio.run(press(False, "escape")) == 0  # standalone: just close
     assert asyncio.run(press(False, "ctrl+q")) == 0  # standalone: just close
 
 
@@ -343,6 +359,7 @@ def test_dashboard_pane_maximize_and_restore(tmp_path: Path) -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
         app = Agent6TUI(tmp_path, from_hub=True)
         async with app.run_test(size=(120, 40)) as pilot:
+            await _show_dashboard(pilot)
             await pilot.pause()
             diff = app._dash.query_one("#diff")
             diff.focus()
@@ -374,6 +391,7 @@ def test_dashboard_diff_pane_scrolls(tmp_path: Path) -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
         app = Agent6TUI(tmp_path)
         async with app.run_test(size=(120, 40)) as pilot:
+            await _show_dashboard(pilot)
             await pilot.pause()
             long_patch = "--- a\n+++ b\n" + "".join(f"+added line {i}\n" for i in range(200))
             app._handle_event(_ev(type="diff.updated", index=1, patch=long_patch))
@@ -401,6 +419,7 @@ def test_dashboard_inline_log_is_a_bounded_gapless_window(tmp_path: Path) -> Non
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
         app = Agent6TUI(tmp_path)
         async with app.run_test(size=(120, 40)) as pilot:
+            await _show_dashboard(pilot)
             await pilot.pause()
             for i in range(100):
                 app._handle_event(_ev(type="tool.call", name=f"pre{i}"))
@@ -425,6 +444,7 @@ def test_dashboard_footer_shows_one_dual_back_key(tmp_path: Path) -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
         app = Agent6TUI(tmp_path, from_hub=True)
         async with app.run_test(size=(120, 30)) as pilot:
+            await _show_dashboard(pilot)
             await pilot.pause()
             displays = [fk.key_display for fk in app.screen.query(FooterKey)]
             assert displays.count("Esc/q") == 1  # exactly one combined Back entry
@@ -609,12 +629,11 @@ def test_historical_steer_request_does_not_pop_a_modal_on_open(tmp_path: Path) -
     asyncio.run(scenario())
 
 
-def test_l_toggles_log_and_t_opens_conversation(tmp_path: Path) -> None:
-    # l toggles the log view (open + close with one key, no stacking: the
-    # dashboard's keys are screen-scoped, so they can't fire under a viewer);
-    # t opens the conversation, Esc returns to the dashboard.
+def test_toggle_and_log_viewer_keys(tmp_path: Path) -> None:
+    # Ctrl+D flips conversation <-> dashboard (t flips back too); l toggles the
+    # log viewer open/closed from the dashboard (LogScreen binds l -> close), and
+    # the dashboard's keys are screen-scoped so nothing stacks under a viewer.
     from agent6.ui.tui.app import DashboardScreen
-    from agent6.ui.tui.conversation import ConversationScreen
     from agent6.ui.tui.logview import LogScreen
 
     (tmp_path / "logs.jsonl").write_text(
@@ -625,7 +644,11 @@ def test_l_toggles_log_and_t_opens_conversation(tmp_path: Path) -> None:
         app = Agent6TUI(tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
-            depth = len(app.screen_stack)  # the dashboard on top
+            assert app.screen is app._conv  # the conversation is the primary view
+            await pilot.press("ctrl+d")  # show the dashboard
+            await pilot.pause()
+            assert isinstance(app.screen, DashboardScreen)
+            depth = len(app.screen_stack)
             await pilot.press("l")  # open the log
             await pilot.pause()
             assert isinstance(app.screen, LogScreen)
@@ -633,14 +656,10 @@ def test_l_toggles_log_and_t_opens_conversation(tmp_path: Path) -> None:
             await pilot.pause()
             assert isinstance(app.screen, DashboardScreen)
             assert len(app.screen_stack) == depth
-            await pilot.press("t")  # open the conversation
+            await pilot.press("t")  # t flips back to the conversation
             await pilot.pause()
-            assert isinstance(app.screen, ConversationScreen)
-            await pilot.press("l")  # dashboard keys are scoped: nothing stacks
-            await pilot.pause()
-            assert isinstance(app.screen, ConversationScreen)
-            assert len(app.screen_stack) == depth + 1
-            await pilot.press("escape")  # Esc returns to the dashboard
+            assert app.screen is app._conv
+            await pilot.press("ctrl+d")  # and Ctrl+D flips again
             await pilot.pause()
             assert isinstance(app.screen, DashboardScreen)
 
@@ -679,8 +698,6 @@ def test_task_filter_scopes_tools_log_and_diff(tmp_path: Path) -> None:
     )
 
     async def scenario() -> None:
-        from agent6.ui.tui.app import DashboardScreen
-
         app = Agent6TUI(tmp_path)
         async with app.run_test(size=(150, 42)) as pilot:
             for _ in range(60):
@@ -691,10 +708,9 @@ def test_task_filter_scopes_tools_log_and_diff(tmp_path: Path) -> None:
             assert [tc.task_id for tc in app.state.tool_calls] == ["t1", "t2"]
             assert [d.task_id for d in app.state.recent_diffs] == ["t1", "t2"]
 
-            app._tick()
+            dash = app._dash
+            dash.render_state()  # the dashboard renders on demand while covered
             await pilot.pause()
-            dash = app.screen
-            assert isinstance(dash, DashboardScreen)
             assert len(dash._visible_tools) == 2  # unfiltered: both
 
             dash._selected_task_id = "t1"  # filter to task one (the handler re-renders)
@@ -741,6 +757,62 @@ def test_question_modal_multi_collects_all_answers() -> None:
     asyncio.run(scenario())
 
 
+def test_conversation_is_the_primary_view(tmp_path: Path) -> None:
+    """The app opens on the run's conversation; Ctrl+D toggles the dashboard and
+    back with the SAME conversation instance (state persists); Esc on the primary
+    view leaves for the hub (exit 0)."""
+    from agent6.ui.tui.app import DashboardScreen
+    from agent6.ui.tui.conversation import ConversationScreen
+
+    (tmp_path / "logs.jsonl").write_text(
+        json.dumps({"type": "run.start", "user_task": "x"}) + "\n", encoding="utf-8"
+    )
+
+    async def scenario() -> None:
+        app = Agent6TUI(tmp_path, from_hub=True)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            assert isinstance(app.screen, ConversationScreen)
+            first = app.screen
+            await pilot.press("ctrl+d")
+            await pilot.pause()
+            assert isinstance(app.screen, DashboardScreen)
+            await pilot.press("ctrl+d")
+            await pilot.pause()
+            assert app.screen is first  # the same instance: nothing was rebuilt
+            await pilot.press("escape")  # Esc on the primary view leaves for the hub
+            await pilot.pause()
+        assert app.return_value == 0
+
+    asyncio.run(scenario())
+
+
+def test_pushed_conversation_viewer_still_dismisses(tmp_path: Path) -> None:
+    """A ConversationScreen pushed as a read-only viewer (the hub's t) keeps its
+    old behavior: Esc dismisses back to the host; Ctrl+D is inert (no dashboard)."""
+    from agent6.ui.tui.conversation import ConversationScreen
+
+    (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+
+    class _Host(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(ConversationScreen(tmp_path / "logs.jsonl", title="conversation · x"))
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert isinstance(app.screen, ConversationScreen)
+            await pilot.press("ctrl+d")  # inert on a viewer
+            await pilot.pause()
+            assert isinstance(app.screen, ConversationScreen)
+            await pilot.press("escape")  # Esc dismisses the viewer
+            await pilot.pause()
+            assert not isinstance(app.screen, ConversationScreen)
+
+    asyncio.run(scenario())
+
+
 def test_dashboard_heartbeat_ticks_while_active(tmp_path: Path) -> None:
     """An attached dashboard on a live-but-silent run shows a ticking "working…
     Ns" heartbeat, so a thinking / resuming run reads as alive, not hung. The
@@ -758,6 +830,7 @@ def test_dashboard_heartbeat_ticks_while_active(tmp_path: Path) -> None:
     async def scenario() -> str:
         app = Agent6TUI(tmp_path)
         async with app.run_test(size=(120, 40)) as pilot:
+            await _show_dashboard(pilot)
             for _ in range(15):  # ~3s: let the reader fold + the heartbeat tick
                 await pilot.pause(0.2)
             app._tick()  # pyright: ignore[reportPrivateUsage]
@@ -798,6 +871,7 @@ def test_dashboard_follows_live_appends_after_attach(tmp_path: Path) -> None:
     async def scenario() -> int:
         app = Agent6TUI(tmp_path)
         async with app.run_test(size=(120, 40)) as pilot:
+            await _show_dashboard(pilot)
             for _ in range(8):
                 await pilot.pause(0.2)
             before = app._dash.query_one("#tools", DataTable).row_count

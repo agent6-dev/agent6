@@ -14,20 +14,22 @@ cost. Enter opens a run; `c` opens the config page; `?` lists the keys.
 
 ![The hub](screenshots/out/01-hub.png)
 
-## Run dashboard
+## Conversation
 
-Opening a run shows the task graph beside the model's live reasoning, then the tool calls
-with their results, and the event log and latest commit diff side by side. A budget bar
-runs along the foot, and `f` maximizes the focused pane to full screen.
-
-![The run dashboard](screenshots/out/02-run-dashboard.png)
-
-## Transcript
-
-`t` (or `agent6 runs transcript`) renders the full conversation: the task, the model's
-reasoning, and every tool call with its complete input and output.
+Opening a run lands on its conversation (also `agent6 runs transcript`): the task, the
+model's reasoning, and every tool call with its complete input and output, following
+live. A live run keeps a steer bar at the bottom.
 
 ![A run transcript](screenshots/out/05-transcript.png)
+
+## Run dashboard
+
+`Ctrl+D` toggles the dashboard: the task graph beside the model's live reasoning, then
+the tool calls with their results, and the event log and latest commit diff side by
+side. A budget bar runs along the foot, and `f` maximizes the focused pane to full
+screen.
+
+![The run dashboard](screenshots/out/02-run-dashboard.png)
 
 ## Event log
 
@@ -67,7 +69,7 @@ streamed live like a run.
 For terminal-first workflows, `agent6 run` executes in the foreground: steer it with
 Ctrl-C, no TUI required. Runs started from the TUI or web hub are detached instead, and
 `agent6 watch` attaches to either kind: a plain no-deps line tail by default, `--tui` for
-the full-screen dashboard, `--json` for a one-shot snapshot of the same state.
+the full-screen TUI, `--json` for a one-shot snapshot of the same state.
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox">
   <source src="/screenshots/out/cli-demo.webm" type="video/webm">

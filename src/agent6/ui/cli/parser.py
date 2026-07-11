@@ -174,8 +174,9 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "--tui",
         action="store_true",
         help=(
-            "Open the full-screen dashboard instead of the default headless CLI"
-            " stream. Needs a TTY; mutually exclusive with -i."
+            "Open the full-screen TUI on the run (the conversation view; Ctrl+D"
+            " toggles the dashboard) instead of the default headless CLI stream."
+            " Needs a TTY; mutually exclusive with -i."
             " (Or run `agent6 tui` and start the run from there.)"
         ),
     )
@@ -338,7 +339,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help=(
             "Follow a run or machine live as a readable conversation (the same"
             " render as `agent6 run`). --raw is the no-deps event-line tail, --tui"
-            " the full-screen dashboard, --json a one-shot snapshot of the folded"
+            " the full-screen TUI, --json a one-shot snapshot of the folded"
             " state. Omit the target for the most recent run."
         ),
     )
@@ -352,7 +353,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     watch_p.add_argument(
         "--tui",
         action="store_true",
-        help="Open the full-screen dashboard instead of the default plain line tail.",
+        help="Open the full-screen TUI instead of the default plain line tail.",
     )
     watch_p.add_argument(
         "--json",
@@ -624,7 +625,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     resume_p.add_argument(
         "--tui",
         action="store_true",
-        help="Open the full-screen dashboard instead of the headless stream (like `run --tui`).",
+        help="Open the full-screen TUI instead of the headless stream (like `run --tui`).",
     )
     _add_budget_flags(resume_p)
     _add_sandbox_flags(resume_p)
@@ -673,7 +674,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     fork_p.add_argument(
         "--tui",
         action="store_true",
-        help="Open the full-screen dashboard instead of the headless stream (like `run --tui`).",
+        help="Open the full-screen TUI instead of the headless stream (like `run --tui`).",
     )
     _add_budget_flags(fork_p)
 

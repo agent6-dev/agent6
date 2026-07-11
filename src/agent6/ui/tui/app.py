@@ -190,7 +190,7 @@ class DashboardScreen(Screen[None]):
                 MenuItem("Prev pane", "focus_prev_pane", "shift+tab"),
                 MenuItem("Maximize pane", "fullscreen", "f"),
                 MenuItem("Full log…", "view_logs", "l"),
-                MenuItem("Conversation…", "view_transcript", "t"),
+                MenuItem("Conversation…", "toggle_dashboard", "t"),
                 MenuItem("Theme…", "choose_theme"),
                 MenuItem("Copy method…", "choose_copy_method"),
             ),
@@ -214,7 +214,10 @@ class DashboardScreen(Screen[None]):
         Binding("R", "resume", "Resume", show=False),  # Shift+R: no accidental resume
         Binding("k", "fork", "Fork", show=False),
         Binding("l", "view_logs", "Full log", show=True),
-        Binding("t", "view_transcript", "Conversation", show=True),
+        # t and Ctrl+D both flip back to the conversation (Ctrl+D is the same
+        # key the conversation uses, t stays for dashboard muscle memory).
+        Binding("t", "toggle_dashboard", "Conversation", show=True),
+        Binding("ctrl+d", "toggle_dashboard", "Conversation", show=False),
         # No g/G scroll keys: every pane is a focusable scroll container, so the
         # native PgUp/PgDn + Home/End already scroll whichever pane is focused --
         # the same keys as the log/conversation viewers.
@@ -336,14 +339,13 @@ class DashboardScreen(Screen[None]):
             LogScreen(self._tui.logs_path, title=f"logs · {self._tui.run_dir.name}")
         )
 
-    def action_view_transcript(self) -> None:
-        """Open THIS run's full LLM conversation (assistant text + every tool
-        call with its result), folded live from the run's event log."""
-        self.app.push_screen(
-            ConversationScreen(
-                self._tui.logs_path, title=f"conversation · {self._tui.run_dir.name}"
-            )
-        )
+    def action_toggle_dashboard(self) -> None:
+        self._tui.action_toggle_dashboard()
+
+    def on_screen_resume(self) -> None:
+        # The conversation stamps its own sub_title; re-stamp ours when the
+        # toggle (or a closing viewer) brings the dashboard back on top.
+        self.app.sub_title = f"run · {self._tui.run_dir.name}"
 
     # --- command palette ---------------------------------------------
 
@@ -643,6 +645,9 @@ class Agent6TUI(App[int]):
         self._heartbeat_at = 0.0
         self.spin = 0
         self._dash = DashboardScreen()
+        self._conv = ConversationScreen(
+            self.logs_path, title=f"conversation · {run_dir.name}", primary=True
+        )
 
     def on_mount(self) -> None:
         setup_theme(self)  # apply the saved theme before the first paint
@@ -655,8 +660,13 @@ class Agent6TUI(App[int]):
         with contextlib.suppress(OSError):
             self._seen_steer = self.logs_path.read_bytes().count(b'"run.steer_requested"')
         # Pushed (not the app's default screen): only the push path loads a
-        # screen's CSS, and the hub pushes its HomeScreen the same way.
+        # screen's CSS, and the hub pushes its HomeScreen the same way. The
+        # conversation opens on top -- the primary view -- with the dashboard
+        # beneath it; Ctrl+D (or t from the dashboard) toggles between them.
+        # Installed, so popping the conversation hides rather than destroys it.
         self.push_screen(self._dash)
+        self.install_screen(self._conv, "conversation")
+        self.push_screen(self._conv)
         # Auto-spawn close: the reader thread sets `run_ended` on `run.end`; we
         # poll it from a timer in the app's OWN loop and exit there. Exit()
         # scheduled from inside a call_from_thread callback does not take effect,
@@ -847,6 +857,16 @@ class Agent6TUI(App[int]):
         matters for `agent6 watch`, where `run_ended` never trips) or the
         co-process app closing on run.end."""
         return not self.run_ended and not self.state.finished
+
+    def action_toggle_dashboard(self) -> None:
+        """Flip between the conversation (the primary view) and the dashboard
+        (Ctrl+D anywhere, t from the dashboard). The conversation is installed,
+        so popping it hides it -- both views keep their state. No-op while a
+        modal or a pushed viewer is on top."""
+        if self.screen is self._conv:
+            self.pop_screen()
+        elif self.screen is self._dash:
+            self.push_screen(self._conv)
 
     def action_to_hub(self) -> None:
         self.exit(0)  # back to the hub loop (or just close, standalone)

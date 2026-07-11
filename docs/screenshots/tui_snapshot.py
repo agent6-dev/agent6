@@ -13,7 +13,8 @@ PNG/JPG can view it.
 Usage:
     uv run python docs/screenshots/tui_snapshot.py <run_dir> <out.(svg|png)> [screen]
 
-    screen: dashboard (default) | log | transcript
+    screen: transcript (default: the conversation the app opens on)
+            | dashboard (Ctrl+D toggles it up) | log
 
     <run_dir> is any run directory holding a logs.jsonl, e.g.
     $XDG_STATE_HOME/agent6/<repo-id>/runs/<run-id>. Pair with llm_proxy.py's
@@ -30,7 +31,8 @@ from pathlib import Path
 
 from agent6.ui.tui.app import Agent6TUI
 
-_KEY = {"log": "l", "transcript": "t"}  # dashboard is the default (no keypress)
+# Keypresses to reach each screen from the conversation the app opens on.
+_KEYS: dict[str, list[str]] = {"transcript": [], "dashboard": ["ctrl+d"], "log": ["ctrl+d", "l"]}
 
 
 def _find_chromium() -> str | None:
@@ -83,9 +85,10 @@ async def _snapshot(run_dir: Path, out: Path, screen: str) -> None:
                 break
         app._tick()  # force the coalesced repaint (same as the headless tests)
         await pilot.pause()
-        if key := _KEY.get(screen):
-            await pilot.press(key)  # open the full log / conversation screen
+        for key in _KEYS.get(screen, []):
+            await pilot.press(key)  # toggle to the dashboard / open the log
             await pilot.pause()
+        app._tick()  # the dashboard repaints only while it is the top screen
         await pilot.pause()
         svg = out if out.suffix == ".svg" else out.with_suffix(".svg")
         app.save_screenshot(str(svg))
@@ -103,7 +106,7 @@ def main() -> int:
         print(__doc__)
         return 2
     run_dir, out = Path(sys.argv[1]), Path(sys.argv[2])
-    screen = sys.argv[3] if len(sys.argv) > 3 else "dashboard"
+    screen = sys.argv[3] if len(sys.argv) > 3 else "transcript"
     if not (run_dir / "logs.jsonl").is_file():
         print(f"ERROR: no logs.jsonl in {run_dir}", file=sys.stderr)
         return 2

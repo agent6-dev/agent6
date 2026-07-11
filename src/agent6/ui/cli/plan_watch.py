@@ -373,8 +373,8 @@ def _print_task_tree(run_dir: Path) -> None:
 
 def _cmd_tui() -> int:
     """The TUI hub (`agent6 tui`): browse runs and start new work. Loops between
-    the home screen and the dashboard, opening a run watches it, then returns
-    here on close."""
+    the home screen and the run view (the conversation; Ctrl+D toggles the
+    dashboard), opening a run watches it, then returns here on close."""
     try:
         from agent6.ui.tui.app import (  # noqa: PLC0415 - lazy: textual optional
             QUIT_HUB_CODE,

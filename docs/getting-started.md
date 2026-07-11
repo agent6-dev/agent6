@@ -42,17 +42,18 @@ inferred the run still proceeds, committing every editing step without a green g
 one in the per-repo config, or with `agent6 init`, to make it deterministic.
 
 `agent6 run` is headless by default: it streams the run in your terminal. `--tui` opens
-the full-screen dashboard instead; `-i` drives the run from a stdin REPL.
+the full-screen TUI instead (the run's conversation, with the dashboard on Ctrl+D);
+`-i` drives the run from a stdin REPL.
 
 ## Inspect a run
 
 `agent6 watch [<target>]` follows live as a plain event stream (a run tails its log, a
-machine streams its state overview and reasoning); `--tui` opens the full-screen dashboard
+machine streams its state overview and reasoning); `--tui` opens the full-screen TUI
 instead. `agent6 runs <verb> [<run-id>]` inspects or merges a run. The id is a positional
 argument everywhere (an exact id or an unambiguous prefix); omit it for the most recent run.
 
 ```sh
-agent6 watch              # follow live as a plain stream; --tui for the dashboard, --json for a snapshot
+agent6 watch              # follow live as a plain stream; --tui for the TUI, --json for a snapshot
 agent6 runs show          # status, iteration, elapsed, cost; --json for scripts
 agent6 runs diff          # the git diff the run produced
 agent6 runs commits       # the per-step commits on the run branch

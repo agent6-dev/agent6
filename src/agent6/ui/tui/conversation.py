@@ -14,9 +14,12 @@ and, unless the operator scrolled up to read, the pane sticks to the bottom.
 A live run opens with the steer bar focused: type + Enter sends a steer, Ctrl-J
 newlines. Ctrl+C copies the mouse selection (or the whole transcript) via the
 ``copy_method`` UI preference; PageUp/PageDown scroll, Ctrl+Home/End jump to
-top/bottom, Esc returns to the dashboard. The menu bar (File/View/Help) and the
-command palette (Ctrl+P) hold the rest -- the detail cycle, reload, and the
-pager/terminal/file copies -- each showing its shortcut from the live bindings.
+top/bottom. As the run app's PRIMARY screen (`agent6 run --tui` opens here)
+Ctrl+D toggles the dashboard and Esc leaves for the hub; as a pushed read-only
+viewer (from the hub or the dashboard) Esc just dismisses. The menu bar
+(File/View/Help) and the command palette (Ctrl+P) hold the rest -- the detail
+cycle, reload, and the pager/terminal/file copies -- each showing its shortcut
+from the live bindings.
 
 The scrollback is a ``Static`` in a ``VerticalScroll`` (not a ``RichLog``): a
 ``RichLog`` renders as line Strips, which the framework's text selection cannot
@@ -44,6 +47,7 @@ from textual.containers import Vertical, VerticalScroll
 from textual.css.query import NoMatches
 from textual.message import Message
 from textual.screen import Screen
+from textual.timer import Timer
 from textual.widgets import Footer, Static, TextArea
 
 from agent6.ui.bridge.approval import clear_steer_answer, request_steer, write_steer_answer
@@ -208,30 +212,34 @@ class ConversationScreen(Screen[None]):
     #conv-input:focus { border: round $accent; }
     """
 
+    _VIEW_ITEMS: ClassVar = (
+        MenuItem("Detail: none / collapsed / expanded", "cycle_detail"),
+        MenuItem("Scroll ↑ a page", "page_up"),
+        MenuItem("Scroll ↓ a page", "page_down"),
+        MenuItem("Scroll → top", "scroll_top"),
+        MenuItem("Scroll → end", "scroll_bottom"),
+        MenuItem("Reload the log", "reload"),
+        MenuItem("Copy selection / all", "copy"),
+        MenuItem("Copy via terminal", "suspend_copy"),
+        MenuItem("Copy via pager", "pager"),
+        MenuItem("Save transcript to file", "write_file"),
+    )
+    _HELP_MENU: ClassVar = Menu(
+        "Help",
+        (
+            MenuItem("Keys & actions", "help"),
+            MenuItem("Command palette", "command_palette"),
+        ),
+    )
+    # The class-level MENUS is the pushed-viewer shape (Esc dismisses back to
+    # wherever it was opened). The PRIMARY view (the run app's main screen)
+    # replaces it per-instance in __init__: File matches the dashboard's
+    # (Back = to the hub, Quit) and View gains the dashboard toggle. The menu
+    # TITLES are identical in both shapes, so menu_bindings stays class-level.
     MENUS: ClassVar = (
-        Menu("File", (MenuItem("Back to dashboard", "close"),)),
-        Menu(
-            "View",
-            (
-                MenuItem("Detail: none / collapsed / expanded", "cycle_detail"),
-                MenuItem("Scroll ↑ a page", "page_up"),
-                MenuItem("Scroll ↓ a page", "page_down"),
-                MenuItem("Scroll → top", "scroll_top"),
-                MenuItem("Scroll → end", "scroll_bottom"),
-                MenuItem("Reload the log", "reload"),
-                MenuItem("Copy selection / all", "copy"),
-                MenuItem("Copy via terminal", "suspend_copy"),
-                MenuItem("Copy via pager", "pager"),
-                MenuItem("Save transcript to file", "write_file"),
-            ),
-        ),
-        Menu(
-            "Help",
-            (
-                MenuItem("Keys & actions", "help"),
-                MenuItem("Command palette", "command_palette"),
-            ),
-        ),
+        Menu("File", (MenuItem("Back", "close"),)),
+        Menu("View", _VIEW_ITEMS),
+        _HELP_MENU,
     )
 
     # The steer bar owns plain letters + Enter, so the transcript's nav actions are
@@ -240,6 +248,9 @@ class ConversationScreen(Screen[None]):
     BINDINGS: ClassVar = [
         Binding("escape", "close", "Back", key_display="Esc", priority=True),
         Binding("ctrl+c", "copy", "Copy", priority=True),
+        # Primary view only (check_action hides it on pushed viewers): flip
+        # between the conversation and the dashboard.
+        Binding("ctrl+d", "toggle_dashboard", "Dashboard", priority=True),
         Binding("pageup", "page_up", "Scroll up", priority=True, show=False),
         Binding("pagedown", "page_down", "Scroll down", priority=True, show=False),
         Binding("ctrl+home", "scroll_top", "Top", priority=True, show=False),
@@ -248,10 +259,29 @@ class ConversationScreen(Screen[None]):
     ]
     COMMANDS: ClassVar = {_ConvCommands}
 
-    def __init__(self, logs_path: Path, *, title: str) -> None:
+    def __init__(self, logs_path: Path, *, title: str, primary: bool = False) -> None:
+        """*primary* marks the run app's main screen (Esc leaves the app, Ctrl+D
+        toggles the dashboard); pushed read-only viewers (the hub, the dashboard's
+        t) leave it False, where Esc just dismisses."""
         super().__init__()
         self._logs_path = logs_path
         self._title = title
+        self._primary = primary
+        # The instance's menus (MENUS stays the class-level viewer shape, which
+        # menu_bindings derives the Alt+letter openers from -- same titles).
+        self._menus: tuple[Menu, ...] = self.MENUS
+        if primary:
+            self._menus = (
+                Menu(
+                    "File",
+                    (
+                        MenuItem("Back", "close"),
+                        MenuItem("Quit", "quit_hub", "ctrl+q"),
+                    ),
+                ),
+                Menu("View", (*self._VIEW_ITEMS, MenuItem("Dashboard…", "toggle_dashboard"))),
+                self._HELP_MENU,
+            )
         self._detail: DetailLevel = "collapsed"  # one shortcut cycles none/collapsed/expanded
         self._tail = LogTail(logs_path)
         self._fold = TranscriptFold()
@@ -262,9 +292,10 @@ class ConversationScreen(Screen[None]):
         self._live_text: list[str] = []
         self._live = False  # run.start seen and no run.end yet -> the steer bar shows
         self._prev_subtitle = ""  # app sub_title to restore when the view closes
+        self._timer: Timer | None = None  # the 0.3s poll; paused while covered
 
     def compose(self) -> ComposeResult:
-        yield MenuBar(self.MENUS)  # top row: menus + "agent6 — <run>", like every screen
+        yield MenuBar(self._menus)  # top row: menus + "agent6 — <run>", like every screen
         with Vertical(id="conv-main"):
             with VerticalScroll(id="conv-scroll"):
                 yield Static(id="conv-body")  # renders as Content -> selectable
@@ -276,10 +307,24 @@ class ConversationScreen(Screen[None]):
         self._prev_subtitle = self.app.sub_title  # show the run in the menu bar's title
         self.app.sub_title = self._title
         self._reload()
-        self.set_interval(0.3, self._poll)
+        self._timer = self.set_interval(0.3, self._poll)
 
     def on_unmount(self) -> None:
         self.app.sub_title = self._prev_subtitle
+
+    def on_screen_suspend(self) -> None:
+        # Hidden behind the dashboard (or another pushed screen): stop polling.
+        if self._timer is not None:
+            self._timer.pause()
+
+    def on_screen_resume(self) -> None:
+        # Back on top (a dashboard toggle, or a viewer above was closed):
+        # re-stamp the title the covering screen may have changed, catch up on
+        # events that landed while hidden, and resume the poll.
+        self.app.sub_title = self._title
+        if self._timer is not None:
+            self._poll()
+            self._timer.resume()
 
     def action_menu(self, mnemonic: str) -> None:
         self.query_one(MenuBar).open(mnemonic)
@@ -298,7 +343,7 @@ class ConversationScreen(Screen[None]):
     def action_help(self) -> None:
         self.app.push_screen(
             HelpScreen(
-                self.MENUS,
+                self._menus,
                 self,
                 title="agent6 — conversation",
                 hints=(
@@ -566,4 +611,29 @@ class ConversationScreen(Screen[None]):
         self._scroll().scroll_page_down()
 
     def action_close(self) -> None:
+        if self._primary:
+            # The run app's main screen: Back means leave the run view entirely
+            # (the Agent6TUI host's to_hub exits with the back-to-hub code).
+            handler = getattr(self.app, "action_to_hub", None)
+            if callable(handler):
+                handler()
+            return
         self.dismiss()
+
+    def action_quit_hub(self) -> None:
+        handler = getattr(self.app, "action_quit_hub", None)  # the Agent6TUI host
+        if callable(handler):
+            handler()
+
+    def action_toggle_dashboard(self) -> None:
+        if not self._primary:
+            return
+        handler = getattr(self.app, "action_toggle_dashboard", None)  # the Agent6TUI host
+        if callable(handler):
+            handler()
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        del parameters
+        if action == "toggle_dashboard":
+            return self._primary  # pushed viewers have no dashboard to toggle
+        return True

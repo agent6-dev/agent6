@@ -85,9 +85,11 @@ def test_dashboard_menu_items_all_resolve(tmp_path: Path) -> None:
         app = Agent6TUI(run)
         async with app.run_test() as pilot:
             await pilot.pause()
-            dash = app.screen
-            assert isinstance(dash, DashboardScreen)
-            _assert_all_items_resolve(dash, dash.MENUS)
+            # Both sibling views of the run app: the primary conversation and the
+            # dashboard behind it (its menus must resolve even while covered).
+            _assert_all_items_resolve(app._conv, app._conv.MENUS)
+            assert isinstance(app._dash, DashboardScreen)
+            _assert_all_items_resolve(app._dash, app._dash.MENUS)
 
     asyncio.run(scenario())
 
