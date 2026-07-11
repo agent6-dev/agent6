@@ -54,6 +54,7 @@ _STYLE_ANSI: dict[StyleName, str] = {
     "ok": _ANSI["green"],
     "fail": _ANSI["red"],
     "detail": _ANSI["dim"],
+    "more": _ANSI["dim"] + _ANSI["italic"],
     "tail": _ANSI["dim"],
     "commit": _ANSI["magenta"],
     "marker": _ANSI["dim"] + _ANSI["italic"],

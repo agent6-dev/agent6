@@ -39,6 +39,7 @@ StyleName = Literal[
     "fail",
     "detail",
     "tail",
+    "more",
     "commit",
     "marker",
     "done-ok",
@@ -50,6 +51,7 @@ Span = tuple[str, StyleName]
 Line = list[Span]
 
 TAIL_CLIP = 120  # chars of a failed tool's captured output tail shown inline
+DETAIL_CLIP = 120  # chars of a tool result's first line shown inline (the rest -> "+N more")
 
 
 def item_lines(item: TranscriptItem, *, show_thinking: bool) -> list[Line]:
@@ -66,8 +68,19 @@ def item_lines(item: TranscriptItem, *, show_thinking: bool) -> list[Line]:
             head.append((f"  {item.arg}", "arg"))
         lines.append(head)
         # RESULT glyph carries the pass/fail colour; the detail is its OWN neutral
-        # span (this is the #1 fix -- it no longer inherits the fail colour).
-        lines.append([(f"  {RESULT} ", "ok" if item.ok else "fail"), (item.detail, "detail")])
+        # span (the #1 fix -- it no longer inherits the fail colour). A long detail
+        # (a failed tool's multi-line error dump) is clipped to its first line + a
+        # "+N more lines" note so it can't dominate the view; the full text stays in
+        # the raw log (and, once collapsible blocks land, behind an expand).
+        detail_lines = item.detail.split("\n")
+        reason = detail_lines[0]
+        if len(reason) > DETAIL_CLIP:
+            reason = reason[: DETAIL_CLIP - 1] + "…"
+        result: Line = [(f"  {RESULT} ", "ok" if item.ok else "fail"), (reason, "detail")]
+        extra = len(detail_lines) - 1
+        if extra:
+            result.append((f"  (+{extra} more line{'' if extra == 1 else 's'})", "more"))
+        lines.append(result)
         if item.tail:
             lines.append([(f"    {' '.join(item.tail.split())[:TAIL_CLIP]}", "tail")])
     elif item.kind == "commit":

@@ -65,6 +65,7 @@ _STYLE_RICH: dict[StyleName, str] = {
     "ok": "green",
     "fail": "red",
     "detail": "dim",
+    "more": "dim italic",
     "tail": "dim",
     "commit": "magenta",
     "marker": "dim italic",
