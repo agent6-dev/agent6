@@ -106,7 +106,7 @@ _STYLE_RICH: dict[StyleName, str] = {
     "done-fail": "bold yellow",
     "body": "",
     "done-detail": "dim",
-    "operator": "bold magenta",
+    "operator": "bold green",
 }
 
 
@@ -317,6 +317,8 @@ class ConversationScreen(Screen[None]):
         # between the conversation and the dashboard.
         Binding("ctrl+d", "toggle_dashboard", "Dashboard", priority=True),
         Binding("ctrl+c", "copy", "Copy", priority=True),
+        # The thinking/tool-detail cycle: none -> collapsed -> expanded.
+        Binding("ctrl+t", "cycle_detail", "Detail", priority=True),
         Binding("escape", "close", "Back", key_display="Esc", priority=True),
         Binding("pageup", "page_up", "Scroll up", priority=True, show=False),
         Binding("pagedown", "page_down", "Scroll down", priority=True, show=False),

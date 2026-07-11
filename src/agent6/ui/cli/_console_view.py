@@ -62,7 +62,7 @@ _STYLE_ANSI: dict[StyleName, str] = {
     "done-fail": _ANSI["bold"] + _ANSI["yellow"],
     "body": "",
     "done-detail": _ANSI["dim"],
-    "operator": _ANSI["bold"] + _ANSI["magenta"],
+    "operator": _ANSI["bold"] + _ANSI["green"],
 }
 
 _FLUSH_EVERY_S = 0.03  # coalesce streaming-delta flushes; see ConsoleView._raw
