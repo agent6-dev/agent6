@@ -41,6 +41,18 @@ def osc52_sequence(text: str, *, wrap: str) -> str:
     return seq
 
 
+def mux_passthrough(seq: str) -> str:
+    """Wrap a terminal escape for the ACTIVE multiplexer's passthrough (tmux DCS
+    with doubled inner ESCs; GNU screen DCS), else return it bare. Inside tmux
+    the outer terminal additionally needs ``allow-passthrough on`` (off by
+    default since tmux 3.3)."""
+    if os.environ.get("TMUX"):
+        return "\x1bPtmux;" + seq.replace("\x1b", "\x1b\x1b") + "\x1b\\"
+    if os.environ.get("STY"):
+        return "\x1bP" + seq + "\x1b\\"
+    return seq
+
+
 def resolve_method(pref: str) -> str:
     """The concrete method for *pref* (from the ``copy_method`` UI pref, so any
     string); ``"auto"`` chooses per environment, anything else passes through."""

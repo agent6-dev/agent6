@@ -43,7 +43,7 @@ from agent6.ui.tui.logview import LogScreen
 from agent6.ui.tui.machines import MachinesScreen
 from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.modals import ConfirmModal
-from agent6.ui.tui.theme import PALETTE_CSS, open_theme_picker, setup_theme
+from agent6.ui.tui.theme import PALETTE_CSS, MuxPointerShapes, open_theme_picker, setup_theme
 from agent6.ui.tui.widgets import FORM_CSS, ActionItem
 from agent6.ui.viewmodel import RunSummary, summarize_run_dir
 from agent6.ui.viewmodel import run_mtime as _run_mtime
@@ -492,7 +492,7 @@ class HomeScreen(Screen[None]):
             self.app.notify(error or "Could not start the run.", severity="error", timeout=8.0)
 
 
-class Agent6HomeApp(App[Path | None]):
+class Agent6HomeApp(MuxPointerShapes, App[Path | None]):
     """Home hub. `run()` returns the run directory the user chose to open (to be
     watched by the dashboard), or None to quit. A thin shell around
     :class:`HomeScreen` so the hub's key bindings stay screen-scoped."""

@@ -33,6 +33,7 @@ try:
 except ImportError as e:  # pragma: no cover - clear runtime message
     raise SystemExit("The TUI theme support needs textual: pip install 'agent6[tui]'") from e
 
+from agent6.ui.tui.clipboard import mux_passthrough
 from agent6.ui.tui.settings import DEFAULT_THEME, get_theme, save_theme
 from agent6.ui.tui.widgets import FORM_CSS, ChoiceField
 
@@ -158,6 +159,19 @@ class ThinScrollBarRender(ScrollBarRender):
                 meta = before if right < start else after
                 segments.append(Segment(" ", Style(bgcolor=back_color, meta=meta)))
         return Segments([*segments, Segment.line()] * thickness, new_lines=False)
+
+
+class MuxPointerShapes:
+    """Mix into an App (before App in the bases): re-emits the kitty
+    pointer-shape OSC (``ESC ] 22 ; <shape> BEL``) wrapped for tmux/screen
+    passthrough. textual writes it bare, which a multiplexer swallows -- the
+    same lesson as bare OSC 52 copy -- so the I-beam over text never reached
+    the outer terminal under byobu."""
+
+    def _set_pointer_shape(self, shape: str) -> None:
+        driver = getattr(self, "_driver", None)
+        if driver is not None:
+            driver.write(mux_passthrough(f"\x1b]22;{shape}\x07"))
 
 
 def setup_theme(app: App[Any]) -> None:

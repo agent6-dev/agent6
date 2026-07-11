@@ -83,7 +83,7 @@ from agent6.ui.tui.modals import (
     ToolCallDetailModal,
 )
 from agent6.ui.tui.settings import get_copy_method
-from agent6.ui.tui.theme import PALETTE_CSS, open_theme_picker, setup_theme
+from agent6.ui.tui.theme import PALETTE_CSS, MuxPointerShapes, open_theme_picker, setup_theme
 from agent6.ui.viewmodel.format import TASK_STATUS_GLYPH, format_cost
 from agent6.ui.viewmodel.state import (
     MAX_LOG_TAIL,
@@ -622,7 +622,7 @@ class DashboardScreen(Screen[None]):
             diff_widget.update(Text("(no diffs yet)", style="dim"))
 
 
-class Agent6TUI(App[int]):
+class Agent6TUI(MuxPointerShapes, App[int]):
     TITLE = "agent6"
     CSS = (
         PALETTE_CSS
