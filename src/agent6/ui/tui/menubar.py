@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from itertools import accumulate, pairwise
 from typing import ClassVar
 
 try:
@@ -24,10 +25,10 @@ try:
     from textual import events, on
     from textual.app import ComposeResult
     from textual.binding import Binding
-    from textual.containers import Horizontal, VerticalScroll
+    from textual.containers import Horizontal, Vertical, VerticalScroll
     from textual.geometry import Offset
     from textual.message import Message
-    from textual.screen import ModalScreen, Screen
+    from textual.screen import Screen
     from textual.widget import Widget
     from textual.widgets import OptionList, Static
     from textual.widgets.option_list import Option
@@ -142,64 +143,132 @@ def _menu_options(items: tuple[MenuItem, ...], keys: dict[str, str]) -> list[Opt
     return opts
 
 
-class HelpScreen(ModalScreen[None]):
-    """A centered help/keys page generated from a screen's menus, so it is
-    always complete and accurate. Replaces textual's right-docked keys panel
-    with a single page you close with Esc. The Help menu opens this everywhere."""
+def _footer_only_rows(
+    source: object, menus: tuple[Menu, ...], keys: dict[str, str]
+) -> tuple[tuple[str, str], ...]:
+    """(description, shortcut) for each VISIBLE footer binding no menu item covers,
+    so the help page lists every advertised shortcut even when a screen binds keys
+    outside its menus. Menu openers (F10 / Alt+letter) are excluded: the page's own
+    footer line covers them."""
+    screen = source if isinstance(source, Screen) else getattr(source, "screen", source)
+    covered = {it.action for m in menus for it in m.items}
+    rows: list[tuple[str, str]] = []
+    for _key, active in getattr(screen, "active_bindings", {}).items():
+        binding = active.binding
+        if not binding.show or binding.action in covered or binding.action.startswith("menu("):
+            continue
+        covered.add(binding.action)  # multi-key actions land once, keys already joined
+        rows.append((binding.description or binding.action, keys.get(binding.action, "")))
+    return tuple(rows)
+
+
+class HelpScreen(Screen[None]):
+    """A full-screen keys & actions page generated from a screen's menus and its
+    LIVE key bindings, so it is always complete and accurate: every menu action
+    with its shortcut, every visible footer binding a menu doesn't cover, and the
+    screen's extra interaction hints. Sections flow into up-to-3 columns sized to
+    the terminal when the page opens. Esc/q (or ? again) closes."""
 
     BINDINGS: ClassVar = [Binding("escape,q,question_mark,f1", "dismiss", "Close", show=False)]
     CSS = """
-    HelpScreen { align: center middle; }
-    #help-box {
-        width: 64; height: auto; max-height: 90%;
-        border: round $accent; padding: 1 2; background: $surface;
-    }
-    #help-title { text-style: bold; padding-bottom: 1; }
+    HelpScreen { background: $surface; }
+    #help-title { dock: top; height: 1; padding: 0 1; background: $panel; text-style: bold; }
+    #help-foot { dock: bottom; height: 1; padding: 0 1; background: $panel; color: $text-muted; }
+    #help-scroll { height: 1fr; padding: 0 2 1 2; }
+    #help-columns { height: auto; }
+    /* Columns hug their content; the Statics must be width:auto too (their 1fr
+       default collapses to 0 inside an auto-width parent). */
+    .help-col { width: auto; height: auto; margin-right: 6; }
+    .help-col Static { width: auto; }
     .help-menu { text-style: bold; color: $accent; padding-top: 1; }
     """
 
     def __init__(
         self,
         menus: tuple[Menu, ...],
-        keys: dict[str, str] | None = None,
+        source: object,
         *,
         title: str = "Keys & actions",
+        hints: tuple[str, ...] = (),
     ) -> None:
+        """*source* is the screen (or app) whose live bindings the page reflects;
+        *hints* are extra interaction lines the bindings can't express (widget-level
+        keys like the steer bar's Enter/Ctrl-J, or picker navigation)."""
         super().__init__()
         self._menus = menus
-        self._keys = keys or {}  # action -> live shortcut(s); see action_keys()
         self._title = title
+        self._hints = hints
+        self._keys = action_keys(source)  # action -> live shortcut label(s)
+        self._extra = _footer_only_rows(source, menus, self._keys)
 
     def _shortcut(self, it: MenuItem) -> str:
         return self._keys.get(it.action) or (_key_label(it.key) if it.key else "")
 
-    def compose(self) -> ComposeResult:
-        # Keys right-aligned to a common edge across ALL sections (labels left),
-        # matching the menu dropdowns. Width = indent + widest label + gap + key.
-        items = [it for m in self._menus for it in m.items]
-        label_w = max((len(it.label) for it in items), default=0)
-        key_w = max((len(self._shortcut(it)) for it in items), default=0)
-        right = 2 + label_w + 2 + key_w
-        with VerticalScroll(id="help-box"):
-            yield Static(self._title, id="help-title")
-            for m in self._menus:
-                # Underline the mnemonic letter, matching the top menu bar.
-                yield Static(_title_text(m), classes="help-menu")
-                for it in m.items:
-                    line = Text(f"  {it.label}")
-                    key = self._shortcut(it)
-                    if key:  # pad so the key's right edge lands at `right`
-                        line.pad_right(right - 2 - len(it.label) - len(key))
-                        line.append(key, style="dim")
-                    yield Static(line)
-            yield Static("")
-            yield Static(
-                Text("F10 or Alt+<letter> opens a menu · Esc/q or click-out closes", style="dim"),
-            )
+    def _sections(self) -> list[tuple[Text, list[tuple[str, str]]]]:
+        """(heading, rows) per section: one per menu (mnemonic underlined, matching
+        the menu bar), then footer-only bindings, then the interaction hints."""
+        sections = [
+            (_title_text(m), [(it.label, self._shortcut(it)) for it in m.items])
+            for m in self._menus
+        ]
+        if self._extra:
+            sections.append((Text("Other keys"), list(self._extra)))
+        if self._hints:
+            sections.append((Text("Hints"), [(h, "") for h in self._hints]))
+        return sections
 
-    def on_click(self, event: events.Click) -> None:
-        if event.widget is self:  # click on the backdrop (outside the dialog) = close
-            self.dismiss()
+    def _columns(self) -> list[list[Static]]:
+        """Pack the sections into columns of roughly equal height, preserving
+        reading order (down a column, then the next). Sections stay whole: the
+        column breaks land on the section boundaries closest to the ideal split
+        points. Within a column the keys right-align to a shared edge, like the
+        menu dropdowns."""
+        sections = self._sections()
+        sizes = [len(rows) + 1 for _, rows in sections]  # +1 per heading
+        total = sum(sizes)
+        ncols = min(max(1, self.app.size.width // 50), 3, len(sections))
+        prefix = list(accumulate(sizes))
+        breaks = sorted(
+            {
+                min(range(1, len(sections)), key=lambda i: abs(prefix[i - 1] - total * k / ncols))
+                for k in range(1, ncols)
+            }
+        )
+        edges = [0, *breaks, len(sections)]
+        packed = [sections[a:b] for a, b in pairwise(edges) if a < b]
+        out: list[list[Static]] = []
+        for col_sections in packed:
+            rows = [r for _, section_rows in col_sections for r in section_rows]
+            # Only rows WITH a key set the alignment edge, so a long keyless
+            # hint line can't push the whole column's keys far from their labels.
+            label_w = max((len(label) for label, key in rows if key), default=0)
+            key_w = max((len(key) for _, key in rows), default=0)
+            right = label_w + 2 + key_w
+            lines: list[Static] = []
+            for heading, section_rows in col_sections:
+                lines.append(Static(heading, classes="help-menu"))
+                for label, key in section_rows:
+                    line = Text(label)
+                    if key:  # pad so the key's right edge lands at `right`
+                        line.pad_right(right - len(label) - len(key))
+                        line.append(key, style="dim")
+                    lines.append(Static(line))
+            out.append(lines)
+        return out
+
+    def compose(self) -> ComposeResult:
+        yield Static(self._title, id="help-title")
+        with VerticalScroll(id="help-scroll"), Horizontal(id="help-columns"):
+            for column in self._columns():
+                with Vertical(classes="help-col"):
+                    yield from column
+        yield Static(
+            Text("F10 or Alt+<letter> opens a menu · Esc/q closes this page", style="dim"),
+            id="help-foot",
+        )
+
+    def on_mount(self) -> None:
+        self.query_one("#help-scroll", VerticalScroll).focus()  # PgUp/PgDn scroll at once
 
 
 class _MenuTitle(Static):

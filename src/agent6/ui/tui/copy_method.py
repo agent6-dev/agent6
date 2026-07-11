@@ -69,9 +69,12 @@ class CopyMethodPicker(ModalScreen[None]):
             yield Static("Copy method", id="copy-title")
             with VerticalScroll(id="copy-scroll"):
                 yield ChoiceField(choices, current, id="copy-list")
+            # Hand-split at phrase boundaries: the box is 58 cells inside, so one
+            # long line would word-wrap mid-phrase.
             yield Static(
                 Text(
-                    f"auto → {resolved} in this terminal · how the TUI copies to your clipboard\n"
+                    "how the TUI copies to your clipboard\n"
+                    f"auto → {resolved} in this terminal\n"
                     "↑↓ highlight · Space select (saved) · Esc closes",
                     style="dim",
                 ),

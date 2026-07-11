@@ -57,7 +57,8 @@ from agent6.ui.bridge.approval import (
 )
 from agent6.ui.bridge.notify import desktop_notify
 from agent6.ui.bridge.spawn import agent6_exe, spawn_and_confirm, spawn_and_locate
-from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, action_keys, menu_bindings
+from agent6.ui.tui.copy_method import open_copy_method_picker
+from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.modals import (
     ApprovalModal,
     ConfirmModal,
@@ -65,7 +66,7 @@ from agent6.ui.tui.modals import (
     SteerModal,
     TextInputModal,
 )
-from agent6.ui.tui.theme import PALETTE_CSS, setup_theme
+from agent6.ui.tui.theme import PALETTE_CSS, open_theme_picker, setup_theme
 from agent6.ui.viewmodel import (
     MachineState,
     MachineWatchCursor,
@@ -475,7 +476,9 @@ class CreateMachineModal(ModalScreen[str]):
         with Container(id="create-box"):
             text = Text()
             text.append("Create a machine\n\n", style="bold")
-            text.append("Describe the loop to author; agent6 drafts a .asm.toml in this repo.")
+            # Split at the clause boundary so a narrow terminal (the box is 80%
+            # wide) never wraps mid-phrase.
+            text.append("Describe the loop to author;\nagent6 drafts a .asm.toml in this repo.")
             yield Static(text)
             yield Input(
                 placeholder="e.g. nightly: pull, run tests, open an issue on failure",
@@ -532,6 +535,14 @@ class MachinesScreen(Screen[None]):
     """
     )
     MENUS: ClassVar = (
+        # File/<page>/View/Help, the same shape as the hub and the dashboard.
+        Menu(
+            "File",
+            (
+                MenuItem("Back", "close", "Esc/q"),
+                MenuItem("Quit", "quit", "ctrl+q"),
+            ),
+        ),
         Menu(
             "Machines",
             (
@@ -540,8 +551,13 @@ class MachinesScreen(Screen[None]):
                 MenuItem("Watch", "watch", "w"),
                 MenuItem("Create…", "create", "c"),
                 MenuItem("Refresh", "refresh", "f"),
-                MenuItem("Back", "close", "Esc/q"),
-                MenuItem("Quit", "quit", "ctrl+q"),
+            ),
+        ),
+        Menu(
+            "View",
+            (
+                MenuItem("Theme…", "choose_theme"),
+                MenuItem("Copy method…", "choose_copy_method"),
             ),
         ),
         Menu(
@@ -714,9 +730,20 @@ class MachinesScreen(Screen[None]):
     def action_refresh(self) -> None:
         self._reload()
 
+    def action_choose_theme(self) -> None:
+        open_theme_picker(self.app)
+
+    def action_choose_copy_method(self) -> None:
+        open_copy_method_picker(self.app)
+
     def action_help(self) -> None:
         self.app.push_screen(
-            HelpScreen(self.MENUS, action_keys(self), title="agent6 machines — keys & actions")
+            HelpScreen(
+                self.MENUS,
+                self,
+                title="agent6 machines — keys & actions",
+                hints=("Enter opens the selected machine",),
+            )
         )
 
     def action_quit(self) -> None:

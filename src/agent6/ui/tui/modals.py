@@ -191,7 +191,9 @@ class SteerModal(ModalScreen[str]):
         with Container(id="steer-box"):
             body = Text()
             body.append("Steer this run\n\n", style="bold")
-            body.append("Type an instruction (multi-line) then Send it, or Continue as-is.")
+            # Split at the clause boundary so a narrow terminal (the box is 80%
+            # wide) never wraps mid-phrase.
+            body.append("Type an instruction (multi-line) then Send it,\nor Continue as-is.")
             yield Static(body)
             yield TextArea(id="steer-input", soft_wrap=True)
             with Horizontal(id="steer-buttons"):

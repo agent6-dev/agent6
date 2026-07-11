@@ -53,7 +53,6 @@ from agent6.ui.tui.menubar import (
     Menu,
     MenuBar,
     MenuItem,
-    action_keys,
     menu_bindings,
 )
 from agent6.ui.tui.settings import get_copy_method
@@ -298,7 +297,15 @@ class ConversationScreen(Screen[None]):
 
     def action_help(self) -> None:
         self.app.push_screen(
-            HelpScreen(self.MENUS, action_keys(self), title="agent6 — conversation")
+            HelpScreen(
+                self.MENUS,
+                self,
+                title="agent6 — conversation",
+                hints=(
+                    "Steer bar: Enter sends the instruction",
+                    "Ctrl-J or Shift+Enter inserts a newline",
+                ),
+            )
         )
 
     def _scroll(self) -> VerticalScroll:

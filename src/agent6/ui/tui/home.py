@@ -41,7 +41,7 @@ from agent6.ui.tui.conversation import ConversationScreen
 from agent6.ui.tui.copy_method import open_copy_method_picker
 from agent6.ui.tui.logview import LogScreen
 from agent6.ui.tui.machines import MachinesScreen
-from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, action_keys, menu_bindings
+from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.modals import ConfirmModal
 from agent6.ui.tui.theme import PALETTE_CSS, open_theme_picker, setup_theme
 from agent6.ui.tui.widgets import FORM_CSS, ActionItem
@@ -158,8 +158,10 @@ class _NewWorkModal(ModalScreen[tuple[str, str, str] | None]):
                 yield ActionItem("run", "run")
                 yield ActionItem("plan", "plan")
                 yield ActionItem("ask", "ask")
+            # Split at the phrase boundary so a narrow terminal (the box is 80%
+            # wide) never wraps mid-phrase.
             yield Static(
-                Text("Tab to run / plan / ask · Enter = newline · Esc cancel", style="dim"),
+                Text("Tab to run / plan / ask\nEnter = newline · Esc cancel", style="dim"),
                 classes="edit-label",
             )
 
@@ -466,7 +468,15 @@ class HomeScreen(Screen[None]):
 
     def action_help(self) -> None:
         self.app.push_screen(
-            HelpScreen(self.MENUS, action_keys(self), title="agent6 — keys & actions")
+            HelpScreen(
+                self.MENUS,
+                self,
+                title="agent6 — keys & actions",
+                hints=(
+                    "Enter opens the selected run",
+                    "Pickers: ↑↓ highlight · Space selects",
+                ),
+            )
         )
 
     def _on_new_work(self, result: tuple[str, str, str] | None) -> None:
@@ -492,6 +502,10 @@ class Agent6HomeApp(App[Path | None]):
         PALETTE_CSS
         + """
     Screen { layers: base dropdown; background: $surface; }
+    /* The flat Screen rule above also matches ModalScreens, which would make
+       their backdrops opaque; restore textual's translucent dim (same
+       specificity, later rule wins) so the screen shows through behind dialogs. */
+    ModalScreen { background: $background 60%; }
     * { scrollbar-size-vertical: 1; }  /* half the 2-wide default */
     #runs { height: 1fr; border: round $primary; background: $surface; }
     #runs:focus { border: round $accent; }

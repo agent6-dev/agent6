@@ -161,8 +161,9 @@ class ThemePicker(ModalScreen[None]):
             # focus stop). Close with Esc or a click outside (handled below).
             with VerticalScroll(id="theme-scroll"):
                 yield ChoiceField(tuple(names), current, id="theme-list")
+            # Two balanced lines: the 44-wide box would wrap one line mid-phrase.
             yield Static(
-                Text("↑↓ highlight · Space select · Esc or click outside closes", style="dim"),
+                Text("↑↓ highlight · Space select\nEsc or click outside closes", style="dim"),
                 id="theme-hint",
             )
 

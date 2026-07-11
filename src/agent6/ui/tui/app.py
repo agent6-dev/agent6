@@ -64,7 +64,7 @@ from agent6.ui.bridge.spawn import agent6_exe, spawn_and_locate, spawn_detached_
 from agent6.ui.tui.conversation import ConversationScreen
 from agent6.ui.tui.copy_method import open_copy_method_picker
 from agent6.ui.tui.logview import LogScreen
-from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, action_keys, menu_bindings
+from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.modals import (
     ApprovalModal,
     ConfirmModal,
@@ -133,6 +133,10 @@ class Agent6TUI(App[int]):
         PALETTE_CSS
         + """
     Screen { layers: base dropdown; background: $surface; }
+    /* The flat Screen rule above also matches ModalScreens, which would make
+       their backdrops opaque; restore textual's translucent dim (same
+       specificity, later rule wins) so the screen shows through behind dialogs. */
+    ModalScreen { background: $background 60%; }
     * { scrollbar-size-vertical: 1; }  /* half the 2-wide default */
     #top { height: 4; padding: 0 1; }
     /* Top row: the task graph is usually a few nodes, so it stays compact beside
@@ -184,13 +188,11 @@ class Agent6TUI(App[int]):
         Menu(
             "View",
             (
-                MenuItem("Next pane", "focus_next_pane", "Tab"),
-                MenuItem("Prev pane", "focus_prev_pane", "Shift+Tab"),
+                MenuItem("Next pane", "focus_next_pane", "tab"),
+                MenuItem("Prev pane", "focus_prev_pane", "shift+tab"),
                 MenuItem("Maximize pane", "fullscreen", "f"),
                 MenuItem("Full log…", "view_logs", "l"),
                 MenuItem("Conversation…", "view_transcript", "t"),
-                MenuItem("Log → top", "scroll_log_home", "g"),
-                MenuItem("Log → end", "scroll_log_end", "G"),
                 MenuItem("Theme…", "choose_theme"),
                 MenuItem("Copy method…", "choose_copy_method"),
             ),
@@ -215,18 +217,17 @@ class Agent6TUI(App[int]):
         Binding("k", "fork", "Fork", show=False),
         Binding("l", "view_logs", "Full log", show=True),
         Binding("t", "view_transcript", "Conversation", show=True),
-        # g=top / G=end, matching vi and the LogScreen/ConversationScreen viewers
-        # (g used to be "end" here, contradicting those screens reached via l/t).
-        Binding("g", "scroll_log_home", "Log→top", show=False),
-        Binding("G", "scroll_log_end", "Log→end", show=True),
+        # No g/G scroll keys: every pane is a focusable scroll container, so the
+        # native PgUp/PgDn + Home/End already scroll whichever pane is focused --
+        # the same keys as the log/conversation viewers.
         Binding("f", "fullscreen", "Fullscreen", show=True),
         Binding("question_mark", "help", "Help"),
         # q and Esc both back out to the hub; shown as one "Esc/q Back" footer entry.
         Binding("escape", "to_hub", "Back", key_display="Esc/q"),
         Binding("q", "to_hub", "Back", show=False),
         Binding("ctrl+q", "quit_hub", "Quit", show=False),
-        Binding("tab", "focus_next_pane", "Next pane", show=False),
-        Binding("shift+tab", "focus_prev_pane", "Prev pane", show=False),
+        # No tab/shift+tab bindings here: the default Screen's own tab bindings
+        # (closer to focus) shadow app-level ones, and they already move panes.
         *menu_bindings(MENUS),
     ]
 
@@ -549,12 +550,6 @@ class Agent6TUI(App[int]):
         elif self.focused is not None and self.focused.allow_maximize:
             screen.maximize(self.focused)
 
-    def action_scroll_log_end(self) -> None:
-        self.query_one("#log", RichLog).scroll_end(animate=False)
-
-    def action_scroll_log_home(self) -> None:
-        self.query_one("#log", RichLog).scroll_home(animate=False)
-
     def action_view_logs(self) -> None:
         """Toggle the full, scrollable log of THIS run -- the inline #log pane is a
         small sliding window; this is the whole history, scroll-anchored."""
@@ -611,7 +606,18 @@ class Agent6TUI(App[int]):
         self.query_one(MenuBar).open(mnemonic)
 
     def action_help(self) -> None:
-        self.push_screen(HelpScreen(self.MENUS, action_keys(self), title="agent6 — keys & actions"))
+        self.push_screen(
+            HelpScreen(
+                self.MENUS,
+                self,
+                title="agent6 — keys & actions",
+                hints=(
+                    "Tab focuses a pane · PgUp/PgDn, Home/End scroll it",
+                    "Enter on a tool row opens its full detail",
+                    "Pickers: ↑↓ highlight · Space selects",
+                ),
+            )
+        )
 
     def action_choose_theme(self) -> None:
         open_theme_picker(self)
@@ -749,9 +755,10 @@ class Agent6TUI(App[int]):
         # sliding window, so a length-based diff freezes once it saturates.
         # Sticky-bottom: only snap to the newest line if the operator was already
         # at the bottom, so scrolling up to read holds position (the pane no
-        # longer "plays through" out from under them). `G` / Full log jump back
-        # to the live tail. A filter change forces one full re-render (the RichLog
-        # is append-only, so it cannot re-window itself incrementally).
+        # longer "plays through" out from under them). End (pane focused) / Full
+        # log jump back to the live tail. A filter change forces one full
+        # re-render (the RichLog is append-only, so it cannot re-window itself
+        # incrementally).
         log = self.query_one("#log", RichLog)
         log.border_title = f"log{filt}" if sel else ""
         if sel != self._log_filter:

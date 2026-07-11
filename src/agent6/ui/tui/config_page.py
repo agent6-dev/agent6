@@ -51,7 +51,7 @@ from agent6.config.layer import (
 from agent6.models.cache import cached_models, list_models
 from agent6.models.registry import resolved_adaptive_values
 from agent6.secrets import resolve_api_key
-from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, action_keys, menu_bindings
+from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.theme import open_theme_picker
 from agent6.ui.tui.widgets import (
     FORM_CSS,
@@ -413,10 +413,12 @@ class ProviderModal(ModalScreen[None]):
         choices = provider_choices()
         with VerticalScroll(id="prov-box"):
             yield Static("Add provider", id="prov-title")
+            # Split at the sentence boundary: one line is wider than the box
+            # (74 cells inside) and would word-wrap mid-phrase.
             yield Static(
                 Text(
-                    "A [providers.<name>] block. base_url/auth default from the "
-                    "format + deployment when left blank.",
+                    "A [providers.<name>] block.\n"
+                    "base_url/auth default from the format + deployment when left blank.",
                     style="dim",
                 )
             )
@@ -899,7 +901,12 @@ class ConfigScreen(Screen[None]):
 
     def action_help(self) -> None:
         self.app.push_screen(
-            HelpScreen(self.MENUS, action_keys(self), title="agent6 config — keys & actions")
+            HelpScreen(
+                self.MENUS,
+                self,
+                title="agent6 config — keys & actions",
+                hints=("Enter edits the selected setting",),
+            )
         )
 
     def action_choose_theme(self) -> None:

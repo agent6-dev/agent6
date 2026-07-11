@@ -41,7 +41,6 @@ from agent6.ui.tui.menubar import (
     Menu,
     MenuBar,
     MenuItem,
-    action_keys,
     menu_bindings,
 )
 from agent6.ui.viewmodel.state import STREAM_DELTA_EVENTS, format_log_line
@@ -123,7 +122,7 @@ class LogScreen(Screen[None]):
                 await result
 
     def action_help(self) -> None:
-        self.app.push_screen(HelpScreen(self.MENUS, action_keys(self), title="agent6 — log"))
+        self.app.push_screen(HelpScreen(self.MENUS, self, title="agent6 — log"))
 
     def _scroll(self) -> VerticalScroll:
         return self.query_one("#logview-scroll", VerticalScroll)
