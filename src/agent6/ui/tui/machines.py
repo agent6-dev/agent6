@@ -757,7 +757,12 @@ class _MachineWatchApp(App[None]):
     """One-screen host for `agent6 watch <machine> --tui`: the same live machine
     view the Machines page opens, runnable straight from the CLI."""
 
-    CSS = PALETTE_CSS
+    CSS = (
+        PALETTE_CSS
+        + """
+    * { scrollbar-size-vertical: 1; scrollbar-size-horizontal: 1; }  /* match the other apps */
+    """
+    )
 
     def __init__(self, instance_dir: Path, spec: MachineSpec) -> None:
         super().__init__()

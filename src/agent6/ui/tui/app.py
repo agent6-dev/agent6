@@ -160,7 +160,7 @@ class DashboardScreen(Screen[None]):
     #stream-body, #diff-body { width: 1fr; height: auto; }
     /* The composer bar (the same widget as the conversation's): auto-grows with
        its content, squeezing the 1fr #body row above. */
-    #dash-input { height: auto; max-height: 8; margin: 0 1; border: round $primary; }
+    #dash-input { height: auto; max-height: 8; border: round $primary; }
     #dash-input:focus { border: round $accent; }
     /* One card background everywhere. Tree/DataTable/RichLog default to $surface
        but the Static-based stream/diff panes are transparent (screen background),
@@ -619,7 +619,7 @@ class Agent6TUI(App[int]):
        their backdrops opaque; restore textual's translucent dim (same
        specificity, later rule wins) so the screen shows through behind dialogs. */
     ModalScreen { background: $background 60%; }
-    * { scrollbar-size-vertical: 1; }  /* half the 2-wide default */
+    * { scrollbar-size-vertical: 1; scrollbar-size-horizontal: 1; }  /* half the 2-wide default */
     """
     )
 

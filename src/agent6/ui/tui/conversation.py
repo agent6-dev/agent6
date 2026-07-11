@@ -215,7 +215,7 @@ class ConversationScreen(Screen[None]):
     }
     /* The steer bar: shown only while the run is live (see _sync_input). */
     #conv-input {
-        display: none; height: auto; max-height: 8; margin: 0 1;
+        display: none; height: auto; max-height: 8;
         border: round $primary; background: $surface;
     }
     #conv-input:focus { border: round $accent; }
