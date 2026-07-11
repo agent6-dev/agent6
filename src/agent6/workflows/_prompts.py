@@ -422,7 +422,7 @@ and specific `grep` patterns over broad reads.
 """
 
 V2_REPO_BLOCK_TEMPLATE = """<repo-priors>
-Repository: branch={branch}, head={head_sha}, files={file_count}
+{repo_line}
 Top-level: {top_level}
 
 {repo_map_block}{symbol_outline_block}AGENTS.md (project conventions):
@@ -659,6 +659,68 @@ def context_restart_notice(mode: Literal["run", "plan", "ask", "machine", "agent
     return "\n\n".join(parts)
 
 
+def repo_priors_block(repo: RepoSummary) -> str:
+    """Render the <repo-priors> block: the repo header line plus the structural
+    priors (co-change pairs, hot symbols, repo map, symbol outline) that are
+    present on this summary. Outside a git repository (`agent6 ask` runs
+    anywhere) the header names the situation so the model doesn't reach for
+    git history or a tracked-file map that isn't there."""
+    co_change_block = ""
+    if repo.co_change_pairs:
+        lines = "\n".join(
+            f"  {p.file_a} <-> {p.file_b}  (changed together {p.count} times)"
+            for p in repo.co_change_pairs[:20]
+        )
+        co_change_block = (
+            "Git co-change pairs (files that historically change together;"
+            " consider when editing one of these):\n"
+            f"{lines}\n\n"
+        )
+
+    hot_symbols_block = ""
+    if repo.hot_symbols:
+        lines = "\n".join(
+            f"  {s.name} ({s.kind}) at {s.def_path}:{s.def_line + 1},"
+            f" referenced across {s.files_referenced} files"
+            for s in repo.hot_symbols[:15]
+        )
+        hot_symbols_block = (
+            "Hot symbols (cross-file reference hot spots from static analysis;"
+            " changing one of these forces edits across the listed file count):\n"
+            f"{lines}\n\n"
+        )
+
+    repo_map_block = ""
+    if repo.repo_map:
+        repo_map_block = f"Repo map (tracked files grouped by directory):\n{repo.repo_map}\n\n"
+
+    symbol_outline_block = ""
+    if repo.symbol_outline:
+        symbol_outline_block = (
+            "Symbol outline (top-level defs per file from the tree-sitter index;"
+            " line numbers are 1-based):\n"
+            f"{repo.symbol_outline}\n\n"
+        )
+
+    if repo.is_git:
+        repo_line = (
+            f"Repository: branch={repo.branch},"
+            f" head={repo.head_sha[:12] or '(no commits yet)'}, files={repo.file_count}"
+        )
+    else:
+        repo_line = "Directory (not a git repository; no branch, history, or tracked-file map)."
+    return V2_REPO_BLOCK_TEMPLATE.format(
+        repo_line=repo_line,
+        top_level=", ".join(repo.top_level),
+        agents_md=repo.agents_md or "(empty)",
+        repo_map_block=repo_map_block,
+        symbol_outline_block=symbol_outline_block,
+        co_change_block=co_change_block,
+        hot_symbols_block=hot_symbols_block,
+        recent_log=repo.recent_log or "(none)",
+    )
+
+
 def build_system_prompt(
     *,
     config: Config,
@@ -765,58 +827,7 @@ def build_system_prompt(
         )
     )
 
-    # Structural priors injected directly.
-    co_change_block = ""
-    if repo.co_change_pairs:
-        lines = "\n".join(
-            f"  {p.file_a} <-> {p.file_b}  (changed together {p.count} times)"
-            for p in repo.co_change_pairs[:20]
-        )
-        co_change_block = (
-            "Git co-change pairs (files that historically change together;"
-            " consider when editing one of these):\n"
-            f"{lines}\n\n"
-        )
-
-    hot_symbols_block = ""
-    if repo.hot_symbols:
-        lines = "\n".join(
-            f"  {s.name} ({s.kind}) at {s.def_path}:{s.def_line + 1},"
-            f" referenced across {s.files_referenced} files"
-            for s in repo.hot_symbols[:15]
-        )
-        hot_symbols_block = (
-            "Hot symbols (cross-file reference hot spots from static analysis;"
-            " changing one of these forces edits across the listed file count):\n"
-            f"{lines}\n\n"
-        )
-
-    repo_map_block = ""
-    if repo.repo_map:
-        repo_map_block = f"Repo map (tracked files grouped by directory):\n{repo.repo_map}\n\n"
-
-    symbol_outline_block = ""
-    if repo.symbol_outline:
-        symbol_outline_block = (
-            "Symbol outline (top-level defs per file from the tree-sitter index;"
-            " line numbers are 1-based):\n"
-            f"{repo.symbol_outline}\n\n"
-        )
-
-    parts.append(
-        V2_REPO_BLOCK_TEMPLATE.format(
-            branch=repo.branch,
-            head_sha=repo.head_sha[:12] or "(no commits yet)",
-            file_count=repo.file_count,
-            top_level=", ".join(repo.top_level),
-            agents_md=repo.agents_md or "(empty)",
-            repo_map_block=repo_map_block,
-            symbol_outline_block=symbol_outline_block,
-            co_change_block=co_change_block,
-            hot_symbols_block=hot_symbols_block,
-            recent_log=repo.recent_log or "(none)",
-        )
-    )
+    parts.append(repo_priors_block(repo))
 
     # Cross-run memories, after the repo priors. Empty for machine/agent
     # (returned above) and for plan/ask with nothing recorded.

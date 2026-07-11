@@ -85,6 +85,8 @@ agent6 ask "how does the curator subprocess work?"
 
 `agent6 review --reviewers 3 --personas security,correctness,tests` runs a panel of
 reviewers whose findings are checked against the diff, so only real problems gate.
+`ask` is read-only and works in any directory, git repository or not; `run` and
+`plan` require one (agent6 builds on git for run branches, diffs, and merges).
 `agent6 run --profile ultra` selects a strategy preset (`quick`, `standard`, `ultra`,
 `paranoid`).
 

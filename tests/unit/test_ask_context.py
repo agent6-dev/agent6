@@ -228,3 +228,57 @@ def test_ask_question_snippet_reads_interactive_transcripts(tmp_path: Path) -> N
     save_ask_repl_transcript(layout, [("why is the broker slow?", "because"), ("more?", "sure")])
     text = (layout.run_dir / "transcript.md").read_text(encoding="utf-8")
     assert ask_question_snippet(text) == "why is the broker slow?"
+
+
+# --- ask outside a git repository ------------------------------------------
+# `agent6 ask` runs in any directory (run/plan refuse non-git up front); the
+# context loader and system prompt must degrade honestly instead of raising.
+
+
+def test_load_repo_summary_outside_git(tmp_path: Path) -> None:
+    from agent6.workflows._context import load_repo_summary
+
+    (tmp_path / "notes.txt").write_text("alpha\n", encoding="utf-8")
+    (tmp_path / "sub").mkdir()
+    summary = load_repo_summary(tmp_path)
+    assert summary.is_git is False
+    assert summary.branch == "" and summary.head_sha == ""
+    assert summary.recent_log == "" and summary.repo_map == ""
+    assert summary.file_count == 0
+    assert "notes.txt" in summary.top_level and "sub/" in summary.top_level
+
+
+def test_system_prompt_names_non_git_directory(tmp_path: Path) -> None:
+    from agent6.config import load_config
+    from agent6.types import RepoSummary
+    from agent6.workflows.loop import _build_system_prompt  # pyright: ignore[reportPrivateUsage]
+
+    cfg_path = tmp_path / "agent6.toml"
+    cfg_path.write_text(
+        "\n".join(
+            (
+                "[agent6]",
+                "config_version = 1",
+                "[providers.anthropic]",
+                'api_format = "anthropic"',
+                'api_key_env = "ANTHROPIC_API_KEY"',
+                "[models.worker]",
+                'provider = "anthropic"',
+                'model = "x"',
+            )
+        ),
+        encoding="utf-8",
+    )
+    repo = RepoSummary(
+        root=tmp_path,
+        branch="",
+        head_sha="",
+        file_count=0,
+        top_level=("notes.txt",),
+        agents_md="",
+        recent_log="",
+        is_git=False,
+    )
+    prompt = _build_system_prompt(config=load_config(cfg_path), repo=repo, mode="ask")
+    assert "not a git repository" in prompt
+    assert "branch=" not in prompt  # no fake repo header

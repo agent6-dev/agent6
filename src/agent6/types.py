@@ -131,6 +131,11 @@ class RepoSummary:
     # as `... (N more files)`. Empty when no parser is available or the
     # index is disabled.
     symbol_outline: str = ""
+    # False when root is not a git repository (`agent6 ask` runs anywhere;
+    # run/plan require git up front). branch/head_sha/recent_log/repo_map
+    # are then empty and the prompt names the situation instead of
+    # rendering a fake repo header.
+    is_git: bool = True
 
 
 @dataclass(frozen=True, slots=True)

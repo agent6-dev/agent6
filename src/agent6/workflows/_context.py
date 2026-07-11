@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from agent6.budget import BudgetExceeded
-from agent6.git_ops import co_change_pairs, recent_log, status, tracked_files
+from agent6.git_ops import co_change_pairs, is_git_repo, recent_log, status, tracked_files
 from agent6.types import CoChangePair, HotSymbol, RepoSummary
 from agent6.workflows._symbol_outline import build_symbol_outline_block
 
@@ -68,8 +68,15 @@ def load_repo_summary(root: Path, *, dispatcher: ToolDispatcher | None = None) -
     symbol outline. Enrichment is best-effort -- a parser or git-history hiccup
     must not block the run -- but BudgetExceeded / KeyboardInterrupt propagate so
     the loop's budget guarantee and abort path stay intact.
+
+    Outside a git repository (``agent6 ask`` runs anywhere; run/plan refuse up
+    front) the git-derived fields stay empty: the top-level listing is the
+    model's starting point and it lists/reads deeper on demand. No recursive
+    walk substitute: an unbounded crawl of an arbitrary directory (say $HOME)
+    is exactly what the tracked-files count exists to avoid.
     """
-    st = status(root)
+    in_git = is_git_repo(root)
+    st = status(root) if in_git else None
     top = tuple(
         sorted(
             p.name + ("/" if p.is_dir() else "")
@@ -80,7 +87,7 @@ def load_repo_summary(root: Path, *, dispatcher: ToolDispatcher | None = None) -
     # Count git-tracked files, not an unfiltered rglob: the old walk counted
     # .git/.venv/build junk (a misleading number to the model) and traversed the
     # whole tree every startup. tracked is reused by _build_repo_map below.
-    tracked = tracked_files(root)
+    tracked = tracked_files(root) if in_git else ()
     file_count = len(tracked)
     agents_md_path = root / "AGENTS.md"
     agents_md = agents_md_path.read_text(encoding="utf-8") if agents_md_path.is_file() else ""
@@ -102,12 +109,13 @@ def load_repo_summary(root: Path, *, dispatcher: ToolDispatcher | None = None) -
             raise
         except Exception:
             hot = ()
-        try:
-            co_change = tuple(CoChangePair(*t) for t in co_change_pairs(root, n_commits=200))
-        except (BudgetExceeded, KeyboardInterrupt):
-            raise
-        except Exception:
-            co_change = ()
+        if in_git:
+            try:
+                co_change = tuple(CoChangePair(*t) for t in co_change_pairs(root, n_commits=200))
+            except (BudgetExceeded, KeyboardInterrupt):
+                raise
+            except Exception:
+                co_change = ()
         try:
             symbol_outline = build_symbol_outline_block(dispatcher.file_outlines(), root=root)
         except (BudgetExceeded, KeyboardInterrupt):
@@ -116,14 +124,15 @@ def load_repo_summary(root: Path, *, dispatcher: ToolDispatcher | None = None) -
             symbol_outline = ""
     return RepoSummary(
         root=root,
-        branch=st.branch,
-        head_sha=st.head_sha,
+        branch=st.branch if st is not None else "",
+        head_sha=st.head_sha if st is not None else "",
         file_count=file_count,
         top_level=top,
         agents_md=agents_md,
-        recent_log=recent_log(root, n=20),
+        recent_log=recent_log(root, n=20) if in_git else "",
         repo_map=_build_repo_map(tracked),
         co_change_pairs=co_change,
         hot_symbols=hot,
         symbol_outline=symbol_outline,
+        is_git=in_git,
     )
