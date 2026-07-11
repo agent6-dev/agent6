@@ -692,6 +692,17 @@ class AnthropicProvider:
                         break
                     elif et == "error":
                         err = evt.get("error", {}) or {}
+                        # Record the frame before raising so the upstream failure
+                        # is auditable in the transcript (parity with the OpenAI
+                        # provider's mid-stream error handling).
+                        if self.transcript_sink is not None:
+                            self.transcript_sink.record(
+                                url=url,
+                                request_headers=stream_headers,
+                                request_body=body,
+                                response_status=0,
+                                response_body=data_str[:8192],
+                            )
                         raise ProviderError(
                             f"Anthropic stream error: {err.get('type')}: {err.get('message')}"
                         )

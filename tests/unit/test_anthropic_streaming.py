@@ -352,6 +352,43 @@ def test_streaming_premature_end_without_message_stop_raises(
     assert pieces == ["I will now edit the file"]
 
 
+def test_streaming_error_event_raises_and_records_transcript(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A mid-stream `error` event must surface as a retryable ProviderError AND
+    leave the error frame in the transcript for audit (parity with OpenAI)."""
+    sink = TranscriptSink(tmp_path / "transcripts")
+    provider = AnthropicProvider(
+        api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
+    )
+    lines = _sse(
+        [
+            ("message_start", {"message": {"usage": {"input_tokens": 5}}}),
+            (
+                "error",
+                {"type": "error", "error": {"type": "overloaded_error", "message": "busy"}},
+            ),
+        ]
+    )
+
+    def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
+        return _FakeStreamResponse(status_code=200, lines=lines)
+
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
+
+    with pytest.raises(ProviderError, match="overloaded_error"):
+        provider.call(
+            system="sys",
+            messages=[{"role": "user", "content": "x"}],
+            text_delta_callback=lambda _p: None,
+        )
+    files = list((tmp_path / "transcripts").glob("*.json"))
+    assert len(files) == 1
+    doc = json.loads(files[0].read_text(encoding="utf-8"))
+    assert doc["response"]["status"] == 0
+    assert "overloaded_error" in doc["response"]["body"]
+
+
 def test_streaming_propagates_http_error(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     sink = TranscriptSink(tmp_path / "transcripts")
     provider = AnthropicProvider(
