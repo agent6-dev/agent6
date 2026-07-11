@@ -156,6 +156,13 @@ CONDITIONS: dict[str, Condition] = {
     "window16k": Condition(toml="[context]\ndrop_at_chars = 29000\nsummarise_at_chars = 52000\n"),
     "window32k": Condition(toml="[context]\ndrop_at_chars = 58000\nsummarise_at_chars = 104000\n"),
     "window64k": Condition(toml="[context]\ndrop_at_chars = 115000\nsummarise_at_chars = 205000\n"),
+    # The gist A/B arm: window16k thresholds with tier-1 gist elision off
+    # (bare markers only, the pre-gist behavior).
+    "window16k_nogist": Condition(
+        toml=(
+            "[context]\ndrop_at_chars = 29000\nsummarise_at_chars = 52000\nelision_gists = false\n"
+        )
+    ),
     "fresh_state": Condition(fresh_state_per_leg=True),
 }
 
@@ -223,6 +230,11 @@ def _extract_metrics(state_home: Path, run_id: str, trap: str | None) -> dict[st
         "drop_events": 0,
         "drops_total": 0,
         "first_drop_at_tool_call": None,
+        # Tier-1 gist elision: gists written / demoted to bare, and failed
+        # distiller calls.
+        "gists_total": 0,
+        "gist_demotions": 0,
+        "gist_failures": 0,
         # Read-shaped calls repeating an earlier (name,args) / an earlier path.
         # The *_post_drop split isolates re-reads AFTER tier-1 first bit (the
         # re-reads compaction plausibly caused); *_post_compact after tier-2.
@@ -276,6 +288,11 @@ def _extract_metrics(state_home: Path, run_id: str, trap: str | None) -> dict[st
             m["memory_flip_nudges"] += 1
         elif t == "loop.memory_finish.gated":
             m["memory_finish_nudges"] += 1
+        elif t == "loop.compact.gists":
+            m["gists_total"] += int(e.get("gisted") or 0)
+            m["gist_demotions"] += int(e.get("demoted") or 0)
+        elif t == "loop.compact.gist.failed":
+            m["gist_failures"] += 1
         elif t == "tool.call":
             m["tool_calls"] += 1
             name = e.get("name")
