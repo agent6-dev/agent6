@@ -65,7 +65,12 @@ class Leg:
 class Task:
     legs: tuple[Leg, ...]
     protected: tuple[str, ...]  # agent must not modify these (tamper check)
-    trap_pattern: str | None = None  # substring of edit-tool args worth counting
+    # Substrings of an edit-tool TARGET worth counting (the built-artifact
+    # trap). Matched against the call's `path` arg when present, else the
+    # whole args JSON (apply_patch may carry the path only in patch headers);
+    # path-first keeps a generator that MENTIONS the artifact in a docstring
+    # from counting as a trap edit.
+    trap_patterns: tuple[str, ...] = ()
 
 
 # Prompts are deliberately NEUTRAL about the DAG, dependencies, and memories:
@@ -132,9 +137,28 @@ TASKS: dict[str, Task] = {
                 timeout_s=1500,
                 max_usd=1.00,
             ),
+            # The read-side memory probe: a THIRD task against the same two
+            # conventions (data/ files are built artifacts; money rounds
+            # half-up on the cent) with fresh discriminator values, and a spec
+            # that deliberately does NOT point at docs/NOTES.md. An agent
+            # whose <memories> carry the leg-1/leg-2 trap facts can apply
+            # them; a fresh-state agent must rediscover or fall.
+            Leg(
+                name="clearance",
+                prompt=(
+                    "Another requirement landed: implement the CLEARANCE feed"
+                    " described in specs/clearance.md so that ./verify.sh passes"
+                    " (test_clearance.py is the new part of the suite). Do not"
+                    " modify test_catalog.py, test_weekend.py, test_clearance.py,"
+                    " or verify.sh."
+                ),
+                inject="leg3",
+                timeout_s=1500,
+                max_usd=1.00,
+            ),
         ),
-        protected=("test_catalog.py", "test_weekend.py", "verify.sh"),
-        trap_pattern="data/catalog.tsv",
+        protected=("test_catalog.py", "test_weekend.py", "test_clearance.py", "verify.sh"),
+        trap_patterns=("data/catalog.tsv", "data/clearance.tsv"),
     ),
 }
 
@@ -210,7 +234,7 @@ def _find_logs(state_home: Path, run_id: str) -> Path | None:
     return None
 
 
-def _extract_metrics(state_home: Path, run_id: str, trap: str | None) -> dict[str, Any]:
+def _extract_metrics(state_home: Path, run_id: str, traps: tuple[str, ...]) -> dict[str, Any]:
     """Pull one leg's metrics from its run's logs.jsonl under the state home."""
     m: dict[str, Any] = {
         "run_found": False,
@@ -303,8 +327,10 @@ def _extract_metrics(state_home: Path, run_id: str, trap: str | None) -> dict[st
                 m["memory_writes"] += 1
             elif name == "invalidate_memory":
                 m["memory_invalidations"] += 1
-            elif name in EDIT_TOOLS and trap and trap in json.dumps(args):
-                m["trap_edits"] += 1
+            elif name in EDIT_TOOLS and traps:
+                target = str(args.get("path") or "") or json.dumps(args)
+                if any(t in target for t in traps):
+                    m["trap_edits"] += 1
             if name in READ_TOOLS:
                 sig = f"{name}:{json.dumps(args, sort_keys=True)}"
                 if sig in seen_calls:
@@ -470,7 +496,7 @@ def one_sequence(
         wall = round(time.time() - t0, 1)
 
         grade = _grade(task, workdir, leg.name)
-        metrics = _extract_metrics(state_home, run_id, spec.trap_pattern)
+        metrics = _extract_metrics(state_home, run_id, spec.trap_patterns)
         records.append(
             {
                 "label": label,

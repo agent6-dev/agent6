@@ -37,13 +37,17 @@ agent uses those channels is part of what the bench measures.
 |------|-------|------|----------|
 | `stylebook` | implement a 10-rule text auditor; each rule is one ~4k-char authoritative doc, with deliberate cross-file couplings (R01<->R09/R10, R08<->R09) | 1 | retention: per-rule component scores = which early-read rules survive elision |
 | `relay` | 6-module event pipeline with a strict interface chain (incl. a ping count threaded through stages 3->6) | 1 | organic length, interface retention, add_dependency shape |
-| `orchard` | leg 1: fix a price whose root cause is a SOURCE table behind a generated file (verify regenerates, hand-edits get clobbered); leg 2: WEEKEND tier touching the same generator + the cents/half-up convention | 2 | memory value: leg-2 iterations/score/trap-edits, baseline vs fresh_state |
+| `orchard` | leg 1: fix a price whose root cause is a SOURCE table behind a generated file (verify regenerates, hand-edits get clobbered); leg 2: WEEKEND tier touching the same generator + the cents/half-up convention; leg 3: CLEARANCE feed re-probing BOTH conventions with fresh discriminators, spec deliberately silent on them (no NOTES.md pointer) | 3 | memory value: leg-2/leg-3 iterations/score/trap-edits, baseline vs fresh_state. Leg 3 is the READ-side probe: leg-1/2 recoverers hold nudged memories by leg 3, the 2-leg design could not separate that from task ease |
 
 Graders were validated against reference solutions (reference scores 1.0,
 stub 0.0, targeted mutants dent exactly their component; references live
 outside the repo, in the authoring session's scratchpad). `orchard`'s
 rounding component includes an engineered half-up vs banker's divergence
-(F-310: shelf 790 -> weekend 909; float `round()` gives 908).
+(F-310: shelf 790 -> weekend 909; float `round()` gives 908). Leg 3 carries
+fresh ones the shipped acceptance test deliberately omits (clearance A-140
+448 / E-905 1858 catch `round()`, B-204 649 catches truncation), and its
+`regen` component deletes `data/*.tsv` before running the agent's build
+tools, so a hand-written feed no generator reproduces scores zero.
 
 ## Conditions (`CONDITIONS` in run.py)
 
@@ -70,9 +74,10 @@ stylebook), `drops_total`/`drop_events`/`first_drop_at_tool_call` (tier-1),
 `_post_drop`/`_post_compact` splits, `memory_writes`/`memory_invalidations`
 plus `memory_flip_nudges`/`memory_finish_nudges` (the loop's write-side
 nudges) and a post-leg store snapshot (`memories_ids`/`memories_bytes`),
-`deps_added`/`deps_in_graph`, `trap_edits` (edit calls touching orchard's
-generated file), `iterations`, `usd`, `tokens`, `wall_s`, `end_reason`,
-`tampered`.
+`deps_added`/`deps_in_graph`, `trap_edits` (edit calls whose TARGET is one
+of orchard's generated feeds; matched on the `path` arg when present so a
+generator merely mentioning the feed in a docstring does not count),
+`iterations`, `usd`, `tokens`, `wall_s`, `end_reason`, `tampered`.
 
 ## Running
 

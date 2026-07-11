@@ -61,7 +61,7 @@ def main() -> None:
 
     print(" | ".join(keys))
     print(
-        "  n   score(mean+/-se)  solved  drops  compact  rr/rr_pd  memw  deps"
+        "  n   score(mean+/-se)  solved  drops  compact  rr/rr_pd  memw  trap  deps"
         "  iters   usd     wall  tamper"
     )
     for key in sorted(cells, key=lambda k: tuple(str(x) for x in k)):
@@ -73,6 +73,7 @@ def main() -> None:
         rr = _mean_se(_num(rs, "redundant_reads"))[0]
         rr_pd = _mean_se(_num(rs, "redundant_reads_post_drop"))[0]
         memw = _mean_se(_num(rs, "memory_writes"))[0]
+        trap = _mean_se(_num(rs, "trap_edits"))[0]
         deps = _mean_se(_num(rs, "deps_added"))[0]
         iters = _mean_se(_num(rs, "iterations"))[0]
         usd = _mean_se(_num(rs, "usd"))[0]
@@ -81,7 +82,7 @@ def main() -> None:
         print(
             f"  {' | '.join(str(x) for x in key)}\n"
             f"    {len(rs):<3} {mu:.3f}+/-{se:.3f}     {solved:.2f}  {drops:6.1f}"
-            f"  {compact:5.1f}  {rr:5.1f}/{rr_pd:<5.1f} {memw:4.1f}  {deps:4.1f}"
+            f"  {compact:5.1f}  {rr:5.1f}/{rr_pd:<5.1f} {memw:4.1f}  {trap:4.1f}  {deps:4.1f}"
             f"  {iters or float('nan'):5.1f}  {usd or float('nan'):.3f}"
             f"  {wall:5.0f}s  {tamper:.2f}"
         )
