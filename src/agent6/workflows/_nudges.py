@@ -103,12 +103,17 @@ QUESTION_NUDGE = (
 # (deferred once, the backstop). Each fires at most once per run, only in run
 # mode with a memory store wired, and only while the worker has recorded
 # nothing; a run whose verify never failed is never nudged.
+# "State the rule, not the instance": measured on orchard leg 3 (FINDINGS #2
+# day 3) — a store that spelled the house convention in words transferred to
+# a new computation; a store carrying only the formula it was first seen in
+# did not.
 MEMORY_FLIP_NUDGE = (
     "[harness memory] Verify just went green after failing. If the fix rested"
     " on a durable non-obvious fact about this repository (a generated file, a"
     " hidden coupling, a convention), record that fact now with"
-    " add_memory(scope, body) so future runs skip the rediscovery. If the"
-    " failure was ordinary, carry on."
+    " add_memory(scope, body) so future runs skip the rediscovery. State the"
+    " general rule in words, not just the instance you fixed. If the failure"
+    " was ordinary, carry on."
 )
 
 MEMORY_FINISH_NUDGE = (
@@ -116,8 +121,9 @@ MEMORY_FINISH_NUDGE = (
     " run before going green, and nothing was recorded for future runs. If the"
     " root cause was a durable non-obvious fact about this repository (a"
     " generated file, a hidden coupling, a convention), record it with"
-    " add_memory(scope, body), then call finish_run again. If nothing"
-    " qualifies, call finish_run again immediately."
+    " add_memory(scope, body), stating the general rule in words rather than"
+    " one instance, then call finish_run again. If nothing qualifies, call"
+    " finish_run again immediately."
 )
 
 
