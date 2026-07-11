@@ -394,9 +394,10 @@ class SandboxConfig(BaseModel):
     # with ENOMEM (Python MemoryError) that the agent sees as an ordinary
     # failed command, instead of driving the host to the OOM killer. The cap
     # is per PROCESS, not per tree; it bounds the common single-runaway case,
-    # not a fork bomb. 0 disables (opt-out, like every widening). No effect
-    # under profile `none` (no confinement at all there). Raise it when a
-    # legitimate build or test suite needs more than 4 GiB in one process.
+    # not a fork bomb. An operational guardrail, not a security control. 0
+    # disables. No effect under profile `none` (no confinement at all there).
+    # Raise it when a legitimate build or test suite needs more than 4 GiB in
+    # one process.
     memory_limit_mb: int = Field(default=4096, ge=0)
     # Extra egress destinations the AGENT process may reach under
     # `agent_network = "providers"`, on top of the configured provider

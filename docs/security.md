@@ -181,20 +181,14 @@ where user namespaces are available) the jail:
 - Sets `NO_NEW_PRIVS`: the kernel then ignores setuid bits, so `sudo`
   and every setuid binary cannot escalate.
 - Then `execve`s the requested binary, SIGKILLing the jail's whole
-  process group at the policy's wall-clock timeout. Two resource limits
-  apply: that timeout, and a per-process memory cap
-  (`[sandbox].memory_limit_mb`, default 4096 MiB, `0` disables) set as
-  `RLIMIT_DATA` on the child before exec and inherited by its
-  descendants. `RLIMIT_DATA` rather than `RLIMIT_AS` so runtimes that
-  reserve large address space without committing it (V8, JVM, ASAN)
-  keep working; a runaway allocation gets ENOMEM (a `MemoryError` the
-  agent handles as an ordinary failed command) instead of driving the
-  host to the OOM killer. The cap is per process, not per tree
-  (bounding the tree takes a cgroup, which an unprivileged launcher
-  cannot assume): it bounds the common single-runaway case, not a
-  deliberate fork bomb. Raising the hard limit back needs
-  `CAP_SYS_RESOURCE` in the initial user namespace, which a jailed
-  child never has. The jail does not call `capset` (under `strict` the
+  process group at the policy's wall-clock timeout. A per-process memory
+  cap (`[sandbox].memory_limit_mb`, default 4096 MiB, `0` disables) is set
+  as `RLIMIT_DATA` on the child before exec (not `RLIMIT_AS`, so runtimes
+  that reserve large address space without committing it -- V8, JVM, ASAN
+  -- keep working). It is an operational guardrail, NOT part of the threat
+  model: it stops a single runaway allocation from driving the host to the
+  OOM killer. Its incompleteness (per process, not per tree; no fork-bomb
+  bound) is by design, not a security gap. The jail does not call `capset` (under `strict` the
   child's namespaced-root already maps to your unprivileged uid; under
   `hardened` the child keeps the invoking user's capabilities, none for
   a normal user).
@@ -632,13 +626,6 @@ not to bound what an attacker can do.
   `agent_network = "open"`.
 - **seccomp** is required by the jail; on rare hardened kernels that
   block seccomp from unprivileged callers, the jail fails closed.
-- **Memory cap is per process, not per tree**: `memory_limit_mb` is an
-  rlimit, so N concurrent children can each commit the cap; a deliberate
-  fork bomb is out of its scope. For a hard whole-tree bound, run agent6
-  under a cgroup (`systemd-run -p MemoryMax=…`). Under `strict` the
-  in-jail `/tmp` tmpfs is capped (64 MB); under `hardened` the child
-  writes to the host `/tmp`, which on tmpfs hosts is RAM the rlimit does
-  not count.
 - **Devcontainers**: the jail's `hardened` profile is what you get
   inside Docker / VS Code dev containers. The container itself becomes
   the FS blast radius. Network restrictions still apply via the
