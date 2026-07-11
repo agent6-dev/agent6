@@ -176,7 +176,7 @@ class Agent6TUI(App[int]):
             (
                 MenuItem("Steer the run", "steer", "s"),
                 MenuItem("Stop the run", "stop", "x"),
-                MenuItem("Resume the run", "resume", "r"),
+                MenuItem("Resume the run", "resume", "R"),
                 MenuItem("Fork the run", "fork", "k"),
             ),
         ),
@@ -210,10 +210,13 @@ class Agent6TUI(App[int]):
         # modal consumes the key.)
         Binding("s", "steer", "Steer", show=True),
         Binding("x", "stop", "Stop", show=True),
-        Binding("r", "resume", "Resume", show=False),
+        Binding("R", "resume", "Resume", show=False),  # Shift+R: no accidental resume
         Binding("k", "fork", "Fork", show=False),
         Binding("l", "view_logs", "Full log", show=True),
         Binding("t", "view_transcript", "Conversation", show=True),
+        Binding(
+            "ctrl+tab", "view_transcript", "Conversation", show=False
+        ),  # toggle back from the view
         # g=top / G=end, matching vi and the LogScreen/ConversationScreen viewers
         # (g used to be "end" here, contradicting those screens reached via l/t).
         Binding("g", "scroll_log_home", "Log→top", show=False),

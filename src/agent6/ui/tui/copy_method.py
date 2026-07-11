@@ -11,7 +11,7 @@ immediately, matching the theme picker.
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import Any, ClassVar
 
 try:
     from rich.text import Text
@@ -29,7 +29,7 @@ from agent6.ui.tui.settings import get_copy_method, save_copy_method
 from agent6.ui.tui.widgets import FORM_CSS, ChoiceField
 
 
-def open_copy_method_picker(app: App[object]) -> None:
+def open_copy_method_picker(app: App[Any]) -> None:
     """Push the copy-method picker (the View>Copy method handler)."""
     app.push_screen(CopyMethodPicker())
 

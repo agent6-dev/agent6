@@ -5,13 +5,19 @@
 from __future__ import annotations
 
 import asyncio
+import bisect
 import json
 from pathlib import Path
 
 from textual.app import App
+from textual.containers import VerticalScroll
 from textual.widgets import Static
 
-from agent6.ui.tui.conversation import ConversationScreen
+from agent6.ui.tui.conversation import ConversationScreen, SteerInput
+
+
+def _following(scroll: VerticalScroll) -> bool:
+    return scroll.max_scroll_y - scroll.scroll_y <= 2.0
 
 
 def _nlines(app: App[None]) -> int:
@@ -45,7 +51,7 @@ def _write(logs: Path, events: list[dict[str, object]]) -> None:
     logs.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
 
 
-def test_conversation_screen_renders_and_toggles_thinking(tmp_path: Path) -> None:
+def test_conversation_screen_cycles_detail_level(tmp_path: Path) -> None:
     logs = tmp_path / "logs.jsonl"
     _write(logs, _EVENTS)
 
@@ -55,11 +61,19 @@ def test_conversation_screen_renders_and_toggles_thinking(tmp_path: Path) -> Non
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, ConversationScreen)
-            with_thinking = _nlines(app)
-            assert with_thinking > 0  # the conversation rendered
-            screen.action_toggle_thinking()  # hide the thinking block
+
+            def body_text() -> str:
+                return str(screen.query_one("#conv-body", Static).content)
+
+            assert _nlines(app) > 0  # the conversation rendered
+            assert "thinking…" in body_text()  # collapsed default: a one-line marker
+            assert "thinking hard here" not in body_text()  # not the full reasoning
+            screen.action_cycle_detail()  # collapsed -> expanded
             await pilot.pause()
-            assert _nlines(app) < with_thinking  # fewer lines without thinking
+            assert "thinking hard here" in body_text()  # full reasoning now shown
+            screen.action_cycle_detail()  # expanded -> hidden
+            await pilot.pause()
+            assert "thinking" not in body_text()  # thinking omitted entirely
             screen.action_reload()  # reload must not raise
             await pilot.pause()
 
@@ -82,6 +96,139 @@ def test_conversation_screen_follows_live(tmp_path: Path) -> None:
             await asyncio.sleep(0.7)  # let the 0.5s follow poll fire
             await pilot.pause()
             assert _nlines(app) > before  # the appended turns appeared
+
+    asyncio.run(scenario())
+
+
+def test_steer_bar_hidden_for_a_finished_run(tmp_path: Path) -> None:
+    logs = tmp_path / "logs.jsonl"
+    _write(logs, _EVENTS)  # _EVENTS ends with run.end -> nothing to steer
+
+    async def scenario() -> None:
+        app = _Host(logs)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert not app.screen.query_one("#conv-input", SteerInput).display
+
+    asyncio.run(scenario())
+
+
+def test_steer_bar_shows_for_a_live_run_and_submits_over_the_bridge(tmp_path: Path) -> None:
+    from agent6.ui.bridge.approval import STEER_ANSWER_FILE, steer_request_pending
+
+    logs = tmp_path / "logs.jsonl"
+    _write(logs, _EVENTS[:-1])  # drop run.end -> the run is live
+
+    async def scenario() -> None:
+        app = _Host(logs)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            bar = app.screen.query_one("#conv-input", SteerInput)
+            assert bar.display  # a live run shows the steer bar
+            bar.post_message(SteerInput.Submitted("go left"))
+            await pilot.pause()
+
+    asyncio.run(scenario())
+    assert steer_request_pending(tmp_path)  # the run was asked to steer
+    assert (tmp_path / STEER_ANSWER_FILE).read_text(encoding="utf-8") == "go left"
+
+
+def test_live_run_auto_focuses_the_steer_bar(tmp_path: Path) -> None:
+    logs = tmp_path / "logs.jsonl"
+    _write(logs, _EVENTS[:-1])  # live -> bar ready to type
+
+    async def scenario() -> None:
+        app = _Host(logs)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert isinstance(app.focused, SteerInput)
+
+    asyncio.run(scenario())
+
+
+def test_ctrl_tab_backs_out_even_with_the_bar_focused(tmp_path: Path) -> None:
+    # A live run auto-focuses the bar; ctrl+tab is a priority binding, so it still
+    # closes the view (the toggle back to the dashboard) instead of the bar eating it.
+    logs = tmp_path / "logs.jsonl"
+    _write(logs, _EVENTS[:-1])
+
+    async def scenario() -> None:
+        app = _Host(logs)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert isinstance(app.focused, SteerInput)
+            await pilot.press("ctrl+tab")
+            await pilot.pause()
+            assert not isinstance(app.screen, ConversationScreen)
+
+    asyncio.run(scenario())
+
+
+def test_follow_survives_the_live_pane_growing(tmp_path: Path) -> None:
+    # A live turn that only THINKS (no completed turn appended) still grows the live
+    # pane, shrinking the scroll viewport. Follow mode must survive that nudge.
+    logs = tmp_path / "logs.jsonl"
+    events: list[dict[str, object]] = [{"type": "run.start", "user_task": "x"}]
+    for i in range(20):  # overflow a short viewport
+        more: list[dict[str, object]] = [
+            {"type": "tool.call", "name": "read_file", "args": {"path": f"f{i}"}},
+            {"type": "tool.result", "name": "read_file", "ok": True, "summary": f"{i} bytes"},
+        ]
+        events += more
+    _write(logs, events)  # no run.end -> live
+
+    async def scenario() -> None:
+        app = _Host(logs)
+        async with app.run_test(size=(60, 12)) as pilot:
+            await pilot.pause()
+            scroll = app.screen.query_one("#conv-scroll", VerticalScroll)
+            assert _following(scroll)  # _reload pins to the bottom
+            with logs.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps({"type": "role.thinking_delta", "text": "x " * 300}) + "\n")
+            await asyncio.sleep(0.5)  # let the poll fire + grow the live pane
+            await pilot.pause()
+            assert _following(scroll)  # still following despite the live pane growing
+
+    asyncio.run(scenario())
+
+
+def test_detail_cycle_keeps_the_top_block_anchored(tmp_path: Path) -> None:
+    # Expanding a big failed-tool block above the viewport must not carry your place
+    # away: the block at the top of the viewport stays put across the re-render.
+    logs = tmp_path / "logs.jsonl"
+    events: list[dict[str, object]] = [{"type": "run.start", "user_task": "x"}]
+    events += [
+        {"type": "tool.call", "name": "apply_edit", "args": {"path": "b"}},
+        {
+            "type": "tool.result",
+            "name": "apply_edit",
+            "ok": False,
+            "summary": "\n".join(f"line {i}" for i in range(100)),
+        },
+    ]
+    for i in range(15):
+        events += [
+            {"type": "tool.call", "name": "grep", "args": {"pattern": f"m{i}"}},
+            {"type": "tool.result", "name": "grep", "ok": True, "summary": f"{i} hits"},
+        ]
+    _write(logs, events)
+
+    async def scenario() -> None:
+        app = _Host(logs)
+        async with app.run_test(size=(80, 16)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, ConversationScreen)
+            scroll = screen.query_one("#conv-scroll", VerticalScroll)
+            scroll.scroll_to(y=18, animate=False)  # a mid position, past the failed tool
+            await pilot.pause()
+            starts = screen._item_visual_starts()
+            anchor = bisect.bisect_right(starts, scroll.scroll_y) - 1
+            offset_before = scroll.scroll_y - starts[anchor]
+            screen.action_cycle_detail()  # collapsed -> expanded: the failed tool grows above
+            await pilot.pause()
+            offset_after = scroll.scroll_y - screen._item_visual_starts()[anchor]
+            assert abs(offset_after - offset_before) <= 2  # the anchored block held its place
 
     asyncio.run(scenario())
 
@@ -126,8 +273,8 @@ def test_conversation_screen_empty(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_conversation_screen_q_backs_out(tmp_path: Path) -> None:
-    """q (like Esc) closes the pager -- backs out one level."""
+def test_conversation_screen_esc_backs_out(tmp_path: Path) -> None:
+    """Esc closes the conversation view -- backs out one level."""
     logs = tmp_path / "logs.jsonl"
     _write(logs, _EVENTS)
 
@@ -136,7 +283,7 @@ def test_conversation_screen_q_backs_out(tmp_path: Path) -> None:
         async with app.run_test() as pilot:
             await pilot.pause()
             assert isinstance(app.screen, ConversationScreen)
-            await pilot.press("q")
+            await pilot.press("escape")
             await pilot.pause()
             assert not isinstance(app.screen, ConversationScreen)  # backed out
 

@@ -47,7 +47,7 @@ _ANSI = {
 # render item_lines() (viewmodel.transcript_style), so the structure and which
 # element is coloured live in ONE place and can't drift.
 _STYLE_ANSI: dict[StyleName, str] = {
-    "thinking": _ANSI["dim"] + _ANSI["italic"],
+    "thinking": _ANSI["dim"],
     "text": "",
     "call": _ANSI["bold"] + _ANSI["cyan"],
     "arg": _ANSI["dim"],
@@ -180,7 +180,7 @@ class ConsoleView:
     def _render(self, item: TranscriptItem) -> None:
         """The CLI skin over the shared item_lines(): map each span's semantic style
         to ANSI, behind a two-space left gutter (a blank spec line stays blank)."""
-        for line in item_lines(item, show_thinking=True):
+        for line in item_lines(item, detail="collapsed"):
             rendered = "".join(
                 f"{_STYLE_ANSI[style]}{text}{_ANSI['reset']}"
                 if self._color and _STYLE_ANSI[style]

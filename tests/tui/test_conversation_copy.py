@@ -15,7 +15,7 @@ def test_copy_text_emits_the_osc52_sequence_via_the_seam(tmp_path: Path) -> None
     logs.write_text("", encoding="utf-8")
     screen = ConversationScreen(logs, title="t")
     written: list[str] = []
-    screen._emit = written.append  # substitute the raw-write seam (no running app)
+    screen._emit = written.append  # type: ignore[method-assign]  # sub the raw-write seam
     status = screen._copy_text("hello", method="osc52")
     assert written == ["\x1b]52;c;aGVsbG8=\x07"]  # base64("hello") == "aGVsbG8="
     assert "osc" in status.lower()

@@ -50,39 +50,61 @@ StyleName = Literal[
 Span = tuple[str, StyleName]
 Line = list[Span]
 
+# One detail level, cycled by a single shortcut in the TUI:
+#   hidden    -- thinking omitted entirely, tool detail clipped (least noise)
+#   collapsed -- thinking as a one-line marker, tool detail clipped (the default)
+#   expanded  -- thinking and tool detail both in full
+DetailLevel = Literal["hidden", "collapsed", "expanded"]
+
 TAIL_CLIP = 120  # chars of a failed tool's captured output tail shown inline
 DETAIL_CLIP = 120  # chars of a tool result's first line shown inline (the rest -> "+N more")
 
 
-def item_lines(item: TranscriptItem, *, show_thinking: bool) -> list[Line]:
-    """The styled lines for one folded conversation item (both skins render these)."""
-    lines: list[Line] = []
-    if item.kind == "thinking":
-        if show_thinking:
-            lines.append([(f"{THINK} {item.body}", "thinking")])
-    elif item.kind == "text":
-        lines.extend([(ln, "text")] for ln in item.body.split("\n"))
-    elif item.kind == "tool":
-        head: Line = [(f"{CALL} {item.name}", "call")]
-        if item.arg:
-            head.append((f"  {item.arg}", "arg"))
-        lines.append(head)
-        # RESULT glyph carries the pass/fail colour; the detail is its OWN neutral
-        # span (the #1 fix -- it no longer inherits the fail colour). A long detail
-        # (a failed tool's multi-line error dump) is clipped to its first line + a
-        # "+N more lines" note so it can't dominate the view; the full text stays in
-        # the raw log (and, once collapsible blocks land, behind an expand).
-        detail_lines = item.detail.split("\n")
+def _tool_lines(item: TranscriptItem, *, expanded: bool) -> list[Line]:
+    """A tool call's lines: the call head, then the result. The RESULT glyph carries
+    the pass/fail colour; the detail is its OWN neutral span (the #1 fix -- it no
+    longer inherits the fail colour). Collapsed, a long multi-line detail (a failed
+    tool's error dump) is clipped to its first line + a "+N more lines" note so it
+    can't dominate; expanded, the full detail is shown, indented and still neutral."""
+    head: Line = [(f"{CALL} {item.name}", "call")]
+    if item.arg:
+        head.append((f"  {item.arg}", "arg"))
+    glyph: StyleName = "ok" if item.ok else "fail"
+    detail_lines = item.detail.split("\n")
+    long = len(detail_lines) > 1 or len(detail_lines[0]) > DETAIL_CLIP
+    if expanded and long:
+        lines: list[Line] = [head, [(f"  {RESULT} ", glyph), (detail_lines[0], "detail")]]
+        lines.extend([(f"      {ln}", "detail")] for ln in detail_lines[1:])
+    else:
         reason = detail_lines[0]
         if len(reason) > DETAIL_CLIP:
             reason = reason[: DETAIL_CLIP - 1] + "…"
-        result: Line = [(f"  {RESULT} ", "ok" if item.ok else "fail"), (reason, "detail")]
+        result: Line = [(f"  {RESULT} ", glyph), (reason, "detail")]
         extra = len(detail_lines) - 1
         if extra:
             result.append((f"  (+{extra} more line{'' if extra == 1 else 's'})", "more"))
-        lines.append(result)
-        if item.tail:
-            lines.append([(f"    {' '.join(item.tail.split())[:TAIL_CLIP]}", "tail")])
+        lines = [head, result]
+    if item.tail:
+        lines.append([(f"    {' '.join(item.tail.split())[:TAIL_CLIP]}", "tail")])
+    return lines
+
+
+def item_lines(item: TranscriptItem, *, detail: DetailLevel) -> list[Line]:
+    """The styled lines for one folded conversation item (both skins render these).
+    ``detail`` is the one detail level cycled in the TUI (see DetailLevel)."""
+    lines: list[Line] = []
+    if item.kind == "thinking":
+        if detail == "expanded":
+            lines.append([(f"{THINK} {item.body}", "thinking")])
+        elif detail == "collapsed":
+            # A one-line marker instead of the reasoning bulk; "hidden" omits it.
+            n = item.body.count("\n") + 1
+            plural = "" if n == 1 else "s"
+            lines.append([(f"{THINK} thinking…", "thinking"), (f"  ({n} line{plural})", "more")])
+    elif item.kind == "text":
+        lines.extend([(ln, "text")] for ln in item.body.split("\n"))
+    elif item.kind == "tool":
+        lines.extend(_tool_lines(item, expanded=detail == "expanded"))
     elif item.kind == "commit":
         lines.append([(f"{COMMIT} commit  {item.detail}", "commit")])
     elif item.kind == "marker":
