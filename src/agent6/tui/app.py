@@ -58,6 +58,7 @@ from agent6.frontend.approval import (
     write_question_answer,
     write_steer_answer,
 )
+from agent6.frontend.spawn import agent6_exe, spawn_and_locate, spawn_detached_resume
 from agent6.tui.conversation import ConversationScreen
 from agent6.tui.logview import LogScreen
 from agent6.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
@@ -177,6 +178,8 @@ class Agent6TUI(App[int]):
             (
                 MenuItem("Steer the run", "steer", "s"),
                 MenuItem("Stop the run", "stop", "x"),
+                MenuItem("Resume the run", "resume", "r"),
+                MenuItem("Fork the run", "fork", "k"),
             ),
         ),
         Menu(
@@ -208,6 +211,8 @@ class Agent6TUI(App[int]):
         # modal consumes the key.)
         Binding("s", "steer", "Steer", show=True),
         Binding("x", "stop", "Stop", show=True),
+        Binding("r", "resume", "Resume", show=False),
+        Binding("k", "fork", "Fork", show=False),
         Binding("l", "view_logs", "Full log", show=True),
         Binding("t", "view_transcript", "Conversation", show=True),
         # g=top / G=end, matching vi and the LogScreen/ConversationScreen viewers
@@ -430,6 +435,39 @@ class Agent6TUI(App[int]):
             ),
             _confirmed,
         )
+
+    def action_resume(self) -> None:
+        """Resume a finished/stopped run: it continues in the background (appending
+        to the same log) and this dashboard follows straight through."""
+        if not self.state.finished:
+            self.notify("run is still going -- nothing to resume", severity="warning")
+            return
+        err = spawn_detached_resume(Path.cwd(), self.run_dir.name)
+        self.notify(
+            err or f"resuming {self.run_dir.name} in the background…",
+            severity="error" if err else "information",
+        )
+
+    def action_fork(self) -> None:
+        """Fork this run into a NEW run (from its latest checkpoint) that runs in the
+        background and shows up in the hub. Spawns off-thread so the UI stays live."""
+        self.notify(f"forking {self.run_dir.name}…", severity="information")
+        threading.Thread(target=self._do_fork, daemon=True).start()
+
+    def _do_fork(self) -> None:
+        runs = self.run_dir.parent  # sibling run dirs under runs/
+        new_dir, err = spawn_and_locate(
+            [agent6_exe(), "fork", self.run_dir.name],
+            Path.cwd(),
+            before={p for p in runs.iterdir() if p.is_dir()},
+            list_dirs=lambda: [p for p in runs.iterdir() if p.is_dir()],
+        )
+        msg = (
+            f"forked to {new_dir.name} (open it from the hub)"
+            if new_dir
+            else (err or "fork failed")
+        )
+        self.call_from_thread(self.notify, msg, severity="information" if new_dir else "error")
 
     def _run_controllable(self) -> bool:
         """Steer/Stop are no-ops once the run is over: finished (the case that

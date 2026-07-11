@@ -318,3 +318,13 @@ def test_run_status_label_distinguishes_stop_finish_error() -> None:
     assert run_status_label(end("provider_error", False)) == "ended · provider error"
     # and the computed label rides along on the wire dict for the web client
     assert run_state_as_dict(end("steer_abort", False))["status_label"] == "stopped"
+
+
+def test_resume_start_unfinishes_the_run() -> None:
+    # A resume restarts a finished/stopped run in place; the header must show it
+    # running again (else steer/stop stay disabled on a live run).
+    s = apply_event(initial_state(), {"type": "run.end", "reason": "steer_abort"})
+    assert s.finished and s.end_reason == "steer_abort"
+    s = apply_event(s, {"type": "loop.resume.start"})
+    assert not s.finished and s.end_reason == ""
+    assert run_status_label(s) == "running"

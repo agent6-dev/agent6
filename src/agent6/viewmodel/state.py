@@ -152,6 +152,11 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
         case "run.start":
             return replace(state, user_task=str(event.get("user_task", "")))
 
+        case "loop.resume.start":
+            # A resume restarts a finished/stopped run in place (it appends to the
+            # same log): it is running again, so clear the terminal state.
+            return replace(state, finished=False, end_reason="")
+
         case "graph.update":
             nodes = event.get("nodes", {}) or {}
             cursor = event.get("cursor")
