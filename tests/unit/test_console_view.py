@@ -68,3 +68,14 @@ def test_failed_tool_shows_its_output_tail() -> None:
     )
     assert "→ run_command" in out
     assert "No such file" in out
+
+
+def test_steer_request_closes_open_dim_block() -> None:
+    # A Ctrl-C pause message prints to the same terminal; the open dim thinking
+    # block must be closed (reset) first so the message doesn't inherit the dim.
+    buf = StringIO()
+    view = ConsoleView(buf, color=True)
+    view.feed({"type": "role.thinking_delta", "text": "pondering the fix"})
+    assert not buf.getvalue().endswith("\033[0m\n")  # block still open
+    view.feed({"type": "run.steer_requested", "source": "sigint"})
+    assert buf.getvalue().endswith("\033[0m\n")  # closed + reset before the message prints

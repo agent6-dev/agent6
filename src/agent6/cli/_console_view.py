@@ -70,6 +70,11 @@ class ConsoleView:
             if etype in ("role.call", "role.result"):
                 self._end_block()  # a provider call boundary closes any open prose
                 return
+            if etype == "run.steer_requested":
+                # A Ctrl-C pause message is about to print to the same terminal;
+                # close any open (dim) block so it doesn't bleed into the message.
+                self._end_block()
+                return
             if etype == "run.start":
                 task = " ".join(str(event.get("user_task", "")).split())
                 self._line(self._c("bold", self._c("cyan", DONE) + " " + task) + "\n")
