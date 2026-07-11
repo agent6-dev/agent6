@@ -9,9 +9,9 @@ OpenRouter. Any sub-agent role (planner, worker, critic, reviewer,
 summarizer) can be routed through this provider via
 `[models.<role>]` in your config.
 
-Single HTTP call site, same shape as
-`agent6.providers.anthropic`. Uses httpx2 directly (no SDK) for a
-smaller audit surface.
+HTTP transport and SSE lifecycle are shared with the Anthropic provider
+(`providers/_transport.py`, `providers/_stream.py`); both use httpx2
+directly (no SDK) for a smaller audit surface.
 
 **- tool-use translation (Shape B)**: agent6's internal
 "lingua franca" is Anthropic content-blocks (the most expressive
@@ -59,14 +59,13 @@ import httpx2
 
 from agent6.budget import BudgetTracker
 from agent6.providers._stream import SseCall, StreamClock
-from agent6.providers.egress import http_post
+from agent6.providers._transport import ProviderCall
 from agent6.providers.token_command import CommandToken
 from agent6.providers.types import (
     ProviderError,
     ProviderResponse,
     ToolDefinition,
     TranscriptSink,
-    parse_retry_after,
 )
 from agent6.providers.wire import AuthStyle, Deployment, auth_header, request_url
 
@@ -236,6 +235,19 @@ class OpenAIProvider:
             return True
         return False
 
+    def _build_headers(self, token: str) -> dict[str, str]:
+        """Per-attempt request headers. Rebuilt each attempt because a
+        `token_command` credential mints a short-lived bearer that takes
+        precedence over the static api_key; on a 401/403 the transport
+        refreshes it once and retries, so an expired token self-heals."""
+        headers: dict[str, str] = {"content-type": "application/json"}
+        authed = auth_header(self.auth_style, token)
+        if authed is not None:
+            headers[authed[0]] = authed[1]
+        for k, v in self.extra_headers:
+            headers[k.lower()] = v
+        return headers
+
     @classmethod
     def from_env(
         cls,
@@ -261,7 +273,7 @@ class OpenAIProvider:
             budget=budget,
         )
 
-    def call(  # noqa: PLR0912, PLR0915
+    def call(  # noqa: PLR0912
         self,
         *,
         system: str,
@@ -445,147 +457,48 @@ class OpenAIProvider:
         # Qwen-style XML call rebuilds correctly. Empty when no tools.
         tool_schemas = {t.name: t.input_schema for t in tools} if tools else {}
 
-        # SSE streaming. When the caller supplies a
-        # text_delta_callback we POST with `stream: true` (and
-        # `stream_options.include_usage` so usage still arrives) and
-        # synthesise a non-streaming-shape response at terminal chunk.
-        # Streaming is also the only reliable path for OpenRouter-style
-        # gateways that emit `: OPENROUTER PROCESSING` SSE comment
-        # heartbeats during long requests; on the non-streaming path
-        # those heartbeats land in `resp.text` as garbage and break
-        # `resp.json()` mid-body. Bench shell scripts force this on
-        # via AGENT6_FORCE_STREAM=1 (the CLI translates that into a
-        # no-op callback so we exercise the streaming code path even
-        # when stderr is redirected).
-        # Auth header is (re)built per attempt: a `token_command` credential
-        # mints a short-lived bearer that takes precedence over the static
-        # api_key. On a 401/403 we refresh the credential once and retry, so an
-        # expired token self-heals regardless of its cache TTL. Without a
-        # credential there is exactly one attempt and the static key is used.
-        cred = self.credential
-        # +1 attempt reserved for each one-shot body adaptation (an unknown
-        # reasoning deployment rejecting max_tokens / temperature); mirrors
-        # the AnthropicProvider temperature-400 accounting.
-        max_attempts = (
-            (2 if cred is not None else 1)
-            + (1 if "max_tokens" in body else 0)
-            + (1 if "temperature" in body else 0)
-        )
-        for attempt in range(max_attempts):
-            headers: dict[str, str] = {"content-type": "application/json"}
-            token = cred.token() if cred is not None else self.api_key
-            authed = auth_header(self.auth_style, token)
-            if authed is not None:
-                headers[authed[0]] = authed[1]
-            for k, v in self.extra_headers:
-                headers[k.lower()] = v
-
-            if text_delta_callback is not None or thinking_delta_callback is not None:
-                try:
-                    return self._call_streaming(
-                        url=url,
-                        headers=headers,
-                        body=body,
-                        text_delta_callback=text_delta_callback,
-                        thinking_delta_callback=thinking_delta_callback,
-                        should_abort=should_abort,
-                        should_interrupt=should_interrupt,
-                        tool_names=tool_names,
-                        tool_schemas=tool_schemas,
-                    )
-                except ProviderError as exc:
-                    if attempt + 1 < max_attempts and self._adapt_body_for_400(
-                        exc.status_code, str(exc), body
-                    ):
-                        continue
-                    if (
-                        cred is not None
-                        and attempt + 1 < max_attempts
-                        and exc.status_code in (401, 403)
-                    ):
-                        cred.invalidate()
-                        continue
-                    raise
-
-            try:
-                resp = http_post(
-                    url,
-                    headers=headers,
-                    content=json.dumps(body).encode("utf-8"),
-                    timeout=self.timeout_s,
-                )
-            except httpx2.HTTPError as exc:
-                if self.transcript_sink is not None:
-                    self.transcript_sink.record(
-                        url=url,
-                        request_headers=headers,
-                        request_body=body,
-                        response_status=0,
-                        response_body=f"HTTPError: {exc}",
-                    )
-                raise ProviderError(f"HTTP error calling {url} (openai format): {exc}") from exc
-            if cred is not None and attempt + 1 < max_attempts and resp.status_code in (401, 403):
-                cred.invalidate()
-                continue
-            if resp.status_code >= 400:
-                if self.transcript_sink is not None:
-                    self.transcript_sink.record(
-                        url=url,
-                        request_headers=headers,
-                        request_body=body,
-                        response_status=resp.status_code,
-                        response_body=resp.text[:8192],
-                    )
-                if attempt + 1 < max_attempts and self._adapt_body_for_400(
-                    resp.status_code, resp.text, body
-                ):
-                    continue
-                raise ProviderError(
-                    f"OpenAI API error {resp.status_code}: {resp.text[:500]}",
-                    status_code=resp.status_code,
-                    retry_after_s=parse_retry_after(resp.headers),
-                )
-            try:
-                data: dict[str, Any] = resp.json()
-            except (json.JSONDecodeError, ValueError) as exc:
-                # A 2xx with a non-JSON body (transient proxy/gateway glitch)
-                # would otherwise raise a JSONDecodeError that the retry loop
-                # doesn't catch (it only handles ProviderError), aborting the
-                # run. Convert to a retryable ProviderError. Leaving
-                # status_code unset marks it retryable.
-                if self.transcript_sink is not None:
-                    self.transcript_sink.record(
-                        url=url,
-                        request_headers=headers,
-                        request_body=body,
-                        response_status=resp.status_code,
-                        response_body=resp.text[:8192],
-                    )
-                raise ProviderError(
-                    f"non-JSON response from OpenAI (status {resp.status_code}): {resp.text[:500]}"
-                ) from exc
-            if self.transcript_sink is not None:
-                self.transcript_sink.record(
+        # Streaming is chosen by the caller supplying a delta callback. It is
+        # also the only reliable path for OpenRouter-style gateways whose
+        # `: OPENROUTER PROCESSING` SSE comment heartbeats land in `resp.text`
+        # as garbage on the non-streaming path and break `resp.json()`; bench
+        # shell scripts force it via AGENT6_FORCE_STREAM=1 (the CLI translates
+        # that into a no-op callback).
+        return ProviderCall(
+            api_label="OpenAI",
+            api_format="openai",
+            url=url,
+            body=body,
+            timeout_s=self.timeout_s,
+            api_key=self.api_key,
+            credential=self.credential,
+            transcript_sink=self.transcript_sink,
+            budget=self.budget,
+            model=self.model,
+            build_headers=self._build_headers,
+            adapt_400=self._adapt_body_for_400,
+            adapt_attempts=int("max_tokens" in body) + int("temperature" in body),
+            require_metered=lambda data: _require_metered_usage(
+                data.get("usage"), source="OpenAI response"
+            ),
+            parse=lambda data: _parse_response(
+                data, tool_names=tool_names, tool_schemas=tool_schemas
+            ),
+            stream=(
+                lambda attempt_headers: self._call_streaming(
                     url=url,
-                    request_headers=headers,
-                    request_body=body,
-                    response_status=resp.status_code,
-                    response_body=data,
+                    headers=attempt_headers,
+                    body=body,
+                    text_delta_callback=text_delta_callback,
+                    thinking_delta_callback=thinking_delta_callback,
+                    should_abort=should_abort,
+                    should_interrupt=should_interrupt,
+                    tool_names=tool_names,
+                    tool_schemas=tool_schemas,
                 )
-            if self.budget is not None:
-                _require_metered_usage(data.get("usage"), source="OpenAI response")
-            parsed = _parse_response(data, tool_names=tool_names, tool_schemas=tool_schemas)
-            if self.budget is not None:
-                self.budget.record(
-                    model=self.model,
-                    input_tokens=parsed.input_tokens,
-                    output_tokens=parsed.output_tokens,
-                    cache_read_tokens=parsed.cache_read_tokens,
-                    cache_creation_tokens=parsed.cache_creation_tokens,
-                    cost_usd=parsed.cost_usd,
-                )
-            return parsed
-        raise ProviderError("OpenAI auth retry exhausted")  # pragma: no cover
+            )
+            if streaming
+            else None,
+        ).run()
 
     def _call_streaming(  # noqa: PLR0915
         self,

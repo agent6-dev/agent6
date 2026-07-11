@@ -55,7 +55,7 @@ def test_openai_non_json_200_is_provider_error() -> None:
     provider = OpenAIProvider(api_key="sk-test", model="gpt-4o-mini")
     resp = _FakeJSONResponse(status_code=200, text="<html>502 Bad Gateway</html>")
     with (
-        mock.patch("agent6.providers.openai.http_post", return_value=resp),
+        mock.patch("agent6.providers._transport.http_post", return_value=resp),
         pytest.raises(ProviderError) as ei,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
@@ -68,7 +68,7 @@ def test_anthropic_non_json_200_is_provider_error() -> None:
     provider = AnthropicProvider(api_key="sk-test", model="claude-3-5-sonnet")
     resp = _FakeJSONResponse(status_code=200, text="<html>502 Bad Gateway</html>")
     with (
-        mock.patch("agent6.providers.anthropic.http_post", return_value=resp),
+        mock.patch("agent6.providers._transport.http_post", return_value=resp),
         pytest.raises(ProviderError) as ei,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
@@ -89,7 +89,7 @@ def test_openai_budgeted_response_requires_usage_tokens() -> None:
         ),
     )
     with (
-        mock.patch("agent6.providers.openai.http_post", return_value=resp),
+        mock.patch("agent6.providers._transport.http_post", return_value=resp),
         pytest.raises(ProviderError) as ei,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
@@ -111,7 +111,7 @@ def test_anthropic_budgeted_response_requires_usage_tokens() -> None:
         ),
     )
     with (
-        mock.patch("agent6.providers.anthropic.http_post", return_value=resp),
+        mock.patch("agent6.providers._transport.http_post", return_value=resp),
         pytest.raises(ProviderError) as ei,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
@@ -134,7 +134,7 @@ def test_openai_budgeted_response_rejects_zero_token_usage() -> None:
         ),
     )
     with (
-        mock.patch("agent6.providers.openai.http_post", return_value=resp),
+        mock.patch("agent6.providers._transport.http_post", return_value=resp),
         pytest.raises(ProviderError) as ei,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
@@ -156,7 +156,7 @@ def test_anthropic_budgeted_response_rejects_zero_token_usage() -> None:
         ),
     )
     with (
-        mock.patch("agent6.providers.anthropic.http_post", return_value=resp),
+        mock.patch("agent6.providers._transport.http_post", return_value=resp),
         pytest.raises(ProviderError) as ei,
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
@@ -184,7 +184,7 @@ def test_anthropic_budgeted_response_accepts_fully_cached_turn() -> None:
             }
         ),
     )
-    with mock.patch("agent6.providers.anthropic.http_post", return_value=resp):
+    with mock.patch("agent6.providers._transport.http_post", return_value=resp):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     assert budget.snapshot()["per_model"] != {}
 
@@ -274,7 +274,7 @@ def _capture_body(provider: OpenAIProvider) -> dict[str, Any]:
         captured.update(json.loads(kwargs["content"]))
         return _Resp()
 
-    with mock.patch("agent6.providers.openai.http_post", side_effect=fake_post):
+    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
         provider.call(
             system="sys",
             messages=[{"role": "user", "content": "x"}],
@@ -407,7 +407,7 @@ def test_anthropic_temperature_400_retries_without_temperature_then_latches() ->
         bodies.append(json.loads(k["content"]))  # type: ignore[arg-type]
         return err400 if len(bodies) == 1 else ok200
 
-    with mock.patch("agent6.providers.anthropic.http_post", side_effect=first_call):
+    with mock.patch("agent6.providers._transport.http_post", side_effect=first_call):
         resp = provider.call(
             system="sys", messages=[{"role": "user", "content": "x"}], temperature=0.0
         )
@@ -424,7 +424,7 @@ def test_anthropic_temperature_400_retries_without_temperature_then_latches() ->
         bodies2.append(json.loads(k["content"]))  # type: ignore[arg-type]
         return ok200
 
-    with mock.patch("agent6.providers.anthropic.http_post", side_effect=second_call):
+    with mock.patch("agent6.providers._transport.http_post", side_effect=second_call):
         provider.call(system="sys", messages=[{"role": "user", "content": "y"}], temperature=0.0)
     assert "temperature" not in bodies2[0]
 
@@ -437,7 +437,7 @@ def test_openai_connection_error_names_url_and_format() -> None:
     provider = OpenAIProvider(api_key="", model="llama3", base_url="http://localhost:11434/v1")
     with (
         mock.patch(
-            "agent6.providers.openai.http_post",
+            "agent6.providers._transport.http_post",
             side_effect=httpx2.HTTPError("[Errno 111] Connection refused"),
         ),
         pytest.raises(ProviderError) as ei,
@@ -453,7 +453,7 @@ def test_anthropic_connection_error_names_url_and_format() -> None:
     provider = AnthropicProvider(api_key="sk-test", model="claude-3-5-sonnet")
     with (
         mock.patch(
-            "agent6.providers.anthropic.http_post",
+            "agent6.providers._transport.http_post",
             side_effect=httpx2.HTTPError("[Errno 111] Connection refused"),
         ),
         pytest.raises(ProviderError) as ei,

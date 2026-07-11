@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 
-from agent6.providers.anthropic import parse_retry_after
+from agent6.providers.types import parse_retry_after
 
 
 def test_retry_after_seconds_form() -> None:

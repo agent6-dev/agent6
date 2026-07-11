@@ -2,9 +2,11 @@
 # Copyright 2026 Eric Lesiuta
 """Anthropic provider.
 
-Single HTTP call site. Uses httpx2 directly (no SDK) for a smaller
-audit surface and pinned URL. Supports prompt caching via the
-`cache_control` block field on system / tool entries.
+HTTP transport and SSE lifecycle are shared with the OpenAI provider
+(`providers/_transport.py`, `providers/_stream.py`); both use httpx2
+directly (no SDK) for a smaller audit surface and pinned URL. Supports
+prompt caching via the `cache_control` block field on system / tool
+entries.
 """
 
 from __future__ import annotations
@@ -20,13 +22,12 @@ import httpx2
 
 from agent6.budget import BudgetTracker
 from agent6.providers._stream import SseCall, StreamClock
-from agent6.providers.egress import http_post
+from agent6.providers._transport import ProviderCall
 from agent6.providers.types import (
     ProviderError,
     ProviderResponse,
     ToolDefinition,
     TranscriptSink,
-    parse_retry_after,
 )
 from agent6.providers.wire import AuthStyle, Deployment, auth_header, request_url
 
@@ -163,6 +164,33 @@ class AnthropicProvider:
     # A 1-element list because the dataclass is frozen but the list is mutable.
     _omit_temperature: list[bool] = field(default_factory=lambda: [False])
 
+    def _adapt_body_for_400(self, status: int | None, text: str, body: dict[str, Any]) -> bool:
+        """Drop ``temperature`` and latch ``_omit_temperature`` on a
+        "temperature is deprecated" 400 (e.g. claude-opus-4-8); the transport
+        retries once with the adapted body."""
+        if not _is_temperature_400(status, text, body):
+            return False
+        self._omit_temperature[0] = True
+        body.pop("temperature", None)
+        return True
+
+    def _build_headers(self, token: str) -> dict[str, str]:
+        """Per-attempt request headers. Rebuilt each attempt because a
+        `token_command` credential mints a short-lived bearer (Vertex Google
+        OAuth); on a 401/403 the transport refreshes it once and retries."""
+        headers: dict[str, str] = {"content-type": "application/json"}
+        authed = auth_header(self.auth_style, token)
+        if authed is not None:
+            headers[authed[0]] = authed[1]
+        version_placement, version_value = _anthropic_version(self.deployment)
+        if version_placement == "header":
+            headers["anthropic-version"] = version_value
+        if self.prompt_caching:
+            headers["anthropic-beta"] = "prompt-caching-2024-07-31"
+        for k, v in self.extra_headers:
+            headers[k.lower()] = v
+        return headers
+
     @classmethod
     def from_env(
         cls,
@@ -188,7 +216,7 @@ class AnthropicProvider:
             thinking=thinking,
         )
 
-    def call(  # noqa: PLR0912, PLR0915
+    def call(  # noqa: PLR0912
         self,
         *,
         system: str,
@@ -272,131 +300,42 @@ class AnthropicProvider:
             reserved = {"system", "messages", "model", "stream", "anthropic_version"}
             body.update({k: v for k, v in self.extra_body.items() if k not in reserved})
 
-        # Auth header is (re)built per attempt: a token_command credential mints
-        # a short-lived bearer (Vertex Google OAuth); on a 401/403 we refresh it
-        # once and retry. Without a credential there is exactly one attempt.
-        cred = self.credential
-        # +1 attempt reserved for a one-shot "temperature is deprecated" 400 retry
-        # (only possible while temperature is still in the body).
-        max_attempts = (2 if cred is not None else 1) + (1 if "temperature" in body else 0)
-        for attempt in range(max_attempts):
-            headers: dict[str, str] = {"content-type": "application/json"}
-            token = cred.token() if cred is not None else self.api_key
-            authed = auth_header(self.auth_style, token)
-            if authed is not None:
-                headers[authed[0]] = authed[1]
-            if version_placement == "header":
-                headers["anthropic-version"] = version_value
-            if self.prompt_caching:
-                headers["anthropic-beta"] = "prompt-caching-2024-07-31"
-            for k, v in self.extra_headers:
-                headers[k.lower()] = v
-
-            # opt-in SSE streaming; otherwise the non-streaming POST below.
-            if streaming:
-                try:
-                    return self._call_streaming(
-                        url=url,
-                        headers=headers,
-                        body=body,
-                        text_delta_callback=text_delta_callback,
-                        thinking_delta_callback=thinking_delta_callback,
-                        should_abort=should_abort,
-                        should_interrupt=should_interrupt,
-                    )
-                except ProviderError as exc:
-                    if _is_temperature_400(exc.status_code, str(exc), body):
-                        self._omit_temperature[0] = True
-                        body.pop("temperature", None)
-                        continue
-                    if (
-                        cred is not None
-                        and attempt + 1 < max_attempts
-                        and exc.status_code in (401, 403)
-                    ):
-                        cred.invalidate()
-                        continue
-                    raise
-
-            try:
-                resp = http_post(
-                    url,
-                    headers=headers,
-                    content=json.dumps(body).encode("utf-8"),
-                    timeout=self.timeout_s,
-                )
-            except httpx2.HTTPError as exc:
-                if self.transcript_sink is not None:
-                    self.transcript_sink.record(
-                        url=url,
-                        request_headers=headers,
-                        request_body=body,
-                        response_status=0,
-                        response_body=f"HTTPError: {exc}",
-                    )
-                raise ProviderError(f"HTTP error calling {url} (anthropic format): {exc}") from exc
-            if cred is not None and attempt + 1 < max_attempts and resp.status_code in (401, 403):
-                cred.invalidate()
-                continue
-            if resp.status_code >= 400:
-                if self.transcript_sink is not None:
-                    self.transcript_sink.record(
-                        url=url,
-                        request_headers=headers,
-                        request_body=body,
-                        response_status=resp.status_code,
-                        response_body=resp.text[:8192],
-                    )
-                if _is_temperature_400(resp.status_code, resp.text, body):
-                    self._omit_temperature[0] = True
-                    body.pop("temperature", None)
-                    continue
-                raise ProviderError(
-                    f"Anthropic API error {resp.status_code}: {resp.text[:500]}",
-                    status_code=resp.status_code,
-                    retry_after_s=parse_retry_after(resp.headers),
-                )
-            try:
-                data: dict[str, Any] = resp.json()
-            except (json.JSONDecodeError, ValueError) as exc:
-                # A 2xx with a non-JSON body (transient proxy/gateway glitch)
-                # would otherwise raise a JSONDecodeError that the retry loop
-                # doesn't catch (it only handles ProviderError), aborting the
-                # run. Convert to a retryable ProviderError. Leaving
-                # status_code unset marks it retryable.
-                if self.transcript_sink is not None:
-                    self.transcript_sink.record(
-                        url=url,
-                        request_headers=headers,
-                        request_body=body,
-                        response_status=resp.status_code,
-                        response_body=resp.text[:8192],
-                    )
-                raise ProviderError(
-                    f"non-JSON response from Anthropic (status {resp.status_code}): "
-                    f"{resp.text[:500]}"
-                ) from exc
-            if self.transcript_sink is not None:
-                self.transcript_sink.record(
+        # The transport rebuilds headers per attempt (a token_command
+        # credential mints a short-lived Vertex bearer; a 401/403 refreshes it
+        # once and retries) and reserves one extra attempt for the one-shot
+        # "temperature is deprecated" 400 adaptation.
+        return ProviderCall(
+            api_label="Anthropic",
+            api_format="anthropic",
+            url=url,
+            body=body,
+            timeout_s=self.timeout_s,
+            api_key=self.api_key,
+            credential=self.credential,
+            transcript_sink=self.transcript_sink,
+            budget=self.budget,
+            model=self.model,
+            build_headers=self._build_headers,
+            adapt_400=self._adapt_body_for_400,
+            adapt_attempts=int("temperature" in body),
+            require_metered=lambda data: _require_metered_usage(
+                data.get("usage"), source="Anthropic response"
+            ),
+            parse=_parse_response,
+            stream=(
+                lambda attempt_headers: self._call_streaming(
                     url=url,
-                    request_headers=headers,
-                    request_body=body,
-                    response_status=resp.status_code,
-                    response_body=data,
+                    headers=attempt_headers,
+                    body=body,
+                    text_delta_callback=text_delta_callback,
+                    thinking_delta_callback=thinking_delta_callback,
+                    should_abort=should_abort,
+                    should_interrupt=should_interrupt,
                 )
-            if self.budget is not None:
-                _require_metered_usage(data.get("usage"), source="Anthropic response")
-            parsed = _parse_response(data)
-            if self.budget is not None:
-                self.budget.record(
-                    model=self.model,
-                    input_tokens=parsed.input_tokens,
-                    output_tokens=parsed.output_tokens,
-                    cache_read_tokens=parsed.cache_read_tokens,
-                    cache_creation_tokens=parsed.cache_creation_tokens,
-                )
-            return parsed
-        raise ProviderError("Anthropic auth retry exhausted")  # pragma: no cover
+            )
+            if streaming
+            else None,
+        ).run()
 
     def _call_streaming(  # noqa: PLR0915
         self,
