@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 
-def tail_events(  # noqa: PLR0912
+def tail_events(
     path: Path,
     *,
     poll_s: float = 0.25,
@@ -62,12 +62,18 @@ def tail_events(  # noqa: PLR0912
             pending += chunk
             lines = pending.split(b"\n")
             pending = lines[-1]  # last fragment may be incomplete
-            for line in lines[:-1]:
-                evt = _parse_event_line(line)
-                if evt is None:
-                    continue
+            parsed = [e for e in map(_parse_event_line, lines[:-1]) if e is not None]
+            # stop_when_finished halts at the FINAL run.end in this batch, not an
+            # earlier one: a stopped-then-resumed run shares one log (two run.end
+            # events), and a watcher must reach the last, not the stop. A live run's
+            # real end is at EOF, so it is the last one anyway.
+            last_end = max(
+                (j for j, e in enumerate(parsed) if e.get("type") == "run.end"),
+                default=-1,
+            )
+            for i, evt in enumerate(parsed):
                 yield evt
-                if stop_when_finished and evt.get("type") == "run.end":
+                if stop_when_finished and i == last_end:
                     return
 
         if not follow:

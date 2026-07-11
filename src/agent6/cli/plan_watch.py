@@ -405,7 +405,9 @@ def format_plain_event(line: str, *, run_start_ts: float | None) -> str:
 def _watch_transcript(target: Path) -> int:
     """Follow a run's conversation live: fold ``logs.jsonl`` through the same
     ``ConsoleView`` as ``agent6 run``, so an attached viewer sees what the run
-    prints. Renders from the start, then tails; Ctrl-C exits."""
+    prints. Renders from the start, tails until the run ends (a finished run just
+    renders and exits), then returns; Ctrl-C exits early. A detach emits no
+    run.end, so watching a detached run follows the background resume to its end."""
     events_path = target / "logs.jsonl"
     if not events_path.is_file():
         print(f"ERROR: no logs.jsonl in {target}", file=sys.stderr)
@@ -413,7 +415,7 @@ def _watch_transcript(target: Path) -> int:
     print(f"[agent6] following {target.name}. Ctrl-C to exit.", file=sys.stderr)
     view = ConsoleView(sys.stdout)
     try:
-        for event in tail_events(events_path, follow=True):
+        for event in tail_events(events_path, follow=True, stop_when_finished=True):
             view.feed(event)
     except KeyboardInterrupt:
         print("\n[agent6] watch: stopped.", file=sys.stderr)

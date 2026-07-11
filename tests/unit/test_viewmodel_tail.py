@@ -151,3 +151,32 @@ def test_logtail_holds_a_partial_line_until_its_newline(tmp_path: Path) -> None:
 
 def test_logtail_missing_file_is_empty(tmp_path: Path) -> None:
     assert LogTail(tmp_path / "nope.jsonl").read() == []
+
+
+def test_stop_when_finished_stops_at_a_lone_run_end(tmp_path: Path) -> None:
+    p = tmp_path / "logs.jsonl"
+    p.write_text(
+        '{"type": "run.start"}\n'
+        '{"type": "tool.call", "name": "x"}\n'
+        '{"type": "run.end", "reason": "finish_run"}\n',
+        encoding="utf-8",
+    )
+    out = list(tail_events(p, follow=True, stop_when_finished=True))
+    assert [e["type"] for e in out] == ["run.start", "tool.call", "run.end"]
+
+
+def test_stop_when_finished_follows_through_a_resumed_run(tmp_path: Path) -> None:
+    # A stop then resume shares one log: two run.end events. stop_when_finished must
+    # follow past the intermediate one (steer_abort) to the final one, not halt at
+    # the stop -- else a watcher of a resumed run wrongly shows "stopped".
+    p = tmp_path / "logs.jsonl"
+    p.write_text(
+        '{"type": "run.start"}\n'
+        '{"type": "run.end", "reason": "steer_abort"}\n'
+        '{"type": "role.call"}\n'
+        '{"type": "run.end", "reason": "finish_run"}\n',
+        encoding="utf-8",
+    )
+    out = list(tail_events(p, follow=True, stop_when_finished=True))
+    assert [e.get("reason") for e in out if e["type"] == "run.end"] == ["steer_abort", "finish_run"]
+    assert out[-1]["reason"] == "finish_run"  # stopped at the final end, not the stop
