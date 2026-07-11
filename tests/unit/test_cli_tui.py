@@ -16,6 +16,7 @@ from typing import Any
 import pytest
 
 from agent6.events import EventSink
+from agent6.ui.cli import _interact as interactmod
 from agent6.ui.cli import run as runmod
 
 
@@ -65,10 +66,10 @@ def test_approver_uses_tui_answer_when_live(
 ) -> None:
     log = tmp_path / "logs.jsonl"
     events = EventSink(log)
-    monkeypatch.setattr(runmod, "frontend_is_live", _live)
-    monkeypatch.setattr(runmod, "read_answer", _ans_yes)
-    monkeypatch.setattr(runmod, "_default_stdin_approver", _stdin_forbidden)
-    approve = runmod._build_approver(tmp_path, events)  # pyright: ignore[reportPrivateUsage]
+    monkeypatch.setattr(interactmod, "frontend_is_live", _live)
+    monkeypatch.setattr(interactmod, "read_answer", _ans_yes)
+    monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)
+    approve = interactmod.build_approver(tmp_path, events)
     assert approve("run `ls`?") is True
     assert _events_of(log, "approval.prompt")
     ans = _events_of(log, "approval.answer")[0]
@@ -81,9 +82,9 @@ def test_approver_falls_back_to_stdin_without_tui(
 ) -> None:
     log = tmp_path / "logs.jsonl"
     events = EventSink(log)
-    monkeypatch.setattr(runmod, "frontend_is_live", _dead)
-    monkeypatch.setattr(runmod, "_default_stdin_approver", _stdin_no)
-    approve = runmod._build_approver(tmp_path, events)  # pyright: ignore[reportPrivateUsage]
+    monkeypatch.setattr(interactmod, "frontend_is_live", _dead)
+    monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_no)
+    approve = interactmod.build_approver(tmp_path, events)
     assert approve("x") is False
     assert _events_of(log, "approval.answer")[0]["source"] == "stdin"
 
@@ -95,12 +96,12 @@ def test_approver_session_allows_every_later_command(
     # later one without prompting again -- across the run.
     log = tmp_path / "logs.jsonl"
     events = EventSink(log)
-    monkeypatch.setattr(runmod, "frontend_is_live", _dead)
-    monkeypatch.setattr(runmod, "_default_stdin_approver", _stdin_session)
-    approve = runmod._build_approver(tmp_path, events)  # pyright: ignore[reportPrivateUsage]
+    monkeypatch.setattr(interactmod, "frontend_is_live", _dead)
+    monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_session)
+    approve = interactmod.build_approver(tmp_path, events)
     assert approve("first?") is True
     # A second prompt must NOT reach the stdin approver -- the session marker auto-passes.
-    monkeypatch.setattr(runmod, "_default_stdin_approver", _stdin_forbidden)
+    monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)
     assert approve("second?") is True
     assert _events_of(log, "approval.answer")[-1]["source"] == "session"
 
@@ -110,10 +111,10 @@ def test_approver_tui_timeout_falls_back_to_stdin(
 ) -> None:
     log = tmp_path / "logs.jsonl"
     events = EventSink(log)
-    monkeypatch.setattr(runmod, "frontend_is_live", _live)
-    monkeypatch.setattr(runmod, "read_answer", _ans_none)  # TUI died / timed out
-    monkeypatch.setattr(runmod, "_default_stdin_approver", _stdin_yes)
-    approve = runmod._build_approver(tmp_path, events)  # pyright: ignore[reportPrivateUsage]
+    monkeypatch.setattr(interactmod, "frontend_is_live", _live)
+    monkeypatch.setattr(interactmod, "read_answer", _ans_none)  # TUI died / timed out
+    monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_yes)
+    approve = interactmod.build_approver(tmp_path, events)
     assert approve("x") is True
     assert _events_of(log, "approval.answer")[0]["source"] == "stdin"
 
@@ -197,9 +198,9 @@ def test_approver_away_deny_auto_denies(tmp_path: Path, monkeypatch: pytest.Monk
 
     log = tmp_path / "logs.jsonl"
     events = EventSink(log)
-    monkeypatch.setattr(runmod, "_default_stdin_approver", _stdin_forbidden)  # must NOT prompt
+    monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)  # must NOT prompt
     set_away_mode(tmp_path, "deny")
-    approve = runmod._build_approver(tmp_path, events)  # pyright: ignore[reportPrivateUsage]
+    approve = interactmod.build_approver(tmp_path, events)
     assert approve("rm -rf /") is False
     assert _events_of(log, "approval.answer")[0]["source"] == "away-deny"
 
@@ -212,10 +213,10 @@ def test_approver_away_wait_uses_reattached_front_end(
 
     log = tmp_path / "logs.jsonl"
     events = EventSink(log)
-    monkeypatch.setattr(runmod, "frontend_is_live", _live)  # a front-end is attached
-    monkeypatch.setattr(runmod, "read_answer", _ans_yes)  # and it approved
-    monkeypatch.setattr(runmod, "_default_stdin_approver", _stdin_forbidden)  # never falls to stdin
+    monkeypatch.setattr(interactmod, "frontend_is_live", _live)  # a front-end is attached
+    monkeypatch.setattr(interactmod, "read_answer", _ans_yes)  # and it approved
+    monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)  # no stdin fall
     set_away_mode(tmp_path, "wait")
-    approve = runmod._build_approver(tmp_path, events)  # pyright: ignore[reportPrivateUsage]
+    approve = interactmod.build_approver(tmp_path, events)
     assert approve("ls") is True
     assert _events_of(log, "approval.answer")[0]["source"] == "away-wait"

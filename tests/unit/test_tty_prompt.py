@@ -23,7 +23,7 @@ from typing import Any
 import pytest
 
 from agent6.tools.schema import UserQuestion
-from agent6.ui.cli.run import _build_questioner  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli._interact import build_questioner
 
 pytestmark = pytest.mark.filterwarnings(
     "ignore:This process.*is multi-threaded, use of fork:DeprecationWarning"
@@ -67,9 +67,9 @@ def test_tty_prompt_round_trips_on_the_controlling_terminal() -> None:
 
 def test_ask_one_stdin_prompts_and_maps_a_digit_to_its_option() -> None:
     def child() -> int:
-        from agent6.ui.cli.run import _ask_one_stdin  # pyright: ignore[reportPrivateUsage]
+        from agent6.ui.cli._interact import ask_one_stdin
 
-        ans = _ask_one_stdin(UserQuestion(question="Which theme?", options=("alpha", "beta")))
+        ans = ask_one_stdin(UserQuestion(question="Which theme?", options=("alpha", "beta")))
         return 0 if ans == "beta" else 13
 
     assert _drive_pty(child, b"2) beta", b"2\n") == 0
@@ -80,10 +80,10 @@ def test_stdin_questioner_returns_none_without_a_terminal() -> None:
     # in a subprocess so an interactively-run pytest (which HAS a /dev/tty)
     # cannot block on a real prompt.
     code = (
-        "from agent6.ui.cli.run import _default_stdin_questioner\n"
+        "from agent6.ui.cli._interact import default_stdin_questioner\n"
         "from agent6.tools.schema import UserQuestion\n"
         "q = (UserQuestion(question='anyone there?'),)\n"
-        "raise SystemExit(0 if _default_stdin_questioner(q) is None else 13)\n"
+        "raise SystemExit(0 if default_stdin_questioner(q) is None else 13)\n"
     )
     proc = subprocess.run(
         [sys.executable, "-c", code],
@@ -100,19 +100,19 @@ def test_questioner_marks_headless_defaults(
 ) -> None:
     """With no front-end and no terminal, ask_user answers empty but says so:
     the question.answer event carries source=headless-default."""
-    from agent6.ui.cli import run as run_mod
+    from agent6.ui.cli import _interact as interact_mod
 
     def _no_tty(_q: tuple[UserQuestion, ...]) -> tuple[str, ...] | None:
         return None
 
-    monkeypatch.setattr(run_mod, "_default_stdin_questioner", _no_tty)
+    monkeypatch.setattr(interact_mod, "default_stdin_questioner", _no_tty)
     emitted: list[tuple[str, dict[str, Any]]] = []
 
     class _Events:
         def emit(self, event_type: str, **fields: Any) -> None:
             emitted.append((event_type, fields))
 
-    ask = _build_questioner(tmp_path, _Events())  # type: ignore[arg-type]
+    ask = build_questioner(tmp_path, _Events())  # type: ignore[arg-type]
     answers = ask((UserQuestion(question="pick?", options=("a", "b")),))
     assert answers == ("",)
     answer_events = [f for t, f in emitted if t == "question.answer"]
