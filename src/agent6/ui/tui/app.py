@@ -62,6 +62,7 @@ from agent6.ui.bridge.approval import (
 )
 from agent6.ui.bridge.spawn import agent6_exe, spawn_and_locate, spawn_detached_resume
 from agent6.ui.tui.conversation import ConversationScreen
+from agent6.ui.tui.copy_method import open_copy_method_picker
 from agent6.ui.tui.logview import LogScreen
 from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.modals import (
@@ -190,6 +191,7 @@ class Agent6TUI(App[int]):
                 MenuItem("Log → top", "scroll_log_home", "g"),
                 MenuItem("Log → end", "scroll_log_end", "G"),
                 MenuItem("Theme…", "choose_theme"),
+                MenuItem("Copy method…", "choose_copy_method"),
             ),
         ),
         Menu(
@@ -612,6 +614,9 @@ class Agent6TUI(App[int]):
 
     def action_choose_theme(self) -> None:
         open_theme_picker(self)
+
+    def action_choose_copy_method(self) -> None:
+        open_copy_method_picker(self)
 
     async def on_menu_bar_selected(self, event: MenuBar.Selected) -> None:
         # action_quit (and other built-ins) are coroutines, so await results.

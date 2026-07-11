@@ -38,6 +38,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 from agent6.ui.bridge.spawn import agent6_exe, run_cli_capture, spawn_and_locate
 from agent6.ui.tui.config_page import ConfigScreen
 from agent6.ui.tui.conversation import ConversationScreen
+from agent6.ui.tui.copy_method import open_copy_method_picker
 from agent6.ui.tui.logview import LogScreen
 from agent6.ui.tui.machines import MachinesScreen
 from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
@@ -256,6 +257,7 @@ class HomeScreen(Screen[None]):
                 MenuItem("View logs", "view_logs", "l"),
                 MenuItem("View transcript", "view_transcript", "t"),
                 MenuItem("Theme…", "choose_theme"),
+                MenuItem("Copy method…", "choose_copy_method"),
             ),
         ),
         Menu(
@@ -458,6 +460,9 @@ class HomeScreen(Screen[None]):
 
     def action_choose_theme(self) -> None:
         open_theme_picker(self.app)
+
+    def action_choose_copy_method(self) -> None:
+        open_copy_method_picker(self.app)
 
     def action_help(self) -> None:
         self.app.push_screen(HelpScreen(self.MENUS, title="agent6 — keys & actions"))

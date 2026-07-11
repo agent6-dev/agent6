@@ -35,5 +35,17 @@ def test_copy_prefers_the_current_selection_else_whole_transcript(tmp_path: Path
     assert text == "one" and what == "selection"
 
 
+def test_get_selected_text_gathers_body_only(tmp_path: Path) -> None:
+    # get_selected_text is Textual's built-in Ctrl+C copy path; overriding it to the
+    # body-only gather means a drag over a footer key can never reach the clipboard.
+    logs = tmp_path / "logs.jsonl"
+    logs.write_text("", encoding="utf-8")
+    screen = ConversationScreen(logs, title="t")
+    screen._body_selection = lambda: "body text"  # type: ignore[method-assign]
+    assert screen.get_selected_text() == "body text"
+    screen._body_selection = lambda: None  # type: ignore[method-assign]
+    assert screen.get_selected_text() is None
+
+
 def test_chrome_static_is_not_selectable() -> None:
     assert _ChromeStatic.ALLOW_SELECT is False

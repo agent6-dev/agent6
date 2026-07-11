@@ -254,6 +254,12 @@ class ConversationScreen(Screen[None]):
         grabbed = body.get_selection(selection)
         return grabbed[0] if grabbed is not None else None
 
+    def get_selected_text(self) -> str | None:
+        """Copy the transcript body only. Textual's screen-wide gather -- used by
+        the built-in Ctrl+C copy -- would otherwise include footer-key or live-pane
+        text a drag strayed over; restrict every copy path to the body."""
+        return self._body_selection()
+
     def _copy_text(self, text: str, *, method: str) -> str:
         """Copy *text* using the resolved *method*; returns a short status."""
         return clipboard.emit_clipboard(text, clipboard.resolve_method(method), self._emit)
