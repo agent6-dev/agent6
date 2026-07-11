@@ -223,30 +223,28 @@ def test_system_prompt_file_validator_rejects_missing(tmp_path: Path) -> None:
         Config.model_validate({"prompt": {"system_prompt_file": str(tmp_path / "nope.txt")}})
 
 
-def test_warn_if_prompt_override_incomplete(
+def testwarn_if_prompt_override_incomplete(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.ui.cli.run import (
-        _warn_if_prompt_override_incomplete,  # pyright: ignore[reportPrivateUsage]
-    )
+    from agent6.ui.cli._preflight import warn_if_prompt_override_incomplete
 
     good = tmp_path / "good.txt"
     good.write_text("use apply_edit and call finish_run when done", encoding="utf-8")
     bad = tmp_path / "bad.txt"
     bad.write_text("just go do stuff", encoding="utf-8")
     # complete override -> silent
-    _warn_if_prompt_override_incomplete(
+    warn_if_prompt_override_incomplete(
         Config.model_validate({"prompt": {"system_prompt_file": str(good)}})
     )
     assert capsys.readouterr().err == ""
     # missing both contracts -> warns about each
-    _warn_if_prompt_override_incomplete(
+    warn_if_prompt_override_incomplete(
         Config.model_validate({"prompt": {"system_prompt_file": str(bad)}})
     )
     err = capsys.readouterr().err
     assert "finish_run" in err and "apply_edit/apply_patch" in err
     # no override -> silent
-    _warn_if_prompt_override_incomplete(Config())
+    warn_if_prompt_override_incomplete(Config())
     assert capsys.readouterr().err == ""
 
 

@@ -14,30 +14,27 @@ import pytest
 from agent6.config import Config
 from agent6.git_ops import init_repo, is_git_repo
 from agent6.ui.cli import main
+from agent6.ui.cli._preflight import require_git_repo, warn_if_headless_ask
 from agent6.ui.cli.init_cmds import _offer_git_setup  # pyright: ignore[reportPrivateUsage]
-from agent6.ui.cli.run import (
-    _require_git_repo,  # pyright: ignore[reportPrivateUsage]
-    _warn_if_headless_ask,  # pyright: ignore[reportPrivateUsage]
-)
 
 
-def test_warn_if_headless_ask(
+def testwarn_if_headless_ask(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     ask = cast(Config, SimpleNamespace(sandbox=SimpleNamespace(run_commands="ask")))
     # Headless (no TTY, no TUI) + ask -> warn (run_command would be auto-denied).
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    _warn_if_headless_ask(ask, tui_enabled=False)
+    warn_if_headless_ask(ask, tui_enabled=False)
     assert "headless" in capsys.readouterr().err
     # No warning when a TUI is up, or stdin is a TTY, or run_commands != ask.
-    _warn_if_headless_ask(ask, tui_enabled=True)
+    warn_if_headless_ask(ask, tui_enabled=True)
     assert capsys.readouterr().err == ""
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    _warn_if_headless_ask(ask, tui_enabled=False)
+    warn_if_headless_ask(ask, tui_enabled=False)
     assert capsys.readouterr().err == ""
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     yes = cast(Config, SimpleNamespace(sandbox=SimpleNamespace(run_commands="yes")))
-    _warn_if_headless_ask(yes, tui_enabled=False)
+    warn_if_headless_ask(yes, tui_enabled=False)
     assert capsys.readouterr().err == ""
 
 
@@ -57,7 +54,7 @@ def test_run_surfaces_git_wall_before_provider_wall(
 def test_require_git_repo_errors_outside_repo(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert _require_git_repo(tmp_path) is False
+    assert require_git_repo(tmp_path) is False
     err = capsys.readouterr().err
     assert "not a git repository" in err
     assert "agent6 init" in err  # points at the guided fix
@@ -65,7 +62,7 @@ def test_require_git_repo_errors_outside_repo(
 
 def test_require_git_repo_ok_inside_repo(tmp_path: Path) -> None:
     init_repo(tmp_path)
-    assert _require_git_repo(tmp_path) is True
+    assert require_git_repo(tmp_path) is True
 
 
 def test_offer_git_setup_noninteractive_just_notes(

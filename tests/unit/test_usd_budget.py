@@ -133,13 +133,13 @@ def test_explicit_usd_flag_ok_when_priced(price_cache: Path) -> None:
     assert _explicit_usd_flag_error(2.5, cfg) is None
 
 
-def test_warn_if_usd_unenforceable(price_cache: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def testwarn_if_usd_unenforceable(price_cache: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """A TOML best_effort_usd_limit on an unpriced worker can't enforce (Anthropic
     publishes no pricing), so run startup must warn instead of silently no-op'ing.
     The --max-usd *flag* is already guarded by _explicit_usd_flag_error; this is
     the config-path complement."""
     from agent6.config import Config
-    from agent6.ui.cli.run import _warn_if_usd_unenforceable  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli._preflight import warn_if_usd_unenforceable
 
     def _cfg(usd: float, worker: str, reviewer: str | None = None) -> Config:
         models: dict[str, Any] = {"worker": {"provider": "p", "model": worker}}
@@ -154,21 +154,21 @@ def test_warn_if_usd_unenforceable(price_cache: Path, capsys: pytest.CaptureFixt
         )
 
     # unpriced worker + usd>0 -> warns, names the model, points at token ceilings
-    _warn_if_usd_unenforceable(_cfg(1.0, "nobody/unpriced"))
+    warn_if_usd_unenforceable(_cfg(1.0, "nobody/unpriced"))
     warned = capsys.readouterr().err
     assert "cannot be enforced" in warned and "nobody/unpriced" in warned
 
     # priced worker -> the USD ceiling works, so stay silent
-    _warn_if_usd_unenforceable(_cfg(1.0, PRICED_MODEL))
+    warn_if_usd_unenforceable(_cfg(1.0, PRICED_MODEL))
     assert capsys.readouterr().err == ""
 
     # priced worker but UNPRICED reviewer -> still warns (its spend is invisible
     # to the dollar ceiling). Names the reviewer, not the priced worker.
-    _warn_if_usd_unenforceable(_cfg(1.0, PRICED_MODEL, reviewer="nobody/unpriced-reviewer"))
+    warn_if_usd_unenforceable(_cfg(1.0, PRICED_MODEL, reviewer="nobody/unpriced-reviewer"))
     warned = capsys.readouterr().err
     assert "cannot be enforced" in warned and "nobody/unpriced-reviewer" in warned
     assert PRICED_MODEL not in warned
 
     # no USD limit -> nothing to enforce, stay silent
-    _warn_if_usd_unenforceable(_cfg(0.0, "nobody/unpriced"))
+    warn_if_usd_unenforceable(_cfg(0.0, "nobody/unpriced"))
     assert capsys.readouterr().err == ""
