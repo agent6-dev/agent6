@@ -1,9 +1,11 @@
 # Long-horizon experiments — findings
 
-Day-1 numbers from the harness this directory documents (see README). All
-runs: real OpenRouter models, hidden-grader partial credit, records in
-`results/`. Adoption rule unchanged from bench/coreagent: strictly better →
-default; helps-some → knob; helps-nowhere → scrap.
+Numbers from the harness this directory documents (see README); day 1 built
+it, day 2 measured the write-side nudges and gist elision, day 3 measured
+memory READ-side value on the new orchard leg 3. All runs: real OpenRouter
+models, hidden-grader partial credit, records in `results/`. Adoption rule
+unchanged from bench/coreagent: strictly better → default; helps-some →
+knob; helps-nowhere → scrap.
 
 ## 1. Tier-1 compaction losses are real, regime-gated, and gist elision recovers most of them
 
@@ -95,15 +97,50 @@ trap facts ("data/catalog.tsv is generated from tools/catalog_source.tsv by
 gen_catalog.py; shelf = base + (base*margin+50)//100"), 1 is a
 confidently-wrong trap-faller rationalization, 0 are task-progress junk.
 
-**Read-side value is still unmeasured — and the 2-leg orchard cannot measure
-it by construction.** Leg-1 writers are exactly the reps that recovered (and
-so left an easy leg 2); trap-fallers, the population a memory would help,
-never went green in leg 1 so never got nudged and wrote nothing. The
-baseline-vs-fresh_state leg-1 delta (must be zero in expectation) came out
-+0.03 score / 12 iters — that is the noise floor, and the leg-2 deltas sit
-inside it. Measuring read-side value needs a THIRD leg that touches the
-generator again after leg 2's recovery memory exists (leg-3 orchard
-authoring, with the same grader rigor as the originals).
+**Day 2: read-side value was still unmeasured — the 2-leg orchard cannot
+measure it by construction.** Leg-1 writers are exactly the reps that
+recovered (and so left an easy leg 2); trap-fallers, the population a memory
+would help, never went green in leg 1 so never got nudged and wrote nothing.
+The baseline-vs-fresh_state leg-1 delta (must be zero in expectation) came
+out +0.03 score / 12 iters — that is the noise floor, and the leg-2 deltas
+sit inside it. Measuring read-side value needs a THIRD leg that touches the
+generator again after leg 2's recovery memory exists.
+
+**Day 3 (leg-3 "clearance" shipped, mem3-qwen, n=6 per cell): read-side
+value is REAL, and it lands exactly on the two seeded conventions.** The new
+leg re-probes the generated-file rule and the half-up rule with fresh
+discriminators, in a spec that deliberately does not point at docs/NOTES.md;
+the shipped acceptance test carries no half-cent sku, so a banker's/truncation
+implementation goes verify-green and only the hidden grader sees it.
+
+- clearance leg: baseline **0.922 ± 0.038** vs fresh_state **0.750 ± 0.097**
+  (dscore −0.172). Same-wave leg-1 calibration delta (identical conditions by
+  construction): −0.019, so the leg-3 delta is ~9x this wave's floor.
+- Components: rounding **0.78 vs 0.33**, api 1.00 vs 0.83, regen 0.91 vs
+  0.78. `trap_edits` **0.0 vs 0.7 per leg** — no baseline rep touched a
+  generated feed; two fresh reps hand-edited (the worst, with a dead API on
+  top, landed 0.375 — the no-generator mutant signature). Iterations are
+  flat (30.8 vs 31.2): on this task memory buys correctness, not speed.
+- Leg 2 same wave: −0.045 with rounding 1.00 vs 0.89 — direction consistent,
+  still near the floor, as day 2 predicted.
+- Mechanism, per rep: 3/6 baseline reps entered leg 3 holding nudged
+  memories; all three avoided the trap. What the memory SAYS predicts what
+  transfers: the rep whose leg-2 store spelled out "rounding half-up" in
+  words scored 1.0; the rep whose store only encoded the catalog formula
+  (half-up implicit in `(x+50)//100`) reapplied the generated-file fact but
+  truncated the NEW discount computation (rounding 0.0). Record the RULE,
+  not the instance — a candidate wording tweak for the write nudges.
+- The no-memory baseline reps went 1.0/1.0/0.906, so with n=6 the condition
+  delta is carried by the memory readers plus rep luck; the component
+  pattern (rounding and trap, nothing else) matches the memory mechanism,
+  not generic drift.
+- Two believed-done dents in baseline came from a fresh shape: a feed
+  written with WRONG values (one rep stored discounts instead of prices —
+  and wrote a confidently-wrong memory saying that is the format) while a
+  compute-side API kept every probe green. The registers-read-the-feed
+  grader catches it; the shipped suite structurally cannot. Second
+  confidently-wrong memory observed across waves; `invalidate_memory`
+  remains unused.
 
 ## 3. add_dependency: first real usage (mistral-small, decompose on)
 
@@ -132,6 +169,15 @@ the half-up-vs-banker's discriminator (F-310 → 909). kimi never falls in
 (8/8 legs 1.0, trap_edits 0); mistral-small falls in 3/3 at exactly the
 0.889 signature and never recovers. The task separates exactly the
 population the memory experiment needs.
+
+Day 3: the trap re-fires on the SAME model inside one sequence when the
+cross-run store is wiped — fresh_state qwen hand-edited the new clearance
+feed in 2/6 leg-3 reps (one landed 0.375 with a hand-built feed the build
+cannot reproduce), while baseline touched a generated feed in 0/6. Note the
+counting rule changed on day 3 (`trap_edits` now matches the edit call's
+`path` when present, not the whole args JSON), so day-1/2 raw counts are
+not comparable; day-3 leg-1 counts run 4–6 per faller under the new rule
+because repeated hand-edit attempts each count.
 
 ## Methodology notes
 
