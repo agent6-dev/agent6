@@ -47,8 +47,10 @@ from agent6.sandbox.detect import ProfileUnavailableError, select_profile
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.ui.bridge.approval import (
     clear_away_mode,
+    clear_compact_request,
     clear_pending_answers,
     clear_worker_pid,
+    compact_request_pending,
     session_allow_set,
     write_worker_pid,
 )
@@ -584,6 +586,10 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                     steer_requested=steer_state.requested,
                     steer_clear=steer_state.clear,
                     steer_prompt=steer_state.prompt,
+                    # "Compact now" from a front-end: the same file-bridge
+                    # pattern as steer, honored at the next pre-call boundary.
+                    compact_requested=lambda: compact_request_pending(layout.run_dir),
+                    compact_clear=lambda: clear_compact_request(layout.run_dir),
                     should_abort=steer_state.abort_pending,
                     should_interrupt=steer_state.requested,
                     budget=budget,

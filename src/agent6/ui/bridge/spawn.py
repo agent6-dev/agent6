@@ -27,18 +27,25 @@ def agent6_exe() -> str:
     return shutil.which("agent6") or "agent6"
 
 
-def spawn_detached_resume(cwd: Path, run_id: str) -> str:
+def spawn_detached_resume(cwd: Path, run_id: str, *, steer: str = "") -> str:
     """Fire-and-forget a detached ``agent6 resume <run_id>`` (new session, no
     stdio) so a run keeps going in the background after the operator detaches.
+
+    A non-empty *steer* rides along as ``--steer=TEXT`` (the ``=`` form, so a
+    follow-up starting with ``-`` cannot read as an option): the resume injects
+    it as the first steering instruction. Operator-typed text, never LLM output.
 
     The caller must have released the run's worker lock first, so the child
     acquires it cleanly. ``AGENT6_STREAM_TO_LOG=1`` keeps the headless child
     emitting delta events, so a later ``agent6 watch`` shows its full reasoning,
     not just tool calls. argv is the agent6 exe + the run id (never LLM output).
     Returns "" on success, else an error message."""
+    argv = [agent6_exe(), "resume", run_id]
+    if steer:
+        argv.append(f"--steer={steer}")
     try:
         subprocess.Popen(
-            [agent6_exe(), "resume", run_id],
+            argv,
             cwd=str(cwd),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,

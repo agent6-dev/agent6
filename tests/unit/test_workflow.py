@@ -2282,6 +2282,27 @@ def test_maybe_compact_returns_restart_signal() -> None:
     assert len(big) == 2  # history was replaced
 
 
+def test_compact_request_forces_a_tier2_restart() -> None:
+    """An operator compact.request (the TUI's "Compact now") forces the tier-2
+    summarise-and-restart at the next boundary even far below the size
+    thresholds, and consumes the marker: one request, one compaction."""
+    summariser = MagicMock()
+    summariser.call.return_value = _resp("progress summary")
+    pending = {"req": True}
+    wf = _wf(
+        summariser_provider=summariser,
+        compact_summarise_at_chars=500_000,
+        compact_requested=lambda: pending["req"],
+        compact_clear=lambda: pending.__setitem__("req", False),
+    )
+    small = _big_text_history("TASK: x", blocks=2, block_chars=100)  # nowhere near tier 2
+    assert wf._maybe_compact(small) is True  # pyright: ignore[reportPrivateUsage]
+    assert pending["req"] is False  # the marker was consumed
+    assert len(small) == 2  # history replaced by (task + summary)
+    # No re-trigger without a fresh request (and still below the threshold).
+    assert wf._maybe_compact(small) is False  # pyright: ignore[reportPrivateUsage]
+
+
 def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: Path) -> None:
     """Integration: a tier-2 restart mid-run wipes the focus banner, and the loop's
     `if self._maybe_compact(messages): state.surfaced_task_id = None` edge makes the

@@ -48,9 +48,13 @@ from agent6.sandbox.detect import ProfileUnavailableError, select_profile
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.ui.bridge.approval import (
     clear_away_mode,
+    clear_compact_request,
     clear_pending_answers,
     clear_worker_pid,
+    compact_request_pending,
+    request_steer,
     session_allow_set,
+    write_steer_answer,
     write_worker_pid,
 )
 from agent6.ui.cli._common import (
@@ -246,6 +250,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     budget_overrides: _BudgetOverrides | None = None,
     sandbox_overrides: _SandboxOverrides | None = None,
     profile: str = "",
+    steer: str = "",
 ) -> int:
     """Resume a paused/crashed run from its snapshot.
 
@@ -292,6 +297,12 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     # Drop a prior session's stale answer files + frontend.pid (the id counters reset
     # on resume, an old answer must not be read instead of re-prompting).
     clear_pending_answers(layout.run_dir)
+    if steer.strip():
+        # --steer: queue the operator's follow-up as the first steering
+        # instruction. Seeded AFTER the stale-state clear (which drops steer
+        # files), so the loop's steer poll injects it at its first boundary.
+        request_steer(layout.run_dir)
+        write_steer_answer(layout.run_dir, steer.strip())
     if sys.stdin.isatty():  # a foreground start clears a stale detach away-mode
         clear_away_mode(layout.run_dir)
     # Record this worker's pid so `agent6 runs show` can probe liveness even while
@@ -576,6 +587,10 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
                     steer_requested=steer_state.requested,
                     steer_clear=steer_state.clear,
                     steer_prompt=steer_state.prompt,
+                    # "Compact now" from a front-end: the same file-bridge
+                    # pattern as steer, honored at the next pre-call boundary.
+                    compact_requested=lambda: compact_request_pending(layout.run_dir),
+                    compact_clear=lambda: clear_compact_request(layout.run_dir),
                     should_abort=steer_state.abort_pending,
                     should_interrupt=steer_state.requested,
                     budget=budget,

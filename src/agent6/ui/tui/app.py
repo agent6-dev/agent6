@@ -15,8 +15,9 @@ Architecture:
 
 The dashboard is READ-ONLY on the log stream and only writes the answer files
 the workflow polls: `<run_dir>/approvals/<id>.answer` (approve), `.../questions/
-<id>.answer` (ask_user), and `<run_dir>/steer.answer` (Ctrl-C steer). Any other
-front-end can mirror this contract.
+<id>.answer` (ask_user), `<run_dir>/steer.answer` (steer), and the
+`<run_dir>/compact.request` marker (Compact now). Any other front-end can
+mirror this contract.
 """
 
 from __future__ import annotations
@@ -56,6 +57,7 @@ from agent6.ui.bridge.approval import (
     clear_frontend_pid,
     clear_steer_answer,
     frontend_is_live,
+    request_compact,
     request_steer,
     set_session_allow,
     write_answer,
@@ -180,6 +182,7 @@ class DashboardScreen(Screen[None]):
             "Run",
             (
                 MenuItem("Steer the run", "steer", "s"),
+                MenuItem("Compact context now", "compact"),
                 MenuItem("Stop the run", "stop", "x"),
                 MenuItem("Resume the run", "resume", "R"),
                 MenuItem("Fork the run", "fork", "k"),
@@ -299,6 +302,9 @@ class DashboardScreen(Screen[None]):
     def on_steer_input_submitted(self, message: SteerInput.Submitted) -> None:
         self._tui.submit_instruction(message.text)
 
+    def action_compact(self) -> None:
+        self._tui.action_compact()
+
     def action_stop(self) -> None:
         self._tui.action_stop()
 
@@ -319,7 +325,7 @@ class DashboardScreen(Screen[None]):
         steer/stop only on a live run, resume/fork only on a finished one. A
         finished run advertising 'Stop' (and vice versa) was misleading."""
         del parameters
-        if action in ("steer", "stop"):
+        if action in ("steer", "stop", "compact"):
             return self._tui.run_controllable()
         if action in ("resume", "fork"):
             return bool(self._tui.state.finished)
@@ -804,11 +810,11 @@ class Agent6TUI(App[int]):
             self.resume_with_instruction(text)
 
     def resume_with_instruction(self, text: str) -> None:
-        """Resume this run with *text* as its first steering instruction: seed
-        the steer files, then spawn the detached resume -- the new session's
-        steer poll picks them up at its first boundary and injects the text."""
-        self._seed_steer(text)
-        err = spawn_detached_resume(Path.cwd(), self.run_dir.name)
+        """Resume this run with *text* as its first steering instruction (rides
+        `agent6 resume --steer`, which seeds the steer files AFTER its stale-
+        state clear; a pre-seed here would be wiped by that clear). The new
+        session's steer poll injects the text at its first boundary."""
+        err = spawn_detached_resume(Path.cwd(), self.run_dir.name, steer=text)
         self.notify(
             err or f"resuming {self.run_dir.name} with your instruction…",
             severity="error" if err else "information",
@@ -825,6 +831,16 @@ class Agent6TUI(App[int]):
             with contextlib.suppress(NoMatches):
                 self._dash.query_one("#dash-input", SteerInput).focus()
         self.notify("the run asked for steering — type an instruction and press Enter")
+
+    def action_compact(self) -> None:
+        """Ask the run to compact its context now: drop the compact.request
+        marker (the same file-bridge pattern as steer); the loop honors it at
+        its next safe boundary by forcing a summarise-and-restart."""
+        if not self.run_controllable():
+            self.notify("run is not live -- nothing to compact", severity="warning")
+            return
+        request_compact(self.run_dir)
+        self.notify("compaction requested — applies at the next safe boundary")
 
     def action_stop(self) -> None:
         """Stop the run (a separate action from steering). Confirms first, then

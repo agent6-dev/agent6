@@ -627,6 +627,16 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         action="store_true",
         help="Open the full-screen TUI instead of the headless stream (like `run --tui`).",
     )
+    resume_p.add_argument(
+        "--steer",
+        default="",
+        metavar="TEXT",
+        help=(
+            "Inject TEXT as an operator steering instruction at the resumed"
+            " session's first safe boundary (the TUI composer bar's follow-up"
+            " uses this)."
+        ),
+    )
     _add_budget_flags(resume_p)
     _add_sandbox_flags(resume_p)
 

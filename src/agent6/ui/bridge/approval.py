@@ -375,6 +375,25 @@ def clear_steer_request(run_dir: Path) -> None:
         (run_dir / STEER_REQUEST_FILE).unlink()
 
 
+COMPACT_REQUEST_FILE = "compact.request"
+
+
+def request_compact(run_dir: Path) -> None:
+    """TUI-initiated manual compaction: drop a marker the run polls at its next
+    safe boundary and honors by forcing a context compaction (mirrors steer)."""
+    with contextlib.suppress(OSError):
+        (run_dir / COMPACT_REQUEST_FILE).write_text("", encoding="utf-8")
+
+
+def compact_request_pending(run_dir: Path) -> bool:
+    return (run_dir / COMPACT_REQUEST_FILE).exists()
+
+
+def clear_compact_request(run_dir: Path) -> None:
+    with contextlib.suppress(FileNotFoundError):
+        (run_dir / COMPACT_REQUEST_FILE).unlink()
+
+
 def read_steer_answer(
     run_dir: Path,
     *,

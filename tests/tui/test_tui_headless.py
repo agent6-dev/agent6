@@ -34,10 +34,27 @@ def _ev(**fields: Any) -> dict[str, object]:
 
 async def _show_dashboard(pilot: Any) -> None:
     """The app opens on the conversation view; flip to the dashboard (Ctrl+D)
-    so the pane tests drive the dashboard like before."""
-    await pilot.pause()
+    so the pane tests drive the dashboard like before. Waits for each screen to
+    actually be on top: startup pushes the screens asynchronously, and a Ctrl+D
+    fired before the conversation lands would type into the wrong screen."""
+    app = pilot.app
+    for _ in range(20):
+        await pilot.pause()
+        if app.screen is app._conv:
+            break
     await pilot.press("ctrl+d")
-    await pilot.pause()
+    for _ in range(20):
+        await pilot.pause()
+        if app.screen is app._dash:
+            break
+
+
+async def _settle_focus(pilot: Any, widget: Any) -> None:
+    """Wait for a deferred focus() (Widget.focus defers via call_later) to land."""
+    for _ in range(10):
+        if pilot.app.focused is widget:
+            return
+        await pilot.pause()
 
 
 def test_question_modal_digit_in_freetext_is_not_hijacked() -> None:
@@ -269,8 +286,8 @@ def test_render_and_modals(tmp_path: Path) -> None:
 
             app._handle_event(_ev(type="run.steer_requested", source="sigint"))
             app._tick()
-            await pilot.pause()
             bar = app._dash.query_one("#dash-input", SteerInput)
+            await _settle_focus(pilot, bar)
             assert app.focused is bar
             await pilot.press("f", "i", "x")
             await pilot.press("enter")
@@ -555,8 +572,8 @@ def test_dashboard_s_key_steers_without_ctrl_c(tmp_path: Path) -> None:
             await _show_dashboard(pilot)
             assert not steer_request_pending(tmp_path)
             await pilot.press("s")
-            await pilot.pause()
             bar = app._dash.query_one("#dash-input", SteerInput)
+            await _settle_focus(pilot, bar)
             assert app.focused is bar  # s jumps to the bar; nothing written yet
             assert not steer_request_pending(tmp_path)
             await pilot.press("g", "o")
@@ -569,17 +586,17 @@ def test_dashboard_s_key_steers_without_ctrl_c(tmp_path: Path) -> None:
 
 
 def test_finished_run_bar_resumes_with_the_instruction(tmp_path: Path, monkeypatch: Any) -> None:
-    """Typing into the composer bar of a FINISHED run seeds the steer files and
-    spawns a detached resume: the follow-up is injected at the resumed session's
-    first boundary (the claude-code follow-up flow)."""
-    from agent6.ui.bridge.approval import steer_request_pending
+    """Typing into the composer bar of a FINISHED run spawns a detached
+    `agent6 resume --steer=<text>`: the follow-up rides the flag (a pre-seeded
+    steer file would be wiped by resume's stale-state clear) and is injected at
+    the resumed session's first boundary -- the claude-code follow-up flow."""
     from agent6.ui.tui import app as app_mod
     from agent6.ui.tui.conversation import SteerInput
 
-    spawned: list[str] = []
+    spawned: list[tuple[str, str]] = []
 
-    def _fake_resume(_cwd: Path, rid: str) -> str:
-        spawned.append(rid)
+    def _fake_resume(_cwd: Path, rid: str, *, steer: str = "") -> str:
+        spawned.append((rid, steer))
         return ""
 
     monkeypatch.setattr(app_mod, "spawn_detached_resume", _fake_resume)
@@ -608,10 +625,8 @@ def test_finished_run_bar_resumes_with_the_instruction(tmp_path: Path, monkeypat
             bar.post_message(SteerInput.Submitted("also add tests"))
             await pilot.pause()
             await pilot.pause()
-            assert steer_request_pending(tmp_path)  # seeded for the resumed session
-            answer = (tmp_path / "steer.answer").read_text(encoding="utf-8")
-            assert answer == "also add tests"
-            assert spawned == [tmp_path.name]  # the detached resume was spawned
+            # The instruction rides --steer on the detached resume.
+            assert spawned == [(tmp_path.name, "also add tests")]
 
     asyncio.run(scenario())
 
@@ -634,6 +649,31 @@ def test_dashboard_stop_action_aborts_via_bridge(tmp_path: Path) -> None:
             await pilot.pause()
             assert (tmp_path / "steer.answer").read_text(encoding="utf-8") == "abort"
             assert steer_request_pending(tmp_path)
+
+    asyncio.run(scenario())
+
+
+def test_compact_now_drops_the_marker_for_a_live_run(tmp_path: Path) -> None:
+    """The Run menu's "Compact context now" drops the compact.request marker for
+    the run to honor at its next boundary; a finished run refuses (nothing to
+    compact)."""
+    from agent6.ui.bridge.approval import compact_request_pending
+
+    async def scenario() -> None:
+        (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+        app = Agent6TUI(tmp_path)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            assert not compact_request_pending(tmp_path)
+            app.action_compact()
+            await pilot.pause()
+            assert compact_request_pending(tmp_path)  # marker dropped for the run
+            # A finished run: the action refuses instead of dropping a marker.
+            (tmp_path / "compact.request").unlink()
+            app._handle_event(_ev(type="run.end", reason="completed", all_passed=True))
+            app.action_compact()
+            await pilot.pause()
+            assert not compact_request_pending(tmp_path)
 
     asyncio.run(scenario())
 
@@ -672,7 +712,7 @@ def test_historical_steer_request_does_not_grab_the_bar_on_open(tmp_path: Path) 
             # a NEW steer request (a live Ctrl-C while watching) still routes here
             app._handle_event(_ev(type="run.steer_requested", source="sigint"))
             app._tick()
-            await pilot.pause()
+            await _settle_focus(pilot, bar)
             assert app.focused is bar
 
     asyncio.run(scenario())

@@ -284,8 +284,8 @@ layers sit under all three: the read side
 `agent6 watch --json` and the web JSON/SSE endpoints emit) and the textual-free
 write bridge
 [src/agent6/ui/bridge/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/bridge)
-(spawn the CLI detached, plus the approval / question / steer answer-file contract
-the workflow process polls). See [the web UI](web.md).
+(spawn the CLI detached, plus the approval / question / steer / compact-request
+file contract the workflow process polls). See [the web UI](web.md).
 
 The `logs.jsonl` vocabulary is small and stable: the data contract for
 any external viewer (the fold to render-ready state lives in
@@ -338,7 +338,7 @@ graph`).
 | Provider clients                 | [src/agent6/providers/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/providers)                        |
 | Knowledge graph (curator)        | [src/agent6/graph/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/graph)                                |
 | Event log + view-model fold      | [src/agent6/events.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/events.py) (writer), [src/agent6/ui/viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/viewmodel) (RunState/MachineState fold), [src/agent6/ui/tui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/tui) (textual render) |
-| Front-end write bridge           | [src/agent6/ui/bridge/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/bridge) (spawn detached + approval/question/steer answer files; shared by CLI, TUI, web) |
+| Front-end write bridge           | [src/agent6/ui/bridge/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/bridge) (spawn detached + approval/question/steer/compact bridge files; shared by CLI, TUI, web) |
 | Web UI (`agent6 web`)            | [src/agent6/ui/web/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/web) (stdlib HTTP server + one embedded page over the view-model + frontend) |
 | Cross-run memory store           | [src/agent6/memory.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/memory.py) (store), `<state-dir>/<repo-id>/memories/` (data) |
 | Run state on disk                | `<state-dir>/<repo-id>/runs/<run-id>/` (out of the workspace)         |

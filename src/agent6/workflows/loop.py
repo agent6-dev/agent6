@@ -609,6 +609,11 @@ class Workflow:
     steer_requested: Callable[[], bool] = field(default=lambda: False)
     steer_clear: Callable[[], None] = field(default=lambda: None)
     steer_prompt: Callable[[], str | None] = field(default=lambda: None)
+    # Manual compaction request (the TUI's "Compact now"): polled at the same
+    # pre-call boundary as the tiered thresholds; a positive forces the tier-2
+    # summarise-and-restart. The marker travels the same file bridge as steer.
+    compact_requested: Callable[[], bool] = field(default=lambda: False)
+    compact_clear: Callable[[], None] = field(default=lambda: None)
     # Polled DURING a streaming model call (not just between steps): True once the
     # operator has asked to stop, so a long reasoning turn aborts promptly.
     should_abort: Callable[[], bool] = field(default=lambda: False)
@@ -2756,7 +2761,16 @@ class Workflow:
         tier 1 just capped -- left tier 2 unreachable. Fail-safe: if
         summarisation errors or returns nothing, the message list is left
         untouched (tier-1 elision already ran) and the run continues.
+
+        An operator compact request (``compact_requested``, the TUI's
+        "Compact now") forces tier 2 regardless of the size thresholds; the
+        marker is consumed here so one request means one compaction.
         """
+        forced = self.compact_requested()
+        if forced:
+            self.compact_clear()
+            self._log("LOOP: operator requested a manual compaction")
+            self._emit("loop.compact.requested")
         stats = _compact_old_tool_results(
             messages,
             max_total_bytes=self.compact_drop_at_chars,
@@ -2783,7 +2797,7 @@ class Workflow:
         # Tier 2 needs at least an original-task message plus enough history
         # to be worth summarising; below that a restart would lose more than
         # it saves.
-        if total > self.compact_summarise_at_chars and len(messages) > 3:
+        if (forced or total > self.compact_summarise_at_chars) and len(messages) > 3:
             return self._summarise_and_restart(messages)
         return False
 

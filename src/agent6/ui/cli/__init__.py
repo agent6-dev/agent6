@@ -354,6 +354,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             tui=args.tui,
             budget_overrides=_BudgetOverrides.from_args(args),
             sandbox_overrides=_SandboxOverrides.from_args(args),
+            steer=args.steer,
         )
     if args.command == "fork":
         return _cmd_fork(
