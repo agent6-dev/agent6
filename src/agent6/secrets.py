@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from agent6.paths import RealUser, chown_to_real_user, effective_user, secrets_path
+from agent6.portable import atomic_write
 
 
 class SecretsError(Exception):
@@ -130,14 +131,13 @@ def save_secret(
     path.parent.mkdir(parents=True, exist_ok=True)
     path.parent.chmod(0o700)
     text = _render_secrets_toml(data)
-    tmp = path.with_name(path.name + ".tmp")
-    # Create with 0600 from the start so the key is never briefly world-readable.
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    try:
-        os.write(fd, text.encode("utf-8"))
-    finally:
-        os.close(fd)
-    tmp.replace(path)
+    # atomic_write uses tempfile.mkstemp: an unpredictable name opened O_EXCL at
+    # 0600, so a pre-planted `secrets.toml.tmp` symlink can no longer redirect
+    # this write (the old fixed `.tmp` + O_CREAT|O_TRUNC followed a symlink,
+    # letting an unprivileged user retarget a root write under `sudo connect`).
+    # A new file inherits mkstemp's 0600; an existing one keeps its mode. Force
+    # 0600 anyway so a pre-existing wider-mode file is tightened.
+    atomic_write(path, text)
     path.chmod(0o600)
     chown_to_real_user(path.parent, user)
     chown_to_real_user(path, user)

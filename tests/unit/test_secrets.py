@@ -56,3 +56,17 @@ def test_load_secrets_refuses_group_readable(gcfg: Path) -> None:
 
 def test_load_secrets_absent_is_empty(gcfg: Path) -> None:
     assert secrets.load_secrets() == {}
+
+
+def test_save_secret_does_not_follow_a_planted_tmp_symlink(gcfg: Path, tmp_path: Path) -> None:
+    """A pre-planted `secrets.toml.tmp` symlink must not redirect the write to
+    its target (the sudo-connect symlink-redirect vector). atomic_write uses an
+    unpredictable mkstemp name, so a fixed-name symlink is simply ignored."""
+    victim = tmp_path / "victim"
+    victim.write_text("KEEP ME\n", encoding="utf-8")
+    gcfg.mkdir(parents=True, exist_ok=True)
+    (gcfg / "secrets.toml.tmp").symlink_to(victim)
+    secrets.save_secret("anthropic", "sk-ant-xyz")
+    assert victim.read_text(encoding="utf-8") == "KEEP ME\n"  # untouched
+    assert secrets.resolve_api_key("anthropic", None) == "sk-ant-xyz"
+    assert not (gcfg / "secrets.toml").is_symlink()
