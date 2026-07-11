@@ -86,6 +86,7 @@ from agent6.frontend.approval import (
     read_question_answer,
     write_worker_pid,
 )
+from agent6.frontend.spawn import spawn_detached_resume
 from agent6.git_ops import (
     CommitIdentity,
     GitError,
@@ -869,6 +870,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     egress_broker = None
     egress_sock_dir = None
     run_branch: str | None = None
+    detach_requested = False
     try:
         # Cut a fresh branch named after the run id so it is 1:1 with the run
         # (find it from any run id, `agent6 runs diff <id>`, or just delete the
@@ -1120,6 +1122,9 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                 except KeyboardInterrupt:
                     interrupted = True
                     print("\n[agent6] run interrupted", file=sys.stderr)
+                    # The loop was cut mid-step, so it never emitted run.end; do it
+                    # here so an attached watcher/TUI stops instead of hanging.
+                    events.emit("run.end", reason="interrupted", all_passed=False)
         except CuratorClientError as exc:
             print(f"ERROR: curator failed to start: {exc}", file=sys.stderr)
             return 1
@@ -1165,6 +1170,14 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
             print(budget.format_summary(), file=sys.stderr)
             return 0 if result.completed else 1
 
+        if result.reason == "detached":
+            # Keep going in the background: the outer finally releases this run's
+            # worker lock, then spawns a detached `resume` that picks it up.
+            detach_requested = True
+            print(f"\n[agent6] detached — {layout.run_id} continues in the background.")
+            print(f"          reattach:  agent6 watch {layout.run_id}")
+            return 0
+
         print()
         print(
             f"[agent6] result: completed={result.completed} reason={result.reason} "
@@ -1196,6 +1209,11 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                 auto_pop=cfg.git.auto_stash_pop,
             )
         _release_single_writer(worker_lock_fd)
+        if detach_requested:
+            # The worker lock is released now, so the detached `resume` acquires it.
+            err = spawn_detached_resume(cwd, layout.run_id)
+            if err:
+                print(f"[agent6] {err}", file=sys.stderr)
 
 
 def _finalize_auto_merge(cwd: Path, *, layout: RunLayout, cfg: Config) -> None:
@@ -1498,6 +1516,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
 
     egress_broker = None
     egress_sock_dir = None
+    detach_requested = False
     try:
         snapshot_path = layout.run_dir / "loop_state.json"
         if not snapshot_path.is_file():
@@ -1793,6 +1812,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
                 except KeyboardInterrupt:
                     interrupted = True
                     print("\n[agent6] resume interrupted", file=sys.stderr)
+                    events.emit("run.end", reason="interrupted", all_passed=False)
         except CuratorClientError as exc:
             print(f"ERROR: curator failed to start: {exc}", file=sys.stderr)
             return 1
@@ -1826,6 +1846,12 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
         if result is None:
             return 1
 
+        if result.reason == "detached":
+            detach_requested = True
+            print(f"\n[agent6] detached — {layout.run_id} continues in the background.")
+            print(f"          reattach:  agent6 watch {layout.run_id}")
+            return 0
+
         print()
         print(
             f"[agent6] result: completed={result.completed} reason={result.reason} "
@@ -1848,3 +1874,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
         clear_worker_pid(layout.run_dir)
         _stop_egress(egress_broker, egress_sock_dir)
         _release_single_writer(worker_lock_fd)
+        if detach_requested:
+            err = spawn_detached_resume(cwd, layout.run_id)
+            if err:
+                print(f"[agent6] {err}", file=sys.stderr)

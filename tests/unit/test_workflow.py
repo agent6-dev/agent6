@@ -2366,6 +2366,21 @@ def test_steer_abort_signal() -> None:
         assert messages == [], "abort must not inject a message"
 
 
+def test_steer_detach_signal() -> None:
+    """Operator chose 'detach' -> returns 'detach' (the caller backgrounds the run)."""
+    cleared: list[bool] = []
+    wf = _wf(
+        steer_requested=lambda: True,
+        steer_clear=lambda: cleared.append(True),
+        steer_prompt=lambda: "detach",
+    )
+    messages: list[dict[str, Any]] = []
+    result = wf._maybe_handle_steer(messages, iteration=4)  # pyright: ignore[reportPrivateUsage]
+    assert result == "detach"
+    assert cleared == [True]
+    assert messages == [], "detach must not inject a message"
+
+
 def test_steer_clear_called_even_when_prompt_raises() -> None:
     """A misbehaving steer_prompt must not leave the flag set."""
     cleared: list[bool] = []

@@ -30,6 +30,8 @@ class RunResult:
       loop_guard_killed - identical tool call repeated past the kill threshold.
       interactive_stop  - operator chose "stop" at the REPL after_auto_commit hook.
       steer_abort       - operator typed "abort" at a steering prompt.
+      detached          - operator chose "detach"; the CLI respawns a detached
+                          `resume` to continue the run in the background.
       prompt_revision_failed - revise_prompt failed before the worker loop.
       max_iterations    - hit max_iterations cap without finish.
     """

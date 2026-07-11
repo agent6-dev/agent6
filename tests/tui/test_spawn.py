@@ -124,3 +124,33 @@ def test_spawn_and_confirm_clean_fast_exit_is_ok(tmp_path: Path) -> None:
         [sys.executable, "-c", "raise SystemExit(0)"], tmp_path, started=lambda _pid: False
     )
     assert err == ""
+
+
+def test_spawn_detached_resume_argv_and_stream_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, object] = {}
+
+    def _popen(argv: list[str], **kw: object) -> object:
+        seen["argv"] = argv
+        seen["kw"] = kw
+        return object()
+
+    monkeypatch.setattr(spawn.subprocess, "Popen", _popen)
+    monkeypatch.setattr(spawn, "agent6_exe", lambda: "/opt/agent6")
+    err = spawn.spawn_detached_resume(Path("/repo"), "tidy-owl-9Z3")
+    assert err == ""
+    assert seen["argv"] == ["/opt/agent6", "resume", "tidy-owl-9Z3"]
+    kw = seen["kw"]
+    assert isinstance(kw, dict)
+    assert kw["start_new_session"] is True
+    env = kw["env"]
+    assert isinstance(env, dict)
+    assert env["AGENT6_STREAM_TO_LOG"] == "1"  # headless child still emits deltas for watch
+
+
+def test_spawn_detached_resume_reports_oserror(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _boom(*_a: object, **_k: object) -> object:
+        raise OSError("no exec")
+
+    monkeypatch.setattr(spawn.subprocess, "Popen", _boom)
+    err = spawn.spawn_detached_resume(Path("/repo"), "tidy-owl-9Z3")
+    assert "could not spawn" in err

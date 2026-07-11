@@ -108,6 +108,20 @@ def select_revised_prompt(
         print("[agent6] choose accept, original, edit, or quit.", file=sys.stderr)
 
 
+def _normalize_steer_choice(line: str | None) -> str | None:
+    """Map a mid-run menu line to a canonical action: None/'' continue,
+    'abort' stop, 'detach' keep-running-in-background, else the instruction."""
+    if line is None:
+        return None
+    choice = line.strip()
+    low = choice.lower()
+    if low in ("q", "quit", "stop", "abort"):
+        return "abort"
+    if low in ("d", "detach"):
+        return "detach"
+    return choice
+
+
 def tty_message(text: str) -> None:
     """Print to the controlling terminal directly, bypassing any stdout/stderr
     redirection (the TUI redirects the run's std streams to a log file)."""
@@ -181,8 +195,8 @@ def install_steer_sigint(events: EventSink, run_dir: Path) -> SteerState:
         # terminal it owns. Otherwise tell the user a prompt is coming.
         if not frontend_is_live(run_dir):
             tty_message(
-                "\n[agent6] steer requested — finishing current step, then will"
-                " prompt. Press Ctrl-C again to abort.\n"
+                "\n[agent6] pausing after this step for a prompt"
+                " (steer / continue / stop / detach). Ctrl-C again to abort now.\n"
             )
 
     previous = signal.signal(signal.SIGINT, _handler)
@@ -211,7 +225,9 @@ def install_steer_sigint(events: EventSink, run_dir: Path) -> SteerState:
                 state["requested"] = False
                 clear_steer_request(run_dir)
             return answer
-        return tty_prompt("[agent6] steer (blank=continue, 'abort'=stop, else=instruction): ")
+        return _normalize_steer_choice(
+            tty_prompt("[agent6] paused — [enter] continue · type to steer · q stop · d detach: ")
+        )
 
     def restore() -> None:
         with contextlib.suppress(Exception):

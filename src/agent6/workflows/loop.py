@@ -1808,6 +1808,17 @@ class Workflow:
                     iterations=iteration,
                     tool_calls=state.tool_calls,
                 )
+            if steer_result == "detach":
+                # Not an end: the caller respawns a detached `resume` that appends
+                # to this same log, so a persistent viewer follows straight through
+                # (no run.end). The per-iteration snapshot is the resume point.
+                return RunResult(
+                    completed=False,
+                    reason="detached",
+                    summary=f"operator detached at iter {iteration}; resuming in the background",
+                    iterations=iteration,
+                    tool_calls=state.tool_calls,
+                )
 
         self._log(f"LOOP: max_iterations={self.max_iterations} reached")
         self._final_checkpoint(self.max_iterations)
@@ -3275,6 +3286,10 @@ class Workflow:
             self._emit("loop.steer.aborted")
             self._log("  abort - halting the run")
             return "abort"
+        if steer_text.lower() == "detach":
+            self._emit("loop.steer.detached")
+            self._log("  detach - stopping to resume in the background")
+            return "detach"
         self._log(f"  injecting steering instruction ({len(steer_text)} chars)")
         self._emit("loop.steer.injected", chars=len(steer_text))
         messages.append(

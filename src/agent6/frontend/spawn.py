@@ -8,6 +8,7 @@ leaf module (only stdlib) so any front-end depends on it without a cycle."""
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -24,6 +25,30 @@ def agent6_exe() -> str:
     if argv0.name.startswith("agent6") and argv0.exists():
         return str(argv0.resolve())
     return shutil.which("agent6") or "agent6"
+
+
+def spawn_detached_resume(cwd: Path, run_id: str) -> str:
+    """Fire-and-forget a detached ``agent6 resume <run_id>`` (new session, no
+    stdio) so a run keeps going in the background after the operator detaches.
+
+    The caller must have released the run's worker lock first, so the child
+    acquires it cleanly. ``AGENT6_STREAM_TO_LOG=1`` keeps the headless child
+    emitting delta events, so a later ``agent6 watch`` shows its full reasoning,
+    not just tool calls. argv is the agent6 exe + the run id (never LLM output).
+    Returns "" on success, else an error message."""
+    try:
+        subprocess.Popen(
+            [agent6_exe(), "resume", run_id],
+            cwd=str(cwd),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            env={**os.environ, "AGENT6_STREAM_TO_LOG": "1"},
+        )
+    except OSError as exc:
+        return f"could not spawn background resume: {exc}"
+    return ""
 
 
 def run_cli_capture(argv: list[str], cwd: Path, *, timeout_s: float = 120.0) -> tuple[bool, str]:
