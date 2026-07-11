@@ -324,10 +324,10 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         sub,
         "watch",
         help=(
-            "Follow a run or machine live as a plain event stream (no-deps line"
-            " tail). --tui opens the full-screen dashboard instead. --json prints"
-            " a one-shot snapshot of the folded state. Omit the target for the"
-            " most recent run."
+            "Follow a run or machine live as a readable conversation (the same"
+            " render as `agent6 run`). --raw is the no-deps event-line tail, --tui"
+            " the full-screen dashboard, --json a one-shot snapshot of the folded"
+            " state. Omit the target for the most recent run."
         ),
     )
     watch_target = watch_p.add_argument(
@@ -348,11 +348,16 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Print a one-shot JSON snapshot of the folded state and exit (the web wire form).",
     )
     watch_p.add_argument(
+        "--raw",
+        action="store_true",
+        help="Follow the no-deps event-line tail (type + key fields) instead of the conversation.",
+    )
+    watch_p.add_argument(
         "--since",
         type=int,
         default=0,
         metavar="N",
-        help="Plain tail only: replay the last N events before following (0 = from end).",
+        help="--raw only: replay the last N events before following (0 = from end).",
     )
 
     runs_p = _sub(

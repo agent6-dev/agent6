@@ -52,6 +52,12 @@ from agent6.viewmodel.state import (
     run_state_as_dict,
 )
 from agent6.viewmodel.tail import tail_events
+from agent6.viewmodel.transcript import (
+    TranscriptFold,
+    TranscriptItem,
+    fold_transcript,
+    salient_arg,
+)
 
 __all__ = [
     "MAX_LOG_TAIL",
@@ -66,12 +72,15 @@ __all__ = [
     "RunState",
     "TaskNodeView",
     "ToolCallView",
+    "TranscriptFold",
+    "TranscriptItem",
     "TransitionView",
     "VerifyView",
     "apply_event",
     "first_task_line",
     "fold_machine",
     "fold_run",
+    "fold_transcript",
     "format_log_line",
     "initial_state",
     "machine_state_as_dict",
@@ -79,6 +88,7 @@ __all__ = [
     "notification_key",
     "run_mtime",
     "run_state_as_dict",
+    "salient_arg",
     "tail_events",
     "task_snippet",
 ]

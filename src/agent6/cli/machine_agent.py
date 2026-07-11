@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from agent6.budget import BudgetTracker
+from agent6.cli._console_view import ConsoleView
 from agent6.cli.egress import (
     _check_network_profile,
     _maybe_apply_agent_landlock,
@@ -223,9 +224,14 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
         # gateways (SSE heartbeats corrupt it, observed as "incomplete chunked
         # read" on ~14k-token authoring calls). It is also what feeds the
         # role.*_delta events to the sink above.
-        # console_stream: additionally echo reasoning + answer to stderr at a
-        # TTY so `machine create` and live `agent` states are watchable.
+        # At a TTY (or forced), render the live conversation to stderr so
+        # `machine create` and live `agent` states are watchable; it consumes
+        # the same events the sink records.
         rm = cfg.models.resolve("worker")
+        if events_sink is not None and (
+            sys.stderr.isatty() or os.environ.get("AGENT6_FORCE_STREAM") == "1"
+        ):
+            events_sink.subscribe(ConsoleView(sys.stderr))
         provider = _InstrumentedProvider(
             inner=inner_provider,
             role=r.get("role_label", "agent"),
@@ -234,7 +240,6 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
             events=events_sink,
             budget=budget,
             stream_text=True,
-            console_stream=sys.stderr.isatty() or os.environ.get("AGENT6_FORCE_STREAM") == "1",
         )
         # Re-confirm the cwd-containment invariant at the subprocess boundary
         # (defense in depth, the engine already filtered these).

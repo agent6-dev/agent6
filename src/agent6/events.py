@@ -18,8 +18,10 @@ Design notes:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -38,10 +40,18 @@ class EventSink:
 
     path: Path
     _lock: RLock
+    _listeners: list[Callable[[dict[str, Any]], None]]
 
     def __init__(self, path: Path) -> None:
         self.path = path
         self._lock = RLock()
+        self._listeners = []
+
+    def subscribe(self, listener: Callable[[dict[str, Any]], None]) -> None:
+        """Also hand each emitted event to an in-process consumer, as it happens.
+        The live CLI renderer uses this; the file stays the source for
+        out-of-process viewers (TUI, `watch`, web)."""
+        self._listeners.append(listener)
 
     def emit(self, event_type: str, /, **fields: Any) -> None:
         payload: dict[str, Any] = {
@@ -54,16 +64,15 @@ class EventSink:
         except (TypeError, ValueError):
             # If a field can't be serialized, drop the event rather than crash.
             return
-        with self._lock:
-            try:
-                self.path.parent.mkdir(parents=True, exist_ok=True)
-                with self.path.open("a", encoding="utf-8") as fh:
-                    fh.write(line + "\n")
-                    fh.flush()
-                    os.fsync(fh.fileno())
-            except OSError:
-                # Telemetry must never break the run.
-                return
+        with self._lock, contextlib.suppress(OSError):  # telemetry must never break the run
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with self.path.open("a", encoding="utf-8") as fh:
+                fh.write(line + "\n")
+                fh.flush()
+                os.fsync(fh.fileno())
+        for listener in self._listeners:
+            with contextlib.suppress(Exception):  # a UI consumer must never break the run
+                listener(payload)
 
 
 def _json_default(value: Any) -> Any:

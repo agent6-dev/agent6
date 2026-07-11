@@ -1,0 +1,75 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Eric Lesiuta
+"""TranscriptFold: the event stream folds into the right conversation items."""
+
+from __future__ import annotations
+
+from agent6.viewmodel import TranscriptItem, fold_transcript, salient_arg
+
+
+def _read(path: str) -> list[dict[str, object]]:
+    return [
+        {"type": "role.call", "role": "worker"},
+        {"type": "role.thinking_delta", "text": "let me look"},
+        {"type": "role.result"},
+        {"type": "tool.call", "name": "read_file", "args": {"path": path}},
+        {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
+    ]
+
+
+def test_tool_only_turn_has_no_empty_text_item() -> None:
+    # A turn that reasons then calls a tool, emitting NO assistant text, must not
+    # produce a blank `text` item -- the bug behind the empty response blocks.
+    items = fold_transcript(_read("a.py"))
+    kinds = [i.kind for i in items]
+    assert kinds == ["thinking", "tool"]
+    assert not any(i.kind == "text" and not i.body for i in items)
+    tool = items[1]
+    assert (tool.name, tool.arg, tool.ok, tool.detail) == ("read_file", "a.py", True, "12 bytes")
+
+
+def test_verify_badge_folds_into_the_tool_item() -> None:
+    events = [
+        {"type": "tool.call", "name": "run_verify_command", "args": {}},
+        {"type": "verify.start", "cmd": ["pytest"]},
+        {"type": "verify.end", "exit_code": 0, "duration_s": 0.2},
+        {"type": "tool.result", "name": "run_verify_command", "ok": True, "summary": "exit=0"},
+    ]
+    (item,) = fold_transcript(events)
+    assert item.kind == "tool" and item.ok is True
+    assert item.detail == "✓ pass · 0.2s"  # the verify badge, not the raw summary
+
+
+def test_finish_tool_becomes_the_verdict_not_a_step() -> None:
+    events = [
+        {"type": "tool.call", "name": "finish_run", "args": {"summary": "all green"}},
+        {"type": "tool.result", "name": "finish_run", "ok": True, "summary": "finish_run"},
+        {"type": "run.end", "all_passed": True, "reason": "finish_run"},
+    ]
+    items = fold_transcript(events)
+    assert [i.kind for i in items] == ["done"]
+    done = items[0]
+    assert done.ok is True and done.body == "all green"
+    assert done.detail == "0 tools · 0 commit(s)"
+
+
+def test_failed_tool_keeps_a_tail() -> None:
+    events = [
+        {"type": "tool.call", "name": "run_command", "args": {"command": "ls /nope"}},
+        {
+            "type": "tool.result",
+            "name": "run_command",
+            "ok": False,
+            "summary": "exit=2",
+            "stderr_tail": "ls: /nope: No such file",
+        },
+    ]
+    (item,) = fold_transcript(events)
+    assert item.ok is False and "No such file" in item.tail
+
+
+def test_salient_arg_prefers_a_primary_key() -> None:
+    assert salient_arg({"recursive": True, "path": "src/x.py"}) == "src/x.py"
+    assert salient_arg({}) == ""
+    assert salient_arg({"n": 3}) == "n=3"
+    assert isinstance(TranscriptItem("marker", body="reset"), TranscriptItem)

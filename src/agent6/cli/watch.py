@@ -84,7 +84,9 @@ def _machine_watch_tui(machine_dir: Path) -> int:
     return run_machine_watch_tui(machine_dir, spec)
 
 
-def _cmd_watch_target(target: str, *, tui: bool, json_out: bool, since: int) -> int:  # noqa: PLR0911
+def _cmd_watch_target(  # noqa: PLR0911
+    target: str, *, tui: bool, json_out: bool, since: int, raw: bool
+) -> int:
     """Resolve *target* to a run or machine and follow it (or snapshot it)."""
     cwd = Path.cwd()
     runs_dir = _runs_dir(cwd)
@@ -100,7 +102,7 @@ def _cmd_watch_target(target: str, *, tui: bool, json_out: bool, since: int) -> 
     # Empty target, or one that resolves to a run id: watch the run.
     if is_run:
         if not json_out:
-            return _watch_run(target, tui=tui, since=since)
+            return _watch_run(target, tui=tui, since=since, raw=raw)
         run_dir = _resolve_run_dir(runs_dir, target)
         if run_dir is None or not run_dir.is_dir():
             print(f"ERROR: no run found ({target or 'latest'}) under {runs_dir}", file=sys.stderr)

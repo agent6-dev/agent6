@@ -35,6 +35,7 @@ from agent6.cli._common import (
     _state_dir,
     detect_env,
 )
+from agent6.cli._console_view import ConsoleView
 from agent6.cli._merge import execute_merge
 from agent6.cli._repl import build_repl_hook as _build_repl_hook
 from agent6.cli._steer import (
@@ -434,9 +435,10 @@ def _stream_modes(*, tui_enabled: bool) -> tuple[bool, bool]:
     """Return ``(stream_text, console_stream)`` for the worker provider.
 
     ``stream_text`` makes the provider stream and emit ``role.text_delta`` /
-    ``role.thinking_delta`` events, which the dashboard renders as the model's
-    live reasoning + answer. ``console_stream`` additionally echoes those deltas
-    to stderr.
+    ``role.thinking_delta`` events, which every live view renders as the model's
+    reasoning + answer. ``console_stream`` additionally subscribes a
+    ``ConsoleView`` to the EventSink, rendering the live conversation -- reasoning,
+    text, and every tool call with its result -- to stderr.
 
     Streaming is on for an interactive stderr TTY (so a plain `agent6 ask`/`plan`
     shows live output) or when forced:
@@ -959,6 +961,8 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
             )
             effective_revise_prompt = "off"
         stream_text, console_stream = _stream_modes(tui_enabled=tui_enabled)
+        if console_stream:
+            events.subscribe(ConsoleView(sys.stderr))
         provider: Provider = _InstrumentedProvider(
             inner=worker_inner,
             role=role,
@@ -967,7 +971,6 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
             events=events,
             budget=budget,
             stream_text=stream_text,
-            console_stream=console_stream,
         )
 
         critic_provider = _build_critic_provider(
@@ -1651,6 +1654,8 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
         tui_enabled = _should_spawn_tui(tui=tui, interactive=False, mode=mode)
         _warn_if_headless_ask(cfg, tui_enabled=tui_enabled)
         stream_text, console_stream = _stream_modes(tui_enabled=tui_enabled)
+        if console_stream:
+            events.subscribe(ConsoleView(sys.stderr))
         provider: Provider = _InstrumentedProvider(
             inner=worker_inner,
             role="worker",
@@ -1659,7 +1664,6 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
             events=events,
             budget=budget,
             stream_text=stream_text,
-            console_stream=console_stream,
         )
 
         critic_provider = _build_critic_provider(

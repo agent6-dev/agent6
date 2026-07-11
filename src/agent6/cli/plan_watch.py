@@ -14,9 +14,10 @@ from datetime import datetime
 from pathlib import Path
 
 from agent6.cli._common import _runs_dir
+from agent6.cli._console_view import ConsoleView
 from agent6.frontend.approval import read_worker_pid, worker_is_alive
 from agent6.run_id import RunIdError, resolve_run_id
-from agent6.viewmodel import run_mtime
+from agent6.viewmodel import run_mtime, tail_events
 
 
 def event_epoch(value: object) -> float | None:
@@ -122,11 +123,11 @@ def _most_recent_plan_run_id(runs_dir: Path) -> str | None:
     return candidates[0].name if candidates else None
 
 
-def _cmd_watch(run_id: str, *, tui: bool = False, since: int = 0) -> int:
+def _cmd_watch(run_id: str, *, tui: bool = False, since: int = 0, raw: bool = False) -> int:
     """Read-only live view of a run directory.
 
-    Default is a no-deps line tail of ``logs.jsonl`` (the CLI mode). ``--tui``
-    opens the full-screen textual dashboard instead.
+    Default follows the run's conversation (the same render as ``agent6 run``).
+    ``--raw`` is the no-deps event-line tail; ``--tui`` the full-screen dashboard.
     """
     runs_dir = _runs_dir(Path.cwd())
     if run_id:
@@ -147,7 +148,7 @@ def _cmd_watch(run_id: str, *, tui: bool = False, since: int = 0) -> int:
         print(f"ERROR: no such run dir: {target}", file=sys.stderr)
         return 2
     if not tui:
-        return _cmd_watch_plain(target, since=since)
+        return _cmd_watch_plain(target, since=since) if raw else _watch_transcript(target)
     try:
         from agent6.tui.app import run_tui  # noqa: PLC0415 - lazy: textual is optional
     except ImportError as e:
@@ -399,6 +400,24 @@ def format_plain_event(line: str, *, run_start_ts: float | None) -> str:
             shown = blob if len(blob) <= 80 else blob[:77] + "..."
             pairs.append(f"{k}={shown}")
     return f"{ts_str} {event:30s} {' '.join(pairs)}"
+
+
+def _watch_transcript(target: Path) -> int:
+    """Follow a run's conversation live: fold ``logs.jsonl`` through the same
+    ``ConsoleView`` as ``agent6 run``, so an attached viewer sees what the run
+    prints. Renders from the start, then tails; Ctrl-C exits."""
+    events_path = target / "logs.jsonl"
+    if not events_path.is_file():
+        print(f"ERROR: no logs.jsonl in {target}", file=sys.stderr)
+        return 2
+    print(f"[agent6] following {target.name}. Ctrl-C to exit.", file=sys.stderr)
+    view = ConsoleView(sys.stdout)
+    try:
+        for event in tail_events(events_path, follow=True):
+            view.feed(event)
+    except KeyboardInterrupt:
+        print("\n[agent6] watch: stopped.", file=sys.stderr)
+    return 0
 
 
 def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0912, PLR0915

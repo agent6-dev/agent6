@@ -297,7 +297,9 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             profile=getattr(args, "profile", ""),
         )
     if args.command == "watch":
-        return _cmd_watch_target(args.target, tui=args.tui, json_out=args.json, since=args.since)
+        return _cmd_watch_target(
+            args.target, tui=args.tui, json_out=args.json, since=args.since, raw=args.raw
+        )
     if args.command == "runs":
         if args.runs_command == "show":
             return _cmd_status(args.run_id, as_json=args.json)
