@@ -2,8 +2,10 @@
 
 Numbers from the harness this directory documents (see README); day 1 built
 it, day 2 measured the write-side nudges and gist elision, day 3 measured
-memory READ-side value on the new orchard leg 3. All runs: real OpenRouter
-models, hidden-grader partial credit, records in `results/`. Adoption rule
+memory READ-side value on the new orchard leg 3, day 4 took the harness to the
+direct Anthropic API (haiku-4.5, sonnet-5) and replicated the gist result on a
+second open model (kimi). Runs are real models over OpenRouter or the direct
+Anthropic API, hidden-grader partial credit, records in `results/`. Adoption rule
 unchanged from bench/coreagent: strictly better → default; helps-some →
 knob; helps-nowhere → scrap.
 
@@ -77,6 +79,24 @@ default on). A/B under the same window16k thresholds:
   engaged regime, inert outside it (gists only exist after a drop). This
   closes the facts-ledger gate; a further salience/ledger pass would chase
   the remaining 0.10 to baseline and is not opened.
+
+**Day 4 (kimi replication, kimi-gist, n=3 per cell):** the gist A/B repeats on
+a second open model. kimi-k2.6 stylebook under the window16k thresholds:
+
+| stylebook | baseline | window16k (gists on) | window16k_nogist |
+|-----------|----------|----------------------|------------------|
+| score | 1.000 | 0.983 ± 0.017 | 0.917 ± 0.083 |
+| drops / rereads / iters | 0 / 0.7 / 11 | 13.7 / 6.0 / 10 | 438 / 449.7 / 103 |
+| usd | $0.29 | $0.37 | $0.82 |
+
+- Same mechanism, sharper efficiency signal. Without gists kimi survives on
+  score (0.917; it is more robust than qwen) but pays 10x the iterations (103
+  vs 10), 75x the redundant reads (449.7 vs 6.0), and double the cost; the
+  bare-marker legs thrash hardest (per-leg drops 186 / 505 / 623, up to 136
+  iterations).
+- With gists the window16k leg sits within noise of the uncompacted baseline on
+  every axis (0.983 vs 1.0, 10 iters, 6 rereads). Second-model confirmation
+  that `elision_gists` default-on is strictly better in the engaged regime.
 
 ## 2. Nobody writes memories unprompted — FIXED by the write-side nudges
 
@@ -179,6 +199,41 @@ counting rule changed on day 3 (`trap_edits` now matches the edit call's
 not comparable; day-3 leg-1 counts run 4–6 per faller under the new rule
 because repeated hand-edit attempts each count.
 
+## 5. Direct Anthropic API: the tier the agent is positioned for
+
+Day 4 pointed the harness at the direct Anthropic API (`--provider anthropic`,
+token-capped since Anthropic USD is unpriced here), n=3 per cell.
+
+**Both tiers solve the suite; the memory A/B is null by ceiling.** haiku-4.5
+and sonnet-5 both score 1.0 on all three orchard legs in BOTH conditions, so
+the leg-3 read-side memory delta that is +0.17 for qwen (finding 2) is +0.00
+here. Neither needs the cross-run store to dodge the generated-file / half-up
+trap; both rediscover the conventions every leg (fresh_state even runs a hair
+fewer iterations). Same story as findings 2 and 3: cross-run memory and
+add_dependency are weak-model affordances with real value on qwen and mistral
+and no headroom on capable models. stylebook baseline is 1.0 for both (haiku 68
+iters $0.53; sonnet 10 iters $0.39).
+
+**Found and fixed a real product bug: the SSE watchdog killed Sonnet on hard
+tasks.** sonnet-5 stylebook first ran 0/3, every rep provider_error at 3-4
+iterations ("Anthropic SSE stream idle for >45s mid-stream ... upstream
+wedged"). Root cause: sonnet-5 does adaptive thinking on by default with
+display:omitted, so a hard-task turn thinks >45s emitting only ping heartbeats;
+the mid-stream idle watchdog counted a thinking-block start as output and held
+it to the tight 45s budget, aborting every long think. Orchard (short thinks)
+never tripped it; Opus and Fable would fail the same way. The fix gives a
+thinking block a patient idle budget (genuine wedges stay bounded); the
+identical cell then runs 3/3 at 1.0 (80/80 cases, 10 iters, $0.39, ~205s).
+Before and after are in `results/sb-sonnet.jsonl` and
+`results/sb-sonnet-fixed.jsonl`.
+
+Separate latent issue (not fixed this pass): the provider still shapes extended
+thinking as `budget_tokens`, which the API removed on sonnet-5 / opus-4.7+ /
+fable-5 (a 400 if a thinking level is configured; the bench runs thinking off,
+so it is not hit). Migrating the Anthropic thinking config to adaptive +
+display:summarized is the proper follow-up and would make the watchdog's job
+trivial (real deltas arrive during thinking).
+
 ## Methodology notes
 
 - qwen3-coder-30b is the workhorse: $0.03–0.07 and 1–5 min per run.
@@ -195,3 +250,7 @@ because repeated hand-edit attempts each count.
   stylebook cell has two r0), but cells are balanced at n=3 and reps carry
   no seed. Bench waves should cap memory: `MemoryMax` on the unit plus
   `ulimit -v` under it.
+- Day 4 added `--provider anthropic` (token-capped, since Anthropic is unpriced
+  here) and `--timeout-scale` (kimi stylebook legs run 15-70 min; scale 2.0
+  lifts the per-leg timeout so they finish rather than dying at 2400s). The
+  anthropic path first surfaced the thinking-watchdog bug in finding 5.

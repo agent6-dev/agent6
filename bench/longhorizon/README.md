@@ -92,6 +92,12 @@ python3 run.py --model qwen/qwen3-coder-30b-a3b-instruct \
     --tasks orchard --conditions baseline,fresh_state \
     --reps 4 --parallel 3 --label mem1
 
+# direct Anthropic API (token-capped); --timeout-scale lifts slow models'
+# per-leg timeouts (kimi stylebook wants ~2x)
+python3 run.py --model claude-sonnet-5 --provider anthropic \
+    --tasks orchard --conditions baseline,fresh_state \
+    --reps 3 --parallel 2 --label mem4-sonnet
+
 python3 stats.py results/wave1.jsonl              # cells + deltas
 python3 stats.py results/wave1.jsonl --components # per-rule retention curve
 ```
