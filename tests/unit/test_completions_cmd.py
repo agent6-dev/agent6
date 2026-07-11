@@ -80,7 +80,7 @@ def test_detects_shell_from_env(
     home: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setenv("SHELL", "/usr/bin/zsh")
-    assert cmd_completions("", print_only=True) == 0
+    assert cmd_completions(None, print_only=True) == 0
     assert "agent6" in capsys.readouterr().out
 
 
@@ -96,6 +96,10 @@ def test_xonsh_writes_autoloaded_completer(home: Path, capsys: pytest.CaptureFix
     assert "_ARGCOMPLETE_STDOUT_FILENAME" in code
     assert "COMP_LINE" in code
     assert 'add_one_completer("agent6"' in code
+    # Candidates with shell-hostile characters are quoted before insertion,
+    # and a missing/hung agent6 yields no candidates instead of a traceback.
+    assert "shlex.quote" in code
+    assert "TimeoutExpired" in code
     out = capsys.readouterr().out
     assert "xonsh loads it automatically" in out
     assert "activate now" not in out  # rc.d needs no activation step

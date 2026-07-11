@@ -54,13 +54,14 @@ _XONSH_SCRIPT = """\
 # argcomplete protocol: request in env vars, answer in a side file), so it
 # needs no regeneration when agent6's arguments change.
 import os
+import shlex
 import subprocess
 import tempfile
 
 from xonsh.built_ins import XSH
 from xonsh.completers import completer
 from xonsh.completers.tools import (
-    completion_from_cmd_output,
+    RichCompletion,
     contextual_command_completer,
 )
 
@@ -84,24 +85,41 @@ def _agent6_completer(context):
         "COMP_POINT": str(len(line)),
     }
     try:
-        subprocess.run(
-            [context.args[0].value],
-            env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        try:
+            subprocess.run(
+                [context.args[0].value],
+                env=env,
+                timeout=10,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            # agent6 is an alias/abbrev rather than a binary, or it hung:
+            # no candidates, and no exception splashed across the prompt.
+            return None
         with open(handle.name, encoding="utf-8") as out:
             output = out.read()
     finally:
         os.unlink(handle.name)
     # argcomplete already filtered by the prefix (COMP_POINT is the true
-    # cursor), so return a plain set; an empty one falls through to xonsh's
-    # own completers (e.g. paths).
-    return {
-        completion_from_cmd_output(entry, append_space=True)
-        for entry in output.splitlines()
-        if entry.strip()
-    }
+    # cursor); an empty set falls through to xonsh's own completers (e.g.
+    # paths). Values the shell would split are quoted -- on the bare value,
+    # so a trailing-sep directory is still detected and keeps no-space
+    # completing into itself.
+    candidates = set()
+    for entry in output.splitlines():
+        if not entry.strip():
+            continue
+        value, _, desc = entry.strip().partition("\\t")
+        value = value.strip()
+        candidates.add(
+            RichCompletion(
+                shlex.quote(value),
+                description=desc.strip(),
+                append_space=not value.endswith(os.sep),
+            )
+        )
+    return candidates
 
 
 completer.add_one_completer("agent6", _agent6_completer, "start")
