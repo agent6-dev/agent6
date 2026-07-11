@@ -479,8 +479,6 @@ class AnthropicProvider:
         saw_input_usage = False
         saw_output_usage = False
 
-        sse_lines: list[str] = []  # for transcript audit trail
-
         # Background watchdog. It closes the response (unblocking the blocking
         # ``iter_lines`` below, which then raises) in two cases: an idle-since-
         # last-data hang past the threshold (``ping`` heartbeats do NOT count --
@@ -565,7 +563,6 @@ class AnthropicProvider:
                     )
                 event_type: str = ""
                 for line in resp.iter_lines():
-                    sse_lines.append(line)
                     if not line:
                         event_type = ""
                         continue
