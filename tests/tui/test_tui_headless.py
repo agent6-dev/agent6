@@ -588,3 +588,35 @@ def test_historical_steer_request_does_not_pop_a_modal_on_open(tmp_path: Path) -
             assert isinstance(app.screen, SteerModal)
 
     asyncio.run(scenario())
+
+
+def test_l_and_t_toggle_detail_views_without_stacking(tmp_path: Path) -> None:
+    # l/t are toggles: pressing l opens the log, l again closes it (not a second
+    # stacked copy needing two escapes), and t switches to the conversation.
+    from agent6.tui.conversation import ConversationScreen
+    from agent6.tui.logview import LogScreen
+
+    (tmp_path / "logs.jsonl").write_text(
+        json.dumps({"type": "run.start", "user_task": "x"}) + "\n", encoding="utf-8"
+    )
+
+    async def scenario() -> None:
+        app = Agent6TUI(tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("l")  # open the log
+            await pilot.pause()
+            assert isinstance(app.screen, LogScreen)
+            await pilot.press("l")  # toggle it off -> back to the dashboard (no stack)
+            await pilot.pause()
+            assert not isinstance(app.screen, LogScreen)
+            assert len(app.screen_stack) == 1
+            await pilot.press("l")  # open the log again
+            await pilot.pause()
+            assert isinstance(app.screen, LogScreen)
+            await pilot.press("t")  # switch to conversation, not stack on top of the log
+            await pilot.pause()
+            assert isinstance(app.screen, ConversationScreen)
+            assert len(app.screen_stack) == 2  # dashboard + conversation, not + log too
+
+    asyncio.run(scenario())

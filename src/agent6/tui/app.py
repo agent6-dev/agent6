@@ -521,16 +521,32 @@ class Agent6TUI(App[int]):
         self.query_one("#log", RichLog).scroll_home(animate=False)
 
     def action_view_logs(self) -> None:
-        """Open the full, scrollable log of THIS run -- the inline #log pane is a
+        """Toggle the full, scrollable log of THIS run -- the inline #log pane is a
         small sliding window; this is the whole history, scroll-anchored."""
+        if self._close_detail_view(LogScreen):
+            return
         self.push_screen(LogScreen(self.logs_path, title=f"logs · {self.run_dir.name}"))
 
     def action_view_transcript(self) -> None:
-        """Open THIS run's full LLM conversation (assistant text + every tool
+        """Toggle THIS run's full LLM conversation (assistant text + every tool
         call with its result), folded live from the run's event log."""
+        if self._close_detail_view(ConversationScreen):
+            return
         self.push_screen(
             ConversationScreen(self.logs_path, title=f"conversation · {self.run_dir.name}")
         )
+
+    def _close_detail_view(self, wanted: type[LogScreen] | type[ConversationScreen]) -> bool:
+        """A detail view (log/conversation) is a regular screen, so l/t still reach
+        the app while it is up. Pop whichever one is showing so a repeat press does
+        not stack a duplicate, and return True when it was the SAME view (l/t toggle
+        it off); a different one is closed so the caller can switch to the requested
+        view instead of stacking both."""
+        top = self.screen
+        if isinstance(top, (LogScreen, ConversationScreen)):
+            self.pop_screen()
+            return isinstance(top, wanted)
+        return False
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """Enter on a tool-calls row opens its full args + summary in a modal (the
