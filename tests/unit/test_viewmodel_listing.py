@@ -7,7 +7,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from agent6.viewmodel import run_mtime, summarize_run_dir, task_snippet
+from agent6.ui.viewmodel import run_mtime, summarize_run_dir, task_snippet
 
 
 def test_run_mtime_prefers_log_over_dir(tmp_path: Path) -> None:

@@ -10,9 +10,9 @@ from pathlib import Path
 import pytest
 
 from agent6 import secrets
-from agent6.cli import main
 from agent6.config_layer import resolved_state_dir
 from agent6.models_cache import KeyProbeResult
+from agent6.ui.cli import main
 
 
 @pytest.fixture
@@ -26,7 +26,7 @@ def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     # Keep connect hermetic by default: stub the post-save key probe so no test
     # makes a real network call. Tests of the probe behaviour re-patch it.
     monkeypatch.setattr(
-        "agent6.cli.connect.probe_provider_key",
+        "agent6.ui.cli.connect.probe_provider_key",
         lambda *a, **k: KeyProbeResult(  # type: ignore[misc]
             ok=True, status="ok", detail="provider returned 1 models"
         ),
@@ -37,7 +37,7 @@ def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 def test_connect_stores_key_and_provider_and_never_execs(
     iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr("agent6.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-FAKE")
+    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-FAKE")
     # Security: connect must NEVER run a subprocess (no remote-supplied command).
     calls: list[object] = []
 
@@ -62,7 +62,7 @@ def test_connect_stores_key_and_provider_and_never_execs(
 def test_connect_validates_key_and_reports_ok(
     iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr("agent6.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-REAL")
+    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-REAL")
     rc = main(["connect", "--provider", "anthropic"])  # iso stubs the probe -> ok
     assert rc == 0
     out = capsys.readouterr().out
@@ -73,9 +73,9 @@ def test_connect_validates_key_and_reports_ok(
 def test_connect_warns_when_provider_rejects_key(
     iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr("agent6.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-BAD")
+    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-BAD")
     monkeypatch.setattr(
-        "agent6.cli.connect.probe_provider_key",
+        "agent6.ui.cli.connect.probe_provider_key",
         lambda *a, **k: KeyProbeResult(ok=False, status="auth_failed", detail="HTTP 401"),  # type: ignore[misc]
     )
     rc = main(["connect", "--provider", "anthropic"])
@@ -90,12 +90,12 @@ def test_connect_warns_when_provider_rejects_key(
 def test_connect_no_verify_skips_the_probe(
     iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr("agent6.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-REAL")
+    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-REAL")
 
     def _boom(*_a: object, **_k: object) -> KeyProbeResult:
         raise AssertionError("--no-verify must not probe the provider")
 
-    monkeypatch.setattr("agent6.cli.connect.probe_provider_key", _boom)
+    monkeypatch.setattr("agent6.ui.cli.connect.probe_provider_key", _boom)
     rc = main(["connect", "--provider", "anthropic", "--no-verify"])
     assert rc == 0
     assert "Checking the key" not in capsys.readouterr().out
@@ -112,7 +112,7 @@ def test_connect_non_tty_reads_plain_input_without_getpass(
     def _boom(*_a: object, **_k: object) -> str:
         raise AssertionError("getpass must not be called on the non-TTY path")
 
-    monkeypatch.setattr("agent6.cli.connect.getpass.getpass", _boom)
+    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", _boom)
     monkeypatch.setattr("builtins.input", lambda prompt="": "sk-ant-PIPED")
 
     rc = main(["connect", "--provider", "anthropic"])
@@ -144,7 +144,7 @@ def test_connect_prints_post_entry_key_summary(
             raise TypeError("echo_char unsupported")
         return "sk-ant-0123456789wxyz"
 
-    monkeypatch.setattr("agent6.cli.connect.getpass.getpass", _fake_getpass)
+    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", _fake_getpass)
     rc = main(["connect", "--provider", "anthropic"])
     assert rc == 0
     out = capsys.readouterr().out
@@ -161,7 +161,7 @@ def test_connect_short_key_summary_omits_tail(
             raise TypeError("echo_char unsupported")
         return "short"
 
-    monkeypatch.setattr("agent6.cli.connect.getpass.getpass", _fake_getpass)
+    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", _fake_getpass)
     rc = main(["connect", "--provider", "anthropic"])
     assert rc == 0
     out = capsys.readouterr().out
@@ -177,7 +177,7 @@ def test_connect_masked_echo_skips_summary(
     def _fake_getpass(prompt: str = "", **kwargs: object) -> str:
         return "sk-ant-0123456789wxyz"
 
-    monkeypatch.setattr("agent6.cli.connect.getpass.getpass", _fake_getpass)
+    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", _fake_getpass)
     rc = main(["connect", "--provider", "anthropic"])
     assert rc == 0
     out = capsys.readouterr().out
@@ -187,7 +187,7 @@ def test_connect_masked_echo_skips_summary(
 def test_connect_local_endpoint_no_key(
     iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr("agent6.cli.connect.getpass.getpass", lambda prompt="": "")
+    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "")
     monkeypatch.setattr("builtins.input", lambda prompt="": "")  # accept default base_url
     rc = main(["connect", "--provider", "ollama"])
     assert rc == 0
@@ -235,7 +235,7 @@ def test_model_invalid_provider_refuses_and_rolls_back(
     # byte as it was, not write the broken value -- which previously bricked every
     # later command. (The provider cross-check is active only once a provider is
     # configured, so connect one first.)
-    monkeypatch.setattr("agent6.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-FAKE")
+    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-FAKE")
     assert main(["connect", "--provider", "anthropic"]) == 0
     assert main(["model", "worker", "anthropic", "good-x"]) == 0
     cfg = tmp_path / "g" / "config.toml"
@@ -274,7 +274,7 @@ def test_model_interactive_prefill(
     def fake_list_models(*a: object, **k: object) -> list[str]:
         return ["claude-a", "claude-b"]
 
-    monkeypatch.setattr("agent6.cli.model.list_models", fake_list_models)
+    monkeypatch.setattr("agent6.ui.cli.model.list_models", fake_list_models)
     answers = iter(["", "2"])  # provider default, then model #2
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
     rc = main(["model", "worker"])
@@ -296,7 +296,7 @@ def test_model_all_interactive_prompts_once(
     def _models(*_a: object, **_k: object) -> list[str]:
         return ["claude-a", "claude-b"]
 
-    monkeypatch.setattr("agent6.cli.model.list_models", _models)
+    monkeypatch.setattr("agent6.ui.cli.model.list_models", _models)
     calls = {"n": 0}
     answers = iter(["", "2"])  # provider default, model #2 — once, not 3x
 

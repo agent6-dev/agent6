@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from agent6 import cli
-from agent6.cli import cli_main
+from agent6.ui import cli
+from agent6.ui.cli import cli_main
 
 
 def test_cli_main_passes_through_return_code(monkeypatch: pytest.MonkeyPatch) -> None:

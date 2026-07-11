@@ -9,12 +9,12 @@ from pathlib import Path
 
 import pytest
 
-from agent6.cli import main
-from agent6.cli.plan_watch import (
+from agent6.config_layer import resolved_state_dir
+from agent6.ui.cli import main
+from agent6.ui.cli.plan_watch import (
     _most_recent_plan_run_id,  # pyright: ignore[reportPrivateUsage]
     _most_recent_run_id,  # pyright: ignore[reportPrivateUsage]
 )
-from agent6.config_layer import resolved_state_dir
 
 
 def test_most_recent_run_id_none_outside_workspace(tmp_path: Path) -> None:

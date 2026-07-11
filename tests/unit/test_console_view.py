@@ -7,7 +7,7 @@ from __future__ import annotations
 from io import StringIO
 from typing import Any
 
-from agent6.cli._console_view import ConsoleView
+from agent6.ui.cli._console_view import ConsoleView
 
 
 def _render(events: list[dict[str, object]]) -> str:

@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from agent6.cli import main
 from agent6.config_layer import resolved_state_dir
+from agent6.ui.cli import main
 
 
 def _seed_plan(tmp_path: Path, run_id: str, body: str) -> Path:

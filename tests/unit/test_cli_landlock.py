@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for the agent-process Landlock wiring in agent6.cli.
+"""Tests for the agent-process Landlock wiring in agent6.ui.cli.
 
 These never call the real ``apply_agent_landlock`` (which is irrevocable and
 would confine the test process); the symbol is monkeypatched with a recorder.
@@ -14,10 +14,10 @@ from typing import Any
 
 import pytest
 
-from agent6.cli import egress as cli  # _maybe_apply_agent_landlock lives here now
 from agent6.detect import Environment, KernelInfo
 from agent6.sandbox import LandlockNotSupportedError
 from agent6.sandbox.landlock import LandlockReport
+from agent6.ui.cli import egress as cli  # _maybe_apply_agent_landlock lives here now
 
 
 def _env(*, major: int, minor: int) -> Environment:

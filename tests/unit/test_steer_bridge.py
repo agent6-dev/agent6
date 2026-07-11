@@ -14,13 +14,13 @@ from pathlib import Path
 
 import pytest
 
-from agent6.cli._steer import file_bridge_steer, make_steer_state
 from agent6.events import EventSink
-from agent6.frontend.approval import (
+from agent6.ui.bridge.approval import (
     request_steer,
     steer_request_pending,
     write_steer_answer,
 )
+from agent6.ui.cli._steer import file_bridge_steer, make_steer_state
 
 
 def test_prompt_consumes_bridged_answer(tmp_path: Path) -> None:
@@ -42,7 +42,7 @@ def test_prompt_without_answer_clears_request(
     def no_answer(run_dir: Path) -> str | None:
         return None
 
-    monkeypatch.setattr("agent6.cli._steer.read_steer_answer", no_answer)
+    monkeypatch.setattr("agent6.ui.cli._steer.read_steer_answer", no_answer)
     request_steer(tmp_path)
     steer = file_bridge_steer(tmp_path)
     assert steer.prompt() is None
@@ -70,7 +70,7 @@ def test_make_steer_state_without_tty_uses_bridge(
 def test_steer_answer_is_abort_peeks_without_consuming(tmp_path: Path) -> None:
     """The non-blocking stop peek: True only for abort/stop, and it never consumes
     the answer (the between-step boundary still handles it)."""
-    from agent6.frontend.approval import steer_answer_is_abort
+    from agent6.ui.bridge.approval import steer_answer_is_abort
 
     assert not steer_answer_is_abort(tmp_path)  # no answer file yet
     write_steer_answer(tmp_path, "focus on the parser")

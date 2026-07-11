@@ -226,7 +226,7 @@ def test_system_prompt_file_validator_rejects_missing(tmp_path: Path) -> None:
 def test_warn_if_prompt_override_incomplete(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.cli.run import (
+    from agent6.ui.cli.run import (
         _warn_if_prompt_override_incomplete,  # pyright: ignore[reportPrivateUsage]
     )
 

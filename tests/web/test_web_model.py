@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agent6.web import model
+from agent6.ui.web import model
 
 
 def _run(cwd: Path, run_id: str, events: list[dict[str, object]]) -> Path:

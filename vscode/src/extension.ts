@@ -44,7 +44,7 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       // Newest first by logs.jsonl mtime, the CLI's definition of recency
-      // (src/agent6/viewmodel/listing.py): run ids start with a random
+      // (src/agent6/ui/viewmodel/listing.py): run ids start with a random
       // adjective-noun, so names are not chronological. Runs without a
       // logs.jsonl yet sort last.
       const entries = fs

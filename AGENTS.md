@@ -25,9 +25,13 @@ The load-bearing invariants, collected; each is detailed in its section below.
 
 ## Architecture and changes
 
-- **Layering** is `cli -> workflows -> agents -> tools -> sandbox`; workflows
-  never import each other, and agents never import workflows or the CLI.
-  [tach](https://docs.gauge.sh/) (`tach.toml`) checks it.
+- **Layering** is `ui -> workflows -> agents -> tools -> sandbox`; workflows
+  never import each other, and the engine (workflows/agents/tools/... and
+  everything below) never imports the UI. `ui/` is the presentation layer and
+  the composition root: the three front-ends (`ui/cli`, `ui/tui`, `ui/web`),
+  the shared read-model fold (`ui/viewmodel`), and the front-end bridge
+  (`ui/bridge`: spawn / approval / notify). `ui/cli` is the entry point that
+  wires a run. [tach](https://docs.gauge.sh/) (`tach.toml`) checks it.
 - **`tach.toml` mirrors the design.** Write the right design, then update
   `tach.toml` to match; never contort code (or add an indirection) to satisfy
   tach or strict pyright. After a change, audit the boundaries it produced and ask
@@ -82,7 +86,7 @@ principles the Zen doesn't cover:
   it ossifies, rather than threading one more local or piling on another
   branch. The patterns we use (see `workflows/loop.py` + its `_prompts` /
   `_metric` / `_compaction` / `_critic` / `_symbol_outline` siblings, the
-  `cli/_steer|_ask|_repl` split of `run.py`, the `tools/_edit_diag` /
+  `ui/cli/_steer|_ask|_repl` split of `run.py`, the `tools/_edit_diag` /
   `_agent6_docs` / `_result_format` split of `dispatch.py`, and
   `machine/model.py` -> `_semantics.py`):
   - Lift cohesive pure-helper / constant groups into sibling `_name.py`
@@ -187,26 +191,26 @@ All five must pass; keep the suite green.
   exe captured at fork time, requests only from the trusted parent over a
   close-on-exec pipe, never LLM output), `providers/token_command.py` (the operator-configured
   `[providers.*].token_command` that mints a provider bearer; argv comes
-  from config, never from LLM output), `frontend/spawn.py` (the shared front-end
+  from config, never from LLM output), `ui/bridge/spawn.py` (the shared front-end
   bridge: spawns the agent6 CLI detached for run/machine launches and captures
   `runs merge`/`prune`/`config set`, argv being the agent6 exe + operator-chosen
-  args, never LLM output), `frontend/notify.py` (fires `notify-send` with a
+  args, never LLM output), `ui/bridge/notify.py` (fires `notify-send` with a
   fixed argv, exe + `--` end-of-options + two positional data args, no shell, for
   the device-present machine notification; the message is inert data, never a
   command or an option), and a small
-  set of `cli/` helpers (`$EDITOR` for
+  set of `ui/cli/` helpers (`$EDITOR` for
   plan and steer editing, `git diff/log` for the review subcommand and
   the `runs`/`ask` diff views, argv from the run manifest the CLI wrote
   outside the jail, `rg` for history
-  search, the fixed-argv `python -m agent6.tui` co-process behind
-  `run --tui`, the operator `[notify].on_complete` hook `cli/run.py` fires at
+  search, the fixed-argv `python -m agent6.ui.tui` co-process behind
+  `run --tui`, the operator `[notify].on_complete` hook `ui/ui/cli/run.py` fires at
   run end (argv from config, never LLM output),
-  `cli/scriptcheck.py` running ruff/ty with fixed argv to
+  `ui/cli/scriptcheck.py` running ruff/ty with fixed argv to
   statically read generated scripts, which only ever execute via
-  `run_in_jail`, `cli/system_cmds.py` running `cp`/`rm`/`apparmor_parser`
+  `run_in_jail`, `ui/cli/system_cmds.py` running `cp`/`rm`/`apparmor_parser`
   via sudo with fixed argv for `agent6 system apparmor` (operator host
   setup), the `machine run` supervisor that spawns each agent
-  state as a fixed-argv `python -m agent6.cli.machine_agent` subprocess
+  state as a fixed-argv `python -m agent6.ui.cli.machine_agent` subprocess
   whose request travels in a temp file, never on argv, and its operator
   `[machine.notify].on_event` hook, argv from config, never LLM output, run on
   the host with `AGENT6_MACHINE_*` env, mirroring `[notify].on_complete`). Audit

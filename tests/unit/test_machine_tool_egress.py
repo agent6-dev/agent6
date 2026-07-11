@@ -11,17 +11,17 @@ from typing import Any
 
 import pytest
 
-from agent6.cli.machine_cmds import (
+from agent6.config import Config
+from agent6.machine import MachineJournal, ToolState, drive, load_machine
+from agent6.machine.engine import LiveWorld, ToolExecResult
+from agent6.types import CommandResult
+from agent6.ui.cli.machine_cmds import (
     _machine_network_refusal,  # pyright: ignore[reportPrivateUsage]
     _machine_protect_paths,  # pyright: ignore[reportPrivateUsage]
     _resolve_network_refusal,  # pyright: ignore[reportPrivateUsage]
     _suggested_network_fix,  # pyright: ignore[reportPrivateUsage]
     _validate_bundle,  # pyright: ignore[reportPrivateUsage]
 )
-from agent6.config import Config
-from agent6.machine import MachineJournal, ToolState, drive, load_machine
-from agent6.machine.engine import LiveWorld, ToolExecResult
-from agent6.types import CommandResult
 
 # A two-tool machine: the first tool opts into the network, the second does not.
 NET_MACHINE = """
@@ -331,7 +331,7 @@ def test_bundle_reports_circular_symlink_command_ref(tmp_path: Path) -> None:
 
 
 def test_machine_check_fails_on_bad_bundle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from agent6.cli import main
+    from agent6.ui.cli import main
 
     text = NET_MACHINE.replace('command = ["scripts/fetch.sh"]', 'command = ["scripts/../escape"]')
     f = _write(tmp_path, text)
@@ -342,7 +342,7 @@ def test_machine_check_fails_on_bad_bundle(tmp_path: Path, monkeypatch: pytest.M
 def test_machine_check_passes_with_valid_bundle(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from agent6.cli import main
+    from agent6.ui.cli import main
 
     f = _write(tmp_path, NET_MACHINE)
     (tmp_path / "scripts").mkdir()
@@ -357,7 +357,7 @@ def test_machine_run_refuses_escaping_bundle(
     # Security: `machine run` must re-validate the bundle, not only `check`. On a
     # profile that can't RO-bind the bundle, a `scripts/` symlink escaping it
     # would otherwise be executed; run must refuse before touching the world.
-    from agent6.cli import main
+    from agent6.ui.cli import main
 
     f = _write(tmp_path, NET_MACHINE)
     (tmp_path / "scripts").mkdir()
@@ -376,7 +376,7 @@ def test_machine_run_validates_config_overlay_for_pure_machine(
     # overlay must still be validated (and [machine] snapshot_keep honored). A
     # bogus overlay key now fails the run with CONFIG ERROR instead of being
     # silently ignored.
-    from agent6.cli import main
+    from agent6.ui.cli import main
 
     pure = (
         'machine = "pure"\nversion = 1\ninitial = "go"\n'
@@ -395,7 +395,7 @@ def test_machine_run_validates_config_overlay_for_pure_machine(
 def test_machine_run_keeps_tool_jail_strict_when_agent_egress_would_downgrade(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from agent6.cli import main
+    from agent6.ui.cli import main
 
     f = _write(tmp_path, TOOL_ONLY_MACHINE)
     seen_profiles: list[str] = []
@@ -417,9 +417,9 @@ def test_machine_run_keeps_tool_jail_strict_when_agent_egress_would_downgrade(
         return "strict"
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("agent6.cli.machine_cmds.select_profile", select_strict)
+    monkeypatch.setattr("agent6.ui.cli.machine_cmds.select_profile", select_strict)
     monkeypatch.setattr(
-        "agent6.cli.machine_cmds.resolve_strict_egress_viability", fail_egress_probe
+        "agent6.ui.cli.machine_cmds.resolve_strict_egress_viability", fail_egress_probe
     )
     monkeypatch.setattr("agent6.machine.engine.run_in_jail", fake_run_in_jail)
 

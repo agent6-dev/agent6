@@ -11,8 +11,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent6.cli import machine_cmds as cli  # create + its preflight helpers live here now
-from agent6.cli import main
 from agent6.machine import (
     SCRIPTS_PAYLOAD_KEY,
     TOML_PAYLOAD_KEY,
@@ -22,6 +20,8 @@ from agent6.machine import (
     extract_scripts,
     extract_toml,
 )
+from agent6.ui.cli import machine_cmds as cli  # create + its preflight helpers live here now
+from agent6.ui.cli import main
 
 VALID_MACHINE = """\
 machine = "greeter"
@@ -410,7 +410,7 @@ def test_create_retry_prompt_carries_prior_scripts(
 ) -> None:
     # When a draft fails the script gate, the NEXT attempt's prompt must show
     # the prior script source so the model patches instead of regenerating.
-    from agent6.cli import scriptcheck
+    from agent6.ui.cli import scriptcheck
 
     if "ruff" not in scriptcheck.available_tools():
         pytest.skip("ruff not installed")
@@ -574,7 +574,7 @@ def test_create_rejects_lint_bad_script(
 ) -> None:
     """A structurally-valid machine whose script has a lint error must NOT be
     written — ruff/ty run in the create loop and the failure is a diagnostic."""
-    from agent6.cli import scriptcheck
+    from agent6.ui.cli import scriptcheck
 
     if "ruff" not in scriptcheck.available_tools():
         pytest.skip("ruff not installed")

@@ -26,8 +26,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from agent6.budget import BudgetTracker
-from agent6.cli.run import _build_repl_hook  # pyright: ignore[reportPrivateUsage]
 from agent6.git_ops import GitError, revert_head
+from agent6.ui.cli.run import _build_repl_hook  # pyright: ignore[reportPrivateUsage]
 
 
 def _init_repo(path: Path) -> None:
@@ -210,8 +210,8 @@ def test_steer_prompt_clears_request_marker_on_no_answer(
     """A TUI-initiated steer whose modal is dismissed (read_steer_answer -> None
     on timeout) must clear the `steer.request` marker so the run does NOT
     re-enter the 600s blocking prompt at every later boundary."""
-    from agent6.cli import _steer
-    from agent6.frontend.approval import request_steer, steer_request_pending
+    from agent6.ui.bridge.approval import request_steer, steer_request_pending
+    from agent6.ui.cli import _steer
 
     run_dir = tmp_path
     request_steer(run_dir)  # TUI `s`-key dropped the marker
@@ -237,8 +237,8 @@ def test_steer_prompt_keeps_marker_on_real_answer(
 ) -> None:
     """A genuinely-answered steer still works: prompt() returns the answer and
     leaves clearing to the caller's clear() (which consumes request+answer)."""
-    from agent6.cli import _steer
-    from agent6.frontend.approval import request_steer, steer_request_pending
+    from agent6.ui.bridge.approval import request_steer, steer_request_pending
+    from agent6.ui.cli import _steer
 
     run_dir = tmp_path
     request_steer(run_dir)

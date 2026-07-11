@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import pytest
 
-from agent6.cli.run import _confirm_unconfined_autorun  # pyright: ignore[reportPrivateUsage]
 from agent6.config import Config
+from agent6.ui.cli.run import _confirm_unconfined_autorun  # pyright: ignore[reportPrivateUsage]
 
 
 def _cfg(run_commands: str) -> Config:
@@ -49,14 +49,14 @@ def _fixed_prompt(answer: str | None):  # type: ignore[no-untyped-def]
 
 def test_interactive_combo_requires_yes(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    monkeypatch.setattr("agent6.cli.run._tty_prompt", _fixed_prompt("y"))
+    monkeypatch.setattr("agent6.ui.cli.run._tty_prompt", _fixed_prompt("y"))
     assert _confirm_unconfined_autorun("none", _cfg("yes")) is True
 
 
 def test_interactive_combo_defaults_to_abort(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     # Empty answer (bare Enter) / None (no tty read) both abort.
-    monkeypatch.setattr("agent6.cli.run._tty_prompt", _fixed_prompt(""))
+    monkeypatch.setattr("agent6.ui.cli.run._tty_prompt", _fixed_prompt(""))
     assert _confirm_unconfined_autorun("none", _cfg("yes")) is False
-    monkeypatch.setattr("agent6.cli.run._tty_prompt", _fixed_prompt(None))
+    monkeypatch.setattr("agent6.ui.cli.run._tty_prompt", _fixed_prompt(None))
     assert _confirm_unconfined_autorun("none", _cfg("yes")) is False

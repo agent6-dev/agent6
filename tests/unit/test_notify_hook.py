@@ -9,11 +9,11 @@ from pathlib import Path
 
 import pytest
 
-from agent6.cli.machine_cmds import (
+from agent6.config import NotifyConfig, load_config
+from agent6.ui.cli.machine_cmds import (
     _build_machine_notify_hook,  # pyright: ignore[reportPrivateUsage]
 )
-from agent6.cli.run import _fire_notify_hook  # pyright: ignore[reportPrivateUsage]
-from agent6.config import NotifyConfig, load_config
+from agent6.ui.cli.run import _fire_notify_hook  # pyright: ignore[reportPrivateUsage]
 
 
 def test_notify_noop_when_unconfigured(tmp_path: Path) -> None:

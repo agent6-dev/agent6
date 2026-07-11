@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from agent6.cli.check_cmds import _doctor_check_config  # pyright: ignore[reportPrivateUsage]
 from agent6.config import Config
+from agent6.ui.cli.check_cmds import _doctor_check_config  # pyright: ignore[reportPrivateUsage]
 
 
 def test_no_providers_is_info_not_pass(capsys: pytest.CaptureFixture[str]) -> None:
@@ -28,7 +28,7 @@ def test_check_summary_carries_info_through(
 ) -> None:
     # `check verify` on a default config: verify_command is unset, an advisory.
     # The summary line must say INFO (previously coerced to PASS) and exit 0.
-    from agent6.cli import main
+    from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
     rc = main(["check", "verify"])

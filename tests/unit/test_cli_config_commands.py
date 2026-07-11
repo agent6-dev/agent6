@@ -9,13 +9,13 @@ from pathlib import Path
 
 import pytest
 
-from agent6.cli.egress import (
-    _allow_url_endpoints,  # pyright: ignore[reportPrivateUsage]
-    _provider_endpoints,  # pyright: ignore[reportPrivateUsage]
-)
 from agent6.config import SandboxConfig, validate_config
 from agent6.config_layer import resolved_state_dir
 from agent6.sandbox.broker import Endpoint
+from agent6.ui.cli.egress import (
+    _allow_url_endpoints,  # pyright: ignore[reportPrivateUsage]
+    _provider_endpoints,  # pyright: ignore[reportPrivateUsage]
+)
 
 
 @pytest.fixture
@@ -27,7 +27,7 @@ def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 
 
 def _run(args: list[str]) -> int:
-    from agent6.cli import main
+    from agent6.ui.cli import main
 
     return main(args)
 

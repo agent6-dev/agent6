@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 
-from agent6.cli.plan_watch import (
+from agent6.ui.cli.plan_watch import (
     event_epoch,  # pyright: ignore[reportPrivateUsage]
     format_plain_event,  # pyright: ignore[reportPrivateUsage]
 )

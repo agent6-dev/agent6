@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.cli.prompt_cmds import _cmd_prompt_show  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli.prompt_cmds import _cmd_prompt_show  # pyright: ignore[reportPrivateUsage]
 
 
 def _git_repo(tmp_path: Path) -> Path:

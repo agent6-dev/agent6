@@ -9,17 +9,20 @@ see [security.md](security.md).
 ## Layering
 
 ```
-cli  ──▶  workflows  ──▶  agents  ──▶  tools  ──▶  sandbox
-                              │
-                              └─▶ providers (anthropic | openai)
+ui  ──▶  workflows  ──▶  agents  ──▶  tools  ──▶  sandbox
+                             │
+                             └─▶ providers (anthropic | openai)
 ```
 
-Boundaries are enforced by [tach](https://docs.gauge.sh/) (see
-[tach.toml](https://github.com/agent6-dev/agent6/blob/master/tach.toml)). Workflows never import each other; agents never
-import workflows or the CLI. Crossing a boundary is almost always a
-sign of the wrong design.
+`ui/` is the presentation layer and composition root: `ui/cli`, `ui/tui`,
+`ui/web` (the three front-ends), `ui/viewmodel` (the shared read-model fold),
+and `ui/bridge` (spawn / approval / notify). Boundaries are enforced by
+[tach](https://docs.gauge.sh/) (see
+[tach.toml](https://github.com/agent6-dev/agent6/blob/master/tach.toml)). Workflows never import each other; the engine
+(workflows and everything below) never imports the UI. Crossing a boundary is
+almost always a sign of the wrong design.
 
-- **cli** ([src/agent6/cli/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/cli)): argument parsing,
+- **cli** ([src/agent6/ui/cli/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/cli)): argument parsing,
   optional TUI spawn, top-level dispatch. Picks a workflow. Config is
   resolved by [config_layer.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config_layer.py) (built-in
   secure defaults < global `~/.config/agent6/config.toml` < per-repo
@@ -243,22 +246,22 @@ commit plus the conversation up to that turn is the design choice: predictable
 and cheap, versus snapshotting uncommitted bytes into every checkpoint.
 
 One headless core, three thin front-ends: the CLI, the Textual TUI
-([src/agent6/tui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/tui)),
+([src/agent6/ui/tui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/tui)),
 and the browser web UI
-([src/agent6/web/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/web),
+([src/agent6/ui/web/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/web),
 `agent6 web`) all fold the same event stream and render their own way. Two shared
 layers sit under all three: the read side
-[src/agent6/viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel)
+[src/agent6/ui/viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/viewmodel)
 (the `RunState`/`MachineState` fold + its `*_as_dict` wire form, exactly what
 `agent6 watch --json` and the web JSON/SSE endpoints emit) and the textual-free
 write bridge
-[src/agent6/frontend/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/frontend)
+[src/agent6/ui/bridge/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/bridge)
 (spawn the CLI detached, plus the approval / question / steer answer-file contract
 the workflow process polls). See [the web UI](web.md).
 
 The `logs.jsonl` vocabulary is small and stable: the data contract for
 any external viewer (the fold to render-ready state lives in
-[src/agent6/viewmodel/state.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state.py) as a pure function, shared by the CLI, the TUI, and the web client):
+[src/agent6/ui/viewmodel/state.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/viewmodel/state.py) as a pure function, shared by the CLI, the TUI, and the web client):
 
 | Event                       | Notable fields                              |
 | --------------------------- | ------------------------------------------- |
@@ -285,7 +288,7 @@ headless (stdin prompt, or deny for a machine state) only after the front-end
 has stayed dead for 30 consecutive seconds, so a transient drop (a page
 reload, a phone locking its browser) does not convert a pending approval into
 a deny. The web UI drives the same answer-file contract (via
-[src/agent6/frontend/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/frontend)):
+[src/agent6/ui/bridge/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/bridge)):
 while a browser watches a run it registers as the run's answer front-end, so
 approval / question / steer prompts bridge to the page. The task DAG is not in this stream; it is
 curator-owned and lives in `graph.jsonl` (read via `agent6 runs
@@ -306,9 +309,9 @@ graph`).
 | Git policy                       | [src/agent6/git_ops.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/git_ops.py)                        |
 | Provider clients                 | [src/agent6/providers/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/providers)                        |
 | Knowledge graph (curator)        | [src/agent6/graph/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/graph)                                |
-| Event log + view-model fold      | [src/agent6/events.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/events.py) (writer), [src/agent6/viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel) (RunState/MachineState fold), [src/agent6/tui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/tui) (textual render) |
-| Front-end write bridge           | [src/agent6/frontend/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/frontend) (spawn detached + approval/question/steer answer files; shared by CLI, TUI, web) |
-| Web UI (`agent6 web`)            | [src/agent6/web/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/web) (stdlib HTTP server + one embedded page over the view-model + frontend) |
+| Event log + view-model fold      | [src/agent6/events.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/events.py) (writer), [src/agent6/ui/viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/viewmodel) (RunState/MachineState fold), [src/agent6/ui/tui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/tui) (textual render) |
+| Front-end write bridge           | [src/agent6/ui/bridge/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/bridge) (spawn detached + approval/question/steer answer files; shared by CLI, TUI, web) |
+| Web UI (`agent6 web`)            | [src/agent6/ui/web/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/web) (stdlib HTTP server + one embedded page over the view-model + frontend) |
 | Run state on disk                | `<state-dir>/<repo-id>/runs/<run-id>/` (out of the workspace)         |
 
 ## Pre-1.0 stability

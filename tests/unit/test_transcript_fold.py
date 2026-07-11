@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from agent6.viewmodel import TranscriptItem, fold_transcript, salient_arg
+from agent6.ui.viewmodel import TranscriptItem, fold_transcript, salient_arg
 
 
 def _read(path: str) -> list[dict[str, object]]:

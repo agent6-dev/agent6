@@ -11,9 +11,9 @@ import pytest
 from textual.app import App, ComposeResult
 from textual.widgets import Static
 
-from agent6.tui.settings import get_theme, save_theme
-from agent6.tui.theme import ThemePicker, setup_theme
-from agent6.tui.widgets import ChoiceField
+from agent6.ui.tui.settings import get_theme, save_theme
+from agent6.ui.tui.theme import ThemePicker, setup_theme
+from agent6.ui.tui.widgets import ChoiceField
 
 
 @pytest.fixture

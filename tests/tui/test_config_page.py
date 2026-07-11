@@ -17,8 +17,8 @@ from textual.app import App
 from textual.widgets import DataTable, Input, OptionList
 
 from agent6.config_layer import load_effective
-from agent6.tui.config_page import ConfigScreen, EditModal, HelpScreen
-from agent6.tui.menubar import MenuBar
+from agent6.ui.tui.config_page import ConfigScreen, EditModal, HelpScreen
+from agent6.ui.tui.menubar import MenuBar
 
 _GLOBAL = """\
 [providers.anthropic]
@@ -119,7 +119,7 @@ def test_config_page_edit_persists(repo: Path) -> None:
     writes through the shared edit path. The whole edit ask, end to end."""
 
     async def scenario() -> None:
-        from agent6.tui.config_page import ChoiceField
+        from agent6.ui.tui.config_page import ChoiceField
 
         app = _Host(repo)
         async with app.run_test() as pilot:
@@ -197,7 +197,7 @@ def test_edit_custom_value_inline(repo: Path) -> None:
     the value -- no jump to a popped-up box below."""
 
     async def scenario() -> None:
-        from agent6.tui.config_page import ChoiceField
+        from agent6.ui.tui.config_page import ChoiceField
 
         app = _Host(repo)
         async with app.run_test() as pilot:
@@ -235,7 +235,7 @@ def test_edit_action_arrows_navigate(repo: Path) -> None:
     between them (wrapping) -- arrow nav that depends on what's in focus."""
 
     async def scenario() -> None:
-        from agent6.tui.config_page import ActionItem
+        from agent6.ui.tui.config_page import ActionItem
 
         app = _Host(repo)
         async with app.run_test() as pilot:
@@ -272,7 +272,7 @@ def test_provider_field_is_a_picker_of_configured_providers(repo: Path) -> None:
     names (a picker, not a blank text box)."""
 
     async def scenario() -> None:
-        from agent6.tui.config_page import ChoiceField
+        from agent6.ui.tui.config_page import ChoiceField
 
         app = _Host(repo)
         async with app.run_test(size=(100, 44)) as pilot:
@@ -303,7 +303,7 @@ def test_provider_field_is_a_picker_of_configured_providers(repo: Path) -> None:
 def test_model_field_is_a_typeahead_picker(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Editing models.<role>.model opens a type-to-narrow picker over the
     provider's models (cached + a live refresh), not a blank box."""
-    import agent6.tui.config_page as cp
+    import agent6.ui.tui.config_page as cp
 
     models = ["claude-opus-4-8", "claude-sonnet-4-6", "claude-sonnet-4-5", "claude-haiku-4-5"]
 
@@ -314,7 +314,7 @@ def test_model_field_is_a_typeahead_picker(repo: Path, monkeypatch: pytest.Monke
     monkeypatch.setattr(cp, "list_models", _models)  # mock the live fetch
 
     async def scenario() -> None:
-        from agent6.tui.widgets import TypeaheadField
+        from agent6.ui.tui.widgets import TypeaheadField
 
         app = _Host(repo)
         async with app.run_test(size=(100, 44)) as pilot:
@@ -351,7 +351,7 @@ def test_edit_modal_up_at_top_is_a_hard_stop(repo: Path) -> None:
     focusable scroll container (which stranded the arrows). Regression guard."""
 
     async def scenario() -> None:
-        from agent6.tui.config_page import ChoiceField
+        from agent6.ui.tui.config_page import ChoiceField
 
         app = _Host(repo)
         async with app.run_test() as pilot:
@@ -425,7 +425,7 @@ def test_view_menu_opens_theme_picker(repo: Path) -> None:
     """The View>Theme item (and action_choose_theme) opens the theme picker."""
 
     async def scenario() -> None:
-        from agent6.tui.theme import ThemePicker
+        from agent6.ui.tui.theme import ThemePicker
 
         app = _Host(repo)
         async with app.run_test() as pilot:
@@ -683,7 +683,7 @@ def test_filter_arrow_in_and_out(repo: Path) -> None:
     Up from the topmost header returns to the filter box."""
 
     async def scenario() -> None:
-        from agent6.tui.config_page import _NavTable
+        from agent6.ui.tui.config_page import _NavTable
 
         app = _Host(repo)
         async with app.run_test(size=(100, 44)) as pilot:
@@ -714,7 +714,7 @@ def test_arrows_flow_through_section_headers(repo: Path) -> None:
     async def scenario() -> None:
         from textual.widgets import Collapsible
 
-        from agent6.tui.config_page import _NavTable
+        from agent6.ui.tui.config_page import _NavTable
 
         app = _Host(repo)
         async with app.run_test(size=(110, 44)) as pilot:
@@ -755,7 +755,7 @@ def test_add_provider_via_form_persists(repo: Path) -> None:
     and the page reflects it. No hand-editing a TOML dict."""
 
     async def scenario() -> None:
-        from agent6.tui.config_page import ChoiceField, ProviderModal
+        from agent6.ui.tui.config_page import ChoiceField, ProviderModal
 
         app = _Host(repo)
         async with app.run_test(size=(110, 44)) as pilot:
@@ -794,7 +794,7 @@ def test_add_provider_prefills_known_preset_base_url(repo: Path) -> None:
     that `agent6 connect` applies, silently pointing openrouter at OpenAI."""
 
     async def scenario() -> None:
-        from agent6.tui.config_page import ChoiceField, ProviderModal
+        from agent6.ui.tui.config_page import ChoiceField, ProviderModal
 
         app = _Host(repo)
         async with app.run_test(size=(110, 44)) as pilot:
@@ -825,7 +825,7 @@ def test_add_provider_prefill_keeps_user_typed_base_url(repo: Path) -> None:
     custom URL first, then type a known name -- the custom URL stays."""
 
     async def scenario() -> None:
-        from agent6.tui.config_page import ProviderModal
+        from agent6.ui.tui.config_page import ProviderModal
 
         app = _Host(repo)
         async with app.run_test(size=(110, 44)) as pilot:
@@ -855,7 +855,7 @@ def test_edit_base_url_prefills_preset_for_known_provider(repo: Path) -> None:
 
     async def scenario() -> None:
         from agent6.config_layer import set_config_table
-        from agent6.tui.config_page import EditModal
+        from agent6.ui.tui.config_page import EditModal
 
         # An openrouter provider with NO base_url -> effective default api.openai.com.
         assert set_config_table(repo, "providers.openrouter", {"api_format": "openai"}) is None

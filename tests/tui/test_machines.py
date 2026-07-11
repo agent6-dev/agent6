@@ -10,8 +10,8 @@ from pathlib import Path
 from textual.app import App
 from textual.widgets import DataTable, Input
 
-from agent6.tui import machines as machmod
-from agent6.tui.machines import (
+from agent6.ui.tui import machines as machmod
+from agent6.ui.tui.machines import (
     CreateMachineModal,
     MachineDetailScreen,
     MachinesScreen,
@@ -19,7 +19,7 @@ from agent6.tui.machines import (
     find_machine_files,
     machine_detail_text,
 )
-from agent6.tui.modals import ConfirmModal
+from agent6.ui.tui.modals import ConfirmModal
 
 # A no-I/O machine that reaches a terminal immediately (branch -> terminal), so a
 # `machine run` produces a finished instance with no model/jail needed.
@@ -134,9 +134,9 @@ def test_watch_screen_shows_states_transitions_and_end(tmp_path: Path, monkeypat
     """The Machines watch screen renders the state overview (current marked `>`,
     visited `.`), the transition in the log, and the ended status -- the in-TUI
     equivalent of `agent6 watch`."""
-    from agent6.cli import main as cli_main
     from agent6.config_layer import resolved_state_dir
     from agent6.machine import load_machine
+    from agent6.ui.cli import main as cli_main
 
     monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]
     f = tmp_path / "tiny.asm.toml"
@@ -173,7 +173,7 @@ def test_discrete_log_line_renders_tool_events_only() -> None:
     # The shared journal fold (current/visited/transitions) is tested in
     # tests/unit/test_viewmodel_machine_state.py; this covers the TUI-only
     # presentation helper for the per-state agent log.
-    from agent6.tui.machines import _discrete_log_line
+    from agent6.ui.tui.machines import _discrete_log_line
 
     # A tool call renders compactly; a thinking delta is not a discrete line.
     assert _discrete_log_line({"type": "role.thinking_delta", "text": "hm"}) is None
@@ -229,7 +229,7 @@ def test_machines_page_lists_and_views(tmp_path: Path) -> None:
 def test_machines_menu_bar_dispatches_an_item(tmp_path: Path) -> None:
     """Selecting an item from the menu bar (not just the key binding) runs its
     action -- exercises action_menu + on_menu_bar_selected, the dead-menu bug class."""
-    from agent6.tui.menubar import MenuBar, _Dropdown
+    from agent6.ui.tui.menubar import MenuBar, _Dropdown
 
     async def scenario() -> None:
         app = _Host(tmp_path)

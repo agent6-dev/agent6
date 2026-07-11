@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.tui.settings import DEFAULT_THEME, get_theme, load_ui_settings, save_theme
+from agent6.ui.tui.settings import DEFAULT_THEME, get_theme, load_ui_settings, save_theme
 
 
 @pytest.fixture

@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
-from agent6.cli import _common
 from agent6.detect import Environment, KernelInfo
+from agent6.ui.cli import _common
 
 
 def _env(userns: bool, *, sandbox: bool = True) -> Environment:

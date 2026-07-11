@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.cli.parser import (
+from agent6.ui.cli.parser import (
     _inject_default_verb,  # pyright: ignore[reportPrivateUsage]
     build_parser,
 )

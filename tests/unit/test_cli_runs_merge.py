@@ -11,9 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from agent6.cli import main
 from agent6.config_layer import resolved_state_dir
 from agent6.graph.storage import RunLayout
+from agent6.ui.cli import main
 
 
 def _git(repo: Path, *args: str) -> str:

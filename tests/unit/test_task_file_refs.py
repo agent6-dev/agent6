@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent6.cli.run import (
+from agent6.ui.cli.run import (
     _TASK_FILE_REF_MAX_BYTES,  # pyright: ignore[reportPrivateUsage]
     _expand_task_file_refs,  # pyright: ignore[reportPrivateUsage]
 )

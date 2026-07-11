@@ -10,8 +10,8 @@ from typing import cast
 
 import pytest
 
-from agent6.cli import egress
 from agent6.config import Config
+from agent6.ui.cli import egress
 
 
 def _cfg(profile: str, agent_network: str, tool_network: str = "block") -> Config:

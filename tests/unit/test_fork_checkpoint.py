@@ -21,10 +21,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from agent6.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
-from agent6.cli.fork import _cmd_fork  # pyright: ignore[reportPrivateUsage]
-from agent6.cli.run import _cmd_resume  # pyright: ignore[reportPrivateUsage]
 from agent6.graph.storage import RunLayout, list_checkpoint_turns
+from agent6.ui.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli.fork import _cmd_fork  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli.run import _cmd_resume  # pyright: ignore[reportPrivateUsage]
 from agent6.workflows._run_state import load_checkpoint
 from agent6.workflows.loop import (
     Workflow,
@@ -443,7 +443,7 @@ def _layout_with_run_branch(state_dir: Path, run_id: str, run_branch: str | None
 def test_ensure_on_run_branch_checks_out_the_fork_branch(tmp_path: Path) -> None:
     # Reproduces the fork bug: the branch exists (cut additively) but HEAD is on
     # the operator's branch, so resume must switch onto it before committing.
-    from agent6.cli.run import _ensure_on_run_branch  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli.run import _ensure_on_run_branch  # pyright: ignore[reportPrivateUsage]
 
     repo = tmp_path / "repo"
     head = _git_repo(repo)
@@ -456,7 +456,7 @@ def test_ensure_on_run_branch_checks_out_the_fork_branch(tmp_path: Path) -> None
 
 
 def test_ensure_on_run_branch_refuses_dirty_tree(tmp_path: Path) -> None:
-    from agent6.cli.run import _ensure_on_run_branch  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli.run import _ensure_on_run_branch  # pyright: ignore[reportPrivateUsage]
 
     repo = tmp_path / "repo"
     head = _git_repo(repo)
@@ -472,7 +472,7 @@ def test_ensure_on_run_branch_refuses_dirty_tree(tmp_path: Path) -> None:
 def test_ensure_on_run_branch_allows_untracked_files(tmp_path: Path) -> None:
     # Untracked files are carried across a checkout, so they must NOT block the
     # switch (only modified tracked files do).
-    from agent6.cli.run import _ensure_on_run_branch  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli.run import _ensure_on_run_branch  # pyright: ignore[reportPrivateUsage]
 
     repo = tmp_path / "repo"
     head = _git_repo(repo)
@@ -522,7 +522,7 @@ def test_fork_continue_resumes_without_force(
         captured["run_id"] = run_id
         return 0
 
-    monkeypatch.setattr("agent6.cli.fork._cmd_resume", _fake_resume)
+    monkeypatch.setattr("agent6.ui.cli.fork._cmd_resume", _fake_resume)
     rc = _cmd_fork(None, "src", new_run_id="child-BBBB22")  # default: continue
     assert rc == 0
     assert captured["force"] is False
@@ -553,7 +553,7 @@ def test_resume_without_id_and_no_runs_errors_cleanly(
 
 def test_ensure_on_run_branch_noop_without_run_branch(tmp_path: Path) -> None:
     # branch_per_run was off: no run_branch recorded, so HEAD is left alone.
-    from agent6.cli.run import _ensure_on_run_branch  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli.run import _ensure_on_run_branch  # pyright: ignore[reportPrivateUsage]
 
     repo = tmp_path / "repo"
     _git_repo(repo)

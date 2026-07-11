@@ -11,13 +11,13 @@ from pathlib import Path
 
 import pytest
 
-from agent6.cli._ask import (
+from agent6.config_layer import resolved_state_dir
+from agent6.ui.cli._ask import (
     build_ask_run_digest as _build_ask_run_digest,
 )
-from agent6.cli._ask import (
+from agent6.ui.cli._ask import (
     seed_files as _seed_files,
 )
-from agent6.config_layer import resolved_state_dir
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -115,7 +115,7 @@ def test_seed_files_wraps_and_skips_missing(tmp_path: Path) -> None:
 
 
 def test_ask_question_snippet_skips_digest_tags() -> None:
-    from agent6.cli._ask import ask_question_snippet as _ask_question_snippet
+    from agent6.ui.cli._ask import ask_question_snippet as _ask_question_snippet
 
     t = (
         "# agent6 ask\n\n## Question\n\n"
@@ -144,7 +144,7 @@ def test_ask_question_snippet_skips_digest_tags() -> None:
 def test_ask_list_uses_log_activity_not_frontend_dir_touch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.cli._ask import cmd_ask_list
+    from agent6.ui.cli._ask import cmd_ask_list
 
     monkeypatch.chdir(tmp_path)
     asks = resolved_state_dir(tmp_path) / "asks"
@@ -169,8 +169,8 @@ def test_ask_repl_multi_turn_carries_context(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
 
-    from agent6.cli._ask import run_ask_repl as _run_ask_repl
     from agent6.graph.storage import RunLayout
+    from agent6.ui.cli._ask import run_ask_repl as _run_ask_repl
     from agent6.workflows.loop import RunResult
 
     class _FakeWf:
@@ -220,8 +220,8 @@ def test_ask_repl_multi_turn_carries_context(
 def test_ask_question_snippet_reads_interactive_transcripts(tmp_path: Path) -> None:
     # REPL transcripts head their sections "## Q1"/"## A1" (not "## Question");
     # `ask list` used to show "(no question)" for every interactive ask.
-    from agent6.cli._ask import ask_question_snippet, save_ask_repl_transcript
     from agent6.graph.storage import RunLayout
+    from agent6.ui.cli._ask import ask_question_snippet, save_ask_repl_transcript
 
     layout = RunLayout(state_dir=tmp_path, run_id="ask-x")
     layout.ensure()

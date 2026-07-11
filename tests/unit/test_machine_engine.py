@@ -1188,7 +1188,7 @@ def test_poke_atomic_write_leaves_no_temp_and_keeps_payload(tmp_path: Path) -> N
 
 
 def test_machine_is_parked_reflects_pending_wait(tmp_path: Path) -> None:
-    from agent6.web.model import machine_is_parked
+    from agent6.ui.web.model import machine_is_parked
 
     journal, f = _load(tmp_path, FOREVER)
     spec = load_machine(f)

@@ -7,7 +7,7 @@ from __future__ import annotations
 import sys
 from unittest.mock import patch
 
-from agent6.cli.run import _confirm_run_on_run_branch  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli.run import _confirm_run_on_run_branch  # pyright: ignore[reportPrivateUsage]
 
 
 def test_non_interactive_warns_and_proceeds() -> None:

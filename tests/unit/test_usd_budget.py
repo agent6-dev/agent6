@@ -99,10 +99,10 @@ def test_explicit_usd_flag_refused_when_unpriced(
 ) -> None:
     # An explicit --max-usd is a promise for the run; with no price data for
     # the worker model it cannot be kept, so the CLI refuses to start.
-    from agent6.cli._common import (
+    from agent6.config import Config
+    from agent6.ui.cli._common import (
         _explicit_usd_flag_error,  # pyright: ignore[reportPrivateUsage]
     )
-    from agent6.config import Config
 
     monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "empty-cache"))
     cfg = Config.model_validate(
@@ -119,10 +119,10 @@ def test_explicit_usd_flag_refused_when_unpriced(
 
 
 def test_explicit_usd_flag_ok_when_priced(price_cache: Path) -> None:
-    from agent6.cli._common import (
+    from agent6.config import Config
+    from agent6.ui.cli._common import (
         _explicit_usd_flag_error,  # pyright: ignore[reportPrivateUsage]
     )
-    from agent6.config import Config
 
     cfg = Config.model_validate(
         {
@@ -138,8 +138,8 @@ def test_warn_if_usd_unenforceable(price_cache: Path, capsys: pytest.CaptureFixt
     publishes no pricing), so run startup must warn instead of silently no-op'ing.
     The --max-usd *flag* is already guarded by _explicit_usd_flag_error; this is
     the config-path complement."""
-    from agent6.cli.run import _warn_if_usd_unenforceable  # pyright: ignore[reportPrivateUsage]
     from agent6.config import Config
+    from agent6.ui.cli.run import _warn_if_usd_unenforceable  # pyright: ignore[reportPrivateUsage]
 
     def _cfg(usd: float, worker: str, reviewer: str | None = None) -> Config:
         models: dict[str, Any] = {"worker": {"provider": "p", "model": worker}}

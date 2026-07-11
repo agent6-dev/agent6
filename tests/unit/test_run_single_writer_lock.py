@@ -16,7 +16,7 @@ import time
 from multiprocessing.synchronize import Event as EventType
 from pathlib import Path
 
-from agent6.cli.run import (
+from agent6.ui.cli.run import (
     _acquire_single_writer,  # pyright: ignore[reportPrivateUsage]
     _release_single_writer,  # pyright: ignore[reportPrivateUsage]
 )

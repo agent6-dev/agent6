@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.scripts]
-agent6 = "agent6.cli:cli_main"
+agent6 = "agent6.ui.cli:cli_main"
 
 [build-system]
 requires = ["hatchling"]
@@ -111,7 +111,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 # page.py is one embedded HTML/CSS/JS asset string; line length is meaningless there.
-"src/agent6/web/page.py" = ["E501", "RUF001"]
+"src/agent6/ui/web/page.py" = ["E501", "RUF001"]
 "tests/**" = ["S", "PLR2004", "PLR0915", "PLC0415", "B017"]
 "bench/**" = ["S", "PLR0912", "PLR0915", "PLC0415", "PLW2901", "SIM105", "SIM114", "SIM115", "E501", "PTH"]
 "docs/screenshots/keystroke_overlay.py" = ["PLR0912", "PLR1730"]
@@ -132,7 +132,7 @@ reportUnknownArgumentType = false
 # and unused-symbol checks (which assume `_name` is file-local) only add noise
 # here; they stay strict everywhere else.
 [[tool.pyright.executionEnvironments]]
-root = "src/agent6/cli"
+root = "src/agent6/ui/cli"
 reportPrivateUsage = false
 reportUnusedFunction = false
 reportUnusedClass = false

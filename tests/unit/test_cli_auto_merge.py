@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from agent6.cli import run as runmod
 from agent6.config_layer import load_effective, resolved_state_dir
 from agent6.graph.storage import RunLayout
+from agent6.ui.cli import run as runmod
 
 
 def _git(repo: Path, *args: str) -> str:

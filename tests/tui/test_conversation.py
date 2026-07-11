@@ -11,7 +11,7 @@ from pathlib import Path
 from textual.app import App
 from textual.widgets import Static
 
-from agent6.tui.conversation import ConversationScreen
+from agent6.ui.tui.conversation import ConversationScreen
 
 
 def _nlines(app: App[None]) -> int:

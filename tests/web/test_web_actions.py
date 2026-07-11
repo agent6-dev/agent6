@@ -8,11 +8,11 @@ from pathlib import Path
 
 import pytest
 
-from agent6.cli.parser import (
+from agent6.ui.cli.parser import (
     _inject_default_verb,  # pyright: ignore[reportPrivateUsage]
     build_parser,
 )
-from agent6.web import actions
+from agent6.ui.web import actions
 
 TINY = """
 machine = "tiny"
@@ -131,8 +131,8 @@ def test_spawn_machine_run_started_signal_is_child_worker_pid(
     # not read as "this spawn started".
     from collections.abc import Callable
 
-    from agent6.frontend.approval import write_worker_pid
-    from agent6.web import model
+    from agent6.ui.bridge.approval import write_worker_pid
+    from agent6.ui.web import model
 
     mf = tmp_path / "tiny.asm.toml"
     mf.write_text(TINY, encoding="utf-8")

@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from agent6.cli import main
-from agent6.cli import system_cmds as sc
+from agent6.ui.cli import main
+from agent6.ui.cli import system_cmds as sc
 
 
 @pytest.fixture

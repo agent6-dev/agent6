@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from agent6.cli._steer import (
+from agent6.ui.cli._steer import (
     _normalize_steer_choice,  # pyright: ignore[reportPrivateUsage]
 )
 

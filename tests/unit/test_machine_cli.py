@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from agent6.cli import main
 from agent6.config_layer import resolved_state_dir
 from agent6.machine import MachineJournal
+from agent6.ui.cli import main
 
 WAITER_DELAYED = """
 machine = "waiter_delayed"
@@ -193,7 +193,7 @@ def test_tail_state_log_tolerates_torn_utf8_tail(
     # print once completed.
     import json
 
-    from agent6.cli.machine_cmds import _tail_state_log  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli.machine_cmds import _tail_state_log  # pyright: ignore[reportPrivateUsage]
 
     log = tmp_path / "logs.jsonl"
     full = json.dumps({"type": "loop.note", "text": "café"}, ensure_ascii=False).encode()
@@ -265,7 +265,7 @@ def test_hard_usd_preflight_refuses_unpriced(
 ) -> None:
     # [budget].max_usd is a hard promise; an unpriced inherited worker model
     # cannot honor it, so machine run must refuse up front.
-    from agent6.cli.machine_cmds import (
+    from agent6.ui.cli.machine_cmds import (
         _hard_usd_preflight_error,  # pyright: ignore[reportPrivateUsage]
     )
 
@@ -281,7 +281,7 @@ def test_hard_usd_preflight_passes_best_effort_and_priced(
 ) -> None:
     import json as _json
 
-    from agent6.cli.machine_cmds import (
+    from agent6.ui.cli.machine_cmds import (
         _hard_usd_preflight_error,  # pyright: ignore[reportPrivateUsage]
     )
 
@@ -308,7 +308,7 @@ def test_hard_usd_preflight_checks_per_state_cap(
 ) -> None:
     # A soft machine budget with a hard per-state max_usd still requires price
     # data for that state's model.
-    from agent6.cli.machine_cmds import (
+    from agent6.ui.cli.machine_cmds import (
         _hard_usd_preflight_error,  # pyright: ignore[reportPrivateUsage]
     )
 

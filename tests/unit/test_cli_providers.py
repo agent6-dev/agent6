@@ -1,16 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for agent6.cli.providers provider construction (config -> provider)."""
+"""Tests for agent6.ui.cli.providers provider construction (config -> provider)."""
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from agent6.cli.providers import (
-    _build_role_provider,  # pyright: ignore[reportPrivateUsage]
-)
 from agent6.config import Config, ModelsConfig, OpenAIProviderEntry, RoleModel
 from agent6.providers import OpenAIProvider
+from agent6.ui.cli.providers import (
+    _build_role_provider,  # pyright: ignore[reportPrivateUsage]
+)
 
 
 def test_build_role_provider_forwards_extra_body_and_headers() -> None:

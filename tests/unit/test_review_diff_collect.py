@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.cli.review_cmds import _collect_review_diff  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli.review_cmds import _collect_review_diff  # pyright: ignore[reportPrivateUsage]
 
 
 def _git(root: Path, *args: str) -> str:

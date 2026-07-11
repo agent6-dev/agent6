@@ -14,9 +14,9 @@ import argparse
 
 import pytest
 
-from agent6.cli._common import _SandboxOverrides  # pyright: ignore[reportPrivateUsage]
 from agent6.config import Config
 from agent6.detect import Environment, KernelInfo, select_profile
+from agent6.ui.cli._common import _SandboxOverrides  # pyright: ignore[reportPrivateUsage]
 
 
 def _args(**kw: bool) -> argparse.Namespace:

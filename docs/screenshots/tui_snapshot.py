@@ -28,7 +28,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from agent6.tui.app import Agent6TUI
+from agent6.ui.tui.app import Agent6TUI
 
 _KEY = {"log": "l", "transcript": "t"}  # dashboard is the default (no keypress)
 

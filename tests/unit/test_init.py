@@ -45,7 +45,7 @@ def test_cmd_init_reports_invalid_config_cleanly(
     report this" handler. init loads the effective config to infer a verify
     command; it is the user's setup to fix, and init is the repair command, so it
     must surface the validation error the way every other command does."""
-    from agent6.cli.init_cmds import _cmd_init  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli.init_cmds import _cmd_init  # pyright: ignore[reportPrivateUsage]
 
     repo = _repo(tmp_path)
     # Valid global with a configured provider, so the cross-field validator has a

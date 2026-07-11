@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.cli import config_cmds as cc
+from agent6.ui.cli import config_cmds as cc
 
 
 def _noop_overlay(*_a: object, **_k: object) -> None:
@@ -22,7 +22,9 @@ def test_extra_body_value_completer_offers_routing_presets() -> None:
     # presets for any provider name (matched by suffix).
     import argparse
 
-    from agent6.cli.completers import _complete_config_values  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli.completers import (
+        _complete_config_values,  # pyright: ignore[reportPrivateUsage]
+    )
 
     args = argparse.Namespace(key="providers.openrouter.extra_body")
     out = _complete_config_values("", args)  # pyright: ignore[reportPrivateUsage]
@@ -81,7 +83,7 @@ def test_config_add_on_scalar_key_says_not_a_list(
     # The key is unset in the target file, so the old file-only guard let a
     # scalar through to revalidation, which printed a self-contradictory
     # "'local' is not valid ... Input should be 'providers', 'local' or 'open'".
-    from agent6.cli import main
+    from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
     rc = main(["config", "add", "sandbox.agent_network", "local"])
@@ -94,7 +96,7 @@ def test_config_add_on_scalar_key_says_not_a_list(
 def test_config_add_on_unset_list_key_still_works(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.cli import main
+    from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
     rc = main(["config", "add", "sandbox.allow_urls", "https://example.com"])
@@ -109,8 +111,8 @@ def test_config_add_on_unset_optional_list_key_works(
     # value is unset must not be misread as a scalar: the effective value is
     # None, which is not proof of scalar-ness. Regression for a guard that
     # refused `config add` on it with a "not a list field" error.
-    from agent6.cli import main
     from agent6.paths import global_config_path
+    from agent6.ui.cli import main
 
     global_config_path().write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"

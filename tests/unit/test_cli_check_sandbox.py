@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import pytest
 
-from agent6.cli import check_cmds
 from agent6.types import CommandResult, JailPolicy
+from agent6.ui.cli import check_cmds
 
 
 def _fake_result(argv: tuple[str, ...], rc: int) -> CommandResult:

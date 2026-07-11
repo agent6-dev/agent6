@@ -11,17 +11,19 @@ from typing import Any
 
 import pytest
 
-from agent6.cli import machine_agent
-from agent6.cli.egress import (
+from agent6.config import Config, validate_config
+from agent6.machine.model import ToolState
+from agent6.types import SandboxProfile
+from agent6.ui.cli import machine_agent
+from agent6.ui.cli.egress import (
     EgressGuard,
     _check_network_profile,  # pyright: ignore[reportPrivateUsage]
     _is_loopback,  # pyright: ignore[reportPrivateUsage]
     _maybe_start_egress,  # pyright: ignore[reportPrivateUsage]
 )
-from agent6.cli.machine_cmds import _machine_network_refusal  # pyright: ignore[reportPrivateUsage]
-from agent6.config import Config, validate_config
-from agent6.machine.model import ToolState
-from agent6.types import SandboxProfile
+from agent6.ui.cli.machine_cmds import (
+    _machine_network_refusal,  # pyright: ignore[reportPrivateUsage]
+)
 
 
 def _cfg(agent_network: str = "providers", tool_network: str = "block") -> Config:
@@ -138,7 +140,7 @@ def test_egress_local_refuses_non_local_provider() -> None:
 def test_egress_reaps_broker_when_isolation_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     # If enter_network_isolation() fails AFTER the broker child is forked, the
     # broker must be reaped (not leaked) and the run refused.
-    from agent6.cli import egress as eg
+    from agent6.ui.cli import egress as eg
 
     closed = {"n": 0}
 
@@ -335,7 +337,7 @@ def test_run_one_exports_commit_identity(
 def test_egress_fails_closed_and_cleans_up_on_socket_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import agent6.cli.egress as eg
+    import agent6.ui.cli.egress as eg
 
     sock = tmp_path / "egress-sock"
 

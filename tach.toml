@@ -15,7 +15,7 @@ path = "agent6"
 depends_on = []
 
 [[modules]]
-path = "agent6.cli"
+path = "agent6.ui.cli"
 depends_on = [
   "agent6.config",
   "agent6.config_io",
@@ -36,10 +36,10 @@ depends_on = [
   "agent6.events",
   "agent6.git_ops",
   "agent6.init",
-  "agent6.tui",
-  "agent6.web",
-  "agent6.frontend",
-  "agent6.viewmodel",
+  "agent6.ui.tui",
+  "agent6.ui.web",
+  "agent6.ui.bridge",
+  "agent6.ui.viewmodel",
   "agent6.graph.client",
   "agent6.graph.models",
   "agent6.graph.storage",
@@ -81,14 +81,14 @@ path = "agent6.events"
 depends_on = []
 
 [[modules]]
-path = "agent6.tui"
-depends_on = ["agent6.config_layer", "agent6.frontend", "agent6.machine", "agent6.models_cache", "agent6.paths", "agent6.secrets", "agent6.viewmodel"]
+path = "agent6.ui.tui"
+depends_on = ["agent6.config_layer", "agent6.ui.bridge", "agent6.machine", "agent6.models_cache", "agent6.paths", "agent6.secrets", "agent6.ui.viewmodel"]
 
 [[modules]]
 # The shared, textual-free write bridge: spawn the CLI detached, and the
 # approval / question / steer answer-file contract the workflow process polls.
 # Consumed by the CLI, the TUI, and the web server. Pure stdlib, no UI toolkit.
-path = "agent6.frontend"
+path = "agent6.ui.bridge"
 depends_on = []
 
 [[modules]]
@@ -96,11 +96,11 @@ depends_on = []
 # view-model folds (viewmodel), the effective config (config_layer), and the
 # conversation (transcript_render), reading run/machine dirs it locates via the
 # machine spec/journal. The write side drives the frontend bridge. No UI toolkit.
-path = "agent6.web"
+path = "agent6.ui.web"
 depends_on = [
   "agent6",
-  "agent6.viewmodel",
-  "agent6.frontend",
+  "agent6.ui.viewmodel",
+  "agent6.ui.bridge",
   "agent6.config",
   "agent6.config_layer",
   "agent6.transcript_render",
@@ -112,7 +112,7 @@ depends_on = [
 # journal folded into MachineState. Consumed by the TUI, the CLI watchers, and
 # (later) the web UI. The machine fold reads the journal event types + the spec,
 # so it depends on those two leaf machine modules; nothing UI-toolkit-shaped.
-path = "agent6.viewmodel"
+path = "agent6.ui.viewmodel"
 depends_on = ["agent6.machine.journal", "agent6.machine.model"]
 
 [[modules]]
@@ -222,7 +222,7 @@ depends_on = [
   "agent6.config_layer",
   "agent6.tools",
   "agent6.graph.storage",
-  "agent6.viewmodel",
+  "agent6.ui.viewmodel",
 ]
 
 [[modules]]

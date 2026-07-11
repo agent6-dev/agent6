@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-import agent6.cli.run as run_mod
+import agent6.ui.cli.run as run_mod
 from agent6.config import (
     Config,
     GitConfig,

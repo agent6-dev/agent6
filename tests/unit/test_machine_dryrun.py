@@ -162,7 +162,7 @@ def test_branch_on_empty_record_default_synthesizes_fields(tmp_path: Path) -> No
 
 
 def test_cli_machine_test_passes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    from agent6.cli import main
+    from agent6.ui.cli import main
 
     f = _write(tmp_path)
     assert main(["machine", "test", str(f)]) == 0
@@ -175,7 +175,7 @@ def test_cli_machine_test_passes(tmp_path: Path, capsys: pytest.CaptureFixture[s
 def test_cli_machine_test_with_blackboard(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.cli import main
+    from agent6.ui.cli import main
 
     f = _write(tmp_path)
     bb = tmp_path / "bb.toml"
@@ -186,7 +186,7 @@ def test_cli_machine_test_with_blackboard(
 
 
 def test_cli_machine_test_runs_check_first(tmp_path: Path) -> None:
-    from agent6.cli import main
+    from agent6.ui.cli import main
 
     # An invalid machine (goto target missing) must fail like `machine check`.
     bad = DEMO.replace('goto = "judge"', 'goto = "nope"')
@@ -195,14 +195,14 @@ def test_cli_machine_test_runs_check_first(tmp_path: Path) -> None:
 
 
 def test_cli_machine_test_missing_fixture(tmp_path: Path) -> None:
-    from agent6.cli import main
+    from agent6.ui.cli import main
 
     f = _write(tmp_path)
     assert main(["machine", "test", str(f), "--blackboard", str(tmp_path / "nope.toml")]) == 2
 
 
 def test_cli_machine_test_bad_fixture_toml(tmp_path: Path) -> None:
-    from agent6.cli import main
+    from agent6.ui.cli import main
 
     f = _write(tmp_path)
     bb = tmp_path / "bb.toml"

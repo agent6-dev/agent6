@@ -10,8 +10,8 @@ from collections.abc import Iterator
 
 import pytest
 
-from agent6.cli.completers import _complete_profiles  # pyright: ignore[reportPrivateUsage]
-from agent6.cli.parser import build_parser
+from agent6.ui.cli.completers import _complete_profiles  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli.parser import build_parser
 
 
 def _subparsers(parser: argparse.ArgumentParser) -> Iterator[tuple[str, argparse.ArgumentParser]]:
@@ -66,7 +66,7 @@ def test_bare_parent_command_error_names_subcommand_not_dest(
 
 
 def test_bare_agent6_prints_help_not_an_error(capsys: pytest.CaptureFixture[str]) -> None:
-    from agent6.cli import main
+    from agent6.ui.cli import main
 
     rc = main([])
     out = capsys.readouterr().out
@@ -129,7 +129,7 @@ def test_option_metavars() -> None:
 def test_model_header_names_reviewer_fallback(capsys: pytest.CaptureFixture[str]) -> None:
     # config.py: planner and reviewer fall back to worker (the header said
     # "planner/worker").
-    from agent6.cli import main
+    from agent6.ui.cli import main
 
     assert main(["model"]) == 0
     out = capsys.readouterr().out

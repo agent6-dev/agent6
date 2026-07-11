@@ -17,9 +17,12 @@ from pathlib import Path
 
 import pytest
 
-from agent6.cli import main
 from agent6.config_layer import resolved_state_dir
-from agent6.web.server import WebServer, _create_web_server  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli import main
+from agent6.ui.web.server import (
+    WebServer,
+    _create_web_server,  # pyright: ignore[reportPrivateUsage]
+)
 
 TINY = """
 machine = "tiny"
@@ -529,7 +532,7 @@ def test_sse_run_closes_even_if_tailer_dies(
     # injected raise below is intentionally unhandled in that thread), the
     # stream sends the folded snapshot and closes instead of hanging until the
     # client gives up.
-    import agent6.web.server as server_mod
+    import agent6.ui.web.server as server_mod
 
     def _boom(*_a: object, **_k: object) -> object:
         raise RuntimeError("tailer died")

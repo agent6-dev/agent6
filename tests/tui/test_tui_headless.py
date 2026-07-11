@@ -19,14 +19,14 @@ from typing import Any
 from textual.app import App
 from textual.widgets import Button, DataTable, Input, RichLog, Static, TextArea, Tree
 
-from agent6.tui.app import Agent6TUI
-from agent6.tui.modals import (
+from agent6.ui.tui.app import Agent6TUI
+from agent6.ui.tui.modals import (
     ApprovalModal,
     QuestionModal,
     SteerModal,
     ToolCallDetailModal,
 )
-from agent6.viewmodel.state import Question
+from agent6.ui.viewmodel.state import Question
 
 
 def _ev(**fields: Any) -> dict[str, object]:
@@ -316,7 +316,7 @@ def test_render_and_modals(tmp_path: Path) -> None:
 def test_dashboard_back_vs_quit(tmp_path: Path) -> None:
     """Option 3: q (like Esc) backs out to the hub (exit 0); only Ctrl+Q quits the
     hub (QUIT_HUB_CODE). Standalone, every one of them just closes (0)."""
-    from agent6.tui.app import QUIT_HUB_CODE
+    from agent6.ui.tui.app import QUIT_HUB_CODE
 
     async def press(from_hub: bool, key: str) -> int | None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
@@ -395,7 +395,7 @@ def test_dashboard_inline_log_is_a_bounded_gapless_window(tmp_path: Path) -> Non
     window: feed a pre-burst, then a burst larger than the window in one tick, and the
     RichLog caps at MAX_LOG_TAIL -- the gap-causing pre-burst lines are evicted, so it
     is the gapless recent window, not pre-burst lines + a hole + the tail."""
-    from agent6.viewmodel.state import MAX_LOG_TAIL
+    from agent6.ui.viewmodel.state import MAX_LOG_TAIL
 
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
@@ -517,7 +517,7 @@ def test_resume_reopens_modal_for_reused_prompt_id(tmp_path: Path) -> None:
 
 
 def test_steer_request_marker_round_trip(tmp_path: Path) -> None:
-    from agent6.frontend.approval import clear_steer_request, request_steer, steer_request_pending
+    from agent6.ui.bridge.approval import clear_steer_request, request_steer, steer_request_pending
 
     assert not steer_request_pending(tmp_path)
     request_steer(tmp_path)
@@ -530,8 +530,8 @@ def test_dashboard_s_key_steers_without_ctrl_c(tmp_path: Path) -> None:
     """The dashboard 's' action drops a steer.request marker (the run picks it up
     at its next boundary) and opens the steer box -- no Ctrl-C needed -- then the
     typed instruction lands in steer.answer for the run to inject."""
-    from agent6.frontend.approval import steer_request_pending
-    from agent6.tui.modals import SteerModal
+    from agent6.ui.bridge.approval import steer_request_pending
+    from agent6.ui.tui.modals import SteerModal
 
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
@@ -554,8 +554,8 @@ def test_dashboard_s_key_steers_without_ctrl_c(tmp_path: Path) -> None:
 def test_dashboard_stop_action_aborts_via_bridge(tmp_path: Path) -> None:
     """The dedicated Stop action (x) confirms, then writes an abort over the file
     bridge -- separate from steering, which never stops the run."""
-    from agent6.frontend.approval import steer_request_pending
-    from agent6.tui.modals import ConfirmModal
+    from agent6.ui.bridge.approval import steer_request_pending
+    from agent6.ui.tui.modals import ConfirmModal
 
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
@@ -612,8 +612,8 @@ def test_historical_steer_request_does_not_pop_a_modal_on_open(tmp_path: Path) -
 def test_l_and_t_toggle_detail_views_without_stacking(tmp_path: Path) -> None:
     # l/t are toggles: pressing l opens the log, l again closes it (not a second
     # stacked copy needing two escapes), and t switches to the conversation.
-    from agent6.tui.conversation import ConversationScreen
-    from agent6.tui.logview import LogScreen
+    from agent6.ui.tui.conversation import ConversationScreen
+    from agent6.ui.tui.logview import LogScreen
 
     (tmp_path / "logs.jsonl").write_text(
         json.dumps({"type": "run.start", "user_task": "x"}) + "\n", encoding="utf-8"
