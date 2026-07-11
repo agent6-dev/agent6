@@ -56,7 +56,7 @@ def _cmd_memory_list(scope: MemoryScope | None, *, include_invalidated: bool) ->
     # opaque id and timestamp recede (dim) below the content they belong to.
     groups: dict[str, list[MemoryEntry]] = {}
     for e in shown:
-        groups.setdefault(f"{e.scope}", []).append(e)
+        groups.setdefault(e.scope, []).append(e)
     for i, (scope_name, items) in enumerate(groups.items()):
         print("" if i == 0 else "\n", end="")
         print(_sgr(scope_name, "1"))
