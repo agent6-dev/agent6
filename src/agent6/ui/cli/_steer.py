@@ -29,6 +29,7 @@ from agent6.ui.bridge.approval import (
     steer_answer_is_abort,
     steer_request_pending,
 )
+from agent6.ui.cli._ptk_reader import on_tty, ptk_prompt
 
 
 @dataclass
@@ -111,7 +112,7 @@ def select_revised_prompt(
         print("[agent6] choose accept, original, edit, or quit.", file=sys.stderr)
 
 
-def _normalize_steer_choice(line: str | None) -> str | None:
+def normalize_steer_choice(line: str | None) -> str | None:
     """Map a mid-run menu line to a canonical action: None/'' continue,
     'abort' stop, 'detach' keep-running-in-background, else the instruction."""
     if line is None:
@@ -186,6 +187,7 @@ def install_steer_sigint(events: EventSink, run_dir: Path) -> SteerState:
     previous handler back when the run is done.
     """
     state: dict[str, Any] = {"requested": False}
+    steer_history: list[str] = []  # past typed steers, for up-arrow recall + auto-suggest
 
     def _handler(_signum: int, _frame: Any) -> None:
         # A steer is checked at the next between-step boundary, which can be up to
@@ -236,9 +238,20 @@ def install_steer_sigint(events: EventSink, run_dir: Path) -> SteerState:
                 state["requested"] = False
                 clear_steer_request(run_dir)
             return answer
-        return _normalize_steer_choice(
-            tty_prompt("[agent6] paused: [enter] continue · type to steer · q stop · d detach: ")
+        text = "[agent6] paused: [enter] continue · type to steer · q stop · d detach: "
+        # A tty gets the prompt_toolkit line editor (edit + history + stop/detach
+        # completion); no tty falls back to the plain /dev/tty read. Steer safely
+        # coexists with the live view: run.steer_requested has cleared the spinner.
+        line = (
+            ptk_prompt(
+                text, options=["stop", "detach"], history=steer_history, interrupt_aborts=True
+            )
+            if on_tty()
+            else tty_prompt(text)
         )
+        if line and line.strip():
+            steer_history.append(line.strip())
+        return normalize_steer_choice(line)
 
     def restore() -> None:
         with contextlib.suppress(Exception):

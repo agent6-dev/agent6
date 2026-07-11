@@ -58,6 +58,7 @@ from agent6.ui.cli._ask import (
 from agent6.ui.cli._ask import (
     save_ask_transcript as _save_ask_transcript,
 )
+from agent6.ui.cli._bar import BarController
 from agent6.ui.cli._common import (
     _BudgetOverrides,
     _check_provider_keys,
@@ -131,6 +132,7 @@ from agent6.ui.cli._preflight import (
 from agent6.ui.cli._preflight import (
     warn_if_usd_unenforceable as _warn_if_usd_unenforceable,
 )
+from agent6.ui.cli._ptk_reader import on_tty
 from agent6.ui.cli._repl import build_repl_hook as _build_repl_hook
 from agent6.ui.cli._single_writer import (
     SINGLE_WRITER_BUSY as _SINGLE_WRITER_BUSY,
@@ -459,20 +461,35 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         # response body (resp.json() blows up with JSONDecodeError).
         tui_enabled = _should_spawn_tui(tui=tui, interactive=interactive, mode=mode)
         _warn_if_headless_ask(cfg, tui_enabled=tui_enabled)
-        # The interactive revision prompt reads the terminal; with the TUI owning
-        # it the prompt would land invisibly in the console log and contend for
-        # stdin. Skip revision for this run instead.
+        stream_text, console_stream = _stream_modes(tui_enabled=tui_enabled)
+        # [cli] input = "bar": a persistent prompt_toolkit input bar at the bottom of
+        # a live run, output scrolling above it. Needs a real terminal and the plain
+        # CLI stream (not the TUI), and it owns the one input line -- so an
+        # interactive run (the -i after-commit REPL) stays modal rather than run a
+        # second prompt on the loop thread. Degrades to modal otherwise. In bar mode
+        # the ConsoleView writes through a stdout-delegating stream so patch_stdout
+        # keeps its output above the bar.
+        use_bar = (
+            cfg.cli.input == "bar"
+            and console_stream
+            and mode == "run"
+            and on_tty()
+            and not interactive
+        )
+        bar = BarController() if use_bar else None
+        # The interactive revision prompt reads the terminal; when the TUI or the
+        # input bar owns it the prompt would contend for stdin. Skip revision then.
         effective_revise_prompt = cfg.prompt.revise_prompt
-        if effective_revise_prompt == "interactive" and tui_enabled:
+        if effective_revise_prompt == "interactive" and (tui_enabled or use_bar):
+            owner = "the TUI" if tui_enabled else "the input bar"
             print(
-                "[agent6] prompt.revise_prompt='interactive' needs the terminal; the TUI"
+                f"[agent6] prompt.revise_prompt='interactive' needs the terminal; {owner}"
                 " owns it. Skipping prompt revision for this run.",
                 file=sys.stderr,
             )
             effective_revise_prompt = "off"
-        stream_text, console_stream = _stream_modes(tui_enabled=tui_enabled)
         if console_stream:
-            console_view = ConsoleView(sys.stderr)
+            console_view = ConsoleView(bar.stream() if bar is not None else sys.stderr)
             events.subscribe(console_view)
         provider: Provider = _InstrumentedProvider(
             inner=worker_inner,
@@ -524,7 +541,9 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         # Steering (mid-run Ctrl-C -> a stdin prompt) needs the terminal; skip it
         # when the TUI owns it (then default Ctrl-C aborts cleanly). Double-Ctrl-C
         # within 2s still raises KeyboardInterrupt for the hard-abort path below.
-        steer_state = _make_steer_state(events, layout.run_dir)
+        steer_state = (
+            bar.steer_state() if bar is not None else _make_steer_state(events, layout.run_dir)
+        )
 
         result = None
         interrupted = False
@@ -559,8 +578,8 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                     root=cwd,
                     config=cfg,
                     sandbox_profile=selected_profile,
-                    approver=_build_approver(layout.run_dir, events, console_view),
-                    questioner=_build_questioner(layout.run_dir, events, console_view),
+                    approver=_build_approver(layout.run_dir, events, console_view, bar),
+                    questioner=_build_questioner(layout.run_dir, events, console_view, bar),
                     events=events,
                     graph_client=graph_client,
                     run_root_node_id=None,  # Workflow seeds the root + calls set_run_root_node_id
@@ -633,6 +652,8 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                     with _tui_session(layout.run_dir, enabled=tui_enabled):
                         if mode == "ask" and interactive:
                             result = _run_ask_repl(wf, budget, layout, first_question=task)
+                        elif bar is not None and console_view is not None:
+                            result = bar.run(lambda: wf.run(task), console_view)
                         else:
                             result = wf.run(task)
                 except KeyboardInterrupt:

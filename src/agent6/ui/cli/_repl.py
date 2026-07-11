@@ -21,6 +21,7 @@ from agent6.git_ops import (
 from agent6.init import init_workspace
 from agent6.tools.mcp_client import MCPManager
 from agent6.ui.cli._common import _runs_dir
+from agent6.ui.cli._ptk_reader import on_tty, ptk_prompt
 from agent6.ui.cli.plan_watch import (
     event_epoch,
     format_plain_event,
@@ -49,6 +50,22 @@ REPL_HELP = (
 )
 
 
+def _read_repl_line(commands: list[str], history: list[str]) -> str | None:
+    """Read one after-commit REPL line: prompt_toolkit on a tty (history + slash-
+    command completion), else plain input(). None means stop (ctrl-c / EOF). A
+    non-empty line is recorded in ``history`` for up-arrow recall + auto-suggest."""
+    if on_tty():
+        line = ptk_prompt("agent6> ", options=commands, history=history)
+    else:
+        try:
+            line = input("agent6> ")
+        except (EOFError, KeyboardInterrupt):
+            return None
+    if line and line.strip():
+        history.append(line.strip())
+    return line
+
+
 def build_repl_hook(
     root: Path,
     budget: BudgetTracker,
@@ -65,6 +82,9 @@ def build_repl_hook(
     extends with /diff, /watch, /mcp, /init.
     """
 
+    commands = ["/continue", "/cost", "/diff", "/watch", "/mcp", "/init", "/undo", "/help", "/quit"]
+    repl_history: list[str] = []  # past REPL lines, for up-arrow recall + auto-suggest
+
     def hook(iteration: int, sha: str) -> Literal["continue", "stop"]:
         print(
             f"\n[agent6] iter {iteration} committed {sha[:12]}. "
@@ -72,11 +92,11 @@ def build_repl_hook(
             file=sys.stderr,
         )
         while True:
-            try:
-                raw = input("agent6> ").strip()
-            except (EOFError, KeyboardInterrupt):
-                print("[agent6] EOF - stopping interactively.", file=sys.stderr)
+            line = _read_repl_line(commands, repl_history)
+            if line is None:  # ctrl-c / EOF
+                print("[agent6] stopping interactively.", file=sys.stderr)
                 return "stop"
+            raw = line.strip()
             cmd = raw.lower()
             if cmd in {"", "/continue", "/c"}:
                 return "continue"

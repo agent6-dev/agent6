@@ -10,6 +10,7 @@ authors = [{ name = "Eric Lesiuta" }]
 dependencies = [
     "argcomplete>=3,<4",
     "httpx2>=2.3",
+    "prompt_toolkit==3.0.52",  # pinned exact (no trusted publishing; mature, stable release)
     "pydantic>=2.7,<3",
     "ruff>=0.6,<1",  # runtime, not dev: lints the scripts `machine create` generates
     "textual>=0.86",  # the live dashboard; without it `--tui` falls back to the plain CLI stream
