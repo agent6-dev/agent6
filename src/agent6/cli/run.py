@@ -14,6 +14,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any, Literal
@@ -79,13 +80,17 @@ from agent6.config_layer import (
 from agent6.detect import select_profile
 from agent6.events import EventSink
 from agent6.frontend.approval import (
+    away_mode,
+    clear_away_mode,
     clear_pending_answers,
     clear_worker_pid,
     frontend_is_live,
     read_answer,
     read_question_answers,
     session_allow_set,
+    set_away_mode,
     set_session_allow,
+    steer_answer_is_abort,
     write_worker_pid,
 )
 from agent6.frontend.spawn import spawn_detached_resume
@@ -314,6 +319,51 @@ def _confirm_run_on_run_branch(base_branch: str) -> bool:
     return ans.strip().lower() in {"y", "yes"}
 
 
+def _prompt_detach_away_mode(run_dir: Path) -> None:
+    """On detach with run_commands=ask, ask how approvals/questions should be handled
+    while nothing is watching, and record it for the background run. Non-interactive
+    (no tty) -> deny, the safe default."""
+    if not sys.stdin.isatty():
+        set_away_mode(run_dir, "deny")
+        return
+    print(
+        "[agent6] Detaching with run_commands=ask -- nothing will be watching to approve.",
+        file=sys.stderr,
+    )
+    ans = _tty_prompt(
+        "  While away: [a]pprove all / [d]eny all / [w]ait for a reattached front-end? [d]: ",
+        fall_back_to_stdin=False,
+    )
+    choice = (ans or "").strip().lower()
+    if choice in {"a", "approve"}:
+        set_session_allow(run_dir)  # reuse the session-allow marker
+        print("  -> approving every run_command.", file=sys.stderr)
+    elif choice in {"w", "wait"}:
+        set_away_mode(run_dir, "wait")
+        print("  -> waiting; reattach (agent6 watch / the TUI) to approve.", file=sys.stderr)
+    else:
+        set_away_mode(run_dir, "deny")
+        print("  -> denying run_commands until you reattach.", file=sys.stderr)
+
+
+def _wait_for_reply(run_dir: Path, read_once: Callable[[], object | None]) -> object | None:
+    """Detach 'wait' mode: block until a reattached front-end supplies an answer
+    (``read_once`` returns non-None) or stops the run. ``read_once`` polls a live
+    front-end for up to its own (short) timeout; between calls, when no front-end is
+    attached yet, we poll for one. A reattached front-end's Stop lands as a steer
+    abort, which breaks the wait so the run can end. Returns the reply, or None on
+    stop."""
+    while True:
+        if steer_answer_is_abort(run_dir):
+            return None
+        if frontend_is_live(run_dir):
+            reply = read_once()
+            if reply is not None:
+                return reply
+        else:
+            time.sleep(1.0)  # no front-end yet; poll for one to reattach
+
+
 def _build_approver(run_dir: Path, events: EventSink) -> Callable[[str], bool]:
     """Build the `run_command` approver, bridged to a live TUI when present.
 
@@ -332,7 +382,19 @@ def _build_approver(run_dir: Path, events: EventSink) -> Callable[[str], bool]:
         if session_allow_set(run_dir):
             events.emit("approval.answer", id=prompt_id, approved=True, source="session")
             return True
+        # A detached run chose how to handle approvals while away (deny / wait).
+        away = away_mode(run_dir)
+        if away == "deny":
+            events.emit("approval.answer", id=prompt_id, approved=False, source="away-deny")
+            return False
         events.emit("approval.prompt", id=prompt_id, prompt=prompt)
+        if away == "wait":  # block until a reattached front-end answers (or stops)
+            reply = _wait_for_reply(
+                run_dir, lambda: read_answer(run_dir, prompt_id, timeout_s=20.0, dead_grace_s=8.0)
+            )
+            approved = bool(reply)
+            events.emit("approval.answer", id=prompt_id, approved=approved, source="away-wait")
+            return approved
         approved: bool | None = None
         source = "stdin"
         if frontend_is_live(run_dir):
@@ -416,7 +478,17 @@ def _build_questioner(
         )
         answers: tuple[str, ...] | None = None
         source = "stdin"
-        if frontend_is_live(run_dir):
+        if away_mode(run_dir) == "wait":
+            # Detached 'wait': block until a reattached front-end answers (or stops).
+            reply = _wait_for_reply(
+                run_dir,
+                lambda: read_question_answers(
+                    run_dir, question_id, timeout_s=20.0, dead_grace_s=8.0
+                ),
+            )
+            answers = reply if isinstance(reply, tuple) else tuple("" for _ in questions)
+            source = "away-wait"
+        elif frontend_is_live(run_dir):
             answers = read_question_answers(run_dir, question_id)
             if answers is not None:
                 source = "tui"
@@ -929,6 +1001,8 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     # id counters reset on resume, so an old answer must not be read instead of
     # re-prompting; a stale frontend.pid would otherwise stall the answer-poll).
     clear_pending_answers(layout.run_dir)
+    if sys.stdin.isatty():  # a foreground start clears a stale detach away-mode
+        clear_away_mode(layout.run_dir)
     # Record this worker's pid so `agent6 runs show` can probe liveness even while
     # the worker is blocked in a long provider call (which emits no events).
     write_worker_pid(layout.run_dir, os.getpid())
@@ -1308,19 +1382,14 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
             )
         _release_single_writer(worker_lock_fd)
         if detach_requested:
-            # The worker lock is released now, so the detached `resume` acquires it.
+            # Ask how to handle approvals while away BEFORE spawning, so the marker is
+            # set when the background run reads it. The worker lock is released now, so
+            # the detached `resume` acquires it.
+            if cfg.sandbox.run_commands == "ask" and not session_allow_set(layout.run_dir):
+                _prompt_detach_away_mode(layout.run_dir)
             err = spawn_detached_resume(cwd, layout.run_id)
             if err:
                 print(f"[agent6] {err}", file=sys.stderr)
-            elif cfg.sandbox.run_commands == "ask" and not session_allow_set(layout.run_dir):
-                # Detached + ask has no terminal to prompt: it denies commands until a
-                # front-end reattaches. Point at the two ways to keep it moving.
-                print(
-                    f"[agent6] detached; run_commands=ask denies commands with no"
-                    f" front-end -- reattach (agent6 watch {layout.run_id}) to approve,"
-                    " or pick 'Allow session' before detaching to run unattended.",
-                    file=sys.stderr,
-                )
 
 
 def _finalize_auto_merge(cwd: Path, *, layout: RunLayout, cfg: Config) -> None:
@@ -1617,6 +1686,8 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     # Drop a prior session's stale answer files + frontend.pid (the id counters reset
     # on resume, an old answer must not be read instead of re-prompting).
     clear_pending_answers(layout.run_dir)
+    if sys.stdin.isatty():  # a foreground start clears a stale detach away-mode
+        clear_away_mode(layout.run_dir)
     # Record this worker's pid so `agent6 runs show` can probe liveness even while
     # the worker is blocked in a long provider call (which emits no events).
     write_worker_pid(layout.run_dir, os.getpid())
@@ -1624,6 +1695,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
     egress_broker = None
     egress_sock_dir = None
     detach_requested = False
+    cfg: Config | None = None  # bound below; the finally reads it (detach away-mode)
     try:
         snapshot_path = layout.run_dir / "loop_state.json"
         if not snapshot_path.is_file():
@@ -1983,7 +2055,9 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
         clear_worker_pid(layout.run_dir)
         _stop_egress(egress_broker, egress_sock_dir)
         _release_single_writer(worker_lock_fd)
-        if detach_requested:
+        if detach_requested and cfg is not None:
+            if cfg.sandbox.run_commands == "ask" and not session_allow_set(layout.run_dir):
+                _prompt_detach_away_mode(layout.run_dir)
             err = spawn_detached_resume(cwd, layout.run_id)
             if err:
                 print(f"[agent6] {err}", file=sys.stderr)

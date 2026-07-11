@@ -189,3 +189,33 @@ def test_tui_session_disabled_is_noop(tmp_path: Path) -> None:
     with runmod._tui_session(tmp_path, enabled=False):  # pyright: ignore[reportPrivateUsage]
         pass
     assert not (tmp_path / "tui_console.log").exists()
+
+
+def test_approver_away_deny_auto_denies(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Detach chose "deny all": every run_command is denied without prompting.
+    from agent6.frontend.approval import set_away_mode
+
+    log = tmp_path / "logs.jsonl"
+    events = EventSink(log)
+    monkeypatch.setattr(runmod, "_default_stdin_approver", _stdin_forbidden)  # must NOT prompt
+    set_away_mode(tmp_path, "deny")
+    approve = runmod._build_approver(tmp_path, events)  # pyright: ignore[reportPrivateUsage]
+    assert approve("rm -rf /") is False
+    assert _events_of(log, "approval.answer")[0]["source"] == "away-deny"
+
+
+def test_approver_away_wait_uses_reattached_front_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Detach chose "wait": approval blocks until a reattached front-end answers.
+    from agent6.frontend.approval import set_away_mode
+
+    log = tmp_path / "logs.jsonl"
+    events = EventSink(log)
+    monkeypatch.setattr(runmod, "frontend_is_live", _live)  # a front-end is attached
+    monkeypatch.setattr(runmod, "read_answer", _ans_yes)  # and it approved
+    monkeypatch.setattr(runmod, "_default_stdin_approver", _stdin_forbidden)  # never falls to stdin
+    set_away_mode(tmp_path, "wait")
+    approve = runmod._build_approver(tmp_path, events)  # pyright: ignore[reportPrivateUsage]
+    assert approve("ls") is True
+    assert _events_of(log, "approval.answer")[0]["source"] == "away-wait"

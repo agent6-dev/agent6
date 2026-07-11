@@ -217,6 +217,36 @@ def session_allow_set(run_dir: Path) -> bool:
     return (approvals_dir(run_dir) / SESSION_ALLOW_FILE).exists()
 
 
+# How a DETACHED run (no terminal to prompt) handles run_command approvals and
+# ask_user questions: "deny" auto-denies, "wait" blocks until a front-end
+# reattaches and answers. "approve" is not stored here -- detach approve-all
+# reuses the session.allow marker. Persists like session.allow (not an *.answer).
+AWAY_MODE_FILE = "away.mode"
+
+
+def set_away_mode(run_dir: Path, mode: str) -> None:
+    """Record the detach 'while away' choice ("deny" | "wait")."""
+    d = approvals_dir(run_dir)
+    d.mkdir(parents=True, exist_ok=True)
+    _write_answer_atomic(d / AWAY_MODE_FILE, mode)
+
+
+def away_mode(run_dir: Path) -> str:
+    """ "deny", "wait", or "" (unset -- interactive/foreground default flow)."""
+    try:
+        return (approvals_dir(run_dir) / AWAY_MODE_FILE).read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def clear_away_mode(run_dir: Path) -> None:
+    """Drop the detach 'while away' choice. Called when an INTERACTIVE (tty) run or
+    resume starts: the operator is back at the terminal, so a stale away-mode from a
+    prior detach must not keep auto-denying/waiting."""
+    with contextlib.suppress(FileNotFoundError):
+        (approvals_dir(run_dir) / AWAY_MODE_FILE).unlink()
+
+
 def read_answer(
     run_dir: Path,
     prompt_id: str,
