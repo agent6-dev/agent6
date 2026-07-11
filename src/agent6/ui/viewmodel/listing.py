@@ -89,12 +89,12 @@ def status_word(*, finished: bool, all_passed: bool, end_reason: str) -> tuple[s
     surfaces can never disagree. "stopped" is the operator's own act (not a
     failure), "passed" means all verify gates green, "finished" is a deliberate
     finish without all-passed, and anything else is "failed" with the reason
-    (provider_error, went_quiet, interrupted, ...).
+    (provider_error, went_quiet, ...).
     """
     if not finished:
         return "running", ""
-    if end_reason == "steer_abort":
-        return "stopped", ""
+    if end_reason in ("steer_abort", "interrupted"):
+        return "stopped", ""  # both are the operator's own act, not a failure
     if all_passed:
         return "passed", ""
     if end_reason and end_reason != "finish_run":

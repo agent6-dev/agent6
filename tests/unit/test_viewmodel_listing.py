@@ -102,6 +102,21 @@ def test_summary_stop_is_not_a_failure(tmp_path: Path) -> None:
     assert summarize_run_dir(rd).status == "stopped"
 
 
+def test_summary_interrupt_reads_as_stopped(tmp_path: Path) -> None:
+    # A Ctrl-C interrupt is the operator's own act, like steer_abort -- not a
+    # failure the listing should flag red.
+    rd = _write_run(
+        tmp_path,
+        "runs",
+        "r1",
+        [
+            {"type": "run.start", "mode": "run", "user_task": "t"},
+            {"type": "run.end", "all_passed": False, "reason": "interrupted"},
+        ],
+    )
+    assert summarize_run_dir(rd).status == "stopped"
+
+
 def test_summary_resume_unfinishes(tmp_path: Path) -> None:
     """A detached resume appends past the first run.end; the run is running
     again, not whatever it last ended as."""
