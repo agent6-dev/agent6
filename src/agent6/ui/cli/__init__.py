@@ -75,11 +75,9 @@ from agent6.ui.cli.plan_watch import (
     _resolve_plan_run_id,
 )
 from agent6.ui.cli.prompt_cmds import _cmd_prompt_show
+from agent6.ui.cli.resume import _cmd_resume
 from agent6.ui.cli.review_cmds import _cmd_review
-from agent6.ui.cli.run import (
-    _cmd_resume,
-    _cmd_run,
-)
+from agent6.ui.cli.run import _cmd_run
 from agent6.ui.cli.runs_cmds import (
     _cmd_commits,
     _cmd_diff,

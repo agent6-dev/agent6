@@ -13,7 +13,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from agent6.ui.cli.run import snapshot_head_mismatch
+from agent6.ui.cli.resume import snapshot_head_mismatch
 
 
 def _git(repo: Path, *args: str) -> str:
