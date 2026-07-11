@@ -14,6 +14,14 @@ from pathlib import Path
 from typing import Any
 
 from agent6.config.model import ConfigError
+from agent6.portable import atomic_write
+
+
+def _write(path: Path, text: str) -> None:
+    """Publish config text via tmp+rename, matching every other agent6 state
+    writer. Plain `write_text` truncated in place, so a crash mid-write left a
+    truncated/empty config; the rename makes the update all-or-nothing."""
+    atomic_write(path, text)
 
 
 def _toml_value(value: str | bool) -> str:
@@ -49,7 +57,7 @@ def upsert_toml_table(path: Path, table: str, fields: dict[str, str | bool | Non
     if start is None:
         prefix = text if not text or text.endswith("\n") else text + "\n"
         sep = "\n" if prefix and not prefix.endswith("\n\n") else ""
-        path.write_text(prefix + sep + block + "\n", encoding="utf-8")
+        _write(path, prefix + sep + block + "\n")
         return
     end = len(lines)
     for j in range(start + 1, len(lines)):
@@ -57,7 +65,7 @@ def upsert_toml_table(path: Path, table: str, fields: dict[str, str | bool | Non
             end = j
             break
     new_lines = lines[:start] + block.splitlines() + [""] + lines[end:]
-    path.write_text("\n".join(new_lines).rstrip("\n") + "\n", encoding="utf-8")
+    _write(path, "\n".join(new_lines).rstrip("\n") + "\n")
 
 
 def _toml_repr(value: object) -> str:  # noqa: PLR0911
@@ -135,7 +143,7 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
     if start is None:
         prefix = text if (not text or text.endswith("\n")) else text + "\n"
         sep = "\n" if prefix and not prefix.endswith("\n\n") else ""
-        path.write_text(prefix + sep + header + "\n" + new_line + "\n", encoding="utf-8")
+        _write(path, prefix + sep + header + "\n" + new_line + "\n")
         return
     end = next(
         (j for j in range(start + 1, len(lines)) if lines[j].lstrip().startswith("[")),
@@ -145,13 +153,13 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
     for j in range(start + 1, end):
         if leaf_re.match(lines[j]):
             lines[j] = new_line
-            path.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
+            _write(path, "\n".join(lines).rstrip("\n") + "\n")
             return
     insert_at = end
     while insert_at - 1 > start and lines[insert_at - 1].strip() == "":
         insert_at -= 1
     lines[insert_at:insert_at] = [new_line]
-    path.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
+    _write(path, "\n".join(lines).rstrip("\n") + "\n")
 
 
 def remove_toml_leaf(path: Path, dotted_key: str) -> bool:
@@ -173,7 +181,7 @@ def remove_toml_leaf(path: Path, dotted_key: str) -> bool:
         if leaf_re.match(lines[j]):
             del lines[j]
             out = "\n".join(lines).rstrip("\n") + "\n" if lines else ""
-            path.write_text(out, encoding="utf-8")
+            _write(path, out)
             return True
     return False
 
@@ -201,7 +209,7 @@ def remove_toml_table(path: Path, table: str) -> bool:
     if not removed:
         return False
     out = "\n".join(kept).rstrip("\n") + "\n" if any(ln.strip() for ln in kept) else ""
-    path.write_text(out, encoding="utf-8")
+    _write(path, out)
     return True
 
 
