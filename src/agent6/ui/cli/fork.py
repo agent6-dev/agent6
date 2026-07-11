@@ -44,8 +44,9 @@ from agent6.portable import atomic_write
 from agent6.runs.id import RunIdError, new_friendly_id, resolve_run_id
 from agent6.runs.layout import RunLayout
 from agent6.ui.cli._common import _BudgetOverrides, _state_dir
+from agent6.ui.cli._manifest import write_run_manifest as _write_run_manifest
 from agent6.ui.cli.plan_watch import _most_recent_run_id
-from agent6.ui.cli.run import _cmd_resume, _write_run_manifest
+from agent6.ui.cli.run import _cmd_resume
 from agent6.workflows._run_state import load_checkpoint
 
 # Curator-owned DAG artifacts copied verbatim into the fork (Phase 1). Each is a
