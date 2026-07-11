@@ -617,7 +617,8 @@ def build_system_prompt(
     co_change_block = ""
     if repo.co_change_pairs:
         lines = "\n".join(
-            f"  {a} <-> {b}  (changed together {c} times)" for a, b, c in repo.co_change_pairs[:20]
+            f"  {p.file_a} <-> {p.file_b}  (changed together {p.count} times)"
+            for p in repo.co_change_pairs[:20]
         )
         co_change_block = (
             "Git co-change pairs (files that historically change together;"
@@ -628,8 +629,9 @@ def build_system_prompt(
     hot_symbols_block = ""
     if repo.hot_symbols:
         lines = "\n".join(
-            f"  {name} ({kind}) at {path}:{line + 1}, referenced across {n_files} files"
-            for name, kind, path, line, n_files in repo.hot_symbols[:15]
+            f"  {s.name} ({s.kind}) at {s.def_path}:{s.def_line + 1},"
+            f" referenced across {s.files_referenced} files"
+            for s in repo.hot_symbols[:15]
         )
         hot_symbols_block = (
             "Hot symbols (cross-file reference hot spots from static analysis;"

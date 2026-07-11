@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from agent6.budget import BudgetExceeded
 from agent6.git_ops import co_change_pairs, recent_log, status, tracked_files
-from agent6.types import RepoSummary
+from agent6.types import CoChangePair, HotSymbol, RepoSummary
 from agent6.workflows._symbol_outline import build_symbol_outline_block
 
 if TYPE_CHECKING:
@@ -89,18 +89,21 @@ def load_repo_summary(root: Path, *, dispatcher: ToolDispatcher | None = None) -
             agents_md[:_AGENTS_MD_MAX_CHARS]
             + "\n... (AGENTS.md truncated here; use read_file for the full text)\n"
         )
-    hot: tuple[tuple[str, str, str, int, int], ...] = ()
-    co_change: tuple[tuple[str, str, int], ...] = ()
+    hot: tuple[HotSymbol, ...] = ()
+    co_change: tuple[CoChangePair, ...] = ()
     symbol_outline = ""
     if dispatcher is not None:
         try:
-            hot = tuple(dispatcher.hot_symbols(max_symbols=20, min_files_referenced=2))
+            hot = tuple(
+                HotSymbol(*t)
+                for t in dispatcher.hot_symbols(max_symbols=20, min_files_referenced=2)
+            )
         except (BudgetExceeded, KeyboardInterrupt):
             raise
         except Exception:
             hot = ()
         try:
-            co_change = tuple(co_change_pairs(root, n_commits=200))
+            co_change = tuple(CoChangePair(*t) for t in co_change_pairs(root, n_commits=200))
         except (BudgetExceeded, KeyboardInterrupt):
             raise
         except Exception:

@@ -75,12 +75,14 @@ def format_prompt_revision_context(repo: RepoSummary) -> str:
     if repo.symbol_outline:
         parts.append("Symbol outline:\n" + clip_text(repo.symbol_outline, 5000))
     if repo.co_change_pairs:
-        lines = "\n".join(f"  {a} <-> {b} ({count})" for a, b, count in repo.co_change_pairs[:15])
+        lines = "\n".join(
+            f"  {p.file_a} <-> {p.file_b} ({p.count})" for p in repo.co_change_pairs[:15]
+        )
         parts.append("Git co-change pairs:\n" + lines)
     if repo.hot_symbols:
         lines = "\n".join(
-            f"  {name} ({kind}) at {path}:{line + 1}, {n_files} files"
-            for name, kind, path, line, n_files in repo.hot_symbols[:12]
+            f"  {s.name} ({s.kind}) at {s.def_path}:{s.def_line + 1}, {s.files_referenced} files"
+            for s in repo.hot_symbols[:12]
         )
         parts.append("Hot symbols:\n" + lines)
     if repo.recent_log:

@@ -70,6 +70,26 @@ class JailPolicy:
 
 
 @dataclass(frozen=True, slots=True)
+class CoChangePair:
+    """Two files that changed together, and how many commits they co-changed in."""
+
+    file_a: str
+    file_b: str
+    count: int
+
+
+@dataclass(frozen=True, slots=True)
+class HotSymbol:
+    """A symbol whose rename/signature change would ripple across files."""
+
+    name: str
+    kind: str
+    def_path: str
+    def_line: int
+    files_referenced: int
+
+
+@dataclass(frozen=True, slots=True)
 class RepoSummary:
     """Compact view of a repository handed to the planner."""
 
@@ -84,14 +104,14 @@ class RepoSummary:
     # of (file_a, file_b, count) sorted by count desc. Empty when the
     # repo has insufficient history (e.g. fresh --depth=1 clone in the
     # realworld bench) or when no pair co-changed at least 2 commits.
-    co_change_pairs: tuple[tuple[str, str, int], ...] = ()
+    co_change_pairs: tuple[CoChangePair, ...] = ()
     # Top "hot" symbols mined from the tree-sitter index. Tuple
     # of (name, kind, def_path, def_line, files_referenced) sorted by
     # cross-file reference count desc. Complements co_change_pairs:
     # works on fresh repos (no history needed). Empty when the index
     # is disabled or no symbol crosses the min_files_referenced
     # threshold.
-    hot_symbols: tuple[tuple[str, str, str, int, int], ...] = ()
+    hot_symbols: tuple[HotSymbol, ...] = ()
     # Compact directory map built from `git ls-files`. Multi-line
     # string of `path/  (N files: a, b, ...)` rows, capped so it stays
     # within a few KB. Empty outside a git repo or when ls-files fails.
