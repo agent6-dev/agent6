@@ -72,7 +72,10 @@ class TranscriptFold:
     def __init__(self) -> None:
         self._thinking: list[str] = []
         self._text: list[str] = []
-        self._tool: tuple[str, str] | None = None  # (name, arg) awaiting its result
+        # name -> salient arg for calls awaiting their result. A dict (not one
+        # slot) so interleaved calls -- a concurrent explore-tier review panel
+        # shares one dispatcher across threads -- pair by name, not by position.
+        self._pending: dict[str, str] = {}
         self._verify: tuple[bool, str] | None = None  # (ok, badge) for run_verify_command
         self._finish = ""  # summary from the terminal finish tool
         self._tools = 0
@@ -99,7 +102,7 @@ class TranscriptFold:
                 self._finish = str((event.get("args") or {}).get("summary", "")).strip()
                 return out
             self._tools += 1
-            self._tool = (name, salient_arg(event.get("args") or {}))
+            self._pending[name] = salient_arg(event.get("args") or {})
             self._verify = None
             return out
         if etype == "verify.end":
@@ -142,11 +145,11 @@ class TranscriptFold:
         return out
 
     def _complete_tool(self, event: dict[str, Any]) -> list[TranscriptItem]:
-        if self._tool is None:  # the finish tool's result, or an unmatched one
+        name = str(event.get("name", ""))
+        if name not in self._pending:  # a finish tool's result, or an unmatched one
             return []
-        name, arg = self._tool
-        self._tool = None
-        if self._verify is not None:  # run_verify_command owns the verify badge
+        arg = self._pending.pop(name)
+        if name == "run_verify_command" and self._verify is not None:
             ok, detail = self._verify
             self._verify = None
         else:

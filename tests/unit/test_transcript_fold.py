@@ -73,3 +73,24 @@ def test_salient_arg_prefers_a_primary_key() -> None:
     assert salient_arg({}) == ""
     assert salient_arg({"n": 3}) == "n=3"
     assert isinstance(TranscriptItem("marker", body="reset"), TranscriptItem)
+
+
+def test_interleaved_tool_calls_pair_by_name() -> None:
+    # A concurrent explore-tier review panel can interleave tool.call/tool.result
+    # across tools; each result must pair with its own call by name, not with the
+    # next pending call by position.
+    events = [
+        {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}},
+        {"type": "tool.call", "name": "grep", "args": {"pattern": "def"}},
+        {"type": "tool.result", "name": "grep", "ok": False, "summary": "no match"},
+        {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
+    ]
+    tools = {i.name: i for i in fold_transcript(events) if i.kind == "tool"}
+    assert len(tools) == 2  # both paired; none dropped or mislabelled
+    assert tools["grep"].ok is False and tools["grep"].detail == "no match"
+    assert tools["read_file"].ok is True and tools["read_file"].detail == "12 bytes"
+
+
+def test_unmatched_tool_result_is_dropped() -> None:
+    # A result with no matching pending call must not crash or emit a bogus item.
+    assert fold_transcript([{"type": "tool.result", "name": "ghost", "ok": True}]) == []
