@@ -44,7 +44,7 @@ depends_on = [
   "agent6.graph.models",
   "agent6.graph.storage",
   "agent6.run_id",
-  "agent6.mcp_server",
+  "agent6.ui.mcp_server",
   "agent6.machine",
   "agent6.verify_infer",
   "agent6.transcript_render",
@@ -220,7 +220,7 @@ path = "agent6._data"
 depends_on = []
 
 [[modules]]
-path = "agent6.mcp_server"
+path = "agent6.ui.mcp_server"
 depends_on = [
   "agent6",
   "agent6.config",

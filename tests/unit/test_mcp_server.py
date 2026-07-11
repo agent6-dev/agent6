@@ -16,8 +16,8 @@ from agent6.config import Config, load_config
 from agent6.config.layer import resolved_state_dir
 from agent6.graph.models import TaskNode
 from agent6.graph.storage import RunLayout, write_node
-from agent6.mcp_server import MCPServer, _deny_approver  # pyright: ignore[reportPrivateUsage]
 from agent6.tools.dispatch import ToolError
+from agent6.ui.mcp_server import MCPServer, _deny_approver  # pyright: ignore[reportPrivateUsage]
 
 _VALID_TOML = """
 [agent6]
@@ -417,7 +417,7 @@ def test_most_recent_run_id_uses_log_activity_not_name_or_dir_touch(tmp_path: Pa
     # directory mtime is not chronological either. The newest log activity wins.
     import os
 
-    from agent6.mcp_server import _most_recent_run_id  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.mcp_server import _most_recent_run_id  # pyright: ignore[reportPrivateUsage]
 
     runs = tmp_path / "runs"
     runs.mkdir()
