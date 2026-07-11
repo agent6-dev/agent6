@@ -69,6 +69,11 @@ principles the Zen doesn't cover:
   hasn't arrived. A reviewer should read a module top to bottom in one sitting;
   inline a one-caller helper, make a stateless class a function, and if it's hard
   to explain it's a bad idea.
+- **Fix the root cause, never the symptom.** Find why something is wrong and fix
+  that. No hacks, workarounds, blind retries, or special cases that hide the real
+  defect. Prefer rethinking and deleting over adding: less code beats more, and
+  removing a wrong shape beats guarding against it. When you cannot find the root
+  cause, say so rather than paper over it.
 - **Right-shaped data.** Get the data structure right and the code around it
   stays small. A field that can never be half-set belongs in one frozen type, not
   two parallel dicts; when code keeps converting between shapes, fix the shape.
