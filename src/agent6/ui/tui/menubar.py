@@ -182,7 +182,7 @@ class HelpScreen(Screen[None]):
        default collapses to 0 inside an auto-width parent). Symmetric margins =
        a 6-cell gap between columns and 3 outside, so centering stays true. */
     .help-col { width: auto; height: auto; margin: 0 3; }
-    .help-col Static { width: auto; }
+    .help-col Static { width: auto; pointer: text; }  /* selectable: I-beam */
     .help-menu { text-style: bold; color: $accent; padding-top: 1; }
     """
 

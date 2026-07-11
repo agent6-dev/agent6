@@ -14,15 +14,20 @@ palettes and remembers the choice (in ``ui.toml``, never the agent config).
 
 from __future__ import annotations
 
+from math import ceil
 from typing import Any, ClassVar
 
 try:
+    from rich.color import Color
+    from rich.segment import Segment, Segments
+    from rich.style import Style
     from rich.text import Text
     from textual import events, on
     from textual.app import App, ComposeResult
     from textual.binding import Binding
     from textual.containers import Vertical, VerticalScroll
     from textual.screen import ModalScreen
+    from textual.scrollbar import ScrollBar, ScrollBarRender
     from textual.theme import Theme
     from textual.widgets import Static
 except ImportError as e:  # pragma: no cover - clear runtime message
@@ -96,6 +101,64 @@ CommandPalette #--input { border: none; background: $panel; }
 CommandPalette #--input.--list-visible { border: none; }
 """
 
+# The upstream render_bar signature's defaults, as module singletons (B008).
+_SCROLLBAR_BACK = Color.parse("#555555")
+_SCROLLBAR_BAR = Color.parse("bright_magenta")
+
+
+class ThinScrollBarRender(ScrollBarRender):
+    """Horizontal scrollbar thumbs at HALF cell height: a terminal cell is about
+    twice as tall as it is wide, so textual's full-cell horizontal thumb reads
+    twice as heavy as a one-cell-wide vertical bar. The thumb body is a lower
+    half-block band with quadrant end caps for half-cell granularity; vertical
+    bars keep the default rendering."""
+
+    @classmethod
+    def render_bar(
+        cls,
+        size: int = 25,
+        virtual_size: float = 50,
+        window_size: float = 20,
+        position: float = 0,
+        thickness: int = 1,
+        vertical: bool = True,
+        back_color: Color = _SCROLLBAR_BACK,
+        bar_color: Color = _SCROLLBAR_BAR,
+    ) -> Segments:
+        if vertical or not (window_size and size and virtual_size and size != virtual_size):
+            return super().render_bar(
+                size=size,
+                virtual_size=virtual_size,
+                window_size=window_size,
+                position=position,
+                thickness=thickness,
+                vertical=vertical,
+                back_color=back_color,
+                bar_color=bar_color,
+            )
+        bar_ratio = virtual_size / size
+        thumb_size = max(1.0, window_size / bar_ratio)
+        position_ratio = position / (virtual_size - window_size)
+        start = int((size - thumb_size) * position_ratio * 2)  # half-cell units
+        end = start + max(2, ceil(thumb_size * 2))  # the thumb spans >= one cell
+        before = {"@mouse.down": "scroll_up"}
+        after = {"@mouse.down": "scroll_down"}
+        grab = {"@mouse.down": "grab"}
+        segments: list[Segment] = []
+        for cell in range(int(size)):
+            left, right = 2 * cell, 2 * cell + 1
+            left_in = start <= left < end
+            right_in = start <= right < end
+            if left_in or right_in:
+                glyph = "▄" if (left_in and right_in) else ("▗" if right_in else "▖")
+                segments.append(
+                    Segment(glyph, Style(color=bar_color, bgcolor=back_color, meta=grab))
+                )
+            else:
+                meta = before if right < start else after
+                segments.append(Segment(" ", Style(bgcolor=back_color, meta=meta)))
+        return Segments([*segments, Segment.line()] * thickness, new_lines=False)
+
 
 def setup_theme(app: App[Any]) -> None:
     """Register the branded themes, apply the saved one, and persist changes.
@@ -103,7 +166,9 @@ def setup_theme(app: App[Any]) -> None:
     Call from ``App.on_mount``. Subscribing to ``theme_changed_signal`` means
     EVERY path that changes the theme — the View>Theme picker, the built-in
     Ctrl+P "change theme" palette — is remembered, with no extra wiring.
-    """
+    Also installs the half-height horizontal scrollbar renderer (a class-level
+    hook, so one assignment restyles every bar in the process)."""
+    ScrollBar.renderer = ThinScrollBarRender
     for theme in (AGENT6_DARK, AGENT6_LIGHT):
         if theme.name not in app.available_themes:
             app.register_theme(theme)

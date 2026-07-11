@@ -163,8 +163,9 @@ class DashboardScreen(Screen[None]):
     #body { height: 1fr; }
     #log { width: 1fr; border: round $primary; }
     #diff { width: 1fr; border: round $primary; padding: 0 1; }
-    /* The stream/diff bodies fill their scroll pane so long content scrolls. */
-    #stream-body, #diff-body { width: 1fr; height: auto; }
+    /* The stream/diff bodies fill their scroll pane so long content scrolls;
+       they are selectable text, so the pointer shows an I-beam over them. */
+    #stream-body, #diff-body { width: 1fr; height: auto; pointer: text; }
     /* The composer bar (the same widget as the conversation's): auto-grows with
        its content, squeezing the 1fr #body row above. */
     #dash-input { height: auto; max-height: 8; border: round $primary; }
@@ -632,6 +633,8 @@ class Agent6TUI(App[int]):
        specificity, later rule wins) so the screen shows through behind dialogs. */
     ModalScreen { background: $background 60%; }
     * { scrollbar-size-vertical: 1; scrollbar-size-horizontal: 1; }  /* half the 2-wide default */
+    /* I-beam over anything you can type into (kitty OSC 22; inert elsewhere). */
+    Input, TextArea { pointer: text; }
     """
     )
 

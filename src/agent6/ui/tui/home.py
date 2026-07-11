@@ -507,6 +507,8 @@ class Agent6HomeApp(App[Path | None]):
        specificity, later rule wins) so the screen shows through behind dialogs. */
     ModalScreen { background: $background 60%; }
     * { scrollbar-size-vertical: 1; scrollbar-size-horizontal: 1; }  /* half the 2-wide default */
+    /* I-beam over anything you can type into (kitty OSC 22; inert elsewhere). */
+    Input, TextArea { pointer: text; }
     #runs { height: 1fr; border: round $primary; background: $surface; }
     #runs:focus { border: round $accent; }
     /* Panel-coloured header bar (matches the menu bar + footer + config header),

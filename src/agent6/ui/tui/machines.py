@@ -433,6 +433,7 @@ class MachineDetailScreen(Screen[None]):
         dock: top; height: 1; padding: 0 1; background: $panel; text-style: bold;
     }
     #machine-detail-body { height: 1fr; padding: 0 1; }
+    #machine-detail-body Static { pointer: text; }  /* selectable text: I-beam */
     """
 
     BINDINGS: ClassVar = [
@@ -761,6 +762,7 @@ class _MachineWatchApp(App[None]):
         PALETTE_CSS
         + """
     * { scrollbar-size-vertical: 1; scrollbar-size-horizontal: 1; }  /* match the other apps */
+    Input, TextArea { pointer: text; }
     """
     )
 

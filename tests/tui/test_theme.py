@@ -121,3 +121,41 @@ def test_picker_backdrop_click_closes(cfg: Path) -> None:
             assert not isinstance(app.screen, ThemePicker)  # mouse-closed, no Esc needed
 
     asyncio.run(scenario())
+
+
+def test_horizontal_scrollbar_thumb_is_half_height() -> None:
+    """The horizontal thumb renders as a lower half-block band (▄ body with
+    quadrant end caps), so a 1-cell horizontal bar carries the same visual
+    weight as the 1-cell-wide vertical bar; the track stays blank cells."""
+    from rich.color import Color
+
+    from agent6.ui.tui.theme import ThinScrollBarRender
+
+    seg = ThinScrollBarRender.render_bar(
+        size=10,
+        virtual_size=100,
+        window_size=50,
+        position=25,
+        thickness=1,
+        vertical=False,
+        back_color=Color.parse("#111111"),
+        bar_color=Color.parse("#aaaaaa"),
+    )
+    row = "".join(s.text for s in seg.segments if s.text != "\n")
+    assert "▄" in row  # the half-height thumb body
+    # No full-height cells anywhere: neither reverse-video blanks nor the
+    # default renderer's full-height partial-width caps.
+    assert not any(s.style and s.style.reverse for s in seg.segments)
+    assert not any(ch in row for ch in "▉▊▋▌▍▎▏█")
+    # Vertical bars keep textual's default full-cell rendering (reverse blanks).
+    vseg = ThinScrollBarRender.render_bar(
+        size=10,
+        virtual_size=100,
+        window_size=50,
+        position=25,
+        thickness=1,
+        vertical=True,
+        back_color=Color.parse("#111111"),
+        bar_color=Color.parse("#aaaaaa"),
+    )
+    assert any(s.style and s.style.reverse for s in vseg.segments)

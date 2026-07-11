@@ -53,7 +53,7 @@ class LogScreen(Screen[None]):
     CSS = """
     LogScreen { background: $surface; }
     #logview-scroll { height: 1fr; }
-    #logview-body { height: auto; padding: 0 1; }
+    #logview-body { height: auto; padding: 0 1; pointer: text; }  /* selectable: I-beam */
     """
 
     MENUS: ClassVar = (

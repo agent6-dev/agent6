@@ -260,7 +260,7 @@ class ConversationScreen(Screen[None]):
     ConversationScreen { background: $surface; }
     #conv-main { height: 1fr; }
     #conv-scroll { height: 1fr; }
-    #conv-body { height: auto; padding: 0 1; }
+    #conv-body { height: auto; padding: 0 1; pointer: text; }  /* selectable: I-beam */
     #conv-live {
         height: auto; max-height: 12; padding: 0 1;
         border-top: solid $border; background: $surface;
