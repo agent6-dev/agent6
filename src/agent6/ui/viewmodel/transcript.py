@@ -36,7 +36,7 @@ _FINISH_TOOLS = frozenset({"finish_run", "finish_planning"})
 # reads as "stopped" (not the raw "steer_abort") and an error names itself.
 _END_REASON_LABEL = {
     "steer_abort": "stopped",
-    "finish_run": "checks failed",
+    "finish_run": "finished",
     "provider_error": "provider error",
     "budget_exhausted": "budget exhausted",
     "went_quiet": "went quiet",

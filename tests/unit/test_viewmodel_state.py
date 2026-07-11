@@ -313,9 +313,9 @@ def test_run_status_label_distinguishes_stop_finish_error() -> None:
 
     assert run_status_label(initial_state()) == "running"
     assert run_status_label(end("steer_abort", False)) == "stopped"
-    assert run_status_label(end("finish_run", True)) == "finished · all passed"
+    assert run_status_label(end("finish_run", True)) == "passed"
     assert run_status_label(end("finish_run", False)) == "finished"
-    assert run_status_label(end("provider_error", False)) == "ended · provider error"
+    assert run_status_label(end("provider_error", False)) == "failed · provider error"
     # and the computed label rides along on the wire dict for the web client
     assert run_state_as_dict(end("steer_abort", False))["status_label"] == "stopped"
 

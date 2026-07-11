@@ -36,7 +36,7 @@ from agent6.ui.cli._common import _runs_dir, _state_dir
 from agent6.ui.cli._merge import execute_merge
 from agent6.ui.cli.plan_watch import _most_recent_run_id
 from agent6.ui.viewmodel import summarize_run_dir, task_snippet
-from agent6.ui.viewmodel.format import format_cost
+from agent6.ui.viewmodel.format import format_cost, status_label
 
 # ANSI styles for the shared status words (viewmodel.status_word), tty only:
 # a listing where a provider_error death reads as plain text is how dead runs
@@ -52,7 +52,7 @@ _STATUS_SGR = {
 
 def _styled_status(status: str, reason: str, *, color: bool) -> tuple[str, str]:
     """(possibly-colored label, plain label) -- the plain form drives width math."""
-    label = status if not reason else f"{status} · {reason.replace('_', ' ')}"
+    label = status_label(status, reason)
     sgr = _STATUS_SGR.get(status)
     if color and sgr:
         return f"\x1b[{sgr}m{label}\x1b[0m", label

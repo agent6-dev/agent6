@@ -47,7 +47,7 @@ from agent6.ui.tui.widgets import FORM_CSS, ActionItem
 from agent6.ui.viewmodel import RunSummary, summarize_run_dir
 from agent6.ui.viewmodel import run_mtime as _run_mtime
 from agent6.ui.viewmodel import task_snippet as _task_snippet
-from agent6.ui.viewmodel.format import format_cost
+from agent6.ui.viewmodel.format import format_cost, status_label
 
 # Subdirs (relative to the agent6 dir) that hold watchable run directories.
 _RUN_SUBDIRS = ("runs", "asks")
@@ -78,9 +78,7 @@ _STATUS_STYLE = {
 
 
 def _status_cell(summary: RunSummary) -> Text:
-    label = summary.status
-    if summary.reason:
-        label = f"{summary.status} · {summary.reason.replace('_', ' ')}"
+    label = status_label(summary.status, summary.reason)
     return Text(label, style=_STATUS_STYLE.get(summary.status, ""))
 
 

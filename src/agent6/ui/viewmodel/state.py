@@ -18,6 +18,7 @@ from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any, Literal
 
+from agent6.ui.viewmodel.format import status_label
 from agent6.ui.viewmodel.listing import status_word
 
 NodeStatus = Literal["pending", "in_progress", "passed", "failed", "skipped", "obsolete"]
@@ -549,13 +550,7 @@ def run_status_label(state: RunState) -> str:
     word, reason = status_word(
         finished=state.finished, all_passed=bool(state.all_passed), end_reason=state.end_reason
     )
-    labels = {
-        "running": "running",
-        "stopped": "stopped",
-        "passed": "finished · all passed",
-        "finished": "finished",
-    }
-    return labels.get(word) or f"ended · {reason.replace('_', ' ')}"
+    return status_label(word, reason)
 
 
 def run_state_as_dict(state: RunState) -> dict[str, Any]:

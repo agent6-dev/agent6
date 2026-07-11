@@ -31,3 +31,12 @@ def format_cost(usd: float, *, partial: bool = False) -> str:
     SPA mirrors this in page.py's fmtUsd."""
     prefix = "~" if partial else ""
     return f"{prefix}${usd:.2f}" if usd >= 0.995 else f"{prefix}${usd:.4f}"
+
+
+def status_label(status: str, reason: str = "") -> str:
+    """The one human label for a run outcome: the status word (from
+    ``status_word``), plus the reason with underscores spaced when there is one
+    ("failed · provider error"). Shared by every hub listing, the run header, and
+    the web wire form, which had drifted ("failed · X" vs "ended · X" vs
+    "finished · all passed") so the same run read differently across surfaces."""
+    return status if not reason else f"{status} · {reason.replace('_', ' ')}"
