@@ -10,17 +10,17 @@ from pathlib import Path
 import pytest
 
 from agent6.config import NotifyConfig, load_config
+from agent6.ui.cli._finalize import fire_notify_hook
 from agent6.ui.cli.machine_cmds import (
     _build_machine_notify_hook,  # pyright: ignore[reportPrivateUsage]
 )
-from agent6.ui.cli.run import _fire_notify_hook  # pyright: ignore[reportPrivateUsage]
 
 
 def test_notify_noop_when_unconfigured(tmp_path: Path) -> None:
     """An empty `on_complete` tuple is a no-op (no subprocess, no error)."""
     notify = NotifyConfig()
     # Should return without raising, without doing anything.
-    _fire_notify_hook(
+    fire_notify_hook(
         notify,
         run_id="abcdef0123456789",
         run_dir=tmp_path,
@@ -45,7 +45,7 @@ def test_notify_fires_with_env(tmp_path: Path) -> None:
         str(out),
     )
     notify = NotifyConfig(on_complete=argv, timeout_s=10.0)
-    _fire_notify_hook(
+    fire_notify_hook(
         notify,
         run_id="run-xyz",
         run_dir=tmp_path,
@@ -64,7 +64,7 @@ def test_notify_fires_with_env(tmp_path: Path) -> None:
 def test_notify_failure_does_not_raise(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """A failing argv (nonexistent binary) logs but does not raise."""
     notify = NotifyConfig(on_complete=("/nonexistent/agent6-notify-binary",), timeout_s=5.0)
-    _fire_notify_hook(
+    fire_notify_hook(
         notify,
         run_id="run-xyz",
         run_dir=tmp_path,
@@ -84,7 +84,7 @@ def test_notify_ok_zero_when_failed(tmp_path: Path) -> None:
         f'printf "%s" "$AGENT6_RUN_OK" > {out}',
     )
     notify = NotifyConfig(on_complete=argv, timeout_s=5.0)
-    _fire_notify_hook(
+    fire_notify_hook(
         notify,
         run_id="r",
         run_dir=tmp_path,

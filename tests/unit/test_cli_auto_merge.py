@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for `git.auto_merge` (run.py's _finalize_auto_merge)."""
+"""Tests for `git.auto_merge` (ui/cli/_finalize.py finalize_auto_merge)."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import pytest
 
 from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.runs.layout import RunLayout
-from agent6.ui.cli import run as runmod
+from agent6.ui.cli import _finalize as finmod
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -73,7 +73,7 @@ def test_auto_merge_squashes_and_lands_on_base(
         run_branch="agent6/run-AM1111",
     )
     cfg = load_effective(tmp_path, None).config
-    runmod._finalize_auto_merge(  # pyright: ignore[reportPrivateUsage]
+    finmod.finalize_auto_merge(
         tmp_path, layout=RunLayout(resolved_state_dir(tmp_path), "run-AM1111"), cfg=cfg
     )
     assert _git(tmp_path, "rev-parse", "--abbrev-ref", "HEAD") == "main"  # ends on base
@@ -98,7 +98,7 @@ def test_auto_merge_noop_without_run_branch(
     cfg = load_effective(tmp_path, None).config
     # On main (no run branch); the helper must no-op without crashing.
     _git(tmp_path, "checkout", "-q", "main")
-    runmod._finalize_auto_merge(  # pyright: ignore[reportPrivateUsage]
+    finmod.finalize_auto_merge(
         tmp_path, layout=RunLayout(resolved_state_dir(tmp_path), "run-AM2222"), cfg=cfg
     )
     assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "0"  # nothing merged
@@ -121,7 +121,7 @@ def test_auto_merge_conflict_keeps_run_branch_intact(
     _git(tmp_path, "commit", "-q", "-m", "base edits the same file")
     _git(tmp_path, "checkout", "-q", "agent6/run-AM3333")
     cfg = load_effective(tmp_path, None).config
-    runmod._finalize_auto_merge(  # pyright: ignore[reportPrivateUsage]
+    finmod.finalize_auto_merge(
         tmp_path, layout=RunLayout(resolved_state_dir(tmp_path), "run-AM3333"), cfg=cfg
     )
     err = capsys.readouterr().err
@@ -146,7 +146,7 @@ def test_auto_merge_skips_when_base_branch_is_gone(
     # operator deleted the base branch mid-run (we're on the run branch, so -D works)
     _git(tmp_path, "branch", "-D", "main")
     cfg = load_effective(tmp_path, None).config
-    runmod._finalize_auto_merge(  # pyright: ignore[reportPrivateUsage]
+    finmod.finalize_auto_merge(
         tmp_path, layout=RunLayout(resolved_state_dir(tmp_path), "run-GONE11"), cfg=cfg
     )
     assert _git(tmp_path, "branch", "--list", "main") == ""  # base NOT fabricated
@@ -172,7 +172,7 @@ def test_auto_prune_deletes_reachable_merge_branch(
         update={"auto_merge": True, "auto_prune": True, "merge_strategy": "merge"}
     )
     cfg2 = cfg.model_copy(update={"git": git2})
-    runmod._finalize_auto_merge(  # pyright: ignore[reportPrivateUsage]
+    finmod.finalize_auto_merge(
         tmp_path, layout=RunLayout(resolved_state_dir(tmp_path), "run-AP1111"), cfg=cfg2
     )
     assert _git(tmp_path, "branch", "--list", "agent6/run-AP1111") == ""  # pruned (reachable)
@@ -193,7 +193,7 @@ def test_auto_prune_keeps_squash_branch(
         update={"auto_merge": True, "auto_prune": True, "merge_strategy": "squash"}
     )
     cfg2 = cfg.model_copy(update={"git": git2})
-    runmod._finalize_auto_merge(  # pyright: ignore[reportPrivateUsage]
+    finmod.finalize_auto_merge(
         tmp_path, layout=RunLayout(resolved_state_dir(tmp_path), "run-AP2222"), cfg=cfg2
     )
     assert _git(tmp_path, "branch", "--list", "agent6/run-AP2222")  # kept (squash unreachable)

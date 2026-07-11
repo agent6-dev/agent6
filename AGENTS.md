@@ -203,7 +203,7 @@ All five must pass; keep the suite green.
   the `runs`/`ask` diff views, argv from the run manifest the CLI wrote
   outside the jail, `rg` for history
   search, the fixed-argv `python -m agent6.ui.tui` co-process behind
-  `run --tui`, the operator `[notify].on_complete` hook `ui/ui/cli/run.py` fires at
+  `run --tui`, the operator `[notify].on_complete` hook `ui/cli/_finalize.py` fires at
   run end (argv from config, never LLM output),
   `ui/cli/scriptcheck.py` running ruff/ty with fixed argv to
   statically read generated scripts, which only ever execute via
