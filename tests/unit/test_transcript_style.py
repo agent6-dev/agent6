@@ -49,13 +49,21 @@ def test_tool_tail_clipped_to_one_length_and_neutral() -> None:
 
 
 def test_thinking_detail_levels() -> None:
-    item = TranscriptItem("thinking", body="a\nb\nc")
+    item = TranscriptItem("thinking", body="plan the fix\nb\nc")
     assert item_lines(item, detail="hidden") == []  # omitted entirely
     collapsed = item_lines(item, detail="collapsed")
-    assert collapsed[0][0][1] == "thinking" and "thinking…" in collapsed[0][0][0]
-    assert collapsed[0][1][1] == "more" and "3 lines" in collapsed[0][1][0]
+    # Collapsed = the FIRST LINE of the reasoning as a summary + a more-count,
+    # so it still says what the model is thinking about.
+    assert collapsed[0][0][1] == "thinking" and "plan the fix" in collapsed[0][0][0]
+    assert "b" not in collapsed[0][0][0].split("plan the fix")[-1]  # only the first line
+    assert collapsed[0][1][1] == "more" and "+2 more lines" in collapsed[0][1][0]
+    # A single-line thought has no more-count; a long first line is clipped.
+    single = item_lines(TranscriptItem("thinking", body="only line"), detail="collapsed")
+    assert len(single[0]) == 1 and "only line" in single[0][0][0]
+    long = item_lines(TranscriptItem("thinking", body="x" * 400), detail="collapsed")
+    assert long[0][0][0].endswith("…") and len(long[0][0][0]) < 200
     expanded = item_lines(item, detail="expanded")
-    assert expanded[0][0][1] == "thinking" and expanded[0][0][0].endswith("a\nb\nc")
+    assert expanded[0][0][1] == "thinking" and expanded[0][0][0].endswith("plan the fix\nb\nc")
 
 
 def test_tool_head_is_one_call_span_plus_arg() -> None:

@@ -66,8 +66,10 @@ def test_conversation_screen_cycles_detail_level(tmp_path: Path) -> None:
                 return str(screen.query_one("#conv-body", Static).content)
 
             assert _nlines(app) > 0  # the conversation rendered
-            assert "thinking…" in body_text()  # collapsed default: a one-line marker
-            assert "thinking hard here" not in body_text()  # not the full reasoning
+            # Collapsed default: the first line of the reasoning as a one-line
+            # summary (with a more-count when it spans lines), not the bulk.
+            assert "thinking hard here" in body_text()
+            assert body_text().count("thinking hard here") == 1
             screen.action_cycle_detail()  # collapsed -> expanded
             await pilot.pause()
             assert "thinking hard here" in body_text()  # full reasoning now shown

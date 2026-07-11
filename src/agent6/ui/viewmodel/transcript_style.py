@@ -99,10 +99,17 @@ def item_lines(item: TranscriptItem, *, detail: DetailLevel) -> list[Line]:
         if detail == "expanded":
             lines.append([(f"{THINK} {item.body}", "thinking")])
         elif detail == "collapsed":
-            # A one-line marker instead of the reasoning bulk; "hidden" omits it.
+            # One line OF the reasoning as the summary (first non-empty line,
+            # clipped), so collapsed still says what the model is thinking
+            # about; "hidden" omits it entirely.
             n = item.body.count("\n") + 1
-            plural = "" if n == 1 else "s"
-            lines.append([(f"{THINK} thinking…", "thinking"), (f"  ({n} line{plural})", "more")])
+            first = next((ln.strip() for ln in item.body.split("\n") if ln.strip()), "")
+            if len(first) > DETAIL_CLIP:
+                first = first[: DETAIL_CLIP - 1] + "…"
+            line: Line = [(f"{THINK} {first}", "thinking")]
+            if n > 1:
+                line.append((f"  (+{n - 1} more line{'' if n == 2 else 's'})", "more"))
+            lines.append(line)
     elif item.kind == "text":
         lines.extend([(ln, "text")] for ln in item.body.split("\n"))
     elif item.kind == "tool":
