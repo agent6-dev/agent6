@@ -187,18 +187,71 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
   .card.scroll { max-height: 60vh; }
   header .desktop-only { display: none; }
 }
+
+/* --- desktop: a persistent left nav rail (>=781px); phones keep the bottom
+   tab bar and the plain single-column stack, untouched. --- */
+aside.rail { display: none; }
+@media (min-width: 781px) {
+  aside.rail {
+    display: flex; flex-direction: column; gap: 4px; z-index: 30;
+    position: fixed; left: 0; top: 0; width: 216px; height: 100vh; overflow: auto;
+    padding: 16px 12px calc(16px + env(safe-area-inset-bottom));
+    background: var(--surface); border-right: 1px solid var(--border);
+  }
+  aside.rail .rail-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 17px; padding: 6px 8px 16px; cursor: pointer; }
+  aside.rail .rail-brand b { color: var(--accent); }
+  aside.rail .rail-brand img { border-radius: 6px; }
+  aside.rail .rail-nav { display: flex; flex-direction: column; gap: 2px; }
+  aside.rail .rail-nav a { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 8px; color: var(--muted); }
+  aside.rail .rail-nav a:hover { background: var(--surface2); color: var(--text); }
+  aside.rail .rail-nav a.active { background: var(--surface2); color: var(--accent); }
+  aside.rail .rail-nav .ic { font-size: 16px; width: 18px; text-align: center; }
+  aside.rail .rail-gap { flex: 1; }
+  .content { margin-left: 216px; }
+  header { justify-content: flex-start; }
+  header .brand, header > button { display: none; }  /* the rail owns brand + actions */
+  main { max-width: 1280px; margin: 0; padding: 20px 28px; }
+}
+
+/* --- run dashboard: a real multi-pane layout on wide screens, not a 2-col
+   reflow. Reasoning / tools / log run down the main column; the task graph,
+   budget, and latest commit sit in a narrower side column. --- */
+@media (min-width: 1024px) {
+  .run-grid {
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+    grid-template-areas: "head head" "role tasks" "tools budget" "log diff";
+  }
+  .run-grid .card-head { grid-area: head; }
+  .run-grid .card-role { grid-area: role; }
+  .run-grid .card-tasks { grid-area: tasks; }
+  .run-grid .card-tools { grid-area: tools; }
+  .run-grid .card-budget { grid-area: budget; }
+  .run-grid .card-log { grid-area: log; }
+  .run-grid .card-diff { grid-area: diff; }
+}
 </style>
 </head>
 <body>
+<aside class="rail">
+  <div class="rail-brand" onclick="location.hash='#/'"><img src="/icon.svg" width="24" height="24" alt=""><b>agent6</b></div>
+  <nav class="rail-nav">
+    <a href="#/" data-tab="hub"><span class="ic">▤</span><span>Runs</span></a>
+    <a href="#/machines" data-tab="machines"><span class="ic">◈</span><span>Machines</span></a>
+    <a href="#/config" data-tab="config"><span class="ic">⚙</span><span>Config</span></a>
+  </nav>
+  <span class="rail-gap"></span>
+  <button onclick="toggleTheme()" title="theme">◐ theme</button>
+</aside>
+<div class="content">
 <header>
   <span class="brand" onclick="location.hash='#/'"><b>agent6</b></span>
   <span class="crumb" id="crumb"></span>
   <span class="spacer"></span>
-  <button class="desktop-only" onclick="location.hash='#/config'">config</button>
   <button onclick="toggleTheme()" title="theme">◐</button>
 </header>
 
 <main id="view"><div class="empty">loading…</div></main>
+</div>
 
 <nav class="tabs">
   <a href="#/" data-tab="hub"><span class="ic">▤</span>Runs</a>
@@ -255,7 +308,7 @@ function closeLive() { if (live) { live.close(); live = null; } }
 function pill(status) { const p = el('span', 'pill ' + esc(status), esc(status)); return p; }
 
 function setTab(name) {
-  document.querySelectorAll('nav.tabs a').forEach(a => a.classList.toggle('active', a.dataset.tab === name));
+  document.querySelectorAll('nav.tabs a, aside.rail .rail-nav a').forEach(a => a.classList.toggle('active', a.dataset.tab === name));
 }
 
 // --- router ------------------------------------------------------------------
@@ -386,9 +439,9 @@ function renderRun(id, opts) {
   setCrumb(opts.crumb || id.slice(0, 16));
   view.innerHTML = '';
   const prompts = el('div'); view.appendChild(prompts); // approval/question boxes surface here
-  const grid = el('div', 'grid cols2');
+  const grid = el('div', 'grid run-grid');
   const cards = { _id: id, _prompts: prompts, _readOnly: readOnly };
-  const mk = (key, title, cls) => { const c = el('div', 'card ' + (cls||'')); c.appendChild(el('h2', null, title)); const body = el('div'); c.appendChild(body); cards[key] = body; grid.appendChild(c); return body; };
+  const mk = (key, title, cls) => { const c = el('div', 'card card-' + key + ' ' + (cls||'')); c.appendChild(el('h2', null, title)); const body = el('div'); c.appendChild(body); cards[key] = body; grid.appendChild(c); return body; };
   mk('head', opts.title || 'Run');
   mk('budget', 'Budget');
   mk('tasks', 'Task graph', 'scroll');
@@ -793,11 +846,35 @@ self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', () => {});
 """
 
-# The app icon: a self-contained SVG (no raster asset to ship). "maskable"-safe
-# with a full-bleed background.
+# The app icon: the docs site's hex-framed snowflake (docs/assets/favicon.svg),
+# centred on a full-bleed dark backdrop so it stays "maskable"-safe. Self-contained
+# SVG, no raster asset to ship.
 ICON_SVG = r"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs><linearGradient id="g" x1="6" y1="4" x2="42" y2="44" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#7aa2f7"/><stop offset="1" stop-color="#06f5f3"/></linearGradient></defs>
   <rect width="512" height="512" rx="96" fill="#0e1116"/>
-  <text x="256" y="330" font-family="ui-monospace, monospace" font-size="300"
-        font-weight="700" text-anchor="middle" fill="#6ea8fe">a6</text>
+  <g transform="translate(96 96) scale(6.6667)">
+    <path d="M24 3.5 41.7 13.75 V34.25 L24 44.5 6.3 34.25 V13.75 Z" fill="#161618"/>
+    <path d="M24 3.5 41.7 13.75 V34.25 L24 44.5 6.3 34.25 V13.75 Z" stroke="url(#g)" stroke-width="2.4" stroke-linejoin="round" fill="none"/>
+    <g stroke="url(#g)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <line x1="24" y1="24" x2="24" y2="10"/>
+      <line x1="24" y1="15.32" x2="19.25" y2="12.35"/>
+      <line x1="24" y1="15.32" x2="28.75" y2="12.35"/>
+      <line x1="24" y1="24" x2="11.88" y2="17"/>
+      <line x1="16.48" y1="19.66" x2="11.54" y2="22.29"/>
+      <line x1="16.48" y1="19.66" x2="16.29" y2="14.06"/>
+      <line x1="24" y1="24" x2="11.88" y2="31"/>
+      <line x1="16.48" y1="28.34" x2="16.29" y2="33.94"/>
+      <line x1="16.48" y1="28.34" x2="11.54" y2="25.71"/>
+      <line x1="24" y1="24" x2="24" y2="38"/>
+      <line x1="24" y1="32.68" x2="28.75" y2="35.65"/>
+      <line x1="24" y1="32.68" x2="19.25" y2="35.65"/>
+      <line x1="24" y1="24" x2="36.12" y2="31"/>
+      <line x1="31.52" y1="28.34" x2="36.46" y2="25.71"/>
+      <line x1="31.52" y1="28.34" x2="31.71" y2="33.94"/>
+      <line x1="24" y1="24" x2="36.12" y2="17"/>
+      <line x1="31.52" y1="19.66" x2="31.71" y2="14.06"/>
+      <line x1="31.52" y1="19.66" x2="36.46" y2="22.29"/>
+    </g>
+  </g>
 </svg>
 """
