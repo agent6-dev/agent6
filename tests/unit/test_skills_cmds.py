@@ -54,7 +54,9 @@ class TestInstall:
         assert _cmd_skills_install(str(src), force=False) == 0
         assert (_installed(env, "tidy") / "SKILL.md").is_file()
         assert (_installed(env, "tidy") / ".origin.toml").is_file()
-        assert "installed tidy" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert "Installed tidy" in out
+        assert "Use when testing tidy." in out
 
     def test_local_repo_with_skills_dir(self, env: Path) -> None:
         repo = env / "pack"
@@ -101,10 +103,11 @@ class TestUpdate:
         src = _write_skill_file(env / "src" / "SKILL.md", "tidy")
         assert _cmd_skills_install(str(src), force=False) == 0
         assert _cmd_skills_update("tidy") == 0
-        assert "tidy: unchanged" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert "tidy" in out and "unchanged" in out
         src.write_text(SKILL_MD.format(name="tidy") + "\nMore.\n", encoding="utf-8")
         assert _cmd_skills_update("tidy") == 0
-        assert "tidy: updated" in capsys.readouterr().out
+        assert "updated" in capsys.readouterr().out
         assert "More." in (_installed(env, "tidy") / "SKILL.md").read_text()
 
     def test_update_unknown_name(self, env: Path) -> None:

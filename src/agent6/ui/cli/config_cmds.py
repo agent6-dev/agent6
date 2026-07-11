@@ -46,7 +46,8 @@ def _cmd_config_show(config_path: Path | None, *, as_json: bool) -> int:
         print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
         return 2
     resolved = models_registry.resolved_adaptive_values(eff.config)
-    print(render_show(eff, as_json=as_json, resolved=resolved), end="")
+    text = render_show(eff, as_json=as_json, resolved=resolved, color=sys.stdout.isatty())
+    print(text, end="")
     return 0
 
 

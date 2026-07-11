@@ -245,7 +245,11 @@ def _truncate(text: str, width: int) -> str:
 
 
 def render_show(
-    eff: EffectiveConfig, *, as_json: bool = False, resolved: dict[str, Any] | None = None
+    eff: EffectiveConfig,
+    *,
+    as_json: bool = False,
+    resolved: dict[str, Any] | None = None,
+    color: bool = False,
 ) -> str:
     """Render the effective config + provenance from the shared ConfigView.
 
@@ -258,7 +262,9 @@ def render_show(
     adaptive, type, choices) -- the complete machine-readable picture.
 
     *resolved* maps dotted keys to their resolved values (e.g. adaptive
-    compaction sized from the worker model); the caller computes it.
+    compaction sized from the worker model); the caller computes it. *color*
+    dims the default rows (tty only; the caller passes ``isatty()``) so the
+    ``*`` operator-set rows stand out.
     """
     view = build_config_view(eff, resolved=resolved)
     if as_json:
@@ -295,7 +301,10 @@ def render_show(
             mark = "*" if s.modified else " "
             short_key = _truncate(s.key, key_w)
             short_val = _truncate(value, val_w)
-            lines.append(f"{mark} {short_key:<{key_w}} {short_val:<{val_w}} {s.source}")
+            row = f"{mark} {short_key:<{key_w}} {short_val:<{val_w}} {s.source}"
+            # Dim the default rows so the `*` operator-set values stand out of
+            # what is otherwise a long dump of built-in defaults.
+            lines.append(f"\x1b[2m{row}\x1b[0m" if color and not s.modified else row)
         lines.append("")
     legend_layers = ", ".join(
         f"{lyr.name}={lyr.path}" for lyr in view.layers if lyr.path is not None

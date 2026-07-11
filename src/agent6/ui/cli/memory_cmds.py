@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from agent6.memory import (
+    MemoryEntry,
     MemoryScope,
     MemoryStoreError,
 )
@@ -21,6 +22,11 @@ from agent6.memory import (
     list_entries as memory_list,
 )
 from agent6.ui.cli._common import _state_dir
+
+
+def _sgr(text: str, code: str) -> str:
+    """Wrap in an ANSI style, tty only, so piped output stays plain."""
+    return f"\x1b[{code}m{text}\x1b[0m" if sys.stdout.isatty() else text
 
 
 def _cmd_memory_add(scope: MemoryScope, body: str) -> int:
@@ -39,19 +45,29 @@ def _cmd_memory_list(scope: MemoryScope | None, *, include_invalidated: bool) ->
     except MemoryStoreError as exc:
         print(f"MEMORY ERROR: {exc}", file=sys.stderr)
         return 2
-    if not entries:
-        print("(no memories)")
+    shown = [e for e in entries if include_invalidated or e.is_active]
+    if not shown:
+        if entries:
+            print("no active memories. Pass --include-invalidated to see invalidated ones.")
+        else:
+            print('no memories yet. Add one with `agent6 memory add <scope> "<text>"`.')
         return 0
-    for e in entries:
-        if not include_invalidated and not e.is_active:
-            continue
-        flag = "" if e.is_active else " [INVALIDATED]"
-        print(f"[{e.scope}] {e.id} {e.created_at}{flag}")
-        if not e.is_active and e.invalidation_reason:
-            print(f"    invalidated_at: {e.invalidated_at}  reason: {e.invalidation_reason}")
-        for line in e.body.splitlines():
-            print(f"    {line}")
-        print()
+    # Group by scope so the category prints once, and lead with the body: the
+    # opaque id and timestamp recede (dim) below the content they belong to.
+    groups: dict[str, list[MemoryEntry]] = {}
+    for e in shown:
+        groups.setdefault(f"{e.scope}", []).append(e)
+    for i, (scope_name, items) in enumerate(groups.items()):
+        print("" if i == 0 else "\n", end="")
+        print(_sgr(scope_name, "1"))
+        for e in items:
+            active = e.is_active
+            for line in e.body.splitlines():
+                print(f"  {line}" if active else _sgr(f"  {line}", "2"))
+            meta = f"{e.id}  ·  {e.created_at}"
+            if not active:
+                meta = f"[invalidated] {meta}  ·  {e.invalidation_reason or 'no reason'}"
+            print(_sgr(f"  {meta}", "2"))
     return 0
 
 

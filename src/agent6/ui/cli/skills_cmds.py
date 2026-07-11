@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import tomllib
+from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -37,6 +38,36 @@ from agent6.ui.cli._steer_menu import COMMANDS as _MENU_COMMANDS
 _ORIGIN_FILE = ".origin.toml"
 _FETCH_TIMEOUT_S = 30.0
 _FETCH_MAX_BYTES = 1_048_576  # a SKILL.md is prose; 1 MiB is already generous
+
+
+def _sgr(text: str, code: str) -> str:
+    """Wrap in an ANSI style, tty only, so piped output stays plain."""
+    return f"\x1b[{code}m{text}\x1b[0m" if sys.stdout.isatty() else text
+
+
+def _term_width() -> int:
+    return shutil.get_terminal_size((100, 24)).columns
+
+
+def _one_line(text: str, width: int) -> str:
+    """Collapse whitespace to a single line and truncate to *width* so a long
+    description can never wrap into a wall of text."""
+    text = " ".join(text.split())
+    if width < 12 or len(text) <= width:
+        return text
+    return text[: width - 1].rstrip() + "…"
+
+
+def _short_source(src: str) -> str:
+    """A compact provenance label: drop the URL scheme and `.git`, contract
+    $HOME to `~`."""
+    src = src.removesuffix(".git")
+    for scheme in ("https://", "http://", "ssh://", "git://"):
+        if src.startswith(scheme):
+            src = src[len(scheme) :]
+            break
+    home = str(Path.home())
+    return "~" + src[len(home) :] if src.startswith(home) else src
 
 
 def _installed_dir() -> Path:
@@ -217,29 +248,50 @@ def _cmd_skills_install(url: str, *, force: bool) -> int:
         return 2
     skills, _ = discover_skills([_installed_dir()])
     by_name = {s.name: s for s in skills}
+    width = _term_width()
+    if len(installed) == 1:
+        name = installed[0]
+        print(f"Installed {_sgr(name, '1')}")
+        if desc := (by_name[name].description if name in by_name else ""):
+            print(f"  {_sgr(_one_line(desc, width - 2), '2')}")
+    else:
+        print(_sgr(f"Installed {len(installed)} skills from {_short_source(url)}:", "1"))
+        name_w = min(32, max(len(n) for n in installed))
+        for name in sorted(installed):
+            desc = by_name[name].description if name in by_name else ""
+            prefix = f"  {name:<{name_w}}  "
+            print(f"{prefix}{_sgr(_one_line(desc, max(20, width - len(prefix))), '2')}")
     for name in installed:
-        desc = by_name[name].description if name in by_name else ""
-        print(f"installed {name} — {desc}")
         if f"/{name}" in _MENU_COMMANDS:
             print(
                 f"note: /{name} is a built-in pause-menu command and keeps its meaning;"
                 " the skill stays reachable via the <skills> index, use_skill, and --skill"
             )
+    print(_sgr("Enabled and active now; `agent6 skills list` to review.", "2"))
     return 0
 
 
 def _cmd_skills_update(name: str) -> int:
     base = _installed_dir()
-    targets = [base / name] if name else sorted(p for p in base.glob("*") if p.is_dir())
     if name and not (base / name).is_dir():
         print(f"SKILLS ERROR: {name!r} is not installed", file=sys.stderr)
         return 2
-    changed = unchanged = skipped = 0
+    targets = [base / name] if name else sorted(p for p in base.glob("*") if p.is_dir())
+    if not targets:
+        print("no skills installed. Install one with `agent6 skills install <url>`.")
+        return 0
+    name_w = min(32, max(len(p.name) for p in targets))
+
+    def _row(skill: str, status: str, *, dim: bool, note: str = "") -> None:
+        line = f"  {skill:<{name_w}}  {f'{status}  {note}'.rstrip()}"
+        print(_sgr(line, "2") if dim else line)
+
+    counts = {"updated": 0, "unchanged": 0, "skipped": 0}
     for skill_dir in targets:
         origin = _read_origin(skill_dir)
         if origin is None or not origin.get("url"):
-            print(f"{skill_dir.name}: no origin recorded, skipping")
-            skipped += 1
+            _row(skill_dir.name, "skipped", dim=True, note="(no origin recorded)")
+            counts["skipped"] += 1
             continue
         before = origin.get("sha256", "")
         try:
@@ -252,8 +304,8 @@ def _cmd_skills_update(name: str) -> int:
                         None,
                     )
                     if src is None:
-                        print(f"{skill_dir.name}: no longer present at origin, skipping")
-                        skipped += 1
+                        _row(skill_dir.name, "skipped", dim=True, note="(gone from origin)")
+                        counts["skipped"] += 1
                         continue
                     _install_skill_dir(
                         src, url=origin["url"], kind="git", source_sha=sha, force=True
@@ -271,12 +323,13 @@ def _cmd_skills_update(name: str) -> int:
             return 2
         after = _read_origin(base / skill_dir.name) or {}
         if after.get("sha256", "") != before:
-            print(f"{skill_dir.name}: updated")
-            changed += 1
+            _row(skill_dir.name, "updated", dim=False)
+            counts["updated"] += 1
         else:
-            print(f"{skill_dir.name}: unchanged")
-            unchanged += 1
-    print(f"{changed} updated, {unchanged} unchanged, {skipped} skipped")
+            _row(skill_dir.name, "unchanged", dim=True)
+            counts["unchanged"] += 1
+    parts = [f"{counts[k]} {k}" for k in ("updated", "unchanged", "skipped") if counts[k]]
+    print(_sgr(", ".join(parts), "1"))
     return 0
 
 
@@ -295,14 +348,37 @@ def _cmd_skills_list() -> int:
     skills, warnings = discover_skills(dirs)
     state = dict(cfg.skills.state) if cfg is not None else {}
     if not skills:
-        print("(no skills installed; `agent6 skills install <url>` adds one)")
+        print("no skills installed. Install one with `agent6 skills install <url>`.")
         return 0
+
+    states = [state.get(s.name, "enabled") for s in skills]
+    counts = Counter(states)
+    detail = [f"{counts[k]} {k}" for k in ("disabled", "always") if counts[k]]
+    summary = f"{len(skills)} skill{'s' if len(skills) != 1 else ''}"
+    if detail:
+        summary += f"  ({', '.join(detail)})"
+    print(_sgr(summary, "1"))
+
+    # Group by origin so a repo that ships 20 skills prints its URL once, not
+    # once per line. The state tag column only appears when some skill is not
+    # plain-enabled, so the common all-enabled listing stays tight.
+    groups: dict[str, list[Skill]] = {}
     for s in skills:
-        st = state.get(s.name, "enabled")
         origin = _read_origin(s.dir)
-        src = origin["url"] if origin and origin.get("url") else str(s.dir)
-        print(f"{s.name}  [{st}]  {src}")
-        print(f"    {s.description}")
+        src = origin["url"] if origin and origin.get("url") else str(s.dir.parent)
+        groups.setdefault(src, []).append(s)
+    show_state = any(st != "enabled" for st in states)
+    name_w = min(32, max(len(s.name) for s in skills))
+    tag_w = len("[disabled]")
+    for src, items in groups.items():
+        print(f"\n{_sgr(_short_source(src), '2')}")
+        for s in sorted(items, key=lambda k: k.name):
+            st = state.get(s.name, "enabled")
+            name = s.name if len(s.name) <= name_w else s.name[: name_w - 1] + "…"
+            prefix = f"  {name:<{name_w}}  "
+            if show_state:
+                prefix += f"{('' if st == 'enabled' else f'[{st}]'):<{tag_w}}  "
+            print(f"{prefix}{_one_line(s.description, max(20, _term_width() - len(prefix)))}")
     for w in warnings:
         print(f"WARNING: {w}", file=sys.stderr)
     return 0
