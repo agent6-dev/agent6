@@ -730,9 +730,22 @@ class ToolDispatcher:
         return {"hits": hits, "truncated": False}
 
     def _refuse_protected_writes(self, path: str, resolved: _SafePath | None = None) -> None:
-        """Refuse an in-process edit into ``.git`` (it bypasses the jail entirely)."""
+        """Refuse an in-process edit into a protected location (it bypasses the
+        jail entirely). ``.git`` under ``protect_git``, plus any operator/machine
+        protect paths (a machine bundle's ``.asm.toml`` + ``scripts/``), which the
+        jail marks read-only for ``run_command`` but the in-process edit tools
+        would otherwise let a ``mode="run"`` state rewrite -- persisting a payload
+        for the next run. Applies on both sandbox profiles."""
         if self._config.sandbox.protect_git:
             _refuse_protected_write(path, ".git", why="git history/metadata", resolved=resolved)
+        if resolved is not None and self._extra_protect_paths:
+            target = resolved.abs_path
+            for prot in self._extra_protect_paths:
+                if target == prot or prot in target.parents:
+                    raise ToolError(
+                        f"Refusing to write to a protected path (machine bundle): {path!r} "
+                        f"resolves under {prot}"
+                    )
 
     def _apply_edit(self, raw: dict[str, Any]) -> dict[str, Any]:
         args = ApplyEditInput.model_validate(raw)

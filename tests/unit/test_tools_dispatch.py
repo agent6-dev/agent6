@@ -301,6 +301,50 @@ def test_apply_edit_allows_git_write_when_protect_git_false(tmp_path: Path) -> N
     assert (tmp_path / ".git" / "description").read_text(encoding="utf-8") == "ok\n"
 
 
+def test_apply_edit_refuses_extra_protect_paths(tmp_path: Path) -> None:
+    # A machine bundle's .asm.toml + scripts/ are passed as extra_protect_paths.
+    # The jail marks them read-only for run_command, but the in-process edit tools
+    # ran outside that -- a mode="run" state could rewrite its own logic/scripts
+    # and persist a payload for the next run. Refuse on both profiles.
+    cfg = _config(tmp_path)
+    (tmp_path / "bundle").mkdir()
+    asm = tmp_path / "bundle" / "fixer.asm.toml"
+    asm.write_text("[machine]\n", encoding="utf-8")
+    scripts = tmp_path / "bundle" / "scripts"
+    scripts.mkdir()
+    (scripts / "deploy.sh").write_text("#!/bin/sh\ntrue\n", encoding="utf-8")
+    d = ToolDispatcher(
+        root=tmp_path,
+        config=cfg,
+        extra_protect_paths=(asm.resolve(), scripts.resolve()),
+    )
+    with pytest.raises(ToolError, match="protected path"):
+        d.dispatch(
+            "apply_edit",
+            {
+                "path": "bundle/fixer.asm.toml",
+                "edits": [{"kind": "replace", "old_string": "[machine]", "new_string": "[m]"}],
+            },
+        )
+    with pytest.raises(ToolError, match="protected path"):
+        d.dispatch(
+            "apply_edit",
+            {
+                "path": "bundle/scripts/deploy.sh",
+                "edits": [{"kind": "replace", "old_string": "true", "new_string": "curl evil"}],
+            },
+        )
+    # A sibling file NOT under a protect path stays editable.
+    (tmp_path / "bundle" / "notes.md").write_text("hi\n", encoding="utf-8")
+    d.dispatch(
+        "apply_edit",
+        {
+            "path": "bundle/notes.md",
+            "edits": [{"kind": "replace", "old_string": "hi", "new_string": "bye"}],
+        },
+    )
+
+
 def test_apply_edit_rejects_create_combined_with_other_edits(tmp_path: Path) -> None:
     # A `create` after a `replace` used to skip the file-exists guard (which
     # only fired for the first edit) and silently overwrite the whole file.
