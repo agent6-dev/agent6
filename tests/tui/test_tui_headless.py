@@ -136,7 +136,7 @@ def test_tools_table_maximizes_to_full_height(tmp_path: Path) -> None:
             await pilot.pause()
             table = app._dash.query_one("#tools", DataTable)
             table.focus()
-            await pilot.pause()
+            await _settle_focus(pilot, table)
             resting_h = table.size.height
             app._dash.action_fullscreen()  # View menu / palette action (no bare letter)
             await pilot.pause()
@@ -178,7 +178,7 @@ def test_plan_tree_maximizes_to_full_width(tmp_path: Path) -> None:
             await pilot.pause()
             tree = app._dash.query_one("#plan", Tree)
             tree.focus()
-            await pilot.pause()
+            await _settle_focus(pilot, tree)
             resting_w = tree.size.width
             app._dash.action_fullscreen()  # View menu / palette action (no bare letter)
             await pilot.pause()
@@ -374,7 +374,7 @@ def test_dashboard_pane_maximize_and_restore(tmp_path: Path) -> None:
             await pilot.pause()
             diff = app._dash.query_one("#diff")
             diff.focus()
-            await pilot.pause()
+            await _settle_focus(pilot, diff)
             app._dash.action_fullscreen()  # maximize the focused pane
             await pilot.pause()
             assert app.screen.maximized is diff
@@ -383,6 +383,7 @@ def test_dashboard_pane_maximize_and_restore(tmp_path: Path) -> None:
             assert app.screen.maximized is None
             assert app.return_value is None  # still running; Esc was consumed by minimize
             diff.focus()
+            await _settle_focus(pilot, diff)
             app._dash.action_fullscreen()
             await pilot.pause()
             assert app.screen.maximized is diff
@@ -411,7 +412,7 @@ def test_dashboard_diff_pane_scrolls(tmp_path: Path) -> None:
             diff = app._dash.query_one("#diff")
             assert diff.max_scroll_y > 0  # content overflows the pane -> scrollable
             diff.focus()
-            await pilot.pause()  # focus() defers; land it before maximizing
+            await _settle_focus(pilot, diff)  # focus() defers; land it before maximizing
             app._dash.action_fullscreen()  # maximize, then it must still scroll
             await pilot.pause()
             assert app.screen.maximized is diff
@@ -448,9 +449,11 @@ def test_dashboard_inline_log_is_a_bounded_gapless_window(tmp_path: Path) -> Non
 
 
 def test_conversation_and_dashboard_footers_match(tmp_path: Path) -> None:
-    """The two run views share one shortcut scheme: identical footer entries in
-    the same order (only the Ctrl+D label differs: Dashboard vs Conversation),
-    Ctrl+D leftmost, and no plain-letter keys (the composer bars own letters)."""
+    """The two run views share one shortcut scheme: the same footer entries in
+    the same order, Ctrl+D leftmost (only its label differs: Dashboard vs
+    Conversation), and no plain-letter keys (the composer bars own letters).
+    One deliberate extra on the conversation: ^t Detail (the transcript's
+    detail cycle -- the dashboard has no transcript)."""
     from textual.widgets._footer import FooterKey
 
     async def scenario() -> None:
@@ -462,11 +465,12 @@ def test_conversation_and_dashboard_footers_match(tmp_path: Path) -> None:
             await pilot.press("ctrl+d")
             await pilot.pause()
             dash = [(fk.key_display, fk.description) for fk in app.screen.query(FooterKey)]
-            assert [k for k, _ in conv] == [k for k, _ in dash]  # same keys, same order
+            shared = [(k, d) for k, d in conv if d != "Detail"]
+            assert [k for k, _ in shared] == [k for k, _ in dash]  # same keys, same order
             assert conv[0][0] == "^d" and conv[0][1] == "Dashboard"  # leftmost toggle
             assert dash[0][1] == "Conversation"
             toggles = ("Dashboard", "Conversation")
-            assert [lbl for _, lbl in conv if lbl not in toggles] == [
+            assert [lbl for _, lbl in shared if lbl not in toggles] == [
                 lbl for _, lbl in dash if lbl not in toggles
             ]
             # No plain single-letter shortcuts on either view.
