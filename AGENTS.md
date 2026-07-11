@@ -58,6 +58,14 @@ explicit over implicit, simple over complex, special cases aren't special enough
 to break the rules, errors never pass silently. The agent6 concretions, and the
 principles the Zen doesn't cover:
 
+- **Ask, don't over-decide.** These rules are guardrails against reflexive
+  mistakes, not licence to make judgement calls alone. When a task forks -- a
+  behaviour tradeoff, an edge case that may not be worth handling, scope that could
+  grow, more than one reasonable design, a new dependency -- ask the operator
+  instead of picking. A one-line question is cheaper than confidently shipping the
+  wrong or over-built thing. Default to the simplest solution that fixes the actual
+  request; don't chase every edge a review can surface -- name the ones you skip and
+  let the operator judge if they matter.
 - **One obvious way.** One well-named command, not near-duplicate aliases:
   `agent6 connect`, not also `agent6 auth login`.
 - **Explicit.** Defaults are real, readable values `agent6 config show` prints
