@@ -185,32 +185,6 @@ def test_poke_missing_instance_errors(
     assert "no machine instance" in capsys.readouterr().err
 
 
-def test_tail_state_log_tolerates_torn_utf8_tail(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # `machine watch` polls the per-state log; a tail torn mid multibyte UTF-8
-    # sequence must be held back (offset at the partial start), not raise, and
-    # print once completed.
-    import json
-
-    from agent6.ui.cli.machine_cmds import _tail_state_log  # pyright: ignore[reportPrivateUsage]
-
-    log = tmp_path / "logs.jsonl"
-    full = json.dumps({"type": "loop.note", "text": "café"}, ensure_ascii=False).encode()
-    cut = full.rindex(b"\xc3\xa9") + 1  # keep only the first byte of the é
-    head = json.dumps({"type": "run.start", "ts": 1000.0}).encode() + b"\n"
-    log.write_bytes(head + full[:cut])
-    offset, anchor = _tail_state_log(log, 0, None)
-    assert offset == len(head)  # complete line consumed; torn tail held back
-    assert anchor == 1000.0
-    assert "run.start" in capsys.readouterr().out
-    with log.open("ab") as fh:
-        fh.write(full[cut:] + b"\n")
-    offset, _ = _tail_state_log(log, offset, anchor)
-    assert offset == len(head) + len(full) + 1
-    assert "café" in capsys.readouterr().out
-
-
 AGENT_MACHINE_HARD = """
 machine = "hard-usd"
 version = 1

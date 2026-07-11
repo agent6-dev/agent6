@@ -68,10 +68,10 @@ from agent6.ui.tui.modals import (
 from agent6.ui.tui.theme import PALETTE_CSS, setup_theme
 from agent6.ui.viewmodel import (
     MachineState,
+    MachineWatchCursor,
     fold_machine,
     fold_run,
     newest_state_log,
-    notification_key,
     tail_events,
 )
 
@@ -148,17 +148,12 @@ class MachineWatchScreen(Screen[None]):
         self._root = instance_dir
         self._spec = spec
         self._journal = MachineJournal(instance_dir)
-        self._seen_steps = 0
-        self._cur_log: Path | None = None
-        self._cur_off = 0
+        self._cursor = MachineWatchCursor()
         self._pending = ""  # accumulated thinking/answer text, flushed in readable chunks
         self._ended = False
         # Dedup prompts by (per-state dir, id): a new agent state resets its ids
         # to approval-1/question-1, so a bare-id set would mask the second state's.
         self._seen_prompt_keys: set[str] = set()
-        # Dedup notifications by identity, not a count: ms.notifications is a
-        # sliding window, so a count index would miss every notify past its cap.
-        self._seen_notif_keys: set[tuple[str, str, str]] = set()
         self._end_notified = False
         self._steer_open = False
 
@@ -186,9 +181,7 @@ class MachineWatchScreen(Screen[None]):
             events = self._journal.read()
         except JournalError:
             events = []  # the first poll surfaces the corruption in the header
-        self._seen_notif_keys = {
-            notification_key(n) for n in fold_machine(self._spec, events).notifications
-        }
+        self._cursor.seed_notifications(fold_machine(self._spec, events))
         self._poll()
         self.set_interval(0.5, self._poll)
 
@@ -289,20 +282,17 @@ class MachineWatchScreen(Screen[None]):
 
         log = self.query_one("#mw-log", RichLog)
         # New transitions.
-        for t in ms.transitions[self._seen_steps :]:
+        for t in self._cursor.new_transitions(ms):
             self._flush_pending()
             log.write(Text(f"[{t.seq}] {t.state} --{t.label}--> {t.goto}", style="bold"))
-        self._seen_steps = len(ms.transitions)
 
         # The current agent state's reasoning (switch logs as states change).
-        newest = newest_state_log(self._root)
-        if newest != self._cur_log:
+        newest, switched = self._cursor.advance_log(self._root)
+        if switched:
             self._flush_pending()
-            self._cur_log, self._cur_off = newest, 0
             if newest is not None:
                 log.write(Text(f"-- agent state: {newest.parent.name} --", style="cyan bold"))
-        if self._cur_log is not None:
-            self._cur_off = self._consume_state_log(self._cur_log, self._cur_off, log)
+        self._render_log_lines(log)
         self._flush_pending()  # show partial reasoning each tick
 
         self._dispatch_notifications(ms)
@@ -315,11 +305,7 @@ class MachineWatchScreen(Screen[None]):
         """Pop an in-app + desktop notification for each new machine.notify, and
         once for the machine's completion. Dedup by identity (not a count) since
         ms.notifications is a sliding window."""
-        for n in ms.notifications:
-            key = notification_key(n)
-            if key in self._seen_notif_keys:
-                continue
-            self._seen_notif_keys.add(key)
+        for n in self._cursor.new_notifications(ms):
             sev: SeverityLevel = (
                 "warning" if n.level == "warn" else "error" if n.level == "error" else "information"
             )
@@ -375,38 +361,26 @@ class MachineWatchScreen(Screen[None]):
 
         return cb
 
-    def _consume_state_log(self, path: Path, offset: int, log: RichLog) -> int:
-        """Read complete new lines past *offset*: accumulate thinking/answer text in
-        self._pending, write discrete events (tool calls) inline. Returns the new
-        offset (start of any partial trailing line).
-
-        Byte reads: a poll can hit EOF mid multibyte UTF-8 sequence (the writer
-        flushes long lines in several syscalls), and a text-mode readline would
-        raise UnicodeDecodeError there. Only complete lines are decoded."""
-        try:
-            with path.open("rb") as fh:
-                fh.seek(offset)
-                while True:
-                    pos = fh.tell()
-                    line = fh.readline()
-                    if not line.endswith(b"\n"):
-                        return pos
-                    try:
-                        evt = json.loads(line.decode("utf-8"))
-                    except (UnicodeDecodeError, json.JSONDecodeError):
-                        continue
-                    if not isinstance(evt, dict):
-                        continue
-                    etype = evt.get("type")
-                    if etype in ("role.thinking_delta", "role.text_delta"):
-                        self._pending += str(evt.get("text", ""))
-                        continue
-                    discrete = _discrete_log_line(evt)
-                    if discrete is not None:
-                        self._flush_pending()
-                        log.write(discrete)
-        except OSError:
-            return offset
+    def _render_log_lines(self, log: RichLog) -> None:
+        """Render new complete lines of the current state log: accumulate
+        thinking/answer text in self._pending, write discrete events (tool
+        calls) inline. The byte-offset cursor (partial trailing lines stay
+        unconsumed) lives in MachineWatchCursor."""
+        for raw in self._cursor.read_log_lines():
+            try:
+                evt = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(evt, dict):
+                continue
+            etype = evt.get("type")
+            if etype in ("role.thinking_delta", "role.text_delta"):
+                self._pending += str(evt.get("text", ""))
+                continue
+            discrete = _discrete_log_line(evt)
+            if discrete is not None:
+                self._flush_pending()
+                log.write(discrete)
 
 
 def _machine_row(path: Path) -> tuple[str, str, str]:

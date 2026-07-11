@@ -155,6 +155,83 @@ def newest_state_log(root: Path) -> Path | None:
     return None
 
 
+def read_complete_lines(path: Path, offset: int) -> tuple[list[str], int]:
+    """Complete new lines of *path* past byte *offset*, plus the new offset
+    (the start of any partial trailing line, re-read next poll).
+
+    Byte reads: a poll can hit EOF mid multibyte UTF-8 sequence (the writer
+    flushes long lines in several syscalls) and a text-mode readline would
+    raise UnicodeDecodeError there. Only complete lines are decoded."""
+    lines: list[str] = []
+    pos = offset
+    try:
+        with path.open("rb") as fh:
+            fh.seek(offset)
+            while True:
+                pos = fh.tell()
+                raw = fh.readline()
+                if not raw.endswith(b"\n"):
+                    break
+                lines.append(raw.decode("utf-8", errors="replace"))
+    except OSError:
+        pass
+    return lines, pos
+
+
+@dataclass
+class MachineWatchCursor:
+    """What a live machine watcher has already surfaced.
+
+    One implementation of the three dedup rules every front-end (the CLI watch
+    loop, the TUI machine screen) must agree on: transitions by count,
+    notifications by identity (``ms.notifications`` is a sliding window, so a
+    count index would miss every notify past its cap), and the newest state
+    log by (path, byte offset) with only complete lines consumed."""
+
+    seen_steps: int = 0
+    seen_notifications: set[tuple[str, str, str]] | None = None
+    log_path: Path | None = None
+    log_offset: int = 0
+
+    def seed_notifications(self, ms: MachineState) -> None:
+        """Mark every already-recorded notification as seen, so opening a watch
+        does not re-announce history."""
+        self.seen_notifications = {notification_key(n) for n in ms.notifications}
+
+    def new_transitions(self, ms: MachineState) -> list[TransitionView]:
+        out = list(ms.transitions[self.seen_steps :])
+        self.seen_steps = len(ms.transitions)
+        return out
+
+    def new_notifications(self, ms: MachineState) -> list[NotificationView]:
+        if self.seen_notifications is None:
+            self.seen_notifications = set()
+        out: list[NotificationView] = []
+        for n in ms.notifications:
+            key = notification_key(n)
+            if key not in self.seen_notifications:
+                self.seen_notifications.add(key)
+                out.append(n)
+        return out
+
+    def advance_log(self, root: Path) -> tuple[Path | None, bool]:
+        """Track the newest per-state log under *root*. Returns the current log
+        and True when it changed; the caller resets its render state (elapsed
+        anchor, pending text) and announces the new agent state."""
+        newest = newest_state_log(root)
+        if newest != self.log_path:
+            self.log_path, self.log_offset = newest, 0
+            return newest, True
+        return newest, False
+
+    def read_log_lines(self) -> list[str]:
+        """Complete new lines of the current state log since the last poll."""
+        if self.log_path is None:
+            return []
+        lines, self.log_offset = read_complete_lines(self.log_path, self.log_offset)
+        return lines
+
+
 def machine_state_as_dict(ms: MachineState) -> dict[str, Any]:
     """The JSON-able wire form of a MachineState, stable field names: what
     `agent6 watch --json` and a web client serialize."""

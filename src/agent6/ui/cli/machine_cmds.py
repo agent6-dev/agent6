@@ -74,9 +74,8 @@ from agent6.ui.cli.plan_watch import event_epoch, format_plain_event
 from agent6.ui.cli.scriptcheck import lint_and_typecheck, run_offline_tests
 from agent6.ui.viewmodel import (
     MachineState,
+    MachineWatchCursor,
     fold_machine,
-    newest_state_log,
-    notification_key,
 )
 
 
@@ -872,33 +871,6 @@ def _render_overview(ms: MachineState) -> str:
     return "\n".join(lines)
 
 
-def _tail_state_log(
-    path: Path, offset: int, run_start_ts: float | None
-) -> tuple[int, float | None]:
-    """Print complete new lines of *path* past *offset* (the agent's reasoning +
-    tool calls, rendered like a run), returning the new offset (start of any
-    partial trailing line) and the elapsed-time anchor.
-
-    Byte reads: a poll can hit EOF mid multibyte UTF-8 sequence (the writer
-    flushes long lines in several syscalls) and a text-mode readline would raise
-    UnicodeDecodeError there. Only complete lines are decoded."""
-    try:
-        with path.open("rb") as fh:
-            fh.seek(offset)
-            while True:
-                pos = fh.tell()
-                raw = fh.readline()
-                if not raw.endswith(b"\n"):
-                    return pos, run_start_ts  # partial / EOF: resume here next poll
-                line = raw.decode("utf-8", errors="replace")
-                if run_start_ts is None:
-                    with contextlib.suppress(json.JSONDecodeError):
-                        run_start_ts = event_epoch(json.loads(line).get("ts"))
-                print("    " + format_plain_event(line, run_start_ts=run_start_ts), flush=True)
-    except OSError:
-        return offset, run_start_ts
-
-
 def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0912
     """Follow a running machine: the state overview, each transition as it lands,
     and the current agent state's live reasoning (its per-state logs.jsonl). Exits
@@ -928,37 +900,31 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0912
         f"agent6 machine poke {machine_id} [--message TEXT]",
         file=sys.stderr,
     )
-    seen_steps = len(ms.transitions)
-    # Dedup by identity, NOT by a count: ms.notifications is a sliding window
-    # (viewmodel caps it), so a count index would miss every notify past the cap.
-    seen_notifs = {notification_key(n) for n in ms.notifications}  # seed history silently
-    cur_log: Path | None = None
-    cur_off = 0
+    cursor = MachineWatchCursor(seen_steps=len(ms.transitions))
+    cursor.seed_notifications(ms)  # history already rendered by the overview
     anchor: float | None = None
     try:
         while True:
             ms = fold_machine(spec, journal.read())
-            for t in ms.transitions[seen_steps:]:
+            for t in cursor.new_transitions(ms):
                 print(f"  [{t.seq:>3}] {t.state} --{t.label}--> {t.goto}", flush=True)
-            seen_steps = len(ms.transitions)
-            for n in ms.notifications:
-                key = notification_key(n)
-                if key in seen_notifs:
-                    continue
-                seen_notifs.add(key)
+            for n in cursor.new_notifications(ms):
                 # Ring the bell + fire a desktop notification (if notify-send is
                 # present) so an operator watching over ssh is alerted.
                 print(f"\a  🔔 [{n.level}] {n.state}: {n.message}", flush=True)
                 desktop_notify(f"agent6: {ms.machine}", n.message)
-            newest = newest_state_log(root)
-            if newest != cur_log:
+            newest, switched = cursor.advance_log(root)
+            if switched:
                 # Reset the elapsed-time anchor too: each state log re-derives its
                 # own base from its first event, else states 2..N read inflated.
-                cur_log, cur_off, anchor = newest, 0, None
-                if cur_log is not None:
-                    print(f"  -- agent state: {cur_log.parent.name} --", file=sys.stderr)
-            if cur_log is not None:
-                cur_off, anchor = _tail_state_log(cur_log, cur_off, anchor)
+                anchor = None
+                if newest is not None:
+                    print(f"  -- agent state: {newest.parent.name} --", file=sys.stderr)
+            for line in cursor.read_log_lines():
+                if anchor is None:
+                    with contextlib.suppress(json.JSONDecodeError):
+                        anchor = event_epoch(json.loads(line).get("ts"))
+                print("    " + format_plain_event(line, run_start_ts=anchor), flush=True)
             if ms.ended is not None:
                 print(
                     f"\n{ms.ended.status.upper()}: ended in {ms.ended.state!r} after"
