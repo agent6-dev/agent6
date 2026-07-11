@@ -51,19 +51,18 @@ uv run agent6 --help
 
 ## Shell completion
 
-agent6 uses [argcomplete](https://kislyuk.github.io/argcomplete/):
+One command installs tab-completion (it detects your shell from `$SHELL`, or
+pass `bash`/`zsh`/`fish` explicitly; rerunning is safe and refreshes it):
 
-=== "Bash / Zsh"
+```sh
+agent6 completions
+```
 
-    ```sh
-    eval "$(register-python-argcomplete agent6)"
-    ```
-
-=== "Fish"
-
-    ```sh
-    register-python-argcomplete --shell fish agent6 > ~/.config/fish/completions/agent6.fish
-    ```
+Bash/zsh get a marker-guarded source line in their rc file pointing at a
+script under the agent6 config dir; fish gets a native completions file.
+`agent6 completions --print bash` emits the script instead, for `eval` or a
+dotfiles repo. (The underlying [argcomplete](https://kislyuk.github.io/argcomplete/)
+`register-python-argcomplete` also works when it is on your PATH.)
 
 ## Check the install
 

@@ -29,6 +29,7 @@ from agent6.ui.cli._common import (
     _SandboxOverrides,
 )
 from agent6.ui.cli.check_cmds import _cmd_check
+from agent6.ui.cli.completions_cmd import cmd_completions as _cmd_completions
 from agent6.ui.cli.config_cmds import (
     _cmd_config_add,
     _cmd_config_fill,
@@ -336,6 +337,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             return _cmd_history_graph(args.run_id)
     if args.command == "tui":
         return _cmd_tui()
+    if args.command == "completions":
+        return _cmd_completions(args.shell, print_only=args.print_only)
     if args.command == "web":
         return _cmd_web(
             args.target,

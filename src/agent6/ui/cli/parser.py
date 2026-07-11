@@ -536,6 +536,31 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Open the TUI hub: browse runs and start a new run/plan/ask.",
     )
 
+    completions_p = _sub(
+        sub,
+        "completions",
+        help=(
+            "Install shell tab-completion for agent6 (detects your shell from"
+            " $SHELL; bash/zsh get a guarded source line in their rc, fish a"
+            " native completions file). --print emits the script instead, for"
+            " `eval` or manual setup."
+        ),
+    )
+    completions_p.add_argument(
+        "shell",
+        nargs="?",
+        default="",
+        choices=["", "bash", "zsh", "fish"],
+        metavar="{bash,zsh,fish}",
+        help="Target shell (default: detect from $SHELL).",
+    )
+    completions_p.add_argument(
+        "--print",
+        dest="print_only",
+        action="store_true",
+        help="Print the completion script to stdout instead of installing it.",
+    )
+
     web_p = _sub(
         sub,
         "web",
