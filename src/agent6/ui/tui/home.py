@@ -435,6 +435,22 @@ class HomeScreen(Screen[None]):
         return cb
 
     def action_open_config(self) -> None:
+        # An invalid config (e.g. a stale value or a leftover table from a removed
+        # feature) would crash the config screen on load. Pre-check so we can point
+        # at `agent6 config fix` instead of taking down the TUI.
+        from agent6.config import ConfigError  # noqa: PLC0415
+        from agent6.config.layer import load_effective  # noqa: PLC0415
+
+        try:
+            load_effective(self.repo_cwd, None)
+        except ConfigError as exc:
+            self.app.notify(
+                "Config is invalid, so it can't be opened. Run `agent6 config fix` in a"
+                f" terminal to drop invalid entries, then reopen.\n{exc}",
+                severity="error",
+                timeout=15.0,
+            )
+            return
         self.app.push_screen(ConfigScreen(self.repo_cwd))
 
     def action_open_machines(self) -> None:
