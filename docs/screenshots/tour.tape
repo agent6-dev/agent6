@@ -3,15 +3,16 @@
 #
 #   bash docs/screenshots/generate.sh        # seeds fixtures, runs this tape
 #
-# Drives hub -> config -> search -> help -> run dashboard -> transcript -> logs
+# Drives hub -> config -> search -> help -> log -> conversation -> dashboard
 # and writes one PNG per stop. Requires `vhs`, `ttyd`, `ffmpeg`, and `agent6` on
 # PATH. generate.sh exports AGENT6_STATE_HOME / AGENT6_CONFIG_HOME /
 # AGENT6_DEMO_REPO (seeded, isolated) before invoking vhs; the tape inherits
-# them. Uses only the hub/dashboard's direct key bindings (Enter/l/t/c/?/q and
-# /), never the terminal-dependent Alt+<key> menus. The config/search/help
-# screens are captured from the freshly mounted hub BEFORE entering the
-# dashboard, because hub<->dashboard are separate apps and the app restart drops
-# the first keystroke that follows it.
+# them. Hub stops use its direct key bindings (Enter/l/c/?/q and /); inside the
+# run app the composer bar owns plain letters, so only its priority chords
+# (Ctrl+D, PageUp, Esc) are used. The config/search/help/log screens are
+# captured from the freshly mounted hub BEFORE entering the run, because
+# hub<->run are separate apps and the app restart drops the first keystroke
+# that follows it.
 #
 # This tape's job is the PNGs. vhs requires an Output, but this recording is a
 # throwaway -- the tour.webm video is recorded separately by reel.tape (no
@@ -63,36 +64,33 @@ Screenshot docs/screenshots/out/08-help.png
 Escape
 Sleep 1s
 
-# --- open the top run -> the live dashboard ------------------------------
-# (DAG, budget bar, tool table, reasoning stream, log tail, diff)
-Enter
-Sleep 3.5s
-Screenshot docs/screenshots/out/02-run-dashboard.png
-
-# --- the conversation viewer (t): assistant text + every tool call -------
-# Jump to the end (G), then back up two pages so an assistant turn with its
-# reasoning + tool calls is centered, not the long system prompt.
-Type "t"
-Sleep 1.5s
-Type "G"
-Sleep 500ms
-PageUp
-Sleep 300ms
-PageUp
-Sleep 1s
-Screenshot docs/screenshots/out/05-transcript.png
-Escape
-Sleep 1s
-
-# --- the full-height log viewer (l) --------------------------------------
+# --- the event log of the selected run (l), straight from the hub --------
 Type "l"
 Sleep 1.5s
 Screenshot docs/screenshots/out/09-logs.png
 Escape
 Sleep 1s
 
+# --- open the top run -> the conversation, the run app's primary view ----
+# (assistant turns, tool calls, the composer bar). It opens following the
+# end; two pages up centers an assistant turn with its reasoning + tool
+# calls instead of the run's tail.
+Enter
+Sleep 3.5s
+PageUp
+Sleep 300ms
+PageUp
+Sleep 1s
+Screenshot docs/screenshots/out/05-transcript.png
+
+# --- the live dashboard (Ctrl+D toggles conversation <-> dashboard) ------
+# (DAG, budget bar, tool table, reasoning stream, log tail, diff)
+Ctrl+D
+Sleep 3s
+Screenshot docs/screenshots/out/02-run-dashboard.png
+
 # --- back to the hub and quit --------------------------------------------
 Escape
-Sleep 700ms
+Sleep 2s
 Type "q"
 Sleep 1s
