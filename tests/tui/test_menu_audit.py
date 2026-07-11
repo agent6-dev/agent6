@@ -172,3 +172,27 @@ def test_menu_dropdown_keys_right_align_to_common_edge() -> None:
     assert len({len(r) for r in keyed}) == 1  # all padded to one width => shared right edge
     assert opts["a"].endswith(" n") and opts["b"].endswith("Enter") and opts["d"].endswith(" q")
     assert opts["c"] == "Theme…"  # keyless row is just the label
+
+
+def test_help_screen_closes_after_resize_reflow() -> None:
+    """The help page reflows on resize via recompose, which replaces the focused
+    #help-scroll. Focus must move to the new instance: left on the detached old
+    one, its binding chain no longer reaches the screen and Esc/q/? stop
+    closing the page (a keyboard trap; ttyd/vhs always resize right after
+    mount, so the tour hit it on every run)."""
+    adir, repo = Path(tempfile.mkdtemp()), Path(tempfile.mkdtemp())
+
+    async def scenario() -> None:
+        app = Agent6HomeApp(adir, repo)
+        async with app.run_test(size=(190, 50)) as pilot:
+            await pilot.pause()
+            await pilot.press("question_mark")
+            await pilot.pause()
+            assert type(app.screen).__name__ == "HelpScreen"
+            await pilot.resize_terminal(150, 40)  # triggers the reflow recompose
+            await pilot.pause()
+            await pilot.press("escape")
+            await pilot.pause()
+            assert type(app.screen).__name__ == "HomeScreen"
+
+    asyncio.run(scenario())

@@ -270,13 +270,20 @@ class HelpScreen(Screen[None]):
             id="help-foot",
         )
 
-    def on_mount(self) -> None:
+    def _focus_scroll(self) -> None:
         self.query_one("#help-scroll", VerticalScroll).focus()  # PgUp/PgDn scroll at once
+
+    def on_mount(self) -> None:
+        self._focus_scroll()
 
     def on_resize(self) -> None:
         # Reflow: the column count is computed from the width at compose time,
         # so a terminal resize rebuilds the page (cheap: a few dozen Statics).
+        # Recompose replaces #help-scroll; without a refocus, focus stays on the
+        # detached old instance, whose binding chain no longer reaches this
+        # screen -- Esc/q/? stop closing the page.
         self.refresh(recompose=True)
+        self.call_after_refresh(self._focus_scroll)
 
 
 class _MenuTitle(Static):
