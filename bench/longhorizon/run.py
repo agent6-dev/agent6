@@ -235,6 +235,10 @@ def _extract_metrics(state_home: Path, run_id: str, trap: str | None) -> dict[st
         "deps_added": 0,
         "memory_writes": 0,
         "memory_invalidations": 0,
+        # Write-side nudges the loop fired (flip advisory / deferred finish);
+        # with memory_writes they show which surface converts models.
+        "memory_flip_nudges": 0,
+        "memory_finish_nudges": 0,
         "trap_edits": 0,
     }
     logs = _find_logs(state_home, run_id)
@@ -268,6 +272,10 @@ def _extract_metrics(state_home: Path, run_id: str, trap: str | None) -> dict[st
             dropped = True
         elif t == "loop.task.surfaced":
             m["surfaced"] += 1
+        elif t == "loop.memory_flip.nudged":
+            m["memory_flip_nudges"] += 1
+        elif t == "loop.memory_finish.gated":
+            m["memory_finish_nudges"] += 1
         elif t == "tool.call":
             m["tool_calls"] += 1
             name = e.get("name")
@@ -537,6 +545,7 @@ def main() -> None:
                         f" r{rec.get('rep')} {rec.get('leg', '?')}"
                         f" score={rec.get('score')} drops={rec.get('drops_total')}"
                         f" rr={rec.get('redundant_reads')} memw={rec.get('memory_writes')}"
+                        f" nudges={rec.get('memory_flip_nudges')}/{rec.get('memory_finish_nudges')}"
                         f" deps={rec.get('deps_added')} iters={rec.get('iterations')}"
                         f" ${rec.get('usd')} {rec.get('wall_s')}s"
                         f" reason={rec.get('end_reason')}"
