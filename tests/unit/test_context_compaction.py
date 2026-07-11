@@ -96,8 +96,8 @@ def test_compact_skips_tool_result_smaller_than_placeholder() -> None:
 
 def test_compact_noop_when_under_threshold() -> None:
     msgs: list[dict[str, Any]] = [_user_msg_with_tool_results("small")]
-    elided = compact_old_tool_results(msgs, max_total_bytes=1000)
-    assert elided == 0
+    stats = compact_old_tool_results(msgs, max_total_bytes=1000)
+    assert stats.elided == 0
     assert msgs[0]["content"][0]["content"] == "small"
 
 
@@ -108,8 +108,8 @@ def test_compact_elides_oldest_when_over_threshold() -> None:
         _user_msg_with_tool_results(big),  # turn 1
         _user_msg_with_tool_results(big),  # turn 2 - newest
     ]
-    elided = compact_old_tool_results(msgs, max_total_bytes=1500, keep_recent=2)
-    assert elided == 1
+    stats = compact_old_tool_results(msgs, max_total_bytes=1500, keep_recent=2)
+    assert stats.elided == 1
     # Turn 0 (oldest) replaced with marker; turns 1 and 2 kept.
     assert "elided" in msgs[0]["content"][0]["content"]
     assert msgs[1]["content"][0]["content"] == big
@@ -121,9 +121,9 @@ def test_compact_preserves_keep_recent_floor() -> None:
     are never elided."""
     big = "x" * 10_000
     msgs: list[dict[str, Any]] = [_user_msg_with_tool_results(big) for _ in range(5)]
-    elided = compact_old_tool_results(msgs, max_total_bytes=100, keep_recent=2)
+    stats = compact_old_tool_results(msgs, max_total_bytes=100, keep_recent=2)
     # 3 oldest elided, 2 most recent preserved.
-    assert elided == 3
+    assert stats.elided == 3
     assert "elided" in msgs[0]["content"][0]["content"]
     assert "elided" in msgs[1]["content"][0]["content"]
     assert "elided" in msgs[2]["content"][0]["content"]
@@ -137,8 +137,8 @@ def test_compact_idempotent_on_already_elided() -> None:
     msgs: list[dict[str, Any]] = [_user_msg_with_tool_results(big) for _ in range(4)]
     e1 = compact_old_tool_results(msgs, max_total_bytes=1500, keep_recent=2)
     e2 = compact_old_tool_results(msgs, max_total_bytes=1500, keep_recent=2)
-    assert e1 == 2  # oldest 2 elided
-    assert e2 == 0  # no further work needed on second pass
+    assert e1.elided == 2  # oldest 2 elided
+    assert e2.elided == 0  # no further work needed on second pass
 
 
 def test_compact_skips_non_tool_result_blocks() -> None:
@@ -154,11 +154,11 @@ def test_compact_skips_non_tool_result_blocks() -> None:
         _user_msg_with_tool_results("y" * 1000),
         _user_msg_with_tool_results("z" * 1000),
     ]
-    elided = compact_old_tool_results(msgs, max_total_bytes=1500, keep_recent=2)
+    stats = compact_old_tool_results(msgs, max_total_bytes=1500, keep_recent=2)
     # Assistant message untouched.
     assert msgs[0]["content"][0]["type"] == "tool_use"
     # Oldest tool_result elided.
-    assert elided == 1
+    assert stats.elided == 1
 
 
 def test_compact_never_elides_unseen_results_in_final_message() -> None:
@@ -179,8 +179,8 @@ def test_compact_never_elides_unseen_results_in_final_message() -> None:
         },
         _user_msg_with_tool_results(big, big, big),
     ]
-    elided = compact_old_tool_results(msgs, max_total_bytes=100, keep_recent=2)
-    assert elided == 0
+    stats = compact_old_tool_results(msgs, max_total_bytes=100, keep_recent=2)
+    assert stats.elided == 0
     assert [c["content"] for c in msgs[2]["content"]] == [big, big, big]
 
 
@@ -194,8 +194,8 @@ def test_compact_elides_seen_results_but_protects_final_message() -> None:
         {"role": "assistant", "content": [{"type": "text", "text": "on it"}]},
         _user_msg_with_tool_results(big, big, big),  # unseen: awaiting delivery
     ]
-    elided = compact_old_tool_results(msgs, max_total_bytes=100, keep_recent=2)
-    assert elided == 3
+    stats = compact_old_tool_results(msgs, max_total_bytes=100, keep_recent=2)
+    assert stats.elided == 3
     assert all("elided" in c["content"] for c in msgs[1]["content"])
     assert [c["content"] for c in msgs[3]["content"]] == [big, big, big]
 
@@ -220,8 +220,8 @@ def test_compact_never_elides_undelivered_results_behind_a_steer_message() -> No
         _user_msg_with_tool_results(big, big, big),  # unseen: awaiting delivery
         {"role": "user", "content": [{"type": "text", "text": "steer: focus on the parser"}]},
     ]
-    elided = compact_old_tool_results(msgs, max_total_bytes=100, keep_recent=2)
-    assert elided == 0
+    stats = compact_old_tool_results(msgs, max_total_bytes=100, keep_recent=2)
+    assert stats.elided == 0
     assert [c["content"] for c in msgs[2]["content"]] == [big, big, big]
 
 
@@ -328,7 +328,7 @@ def test_compact_elides_protected_reads_last_but_bound_still_holds() -> None:
     n = compact_old_tool_results(
         msgs, max_total_bytes=3500, keep_recent=2, protect_paths=frozenset({"hot.py"})
     )
-    assert n == 1
+    assert n.elided == 1
     assert msgs[1]["content"][0]["content"] == "H" * 1000
     assert "cold.py" in msgs[3]["content"][0]["content"]
     # Tighter budget: protection is a priority, not an exemption; the hot read
@@ -337,7 +337,7 @@ def test_compact_elides_protected_reads_last_but_bound_still_holds() -> None:
     n2 = compact_old_tool_results(
         msgs2, max_total_bytes=2500, keep_recent=2, protect_paths=frozenset({"hot.py"})
     )
-    assert n2 == 2
+    assert n2.elided == 2
     assert "hot.py" in msgs2[1]["content"][0]["content"]
 
 
@@ -353,7 +353,7 @@ def test_compact_placeholder_carries_tool_identity() -> None:
         _tool_result_msg("r4", "W" * 1000),
     ]
     n = compact_old_tool_results(msgs, max_total_bytes=3000, keep_recent=2)
-    assert n >= 1
+    assert n.elided >= 1
     elided = msgs[1]["content"][0]["content"]
     assert elided.startswith("<elided by context compaction")
     assert "read_file src/lib.py" in elided

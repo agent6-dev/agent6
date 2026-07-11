@@ -63,6 +63,9 @@ from agent6.workflows._compaction import (
     SUMMARISE_AT_CHARS as _SUMMARISE_AT_CHARS,
 )
 from agent6.workflows._compaction import (
+    GistRequest as _GistRequest,
+)
+from agent6.workflows._compaction import (
     cap_tool_result as _cap_tool_result,
 )
 from agent6.workflows._compaction import (
@@ -73,6 +76,9 @@ from agent6.workflows._compaction import (
 )
 from agent6.workflows._compaction import (
     parse_checkoff as _parse_checkoff,
+)
+from agent6.workflows._compaction import (
+    parse_gist_lines as _parse_gist_lines,
 )
 from agent6.workflows._compaction import (
     recently_edited_paths as _recently_edited_paths,
@@ -223,6 +229,9 @@ from agent6.workflows._prompts import (
 )
 from agent6.workflows._prompts import (
     CRITIC_SYSTEM_PROMPT as _CRITIC_SYSTEM_PROMPT,
+)
+from agent6.workflows._prompts import (
+    GIST_DISTILL_SYSTEM_PROMPT as _GIST_DISTILL_SYSTEM_PROMPT,
 )
 from agent6.workflows._prompts import (
     PROMPT_REVISION_SYSTEM_PROMPT as _PROMPT_REVISION_SYSTEM_PROMPT,
@@ -643,6 +652,10 @@ class Workflow:
     # feature still works without explicit wiring.
     summariser_provider: Provider | None = None
     context_summary_max_tokens: int = 2048
+    # Tier-1 gist elision (``context.elision_gists``): large read_file results
+    # decay to a distilled-gist placeholder (summariser model, one batched call
+    # per drop event) before the bare marker. Off = pre-gist behavior.
+    compact_elision_gists: bool = True
     # Cap on consecutive `before_finish` rejections.
     # When the worker repeatedly calls finish_run and the critic keeps
     # saying NEEDS_WORK, the loop would otherwise burn budget bouncing.
@@ -2744,15 +2757,21 @@ class Workflow:
         summarisation errors or returns nothing, the message list is left
         untouched (tier-1 elision already ran) and the run continues.
         """
-        n_dropped = _compact_old_tool_results(
+        stats = _compact_old_tool_results(
             messages,
             max_total_bytes=self.compact_drop_at_chars,
             keep_recent=2,
             protect_paths=_recently_edited_paths(messages),
+            gister=self._distill_gists if self.compact_elision_gists else None,
         )
-        if n_dropped:
-            self._log(f"LOOP: compaction elided {n_dropped} old tool_result blocks")
-            self._emit("loop.compact.dropped", n=n_dropped)
+        if stats.elided:
+            detail = f", {stats.gisted} kept as distilled gists" if stats.gisted else ""
+            self._log(f"LOOP: compaction elided {stats.elided} old tool_result blocks{detail}")
+            self._emit("loop.compact.dropped", n=stats.elided)
+        if stats.demoted:
+            self._log(f"LOOP: compaction demoted {stats.demoted} gists to bare placeholders")
+        if stats.gisted or stats.demoted:
+            self._emit("loop.compact.gists", gisted=stats.gisted, demoted=stats.demoted)
         # Tier 2 must measure something tier 1 does NOT already bound. Tier 1
         # just capped tool_result bytes to ``compact_drop_at_chars``, so
         # re-measuring only tool_results here could never exceed the (larger)
@@ -2767,6 +2786,28 @@ class Workflow:
         if total > self.compact_summarise_at_chars and len(messages) > 3:
             return self._summarise_and_restart(messages)
         return False
+
+    def _distill_gists(self, requests: tuple[_GistRequest, ...]) -> dict[str, str]:
+        """Distill about-to-be-elided file reads into one-line gists with the
+        summariser model (same seat as tier-2). Fail-safe: any provider error
+        returns {} and every victim gets the bare placeholder, so gisting can
+        slow a drop event but never break one."""
+        provider = self.summariser_provider or self.provider
+        files = "\n\n".join(f"=== FILE {r.path} ===\n{r.content}" for r in requests)
+        self._emit("loop.compact.gist.call", files=len(requests))
+        try:
+            resp = provider.call(
+                system=_GIST_DISTILL_SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": files}],
+                tools=[],
+                max_tokens=self.context_summary_max_tokens,
+                temperature=0.0,
+            )
+        except (ProviderError, BudgetExceeded) as exc:
+            self._log(f"  gist distillation failed: {exc}; eliding without gists")
+            self._emit("loop.compact.gist.failed", error=str(exc)[:200])
+            return {}
+        return _parse_gist_lines(resp.text or "", paths=[r.path for r in requests])
 
     def _summarise_and_restart(self, messages: list[dict[str, Any]]) -> bool:
         """Replace the message history with (original task + a model-written

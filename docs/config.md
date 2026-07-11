@@ -268,7 +268,8 @@ Tiered context-compaction thresholds (approximate chars; tokens ≈ chars/4).
 |---|---|---|
 | `drop_at_chars` | _adaptive_ | Tier-1 compaction: replace oldest tool-results with a placeholder. Default (unset) sizes from the worker model's context window (~45% of it); set BOTH thresholds to pin. |
 | `summarise_at_chars` | _adaptive_ | Tier-2 compaction: summarise elided history + restart (the task DAG survives). Default (unset) ~80% of the model's context window; the historical 256k/768k apply when the window is unknown. Must be greater than `drop_at_chars`. |
-| `summary_max_tokens` | `2048` | Cap on the tier-2 summary. |
+| `summary_max_tokens` | `2048` | Cap on the tier-2 summary (also caps a gist distillation call). |
+| `elision_gists` | `true` | Tier-1 decays a large `read_file` result to a placeholder carrying a model-written gist of the file (one batched reviewer-model call per drop event) before the bare marker; under continued pressure gists demote to bare so the byte bound holds. `false` = straight to bare markers, no distiller calls. |
 
 ## `[prompt]`
 

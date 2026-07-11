@@ -615,6 +615,13 @@ class ContextConfig(BaseModel):
     drop_at_chars: int | None = Field(default=None, gt=0)
     summarise_at_chars: int | None = Field(default=None, gt=0)
     summary_max_tokens: int = Field(gt=0, default=2048)
+    # Tier-1 gist elision: a large read_file result about to be elided decays
+    # to a placeholder carrying a model-written gist of the file first (one
+    # batched reviewer-model call per drop event), then to the bare marker
+    # under continued pressure. Measured on the longhorizon bench: bare
+    # elision of reference docs halves a retention task's score under a small
+    # window. False = straight to bare markers (no distiller calls).
+    elision_gists: bool = True
 
     @model_validator(mode="after")
     def _check_compaction_thresholds(self) -> ContextConfig:

@@ -308,6 +308,7 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
             compact_drop_at_chars=compact_drop,
             compact_summarise_at_chars=compact_summarise,
             context_summary_max_tokens=cfg.context.summary_max_tokens,
+            compact_elision_gists=cfg.context.elision_gists,
             steer_requested=bridges.steer_requested if bridges is not None else (lambda: False),
             steer_clear=bridges.steer_clear if bridges is not None else (lambda: None),
             steer_prompt=bridges.steer_prompt if bridges is not None else (lambda: None),

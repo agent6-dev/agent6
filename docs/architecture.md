@@ -111,8 +111,15 @@ Notes:
   placeholder naming the elided call (`read_file src/x.py ...`), with
   reads of files the worker edited in the last few turns elided last
   (a placeholder there would force a paid re-read before the next
-  edit; it is a priority, not an exemption, so the bound holds); at
-  `summarise_at_chars`
+  edit; it is a priority, not an exemption, so the bound holds). A
+  large `read_file` result decays in two stages: first to a placeholder
+  carrying a distilled gist of the file's load-bearing facts (one
+  batched reviewer-model call per drop event; measured on the
+  longhorizon bench, bare elision of reference docs halves a retention
+  task's score under a small window), then under continued pressure to
+  the bare marker, oldest gists first, so the byte bound always holds.
+  Hot files are never gisted (their content is changing under edits).
+  At `summarise_at_chars`
   the elided history is summarised by the `reviewer` model and the
   conversation restarts from (task + summary). The curator-owned task
   DAG survives the restart: agent6 re-surfaces the current task into the

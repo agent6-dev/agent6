@@ -598,6 +598,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
                     compact_drop_at_chars=compact_drop,
                     compact_summarise_at_chars=compact_summarise,
                     context_summary_max_tokens=cfg.context.summary_max_tokens,
+                    compact_elision_gists=cfg.context.elision_gists,
                 )
                 try:
                     with _tui_session(layout.run_dir, enabled=tui_enabled):

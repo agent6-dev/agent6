@@ -572,6 +572,19 @@ CONTEXT_SUMMARY_SYSTEM_PROMPT = (
     " Do not include pleasantries or meta-commentary. Output only the summary."
 )
 
+GIST_DISTILL_SYSTEM_PROMPT = (
+    "You are compacting an autonomous coding agent's context. Each file below"
+    " is about to be dropped from that context. For EACH file output exactly"
+    " one line:\n"
+    "the file's path, a colon, then the facts the agent needs to keep working"
+    " correctly without re-reading the file: exact requirements, constraints,"
+    " thresholds, edge cases, interfaces, and numbers, in the file's own"
+    " terms.\n"
+    "One line per file, every file, in the order given, at most 350 characters"
+    " per line. No commentary, no markdown, no blank lines."
+)
+
+
 # Prepended to the post-compaction restart message so the worker knows the
 # history was summarised rather than lost, and continues rather than restarting.
 _CONTEXT_RESTART_HEAD = (
