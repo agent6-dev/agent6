@@ -14,7 +14,6 @@ import signal
 import subprocess
 import sys
 import tempfile
-import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -162,28 +161,22 @@ def install_steer_sigint(events: EventSink, run_dir: Path) -> SteerState:
       (between steps) and prompts: through a TUI modal when the TUI is live,
       otherwise on the controlling terminal (``/dev/tty``, so the prompt is
       visible even when the TUI has redirected the run's std streams to a log).
-    * 2nd SIGINT within 2 s, raise KeyboardInterrupt to abort the run.
+    * Any further SIGINT while a steer is still pending, raise KeyboardInterrupt
+      to stop the run now (a between-step boundary can be a whole response away).
 
     Returns callables for the workflow plus a ``restore`` hook to put the
     previous handler back when the run is done.
     """
-    state: dict[str, Any] = {"requested": False, "last_ts": 0.0}
-    window_s = 2.0
+    state: dict[str, Any] = {"requested": False}
 
     def _handler(_signum: int, _frame: Any) -> None:
-        now = time.monotonic()
+        # A steer is checked at the next between-step boundary, which can be up to
+        # a full model response away (a reasoning model may think for 30-60s). So
+        # once a steer is pending, ANY further Ctrl-C means "stop now" -- no 2s
+        # double-tap window to hit, which felt like the prompt was hanging.
         if state["requested"]:
-            # Second Ctrl-C aborts: within the 2s window always, or any time a
-            # steer is still pending in TUI mode (no terminal feedback there to
-            # re-arm against). Otherwise just refresh the timestamp, crucially
-            # WITHOUT re-clearing the answer file, which the TUI may have just
-            # written (re-clearing it would strand read_steer_answer for 600s).
-            if (now - state["last_ts"]) < window_s or frontend_is_live(run_dir):
-                raise KeyboardInterrupt
-            state["last_ts"] = now
-            return
+            raise KeyboardInterrupt
         state["requested"] = True
-        state["last_ts"] = now
         # Drop a STALE answer file (one without a request marker) so it is not
         # instantly consumed as this new prompt's answer. An answer with a
         # pending request is a live front-end steer the loop has not consumed
@@ -195,8 +188,8 @@ def install_steer_sigint(events: EventSink, run_dir: Path) -> SteerState:
         # terminal it owns. Otherwise tell the user a prompt is coming.
         if not frontend_is_live(run_dir):
             tty_message(
-                "\n[agent6] pausing after this step for a prompt"
-                " (steer / continue / stop / detach). Ctrl-C again to abort now.\n"
+                "\n[agent6] will prompt (steer / continue / stop / detach) once the"
+                " current model response finishes. Ctrl-C again to stop now.\n"
             )
 
     previous = signal.signal(signal.SIGINT, _handler)
