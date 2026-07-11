@@ -155,6 +155,10 @@ class Agent6TUI(App[int]):
     /* The stream/diff bodies fill their scroll pane so long content scrolls. */
     #stream-body, #diff-body { width: 1fr; height: auto; }
     #budget { width: 1fr; height: 3; border: round $primary; padding: 0 1; }
+    /* One card background everywhere. Tree/DataTable/RichLog default to $surface
+       but the Static-based stream/diff panes are transparent (screen background),
+       so set it explicitly to keep every card the same. */
+    #plan, #stream, #tools, #log, #diff { background: $surface; }
     /* Uniform resting border (matches the home table + config card); the focused
        panel goes $accent. */
     #plan:focus, #stream:focus, #tools:focus, #log:focus, #diff:focus { border: round $accent; }
