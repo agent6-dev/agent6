@@ -41,7 +41,7 @@ from agent6.ui.tui.conversation import ConversationScreen
 from agent6.ui.tui.copy_method import open_copy_method_picker
 from agent6.ui.tui.logview import LogScreen
 from agent6.ui.tui.machines import MachinesScreen
-from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
+from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, action_keys, menu_bindings
 from agent6.ui.tui.modals import ConfirmModal
 from agent6.ui.tui.theme import PALETTE_CSS, open_theme_picker, setup_theme
 from agent6.ui.tui.widgets import FORM_CSS, ActionItem
@@ -465,7 +465,9 @@ class HomeScreen(Screen[None]):
         open_copy_method_picker(self.app)
 
     def action_help(self) -> None:
-        self.app.push_screen(HelpScreen(self.MENUS, title="agent6 — keys & actions"))
+        self.app.push_screen(
+            HelpScreen(self.MENUS, action_keys(self), title="agent6 — keys & actions")
+        )
 
     def _on_new_work(self, result: tuple[str, str, str] | None) -> None:
         if result is None:
@@ -489,7 +491,8 @@ class Agent6HomeApp(App[Path | None]):
     CSS = (
         PALETTE_CSS
         + """
-    Screen { layers: base dropdown; }
+    Screen { layers: base dropdown; background: $surface; }
+    * { scrollbar-size-vertical: 1; }  /* half the 2-wide default */
     #runs { height: 1fr; border: round $primary; background: $surface; }
     #runs:focus { border: round $accent; }
     /* Panel-coloured header bar (matches the menu bar + footer + config header),

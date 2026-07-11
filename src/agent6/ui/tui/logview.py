@@ -7,7 +7,7 @@ bottom on every new line, so a fast run "plays through" with no way to scroll
 back, and finished runs in the hub had no log view at all. ``LogScreen`` reads
 a run's whole logs.jsonl, renders each STRUCTURAL event with the SAME one-line
 formatter the dashboard uses (so the two read identically), and lets the
-operator scroll -- and select/copy -- freely. It is read-only; ``r`` re-reads
+operator scroll -- and select/copy -- freely. It is read-only; reload re-reads
 the file (a live run keeps appending).
 
 Two deliberate choices:
@@ -18,14 +18,14 @@ Two deliberate choices:
   renders as line Strips, which the framework's text selection can't extract, so
   its text is not copyable; a `Static` renders as `Content` and is selectable.
 
-Deliberately lighter chrome than HomeScreen/ConfigScreen: a read-only pager needs
-no File/View menus, so it skips the MenuBar/MENUS/palette convention and keeps
-just a dock-top title and a terse binding set (Esc/q back, r refresh, g/G scroll)
--- the same minimal shape as its sibling ConversationScreen.
+Chrome matches every other screen: the File/View/Help menu bar (its shortcuts
+drawn from the live bindings), the same PgUp/PgDn + Ctrl+Home/End scroll keys as
+the conversation view, and Esc/q back.
 """
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 from typing import ClassVar
 
@@ -36,6 +36,14 @@ from textual.containers import VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Footer, Static
 
+from agent6.ui.tui.menubar import (
+    HelpScreen,
+    Menu,
+    MenuBar,
+    MenuItem,
+    action_keys,
+    menu_bindings,
+)
 from agent6.ui.viewmodel.state import STREAM_DELTA_EVENTS, format_log_line
 from agent6.ui.viewmodel.tail import LogTail
 
@@ -45,20 +53,37 @@ class LogScreen(Screen[None]):
 
     CSS = """
     LogScreen { background: $surface; }
-    #logview-title { dock: top; height: 1; padding: 0 1; background: $panel; text-style: bold; }
     #logview-scroll { height: 1fr; }
     #logview-body { height: auto; padding: 0 1; }
     """
 
+    MENUS: ClassVar = (
+        Menu("File", (MenuItem("Back", "close"),)),
+        Menu(
+            "View",
+            (
+                MenuItem("Scroll ↑ a page", "page_up"),
+                MenuItem("Scroll ↓ a page", "page_down"),
+                MenuItem("Scroll → top", "scroll_top"),
+                MenuItem("Scroll → end", "scroll_bottom"),
+                MenuItem("Reload", "reload"),
+            ),
+        ),
+        Menu(
+            "Help",
+            (MenuItem("Keys & actions", "help"), MenuItem("Command palette", "command_palette")),
+        ),
+    )
+
     BINDINGS: ClassVar = [
-        # q and Esc both close the pager (back out one level); shown as one "Esc/q
-        # Back" footer entry. Only the root hub quits on q -- every other screen
-        # backs out; Ctrl+Q is the app-wide hard quit.
         Binding("escape", "close", "Back", key_display="Esc/q"),
         Binding("q", "close", "Back", show=False),
-        Binding("r", "reload", "Refresh"),
-        Binding("g", "scroll_top", "Top"),
-        Binding("G", "scroll_bottom", "End"),
+        Binding("r", "reload", "Reload"),
+        Binding("pageup", "page_up", "Scroll up", show=False),
+        Binding("pagedown", "page_down", "Scroll down", show=False),
+        Binding("ctrl+home", "scroll_top", "Top", show=False),
+        Binding("ctrl+end", "scroll_bottom", "End", show=False),
+        *menu_bindings(MENUS),
     ]
 
     def __init__(self, logs_path: Path, *, title: str) -> None:
@@ -67,17 +92,38 @@ class LogScreen(Screen[None]):
         self._title = title
         self._tail = LogTail(logs_path)
         self._text = Text()
+        self._prev_subtitle = ""
 
     def compose(self) -> ComposeResult:
-        yield Static(self._title, id="logview-title")
+        yield MenuBar(self.MENUS)  # top row: menus + "agent6 — <run>", like every screen
         with VerticalScroll(id="logview-scroll"):
             yield Static(id="logview-body")  # renders as Content -> its text is selectable
         yield Footer()
 
     def on_mount(self) -> None:
+        self._prev_subtitle = self.app.sub_title  # show the run in the menu bar's title
+        self.app.sub_title = self._title
         self._reload()
         # Follow live: a resume appends to the same file, so keep reading.
         self.set_interval(0.5, self._poll)
+
+    def on_unmount(self) -> None:
+        self.app.sub_title = self._prev_subtitle
+
+    def action_menu(self, mnemonic: str) -> None:
+        self.query_one(MenuBar).open(mnemonic)
+
+    async def on_menu_bar_selected(self, event: MenuBar.Selected) -> None:
+        handler = getattr(self, f"action_{event.action}", None) or getattr(
+            self.app, f"action_{event.action}", None
+        )
+        if handler is not None:
+            result = handler()
+            if inspect.isawaitable(result):
+                await result
+
+    def action_help(self) -> None:
+        self.app.push_screen(HelpScreen(self.MENUS, action_keys(self), title="agent6 — log"))
 
     def _scroll(self) -> VerticalScroll:
         return self.query_one("#logview-scroll", VerticalScroll)
@@ -111,6 +157,12 @@ class LogScreen(Screen[None]):
 
     def action_reload(self) -> None:
         self._reload()
+
+    def action_page_up(self) -> None:
+        self._scroll().scroll_page_up()
+
+    def action_page_down(self) -> None:
+        self._scroll().scroll_page_down()
 
     def action_scroll_top(self) -> None:
         self._scroll().scroll_home(animate=False)

@@ -27,7 +27,7 @@ try:
     from textual.containers import Horizontal, VerticalScroll
     from textual.geometry import Offset
     from textual.message import Message
-    from textual.screen import ModalScreen
+    from textual.screen import ModalScreen, Screen
     from textual.widget import Widget
     from textual.widgets import OptionList, Static
     from textual.widgets.option_list import Option
@@ -65,15 +65,55 @@ def menu_bindings(menus: tuple[Menu, ...]) -> list[Binding]:
     return binds
 
 
+_KEY_NAMES = {
+    "question_mark": "?",
+    "escape": "Esc",
+    "enter": "Enter",
+    "pageup": "PgUp",
+    "pagedown": "PgDn",
+    "home": "Home",
+    "end": "End",
+    "space": "Space",
+    "tab": "Tab",
+    "backtab": "⇧Tab",  # the terminal name for Shift+Tab
+    "up": "↑",
+    "down": "↓",
+    "left": "←",
+    "right": "→",
+    "backspace": "Bksp",
+    "delete": "Del",
+}
+_MODIFIERS = {"ctrl": "^", "shift": "⇧", "alt": "Alt+", "super": "Super+"}
+
+
 def _key_label(key: str) -> str:
-    return {
-        "question_mark": "?",
-        "escape": "Esc",
-        "ctrl+r": "^R",
-        "ctrl+p": "^P",
-        "ctrl+q": "^Q",
-        "enter": "Enter",
-    }.get(key, key)
+    """A compact display for one key, keeping the footer's casing so the menu, help,
+    and footer match: n, ^c, ⇧Enter, Alt+f, PgDn, Esc. A bare capital letter stays
+    capital (so g and G stay distinct)."""
+    if key in _KEY_NAMES:
+        return _KEY_NAMES[key]
+    parts = key.split("+")
+    prefix = "".join(_MODIFIERS.get(p, "") for p in parts[:-1])
+    last = _KEY_NAMES.get(parts[-1], parts[-1])  # preserve case
+    return f"{prefix}{last}"
+
+
+def action_keys(source: object) -> dict[str, str]:
+    """Map each bound ``action`` to its shortcut label(s) from the ACTIVE bindings --
+    the single source of truth, so the menu bar, the help page, and the footer all
+    show the same keys and can't drift from the actual key bindings. Multiple keys on
+    one action (e.g. PageDown + Ctrl+End, or Shift+Enter + Ctrl+J) are joined:
+    'PgDn / ^End'. ``source`` may be an App (its current screen is used) or a Screen."""
+    screen = source if isinstance(source, Screen) else getattr(source, "screen", source)
+    labels: dict[str, list[str]] = {}
+    for key, active in getattr(screen, "active_bindings", {}).items():
+        if "super" in key:  # Cmd on macOS; textual adds it beside Ctrl but it's noise on Linux
+            continue
+        label = _key_label(key)
+        seen = labels.setdefault(active.binding.action, [])
+        if label not in seen:
+            seen.append(label)
+    return {action: " / ".join(keys) for action, keys in labels.items()}
 
 
 def _title_text(menu: Menu) -> Text:
@@ -83,16 +123,17 @@ def _title_text(menu: Menu) -> Text:
     return t
 
 
-def _menu_options(items: tuple[MenuItem, ...]) -> list[Option]:
+def _menu_options(items: tuple[MenuItem, ...], keys: dict[str, str]) -> list[Option]:
     """Dropdown rows with labels left-aligned and shortcut keys RIGHT-aligned to a
-    common edge, so the keys line up in a column (instead of floating a fixed gap
-    after each varying-width label). The key column is sized to the widest of each."""
-    keys = [_key_label(it.key) if it.key else "" for it in items]
+    common edge, so the keys line up in a column. The shortcut comes from the live
+    key bindings (``keys`` = action -> label, possibly several joined), falling back
+    to the item's own key hint for menu-only actions with no binding."""
+    labels = [keys.get(it.action) or (_key_label(it.key) if it.key else "") for it in items]
     label_w = max((len(it.label) for it in items), default=0)
-    key_w = max((len(k) for k in keys), default=0)
+    key_w = max((len(k) for k in labels), default=0)
     width = label_w + 2 + key_w  # 2-space minimum gap between the two columns
     opts: list[Option] = []
-    for it, key in zip(items, keys, strict=True):
+    for it, key in zip(items, labels, strict=True):
         t = Text(it.label)
         if key:  # pad so the key's right edge lands at `width`
             t.pad_right(width - len(it.label) - len(key))
@@ -117,17 +158,27 @@ class HelpScreen(ModalScreen[None]):
     .help-menu { text-style: bold; color: $accent; padding-top: 1; }
     """
 
-    def __init__(self, menus: tuple[Menu, ...], *, title: str = "Keys & actions") -> None:
+    def __init__(
+        self,
+        menus: tuple[Menu, ...],
+        keys: dict[str, str] | None = None,
+        *,
+        title: str = "Keys & actions",
+    ) -> None:
         super().__init__()
         self._menus = menus
+        self._keys = keys or {}  # action -> live shortcut(s); see action_keys()
         self._title = title
+
+    def _shortcut(self, it: MenuItem) -> str:
+        return self._keys.get(it.action) or (_key_label(it.key) if it.key else "")
 
     def compose(self) -> ComposeResult:
         # Keys right-aligned to a common edge across ALL sections (labels left),
         # matching the menu dropdowns. Width = indent + widest label + gap + key.
         items = [it for m in self._menus for it in m.items]
         label_w = max((len(it.label) for it in items), default=0)
-        key_w = max((len(_key_label(it.key)) for it in items if it.key), default=0)
+        key_w = max((len(self._shortcut(it)) for it in items), default=0)
         right = 2 + label_w + 2 + key_w
         with VerticalScroll(id="help-box"):
             yield Static(self._title, id="help-title")
@@ -136,8 +187,8 @@ class HelpScreen(ModalScreen[None]):
                 yield Static(_title_text(m), classes="help-menu")
                 for it in m.items:
                     line = Text(f"  {it.label}")
-                    if it.key:  # pad so the key's right edge lands at `right`
-                        key = _key_label(it.key)
+                    key = self._shortcut(it)
+                    if key:  # pad so the key's right edge lands at `right`
                         line.pad_right(right - 2 - len(it.label) - len(key))
                         line.append(key, style="dim")
                     yield Static(line)
@@ -315,7 +366,8 @@ class MenuBar(Horizontal):
         # the bottom.) No fixed id: remove() is async, so a re-open could mount a
         # second one before the first is gone (DuplicateIds).
         title = self.query_one(f"#menu-{mnemonic}", _MenuTitle)
-        dd = _Dropdown(*_menu_options(menu.items), mnemonic=mnemonic, on_pick=self._dispatch)
+        opts = _menu_options(menu.items, action_keys(self.screen))
+        dd = _Dropdown(*opts, mnemonic=mnemonic, on_pick=self._dispatch)
         self.screen.mount(dd)
         dd.absolute_offset = Offset(title.region.x, title.region.y + 1)
         title.add_class("-open")  # keep the open menu's title highlighted

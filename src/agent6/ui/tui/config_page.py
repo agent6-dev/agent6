@@ -51,7 +51,7 @@ from agent6.config.layer import (
 from agent6.models.cache import cached_models, list_models
 from agent6.models.registry import resolved_adaptive_values
 from agent6.secrets import resolve_api_key
-from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
+from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, action_keys, menu_bindings
 from agent6.ui.tui.theme import open_theme_picker
 from agent6.ui.tui.widgets import (
     FORM_CSS,
@@ -518,7 +518,7 @@ class ConfigScreen(Screen[None]):
     key, or the command palette."""
 
     CSS = """
-    ConfigScreen { layers: base dropdown; }
+    ConfigScreen { layers: base dropdown; background: $surface; }
     /* One slim row: inline filter (left) + count/modified tag (right). */
     #topbar { height: 1; padding: 0 1; }
     #search { width: 1fr; height: 1; border: none; background: transparent; padding: 0; }
@@ -898,7 +898,9 @@ class ConfigScreen(Screen[None]):
         self.notify("Config reloaded.")
 
     def action_help(self) -> None:
-        self.app.push_screen(HelpScreen(self.MENUS, title="agent6 config — keys & actions"))
+        self.app.push_screen(
+            HelpScreen(self.MENUS, action_keys(self), title="agent6 config — keys & actions")
+        )
 
     def action_choose_theme(self) -> None:
         open_theme_picker(self.app)

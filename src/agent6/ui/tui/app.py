@@ -64,7 +64,7 @@ from agent6.ui.bridge.spawn import agent6_exe, spawn_and_locate, spawn_detached_
 from agent6.ui.tui.conversation import ConversationScreen
 from agent6.ui.tui.copy_method import open_copy_method_picker
 from agent6.ui.tui.logview import LogScreen
-from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
+from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, action_keys, menu_bindings
 from agent6.ui.tui.modals import (
     ApprovalModal,
     ConfirmModal,
@@ -132,7 +132,8 @@ class Agent6TUI(App[int]):
     CSS = (
         PALETTE_CSS
         + """
-    Screen { layers: base dropdown; }
+    Screen { layers: base dropdown; background: $surface; }
+    * { scrollbar-size-vertical: 1; }  /* half the 2-wide default */
     #top { height: 4; padding: 0 1; }
     /* Top row: the task graph is usually a few nodes, so it stays compact beside
        the model's live output. */
@@ -214,9 +215,6 @@ class Agent6TUI(App[int]):
         Binding("k", "fork", "Fork", show=False),
         Binding("l", "view_logs", "Full log", show=True),
         Binding("t", "view_transcript", "Conversation", show=True),
-        Binding(
-            "ctrl+tab", "view_transcript", "Conversation", show=False
-        ),  # toggle back from the view
         # g=top / G=end, matching vi and the LogScreen/ConversationScreen viewers
         # (g used to be "end" here, contradicting those screens reached via l/t).
         Binding("g", "scroll_log_home", "Log→top", show=False),
@@ -613,7 +611,7 @@ class Agent6TUI(App[int]):
         self.query_one(MenuBar).open(mnemonic)
 
     def action_help(self) -> None:
-        self.push_screen(HelpScreen(self.MENUS, title="agent6 — keys & actions"))
+        self.push_screen(HelpScreen(self.MENUS, action_keys(self), title="agent6 — keys & actions"))
 
     def action_choose_theme(self) -> None:
         open_theme_picker(self)

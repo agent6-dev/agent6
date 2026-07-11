@@ -55,6 +55,12 @@ AGENT6_DARK = Theme(
         "footer-key-foreground": "#FFA62B",
         "footer-foreground": "#E0E0E0",
         "footer-description-foreground": "#E0E0E0",
+        # Scrollbar tracks default to near-black (#000002); match the surface so the
+        # track meshes with its panel (only the thumb shows) instead of a black gap.
+        "scrollbar-background": "#202023",  # == surface
+        "scrollbar-background-hover": "#202023",
+        "scrollbar-background-active": "#202023",
+        "scrollbar-corner-color": "#202023",
     },
 )
 
@@ -71,7 +77,13 @@ AGENT6_LIGHT = Theme(
     warning="#9A6E00",
     error="#C0392B",
     dark=False,
-    variables={"footer-key-foreground": "#C2410C"},  # warm orange keys, readable on light
+    variables={
+        "footer-key-foreground": "#C2410C",  # warm orange keys, readable on light
+        "scrollbar-background": "#EAECF2",  # == surface, so tracks mesh (see agent6-dark)
+        "scrollbar-background-hover": "#EAECF2",
+        "scrollbar-background-active": "#EAECF2",
+        "scrollbar-corner-color": "#EAECF2",
+    },
 )
 
 # Restyle textual's built-in command palette (Ctrl+P) to match our dialogs: a

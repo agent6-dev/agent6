@@ -14,9 +14,9 @@ and, unless the operator scrolled up to read, the pane sticks to the bottom.
 A live run opens with the steer bar focused: type + Enter sends a steer, Ctrl-J
 newlines. Ctrl+C copies the mouse selection (or the whole transcript) via the
 ``copy_method`` UI preference; PageUp/PageDown scroll, Ctrl+Home/End jump to
-top/bottom, Esc or Ctrl+Tab returns to the dashboard, F2 cycles the detail level
-(none/collapsed/expanded reasoning + tool output), F5 re-reads. The command palette
-(Ctrl+P) holds those plus the pager/terminal/file copies.
+top/bottom, Esc returns to the dashboard. The menu bar (File/View/Help) and the
+command palette (Ctrl+P) hold the rest -- the detail cycle, reload, and the
+pager/terminal/file copies -- each showing its shortcut from the live bindings.
 
 The scrollback is a ``Static`` in a ``VerticalScroll`` (not a ``RichLog``): a
 ``RichLog`` renders as line Strips, which the framework's text selection cannot
@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import bisect
 import contextlib
+import inspect
 import os
 import subprocess
 from collections.abc import Callable
@@ -47,6 +48,14 @@ from textual.widgets import Footer, Static, TextArea
 
 from agent6.ui.bridge.approval import clear_steer_answer, request_steer, write_steer_answer
 from agent6.ui.tui import clipboard
+from agent6.ui.tui.menubar import (
+    HelpScreen,
+    Menu,
+    MenuBar,
+    MenuItem,
+    action_keys,
+    menu_bindings,
+)
 from agent6.ui.tui.settings import get_copy_method
 from agent6.ui.viewmodel.tail import LogTail
 from agent6.ui.viewmodel.transcript import (
@@ -185,7 +194,6 @@ class ConversationScreen(Screen[None]):
 
     CSS = """
     ConversationScreen { background: $surface; }
-    #conv-title { dock: top; height: 1; padding: 0 1; background: $panel; text-style: bold; }
     #conv-main { height: 1fr; }
     #conv-scroll { height: 1fr; }
     #conv-body { height: auto; padding: 0 1; }
@@ -201,19 +209,43 @@ class ConversationScreen(Screen[None]):
     #conv-input:focus { border: round $accent; }
     """
 
-    # The steer bar owns plain letters + Enter, so everything the transcript needs
-    # while the bar has focus is a priority binding (fires before the bar); the less
-    # common actions live in the command palette (Ctrl+P) -- see _ConvCommands.
+    MENUS: ClassVar = (
+        Menu("File", (MenuItem("Back to dashboard", "close"),)),
+        Menu(
+            "View",
+            (
+                MenuItem("Detail: none / collapsed / expanded", "cycle_detail"),
+                MenuItem("Scroll ↑ a page", "page_up"),
+                MenuItem("Scroll ↓ a page", "page_down"),
+                MenuItem("Scroll → top", "scroll_top"),
+                MenuItem("Scroll → end", "scroll_bottom"),
+                MenuItem("Reload the log", "reload"),
+                MenuItem("Copy selection / all", "copy"),
+                MenuItem("Copy via terminal", "suspend_copy"),
+                MenuItem("Copy via pager", "pager"),
+                MenuItem("Save transcript to file", "write_file"),
+            ),
+        ),
+        Menu(
+            "Help",
+            (
+                MenuItem("Keys & actions", "help"),
+                MenuItem("Command palette", "command_palette"),
+            ),
+        ),
+    )
+
+    # The steer bar owns plain letters + Enter, so the transcript's nav actions are
+    # priority bindings (fire before the bar). Everything else lives in the menu bar
+    # (which shows the shortcuts from these bindings) and the command palette.
     BINDINGS: ClassVar = [
         Binding("escape", "close", "Back", key_display="Esc", priority=True),
-        Binding("ctrl+tab", "close", "Dashboard", priority=True),
         Binding("ctrl+c", "copy", "Copy", priority=True),
-        Binding("pageup", "page_up", "Scroll", priority=True, show=False),
-        Binding("pagedown", "page_down", "Scroll", priority=True, show=False),
+        Binding("pageup", "page_up", "Scroll up", priority=True, show=False),
+        Binding("pagedown", "page_down", "Scroll down", priority=True, show=False),
         Binding("ctrl+home", "scroll_top", "Top", priority=True, show=False),
         Binding("ctrl+end", "scroll_bottom", "End", priority=True, show=False),
-        Binding("f2", "cycle_detail", "Detail", priority=True),
-        Binding("f5", "reload", "Refresh"),
+        *menu_bindings(MENUS),
     ]
     COMMANDS: ClassVar = {_ConvCommands}
 
@@ -230,9 +262,10 @@ class ConversationScreen(Screen[None]):
         self._live_think: list[str] = []
         self._live_text: list[str] = []
         self._live = False  # run.start seen and no run.end yet -> the steer bar shows
+        self._prev_subtitle = ""  # app sub_title to restore when the view closes
 
     def compose(self) -> ComposeResult:
-        yield _ChromeStatic(self._title, id="conv-title")
+        yield MenuBar(self.MENUS)  # top row: menus + "agent6 — <run>", like every screen
         with Vertical(id="conv-main"):
             with VerticalScroll(id="conv-scroll"):
                 yield Static(id="conv-body")  # renders as Content -> selectable
@@ -241,8 +274,32 @@ class ConversationScreen(Screen[None]):
         yield Footer()  # Footer is ALLOW_SELECT=False in textual already
 
     def on_mount(self) -> None:
+        self._prev_subtitle = self.app.sub_title  # show the run in the menu bar's title
+        self.app.sub_title = self._title
         self._reload()
         self.set_interval(0.3, self._poll)
+
+    def on_unmount(self) -> None:
+        self.app.sub_title = self._prev_subtitle
+
+    def action_menu(self, mnemonic: str) -> None:
+        self.query_one(MenuBar).open(mnemonic)
+
+    async def on_menu_bar_selected(self, event: MenuBar.Selected) -> None:
+        # Screen actions first, then app-level built-ins (command_palette), which are
+        # coroutines -- await results. Mirrors the hub / config / machines screens.
+        handler = getattr(self, f"action_{event.action}", None) or getattr(
+            self.app, f"action_{event.action}", None
+        )
+        if handler is not None:
+            result = handler()
+            if inspect.isawaitable(result):
+                await result
+
+    def action_help(self) -> None:
+        self.app.push_screen(
+            HelpScreen(self.MENUS, action_keys(self), title="agent6 — conversation")
+        )
 
     def _scroll(self) -> VerticalScroll:
         return self.query_one("#conv-scroll", VerticalScroll)

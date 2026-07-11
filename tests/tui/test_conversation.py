@@ -146,9 +146,9 @@ def test_live_run_auto_focuses_the_steer_bar(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_ctrl_tab_backs_out_even_with_the_bar_focused(tmp_path: Path) -> None:
-    # A live run auto-focuses the bar; ctrl+tab is a priority binding, so it still
-    # closes the view (the toggle back to the dashboard) instead of the bar eating it.
+def test_esc_backs_out_even_with_the_bar_focused(tmp_path: Path) -> None:
+    # A live run auto-focuses the bar; Esc is a priority binding, so it still closes
+    # the view (back to the dashboard) instead of the bar eating the key.
     logs = tmp_path / "logs.jsonl"
     _write(logs, _EVENTS[:-1])
 
@@ -157,7 +157,7 @@ def test_ctrl_tab_backs_out_even_with_the_bar_focused(tmp_path: Path) -> None:
         async with app.run_test() as pilot:
             await pilot.pause()
             assert isinstance(app.focused, SteerInput)
-            await pilot.press("ctrl+tab")
+            await pilot.press("escape")
             await pilot.pause()
             assert not isinstance(app.screen, ConversationScreen)
 
@@ -197,7 +197,7 @@ def test_detail_cycle_keeps_the_top_block_anchored(tmp_path: Path) -> None:
     # away: the block at the top of the viewport stays put across the re-render.
     logs = tmp_path / "logs.jsonl"
     events: list[dict[str, object]] = [{"type": "run.start", "user_task": "x"}]
-    events += [
+    big: list[dict[str, object]] = [
         {"type": "tool.call", "name": "apply_edit", "args": {"path": "b"}},
         {
             "type": "tool.result",
@@ -206,11 +206,13 @@ def test_detail_cycle_keeps_the_top_block_anchored(tmp_path: Path) -> None:
             "summary": "\n".join(f"line {i}" for i in range(100)),
         },
     ]
+    events += big
     for i in range(15):
-        events += [
+        row: list[dict[str, object]] = [
             {"type": "tool.call", "name": "grep", "args": {"pattern": f"m{i}"}},
             {"type": "tool.result", "name": "grep", "ok": True, "summary": f"{i} hits"},
         ]
+        events += row
     _write(logs, events)
 
     async def scenario() -> None:

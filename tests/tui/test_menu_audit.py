@@ -162,7 +162,8 @@ def test_menu_dropdown_keys_right_align_to_common_edge() -> None:
         MenuItem("Theme…", "c", None),  # keyless
         MenuItem("Quit", "d", "q"),
     )
-    opts = {o.id: cast(Text, o.prompt).plain for o in _menu_options(items)}
+    # No live bindings map -> falls back to each item's own key hint.
+    opts = {o.id: cast(Text, o.prompt).plain for o in _menu_options(items, {})}
     keyed = [opts["a"], opts["b"], opts["d"]]
     assert len({len(r) for r in keyed}) == 1  # all padded to one width => shared right edge
     assert opts["a"].endswith(" n") and opts["b"].endswith("Enter") and opts["d"].endswith(" q")

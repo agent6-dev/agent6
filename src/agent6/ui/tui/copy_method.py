@@ -47,7 +47,7 @@ class CopyMethodPicker(ModalScreen[None]):
         + """
     CopyMethodPicker { align: center middle; }
     #copy-box {
-        width: 52; height: auto; max-height: 90%;
+        width: 64; height: auto; max-height: 90%;
         border: round $accent; padding: 1 2; background: $surface;
     }
     #copy-title { text-style: bold; }
@@ -71,7 +71,7 @@ class CopyMethodPicker(ModalScreen[None]):
                 yield ChoiceField(choices, current, id="copy-list")
             yield Static(
                 Text(
-                    f"auto → {resolved} in this terminal · how `c` copies to your clipboard\n"
+                    f"auto → {resolved} in this terminal · how the TUI copies to your clipboard\n"
                     "↑↓ highlight · Space select (saved) · Esc closes",
                     style="dim",
                 ),

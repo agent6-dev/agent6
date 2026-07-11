@@ -57,7 +57,7 @@ from agent6.ui.bridge.approval import (
 )
 from agent6.ui.bridge.notify import desktop_notify
 from agent6.ui.bridge.spawn import agent6_exe, spawn_and_confirm, spawn_and_locate
-from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
+from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, action_keys, menu_bindings
 from agent6.ui.tui.modals import (
     ApprovalModal,
     ConfirmModal,
@@ -715,7 +715,9 @@ class MachinesScreen(Screen[None]):
         self._reload()
 
     def action_help(self) -> None:
-        self.app.push_screen(HelpScreen(self.MENUS, title="agent6 machines — keys & actions"))
+        self.app.push_screen(
+            HelpScreen(self.MENUS, action_keys(self), title="agent6 machines — keys & actions")
+        )
 
     def action_quit(self) -> None:
         self.app.exit()
