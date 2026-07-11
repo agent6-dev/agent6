@@ -261,10 +261,10 @@ class _InstrumentedProvider:
             usd_total, usd_partial = self.budget.estimate_usd()
             self.events.emit(
                 "budget.update",
-                input_total=snap["input_total"],
-                output_total=snap["output_total"],
-                input_cap=snap["max_input_tokens"],
-                output_cap=snap["max_output_tokens"],
+                input_total=snap.input_total,
+                output_total=snap.output_total,
+                input_cap=snap.max_input_tokens,
+                output_cap=snap.max_output_tokens,
                 usd_total=usd_total,
                 usd_partial=usd_partial,
             )

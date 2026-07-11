@@ -124,6 +124,34 @@ class _ModelTotals:
     reported_calls: int = 0
 
 
+@dataclass(frozen=True, slots=True)
+class ModelUsage:
+    """Immutable per-model usage totals inside a :class:`BudgetSnapshot`."""
+
+    input_tokens: int
+    output_tokens: int
+    cache_read_tokens: int
+    cache_creation_tokens: int
+    calls: int
+    reported_cost_usd: float
+    reported_calls: int
+
+
+@dataclass(frozen=True, slots=True)
+class BudgetSnapshot:
+    """Immutable snapshot of a BudgetTracker's counters at one instant."""
+
+    input_total: int
+    output_total: int
+    cache_read_total: int
+    cache_creation_total: int
+    max_input_tokens: int
+    max_output_tokens: int
+    exhausted: bool
+    exhausted_reason: str
+    per_model: dict[str, ModelUsage]
+
+
 @dataclass(slots=True)
 class BudgetTracker:
     """Thread-safe token accumulator with a hard ceiling.
@@ -247,32 +275,32 @@ class BudgetTracker:
                 used = max(used, usd_spent / self.max_usd)
         return max(0.0, 1.0 - used)
 
-    def snapshot(self) -> dict[str, object]:
-        """Immutable snapshot of all counters; safe to JSON-encode."""
+    def snapshot(self) -> BudgetSnapshot:
+        """Immutable snapshot of all counters."""
         with self._lock:
-            per_model: dict[str, dict[str, int | float]] = {
-                model: {
-                    "input_tokens": t.input_tokens,
-                    "output_tokens": t.output_tokens,
-                    "cache_read_tokens": t.cache_read_tokens,
-                    "cache_creation_tokens": t.cache_creation_tokens,
-                    "calls": t.calls,
-                    "reported_cost_usd": t.reported_cost_usd,
-                    "reported_calls": t.reported_calls,
-                }
+            per_model = {
+                model: ModelUsage(
+                    input_tokens=t.input_tokens,
+                    output_tokens=t.output_tokens,
+                    cache_read_tokens=t.cache_read_tokens,
+                    cache_creation_tokens=t.cache_creation_tokens,
+                    calls=t.calls,
+                    reported_cost_usd=t.reported_cost_usd,
+                    reported_calls=t.reported_calls,
+                )
                 for model, t in sorted(self._per_model.items())
             }
-            return {
-                "input_total": self._input_total,
-                "output_total": self._output_total,
-                "cache_read_total": self._cache_read_total,
-                "cache_creation_total": self._cache_creation_total,
-                "max_input_tokens": self.max_input_tokens,
-                "max_output_tokens": self.max_output_tokens,
-                "exhausted": bool(self._exceeded_reason),
-                "exhausted_reason": self._exceeded_reason,
-                "per_model": per_model,
-            }
+            return BudgetSnapshot(
+                input_total=self._input_total,
+                output_total=self._output_total,
+                cache_read_total=self._cache_read_total,
+                cache_creation_total=self._cache_creation_total,
+                max_input_tokens=self.max_input_tokens,
+                max_output_tokens=self.max_output_tokens,
+                exhausted=bool(self._exceeded_reason),
+                exhausted_reason=self._exceeded_reason,
+                per_model=per_model,
+            )
 
     def estimate_usd(self) -> tuple[float, bool]:
         """Estimate cumulative USD spend across all recorded calls.
@@ -328,42 +356,38 @@ class BudgetTracker:
     def format_summary(self) -> str:
         """Human-facing end-of-run summary with USD estimate where known."""
         snap = self.snapshot()
-        per_model = snap["per_model"]
-        assert isinstance(per_model, dict)
         lines = ["Token + cost summary:"]
         total_usd = 0.0
         any_unknown = False
-        for model, totals in per_model.items():
+        for model, totals in snap.per_model.items():
             price = lookup_price(model)
             cost_str: str
-            reported = float(totals.get("reported_cost_usd", 0.0))
-            reported_calls = int(totals.get("reported_calls", 0))
-            if reported > 0.0 and reported_calls == int(totals["calls"]):
+            if totals.reported_cost_usd > 0.0 and totals.reported_calls == totals.calls:
                 # Provider-authoritative.
-                total_usd += reported
-                cost_str = f"${reported:.4f} (reported)"
+                total_usd += totals.reported_cost_usd
+                cost_str = f"${totals.reported_cost_usd:.4f} (reported)"
             elif price is None:
                 cost_str = "$? (unknown price)"
                 any_unknown = True
             else:
                 # See estimate_usd for the pricing model rationale.
-                in_usd = totals["input_tokens"] * price[0] / 1e6
-                cache_creation_usd = totals["cache_creation_tokens"] * (price[0] * 1.25) / 1e6
-                cache_read_usd = totals["cache_read_tokens"] * (price[0] * 0.1) / 1e6
-                out_usd = totals["output_tokens"] * price[1] / 1e6
+                in_usd = totals.input_tokens * price[0] / 1e6
+                cache_creation_usd = totals.cache_creation_tokens * (price[0] * 1.25) / 1e6
+                cache_read_usd = totals.cache_read_tokens * (price[0] * 0.1) / 1e6
+                out_usd = totals.output_tokens * price[1] / 1e6
                 model_usd = in_usd + cache_creation_usd + cache_read_usd + out_usd
                 total_usd += model_usd
                 cost_str = f"${model_usd:.4f}"
             lines.append(
                 f"  {model}: "
-                f"in={totals['input_tokens']} out={totals['output_tokens']} "
-                f"cache_r={totals['cache_read_tokens']} "
-                f"cache_c={totals['cache_creation_tokens']} "
-                f"calls={totals['calls']} {cost_str}"
+                f"in={totals.input_tokens} out={totals.output_tokens} "
+                f"cache_r={totals.cache_read_tokens} "
+                f"cache_c={totals.cache_creation_tokens} "
+                f"calls={totals.calls} {cost_str}"
             )
         budget_line = (
-            f"  TOTAL: in={snap['input_total']}/{snap['max_input_tokens']} "
-            f"out={snap['output_total']}/{snap['max_output_tokens']} "
+            f"  TOTAL: in={snap.input_total}/{snap.max_input_tokens} "
+            f"out={snap.output_total}/{snap.max_output_tokens} "
             f"cost~${total_usd:.4f}"
         )
         if any_unknown:
@@ -371,6 +395,6 @@ class BudgetTracker:
             # provider price (see agent6.pricing: no static fallback).
             budget_line += "+ (some models unpriced; figure is a lower bound)"
         lines.append(budget_line)
-        if snap["exhausted"]:
-            lines.append(f"  STATUS: BUDGET EXCEEDED — {snap['exhausted_reason']}")
+        if snap.exhausted:
+            lines.append(f"  STATUS: BUDGET EXCEEDED — {snap.exhausted_reason}")
         return "\n".join(lines)

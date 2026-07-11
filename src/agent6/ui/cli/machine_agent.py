@@ -69,9 +69,7 @@ def _result(
     if budget is not None:
         usd, _ = budget.estimate_usd()
         snap = budget.snapshot()
-        inp_v, out_v = snap["input_total"], snap["output_total"]
-        assert isinstance(inp_v, int) and isinstance(out_v, int)
-        inp, out = inp_v, out_v
+        inp, out = snap.input_total, snap.output_total
     return {
         "reason": reason,
         "payload": payload,

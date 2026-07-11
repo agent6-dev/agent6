@@ -574,4 +574,4 @@ def test_streaming_with_budget_requires_usage_tokens(
             text_delta_callback=lambda _p: None,
         )
     assert exc_info.value.status_code == 422
-    assert budget.snapshot()["per_model"] == {}
+    assert budget.snapshot().per_model == {}

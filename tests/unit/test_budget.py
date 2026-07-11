@@ -90,11 +90,11 @@ def test_record_accumulates() -> None:
         model="m", input_tokens=4, output_tokens=2, cache_read_tokens=0, cache_creation_tokens=0
     )
     snap = t.snapshot()
-    assert snap["input_total"] == 9
-    assert snap["output_total"] == 5
-    assert snap["cache_read_total"] == 1
-    assert snap["cache_creation_total"] == 2
-    assert snap["exhausted"] is False
+    assert snap.input_total == 9
+    assert snap.output_total == 5
+    assert snap.cache_read_total == 1
+    assert snap.cache_creation_total == 2
+    assert snap.exhausted is False
     t.check()  # should not raise
 
 
@@ -129,13 +129,11 @@ def test_per_model_tracking() -> None:
     t.record(
         model="a", input_tokens=5, output_tokens=1, cache_read_tokens=0, cache_creation_tokens=0
     )
-    snap = t.snapshot()
-    pm = snap["per_model"]
-    assert isinstance(pm, dict)
-    assert pm["a"]["input_tokens"] == 15
-    assert pm["a"]["calls"] == 2
-    assert pm["b"]["input_tokens"] == 20
-    assert pm["b"]["calls"] == 1
+    pm = t.snapshot().per_model
+    assert pm["a"].input_tokens == 15
+    assert pm["a"].calls == 2
+    assert pm["b"].input_tokens == 20
+    assert pm["b"].calls == 1
 
 
 def test_format_summary_renders_known_and_unknown_prices() -> None:

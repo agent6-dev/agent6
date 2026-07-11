@@ -361,7 +361,7 @@ def test_streaming_with_budget_requires_usage_trailer() -> None:
         )
     assert exc_info.value.status_code == 422
     assert provider.budget is not None
-    assert provider.budget.snapshot()["per_model"] == {}
+    assert provider.budget.snapshot().per_model == {}
 
 
 def test_no_callback_does_not_stream() -> None:

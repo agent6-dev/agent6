@@ -3186,8 +3186,8 @@ class Workflow:
         self._emit(
             "loop.budget",
             iteration=iteration,
-            input_tokens=snap.get("input_total"),
-            output_tokens=snap.get("output_total"),
-            cache_read_tokens=snap.get("cache_read_total"),
+            input_tokens=snap.input_total,
+            output_tokens=snap.output_total,
+            cache_read_tokens=snap.cache_read_total,
             cost_usd=round(cost, 6),
         )

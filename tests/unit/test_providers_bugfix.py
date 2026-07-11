@@ -94,7 +94,7 @@ def test_openai_budgeted_response_requires_usage_tokens() -> None:
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     assert ei.value.status_code == 422
-    assert budget.snapshot()["per_model"] == {}
+    assert budget.snapshot().per_model == {}
 
 
 def test_anthropic_budgeted_response_requires_usage_tokens() -> None:
@@ -116,7 +116,7 @@ def test_anthropic_budgeted_response_requires_usage_tokens() -> None:
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     assert ei.value.status_code == 422
-    assert budget.snapshot()["per_model"] == {}
+    assert budget.snapshot().per_model == {}
 
 
 def test_openai_budgeted_response_rejects_zero_token_usage() -> None:
@@ -139,7 +139,7 @@ def test_openai_budgeted_response_rejects_zero_token_usage() -> None:
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     assert ei.value.status_code == 422
-    assert budget.snapshot()["per_model"] == {}
+    assert budget.snapshot().per_model == {}
 
 
 def test_anthropic_budgeted_response_rejects_zero_token_usage() -> None:
@@ -161,7 +161,7 @@ def test_anthropic_budgeted_response_rejects_zero_token_usage() -> None:
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     assert ei.value.status_code == 422
-    assert budget.snapshot()["per_model"] == {}
+    assert budget.snapshot().per_model == {}
 
 
 def test_anthropic_budgeted_response_accepts_fully_cached_turn() -> None:
@@ -186,7 +186,7 @@ def test_anthropic_budgeted_response_accepts_fully_cached_turn() -> None:
     )
     with mock.patch("agent6.providers._transport.http_post", return_value=resp):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
-    assert budget.snapshot()["per_model"] != {}
+    assert budget.snapshot().per_model != {}
 
 
 # --------------------------------------------------------------------------
