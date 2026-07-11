@@ -733,9 +733,15 @@ class AnthropicProvider:
                     # Reset the idle clock on every MEANINGFUL event. ``ping``
                     # heartbeats are deliberately excluded: they are exactly
                     # the bytes that would otherwise mask a wedged upstream.
+                    # seen_data (the switch to the short mid-stream idle timeout)
+                    # is set only when actual content starts (content_block_*
+                    # below), NOT on message_start -- that metadata arrives before
+                    # the model has produced anything, and ending the generous
+                    # prefill budget there would false-kill a long silent reason.
                     if et != "ping":
                         last_data_at = time.monotonic()
-                        seen_data.set()  # past prefill: mid-stream idle timeout now applies
+                    if et in ("content_block_start", "content_block_delta"):
+                        seen_data.set()
                     if et == "message_start":
                         msg = evt.get("message", {})
                         u = msg.get("usage", {}) or {}

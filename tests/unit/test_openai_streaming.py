@@ -566,3 +566,64 @@ def test_lenient_json_object_recovers_common_malformations() -> None:
     assert _lenient_json_object("42") is None
     assert _lenient_json_object('["a"]') is None
     assert _lenient_json_object("") is None
+
+
+def test_empty_role_delta_stays_in_the_prefill_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An empty role delta arrives immediately but is NOT real output, so it must
+    not flip to the short mid-stream idle timeout: a model that emits the role
+    delta then reasons silently gets the generous prefill budget, not a 45s kill
+    (regression guard for the two-phase watchdog)."""
+    import threading
+    import time
+
+    from agent6.providers import openai as openai_mod
+
+    monkeypatch.setattr(openai_mod, "_STREAM_FIRST_DATA_TIMEOUT_S", 0.6)
+    monkeypatch.setattr(openai_mod, "_STREAM_IDLE_TIMEOUT_S", 0.2)
+    monkeypatch.setattr(openai_mod, "_STREAM_WATCHDOG_TICK_S", 0.05)
+    provider = OpenAIProvider(api_key="sk-test", model="kimi")
+
+    class _RoleThenSilent:
+        def __init__(self) -> None:
+            self.status_code = 200
+            self._closed = threading.Event()
+
+        def __enter__(self) -> _RoleThenSilent:
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            return None
+
+        def close(self) -> None:
+            self._closed.set()
+
+        def read(self) -> bytes:
+            return b""
+
+        def iter_lines(self):
+            # Empty role delta (immediate), then only heartbeats: no real content.
+            yield 'data: {"choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}'
+            yield ""
+            while not self._closed.is_set():
+                yield ":OPENROUTER PROCESSING"
+                yield ""
+                if self._closed.wait(0.03):
+                    raise httpx2.ReadError("closed by watchdog")
+            raise httpx2.ReadError("closed by watchdog")
+
+    def fake_stream(method: str, url: str, **kwargs: Any) -> _RoleThenSilent:
+        return _RoleThenSilent()
+
+    started = time.monotonic()
+    with (
+        mock.patch("httpx2.stream", side_effect=fake_stream),
+        pytest.raises(ProviderError, match="prefill"),
+    ):
+        provider.call(
+            system="s",
+            messages=[{"role": "user", "content": "x"}],
+            text_delta_callback=lambda _p: None,
+        )
+    # It survived past the 0.2s mid-stream budget and fired on the 0.6s prefill
+    # budget -> the empty role delta did not flip the phase.
+    assert time.monotonic() - started >= 0.45

@@ -773,9 +773,13 @@ class OpenAIProvider:
                         continue
                     # Real SSE data line. Reset the idle clock; the
                     # watchdog is satisfied as long as we keep seeing
-                    # these at all (even ``[DONE]`` counts as progress).
+                    # these at all (even ``[DONE]`` counts as progress). NOTE:
+                    # seen_data (the switch to the short mid-stream idle timeout)
+                    # is set later, only on the first real CONTENT token -- an
+                    # empty role/keepalive delta arrives immediately and must not
+                    # end the generous prefill budget before the model has
+                    # actually started producing output.
                     last_data_at = time.monotonic()
-                    seen_data.set()  # past prefill: mid-stream idle timeout now applies
                     data_str = line[5:].strip()
                     if not data_str or data_str == "[DONE]":
                         if data_str == "[DONE]":
@@ -821,6 +825,7 @@ class OpenAIProvider:
                         continue
                     content = delta.get("content")
                     if isinstance(content, str) and content:
+                        seen_data.set()  # real output: the mid-stream idle budget applies now
                         # Accumulation is unconditional; the callback is optional
                         # (streaming may be triggered by thinking_delta alone).
                         text_parts.append(content)
@@ -829,6 +834,7 @@ class OpenAIProvider:
                                 text_delta_callback(content)
                     reasoning = delta.get("reasoning_content") or delta.get("reasoning")
                     if isinstance(reasoning, str) and reasoning:
+                        seen_data.set()  # streamed reasoning counts as output too
                         reasoning_parts.append(reasoning)
                         if thinking_delta_callback is not None:
                             with contextlib.suppress(Exception):
@@ -836,6 +842,8 @@ class OpenAIProvider:
                     raw_tc = delta.get("tool_calls") or []
                     if not isinstance(raw_tc, list):
                         continue
+                    if raw_tc:
+                        seen_data.set()  # tool-call tokens are real output
                     for tc in raw_tc:
                         if not isinstance(tc, dict):
                             continue
