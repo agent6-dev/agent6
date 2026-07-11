@@ -693,9 +693,7 @@ def test_run_command_refuses_git_config_injection(tmp_path: Path, argv: list[str
 def test_run_command_allows_readonly_git_without_injected_config() -> None:
     """The injection refusal must NOT fire for legit read-only git: -C (dir
     change, uppercase) and --no-pager are not config injection."""
-    from agent6.tools.dispatch import (
-        _refuse_mutating_git_command,  # pyright: ignore[reportPrivateUsage]
-    )
+    from agent6.tools._git_guard import refuse_mutating_git_command
 
     for argv in (
         ("git", "status"),
@@ -709,7 +707,7 @@ def test_run_command_allows_readonly_git_without_injected_config() -> None:
         ("git", "diff", "-c"),
         ("git", "-C", "subdir", "show", "-c", "HEAD"),
     ):
-        _refuse_mutating_git_command(argv)  # must not raise
+        refuse_mutating_git_command(argv)  # must not raise
 
 
 def test_unknown_tool_rejected(tmp_path: Path) -> None:
