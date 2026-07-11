@@ -40,6 +40,25 @@ class ToolCallView:
     args_full: str = ""  # rendered with a generous per-value cap, for the detail modal
     result_summary: str = ""
     ok: bool | None = None  # None = in-flight
+    task_id: str | None = None  # DAG task in focus when the call ran (for filtering)
+
+
+@dataclass(frozen=True, slots=True)
+class LogLine:
+    """One audit-log line plus the DAG task in focus when it was emitted, so a
+    viewer can filter the log to a selected task."""
+
+    text: str
+    task_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DiffView:
+    """One auto-commit diff plus the task in focus when it landed."""
+
+    patch: str
+    task_id: str | None = None
+    sha: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,8 +127,9 @@ class RunState:
     budget: BudgetView = field(default_factory=BudgetView)
     pending_approvals: tuple[ApprovalPrompt, ...] = ()
     pending_questions: tuple[QuestionPrompt, ...] = ()
-    log_tail: tuple[str, ...] = ()  # most-recent-last, bounded
+    log_tail: tuple[LogLine, ...] = ()  # most-recent-last, bounded
     log_count: int = 0  # monotonic total log lines ever (log_tail is windowed)
+    recent_diffs: tuple[DiffView, ...] = ()  # auto-commit diffs, bounded, for task filtering
     finished: bool = False
     all_passed: bool | None = None
     end_reason: str = ""  # run.end reason: finish_run | steer_abort | provider_error | ...
@@ -124,6 +144,7 @@ def initial_state() -> RunState:
 
 
 _MAX_TOOL_HISTORY = 50
+_MAX_DIFF_HISTORY = 30  # auto-commit diffs retained for per-task filtering
 MAX_LOG_TAIL = 400  # public: the inline log RichLog caps to this so it stays a gapless window
 # Live streamed reasoning/text is the frontier of an in-flight call; keep only the
 # tail so a 25k-char reasoning burst doesn't bloat every SSE frame or re-render.
@@ -141,8 +162,9 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
     """Fold one event into the run state. Pure function."""
     etype = event.get("type", "")
     if etype not in STREAM_DELTA_EVENTS:  # deltas are live-stream only, not audit log
-        log_line = format_log_line(event)
-        new_log = _push_bounded(state.log_tail, log_line, MAX_LOG_TAIL)
+        # cursor_task_id is the focus task (graph.update lands before a turn's calls).
+        entry = LogLine(format_log_line(event), state.cursor_task_id)
+        new_log = _push_bounded(state.log_tail, entry, MAX_LOG_TAIL)
         # log_count is monotonic; log_tail is a sliding window. A live viewer must
         # diff on the count (which keeps growing) -- diffing on len(log_tail) freezes
         # the panel once the window saturates at MAX_LOG_TAIL.
@@ -167,7 +189,15 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
             )
 
         case "diff.updated":
-            return replace(state, latest_diff=str(event.get("patch", "")))
+            patch = str(event.get("patch", ""))
+            entry = DiffView(
+                patch=patch, task_id=state.cursor_task_id, sha=str(event.get("sha", ""))
+            )
+            return replace(
+                state,
+                latest_diff=patch,
+                recent_diffs=_push_bounded(state.recent_diffs, entry, _MAX_DIFF_HISTORY),
+            )
 
         case "role.call":
             return replace(
@@ -222,6 +252,7 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
                 args_preview=_render_args(raw_args),
                 args_full=_render_args(raw_args, max_value=4000),
                 ok=None,
+                task_id=state.cursor_task_id,
             )
             return replace(
                 state,
@@ -470,4 +501,8 @@ def run_state_as_dict(state: RunState) -> dict[str, Any]:
     web/CLI render verbatim so the label logic lives in one place."""
     d = asdict(state)
     d["status_label"] = run_status_label(state)
+    # log_tail is LogLine objects now; the wire form stays a flat list of strings
+    # (web + `watch --json` consumers render lines verbatim). task_id filtering is
+    # a TUI-local concern that reads the RunState directly.
+    d["log_tail"] = [line.text for line in state.log_tail]
     return d

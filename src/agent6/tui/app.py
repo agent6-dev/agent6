@@ -76,6 +76,7 @@ from agent6.viewmodel.state import (
     ApprovalPrompt,
     QuestionPrompt,
     RunState,
+    ToolCallView,
     apply_event,
     initial_state,
     run_status_label,
@@ -244,6 +245,12 @@ class Agent6TUI(App[int]):
         self._seen_steer = 0
         self._steer_open = False
         self._last_log_count = 0
+        # Select a task in the #plan tree to filter tools/log/diff to it; re-select
+        # to clear. _log_filter tracks what the RichLog currently shows so a filter
+        # change forces one full re-render (it is append-only otherwise).
+        self._selected_task_id: str | None = None
+        self._log_filter: str | None = None
+        self._visible_tools: tuple[ToolCallView, ...] = ()  # the tool rows on screen now
         self._dirty = False  # an event arrived; _tick coalesces the repaint
         self._stop = threading.Event()
         # When True (the auto-spawned co-process of `agent6 run`), close the
@@ -558,10 +565,22 @@ class Agent6TUI(App[int]):
         with a rebuild."""
         if event.data_table.id != "tools":
             return
-        window = self.state.tool_calls[-_TOOL_TABLE_ROWS:]
+        window = self._visible_tools  # exactly the rows on screen (task filter applied)
         if 0 <= event.cursor_row < len(window):
             tc = window[event.cursor_row]
             self.push_screen(ToolCallDetailModal(tc.name, tc.ok, tc.args_full, tc.result_summary))
+
+    def on_tree_node_selected(self, event: Tree.NodeSelected[str | None]) -> None:
+        """Select a task in the #plan tree to filter tools/log/diff to it; select it
+        again (or a different task) to change the filter, clearing when re-selected."""
+        if event.control.id != "plan":
+            return
+        tid = event.node.data
+        if not isinstance(tid, str):
+            return
+        self._selected_task_id = None if tid == self._selected_task_id else tid
+        self._dirty = True  # a selection, not an event: mark dirty so _tick repaints
+        self._tick()  # apply the new filter immediately
 
     def action_menu(self, mnemonic: str) -> None:
         self.query_one(MenuBar).open(mnemonic)
@@ -640,7 +659,10 @@ class Agent6TUI(App[int]):
             icon = _TASK_ICONS.get(tv.status, "·")
             indent = "  " * tv.depth
             marker = "▸ " if tv.is_cursor else ""
-            tree.root.add_leaf(Text(f"{indent}{marker}{icon} {tv.title}"))
+            label = Text(f"{indent}{marker}{icon} {tv.title}")
+            if tv.id == self._selected_task_id:  # the task the panes are filtered to
+                label.stylize("bold reverse")
+            tree.root.add_leaf(label, data=tv.id)
         tree.root.expand()
 
         bar = self.query_one("#budget", ProgressBar)
@@ -655,38 +677,70 @@ class Agent6TUI(App[int]):
             f"{'~' if s.budget.usd_partial else ''}${s.budget.usd_total:.4f}"
         )
 
+        # A task selected in the #plan tree filters tools/log/diff to it. sel=None
+        # is the unfiltered live view; the border titles show which task when set.
+        sel = self._selected_task_id
+        sel_title = next((t.title for t in s.tasks if t.id == sel), "") if sel else ""
+        filt = f" · task: {sel_title[:28]}" if sel else ""
+
         table = self.query_one("#tools", DataTable)
         table.clear()
-        for tc in s.tool_calls[-_TOOL_TABLE_ROWS:]:
+        tools = [tc for tc in s.tool_calls if sel is None or tc.task_id == sel]
+        self._visible_tools = tuple(tools[-_TOOL_TABLE_ROWS:])
+        for tc in self._visible_tools:
             ok = "…" if tc.ok is None else ("✓" if tc.ok else "✗")
             table.add_row(
                 Text(tc.name), Text(tc.args_preview[:90]), ok, Text(tc.result_summary[:40])
             )
+        table.border_title = f"tools{filt}" if sel else ""
 
         # Log. Diff on the monotonic log_count, not len(log_tail): log_tail is a
         # sliding window, so a length-based diff freezes once it saturates.
         # Sticky-bottom: only snap to the newest line if the operator was already
         # at the bottom, so scrolling up to read holds position (the pane no
         # longer "plays through" out from under them). `G` / Full log jump back
-        # to the live tail.
+        # to the live tail. A filter change forces one full re-render (the RichLog
+        # is append-only, so it cannot re-window itself incrementally).
         log = self.query_one("#log", RichLog)
-        n_new = min(s.log_count - self._last_log_count, len(s.log_tail))
-        if n_new > 0:
-            at_bottom = (log.max_scroll_y - log.scroll_offset.y) <= 1
-            for line in s.log_tail[-n_new:]:
-                log.write(line)
-            if at_bottom:
-                log.scroll_end(animate=False)
-        self._last_log_count = s.log_count
+        log.border_title = f"log{filt}" if sel else ""
+        if sel != self._log_filter:
+            log.clear()
+            for ln in s.log_tail:
+                if sel is None or ln.task_id == sel:
+                    log.write(ln.text)
+            log.scroll_end(animate=False)
+            self._log_filter = sel
+            self._last_log_count = s.log_count
+        else:
+            n_new = min(s.log_count - self._last_log_count, len(s.log_tail))
+            if n_new > 0:
+                at_bottom = (log.max_scroll_y - log.scroll_offset.y) <= 1
+                for ln in s.log_tail[-n_new:]:
+                    if sel is None or ln.task_id == sel:
+                        log.write(ln.text)
+                if at_bottom:
+                    log.scroll_end(animate=False)
+            self._last_log_count = s.log_count
 
-        # Diff (the latest auto-commit) or live verify output. Built as rich Text
-        # to avoid markup parsing of diff/verify bodies (which contain brackets).
+        # Diff: the latest auto-commit or live verify output -- or, when a task is
+        # selected, the commits made while it was in focus. Built as rich Text to
+        # avoid markup parsing of diff/verify bodies (which contain brackets).
         diff_widget = self.query_one("#diff-body", Static)
+        self.query_one("#diff").border_title = f"diff{filt}" if sel else ""
         verify = s.last_verify
         dt = Text()
+        if sel is not None:
+            task_diffs = [d for d in s.recent_diffs if d.task_id == sel]
+            if task_diffs:
+                n = len(task_diffs)
+                dt.append(f"selected task · {n} commit{'s' if n != 1 else ''}\n", style="bold")
+                _append_colored_diff(dt, task_diffs[-1].patch[:2000])
+            else:
+                dt.append("(no commits during the selected task yet)", style="dim")
+            diff_widget.update(dt)
         # A RUNNING or FAILED verify takes precedence so a failure is never
         # hidden behind a stale passing diff. A passed verify yields to the diff.
-        if verify is not None and verify.exit_code is None:
+        elif verify is not None and verify.exit_code is None:
             dt.append("verify running: ", style="bold")
             dt.append(" ".join(verify.cmd)[:200] + "\n")
             dt.append("…", style="dim")

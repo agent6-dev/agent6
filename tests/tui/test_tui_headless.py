@@ -620,3 +620,64 @@ def test_l_and_t_toggle_detail_views_without_stacking(tmp_path: Path) -> None:
             assert len(app.screen_stack) == 2  # dashboard + conversation, not + log too
 
     asyncio.run(scenario())
+
+
+def test_task_filter_scopes_tools_log_and_diff(tmp_path: Path) -> None:
+    # Two tasks, each with a tool call + a commit. Selecting a task filters the
+    # tools table / log / diff to just that task's activity; the fold stamps each
+    # event with the cursor task in focus when it landed.
+    def _nodes(cur_status: dict[str, str]) -> dict[str, object]:
+        return {
+            tid: {"title": t, "status": cur_status[tid], "parent_id": None, "children": []}
+            for tid, t in (("t1", "Task one"), ("t2", "Task two"))
+        }
+
+    events = [
+        {"type": "run.start", "user_task": "x"},
+        {
+            "type": "graph.update",
+            "nodes": _nodes({"t1": "in_progress", "t2": "pending"}),
+            "cursor": "t1",
+        },
+        {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}},
+        {"type": "diff.updated", "sha": "aaa", "patch": "diff --git a/a.py b/a.py\n+one"},
+        {
+            "type": "graph.update",
+            "nodes": _nodes({"t1": "passed", "t2": "in_progress"}),
+            "cursor": "t2",
+        },
+        {"type": "tool.call", "name": "apply_edit", "args": {"path": "b.py"}},
+        {"type": "diff.updated", "sha": "bbb", "patch": "diff --git a/b.py b/b.py\n+two"},
+    ]
+    (tmp_path / "logs.jsonl").write_text(
+        "\n".join(json.dumps(e) for e in events) + "\n", encoding="utf-8"
+    )
+
+    async def scenario() -> None:
+        app = Agent6TUI(tmp_path)
+        async with app.run_test(size=(150, 42)) as pilot:
+            for _ in range(60):
+                await pilot.pause()
+                if len(app.state.recent_diffs) >= 2:  # the last events emitted
+                    break
+            # Fold stamped each tool call + diff with the task in focus at the time.
+            assert [tc.task_id for tc in app.state.tool_calls] == ["t1", "t2"]
+            assert [d.task_id for d in app.state.recent_diffs] == ["t1", "t2"]
+
+            app._tick()
+            await pilot.pause()
+            assert len(app._visible_tools) == 2  # unfiltered: both
+
+            app._selected_task_id = "t1"  # filter to task one (handler also sets _dirty)
+            app._dirty = True
+            app._tick()
+            await pilot.pause()
+            assert [tc.name for tc in app._visible_tools] == ["read_file"]
+
+            app._selected_task_id = "t2"
+            app._dirty = True
+            app._tick()
+            await pilot.pause()
+            assert [tc.name for tc in app._visible_tools] == ["apply_edit"]
+
+    asyncio.run(scenario())
