@@ -16,6 +16,7 @@ which is shared with the TUI and web skins.
 from __future__ import annotations
 
 import sys
+import time
 from threading import RLock
 from typing import Any, TextIO
 
@@ -40,6 +41,8 @@ _ANSI = {
     "magenta": "\033[35m",
 }
 
+_FLUSH_EVERY_S = 0.03  # coalesce streaming-delta flushes; see ConsoleView._raw
+
 
 class ConsoleView:
     """Fold events to styled terminal lines. `feed`/`__call__` take one event;
@@ -53,6 +56,7 @@ class ConsoleView:
         # the same thread) while a delta write may hold the lock.
         self._lock = RLock()
         self._phase: str | None = None  # None | "thinking" | "text": the open prose block
+        self._last_flush = 0.0
 
     def __call__(self, event: dict[str, Any]) -> None:
         self.feed(event)
@@ -92,6 +96,7 @@ class ConsoleView:
             self._raw(self._reset())
         if self._phase is not None:
             self._raw("\n")
+            self._flush()  # show the completed prose block now
         self._phase = None
 
     # -- structural items ---------------------------------------------------
@@ -138,9 +143,22 @@ class ConsoleView:
         return _ANSI["reset"] if self._color else ""
 
     def _raw(self, text: str) -> None:
+        # Streaming path: flush at most every _FLUSH_EVERY_S. A per-token flush on
+        # a slow terminal (SSH, a busy emulator) backpressures the SSE read in the
+        # same thread and can stall the stream; ~30ms is imperceptible and cuts
+        # thousands of flushes to a few dozen a second.
         self._out.write(text)
-        self._out.flush()
+        now = time.monotonic()
+        if now - self._last_flush >= _FLUSH_EVERY_S:
+            self._out.flush()
+            self._last_flush = now
 
     def _line(self, text: str) -> None:
+        # Structural lines (tool call/result, commit, verdict) are discrete: show
+        # them at once.
         self._out.write(text)
+        self._flush()
+
+    def _flush(self) -> None:
         self._out.flush()
+        self._last_flush = time.monotonic()
