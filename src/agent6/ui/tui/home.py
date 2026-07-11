@@ -37,7 +37,6 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 # needs textual) is only reached when textual is present.
 from agent6.ui.bridge.spawn import agent6_exe, run_cli_capture, spawn_and_locate
 from agent6.ui.tui.config_page import ConfigScreen
-from agent6.ui.tui.conversation import ConversationScreen
 from agent6.ui.tui.copy_method import open_copy_method_picker
 from agent6.ui.tui.logview import LogScreen
 from agent6.ui.tui.machines import MachinesScreen
@@ -254,10 +253,10 @@ class HomeScreen(Screen[None]):
         Menu(
             "View",
             (
-                # Viewing a selected run's logs/transcript is filed under View to
-                # match the run dashboard's View menu (the two surfaces stay aligned).
+                # Viewing a selected run's raw event log is filed under View to
+                # match the run views' View menus. There is no separate
+                # transcript viewer: Enter opens the run on its conversation.
                 MenuItem("View logs", "view_logs", "l"),
-                MenuItem("View transcript", "view_transcript", "t"),
                 MenuItem("Theme…", "choose_theme"),
                 MenuItem("Copy method…", "choose_copy_method"),
             ),
@@ -275,7 +274,6 @@ class HomeScreen(Screen[None]):
         Binding("n", "new_work", "New run/plan/ask"),
         Binding("enter", "open_selected", "Open"),
         Binding("l", "view_logs", "View logs"),
-        Binding("t", "view_transcript", "View transcript"),
         Binding("m", "merge_selected", "Merge run"),
         Binding("r", "refresh", "Refresh"),
         Binding("c", "open_config", "Config"),
@@ -383,17 +381,6 @@ class HomeScreen(Screen[None]):
             return
         run_dir = self._runs[table.cursor_row]
         self.app.push_screen(LogScreen(run_dir / "logs.jsonl", title=f"logs · {run_dir.name}"))
-
-    def action_view_transcript(self) -> None:
-        """Open the full LLM conversation of the selected run (folded from its
-        event log) -- the deep-dive companion to the terse event log."""
-        table = self.query_one("#runs", DataTable)
-        if not (self._runs and 0 <= table.cursor_row < len(self._runs)):
-            return
-        run_dir = self._runs[table.cursor_row]
-        self.app.push_screen(
-            ConversationScreen(run_dir / "logs.jsonl", title=f"conversation · {run_dir.name}")
-        )
 
     def on_data_table_row_selected(self, _event: DataTable.RowSelected) -> None:
         # Enter / double-click a run row opens it. The DataTable consumes Enter
