@@ -17,7 +17,7 @@ import pytest
 
 from agent6.events import EventSink
 from agent6.ui.cli import _interact as interactmod
-from agent6.ui.cli import run as runmod
+from agent6.ui.cli import _live as livemod
 
 
 def _events_of(log: Path, type_: str) -> list[dict[str, Any]]:
@@ -137,10 +137,10 @@ def _no() -> bool:
 
 def test_should_spawn_tui_gating(monkeypatch: pytest.MonkeyPatch) -> None:
     def should(**kw: Any) -> bool:
-        return runmod._should_spawn_tui(**kw)  # pyright: ignore[reportPrivateUsage]
+        return livemod.should_spawn_tui(**kw)
 
-    monkeypatch.setattr(runmod, "_tui_available", _yes)
-    monkeypatch.setattr(runmod.sys, "stdout", _FakeStdout(tty=True))
+    monkeypatch.setattr(livemod, "_tui_available", _yes)
+    monkeypatch.setattr(livemod.sys, "stdout", _FakeStdout(tty=True))
     # Headless by default: no --tui -> never spawn.
     assert should(tui=False, interactive=False, mode="run") is False
     # --tui on a TTY with textual + run mode -> spawn.
@@ -149,32 +149,32 @@ def test_should_spawn_tui_gating(monkeypatch: pytest.MonkeyPatch) -> None:
     assert should(tui=True, interactive=True, mode="run") is False
     assert should(tui=True, interactive=False, mode="plan") is False
     # textual not installed.
-    monkeypatch.setattr(runmod, "_tui_available", _no)
+    monkeypatch.setattr(livemod, "_tui_available", _no)
     assert should(tui=True, interactive=False, mode="run") is False
     # non-TTY (benches / CI / pipes).
-    monkeypatch.setattr(runmod, "_tui_available", _yes)
-    monkeypatch.setattr(runmod.sys, "stdout", _FakeStdout(tty=False))
+    monkeypatch.setattr(livemod, "_tui_available", _yes)
+    monkeypatch.setattr(livemod.sys, "stdout", _FakeStdout(tty=False))
     assert should(tui=True, interactive=False, mode="run") is False
 
 
 def test_stream_modes(monkeypatch: pytest.MonkeyPatch) -> None:
     def modes(*, tui_enabled: bool) -> tuple[bool, bool]:
-        return runmod._stream_modes(tui_enabled=tui_enabled)  # pyright: ignore[reportPrivateUsage]
+        return livemod.stream_modes(tui_enabled=tui_enabled)
 
     monkeypatch.delenv("AGENT6_FORCE_STREAM", raising=False)
     monkeypatch.delenv("AGENT6_STREAM_TO_LOG", raising=False)
 
     # Headless, no env: the audited non-streaming path, no console echo.
-    monkeypatch.setattr(runmod.sys, "stderr", _FakeStdout(tty=False))
+    monkeypatch.setattr(livemod.sys, "stderr", _FakeStdout(tty=False))
     assert modes(tui_enabled=False) == (False, False)
 
     # Interactive stderr TTY: stream; echo only when the TUI does NOT own the term.
-    monkeypatch.setattr(runmod.sys, "stderr", _FakeStdout(tty=True))
+    monkeypatch.setattr(livemod.sys, "stderr", _FakeStdout(tty=True))
     assert modes(tui_enabled=False) == (True, True)  # plain ask/plan
     assert modes(tui_enabled=True) == (True, False)  # the TUI renders the deltas
 
     # AGENT6_FORCE_STREAM (bench/CI): stream AND echo even when headless.
-    monkeypatch.setattr(runmod.sys, "stderr", _FakeStdout(tty=False))
+    monkeypatch.setattr(livemod.sys, "stderr", _FakeStdout(tty=False))
     monkeypatch.setenv("AGENT6_FORCE_STREAM", "1")
     assert modes(tui_enabled=False) == (True, True)
     monkeypatch.delenv("AGENT6_FORCE_STREAM")
@@ -187,7 +187,7 @@ def test_stream_modes(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_tui_session_disabled_is_noop(tmp_path: Path) -> None:
     # enabled=False must not spawn anything or touch stdout.
-    with runmod._tui_session(tmp_path, enabled=False):  # pyright: ignore[reportPrivateUsage]
+    with livemod.tui_session(tmp_path, enabled=False):
         pass
     assert not (tmp_path / "tui_console.log").exists()
 
