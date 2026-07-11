@@ -16,7 +16,7 @@ from agent6.config import (
 from agent6.config.layer import (
     load_effective,
 )
-from agent6.detect import apparmor_userns_restricted, select_profile
+from agent6.detect import ProfileUnavailableError, apparmor_userns_restricted, select_profile
 from agent6.sandbox import (
     JailUnavailableError,
     landlock_abi,
@@ -241,7 +241,7 @@ def _check_config_section(cfg: Config) -> list[_DoctorCheck]:
         out.append(
             _DoctorCheck(name="config.profile", status="PASS", detail=f"selected {selected}")
         )
-    except RuntimeError as exc:
+    except ProfileUnavailableError as exc:
         print(f"  [FAIL] profile selection: {exc}")
         out.append(_DoctorCheck(name="config.profile", status="FAIL", detail=str(exc)))
     out.extend(_doctor_check_config(cfg))

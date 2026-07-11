@@ -29,7 +29,7 @@ from agent6.config.layer import (
     load_effective_with_overlay,
     repo_config_path_for,
 )
-from agent6.detect import select_profile
+from agent6.detect import ProfileUnavailableError, select_profile
 from agent6.events import EventSink
 from agent6.git_ops import CommitIdentity, GitError, verify_git_identity
 from agent6.machine import (
@@ -582,7 +582,7 @@ def _resolve_network_refusal(  # noqa: PLR0911
     try:
         new_cfg = load_effective_with_overlay(cwd, overlay).config
         new_profile = select_profile(new_cfg.sandbox.profile, detect_env())
-    except (ConfigError, RuntimeError) as exc:
+    except (ConfigError, ProfileUnavailableError) as exc:
         print(f"  Applied, but the config no longer validates: {exc}", file=sys.stderr)
         return 2
     if _machine_network_refusal(new_cfg, new_profile, tool_states) is not None:
@@ -648,7 +648,7 @@ def _cmd_machine_run(  # noqa: PLR0911, PLR0912, PLR0915
             return 2
         try:
             profile = select_profile(cfg.sandbox.profile, detect_env())
-        except RuntimeError as exc:
+        except ProfileUnavailableError as exc:
             print(f"REFUSING: {exc}", file=sys.stderr)
             return 2
         agent_profile = profile
@@ -1038,7 +1038,7 @@ def _cmd_machine_create(  # noqa: PLR0911, PLR0912, PLR0915
         return 2
     try:
         profile = select_profile(cfg.sandbox.profile, detect_env())
-    except RuntimeError as exc:
+    except ProfileUnavailableError as exc:
         print(f"REFUSING: {exc}", file=sys.stderr)
         return 2
     profile, egress_err = resolve_strict_egress_viability(cfg, profile)

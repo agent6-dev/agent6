@@ -64,7 +64,7 @@ _RECV_CHUNK = 65536
 _UPSTREAM_CONNECT_TIMEOUT_S = 30.0
 
 
-class EgressBrokerError(RuntimeError):
+class EgressBrokerError(Exception):
     """The provider-only egress broker could not be established."""
 
 

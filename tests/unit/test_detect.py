@@ -10,6 +10,7 @@ import agent6.detect as detect_mod
 from agent6.detect import (
     Environment,
     KernelInfo,
+    ProfileUnavailableError,
     _parse_kernel,  # pyright: ignore[reportPrivateUsage]
     detect_container_signals,
     select_profile,
@@ -100,7 +101,7 @@ def test_select_profile_auto_follows_environment() -> None:
 
 
 def test_select_profile_strict_refuses_silent_downgrade() -> None:
-    with pytest.raises(RuntimeError, match="user namespaces"):
+    with pytest.raises(ProfileUnavailableError, match="user namespaces"):
         select_profile("strict", _env(userns=False))
 
 
@@ -182,7 +183,7 @@ def test_select_profile_auto_never_unsandboxes_on_linux() -> None:
 
 
 def test_select_profile_unknown_raises() -> None:
-    with pytest.raises(RuntimeError, match=r"unknown sandbox\.profile"):
+    with pytest.raises(ProfileUnavailableError, match=r"unknown sandbox\.profile"):
         select_profile("lax", _env(userns=True))
 
 
@@ -206,12 +207,12 @@ def test_select_profile_auto_is_none_without_sandbox() -> None:
 
 
 def test_select_profile_strict_refused_without_sandbox() -> None:
-    with pytest.raises(RuntimeError, match="Linux kernel sandbox"):
+    with pytest.raises(ProfileUnavailableError, match="Linux kernel sandbox"):
         select_profile("strict", _no_sandbox_env())
 
 
 def test_select_profile_hardened_refused_without_sandbox() -> None:
-    with pytest.raises(RuntimeError, match="Linux kernel sandbox"):
+    with pytest.raises(ProfileUnavailableError, match="Linux kernel sandbox"):
         select_profile("hardened", _no_sandbox_env())
 
 

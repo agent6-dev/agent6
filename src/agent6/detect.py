@@ -187,12 +187,20 @@ def detect() -> Environment:
     )
 
 
+class ProfileUnavailableError(Exception):
+    """The host cannot provide the requested `[sandbox] profile`.
+
+    A distinct type so the refusal sites catch exactly this; catching bare
+    RuntimeError there also swallowed unrelated faults as security refusals.
+    """
+
+
 def select_profile(requested: str, env: Environment) -> SandboxProfile:
     """Resolve `[sandbox] profile` ("auto"|"strict"|"hardened") against the host.
 
-    Raises `RuntimeError` if the user asked for a profile the kernel + container
-    cannot provide. This is the "no silent downgrade" rule: we never give the
-    user less isolation than they configured.
+    Raises `ProfileUnavailableError` if the user asked for a profile the kernel
+    + container cannot provide. This is the "no silent downgrade" rule: we never
+    give the user less isolation than they configured.
     """
     if sandbox_disabled_by_env():
         # Per-invocation override: run unconfined regardless of config.
@@ -203,7 +211,7 @@ def select_profile(requested: str, env: Environment) -> SandboxProfile:
         # explicit request for real isolation is refused, not silently downgraded.
         if requested in ("auto", "none"):
             return "none"
-        raise RuntimeError(
+        raise ProfileUnavailableError(
             f"sandbox.profile = {requested!r} requires the Linux kernel sandbox "
             f"(Landlock + seccomp + namespaces), which is not available on "
             f"{sys.platform!r}. Set profile = 'auto' to run unsandboxed on this "
@@ -225,7 +233,7 @@ def select_profile(requested: str, env: Environment) -> SandboxProfile:
         return "none"
     if requested == "strict":
         if not env.userns_supported:
-            raise RuntimeError(
+            raise ProfileUnavailableError(
                 "sandbox.profile = 'strict' requires unprivileged user namespaces "
                 "(`unshare -U -r true`) to succeed, but this host blocks them. "
                 "Set profile = 'hardened' (or 'auto') to run without namespaces "
@@ -234,4 +242,4 @@ def select_profile(requested: str, env: Environment) -> SandboxProfile:
         return "strict"
     if requested == "hardened":
         return "hardened"
-    raise RuntimeError(f"unknown sandbox.profile: {requested!r}")
+    raise ProfileUnavailableError(f"unknown sandbox.profile: {requested!r}")

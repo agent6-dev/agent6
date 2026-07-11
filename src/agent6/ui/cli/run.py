@@ -30,7 +30,7 @@ from agent6.config import (
 from agent6.config.layer import (
     load_effective,
 )
-from agent6.detect import select_profile
+from agent6.detect import ProfileUnavailableError, select_profile
 from agent6.events import EventSink
 from agent6.git_ops import (
     CommitIdentity,
@@ -988,7 +988,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     env = detect_env()
     try:
         selected_profile = select_profile(cfg.sandbox.profile, env)
-    except RuntimeError as exc:
+    except ProfileUnavailableError as exc:
         print(f"REFUSING: {exc}", file=sys.stderr)
         return 2
     _warn_if_unsandboxed(selected_profile)
@@ -1858,7 +1858,7 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
         env = detect_env()
         try:
             selected_profile = select_profile(cfg.sandbox.profile, env)
-        except RuntimeError as exc:
+        except ProfileUnavailableError as exc:
             print(f"REFUSING: {exc}", file=sys.stderr)
             return 2
         _warn_if_unsandboxed(selected_profile)

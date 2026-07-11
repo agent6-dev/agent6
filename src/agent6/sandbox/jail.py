@@ -24,7 +24,7 @@ from pathlib import Path
 from agent6.types import CommandResult, JailPolicy
 
 
-class JailUnavailableError(RuntimeError):
+class JailUnavailableError(Exception):
     """`agent6-jail` could not be located or refused to set up the namespace."""
 
 
