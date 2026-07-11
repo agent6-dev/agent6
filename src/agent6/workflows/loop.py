@@ -1916,174 +1916,204 @@ class Workflow:
         # that emits graph.update, so refresh the live view here.
         self._emit_graph_snapshot()
 
-    def _handle_no_tool_use(  # noqa: PLR0911, PLR0912, PLR0915
+    def _handle_no_tool_use(
         self, resp: Any, messages: list[dict[str, Any]], state: _LoopState, *, iteration: int
     ) -> RunResult | None:
         """Handle a turn with no tool_use. Either a silent finish (the agent
-        emitted text; gated by the before_finish critic and the metric
-        early-finish guard) or went-quiet (an empty turn; nudged up to a cap).
-        Returns a terminal RunResult, or None to continue the loop after
-        appending a nudge."""
-        # Agent emitted no tool_use. audit finding:
-        # distinguish "agent talked then stopped" (likely an
-        # implicit finish - user gets the text as summary) from
-        # "agent emitted nothing" (likely went-quiet failure -
-        # provider returned an empty response, or the agent got
-        # confused; bench scoring should NOT treat this as
-        # success).
+        emitted text; gated like an explicit finish_run) or went-quiet (an
+        empty turn; nudged up to a cap). Returns a terminal RunResult, or None
+        to continue the loop after appending a nudge.
+
+        Distinguishing the two matters: "agent talked then stopped" is likely
+        an implicit finish (the user gets the text as summary), while "agent
+        emitted nothing" is a went-quiet failure (an empty provider response,
+        or a confused agent) that bench scoring must NOT treat as success."""
         text = resp.text.strip() if resp.text else ""
         if text:
-            # silent_finish goes through the same
-            # before_finish critic gate as an explicit
-            # finish_run tool_use. Without this, an agent that
-            # stops emitting tool calls bypasses critic review
-            # entirely. Rejection cap is shared with the
-            # tool_use path so a stubborn worker can't bounce
-            # the loop forever.
-            if self.critic_mode == "before_finish" and self._has_reviewer():
-                critique = self._review_or_critic(
-                    state=state,
-                    messages=messages,
-                    trigger="before_finish",
-                    iteration=iteration,
+            return self._handle_silent_finish(text, messages, state, iteration=iteration)
+        return self._handle_went_quiet(resp, messages, state, iteration=iteration)
+
+    def _handle_silent_finish(
+        self, text: str, messages: list[dict[str, Any]], state: _LoopState, *, iteration: int
+    ) -> RunResult | None:
+        """A no-tool_use turn WITH text: treat it as an implicit finish and run
+        it through the same gates as an explicit finish_run. Returns None (with
+        a nudge appended to ``messages``) when a gate sends the worker back to
+        work; the silent_finish RunResult once every gate lets it through."""
+        # Same before_finish critic gate as an explicit finish_run tool_use.
+        # Without this, an agent that stops emitting tool calls bypasses
+        # critic review entirely. The rejection cap is shared with the
+        # tool_use path so a stubborn worker can't bounce the loop forever.
+        if (
+            self.critic_mode == "before_finish"
+            and self._has_reviewer()
+            and self._silent_finish_critic_rejects(state, messages, iteration=iteration)
+        ):
+            return None
+        # metric-run early-finish guard, mirroring the finish_run path: a
+        # silent finish on an optimisation run with budget to spare should be
+        # nudged to keep optimising rather than accepted. Without this,
+        # dropping tool_use was a way to skip the plateau/early-finish policy
+        # entirely.
+        if (
+            self.mode == "run"
+            and _metric_goal(self.config.workflow.metric) is not None
+            and not self._metric_at_ceiling(state.metric_history)
+        ):
+            finish_budget_remaining = self._budget_fraction_remaining()
+            has_runway = (
+                finish_budget_remaining is not None
+                and finish_budget_remaining > _METRIC_PLATEAU_STOP_BELOW_BUDGET
+            )
+            if has_runway and state.metric_finish_nudges_used < _METRIC_EARLY_FINISH_PATIENCE:
+                assert finish_budget_remaining is not None
+                state.metric_finish_nudges_used += 1
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": [{"type": "text", "text": _METRIC_FINISH_NUDGE}],
+                    }
                 )
-                cap = self.max_consecutive_critic_rejections
-                cap_reached = cap > 0 and state.consecutive_critic_rejections >= cap
-                if critique is not None and not critique.satisfied and not cap_reached:
-                    self._log(f"  critic rejected silent_finish at iter {iteration}")
-                    self._emit(
-                        "loop.critic.rejected_silent_finish",
-                        iteration=iteration,
-                    )
-                    state.consecutive_critic_rejections += 1
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": (
-                                        "[critic]\nThe critic"
-                                        " rejected your"
-                                        " silent finish (no"
-                                        " tool_use, just"
-                                        " text). Address the"
-                                        " issues below and"
-                                        " continue the task.\n\n" + critique.text
-                                    ),
-                                }
-                            ],
-                        }
-                    )
-                    return None
-                if critique is not None and not critique.satisfied and cap_reached:
-                    self._log(
-                        f"  critic rejected silent_finish at"
-                        f" iter {iteration} but rejection cap"
-                        f" ({cap}) reached - accepting finish"
-                    )
-                    self._emit(
-                        "loop.critic.rejection_cap_reached",
-                        iteration=iteration,
-                        rejections=state.consecutive_critic_rejections,
-                    )
-                    state.consecutive_critic_rejections = 0
-                elif critique is not None:
-                    self._log("  critic approved silent_finish")
-                    state.consecutive_critic_rejections = 0
-            # metric-run early-finish guard, mirroring the finish_run
-            # path: a silent finish on an optimisation run with budget to
-            # spare should be nudged to keep optimising rather than
-            # accepted. Without this, dropping tool_use was a way to skip
-            # the plateau/early-finish policy entirely.
-            if (
-                self.mode == "run"
-                and _metric_goal(self.config.workflow.metric) is not None
-                and not self._metric_at_ceiling(state.metric_history)
-            ):
-                finish_budget_remaining = self._budget_fraction_remaining()
-                has_runway = (
-                    finish_budget_remaining is not None
-                    and finish_budget_remaining > _METRIC_PLATEAU_STOP_BELOW_BUDGET
-                )
-                if has_runway and state.metric_finish_nudges_used < _METRIC_EARLY_FINISH_PATIENCE:
-                    assert finish_budget_remaining is not None
-                    state.metric_finish_nudges_used += 1
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": [{"type": "text", "text": _METRIC_FINISH_NUDGE}],
-                        }
-                    )
-                    self._log(
-                        f"  metric early-finish (silent) rejected"
-                        f" #{state.metric_finish_nudges_used} at iter {iteration}"
-                        f" (budget {finish_budget_remaining:.0%} left)"
-                    )
-                    self._emit(
-                        "loop.metric_early_finish.rejected",
-                        iteration=iteration,
-                        nudges_used=state.metric_finish_nudges_used,
-                        budget_remaining=finish_budget_remaining,
-                        trigger="silent_finish",
-                    )
-                    return None
-            # Task finish-gate (silent path): a worker that stops emitting tool
-            # calls with its own subtasks still open is steered back to the list
-            # rather than silently finished (shares the cap with the finish_run
-            # path). This is the premature-stop case observed live.
-            task_nudge = self._task_finish_gate_nudge(state)
-            if task_nudge is not None:
                 self._log(
-                    f"  silent_finish gated: open subtasks remain (nudge"
-                    f" #{state.task_finish_nudges_used}) at iter {iteration}"
+                    f"  metric early-finish (silent) rejected"
+                    f" #{state.metric_finish_nudges_used} at iter {iteration}"
+                    f" (budget {finish_budget_remaining:.0%} left)"
                 )
                 self._emit(
-                    "loop.task_finish.gated",
+                    "loop.metric_early_finish.rejected",
                     iteration=iteration,
-                    nudges_used=state.task_finish_nudges_used,
+                    nudges_used=state.metric_finish_nudges_used,
+                    budget_remaining=finish_budget_remaining,
                     trigger="silent_finish",
                 )
-                messages.append({"role": "user", "content": [{"type": "text", "text": task_nudge}]})
                 return None
-            # Question-nudge (run mode, once): the model ended by asking the
-            # operator something in prose without calling ask_user, so the run
-            # would silently finish with an unanswered question. Nudge once to
-            # call ask_user / finish_run; if it asks again, accept the finish
-            # (bounded, so a stubborn model cannot loop the run).
-            if self.mode == "run" and not state.question_nudged and _ends_with_question(text):
-                state.question_nudged = True
-                self._log(f"  silent_finish nudged: ended on a question at iter {iteration}")
-                self._emit("loop.question_nudge", iteration=iteration)
-                messages.append(
-                    {"role": "user", "content": [{"type": "text", "text": _QUESTION_NUDGE}]}
-                )
-                return None
+        # Task finish-gate (silent path): a worker that stops emitting tool
+        # calls with its own subtasks still open is steered back to the list
+        # rather than silently finished (shares the cap with the finish_run
+        # path). This is the premature-stop case observed live.
+        task_nudge = self._task_finish_gate_nudge(state)
+        if task_nudge is not None:
             self._log(
-                f"LOOP: silent_finish at iter {iteration} - agent emitted text but no tool_use"
+                f"  silent_finish gated: open subtasks remain (nudge"
+                f" #{state.task_finish_nudges_used}) at iter {iteration}"
             )
-            self._final_checkpoint(iteration)
-            self._emit_run_end_passed(reason="silent_finish", iterations=iteration)
-            return RunResult(
-                completed=True,
-                reason="silent_finish",
-                # In ask mode the final prose IS the answer the caller
-                # prints, so keep it whole; run/plan only need a short
-                # summary line.
-                summary=text if self.mode == "ask" else text[:1000],
-                iterations=iteration,
-                tool_calls=state.tool_calls,
+            self._emit(
+                "loop.task_finish.gated",
+                iteration=iteration,
+                nudges_used=state.task_finish_nudges_used,
+                trigger="silent_finish",
             )
-        # reasoning-starvation trip-wire. When a model
-        # spends its entire output budget on reasoning_content
-        # and emits nothing user-visible, the provider returns
-        # stop_reason="length" with empty text + no tool_uses.
-        # Without this breadcrumb the failure mode is
-        # indistinguishable from a model that genuinely gave up,
-        # and the only way to diagnose it is to read raw
-        # transcripts (took ~7 minutes per case
-        # forensics). Surface it explicitly so the next
-        # undetected reasoning model is one log line away.
+            messages.append({"role": "user", "content": [{"type": "text", "text": task_nudge}]})
+            return None
+        # Question-nudge (run mode, once): the model ended by asking the
+        # operator something in prose without calling ask_user, so the run
+        # would silently finish with an unanswered question. Nudge once to
+        # call ask_user / finish_run; if it asks again, accept the finish
+        # (bounded, so a stubborn model cannot loop the run).
+        if self.mode == "run" and not state.question_nudged and _ends_with_question(text):
+            state.question_nudged = True
+            self._log(f"  silent_finish nudged: ended on a question at iter {iteration}")
+            self._emit("loop.question_nudge", iteration=iteration)
+            messages.append(
+                {"role": "user", "content": [{"type": "text", "text": _QUESTION_NUDGE}]}
+            )
+            return None
+        self._log(f"LOOP: silent_finish at iter {iteration} - agent emitted text but no tool_use")
+        self._final_checkpoint(iteration)
+        self._emit_run_end_passed(reason="silent_finish", iterations=iteration)
+        return RunResult(
+            completed=True,
+            reason="silent_finish",
+            # In ask mode the final prose IS the answer the caller
+            # prints, so keep it whole; run/plan only need a short
+            # summary line.
+            summary=text if self.mode == "ask" else text[:1000],
+            iterations=iteration,
+            tool_calls=state.tool_calls,
+        )
+
+    def _silent_finish_critic_rejects(
+        self, state: _LoopState, messages: list[dict[str, Any]], *, iteration: int
+    ) -> bool:
+        """Run the before_finish critic against a silent finish. True = the
+        finish was rejected (critique appended to ``messages``; the loop
+        continues). A cap-reached rejection or an approval resets the
+        rejection counter and lets the finish proceed."""
+        critique = self._review_or_critic(
+            state=state,
+            messages=messages,
+            trigger="before_finish",
+            iteration=iteration,
+        )
+        cap = self.max_consecutive_critic_rejections
+        cap_reached = cap > 0 and state.consecutive_critic_rejections >= cap
+        if critique is not None and not critique.satisfied and not cap_reached:
+            self._log(f"  critic rejected silent_finish at iter {iteration}")
+            self._emit(
+                "loop.critic.rejected_silent_finish",
+                iteration=iteration,
+            )
+            state.consecutive_critic_rejections += 1
+            messages.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                "[critic]\nThe critic"
+                                " rejected your"
+                                " silent finish (no"
+                                " tool_use, just"
+                                " text). Address the"
+                                " issues below and"
+                                " continue the task.\n\n" + critique.text
+                            ),
+                        }
+                    ],
+                }
+            )
+            return True
+        if critique is not None and not critique.satisfied and cap_reached:
+            self._log(
+                f"  critic rejected silent_finish at"
+                f" iter {iteration} but rejection cap"
+                f" ({cap}) reached - accepting finish"
+            )
+            self._emit(
+                "loop.critic.rejection_cap_reached",
+                iteration=iteration,
+                rejections=state.consecutive_critic_rejections,
+            )
+            state.consecutive_critic_rejections = 0
+        elif critique is not None:
+            self._log("  critic approved silent_finish")
+            state.consecutive_critic_rejections = 0
+        return False
+
+    def _handle_went_quiet(
+        self, resp: Any, messages: list[dict[str, Any]], state: _LoopState, *, iteration: int
+    ) -> RunResult | None:
+        """A fully-empty turn (no text, no tool_use): surface reasoning
+        starvation explicitly, then nudge-and-retry up to the per-streak cap
+        before ending the run as went_quiet.
+
+        The nudge is cheap (~50 input tokens vs aborting the entire run) and
+        almost always gets a weak open-weights model back on track. The empty
+        assistant turn is dropped from ``messages`` first: Anthropic rejects an
+        assistant message with empty content, a THINKING-ONLY turn (reasoning
+        starvation: blocks but no text/tool_use) translates to one with no
+        content and no tool_calls that strict OpenAI-compatible backends reject
+        with a non-retryable 400, and either way it is dead context.
+        AGENT6_WENT_QUIET_MAX_NUDGES overrides the cap."""
+        # reasoning-starvation trip-wire. When a model spends its entire output
+        # budget on reasoning_content and emits nothing user-visible, the
+        # provider returns stop_reason="length" with empty text + no tool_uses.
+        # Without this breadcrumb the failure mode is indistinguishable from a
+        # model that genuinely gave up, and the only way to diagnose it is to
+        # read raw transcripts (took ~7 minutes per case forensics). Surface it
+        # explicitly so the next undetected reasoning model is one log line
+        # away.
         reasoning_chars = 0
         raw_content = (resp.raw or {}).get("content") or []
         if isinstance(raw_content, list):
@@ -2109,29 +2139,10 @@ class Workflow:
                 stop_reason=resp.stop_reason,
             )
         self._log(f"LOOP: went_quiet at iter {iteration} - agent emitted no text and no tool_use")
-        # nudge-and-retry instead of immediate exit.
-        # Weak open-weights models occasionally emit a single
-        # empty assistant turn mid-run; a one-line synthetic
-        # user prompt almost always gets them back on track,
-        # and costs ~50 input tokens vs aborting the entire run.
-        # AGENT6_WENT_QUIET_MAX_NUDGES env override.
         env_max = os.environ.get("AGENT6_WENT_QUIET_MAX_NUDGES", "").strip()
         effective_max_nudges = int(env_max) if env_max.isdigit() else self.went_quiet_max_nudges
         if state.went_quiet_nudges_used < effective_max_nudges:
             state.went_quiet_nudges_used += 1
-            # Drop the empty assistant turn we appended at the
-            # top of this iteration. An assistant message with
-            # empty content is rejected by Anthropic
-            # ("messages.N.content: Input should be a valid
-            # list") and is wasted context everywhere else.
-            # A THINKING-ONLY turn (reasoning starvation: blocks
-            # but no text/tool_use) counts as empty too - echoed
-            # back it translates to an assistant message with no
-            # content and no tool_calls, which strict
-            # OpenAI-compatible backends reject with a
-            # non-retryable 400, and it is dead context anyway.
-            # The nudge becomes a normal user turn appended to
-            # the prior assistant turn.
             if messages and messages[-1].get("role") == "assistant":
                 last_content = messages[-1].get("content") or []
                 substantive = isinstance(last_content, list) and any(
@@ -2144,12 +2155,12 @@ class Workflow:
                 )
                 if not substantive:
                     messages.pop()
-            # starvation-specific nudge. When the previous
-            # turn ended with stop_reason=length AND reasoning_content
-            # ate the entire budget, the generic "your turn was empty"
-            # message gives the model no actionable feedback and it
-            # repeats the same reasoning loop next turn. Tell it
-            # explicitly to stop thinking and commit to a tool call.
+            # starvation-specific nudge. When the previous turn ended with
+            # stop_reason=length AND reasoning_content ate the entire budget,
+            # the generic "your turn was empty" message gives the model no
+            # actionable feedback and it repeats the same reasoning loop next
+            # turn. Tell it explicitly to stop thinking and commit to a tool
+            # call.
             if starved:
                 nudge_text = (
                     "[harness] Your previous turn spent its entire"
