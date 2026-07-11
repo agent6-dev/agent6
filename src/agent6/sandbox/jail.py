@@ -71,6 +71,7 @@ def _policy_to_json(policy: JailPolicy) -> str:
             "extra_ro_paths": [str(p) for p in policy.extra_ro_paths],
             "extra_rw_paths": [str(p) for p in policy.extra_rw_paths],
             "extra_protect_paths": [str(p) for p in policy.extra_protect_paths],
+            "tool_paths": [str(p) for p in policy.tool_paths],
             "timeout_s": policy.timeout_s,
         }
     )

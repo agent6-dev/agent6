@@ -51,6 +51,13 @@ struct Policy {
     extra_ro_paths: Vec<PathBuf>,
     #[serde(default)]
     extra_rw_paths: Vec<PathBuf>,
+    /// Real-location RO+exec bind mounts for operator-installed tools (uv, node,
+    /// ...) that live outside the system dirs -- ~/.local/bin, ~/.cargo/bin, or the
+    /// /opt target a /usr/local/bin symlink resolves to. Unlike extra_ro_paths
+    /// (remapped under /ro) these keep their real paths so PATH lookups and
+    /// symlinks resolve. Read+execute only, never writable.
+    #[serde(default)]
+    tool_paths: Vec<PathBuf>,
     /// Paths inside `cwd` to make READ-ONLY from the child's view. In
     /// strict, these are re-bound RO on top of the workspace mount. In
     /// hardened (no mount namespace), the Landlock ruleset switches from
@@ -233,6 +240,31 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
         Some("size=64m"),
     )
     .map_err(io_err)?;
+    // Operator tool dirs (uv etc.) at their REAL locations, RO. After /tmp so a dir
+    // that happens to live under it is not shadowed by the fresh tmpfs. Best-effort:
+    // a dir that fails to mount just leaves that tool unreachable rather than aborting
+    // the run; dispatch only passes dirs OUTSIDE the system mounts above.
+    for src in &policy.tool_paths {
+        if !src.exists() {
+            continue;
+        }
+        let dst = new_root.join(src.strip_prefix("/").unwrap_or(src));
+        if fs::create_dir_all(&dst).is_err() {
+            continue;
+        }
+        if mount(Some(src.as_path()), &dst, Some(""), MsFlags::MS_BIND | MsFlags::MS_REC, Some(""))
+            .is_err()
+        {
+            continue;
+        }
+        let _ = mount(
+            Some(""),
+            &dst,
+            Some(""),
+            MsFlags::MS_BIND | MsFlags::MS_REMOUNT | MsFlags::MS_RDONLY | MsFlags::MS_REC,
+            Some(""),
+        );
+    }
     // /proc — bind from host /proc (it's still our PID namespace's view from outside,
     // but inside the new pid ns we'll mount a fresh one below).
     fs::create_dir_all(new_root.join("proc"))?;
@@ -471,6 +503,14 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("rule {ro}: {e}")))?;
         }
     }
+    // Operator tool dirs (mounted at real locations in setup_rootfs): read+exec.
+    for tp in &policy.tool_paths {
+        if let Ok(fd) = PathFd::new(tp) {
+            ruleset = ruleset
+                .add_rule(PathBeneath::new(fd, access_read_exec))
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("rule tool: {e}")))?;
+        }
+    }
     // Grant WriteFile on the harmless sink devices. /dev/null and /dev/full
     // are bind-mounted from the host (see setup_rootfs) and pytest's logging
     // plugin opens /dev/null O_WRONLY|O_APPEND when log_file is configured,
@@ -645,6 +685,11 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
     for p in &policy.extra_ro_paths {
         ro_paths.push(p.clone());
     }
+    // Operator tool dirs (uv etc.): read+exec at their real host paths (hardened
+    // runs in the real filesystem, so no bind mount is needed, only the grant).
+    for p in &policy.tool_paths {
+        ro_paths.push(p.clone());
+    }
     for p in &ro_paths {
         if let Ok(fd) = PathFd::new(p) {
             ruleset = ruleset.add_rule(PathBeneath::new(fd, access_read_exec)).map_err(|e| {
@@ -749,8 +794,12 @@ fn run_child(policy: &Policy, cwd: &Path) -> io::Result<()> {
     for (k, v) in &policy.env {
         cmd.env(k, v);
     }
-    // Minimal PATH so basic tools work inside the jail.
-    cmd.env("PATH", "/usr/bin:/bin");
+    // Minimal PATH so basic tools work inside the jail; the policy may extend it so
+    // operator-installed tools outside /usr/bin (e.g. /usr/local/bin, ~/.local/bin)
+    // resolve. Policy env is operator-side input.
+    if !policy.env.iter().any(|(k, _)| k == "PATH") {
+        cmd.env("PATH", "/usr/bin:/bin");
+    }
     // HOME default; the policy may override it (e.g. a writable /tmp path so
     // toolchain caches like go-build work). Policy env is operator-side input.
     if !policy.env.iter().any(|(k, _)| k == "HOME") {

@@ -19,9 +19,9 @@ not mutate config). The operator is shown what was picked + how to pin it.
 ``verify_command`` is an argv tuple run with NO shell, so a simple command
 tokenises directly; a shell pipeline (``a && b``, ``a | b``) is wrapped as
 ``("sh", "-c", "<pipeline>")`` -- ``sh`` resolves on the jail PATH
-(``/usr/bin:/bin``). The same jail PATH is why inference prefers interpreters
-that resolve there (a stdlib ``.venv/bin/python``, ``/usr/bin/python3``, system
-``cargo``/``go``/``node``) over home-dir wrappers (uv/poetry/nvm).
+(``/usr/bin:/bin`` plus the standard bin dirs that exist). Operator tools like
+``uv`` resolve now, so ``uv run pytest`` is a fine inferred command (it uses the
+already-synced venv; the sandbox cannot sync).
 """
 
 from __future__ import annotations
@@ -176,10 +176,12 @@ VERIFY_INFER_SYSTEM_PROMPT = (
     " repository passes (build + tests). You are given the repo's manifest files and AGENTS.md.\n\n"
     'Reply with ONLY a JSON array of argv strings and nothing else, e.g. ["pytest","-q"].\n'
     "Hard rules:\n"
-    "- The command runs in a locked-down sandbox: PATH is /usr/bin:/bin plus the repo dir,"
-    " with NO $HOME and NO network. Prefer interpreters that resolve there: a stdlib"
-    " .venv/bin/python, /usr/bin/python3, or system cargo/go/node/make. AVOID home-dir"
-    " wrappers (uv, poetry, pipx, nvm-managed node) that will not exist in the sandbox.\n"
+    "- The command runs in a locked-down sandbox: PATH is /usr/bin:/bin, the standard bin"
+    " dirs that exist (/usr/local/bin, ~/.local/bin, ~/.cargo/bin, ...), and the repo dir,"
+    " with an ephemeral $HOME and NO network. Operator tools resolve, so `uv run pytest`"
+    " works (it uses the already-synced venv; the sandbox cannot sync). Prefer the"
+    " project's real runner: `uv run ...` for a uv project, else a stdlib .venv/bin/python"
+    " or /usr/bin/python3, or system cargo/go/node/make.\n"
     "- Prefer the project's real fast test/build command, not a lint-only or syntax check.\n"
     '- If you need a shell pipeline, return ["sh","-c","<pipeline>"].\n'
     "- If you genuinely cannot determine one, return []."

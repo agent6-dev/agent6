@@ -177,9 +177,10 @@ class RunCommandInput(_ToolInput):
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Run a command in the sandbox. argv must be an array of strings (no shell)."
         " Requires `run_commands` capability != 'no' in config; if 'ask', the user is prompted."
-        " The jail's PATH is `/usr/bin:/bin` and only `/usr` is bind-mounted from the host —"
-        " prefer absolute paths like `/usr/bin/python3` or `/usr/bin/pytest`. Bare `python`"
-        " will fail on Debian/Ubuntu-style hosts where only `python3` exists."
+        " The jail's PATH is `/usr/bin:/bin` plus the standard bin dirs that exist"
+        " (`/usr/local/bin`, `~/.local/bin`, `~/.cargo/bin`, `/opt/homebrew/bin`, `/snap/bin`),"
+        " each mounted read-only, so operator-installed tools like `uv` resolve. Prefer absolute"
+        " paths like `/usr/bin/python3`; bare `python` may fail where only `python3` exists."
         " Mutating git subcommands such as `checkout`, `reset`, `restore`, `clean`, `stash`,"
         " and `commit` are refused because `.git/` is protected; to undo a bad edit, read"
         " prior content with `git show HEAD:path/to/file` and restore it with `apply_patch`"

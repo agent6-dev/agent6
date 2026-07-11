@@ -56,9 +56,10 @@ change a project convention, build command, dependency, or security invariant.
 
 The command agent6 runs to decide whether a step "succeeded". agent6 reads this
 section to infer its verify_command when one is not configured -- keep it a real
-pass/fail (build + tests). It runs in the sandbox (PATH=/usr/bin:/bin + the repo,
-no $HOME, no network), so prefer a stdlib `.venv/bin/python`, `/usr/bin/python3`,
-or system cargo/go/node over home-dir wrappers (uv/poetry/nvm).
+pass/fail (build + tests). It runs in the sandbox (PATH=/usr/bin:/bin plus the
+standard bin dirs, ephemeral $HOME, no network), so `uv run ...` works (it uses
+the already-synced venv); a stdlib `.venv/bin/python` or `/usr/bin/python3` is
+also fine.
 
 ```bash
 {verify}

@@ -1303,3 +1303,28 @@ def test_non_json_string_still_fails_validation(tmp_path: Path) -> None:
     d = ToolDispatcher(root=tmp_path, config=cfg)
     with pytest.raises(ToolError):
         d.dispatch("apply_edit", {"path": "a.txt", "edits": "not json at all"})
+
+
+def test_under_system_root_classifies_bin_dirs() -> None:
+    from agent6.tools.dispatch import _under_system_root  # pyright: ignore[reportPrivateUsage]
+
+    assert _under_system_root(Path("/usr/local/bin"))  # under a mounted system root
+    assert _under_system_root(Path("/usr/bin"))
+    assert not _under_system_root(Path("/opt/pipx/venvs/uv/bin"))  # pipx target
+    assert not _under_system_root(Path("/home/x/.local/bin"))
+
+
+def test_operator_tool_paths_extends_path_and_mounts_are_nonsystem() -> None:
+    from agent6.tools.dispatch import (
+        _operator_tool_paths,  # pyright: ignore[reportPrivateUsage]
+        _under_system_root,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    path, mounts = _operator_tool_paths()
+    # PATH always starts with the jail baseline, then any standard bin dirs.
+    assert path.startswith("/usr/bin:/bin")
+    # Mounts are only dirs OUTSIDE the system roots (those are already mounted via
+    # /usr); a system dir here would be a redundant/failing re-bind.
+    for m in mounts:
+        assert not _under_system_root(m), m
+        assert m.is_dir()

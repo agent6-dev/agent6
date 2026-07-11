@@ -31,8 +31,8 @@ class CommandResult:
     stderr: str
     duration_s: float
     # True when the launcher could not execute the binary at all (bad path, not
-    # on the jail PATH /usr/bin:/bin, missing interpreter, or a symlink that
-    # escapes the sandbox roots). Distinct from "ran and exited non-zero": a
+    # on the jail PATH, missing interpreter, or a symlink that escapes the
+    # sandbox roots). Distinct from "ran and exited non-zero": a
     # model can fix its own argv, but an operator verify/metric command that
     # cannot execute is a config/sandbox problem the run must surface loudly.
     exec_failed: bool = False
@@ -60,6 +60,12 @@ class JailPolicy:
     # LLM-driven ``run_command`` from rewriting ``.git`` even though it
     # lives inside the project root.
     extra_protect_paths: tuple[Path, ...] = ()
+    # Real-location RO+exec bind mounts for operator-installed tools that live
+    # outside the system dirs (uv in ~/.local/bin or the /opt target a
+    # /usr/local/bin symlink resolves to), so a verify/run command finds them.
+    # Distinct from ``extra_ro_paths`` (remapped under /ro, which breaks symlinks);
+    # these keep their real paths. Read+execute only, never writable.
+    tool_paths: tuple[Path, ...] = ()
     timeout_s: float = 600.0
 
 

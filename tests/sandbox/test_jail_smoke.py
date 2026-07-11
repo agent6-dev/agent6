@@ -243,3 +243,38 @@ def test_jail_hardened_protect_paths_block_writes(jail_bin: Path, tmp_path: Path
     assert "ok" in res.stdout  # sibling write succeeded
     assert "pwned" not in res.stdout  # protected write rejected
     assert (git_dir / "HEAD").read_text(encoding="utf-8") == "ref: refs/heads/main\n"
+
+
+def test_jail_tool_paths_make_a_nonworkspace_binary_reachable(
+    jail_bin: Path, tmp_path: Path
+) -> None:
+    # A tool dir OUTSIDE the workspace (like ~/.local/bin or a pipx /opt target) is
+    # unreachable by default; passing it as tool_paths bind-mounts it RO+exec at its
+    # real path so PATH resolves it. This is what makes an operator's uv reachable.
+    work = tmp_path / "work"
+    work.mkdir()
+    tools = tmp_path / "tools"  # sibling of cwd -> not under the workspace mount
+    tools.mkdir()
+    script = tools / "mytool"
+    script.write_text("#!/bin/sh\necho tool-ran\n")
+    script.chmod(0o755)
+    env = (("PATH", f"/usr/bin:/bin:{tools}"),)
+
+    with_mount = run_in_jail(
+        JailPolicy(
+            cwd=work,
+            argv=("/bin/sh", "-c", "mytool"),
+            env=env,
+            tool_paths=(tools,),
+            timeout_s=10.0,
+        )
+    )
+    assert with_mount.returncode == 0, with_mount.stderr
+    assert "tool-ran" in with_mount.stdout
+
+    # Same PATH but no tool_paths: the dir is not mounted, so exec fails (guards
+    # against the mount silently becoming a no-op).
+    without_mount = run_in_jail(
+        JailPolicy(cwd=work, argv=("/bin/sh", "-c", "mytool"), env=env, timeout_s=10.0)
+    )
+    assert without_mount.returncode != 0

@@ -145,6 +145,68 @@ class OperatorCommandUnexecutable(Exception):
     """
 
 
+# --- operator tool reachability ----------------------------------------------
+# The jail's baseline PATH is /usr/bin:/bin and it bind-mounts only the system
+# roots below. Operator tools (uv, node, ...) installed elsewhere are otherwise
+# unreachable, so a verify/run command dies 127. We add the standard bin dirs that
+# exist to PATH, and for those outside the system roots -- or whose symlinks
+# resolve out to one (a pipx `uv` at /usr/local/bin -> /opt/pipx/...) -- pass the
+# real dirs as tool_paths for a real-location RO+exec mount. Read+exec only; the
+# jail still confines writes and network, so containment is unchanged.
+_JAIL_BASE_PATH_DIRS = ("/usr/bin", "/bin")
+_SYSTEM_ROOTS = (
+    Path("/usr"),
+    Path("/bin"),
+    Path("/sbin"),
+    Path("/lib"),
+    Path("/lib64"),
+    Path("/etc"),
+    Path("/dev"),
+)
+
+
+def _under_system_root(p: Path) -> bool:
+    return any(p.is_relative_to(r) for r in _SYSTEM_ROOTS)
+
+
+def _operator_tool_paths() -> tuple[str, tuple[Path, ...]]:
+    """Return (PATH string, real-location mount dirs) so operator-installed tools
+    resolve in the jail. Recomputed per call so a tool the model just installed is
+    picked up (dirs under a mounted system root only join PATH; dirs outside it, and
+    the real dirs symlinks resolve out to, also need the RO+exec mount)."""
+    home = Path.home()
+    candidates = (
+        Path("/usr/local/bin"),
+        Path("/usr/local/sbin"),
+        home / ".local/bin",
+        home / ".cargo/bin",
+        Path("/opt/homebrew/bin"),
+        Path("/snap/bin"),
+    )
+    path_dirs: list[str] = list(_JAIL_BASE_PATH_DIRS)
+    mounts: set[Path] = set()
+    for d in candidates:
+        if not d.is_dir():
+            continue
+        path_dirs.append(str(d))
+        if not _under_system_root(d):
+            mounts.add(d)  # real binaries in a non-system dir need the dir itself
+        try:
+            entries = list(d.iterdir())
+        except OSError:
+            continue
+        for entry in entries:
+            if not entry.is_symlink():
+                continue  # real files are covered by the dir / the /usr mount
+            try:
+                real = entry.resolve()
+            except OSError:
+                continue
+            if real.is_file() and not _under_system_root(real):
+                mounts.add(real.parent)  # e.g. /opt/pipx/venvs/uv/bin
+    return ":".join(path_dirs), tuple(sorted(mounts))
+
+
 # --- grep regex safety (ReDoS containment) -----------------------------------
 # `grep` compiles a model-supplied regex and runs it in agent6's own process
 # (not the jail). CPython's `re` engine holds the GIL and is not interruptible
@@ -1253,11 +1315,11 @@ class ToolDispatcher:
         if res.get("exec_failed"):
             raise OperatorCommandUnexecutable(
                 f"verify_command {list(argv)} could not be executed in the sandbox: "
-                f"{res['stderr']}. The jail PATH is /usr/bin:/bin; a tool installed "
-                "elsewhere (e.g. uv under /usr/local/bin or ~/.local/bin, or a venv "
-                "python symlinked outside the workspace) is not reachable. Fix the "
-                "verify_command to use a /usr/bin-reachable invocation, or grant the "
-                "tool's real path via sandbox.extra_read_paths."
+                f"{res['stderr']}. The jail PATH is /usr/bin:/bin plus the standard bin "
+                "dirs that exist (/usr/local/bin, ~/.local/bin, ~/.cargo/bin, "
+                "/opt/homebrew/bin, /snap/bin), each mounted read-only; the command is on "
+                "none of them. Install the tool into one of those on the host, or grant "
+                "its real path via sandbox.extra_read_paths."
             )
         return res
 
@@ -1388,9 +1450,9 @@ class ToolDispatcher:
         if res.get("exec_failed"):
             raise OperatorCommandUnexecutable(
                 f"metric_command {list(argv)} could not be executed in the sandbox: "
-                f"{res['stderr']}. See run_verify_command's note: the jail PATH is "
-                "/usr/bin:/bin; grant the tool's real path via sandbox.extra_read_paths "
-                "or use a /usr/bin-reachable invocation."
+                f"{res['stderr']}. See run_verify_command's note: PATH is /usr/bin:/bin "
+                "plus the standard bin dirs; install the tool into one of those on the "
+                "host, or grant its real path via sandbox.extra_read_paths."
             )
         score = _parse_metric_score(res, pattern=metric_cfg.pattern)
         res["score"] = score
@@ -1442,6 +1504,16 @@ class ToolDispatcher:
         # and models burn whole budgets probing the sandbox for a writable spot.
         env.setdefault("HOME", "/tmp/agent6-home")  # noqa: S108 - resolved inside the jail
         env.setdefault("PYTHONDONTWRITEBYTECODE", "1")
+        # `uv run` inside the jail must use the venv the operator already synced: the
+        # jail is offline (network is brokered to providers only) and HOME is a fresh
+        # tmpfs, so a sync/build would re-resolve against an empty cache and fail. Run
+        # against the existing env instead (a verify's `uv run ruff` then works).
+        env.setdefault("UV_NO_SYNC", "1")
+        # Make operator-installed tools (uv, ...) reachable: a controlled PATH that
+        # extends /usr/bin:/bin with the standard bin dirs, plus their real dirs as
+        # RO+exec mounts. Without this a `uv run` verify dies 127.
+        tool_path, tool_mounts = _operator_tool_paths()
+        env["PATH"] = tool_path
         policy = JailPolicy(
             cwd=self._root,
             argv=argv,
@@ -1450,6 +1522,7 @@ class ToolDispatcher:
             allow_network=allow_network,
             extra_protect_paths=tuple(protect_paths),
             extra_ro_paths=tuple(Path(p) for p in self._config.sandbox.extra_read_paths),
+            tool_paths=tool_mounts,
             **policy_kwargs,
         )
         try:
