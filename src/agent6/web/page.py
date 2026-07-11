@@ -63,6 +63,8 @@ button, .btn {
 }
 button:hover, .btn:hover { border-color: var(--accent); }
 button:active { transform: translateY(1px); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+button:disabled:hover { border-color: var(--border); }
 
 nav.tabs {
   display: none; position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;
@@ -271,6 +273,7 @@ aside.rail { display: none; }
 const view = document.getElementById('view');
 const crumb = document.getElementById('crumb');
 let live = null; // the active EventSource, closed on navigation
+let activeOverlayClose = null; // an open modal dialog's dismisser, closed on navigation
 
 // --- theme -------------------------------------------------------------------
 if (localStorage.getItem('a6-theme') === 'light') document.documentElement.classList.add('light');
@@ -312,6 +315,7 @@ function fmtUsd(u) { return u ? '$' + Number(u).toFixed(4) : '$0'; }
 function when(ts) { if (!ts) return ''; const d = new Date(ts * 1000); return d.toLocaleString(); }
 function setCrumb(t) { crumb.textContent = t || ''; }
 function closeLive() { if (live) { live.close(); live = null; } }
+function closeOverlay() { if (activeOverlayClose) activeOverlayClose(); }
 function pill(status) { const p = el('span', 'pill ' + esc(status), esc(status)); return p; }
 
 function setTab(name) {
@@ -321,6 +325,7 @@ function setTab(name) {
 // --- router ------------------------------------------------------------------
 async function route() {
   closeLive();
+  closeOverlay();
   const h = location.hash.replace(/^#/, '') || '/';
   const parts = h.split('/').filter(Boolean); // e.g. ['run','abc']
   try {
@@ -450,7 +455,8 @@ function steerDialog(title, onResult) {
   const send = el('button', 'primary', 'Send'), cont = el('button', null, 'Continue'), cancel = el('button', null, 'Cancel');
   row.appendChild(send); row.appendChild(cont); row.appendChild(cancel); box.appendChild(row);
   back.appendChild(box); document.body.appendChild(back); ta.focus();
-  const close = (r) => { back.remove(); document.removeEventListener('keydown', onKey); onResult(r); };
+  const close = (r) => { activeOverlayClose = null; back.remove(); document.removeEventListener('keydown', onKey); onResult(r); };
+  activeOverlayClose = () => close(null); // navigating away dismisses it (no orphaned overlay/listener)
   function onKey(e) { if (e.key === 'Escape') close(null); }
   document.addEventListener('keydown', onKey);
   send.onclick = () => close(ta.value); cont.onclick = () => close(''); cancel.onclick = () => close(null);
@@ -495,6 +501,7 @@ function renderRun(id, opts) {
     const tbtn = el('button', null, 'Transcript →');
     tbtn.onclick = () => location.hash = '#/transcript/' + encodeURIComponent(id);
     actions.appendChild(steerBtn); actions.appendChild(stopBtn); actions.appendChild(mergeBtn); actions.appendChild(tbtn);
+    cards._steer = steerBtn; cards._stop = stopBtn; // paintRun disables these once the run is finished
     view.appendChild(actions);
   }
   view.appendChild(grid);
@@ -570,6 +577,8 @@ function paintPrompts(cards, s) {
 
 function paintRun(cards, s) {
   if (!cards._readOnly) paintPrompts(cards, s);
+  // Steer/Stop only mean something on a live run; a finished run ignores the bridge.
+  if (cards._steer) { cards._steer.disabled = s.finished; cards._stop.disabled = s.finished; }
   // header
   cards.head.innerHTML = '';
   const kv = el('div', 'kv');
