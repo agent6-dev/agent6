@@ -6,8 +6,12 @@
 has been stripped out. The CLI imports it lazily.
 
 Architecture:
-- main thread: textual event loop.
-- background thread: tail_events(logs.jsonl) -> apply_event -> call_from_thread.
+- `Agent6TUI` (the App) is the data plane: a background thread tails
+  logs.jsonl -> apply_event -> call_from_thread, and the app owns the folded
+  RunState, the approval/question/steer prompt dispatch, run control (steer /
+  stop / resume / fork), and the exit codes.
+- `DashboardScreen` is the presentation: the panes, their key bindings and
+  menus, and the coalesced repaint of the app's RunState.
 
 The dashboard is READ-ONLY on the log stream and only writes the answer files
 the workflow polls: `<run_dir>/approvals/<id>.answer` (approve), `.../questions/
@@ -93,23 +97,23 @@ _TASK_ICONS = TASK_STATUS_GLYPH
 _TOOL_TABLE_ROWS = 20
 
 
-class _Agent6Commands(Provider):
-    """Agent-specific entries for the Ctrl+P command palette (in addition to
-    textual's built-in system commands)."""
+class _DashboardCommands(Provider):
+    """The dashboard's menu actions in the Ctrl+P palette, from the same MENUS
+    registry as the menu bar and key bindings -- so the surfaces never drift."""
 
     @property
-    def _tui(self) -> Agent6TUI:
-        app = self.app
-        assert isinstance(app, Agent6TUI)
-        return app
+    def _dash(self) -> DashboardScreen:
+        screen = self.screen
+        assert isinstance(screen, DashboardScreen)
+        return screen
 
     async def discover(self) -> Hits:
-        for name, runnable, help_text in self._tui.palette_commands():
+        for name, runnable, help_text in self._dash.palette_commands():
             yield DiscoveryHit(name, runnable, help=help_text)
 
     async def search(self, query: str) -> Hits:
         matcher = self.matcher(query)
-        for name, runnable, help_text in self._tui.palette_commands():
+        for name, runnable, help_text in self._dash.palette_commands():
             score = matcher.match(name)
             if score > 0:
                 yield Hit(score, matcher.highlight(name), runnable, help=help_text)
@@ -127,20 +131,15 @@ class _ScrollPane(VerticalScroll):
     ALLOW_MAXIMIZE = True
 
 
-class Agent6TUI(App[int]):
-    TITLE = "agent6"
-    CSS = (
-        PALETTE_CSS
-        + """
-    Screen { layers: base dropdown; background: $surface; }
-    /* The flat Screen rule above also matches ModalScreens, which would make
-       their backdrops opaque; restore textual's translucent dim (same
-       specificity, later rule wins) so the screen shows through behind dialogs. */
-    ModalScreen { background: $background 60%; }
-    * { scrollbar-size-vertical: 1; }  /* half the 2-wide default */
-    #top { height: 4; padding: 0 1; }
+class DashboardScreen(Screen[None]):
+    """The run dashboard panes: task graph, live stream, tool table, log window,
+    diff/verify, budget. Presentation only -- it renders the app's folded RunState
+    and dispatches run control back through the app (see the module docstring)."""
+
+    CSS = """
     /* Top row: the task graph is usually a few nodes, so it stays compact beside
        the model's live output. */
+    #top { height: 4; padding: 0 1; }
     #head { height: 28%; }
     #plan { width: 32%; border: round $primary; }
     #stream { width: 1fr; border: round $primary; padding: 0 1; }
@@ -167,9 +166,8 @@ class Agent6TUI(App[int]):
        panel goes $accent. */
     #plan:focus, #stream:focus, #tools:focus, #log:focus, #diff:focus { border: round $accent; }
     """
-    )
 
-    COMMANDS: ClassVar = App.COMMANDS | {_Agent6Commands}
+    COMMANDS: ClassVar = Screen.COMMANDS | {_DashboardCommands}
 
     MENUS: ClassVar = (
         Menu(
@@ -209,8 +207,8 @@ class Agent6TUI(App[int]):
         # Footer order: page action, then meta (Help, Back, Menu) -- matching the
         # home + config footers. The dashboard is one level below the hub, so q
         # (like Esc) backs out TO the hub; only the root hub quits on q. Ctrl+Q is
-        # the app-wide hard quit. (Esc on an open modal cancels it first -- the
-        # modal consumes the key.)
+        # the app-wide hard quit (bound on the App so it works from any screen).
+        # (Esc on an open modal cancels it first -- the modal consumes the key.)
         Binding("s", "steer", "Steer", show=True),
         Binding("x", "stop", "Stop", show=True),
         Binding("R", "resume", "Resume", show=False),  # Shift+R: no accidental resume
@@ -225,46 +223,27 @@ class Agent6TUI(App[int]):
         # q and Esc both back out to the hub; shown as one "Esc/q Back" footer entry.
         Binding("escape", "to_hub", "Back", key_display="Esc/q"),
         Binding("q", "to_hub", "Back", show=False),
-        Binding("ctrl+q", "quit_hub", "Quit", show=False),
         # No tab/shift+tab bindings here: the default Screen's own tab bindings
-        # (closer to focus) shadow app-level ones, and they already move panes.
+        # (closer to focus) shadow screen-level ones, and they already move panes.
         *menu_bindings(MENUS),
     ]
 
-    def __init__(self, run_dir: Path, *, exit_on_end: bool = False, from_hub: bool = False) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self.run_dir = run_dir
-        # When launched from the hub loop, Esc returns to it and q quits the hub
-        # (signalled by the exit code); standalone, both just close the dashboard.
-        self.from_hub = from_hub
-        self.logs_path = run_dir / "logs.jsonl"
-        self.state: RunState = initial_state()
-        self._seen_approval_ids: set[str] = set()
-        self._seen_question_ids: set[str] = set()
-        self._seen_steer = 0
-        self._steer_open = False
-        self._last_log_count = 0
         # Select a task in the #plan tree to filter tools/log/diff to it; re-select
         # to clear. _log_filter tracks what the RichLog currently shows so a filter
         # change forces one full re-render (it is append-only otherwise).
         self._selected_task_id: str | None = None
         self._log_filter: str | None = None
+        self._last_log_count = 0
         self._visible_tools: tuple[ToolCallView, ...] = ()  # the tool rows on screen now
-        self._dirty = False  # an event arrived; _tick coalesces the repaint
-        self._stop = threading.Event()
-        # When True (the auto-spawned co-process of `agent6 run`), close the
-        # dashboard once the run ends so the parent command returns; `agent6
-        # watch` leaves this False and keeps following.
-        self.exit_on_end = exit_on_end
-        self._run_ended = False
         self._footer_finished = False  # last state.finished the footer bindings reflect
-        # Live heartbeat: a run can be silent for a whole reasoning turn (or the
-        # resume context-rebuild gap). Track when the last event landed and
-        # repaint ~1/s while active so an elapsed timer + spinner visibly tick --
-        # the difference between "thinking" and "hung" the user could not see.
-        self._last_event_at = time.monotonic()
-        self._heartbeat_at = 0.0
-        self._spin = 0
+
+    @property
+    def _tui(self) -> Agent6TUI:
+        app = self.app
+        assert isinstance(app, Agent6TUI)
+        return app
 
     # --- layout -------------------------------------------------------
 
@@ -300,205 +279,28 @@ class Agent6TUI(App[int]):
         yield Footer()
 
     def on_mount(self) -> None:
-        setup_theme(self)  # apply the saved theme before the first paint
-        self._ensure_claim()
-        self.sub_title = f"run · {self.run_dir.name}"  # menu-bar title context
         self.query_one("#tools", DataTable).add_columns("tool", "args", "ok", "summary")
-        # A steer request already in the log is historical (e.g. a CLI Ctrl-C that
-        # detached, whose run.steer_requested replays on open); only prompt for ones
-        # that arrive AFTER we start watching, so opening a run never pops a stale,
-        # already-handled steer modal.
-        with contextlib.suppress(OSError):
-            self._seen_steer = self.logs_path.read_bytes().count(b'"run.steer_requested"')
-        self._render()  # initial paint; later paints are coalesced in _tick
-        # Auto-spawn close: the reader thread sets `_run_ended` on `run.end`; we
-        # poll it from a timer in the app's OWN loop and exit there. Exit()
-        # scheduled from inside a call_from_thread callback does not take effect,
-        # but exiting from a timer callback does. The same timer also drives the
-        # approval / question / steer modals.
-        self.set_interval(0.2, self._tick)
-        self._thread = threading.Thread(target=self._reader_loop, daemon=True)
-        self._thread.start()
+        self.render_state()  # initial paint; later paints are coalesced in the app's tick
 
-    def _ensure_claim(self) -> None:
-        """Claim frontend.pid only when no live front-end owns it, so a concurrent
-        web/TUI viewer on the same run is not clobbered. Re-asserted each tick, so
-        if the owner goes away the bridge self-heals to this still-open dashboard
-        (the same pattern as MachineWatchScreen)."""
-        if not frontend_is_live(self.run_dir):
-            write_frontend_pid(self.run_dir, os.getpid())
-
-    def on_unmount(self) -> None:
-        self._stop.set()
-        # Stop claiming the run's prompts, but only if frontend.pid is still ours
-        # (a concurrent viewer may own it).
-        try:
-            owned = (self.run_dir / "frontend.pid").read_text(encoding="utf-8").strip() == str(
-                os.getpid()
-            )
-        except OSError:
-            owned = False
-        if owned:
-            clear_frontend_pid(self.run_dir)
-
-    # --- reader thread -----------------------------------------------
-
-    def _reader_loop(self) -> None:
-        for event in tail_events(self.logs_path, follow=True, stop_when_finished=self.exit_on_end):
-            if self._stop.is_set():
-                return
-            self.call_from_thread(self._handle_event, event)
-
-    def _handle_event(self, event: dict[str, object]) -> None:
-        self.state = apply_event(self.state, event)
-        self._last_event_at = time.monotonic()  # feeds the live "working… Ns" heartbeat
-        if event.get("type") == "run.start":
-            # A resume appends a new session to the same log and its prompt id
-            # counters restart at approval-1/question-1; a stale seen-set would
-            # swallow the new session's first prompts.
-            self._seen_approval_ids.clear()
-            self._seen_question_ids.clear()
-        if self.exit_on_end and event.get("type") == "run.end":
-            self._run_ended = True
-        # Coalesce: mark dirty and let the 0.2s _tick repaint once. Replaying a
-        # finished run floods hundreds of events on open; rendering each one would
-        # rebuild the whole dashboard per event (UI thrash, and vhs can't capture
-        # the burst, so the tour video skipped past the dashboard).
-        self._dirty = True
-
-    def _tick(self) -> None:
-        self._ensure_claim()  # re-assert the bridge if a peer viewer went away
-        for ap in self.state.pending_approvals:
-            if not ap.answered and ap.id not in self._seen_approval_ids:
-                self._seen_approval_ids.add(ap.id)
-                self.push_screen(ApprovalModal(ap.id, ap.prompt), self._on_approval(ap))
-        for qp in self.state.pending_questions:
-            if not qp.answered and qp.id not in self._seen_question_ids:
-                self._seen_question_ids.add(qp.id)
-                self.push_screen(QuestionModal(qp.id, qp.questions), self._on_question(qp))
-        # Pop a steer modal once per Ctrl-C (steer_requests is monotonic).
-        if self.state.steer_requests > self._seen_steer and not self._steer_open:
-            self._seen_steer = self.state.steer_requests
-            self._steer_open = True
-            self.push_screen(SteerModal(), self._on_steer)
-        # Heartbeat: while the run is active but silent, advance the spinner and
-        # repaint ~1/s so the "working… Ns" timer ticks -- an attached viewer can
-        # see the run is alive (thinking / resuming), not hung.
-        if not self.state.finished and not self._run_ended:
-            now = time.monotonic()
-            if now - self._heartbeat_at >= 1.0:
-                self._heartbeat_at = now
-                self._spin += 1
-                self._dirty = True
-        # Coalesced repaint: once per tick, and only when the dashboard is the
-        # active, mounted screen. A modal (transcript/log) or shutdown leaves the
-        # dashboard widgets covered or torn down, so querying them raises; defer
-        # the paint (dirty stays set) until it is back on top.
-        if self._dirty and not self._stop.is_set() and len(self.screen_stack) <= 1:
-            self._dirty = False
-            with contextlib.suppress(NoMatches):
-                self._render()
-        # Exit only once the run ended AND nothing is still awaiting an answer,
-        # so a final approval/question/steer isn't dropped on the way out.
-        if (
-            self.exit_on_end
-            and self._run_ended
-            and not self._steer_open
-            and all(ap.answered for ap in self.state.pending_approvals)
-            and all(q.answered for q in self.state.pending_questions)
-        ):
-            self.exit()
-
-    def _on_approval(self, ap: ApprovalPrompt):  # type: ignore[no-untyped-def]
-        def cb(answer: str | None) -> None:
-            if answer == "session":  # allow every later run_command this run
-                set_session_allow(self.run_dir)
-            write_answer(self.run_dir, ap.id, approved=answer in ("yes", "session"))
-
-        return cb
-
-    def _on_question(self, qp: QuestionPrompt):  # type: ignore[no-untyped-def]
-        def cb(answers: tuple[str, ...] | None) -> None:
-            write_question_answers(self.run_dir, qp.id, answers or ())
-
-        return cb
-
-    def _on_steer(self, answer: str | None) -> None:
-        self._steer_open = False
-        write_steer_answer(self.run_dir, answer or "")
+    # --- actions ------------------------------------------------------
 
     def action_steer(self) -> None:
-        """Steer the run WITHOUT Ctrl-C: open the steer box and drop a request
-        marker the run picks up at its next safe boundary (after the current step,
-        never mid tool-call), then injects your instruction into the next step.
-        The run keeps going -- no stop/resume. Submit blank to cancel."""
-        if self._steer_open or not self._run_controllable():
-            return
-        self._steer_open = True
-        clear_steer_answer(self.run_dir)  # discard any stale answer -> run waits for this one
-        request_steer(self.run_dir)
-        self.push_screen(SteerModal(), self._on_steer)
+        self._tui.action_steer()
 
     def action_stop(self) -> None:
-        """Stop the run (a separate action from steering). Confirms first, then
-        writes an abort over the file bridge; the run stops -- mid-response once
-        the abort watcher lands -- and can be resumed later."""
-        if self._steer_open or not self._run_controllable():
-            return
-
-        def _confirmed(yes: bool | None) -> None:
-            if yes:
-                clear_steer_answer(self.run_dir)
-                request_steer(self.run_dir)
-                write_steer_answer(self.run_dir, "abort")
-
-        self.push_screen(
-            ConfirmModal(
-                "Stop the run?",
-                "It ends now and can be resumed later with `agent6 resume`.",
-                confirm_label="Stop",
-            ),
-            _confirmed,
-        )
+        self._tui.action_stop()
 
     def action_resume(self) -> None:
-        """Resume a finished/stopped run: it continues in the background (appending
-        to the same log) and this dashboard follows straight through."""
-        if not self.state.finished:
-            self.notify("run is still going -- nothing to resume", severity="warning")
-            return
-        err = spawn_detached_resume(Path.cwd(), self.run_dir.name)
-        self.notify(
-            err or f"resuming {self.run_dir.name} in the background…",
-            severity="error" if err else "information",
-        )
+        self._tui.action_resume()
 
     def action_fork(self) -> None:
-        """Fork this run into a NEW run (from its latest checkpoint) that runs in the
-        background and shows up in the hub. Spawns off-thread so the UI stays live."""
-        self.notify(f"forking {self.run_dir.name}…", severity="information")
-        threading.Thread(target=self._do_fork, daemon=True).start()
+        self._tui.action_fork()
 
-    def _do_fork(self) -> None:
-        runs = self.run_dir.parent  # sibling run dirs under runs/
-        new_dir, err = spawn_and_locate(
-            [agent6_exe(), "fork", self.run_dir.name],
-            Path.cwd(),
-            before={p for p in runs.iterdir() if p.is_dir()},
-            list_dirs=lambda: [p for p in runs.iterdir() if p.is_dir()],
-        )
-        msg = (
-            f"forked to {new_dir.name} (open it from the hub)"
-            if new_dir
-            else (err or "fork failed")
-        )
-        self.call_from_thread(self.notify, msg, severity="information" if new_dir else "error")
+    def action_to_hub(self) -> None:
+        self._tui.action_to_hub()
 
-    def _run_controllable(self) -> bool:
-        """Steer/Stop are no-ops once the run is over: finished (the case that
-        matters for `agent6 watch`, where `_run_ended` never trips) or the
-        co-process app closing on run.end."""
-        return not self._run_ended and not self.state.finished
+    def action_quit_hub(self) -> None:
+        self._tui.action_quit_hub()
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         """Hide the run-control keys from the footer when they can't apply:
@@ -506,18 +308,42 @@ class Agent6TUI(App[int]):
         finished run advertising 'Stop' (and vice versa) was misleading."""
         del parameters
         if action in ("steer", "stop"):
-            return self._run_controllable()
+            return self._tui.run_controllable()
         if action in ("resume", "fork"):
-            return bool(self.state.finished)
+            return bool(self._tui.state.finished)
         return True
 
     def action_focus_next_pane(self) -> None:
         # Local action wrapping the App's framework action so it resolves from a
         # menu item / palette entry (a namespaced `app.focus_next` does not).
-        self.action_focus_next()
+        self.app.action_focus_next()
 
     def action_focus_prev_pane(self) -> None:
-        self.action_focus_previous()
+        self.app.action_focus_previous()
+
+    def action_fullscreen(self) -> None:
+        """Maximize the focused pane; Esc or f again restores the dashboard."""
+        if self.maximized is not None:
+            self.minimize()
+        elif self.focused is not None and self.focused.allow_maximize:
+            self.maximize(self.focused)
+
+    def action_view_logs(self) -> None:
+        """Open the full, scrollable log of THIS run -- the inline #log pane is a
+        small sliding window; this is the whole history, scroll-anchored. (l again
+        inside the view closes it: LogScreen binds l -> close.)"""
+        self.app.push_screen(
+            LogScreen(self._tui.logs_path, title=f"logs · {self._tui.run_dir.name}")
+        )
+
+    def action_view_transcript(self) -> None:
+        """Open THIS run's full LLM conversation (assistant text + every tool
+        call with its result), folded live from the run's event log."""
+        self.app.push_screen(
+            ConversationScreen(
+                self._tui.logs_path, title=f"conversation · {self._tui.run_dir.name}"
+            )
+        )
 
     # --- command palette ---------------------------------------------
 
@@ -534,50 +360,6 @@ class Agent6TUI(App[int]):
                 if handler is not None:
                     yield (item.label, handler, menu.title)
 
-    def action_to_hub(self) -> None:
-        self.exit(0)  # back to the hub loop (or just close, standalone)
-
-    def action_quit_hub(self) -> None:
-        # In the hub loop, signal "quit the hub" via the exit code; standalone,
-        # there's nothing to return to, so a plain close (0) is the same thing.
-        self.exit(QUIT_HUB_CODE if self.from_hub else 0)
-
-    def action_fullscreen(self) -> None:
-        """Maximize the focused pane; Esc or f again restores the dashboard."""
-        screen = self.screen
-        if screen.maximized is not None:
-            screen.minimize()
-        elif self.focused is not None and self.focused.allow_maximize:
-            screen.maximize(self.focused)
-
-    def action_view_logs(self) -> None:
-        """Toggle the full, scrollable log of THIS run -- the inline #log pane is a
-        small sliding window; this is the whole history, scroll-anchored."""
-        if self._close_detail_view(LogScreen):
-            return
-        self.push_screen(LogScreen(self.logs_path, title=f"logs · {self.run_dir.name}"))
-
-    def action_view_transcript(self) -> None:
-        """Toggle THIS run's full LLM conversation (assistant text + every tool
-        call with its result), folded live from the run's event log."""
-        if self._close_detail_view(ConversationScreen):
-            return
-        self.push_screen(
-            ConversationScreen(self.logs_path, title=f"conversation · {self.run_dir.name}")
-        )
-
-    def _close_detail_view(self, wanted: type[LogScreen] | type[ConversationScreen]) -> bool:
-        """A detail view (log/conversation) is a regular screen, so l/t still reach
-        the app while it is up. Pop whichever one is showing so a repeat press does
-        not stack a duplicate, and return True when it was the SAME view (l/t toggle
-        it off); a different one is closed so the caller can switch to the requested
-        view instead of stacking both."""
-        top = self.screen
-        if isinstance(top, (LogScreen, ConversationScreen)):
-            self.pop_screen()
-            return isinstance(top, wanted)
-        return False
-
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """Enter on a tool-calls row opens its full args + summary in a modal (the
         columns truncate long values). Map the visual row back through the same
@@ -588,7 +370,9 @@ class Agent6TUI(App[int]):
         window = self._visible_tools  # exactly the rows on screen (task filter applied)
         if 0 <= event.cursor_row < len(window):
             tc = window[event.cursor_row]
-            self.push_screen(ToolCallDetailModal(tc.name, tc.ok, tc.args_full, tc.result_summary))
+            self.app.push_screen(
+                ToolCallDetailModal(tc.name, tc.ok, tc.args_full, tc.result_summary)
+            )
 
     def on_tree_node_selected(self, event: Tree.NodeSelected[str | None]) -> None:
         """Select a task in the #plan tree to filter tools/log/diff to it; select it
@@ -599,14 +383,13 @@ class Agent6TUI(App[int]):
         if not isinstance(tid, str):
             return
         self._selected_task_id = None if tid == self._selected_task_id else tid
-        self._dirty = True  # a selection, not an event: mark dirty so _tick repaints
-        self._tick()  # apply the new filter immediately
+        self.render_state()  # a selection, not an event: re-render with the new filter now
 
     def action_menu(self, mnemonic: str) -> None:
         self.query_one(MenuBar).open(mnemonic)
 
     def action_help(self) -> None:
-        self.push_screen(
+        self.app.push_screen(
             HelpScreen(
                 self.MENUS,
                 self,
@@ -620,33 +403,27 @@ class Agent6TUI(App[int]):
         )
 
     def action_choose_theme(self) -> None:
-        open_theme_picker(self)
+        open_theme_picker(self.app)
 
     def action_choose_copy_method(self) -> None:
-        open_copy_method_picker(self)
+        open_copy_method_picker(self.app)
 
     async def on_menu_bar_selected(self, event: MenuBar.Selected) -> None:
-        # action_quit (and other built-ins) are coroutines, so await results.
-        handler = getattr(self, f"action_{event.action}", None)
+        # Screen actions first, then app-level built-ins (command_palette), which
+        # are coroutines -- await results. Mirrors the hub / config / machines.
+        handler = getattr(self, f"action_{event.action}", None) or getattr(
+            self.app, f"action_{event.action}", None
+        )
         if handler is not None:
             result = handler()
             if inspect.isawaitable(result):
                 await result
 
-    def get_system_commands(self, screen: Screen[object]) -> Iterable[SystemCommand]:
-        # Drop textual's "Keys" panel (our Help page replaces it), "Screenshot" (an
-        # unused default whose SVG export is broken in our terminals), "Theme"
-        # (replaced by our live-preview Theme… picker), and "Quit" (its plain exit()
-        # returns the wrong code here -- our File menu's Back to hub / Quit do). All
-        # of these are provided by MENUS via palette_commands, so nothing's added.
-        for cmd in super().get_system_commands(screen):
-            if cmd.title not in ("Keys", "Screenshot", "Theme", "Quit"):
-                yield cmd
-
     # --- rendering ---------------------------------------------------
 
-    def _render(self) -> None:  # noqa: PLR0912, PLR0915
-        s = self.state
+    def render_state(self) -> None:  # noqa: PLR0912, PLR0915
+        tui = self._tui
+        s = tui.state
         # The finished flag gates which run-control keys the footer shows; when it
         # flips (run ends, or a resume un-finishes it), re-ask check_action.
         if s.finished != self._footer_finished:
@@ -655,11 +432,11 @@ class Agent6TUI(App[int]):
         role = s.last_role
         # Live heartbeat: a spinner + seconds since the last event, shown while
         # the run is active. Silent thinking / the resume gap now visibly tick.
-        active = not s.finished and not self._run_ended
+        active = not s.finished and not tui.run_ended
         beat = ""
         if active and role is not None:
-            spinner = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[self._spin % 10]
-            beat = f" {spinner} {int(time.monotonic() - self._last_event_at)}s"
+            spinner = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[tui.spin % 10]
+            beat = f" {spinner} {int(time.monotonic() - tui.last_event_at)}s"
         role_line = f"{role.role} / {role.model}{beat}" if role else "(idle)"
         done_n = sum(1 for t in s.tasks if t.status in ("passed", "skipped"))
         step = f"tasks: {done_n}/{len(s.tasks)}" if s.tasks else "tasks: —"
@@ -701,8 +478,8 @@ class Agent6TUI(App[int]):
         elif active and role is not None:
             # No live deltas: the model is thinking, or a resume is rebuilding
             # context. A ticking heartbeat, never a stale "idle" or blank.
-            spinner = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[self._spin % 10]
-            secs = int(time.monotonic() - self._last_event_at)
+            spinner = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[tui.spin % 10]
+            secs = int(time.monotonic() - tui.last_event_at)
             st.append(f"{spinner} {role.role} working… {secs}s", style="dim italic")
         else:
             st.append("(waiting for the model…)", style="dim")
@@ -817,6 +594,277 @@ class Agent6TUI(App[int]):
             diff_widget.update(dt)
         else:
             diff_widget.update(Text("(no diffs yet)", style="dim"))
+
+
+class Agent6TUI(App[int]):
+    TITLE = "agent6"
+    CSS = (
+        PALETTE_CSS
+        + """
+    Screen { layers: base dropdown; background: $surface; }
+    /* The flat Screen rule above also matches ModalScreens, which would make
+       their backdrops opaque; restore textual's translucent dim (same
+       specificity, later rule wins) so the screen shows through behind dialogs. */
+    ModalScreen { background: $background 60%; }
+    * { scrollbar-size-vertical: 1; }  /* half the 2-wide default */
+    """
+    )
+
+    BINDINGS: ClassVar = [
+        # App-level so it works from any screen (viewers included); the hub-aware
+        # exit code needs our handler, not textual's default quit.
+        Binding("ctrl+q", "quit_hub", "Quit", show=False),
+    ]
+
+    def __init__(self, run_dir: Path, *, exit_on_end: bool = False, from_hub: bool = False) -> None:
+        super().__init__()
+        self.run_dir = run_dir
+        # When launched from the hub loop, Esc returns to it and q quits the hub
+        # (signalled by the exit code); standalone, both just close the dashboard.
+        self.from_hub = from_hub
+        self.logs_path = run_dir / "logs.jsonl"
+        self.state: RunState = initial_state()
+        self._seen_approval_ids: set[str] = set()
+        self._seen_question_ids: set[str] = set()
+        self._seen_steer = 0
+        self._steer_open = False
+        self._dirty = False  # an event arrived; _tick coalesces the repaint
+        self._stop = threading.Event()
+        # When True (the auto-spawned co-process of `agent6 run`), close the
+        # dashboard once the run ends so the parent command returns; `agent6
+        # watch` leaves this False and keeps following.
+        self.exit_on_end = exit_on_end
+        self.run_ended = False
+        # Live heartbeat: a run can be silent for a whole reasoning turn (or the
+        # resume context-rebuild gap). Track when the last event landed and
+        # repaint ~1/s while active so an elapsed timer + spinner visibly tick --
+        # the difference between "thinking" and "hung" the user could not see.
+        self.last_event_at = time.monotonic()
+        self._heartbeat_at = 0.0
+        self.spin = 0
+        self._dash = DashboardScreen()
+
+    def on_mount(self) -> None:
+        setup_theme(self)  # apply the saved theme before the first paint
+        self._ensure_claim()
+        self.sub_title = f"run · {self.run_dir.name}"  # menu-bar title context
+        # A steer request already in the log is historical (e.g. a CLI Ctrl-C that
+        # detached, whose run.steer_requested replays on open); only prompt for ones
+        # that arrive AFTER we start watching, so opening a run never pops a stale,
+        # already-handled steer modal.
+        with contextlib.suppress(OSError):
+            self._seen_steer = self.logs_path.read_bytes().count(b'"run.steer_requested"')
+        # Pushed (not the app's default screen): only the push path loads a
+        # screen's CSS, and the hub pushes its HomeScreen the same way.
+        self.push_screen(self._dash)
+        # Auto-spawn close: the reader thread sets `run_ended` on `run.end`; we
+        # poll it from a timer in the app's OWN loop and exit there. Exit()
+        # scheduled from inside a call_from_thread callback does not take effect,
+        # but exiting from a timer callback does. The same timer also drives the
+        # approval / question / steer modals.
+        self.set_interval(0.2, self._tick)
+        self._thread = threading.Thread(target=self._reader_loop, daemon=True)
+        self._thread.start()
+
+    def _ensure_claim(self) -> None:
+        """Claim frontend.pid only when no live front-end owns it, so a concurrent
+        web/TUI viewer on the same run is not clobbered. Re-asserted each tick, so
+        if the owner goes away the bridge self-heals to this still-open dashboard
+        (the same pattern as MachineWatchScreen)."""
+        if not frontend_is_live(self.run_dir):
+            write_frontend_pid(self.run_dir, os.getpid())
+
+    def on_unmount(self) -> None:
+        self._stop.set()
+        # Stop claiming the run's prompts, but only if frontend.pid is still ours
+        # (a concurrent viewer may own it).
+        try:
+            owned = (self.run_dir / "frontend.pid").read_text(encoding="utf-8").strip() == str(
+                os.getpid()
+            )
+        except OSError:
+            owned = False
+        if owned:
+            clear_frontend_pid(self.run_dir)
+
+    # --- reader thread -----------------------------------------------
+
+    def _reader_loop(self) -> None:
+        for event in tail_events(self.logs_path, follow=True, stop_when_finished=self.exit_on_end):
+            if self._stop.is_set():
+                return
+            self.call_from_thread(self._handle_event, event)
+
+    def _handle_event(self, event: dict[str, object]) -> None:
+        self.state = apply_event(self.state, event)
+        self.last_event_at = time.monotonic()  # feeds the live "working… Ns" heartbeat
+        if event.get("type") == "run.start":
+            # A resume appends a new session to the same log and its prompt id
+            # counters restart at approval-1/question-1; a stale seen-set would
+            # swallow the new session's first prompts.
+            self._seen_approval_ids.clear()
+            self._seen_question_ids.clear()
+        if self.exit_on_end and event.get("type") == "run.end":
+            self.run_ended = True
+        # Coalesce: mark dirty and let the 0.2s _tick repaint once. Replaying a
+        # finished run floods hundreds of events on open; rendering each one would
+        # rebuild the whole dashboard per event (UI thrash, and vhs can't capture
+        # the burst, so the tour video skipped past the dashboard).
+        self._dirty = True
+
+    def _tick(self) -> None:
+        self._ensure_claim()  # re-assert the bridge if a peer viewer went away
+        for ap in self.state.pending_approvals:
+            if not ap.answered and ap.id not in self._seen_approval_ids:
+                self._seen_approval_ids.add(ap.id)
+                self.push_screen(ApprovalModal(ap.id, ap.prompt), self._on_approval(ap))
+        for qp in self.state.pending_questions:
+            if not qp.answered and qp.id not in self._seen_question_ids:
+                self._seen_question_ids.add(qp.id)
+                self.push_screen(QuestionModal(qp.id, qp.questions), self._on_question(qp))
+        # Pop a steer modal once per Ctrl-C (steer_requests is monotonic).
+        if self.state.steer_requests > self._seen_steer and not self._steer_open:
+            self._seen_steer = self.state.steer_requests
+            self._steer_open = True
+            self.push_screen(SteerModal(), self._on_steer)
+        # Heartbeat: while the run is active but silent, advance the spinner and
+        # repaint ~1/s so the "working… Ns" timer ticks -- an attached viewer can
+        # see the run is alive (thinking / resuming), not hung.
+        if not self.state.finished and not self.run_ended:
+            now = time.monotonic()
+            if now - self._heartbeat_at >= 1.0:
+                self._heartbeat_at = now
+                self.spin += 1
+                self._dirty = True
+        # Coalesced repaint: once per tick, and only when the dashboard is the
+        # active, mounted screen. A pushed viewer, a modal, or shutdown leaves the
+        # dashboard covered or torn down, so querying its widgets raises; defer
+        # the paint (dirty stays set) until it is back on top.
+        if self._dirty and not self._stop.is_set() and self.screen is self._dash:
+            self._dirty = False
+            with contextlib.suppress(NoMatches):
+                self._dash.render_state()
+        # Exit only once the run ended AND nothing is still awaiting an answer,
+        # so a final approval/question/steer isn't dropped on the way out.
+        if (
+            self.exit_on_end
+            and self.run_ended
+            and not self._steer_open
+            and all(ap.answered for ap in self.state.pending_approvals)
+            and all(q.answered for q in self.state.pending_questions)
+        ):
+            self.exit()
+
+    def _on_approval(self, ap: ApprovalPrompt):  # type: ignore[no-untyped-def]
+        def cb(answer: str | None) -> None:
+            if answer == "session":  # allow every later run_command this run
+                set_session_allow(self.run_dir)
+            write_answer(self.run_dir, ap.id, approved=answer in ("yes", "session"))
+
+        return cb
+
+    def _on_question(self, qp: QuestionPrompt):  # type: ignore[no-untyped-def]
+        def cb(answers: tuple[str, ...] | None) -> None:
+            write_question_answers(self.run_dir, qp.id, answers or ())
+
+        return cb
+
+    def _on_steer(self, answer: str | None) -> None:
+        self._steer_open = False
+        write_steer_answer(self.run_dir, answer or "")
+
+    # --- run control (dispatched from the dashboard's keys and menus) --
+
+    def action_steer(self) -> None:
+        """Steer the run WITHOUT Ctrl-C: open the steer box and drop a request
+        marker the run picks up at its next safe boundary (after the current step,
+        never mid tool-call), then injects your instruction into the next step.
+        The run keeps going -- no stop/resume. Submit blank to cancel."""
+        if self._steer_open or not self.run_controllable():
+            return
+        self._steer_open = True
+        clear_steer_answer(self.run_dir)  # discard any stale answer -> run waits for this one
+        request_steer(self.run_dir)
+        self.push_screen(SteerModal(), self._on_steer)
+
+    def action_stop(self) -> None:
+        """Stop the run (a separate action from steering). Confirms first, then
+        writes an abort over the file bridge; the run stops -- mid-response once
+        the abort watcher lands -- and can be resumed later."""
+        if self._steer_open or not self.run_controllable():
+            return
+
+        def _confirmed(yes: bool | None) -> None:
+            if yes:
+                clear_steer_answer(self.run_dir)
+                request_steer(self.run_dir)
+                write_steer_answer(self.run_dir, "abort")
+
+        self.push_screen(
+            ConfirmModal(
+                "Stop the run?",
+                "It ends now and can be resumed later with `agent6 resume`.",
+                confirm_label="Stop",
+            ),
+            _confirmed,
+        )
+
+    def action_resume(self) -> None:
+        """Resume a finished/stopped run: it continues in the background (appending
+        to the same log) and this dashboard follows straight through."""
+        if not self.state.finished:
+            self.notify("run is still going -- nothing to resume", severity="warning")
+            return
+        err = spawn_detached_resume(Path.cwd(), self.run_dir.name)
+        self.notify(
+            err or f"resuming {self.run_dir.name} in the background…",
+            severity="error" if err else "information",
+        )
+
+    def action_fork(self) -> None:
+        """Fork this run into a NEW run (from its latest checkpoint) that runs in the
+        background and shows up in the hub. Spawns off-thread so the UI stays live."""
+        self.notify(f"forking {self.run_dir.name}…", severity="information")
+        threading.Thread(target=self._do_fork, daemon=True).start()
+
+    def _do_fork(self) -> None:
+        runs = self.run_dir.parent  # sibling run dirs under runs/
+        new_dir, err = spawn_and_locate(
+            [agent6_exe(), "fork", self.run_dir.name],
+            Path.cwd(),
+            before={p for p in runs.iterdir() if p.is_dir()},
+            list_dirs=lambda: [p for p in runs.iterdir() if p.is_dir()],
+        )
+        msg = (
+            f"forked to {new_dir.name} (open it from the hub)"
+            if new_dir
+            else (err or "fork failed")
+        )
+        self.call_from_thread(self.notify, msg, severity="information" if new_dir else "error")
+
+    def run_controllable(self) -> bool:
+        """Steer/Stop are no-ops once the run is over: finished (the case that
+        matters for `agent6 watch`, where `run_ended` never trips) or the
+        co-process app closing on run.end."""
+        return not self.run_ended and not self.state.finished
+
+    def action_to_hub(self) -> None:
+        self.exit(0)  # back to the hub loop (or just close, standalone)
+
+    def action_quit_hub(self) -> None:
+        # In the hub loop, signal "quit the hub" via the exit code; standalone,
+        # there's nothing to return to, so a plain close (0) is the same thing.
+        self.exit(QUIT_HUB_CODE if self.from_hub else 0)
+
+    def get_system_commands(self, screen: Screen[object]) -> Iterable[SystemCommand]:
+        # Drop textual's "Keys" panel (our Help page replaces it), "Screenshot" (an
+        # unused default whose SVG export is broken in our terminals), "Theme"
+        # (replaced by our live-preview Theme… picker), and "Quit" (its plain exit()
+        # returns the wrong code here -- our File menu's Back to hub / Quit do). All
+        # of these are provided by MENUS via palette_commands, so nothing's added.
+        for cmd in super().get_system_commands(screen):
+            if cmd.title not in ("Keys", "Screenshot", "Theme", "Quit"):
+                yield cmd
 
 
 def _append_colored_diff(dt: Text, patch: str) -> None:

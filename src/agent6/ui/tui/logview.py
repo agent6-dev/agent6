@@ -77,6 +77,9 @@ class LogScreen(Screen[None]):
     BINDINGS: ClassVar = [
         Binding("escape", "close", "Back", key_display="Esc/q"),
         Binding("q", "close", "Back", show=False),
+        # l closes too: the key that opened the view (dashboard `l`, hub `l`)
+        # toggles it shut, so open/close is one keystroke from either side.
+        Binding("l", "close", "Back", show=False),
         Binding("r", "reload", "Reload"),
         Binding("pageup", "page_up", "Scroll up", show=False),
         Binding("pagedown", "page_down", "Scroll down", show=False),

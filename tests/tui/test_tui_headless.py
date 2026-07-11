@@ -109,7 +109,7 @@ def test_tools_table_maximizes_to_full_height(tmp_path: Path) -> None:
             app._handle_event(_ev(type="tool.call", name="grep", args={"pattern": "x"}))
             app._tick()
             await pilot.pause()
-            table = app.query_one("#tools", DataTable)
+            table = app._dash.query_one("#tools", DataTable)
             table.focus()
             await pilot.pause()
             resting_h = table.size.height
@@ -150,7 +150,7 @@ def test_plan_tree_maximizes_to_full_width(tmp_path: Path) -> None:
             )
             app._tick()
             await pilot.pause()
-            tree = app.query_one("#plan", Tree)
+            tree = app._dash.query_one("#plan", Tree)
             tree.focus()
             await pilot.pause()
             resting_w = tree.size.width
@@ -180,7 +180,7 @@ def test_tool_row_enter_opens_detail_with_full_args(tmp_path: Path) -> None:
             )
             app._tick()
             await pilot.pause()
-            app.query_one("#tools", DataTable).focus()
+            app._dash.query_one("#tools", DataTable).focus()
             await pilot.pause()
             await pilot.press("enter")  # select the single row
             await pilot.pause()
@@ -344,7 +344,7 @@ def test_dashboard_pane_maximize_and_restore(tmp_path: Path) -> None:
         app = Agent6TUI(tmp_path, from_hub=True)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
-            diff = app.query_one("#diff")
+            diff = app._dash.query_one("#diff")
             diff.focus()
             await pilot.pause()
             await pilot.press("f")  # maximize the focused pane
@@ -379,7 +379,7 @@ def test_dashboard_diff_pane_scrolls(tmp_path: Path) -> None:
             app._handle_event(_ev(type="diff.updated", index=1, patch=long_patch))
             app._tick()
             await pilot.pause()
-            diff = app.query_one("#diff")
+            diff = app._dash.query_one("#diff")
             assert diff.max_scroll_y > 0  # content overflows the pane -> scrollable
             diff.focus()
             await pilot.press("f")  # maximize, then it must still scroll
@@ -410,7 +410,7 @@ def test_dashboard_inline_log_is_a_bounded_gapless_window(tmp_path: Path) -> Non
                 app._handle_event(_ev(type="tool.call", name=f"burst{i}"))
             app._tick()
             await pilot.pause()
-            log = app.query_one("#log", RichLog)
+            log = app._dash.query_one("#log", RichLog)
             assert len(log.lines) == MAX_LOG_TAIL  # bounded; pre-burst lines evicted
 
     asyncio.run(scenario())
@@ -609,9 +609,11 @@ def test_historical_steer_request_does_not_pop_a_modal_on_open(tmp_path: Path) -
     asyncio.run(scenario())
 
 
-def test_l_and_t_toggle_detail_views_without_stacking(tmp_path: Path) -> None:
-    # l/t are toggles: pressing l opens the log, l again closes it (not a second
-    # stacked copy needing two escapes), and t switches to the conversation.
+def test_l_toggles_log_and_t_opens_conversation(tmp_path: Path) -> None:
+    # l toggles the log view (open + close with one key, no stacking: the
+    # dashboard's keys are screen-scoped, so they can't fire under a viewer);
+    # t opens the conversation, Esc returns to the dashboard.
+    from agent6.ui.tui.app import DashboardScreen
     from agent6.ui.tui.conversation import ConversationScreen
     from agent6.ui.tui.logview import LogScreen
 
@@ -623,20 +625,24 @@ def test_l_and_t_toggle_detail_views_without_stacking(tmp_path: Path) -> None:
         app = Agent6TUI(tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
+            depth = len(app.screen_stack)  # the dashboard on top
             await pilot.press("l")  # open the log
             await pilot.pause()
             assert isinstance(app.screen, LogScreen)
-            await pilot.press("l")  # toggle it off -> back to the dashboard (no stack)
+            await pilot.press("l")  # LogScreen binds l -> close: one-key toggle
             await pilot.pause()
-            assert not isinstance(app.screen, LogScreen)
-            assert len(app.screen_stack) == 1
-            await pilot.press("l")  # open the log again
-            await pilot.pause()
-            assert isinstance(app.screen, LogScreen)
-            await pilot.press("t")  # switch to conversation, not stack on top of the log
+            assert isinstance(app.screen, DashboardScreen)
+            assert len(app.screen_stack) == depth
+            await pilot.press("t")  # open the conversation
             await pilot.pause()
             assert isinstance(app.screen, ConversationScreen)
-            assert len(app.screen_stack) == 2  # dashboard + conversation, not + log too
+            await pilot.press("l")  # dashboard keys are scoped: nothing stacks
+            await pilot.pause()
+            assert isinstance(app.screen, ConversationScreen)
+            assert len(app.screen_stack) == depth + 1
+            await pilot.press("escape")  # Esc returns to the dashboard
+            await pilot.pause()
+            assert isinstance(app.screen, DashboardScreen)
 
     asyncio.run(scenario())
 
@@ -673,6 +679,8 @@ def test_task_filter_scopes_tools_log_and_diff(tmp_path: Path) -> None:
     )
 
     async def scenario() -> None:
+        from agent6.ui.tui.app import DashboardScreen
+
         app = Agent6TUI(tmp_path)
         async with app.run_test(size=(150, 42)) as pilot:
             for _ in range(60):
@@ -685,19 +693,19 @@ def test_task_filter_scopes_tools_log_and_diff(tmp_path: Path) -> None:
 
             app._tick()
             await pilot.pause()
-            assert len(app._visible_tools) == 2  # unfiltered: both
+            dash = app.screen
+            assert isinstance(dash, DashboardScreen)
+            assert len(dash._visible_tools) == 2  # unfiltered: both
 
-            app._selected_task_id = "t1"  # filter to task one (handler also sets _dirty)
-            app._dirty = True
-            app._tick()
+            dash._selected_task_id = "t1"  # filter to task one (the handler re-renders)
+            dash.render_state()
             await pilot.pause()
-            assert [tc.name for tc in app._visible_tools] == ["read_file"]
+            assert [tc.name for tc in dash._visible_tools] == ["read_file"]
 
-            app._selected_task_id = "t2"
-            app._dirty = True
-            app._tick()
+            dash._selected_task_id = "t2"
+            dash.render_state()
             await pilot.pause()
-            assert [tc.name for tc in app._visible_tools] == ["apply_edit"]
+            assert [tc.name for tc in dash._visible_tools] == ["apply_edit"]
 
     asyncio.run(scenario())
 
@@ -754,7 +762,7 @@ def test_dashboard_heartbeat_ticks_while_active(tmp_path: Path) -> None:
                 await pilot.pause(0.2)
             app._tick()  # pyright: ignore[reportPrivateUsage]
             await pilot.pause()
-            return str(app.query_one("#stream-body", Static).render())
+            return str(app._dash.query_one("#stream-body", Static).render())
 
     text = asyncio.run(scenario())
     assert "working…" in text
@@ -792,7 +800,7 @@ def test_dashboard_follows_live_appends_after_attach(tmp_path: Path) -> None:
         async with app.run_test(size=(120, 40)) as pilot:
             for _ in range(8):
                 await pilot.pause(0.2)
-            before = app.query_one("#tools", DataTable).row_count
+            before = app._dash.query_one("#tools", DataTable).row_count
             # The background process appends a new turn AFTER we attached.
             append(
                 [
@@ -804,7 +812,7 @@ def test_dashboard_follows_live_appends_after_attach(tmp_path: Path) -> None:
                 await pilot.pause(0.2)
             app._tick()  # pyright: ignore[reportPrivateUsage]
             await pilot.pause()
-            after = app.query_one("#tools", DataTable).row_count
+            after = app._dash.query_one("#tools", DataTable).row_count
             assert after > before, f"live append not followed: {before} -> {after}"
             return after
 

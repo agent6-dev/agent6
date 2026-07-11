@@ -19,7 +19,7 @@ from typing import cast
 from rich.text import Text
 from textual.app import App
 
-from agent6.ui.tui.app import Agent6TUI
+from agent6.ui.tui.app import Agent6TUI, DashboardScreen
 from agent6.ui.tui.config_page import ConfigScreen
 from agent6.ui.tui.home import Agent6HomeApp
 from agent6.ui.tui.menubar import Menu, _Dropdown
@@ -85,7 +85,9 @@ def test_dashboard_menu_items_all_resolve(tmp_path: Path) -> None:
         app = Agent6TUI(run)
         async with app.run_test() as pilot:
             await pilot.pause()
-            _assert_all_items_resolve(app, app.MENUS)
+            dash = app.screen
+            assert isinstance(dash, DashboardScreen)
+            _assert_all_items_resolve(dash, dash.MENUS)
 
     asyncio.run(scenario())
 
