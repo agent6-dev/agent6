@@ -434,6 +434,55 @@ class _LoopState:
     stuck_nudges_fired: int = 0
 
 
+class _NextTurn:
+    """Sentinel returned by ``_turn_provider_call``: the turn was discarded (a
+    mid-stream steer chose continue, or injected an instruction) and the loop
+    should start the next iteration immediately."""
+
+
+_NEXT_TURN = _NextTurn()
+
+
+@dataclass(slots=True)
+class _TurnState:
+    """Mutable bookkeeping for ONE assistant turn that dispatched tools.
+
+    ``_drive_loop`` creates one per tool-use iteration and threads it through
+    the turn phases; a field earns its place by being written in one phase and
+    read in a later one, so each phase is a method taking ``(state, turn)``
+    rather than a slice of ~15 hand-threaded locals. Cross-iteration state
+    stays on ``_LoopState``.
+    """
+
+    iteration: int
+    # The provider response driving this turn (duck-typed; see Provider.call).
+    resp: Any
+    # A finish_run/finish_planning call captured this turn; the finish gates
+    # may revoke it (set back to None) before the stop checks honour it.
+    finish_signal: str | None = None
+    finish_payload: dict[str, Any] | None = None
+    finish_kind: Literal["finish_run", "finish_planning"] = "finish_run"
+    # The user-turn content accumulated for this turn: tool_result blocks
+    # first, then any advisory text notices (critic, metric, nudges).
+    tool_results: list[dict[str, Any]] = field(default_factory=list)
+    verify_just_passed: bool = False
+    verify_just_failed: bool = False
+    # An apply_edit/apply_patch AFTER a passing verify in the same turn changes
+    # the tree that verify validated, so the green no longer applies. Tracked
+    # separately from verify_just_passed (which the metric path also reads) so
+    # only the auto-commit gate is affected.
+    edit_since_verify_pass: bool = False
+    edited: bool = False
+    committed: bool = False
+    dag_mutated: bool = False
+    metric_after_verify_pass: bool = False
+    metric_feedback: str | None = None
+    metric_plateau_finish: str | None = None
+    critic_text: str | None = None
+    plateau_should_stop: bool = False
+    verify_settled_stop: bool = False
+
+
 @dataclass
 class Workflow:
     """Single-loop agent workflow.
@@ -768,7 +817,7 @@ class Workflow:
             metric_at_ceiling=snapshot.metric_at_ceiling,
         )
 
-    def _drive_loop(  # noqa: PLR0911, PLR0912, PLR0915
+    def _drive_loop(  # noqa: PLR0911
         self,
         *,
         system: str,
@@ -784,7 +833,9 @@ class Workflow:
         metric_best_score: float | None = None,
         metric_at_ceiling: bool = False,
     ) -> RunResult:
-        """Shared loop body for both fresh ``run()`` and ``resume()``.
+        """Shared loop body for both fresh ``run()`` and ``resume()``: one
+        ``_TurnState`` per tool-use iteration, driven through the turn phases
+        in order. Any phase returning a RunResult ends the run.
 
         Before each provider call, writes a snapshot of the workflow's
         in-memory state to ``self.resume_state_path`` (if set) so a
@@ -823,693 +874,44 @@ class Workflow:
                 )
             )
         for iteration in range(start_iteration, self.max_iterations + 1):
-            self._emit_budget(iteration)
-            if self._maybe_compact(messages):
-                # A tier-2 restart wiped the surfaced focus banner; let the next
-                # nudge pass re-surface the current task into the fresh context.
-                state.surfaced_task_id = None
-            self._maybe_pre_call_nudges(
-                messages, state, iteration=iteration, start_iteration=start_iteration
-            )
-            # Advance the rolling cache breakpoints onto the final message so
-            # this call re-reads the previous prefix from cache and writes the
-            # new tail. Runs AFTER compaction + nudges (the tail must be final)
-            # and BEFORE the snapshot (markers persist across resume).
-            _roll_cache_breakpoints(messages)
-            # Snapshot BEFORE the LLM call. After this write, a
-            # crash anywhere up to the next iteration's snapshot can be
-            # resumed by re-running this same call.
-            self._save_resume_snapshot(
+            self._turn_pre_call(
                 system=system,
                 messages=messages,
-                tool_calls=state.tool_calls,
-                next_iteration=iteration,
-                root_task_id=root_task_id,
                 state=state,
+                iteration=iteration,
+                start_iteration=start_iteration,
+                root_task_id=root_task_id,
             )
-
-            try:
-                resp = self._call_with_retry(
-                    system,
-                    messages,
-                    tools,
-                    self._worker_max_tokens(state),
-                )
-            except BudgetExceeded as exc:
-                self._log(f"LOOP: budget exhausted at iter {iteration} ({exc})")
-                self._emit(
-                    "run.end",
-                    reason="budget_exhausted",
-                    iterations=iteration,
-                    all_passed=False,
-                )
-                return RunResult(
-                    completed=False,
-                    reason="budget_exhausted",
-                    summary=f"budget exhausted at iter {iteration}: {exc}",
-                    iterations=iteration,
-                    tool_calls=state.tool_calls,
-                )
-            except ProviderAborted:
-                self.steer_clear()  # consume the stop; don't leave it on disk to re-read
-                self._log(f"LOOP: operator stopped the run mid-turn at iter {iteration}")
-                self._emit("run.end", reason="steer_abort", iterations=iteration, all_passed=False)
-                return RunResult(
-                    completed=False,
-                    reason="steer_abort",
-                    summary=f"operator stopped the run at iter {iteration}",
-                    iterations=iteration,
-                    tool_calls=state.tool_calls,
-                )
-            except ProviderInterrupted:
-                # A steer was requested mid-stream; the watchdog ended the (thinking)
-                # turn so we handle it now rather than wait it out. The partial turn
-                # is discarded; the menu decides continue / steer / stop / detach.
-                self._log(f"LOOP: steer requested mid-turn at iter {iteration}")
-                outcome = self._steer_outcome(
-                    self._maybe_handle_steer(messages, iteration), iteration, state
-                )
-                if outcome is not None:
-                    return outcome
-                continue  # "continue" or an injected instruction -> re-do the turn
-            except ProviderError as exc:
-                hint = _provider_error_hint(exc.status_code)
-                self._log(f"LOOP: provider error at iter {iteration}: {exc}{hint}")
-                self._emit(
-                    "run.end",
-                    reason="provider_error",
-                    iterations=iteration,
-                    all_passed=False,
-                )
-                return RunResult(
-                    completed=False,
-                    reason="provider_error",
-                    summary=f"provider error at iter {iteration}: {exc}{hint}",
-                    iterations=iteration,
-                    tool_calls=state.tool_calls,
-                )
-
+            got = self._turn_provider_call(system, messages, tools, state, iteration=iteration)
+            if isinstance(got, RunResult):
+                return got
+            if isinstance(got, _NextTurn):
+                continue
             # Reconstruct the assistant message exactly from the response
             # content blocks so tool_use IDs round-trip cleanly.
-            assistant_blocks = resp.raw.get("content") or []
-            messages.append({"role": "assistant", "content": assistant_blocks})
-
-            if not resp.tool_uses:
-                result = self._handle_no_tool_use(resp, messages, state, iteration=iteration)
+            messages.append({"role": "assistant", "content": got.raw.get("content") or []})
+            if not got.tool_uses:
+                result = self._handle_no_tool_use(got, messages, state, iteration=iteration)
                 if result is not None:
                     return result
                 continue
-            # Dispatch each tool_use, append tool_result to the user message.
-            finish_signal: str | None = None
-            finish_payload: dict[str, Any] | None = None
-            finish_kind: Literal["finish_run", "finish_planning"] = "finish_run"
-            tool_results: list[dict[str, Any]] = []
-            verify_just_passed = False
-            verify_just_failed = False
-            # An apply_edit/apply_patch run AFTER a passing verify in the same
-            # turn changes the tree the verify validated, so the green no longer
-            # applies. Tracked separately from verify_just_passed (which the
-            # metric path also reads) so only the auto-commit gate is affected.
-            edit_since_verify_pass = False
-            edited_this_iter = False
-            committed_this_iter = False
-            dag_mutated_this_iter = False
-            metric_called_after_verify_pass = False
-            metric_feedback_text: str | None = None
-            metric_plateau_finish: str | None = None
-            # This iteration produced tool_uses, so the went_quiet
-            # nudge budget refills (failures are per-streak, not per-run).
-            state.went_quiet_nudges_used = 0
-            for tu in resp.tool_uses:
-                state.tool_calls += 1
-                name = tu.get("name", "")
-                tool_input = tu.get("input", {})
-                tu_id = tu.get("id", "")
-                # degenerate-loop signature tracking. Stable
-                # JSON so dict key order does not break equality. Same
-                # (name, args) back-to-back across iterations increments
-                # `state.repeat_streak`; anything else resets it.
-                try:
-                    sig = f"{name}:{json.dumps(tool_input, sort_keys=True, ensure_ascii=False)}"
-                except (TypeError, ValueError):
-                    sig = f"{name}:<unhashable>"
-                if sig == state.last_tool_signature:
-                    state.repeat_streak += 1
-                else:
-                    state.last_tool_signature = sig
-                    state.repeat_streak = 1
-                self._emit("loop.tool.call", name=name, iteration=iteration)
-                try:
-                    result = self.dispatcher.dispatch(name, tool_input)
-                    content = json.dumps(result, ensure_ascii=False)
-                    # auto-commit-on-verify-pass. Whenever the
-                    # agent's verify_command returns exit 0, the workflow
-                    # immediately commits any uncommitted changes so
-                    # score.sh's git-history rescue can pick the best
-                    # commit.
-                    # commit strategy without forcing the agent to think
-                    # about git. Agent can still commit explicitly via
-                    # run_command if it wants a specific message.
-                    if name == "run_verify_command":
-                        rc = result.get("returncode")
-                        if rc == 0:
-                            verify_just_passed = True
-                            # This verify validated the current tree; any earlier
-                            # edit is now covered.
-                            edit_since_verify_pass = False
-                            state.edited_since_verify = False
-                        elif rc is not None:
-                            verify_just_failed = True
-                        if rc is not None:
-                            # Remember the latest verify result so the review
-                            # panel can ground findings against it (verify-pass
-                            # presumes correctness; verify-red is the hard signal).
-                            state.last_verify_ok = rc == 0
-                            tail = f"{result.get('stdout', '')}\n{result.get('stderr', '')}"
-                            state.last_verify_tail = tail.strip()[-2000:]
-                    elif name == "run_metric_command":
-                        if verify_just_passed:
-                            metric_called_after_verify_pass = True
-                        metric_feedback_text = self._record_metric_result(
-                            state.metric_history,
-                            result,
-                            iteration=iteration,
-                            label=f"manual iter {iteration}",
-                            sha="",
-                        )
-                        if verify_just_passed:
-                            metric_plateau_finish = self._metric_plateau_summary(
-                                state.metric_history
-                            )
-                    if name in ("apply_edit", "apply_patch"):
-                        edited_this_iter = True
-                        # Invalidate a same-turn earlier verify pass: the commit
-                        # gate must not label this edited tree "verify passed".
-                        edit_since_verify_pass = True
-                        state.edited_since_verify = True
-                    if name in _DAG_MUTATING_TOOLS:
-                        dag_mutated_this_iter = True  # snapshot once after the turn
-                except ToolError as exc:
-                    content = json.dumps({"error": str(exc)})
-                    self._log(f"  tool_error: {name}: {exc}")
-                except OperatorCommandUnexecutable as exc:
-                    return self._unexecutable_abort(
-                        exc, iteration=iteration, tool_calls=state.tool_calls
-                    )
-                tool_results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": tu_id,
-                        "content": _cap_tool_result(content, tool_name=name),
-                    }
-                )
-                if name == FinishRunInput.TOOL_NAME:
-                    finish_kind = "finish_run"
-                    finish_signal = (
-                        tool_input.get("summary", "(no summary)")
-                        if isinstance(tool_input, dict)
-                        else "(no summary)"
-                    )
-                    raw_result = tool_input.get("result") if isinstance(tool_input, dict) else None
-                    finish_payload = raw_result if isinstance(raw_result, dict) else None
-                elif name == FinishPlanningInput.TOOL_NAME:
-                    finish_kind = "finish_planning"
-                    finish_signal = (
-                        tool_input.get("summary", "(no summary)")
-                        if isinstance(tool_input, dict)
-                        else "(no summary)"
-                    )
-                    # Persist the plan markdown. Schema validation
-                    # already guaranteed `plan_markdown` is a non-empty
-                    # string when the dispatcher dispatched it, but the
-                    # raw tool_input is what the model sent us; be defensive
-                    # so a malformed call cannot crash the loop.
-                    plan_md = ""
-                    if isinstance(tool_input, dict):
-                        plan_md = str(tool_input.get("plan_markdown", ""))
-                    if self.plan_output_path is not None and plan_md:
-                        try:
-                            self.plan_output_path.parent.mkdir(parents=True, exist_ok=True)
-                            self.plan_output_path.write_text(plan_md, encoding="utf-8")
-                            self._log(
-                                f"  plan written: {self.plan_output_path} ({len(plan_md)} chars)"
-                            )
-                            self._emit(
-                                "loop.plan_written",
-                                path=str(self.plan_output_path),
-                                bytes=len(plan_md.encode("utf-8")),
-                            )
-                        except OSError as exc:
-                            self._log(f"  plan write failed: {exc}")
-                            self._emit(
-                                "loop.plan_write.failed",
-                                path=str(self.plan_output_path),
-                                error=str(exc),
-                            )
-
+            turn = _TurnState(iteration=iteration, resp=got)
+            result = self._turn_dispatch_tools(state, turn)
+            if result is not None:
+                return result
             # One task-DAG snapshot per turn (not per mutation), so several
             # add_task/update_task calls in a turn collapse to a single event.
-            if dag_mutated_this_iter:
+            if turn.dag_mutated:
                 self._emit_graph_snapshot()
-
-            # Auto-commit, AFTER the tool_results so the commit message
-            # reflects the iteration number. Best-effort: commit failures (e.g.
-            # nothing to commit) are logged but don't abort the run. The catch
-            # also handles OSError (subprocess failures) so a transient FS
-            # hiccup doesn't kill an otherwise-fine run.
-            # Plan mode is read-only; never auto-commit.
-            # With a verify command, commits are gated on a green verify; with
-            # none configured (a gateless run), each editing step is committed
-            # as an un-gated checkpoint so resume + the audit trail still work.
-            # `edited_this_iter` (apply_edit/apply_patch) is the cheap fast-path;
-            # fall back to a worktree-dirty check so run_command-authored edits
-            # are also checkpointed (else they'd never be committed gateless).
-            gateless = not self.config.workflow.verify_command
-            gateless_changed = gateless and (edited_this_iter or self._worktree_dirty())
-            verified_commit = verify_just_passed and not edit_since_verify_pass
-            if self.mode == "run" and (verified_commit or gateless_changed):
-                commit_subject = _summarise_assistant_text_for_commit(
-                    resp.text or "",
-                    iteration,
-                    fallback="checkpoint" if gateless else "verify passed",
-                )
-                sha = ""
-                try:
-                    sha = commit_all(
-                        self.root,
-                        commit_subject,
-                    )
-                    self._log(f"  auto-commit: {sha[:12]}")
-                    self._emit("loop.auto_commit", iteration=iteration, sha=sha)
-                    committed_this_iter = bool(sha)
-                    if gateless and sha:
-                        # Seed the idle-stop net for gateless runs (no green
-                        # verify ever fires); see the verify-settled logic below.
-                        state.gateless_ever_committed = True
-                    if sha:
-                        # Surface "what the worker just changed" to a live viewer
-                        # (the TUI diff panel). Capped; best-effort.
-                        self._emit(
-                            "diff.updated",
-                            sha=sha,
-                            patch=commit_diff(self.root, sha, max_bytes=8000),
-                        )
-                except (GitError, OSError) as exc:
-                    msg = str(exc).lower()
-                    # "nothing to commit" can arrive in either
-                    # the stdout half or the stderr half of the detail
-                    # string (see git_ops._run). "no changes added"
-                    # covers the variant when files were edited but
-                    # only paths outside the worktree (or .gitignore'd)
-                    # changed. "working tree clean" covers the case
-                    # where verify passed without any file mutation.
-                    benign = (
-                        "nothing to commit" in msg
-                        or "no changes added" in msg
-                        or "working tree clean" in msg
-                    )
-                    if not benign:
-                        self._log(f"  auto-commit failed: {exc}")
-                        # Capture a status snapshot so the event payload
-                        # tells the operator what was in the worktree
-                        # at the failure point. Best-effort: if status
-                        # itself raises (rare; outside-a-repo case is
-                        # already gone by this point in the loop), omit.
-                        worktree_status = ""
-                        try:
-                            st = git_status(self.root)
-                            worktree_status = (
-                                f"branch={st.branch}"
-                                f" head={st.head_sha[:12]}"
-                                f" clean={st.is_clean}"
-                                f" modified={st.modified_count}"
-                                f" untracked={st.untracked_count}"
-                            )
-                        except (GitError, OSError):
-                            pass
-                        self._emit(
-                            "loop.auto_commit.failed",
-                            iteration=iteration,
-                            error=str(exc)[:2000],
-                            worktree_status=worktree_status,
-                            commit_subject=commit_subject[:200],
-                        )
-                # REPL hook. Default no-op returns "continue".
-                if sha:
-                    directive = self.after_auto_commit(iteration, sha)
-                    if directive == "stop":
-                        self._log(f"LOOP: interactive stop at iter {iteration}")
-                        self._emit_run_end_passed(reason="interactive_stop", iterations=iteration)
-                        return RunResult(
-                            completed=True,
-                            reason="interactive_stop",
-                            summary=f"stopped interactively after iter {iteration}",
-                            iterations=iteration,
-                            tool_calls=state.tool_calls,
-                        )
-                if not metric_called_after_verify_pass:
-                    # The auto path raises OperatorCommandUnexecutable just like a
-                    # manual run_metric_command would; abort the same graceful way
-                    # the per-tool handler does (it is a distinct exception, NOT a
-                    # ToolError, so _auto_metric_feedback does not swallow it).
-                    try:
-                        metric_feedback_text = self._auto_metric_feedback(
-                            state.metric_history,
-                            iteration=iteration,
-                            sha=sha,
-                        )
-                    except OperatorCommandUnexecutable as exc:
-                        return self._unexecutable_abort(
-                            exc, iteration=iteration, tool_calls=state.tool_calls
-                        )
-                    metric_plateau_finish = self._metric_plateau_summary(state.metric_history)
-
-            # critic-in-loop triggers.
-            #   on_verify_fail - the verify just failed; surface a
-            #                    critique alongside the failure so the
-            #                    worker has a second opinion before its
-            #                    next edit.
-            #   periodic       - every critic_period iterations.
-            #   before_finish  - handled below, after finish_signal is
-            #                    inspected, because it can revoke finish.
-            critic_text: str | None = None
-            if self.critic_mode == "on_verify_fail" and verify_just_failed and self._has_reviewer():
-                critique = self._review_or_critic(
-                    state=state,
-                    messages=messages,
-                    trigger="verify_failed",
-                    iteration=iteration,
-                )
-                if critique is not None:
-                    critic_text = critique.text
-            elif (
-                self.critic_mode == "periodic"
-                and self._has_reviewer()
-                and iteration % max(1, self.critic_period) == 0
-            ):
-                critique = self._review_or_critic(
-                    state=state,
-                    messages=messages,
-                    trigger="periodic",
-                    iteration=iteration,
-                )
-                if critique is not None:
-                    critic_text = critique.text
-
-            # before_finish: gate the agent's finish_run on critic approval.
-            # If the critic says NEEDS_WORK, suppress the finish (the
-            # tool_result still goes back so the call isn't half-applied)
-            # and inject the critique - the loop carries on for another
-            # iteration with the critique visible. After
-            # `max_consecutive_critic_rejections` back-to-back rejections
-            # we let the finish through (with the critique still
-            # injected) so the worker can't bounce indefinitely.
-            if (
-                finish_signal is not None
-                and finish_kind == "finish_run"
-                and self.critic_mode == "before_finish"
-                and self._has_reviewer()
-            ):
-                critique = self._review_or_critic(
-                    state=state,
-                    messages=messages,
-                    trigger="before_finish",
-                    iteration=iteration,
-                )
-                cap = self.max_consecutive_critic_rejections
-                cap_reached = cap > 0 and state.consecutive_critic_rejections >= cap
-                if critique is not None and not critique.satisfied and not cap_reached:
-                    self._log(f"  critic rejected finish_run at iter {iteration}")
-                    self._emit("loop.critic.rejected_finish", iteration=iteration)
-                    finish_signal = None
-                    finish_payload = None
-                    state.consecutive_critic_rejections += 1
-                    critic_text = (
-                        "The critic rejected your finish_run call. Address the"
-                        " issues below before calling finish_run again.\n\n" + critique.text
-                    )
-                elif critique is not None and not critique.satisfied and cap_reached:
-                    self._log(
-                        f"  critic rejected finish_run at iter {iteration} but"
-                        f" rejection cap ({cap}) reached - letting finish through"
-                    )
-                    self._emit(
-                        "loop.critic.rejection_cap_reached",
-                        iteration=iteration,
-                        rejections=state.consecutive_critic_rejections,
-                    )
-                    critic_text = (
-                        "The critic flagged issues but the rejection cap was"
-                        " reached; finish_run will be accepted. Critique:\n\n" + critique.text
-                    )
-                    state.consecutive_critic_rejections = 0
-                elif critique is not None:
-                    self._log("  critic approved finish_run")
-                    state.consecutive_critic_rejections = 0
-
-            # metric-run early-finish guard. On optimisation runs the worker
-            # often calls finish_run with most of its budget unspent, even
-            # though the task asks it to keep optimising up to the cap. Mirror
-            # the plateau policy: while the run still has runway above the final
-            # budget slice, reject an early finish_run a few times and nudge the
-            # worker to keep going; only honour it once we are in the final
-            # budget slice or patience is exhausted. Requires a real budget
-            # signal - with none (tests / MCP) we defer to the worker's own
-            # judgement so a finish can never deadlock.
-            if (
-                finish_signal is not None
-                and finish_kind == "finish_run"
-                and self.mode == "run"
-                and _metric_goal(self.config.workflow.metric) is not None
-                and not self._metric_at_ceiling(state.metric_history)
-            ):
-                finish_budget_remaining = self._budget_fraction_remaining()
-                has_runway = (
-                    finish_budget_remaining is not None
-                    and finish_budget_remaining > _METRIC_PLATEAU_STOP_BELOW_BUDGET
-                )
-                if has_runway and state.metric_finish_nudges_used < _METRIC_EARLY_FINISH_PATIENCE:
-                    assert finish_budget_remaining is not None
-                    state.metric_finish_nudges_used += 1
-                    finish_signal = None
-                    finish_payload = None
-                    tool_results.append({"type": "text", "text": _METRIC_FINISH_NUDGE})
-                    self._log(
-                        f"  metric early-finish rejected #{state.metric_finish_nudges_used}"
-                        f" at iter {iteration} (budget {finish_budget_remaining:.0%} left)"
-                    )
-                    self._emit(
-                        "loop.metric_early_finish.rejected",
-                        iteration=iteration,
-                        nudges_used=state.metric_finish_nudges_used,
-                        budget_remaining=finish_budget_remaining,
-                    )
-
-            # Task finish-gate: don't let finish_run through while the worker's
-            # own subtasks are still open (capped; see _task_finish_gate_nudge).
-            if finish_signal is not None and finish_kind == "finish_run" and self.mode == "run":
-                task_nudge = self._task_finish_gate_nudge(state)
-                if task_nudge is not None:
-                    finish_signal = None
-                    finish_payload = None
-                    tool_results.append({"type": "text", "text": task_nudge})
-                    self._log(
-                        f"  finish_run gated: open subtasks remain (nudge"
-                        f" #{state.task_finish_nudges_used}) at iter {iteration}"
-                    )
-                    self._emit(
-                        "loop.task_finish.gated",
-                        iteration=iteration,
-                        nudges_used=state.task_finish_nudges_used,
-                    )
-
-            # Opt-in hard finish gate: refuse finish_run while verify is red/stale
-            # (bounded, so a genuinely-unpassable task can't pin the loop). The
-            # honest all_passed=False signal below applies whether or not this is
-            # on; this just gives the worker a few pushes to get green first.
-            if (
-                finish_signal is not None
-                and finish_kind == "finish_run"
-                and self.mode == "run"
-                and self._tree_is_verify_green(state) is False
-                and self.config.workflow.require_verify_to_finish
-                and state.verify_finish_nudges_used < _VERIFY_FINISH_PATIENCE
-            ):
-                state.verify_finish_nudges_used += 1
-                finish_signal = None
-                finish_payload = None
-                tool_results.append({"type": "text", "text": _VERIFY_FINISH_GATE})
-                self._log(
-                    f"  finish_run gated: verify not green (nudge"
-                    f" #{state.verify_finish_nudges_used}) at iter {iteration}"
-                )
-                self._emit(
-                    "loop.verify_finish.gated",
-                    iteration=iteration,
-                    nudges_used=state.verify_finish_nudges_used,
-                )
-
-            if critic_text:
-                tool_results.append(
-                    {
-                        "type": "text",
-                        "text": f"[critic]\n{critic_text}",
-                    }
-                )
-
-            if metric_feedback_text:
-                tool_results.append(
-                    {
-                        "type": "text",
-                        "text": metric_feedback_text,
-                    }
-                )
-
-            # degenerate-loop intervention. When the same
-            # (tool, args) signature has been called >=3 times in a row,
-            # append a one-shot system-style notice to the user turn so
-            # the worker sees on its next call that re-issuing the same
-            # request will not yield new information. We re-emit once
-            # per "fresh" streak (when a new streak crosses the
-            # threshold) so spamming the same call only triggers once
-            # per latch episode. The repeat counter resets on any new
-            # signature, so a normal re-read after an edit does not
-            # trigger.
-            repeat_threshold = 3
-            if (
-                state.repeat_streak >= repeat_threshold
-                and state.repeat_warning_emitted_at < iteration - 1
-            ):
-                # Strip the args-JSON suffix for the user-facing text.
-                latched_name = (state.last_tool_signature or "").split(":", 1)[0] or "<unknown>"
-                notice = (
-                    f"[loop-guard] You have called `{latched_name}` with"
-                    f" identical arguments {state.repeat_streak} times in a row."
-                    " The tool result has not changed. Re-issuing the same"
-                    " call again will not yield new information. Change"
-                    " your approach: try different arguments, a different"
-                    " tool, commit to an edit, or call `finish_run` if"
-                    " you have already done what the task requires."
-                )
-                tool_results.append({"type": "text", "text": notice})
-                self._emit(
-                    "loop.loop_guard.triggered",
-                    iteration=iteration,
-                    tool=latched_name,
-                    streak=state.repeat_streak,
-                )
-                self._log(
-                    f"  loop-guard: {latched_name} called"
-                    f" {state.repeat_streak}x in a row - injecting notice"
-                )
-                state.repeat_warning_emitted_at = iteration
-
-            # metric-plateau handling. When a verified metric merely ties the
-            # prior best, the plateau detector fires. Rather than quit at the
-            # first stall (often with most of the budget unspent), nudge the
-            # worker to pivot to a different approach; only stop once we are in
-            # the final budget slice and have still failed to beat the best
-            # after a few pivot nudges. With no budget signal (tests / MCP)
-            # the fixed `_METRIC_PLATEAU_PATIENCE` bounds the nudging.
-            plateau_should_stop = False
-            if metric_plateau_finish is not None:
-                budget_remaining = self._budget_fraction_remaining()
-                # A metric at its provable ceiling (e.g. SCORE: 27/27) cannot
-                # improve: stop now rather than nudge the worker to "pivot"
-                # toward a number that does not exist. This is the dominant
-                # cause of weak reasoning models burning their whole budget
-                # (and wall-clock) re-deriving a solved task.
-                in_final_slice = (
-                    budget_remaining is None
-                    or budget_remaining <= _METRIC_PLATEAU_STOP_BELOW_BUDGET
-                )
-                if self._metric_at_ceiling(state.metric_history):
-                    plateau_should_stop = True
-                    self._emit("loop.metric_ceiling.stop", iteration=iteration)
-                elif in_final_slice and state.plateau_nudges_used >= _METRIC_PLATEAU_PATIENCE:
-                    plateau_should_stop = True
-                else:
-                    # Count patience only against final-slice nudges. While the run
-                    # still has runway (in_final_slice False), keep nudging the
-                    # worker to explore without consuming the budget, exactly as the
-                    # early-finish guard only counts rejections while it has runway.
-                    # Counting runway ties here would exhaust _METRIC_PLATEAU_PATIENCE
-                    # before the final slice, so the run would stop the instant the
-                    # budget crossed the threshold and the escalating FINAL
-                    # ("make your one best bet") nudge would never fire.
-                    if in_final_slice:
-                        state.plateau_nudges_used += 1
-                    nudge_text = _metric_plateau_nudge(budget_remaining)
-                    tool_results.append({"type": "text", "text": nudge_text})
-                    budget_note = (
-                        "n/a" if budget_remaining is None else f"{budget_remaining:.0%} left"
-                    )
-                    self._log(
-                        f"  metric_plateau pivot-nudge at iter {iteration} (budget"
-                        f" {budget_note}; final-slice patience"
-                        f" {state.plateau_nudges_used}/{_METRIC_PLATEAU_PATIENCE})"
-                    )
-                    self._emit(
-                        "loop.metric_plateau.nudge",
-                        iteration=iteration,
-                        nudges_used=state.plateau_nudges_used,
-                        budget_remaining=budget_remaining,
-                    )
-
-            # verify-settled completion bookkeeping (run mode). Track no-progress
-            # iterations after the first green verify; nudge once, then stop.
-            # "progress" is any forward motion the prompt encourages, so a
-            # legitimately-working run is never truncated:
-            #   - an apply_edit/apply_patch, or a new commit, or
-            #   - an uncommitted worktree change (an edit made via run_command),
-            #   - a verify RUN itself (re-verifying between reads is active work,
-            #     not idle), held neutral so it neither resets nor accrues.
-            # Only the pathology, spinning on read-only commands with a clean,
-            # already-committed tree, accrues idle.
-            if verify_just_passed:
-                state.verify_ever_passed = True
-            # Only governs PLAIN runs. A metric/optimisation run is also
-            # mode=="run" but its completion is owned by the metric early-finish
-            # guard + plateau/ceiling logic (which deliberately keep going while
-            # budget remains); measure/analyse/read iterations there legitimately
-            # make no commit, so the settled detector must defer to them. (Gating
-            # the bookkeeping here also keeps the worktree-dirty git check off the
-            # metric hot path.)
-            non_metric_run = (
-                self.mode == "run" and _metric_goal(self.config.workflow.metric) is None
-            )
-            # "Settled" once the run reached a good state: a green verify, or (on
-            # a gateless run, where verify never fires) a committed edit.
-            settled_seeded = state.verify_ever_passed or state.gateless_ever_committed
-            if non_metric_run and settled_seeded:
-                made_progress = committed_this_iter or edited_this_iter or self._worktree_dirty()
-                if made_progress:
-                    state.verify_settled_idle = 0
-                    state.verify_settled_nudged = False  # a fresh idle streak may re-nudge
-                elif not (verify_just_passed or verify_just_failed):
-                    state.verify_settled_idle += 1
-            verify_settled_stop = (
-                non_metric_run
-                and finish_signal is None
-                and settled_seeded
-                and state.verify_settled_idle >= _VERIFY_SETTLED_STOP_AFTER
-            )
-            if (
-                non_metric_run
-                and finish_signal is None
-                and not verify_settled_stop
-                and settled_seeded
-                and state.verify_settled_idle >= _VERIFY_SETTLED_NUDGE_AFTER
-                and not state.verify_settled_nudged
-            ):
-                state.verify_settled_nudged = True
-                tool_results.append({"type": "text", "text": _VERIFY_SETTLED_NUDGE})
-                self._emit(
-                    "loop.verify_settled.nudge", iteration=iteration, idle=state.verify_settled_idle
-                )
-
-            messages.append({"role": "user", "content": tool_results})
-
+            result = self._turn_auto_commit_and_metric(state, turn)
+            if result is not None:
+                return result
+            self._turn_critic_triggers(state, turn, messages)
+            self._turn_finish_gates(state, turn, messages)
+            self._turn_notices(state, turn)
+            self._turn_metric_plateau(state, turn)
+            self._turn_verify_settled(state, turn)
+            messages.append({"role": "user", "content": turn.tool_results})
             # Snapshot AFTER the executed tools (assistant turn + tool_results
             # are now in `messages`) so a crash before iteration N+1's pre-call
             # snapshot resumes from AFTER the dispatched tools instead of
@@ -1526,102 +928,14 @@ class Workflow:
                 root_task_id=root_task_id,
                 state=state,
             )
-
-            if verify_settled_stop:
-                self._log(
-                    f"LOOP: verify_settled at iter {iteration} (idle {state.verify_settled_idle})"
-                )
-                self._final_checkpoint(iteration)
-                self._emit_run_end_passed(reason="verify_settled", iterations=iteration)
-                return RunResult(
-                    completed=True,
-                    reason="verify_settled",
-                    summary="verify passed and the worker stopped making changes",
-                    iterations=iteration,
-                    tool_calls=state.tool_calls,
-                )
-
-            if plateau_should_stop:
-                assert metric_plateau_finish is not None
-                self._log(f"LOOP: metric_plateau at iter {iteration}")
-                self._final_checkpoint(iteration)
-                self._emit_run_end_passed(reason="metric_plateau", iterations=iteration)
-                return RunResult(
-                    completed=True,
-                    reason="metric_plateau",
-                    summary=metric_plateau_finish,
-                    iterations=iteration,
-                    tool_calls=state.tool_calls,
-                )
-
-            # loop-guard escalation. The notice above is
-            # advisory; if the worker keeps issuing the same call past
-            # `loop_guard_kill_threshold`, terminate the run before it
-            # burns the rest of the budget circling. Threshold of 0
-            # disables (notice-only behaviour). The kill happens AFTER
-            # appending tool_results so the transcript on disk reflects
-            # exactly what the model produced up to the kill, which is
-            # essential when triaging "why did my run die at iter N".
-            if (
-                self.loop_guard_kill_threshold > 0
-                and state.repeat_streak >= self.loop_guard_kill_threshold
-            ):
-                latched_name = (state.last_tool_signature or "").split(":", 1)[0] or "<unknown>"
-                self._log(
-                    f"LOOP: loop_guard_killed at iter {iteration} -"
-                    f" {latched_name} called {state.repeat_streak}x in a row"
-                    f" (threshold={self.loop_guard_kill_threshold})"
-                )
-                self._emit(
-                    "run.end",
-                    reason="loop_guard_killed",
-                    iterations=iteration,
-                    all_passed=False,
-                    tool=latched_name,
-                    streak=state.repeat_streak,
-                )
-                return RunResult(
-                    completed=False,
-                    reason="loop_guard_killed",
-                    summary=(
-                        f"loop-guard killed run: `{latched_name}`"
-                        f" called {state.repeat_streak}x in a row with"
-                        f" identical arguments (threshold"
-                        f" {self.loop_guard_kill_threshold})"
-                    ),
-                    iterations=iteration,
-                    tool_calls=state.tool_calls,
-                )
-
-            if finish_signal is not None:
-                self._log(f"LOOP: {finish_kind} called at iter {iteration}")
-                self._final_checkpoint(iteration)
-                # Honest finish: finish_planning is always a clean finish, but a
-                # finish_run over a red/stale verify is "finished", not "passed"
-                # -- all_passed reflects the actual verify state, never just "the
-                # model called finish_run".
-                if finish_kind == "finish_run" and self._tree_is_verify_green(state) is False:
-                    self._emit(
-                        "run.end", reason=finish_kind, iterations=iteration, all_passed=False
-                    )
-                else:
-                    self._emit_run_end_passed(reason=finish_kind, iterations=iteration)
-                return RunResult(
-                    completed=True,
-                    reason=finish_kind,
-                    summary=finish_signal,
-                    iterations=iteration,
-                    tool_calls=state.tool_calls,
-                    finish_payload=finish_payload,
-                )
-
-            # audit finding: poll the steering flag between
-            # iterations. The operator can press Ctrl-C once to drop a
-            # steering instruction into the conversation; a second Ctrl-C
-            # within 2s raises KeyboardInterrupt and aborts. Same shape as
-            # the steering hook; safe boundary is
-            # AFTER a complete iter so we never split a tool_use / tool_result
-            # pair.
+            result = self._turn_stop_checks(state, turn)
+            if result is not None:
+                return result
+            # Poll the steering flag between iterations. The operator can press
+            # Ctrl-C once to drop a steering instruction into the conversation;
+            # a second Ctrl-C within 2s raises KeyboardInterrupt and aborts.
+            # The safe boundary is AFTER a complete iter so we never split a
+            # tool_use / tool_result pair.
             outcome = self._steer_outcome(
                 self._maybe_handle_steer(messages, iteration), iteration, state
             )
@@ -1643,6 +957,803 @@ class Workflow:
             iterations=self.max_iterations,
             tool_calls=state.tool_calls,
         )
+
+    def _turn_pre_call(
+        self,
+        *,
+        system: str,
+        messages: list[dict[str, Any]],
+        state: _LoopState,
+        iteration: int,
+        start_iteration: int,
+        root_task_id: str | None,
+    ) -> None:
+        """Prepare the context for this turn's provider call: budget heartbeat,
+        tiered compaction, pre-call nudges, rolling cache breakpoints, then the
+        pre-call resume snapshot.
+
+        The cache breakpoints advance AFTER compaction + nudges (the tail must
+        be final) and BEFORE the snapshot (markers persist across resume).
+        After the snapshot write, a crash anywhere up to the next iteration's
+        snapshot can be resumed by re-running this same call."""
+        self._emit_budget(iteration)
+        if self._maybe_compact(messages):
+            # A tier-2 restart wiped the surfaced focus banner; let the next
+            # nudge pass re-surface the current task into the fresh context.
+            state.surfaced_task_id = None
+        self._maybe_pre_call_nudges(
+            messages, state, iteration=iteration, start_iteration=start_iteration
+        )
+        _roll_cache_breakpoints(messages)
+        self._save_resume_snapshot(
+            system=system,
+            messages=messages,
+            tool_calls=state.tool_calls,
+            next_iteration=iteration,
+            root_task_id=root_task_id,
+            state=state,
+        )
+
+    def _turn_provider_call(
+        self,
+        system: str,
+        messages: list[dict[str, Any]],
+        tools: list[ToolDefinition],
+        state: _LoopState,
+        *,
+        iteration: int,
+    ) -> RunResult | _NextTurn | Any:
+        """One worker call with terminal-error classification. Returns the
+        provider response on success, a RunResult to end the run, or
+        ``_NEXT_TURN`` when a mid-stream steer discarded the turn (the menu
+        chose continue, or injected an instruction, so the turn is re-done)."""
+        try:
+            return self._call_with_retry(
+                system,
+                messages,
+                tools,
+                self._worker_max_tokens(state),
+            )
+        except BudgetExceeded as exc:
+            self._log(f"LOOP: budget exhausted at iter {iteration} ({exc})")
+            self._emit(
+                "run.end",
+                reason="budget_exhausted",
+                iterations=iteration,
+                all_passed=False,
+            )
+            return RunResult(
+                completed=False,
+                reason="budget_exhausted",
+                summary=f"budget exhausted at iter {iteration}: {exc}",
+                iterations=iteration,
+                tool_calls=state.tool_calls,
+            )
+        except ProviderAborted:
+            self.steer_clear()  # consume the stop; don't leave it on disk to re-read
+            self._log(f"LOOP: operator stopped the run mid-turn at iter {iteration}")
+            self._emit("run.end", reason="steer_abort", iterations=iteration, all_passed=False)
+            return RunResult(
+                completed=False,
+                reason="steer_abort",
+                summary=f"operator stopped the run at iter {iteration}",
+                iterations=iteration,
+                tool_calls=state.tool_calls,
+            )
+        except ProviderInterrupted:
+            # A steer was requested mid-stream; the watchdog ended the (thinking)
+            # turn so we handle it now rather than wait it out. The partial turn
+            # is discarded; the menu decides continue / steer / stop / detach.
+            self._log(f"LOOP: steer requested mid-turn at iter {iteration}")
+            outcome = self._steer_outcome(
+                self._maybe_handle_steer(messages, iteration), iteration, state
+            )
+            if outcome is not None:
+                return outcome
+            return _NEXT_TURN  # "continue" or an injected instruction -> re-do the turn
+        except ProviderError as exc:
+            hint = _provider_error_hint(exc.status_code)
+            self._log(f"LOOP: provider error at iter {iteration}: {exc}{hint}")
+            self._emit(
+                "run.end",
+                reason="provider_error",
+                iterations=iteration,
+                all_passed=False,
+            )
+            return RunResult(
+                completed=False,
+                reason="provider_error",
+                summary=f"provider error at iter {iteration}: {exc}{hint}",
+                iterations=iteration,
+                tool_calls=state.tool_calls,
+            )
+
+    def _turn_dispatch_tools(self, state: _LoopState, turn: _TurnState) -> RunResult | None:
+        """Dispatch each tool_use in the turn, appending one tool_result per
+        call and noting effects (verify / metric / edits / DAG / finish) on
+        ``turn``. Returns a RunResult only for the unexecutable-operator-
+        command abort; tool errors become error tool_results instead."""
+        # This iteration produced tool_uses, so the went_quiet
+        # nudge budget refills (failures are per-streak, not per-run).
+        state.went_quiet_nudges_used = 0
+        for tu in turn.resp.tool_uses:
+            state.tool_calls += 1
+            name = tu.get("name", "")
+            tool_input = tu.get("input", {})
+            tu_id = tu.get("id", "")
+            # degenerate-loop signature tracking. Stable
+            # JSON so dict key order does not break equality. Same
+            # (name, args) back-to-back across iterations increments
+            # `state.repeat_streak`; anything else resets it.
+            try:
+                sig = f"{name}:{json.dumps(tool_input, sort_keys=True, ensure_ascii=False)}"
+            except (TypeError, ValueError):
+                sig = f"{name}:<unhashable>"
+            if sig == state.last_tool_signature:
+                state.repeat_streak += 1
+            else:
+                state.last_tool_signature = sig
+                state.repeat_streak = 1
+            self._emit("loop.tool.call", name=name, iteration=turn.iteration)
+            try:
+                result = self.dispatcher.dispatch(name, tool_input)
+                content = json.dumps(result, ensure_ascii=False)
+                self._note_tool_effects(state, turn, name, result)
+            except ToolError as exc:
+                content = json.dumps({"error": str(exc)})
+                self._log(f"  tool_error: {name}: {exc}")
+            except OperatorCommandUnexecutable as exc:
+                return self._unexecutable_abort(
+                    exc, iteration=turn.iteration, tool_calls=state.tool_calls
+                )
+            turn.tool_results.append(
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tu_id,
+                    "content": _cap_tool_result(content, tool_name=name),
+                }
+            )
+            self._capture_finish(turn, name, tool_input)
+        return None
+
+    def _note_tool_effects(
+        self, state: _LoopState, turn: _TurnState, name: str, result: dict[str, Any]
+    ) -> None:
+        """Record a dispatched tool's side effects on the turn: verify results
+        (they feed auto-commit-on-verify-pass and ground the review panel:
+        verify-pass presumes correctness, verify-red is the hard signal),
+        manual metric samples, tree edits, and DAG mutations."""
+        if name == "run_verify_command":
+            rc = result.get("returncode")
+            if rc == 0:
+                turn.verify_just_passed = True
+                # This verify validated the current tree; any earlier
+                # edit is now covered.
+                turn.edit_since_verify_pass = False
+                state.edited_since_verify = False
+            elif rc is not None:
+                turn.verify_just_failed = True
+            if rc is not None:
+                state.last_verify_ok = rc == 0
+                tail = f"{result.get('stdout', '')}\n{result.get('stderr', '')}"
+                state.last_verify_tail = tail.strip()[-2000:]
+        elif name == "run_metric_command":
+            if turn.verify_just_passed:
+                turn.metric_after_verify_pass = True
+            turn.metric_feedback = self._record_metric_result(
+                state.metric_history,
+                result,
+                iteration=turn.iteration,
+                label=f"manual iter {turn.iteration}",
+                sha="",
+            )
+            if turn.verify_just_passed:
+                turn.metric_plateau_finish = self._metric_plateau_summary(state.metric_history)
+        if name in ("apply_edit", "apply_patch"):
+            turn.edited = True
+            # Invalidate a same-turn earlier verify pass: the commit
+            # gate must not label this edited tree "verify passed".
+            turn.edit_since_verify_pass = True
+            state.edited_since_verify = True
+        if name in _DAG_MUTATING_TOOLS:
+            turn.dag_mutated = True  # snapshot once after the turn
+
+    def _capture_finish(self, turn: _TurnState, name: str, tool_input: Any) -> None:
+        """Capture a finish_run / finish_planning call's summary + payload on
+        the turn (the finish gates may still revoke it). finish_planning also
+        persists the plan markdown: schema validation already guaranteed the
+        field when the dispatcher dispatched it, but the raw tool_input is what
+        the model sent us, so stay defensive against a malformed call."""
+        if name == FinishRunInput.TOOL_NAME:
+            turn.finish_kind = "finish_run"
+            turn.finish_signal = (
+                tool_input.get("summary", "(no summary)")
+                if isinstance(tool_input, dict)
+                else "(no summary)"
+            )
+            raw_result = tool_input.get("result") if isinstance(tool_input, dict) else None
+            turn.finish_payload = raw_result if isinstance(raw_result, dict) else None
+        elif name == FinishPlanningInput.TOOL_NAME:
+            turn.finish_kind = "finish_planning"
+            turn.finish_signal = (
+                tool_input.get("summary", "(no summary)")
+                if isinstance(tool_input, dict)
+                else "(no summary)"
+            )
+            plan_md = ""
+            if isinstance(tool_input, dict):
+                plan_md = str(tool_input.get("plan_markdown", ""))
+            if self.plan_output_path is not None and plan_md:
+                try:
+                    self.plan_output_path.parent.mkdir(parents=True, exist_ok=True)
+                    self.plan_output_path.write_text(plan_md, encoding="utf-8")
+                    self._log(f"  plan written: {self.plan_output_path} ({len(plan_md)} chars)")
+                    self._emit(
+                        "loop.plan_written",
+                        path=str(self.plan_output_path),
+                        bytes=len(plan_md.encode("utf-8")),
+                    )
+                except OSError as exc:
+                    self._log(f"  plan write failed: {exc}")
+                    self._emit(
+                        "loop.plan_write.failed",
+                        path=str(self.plan_output_path),
+                        error=str(exc),
+                    )
+
+    def _turn_auto_commit_and_metric(self, state: _LoopState, turn: _TurnState) -> RunResult | None:
+        """Auto-commit the turn's work, then take the automatic metric sample.
+
+        With a verify command, commits are gated on a green verify (the agent
+        shouldn't need to remember to ``git commit`` after a green verify);
+        with none configured (a gateless run), each editing step is committed
+        as an un-gated checkpoint so resume + the audit trail still work.
+        ``turn.edited`` (apply_edit/apply_patch) is the cheap fast-path; the
+        worktree-dirty fallback catches run_command-authored edits (else they'd
+        never be committed gateless). Plan mode is read-only and never commits.
+        Best-effort: commit failures (e.g. nothing to commit) are logged but
+        don't abort the run; the catch includes OSError so a transient FS
+        hiccup doesn't kill an otherwise-fine run.
+
+        Returns a RunResult for the REPL hook's "stop" directive or an
+        unexecutable operator metric command; None otherwise."""
+        gateless = not self.config.workflow.verify_command
+        gateless_changed = gateless and (turn.edited or self._worktree_dirty())
+        verified_commit = turn.verify_just_passed and not turn.edit_since_verify_pass
+        if self.mode != "run" or not (verified_commit or gateless_changed):
+            return None
+        commit_subject = _summarise_assistant_text_for_commit(
+            turn.resp.text or "",
+            turn.iteration,
+            fallback="checkpoint" if gateless else "verify passed",
+        )
+        sha = ""
+        try:
+            sha = commit_all(self.root, commit_subject)
+            self._log(f"  auto-commit: {sha[:12]}")
+            self._emit("loop.auto_commit", iteration=turn.iteration, sha=sha)
+            turn.committed = bool(sha)
+            if gateless and sha:
+                # Seed the idle-stop net for gateless runs (no green verify
+                # ever fires); see the verify-settled bookkeeping.
+                state.gateless_ever_committed = True
+            if sha:
+                # Surface "what the worker just changed" to a live viewer
+                # (the TUI diff panel). Capped; best-effort.
+                self._emit(
+                    "diff.updated",
+                    sha=sha,
+                    patch=commit_diff(self.root, sha, max_bytes=8000),
+                )
+        except (GitError, OSError) as exc:
+            self._report_auto_commit_failure(exc, commit_subject, iteration=turn.iteration)
+        # REPL hook. Default no-op returns "continue".
+        if sha:
+            directive = self.after_auto_commit(turn.iteration, sha)
+            if directive == "stop":
+                self._log(f"LOOP: interactive stop at iter {turn.iteration}")
+                self._emit_run_end_passed(reason="interactive_stop", iterations=turn.iteration)
+                return RunResult(
+                    completed=True,
+                    reason="interactive_stop",
+                    summary=f"stopped interactively after iter {turn.iteration}",
+                    iterations=turn.iteration,
+                    tool_calls=state.tool_calls,
+                )
+        if not turn.metric_after_verify_pass:
+            # The auto path raises OperatorCommandUnexecutable just like a
+            # manual run_metric_command would; abort the same graceful way
+            # the per-tool handler does (it is a distinct exception, NOT a
+            # ToolError, so _auto_metric_feedback does not swallow it).
+            try:
+                turn.metric_feedback = self._auto_metric_feedback(
+                    state.metric_history,
+                    iteration=turn.iteration,
+                    sha=sha,
+                )
+            except OperatorCommandUnexecutable as exc:
+                return self._unexecutable_abort(
+                    exc, iteration=turn.iteration, tool_calls=state.tool_calls
+                )
+            turn.metric_plateau_finish = self._metric_plateau_summary(state.metric_history)
+        return None
+
+    def _report_auto_commit_failure(
+        self, exc: GitError | OSError, commit_subject: str, *, iteration: int
+    ) -> None:
+        """Log + emit a non-benign auto-commit failure with a worktree status
+        snapshot, so the event payload tells the operator what was in the tree
+        at the failure point. "nothing to commit" variants are benign and stay
+        silent: the phrase can arrive in either the stdout or the stderr half
+        of the detail string (see git_ops._run); "no changes added" covers the
+        variant when only paths outside the worktree (or .gitignore'd) changed;
+        "working tree clean" covers a verify pass without any file mutation."""
+        msg = str(exc).lower()
+        benign = (
+            "nothing to commit" in msg or "no changes added" in msg or "working tree clean" in msg
+        )
+        if benign:
+            return
+        self._log(f"  auto-commit failed: {exc}")
+        # Best-effort: if status itself raises (rare; the outside-a-repo case
+        # is already gone by this point in the loop), omit the snapshot.
+        worktree_status = ""
+        try:
+            st = git_status(self.root)
+            worktree_status = (
+                f"branch={st.branch}"
+                f" head={st.head_sha[:12]}"
+                f" clean={st.is_clean}"
+                f" modified={st.modified_count}"
+                f" untracked={st.untracked_count}"
+            )
+        except (GitError, OSError):
+            pass
+        self._emit(
+            "loop.auto_commit.failed",
+            iteration=iteration,
+            error=str(exc)[:2000],
+            worktree_status=worktree_status,
+            commit_subject=commit_subject[:200],
+        )
+
+    def _turn_critic_triggers(
+        self, state: _LoopState, turn: _TurnState, messages: list[dict[str, Any]]
+    ) -> None:
+        """Observe-only critic triggers (before_finish, which can revoke a
+        finish, lives in the finish gates):
+
+          on_verify_fail - the verify just failed; surface a critique
+                           alongside the failure so the worker has a second
+                           opinion before its next edit.
+          periodic       - every critic_period iterations.
+        """
+        if (
+            self.critic_mode == "on_verify_fail"
+            and turn.verify_just_failed
+            and self._has_reviewer()
+        ):
+            critique = self._review_or_critic(
+                state=state,
+                messages=messages,
+                trigger="verify_failed",
+                iteration=turn.iteration,
+            )
+            if critique is not None:
+                turn.critic_text = critique.text
+        elif (
+            self.critic_mode == "periodic"
+            and self._has_reviewer()
+            and turn.iteration % max(1, self.critic_period) == 0
+        ):
+            critique = self._review_or_critic(
+                state=state,
+                messages=messages,
+                trigger="periodic",
+                iteration=turn.iteration,
+            )
+            if critique is not None:
+                turn.critic_text = critique.text
+
+    def _turn_finish_gates(
+        self, state: _LoopState, turn: _TurnState, messages: list[dict[str, Any]]
+    ) -> None:
+        """Gates that can revoke this turn's finish_run, in precedence order:
+        critic (before_finish), metric early-finish, open subtasks, verify
+        green. Each clears ``turn.finish_signal`` and appends its nudge; later
+        gates then see the finish as already revoked and stay quiet."""
+        self._gate_before_finish_critic(state, turn, messages)
+        self._gate_metric_early_finish(state, turn)
+        self._gate_task_finish(state, turn)
+        self._gate_verify_green(state, turn)
+
+    def _gate_before_finish_critic(
+        self, state: _LoopState, turn: _TurnState, messages: list[dict[str, Any]]
+    ) -> None:
+        """Gate the agent's finish_run on critic approval. If the critic says
+        NEEDS_WORK, suppress the finish (the tool_result still goes back so the
+        call isn't half-applied) and inject the critique - the loop carries on
+        with the critique visible. After ``max_consecutive_critic_rejections``
+        back-to-back rejections the finish goes through (critique still
+        injected) so the worker can't bounce indefinitely."""
+        if not (
+            turn.finish_signal is not None
+            and turn.finish_kind == "finish_run"
+            and self.critic_mode == "before_finish"
+            and self._has_reviewer()
+        ):
+            return
+        critique = self._review_or_critic(
+            state=state,
+            messages=messages,
+            trigger="before_finish",
+            iteration=turn.iteration,
+        )
+        cap = self.max_consecutive_critic_rejections
+        cap_reached = cap > 0 and state.consecutive_critic_rejections >= cap
+        if critique is not None and not critique.satisfied and not cap_reached:
+            self._log(f"  critic rejected finish_run at iter {turn.iteration}")
+            self._emit("loop.critic.rejected_finish", iteration=turn.iteration)
+            turn.finish_signal = None
+            turn.finish_payload = None
+            state.consecutive_critic_rejections += 1
+            turn.critic_text = (
+                "The critic rejected your finish_run call. Address the"
+                " issues below before calling finish_run again.\n\n" + critique.text
+            )
+        elif critique is not None and not critique.satisfied and cap_reached:
+            self._log(
+                f"  critic rejected finish_run at iter {turn.iteration} but"
+                f" rejection cap ({cap}) reached - letting finish through"
+            )
+            self._emit(
+                "loop.critic.rejection_cap_reached",
+                iteration=turn.iteration,
+                rejections=state.consecutive_critic_rejections,
+            )
+            turn.critic_text = (
+                "The critic flagged issues but the rejection cap was"
+                " reached; finish_run will be accepted. Critique:\n\n" + critique.text
+            )
+            state.consecutive_critic_rejections = 0
+        elif critique is not None:
+            self._log("  critic approved finish_run")
+            state.consecutive_critic_rejections = 0
+
+    def _gate_metric_early_finish(self, state: _LoopState, turn: _TurnState) -> None:
+        """Metric-run early-finish guard. On optimisation runs the worker often
+        calls finish_run with most of its budget unspent, even though the task
+        asks it to keep optimising up to the cap. Mirror the plateau policy:
+        while the run still has runway above the final budget slice, reject an
+        early finish_run a few times and nudge the worker to keep going; only
+        honour it once we are in the final budget slice or patience is
+        exhausted. Requires a real budget signal - with none (tests / MCP) we
+        defer to the worker's own judgement so a finish can never deadlock."""
+        if not (
+            turn.finish_signal is not None
+            and turn.finish_kind == "finish_run"
+            and self.mode == "run"
+            and _metric_goal(self.config.workflow.metric) is not None
+            and not self._metric_at_ceiling(state.metric_history)
+        ):
+            return
+        finish_budget_remaining = self._budget_fraction_remaining()
+        has_runway = (
+            finish_budget_remaining is not None
+            and finish_budget_remaining > _METRIC_PLATEAU_STOP_BELOW_BUDGET
+        )
+        if has_runway and state.metric_finish_nudges_used < _METRIC_EARLY_FINISH_PATIENCE:
+            assert finish_budget_remaining is not None
+            state.metric_finish_nudges_used += 1
+            turn.finish_signal = None
+            turn.finish_payload = None
+            turn.tool_results.append({"type": "text", "text": _METRIC_FINISH_NUDGE})
+            self._log(
+                f"  metric early-finish rejected #{state.metric_finish_nudges_used}"
+                f" at iter {turn.iteration} (budget {finish_budget_remaining:.0%} left)"
+            )
+            self._emit(
+                "loop.metric_early_finish.rejected",
+                iteration=turn.iteration,
+                nudges_used=state.metric_finish_nudges_used,
+                budget_remaining=finish_budget_remaining,
+            )
+
+    def _gate_task_finish(self, state: _LoopState, turn: _TurnState) -> None:
+        """Task finish-gate: don't let finish_run through while the worker's
+        own subtasks are still open (capped; see _task_finish_gate_nudge)."""
+        if not (
+            turn.finish_signal is not None
+            and turn.finish_kind == "finish_run"
+            and self.mode == "run"
+        ):
+            return
+        task_nudge = self._task_finish_gate_nudge(state)
+        if task_nudge is None:
+            return
+        turn.finish_signal = None
+        turn.finish_payload = None
+        turn.tool_results.append({"type": "text", "text": task_nudge})
+        self._log(
+            f"  finish_run gated: open subtasks remain (nudge"
+            f" #{state.task_finish_nudges_used}) at iter {turn.iteration}"
+        )
+        self._emit(
+            "loop.task_finish.gated",
+            iteration=turn.iteration,
+            nudges_used=state.task_finish_nudges_used,
+        )
+
+    def _gate_verify_green(self, state: _LoopState, turn: _TurnState) -> None:
+        """Opt-in hard finish gate: refuse finish_run while verify is red or
+        stale (bounded, so a genuinely-unpassable task can't pin the loop). The
+        honest all_passed=False signal in the stop checks applies whether or
+        not this is on; this just gives the worker a few pushes to get green
+        first."""
+        if not (
+            turn.finish_signal is not None
+            and turn.finish_kind == "finish_run"
+            and self.mode == "run"
+            and self._tree_is_verify_green(state) is False
+            and self.config.workflow.require_verify_to_finish
+            and state.verify_finish_nudges_used < _VERIFY_FINISH_PATIENCE
+        ):
+            return
+        state.verify_finish_nudges_used += 1
+        turn.finish_signal = None
+        turn.finish_payload = None
+        turn.tool_results.append({"type": "text", "text": _VERIFY_FINISH_GATE})
+        self._log(
+            f"  finish_run gated: verify not green (nudge"
+            f" #{state.verify_finish_nudges_used}) at iter {turn.iteration}"
+        )
+        self._emit(
+            "loop.verify_finish.gated",
+            iteration=turn.iteration,
+            nudges_used=state.verify_finish_nudges_used,
+        )
+
+    def _turn_notices(self, state: _LoopState, turn: _TurnState) -> None:
+        """Append the turn's advisory texts to the tool_results block: critic
+        critique, metric feedback, then the degenerate-loop notice.
+
+        The loop-guard notice fires when the same (tool, args) signature has
+        been called >= 3 times in a row, re-emitted once per "fresh" streak
+        (when a new streak crosses the threshold) so spamming the same call
+        only triggers once per latch episode. The repeat counter resets on any
+        new signature, so a normal re-read after an edit does not trigger."""
+        if turn.critic_text:
+            turn.tool_results.append({"type": "text", "text": f"[critic]\n{turn.critic_text}"})
+        if turn.metric_feedback:
+            turn.tool_results.append({"type": "text", "text": turn.metric_feedback})
+        repeat_threshold = 3
+        if (
+            state.repeat_streak >= repeat_threshold
+            and state.repeat_warning_emitted_at < turn.iteration - 1
+        ):
+            # Strip the args-JSON suffix for the user-facing text.
+            latched_name = (state.last_tool_signature or "").split(":", 1)[0] or "<unknown>"
+            notice = (
+                f"[loop-guard] You have called `{latched_name}` with"
+                f" identical arguments {state.repeat_streak} times in a row."
+                " The tool result has not changed. Re-issuing the same"
+                " call again will not yield new information. Change"
+                " your approach: try different arguments, a different"
+                " tool, commit to an edit, or call `finish_run` if"
+                " you have already done what the task requires."
+            )
+            turn.tool_results.append({"type": "text", "text": notice})
+            self._emit(
+                "loop.loop_guard.triggered",
+                iteration=turn.iteration,
+                tool=latched_name,
+                streak=state.repeat_streak,
+            )
+            self._log(
+                f"  loop-guard: {latched_name} called"
+                f" {state.repeat_streak}x in a row - injecting notice"
+            )
+            state.repeat_warning_emitted_at = turn.iteration
+
+    def _turn_metric_plateau(self, state: _LoopState, turn: _TurnState) -> None:
+        """Metric-plateau handling. When a verified metric merely ties the
+        prior best, the plateau detector fires. Rather than quit at the first
+        stall (often with most of the budget unspent), nudge the worker to
+        pivot to a different approach; only stop once we are in the final
+        budget slice and have still failed to beat the best after a few pivot
+        nudges. With no budget signal (tests / MCP) the fixed
+        ``_METRIC_PLATEAU_PATIENCE`` bounds the nudging. Sets
+        ``turn.plateau_should_stop``; the stop itself happens in the stop
+        checks, after the post-tools snapshot."""
+        if turn.metric_plateau_finish is None:
+            return
+        budget_remaining = self._budget_fraction_remaining()
+        in_final_slice = (
+            budget_remaining is None or budget_remaining <= _METRIC_PLATEAU_STOP_BELOW_BUDGET
+        )
+        if self._metric_at_ceiling(state.metric_history):
+            # A metric at its provable ceiling (e.g. SCORE: 27/27) cannot
+            # improve: stop now rather than nudge the worker to "pivot" toward
+            # a number that does not exist. This is the dominant cause of weak
+            # reasoning models burning their whole budget (and wall-clock)
+            # re-deriving a solved task.
+            turn.plateau_should_stop = True
+            self._emit("loop.metric_ceiling.stop", iteration=turn.iteration)
+        elif in_final_slice and state.plateau_nudges_used >= _METRIC_PLATEAU_PATIENCE:
+            turn.plateau_should_stop = True
+        else:
+            # Count patience only against final-slice nudges. While the run
+            # still has runway (in_final_slice False), keep nudging the
+            # worker to explore without consuming the budget, exactly as the
+            # early-finish guard only counts rejections while it has runway.
+            # Counting runway ties here would exhaust _METRIC_PLATEAU_PATIENCE
+            # before the final slice, so the run would stop the instant the
+            # budget crossed the threshold and the escalating FINAL
+            # ("make your one best bet") nudge would never fire.
+            if in_final_slice:
+                state.plateau_nudges_used += 1
+            nudge_text = _metric_plateau_nudge(budget_remaining)
+            turn.tool_results.append({"type": "text", "text": nudge_text})
+            budget_note = "n/a" if budget_remaining is None else f"{budget_remaining:.0%} left"
+            self._log(
+                f"  metric_plateau pivot-nudge at iter {turn.iteration} (budget"
+                f" {budget_note}; final-slice patience"
+                f" {state.plateau_nudges_used}/{_METRIC_PLATEAU_PATIENCE})"
+            )
+            self._emit(
+                "loop.metric_plateau.nudge",
+                iteration=turn.iteration,
+                nudges_used=state.plateau_nudges_used,
+                budget_remaining=budget_remaining,
+            )
+
+    def _turn_verify_settled(self, state: _LoopState, turn: _TurnState) -> None:
+        """Verify-settled completion bookkeeping (run mode): count no-progress
+        iterations after the first green verify; nudge once, then stop (the
+        stop happens in the stop checks, via ``turn.verify_settled_stop``).
+
+        "Progress" is any forward motion the prompt encourages, so a
+        legitimately-working run is never truncated: an apply_edit/apply_patch,
+        a new commit, or an uncommitted worktree change (an edit made via
+        run_command). A verify RUN itself (re-verifying between reads is active
+        work, not idle) is held neutral so it neither resets nor accrues. Only
+        the pathology, spinning on read-only commands with a clean,
+        already-committed tree, accrues idle.
+
+        Only governs PLAIN runs. A metric/optimisation run is also mode=="run"
+        but its completion is owned by the metric early-finish guard +
+        plateau/ceiling logic (which deliberately keep going while budget
+        remains); measure/analyse/read iterations there legitimately make no
+        commit, so the settled detector must defer to them. (Gating the
+        bookkeeping here also keeps the worktree-dirty git check off the
+        metric hot path.)"""
+        if turn.verify_just_passed:
+            state.verify_ever_passed = True
+        non_metric_run = self.mode == "run" and _metric_goal(self.config.workflow.metric) is None
+        # "Settled" once the run reached a good state: a green verify, or (on a
+        # gateless run, where verify never fires) a committed edit.
+        settled_seeded = state.verify_ever_passed or state.gateless_ever_committed
+        if non_metric_run and settled_seeded:
+            made_progress = turn.committed or turn.edited or self._worktree_dirty()
+            if made_progress:
+                state.verify_settled_idle = 0
+                state.verify_settled_nudged = False  # a fresh idle streak may re-nudge
+            elif not (turn.verify_just_passed or turn.verify_just_failed):
+                state.verify_settled_idle += 1
+        turn.verify_settled_stop = (
+            non_metric_run
+            and turn.finish_signal is None
+            and settled_seeded
+            and state.verify_settled_idle >= _VERIFY_SETTLED_STOP_AFTER
+        )
+        if (
+            non_metric_run
+            and turn.finish_signal is None
+            and not turn.verify_settled_stop
+            and settled_seeded
+            and state.verify_settled_idle >= _VERIFY_SETTLED_NUDGE_AFTER
+            and not state.verify_settled_nudged
+        ):
+            state.verify_settled_nudged = True
+            turn.tool_results.append({"type": "text", "text": _VERIFY_SETTLED_NUDGE})
+            self._emit(
+                "loop.verify_settled.nudge",
+                iteration=turn.iteration,
+                idle=state.verify_settled_idle,
+            )
+
+    def _turn_stop_checks(self, state: _LoopState, turn: _TurnState) -> RunResult | None:
+        """Terminal checks, run after the turn's tool_results are in
+        ``messages`` and the post-tools snapshot is written, in precedence
+        order: verify-settled stop, metric-plateau stop, loop-guard kill, then
+        honouring a finish call that survived the gates."""
+        if turn.verify_settled_stop:
+            self._log(
+                f"LOOP: verify_settled at iter {turn.iteration} (idle {state.verify_settled_idle})"
+            )
+            self._final_checkpoint(turn.iteration)
+            self._emit_run_end_passed(reason="verify_settled", iterations=turn.iteration)
+            return RunResult(
+                completed=True,
+                reason="verify_settled",
+                summary="verify passed and the worker stopped making changes",
+                iterations=turn.iteration,
+                tool_calls=state.tool_calls,
+            )
+        if turn.plateau_should_stop:
+            assert turn.metric_plateau_finish is not None
+            self._log(f"LOOP: metric_plateau at iter {turn.iteration}")
+            self._final_checkpoint(turn.iteration)
+            self._emit_run_end_passed(reason="metric_plateau", iterations=turn.iteration)
+            return RunResult(
+                completed=True,
+                reason="metric_plateau",
+                summary=turn.metric_plateau_finish,
+                iterations=turn.iteration,
+                tool_calls=state.tool_calls,
+            )
+        # loop-guard escalation. The notice in _turn_notices is advisory; if
+        # the worker keeps issuing the same call past loop_guard_kill_threshold,
+        # terminate the run before it burns the rest of the budget circling.
+        # Threshold of 0 disables (notice-only behaviour). The kill happens
+        # AFTER the tool_results were appended so the transcript on disk
+        # reflects exactly what the model produced up to the kill, which is
+        # essential when triaging "why did my run die at iter N".
+        if (
+            self.loop_guard_kill_threshold > 0
+            and state.repeat_streak >= self.loop_guard_kill_threshold
+        ):
+            latched_name = (state.last_tool_signature or "").split(":", 1)[0] or "<unknown>"
+            self._log(
+                f"LOOP: loop_guard_killed at iter {turn.iteration} -"
+                f" {latched_name} called {state.repeat_streak}x in a row"
+                f" (threshold={self.loop_guard_kill_threshold})"
+            )
+            self._emit(
+                "run.end",
+                reason="loop_guard_killed",
+                iterations=turn.iteration,
+                all_passed=False,
+                tool=latched_name,
+                streak=state.repeat_streak,
+            )
+            return RunResult(
+                completed=False,
+                reason="loop_guard_killed",
+                summary=(
+                    f"loop-guard killed run: `{latched_name}`"
+                    f" called {state.repeat_streak}x in a row with"
+                    f" identical arguments (threshold"
+                    f" {self.loop_guard_kill_threshold})"
+                ),
+                iterations=turn.iteration,
+                tool_calls=state.tool_calls,
+            )
+        if turn.finish_signal is not None:
+            self._log(f"LOOP: {turn.finish_kind} called at iter {turn.iteration}")
+            self._final_checkpoint(turn.iteration)
+            # Honest finish: finish_planning is always a clean finish, but a
+            # finish_run over a red/stale verify is "finished", not "passed"
+            # -- all_passed reflects the actual verify state, never just "the
+            # model called finish_run".
+            if turn.finish_kind == "finish_run" and self._tree_is_verify_green(state) is False:
+                self._emit(
+                    "run.end",
+                    reason=turn.finish_kind,
+                    iterations=turn.iteration,
+                    all_passed=False,
+                )
+            else:
+                self._emit_run_end_passed(reason=turn.finish_kind, iterations=turn.iteration)
+            return RunResult(
+                completed=True,
+                reason=turn.finish_kind,
+                summary=turn.finish_signal,
+                iterations=turn.iteration,
+                tool_calls=state.tool_calls,
+                finish_payload=turn.finish_payload,
+            )
+        return None
 
     def _maybe_pre_call_nudges(
         self,
