@@ -548,3 +548,21 @@ def test_streaming_idle_watchdog_does_not_fire_when_data_flows(
 
     assert resp.text == "hello world"
     assert resp.stop_reason == "stop"
+
+
+def test_lenient_json_object_recovers_common_malformations() -> None:
+    """Weak/open models emit args strict JSON rejects; the lenient re-parse
+    recovers the safe cases (raw newline, trailing junk) so the tool just runs,
+    and refuses the ambiguous ones so the _raw_arguments sentinel is kept."""
+    from agent6.providers.openai import _lenient_json_object  # pyright: ignore[reportPrivateUsage]
+
+    # Raw newline inside a string value (a multiline code param).
+    assert _lenient_json_object('{"new_string": "a\nb"}') == {"new_string": "a\nb"}
+    # Trailing junk after a valid object (a leaked closing tag / prose).
+    assert _lenient_json_object('{"path": "a.py"} </invoke>') == {"path": "a.py"}
+    # A bad regex escape (\d) is a hard JSON error -> keep the sentinel (None).
+    assert _lenient_json_object(r'{"pattern": "\d+"}') is None
+    # A scalar / array is not tool args -> None.
+    assert _lenient_json_object("42") is None
+    assert _lenient_json_object('["a"]') is None
+    assert _lenient_json_object("") is None

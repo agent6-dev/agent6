@@ -112,6 +112,16 @@ def test_verify_command_unexecutable_raises_loud(tmp_path: Path) -> None:
     assert out["returncode"] == 1
 
 
+def test_raw_arguments_sentinel_gives_a_clear_json_error(tmp_path: Path) -> None:
+    # When the provider couldn't parse the tool-call arguments as JSON it leaves
+    # the {"_raw_arguments": ...} sentinel; dispatch must tell the model plainly
+    # the JSON was malformed (not a confusing "extra fields" schema error) so it
+    # resends in one shot.
+    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    with pytest.raises(ToolError, match="not valid JSON"):
+        d.dispatch("grep", {"_raw_arguments": '{"pattern": "\\d+"'})
+
+
 def test_ask_user_routes_to_questioner(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     seen: dict[str, object] = {}

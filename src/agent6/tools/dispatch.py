@@ -938,6 +938,15 @@ class ToolDispatcher:
 
     def _run_handler(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
         """Execute the handler, retrying once with stringified-JSON args coerced."""
+        # The provider couldn't parse the tool-call arguments as JSON and left the
+        # `_raw_arguments` sentinel (after a lenient re-parse already failed). A
+        # schema error about "_raw_arguments extra fields" would misdirect the
+        # model; tell it plainly the JSON was malformed so it resends in one shot.
+        if set(raw_input) == {"_raw_arguments"}:
+            raise ToolError(
+                f"{name}: the arguments were not valid JSON. Resend the call with a"
+                " single valid JSON object of arguments."
+            )
         try:
             return self._handlers[name](raw_input)
         except ValidationError as exc:

@@ -1172,6 +1172,28 @@ _TOOL_SCAFFOLD_RE = re.compile(r"</?tool_call>|</?function[^>]*>|</?parameter[^>
 _TOOL_CODE_FENCE_RE = re.compile(r"```tool_code\s*\n?(.*?)```", re.DOTALL)
 
 
+def _lenient_json_object(raw: object) -> dict[str, Any] | None:
+    """Recover a tool-call ``arguments`` string that strict ``json.loads``
+    rejected, when the fix is safe and unambiguous. Returns the object, or None.
+
+    Two common weak/open-model malformations:
+    - a raw control char (an unescaped newline/tab) inside a string value, which
+      ``strict=False`` accepts;
+    - trailing junk after a valid object (a leaked ``</invoke>`` tag or prose),
+      which ``raw_decode`` ignores by parsing only the leading value.
+
+    Only a dict result is returned; a scalar/array (or a still-invalid string,
+    e.g. a bad ``\\d`` regex escape) yields None so the caller keeps the
+    ``_raw_arguments`` sentinel rather than guessing."""
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        parsed, _ = json.JSONDecoder(strict=False).raw_decode(raw.strip())
+    except (json.JSONDecodeError, ValueError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
 def _tool_code_call_to_dict(node: ast.Call, tool_names: frozenset[str]) -> dict[str, Any] | None:
     """Turn one ``ast.Call`` into ``{"name", "input"}`` if it (or, unwrapping a
     non-tool wrapper such as ``print(tool(...))``, an inner call) targets an
@@ -1473,13 +1495,26 @@ def _parse_response(  # noqa: PLR0912, PLR0915
                 if not isinstance(parsed_input, dict):
                     parsed_input = {"_value": parsed_input}
             except (json.JSONDecodeError, TypeError):
-                raw_str = str(args_raw)
-                if len(raw_str) > _RAW_ARGS_CAP:
-                    raw_str = (
-                        raw_str[:_RAW_ARGS_CAP]
-                        + f"... <truncated; original was {len(str(args_raw))} chars>"
-                    )
-                parsed_input = {"_raw_arguments": raw_str}
+                # Before giving up, try a lenient re-parse. Weak/open models
+                # commonly emit args that strict JSON rejects: a raw newline in a
+                # multiline code/regex param, or trailing junk (a leaked
+                # `</invoke>` / prose). Recovering here means the tool just runs,
+                # instead of a wasted round-trip on a validation error. Only a
+                # parse that yields an object is accepted, so a bad guess can't
+                # feed the handler garbage; anything still unparseable becomes the
+                # `_raw_arguments` sentinel (dispatch turns that into a clear
+                # "resend valid JSON" error).
+                repaired = _lenient_json_object(args_raw)
+                if repaired is not None:
+                    parsed_input = repaired
+                else:
+                    raw_str = str(args_raw)
+                    if len(raw_str) > _RAW_ARGS_CAP:
+                        raw_str = (
+                            raw_str[:_RAW_ARGS_CAP]
+                            + f"... <truncated; original was {len(str(args_raw))} chars>"
+                        )
+                    parsed_input = {"_raw_arguments": raw_str}
             parsed_calls.append(
                 {
                     # Synthesise a distinct id when the backend omits one
