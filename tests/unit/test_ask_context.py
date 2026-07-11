@@ -282,3 +282,34 @@ def test_system_prompt_names_non_git_directory(tmp_path: Path) -> None:
     prompt = _build_system_prompt(config=load_config(cfg_path), repo=repo, mode="ask")
     assert "not a git repository" in prompt
     assert "branch=" not in prompt  # no fake repo header
+
+
+def test_prompt_revision_context_names_non_git_directory(tmp_path: Path) -> None:
+    """The reviser context degrades the same way the worker prompt does:
+    outside git it names the situation instead of a fake empty repo header."""
+    from agent6.types import RepoSummary
+    from agent6.workflows._prompt_revision import format_prompt_revision_context
+
+    repo = RepoSummary(
+        root=tmp_path,
+        branch="",
+        head_sha="",
+        file_count=0,
+        top_level=("notes.txt",),
+        agents_md="",
+        recent_log="",
+        is_git=False,
+    )
+    ctx = format_prompt_revision_context(repo)
+    assert "not a git repository" in ctx
+    assert "branch=" not in ctx  # no fake repo header
+    git_repo = RepoSummary(
+        root=tmp_path,
+        branch="main",
+        head_sha="a" * 40,
+        file_count=3,
+        top_level=("x.py",),
+        agents_md="",
+        recent_log="",
+    )
+    assert "branch=main" in format_prompt_revision_context(git_repo)

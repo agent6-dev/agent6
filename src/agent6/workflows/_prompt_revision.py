@@ -64,8 +64,16 @@ def parse_prompt_revision(text: str) -> PromptRevision:
 
 
 def format_prompt_revision_context(repo: RepoSummary) -> str:
+    if repo.is_git:
+        repo_line = (
+            f"Repository: branch={repo.branch}, head={repo.head_sha[:12]}, files={repo.file_count}"
+        )
+    else:
+        # Same degrade as the worker prompt: outside git a fake empty header
+        # would send the model after branch and history that do not exist.
+        repo_line = "Directory (not a git repository; no branch, history, or tracked-file map)."
     parts = [
-        f"Repository: branch={repo.branch}, head={repo.head_sha[:12]}, files={repo.file_count}",
+        repo_line,
         f"Top-level: {', '.join(repo.top_level)}",
     ]
     if repo.agents_md:
