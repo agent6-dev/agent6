@@ -143,10 +143,10 @@ _JUMP_LABEL = "↓ bottom · Ctrl+End"
 
 
 class _JumpButton(Static):
-    """A small floating jump-to-bottom pill (the claude-code affordance): shown
-    while the transcript is scrolled up; click -- or Ctrl+End -- snaps back to
-    the live tail. Floats on the dropdown layer (the _Dropdown recipe), so it
-    never displaces the layout."""
+    """A small floating jump-to-bottom pill: shown while the transcript is
+    scrolled up; click -- or Ctrl+End -- snaps back to the live tail. Floats
+    on the dropdown layer (the _Dropdown recipe), so it never displaces the
+    layout."""
 
     ALLOW_SELECT = False
     DEFAULT_CSS = """
@@ -200,9 +200,9 @@ class SteerInput(TextArea):
 
     def set_mode(self, *, live: bool, ctx_pct: int | None = None) -> None:
         """Relabel for the run's state: steering (live) vs resuming (finished),
-        plus the context-window fill when known (the claude-code-style readout
-        right where you type). Only writes on a real change: this runs on every
-        heartbeat, and same-value style writes still cost a refresh."""
+        plus the context-window fill when known, right where you type. Only
+        writes on a real change: this runs on every heartbeat, and same-value
+        style writes still cost a refresh."""
         title = "steer the run" if live else "continue the run"
         keys = "Enter sends · Ctrl-J newline" if live else "Enter resumes · Ctrl-J newline"
         ctx = f"ctx {ctx_pct}% · " if ctx_pct is not None else ""
@@ -632,7 +632,7 @@ class ConversationScreen(Screen[None]):
         """A line typed into the composer bar. Live: drop a steer request + the
         instruction over the file bridge (the run injects it at its next safe
         boundary and keeps going). Finished (primary view): resume THIS run with
-        the instruction pre-seeded -- the claude-code follow-up."""
+        the instruction pre-seeded as the follow-up."""
         run_dir = self._logs_path.parent
         if self._live:
             clear_steer_answer(run_dir)  # discard any stale answer -> the run waits for this one

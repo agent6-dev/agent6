@@ -869,8 +869,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
     def submit_instruction(self, text: str) -> None:
         """A composer-bar line. Live: inject it at the run's next safe boundary
         (after the current step, never mid tool-call) -- the run keeps going.
-        Finished: resume THIS run with the instruction (the claude-code
-        follow-up)."""
+        Finished: resume THIS run with the instruction as the follow-up."""
         if self.run_controllable():
             self._seed_steer(text)
             self.notify("steering the run…")
