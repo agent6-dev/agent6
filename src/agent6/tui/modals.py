@@ -25,6 +25,17 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Static, TextArea
 
+# Uniform arrow-key focus navigation for every consequential modal: Tab already
+# moves focus; these make the arrows do the same, so the dialogs navigate the way
+# the rest of the TUI does. left/right in a focused Input still move the cursor
+# (the Input consumes them), so only up/down bubble to focus there.
+_ARROW_NAV = (
+    Binding("down", "app.focus_next", "next", show=False),
+    Binding("up", "app.focus_previous", "prev", show=False),
+    Binding("right", "app.focus_next", "next", show=False),
+    Binding("left", "app.focus_previous", "prev", show=False),
+)
+
 
 # Modal frames pin a static round $accent (focused) border: a modal always owns
 # focus, so it always shows the focused accent -- the $primary<->$accent
@@ -46,8 +57,7 @@ class ApprovalModal(ModalScreen[bool]):
 
     # Keys handled on the MODAL (not the app) so they reach the focused button.
     BINDINGS: ClassVar = [
-        Binding("left", "focus_previous", "◀", show=False),
-        Binding("right", "focus_next", "▶", show=False),
+        *_ARROW_NAV,
         Binding("y", "approve", "Allow", show=True),
         Binding("Y", "approve", "Allow", show=False),
         Binding("n", "deny", "Deny", show=True),
@@ -103,8 +113,7 @@ class ConfirmModal(ModalScreen[bool]):
     """
 
     BINDINGS: ClassVar = [
-        Binding("left", "focus_previous", "◀", show=False),
-        Binding("right", "focus_next", "▶", show=False),
+        *_ARROW_NAV,
         Binding("y", "confirm", "Yes", show=True),
         Binding("Y", "confirm", "Yes", show=False),
         Binding("n", "cancel", "No", show=True),
@@ -163,20 +172,21 @@ class SteerModal(ModalScreen[str]):
     """
 
     BINDINGS: ClassVar = [
+        *_ARROW_NAV,
         Binding("escape", "cont", "Continue", show=False),
     ]
 
     def compose(self) -> ComposeResult:
         with Container(id="steer-box"):
             body = Text()
-            body.append("Run interrupted\n\n", style="bold")
-            body.append("Continue, abort, or type a steering instruction below.")
+            body.append("Steer this run\n\n", style="bold")
+            body.append("Type an instruction and Send it, Continue as-is, or Stop the run.")
             yield Static(body)
             yield Input(placeholder="instruction (blank = continue)", id="steer-input")
             with Horizontal(id="steer-buttons"):
-                yield Button("Continue", id="continue", variant="success")
                 yield Button("Send", id="send", variant="primary")
-                yield Button("Abort", id="abort", variant="error")
+                yield Button("Continue", id="continue", variant="success")
+                yield Button("Stop", id="abort", variant="error")
 
     def on_mount(self) -> None:
         self.query_one("#steer-input", Input).focus()
@@ -312,6 +322,7 @@ class QuestionModal(ModalScreen[str]):
     """
 
     BINDINGS: ClassVar = [
+        *_ARROW_NAV,
         Binding("escape", "skip", "Skip", show=True),
     ]
 

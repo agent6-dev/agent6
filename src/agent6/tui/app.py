@@ -189,7 +189,7 @@ class Agent6TUI(App[int]):
         # (like Esc) backs out TO the hub; only the root hub quits on q. Ctrl+Q is
         # the app-wide hard quit. (Esc on an open modal cancels it first -- the
         # modal consumes the key.)
-        Binding("s", "steer", "Steer", show=True),
+        Binding("s", "steer", "Steer/stop", show=True),
         Binding("l", "view_logs", "Full log", show=True),
         Binding("t", "view_transcript", "Conversation", show=True),
         # g=top / G=end, matching vi and the LogScreen/ConversationScreen viewers

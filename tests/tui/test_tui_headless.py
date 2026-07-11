@@ -65,6 +65,30 @@ def test_question_modal_digit_in_freetext_is_not_hijacked() -> None:
     asyncio.run(scenario())
 
 
+def test_steer_modal_arrow_keys_move_focus() -> None:
+    """Arrow keys navigate the steer dialog like Tab, so the TUI is consistent."""
+
+    class _Host(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(SteerModal(), lambda _v: None)
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, SteerModal)
+            assert isinstance(modal.focused, Input)  # starts on the instruction field
+            await pilot.press("down")  # arrow moves focus off the input, onto a button
+            await pilot.pause()
+            assert isinstance(modal.focused, Button)
+            await pilot.press("up")  # and back
+            await pilot.pause()
+            assert isinstance(modal.focused, Input)
+
+    asyncio.run(scenario())
+
+
 def test_tools_table_maximizes_to_full_height(tmp_path: Path) -> None:
     """Pressing `f` on the focused tool table fills the screen, not its 20%
     resting height -- regression: the explicit `height: 20%` made the maximized
