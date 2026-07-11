@@ -30,7 +30,8 @@ from agent6.ui.bridge.approval import (
     steer_request_pending,
 )
 from agent6.ui.cli._console_view import ConsoleView
-from agent6.ui.cli._steer_menu import normalize_steer_choice, pause_menu, readline_capable
+from agent6.ui.cli._menu_input import menu_capable
+from agent6.ui.cli._steer_menu import normalize_steer_choice, pause_menu
 
 
 @dataclass
@@ -169,16 +170,17 @@ def install_steer_sigint(
 
     * 1st Ctrl-C: pause at the next safe boundary (between steps; the
       in-flight model call finishes first). Emits ``run.steer_requested``;
-      the prompt is a TUI modal when the TUI is live, otherwise the readline
-      pause menu on the controlling terminal (``/dev/tty``, so it is visible
-      even when the TUI has redirected the run's std streams to a log).
+      the prompt is a TUI modal when the TUI is live, otherwise the
+      interactive pause menu; with redirected std streams the menu cannot
+      own the line, so a plain prompt goes to the controlling terminal
+      (``/dev/tty``) instead.
     * 2nd Ctrl-C: interrupt the in-flight model call and prompt now.
     * 3rd Ctrl-C (or Ctrl-C at the pause prompt itself): KeyboardInterrupt,
       stopping the run (resumable with ``agent6 resume``).
 
     ``console_view``, when given, has its heartbeat spinner suspended for the
     prompt's duration: the spinner's per-tick line-erase otherwise wipes the
-    readline line and its Tab completions.
+    pause-menu line and its Tab preview.
 
     Returns callables for the workflow plus a ``restore`` hook to put the
     previous handler back when the run is done.
@@ -248,9 +250,9 @@ def install_steer_sigint(
         state["prompting"] = True
         try:
             with pause():
-                if readline_capable():
-                    # The interactive pause menu: readline editing, history, and
-                    # Tab-completed slash commands (/status, /tasks, /stop, ...).
+                if menu_capable():
+                    # The interactive pause menu: line editing, history, and a
+                    # fish-style Tab preview of the slash commands.
                     return pause_menu(run_dir)
                 return normalize_steer_choice(
                     tty_prompt(

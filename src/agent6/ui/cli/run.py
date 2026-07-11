@@ -527,7 +527,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
 
         # Steering (mid-run Ctrl-C -> the pause menu) needs the terminal; the
         # console view's heartbeat spinner is suspended for the prompt so its
-        # line-erase cannot wipe the readline line.
+        # line-erase cannot wipe the pause-menu line.
         steer_state = _make_steer_state(events, layout.run_dir, console_view)
 
         result = None

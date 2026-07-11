@@ -166,32 +166,3 @@ def test_pause_menu_status_shows_ctx_and_profile(
     assert "ctx 90,000 tok" in printed
     assert "(45%)" in printed  # 90k of the 200k sonnet window
     assert "profile paranoid" in printed
-
-
-def test_pause_menu_completer_cycles_commands(monkeypatch: pytest.MonkeyPatch) -> None:
-    import readline
-
-    from agent6.ui.cli._steer_menu import (
-        COMMANDS,
-        _complete,  # pyright: ignore[reportPrivateUsage]
-    )
-
-    def _cycle(text: str) -> list[str]:
-        matches: list[str] = []
-        state = 0
-        while (m := _complete(text, state)) is not None:
-            matches.append(m)
-            state += 1
-        return matches
-
-    monkeypatch.setattr(readline, "get_line_buffer", lambda: "/st")
-    monkeypatch.setattr(readline, "get_begidx", lambda: 0)
-    assert _cycle("/st") == ["/status", "/stop"]
-    assert _complete("plain text", 0) is None  # only slash commands complete
-    # Tab on an empty line lists every command.
-    monkeypatch.setattr(readline, "get_line_buffer", lambda: "")
-    assert _cycle("") == list(COMMANDS)
-    # Tab inside steer text is inert: only the first word completes.
-    monkeypatch.setattr(readline, "get_line_buffer", lambda: "fix the /st")
-    monkeypatch.setattr(readline, "get_begidx", lambda: 8)
-    assert _complete("/st", 0) is None

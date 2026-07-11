@@ -2,11 +2,13 @@
 # Copyright 2026 Eric Lesiuta
 """The interactive pause menu for a foreground CLI run (Ctrl-C, then decide).
 
-Readline-backed on Unix: line editing, in-process history (recall an earlier
-steer with Up), and Tab completion of the slash commands. Windows has no
-``readline``, so it keeps the plain one-line prompt (``_steer`` gates on
-:func:`readline_capable`). Info commands answer from the run's event log and
-re-prompt, so the operator can inspect the run before steering it.
+Line input comes from ``_menu_input`` on Unix: editing, in-process history
+(recall an earlier steer with Up), and a fish-style Tab preview of the slash
+commands (Tab cycles the matches, descriptions shown). Windows has no termios,
+so it keeps the plain one-line prompt (``_steer`` gates on
+:func:`agent6.ui.cli._menu_input.menu_capable`). Info commands answer from the
+run's event log and re-prompt, so the operator can inspect the run before
+steering it.
 
 Parsing rule: a command fires only when it is the WHOLE line (one ``/token``;
 a unique prefix like ``/sta`` works, an ambiguous one re-asks). Any line with
@@ -23,26 +25,20 @@ steering instruction, so no quoting is ever needed:
 
 from __future__ import annotations
 
-import contextlib
 import json
-import sys
-from collections.abc import Callable, Generator
+from collections.abc import Callable
 from pathlib import Path
-
-try:  # Unix line editing; absent on Windows -> the caller uses the plain prompt
-    import readline
-except ImportError:  # pragma: no cover - exercised only on Windows
-    readline = None  # type: ignore[assignment]
 
 from agent6.models.registry import context_window
 from agent6.ui.bridge.approval import request_compact
+from agent6.ui.cli._menu_input import menu_capable, menu_input
 from agent6.ui.viewmodel import fold_run, tail_events
 from agent6.ui.viewmodel.format import TASK_STATUS_GLYPH, format_cost
 from agent6.ui.viewmodel.state import RunState, run_status_label
 
 PROMPT = "[agent6] paused: Enter=continue · type to steer · /help: "
 
-# Command -> one-line help. The completer and /help both read this table.
+# Command -> one-line help. The Tab preview menu and /help both read this table.
 COMMANDS: dict[str, str] = {
     "/status": "run status: tasks, tools, cost, context, profile",
     "/tasks": "the task graph with statuses",
@@ -68,45 +64,12 @@ def normalize_steer_choice(line: str | None) -> str | None:
     return choice
 
 
-def readline_capable() -> bool:
-    """True when the pause menu can own the terminal line: readline exists
-    (Unix) and both std streams are the interactive terminal (a redirected
-    stream means the prompt must go through /dev/tty instead)."""
-    return readline is not None and sys.stdin.isatty() and sys.stdout.isatty()
+# Steer lines accepted this process, for Up-arrow recall across pauses.
+_HISTORY: list[str] = []
 
 
-def _complete(text: str, state: int) -> str | None:
-    """Readline completer for the FIRST word only: Tab on an empty line lists
-    every command, Tab on a ``/prefix`` cycles the matches, and Tab inside
-    steer text is inert (commands never fire mid-line)."""
-    if readline is None:  # pragma: no cover - Windows
-        return None
-    head = readline.get_line_buffer()[: readline.get_begidx()]
-    if head.strip():
-        return None  # not the first word: the line is a steering instruction
-    if text and not text.startswith("/"):
-        return None
-    matches = [c for c in COMMANDS if c.startswith(text)]
-    return matches[state] if state < len(matches) else None
-
-
-@contextlib.contextmanager
-def _line_editing() -> Generator[None]:
-    """Install the slash-command completer for the menu, restoring the prior
-    readline state after (the $EDITOR hook or an embedding REPL may own it)."""
-    if readline is None:  # pragma: no cover - Windows
-        yield
-        return
-    old_completer = readline.get_completer()
-    old_delims = readline.get_completer_delims()
-    readline.set_completer(_complete)
-    readline.set_completer_delims(" \t")  # keep "/" inside the completed word
-    readline.parse_and_bind("tab: complete")
-    try:
-        yield
-    finally:
-        readline.set_completer(old_completer)
-        readline.set_completer_delims(old_delims)
+def _menu_read(prompt: str) -> str:
+    return menu_input(prompt, COMMANDS, _HISTORY)
 
 
 def _fold(run_dir: Path) -> RunState:
@@ -177,34 +140,35 @@ def _run_info_command(cmd: str, run_dir: Path) -> None:
         print("[agent6] compaction requested — applies before the next model call")
 
 
-def pause_menu(run_dir: Path, *, input_fn: Callable[[str], str] = input) -> str | None:
-    """The readline pause menu. Returns the canonical steer action: None/''
+def pause_menu(run_dir: Path, *, input_fn: Callable[[str], str] | None = None) -> str | None:
+    """The interactive pause menu. Returns the canonical steer action: None/''
     continue, 'abort' stop now, 'detach' background, else the instruction sent
     verbatim. A command must be the whole line (unique prefixes fire, ambiguous
     ones re-ask); info commands print and re-prompt. EOF (Ctrl-D) continues."""
-    with _line_editing():
-        while True:
-            try:
-                line = input_fn(PROMPT)
-            except EOFError:
-                return None
-            stripped = line.strip()
-            if not stripped:
-                return ""  # Enter: continue the run unchanged
-            if not stripped.startswith("/") or " " in stripped:
-                return stripped  # a steering instruction, sent verbatim
-            word = stripped.lower()
-            if word in ("/h", "/?"):
-                word = "/help"
-            matches = [word] if word in COMMANDS else [c for c in COMMANDS if c.startswith(word)]
-            if len(matches) > 1:
-                print(f"[agent6] ambiguous: {'  '.join(matches)} — type a bit more")
-            elif not matches:
-                print(
-                    f"[agent6] unknown command {word!r} — /help lists them"
-                    " (a line with spaces is sent as a steer)"
-                )
-            elif matches[0] in _ACTIONS:
-                return _ACTIONS[matches[0]]
-            else:
-                _run_info_command(matches[0], run_dir)
+    if input_fn is None:
+        input_fn = _menu_read if menu_capable() else input
+    while True:
+        try:
+            line = input_fn(PROMPT)
+        except EOFError:
+            return None
+        stripped = line.strip()
+        if not stripped:
+            return ""  # Enter: continue the run unchanged
+        if not stripped.startswith("/") or " " in stripped:
+            return stripped  # a steering instruction, sent verbatim
+        word = stripped.lower()
+        if word in ("/h", "/?"):
+            word = "/help"
+        matches = [word] if word in COMMANDS else [c for c in COMMANDS if c.startswith(word)]
+        if len(matches) > 1:
+            print(f"[agent6] ambiguous: {'  '.join(matches)} — type a bit more")
+        elif not matches:
+            print(
+                f"[agent6] unknown command {word!r} — /help lists them"
+                " (a line with spaces is sent as a steer)"
+            )
+        elif matches[0] in _ACTIONS:
+            return _ACTIONS[matches[0]]
+        else:
+            _run_info_command(matches[0], run_dir)

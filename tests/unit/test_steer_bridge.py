@@ -125,7 +125,7 @@ def test_sigint_at_the_pause_prompt_stops(tmp_path: Path, monkeypatch: pytest.Mo
     import signal
 
     monkeypatch.setattr("agent6.ui.cli._steer.tty_message", _silent_banner)
-    monkeypatch.setattr("agent6.ui.cli._steer.readline_capable", lambda: False)
+    monkeypatch.setattr("agent6.ui.cli._steer.menu_capable", lambda: False)
 
     def prompt_hit_by_ctrl_c(text: str, **_kw: object) -> str | None:
         signal.raise_signal(signal.SIGINT)
@@ -144,7 +144,7 @@ def test_sigint_at_the_pause_prompt_stops(tmp_path: Path, monkeypatch: pytest.Mo
 
 def test_prompt_pauses_the_console_spinner(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The pause menu runs inside ConsoleView.pause(): the heartbeat spinner's
-    per-tick line-erase otherwise wipes the readline line and its completions."""
+    per-tick line-erase otherwise wipes the pause-menu line and its Tab preview."""
     import contextlib
     from collections.abc import Generator
     from typing import cast
@@ -160,7 +160,7 @@ def test_prompt_pauses_the_console_spinner(tmp_path: Path, monkeypatch: pytest.M
             yield
             calls.append("resume")
 
-    monkeypatch.setattr("agent6.ui.cli._steer.readline_capable", lambda: True)
+    monkeypatch.setattr("agent6.ui.cli._steer.menu_capable", lambda: True)
 
     def fake_menu(run_dir: Path) -> str | None:
         calls.append("prompt")
