@@ -56,6 +56,66 @@ def preview_result(
 CLOSEST_MATCH_MAX_LINES = 6000
 
 
+def _leading_ws(s: str) -> str:
+    return s[: len(s) - len(s.lstrip())]
+
+
+def _reindent(lines: list[str], old_base: str, new_base: str) -> list[str] | None:
+    """Replace each non-blank line's leading ``old_base`` with ``new_base``,
+    preserving any indentation beyond the base. Blank lines pass through. Returns
+    None if any non-blank line does not start with ``old_base`` (the shift does
+    not apply cleanly, so it is not safe to guess)."""
+    out: list[str] = []
+    for ln in lines:
+        if not ln.strip():
+            out.append(ln)
+        elif ln.startswith(old_base):
+            out.append(new_base + ln[len(old_base) :])
+        else:
+            return None
+    return out
+
+
+def indent_tolerant_replacement(file_text: str, old_string: str, new_string: str) -> str | None:
+    """Apply an edit whose ``old_string`` doesn't match verbatim but matches
+    EXACTLY ONE on-disk region up to a uniform leading-indent shift -- the
+    dominant weak-model mistake: correct lines, wrong indent depth. Returns the
+    edited file text, or None whenever it is not provably safe (no match,
+    multiple matches, or a non-uniform diff) so the caller keeps the exact-match
+    error.
+
+    Safety gate: the shift derived from the first content line is applied to
+    ``old_string`` and must reproduce the matched region byte-for-byte before it
+    is applied to ``new_string``. So the region is only ever edited when the
+    transform is proven correct for old -> disk; a wrong region cannot be hit.
+    Trailing-whitespace or non-uniform mismatches fail the gate and fall back."""
+    old_lines = old_string.split("\n")
+    file_lines = file_text.split("\n")
+    n = len(old_lines)
+    if n == 0 or n > len(file_lines):
+        return None
+    old_stripped = [ln.strip() for ln in old_lines]
+    if not any(old_stripped):  # all-blank old_string: nothing to anchor safely
+        return None
+    starts = [
+        i
+        for i in range(len(file_lines) - n + 1)
+        if [ln.strip() for ln in file_lines[i : i + n]] == old_stripped
+    ]
+    if len(starts) != 1:  # no match, or ambiguous -> never guess
+        return None
+    start = starts[0]
+    region = file_lines[start : start + n]
+    old_base = next(_leading_ws(o) for o in old_lines if o.strip())
+    new_base = next(_leading_ws(r) for r in region if r.strip())
+    if _reindent(old_lines, old_base, new_base) != region:
+        return None  # the shift is not uniform across the region -> unsafe
+    new_region = _reindent(new_string.split("\n"), old_base, new_base)
+    if new_region is None:
+        return None  # new_string can't take the same shift cleanly -> fall back
+    return "\n".join(file_lines[:start] + new_region + file_lines[start + n :])
+
+
 def closest_on_disk_region(file_text: str, old_string: str) -> tuple[int, str, float] | None:
     """Find the file region most similar to a not-found ``old_string``.
 

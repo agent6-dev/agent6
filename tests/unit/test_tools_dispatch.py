@@ -112,6 +112,53 @@ def test_verify_command_unexecutable_raises_loud(tmp_path: Path) -> None:
     assert out["returncode"] == 1
 
 
+def test_apply_edit_tolerates_a_uniform_indent_mismatch(tmp_path: Path) -> None:
+    # The dominant weak-model miss: right lines, wrong indent depth. old_string
+    # is written at base indent 4; the file uses 8. The edit applies, and the
+    # result keeps the FILE's indentation (not the model's).
+    cfg = _config(tmp_path)
+    (tmp_path / "m.py").write_text(
+        "class C:\n    def m(self):\n        x = 1\n        return x\n", encoding="utf-8"
+    )
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d.dispatch(
+        "apply_edit",
+        {
+            "path": "m.py",
+            "edits": [
+                {
+                    "kind": "replace",
+                    "old_string": "def m(self):\n    x = 1\n    return x",
+                    "new_string": "def m(self):\n    x = 2\n    return x",
+                }
+            ],
+        },
+    )
+    assert (tmp_path / "m.py").read_text(encoding="utf-8") == (
+        "class C:\n    def m(self):\n        x = 2\n        return x\n"
+    )
+
+
+def test_apply_edit_refuses_an_ambiguous_indent_match(tmp_path: Path) -> None:
+    # A multi-line block that matches TWO regions up to indent (0 exact matches):
+    # never guess; surface the mismatch error, don't fuzzy-apply.
+    cfg = _config(tmp_path)
+    (tmp_path / "a.py").write_text(
+        "if x:\n    a = 1\n    b = 2\nif y:\n        a = 1\n        b = 2\n", encoding="utf-8"
+    )
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(ToolError, match="not found"):
+        d.dispatch(
+            "apply_edit",
+            {
+                "path": "a.py",
+                "edits": [{"old_string": "a = 1\nb = 2", "new_string": "a = 9\nb = 2"}],
+            },
+        )
+    # Unchanged on disk (no guess applied).
+    assert "a = 9" not in (tmp_path / "a.py").read_text(encoding="utf-8")
+
+
 def test_raw_arguments_sentinel_gives_a_clear_json_error(tmp_path: Path) -> None:
     # When the provider couldn't parse the tool-call arguments as JSON it leaves
     # the {"_raw_arguments": ...} sentinel; dispatch must tell the model plainly

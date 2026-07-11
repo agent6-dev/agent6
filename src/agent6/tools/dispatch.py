@@ -43,6 +43,9 @@ from agent6.tools._edit_diag import (
     edit_mismatch_error as _edit_mismatch_error,
 )
 from agent6.tools._edit_diag import (
+    indent_tolerant_replacement as _indent_tolerant_replacement,
+)
+from agent6.tools._edit_diag import (
     preview_result as _preview_result,
 )
 from agent6.tools._result_format import (
@@ -1106,11 +1109,22 @@ class ToolDispatcher:
                     raise ToolError(f"replace requested but file does not exist: {args.path}")
                 occurrences = new_content.count(edit.old_string)
                 if occurrences == 0:
-                    # Prefer handing the model the exact closest on-disk text so
-                    # it retries directly. Re-reading the whole file is the
-                    # dominant small-model time sink on a botched edit; the
-                    # shape-only fallback (no copyable body) is used only when
-                    # nothing on disk is similar enough to anchor on.
+                    # Weak models most often miss by indentation depth alone
+                    # (right lines, wrong leading whitespace). If old_string
+                    # matches EXACTLY ONE region up to a uniform indent shift,
+                    # apply it (the shift is verified to reproduce that region
+                    # byte-for-byte first, so a wrong region can't be edited) --
+                    # saving a full round-trip. Otherwise hand the model the exact
+                    # closest on-disk text so it retries directly; re-reading the
+                    # whole file is the dominant small-model time sink on a botched
+                    # edit.
+                    fuzzy = _indent_tolerant_replacement(
+                        new_content, edit.old_string, edit.new_string
+                    )
+                    if fuzzy is not None:
+                        new_content = fuzzy
+                        applied.append("replace~indent")
+                        continue
                     raise ToolError(
                         _edit_mismatch_error(args.path, i, new_content, edit.old_string)
                     )
