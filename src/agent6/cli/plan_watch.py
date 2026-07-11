@@ -280,6 +280,9 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:
     )
 
     if end_reason is not None:
+        # A diagnostic view: show the precise raw reason (steer_abort, provider_error,
+        # verify_settled, ...) rather than a categorized label. The user-facing status
+        # (dashboard/hub) uses the friendly run_status_label, which also has all_passed.
         state = f"finished ({end_reason})"
     elif alive and last_age is not None and last_age > 120:
         state = "running (in a long step — provider call?)"
