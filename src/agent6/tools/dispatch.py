@@ -27,6 +27,7 @@ from agent6.config import Config
 from agent6.events import EventSink
 from agent6.graph.client import GraphClient
 from agent6.graph.models import (
+    AddDependencyIntent,
     AddSubtaskIntent,
     SetCursorIntent,
     TaskNodeDraft,
@@ -83,6 +84,7 @@ from agent6.tools.schema import (
     ApplyEditInput,
     ApplyPatchInput,
     AskUserInput,
+    DagAddDependencyInput,
     DagAddTaskInput,
     DagListTasksInput,
     DagSetCursorInput,
@@ -396,6 +398,7 @@ class ToolDispatcher:
             DagUpdateTaskInput.TOOL_NAME: self._dag_update_task,
             DagSetCursorInput.TOOL_NAME: self._dag_set_cursor,
             DagListTasksInput.TOOL_NAME: self._dag_list_tasks,
+            DagAddDependencyInput.TOOL_NAME: self._dag_add_dependency,
             # Cross-run memory. Handlers raise ToolError if no
             # state_dir was wired.
             AddMemoryInput.TOOL_NAME: self._add_memory,
@@ -1048,6 +1051,16 @@ class ToolDispatcher:
         self._graph_client.set_cursor(SetCursorIntent(id=args.id))
         return {"acknowledged": True, "cursor": args.id}
 
+    def _dag_add_dependency(self, raw: dict[str, Any]) -> dict[str, Any]:
+        if self._graph_client is None:
+            raise ToolError("add_dependency: DAG curator not available in this run")
+        args = DagAddDependencyInput.model_validate(raw)
+        intent = AddDependencyIntent(id=args.id, depends_on=args.depends_on)
+        # Unknown ids and cycles are rejected by the curator; dispatch()'s
+        # generic wrapper surfaces that rejection to the model as a ToolError.
+        node = self._graph_client.add_dependency(intent)
+        return {"id": node.id, "title": node.title, "depends_on": list(node.depends_on)}
+
     def _dag_list_tasks(self, raw: dict[str, Any]) -> dict[str, Any]:
         if self._graph_client is None:
             raise ToolError("list_tasks: DAG curator not available in this run")
@@ -1068,6 +1081,7 @@ class ToolDispatcher:
                     "status": raw_node.get("status", "pending"),
                     "acceptance": raw_node.get("acceptance", ""),
                     "relevant_paths": list(raw_node.get("relevant_paths", ())),
+                    "depends_on": list(raw_node.get("depends_on", ())),
                 }
             )
         return {"tasks": out, "count": len(out)}

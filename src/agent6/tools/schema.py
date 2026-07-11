@@ -322,6 +322,22 @@ class DagListTasksInput(_ToolInput):
     )
 
 
+class DagAddDependencyInput(_ToolInput):
+    TOOL_NAME: ClassVar[str] = "add_dependency"
+    TOOL_DESCRIPTION: ClassVar[str] = (
+        "Declare that task `id` cannot start until task `depends_on` has"
+        " passed. The harness only surfaces a task as the current focus once"
+        " every dependency has passed, so use this when subtasks must land in"
+        " a specific order (B edits code A must create first) instead of"
+        " encoding order in titles. Both ids are 26-char ULIDs from add_task /"
+        " list_tasks. Rejected if it would create a cycle. Returns the updated"
+        " task with its full depends_on list."
+    )
+
+    id: str = Field(min_length=26, max_length=26)
+    depends_on: str = Field(min_length=26, max_length=26)
+
+
 # Cross-run memory surface. Lets the agent persist repo-scoped notes
 # (agent6.memory store under <state_dir>/memories/) that future runs see in
 # the <memories> system-prompt block. Run mode only (LOOP_EXTRA_TOOLS).
@@ -517,6 +533,7 @@ LOOP_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     DagUpdateTaskInput,
     DagSetCursorInput,
     DagListTasksInput,
+    DagAddDependencyInput,
     AddMemoryInput,
     InvalidateMemoryInput,
 )
@@ -531,6 +548,7 @@ PLAN_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     DagUpdateTaskInput,
     DagSetCursorInput,
     DagListTasksInput,
+    DagAddDependencyInput,
     FinishPlanningInput,
 )
 

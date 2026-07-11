@@ -110,18 +110,20 @@ takehomes that already ship a metric).
 # model needs neither, which is why this is opt-in (measured per model).
 DAG_RULES_OPTIONAL = """<dag-rules>
 The DAG-as-tool surface (`add_task`, `update_task`, `set_cursor`,
-`list_tasks`) maintains a persistent task breakdown. OPTIONAL - skip
-it entirely for one-shot fixes, single-file edits, or perf-takehome-
-style "make this number smaller" runs. Use it ONLY when the task
-naturally decomposes into 3+ subtasks worth tracking and humans
-watching the TUI benefit from seeing the breakdown.
+`list_tasks`, `add_dependency`) maintains a persistent task breakdown.
+OPTIONAL - skip it entirely for one-shot fixes, single-file edits, or
+perf-takehome-style "make this number smaller" runs. Use it ONLY when
+the task naturally decomposes into 3+ subtasks worth tracking and
+humans watching the TUI benefit from seeing the breakdown.
 
 When you do use it: `add_task(title, parent_id?)` returns an id;
 `update_task(id, status="in_progress")` when you start a subtask;
 `update_task(id, status="passed")` only after verify confirms it.
-`set_cursor(id)` is cosmetic - it updates the TUI's "current task"
-pointer; it is NOT the resume mechanism (the workflow snapshots its
-own state independently before each LLM call).
+`add_dependency(id, depends_on)` when one subtask must land before
+another can start; the harness only surfaces a task once its
+dependencies have passed. `set_cursor(id)` is cosmetic - it updates
+the TUI's "current task" pointer; it is NOT the resume mechanism (the
+workflow snapshots its own state independently before each LLM call).
 </dag-rules>"""
 
 DAG_RULES_DECOMPOSE = """<decompose-first>
@@ -138,7 +140,10 @@ of holding the whole job in your head.
    phase can stay a single task with no children. Cover the WHOLE task;
    make `title` a short imperative and `acceptance` the concrete,
    verifiable condition it is done. Put anything you must understand
-   before coding in an investigate phase and order it first.
+   before coding in an investigate phase and order it first. When one
+   subtask cannot start before another lands, declare it:
+   `add_dependency(id, depends_on)` - the harness will not surface a
+   task until its dependencies have passed.
 2. WORK ONE AT A TIME, LEAF-FIRST. The harness surfaces your current
    task each turn as a `[harness focus]` banner. Do that ONE task: for
    an investigate task, read what you need and carry the finding forward;

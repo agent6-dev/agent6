@@ -87,8 +87,10 @@ Notes:
   is chosen later at `agent6 runs merge` time via `git.merge_strategy`
   (`squash` / `merge` / `ff`).
 - **DAG-as-scaffold.** `add_task` / `update_task` /
-  `set_cursor` / `list_tasks` write to a curator-owned side
-  store: the worker's task breakdown. They do not pick which tool runs
+  `set_cursor` / `list_tasks` / `add_dependency` write to a curator-owned
+  side store: the worker's task breakdown, with explicit ordering edges
+  (`add_dependency` is cycle-checked by the curator). They do not pick
+  which tool runs
   next, but agent6 reads the DAG to keep a small or weak model focused on
   a long task. Each turn it surfaces the current task -- the cursor when it
   still points at an open subtask, else the first dependency-satisfied

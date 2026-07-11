@@ -17,6 +17,7 @@ import pytest
 from agent6.graph.client import CuratorClientError, GraphClient, spawn_curator
 from agent6.graph.ipc import send_message
 from agent6.graph.models import (
+    AddDependencyIntent,
     AddSubtaskIntent,
     SetCursorIntent,
     TaskNodeDraft,
@@ -242,3 +243,19 @@ def test_client_wraps_transport_failure(curator_proc) -> None:  # type: ignore[n
             client.get_state()  # first call may drain a buffered reply; second cannot
     finally:
         client.close()
+
+
+def test_curator_ipc_add_dependency_roundtrip(curator_proc) -> None:  # type: ignore[no-untyped-def]
+    """The add_dependency intent over the real socket: edge lands, cycle rejected."""
+    sock_path, _ = curator_proc
+    with GraphClient(sock_path) as client:
+        a = client.add_subtask(
+            AddSubtaskIntent(parent_id=None, draft=TaskNodeDraft(title="a", created_by="worker"))
+        )
+        b = client.add_subtask(
+            AddSubtaskIntent(parent_id=a.id, draft=TaskNodeDraft(title="b", created_by="worker"))
+        )
+        updated = client.add_dependency(AddDependencyIntent(id=b.id, depends_on=a.id))
+        assert updated.depends_on == (a.id,)
+        with pytest.raises(CuratorClientError, match="cycle"):
+            client.add_dependency(AddDependencyIntent(id=a.id, depends_on=b.id))
