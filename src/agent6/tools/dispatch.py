@@ -36,7 +36,14 @@ from agent6.graph.models import (
 from agent6.memory import MemoryStoreError
 from agent6.memory import add as memory_add
 from agent6.memory import invalidate as memory_invalidate
+from agent6.paths import data_dir
 from agent6.sandbox.jail import JailUnavailableError, run_in_jail
+from agent6.skills import (
+    ResolvedSkills,
+    discover_skills,
+    resolve_states,
+    skill_search_dirs,
+)
 from agent6.tools._agent6_docs import (
     list_agent6_docs as _list_agent6_docs,
 )
@@ -104,6 +111,7 @@ from agent6.tools.schema import (
     RunMetricInput,
     RunVerifyInput,
     UserQuestion,
+    UseSkillInput,
 )
 from agent6.types import CommandResult, JailPolicy, SandboxProfile
 
@@ -403,6 +411,9 @@ class ToolDispatcher:
             # state_dir was wired.
             AddMemoryInput.TOOL_NAME: self._add_memory,
             InvalidateMemoryInput.TOOL_NAME: self._invalidate_memory,
+            # Operator-installed skills; resolved lazily from config + the
+            # data dir on first use (see _resolved_skills).
+            UseSkillInput.TOOL_NAME: self._use_skill,
         }
         self._available = {cls.TOOL_NAME for cls in ALL_TOOLS}
         self._index: SymbolIndex | None = None
@@ -418,6 +429,9 @@ class ToolDispatcher:
         # they can't help (no ty/uvx, or a non-Python repo) so they don't waste
         # schema tokens or confuse the model with dead near-duplicate tools.
         self._lsp_tools_useful = lsp_tools_useful(self._root)
+        # Operator-installed skills, resolved once on first use (a disk scan
+        # of the configured skill dirs). None = not yet resolved.
+        self._skills_cache: ResolvedSkills | None = None
 
     @property
     def root(self) -> Path:
@@ -546,6 +560,7 @@ class ToolDispatcher:
             AskUserInput.TOOL_NAME,
             AddMemoryInput.TOOL_NAME,
             InvalidateMemoryInput.TOOL_NAME,
+            UseSkillInput.TOOL_NAME,
         }:
             # Run-mode tools (LOOP_EXTRA_TOOLS only); backstop them so a future
             # tool-list regression can't pause a plan/ask/machine loop
@@ -1110,6 +1125,59 @@ class ToolDispatcher:
         except MemoryStoreError as exc:
             raise ToolError(f"invalidate_memory: {exc}") from exc
         return {"id": entry.id, "invalidated_at": entry.invalidated_at}
+
+    def resolved_skills(self) -> ResolvedSkills:
+        """Discover + state-resolve operator skills, once per dispatcher.
+
+        Same source of truth as the loop's system-prompt index:
+        ``[skills].extra_dirs`` first, then the installed dir under the user
+        data dir. An off switch resolves to nothing.
+        """
+        if self._skills_cache is None:
+            if not self._config.skills.enabled:
+                self._skills_cache = ResolvedSkills(enabled=(), always=(), warnings=())
+            else:
+                dirs = skill_search_dirs(self._config.skills.extra_dirs, data_dir() / "skills")
+                found, warns = discover_skills(dirs)
+                resolved = resolve_states(found, self._config.skills.state)
+                self._skills_cache = ResolvedSkills(
+                    enabled=resolved.enabled,
+                    always=resolved.always,
+                    warnings=(*warns, *resolved.warnings),
+                )
+        return self._skills_cache
+
+    def skills_available(self) -> bool:
+        """True when at least one enabled/always skill exists; gates whether
+        ``use_skill`` is exposed in the loop's tool list."""
+        resolved = self.resolved_skills()
+        return bool(resolved.enabled or resolved.always)
+
+    def _use_skill(self, raw: dict[str, Any]) -> dict[str, Any]:
+        args = UseSkillInput.model_validate(raw)
+        resolved = self.resolved_skills()
+        by_name = {s.name: s for s in (*resolved.enabled, *resolved.always)}
+        skill = by_name.get(args.name)
+        if skill is None:
+            raise ToolError(
+                f"use_skill: unknown or disabled skill {args.name!r};"
+                f" available: {', '.join(sorted(by_name)) or '(none)'}"
+            )
+        if args.file is None:
+            return {"skill": skill.name, "file": "SKILL.md", "content": skill.text}
+        # Supplementary files stay inside the skill's own directory: resolve()
+        # collapses ../ and symlinks BEFORE the containment check, so neither
+        # traversal nor a symlink pointing out of the directory can escape.
+        base = skill.dir.resolve()
+        target = (base / args.file).resolve()
+        if not target.is_relative_to(base):
+            raise ToolError(f"use_skill: {args.file!r} escapes the skill directory")
+        if not target.is_file():
+            raise ToolError(f"use_skill: no such file in skill {skill.name!r}: {args.file!r}")
+        if target.stat().st_size > 262_144:
+            raise ToolError(f"use_skill: {args.file!r} exceeds the 256 KiB cap")
+        content = target.read_text(encoding="utf-8", errors="replace")
+        return {"skill": skill.name, "file": args.file, "content": content}
 
     def _run_metric(self, _raw: dict[str, Any]) -> dict[str, Any]:
         """Run ``cfg.workflow.metric.command`` in the jail.

@@ -166,3 +166,81 @@ def test_pause_menu_status_shows_ctx_and_profile(
     assert "ctx 90,000 tok" in printed
     assert "(45%)" in printed  # 90k of the 200k sonnet window
     assert "profile paranoid" in printed
+
+
+# --- skill slash commands ----------------------------------------------------
+
+
+def _skill_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *names: str) -> None:
+    """Install fake skills into an isolated data dir and chdir to tmp."""
+    monkeypatch.setenv("AGENT6_DATA_HOME", str(tmp_path / "data"))
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.chdir(tmp_path)
+    for name in names:
+        d = tmp_path / "data" / "skills" / name
+        d.mkdir(parents=True)
+        (d / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: Use when testing {name}.\n---\n\nGRUNT {name}\n",
+            encoding="utf-8",
+        )
+
+
+def test_skill_command_whole_line(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from agent6.ui.cli._steer_menu import pause_menu
+
+    _skill_env(tmp_path, monkeypatch, "caveman")
+    out = pause_menu(tmp_path, input_fn=_feed(["/caveman"]))
+    assert out is not None
+    assert "GRUNT caveman" in out
+    assert '<skill name="caveman">' in out
+
+
+def test_skill_command_with_args(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from agent6.ui.cli._steer_menu import pause_menu
+
+    _skill_env(tmp_path, monkeypatch, "caveman")
+    out = pause_menu(tmp_path, input_fn=_feed(["/caveman lite"]))
+    assert out is not None
+    assert "Skill arguments: lite" in out
+    assert "GRUNT caveman" in out
+
+
+def test_non_skill_line_with_spaces_stays_verbatim(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from agent6.ui.cli._steer_menu import pause_menu
+
+    _skill_env(tmp_path, monkeypatch, "caveman")
+    assert pause_menu(tmp_path, input_fn=_feed(["/focus on tests"])) == "/focus on tests"
+    assert pause_menu(tmp_path, input_fn=_feed(["fix the parser"])) == "fix the parser"
+
+
+def test_builtin_wins_name_collision(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from agent6.ui.cli._steer_menu import pause_menu
+
+    _skill_env(tmp_path, monkeypatch, "status")
+    # /status must still be the built-in info command (prints, re-prompts, EOF)
+    assert pause_menu(tmp_path, input_fn=_feed(["/status"])) is None
+
+
+def test_disabled_skill_absent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from agent6.ui.cli._steer_menu import pause_menu
+
+    _skill_env(tmp_path, monkeypatch, "caveman")
+    (tmp_path / "config").mkdir(exist_ok=True)
+    (tmp_path / "config" / "config.toml").write_text(
+        '[skills.state]\ncaveman = "disabled"\n', encoding="utf-8"
+    )
+    out = pause_menu(tmp_path, input_fn=_feed(["/caveman", "steer text"]))
+    # unknown command message printed, then the steer line is returned
+    assert out == "steer text"
+
+
+def test_skill_menu_table_lists_enabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from agent6.ui.cli._steer_menu import skill_menu_table
+
+    _skill_env(tmp_path, monkeypatch, "caveman", "tidy")
+    table = skill_menu_table()
+    assert set(table) == {"/caveman", "/tidy"}
+    assert table["/caveman"][0] == "Use when testing caveman."

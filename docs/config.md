@@ -286,6 +286,32 @@ Tiered context-compaction thresholds (approximate chars; tokens ≈ chars/4).
 | `revise_prompt` | `"off"` | One-shot task-prompt revision before the loop: `off` / `auto` / `interactive`. |
 | `decompose` | `"auto"` | Front-load task decomposition (run mode): `"auto"` \| `"on"` \| `"off"`. When on, swaps the "DAG is optional" guidance for a "decompose first" directive: the worker lays the task out as ordered subtasks before editing, then the surface-current-task + finish-gate machinery walks it one focused subtask at a time. Helps a small model that under-finishes multi-component implementation tasks (measured: mistral-small-3.2-24b textkit +0.53, rpn +0.13 score; flat on a debug task, where dropping-components isn't the failure mode); a capable model decomposes implicitly and only pays the overhead (~2-4x turns/cost). `"auto"` (default) resolves per worker model from the capability registry (`models/registry.py`): on only for model families with a measured win, off for everything else; `agent6 config show` displays the resolved value. `--decompose` on `agent6 run` forces it on for one run. No effect on plan/ask/machine/agent modes. |
 
+## `[skills]`
+
+Operator-installed SKILL.md packs (the agentskills.io format superpowers,
+caveman, and most skill repos ship). Installed skills live under
+`$XDG_DATA_HOME/agent6/skills/<name>/`; `agent6 skills install <url>` accepts a
+direct SKILL.md URL, a git repository URL (installs every `skills/*/SKILL.md`),
+or a local path. Installed means enabled: run mode lists each enabled skill's
+name + description in a `<skills>` system-prompt index and the worker loads
+full content on demand with the read-only `use_skill` tool. Enabled skills also
+register as `/<name>` pause-menu commands (built-ins always win collisions) and
+work with `agent6 run --skill <name>`. See [security.md](security.md) for the
+trust model.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `enabled` | `true` | Master switch: off = no index block, no `use_skill` tool, no slash commands. |
+| `extra_dirs` | `[]` | Additional skill directories scanned BEFORE the installed dir (a local checkout under development wins over an installed copy). |
+| `state` | `{}` | Per-skill exceptions, one value per skill: `"disabled"` drops it everywhere; `"always"` injects the full SKILL.md text into the system prompt instead of indexing it. Absent = enabled. Layers merge the map key-wise, so a repo config can flip one skill. `agent6 skills enable/disable [--repo]` write it. |
+
+Measured while building (2026-07-10, n=3 + controls): on small open models
+(qwen3-coder-30b, mistral-small-3.2) the passive index alone never triggered an
+organic `use_skill` call, and system-prompt style instructions produced zero
+compliance (byte-verified delivery, MOOSE positive control). `always`, `/name`,
+and `--skill` are the reliable delivery paths for such models; an irrelevant
+index measurably distracted mistral-small. Prefer a small index on weak models.
+
 ### Config profiles
 
 A profile presets many settings at once so a task picks a strategy with one knob.

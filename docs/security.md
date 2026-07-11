@@ -569,6 +569,32 @@ Every surface fails closed:
   a shared or LLM-drafted machine cannot inject a host command. There is no Web
   Push / VAPID; the web notification is the foreground Notification API only.
 
+## Skills trust model
+
+Skills are operator-installed prompt text: `agent6 skills install <url>` is an
+operator-initiated fetch from the CLI (the same trust class as `agent6
+connect`), and what it installs enters the worker's system prompt or tool
+results verbatim. That makes a skill equivalent to config, not to repository
+content: install one only from a source you trust, exactly like adding a
+provider or widening the sandbox.
+
+The mechanics keep the surface narrow:
+
+- Nothing in a skill is ever executed at install or load time. A skill's
+  helper scripts only run if the model chooses to run them through the normal
+  jailed command path, subject to `sandbox.run_commands` like any command.
+- The `use_skill` tool is read-only and path-contained: it serves files from
+  the skill's own directory only (symlinks and `../` resolve before the
+  containment check), never the repository, never the network.
+- Skill directories are not mounted into the jail; content reaches the model
+  engine-side.
+- Repo-local skills (a `.claude/skills/` inside a checkout you work on) are
+  deliberately NOT discovered: third-party repo content must not silently
+  enter the system prompt. Only the installed dir and the operator's
+  `[skills].extra_dirs` are scanned.
+- The agent-loop egress allow-list is unchanged: the install fetch happens in
+  the operator's CLI process before any agent runs, never from the loop.
+
 ## Prompt-injection resilience
 
 The test suite under [`tests/security/test_prompt_injection.py`](https://github.com/agent6-dev/agent6/blob/master/tests/security/test_prompt_injection.py)

@@ -87,6 +87,14 @@ from agent6.ui.cli.runs_cmds import (
     _cmd_merge,
     _cmd_prune,
 )
+from agent6.ui.cli.skills_cmds import (
+    _cmd_skills_disable,
+    _cmd_skills_enable,
+    _cmd_skills_install,
+    _cmd_skills_list,
+    _cmd_skills_remove,
+    _cmd_skills_update,
+)
 from agent6.ui.cli.system_cmds import _cmd_system_apparmor
 from agent6.ui.cli.watch import _cmd_watch_target
 from agent6.ui.cli.web_cmds import _cmd_web
@@ -246,6 +254,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             interactive=args.interactive,
             tui=args.tui,
             decompose=args.decompose,
+            skills=tuple(args.skill),
             budget_overrides=_BudgetOverrides.from_args(args),
             sandbox_overrides=_SandboxOverrides.from_args(args),
             profile=getattr(args, "profile", ""),
@@ -410,6 +419,19 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             return _cmd_memory_list(args.scope or None, include_invalidated=args.all)
         if args.memory_command == "invalidate":
             return _cmd_memory_invalidate(args.memory_id, args.reason)
+    if args.command == "skills":
+        if args.skills_command == "install":
+            return _cmd_skills_install(args.url, force=args.force)
+        if args.skills_command == "update":
+            return _cmd_skills_update(args.name)
+        if args.skills_command == "list":
+            return _cmd_skills_list()
+        if args.skills_command == "enable":
+            return _cmd_skills_enable(args.name, always=args.always, repo=args.repo)
+        if args.skills_command == "disable":
+            return _cmd_skills_disable(args.name, repo=args.repo)
+        if args.skills_command == "remove":
+            return _cmd_skills_remove(args.name)
     if args.command == "history" and args.history_command == "search":
         return _cmd_history_search(args.query, fixed=not args.regex, run_id=args.run)
     if args.command == "init":

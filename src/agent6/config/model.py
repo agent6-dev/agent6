@@ -711,6 +711,34 @@ class PromptConfig(BaseModel):
         return self
 
 
+class SkillsConfig(BaseModel):
+    """``[skills]`` section: operator-installed SKILL.md packs (agentskills.io).
+
+    Skills live under ``<data-dir>/skills/<name>/`` (``agent6 skills install``)
+    plus any ``extra_dirs``. Installed means enabled: the run-mode system
+    prompt lists each enabled skill's name + description and the worker loads
+    content on demand; the ``state`` map holds only the exceptions. Skills are
+    trusted like config (operator-chosen prompt content); nothing in a skill
+    is ever executed by the loader.
+    """
+
+    model_config = _BASE_MODEL_CONFIG
+
+    # Master switch for the whole subsystem. Off = no index block, no
+    # use_skill tool, slash commands don't register.
+    enabled: bool = True
+    # Additional skill directories scanned BEFORE the installed dir (a local
+    # checkout during skill development wins over an installed copy). Each may
+    # hold skill subdirectories or be a single skill dir itself.
+    extra_dirs: tuple[str, ...] = ()
+    # Per-skill exceptions, one value per skill so contradictory states are
+    # unrepresentable: "disabled" drops it from the index; "always" injects
+    # the full SKILL.md text into the system prompt instead of indexing it.
+    # Absent = "enabled". Layered configs merge this map key-wise, so a repo
+    # config can flip one skill without restating the rest.
+    state: dict[str, Literal["enabled", "disabled", "always"]] = Field(default_factory=dict)
+
+
 class ReviewConfig(BaseModel):
     """``[review]`` section: critic-in-loop trigger + the adversarial review panel."""
 
@@ -1012,6 +1040,7 @@ class Config(BaseModel):
     review: ReviewConfig = Field(default_factory=ReviewConfig)
     context: ContextConfig = Field(default_factory=ContextConfig)
     prompt: PromptConfig = Field(default_factory=PromptConfig)
+    skills: SkillsConfig = Field(default_factory=SkillsConfig)
     budget: BudgetConfig = Field(default_factory=BudgetConfig)
     machine: MachineConfig = Field(default_factory=MachineConfig)
     notify: NotifyConfig = Field(default_factory=NotifyConfig)

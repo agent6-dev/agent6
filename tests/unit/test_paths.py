@@ -58,6 +58,26 @@ def test_state_base_uses_xdg_when_not_sudo(monkeypatch: pytest.MonkeyPatch, tmp_
     assert paths.state_base() == tmp_path / "xdg" / "agent6"
 
 
+def test_data_dir_honors_override(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("AGENT6_DATA_HOME", str(tmp_path / "d"))
+    assert paths.data_dir() == tmp_path / "d"
+
+
+def test_data_dir_uses_xdg_when_not_sudo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("AGENT6_DATA_HOME", raising=False)
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setattr(os, "geteuid", lambda: 1000)
+    assert paths.data_dir() == tmp_path / "xdg" / "agent6"
+
+
+def test_data_dir_falls_back_to_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("AGENT6_DATA_HOME", raising=False)
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    monkeypatch.setattr(os, "geteuid", lambda: 1000)
+    home = paths.effective_user().home
+    assert paths.data_dir() == home / ".local" / "share" / "agent6"
+
+
 def test_effective_user_resolves_sudo(monkeypatch: pytest.MonkeyPatch) -> None:
     real_uid = os.getuid()
     real_gid = os.getgid()

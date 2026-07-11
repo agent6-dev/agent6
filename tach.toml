@@ -20,6 +20,7 @@ depends_on = [
   "agent6.config",
   "agent6.config.io",
   "agent6.config.layer",
+  "agent6.skills",
   "agent6.models.cache",
   "agent6.models.registry",
   "agent6.paths",
@@ -66,6 +67,7 @@ depends_on = [
   "agent6.graph.client",
   "agent6.graph.models",
   "agent6.memory",  # cross-run memories injected into the system prompt
+  "agent6.skills",  # operator-installed skills indexed in the system prompt
 ]
 
 [[modules]]
@@ -144,7 +146,7 @@ path = "agent6.tools"
 # graph.models intent types, for the DAG-as-tool handlers (add_task /
 # update_task / set_cursor / list_tasks), and the memory store for the
 # cross-run memory handlers (add_memory / invalidate_memory).
-depends_on = ["agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.config", "agent6.events", "agent6.graph.client", "agent6.graph.models", "agent6.memory"]
+depends_on = ["agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.config", "agent6.events", "agent6.graph.client", "agent6.graph.models", "agent6.memory", "agent6.skills", "agent6.paths"]
 
 [[modules]]
 path = "agent6.tools.schema"
@@ -205,6 +207,10 @@ depends_on = []
 [[modules]]
 path = "agent6.memory"
 depends_on = ["agent6.graph.ulid", "agent6.portable"]
+
+[[modules]]
+path = "agent6.skills"
+depends_on = []
 
 [[modules]]
 path = "agent6.graph"

@@ -29,7 +29,10 @@ import json
 from collections.abc import Callable
 from pathlib import Path
 
+from agent6.config.layer import load_effective
 from agent6.models.registry import context_window
+from agent6.paths import data_dir
+from agent6.skills import discover_skills, resolve_states, skill_search_dirs
 from agent6.ui.bridge.approval import request_compact
 from agent6.ui.cli._menu_input import menu_capable, menu_input
 from agent6.ui.viewmodel import fold_run, tail_events
@@ -48,6 +51,41 @@ COMMANDS: dict[str, str] = {
     "/detach": "keep the run going in the background",
     "/help": "this list",
 }
+
+
+def skill_menu_table() -> dict[str, tuple[str, str]]:
+    """``/name`` -> (description, full SKILL.md text) for enabled skills.
+
+    Built-in commands always win a name collision, so ``/status`` can never
+    be shadowed by a skill. A broken config or store degrades to no skill
+    commands, loudly, without breaking the pause prompt.
+    """
+    try:
+        cfg = load_effective(Path.cwd()).config
+        if not cfg.skills.enabled:
+            return {}
+        found, _warns = discover_skills(
+            skill_search_dirs(cfg.skills.extra_dirs, data_dir() / "skills")
+        )
+        resolved = resolve_states(found, cfg.skills.state)
+    except Exception as exc:  # the pause prompt must survive any config error
+        print(f"[agent6] skill commands unavailable: {exc}")
+        return {}
+    return {
+        f"/{s.name}": (s.description, s.text)
+        for s in (*resolved.enabled, *resolved.always)
+        if f"/{s.name}" not in COMMANDS
+    }
+
+
+def skill_steer_payload(name: str, text: str, args: str) -> str:
+    """The steer message a ``/skill-name [args]`` menu line injects."""
+    args_line = f"\nSkill arguments: {args}" if args else ""
+    return (
+        f"Apply the operator-installed skill {name!r} for the rest of this run."
+        f"{args_line}\n\n"
+        f'<skill name="{name}">\n{text.rstrip()}\n</skill>'
+    )
 
 
 def normalize_steer_choice(line: str | None) -> str | None:
@@ -140,13 +178,20 @@ def _run_info_command(cmd: str, run_dir: Path) -> None:
         print("[agent6] compaction requested — applies before the next model call")
 
 
-def pause_menu(run_dir: Path, *, input_fn: Callable[[str], str] | None = None) -> str | None:
+def pause_menu(  # noqa: PLR0911, PLR0912
+    run_dir: Path, *, input_fn: Callable[[str], str] | None = None
+) -> str | None:
     """The interactive pause menu. Returns the canonical steer action: None/''
     continue, 'abort' stop now, 'detach' background, else the instruction sent
     verbatim. A command must be the whole line (unique prefixes fire, ambiguous
     ones re-ask); info commands print and re-prompt. EOF (Ctrl-D) continues."""
+    skills = skill_menu_table()
     if input_fn is None:
-        input_fn = _menu_read if menu_capable() else input
+        if menu_capable():
+            display = {**COMMANDS, **{c: d[:70] for c, (d, _t) in skills.items()}}
+            input_fn = lambda p: menu_input(p, display, _HISTORY)  # noqa: E731
+        else:
+            input_fn = input
     while True:
         try:
             line = input_fn(PROMPT)
@@ -155,12 +200,25 @@ def pause_menu(run_dir: Path, *, input_fn: Callable[[str], str] | None = None) -
         stripped = line.strip()
         if not stripped:
             return ""  # Enter: continue the run unchanged
-        if not stripped.startswith("/") or " " in stripped:
+        if not stripped.startswith("/"):
             return stripped  # a steering instruction, sent verbatim
-        word = stripped.lower()
+        first, _, args = stripped.partition(" ")
+        word = first.lower()
         if word in ("/h", "/?"):
             word = "/help"
-        matches = [word] if word in COMMANDS else [c for c in COMMANDS if c.startswith(word)]
+        if args:
+            # Only a skill command takes arguments; any other line with spaces
+            # stays a verbatim steer (the pre-skills contract).
+            smatches = [word] if word in skills else [c for c in skills if c.startswith(word)]
+            if len(smatches) == 1:
+                return skill_steer_payload(smatches[0][1:], skills[smatches[0]][1], args.strip())
+            return stripped
+        if word in COMMANDS or word in skills:  # exact match (never both: the
+            # table builder drops skills that collide with a built-in)
+            matches = [word]
+        else:
+            builtin = [c for c in COMMANDS if c.startswith(word)]
+            matches = builtin + [c for c in skills if c.startswith(word) and c not in builtin]
         if len(matches) > 1:
             print(f"[agent6] ambiguous: {'  '.join(matches)} — type a bit more")
         elif not matches:
@@ -170,5 +228,7 @@ def pause_menu(run_dir: Path, *, input_fn: Callable[[str], str] | None = None) -
             )
         elif matches[0] in _ACTIONS:
             return _ACTIONS[matches[0]]
+        elif matches[0] in skills:
+            return skill_steer_payload(matches[0][1:], skills[matches[0]][1], "")
         else:
             _run_info_command(matches[0], run_dir)

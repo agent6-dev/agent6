@@ -27,6 +27,10 @@ open-ended agent loop.
   operator-reviewed, journaled, and replayable; a machine can wait indefinitely
   for a human, be poked with a payload, steer/answer its agent states from any
   front-end, and notify you when it needs attention
+- Skills: install standard SKILL.md packs (superpowers, caveman, any
+  agentskills.io repo) with `agent6 skills install <url>`; they index into the
+  system prompt, load on demand via a read-only tool, and fire as `/name`
+  pause-menu commands or `run --skill`; nothing in a skill is ever executed
 - Small, fixed LLM tool surface; the only extension point is operator-configured MCP
   servers, off by default
 - Eight runtime dependencies, no telemetry, no auto-update

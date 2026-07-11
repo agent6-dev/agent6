@@ -726,3 +726,30 @@ def test_explicit_auth_style_preserved(tmp_path: Path) -> None:
     body = _with_openai_provider('[providers.x]\napi_format = "openai"\nauth_style = "none"')
     cfg = load_config(_write(tmp_path, body))
     assert cfg.providers["x"].auth_style == "none"  # type: ignore[union-attr]
+
+
+def test_skills_defaults() -> None:
+    cfg = Config()
+    assert cfg.skills.enabled is True
+    assert cfg.skills.extra_dirs == ()
+    assert cfg.skills.state == {}
+
+
+def test_skills_state_map_loads(tmp_path: Path) -> None:
+    body = _VALID_TOML + '\n[skills.state]\ncaveman = "always"\ntidy = "disabled"\n'
+    cfg = load_config(_write(tmp_path, body))
+    assert cfg.skills.state == {"caveman": "always", "tidy": "disabled"}
+
+
+def test_skills_state_rejects_unknown_value(tmp_path: Path) -> None:
+    # one value per skill; only the three states exist (a skill can never be
+    # both disabled and always by construction)
+    body = _VALID_TOML + '\n[skills.state]\ncaveman = "sometimes"\n'
+    with pytest.raises(ConfigError, match="skills"):
+        load_config(_write(tmp_path, body))
+
+
+def test_skills_rejects_unknown_key(tmp_path: Path) -> None:
+    body = _VALID_TOML + "\n[skills]\nallow_repo_skills = true\n"
+    with pytest.raises(ConfigError, match="skills"):
+        load_config(_write(tmp_path, body))

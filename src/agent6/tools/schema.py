@@ -376,6 +376,21 @@ class InvalidateMemoryInput(_ToolInput):
     reason: str = Field(min_length=1, max_length=500)
 
 
+class UseSkillInput(_ToolInput):
+    TOOL_NAME: ClassVar[str] = "use_skill"
+    TOOL_DESCRIPTION: ClassVar[str] = (
+        "Load an operator-installed skill from the <skills> index in the"
+        " system prompt. Returns the skill's full SKILL.md instructions;"
+        " follow them for the current task. Optional `file` fetches a"
+        " supplementary file the skill references (e.g."
+        " 'references/patterns.md'), path relative to the skill's own"
+        " directory. Read-only; never reads the repository."
+    )
+
+    name: str = Field(min_length=1, max_length=100)
+    file: str | None = Field(default=None, min_length=1, max_length=300)
+
+
 class OutlineInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "outline"
     TOOL_DESCRIPTION: ClassVar[str] = (
@@ -536,6 +551,9 @@ LOOP_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     DagAddDependencyInput,
     AddMemoryInput,
     InvalidateMemoryInput,
+    # Operator-installed skills (hidden by the dispatcher when none are
+    # installed or [skills].enabled is off).
+    UseSkillInput,
 )
 
 # Tool list for plan mode (`agent6 plan`). Excludes the

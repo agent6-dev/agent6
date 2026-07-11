@@ -15,6 +15,7 @@ from typing import Literal
 
 from agent6.budget import BudgetTracker
 from agent6.config import (
+    Config,
     ConfigError,
     RoleName,
 )
@@ -36,6 +37,7 @@ from agent6.git_ops import (
 from agent6.graph.client import CuratorClientError, GraphClient, spawn_curator
 from agent6.paths import (
     chown_to_real_user,
+    data_dir,
 )
 from agent6.providers import (
     Provider,
@@ -44,6 +46,7 @@ from agent6.providers import (
 from agent6.runs.id import new_friendly_id
 from agent6.runs.layout import RunLayout
 from agent6.sandbox.detect import ProfileUnavailableError, select_profile
+from agent6.skills import discover_skills, resolve_states, skill_search_dirs
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.ui.bridge.approval import (
     clear_away_mode,
@@ -182,6 +185,25 @@ from agent6.workflows.loop import Workflow
 _ASK_DEFAULT_MAX_USD = 0.50
 
 
+def _skills_task_prefix(cfg: Config, names: tuple[str, ...]) -> tuple[str, str]:
+    """Resolve ``--skill`` names to a task-prompt prefix. Returns (prefix, error)."""
+    found, _warns = discover_skills(skill_search_dirs(cfg.skills.extra_dirs, data_dir() / "skills"))
+    resolved = resolve_states(found, cfg.skills.state)
+    by_name = {s.name: s for s in (*resolved.enabled, *resolved.always)}
+    blocks: list[str] = []
+    for n in names:
+        skill = by_name.get(n)
+        if skill is None:
+            available = ", ".join(sorted(by_name)) or "(none installed)"
+            return "", f"--skill: unknown or disabled skill {n!r}; available: {available}"
+        blocks.append(f'<skill name="{skill.name}">\n{skill.text.rstrip()}\n</skill>')
+    joined = "\n\n".join(blocks)
+    return (
+        f"Apply the operator-installed skill(s) below to this task.\n\n{joined}\n\n---\n\n",
+        "",
+    )
+
+
 def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     config_path: Path | None,
     task: str,
@@ -191,6 +213,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     tui: bool = False,
     decompose: bool = False,
     mode: Literal["run", "plan", "ask"] = "run",
+    skills: tuple[str, ...] = (),
     budget_overrides: _BudgetOverrides | None = None,
     sandbox_overrides: _SandboxOverrides | None = None,
     profile: str = "",
@@ -221,6 +244,12 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     except ConfigError as exc:
         print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
         return 2
+    if skills:
+        prefix, skills_err = _skills_task_prefix(cfg, skills)
+        if skills_err:
+            print(f"ERROR: {skills_err}", file=sys.stderr)
+            return 2
+        task = prefix + task
     # Surface the not-a-git-repo wall up front. run/plan need git; ask is
     # read-only and may run outside a repo. Without this, a user in a scratch
     # non-git dir clears the provider, model, and key walls serially only to

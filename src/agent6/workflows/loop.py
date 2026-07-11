@@ -47,6 +47,7 @@ from agent6.providers import (
     ProviderInterrupted,
     ToolDefinition,
 )
+from agent6.skills import ResolvedSkills
 from agent6.tools.dispatch import OperatorCommandUnexecutable, ToolDispatcher, ToolError
 from agent6.tools.schema import (
     FinishPlanningInput,
@@ -738,7 +739,11 @@ class Workflow:
         self._log("LOOP: LOAD_CONTEXT")
         repo = self._load_repo_summary()
         system = _build_system_prompt(
-            config=self.config, repo=repo, mode=self.mode, memories=self._load_memories()
+            config=self.config,
+            repo=repo,
+            mode=self.mode,
+            memories=self._load_memories(),
+            skills=self._load_skills(),
         )
 
         try:
@@ -2512,6 +2517,25 @@ class Workflow:
         if active:
             self._log(f"LOOP: memories: {len(active)} active")
         return active
+
+    def _load_skills(self) -> ResolvedSkills | None:
+        """Operator-installed skills for the system prompt, run mode only.
+
+        Reuses the dispatcher's one-shot resolution so the <skills> index and
+        what use_skill actually serves can never diverge. None (nothing
+        installed, subsystem off, or non-run mode) renders no block.
+        """
+        if self.mode != "run":
+            return None
+        resolved = self.dispatcher.resolved_skills()
+        for w in resolved.warnings:
+            self._log(f"LOOP: skills: WARNING: {w}")
+        if resolved.enabled or resolved.always:
+            self._log(
+                f"LOOP: skills: {len(resolved.enabled)} indexed, {len(resolved.always)} always-on"
+            )
+            return resolved
+        return None
 
     def _save_resume_snapshot(
         self,

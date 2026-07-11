@@ -18,6 +18,7 @@ from agent6.config.layer import (
 )
 from agent6.ui.cli._common import _machines_dir, _runs_dir
 from agent6.ui.cli.model import _connected_providers, _models_for
+from agent6.ui.cli.skills_cmds import resolved_skill_names_for_completion
 
 
 def _complete_providers(prefix: str, **_kw: object) -> list[str]:
@@ -29,6 +30,11 @@ def _complete_providers(prefix: str, **_kw: object) -> list[str]:
 def _complete_profiles(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: built-in profile presets + configured [profiles.*] names."""
     return [n for n in available_profile_names(Path.cwd()) if n.startswith(prefix)]
+
+
+def _complete_skills(prefix: str, **_kw: object) -> list[str]:
+    """argcomplete: installed + extra_dirs skill names."""
+    return [n for n in resolved_skill_names_for_completion(Path.cwd()) if n.startswith(prefix)]
 
 
 def _complete_models(

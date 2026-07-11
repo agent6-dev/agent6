@@ -23,6 +23,7 @@ from agent6.tools.schema import (
     ApplyPatchInput,
     RunCommandInput,
     RunVerifyInput,
+    UseSkillInput,
 )
 from agent6.workflows._review import ReviewDispatch
 
@@ -91,6 +92,11 @@ def tool_definitions(
         if cls.TOOL_NAME not in available and cls not in extras:
             # Extras (finish_run / finish_planning / run_metric / dag_*) are
             # always exposed even though they're not in ALL_TOOLS.
+            continue
+        if cls.TOOL_NAME == UseSkillInput.TOOL_NAME and not dispatcher.skills_available():
+            # No installed/enabled skills (or [skills].enabled off): hide the
+            # tool rather than offer one that can only error, matching the
+            # LSP-gating pattern.
             continue
         schema = cls.model_json_schema()
         schema.setdefault("type", "object")

@@ -54,8 +54,10 @@ def truncate_args(raw: dict[str, Any], *, max_value_chars: int = 200) -> dict[st
     return out
 
 
-def summarize_result(name: str, result: dict[str, Any]) -> str:  # noqa: PLR0911
+def summarize_result(name: str, result: dict[str, Any]) -> str:  # noqa: PLR0911, PLR0912
     """One-line human-readable summary for the TUI / log tail."""
+    if "skill" in result and "content" in result:
+        return f"skill {result['skill']}/{result.get('file')} ({len(str(result['content']))} chars)"
     if "size" in result:
         return f"{result['size']} bytes"
     if "entries" in result and isinstance(result["entries"], list):

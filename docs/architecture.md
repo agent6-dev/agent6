@@ -144,6 +144,14 @@ Notes:
   once-deferred `finish_run` after such a recovery if nothing was
   recorded. Each fires at most once per run and never on a run whose
   verify never failed.
+- **Skills.** At run start the loop resolves operator-installed SKILL.md
+  packs (`<data-dir>/skills/`, plus `[skills].extra_dirs`) through the
+  dispatcher's single resolution, so the `<skills>` system-prompt index and
+  what `use_skill` serves can never diverge. `always`-state skills inject
+  their full text; the rest get one index line each and load on demand.
+  Run mode only. Delivery is measured, not assumed: small models never call
+  `use_skill` from the index alone, so the reliable paths are `always`,
+  `/name` in the pause menu, and `run --skill` (see docs/config.md).
 - **`finish_run(summary)`** is the only terminal tool. Calling it
   emits a `run.end` event and returns control to the CLI.
 

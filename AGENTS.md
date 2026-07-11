@@ -223,7 +223,10 @@ All five must pass; keep the suite green.
   state as a fixed-argv `python -m agent6.ui.cli.machine_agent` subprocess
   whose request travels in a temp file, never on argv, and its operator
   `[machine.notify].on_event` hook, argv from config, never LLM output, run on
-  the host with `AGENT6_MACHINE_*` env, mirroring `[notify].on_complete`). Audit
+  the host with `AGENT6_MACHINE_*` env, mirroring `[notify].on_complete`, and
+  `ui/cli/skills_cmds.py` running `git clone --depth 1 -- <url>` with fixed
+  argv for `agent6 skills install`, the URL operator-supplied on the CLI and
+  nothing fetched ever executed). Audit
   with `rg 'subprocess\.(run|Popen)' src/agent6/`.
 - Config is secure by default: every field has a default, and
   security-sensitive fields default to the safe value
@@ -252,7 +255,10 @@ All five must pass; keep the suite green.
   deployment profile only appends path/model), unioned with `allow_urls`
   (see `cli/egress.py`). Both are operator-controlled config, so the
   operator chooses the destinations and the credential sent there; do
-  not add a code path that dials a host not derived from them.
+  not add a code path that dials a host not derived from them. This bounds the
+  AGENT's egress; operator-initiated CLI fetches before any agent runs
+  (`agent6 connect` OAuth, `agent6 skills install <url>`) are the operator
+  dialling a host they typed, outside that boundary.
 - The `agent6-jail` Rust binary is part of the security boundary. Changes
   to `src/agent6/jail/src/main.rs` need at minimum a review note covering:
   what mount points changed, what Landlock rules changed, what seccomp

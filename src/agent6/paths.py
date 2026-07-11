@@ -156,6 +156,29 @@ def cache_dir(user: RealUser | None = None) -> Path:
     return user.home / ".cache" / "agent6"
 
 
+_DATA_DIR_ENV = "AGENT6_DATA_HOME"  # points at the agent6 data dir itself
+
+
+def data_dir(user: RealUser | None = None) -> Path:
+    """The agent6 user data directory (operator-installed durable content).
+
+    Precedence mirrors :func:`cache_dir`: ``AGENT6_DATA_HOME`` >
+    ``$XDG_DATA_HOME/agent6`` (only when not running through sudo) >
+    ``<real-user-home>/.local/share/agent6``. Holds installed skills
+    (``<data>/skills/<name>/``); unlike the cache it is authoritative and
+    not regenerable.
+    """
+    override = os.environ.get(_DATA_DIR_ENV)
+    if override:
+        return Path(override).expanduser()
+    user = user or effective_user()
+    if not user.via_sudo:
+        xdg = os.environ.get("XDG_DATA_HOME")
+        if xdg:
+            return Path(xdg) / "agent6"
+    return user.home / ".local" / "share" / "agent6"
+
+
 # Per-repo agent6 state lives OUT of the workspace, under an XDG state base,
 # namespaced by a per-repo id. Nothing the agent runs (a jailed command on its
 # own cwd) can reach it, and a checkout never carries an `.agent6/` dir.

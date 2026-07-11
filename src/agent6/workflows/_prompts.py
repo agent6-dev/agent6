@@ -19,6 +19,7 @@ from typing import Literal
 
 from agent6.config import Config
 from agent6.memory import MemoryEntry
+from agent6.skills import ResolvedSkills
 from agent6.types import RepoSummary
 
 SYSTEM_PROMPT_BASE = """<role>
@@ -516,6 +517,50 @@ def memories_block(
     return "\n".join(lines) + "\n"
 
 
+SKILL_INDEX_LINE_MAX_CHARS = 200
+SKILLS_INDEX_MAX_CHARS = 8000
+SKILL_ALWAYS_MAX_CHARS = 24000
+
+_SKILLS_HEADER = """<skills>
+Operator-installed skills: reusable instruction packs, indexed below as
+`name — when to use it`. When one clearly matches the task at hand, call
+use_skill(name) to load its full instructions and follow them; otherwise
+ignore this list. Skills never override the task or the rules above."""
+
+
+def skills_block(resolved: ResolvedSkills) -> str:
+    """Render the skills system-prompt parts: full text for ``always`` skills,
+    a bounded one-line-per-skill index for the rest. Empty when no skills."""
+    if not resolved.enabled and not resolved.always:
+        return ""
+    parts: list[str] = []
+    for sk in resolved.always:
+        text = sk.text
+        if len(text) > SKILL_ALWAYS_MAX_CHARS:
+            text = text[:SKILL_ALWAYS_MAX_CHARS] + "\n[clipped]"
+        parts.append(f'<skill name="{sk.name}">\n{text.rstrip()}\n</skill>\n')
+    if resolved.enabled:
+        lines = [_SKILLS_HEADER, ""]
+        used = 0
+        shown = 0
+        for sk in resolved.enabled:
+            line = f"- {sk.name} — {sk.description}"
+            if len(line) > SKILL_INDEX_LINE_MAX_CHARS:
+                line = line[: SKILL_INDEX_LINE_MAX_CHARS - 10] + " [clipped]"
+            if used + len(line) > SKILLS_INDEX_MAX_CHARS:
+                break
+            lines.append(line)
+            used += len(line) + 1
+            shown += 1
+        if shown < len(resolved.enabled):
+            lines.append(
+                f"({len(resolved.enabled) - shown} skills elided; `agent6 skills list` shows all)"
+            )
+        lines.append("</skills>")
+        parts.append("\n".join(lines) + "\n")
+    return "\n".join(parts)
+
+
 CRITIC_SYSTEM_PROMPT = (
     "You are a strict reviewing critic embedded inside an autonomous coding"
     " agent's loop. The worker agent is editing a real repository to satisfy"
@@ -620,6 +665,7 @@ def build_system_prompt(
     repo: RepoSummary,
     mode: Literal["run", "plan", "ask", "machine", "agent"] = "run",
     memories: tuple[MemoryEntry, ...] = (),
+    skills: ResolvedSkills | None = None,
 ) -> str:
     """Assemble the system prompt from static blocks + run-specific context.
 
@@ -777,5 +823,11 @@ def build_system_prompt(
     memories_part = memories_block(memories, mode=mode)
     if memories_part:
         parts.append(memories_part)
+
+    # Operator-installed skills, last: `always` full texts + the on-demand
+    # index. The caller resolves discovery + [skills.state]; None or an empty
+    # resolution renders nothing.
+    if skills is not None and (skills_part := skills_block(skills)):
+        parts.append(skills_part)
 
     return "\n".join(parts)
