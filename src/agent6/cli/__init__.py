@@ -239,6 +239,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             run_id=args.run_id,
             interactive=args.interactive,
             tui=args.tui,
+            decompose=args.decompose,
             budget_overrides=_BudgetOverrides.from_args(args),
             sandbox_overrides=_SandboxOverrides.from_args(args),
             profile=getattr(args, "profile", ""),

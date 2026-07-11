@@ -42,3 +42,10 @@ def test_config_flag_parses_in_both_positions(argv: list[str]) -> None:
 def test_config_defaults_to_none_when_absent() -> None:
     args = build_parser().parse_args(["run", "task"])
     assert args.config is None
+
+
+def test_run_decompose_flag_defaults_off_and_parses() -> None:
+    # --decompose is plan-first (overrides [prompt].decompose for the run); off by default.
+    p = build_parser()
+    assert p.parse_args(["run", "fix it"]).decompose is False
+    assert p.parse_args(["run", "--decompose", "fix it"]).decompose is True

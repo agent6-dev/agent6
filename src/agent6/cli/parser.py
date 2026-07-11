@@ -190,6 +190,18 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
     run_from_plan.completer = _complete_plan_run_ids  # type: ignore[attr-defined]
+    run_p.add_argument(
+        "--decompose",
+        action="store_true",
+        help=(
+            "Plan-first: the agent lays the task out as ordered DAG subtasks"
+            " (add_task) before editing, then works them one at a time -- a plan it"
+            " builds and follows on its own, no approval step, populating the task"
+            " graph. Same as setting [prompt].decompose for this run. Helps on"
+            " multi-part tasks and smaller models; a capable model decomposes"
+            " implicitly, so measure before leaving it on."
+        ),
+    )
     _add_budget_flags(run_p)
     _add_sandbox_flags(run_p)
 

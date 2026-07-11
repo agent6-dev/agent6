@@ -777,6 +777,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     run_id: str = "",
     interactive: bool = False,
     tui: bool = False,
+    decompose: bool = False,
     mode: Literal["run", "plan", "ask"] = "run",
     budget_overrides: _BudgetOverrides | None = None,
     sandbox_overrides: _SandboxOverrides | None = None,
@@ -801,6 +802,10 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
             cfg = budget_overrides.apply(cfg)
         if sandbox_overrides is not None:
             cfg = sandbox_overrides.apply(cfg)
+        if decompose:  # --decompose: plan-first for this run (overrides config)
+            cfg = cfg.model_copy(
+                update={"prompt": cfg.prompt.model_copy(update={"decompose": True})}
+            )
     except ConfigError as exc:
         print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
         return 2
