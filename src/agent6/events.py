@@ -9,9 +9,9 @@ a stable, tail-able view of an agent run without parsing the freeform `print` lo
 Design notes:
 - Write-only and append-only. No reads, no rotation, no schema validation,
   consumers should be defensive.
-- Each call opens, writes one line, fsyncs, closes. Cheap enough at our event
-  rate (a handful per step) and removes any "did the buffer flush" worry for
-  external tailers.
+- Each call opens, writes one line, flushes, closes. Durable events fsync too;
+  the high-frequency streaming deltas (see ``_EPHEMERAL_EVENTS``) only flush, so
+  a reasoning model's tens of thousands of deltas don't fsync-throttle the run.
 - Best-effort: if the directory has been deleted or the FS errors, we swallow
   it. Losing telemetry should never crash the agent.
 """
@@ -27,6 +27,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from threading import RLock
 from typing import Any
+
+# High-frequency streaming deltas: written + flushed (so tailers see them live)
+# but NOT fsynced. They are ephemeral UI, reconstructable from the lossless
+# transcripts, and a reasoning model can emit tens of thousands per run -- an
+# fsync each throttles the SSE reader on a slow disk and stalls the stream.
+_EPHEMERAL_EVENTS = frozenset({"role.text_delta", "role.thinking_delta"})
 
 
 @dataclass(slots=True)
@@ -69,7 +75,8 @@ class EventSink:
             with self.path.open("a", encoding="utf-8") as fh:
                 fh.write(line + "\n")
                 fh.flush()
-                os.fsync(fh.fileno())
+                if event_type not in _EPHEMERAL_EVENTS:
+                    os.fsync(fh.fileno())
         for listener in self._listeners:
             with contextlib.suppress(Exception):  # a UI consumer must never break the run
                 listener(payload)

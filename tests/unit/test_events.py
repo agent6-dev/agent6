@@ -5,7 +5,10 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+
+import pytest
 
 from agent6.events import EventSink
 
@@ -60,3 +63,31 @@ def test_emit_swallows_oserror(tmp_path: Path) -> None:
     sink = EventSink(blocker / "subdir" / "logs.jsonl")
     # Must not raise.
     sink.emit("anything")
+
+
+def test_delta_events_flush_but_do_not_fsync(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ephemeral streaming deltas skip fsync (a reasoning model emits tens of
+    thousands; an fsync each throttles the SSE read). Durable events still fsync.
+    They are still written + flushed so tailers see them live."""
+    synced: list[int] = []
+
+    def _fake_fsync(fd: int) -> None:
+        synced.append(fd)
+
+    monkeypatch.setattr(os, "fsync", _fake_fsync)
+    sink = EventSink(tmp_path / "logs.jsonl")
+
+    sink.emit("role.thinking_delta", text="reasoning")
+    sink.emit("role.text_delta", text="answer")
+    assert synced == []  # no fsync for the deltas
+
+    sink.emit("tool.call", name="read_file")
+    assert len(synced) == 1  # a durable event fsyncs
+
+    # all three are on disk regardless (flush, not fsync, makes them readable)
+    types = [
+        json.loads(line)["type"] for line in (tmp_path / "logs.jsonl").read_text().splitlines()
+    ]
+    assert types == ["role.thinking_delta", "role.text_delta", "tool.call"]
