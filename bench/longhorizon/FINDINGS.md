@@ -5,7 +5,7 @@ runs: real OpenRouter models, hidden-grader partial credit, records in
 `results/`. Adoption rule unchanged from bench/coreagent: strictly better →
 default; helps-some → knob; helps-nowhere → scrap.
 
-## 1. Tier-1 compaction losses are real, and they are regime-gated
+## 1. Tier-1 compaction losses are real, regime-gated, and gist elision recovers most of them
 
 qwen3-coder-30b, stylebook (10-rule retention probe) and relay (6-stage
 pipeline), n=3 per cell:
@@ -33,37 +33,93 @@ pipeline), n=3 per cell:
   one rep paid +58% with a tier-2 restart and still landed 1.0): code on
   disk is cheaply re-readable, spec nuance is not. Compaction taxes
   retention tasks in CORRECTNESS and implementation tasks in EFFICIENCY.
-- **Facts-ledger gate: OPEN, scoped.** A tier-1 mitigation (facts ledger or
-  salience-keep) is worth building FOR SMALL-WINDOW DEPLOYMENTS and should
-  be A/B'd here under window16k on stylebook (score) + relay (iterations).
-  Nothing so far justifies changing behavior for 128k+ windows.
+- **Facts-ledger gate (day 1): OPEN, scoped.** A tier-1 mitigation (facts
+  ledger or salience-keep) is worth building FOR SMALL-WINDOW DEPLOYMENTS
+  and should be A/B'd here under window16k on stylebook (score) + relay
+  (iterations). Nothing so far justifies changing behavior for 128k+
+  windows. Day 2 built and measured that mitigation; see the gist block
+  below.
 - Task fairness check: kimi-k2.6 produced a PERFECT 1.0 stylebook (all 12
   components) under window32k with a drop — the ceiling is reachable under
   compaction pressure; it just timed out at 2400s before finish_run
   (103k output tokens of reasoning; see methodology).
 
-## 2. Nobody writes memories unprompted
+**Day 2 (gist elision shipped, gist1-qwen, n=3 per cell):** tier-1 elision
+now decays a large read result content → distilled gist placeholder → bare
+marker (one batched summariser call per drop event; `context.elision_gists`,
+default on). A/B under the same window16k thresholds:
 
-Across all 46 legs / 2 models (qwen3-coder-30b, kimi-k2.6) spanning
+| stylebook (every leg drop-engaged) | gists on | gists off |
+|------------------------------------|----------|-----------|
+| score | **0.825 ± 0.040** | 0.533 ± 0.264 |
+| iterations / usd / wall | 53.7 / $0.069 / 418s | 106.0 / $0.128 / 589s |
+| drops / tier-2 restarts | 19.3 / 2.7 | 36.7 / 5.0 |
+
+- Gists recover most of the day-1 damage: window16k stylebook went 0.425
+  (day 1, bare markers) → 0.825, against the 0.921 uncompacted baseline.
+  The whole retention curve lifts: with gists 6 of 12 components ≥ 0.90;
+  without, all 12 ≤ 0.67.
+- The failure mode gists remove is the re-read spiral: without them a leg
+  re-reads what it lost, regrows context, and drops again (36.7 drops, 5.0
+  tier-2 restarts, 106 iterations mean; one rep collapsed to 0.025 via
+  silent_finish). With gists all three reps finished in 52–55 iterations
+  and the spread collapsed (se 0.264 → 0.040).
+- Cost halves ($0.128 → $0.069 per leg) even with the added summariser
+  calls: 58 gists written across the wave, 10 demoted to bare markers under
+  continued pressure, 0 distiller failures.
+- Relay never engages the gist path on this rung (0 gists across all 6
+  legs; 5 of 6 had zero drops) and stays flat: 0.987 ± 0.006 vs 0.981
+  (excluding one loop_guard kill at iteration 12 with zero drops, which
+  carries no A/B information). No-harm check passed.
+- **Verdict: `elision_gists` stays default-on.** Strictly better in the
+  engaged regime, inert outside it (gists only exist after a drop). This
+  closes the facts-ledger gate; a further salience/ledger pass would chase
+  the remaining 0.10 to baseline and is not opened.
+
+## 2. Nobody writes memories unprompted — FIXED by the write-side nudges
+
+Day 1: across all 46 legs / 2 models (qwen3-coder-30b, kimi-k2.6) spanning
 orchard, relay, stylebook: `add_memory` calls = **0**. The `<memories>` block's
-read side is proven (fake-provider e2e, 2026-07-06), but the write side is
+read side is proven (fake-provider e2e, 2026-07-06), but the write side was
 inert as shipped: models with a discovered non-obvious fact in hand (the
-orchard generated-file trap) never record it. Consequently baseline vs
-`fresh_state` on orchard is flat by construction.
+orchard generated-file trap) never record it.
 
-**Next step:** strengthen the write-side nudge (the <memories> header is
-the only prompt surface; consider mentioning add_memory at the moment of a
-verify-revealed surprise, or in the finish_run gate), then re-run
-`mem1` here. Until a model actually writes, memory value on long tasks is
-unmeasurable and UNPROVEN, not disproven.
+**Day 2 (nudges shipped, mem2-qwen, n=4 per cell):** two loop surfaces now
+nudge `add_memory` — an advisory at the first red-to-green verify flip, and a
+once-deferred finish_run after such a recovery when nothing was recorded.
+Result: `memory_writes` went 0.0 → 0.5–0.8 per leg. In per-run traces the
+flip advisory alone converted about half the writers; the finish backstop
+caught the rest; decliners finished cleanly on the second call (no bounce
+loops). Quality across the 9 stores written: ~8/9 are exactly the durable
+trap facts ("data/catalog.tsv is generated from tools/catalog_source.tsv by
+gen_catalog.py; shelf = base + (base*margin+50)//100"), 1 is a
+confidently-wrong trap-faller rationalization, 0 are task-progress junk.
 
-## 3. add_dependency: unused so far
+**Read-side value is still unmeasured — and the 2-leg orchard cannot measure
+it by construction.** Leg-1 writers are exactly the reps that recovered (and
+so left an easy leg 2); trap-fallers, the population a memory would help,
+never went green in leg 1 so never got nudged and wrote nothing. The
+baseline-vs-fresh_state leg-1 delta (must be zero in expectation) came out
++0.03 score / 12 iters — that is the noise floor, and the leg-2 deltas sit
+inside it. Measuring read-side value needs a THIRD leg that touches the
+generator again after leg 2's recovery memory exists (leg-3 orchard
+authoring, with the same grader rigor as the originals).
 
-`deps_added = 0` across every leg, including relay (a strict 6-stage
-dependency chain, the friendliest possible shape). Standing decision says
-rip it out if useless; day-1 evidence leans useless, but n is small and no
-weak model (the DAG-heavy population) has run yet. Verdict deferred to a
-mistral-small / decompose-on wave.
+## 3. add_dependency: first real usage (mistral-small, decompose on)
+
+Day 1: `deps_added = 0` across every qwen/kimi leg, including relay (a strict
+6-stage chain, the friendliest shape).
+
+**Day 2 (dep1-mistral, n=3 per cell):** mistral-small-3.2 (prompt.decompose
+auto-on from the capability registry) calls it unprompted: `deps_added` 1.7
+per leg on orchard-weekend, 0.3 on relay. The edges are sensible
+gate-everything-on-investigation fan-outs ("Add weekend_cents column" /
+"Implement weekend_price" / "Modify cart_total" each depend on "Investigate
+the weekend pricing requirements"). **Verdict: keep the tool** — it is a
+weak-model affordance, unused by capable models and free when unused.
+Whether the edges improve sequencing is unmeasurable here (mistral's low
+scores are capability-bound: 3/3 leg-1 trap falls at exactly 0.889, weekend
+0.455 on the rounding discriminator).
 
 ## 4. The orchard trap catches real behavior
 
@@ -73,8 +129,9 @@ score 0.889 (exactly the unfixed-seed signature). Leg 2 then went through
 verify, which regenerated the file and resurfaced the failure; the agent
 root-caused `tools/catalog_source.tsv` properly and scored 1.0 including
 the half-up-vs-banker's discriminator (F-310 → 909). kimi never falls in
-(8/8 legs 1.0, trap_edits 0). The task separates exactly the population
-the memory experiment needs.
+(8/8 legs 1.0, trap_edits 0); mistral-small falls in 3/3 at exactly the
+0.889 signature and never recovers. The task separates exactly the
+population the memory experiment needs.
 
 ## Methodology notes
 
@@ -86,3 +143,9 @@ the memory experiment needs.
   --components` before trusting a delta.
 - `run_waves.sh` holds the fuller matrix (kimi compaction cells, more
   reps) for when more coverage is wanted (~$10–25).
+- The gist1-qwen wave was interrupted by a host OOM (a leg's sandboxed
+  process allocated 5.3GB; the box has 8GB and no swap) and resumed under a
+  memory-capped systemd unit. Rep ids in that file restart (the nogist
+  stylebook cell has two r0), but cells are balanced at n=3 and reps carry
+  no seed. Bench waves should cap memory: `MemoryMax` on the unit plus
+  `ulimit -v` under it.

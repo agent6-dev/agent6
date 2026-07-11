@@ -55,6 +55,9 @@ rounding component includes an engineered half-up vs banker's divergence
   these rungs are the compaction A/B. A tidy reader stays under the 32k
   rung's 58k-char drop threshold on these tasks; 16k (local serving) is
   where tier-1 provably engages.
+- `window16k_nogist` — the same thresholds with `context.elision_gists`
+  off: bare markers only, the pre-gist behavior. Pairs with `window16k`
+  as the gist-elision A/B.
 - `fresh_state` — private state dir per leg: the no-cross-run-memory
   control for sequences.
 
@@ -62,9 +65,11 @@ rounding component includes an engineered half-up vs banker's divergence
 
 `score`/`component_scores` (partial credit; per-rule retention curve on
 stylebook), `drops_total`/`drop_events`/`first_drop_at_tool_call` (tier-1),
+`gists_total`/`gist_demotions`/`gist_failures` (tier-1 gist elision),
 `compactions` (tier-2), `redundant_reads`/`repeat_path_reads` and their
 `_post_drop`/`_post_compact` splits, `memory_writes`/`memory_invalidations`
-plus a post-leg store snapshot (`memories_ids`/`memories_bytes`),
+plus `memory_flip_nudges`/`memory_finish_nudges` (the loop's write-side
+nudges) and a post-leg store snapshot (`memories_ids`/`memories_bytes`),
 `deps_added`/`deps_in_graph`, `trap_edits` (edit calls touching orchard's
 generated file), `iterations`, `usd`, `tokens`, `wall_s`, `end_reason`,
 `tampered`.
