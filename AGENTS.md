@@ -180,7 +180,7 @@ All five must pass; keep the suite green.
   `agent6.sandbox.jail.run_in_jail`. No direct `subprocess.run` of
   LLM-provided commands anywhere. Modules that shell out with fixed
   argv depending only on operator input may call `subprocess.run`
-  / `subprocess.Popen` directly: `git_ops.py`, `detect.py`,
+  / `subprocess.Popen` directly: `git_ops.py`, `sandbox/detect.py`,
   `graph/client.py` (spawns the curator subprocess),
   `tools/lsp.py` (the `ty` language
   server, exe resolved from PATH), `tools/mcp_client.py`

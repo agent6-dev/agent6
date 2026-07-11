@@ -13,7 +13,6 @@ from pathlib import Path
 
 from agent6.config import Config
 from agent6.config.layer import resolved_state_dir
-from agent6.detect import Environment, probe_userns_supported
 from agent6.providers.egress import clear_routes, parse_endpoint, register_route
 from agent6.sandbox import (
     BrokerHandle,
@@ -26,6 +25,7 @@ from agent6.sandbox import (
     fork_host_spawner,
     start_egress_broker,
 )
+from agent6.sandbox.detect import Environment, probe_userns_supported
 from agent6.sandbox.jail import _locate_jail_binary
 from agent6.types import SandboxProfile
 from agent6.ui.bridge.spawn import agent6_exe

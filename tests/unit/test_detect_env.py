@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent6.detect import Environment, KernelInfo
+from agent6.sandbox.detect import Environment, KernelInfo
 from agent6.ui.cli import _common
 
 

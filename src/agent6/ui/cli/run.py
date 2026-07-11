@@ -30,7 +30,6 @@ from agent6.config import (
 from agent6.config.layer import (
     load_effective,
 )
-from agent6.detect import ProfileUnavailableError, select_profile
 from agent6.events import EventSink
 from agent6.git_ops import (
     CommitIdentity,
@@ -60,6 +59,7 @@ from agent6.providers import (
 )
 from agent6.runs.id import RunIdError, new_friendly_id, resolve_run_id
 from agent6.runs.layout import RunLayout
+from agent6.sandbox.detect import ProfileUnavailableError, select_profile
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.schema import UserQuestion
 from agent6.types import SandboxProfile

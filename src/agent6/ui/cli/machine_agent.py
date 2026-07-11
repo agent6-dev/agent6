@@ -28,10 +28,10 @@ from typing import Any
 
 from agent6.budget import BudgetTracker
 from agent6.config.layer import load_effective_with_overlay
-from agent6.detect import detect
 from agent6.events import EventSink
 from agent6.git_ops import set_repo_hook_policy
 from agent6.providers import TranscriptSink
+from agent6.sandbox.detect import detect
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.schema import UserQuestion
 from agent6.types import SandboxProfile

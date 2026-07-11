@@ -5,7 +5,7 @@
 Pure stdlib, no agent6 imports. Keeps the platform split contained in one
 spot instead of scattering ``sys.platform`` checks through the graph and
 machine journals. The sandbox itself remains Linux-only (see
-``agent6.detect.sandbox_available``), and native Windows is unsupported
+``agent6.sandbox.detect.sandbox_available``), and native Windows is unsupported
 (use WSL); this module keeps the platform-neutral plumbing (file locks,
 durable renames) working so the agent can run unsandboxed on macOS.
 """

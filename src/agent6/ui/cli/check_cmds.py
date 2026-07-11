@@ -16,11 +16,15 @@ from agent6.config import (
 from agent6.config.layer import (
     load_effective,
 )
-from agent6.detect import ProfileUnavailableError, apparmor_userns_restricted, select_profile
 from agent6.sandbox import (
     JailUnavailableError,
     landlock_abi,
     run_in_jail,
+)
+from agent6.sandbox.detect import (
+    ProfileUnavailableError,
+    apparmor_userns_restricted,
+    select_profile,
 )
 from agent6.types import CommandResult, JailPolicy, SandboxReport
 from agent6.ui.cli._common import (

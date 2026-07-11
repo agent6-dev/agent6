@@ -16,7 +16,6 @@ from agent6.config import (
 from agent6.config.layer import (
     resolved_state_dir,
 )
-from agent6.detect import Environment, detect
 from agent6.models.cache import list_models
 from agent6.models.pricing import lookup_price
 from agent6.paths import (
@@ -27,6 +26,7 @@ from agent6.paths import (
 from agent6.runs.id import RunIdError, list_run_ids
 from agent6.runs.layout import RunLayout
 from agent6.sandbox import strict_namespaces_work
+from agent6.sandbox.detect import Environment, detect
 from agent6.secrets import SecretsError, load_secrets, resolve_api_key
 from agent6.tools.mcp_client import MCPManager
 

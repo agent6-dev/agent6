@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for agent6.detect."""
+"""Tests for agent6.sandbox.detect."""
 
 from __future__ import annotations
 
 import pytest
 
-import agent6.detect as detect_mod
-from agent6.detect import (
+import agent6.sandbox.detect as detect_mod
+from agent6.sandbox.detect import (
     Environment,
     KernelInfo,
     ProfileUnavailableError,
@@ -217,7 +217,7 @@ def test_select_profile_hardened_refused_without_sandbox() -> None:
 
 
 def test_sandbox_available_matches_platform(monkeypatch: pytest.MonkeyPatch) -> None:
-    import agent6.detect as detect_mod
+    import agent6.sandbox.detect as detect_mod
 
     monkeypatch.setattr(detect_mod.sys, "platform", "darwin")
     assert detect_mod.sandbox_available() is False

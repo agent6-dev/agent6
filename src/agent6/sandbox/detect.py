@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Environment + kernel detection.
+"""Environment + kernel detection for the sandbox.
 
-Pure stdlib, no agent6 imports. Read-only.
+Read-only, and a leaf: imports only `agent6.types`, never the rest of the
+sandbox stack. Probes shell out with fixed argv from operator input only.
 """
 
 from __future__ import annotations

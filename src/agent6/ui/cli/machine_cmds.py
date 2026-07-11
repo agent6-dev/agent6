@@ -29,7 +29,6 @@ from agent6.config.layer import (
     load_effective_with_overlay,
     repo_config_path_for,
 )
-from agent6.detect import ProfileUnavailableError, select_profile
 from agent6.events import EventSink
 from agent6.git_ops import CommitIdentity, GitError, verify_git_identity
 from agent6.machine import (
@@ -61,6 +60,7 @@ from agent6.machine import (
 from agent6.models.pricing import lookup_price
 from agent6.paths import chown_to_real_user
 from agent6.runs.id import new_friendly_id
+from agent6.sandbox.detect import ProfileUnavailableError, select_profile
 from agent6.types import SandboxProfile
 from agent6.ui.bridge.approval import write_worker_pid
 from agent6.ui.bridge.notify import desktop_notify

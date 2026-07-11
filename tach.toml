@@ -24,7 +24,7 @@ depends_on = [
   "agent6.paths",
   "agent6.models.pricing",
   "agent6.secrets",
-  "agent6.detect",
+  "agent6.sandbox.detect",
   "agent6.sandbox",
   "agent6.workflows",
   "agent6.types",
@@ -181,7 +181,7 @@ path = "agent6.models.cache"
 depends_on = ["agent6.config", "agent6.paths", "agent6.providers"]
 
 [[modules]]
-path = "agent6.detect"
+path = "agent6.sandbox.detect"
 depends_on = ["agent6.types"]
 
 [[modules]]

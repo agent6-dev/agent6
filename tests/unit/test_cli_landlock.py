@@ -14,8 +14,8 @@ from typing import Any
 
 import pytest
 
-from agent6.detect import Environment, KernelInfo
 from agent6.sandbox import LandlockNotSupportedError
+from agent6.sandbox.detect import Environment, KernelInfo
 from agent6.sandbox.landlock import LandlockReport
 from agent6.ui.cli import egress as cli  # _maybe_apply_agent_landlock lives here now
 
