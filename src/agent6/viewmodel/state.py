@@ -130,16 +130,23 @@ MAX_LOG_TAIL = 400  # public: the inline log RichLog caps to this so it stays a 
 # The full turn is preserved in the transcript, which the conversation view folds.
 _STREAM_TAIL = 6000
 
+# Streaming deltas are ephemeral live-view events -- the reasoning shows in the
+# stream/conversation panes as it arrives. They are NOT audit-log events, so the
+# log_tail and the full LogScreen skip them; otherwise a reasoning model floods the
+# log with thousands of contentless "role.thinking_delta" lines.
+STREAM_DELTA_EVENTS = frozenset({"role.thinking_delta", "role.text_delta"})
+
 
 def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PLR0911, PLR0912, PLR0915
     """Fold one event into the run state. Pure function."""
     etype = event.get("type", "")
-    log_line = format_log_line(event)
-    new_log = _push_bounded(state.log_tail, log_line, MAX_LOG_TAIL)
-    # log_count is monotonic; log_tail is a sliding window. A live viewer must
-    # diff on the count (which keeps growing) -- diffing on len(log_tail) freezes
-    # the panel once the window saturates at MAX_LOG_TAIL.
-    state = replace(state, log_tail=new_log, log_count=state.log_count + 1)
+    if etype not in STREAM_DELTA_EVENTS:  # deltas are live-stream only, not audit log
+        log_line = format_log_line(event)
+        new_log = _push_bounded(state.log_tail, log_line, MAX_LOG_TAIL)
+        # log_count is monotonic; log_tail is a sliding window. A live viewer must
+        # diff on the count (which keeps growing) -- diffing on len(log_tail) freezes
+        # the panel once the window saturates at MAX_LOG_TAIL.
+        state = replace(state, log_tail=new_log, log_count=state.log_count + 1)
 
     match etype:
         case "run.start":

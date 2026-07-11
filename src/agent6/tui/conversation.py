@@ -12,6 +12,11 @@ the turn IN PROGRESS (a reasoning model can think for 30-60s before it produces 
 tool call, so without this the view looks frozen). Follows live: new turns append
 and, unless the operator scrolled up to read, the pane sticks to the bottom.
 ``t`` toggles thinking, ``r`` re-reads, ``g``/``G`` jump to top/bottom.
+
+The scrollback is a ``Static`` in a ``VerticalScroll`` (not a ``RichLog``): a
+``RichLog`` renders as line Strips, which the framework's text selection cannot
+extract, so its text is not copyable; a ``Static`` renders as ``Content`` and is
+selectable -- matching the live pane, which is already a ``Static``.
 """
 
 from __future__ import annotations
@@ -22,9 +27,9 @@ from typing import ClassVar
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Vertical
+from textual.containers import Vertical, VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Footer, RichLog, Static
+from textual.widgets import Footer, Static
 
 from agent6.viewmodel.tail import LogTail
 from agent6.viewmodel.transcript import (
@@ -79,12 +84,13 @@ def _item_renderables(item: TranscriptItem, *, show_thinking: bool) -> list[Text
 
 
 class ConversationScreen(Screen[None]):
-    """Scrollable, live-following LLM conversation for a single run."""
+    """Scrollable, live-following, selectable LLM conversation for a single run."""
 
     CSS = """
     ConversationScreen { background: $surface; }
     #conv-title { dock: top; height: 1; padding: 0 1; background: $panel; text-style: bold; }
-    #conv-body { height: 1fr; border: none; padding: 0 1; }
+    #conv-scroll { height: 1fr; }
+    #conv-body { height: auto; padding: 0 1; }
     #conv-live {
         height: auto; max-height: 12; padding: 0 1;
         border-top: solid $border; background: $surface;
@@ -107,17 +113,15 @@ class ConversationScreen(Screen[None]):
         self._show_thinking = True
         self._tail = LogTail(logs_path)
         self._fold = TranscriptFold()
+        self._content = Text()  # accumulated completed-turn lines (selectable)
         self._live_think: list[str] = []
         self._live_text: list[str] = []
 
     def compose(self) -> ComposeResult:
         yield Static(self._title, id="conv-title")
         with Vertical():
-            # wrap: prose reads wrapped; markup off (tool args carry brackets).
-            # auto_scroll off: the poll manages sticky-bottom so a scroll-up holds.
-            yield RichLog(
-                id="conv-body", highlight=False, markup=False, wrap=True, auto_scroll=False
-            )
+            with VerticalScroll(id="conv-scroll"):
+                yield Static(id="conv-body")  # renders as Content -> selectable
             yield Static("", id="conv-live")
         yield Footer()
 
@@ -125,13 +129,14 @@ class ConversationScreen(Screen[None]):
         self._reload()
         self.set_interval(0.3, self._poll)
 
-    def _body(self) -> RichLog:
-        return self.query_one("#conv-body", RichLog)
+    def _scroll(self) -> VerticalScroll:
+        return self.query_one("#conv-scroll", VerticalScroll)
 
-    def _write(self, item: TranscriptItem, log: RichLog) -> bool:
+    def _append(self, item: TranscriptItem) -> bool:
         wrote = False
         for line in _item_renderables(item, show_thinking=self._show_thinking):
-            log.write(line, scroll_end=False)
+            self._content.append_text(line)
+            self._content.append("\n")
             wrote = True
         return wrote
 
@@ -165,40 +170,39 @@ class ConversationScreen(Screen[None]):
 
     def _reload(self) -> None:
         """Re-read the whole log from scratch (mount, `r`, thinking toggle)."""
-        log = self._body()
-        log.clear()
         self._tail = LogTail(self._logs_path)
         self._fold = TranscriptFold()
+        self._content = Text()
         self._live_think.clear()
         self._live_text.clear()
         wrote = False
         for event in self._tail.read():
             self._track_live(event)
             for item in self._fold.feed(event):
-                wrote = self._write(item, log) or wrote
-        if not wrote:
-            log.write(
-                Text("(no conversation yet — it appears as the run streams)", style="dim italic")
-            )
+                wrote = self._append(item) or wrote
+        empty = Text("(no conversation yet — it appears as the run streams)", style="dim italic")
+        self.query_one("#conv-body", Static).update(self._content if wrote else empty)
         self._render_live()
-        log.scroll_end(animate=False)
-        log.focus()
+        self._scroll().scroll_end(animate=False)
+        self._scroll().focus()
 
     def _poll(self) -> None:
         """Append newly-completed turns (sticking to the bottom unless scrolled
         up) and refresh the live in-progress pane."""
-        log = self._body()
         new_events = self._tail.read()
         if not new_events:
             return
-        at_bottom = log.is_vertical_scroll_end
+        scroll = self._scroll()
+        at_bottom = scroll.is_vertical_scroll_end
         wrote = False
         for event in new_events:
             self._track_live(event)
             for item in self._fold.feed(event):
-                wrote = self._write(item, log) or wrote
-        if wrote and at_bottom:
-            log.scroll_end(animate=False)
+                wrote = self._append(item) or wrote
+        if wrote:
+            self.query_one("#conv-body", Static).update(self._content)
+            if at_bottom:
+                scroll.scroll_end(animate=False)
         self._render_live()
 
     def action_reload(self) -> None:
@@ -209,10 +213,10 @@ class ConversationScreen(Screen[None]):
         self._reload()
 
     def action_scroll_top(self) -> None:
-        self._body().scroll_home(animate=False)
+        self._scroll().scroll_home(animate=False)
 
     def action_scroll_bottom(self) -> None:
-        self._body().scroll_end(animate=False)
+        self._scroll().scroll_end(animate=False)
 
     def action_close(self) -> None:
         self.dismiss()

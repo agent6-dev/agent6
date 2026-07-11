@@ -9,9 +9,16 @@ import json
 from pathlib import Path
 
 from textual.app import App
-from textual.widgets import RichLog, Static
+from textual.widgets import Static
 
 from agent6.tui.conversation import ConversationScreen
+
+
+def _nlines(app: App[None]) -> int:
+    # The scrollback is a Static (selectable); count its non-blank rendered lines.
+    body = app.screen.query_one("#conv-body", Static)
+    return len([ln for ln in str(body.content).splitlines() if ln.strip()])
+
 
 _EVENTS: list[dict[str, object]] = [
     {"type": "run.start", "user_task": "do X"},
@@ -48,12 +55,11 @@ def test_conversation_screen_renders_and_toggles_thinking(tmp_path: Path) -> Non
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, ConversationScreen)
-            body = screen.query_one("#conv-body", RichLog)
-            with_thinking = len(body.lines)
+            with_thinking = _nlines(app)
             assert with_thinking > 0  # the conversation rendered
             screen.action_toggle_thinking()  # hide the thinking block
             await pilot.pause()
-            assert len(body.lines) < with_thinking  # fewer lines without thinking
+            assert _nlines(app) < with_thinking  # fewer lines without thinking
             screen.action_reload()  # reload must not raise
             await pilot.pause()
 
@@ -69,14 +75,13 @@ def test_conversation_screen_follows_live(tmp_path: Path) -> None:
         app = _Host(logs)
         async with app.run_test() as pilot:
             await pilot.pause()
-            body = app.screen.query_one("#conv-body", RichLog)
-            before = len(body.lines)
+            before = _nlines(app)
             with logs.open("a", encoding="utf-8") as fh:
                 for event in _EVENTS:
                     fh.write(json.dumps(event) + "\n")
             await asyncio.sleep(0.7)  # let the 0.5s follow poll fire
             await pilot.pause()
-            assert len(body.lines) > before  # the appended turns appeared
+            assert _nlines(app) > before  # the appended turns appeared
 
     asyncio.run(scenario())
 
@@ -115,8 +120,8 @@ def test_conversation_screen_empty(tmp_path: Path) -> None:
         app = _Host(tmp_path / "missing.jsonl")  # no log file
         async with app.run_test() as pilot:
             await pilot.pause()
-            body = app.screen.query_one("#conv-body", RichLog)
-            assert len(body.lines) == 1  # the "(no conversation yet …)" placeholder
+            body = app.screen.query_one("#conv-body", Static)
+            assert "no conversation yet" in str(body.content)  # the placeholder
 
     asyncio.run(scenario())
 
