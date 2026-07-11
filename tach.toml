@@ -48,7 +48,6 @@ depends_on = [
   "agent6.ui.mcp_server",
   "agent6.machine",
   "agent6.verify_infer",
-  "agent6.transcript_render",
 ]
 
 [[modules]]
@@ -95,7 +94,8 @@ depends_on = []
 [[modules]]
 # The web UI: a stdlib HTTP server + one embedded page. Renders the shared
 # view-model folds (viewmodel), the effective config (config_layer), and the
-# conversation (transcript_render), reading run/machine dirs it locates via the
+# conversation (the viewmodel transcript folds), reading run/machine dirs it
+# locates via the
 # machine spec/journal. The write side drives the frontend bridge. No UI toolkit.
 path = "agent6.ui.web"
 depends_on = [
@@ -104,7 +104,6 @@ depends_on = [
   "agent6.ui.bridge",
   "agent6.config",
   "agent6.config.layer",
-  "agent6.transcript_render",
   "agent6.machine",
 ]
 
@@ -124,9 +123,6 @@ depends_on = ["agent6.config.layer", "agent6.verify_infer"]
 path = "agent6.verify_infer"
 depends_on = []
 
-[[modules]]
-path = "agent6.transcript_render"
-depends_on = []
 
 [[modules]]
 path = "agent6.budget"

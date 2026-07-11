@@ -13,7 +13,6 @@ from pathlib import Path
 from agent6.graph.storage import load_graph
 from agent6.runs.id import RunIdError
 from agent6.runs.layout import RunLayout
-from agent6.transcript_render import fold_conversation, load_transcripts, render_markdown
 from agent6.ui.cli._common import (
     _runs_dir,
     _state_dir,
@@ -21,6 +20,11 @@ from agent6.ui.cli._common import (
 )
 from agent6.ui.cli._task_tree import task_tree_lines
 from agent6.ui.viewmodel import run_mtime
+from agent6.ui.viewmodel.transcript_render import (
+    fold_conversation,
+    load_transcripts,
+    render_markdown,
+)
 
 
 def _cmd_history_search(query: str, *, fixed: bool, run_id: str) -> int:

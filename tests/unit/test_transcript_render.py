@@ -11,7 +11,11 @@ from typing import Any
 
 import pytest
 
-from agent6.transcript_render import fold_conversation, load_transcripts, render_markdown
+from agent6.ui.viewmodel.transcript_render import (
+    fold_conversation,
+    load_transcripts,
+    render_markdown,
+)
 
 _OPENAI = [
     {
