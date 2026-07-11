@@ -86,3 +86,35 @@ def _parse_event_line(line: bytes) -> dict[str, Any] | None:
     except (UnicodeDecodeError, json.JSONDecodeError):
         return None
     return evt if isinstance(evt, dict) else None
+
+
+class LogTail:
+    """Incremental logs.jsonl reader for a UI poll loop. Each ``read`` returns the
+    events appended since the last call (byte-offset based, tolerant of a partial
+    line at EOF). One reader follows a run and its same-dir resume; cheaper than
+    re-reading the whole file every tick."""
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._pos = 0
+        self._pending = b""
+
+    def read(self) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        try:
+            with self._path.open("rb") as fh:
+                fh.seek(self._pos)
+                chunk = fh.read()
+                self._pos = fh.tell()
+        except OSError:
+            return out
+        if not chunk:
+            return out
+        self._pending += chunk
+        lines = self._pending.split(b"\n")
+        self._pending = lines[-1]  # last fragment may be incomplete
+        for line in lines[:-1]:
+            evt = _parse_event_line(line)
+            if evt is not None:
+                out.append(evt)
+        return out

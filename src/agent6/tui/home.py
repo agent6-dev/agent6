@@ -393,14 +393,14 @@ class HomeScreen(Screen[None]):
         self.app.push_screen(LogScreen(run_dir / "logs.jsonl", title=f"logs · {run_dir.name}"))
 
     def action_view_transcript(self) -> None:
-        """Open the full LLM conversation of the selected run (the lossless
-        transcripts) -- the deep-dive companion to the terse event log."""
+        """Open the full LLM conversation of the selected run (folded from its
+        event log) -- the deep-dive companion to the terse event log."""
         table = self.query_one("#runs", DataTable)
         if not (self._runs and 0 <= table.cursor_row < len(self._runs)):
             return
         run_dir = self._runs[table.cursor_row]
         self.app.push_screen(
-            ConversationScreen(run_dir / "transcripts", title=f"conversation · {run_dir.name}")
+            ConversationScreen(run_dir / "logs.jsonl", title=f"conversation · {run_dir.name}")
         )
 
     def on_data_table_row_selected(self, _event: DataTable.RowSelected) -> None:

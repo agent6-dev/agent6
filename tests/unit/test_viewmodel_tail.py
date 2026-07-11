@@ -9,7 +9,7 @@ import threading
 import time
 from pathlib import Path
 
-from agent6.viewmodel.tail import tail_events
+from agent6.viewmodel.tail import LogTail, tail_events
 
 
 def test_tail_yields_existing_lines_in_non_follow_mode(tmp_path: Path) -> None:
@@ -126,3 +126,28 @@ def test_tail_follows_appended_lines(tmp_path: Path) -> None:
     out = list(tail_events(p, follow=True, poll_s=0.05, stop_when_finished=True))
     t.join(timeout=2)
     assert [e["type"] for e in out] == ["first", "second", "run.end"]
+
+
+def test_logtail_reads_only_new_events_incrementally(tmp_path: Path) -> None:
+    p = tmp_path / "logs.jsonl"
+    p.write_text(json.dumps({"type": "a"}) + "\n", encoding="utf-8")
+    tail = LogTail(p)
+    assert [e["type"] for e in tail.read()] == ["a"]
+    assert tail.read() == []  # nothing new
+    with p.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"type": "b"}) + "\n")
+    assert [e["type"] for e in tail.read()] == ["b"]  # only the appended event
+
+
+def test_logtail_holds_a_partial_line_until_its_newline(tmp_path: Path) -> None:
+    p = tmp_path / "logs.jsonl"
+    p.write_bytes(b'{"type": "a"}\n{"type": "b"')  # second line has no newline yet
+    tail = LogTail(p)
+    assert [e["type"] for e in tail.read()] == ["a"]  # the torn line is withheld
+    with p.open("a", encoding="utf-8") as fh:
+        fh.write("}\n")
+    assert [e["type"] for e in tail.read()] == ["b"]  # completed on the next read
+
+
+def test_logtail_missing_file_is_empty(tmp_path: Path) -> None:
+    assert LogTail(tmp_path / "nope.jsonl").read() == []

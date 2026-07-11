@@ -429,11 +429,9 @@ class Agent6TUI(App[int]):
 
     def action_view_transcript(self) -> None:
         """Open THIS run's full LLM conversation (assistant text + every tool
-        call with full I/O), folded from the lossless per-call transcripts."""
+        call with its result), folded live from the run's event log."""
         self.push_screen(
-            ConversationScreen(
-                self.run_dir / "transcripts", title=f"conversation · {self.run_dir.name}"
-            )
+            ConversationScreen(self.logs_path, title=f"conversation · {self.run_dir.name}")
         )
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:

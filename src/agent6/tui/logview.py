@@ -26,7 +26,7 @@ from textual.screen import Screen
 from textual.widgets import Footer, RichLog, Static
 
 from agent6.viewmodel.state import format_log_line
-from agent6.viewmodel.tail import tail_events
+from agent6.viewmodel.tail import LogTail
 
 
 class LogScreen(Screen[None]):
@@ -53,6 +53,7 @@ class LogScreen(Screen[None]):
         super().__init__()
         self._logs_path = logs_path
         self._title = title
+        self._tail = LogTail(logs_path)
 
     def compose(self) -> ComposeResult:
         yield Static(self._title, id="logview-title")
@@ -64,22 +65,38 @@ class LogScreen(Screen[None]):
         yield Footer()
 
     def on_mount(self) -> None:
-        self._load()
+        self._reload()
+        # Follow live: a resume appends to the same file, so keep reading.
+        self.set_interval(0.5, self._poll)
 
-    def _load(self) -> None:
+    def _reload(self) -> None:
         log = self.query_one("#logview-body", RichLog)
         log.clear()
+        self._tail = LogTail(self._logs_path)
         count = 0
-        for event in tail_events(self._logs_path, follow=False):
+        for event in self._tail.read():
             log.write(format_log_line(event))
             count += 1
         if count == 0:
-            log.write("(no events yet — press r to refresh)")
+            log.write("(no events yet)")
         log.scroll_end(animate=False)
         log.focus()
 
+    def _poll(self) -> None:
+        log = self.query_one("#logview-body", RichLog)
+        new_events = self._tail.read()
+        if not new_events:
+            return
+        # Sticky bottom: only snap to the newest line if the operator was there,
+        # so scrolling up to read holds position.
+        at_bottom = (log.max_scroll_y - log.scroll_offset.y) <= 1
+        for event in new_events:
+            log.write(format_log_line(event), scroll_end=False)
+        if at_bottom:
+            log.scroll_end(animate=False)
+
     def action_reload(self) -> None:
-        self._load()
+        self._reload()
 
     def action_scroll_top(self) -> None:
         self.query_one("#logview-body", RichLog).scroll_home(animate=False)

@@ -13,84 +13,37 @@ from textual.widgets import RichLog
 
 from agent6.tui.conversation import ConversationScreen
 
-_TRANSCRIPTS = [
-    {
-        "seq": 1,
-        "request": {
-            "body": {
-                "messages": [
-                    {"role": "system", "content": "SYSTEM"},
-                    {"role": "user", "content": "do X"},
-                ]
-            }
-        },
-        "response": {
-            "body": {
-                "choices": [
-                    {
-                        "message": {
-                            "role": "assistant",
-                            "content": "on it",
-                            "reasoning_content": "thinking hard here",
-                            "tool_calls": [
-                                {
-                                    "id": "c1",
-                                    "function": {"name": "read_file", "arguments": '{"path":"a"}'},
-                                }
-                            ],
-                        }
-                    }
-                ]
-            }
-        },
-    },
-    {
-        "seq": 2,
-        "request": {
-            "body": {
-                "messages": [
-                    {"role": "system", "content": "SYSTEM"},
-                    {"role": "user", "content": "do X"},
-                    {
-                        "role": "assistant",
-                        "content": "on it",
-                        "tool_calls": [
-                            {
-                                "id": "c1",
-                                "function": {"name": "read_file", "arguments": '{"path":"a"}'},
-                            }
-                        ],
-                    },
-                    {"role": "tool", "content": "FILE BODY", "tool_call_id": "c1"},
-                ]
-            }
-        },
-        "response": {"body": {"choices": [{"message": {"role": "assistant", "content": "done"}}]}},
-    },
+_EVENTS: list[dict[str, object]] = [
+    {"type": "run.start", "user_task": "do X"},
+    {"type": "role.call", "role": "worker"},
+    {"type": "role.thinking_delta", "role": "worker", "text": "thinking hard here"},
+    {"type": "role.text_delta", "role": "worker", "text": "on it"},
+    {"type": "role.result", "role": "worker"},
+    {"type": "tool.call", "name": "read_file", "args": {"path": "a"}},
+    {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
+    {"type": "run.end", "all_passed": True, "reason": "finish_run"},
 ]
 
 
 class _Host(App[None]):
-    def __init__(self, transcripts_dir: Path) -> None:
+    def __init__(self, logs_path: Path) -> None:
         super().__init__()
-        self._dir = transcripts_dir
+        self._logs = logs_path
 
     def on_mount(self) -> None:
-        self.push_screen(ConversationScreen(self._dir, title="conversation · test"))
+        self.push_screen(ConversationScreen(self._logs, title="conversation · test"))
 
 
-def _write(tdir: Path) -> None:
-    tdir.mkdir(parents=True)
-    for i, t in enumerate(_TRANSCRIPTS, 1):
-        (tdir / f"2026-00000{i}.json").write_text(json.dumps(t), encoding="utf-8")
+def _write(logs: Path, events: list[dict[str, object]]) -> None:
+    logs.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
 
 
 def test_conversation_screen_renders_and_toggles_thinking(tmp_path: Path) -> None:
-    tdir = tmp_path / "transcripts"
-    _write(tdir)
+    logs = tmp_path / "logs.jsonl"
+    _write(logs, _EVENTS)
 
     async def scenario() -> None:
-        app = _Host(tdir)
+        app = _Host(logs)
         async with app.run_test() as pilot:
             await pilot.pause()
             screen = app.screen
@@ -107,24 +60,45 @@ def test_conversation_screen_renders_and_toggles_thinking(tmp_path: Path) -> Non
     asyncio.run(scenario())
 
 
-def test_conversation_screen_empty(tmp_path: Path) -> None:
+def test_conversation_screen_follows_live(tmp_path: Path) -> None:
+    """Events appended after mount (a live run / a resume) show up via the poll."""
+    logs = tmp_path / "logs.jsonl"
+    logs.write_text("", encoding="utf-8")
+
     async def scenario() -> None:
-        app = _Host(tmp_path / "missing")  # no transcripts dir
+        app = _Host(logs)
         async with app.run_test() as pilot:
             await pilot.pause()
             body = app.screen.query_one("#conv-body", RichLog)
-            assert len(body.lines) == 1  # the "(no transcripts yet …)" placeholder
+            before = len(body.lines)
+            with logs.open("a", encoding="utf-8") as fh:
+                for event in _EVENTS:
+                    fh.write(json.dumps(event) + "\n")
+            await asyncio.sleep(0.7)  # let the 0.5s follow poll fire
+            await pilot.pause()
+            assert len(body.lines) > before  # the appended turns appeared
+
+    asyncio.run(scenario())
+
+
+def test_conversation_screen_empty(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        app = _Host(tmp_path / "missing.jsonl")  # no log file
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            body = app.screen.query_one("#conv-body", RichLog)
+            assert len(body.lines) == 1  # the "(no conversation yet …)" placeholder
 
     asyncio.run(scenario())
 
 
 def test_conversation_screen_q_backs_out(tmp_path: Path) -> None:
-    """q (like Esc) closes the pager -- backs out one level (Option 3)."""
-    tdir = tmp_path / "transcripts"
-    _write(tdir)
+    """q (like Esc) closes the pager -- backs out one level."""
+    logs = tmp_path / "logs.jsonl"
+    _write(logs, _EVENTS)
 
     async def scenario() -> None:
-        app = _Host(tdir)
+        app = _Host(logs)
         async with app.run_test() as pilot:
             await pilot.pause()
             assert isinstance(app.screen, ConversationScreen)

@@ -51,7 +51,7 @@ from agent6.viewmodel.state import (
     initial_state,
     run_state_as_dict,
 )
-from agent6.viewmodel.tail import tail_events
+from agent6.viewmodel.tail import LogTail, tail_events
 from agent6.viewmodel.transcript import (
     TranscriptFold,
     TranscriptItem,
@@ -63,6 +63,7 @@ __all__ = [
     "MAX_LOG_TAIL",
     "ApprovalPrompt",
     "BudgetView",
+    "LogTail",
     "MachineEndView",
     "MachineState",
     "MachineStateView",
