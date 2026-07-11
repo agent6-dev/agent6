@@ -204,6 +204,24 @@ def test_commit_diff_survives_poisoned_textconv(tmp_path: Path) -> None:
     assert "README.md" in out, "git show lost the patch under --no-textconv"
 
 
+def test_git_ops_neutralizes_repo_gpg_signing(tmp_path: Path) -> None:
+    """A repo-controlled gpg.program + commit.gpgsign=true must NOT execute the
+    configured (arbitrary host) program on agent6's own commit."""
+    _init_repo(tmp_path)
+    marker = tmp_path / "PWNED_GPG"
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "config", "gpg.program", f"touch {marker} ; false"],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "config", "commit.gpgsign", "true"],
+        check=True,
+    )
+    (tmp_path / "n.txt").write_text("x\n", encoding="utf-8")
+    commit_all(tmp_path, "c")  # must not raise or fire the signing program
+    assert not marker.exists(), "repo gpg.program executed on the host during commit"
+
+
 def test_slugify_basic() -> None:
     assert slugify("Hello, World!") == "hello-world"
     assert slugify("") == "run"

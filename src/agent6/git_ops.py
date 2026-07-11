@@ -109,12 +109,26 @@ def _git() -> str:
 # repo-controlled command on the HOST (outside the jail) during agent6's own git
 # operations. `-c` has the highest precedence, overriding `.git/config`.
 # `core.fsmonitor` fires a command on every index refresh (status/add/commit);
-# `diff.external` fires one on `git diff` (review/diff). Both are pure overrides
-# with no correctness cost (fsmonitor is a perf cache; an empty diff.external
-# uses git's builtin diff). The edit tools already refuse writes into `.git`
-# under protect_git, but a repo cloned with a pre-poisoned `.git/config` would
-# otherwise execute its payload the first time agent6 ran git here.
-_GIT_EGRESS_HARDENING: tuple[str, ...] = ("-c", "core.fsmonitor=false", "-c", "diff.external=")
+# `diff.external` fires one on `git diff` (review/diff); `commit.gpgsign` fires
+# the configured `gpg.program` (arbitrary host command) on every commit. All are
+# pure overrides with no correctness cost here: fsmonitor is a perf cache, an
+# empty diff.external uses git's builtin diff, and agent6 has no signing feature
+# (its per-step auto-commits are unsigned by design; the operator signs at the
+# end). The edit tools already refuse writes into `.git` under protect_git, but a
+# repo cloned with a pre-poisoned `.git/config` would otherwise execute its
+# payload the first time agent6 ran git here.
+# NOTE: content-semantic drivers a commit/merge legitimately runs -- clean/smudge
+# `filter.*` and `merge.*.driver` -- are deliberately NOT disabled: blanket-
+# disabling them would silently corrupt commits in repos that use them (Git LFS
+# is the common case). They are per-name with no blanket `-c` off switch.
+_GIT_EGRESS_HARDENING: tuple[str, ...] = (
+    "-c",
+    "core.fsmonitor=false",
+    "-c",
+    "diff.external=",
+    "-c",
+    "commit.gpgsign=false",
+)
 
 # Whether the repo's own `.git/hooks/*` run during agent6's git ops (notably the
 # per-step auto-commit). Default false -- a repo hook is repo-controlled HOST
