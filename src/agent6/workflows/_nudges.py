@@ -95,6 +95,32 @@ QUESTION_NUDGE = (
 )
 
 
+# Cross-run memory write nudges. Measured (bench/longhorizon FINDINGS #2):
+# 46 legs across 2 models produced ZERO unprompted add_memory calls, so the
+# <memories> header alone never causes writes. Surface the tool at the two
+# moments a durable discovery is actually in hand: the first red-to-green
+# verify flip (advisory, free) and the first finish_run after such a recovery
+# (deferred once, the backstop). Each fires at most once per run, only in run
+# mode with a memory store wired, and only while the worker has recorded
+# nothing; a run whose verify never failed is never nudged.
+MEMORY_FLIP_NUDGE = (
+    "[harness memory] Verify just went green after failing. If the fix rested"
+    " on a durable non-obvious fact about this repository (a generated file, a"
+    " hidden coupling, a convention), record that fact now with"
+    " add_memory(scope, body) so future runs skip the rediscovery. If the"
+    " failure was ordinary, carry on."
+)
+
+MEMORY_FINISH_NUDGE = (
+    "[harness memory] finish_run deferred once: verify failed earlier in this"
+    " run before going green, and nothing was recorded for future runs. If the"
+    " root cause was a durable non-obvious fact about this repository (a"
+    " generated file, a hidden coupling, a convention), record it with"
+    " add_memory(scope, body), then call finish_run again. If nothing"
+    " qualifies, call finish_run again immediately."
+)
+
+
 def ends_with_question(text: str) -> bool:
     """Best-effort: the model's prose ends by asking the operator something. The
     last non-empty line ending in '?' catches the common 'Should I proceed?' /

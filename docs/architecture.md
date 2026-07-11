@@ -131,7 +131,12 @@ Notes:
   body stays on disk for `agent6 memory list --all`). Run mode only: plan
   and ask read memories but cannot write them, machine modes see neither.
   A resumed run keeps the `<memories>` block frozen in its snapshot, like
-  the rest of its system prompt.
+  the rest of its system prompt. Because models never call `add_memory`
+  unprompted (measured: 46 bench legs, zero calls), the loop surfaces it
+  twice: an advisory when verify first goes green after a red one, and a
+  once-deferred `finish_run` after such a recovery if nothing was
+  recorded. Each fires at most once per run and never on a run whose
+  verify never failed.
 - **`finish_run(summary)`** is the only terminal tool. Calling it
   emits a `run.end` event and returns control to the CLI.
 

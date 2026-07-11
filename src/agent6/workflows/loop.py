@@ -151,6 +151,12 @@ from agent6.workflows._metric import (
     metric_plateau_summary as _metric_plateau_summary,
 )
 from agent6.workflows._nudges import (
+    MEMORY_FINISH_NUDGE as _MEMORY_FINISH_NUDGE,
+)
+from agent6.workflows._nudges import (
+    MEMORY_FLIP_NUDGE as _MEMORY_FLIP_NUDGE,
+)
+from agent6.workflows._nudges import (
     PLAN_BUDGET_NUDGE as _PLAN_BUDGET_NUDGE,
 )
 from agent6.workflows._nudges import (
@@ -426,6 +432,14 @@ class _LoopState:
     verify_settled_idle: int = 0
     verify_settled_nudged: bool = False
     run_budget_nudged: bool = False
+    # Cross-run memory write nudges (run mode, memory store wired): one flip
+    # advisory when verify first goes green after failing, one deferred
+    # finish_run as the backstop. Both suppressed once the worker records
+    # anything; a run whose verify never failed is never nudged.
+    verify_ever_failed: bool = False
+    memory_written: bool = False
+    memory_flip_nudged: bool = False
+    memory_finish_nudged: bool = False
     # surface-current-task: id of the subtask last injected as the focus banner.
     # Re-surface only on a focus change or after a tier-2 restart (reset to None
     # there) -- the banner survives tier-1 elision, so the worker keeps seeing it
@@ -472,6 +486,9 @@ class _TurnState:
     tool_results: list[dict[str, Any]] = field(default_factory=list)
     verify_just_passed: bool = False
     verify_just_failed: bool = False
+    # Verify went green THIS turn after the run's last verify was red; feeds
+    # the one-shot add_memory flip advisory in _turn_notices.
+    verify_flipped_green: bool = False
     # An apply_edit/apply_patch AFTER a passing verify in the same turn changes
     # the tree that verify validated, so the green no longer applies. Tracked
     # separately from verify_just_passed (which the metric path also reads) so
@@ -1140,12 +1157,15 @@ class Workflow:
             rc = result.get("returncode")
             if rc == 0:
                 turn.verify_just_passed = True
+                if state.last_verify_ok is False:
+                    turn.verify_flipped_green = True
                 # This verify validated the current tree; any earlier
                 # edit is now covered.
                 turn.edit_since_verify_pass = False
                 state.edited_since_verify = False
             elif rc is not None:
                 turn.verify_just_failed = True
+                state.verify_ever_failed = True
             if rc is not None:
                 state.last_verify_ok = rc == 0
                 tail = f"{result.get('stdout', '')}\n{result.get('stderr', '')}"
@@ -1162,6 +1182,10 @@ class Workflow:
             )
             if turn.verify_just_passed:
                 turn.metric_plateau_finish = self._metric_plateau_summary(state.metric_history)
+        elif name == "add_memory":
+            # Only successful dispatches reach here, so the write persisted;
+            # both memory nudges stay quiet for the rest of the run.
+            state.memory_written = True
         if name in ("apply_edit", "apply_patch"):
             turn.edited = True
             # Invalidate a same-turn earlier verify pass: the commit
@@ -1373,12 +1397,14 @@ class Workflow:
     ) -> None:
         """Gates that can revoke this turn's finish_run, in precedence order:
         critic (before_finish), metric early-finish, open subtasks, verify
-        green. Each clears ``turn.finish_signal`` and appends its nudge; later
-        gates then see the finish as already revoked and stay quiet."""
+        green, memory backstop. Each clears ``turn.finish_signal`` and appends
+        its nudge; later gates then see the finish as already revoked and stay
+        quiet."""
         self._gate_before_finish_critic(state, turn, messages)
         self._gate_metric_early_finish(state, turn)
         self._gate_task_finish(state, turn)
         self._gate_verify_green(state, turn)
+        self._gate_memory_finish(state, turn)
 
     def _gate_before_finish_critic(
         self, state: _LoopState, turn: _TurnState, messages: list[dict[str, Any]]
@@ -1526,9 +1552,39 @@ class Workflow:
             nudges_used=state.verify_finish_nudges_used,
         )
 
+    def _gate_memory_finish(self, state: _LoopState, turn: _TurnState) -> None:
+        """Memory write-side backstop: defer the first finish_run ONCE when the
+        run recovered from a red verify to green and recorded nothing via
+        add_memory - the nudge asks for the root cause or an immediate re-finish
+        (see _nudges for the measurement behind it). Explicit finish_run only: a
+        went-quiet worker is never bounced here."""
+        if not (
+            turn.finish_signal is not None
+            and turn.finish_kind == "finish_run"
+            and self.mode == "run"
+            and self.state_dir is not None
+            and state.verify_ever_failed
+            and state.last_verify_ok is True
+            and not state.memory_written
+            and not state.memory_finish_nudged
+        ):
+            return
+        state.memory_finish_nudged = True
+        turn.finish_signal = None
+        turn.finish_payload = None
+        turn.tool_results.append({"type": "text", "text": _MEMORY_FINISH_NUDGE})
+        self._log(f"  finish_run deferred once: memory backstop at iter {turn.iteration}")
+        self._emit("loop.memory_finish.gated", iteration=turn.iteration)
+
     def _turn_notices(self, state: _LoopState, turn: _TurnState) -> None:
         """Append the turn's advisory texts to the tool_results block: critic
-        critique, metric feedback, then the degenerate-loop notice.
+        critique, metric feedback, the memory flip advisory, then the
+        degenerate-loop notice.
+
+        The memory flip advisory fires once per run, at the first verify that
+        goes green after a red one, while nothing has been recorded via
+        add_memory: that is the moment a hard-won root cause is in hand (see
+        _nudges for the measurement behind it).
 
         The loop-guard notice fires when the same (tool, args) signature has
         been called >= 3 times in a row, re-emitted once per "fresh" streak
@@ -1539,6 +1595,17 @@ class Workflow:
             turn.tool_results.append({"type": "text", "text": f"[critic]\n{turn.critic_text}"})
         if turn.metric_feedback:
             turn.tool_results.append({"type": "text", "text": turn.metric_feedback})
+        if (
+            turn.verify_flipped_green
+            and self.mode == "run"
+            and self.state_dir is not None
+            and not state.memory_written
+            and not state.memory_flip_nudged
+        ):
+            state.memory_flip_nudged = True
+            turn.tool_results.append({"type": "text", "text": _MEMORY_FLIP_NUDGE})
+            self._log("  memory: verify flipped green - injecting add_memory advisory")
+            self._emit("loop.memory_flip.nudged", iteration=turn.iteration)
         repeat_threshold = 3
         if (
             state.repeat_streak >= repeat_threshold
