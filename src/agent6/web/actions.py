@@ -20,6 +20,7 @@ from typing import Any
 from agent6.frontend.approval import (
     read_worker_pid,
     request_steer,
+    set_session_allow,
     write_answer,
     write_question_answer,
     write_steer_answer,
@@ -101,11 +102,16 @@ def spawn_machine_run(cwd: Path, machine_file: str) -> tuple[bool, str]:
     return (err == ""), (err or "started")
 
 
-def approve(cwd: Path, run_id: str, prompt_id: str, approved: bool) -> tuple[bool, str]:
-    """Answer a pending approval prompt (the run's `approval.prompt`)."""
+def approve(
+    cwd: Path, run_id: str, prompt_id: str, approved: bool, *, session: bool = False
+) -> tuple[bool, str]:
+    """Answer a pending approval prompt (the run's `approval.prompt`). ``session``
+    (the "allow session" button) also auto-approves every later run_command."""
     run_dir = model.run_dir_for(cwd, run_id)
     if run_dir is None:
         return False, f"no run {run_id!r}"
+    if session:
+        set_session_allow(run_dir)
     write_answer(run_dir, prompt_id, approved=approved)
     return True, "answered"
 
@@ -169,13 +175,16 @@ def machine_poke(cwd: Path, name: str, *, data: Any = None, message: str = "") -
 
 
 def machine_approve(
-    cwd: Path, name: str, prompt_id: str, approved: bool, *, state: str = ""
+    cwd: Path, name: str, prompt_id: str, approved: bool, *, session: bool = False, state: str = ""
 ) -> tuple[bool, str]:
     """Answer a pending approval in the agent state the prompt was rendered from
-    (``state``; newest when absent)."""
+    (``state``; newest when absent). ``session`` auto-approves every later
+    run_command in that state."""
     state_dir = _machine_state_dir(cwd, name, state)
     if state_dir is None:
         return False, f"no active agent state for machine {name!r}"
+    if session:
+        set_session_allow(state_dir)
     write_answer(state_dir, prompt_id, approved=approved)
     return True, "answered"
 

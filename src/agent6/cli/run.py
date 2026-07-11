@@ -84,6 +84,8 @@ from agent6.frontend.approval import (
     frontend_is_live,
     read_answer,
     read_question_answer,
+    session_allow_set,
+    set_session_allow,
     write_worker_pid,
 )
 from agent6.frontend.spawn import spawn_detached_resume
@@ -277,14 +279,18 @@ def _require_git_repo(cwd: Path) -> bool:
     return False
 
 
-def _default_stdin_approver(prompt: str) -> bool:
+def _default_stdin_approver(prompt: str) -> str:
     """Plain-terminal fallback for tool approval (no live TUI, or its answer
-    timed out). Routed via /dev/tty so the prompt stays visible when a TUI has
-    redirected the std streams to its console log; plain stdin without one."""
-    ans = _tty_prompt(f"{prompt} [y/N]: ")
+    timed out). Returns "yes", "no", or "session" (allow all for the rest of this
+    run). Routed via /dev/tty so the prompt stays visible when a TUI has redirected
+    the std streams to its console log; plain stdin without one."""
+    ans = _tty_prompt(f"{prompt} [y/N/a]  (a = allow all this session): ")
     if ans is None:
-        return False
-    return ans.strip().lower() in {"y", "yes"}
+        return "no"
+    ans = ans.strip().lower()
+    if ans in {"a", "all", "always", "session"}:
+        return "session"
+    return "yes" if ans in {"y", "yes"} else "no"
 
 
 def _confirm_run_on_run_branch(base_branch: str) -> bool:
@@ -321,15 +327,24 @@ def _build_approver(run_dir: Path, events: EventSink) -> Callable[[str], bool]:
     def approve(prompt: str) -> bool:
         counter["n"] += 1
         prompt_id = f"approval-{counter['n']}"
+        # Already granted for the session (this run + its resumes) -> auto-pass.
+        if session_allow_set(run_dir):
+            events.emit("approval.answer", id=prompt_id, approved=True, source="session")
+            return True
         events.emit("approval.prompt", id=prompt_id, prompt=prompt)
         approved: bool | None = None
         source = "stdin"
         if frontend_is_live(run_dir):
+            # A front-end that chose "allow session" set the marker itself, so this
+            # answer is just yes; the check above auto-passes every later prompt.
             approved = read_answer(run_dir, prompt_id)
             if approved is not None:
                 source = "tui"
         if approved is None:
-            approved = _default_stdin_approver(prompt)
+            answer = _default_stdin_approver(prompt)
+            if answer == "session":
+                set_session_allow(run_dir)
+            approved = answer != "no"
         events.emit("approval.answer", id=prompt_id, approved=approved, source=source)
         return approved
 

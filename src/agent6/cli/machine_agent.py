@@ -50,6 +50,7 @@ from agent6.frontend.approval import (
     read_answer,
     read_question_answer,
     read_steer_answer,
+    session_allow_set,
     steer_request_pending,
 )
 from agent6.git_ops import set_repo_hook_policy
@@ -114,6 +115,10 @@ def _build_machine_bridges(
     def approve(prompt: str) -> bool:
         counters["approval"] += 1
         prompt_id = f"approval-{counters['approval']}"
+        # A prior "allow session" for this agent state auto-passes every later prompt.
+        if session_allow_set(state_dir):
+            events.emit("approval.answer", id=prompt_id, approved=True, source="session")
+            return True
         events.emit("approval.prompt", id=prompt_id, prompt=prompt)
         approved: bool | None = None
         source = "headless"

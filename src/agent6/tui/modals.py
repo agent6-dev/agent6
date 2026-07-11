@@ -40,7 +40,9 @@ _ARROW_NAV = (
 # Modal frames pin a static round $accent (focused) border: a modal always owns
 # focus, so it always shows the focused accent -- the $primary<->$accent
 # resting/focus toggle is only for non-modal cards where focus actually moves.
-class ApprovalModal(ModalScreen[bool]):
+class ApprovalModal(ModalScreen[str]):
+    """Dismisses "yes", "no", or "session" (allow every later run_command this run)."""
+
     DEFAULT_CSS = """
     ApprovalModal { align: center middle; }
     #approval-box {
@@ -49,7 +51,7 @@ class ApprovalModal(ModalScreen[bool]):
     }
     #approval-buttons { height: auto; align: center middle; margin-top: 1; }
     #approval-buttons Button {
-        margin: 0 2; min-width: 16; height: 1; border: none;
+        margin: 0 1; min-width: 18; height: 1; border: none;
         background: transparent; color: $accent;
     }
     #approval-buttons Button:focus { background: $primary; color: $text; text-style: bold; }
@@ -60,6 +62,7 @@ class ApprovalModal(ModalScreen[bool]):
         *_ARROW_NAV,
         Binding("y", "approve", "Allow", show=True),
         Binding("Y", "approve", "Allow", show=False),
+        Binding("a", "approve_session", "Allow session", show=True),
         Binding("n", "deny", "Deny", show=True),
         Binding("N", "deny", "Deny", show=False),
         Binding("escape", "deny", "Deny", show=False),
@@ -78,19 +81,23 @@ class ApprovalModal(ModalScreen[bool]):
             yield Static(body)
             with Horizontal(id="approval-buttons"):
                 yield Button("Allow (y)", id="yes", variant="success")
+                yield Button("Allow session (a)", id="session", variant="success")
                 yield Button("Deny (n)", id="no", variant="error")
 
     def on_mount(self) -> None:
         self.query_one("#yes", Button).focus()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        self.dismiss(event.button.id == "yes")
+        self.dismiss(event.button.id or "no")  # button ids ARE the answer values
 
     def action_approve(self) -> None:
-        self.dismiss(True)
+        self.dismiss("yes")
+
+    def action_approve_session(self) -> None:
+        self.dismiss("session")
 
     def action_deny(self) -> None:
-        self.dismiss(False)
+        self.dismiss("no")
 
 
 class ConfirmModal(ModalScreen[bool]):

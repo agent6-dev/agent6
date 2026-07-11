@@ -82,6 +82,7 @@ class SteerBody(_Body):
 class ApproveBody(_Body):
     id: str
     approved: bool
+    session: bool = False  # "allow session": approve every later run_command too
     state: str = ""
 
 
@@ -359,7 +360,7 @@ class _Handler(BaseHTTPRequestHandler):
             ok, msg = actions.steer(self.cwd, run_id, body.text)
         elif verb == "approve":
             ab = ApproveBody.model_validate(self._read_body())
-            ok, msg = actions.approve(self.cwd, run_id, ab.id, ab.approved)
+            ok, msg = actions.approve(self.cwd, run_id, ab.id, ab.approved, session=ab.session)
         elif verb == "answer":
             qb = AnswerBody.model_validate(self._read_body())
             ok, msg = actions.answer_question(self.cwd, run_id, qb.id, qb.answer)
@@ -380,7 +381,9 @@ class _Handler(BaseHTTPRequestHandler):
             ok, msg = actions.machine_steer(self.cwd, name, body.text, state=body.state)
         elif verb == "approve":
             ab = ApproveBody.model_validate(self._read_body())
-            ok, msg = actions.machine_approve(self.cwd, name, ab.id, ab.approved, state=ab.state)
+            ok, msg = actions.machine_approve(
+                self.cwd, name, ab.id, ab.approved, session=ab.session, state=ab.state
+            )
         elif verb == "answer":
             qb = AnswerBody.model_validate(self._read_body())
             ok, msg = actions.machine_answer(self.cwd, name, qb.id, qb.answer, state=qb.state)

@@ -196,6 +196,25 @@ def write_answer(run_dir: Path, prompt_id: str, *, approved: bool) -> None:
     _write_answer_atomic(target, "yes" if approved else "no")
 
 
+# "Allow for the rest of the session": one marker file, checked before every
+# prompt. It is NOT an `*.answer`, so clear_pending_answers leaves it in place --
+# the choice persists across this run's resumes (a detached run then keeps going
+# without a front-end to prompt). Scoped to the run's approvals dir, so other runs
+# are unaffected; a fresh run has a fresh dir and prompts again.
+SESSION_ALLOW_FILE = "session.allow"
+
+
+def set_session_allow(run_dir: Path) -> None:
+    """Record the operator's 'allow all run_commands for the session' choice."""
+    d = approvals_dir(run_dir)
+    d.mkdir(parents=True, exist_ok=True)
+    _write_answer_atomic(d / SESSION_ALLOW_FILE, "1")
+
+
+def session_allow_set(run_dir: Path) -> bool:
+    return (approvals_dir(run_dir) / SESSION_ALLOW_FILE).exists()
+
+
 def read_answer(
     run_dir: Path,
     prompt_id: str,

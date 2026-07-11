@@ -53,6 +53,7 @@ from agent6.frontend.approval import (
     clear_steer_answer,
     frontend_is_live,
     request_steer,
+    set_session_allow,
     write_answer,
     write_frontend_pid,
     write_question_answer,
@@ -387,8 +388,10 @@ class Agent6TUI(App[int]):
             self.exit()
 
     def _on_approval(self, ap: ApprovalPrompt):  # type: ignore[no-untyped-def]
-        def cb(approved: bool | None) -> None:
-            write_answer(self.run_dir, ap.id, approved=bool(approved))
+        def cb(answer: str | None) -> None:
+            if answer == "session":  # allow every later run_command this run
+                set_session_allow(self.run_dir)
+            write_answer(self.run_dir, ap.id, approved=answer in ("yes", "session"))
 
         return cb
 

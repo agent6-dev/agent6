@@ -44,16 +44,20 @@ def _ans_none(_d: object, _pid: object, **_k: object) -> bool | None:
     return None
 
 
-def _stdin_no(_p: object) -> bool:
-    return False
+def _stdin_no(_p: object) -> str:
+    return "no"
 
 
-def _stdin_yes(_p: object) -> bool:
-    return True
+def _stdin_yes(_p: object) -> str:
+    return "yes"
 
 
-def _stdin_forbidden(_p: object) -> bool:
+def _stdin_forbidden(_p: object) -> str:
     pytest.fail("stdin approver must not be used")
+
+
+def _stdin_session(_p: object) -> str:
+    return "session"
 
 
 def test_approver_uses_tui_answer_when_live(
@@ -82,6 +86,23 @@ def test_approver_falls_back_to_stdin_without_tui(
     approve = runmod._build_approver(tmp_path, events)  # pyright: ignore[reportPrivateUsage]
     assert approve("x") is False
     assert _events_of(log, "approval.answer")[0]["source"] == "stdin"
+
+
+def test_approver_session_allows_every_later_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # "allow session" (stdin returns "session") approves this command AND every
+    # later one without prompting again -- across the run.
+    log = tmp_path / "logs.jsonl"
+    events = EventSink(log)
+    monkeypatch.setattr(runmod, "frontend_is_live", _dead)
+    monkeypatch.setattr(runmod, "_default_stdin_approver", _stdin_session)
+    approve = runmod._build_approver(tmp_path, events)  # pyright: ignore[reportPrivateUsage]
+    assert approve("first?") is True
+    # A second prompt must NOT reach the stdin approver -- the session marker auto-passes.
+    monkeypatch.setattr(runmod, "_default_stdin_approver", _stdin_forbidden)
+    assert approve("second?") is True
+    assert _events_of(log, "approval.answer")[-1]["source"] == "session"
 
 
 def test_approver_tui_timeout_falls_back_to_stdin(

@@ -40,6 +40,7 @@ from agent6.frontend.approval import (
     frontend_is_live,
     read_worker_pid,
     request_steer,
+    set_session_allow,
     write_answer,
     write_frontend_pid,
     write_question_answer,
@@ -352,9 +353,11 @@ class MachineWatchScreen(Screen[None]):
                     self._on_question(state_dir, qp.id),
                 )
 
-    def _on_approval(self, state_dir: Path, prompt_id: str) -> Callable[[bool | None], None]:
-        def cb(approved: bool | None) -> None:
-            write_answer(state_dir, prompt_id, approved=bool(approved))
+    def _on_approval(self, state_dir: Path, prompt_id: str) -> Callable[[str | None], None]:
+        def cb(answer: str | None) -> None:
+            if answer == "session":  # allow every later run_command in this agent state
+                set_session_allow(state_dir)
+            write_answer(state_dir, prompt_id, approved=answer in ("yes", "session"))
 
         return cb
 
