@@ -194,6 +194,7 @@ class _InstrumentedProvider:
         text_delta_callback: Callable[[str], None] | None = None,
         thinking_delta_callback: Callable[[str], None] | None = None,
         should_abort: Callable[[], bool] | None = None,
+        should_interrupt: Callable[[], bool] | None = None,
     ) -> ProviderResponse:
         if self.events is not None:
             self.events.emit(
@@ -239,6 +240,7 @@ class _InstrumentedProvider:
                 text_delta_callback=effective_text_cb,
                 thinking_delta_callback=effective_thinking_cb,
                 should_abort=should_abort,
+                should_interrupt=should_interrupt,
             )
         except Exception as exc:
             if self.events is not None:

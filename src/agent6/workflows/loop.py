@@ -38,7 +38,13 @@ from agent6.graph.models import (
     UpdateStatusIntent,
 )
 from agent6.portable import atomic_write
-from agent6.providers import Provider, ProviderAborted, ProviderError, ToolDefinition
+from agent6.providers import (
+    Provider,
+    ProviderAborted,
+    ProviderError,
+    ProviderInterrupted,
+    ToolDefinition,
+)
 from agent6.tools.dispatch import OperatorCommandUnexecutable, ToolDispatcher, ToolError
 from agent6.tools.schema import (
     ALL_TOOLS,
@@ -763,6 +769,10 @@ class Workflow:
     # Polled DURING a streaming model call (not just between steps): True once the
     # operator has asked to stop, so a long reasoning turn aborts promptly.
     should_abort: Callable[[], bool] = field(default=lambda: False)
+    # Polled DURING a streaming call: True once the operator has asked to STEER
+    # (Ctrl-C / TUI `s`), so the watchdog ends the turn and the loop reaches its
+    # steer boundary (the menu) at once instead of waiting the whole turn out.
+    should_interrupt: Callable[[], bool] = field(default=lambda: False)
     # Hook invoked once per successful auto-commit (after the
     # commit lands). Returning "stop" exits the loop cleanly with
     # completed=True, reason="interactive_stop"; "continue" (the default)
@@ -1114,6 +1124,17 @@ class Workflow:
                     iterations=iteration,
                     tool_calls=state.tool_calls,
                 )
+            except ProviderInterrupted:
+                # A steer was requested mid-stream; the watchdog ended the (thinking)
+                # turn so we handle it now rather than wait it out. The partial turn
+                # is discarded; the menu decides continue / steer / stop / detach.
+                self._log(f"LOOP: steer requested mid-turn at iter {iteration}")
+                outcome = self._steer_outcome(
+                    self._maybe_handle_steer(messages, iteration), iteration, state
+                )
+                if outcome is not None:
+                    return outcome
+                continue  # "continue" or an injected instruction -> re-do the turn
             except ProviderError as exc:
                 hint = _provider_error_hint(exc.status_code)
                 self._log(f"LOOP: provider error at iter {iteration}: {exc}{hint}")
@@ -1807,32 +1828,11 @@ class Workflow:
             # the steering hook; safe boundary is
             # AFTER a complete iter so we never split a tool_use / tool_result
             # pair.
-            steer_result = self._maybe_handle_steer(messages, iteration)
-            if steer_result == "abort":
-                self._emit(
-                    "run.end",
-                    reason="steer_abort",
-                    iterations=iteration,
-                    all_passed=False,
-                )
-                return RunResult(
-                    completed=False,
-                    reason="steer_abort",
-                    summary=f"operator aborted at iter {iteration} via steering prompt",
-                    iterations=iteration,
-                    tool_calls=state.tool_calls,
-                )
-            if steer_result == "detach":
-                # Not an end: the caller respawns a detached `resume` that appends
-                # to this same log, so a persistent viewer follows straight through
-                # (no run.end). The per-iteration snapshot is the resume point.
-                return RunResult(
-                    completed=False,
-                    reason="detached",
-                    summary=f"operator detached at iter {iteration}; resuming in the background",
-                    iterations=iteration,
-                    tool_calls=state.tool_calls,
-                )
+            outcome = self._steer_outcome(
+                self._maybe_handle_steer(messages, iteration), iteration, state
+            )
+            if outcome is not None:
+                return outcome
 
         self._log(f"LOOP: max_iterations={self.max_iterations} reached")
         self._final_checkpoint(self.max_iterations)
@@ -3023,9 +3023,10 @@ class Workflow:
                     max_tokens=max_tokens,
                     temperature=self.temperature,
                     should_abort=self.should_abort,
+                    should_interrupt=self.should_interrupt,
                 )
-            except ProviderAborted:
-                raise  # operator stopped the run: end it, never retry
+            except (ProviderAborted, ProviderInterrupted):
+                raise  # operator stop/steer: handle it, never retry as a fault
             except ProviderError as exc:
                 last_exc = exc
                 non_retryable = exc.status_code in _NON_RETRYABLE_HTTP_STATUSES
@@ -3269,6 +3270,33 @@ class Workflow:
             satisfied=satisfied,
         )
         return _CritiqueResult(text=text, satisfied=satisfied)
+
+    def _steer_outcome(
+        self, steer_result: str | None, iteration: int, state: _LoopState
+    ) -> RunResult | None:
+        """Map a _maybe_handle_steer result to a terminal RunResult, or None to keep
+        going (empty steer, or an instruction injected into messages)."""
+        if steer_result == "abort":
+            self._emit("run.end", reason="steer_abort", iterations=iteration, all_passed=False)
+            return RunResult(
+                completed=False,
+                reason="steer_abort",
+                summary=f"operator aborted at iter {iteration} via steering prompt",
+                iterations=iteration,
+                tool_calls=state.tool_calls,
+            )
+        if steer_result == "detach":
+            # Not an end: the caller respawns a detached `resume` that appends to this
+            # same log, so a persistent viewer follows straight through (no run.end).
+            # The per-iteration snapshot is the resume point.
+            return RunResult(
+                completed=False,
+                reason="detached",
+                summary=f"operator detached at iter {iteration}; resuming in the background",
+                iterations=iteration,
+                tool_calls=state.tool_calls,
+            )
+        return None
 
     def _maybe_handle_steer(
         self,

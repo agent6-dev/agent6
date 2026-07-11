@@ -63,6 +63,7 @@ from agent6.budget import BudgetTracker
 from agent6.providers.anthropic import (
     ProviderAborted,
     ProviderError,
+    ProviderInterrupted,
     ProviderResponse,
     ToolDefinition,
     TranscriptSink,
@@ -304,6 +305,7 @@ class OpenAIProvider:
         text_delta_callback: Callable[[str], None] | None = None,
         thinking_delta_callback: Callable[[str], None] | None = None,
         should_abort: Callable[[], bool] | None = None,
+        should_interrupt: Callable[[], bool] | None = None,
     ) -> ProviderResponse:
         # extended_thinking is Anthropic-shaped (`budget_tokens`).
         # OpenAI reasoning models use `reasoning_effort` instead; no
@@ -518,6 +520,7 @@ class OpenAIProvider:
                         text_delta_callback=text_delta_callback,
                         thinking_delta_callback=thinking_delta_callback,
                         should_abort=should_abort,
+                        should_interrupt=should_interrupt,
                         tool_names=tool_names,
                         tool_schemas=tool_schemas,
                     )
@@ -624,6 +627,7 @@ class OpenAIProvider:
         text_delta_callback: Callable[[str], None] | None = None,
         thinking_delta_callback: Callable[[str], None] | None = None,
         should_abort: Callable[[], bool] | None = None,
+        should_interrupt: Callable[[], bool] | None = None,
         tool_names: frozenset[str] = frozenset(),
         tool_schemas: dict[str, dict[str, Any]] | None = None,
     ) -> ProviderResponse:
@@ -675,6 +679,7 @@ class OpenAIProvider:
         last_data_at = time.monotonic()
         idle_killed = threading.Event()
         aborted = threading.Event()
+        interrupted = threading.Event()
         watchdog_stop = threading.Event()
         # Mutable holder so the watchdog can reach the response without
         # racing on assignment (the ``with`` block runs in a different
@@ -694,6 +699,17 @@ class OpenAIProvider:
                         should_stop = should_abort()
                 if should_stop:
                     aborted.set()
+                    with contextlib.suppress(Exception):
+                        resp.close()
+                    return
+                # A steer request (Ctrl-C / TUI `s`) closes the stream so a long
+                # thinking turn reaches the loop's steer boundary at once.
+                should_steer = False
+                if should_interrupt is not None:
+                    with contextlib.suppress(Exception):
+                        should_steer = should_interrupt()
+                if should_steer:
+                    interrupted.set()
                     with contextlib.suppress(Exception):
                         resp.close()
                     return
@@ -847,6 +863,9 @@ class OpenAIProvider:
                             if isinstance(args_piece, str) and args_piece:
                                 tool_arg_buf.setdefault(idx, []).append(args_piece)
         except httpx2.HTTPError as exc:
+            if interrupted.is_set():
+                watchdog_stop.set()
+                raise ProviderInterrupted("steer requested mid-stream") from exc
             if aborted.is_set():
                 watchdog_stop.set()
                 raise ProviderAborted("run stopped by operator") from exc

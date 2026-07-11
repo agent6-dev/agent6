@@ -19,6 +19,7 @@ from agent6.providers.anthropic import (
     AnthropicProvider,
     ProviderAborted,
     ProviderError,
+    ProviderInterrupted,
     ProviderResponse,
     ToolDefinition,
     TranscriptSink,
@@ -54,6 +55,7 @@ class Provider(Protocol):
         text_delta_callback: Callable[[str], None] | None = ...,
         thinking_delta_callback: Callable[[str], None] | None = ...,
         should_abort: Callable[[], bool] | None = ...,
+        should_interrupt: Callable[[], bool] | None = ...,
     ) -> ProviderResponse: ...
 
 
@@ -64,6 +66,7 @@ __all__ = [
     "Provider",
     "ProviderAborted",
     "ProviderError",
+    "ProviderInterrupted",
     "ProviderResponse",
     "ToolDefinition",
     "TranscriptSink",

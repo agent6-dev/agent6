@@ -134,6 +134,20 @@ def test_call_with_retry_never_retries_an_abort() -> None:
     assert provider.call.call_args.kwargs["should_abort"] is wf.should_abort
 
 
+def test_call_with_retry_never_retries_a_steer_interrupt() -> None:
+    """ProviderInterrupted (steer mid-stream) bubbles immediately -- the loop shows
+    the steer menu; retrying would just re-hit the interrupt."""
+    from agent6.providers import ProviderInterrupted
+
+    provider = MagicMock()
+    provider.call.side_effect = [ProviderInterrupted("steer"), _resp("late")]
+    wf = _wf(provider=provider, provider_retry_count=3)
+    with pytest.raises(ProviderInterrupted):
+        wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
+    assert provider.call.call_count == 1  # not retried
+    assert provider.call.call_args.kwargs["should_interrupt"] is wf.should_interrupt
+
+
 def test_call_with_retry_honors_retry_after(monkeypatch: pytest.MonkeyPatch) -> None:
     """A 429 carrying retry_after_s waits at least that long, not the (shorter)
     self-computed backoff."""
