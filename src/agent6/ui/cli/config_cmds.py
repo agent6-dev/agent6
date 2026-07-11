@@ -139,6 +139,8 @@ def _revalidate_config(target: Path, prior_text: str | None, *, machine: Path | 
 
     Returns a ready-to-print error message when the edit produced an invalid
     config (so the caller fails loud and the file is left untouched), else None.
+    The message names the offending layer file and the command to fix it (built
+    in ``agent6.config.layer``), so a stale value in any layer is self-service.
     """
     err: str | None = None
     try:
@@ -209,7 +211,7 @@ def _cmd_config_set(key: str, value: str, *, repo: bool, machine: Path | None) -
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     if err := _revalidate_config(target, prior, machine=machine):
-        print(f"ERROR: {key} = {value!r} is not valid:\n{err}", file=sys.stderr)
+        print(f"ERROR: {err}", file=sys.stderr)
         return 2
     chown_to_real_user(target.parent)
     chown_to_real_user(target)

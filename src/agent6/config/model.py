@@ -26,6 +26,7 @@ is unset (see :mod:`agent6.verify_infer`), else run gateless.
 from __future__ import annotations
 
 import tomllib
+from collections.abc import Callable
 from ipaddress import ip_address
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -1283,25 +1284,35 @@ def resolve_profile(name: str, user_profiles: dict[str, Any]) -> dict[str, Any]:
     raise ConfigError(f"unknown profile {name!r}. Known profiles: {known}.")
 
 
-def _format_validation_error(err: ValidationError, source: str) -> str:
+def _format_validation_error(
+    err: ValidationError, source: str, locate: Callable[[str], str | None] | None = None
+) -> str:
     lines = [f"Config validation failed: {source}"]
     for issue in err.errors():
         loc = ".".join(str(part) for part in issue["loc"]) or "<root>"
         lines.append(f"  - {loc}: {issue['msg']} (type={issue['type']})")
+        if locate is not None and (where := locate(loc)):
+            lines.append(where)
     return "\n".join(lines)
 
 
-def validate_config(raw: dict[str, object], *, source: str = "<config>") -> Config:
+def validate_config(
+    raw: dict[str, object],
+    *,
+    source: str = "<config>",
+    locate: Callable[[str], str | None] | None = None,
+) -> Config:
     """Validate an already-parsed (and possibly layer-merged) config dict.
 
     Shared by :func:`load_config` and the layered loader
-    (``agent6.config.layer``) so both surface identical field-pointing
-    errors.
+    (``agent6.config.layer``) so both surface identical field-pointing errors.
+    ``locate`` maps a dotted leaf to a "which file, how to fix" hint appended to
+    its error line, so a stale value in a layered config names its own source.
     """
     try:
         return Config.model_validate(raw)
     except ValidationError as exc:
-        raise ConfigError(_format_validation_error(exc, source)) from exc
+        raise ConfigError(_format_validation_error(exc, source, locate)) from exc
 
 
 def load_config(path: Path) -> Config:

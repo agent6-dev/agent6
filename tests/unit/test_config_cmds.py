@@ -122,3 +122,32 @@ def test_config_add_on_unset_optional_list_key_works(
     assert rc == 0
     out = capsys.readouterr().out
     assert "Added" in out
+
+
+def test_config_error_names_the_layer_holding_a_stale_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A value left invalid by a schema change (prompt.decompose = true, once a
+    # bool, now Literal["auto","on","off"]) makes the config fail to load. The
+    # error must name the exact file it is in and the command to fix it -- so it is
+    # self-service -- and `config set` of an unrelated key surfaces that same
+    # actionable error rather than blocking with a bare one.
+    from agent6.paths import global_config_path
+    from agent6.ui.cli import main
+
+    gpath = global_config_path()
+    gpath.write_text("[prompt]\ndecompose = true\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    rc = main(["config", "set", "budget.best_effort_usd_limit", "5"])
+    err = capsys.readouterr().err
+    assert rc == 2  # strict: a broken config blocks the write (fail loud)...
+    assert "prompt.decompose" in err  # ...but the message names the real problem,
+    assert str(gpath) in err  # the exact file it is in,
+    assert "config set prompt.decompose <value>" in err  # and how to fix it.
+
+    # Overwriting the offending value clears it; then the unrelated set works.
+    assert main(["config", "set", "prompt.decompose", "off"]) == 0
+    capsys.readouterr()
+    assert main(["config", "set", "budget.best_effort_usd_limit", "5"]) == 0
+    assert "Set budget" in capsys.readouterr().out

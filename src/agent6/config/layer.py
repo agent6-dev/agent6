@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import contextlib
 import tomllib
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, get_args
@@ -212,6 +213,29 @@ def flatten_leaves(data: dict[str, Any], prefix: str = "") -> dict[str, Any]:
     return out
 
 
+def _leaf_fix_hint(
+    layers: list[Layer], source_of_leaf: dict[str, str]
+) -> Callable[[str], str | None]:
+    """Locator for validate_config: a dotted leaf -> "set in <layer> <path>; fix:
+    <command>", or None when the value came from a built-in default (nothing to
+    fix). Lets a stale value name the exact file and the command to correct it."""
+    by_name = {layer.name: layer for layer in layers}
+
+    def locate(leaf: str) -> str | None:
+        layer = by_name.get(source_of_leaf.get(leaf, ""))
+        if layer is None or layer.path is None:
+            return None
+        if layer.name == "repo":
+            fix = f"agent6 config set --repo {leaf} <value>"
+        elif layer.name == "flag":
+            fix = f"edit {layer.path}"
+        else:
+            fix = f"agent6 config set {leaf} <value>"
+        return f"    set in the {layer.name} config: {layer.path}\n    fix: {fix}"
+
+    return locate
+
+
 def _effective_from_layers(layers: list[Layer], *, source: str) -> EffectiveConfig:
     """Merge *layers* low->high, validate, and build the per-leaf source map."""
     merged: dict[str, Any] = {}
@@ -220,7 +244,7 @@ def _effective_from_layers(layers: list[Layer], *, source: str) -> EffectiveConf
         merged = _deep_merge(merged, layer.data)
         for leaf in flatten_leaves(layer.data):
             source_of_leaf[leaf] = layer.name
-    config = validate_config(merged, source=source)
+    config = validate_config(merged, source=source, locate=_leaf_fix_hint(layers, source_of_leaf))
     # Source map over the *effective* config: every leaf the model
     # produced, attributed to the layer that set it or "default".
     effective_leaves = flatten_leaves(config.model_dump(mode="python"))
