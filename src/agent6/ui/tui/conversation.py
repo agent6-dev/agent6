@@ -11,7 +11,9 @@ Completed turns scroll in the main pane; a docked live pane at the bottom stream
 the turn IN PROGRESS (a reasoning model can think for 30-60s before it produces a
 tool call, so without this the view looks frozen). Follows live: new turns append
 and, unless the operator scrolled up to read, the pane sticks to the bottom.
-``t`` toggles thinking, ``r`` re-reads, ``g``/``G`` jump to top/bottom.
+``t`` toggles thinking, ``r`` re-reads, ``g``/``G`` jump to top/bottom. ``c`` copies
+the mouse selection (or the whole transcript) via the ``copy_method`` UI preference;
+``s``/``p``/``w`` copy via the native terminal / pager / a file.
 
 The scrollback is a ``Static`` in a ``VerticalScroll`` (not a ``RichLog``): a
 ``RichLog`` renders as line Strips, which the framework's text selection cannot
@@ -21,6 +23,9 @@ selectable -- matching the live pane, which is already a ``Static``.
 
 from __future__ import annotations
 
+import contextlib
+import os
+import subprocess
 from pathlib import Path
 from typing import ClassVar
 
@@ -28,9 +33,12 @@ from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical, VerticalScroll
+from textual.css.query import NoMatches
 from textual.screen import Screen
 from textual.widgets import Footer, Static
 
+from agent6.ui.tui import clipboard
+from agent6.ui.tui.settings import get_copy_method
 from agent6.ui.viewmodel.tail import LogTail
 from agent6.ui.viewmodel.transcript import (
     CALL,
@@ -83,6 +91,14 @@ def _item_renderables(item: TranscriptItem, *, show_thinking: bool) -> list[Text
     return out
 
 
+class _ChromeStatic(Static):
+    """A Static that never joins a text selection, so dragging over the title or
+    the live pane doesn't grab their text (or stall the auto-scroll) mid-select.
+    Only the transcript body (`#conv-body`) is selectable/copyable."""
+
+    ALLOW_SELECT = False
+
+
 class ConversationScreen(Screen[None]):
     """Scrollable, live-following, selectable LLM conversation for a single run."""
 
@@ -102,6 +118,10 @@ class ConversationScreen(Screen[None]):
         Binding("q", "close", "Back", show=False),
         Binding("r", "reload", "Refresh"),
         Binding("t", "toggle_thinking", "Thinking"),
+        Binding("c", "copy", "Copy"),
+        Binding("s", "suspend_copy", "Copy via terminal", show=False),
+        Binding("p", "pager", "Pager", show=False),
+        Binding("w", "write_file", "Save to file", show=False),
         Binding("g", "scroll_top", "Top"),
         Binding("G", "scroll_bottom", "End"),
     ]
@@ -118,12 +138,12 @@ class ConversationScreen(Screen[None]):
         self._live_text: list[str] = []
 
     def compose(self) -> ComposeResult:
-        yield Static(self._title, id="conv-title")
+        yield _ChromeStatic(self._title, id="conv-title")
         with Vertical():
             with VerticalScroll(id="conv-scroll"):
                 yield Static(id="conv-body")  # renders as Content -> selectable
-            yield Static("", id="conv-live")
-        yield Footer()
+            yield _ChromeStatic("", id="conv-live")  # chrome: not part of a selection
+        yield Footer()  # Footer is ALLOW_SELECT=False in textual already
 
     def on_mount(self) -> None:
         self._reload()
@@ -204,6 +224,78 @@ class ConversationScreen(Screen[None]):
             if at_bottom:
                 scroll.scroll_end(animate=False)
         self._render_live()
+
+    # -- copy ---------------------------------------------------------------
+    def _emit(self, seq: str) -> None:
+        """Write a raw terminal escape (an OSC 52 clipboard-set) through the driver."""
+        driver = self.app._driver  # pyright: ignore[reportPrivateUsage]
+        if driver is not None:
+            driver.write(seq)
+
+    def _selected_or_all(self) -> tuple[str, str]:
+        """The current transcript-body selection if any, else the whole transcript."""
+        body_selection = self._body_selection()
+        if body_selection and body_selection.strip():
+            return body_selection, "selection"
+        return self._content.plain, "whole transcript"
+
+    def _body_selection(self) -> str | None:
+        """Selected text from the transcript BODY only, so a drag that strays over
+        the footer or live pane never copies their text -- Textual's screen-wide
+        get_selected_text() would otherwise include them (they are chrome)."""
+        try:
+            body = self.query_one("#conv-body", Static)
+        except NoMatches:
+            return None
+        selection = self.selections.get(body)
+        if selection is None:
+            return None
+        grabbed = body.get_selection(selection)
+        return grabbed[0] if grabbed is not None else None
+
+    def _copy_text(self, text: str, *, method: str) -> str:
+        """Copy *text* using the resolved *method*; returns a short status."""
+        return clipboard.emit_clipboard(text, clipboard.resolve_method(method), self._emit)
+
+    def action_copy(self) -> None:
+        text, what = self._selected_or_all()
+        if not text:
+            self.notify("nothing to copy yet")
+            return
+        try:
+            status = self._copy_text(text, method=get_copy_method())
+        except (OSError, subprocess.CalledProcessError) as exc:
+            self.notify(f"copy failed: {exc}", severity="error")
+            return
+        self.notify(f"copied {what} — {status}")
+
+    def action_write_file(self) -> None:
+        path = clipboard.write_transcript_file(self._content.plain)
+        self.notify(f"wrote transcript to {path}")
+
+    def action_suspend_copy(self) -> None:
+        """Drop to the native terminal, print the text (scroll + select + copy with
+        the terminal, which always works), Enter to return."""
+        text, what = self._selected_or_all()
+        with self.app.suspend():
+            print(f"\n===== COPY BELOW ({what}) — select + copy in your terminal =====\n")
+            print(text)
+            print("\n===== END — press Enter to return =====")
+            with contextlib.suppress(EOFError):
+                input()
+
+    def action_pager(self) -> None:
+        """Open the text in $PAGER (scroll + select + copy natively)."""
+        text, _ = self._selected_or_all()
+        pager = os.environ.get("PAGER") or "less"
+        cmd = [pager, "-R"] if Path(pager).name.startswith("less") else [pager]
+        with self.app.suspend():
+            try:
+                subprocess.run(cmd, input=text, text=True, check=False)
+            except OSError as exc:
+                print(f"pager {pager!r} failed: {exc}\nPress Enter to return.")
+                with contextlib.suppress(EOFError):
+                    input()
 
     def action_reload(self) -> None:
         self._reload()

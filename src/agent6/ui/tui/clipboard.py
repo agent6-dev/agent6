@@ -41,8 +41,9 @@ def osc52_sequence(text: str, *, wrap: str) -> str:
     return seq
 
 
-def resolve_method(pref: CopyMethod) -> str:
-    """The concrete method for *pref*; ``"auto"`` chooses per environment."""
+def resolve_method(pref: str) -> str:
+    """The concrete method for *pref* (from the ``copy_method`` UI pref, so any
+    string); ``"auto"`` chooses per environment, anything else passes through."""
     if pref != "auto":
         return pref
     if os.environ.get("TMUX"):
