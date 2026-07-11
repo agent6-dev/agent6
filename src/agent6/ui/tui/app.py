@@ -72,6 +72,7 @@ from agent6.ui.tui.modals import (
     ToolCallDetailModal,
 )
 from agent6.ui.tui.theme import PALETTE_CSS, open_theme_picker, setup_theme
+from agent6.ui.viewmodel.format import TASK_STATUS_GLYPH
 from agent6.ui.viewmodel.state import (
     MAX_LOG_TAIL,
     ApprovalPrompt,
@@ -84,14 +85,7 @@ from agent6.ui.viewmodel.state import (
 )
 from agent6.ui.viewmodel.tail import tail_events
 
-_TASK_ICONS = {
-    "passed": "✓",
-    "failed": "✗",
-    "in_progress": "▶",
-    "skipped": "—",
-    "obsolete": "⊘",
-    "pending": "·",
-}
+_TASK_ICONS = TASK_STATUS_GLYPH
 
 # How many recent tool calls the inline table shows. The RowSelected handler maps
 # a visual row back through the same window, so both must use this one value.

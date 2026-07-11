@@ -9,18 +9,7 @@ run that never opened the TUI #plan pane)."""
 from __future__ import annotations
 
 from agent6.graph.models import TaskNode
-
-# The same status glyphs the TUI tree and web task graph use; keep them
-# identical for cross-surface consistency (ruff's ambiguous-glyph rule flags
-# the en-dash / multiplication-sign, which is the point here).
-_STATUS_GLYPH = {
-    "passed": "✓",
-    "failed": "✗",
-    "in_progress": "▸",
-    "pending": "·",
-    "skipped": "–",  # noqa: RUF001
-    "obsolete": "×",  # noqa: RUF001
-}
+from agent6.ui.viewmodel.format import TASK_STATUS_GLYPH as _STATUS_GLYPH
 
 
 def tree_lines_from_event_nodes(nodes: dict[str, object], cursor: str | None = None) -> list[str]:

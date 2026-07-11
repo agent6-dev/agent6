@@ -640,6 +640,7 @@ function paintRun(cards, s) {
   if (!(s.tasks||[]).length) tree.appendChild(el('div', 'muted', 'no task graph yet'));
   for (const t of s.tasks || []) {
     const line = el('div', 'node' + (t.is_cursor ? ' cursor' : ''));
+    // Mirrors viewmodel/format.py TASK_STATUS_GLYPH (JS can't import it); keep in sync.
     const glyph = { passed:'✓', failed:'✗', in_progress:'▸', pending:'·', skipped:'–', obsolete:'×' }[t.status] || '·';
     line.appendChild(el('span', 'st-' + t.status, '  '.repeat(t.depth) + glyph + ' '));
     line.appendChild(document.createTextNode(t.title));
