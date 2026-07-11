@@ -4,8 +4,10 @@
 
 Validate that the provider's ``thinking`` level (off/low/medium/high):
 
-* enables the ``thinking`` block in the request body with the mapped
-  ``budget_tokens`` and lifts ``max_tokens`` above it;
+* enables the ``thinking`` block per model: adaptive + output_config.effort
+  (with summarized display where display defaults to omitted) on models that
+  removed budget_tokens, the mapped ``budget_tokens`` on older models, always
+  lifting ``max_tokens`` for room to answer;
 * drops ``temperature`` (Anthropic rejects temperature with thinking);
 * leaves the body unchanged when ``thinking`` is off/unset;
 * preserves streamed ``thinking`` blocks (with signature) in the
@@ -76,6 +78,74 @@ def test_thinking_enables_budget_and_drops_temperature(
     assert "temperature" not in body
     # max_tokens must exceed the thinking budget so the model can answer.
     assert body["max_tokens"] > budget
+
+
+@pytest.mark.parametrize("model", ["claude-sonnet-5", "claude-opus-4-8", "claude-fable-5"])
+def test_adaptive_models_use_adaptive_effort_and_summary(
+    monkeypatch: pytest.MonkeyPatch, model: str
+) -> None:
+    # budget_tokens is a 400 on these models; send adaptive + effort instead,
+    # with a summarized display (their display defaults to omitted).
+    bodies: list[dict[str, Any]] = []
+    _capture_body(monkeypatch, bodies)
+    provider = AnthropicProvider(
+        api_key="sk-test", model=model, prompt_caching=False, thinking="high"
+    )
+    provider.call(
+        system="sys",
+        messages=[{"role": "user", "content": "x"}],
+        temperature=0.0,
+        max_tokens=8192,
+    )
+    body = bodies[0]
+    assert body["thinking"] == {"type": "adaptive", "display": "summarized"}
+    assert body["output_config"] == {"effort": "high"}
+    assert "temperature" not in body
+    assert body["max_tokens"] > _THINKING_BUDGET_TOKENS["high"]
+
+
+@pytest.mark.parametrize("model", ["claude-opus-4-6", "claude-sonnet-4-6"])
+def test_46_generation_uses_adaptive_without_display(
+    monkeypatch: pytest.MonkeyPatch, model: str
+) -> None:
+    # The 4.6 generation supports adaptive + effort but already defaults display
+    # to summarized, so no display override.
+    bodies: list[dict[str, Any]] = []
+    _capture_body(monkeypatch, bodies)
+    provider = AnthropicProvider(
+        api_key="sk-test", model=model, prompt_caching=False, thinking="medium"
+    )
+    provider.call(
+        system="sys",
+        messages=[{"role": "user", "content": "x"}],
+        temperature=0.0,
+        max_tokens=8192,
+    )
+    body = bodies[0]
+    assert body["thinking"] == {"type": "adaptive"}
+    assert body["output_config"] == {"effort": "medium"}
+    assert "temperature" not in body
+
+
+@pytest.mark.parametrize("model", ["claude-sonnet-4-5", "claude-haiku-4-5-20251001"])
+def test_legacy_models_keep_budget_tokens(monkeypatch: pytest.MonkeyPatch, model: str) -> None:
+    bodies: list[dict[str, Any]] = []
+    _capture_body(monkeypatch, bodies)
+    provider = AnthropicProvider(
+        api_key="sk-test", model=model, prompt_caching=False, thinking="high"
+    )
+    provider.call(
+        system="sys",
+        messages=[{"role": "user", "content": "x"}],
+        temperature=0.0,
+        max_tokens=8192,
+    )
+    body = bodies[0]
+    assert body["thinking"] == {
+        "type": "enabled",
+        "budget_tokens": _THINKING_BUDGET_TOKENS["high"],
+    }
+    assert "output_config" not in body
 
 
 def test_thinking_off_is_a_plain_call(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -55,16 +55,51 @@ def _anthropic_version(deployment: str) -> tuple[str, str]:
     return ("header", ANTHROPIC_VERSION)
 
 
-# Maps the cross-provider ``thinking`` level (off/low/medium/high) onto an
-# Anthropic extended-thinking ``budget_tokens`` value. Anthropic requires
-# ``budget_tokens >= 1024`` and ``budget_tokens < max_tokens``; the call
-# site lifts ``max_tokens`` above the chosen budget so the model always has
-# room to answer after it finishes thinking.
+# Legacy extended-thinking ``budget_tokens`` per cross-provider ``thinking``
+# level (off/low/medium/high). Anthropic REMOVED budget_tokens (a 400) on the
+# models in _ADAPTIVE_THINKING_MARKERS below in favour of adaptive thinking plus
+# output_config.effort, so this map is only for older models. Anthropic requires
+# ``budget_tokens < max_tokens``; the call site lifts ``max_tokens`` so the
+# model keeps room to answer after thinking.
 _THINKING_BUDGET_TOKENS: dict[str, int] = {
     "low": 4096,
     "medium": 8192,
     "high": 16384,
 }
+
+# Models whose extended thinking must be adaptive: Anthropic removed
+# ``budget_tokens`` (a 400) on Opus 4.7+, Sonnet 5, and Fable 5, and deprecated
+# it on the 4.6 generation. All of these accept ``thinking: {type: adaptive}``
+# and ``output_config.effort``.
+_ADAPTIVE_THINKING_MARKERS = (
+    "fable-5",
+    "mythos-5",
+    "mythos-preview",
+    "opus-4-6",
+    "opus-4-7",
+    "opus-4-8",
+    "sonnet-4-6",
+    "sonnet-5",
+)
+# Of those, the models whose thinking display defaults to omitted: ask for a
+# summary so a long think streams progress (which also keeps the SSE idle
+# watchdog fed) and matches the documented default-override for these.
+_SUMMARISE_DISPLAY_MARKERS = (
+    "fable-5",
+    "mythos-5",
+    "mythos-preview",
+    "opus-4-7",
+    "opus-4-8",
+    "sonnet-5",
+)
+
+
+def _is_adaptive_thinking(model: str) -> bool:
+    return any(m in model for m in _ADAPTIVE_THINKING_MARKERS)
+
+
+def _summarise_thinking_display(model: str) -> bool:
+    return any(m in model for m in _SUMMARISE_DISPLAY_MARKERS)
 
 
 def _require_metered_usage(usage: object, *, source: str) -> None:
@@ -271,11 +306,17 @@ class AnthropicProvider:
                     block["cache_control"] = {"type": "ephemeral"}
                 tool_payload.append(block)
 
-        thinking_budget = _THINKING_BUDGET_TOKENS.get(self.thinking or "off")
-        if thinking_budget is not None:
-            # Anthropic requires ``budget_tokens < max_tokens``; lift the
-            # ceiling so the model keeps room to answer after thinking.
-            max_tokens = max(max_tokens, thinking_budget + DEFAULT_MAX_TOKENS)
+        # Extended thinking. Modern models (see _ADAPTIVE_THINKING_MARKERS) took
+        # adaptive thinking + output_config.effort and dropped budget_tokens;
+        # older models still use budget_tokens. "off" sends neither.
+        level = self.thinking or "off"
+        adaptive_thinking = level != "off" and _is_adaptive_thinking(self.model)
+        thinking_budget = None if adaptive_thinking else _THINKING_BUDGET_TOKENS.get(level)
+        if adaptive_thinking or thinking_budget is not None:
+            # Room to answer after thinking. Adaptive carries no explicit budget,
+            # so reserve the same headroom as the deepest fixed budget.
+            reserve = thinking_budget or _THINKING_BUDGET_TOKENS["high"]
+            max_tokens = max(max_tokens, reserve + DEFAULT_MAX_TOKENS)
 
         body: dict[str, Any] = {
             "max_tokens": max_tokens,
@@ -288,9 +329,19 @@ class AnthropicProvider:
             body["model"] = self.model
         if version_placement == "body":
             body["anthropic_version"] = version_value
-        if thinking_budget is not None:
-            # Extended thinking is incompatible with temperature overrides,
-            # so only pass temperature when thinking is disabled.
+        if adaptive_thinking:
+            # Adaptive is the only on-mode on these models; where display
+            # defaults to omitted ask for a summary so a long think streams
+            # progress, and map the level onto effort. Temperature is dropped
+            # for thinking as before (the transport also one-shot-adapts a
+            # temperature 400).
+            thinking_cfg: dict[str, Any] = {"type": "adaptive"}
+            if _summarise_thinking_display(self.model):
+                thinking_cfg["display"] = "summarized"
+            body["thinking"] = thinking_cfg
+            body["output_config"] = {"effort": level}
+        elif thinking_budget is not None:
+            # Legacy extended thinking; incompatible with temperature overrides.
             body["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
         elif temperature is not None and not self._omit_temperature[0]:
             body["temperature"] = temperature
