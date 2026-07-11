@@ -8,6 +8,7 @@
 //!   - Landlock FS rules
 //!   - seccomp-bpf deny-list (default-allow, EPERM on the dangerous syscalls)
 //!   - PR_SET_NO_NEW_PRIVS
+//!   - RLIMIT_DATA memory cap on the child (policy `memory_limit_mb`)
 //! Then forks + execs the child, captures stdout/stderr, prints one JSON result line.
 //!
 //! Exits 0 if it successfully ran the child (regardless of child exit code).
@@ -71,6 +72,12 @@ struct Policy {
     extra_protect_paths: Vec<PathBuf>,
     #[serde(default = "default_timeout")]
     timeout_s: f64,
+    /// Per-process memory cap in MiB, applied via RLIMIT_DATA in the child
+    /// before exec and inherited by every descendant. 0 disables. The serde
+    /// default matches the Python-side `[sandbox].memory_limit_mb` default so
+    /// a policy missing the field still gets the bounded value.
+    #[serde(default = "default_memory_limit_mb")]
+    memory_limit_mb: u64,
 }
 
 fn default_profile() -> String {
@@ -79,6 +86,10 @@ fn default_profile() -> String {
 
 fn default_timeout() -> f64 {
     600.0
+}
+
+fn default_memory_limit_mb() -> u64 {
+    4096
 }
 
 fn die(msg: impl AsRef<str>) -> ! {
@@ -814,6 +825,38 @@ fn run_child(policy: &Policy, cwd: &Path) -> io::Result<()> {
     // inherited our stdout/stderr write-end keeps the pipe open and the reader
     // threads' read_to_string() never sees EOF — hanging the launcher.
     cmd.process_group(0);
+    // Memory cap: RLIMIT_DATA (brk + private writable anonymous mappings,
+    // enforced for mmap since kernel 4.7 — older than any Landlock-capable
+    // kernel), NOT RLIMIT_AS: an address-space cap breaks VA reservers that
+    // never commit the memory (V8's 4 GiB pointer-compression cage, ASAN
+    // shadow, JVM heap reserve). A runaway allocation gets ENOMEM (Python
+    // MemoryError, C++ bad_alloc) instead of driving the host to the OOM
+    // killer. The limit inherits across fork/exec, so each descendant is
+    // individually bounded; it is per-process, not per-tree (that would take
+    // a cgroup, which an unprivileged launcher cannot assume). Raising the
+    // hard limit back needs CAP_SYS_RESOURCE in the INITIAL user namespace,
+    // which a jailed child (even userns root under `strict`) never has.
+    if policy.memory_limit_mb > 0 {
+        let bytes: libc::rlim_t =
+            (policy.memory_limit_mb as libc::rlim_t).saturating_mul(1024 * 1024);
+        unsafe {
+            cmd.pre_exec(move || {
+                // Clamp to the inherited hard limit: lowering is always
+                // permitted, and if the operator's shell already set a
+                // stricter hard cap the stricter value wins (never EPERM).
+                let mut cur = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+                if libc::getrlimit(libc::RLIMIT_DATA, &mut cur) != 0 {
+                    return Err(io::Error::last_os_error());
+                }
+                let cap = bytes.min(cur.rlim_max);
+                let lim = libc::rlimit { rlim_cur: cap, rlim_max: cap };
+                if libc::setrlimit(libc::RLIMIT_DATA, &lim) != 0 {
+                    return Err(io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
 
     let mut child = cmd.spawn()?;
     let child_pid = child.id() as i32; // == pgid, since process_group(0)

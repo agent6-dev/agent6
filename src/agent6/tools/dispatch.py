@@ -1208,6 +1208,7 @@ class ToolDispatcher:
             extra_protect_paths=tuple(protect_paths),
             extra_ro_paths=tuple(Path(p) for p in self._config.sandbox.extra_read_paths),
             tool_paths=tool_mounts,
+            memory_limit_mb=self._config.sandbox.memory_limit_mb,
             **policy_kwargs,
         )
         try:

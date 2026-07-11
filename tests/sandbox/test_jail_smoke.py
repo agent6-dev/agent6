@@ -128,6 +128,43 @@ def test_jail_dev_null_is_writable(jail_bin: Path, tmp_path: Path) -> None:
         assert "OK" in res.stdout, f"{profile} stdout: {res.stdout!r}"
 
 
+def test_jail_memory_limit_caps_child_allocation(jail_bin: Path, tmp_path: Path) -> None:
+    """memory_limit_mb turns a runaway allocation into a plain failed command.
+
+    A child allocating 200 MiB under a 64 MiB cap must die with MemoryError
+    (RLIMIT_DATA, applied in run_child and shared by both profiles) while the
+    host never approaches the OOM killer; the same allocation with the 0
+    opt-out succeeds.
+    """
+    alloc = (
+        "import sys\n"
+        "try:\n"
+        "    bytearray(200 * 1024 * 1024)\n"
+        "except MemoryError:\n"
+        "    sys.exit(9)\n"
+        "print('ALLOC-OK')\n"
+    )
+    capped = run_in_jail(
+        JailPolicy(
+            cwd=tmp_path,
+            argv=("/usr/bin/python3", "-c", alloc),
+            memory_limit_mb=64,
+            timeout_s=30.0,
+        )
+    )
+    assert capped.returncode == 9, f"stderr: {capped.stderr!r}"
+    uncapped = run_in_jail(
+        JailPolicy(
+            cwd=tmp_path,
+            argv=("/usr/bin/python3", "-c", alloc),
+            memory_limit_mb=0,
+            timeout_s=30.0,
+        )
+    )
+    assert uncapped.returncode == 0, f"stderr: {uncapped.stderr!r}"
+    assert "ALLOC-OK" in uncapped.stdout
+
+
 def test_jail_protect_paths_block_writes_to_subdir(jail_bin: Path, tmp_path: Path) -> None:
     """extra_protect_paths must make a sub-directory of cwd read-only."""
     git_dir = tmp_path / ".git"

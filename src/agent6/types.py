@@ -69,6 +69,11 @@ class JailPolicy:
     # these keep their real paths. Read+execute only, never writable.
     tool_paths: tuple[Path, ...] = ()
     timeout_s: float = 600.0
+    # Per-process memory cap in MiB (RLIMIT_DATA, set by the launcher in the
+    # child before exec and inherited by every descendant); 0 disables. The
+    # dataclass default matches ``[sandbox].memory_limit_mb`` so call sites
+    # that do not carry config (probes, offline script tests) stay bounded.
+    memory_limit_mb: int = 4096
 
 
 @dataclass(frozen=True, slots=True)

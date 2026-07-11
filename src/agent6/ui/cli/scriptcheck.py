@@ -140,7 +140,9 @@ def run_offline_tests(
 
     Skipped on profile ``none`` (no jail to confine model-authored code in),
     the static checks still apply. Each test gets a fresh writable
-    ``$AGENT6_MACHINE_DATA_DIR`` so record-style scripts can be exercised."""
+    ``$AGENT6_MACHINE_DATA_DIR`` so record-style scripts can be exercised.
+    Tests run under the default ``JailPolicy`` memory cap (these are offline
+    mocks; the operator's ``[sandbox].memory_limit_mb`` is not consulted)."""
     scripts_dir = bundle_dir / "scripts"
     if not scripts_dir.is_dir():
         return []

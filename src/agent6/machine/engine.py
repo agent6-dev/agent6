@@ -273,6 +273,9 @@ class LiveWorld:
     # caches). cwd is writable too, but it is the repo, not durable machine
     # state. Set by the CLI to <instance>/data.
     data_dir: Path | None = None
+    # Per-process memory cap (MiB) for every tool jail, from
+    # `[sandbox].memory_limit_mb` (the CLI wires it); 0 disables.
+    memory_limit_mb: int = 4096
 
     def run_tool(
         self, argv: tuple[str, ...], timeout_s: float, *, allow_network: bool = False
@@ -313,6 +316,7 @@ class LiveWorld:
             extra_protect_paths=self.protect_paths,
             extra_rw_paths=extra_rw,
             timeout_s=float(timeout_s),
+            memory_limit_mb=self.memory_limit_mb,
         )
         try:
             result = run_in_jail(policy)

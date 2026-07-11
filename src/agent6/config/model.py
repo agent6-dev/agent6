@@ -384,6 +384,19 @@ class SandboxConfig(BaseModel):
     # entries and break toolchains), so .git is writable there: recoverable,
     # gated by run_commands, and run state lives out of the workspace.
     protect_git: bool = True
+    # Per-process memory cap in MiB for every JAILED child (`run_command`,
+    # verify, metric, machine `tool` states, offline script tests), applied as
+    # RLIMIT_DATA by the launcher and inherited by the child's descendants.
+    # RLIMIT_DATA (heap + private writable anonymous mappings) rather than
+    # RLIMIT_AS so runtimes that reserve large address space without
+    # committing it (V8, JVM, ASAN) keep working. A runaway allocation fails
+    # with ENOMEM (Python MemoryError) that the agent sees as an ordinary
+    # failed command, instead of driving the host to the OOM killer. The cap
+    # is per PROCESS, not per tree; it bounds the common single-runaway case,
+    # not a fork bomb. 0 disables (opt-out, like every widening). No effect
+    # under profile `none` (no confinement at all there). Raise it when a
+    # legitimate build or test suite needs more than 4 GiB in one process.
+    memory_limit_mb: int = Field(default=4096, ge=0)
     # Extra egress destinations the AGENT process may reach under
     # `agent_network = "providers"`, on top of the configured provider
     # endpoints. Each entry is a `host`, `host:port`, or full URL (a missing

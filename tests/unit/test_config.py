@@ -223,6 +223,24 @@ def test_extra_read_paths_rejects_dotdot_traversal(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
+def test_memory_limit_defaults_bounded(tmp_path: Path) -> None:
+    # Secure default: every jailed child is memory-capped; 0 is the explicit
+    # opt-out, like every other widening.
+    cfg = load_config(_write(tmp_path, _VALID_TOML))
+    assert cfg.sandbox.memory_limit_mb == 4096
+
+
+def test_memory_limit_accepts_zero_opt_out(tmp_path: Path) -> None:
+    body = _VALID_TOML.replace("protect_git = true", "protect_git = true\nmemory_limit_mb = 0")
+    assert load_config(_write(tmp_path, body)).sandbox.memory_limit_mb == 0
+
+
+def test_memory_limit_rejects_negative(tmp_path: Path) -> None:
+    body = _VALID_TOML.replace("protect_git = true", "protect_git = true\nmemory_limit_mb = -1")
+    with pytest.raises(ConfigError, match=r"memory_limit_mb"):
+        load_config(_write(tmp_path, body))
+
+
 def test_openai_base_url_accepts_http_and_https(tmp_path: Path) -> None:
     body = _VALID_TOML.replace(
         "[models.worker]",

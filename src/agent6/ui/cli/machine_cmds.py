@@ -735,6 +735,7 @@ def _cmd_machine_run(  # noqa: PLR0911, PLR0912, PLR0915
                 # Operator argv fired on machine.notify/machine.end, on the host
                 # outside the jail (None when [machine.notify].on_event is unset).
                 notify_hook=_build_machine_notify_hook(cfg, spec.machine, root),
+                memory_limit_mb=cfg.sandbox.memory_limit_mb,
             )
             result = drive(spec, journal, world, live=True, exit_on_wait=exit_on_wait)
     except (JournalError, EngineError) as exc:

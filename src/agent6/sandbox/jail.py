@@ -73,6 +73,7 @@ def _policy_to_json(policy: JailPolicy) -> str:
             "extra_protect_paths": [str(p) for p in policy.extra_protect_paths],
             "tool_paths": [str(p) for p in policy.tool_paths],
             "timeout_s": policy.timeout_s,
+            "memory_limit_mb": policy.memory_limit_mb,
         }
     )
 
@@ -82,8 +83,9 @@ def _run_unsandboxed(policy: JailPolicy) -> CommandResult:
 
     Used only for the `none` profile on non-Linux hosts. Inherits the parent
     environment (so `PATH` etc. resolve normally) overlaid with `policy.env`;
-    runs in `policy.cwd`. The sandbox-only knobs (network, ro/rw/protect paths)
-    have no effect here, there is no kernel mechanism to enforce them.
+    runs in `policy.cwd`. The sandbox-only knobs (network, ro/rw/protect paths,
+    memory_limit_mb) have no effect here, there is no kernel mechanism to
+    enforce them.
     """
     env = {**os.environ, **{k: v for k, v in policy.env}}
     start = time.monotonic()
