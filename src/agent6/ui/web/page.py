@@ -843,7 +843,13 @@ function paintPrompts(cards, s) {
         inputs.push(inp);
       });
       const send = el('button', 'primary', qs.length > 1 ? 'Submit all' : 'Send');
-      send.onclick = async () => { try { await postJSON(base + '/answer', { id: q.id, answers: inputs.map(i => i.value.trim()), ...extra }); } catch (e) { toast(e.message, true); } };
+      send.onclick = async () => {
+        const answers = inputs.map(i => i.value.trim());
+        // Guard an accidental Send: an all-empty submit would consume this
+        // one-shot question and continue the run on fabricated empty input.
+        if (answers.every(a => a === '')) { toast('Pick an option or type an answer first.', true); return; }
+        try { await postJSON(base + '/answer', { id: q.id, answers, ...extra }); } catch (e) { toast(e.message, true); }
+      };
       box.appendChild(send);
       return box;
     };
