@@ -15,7 +15,7 @@ from pathlib import Path
 
 from agent6.runs.id import RunIdError, resolve_run_id
 from agent6.ui.bridge.approval import read_worker_pid, worker_is_alive
-from agent6.ui.cli._common import _runs_dir, _state_dir
+from agent6.ui.cli._common import _runs_dir, _state_dir, resolve_run_layout
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.viewmodel import run_mtime, tail_events
 from agent6.ui.viewmodel.format import format_cost
@@ -132,12 +132,13 @@ def _cmd_watch(run_id: str, *, tui: bool = False, since: int = 0, raw: bool = Fa
     """
     runs_dir = _runs_dir(Path.cwd())
     if run_id:
+        # Across every run-style bucket (runs/asks/machine-drafts): a listed
+        # ask or a `machine create` draft is watchable by id too.
         try:
-            resolved = resolve_run_id(runs_dir, run_id)
+            target = resolve_run_layout(Path.cwd(), run_id).run_dir
         except RunIdError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
-        target = runs_dir / resolved
     else:
         latest = _most_recent_run_id(runs_dir)
         if latest is None:
@@ -162,13 +163,18 @@ def _cmd_watch(run_id: str, *, tui: bool = False, since: int = 0, raw: bool = Fa
     return run_tui(target)
 
 
-def _resolve_run_dir(runs_dir: Path, run_id: str) -> Path | None:
-    """Resolve a run id (or the most-recent run when empty) to its run dir."""
+def _resolve_run_dir(repo_root: Path, run_id: str) -> Path | None:
+    """Resolve a run id (or the most-recent run when empty) to its run dir.
+
+    An explicit id resolves across every run-style bucket (runs/, asks/,
+    machine-drafts/): anything `agent6 runs` lists must also be inspectable
+    by id. The empty (most-recent) case stays runs/ only."""
     if run_id:
         try:
-            return runs_dir / resolve_run_id(runs_dir, run_id)
+            return resolve_run_layout(repo_root, run_id).run_dir
         except RunIdError:
             return None
+    runs_dir = _runs_dir(repo_root)
     if not runs_dir.is_dir():
         return None
     # Sort by logs.jsonl activity (run_mtime), not dir mtime: a viewer opening a
@@ -253,10 +259,13 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:  # noqa: PLR0915
     last event, current iteration, and elapsed time from logs.jsonl. For a quick
     or scripted check; `agent6 watch` is the live follower.
     """
-    runs_dir = _runs_dir(Path.cwd())
-    target = _resolve_run_dir(runs_dir, run_id)
+    target = _resolve_run_dir(Path.cwd(), run_id)
     if target is None or not target.is_dir():
-        print(f"ERROR: no run found ({run_id or 'latest'}) under {runs_dir}", file=sys.stderr)
+        state = _state_dir(Path.cwd())
+        print(
+            f"ERROR: no run found ({run_id or 'latest'}) under {state}/(runs|asks|machine-drafts)",
+            file=sys.stderr,
+        )
         return 2
 
     manifest: dict[str, object] = {}

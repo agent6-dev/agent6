@@ -1031,6 +1031,12 @@ def _cmd_machine_create(  # noqa: PLR0911, PLR0912, PLR0915
     events_log = scratch / "logs.jsonl"
     events = EventSink(events_log)
     events.emit("run.start", user_task=task, mode="machine")
+    # Authoring can take minutes with nothing on this terminal; say where the
+    # live reasoning streams so the operator can follow instead of wondering.
+    print(
+        f"machine create: drafting as {scratch.name} (follow live: agent6 watch {scratch.name})",
+        file=sys.stderr,
+    )
     # Authoring drafts a machine; it has no machine [config] overlay of its own.
     runner = _build_machine_agent_runner({}, cwd, profile, scratch / "agent_transcripts")
 

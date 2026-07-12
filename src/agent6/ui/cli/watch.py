@@ -18,8 +18,8 @@ import sys
 from pathlib import Path
 
 from agent6.machine import MachineError, MachineJournal, load_machine
-from agent6.runs.id import RunIdError, resolve_run_id
-from agent6.ui.cli._common import _machines_dir, _runs_dir
+from agent6.runs.id import RunIdError
+from agent6.ui.cli._common import _machines_dir, _runs_dir, resolve_run_layout
 from agent6.ui.cli.machine_cmds import _cmd_machine_watch
 from agent6.ui.cli.plan_watch import _cmd_watch as _watch_run
 from agent6.ui.cli.plan_watch import _resolve_run_dir
@@ -32,13 +32,14 @@ from agent6.ui.viewmodel import (
 )
 
 
-def _run_intent(runs_dir: Path, target: str) -> tuple[bool, str | None]:
-    """Resolve *target* against runs. Returns (is_run, ambiguity_error):
-    (True, None) it resolves to a run; (False, None) no run matches, so the caller
-    may try a machine; (False, msg) it is an ambiguous run prefix, a run-intent
-    error the caller should surface rather than fall through to machine lookup."""
+def _run_intent(repo_root: Path, target: str) -> tuple[bool, str | None]:
+    """Resolve *target* against the run-style buckets (runs/asks/machine-drafts).
+    Returns (is_run, ambiguity_error): (True, None) it resolves; (False, None) no
+    match, so the caller may try a machine; (False, msg) it is an ambiguous
+    prefix, a run-intent error the caller should surface rather than fall
+    through to machine lookup."""
     try:
-        resolve_run_id(runs_dir, target)
+        resolve_run_layout(repo_root, target)
     except RunIdError as exc:
         return (False, str(exc)) if exc.ambiguous else (False, None)
     return (True, None)
@@ -94,7 +95,7 @@ def _cmd_watch_target(  # noqa: PLR0911
 
     # An ambiguous run prefix is a run-intent error: surface the disambiguation
     # rather than falling through to machine lookup and printing "no match".
-    is_run, ambiguous = (True, None) if not target else _run_intent(runs_dir, target)
+    is_run, ambiguous = (True, None) if not target else _run_intent(cwd, target)
     if ambiguous is not None:
         print(f"ERROR: {ambiguous}", file=sys.stderr)
         return 2
@@ -103,7 +104,7 @@ def _cmd_watch_target(  # noqa: PLR0911
     if is_run:
         if not json_out:
             return _watch_run(target, tui=tui, since=since, raw=raw)
-        run_dir = _resolve_run_dir(runs_dir, target)
+        run_dir = _resolve_run_dir(cwd, target)
         if run_dir is None or not run_dir.is_dir():
             print(f"ERROR: no run found ({target or 'latest'}) under {runs_dir}", file=sys.stderr)
             return 2

@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""resolve_run_layout finds a run under runs/ OR asks/ (so history/graph work
-for ask runs, whose state lives under asks/<id>)."""
+"""resolve_run_layout finds a run under runs/, asks/, or machine-drafts/ (so
+anything a listing shows -- an ask, a `machine create` draft -- is inspectable
+and watchable by id too)."""
 
 from __future__ import annotations
 
@@ -36,6 +37,18 @@ def test_resolves_runs_and_asks_with_correct_subdir(tmp_path: Path) -> None:
 
     # Unique-prefix resolution works too.
     assert resolve_run_layout(repo, "ask-").run_id == "ask-xyz"
+
+
+def test_resolves_a_machine_create_draft(tmp_path: Path) -> None:
+    # `agent6 watch <draft-id>` follows the authoring agent's live log.
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    state = resolved_state_dir(repo)
+    (state / "machine-drafts" / "blue-meadow-X1").mkdir(parents=True)
+
+    layout = resolve_run_layout(repo, "blue-")
+    assert layout.subdir == "machine-drafts"
+    assert layout.run_dir == state / "machine-drafts" / "blue-meadow-X1"
 
 
 def test_prefix_must_be_unique_across_runs_and_asks(tmp_path: Path) -> None:

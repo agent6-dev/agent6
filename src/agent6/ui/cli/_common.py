@@ -181,19 +181,22 @@ def _machines_dir(repo_root: Path) -> Path:
 
 
 def resolve_run_layout(repo_root: Path, query: str) -> RunLayout:
-    """Resolve a run id (or unique prefix) across BOTH ``runs/`` and ``asks/``,
-    returning a ``RunLayout`` with the matching subdir.
+    """Resolve a run id (or unique prefix) across every run-style bucket --
+    ``runs/``, ``asks/``, and ``machine-drafts/`` -- returning a ``RunLayout``
+    with the matching subdir.
 
-    `agent6 run`/`plan` live under ``runs/`` and `agent6 ask` under ``asks/``;
-    read-only commands (``runs graph``/``history search``) use this so an ask's
-    state is findable too. Raises ``RunIdError`` if no run matches in either.
+    `agent6 run`/`plan` live under ``runs/``, `agent6 ask` under ``asks/``, and
+    `machine create` authoring logs under ``machine-drafts/``; read-only
+    commands (``runs show``/``watch``/``history search``) use this so anything
+    a listing shows is also inspectable by id. Raises ``RunIdError`` if no run
+    matches in any bucket.
     """
     if not query:
         raise RunIdError("empty run id")
     state = _state_dir(repo_root)
     exact: list[tuple[str, str]] = []
     prefix: list[tuple[str, str]] = []
-    for subdir in ("runs", "asks"):
+    for subdir in ("runs", "asks", "machine-drafts"):
         d = state / subdir
         if not d.is_dir():
             continue
@@ -220,7 +223,7 @@ def resolve_run_layout(repo_root: Path, query: str) -> RunLayout:
             f"run id {query!r} is ambiguous ({len(prefix)} matches): {preview}",
             ambiguous=True,
         )
-    raise RunIdError(f"no run matches {query!r} under {state}/(runs|asks)")
+    raise RunIdError(f"no run matches {query!r} under {state}/(runs|asks|machine-drafts)")
 
 
 def _check_provider_keys(cfg: Config) -> str | None:
