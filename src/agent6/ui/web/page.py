@@ -1128,13 +1128,54 @@ async function renderConfig() {
   filter.oninput = () => { const q = filter.value.toLowerCase(); for (const [key, tr] of rows) tr.style.display = key.includes(q) ? '' : 'none'; };
   view.appendChild(card);
 }
-async function editConfig(key, s) {
+// A proper editor overlay (not a browser prompt): choices and booleans get a
+// select, everything else a text field, with the default, source, and type
+// shown; "set for this repo" writes the per-repo config instead of the global.
+function editConfig(key, s) {
   const cur = s.value === null || s.value === undefined ? '' : (Array.isArray(s.value) ? s.value.join(',') : String(s.value));
-  const choicesHint = s.choices ? ' (one of: ' + s.choices.join(', ') + ')' : '';
-  const value = prompt('Set ' + key + choicesHint + ':', cur);
-  if (value === null) return;
-  try { const d = await postJSON('/api/config', { key, value }); toast(d.message || 'set ' + key); renderConfig(); }
-  catch (e) { toast(e.message, true); }
+  const back = el('div', 'overlay');
+  const box = el('div', 'card'); box.style.width = 'min(560px, 92vw)';
+  box.appendChild(el('h2', null, key));
+  const meta = el('div', 'sub muted');
+  meta.textContent = `${esc(s.type)} · default: ${fmtVal(s.default)} · set from: ${esc(s.source)}` + (s.adaptive ? ' · adaptive' : '');
+  meta.style.marginBottom = '10px';
+  box.appendChild(meta);
+  let field;
+  const choices = s.choices || (s.type === 'bool' ? ['true', 'false'] : null);
+  if (choices) {
+    field = el('select', 'field');
+    for (const c of choices) { const o = el('option', null, c); o.value = c; field.appendChild(o); }
+    field.value = cur || String(s.default ?? '');
+  } else {
+    field = el('input', 'field');
+    field.value = cur;
+    if (s.type === 'list') field.placeholder = 'comma-separated values';
+  }
+  box.appendChild(field);
+  const repoRow = el('label', 'row'); repoRow.style.marginTop = '8px'; repoRow.style.cursor = 'pointer';
+  const repoCb = el('input'); repoCb.type = 'checkbox';
+  repoRow.appendChild(repoCb); repoRow.appendChild(el('span', 'sub muted', 'set for this repo only (not the global config)'));
+  box.appendChild(repoRow);
+  const row = el('div', 'form-row');
+  const save = el('button', 'primary', 'Save'), cancel = el('button', null, 'Cancel');
+  row.appendChild(save); row.appendChild(cancel); box.appendChild(row);
+  back.appendChild(box); document.body.appendChild(back);
+  const close = () => { activeOverlayClose = null; back.remove(); document.removeEventListener('keydown', onKey); };
+  activeOverlayClose = close; // navigating away dismisses it
+  function onKey(e) { if (e.key === 'Escape') close(); }
+  document.addEventListener('keydown', onKey);
+  cancel.onclick = close;
+  back.onclick = (e) => { if (e.target === back) close(); };
+  field.focus();
+  const submit = async () => {
+    save.disabled = true;
+    try {
+      const d = await postJSON('/api/config', { key, value: field.value, repo: repoCb.checked });
+      toast(d.message || 'set ' + key); close(); renderConfig();
+    } catch (e) { toast(e.message, true); save.disabled = false; }
+  };
+  save.onclick = submit;
+  field.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } };
 }
 function fmtVal(v) { if (v === null || v === undefined) return '—'; if (Array.isArray(v)) return '[' + v.join(', ') + ']'; return String(v); }
 
