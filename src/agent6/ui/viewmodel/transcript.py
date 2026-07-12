@@ -15,9 +15,21 @@ tailers feed the same `TranscriptFold` one event at a time.
 
 from __future__ import annotations
 
+import re
 import shlex
 from dataclasses import dataclass
 from typing import Any, Literal
+
+# ANSI/CSI escape sequences (colored tool output). Stripped from fold previews:
+# the fold is plain data consumed by non-terminal surfaces (web, saved
+# transcripts, TUI widgets) that render escapes as literal garbage; the live CLI
+# stream styles its own output separately.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+
+
+def _strip_ansi(text: str) -> str:
+    return _ANSI_RE.sub("", text)
+
 
 # Shared glyph vocabulary (text characters, not graphics, so every terminal font
 # renders them). One place so cli/tui/web agree.
@@ -204,7 +216,16 @@ class TranscriptFold:
             tail = str(event.get("stdout_tail") or "").strip()
         else:
             tail = ""
-        return [TranscriptItem("tool", name=name, arg=arg, ok=ok, detail=detail, tail=tail)]
+        return [
+            TranscriptItem(
+                "tool",
+                name=name,
+                arg=arg,
+                ok=ok,
+                detail=_strip_ansi(detail),
+                tail=_strip_ansi(tail),
+            )
+        ]
 
 
 def fold_transcript(events: list[dict[str, Any]]) -> list[TranscriptItem]:

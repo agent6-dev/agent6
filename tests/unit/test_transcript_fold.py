@@ -68,6 +68,24 @@ def test_failed_tool_keeps_a_tail() -> None:
     assert item.ok is False and "No such file" in item.tail
 
 
+def test_tool_output_ansi_is_stripped_from_the_fold() -> None:
+    # The fold is plain data for non-terminal surfaces (web/saved transcripts):
+    # colored tool output must not leak escape sequences as literal text.
+    events = [
+        {"type": "tool.call", "name": "run_command", "args": {"command": "pytest"}},
+        {
+            "type": "tool.result",
+            "name": "run_command",
+            "ok": True,
+            "summary": "\x1b[32mok\x1b[0m",
+            "stdout_tail": "\x1b[36m[Tach]\x1b[0m 10 tests \x1b[1mpass\x1b[0m",
+        },
+    ]
+    (item,) = fold_transcript(events)
+    assert "\x1b" not in item.tail and item.tail == "[Tach] 10 tests pass"
+    assert "\x1b" not in item.detail and item.detail == "ok"
+
+
 def test_salient_arg_prefers_a_primary_key() -> None:
     assert salient_arg({"recursive": True, "path": "src/x.py"}) == "src/x.py"
     assert salient_arg({}) == ""
