@@ -213,6 +213,16 @@ def _operator_tool_paths() -> tuple[str, tuple[Path, ...]]:
                 continue
             if real.is_file() and not _under_system_root(real):
                 mounts.add(real.parent)  # e.g. /opt/pipx/venvs/uv/bin
+    # Interpreter toolchains a repo venv's python may symlink to: uv-managed
+    # CPython lives under XDG data, not any bin dir. Without this mount the
+    # jail sees such a venv "linked to a non-existent interpreter" and an
+    # in-jail `uv run` DELETES and recreates the operator's .venv (observed
+    # live: the verify tail read "Removed virtual environment at: .venv").
+    # Mount-only, never a PATH entry.
+    data_home = Path(os.environ.get("XDG_DATA_HOME") or home / ".local/share")
+    uv_pythons = data_home / "uv" / "python"
+    if uv_pythons.is_dir():
+        mounts.add(uv_pythons)
     return ":".join(path_dirs), tuple(sorted(mounts))
 
 

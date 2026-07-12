@@ -1435,6 +1435,26 @@ def test_operator_tool_paths_extends_path_and_mounts_are_nonsystem() -> None:
         assert m.is_dir()
 
 
+def test_operator_tool_paths_mounts_uv_managed_pythons(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A repo venv made by uv can symlink python to a uv-managed CPython under
+    # XDG data; without the RO mount an in-jail `uv run` sees a "non-existent
+    # interpreter" and deletes + recreates the operator's .venv.
+    from agent6.tools.dispatch import _operator_tool_paths  # pyright: ignore[reportPrivateUsage]
+
+    pythons = tmp_path / "uv" / "python"
+    pythons.mkdir(parents=True)
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    path, mounts = _operator_tool_paths()
+    assert pythons in mounts
+    assert str(pythons) not in path  # mount-only: interpreters are not PATH dirs
+
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "elsewhere"))
+    _, mounts = _operator_tool_paths()
+    assert pythons not in mounts  # absent dir -> no mount
+
+
 def test_ask_user_accepts_flat_single_question(tmp_path: Path) -> None:
     # A model that sends a lone question flat (not wrapped in `questions`) still works.
     cfg = _config(tmp_path)
