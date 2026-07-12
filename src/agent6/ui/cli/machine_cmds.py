@@ -123,7 +123,7 @@ def _check_scripts_dir(scripts_dir: Path, bundle: Path) -> list[str]:
             problems.append(f"scripts/{rel}: {exc}")
             continue
         if not _is_inside(resolved, bundle):
-            problems.append(f"scripts/{rel} resolves outside the bundle ({resolved}) — refusing")
+            problems.append(f"scripts/{rel} resolves outside the bundle ({resolved}); refused")
     return problems
 
 

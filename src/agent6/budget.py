@@ -396,5 +396,5 @@ class BudgetTracker:
             budget_line += "+ (some models unpriced; figure is a lower bound)"
         lines.append(budget_line)
         if snap.exhausted:
-            lines.append(f"  STATUS: BUDGET EXCEEDED — {snap.exhausted_reason}")
+            lines.append(f"  STATUS: BUDGET EXCEEDED ({snap.exhausted_reason})")
         return "\n".join(lines)

@@ -175,7 +175,7 @@ def _run_info_command(cmd: str, run_dir: Path) -> None:
         _print_tasks(run_dir)
     elif cmd == "/compact":
         request_compact(run_dir)
-        print("[agent6] compaction requested — applies before the next model call")
+        print("[agent6] compaction requested; applies before the next model call")
 
 
 def pause_menu(  # noqa: PLR0911, PLR0912
@@ -220,10 +220,10 @@ def pause_menu(  # noqa: PLR0911, PLR0912
             builtin = [c for c in COMMANDS if c.startswith(word)]
             matches = builtin + [c for c in skills if c.startswith(word) and c not in builtin]
         if len(matches) > 1:
-            print(f"[agent6] ambiguous: {'  '.join(matches)} — type a bit more")
+            print(f"[agent6] ambiguous: {'  '.join(matches)} (type more)")
         elif not matches:
             print(
-                f"[agent6] unknown command {word!r} — /help lists them"
+                f"[agent6] unknown command {word!r}; /help lists them"
                 " (a line with spaces is sent as a steer)"
             )
         elif matches[0] in _ACTIONS:

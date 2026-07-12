@@ -324,7 +324,7 @@ class DashboardScreen(Screen[None]):
         except (OSError, subprocess.CalledProcessError) as exc:
             self.notify(f"copy failed: {exc}", severity="error")
             return
-        self.notify(f"copied selection — {status}")
+        self.notify(f"copied selection ({status})")
 
     def _scroll_target(self) -> Widget:
         """The pane the shared scroll keys drive: the focused scrollable if any
@@ -904,7 +904,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         elif stack[-1] is self._dash:
             with contextlib.suppress(NoMatches):
                 self._dash.query_one("#dash-input", SteerInput).focus()
-        self.notify("the run asked for steering — type an instruction and press Enter")
+        self.notify("steering requested: type an instruction and press Enter")
 
     def action_compact(self) -> None:
         """Ask the run to compact its context now: drop the compact.request
@@ -914,7 +914,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
             self.notify("run is not live -- nothing to compact", severity="warning")
             return
         request_compact(self.run_dir)
-        self.notify("compaction requested — applies at the next safe boundary")
+        self.notify("compaction requested; applies at the next safe boundary")
 
     def action_stop_now(self) -> None:
         """Stop the run immediately: confirm, then write the abort answer over

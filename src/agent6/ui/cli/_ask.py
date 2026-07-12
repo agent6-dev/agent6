@@ -215,7 +215,7 @@ def run_ask_repl(
     The agent re-reads what it needs per turn (prompt-cached); the conversation
     text is what gives continuity."""
     print(
-        "[agent6] ask REPL — follow-up, /cost, /reset, or /quit (Ctrl-D exits).",
+        "[agent6] ask REPL: type a follow-up, or /cost /reset /quit (Ctrl-D exits).",
         file=sys.stderr,
     )
     conversation: list[tuple[str, str]] = []

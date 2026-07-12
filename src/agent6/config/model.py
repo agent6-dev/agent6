@@ -451,9 +451,8 @@ class SandboxConfig(BaseModel):
         if self.tool_network == "allow" and self.agent_network != "open":
             raise ValueError(
                 "sandbox.tool_network = 'allow' requires sandbox.agent_network"
-                " = 'open' — run_command runs inside the agent process and cannot"
-                " reach the network while the agent is confined. Use"
-                " 'only_explicit_states' for audited per-tool egress, or set"
+                " = 'open': run_command runs inside the confined agent process."
+                " Use 'only_explicit_states' for audited per-tool egress, or set"
                 " agent_network = 'open'."
             )
         if self.agent_network == "local" and self.allow_urls:
@@ -462,8 +461,8 @@ class SandboxConfig(BaseModel):
             # providers, so an external allow-list can never take effect.
             raise ValueError(
                 "sandbox.agent_network = 'local' (loopback providers only) cannot"
-                " be combined with sandbox.allow_urls — there is nothing external"
-                " to allow-list when offline. Remove allow_urls, or use"
+                " be combined with sandbox.allow_urls: offline has nothing"
+                " external to allow-list. Remove allow_urls, or use"
                 " agent_network = 'providers'."
             )
         return self

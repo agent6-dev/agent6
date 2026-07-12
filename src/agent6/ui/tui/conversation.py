@@ -553,7 +553,7 @@ class ConversationScreen(Screen[None]):
             self._flush_tail()
         else:
             self._tail_widget().update(
-                Text("(no conversation yet — it appears as the run streams)", style="dim italic")
+                Text("(no conversation yet; it appears as the run streams)", style="dim italic")
             )
         self._render_live()
         self._sync_input()
@@ -693,7 +693,7 @@ class ConversationScreen(Screen[None]):
         except (OSError, subprocess.CalledProcessError) as exc:
             self.notify(f"copy failed: {exc}", severity="error")
             return
-        self.notify(f"copied {what} — {status}")
+        self.notify(f"copied {what} ({status})")
 
     def action_write_file(self) -> None:
         path = clipboard.write_transcript_file(self._content.plain)
@@ -704,9 +704,9 @@ class ConversationScreen(Screen[None]):
         the terminal, which always works), Enter to return."""
         text, what = self._selected_or_all()
         with self.app.suspend():
-            print(f"\n===== COPY BELOW ({what}) — select + copy in your terminal =====\n")
+            print(f"\n===== COPY BELOW ({what}): select and copy in your terminal =====\n")
             print(text)
-            print("\n===== END — press Enter to return =====")
+            print("\n===== END (press Enter to return) =====")
             with contextlib.suppress(EOFError):
                 input()
 

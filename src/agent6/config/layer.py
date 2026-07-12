@@ -123,7 +123,7 @@ def _forbid_repo_state_dir(layer_name: str, data: dict[str, Any]) -> None:
     if isinstance(section, dict) and "state_dir" in section:
         raise ConfigError(
             f"[agent6].state_dir may only be set in the global config"
-            f" ({global_config_path()}), not in the {layer_name} config — it"
+            f" ({global_config_path()}), not in the {layer_name} config: it"
             " locates the directory the per-repo config itself lives in."
         )
 

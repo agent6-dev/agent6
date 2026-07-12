@@ -154,7 +154,7 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True) -> int:  
     read-only GET to the provider's ``/models`` endpoint to confirm the key
     authenticates.
     """
-    print("agent6 connect — add a provider + API key.\n")
+    print("agent6 connect: add a provider and API key.\n")
     name = _resolve_provider_name(provider)
     if name is None:
         return 2

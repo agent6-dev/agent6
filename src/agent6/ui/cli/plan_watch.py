@@ -315,13 +315,13 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:  # noqa: PLR0915
         # (dashboard/hub) uses the friendly run_status_label, which also has all_passed.
         state = f"finished ({end_reason})"
     elif alive and last_age is not None and last_age > 120:
-        state = "running (in a long step — provider call?)"
+        state = "running (long step, likely a provider call)"
     elif alive:
         state = "running"
     elif last_ep is None:
         state = "unknown (no events yet)"
     else:
-        state = "stopped (no live worker, no run.end — likely crashed or killed)"
+        state = "stopped (no worker, no run.end: likely crashed or killed)"
 
     models = manifest.get("models")
     worker = models.get("worker") if isinstance(models, dict) else None
@@ -355,9 +355,9 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:  # noqa: PLR0915
 
     pid_note = ""
     if alive:
-        pid_note = f"  — worker pid {pid} alive"
+        pid_note = f"  (worker pid {pid} alive)"
     elif pid is not None and end_reason is None:
-        pid_note = f"  — worker pid {pid} not running"
+        pid_note = f"  (worker pid {pid} not running)"
     print(f"run:        {target.name}  (mode={manifest.get('mode', '?')})")
     _print_fork_lineage(manifest)
     print(f"model:      {model}")

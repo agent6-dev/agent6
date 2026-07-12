@@ -420,7 +420,7 @@ class MachineSpec(BaseModel):
         for table in ("providers", "sandbox", "profiles"):
             if table in self.config:
                 raise ValueError(
-                    f"machine `[config]` overlay must not declare `[{table}.*]` —"
+                    f"machine `[config]` overlay must not declare `[{table}.*]`:"
                     " connections/secrets, sandbox policy, and profile presets are"
                     " operator decisions set in the global/repo config, never in a"
                     " .asm.toml file"
@@ -430,7 +430,7 @@ class MachineSpec(BaseModel):
         machine_overlay = self.config.get("machine")
         if isinstance(machine_overlay, dict) and "notify" in machine_overlay:
             raise ValueError(
-                "machine `[config]` overlay must not declare `[machine.notify]` —"
+                "machine `[config]` overlay must not declare `[machine.notify]`:"
                 " the notify hook runs an operator argv outside the jail and is"
                 " set only in the global/repo config, never in a .asm.toml file"
             )
@@ -442,7 +442,7 @@ class MachineSpec(BaseModel):
         git_overlay = self.config.get("git")
         if isinstance(git_overlay, dict) and "run_repo_hooks" in git_overlay:
             raise ValueError(
-                "machine `[config]` overlay must not set `git.run_repo_hooks` —"
+                "machine `[config]` overlay must not set `git.run_repo_hooks`:"
                 " honoring the repo's .git/hooks runs repo-controlled code on the"
                 " host outside the jail; it is an operator decision in the"
                 " global/repo config, never in a .asm.toml file"

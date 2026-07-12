@@ -358,10 +358,10 @@ class TypeaheadField(Widget, can_focus=True):
                 out.append_text(row)
             if total > len(matches):
                 out.append("\n")
-                out.append(f"  +{total - len(matches)} more — keep typing", style="dim")
+                out.append(f"  +{total - len(matches)} more, keep typing", style="dim")
             elif not matches:
                 out.append("\n")
-                out.append("  (no matches — saved as typed)", style="dim")
+                out.append("  (no matches; saved as typed)", style="dim")
         return out
 
     def _moved(self) -> None:

@@ -201,7 +201,7 @@ def _dirty_worktree_note(cwd: Path, run_branch: object) -> str:
         return ""
     files = "file" if n == 1 else "files"
     return (
-        f"(no committed changes yet; {n} {files} modified in the working tree — "
+        f"(no committed changes yet; {n} {files} modified in the working tree: "
         "a run commits after each verify pass)"
     )
 

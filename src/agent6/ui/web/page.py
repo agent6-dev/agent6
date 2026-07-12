@@ -579,7 +579,7 @@ function makeConv(url, box, body) {
     // The empty note yields to the live pane: streamed text under a
     // "no conversation yet" banner reads as a contradiction.
     if (!shown && liveHost.style.display === 'none') {
-      itemsHost.appendChild(el('div', 'muted conv-empty', 'no conversation yet — it appears as the run streams'));
+      itemsHost.appendChild(el('div', 'muted conv-empty', 'no conversation yet; it appears as the run streams'));
     }
     if (follow) box.scrollTop = box.scrollHeight;
   };
@@ -688,7 +688,7 @@ function makeComposer(id) {
         let s; try { s = await getJSON('/api/run/' + encodeURIComponent(id)); } catch (_) { continue; }
         if (s && s.finished === false) { ta.value = ''; route(); return; }
       }
-      toast('the resume has not started yet — check `agent6 runs`', true);
+      toast('the resume has not started yet; check `agent6 runs`', true);
     } catch (e) { toast(e.message, true); }
     busy = false; apply();
   };
@@ -739,7 +739,7 @@ async function stopRun(base, label) {
   try { await postJSON(base + '/steer', { text: 'abort' }); toast('stopping…'); } catch (e) { toast(e.message, true); }
 }
 
-// opts: { base, readOnly, title } — a draft (machine-create authoring log) is
+// opts: { base, readOnly, title }: a draft (machine-create authoring log) is
 // watched read-only against /api/draft/<name>; a run is driveable at /api/run/<id>.
 function renderRun(id, opts) {
   opts = opts || {};

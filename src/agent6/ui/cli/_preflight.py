@@ -312,8 +312,8 @@ def infer_verify_if_unset(
     events.emit("loop.verify_inferred", command=list(inferred.argv), source=inferred.source)
     print(
         f"[agent6] verify_command not set; inferred from {inferred.source}:"
-        f" {' '.join(inferred.argv)}\n         (this run only — set"
-        " workflow.verify_command in your per-repo config to pin it)",
+        f" {' '.join(inferred.argv)}\n         (this run only; pin it with"
+        " workflow.verify_command in your per-repo config)",
         file=sys.stderr,
     )
     return cfg.with_inferred_verify(inferred.argv)
