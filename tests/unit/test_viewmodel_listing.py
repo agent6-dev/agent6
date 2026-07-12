@@ -139,6 +139,24 @@ def test_summary_running_and_stale(tmp_path: Path) -> None:
     assert summarize_run_dir(rd, stale_after_s=0.0).status == "stale"
 
 
+def test_summary_dead_worker_reads_stale_at_once(tmp_path: Path) -> None:
+    # A killed run (worker.pid points at a dead process, no run.end) must not
+    # read "running" for the whole silence window; the pid probe settles it now.
+    rd = _write_run(tmp_path, "runs", "r3", [{"type": "run.start", "mode": "run"}])
+    (rd / "worker.pid").write_text("999999999", encoding="utf-8")  # beyond pid_max: never alive
+    assert summarize_run_dir(rd, stale_after_s=10_000_000).status == "stale"
+
+
+def test_summary_live_worker_stays_running_past_the_silence_window(tmp_path: Path) -> None:
+    # The converse: a live worker blocked in a long provider call emits no
+    # events, but it is not stale -- the pid probe wins over log silence.
+    import os
+
+    rd = _write_run(tmp_path, "runs", "r4", [{"type": "run.start", "mode": "run"}])
+    (rd / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    assert summarize_run_dir(rd, stale_after_s=0.0).status == "running"
+
+
 def test_summary_ask_task_comes_from_transcript(tmp_path: Path) -> None:
     rd = _write_run(
         tmp_path,

@@ -15,6 +15,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+from agent6.ui.bridge.approval import read_worker_pid, worker_is_alive
+
 STALE_AFTER_S = 600.0
 
 
@@ -102,6 +104,16 @@ def status_word(*, finished: bool, all_passed: bool, end_reason: str) -> tuple[s
     return "finished", ""
 
 
+def _running_is_stale(run_dir: Path, stale_after_s: float) -> bool:
+    """Probe the worker pid when the run recorded one: a killed run reads
+    "stale" at once (not after the silence window), and a live worker blocked
+    in a long provider call stays "running" however quiet the log. Runs
+    without a pid record keep the log-silence fallback."""
+    if read_worker_pid(run_dir) is not None:
+        return not worker_is_alive(run_dir)
+    return (time.time() - run_mtime(run_dir)) > stale_after_s
+
+
 def summarize_run_dir(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) -> RunSummary:
     """Single pass over ``logs.jsonl``: run.start (mode/task), the last run.end
     (status, un-finished again by a later resume), and the last budget.update
@@ -147,7 +159,7 @@ def summarize_run_dir(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) ->
     except OSError:
         pass
     word, reason = status_word(finished=finished, all_passed=all_passed, end_reason=end_reason)
-    if word == "running" and (time.time() - run_mtime(run_dir)) > stale_after_s:
+    if word == "running" and _running_is_stale(run_dir, stale_after_s):
         word = "stale"
     if mode == "ask":
         with contextlib.suppress(OSError):
