@@ -57,6 +57,16 @@ def test_plan_show_omit_id_uses_most_recent_plan(
     assert "# Plan: the latest" in capsys.readouterr().out
 
 
+def test_from_plan_task_leads_with_the_plan_title() -> None:
+    # The run's task (shown in listings / DAG root) must read as the plan, not
+    # the 'The following plan was prepared...' boilerplate.
+    from agent6.ui.cli import _from_plan_task  # pyright: ignore[reportPrivateUsage]
+
+    task = _from_plan_task("# Plan: Add a --count flag\n\n1. do it", "serene-geyser-NP20")
+    assert task.startswith("Execute the prepared plan: Add a --count flag")
+    assert "1. do it" in task  # the full plan is still fed to the agent
+
+
 def test_plan_show_omit_id_with_no_plans_errors(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

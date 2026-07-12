@@ -110,6 +110,16 @@ def _first_markdown_line(text: str, max_len: int = 80) -> str:
     return "(untitled plan)"
 
 
+def _from_plan_task(plan_md: str, run_id: str) -> str:
+    """The execution prompt for `run --from-plan`, LEADING with the plan title so
+    a listing (the runs table, the DAG root, attach --json) shows the plan, not
+    the 'The following plan was prepared...' boilerplate as the run's task."""
+    title = _first_markdown_line(plan_md)
+    if title.lower().startswith("plan:"):  # the '# Plan: <title>' convention
+        title = title[len("plan:") :].strip() or title
+    return f"Execute the prepared plan: {title}\n\n(from planning pass {run_id})\n\n{plan_md}"
+
+
 def cli_main() -> int:
     """Console-script entry point: a top-level guard around ``main``.
 
@@ -203,10 +213,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             if resolved is None:
                 return 2
             plan_md = (_runs_dir(Path.cwd()) / resolved / "plan.md").read_text(encoding="utf-8")
-            task = (
-                f"The following plan was prepared by a planning pass at {resolved}."
-                f" Execute it.\n\n{plan_md}"
-            )
+            task = _from_plan_task(plan_md, resolved)
         elif not args.task:
             # No task: fall back to the most recent plan run, the common
             # "I just ran `agent6 plan`, now execute it" flow. At a TTY,
@@ -242,10 +249,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             if ans in ("n", "no"):
                 print(f"Aborted. Run it later: agent6 run --from-plan {last_plan}")
                 return 0
-            task = (
-                f"The following plan was prepared by a planning pass at {last_plan}."
-                f" Execute it.\n\n{plan_md}"
-            )
+            task = _from_plan_task(plan_md, last_plan)
         else:
             task = args.task
         return _cmd_run(
