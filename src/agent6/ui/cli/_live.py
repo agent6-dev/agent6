@@ -29,7 +29,12 @@ def loop_logger(mode: str, console_view: ConsoleView | None) -> Callable[[str], 
     decisions) pass. Headless/`ask` keep the full trace on their own stream (the
     log, not a live stream)."""
     if console_view is None:
-        return _eprint if mode == "ask" else print
+        # No live console: a headless run's stdout (or ask's stderr) is
+        # block-buffered when redirected to a file/pipe, so without an explicit
+        # flush the whole LOOP trace only appears when the process EXITS -- a
+        # `nohup agent6 run > log` reads as a dead run for its entire duration.
+        # Flush each line so the log is followable as it happens.
+        return _eprint if mode == "ask" else _print_flush
     debug = os.environ.get("AGENT6_DEBUG") == "1"
 
     def _filtered(msg: str) -> None:
@@ -41,10 +46,17 @@ def loop_logger(mode: str, console_view: ConsoleView | None) -> Callable[[str], 
     return _filtered
 
 
+def _print_flush(msg: str) -> None:
+    """Headless loop logger: print to stdout and flush, so a redirected log
+    (block-buffered) shows the LOOP trace live instead of only at exit."""
+    print(msg, flush=True)
+
+
 def _eprint(msg: str) -> None:
     """Loop logger that writes to stderr (used for `ask`, whose stdout is the
-    answer and must stay clean for piping)."""
-    print(msg, file=sys.stderr)
+    answer and must stay clean for piping). Flushes so a redirected stderr is
+    followable live, not buffered until exit."""
+    print(msg, file=sys.stderr, flush=True)
 
 
 def _tui_available() -> bool:
