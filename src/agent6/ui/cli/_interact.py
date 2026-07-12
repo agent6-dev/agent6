@@ -151,7 +151,7 @@ def build_approver(
             # answer is just yes; the check above auto-passes every later prompt.
             approved = read_answer(run_dir, prompt_id)
             if approved is not None:
-                source = "tui"
+                source = "frontend"
         if approved is None:
             with _pause(console_view):
                 answer = default_stdin_approver(prompt)
@@ -212,7 +212,7 @@ def build_questioner(
         elif frontend_is_live(run_dir):
             answers = read_question_answers(run_dir, question_id)
             if answers is not None:
-                source = "tui"
+                source = "frontend"
         if answers is None:
             with _pause(console_view):
                 stdin_answers = default_stdin_questioner(questions)

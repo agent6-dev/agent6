@@ -74,7 +74,7 @@ def test_approver_uses_tui_answer_when_live(
     assert _events_of(log, "approval.prompt")
     ans = _events_of(log, "approval.answer")[0]
     assert ans["approved"] is True
-    assert ans["source"] == "tui"
+    assert ans["source"] == "frontend"
 
 
 def test_approver_does_not_consume_an_answer_written_before_the_prompt(
@@ -132,7 +132,7 @@ def test_approver_consumes_an_answer_written_after_the_prompt(
     approve = interactmod.build_approver(tmp_path, events)
     assert approve("run `ls`?") is True
     t.join(timeout=2)
-    assert _events_of(log, "approval.answer")[0]["source"] == "tui"
+    assert _events_of(log, "approval.answer")[0]["source"] == "frontend"
 
 
 def test_approver_falls_back_to_stdin_without_tui(
