@@ -283,3 +283,14 @@ def set_config(cwd: Path, key: str, value: str, *, repo: bool = False) -> tuple[
         argv.append("--repo")
     argv += ["--", key, value]
     return run_cli_capture(argv, cwd)
+
+
+def unset_config(cwd: Path, key: str, *, repo: bool = False) -> tuple[bool, str]:
+    """Unset one config leaf: `agent6 config unset <key> [--repo]`, reverting it
+    to the next-lower layer / built-in default. Same fixed-argv CLI bridge as
+    set_config (`--` guards a dashy key)."""
+    argv = [agent6_exe(), "config", "unset"]
+    if repo:
+        argv.append("--repo")
+    argv += ["--", key]
+    return run_cli_capture(argv, cwd)

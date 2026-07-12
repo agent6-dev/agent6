@@ -200,15 +200,35 @@ def hub_payload(cwd: Path) -> dict[str, Any]:
 # --- run snapshot + conversation ----------------------------------------------
 
 
+def manifest_branches(run_dir: Path) -> dict[str, str]:
+    """Branch facts from the run's manifest (run_branch / base_branch /
+    merged_into) for the run header. The event fold doesn't carry them, but a
+    web user needs to SEE where a run's work lives and where Merge lands --
+    consecutive spawns chain branches invisibly otherwise. Empty for a run with
+    no manifest (or branch_per_run off)."""
+    try:
+        manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    out: dict[str, str] = {}
+    for key in ("run_branch", "base_branch", "merged_into"):
+        value = manifest.get(key)
+        if value:
+            out[key] = str(value)
+    return out
+
+
 def run_snapshot(run_dir: Path) -> dict[str, Any]:
-    """A run's folded RunState as the wire dict. Identical to
-    `agent6 attach <id> --json` so `curl` and the CLI agree."""
+    """A run's folded RunState as the wire dict (the same fold as
+    `agent6 attach <id> --json`), plus dir-derived metadata: the authoritative
+    run id and the manifest's branch facts."""
     logs = run_dir / "logs.jsonl"
     snap = run_state_as_dict(fold_run(tail_events(logs, follow=False)))
     # The dir we looked up under is the authoritative run id: stamp it so the
     # payload never carries an empty run_id (older logs predate run.start
     # carrying one) and matches sibling endpoints like /conversation.
     snap["run_id"] = snap.get("run_id") or run_dir.name
+    snap.update(manifest_branches(run_dir))
     return snap
 
 

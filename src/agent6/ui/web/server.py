@@ -117,8 +117,9 @@ class MachinePokeBody(_Body):
 
 class ConfigSetBody(_Body):
     key: str
-    value: str
+    value: str = ""  # unused (and unrequired) when unset=True
     repo: bool = False
+    unset: bool = False  # remove the key from the target layer instead of setting it
 
 
 class WebServer(ThreadingHTTPServer):
@@ -330,7 +331,10 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/config":
             body = ConfigSetBody.model_validate(self._read_body())
-            ok, msg = actions.set_config(self.cwd, body.key, body.value, repo=body.repo)
+            if body.unset:
+                ok, msg = actions.unset_config(self.cwd, body.key, repo=body.repo)
+            else:
+                ok, msg = actions.set_config(self.cwd, body.key, body.value, repo=body.repo)
             self._ok_or_err(ok, {"message": msg}, msg)
             return
         if path == "/api/machine/create":
@@ -599,6 +603,14 @@ class _Handler(BaseHTTPRequestHandler):
 
         threading.Thread(target=tail, daemon=True).start()
 
+        # Branch facts for the header, read once per connection: run_branch /
+        # base_branch are fixed at run start (merged_into lands after the run
+        # ends; a reopen/reconnect re-reads).
+        branches = model.manifest_branches(run_dir)
+
+        def frame() -> dict[str, Any]:
+            return {**run_state_as_dict(state), **branches}
+
         try:
             state = initial_state()
             last_delta_emit = 0.0
@@ -612,7 +624,7 @@ class _Handler(BaseHTTPRequestHandler):
                     # otherwise pin this worker forever: once its worker.pid points
                     # at a dead process, send a final snapshot and close.
                     if read_worker_pid(run_dir) is not None and not worker_is_alive(run_dir):
-                        self._sse_send(run_state_as_dict(state))
+                        self._sse_send(frame())
                         return
                     continue
                 # Fold everything already queued into ONE frame. On connect the
@@ -627,12 +639,12 @@ class _Handler(BaseHTTPRequestHandler):
                     except queue.Empty:
                         break
                 if ev is None:  # run ended: send the final snapshot and close
-                    self._sse_send(run_state_as_dict(state))
+                    self._sse_send(frame())
                     return
                 now = time.monotonic()
                 if last_type in _STREAMING_DELTAS and (now - last_delta_emit) < _DELTA_COALESCE_S:
                     continue  # coalesce bursts of text/thinking deltas
-                if not self._sse_send(run_state_as_dict(state)):
+                if not self._sse_send(frame()):
                     return
                 last_delta_emit = now
         finally:

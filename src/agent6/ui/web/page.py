@@ -88,7 +88,13 @@ nav.tabs a .ic { font-size: 18px; line-height: 1; }
 
 main { padding: 16px; max-width: 1200px; margin: 0 auto; }
 .grid { display: grid; gap: 14px; }
-@media (min-width: 900px) { .grid.cols2 { grid-template-columns: 1fr 1fr; } }
+/* align-items:start: columns keep their natural heights (the left new-work +
+   machines stack was stretching to match the runs column, leaving dead space
+   inside its cards). */
+@media (min-width: 900px) { .grid.cols2 { grid-template-columns: 1fr 1fr; align-items: start; } }
+/* Phone: the runs list is what you open the app to see; it leads, the
+   new-work/machines composer cards follow. Desktop keeps them side by side. */
+@media (max-width: 899px) { .grid.cols2 .lead-mobile { order: -1; } }
 
 .card {
   background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
@@ -149,7 +155,8 @@ table.tools .args { color: var(--muted); font-family: var(--mono); word-break: b
 .conv { font-family: var(--mono); font-size: 12.5px; line-height: 1.5; }
 .conv .ci { padding: 2px 4px; margin: 0 -4px 8px; white-space: pre-wrap; word-break: break-word; border-radius: 6px; }
 .conv .ci.exp { cursor: pointer; }
-.conv .ci.exp:hover { background: var(--surface2); }
+/* hover-capable devices only: on touch, a tap left the hover background stuck */
+@media (hover: hover) { .conv .ci.exp:hover { background: var(--surface2); } }
 .conv .s-thinking { color: var(--muted); font-style: italic; }
 .conv .s-call { color: var(--accent); font-weight: 600; }
 .conv .s-arg, .conv .s-detail, .conv .s-tail, .conv .s-done-detail { color: var(--muted); }
@@ -463,7 +470,9 @@ async function renderHub(focus) {
   setCrumb('');
   const data = await getJSON('/api/hub');
   view.innerHTML = '';
-  const runsCard = el('div', 'card');
+  // lead-mobile: on a phone the runs list renders FIRST (the machines tab keeps
+  // its own lead; see the stack order below).
+  const runsCard = el('div', 'card' + (focus === 'machines' ? '' : ' lead-mobile'));
   runsCard.appendChild(el('h2', null, 'Runs'));
   const runsList = el('div', 'list');
   if (!data.runs.length) runsList.appendChild(el('div', 'empty', 'no runs yet'));
@@ -763,7 +772,7 @@ function renderRun(id, opts) {
     stepBtn.onclick = post('stop_step', 'stopping after the current step');
     const compactBtn = el('button', null, 'Compact context');
     compactBtn.onclick = post('compact', 'compaction requested');
-    const mergeBtn = el('button', null, '⑃ Merge');
+    const mergeBtn = el('button', null, 'Merge'); // no glyph: U+2443 was tofu in common fonts
     mergeBtn.onclick = post('merge', 'merged');
     const tbtn = el('button', null, 'Conversation →');
     tbtn.onclick = () => location.hash = '#/conversation/' + encodeURIComponent(id);
@@ -878,6 +887,13 @@ function paintRun(cards, s) {
   add('task', s.user_task || '(none)');
   add('id', s.run_id || cards._id || ''); // older logs carry no run_id in run.start
   add('state', s.status_label || (s.finished ? 'finished' : 'running'));
+  // Where the run's work lives and where Merge lands: consecutive spawns chain
+  // branches, which is invisible without this line.
+  if (s.run_branch) {
+    add('branch', s.merged_into
+      ? s.run_branch + ' (merged into ' + s.merged_into + ')'
+      : s.run_branch + (s.base_branch ? ' → merges into ' + s.base_branch : ''));
+  }
   cards.head.appendChild(kv);
   if (s.last_role) {
     const r = s.last_role;
@@ -1179,7 +1195,9 @@ function editConfig(key, s) {
   const cur = s.value === null || s.value === undefined ? '' : (Array.isArray(s.value) ? s.value.join(',') : String(s.value));
   const back = el('div', 'overlay');
   const box = el('div', 'card'); box.style.width = 'min(560px, 92vw)';
-  box.appendChild(el('h2', null, key));
+  const title = el('h2', null, key);
+  title.style.textTransform = 'none'; // a config key is a case-sensitive identifier
+  box.appendChild(title);
   const meta = el('div', 'sub muted');
   meta.textContent = `${esc(s.type)} · default: ${fmtVal(s.default)} · set from: ${esc(s.source)}` + (s.adaptive ? ' · adaptive' : '');
   meta.style.marginBottom = '10px';
@@ -1198,11 +1216,25 @@ function editConfig(key, s) {
   box.appendChild(field);
   const repoRow = el('label', 'row'); repoRow.style.marginTop = '8px'; repoRow.style.cursor = 'pointer';
   const repoCb = el('input'); repoCb.type = 'checkbox';
+  // Default the target layer to the value's ORIGIN: editing a repo-sourced value
+  // must write the repo config, or the repo overlay keeps masking the edit and it
+  // looks like the save vanished.
+  repoCb.checked = (s.source === 'repo');
   repoRow.appendChild(repoCb); repoRow.appendChild(el('span', 'sub muted', 'set for this repo only (not the global config)'));
   box.appendChild(repoRow);
   const row = el('div', 'form-row');
   const save = el('button', 'primary', 'Save'), cancel = el('button', null, 'Cancel');
-  row.appendChild(save); row.appendChild(cancel); box.appendChild(row);
+  row.appendChild(save);
+  // A value set from an editable layer gets an Unset: remove it from that layer
+  // so it reverts to the next-lower one / the built-in default. (default-sourced
+  // values have nothing to unset; flag/machine layers are not editable here.)
+  let unsetBtn = null;
+  if (s.source === 'repo' || s.source === 'global') {
+    unsetBtn = el('button', null, 'Unset');
+    unsetBtn.title = 'remove from the ' + s.source + ' config; reverts to ' + fmtVal(s.default);
+    row.appendChild(unsetBtn);
+  }
+  row.appendChild(cancel); box.appendChild(row);
   back.appendChild(box); document.body.appendChild(back);
   const close = () => { activeOverlayClose = null; back.remove(); document.removeEventListener('keydown', onKey); };
   activeOverlayClose = close; // navigating away dismisses it
@@ -1219,6 +1251,13 @@ function editConfig(key, s) {
     } catch (e) { toast(e.message, true); save.disabled = false; }
   };
   save.onclick = submit;
+  if (unsetBtn) unsetBtn.onclick = async () => {
+    unsetBtn.disabled = true;
+    try {
+      const d = await postJSON('/api/config', { key, unset: true, repo: s.source === 'repo' });
+      toast(d.message || 'unset ' + key); close(); renderConfig();
+    } catch (e) { toast(e.message, true); unsetBtn.disabled = false; }
+  };
   field.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } };
 }
 function fmtVal(v) { if (v === null || v === undefined) return '—'; if (Array.isArray(v)) return '[' + v.join(', ') + ']'; return String(v); }
