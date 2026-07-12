@@ -37,6 +37,8 @@ PAGE_HTML = r"""<!doctype html>
 :root.light {
   --bg: #f6f8fa; --surface: #ffffff; --surface2: #eef1f5; --border: #d5dae1;
   --text: #1b2028; --muted: #5a6472; --accent: #2d6fe0; --accent2: #8250df;
+  /* darker semantic colours: the dark-theme pastels wash out on white */
+  --ok: #187a5b; --warn: #8a6100; --err: #c62f3d;
 }
 * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
