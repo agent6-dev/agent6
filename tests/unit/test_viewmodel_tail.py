@@ -54,16 +54,31 @@ def test_tail_returns_when_file_missing_and_not_follow(tmp_path: Path) -> None:
 def test_tail_stops_at_run_end_when_requested(tmp_path: Path) -> None:
     p = tmp_path / "logs.jsonl"
     p.write_text(
-        json.dumps({"type": "a"})
-        + "\n"
-        + json.dumps({"type": "run.end"})
-        + "\n"
-        + json.dumps({"type": "after"})
-        + "\n",
+        json.dumps({"type": "a"}) + "\n" + json.dumps({"type": "run.end"}) + "\n",
         encoding="utf-8",
     )
     out = list(tail_events(p, follow=False, stop_when_finished=True))
     assert [e["type"] for e in out] == ["a", "run.end"]
+
+
+def test_tail_does_not_stop_at_a_run_end_a_resume_superseded(tmp_path: Path) -> None:
+    # A resume appends events AFTER run.end (no second end yet while it runs).
+    # A watcher opening the log mid-resume must stream past the stale end, not
+    # close on it and show the run as finished while it is live again.
+    p = tmp_path / "logs.jsonl"
+    p.write_text(
+        json.dumps({"type": "run.start"})
+        + "\n"
+        + json.dumps({"type": "run.end", "reason": "steer_abort"})
+        + "\n"
+        + json.dumps({"type": "loop.resume.start"})
+        + "\n"
+        + json.dumps({"type": "role.call"})
+        + "\n",
+        encoding="utf-8",
+    )
+    out = list(tail_events(p, follow=False, stop_when_finished=True))
+    assert [e["type"] for e in out] == ["run.start", "run.end", "loop.resume.start", "role.call"]
 
 
 def _torn_utf8_line() -> tuple[bytes, bytes]:
