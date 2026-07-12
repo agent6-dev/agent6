@@ -96,6 +96,7 @@ def test_approver_does_not_consume_an_answer_written_before_the_prompt(
     monkeypatch.setattr(
         interactmod, "read_answer", functools.partial(read_answer, timeout_s=0.4, poll_s=0.05)
     )
+    monkeypatch.setattr(interactmod, "_has_controlling_tty", _tty)  # foreground stdin path
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_no)
     write_answer(tmp_path, "approval-1", approved=True)  # the premature POST
     approve = interactmod.build_approver(tmp_path, events)
@@ -136,16 +137,51 @@ def test_approver_consumes_an_answer_written_after_the_prompt(
     assert _events_of(log, "approval.answer")[0]["source"] == "frontend"
 
 
+def _tty(_: object = None) -> bool:
+    return True  # simulate a controlling terminal (foreground stdin path)
+
+
 def test_approver_falls_back_to_stdin_without_tui(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     log = tmp_path / "logs.jsonl"
     events = EventSink(log)
     monkeypatch.setattr(interactmod, "frontend_is_live", _dead)
+    monkeypatch.setattr(interactmod, "_has_controlling_tty", _tty)  # foreground
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_no)
     approve = interactmod.build_approver(tmp_path, events)
     assert approve("x") is False
     assert _events_of(log, "approval.answer")[0]["source"] == "stdin"
+
+
+def test_approver_headless_no_frontend_waits_not_denies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A web/hub-spawned run (no terminal, no away-mode, no front-end attached
+    # right now) WAITS for a front-end to attach rather than denying -- deny
+    # discards the run's work. A writer thread attaches + answers after a beat.
+    import threading
+    import time
+
+    from agent6.ui.bridge.approval import write_answer, write_frontend_pid
+
+    log = tmp_path / "logs.jsonl"
+    events = EventSink(log)
+    # Use the REAL frontend_is_live: nothing is attached at approve() time (the
+    # writer sleeps first), so the approver reaches the wait path; once the
+    # writer registers frontend.pid, the wait picks up its answer.
+    monkeypatch.setattr(interactmod, "_has_controlling_tty", lambda: False)  # headless
+    monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)  # never stdin
+
+    def attach_and_answer() -> None:
+        time.sleep(0.3)
+        write_frontend_pid(tmp_path, os.getpid())
+        write_answer(tmp_path, "approval-1", approved=True)
+
+    threading.Thread(target=attach_and_answer, daemon=True).start()
+    approve = interactmod.build_approver(tmp_path, events)
+    assert approve("rm -rf build") is True
+    assert _events_of(log, "approval.answer")[0]["source"] == "await-frontend"
 
 
 def test_approver_session_allows_every_later_command(
@@ -156,6 +192,7 @@ def test_approver_session_allows_every_later_command(
     log = tmp_path / "logs.jsonl"
     events = EventSink(log)
     monkeypatch.setattr(interactmod, "frontend_is_live", _dead)
+    monkeypatch.setattr(interactmod, "_has_controlling_tty", _tty)  # foreground
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_session)
     approve = interactmod.build_approver(tmp_path, events)
     assert approve("first?") is True
@@ -172,6 +209,7 @@ def test_approver_tui_timeout_falls_back_to_stdin(
     events = EventSink(log)
     monkeypatch.setattr(interactmod, "frontend_is_live", _live)
     monkeypatch.setattr(interactmod, "read_answer", _ans_none)  # TUI died / timed out
+    monkeypatch.setattr(interactmod, "_has_controlling_tty", _tty)  # foreground
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_yes)
     approve = interactmod.build_approver(tmp_path, events)
     assert approve("x") is True
@@ -306,4 +344,4 @@ def test_approver_away_wait_blocks_for_a_front_end_when_none_attached(
     threading.Thread(target=attach_and_answer, daemon=True).start()
     approve = interactmod.build_approver(tmp_path, events)
     assert approve("ls") is True
-    assert _events_of(log, "approval.answer")[0]["source"] == "away-wait"
+    assert _events_of(log, "approval.answer")[0]["source"] == "await-frontend"

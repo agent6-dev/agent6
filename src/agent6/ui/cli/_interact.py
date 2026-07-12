@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import contextlib
+import os
 import sys
 import time
 from collections.abc import Callable
@@ -47,6 +48,19 @@ def _pause(cv: ConsoleView | None) -> contextlib.AbstractContextManager[None]:
     return cv.pause() if cv is not None else contextlib.nullcontext()
 
 
+def _has_controlling_tty() -> bool:
+    """True iff a controlling terminal exists (so the stdin approver can actually
+    prompt). A foreground run has one; a web/hub-spawned or fully headless run
+    does not, and there falls back to waiting for a front-end rather than a
+    no-terminal deny."""
+    try:
+        fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
+    except OSError:
+        return False
+    os.close(fd)
+    return True
+
+
 def default_stdin_approver(prompt: str) -> str:
     """Plain-terminal fallback for tool approval (no live TUI, or its answer
     timed out). Returns "yes", "no", or "session" (allow all for the rest of this
@@ -62,30 +76,34 @@ def default_stdin_approver(prompt: str) -> str:
 
 
 def prompt_detach_away_mode(run_dir: Path) -> None:
-    """On detach with run_commands=ask, ask how approvals/questions should be handled
-    while nothing is watching, and record it for the background run. Non-interactive
-    (no tty) -> deny, the safe default."""
+    """On detach with run_commands=ask, ask how approvals/questions should be
+    handled while nothing is watching, and record it for the background run.
+
+    The default is WAIT: a deny throws away the run's work (the model's commands
+    are refused and it flails, burning tokens for nothing), while wait pauses
+    cleanly at the approval and is resumable -- re-attach with `agent6 attach`
+    and answer. Non-interactive (no tty) also defaults to wait."""
     if not sys.stdin.isatty():
-        set_away_mode(run_dir, "deny")
+        set_away_mode(run_dir, "wait")
         return
     print(
         "[agent6] Detaching with run_commands=ask -- nothing will be watching to approve.",
         file=sys.stderr,
     )
     ans = _tty_prompt(
-        "  While away: [a]pprove all / [d]eny all / [w]ait for a reattached front-end? [d]: ",
+        "  While away: [w]ait for a reattached front-end / [a]pprove all / [d]eny all? [w]: ",
         fall_back_to_stdin=False,
     )
     choice = (ans or "").strip().lower()
     if choice in {"a", "approve"}:
         set_session_allow(run_dir)  # reuse the session-allow marker
         print("  -> approving every run_command.", file=sys.stderr)
-    elif choice in {"w", "wait"}:
-        set_away_mode(run_dir, "wait")
-        print("  -> waiting; reattach (agent6 watch / the TUI) to approve.", file=sys.stderr)
-    else:
+    elif choice in {"d", "deny"}:
         set_away_mode(run_dir, "deny")
         print("  -> denying run_commands until you reattach.", file=sys.stderr)
+    else:
+        set_away_mode(run_dir, "wait")
+        print("  -> waiting; reattach (agent6 attach / the TUI) to approve.", file=sys.stderr)
 
 
 def _wait_for_reply(run_dir: Path, read_once: Callable[[], object | None]) -> object | None:
@@ -147,12 +165,17 @@ def build_approver(
         if away == "deny":
             events.emit("approval.answer", id=prompt_id, approved=False, source="away-deny")
             return False
-        if away == "wait":  # block until a front-end attaches and answers (or stops)
+        wait_for_frontend = away == "wait" or not _has_controlling_tty()
+        if wait_for_frontend:
+            # away="wait", OR an unattended run with no away-mode and no terminal
+            # (a web/hub-spawned run whose viewers have all left): block until a
+            # front-end attaches and answers, rather than deny. Deny discards the
+            # run's work; wait pauses cleanly and is resumable (the default).
             reply = _wait_for_reply(
                 run_dir, lambda: read_answer(run_dir, prompt_id, timeout_s=20.0, dead_grace_s=8.0)
             )
             approved = bool(reply)
-            events.emit("approval.answer", id=prompt_id, approved=approved, source="away-wait")
+            events.emit("approval.answer", id=prompt_id, approved=approved, source="await-frontend")
             return approved
         # Foreground (a controlling tty, no away-mode): prompt on it directly.
         with _pause(console_view):
