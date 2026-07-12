@@ -8,6 +8,7 @@ import json
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -659,9 +660,18 @@ def test_timed_out_agent_state_salvages_spend_from_its_event_log(
                 raise sp.TimeoutExpired(cmd="agent", timeout=timeout)
             return 0
 
-    monkeypatch.setattr(cli.subprocess, "Popen", lambda *a, **k: _HungProc())
-    monkeypatch.setattr(cli.os, "getpgid", lambda _pid: 424242)
-    monkeypatch.setattr(cli.os, "killpg", lambda _pgid, _sig: None)
+    def _popen(*_args: Any, **_kwargs: Any) -> _HungProc:
+        return _HungProc()
+
+    def _getpgid(_pid: int) -> int:
+        return 424242
+
+    def _killpg(_pgid: int, _sig: int) -> None:
+        return None
+
+    monkeypatch.setattr(cli.subprocess, "Popen", _popen)
+    monkeypatch.setattr(cli.os, "getpgid", _getpgid)
+    monkeypatch.setattr(cli.os, "killpg", _killpg)
 
     runner = cli._build_machine_agent_runner({}, tmp_path, "strict", tmp_path / "tr")  # pyright: ignore[reportPrivateUsage]
     res = runner(AgentRequest(prompt="p", timeout_s=1.0, mode="agent"), events_log)

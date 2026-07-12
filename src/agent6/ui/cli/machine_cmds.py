@@ -1110,8 +1110,15 @@ def _cmd_machine_create(  # noqa: PLR0911, PLR0912, PLR0915
         events.emit("loop.note", text=f"attempt {attempt}/{max_attempts}")
         # model omitted (=None): inherit the operator's effective worker model.
         # mode="machine": authoring system prompt + read-only tools (see loop.py).
+        # thinking="off": authoring is transcription of a described design, not
+        # deep derivation. "low" is already the provider default and did not
+        # help: kimi-k2.6 spiralled into 30-minute length-capped thinks and
+        # timed out on every attempt (0/3 drafts across two spec sizes). With
+        # the reasoning channel off it drafted in ~2.5 minutes for $0.02.
         result = runner(
-            AgentRequest(prompt=prompt, timeout_s=_CREATE_TIMEOUT_S, mode="machine"),
+            AgentRequest(
+                prompt=prompt, timeout_s=_CREATE_TIMEOUT_S, mode="machine", thinking="off"
+            ),
             events_log,
         )
         total_usd += result.usd
