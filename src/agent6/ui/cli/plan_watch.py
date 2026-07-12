@@ -14,9 +14,19 @@ from datetime import datetime
 from pathlib import Path
 
 from agent6.runs.id import RunIdError, resolve_run_id
-from agent6.ui.bridge.approval import read_worker_pid, worker_is_alive
+from agent6.tools.schema import UserQuestion
+from agent6.ui.bridge.approval import (
+    clear_frontend_pid,
+    read_worker_pid,
+    set_session_allow,
+    worker_is_alive,
+    write_answer,
+    write_frontend_pid,
+    write_question_answers,
+)
 from agent6.ui.cli._common import _runs_dir, _state_dir, resolve_run_layout
 from agent6.ui.cli._console_view import ConsoleView
+from agent6.ui.cli._interact import default_stdin_approver, default_stdin_questioner
 from agent6.ui.viewmodel import run_mtime, tail_events
 from agent6.ui.viewmodel.format import format_cost
 
@@ -450,25 +460,123 @@ def format_plain_event(line: str, *, run_start_ts: float | None) -> str:
     return f"{ts_str} {event:30s} {' '.join(pairs)}"
 
 
+class _CliFrontEnd:
+    """Makes an interactive ``agent6 watch`` a real run FRONT-END, not just a
+    reader. When the streamed log surfaces an unanswered ``run_command`` approval
+    or ``ask_user`` question, it prompts on the controlling terminal with the SAME
+    CLI prompts a foreground run uses and writes the answer back over the file
+    bridge -- so watching a detached run is "as if you never detached". The
+    caller registers ``frontend.pid`` so the worker's approver bridges to it (a
+    live front-end always wins over the detach away-mode).
+
+    Prompt ids are deterministic counters, and the log replays from the start on
+    attach, so ``_answered`` (ids with an answer seen) and ``_handled`` (ids WE
+    prompted for) gate re-prompting a historical or already-answered prompt."""
+
+    def __init__(self, run_dir: Path, view: ConsoleView) -> None:
+        self._run_dir = run_dir
+        self._view = view
+        self._answered: set[str] = set()
+        self._handled: set[str] = set()
+
+    def open_prompts_at_attach(self, events_path: Path) -> list[tuple[str, str, object]]:
+        """Pre-scan the existing log: seed ``_answered`` and return the prompts
+        that are open right now (emitted, not answered) so a run already waiting
+        at an approval when you attach is handled at once."""
+        open_prompts: dict[str, tuple[str, str, object]] = {}
+        for ev in tail_events(events_path, follow=False):
+            etype = str(ev.get("type", ""))
+            pid = str(ev.get("id", ""))
+            if etype == "approval.prompt":
+                open_prompts[pid] = ("approval", pid, ev.get("prompt", ""))
+            elif etype == "question.prompt":
+                open_prompts[pid] = ("question", pid, ev.get("questions", []))
+            elif etype in ("approval.answer", "question.answer"):
+                self._answered.add(pid)
+                open_prompts.pop(pid, None)
+        return list(open_prompts.values())
+
+    def handle(self, kind: str, prompt_id: str, content: object) -> None:
+        """Prompt on the terminal (spinner paused) and write the answer over the
+        bridge. Marks the id handled so the follow-loop replay won't re-ask it."""
+        if kind == "approval":
+            with self._view.pause():
+                answer = default_stdin_approver(str(content))
+            if answer == "session":
+                set_session_allow(self._run_dir)
+            write_answer(self._run_dir, prompt_id, approved=answer != "no")
+        else:
+            questions = tuple(
+                UserQuestion(
+                    question=str(q.get("question", "")),
+                    options=tuple(str(o) for o in q.get("options", [])),
+                )
+                for q in (content if isinstance(content, list) else [])
+            )
+            with self._view.pause():
+                answers = default_stdin_questioner(questions)
+            write_question_answers(
+                self._run_dir,
+                prompt_id,
+                answers if answers is not None else tuple("" for _ in questions),
+            )
+        self._handled.add(prompt_id)
+
+    def react(self, event: dict[str, object]) -> None:
+        """Live follow: answer a NEW unanswered prompt; a historical/answered one
+        (id in ``_answered``/``_handled``) is skipped on the replay."""
+        etype = str(event.get("type", ""))
+        pid = str(event.get("id", ""))
+        if etype in ("approval.answer", "question.answer"):
+            self._answered.add(pid)
+            return
+        if pid in self._handled or pid in self._answered:
+            return
+        if etype == "approval.prompt":
+            self.handle("approval", pid, event.get("prompt", ""))
+        elif etype == "question.prompt":
+            self.handle("question", pid, event.get("questions", []))
+
+
 def _watch_transcript(target: Path) -> int:
-    """Follow a run's conversation live: fold ``logs.jsonl`` through the same
-    ``ConsoleView`` as ``agent6 run``, so an attached viewer sees what the run
-    prints. Renders from the start, tails until the run ends (a finished run just
-    renders and exits), then returns; Ctrl-C exits early. A detach emits no
-    run.end, so watching a detached run follows the background resume to its end."""
+    """Follow a run's conversation live and, on an interactive terminal, ATTACH
+    to it as a front-end: fold ``logs.jsonl`` through the same ``ConsoleView`` as
+    ``agent6 run`` and, when the run asks for a ``run_command`` approval or an
+    ``ask_user`` answer, prompt on the terminal exactly as the foreground run
+    would (see ``_CliFrontEnd``). Piped/redirected (no tty) stays a pure reader.
+    Renders from the start, tails until the run ends, then returns; Ctrl-C exits.
+    A detach emits no run.end, so watching a detached run follows it to its end."""
     events_path = target / "logs.jsonl"
     if not events_path.is_file():
         print(f"ERROR: no logs.jsonl in {target}", file=sys.stderr)
         return 2
-    print(f"[agent6] following {target.name}. Ctrl-C to exit.", file=sys.stderr)
     view = ConsoleView(sys.stdout)
+    # Interactive (both streams a tty): become an answering front-end. Piped: read-only.
+    front_end: _CliFrontEnd | None = None
+    if sys.stdin.isatty() and sys.stdout.isatty():
+        front_end = _CliFrontEnd(target, view)
+        write_frontend_pid(target, os.getpid())
+        print(
+            f"[agent6] attached to {target.name}: approvals and questions prompt here."
+            " Ctrl-C to detach.",
+            file=sys.stderr,
+        )
+    else:
+        print(f"[agent6] following {target.name}. Ctrl-C to exit.", file=sys.stderr)
     try:
+        if front_end is not None:
+            for kind, prompt_id, content in front_end.open_prompts_at_attach(events_path):
+                front_end.handle(kind, prompt_id, content)  # a prompt already pending at attach
         for event in tail_events(events_path, follow=True, stop_when_finished=True):
             view.feed(event)
+            if front_end is not None:
+                front_end.react(event)
     except KeyboardInterrupt:
         print("\n[agent6] watch: stopped.", file=sys.stderr)
     finally:
         view.close()  # stop the heartbeat thread, clear any spinner line
+        if front_end is not None:
+            clear_frontend_pid(target)
     return 0
 
 
