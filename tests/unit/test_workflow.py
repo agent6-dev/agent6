@@ -91,6 +91,37 @@ def _turn(**kw: Any) -> Any:
     return _TurnState(**defaults)
 
 
+def test_finish_planning_salvages_a_title_only_plan(tmp_path: Path) -> None:
+    # Weak models leave plan_markdown a bare title and put the plan in `summary`;
+    # the fold must produce a plan.md with real content, not a title-only stub.
+    plan_path = tmp_path / "plan.md"
+    wf = _wf(mode="plan", plan_output_path=plan_path)
+    wf._capture_finish(  # pyright: ignore[reportPrivateUsage]
+        _turn(),
+        "finish_planning",
+        {
+            "summary": "1. Add the --count flag. 2. Update the parser help. 3. Add a test.",
+            "plan_markdown": "# Plan: Add --count flag",
+        },
+    )
+    text = plan_path.read_text(encoding="utf-8")
+    assert "# Plan: Add --count flag" in text  # the title is kept
+    assert "Add the --count flag" in text  # the summary was folded in as the body
+
+
+def test_finish_planning_keeps_a_real_plan_markdown(tmp_path: Path) -> None:
+    # A proper plan_markdown is written verbatim; the summary is NOT appended.
+    plan_path = tmp_path / "plan.md"
+    wf = _wf(mode="plan", plan_output_path=plan_path)
+    wf._capture_finish(  # pyright: ignore[reportPrivateUsage]
+        _turn(),
+        "finish_planning",
+        {"summary": "short blurb", "plan_markdown": "# Plan: X\n\n1. real step\n2. another"},
+    )
+    text = plan_path.read_text(encoding="utf-8")
+    assert "real step" in text and "short blurb" not in text
+
+
 def _resp(text: str = "ok") -> ProviderResponse:
     return ProviderResponse(
         text=text,

@@ -403,6 +403,15 @@ def _summarise_assistant_text_for_commit(
     return f"agent6 iter {iteration}: {subject_body}"
 
 
+def _plan_is_title_only(plan_md: str) -> bool:
+    """True when plan_markdown has no body: only heading lines (``# ...``) and
+    blanks, so `--from-plan` would get a stub. Weak models leave it a bare title
+    and put the plan in `summary`; the caller salvages that case."""
+    return not any(
+        line.strip() and not line.lstrip().startswith("#") for line in plan_md.splitlines()
+    )
+
+
 def _is_empty_tool_call_response(resp: Any) -> bool:
     """A self-contradictory provider response: the finish/stop reason says the
     model stopped to make a tool call, but no tool_use and no text came back.
@@ -1437,8 +1446,21 @@ class Workflow:
                 else "(no summary)"
             )
             plan_md = ""
+            summary = ""
             if isinstance(tool_input, dict):
                 plan_md = str(tool_input.get("plan_markdown", ""))
+                summary = str(tool_input.get("summary", ""))
+            # Salvage a title-only plan_markdown: weak models put the real plan in
+            # `summary` (observed live: kimi's plan_markdown was 126 bytes, just
+            # '# Plan: ...', while summary held the whole plan). Without this the
+            # $0.12 planning pass writes a stub plan.md that --from-plan then
+            # re-derives from scratch. Fold the summary under the title so the plan
+            # carries content. The critic pass gated content quality; this only
+            # rescues field misuse.
+            if _plan_is_title_only(plan_md) and len(summary) > len(plan_md):
+                title = next((ln for ln in plan_md.splitlines() if ln.strip()), "# Plan")
+                plan_md = f"{title}\n\n{summary}"
+                self._log("  plan salvaged: folded summary into a title-only plan_markdown")
             if self.plan_output_path is not None and plan_md:
                 try:
                     self.plan_output_path.parent.mkdir(parents=True, exist_ok=True)
