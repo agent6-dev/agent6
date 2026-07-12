@@ -13,7 +13,7 @@ tests can assert against it directly.
 from __future__ import annotations
 
 # The page is a hash-routed SPA: #/ hub, #/run/<id>, #/machine/<name>,
-# #/transcript/<id>, #/config. Live views open an EventSource against the
+# #/conversation/<id>, #/config. Live views open an EventSource against the
 # matching /events endpoint; static views fetch a snapshot. Writes are small JSON
 # POSTs (new work / steer / approve / answer / merge / prune / config set /
 # machine create+run) to the typed endpoints, never arbitrary execution.
@@ -136,12 +136,32 @@ table.tools .args { color: var(--muted); font-family: var(--mono); word-break: b
 .diff { font-family: var(--mono); font-size: 12px; }
 .diff .add { color: var(--ok); } .diff .del { color: var(--err); } .diff .hunk { color: var(--accent2); }
 
-.turn { padding: 10px 0; border-bottom: 1px solid var(--border); }
-.turn .who { font-weight: 700; font-size: 12px; text-transform: uppercase; color: var(--muted); }
-.turn.assistant .who { color: var(--accent); }
-.turn.user .who { color: var(--ok); }
-.turn.tool .who { color: var(--accent2); }
-.turn .think { color: var(--muted); font-style: italic; border-left: 2px solid var(--border); padding-left: 8px; margin: 6px 0; }
+/* conversation: the folded transcript, the same items (and semantic span
+   styles) the CLI stream and the TUI conversation view render. */
+.conv { font-family: var(--mono); font-size: 12.5px; line-height: 1.5; }
+.conv .ci { padding: 2px 4px; margin: 0 -4px 8px; white-space: pre-wrap; word-break: break-word; border-radius: 6px; }
+.conv .ci.exp { cursor: pointer; }
+.conv .ci.exp:hover { background: var(--surface2); }
+.conv .s-thinking { color: var(--muted); font-style: italic; }
+.conv .s-call { color: var(--accent); font-weight: 600; }
+.conv .s-arg, .conv .s-detail, .conv .s-tail, .conv .s-done-detail { color: var(--muted); }
+.conv .s-more, .conv .s-marker { color: var(--muted); font-style: italic; }
+.conv .s-ok { color: var(--ok); }
+.conv .s-fail { color: var(--err); }
+.conv .s-commit { color: var(--accent2); }
+.conv .s-done-ok { color: var(--ok); font-weight: 700; }
+.conv .s-done-fail { color: var(--warn); font-weight: 700; }
+.conv .s-operator { color: var(--ok); font-weight: 600; }
+.conv-live { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 8px; }
+.conv-live .lt { color: var(--accent); font-weight: 600; }
+.more-note { color: var(--muted); font-style: italic; }
+.card-head-row { display: flex; align-items: baseline; gap: 8px; }
+.card-head-row h2 { flex: 1; }
+button.mini { min-height: 26px; padding: 2px 10px; font-size: 12px; border-radius: 6px; color: var(--muted); }
+/* The conversation card: header fixed, the body scrolls inside .conv-box (so
+   the detail toggle stays reachable while following the tail). */
+.conv-card { display: flex; flex-direction: column; }
+.conv-box { overflow: auto; max-height: 62vh; }
 
 .cfg { width: 100%; border-collapse: collapse; font-size: 13px; }
 .cfg td, .cfg th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
@@ -222,21 +242,24 @@ aside.rail { display: none; }
   main { max-width: 1280px; margin: 0; padding: 20px 28px; }
 }
 
-/* --- run dashboard: a real multi-pane layout on wide screens, not a 2-col
-   reflow. Reasoning / tools / log run down the main column; the task graph,
-   budget, and latest commit sit in a narrower side column. --- */
+/* --- run dashboard: conversation-primary on wide screens. The folded
+   conversation fills the main column; the task graph, budget, tool calls, and
+   latest commit sit in a narrower side column; the raw event log runs full
+   width underneath (the audit view). --- */
 @media (min-width: 1024px) {
   .run-grid {
-    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
-    grid-template-areas: "head head" "role tasks" "tools budget" "log diff";
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+    grid-template-areas: "head head" "conv side" "log log";
+    align-items: start;
   }
   .run-grid .card-head { grid-area: head; }
-  .run-grid .card-role { grid-area: role; }
-  .run-grid .card-tasks { grid-area: tasks; }
-  .run-grid .card-tools { grid-area: tools; }
-  .run-grid .card-budget { grid-area: budget; }
+  .run-grid .run-side { grid-area: side; }
   .run-grid .card-log { grid-area: log; }
-  .run-grid .card-diff { grid-area: diff; }
+  /* The conversation pins to the viewport (sticky under the 57px header) and
+     scrolls internally, so it stays in view while the page scrolls the side
+     cards; the side column keeps its own natural height. */
+  .run-grid .card-conv { grid-area: conv; position: sticky; top: 72px; }
+  .run-grid .card-conv .conv-box { height: calc(100vh - 190px); max-height: none; }
 }
 </style>
 </head>
@@ -351,7 +374,7 @@ async function route() {
     else if (parts[0] === 'machines') { setTab('machines'); await renderHub('machines'); }
     else if (parts[0] === 'config') { setTab('config'); await renderConfig(); }
     else if (parts[0] === 'run' && parts[1]) { setTab('hub'); renderRun(decodeURIComponent(parts[1])); }
-    else if (parts[0] === 'transcript' && parts[1]) { setTab('hub'); await renderTranscript(decodeURIComponent(parts[1])); }
+    else if (parts[0] === 'conversation' && parts[1]) { setTab('hub'); await renderConversation(decodeURIComponent(parts[1])); }
     else if (parts[0] === 'machine' && parts[1]) { setTab('machines'); renderMachine(decodeURIComponent(parts[1])); }
     else if (parts[0] === 'draft' && parts[1]) { const n = decodeURIComponent(parts[1]); setTab('machines'); renderRun(n, { base: '/api/draft/' + encodeURIComponent(n), readOnly: true, title: 'Machine draft', crumb: 'draft ' + n }); }
     else { view.innerHTML = ''; view.appendChild(el('div', 'empty', 'not found')); }
@@ -459,6 +482,121 @@ async function renderHub(focus) {
   view.appendChild(grid);
 }
 
+// --- conversation ------------------------------------------------------------
+// Renders a /conversation payload: folded transcript items whose lines are
+// [text, style] spans from the shared renderer (viewmodel.transcript_style), so
+// the web shows exactly what the CLI stream and the TUI conversation view show.
+// The detail level cycles collapsed -> expanded -> hidden (persisted); an item
+// with a longer form (clipped tool output, folded thinking) expands on click.
+const DETAIL_CYCLE = { collapsed: 'expanded', expanded: 'hidden', hidden: 'collapsed' };
+function tailStr(s, n) { return s.length <= n ? s : '…' + s.slice(-n); }
+function firstLine(s, n) { const t = String(s == null ? '' : s).split('\n')[0]; return t.length > n ? t.slice(0, n - 1) + '…' : t; }
+// The web skin's one glyph substitution: browser mono stacks reliably cover the
+// box-drawing block but often lack U+23BF (the terminal fonts' result glyph).
+const webGlyphs = s => s.replaceAll('⎿', '└');
+// `box` is the scroll container, `body` the host the items render into.
+function makeConv(url, box, body) {
+  const conv = {
+    items: [], open: new Set(),
+    detail: localStorage.getItem('a6-detail') || 'collapsed',
+    timer: null,
+  };
+  const itemsHost = el('div', 'conv');
+  const liveHost = el('div', 'conv conv-live');
+  liveHost.style.display = 'none';
+  body.appendChild(itemsHost); body.appendChild(liveHost);
+  const following = () => box.scrollTop + box.clientHeight >= box.scrollHeight - 40;
+
+  const paintItems = () => {
+    const follow = following();
+    itemsHost.innerHTML = '';
+    let shown = 0;
+    conv.items.forEach((it, i) => {
+      if (it.kind === 'thinking' && conv.detail === 'hidden' && !conv.open.has(i)) return;
+      const expanded = conv.detail === 'expanded' || conv.open.has(i);
+      const lines = expanded && it.full ? it.full : it.lines;
+      const div = el('div', 'ci' + (it.full ? ' exp' : ''));
+      if (it.full) {
+        div.title = expanded ? 'click to collapse' : 'click to expand';
+        div.onclick = () => { if (conv.open.has(i)) conv.open.delete(i); else conv.open.add(i); paintItems(); };
+      }
+      for (const line of lines) {
+        const ln = el('div');
+        for (const [text, style] of line) ln.appendChild(el('span', 's-' + style, webGlyphs(text)));
+        if (!line.length) ln.appendChild(document.createTextNode(' '));
+        div.appendChild(ln);
+      }
+      itemsHost.appendChild(div); shown++;
+    });
+    if (!shown) itemsHost.appendChild(el('div', 'muted', 'no conversation yet — it appears as the run streams'));
+    if (follow) box.scrollTop = box.scrollHeight;
+  };
+
+  conv.refresh = async () => {
+    if (!box.isConnected) return; // navigated away: don't fetch or paint stale
+    let data; try { data = await getJSON(url); } catch (_) { return; }
+    if (!box.isConnected) return;
+    conv.items = data.items || [];
+    paintItems();
+  };
+  conv.poke = () => { // debounced re-fold on an SSE change signal
+    if (conv.timer) return;
+    conv.timer = setTimeout(() => { conv.timer = null; conv.refresh(); }, 900);
+  };
+  // The in-progress turn under the folded items (streamed thinking/text from
+  // the RunState SSE frame): the analogue of the TUI's docked live pane. The
+  // live "thinking…" marker always shows; the reasoning text itself streams
+  // only at the expanded detail level (same rule as the TUI).
+  conv.setLive = (s) => {
+    const r = s.last_role;
+    const follow = following();
+    liveHost.innerHTML = '';
+    if (s.finished || !r) { liveHost.style.display = 'none'; return; }
+    const think = r.streamed_thinking, text = r.streamed_text;
+    liveHost.style.display = '';
+    if (think || text) {
+      if (think) {
+        const line = el('div');
+        line.appendChild(el('span', 'lt', '· thinking… '));
+        if (conv.detail === 'expanded') line.appendChild(el('span', 's-thinking', tailStr(think, 1600)));
+        liveHost.appendChild(line);
+      }
+      if (text) liveHost.appendChild(el('div', null, tailStr(text, 1600)));
+    } else {
+      const hb = el('div', 'muted'); hb.id = 'hb-line'; liveHost.appendChild(hb); hbTick();
+    }
+    if (follow) box.scrollTop = box.scrollHeight;
+  };
+  conv.detailButton = () => {
+    const b = el('button', 'mini', 'detail: ' + conv.detail);
+    b.onclick = () => {
+      conv.detail = DETAIL_CYCLE[conv.detail];
+      localStorage.setItem('a6-detail', conv.detail);
+      b.textContent = 'detail: ' + conv.detail;
+      conv.open.clear();
+      paintItems();
+    };
+    return b;
+  };
+  return conv;
+}
+
+// A titled conversation card, the detail toggle in its (non-scrolling) header
+// and the items scrolling in .conv-box below it; used by the run view (main
+// pane), the full-page view, and the machine view's current-state pane.
+function convCard(url, title, cls) {
+  const card = el('div', 'card conv-card ' + (cls || ''));
+  const hrow = el('div', 'card-head-row');
+  hrow.appendChild(el('h2', null, title));
+  const box = el('div', 'conv-box');
+  const body = el('div');
+  box.appendChild(body);
+  const conv = makeConv(url, box, body);
+  hrow.appendChild(conv.detailButton());
+  card.appendChild(hrow); card.appendChild(box);
+  return { card, conv, box };
+}
+
 // --- run dashboard -----------------------------------------------------------
 // A multi-line steer dialog (browser prompt() is single-line). onResult(text|null):
 // the instruction to send (may be multi-line), or null to cancel. Steering never
@@ -496,15 +634,19 @@ function renderRun(id, opts) {
   view.innerHTML = '';
   const prompts = el('div'); view.appendChild(prompts); // approval/question boxes surface here
   const grid = el('div', 'grid run-grid');
+  const side = el('div', 'grid run-side'); // the narrow column of context cards
   const cards = { _id: id, _prompts: prompts, _readOnly: readOnly };
-  const mk = (key, title, cls) => { const c = el('div', 'card card-' + key + ' ' + (cls||'')); c.appendChild(el('h2', null, title)); const body = el('div'); c.appendChild(body); cards[key] = body; grid.appendChild(c); return body; };
+  const mk = (key, title, cls, parent) => { const c = el('div', 'card card-' + key + ' ' + (cls||'')); c.appendChild(el('h2', null, title)); const body = el('div'); c.appendChild(body); cards[key] = body; (parent || grid).appendChild(c); return body; };
   mk('head', opts.title || 'Run');
-  mk('budget', 'Budget');
-  mk('tasks', 'Task graph', 'scroll');
-  mk('role', 'Reasoning', 'scroll');
-  mk('tools', 'Tool calls', 'scroll');
+  const cc = convCard(base + '/conversation', 'Conversation', 'card-conv');
+  grid.appendChild(cc.card);
+  cards._conv = cc.conv;
+  mk('tasks', 'Task graph', 'scroll', side);
+  mk('budget', 'Budget', '', side);
+  mk('tools', 'Tool calls', 'scroll', side);
+  mk('diff', 'Latest commit', 'scroll', side);
+  grid.appendChild(side);
   mk('log', 'Event log', 'scroll');
-  mk('diff', 'Latest commit', 'scroll');
   if (!readOnly) {  // controls at the TOP so Steer/Stop are reachable without scrolling
     const actions = el('div', 'row wrap'); actions.style.marginBottom = '14px';
     const steerBtn = el('button', null, '↪ Steer');
@@ -516,20 +658,21 @@ function renderRun(id, opts) {
     stopBtn.onclick = () => stopRun('/api/run/' + encodeURIComponent(id), 'the run');
     const mergeBtn = el('button', null, '⑃ Merge');
     mergeBtn.onclick = async () => { try { const d = await postJSON('/api/run/' + encodeURIComponent(id) + '/merge', {}); toast(d.message || 'merged'); } catch (e) { toast(e.message, true); } };
-    const tbtn = el('button', null, 'Transcript →');
-    tbtn.onclick = () => location.hash = '#/transcript/' + encodeURIComponent(id);
+    const tbtn = el('button', null, 'Conversation →');
+    tbtn.onclick = () => location.hash = '#/conversation/' + encodeURIComponent(id);
     actions.appendChild(steerBtn); actions.appendChild(stopBtn); actions.appendChild(mergeBtn); actions.appendChild(tbtn);
     cards._steer = steerBtn; cards._stop = stopBtn; // paintRun disables these once the run is finished
     view.appendChild(actions);
   }
   view.appendChild(grid);
+  cc.conv.refresh();
 
   live = new EventSource(base + '/events');
   live.onmessage = ev => {
     let s; try { s = JSON.parse(ev.data); } catch (_) { return; }
     paintRun(cards, s);
     hbState.spin++;
-    if (s.finished) closeLive(); // run is done; stop the stream so it doesn't reconnect
+    if (s.finished) { closeLive(); setTimeout(() => cc.conv.refresh(), 900); } // one final fold after last writes flush
   };
   if (!hbTimer) hbTimer = setInterval(() => { hbState.spin++; hbTick(); }, 1000);
   live.onerror = () => { /* EventSource auto-retries a live run; leave last paint up */ };
@@ -614,7 +757,7 @@ function paintRun(cards, s) {
   const kv = el('div', 'kv');
   const add = (k, v) => { kv.appendChild(el('div', 'k', k)); kv.appendChild(el('div', 'v', v)); };
   add('task', s.user_task || '(none)');
-  add('id', s.run_id || '');
+  add('id', s.run_id || cards._id || ''); // older logs carry no run_id in run.start
   add('state', s.status_label || (s.finished ? 'finished' : 'running'));
   cards.head.appendChild(kv);
   if (s.last_role) {
@@ -649,22 +792,12 @@ function paintRun(cards, s) {
   }
   cards.tasks.appendChild(tree);
 
-  // reasoning (thinking + streamed text); on an ended run the pane tells the
-  // end story. On a live-but-silent run (thinking / resuming) a heartbeat ticks
-  // via hbTick() so it reads as alive, not hung (the detach->attach symptom).
-  cards.role.innerHTML = '';
+  // conversation: the live in-progress turn paints from this frame at once (a
+  // heartbeat ticks via hbTick() on a live-but-silent run so it reads as alive,
+  // not hung); completed turns re-fold on a debounce.
   const streaming = s.last_role && (s.last_role.streamed_thinking || s.last_role.streamed_text);
-  if (streaming) {
-    if (s.last_role.streamed_thinking) { const t = el('pre', 'think'); t.textContent = s.last_role.streamed_thinking; cards.role.appendChild(t); }
-    if (s.last_role.streamed_text) { const t = el('pre'); t.textContent = s.last_role.streamed_text; cards.role.appendChild(t); }
-  } else if (s.finished) {
-    cards.role.appendChild(el('div', 'sub', s.status_label || 'finished'));
-    if (s.finish_summary) { const t = el('pre'); t.textContent = s.finish_summary; cards.role.appendChild(t); }
-  } else if (s.last_role) {
-    const hb = el('div', 'muted'); hb.id = 'hb-line'; cards.role.appendChild(hb);
-  } else {
-    cards.role.appendChild(el('div', 'muted', 'waiting for the model…'));
-  }
+  cards._conv.setLive(s);
+  cards._conv.poke();
   hbState = {
     active: !s.finished && !!s.last_role && !streaming,
     role: (s.last_role && s.last_role.role) || 'worker',
@@ -672,16 +805,21 @@ function paintRun(cards, s) {
     spin: 0,
   };
   hbTick();
-  cards.role.scrollTop = cards.role.scrollHeight;
 
-  // tools
+  // tools: one clipped line per call (hover shows the full args + result; the
+  // conversation carries the whole story), so a long error dump can't flood it.
   cards.tools.innerHTML = '';
   const tbl = el('table', 'tools');
   for (const tc of (s.tool_calls||[]).slice(-30)) {
     const tr = el('tr');
     const d = el('td'); d.appendChild(el('span', 'dot ' + (tc.ok === null ? '' : tc.ok ? 'ok' : 'bad'))); tr.appendChild(d);
     tr.appendChild(el('td', 'name', tc.name));
-    const a = el('td', 'args'); a.textContent = tc.args_preview + (tc.result_summary ? '  → ' + tc.result_summary : ''); tr.appendChild(a);
+    const a = el('td', 'args');
+    a.textContent = firstLine(tc.args_preview, 90) + (tc.result_summary ? '  → ' + firstLine(tc.result_summary, 90) : '');
+    const extra = String(tc.result_summary || '').split('\n').length - 1;
+    if (extra > 0) a.appendChild(el('span', 'more-note', ` (+${extra} more line${extra === 1 ? '' : 's'})`));
+    a.title = tc.args_preview + (tc.result_summary ? '\n→ ' + tc.result_summary : '');
+    tr.appendChild(a);
     tbl.appendChild(tr);
   }
   if (!(s.tool_calls||[]).length) cards.tools.appendChild(el('div', 'muted', 'no tool calls yet'));
@@ -712,45 +850,35 @@ function renderDiff(text) {
   return box;
 }
 
-// --- transcript --------------------------------------------------------------
-async function renderTranscript(id) {
-  setCrumb('transcript ' + id);
+// --- conversation page ---------------------------------------------------------
+// The run's conversation full-height (the same component the run view embeds),
+// live-following: the RunState /events stream is the change signal; the fold
+// re-fetches on it (debounced) and the stream closes once the run finishes.
+async function renderConversation(id) {
+  setCrumb('conversation ' + id);
   view.innerHTML = '';
   const base = '/api/run/' + encodeURIComponent(id);
-  const card = el('div', 'card scroll'); card.style.maxHeight = '78vh';
-  card.appendChild(el('h2', null, 'Transcript'));
-  const body = el('div'); card.appendChild(body); view.appendChild(card);
+  const cc = convCard(base + '/conversation', 'Conversation');
+  cc.box.style.maxHeight = '82vh';
+  view.appendChild(cc.card);
+  await cc.conv.refresh();
+  cc.box.scrollTop = cc.box.scrollHeight; // open at the tail, like the TUI
 
-  const paint = async () => {
-    if (!card.isConnected) return; // navigated away: don't fetch or paint stale
-    let data; try { data = await getJSON(base + '/transcript'); } catch (_) { return; }
-    if (!card.isConnected) return;
-    const atBottom = card.scrollTop + card.clientHeight >= card.scrollHeight - 40;
-    body.innerHTML = '';
-    if (!data.turns.length) { body.appendChild(el('div', 'empty', 'no transcript recorded')); return; }
-    for (const t of data.turns) {
-      if (t.role === 'marker') { body.appendChild(el('div', 'muted', '— ' + t.text + ' —')); continue; }
-      const turn = el('div', 'turn ' + t.role);
-      turn.appendChild(el('div', 'who', t.role + (t.seq ? '  · seq ' + t.seq : '')));
-      if (t.thinking) { const th = el('pre', 'think'); th.textContent = t.thinking; turn.appendChild(th); }
-      if (t.text) { const p = el('pre'); p.textContent = t.text; turn.appendChild(p); }
-      for (const [name, args] of t.tool_calls || []) turn.appendChild(el('pre', 'mono muted', '→ ' + name + '(' + args + ')'));
-      body.appendChild(turn);
-    }
-    if (atBottom) card.scrollTop = card.scrollHeight; // follow the tail unless scrolled up
-  };
-  await paint();
-
-  // Live-follow: the RunState /events stream is a change signal; re-fold the
-  // transcript on it (debounced) and stop once the run finishes. route()'s
-  // closeLive tears the stream down on navigation.
-  let pending = false;
   live = new EventSource(base + '/events');
   live.onmessage = ev => {
     let s; try { s = JSON.parse(ev.data); } catch (_) { return; }
-    if (!pending) { pending = true; setTimeout(() => { pending = false; paint(); }, 1200); }
-    if (s.finished) { closeLive(); setTimeout(paint, 1300); } // one final fold after last writes flush
+    cc.conv.setLive(s);
+    cc.conv.poke();
+    hbState = {
+      active: !s.finished && !!s.last_role && !(s.last_role.streamed_thinking || s.last_role.streamed_text),
+      role: (s.last_role && s.last_role.role) || 'worker',
+      last: Date.now(),
+      spin: hbState.spin + 1,
+    };
+    hbTick();
+    if (s.finished) { closeLive(); setTimeout(() => cc.conv.refresh(), 900); } // one final fold after last writes flush
   };
+  if (!hbTimer) hbTimer = setInterval(() => { hbState.spin++; hbTick(); }, 1000);
 }
 
 // --- machine watch -----------------------------------------------------------
@@ -782,9 +910,12 @@ function renderMachine(name) {
   const grid = el('div', 'grid cols2');
   const structCard = el('div', 'card scroll'); structCard.appendChild(el('h2', null, 'States')); const structBody = el('div'); structCard.appendChild(structBody);
   const pathCard = el('div', 'card scroll'); pathCard.appendChild(el('h2', null, 'Path')); const pathBody = el('div'); pathCard.appendChild(pathBody);
-  const reasonCard = el('div', 'card scroll'); reasonCard.appendChild(el('h2', null, 'Current state reasoning')); const reasonBody = el('div'); reasonCard.appendChild(reasonBody);
-  grid.appendChild(structCard); grid.appendChild(pathCard); grid.appendChild(reasonCard);
+  // The current agent state's conversation: the same folded view a run shows.
+  const cc = convCard(base + '/conversation', 'Current state');
+  cards._conv = cc.conv;
+  grid.appendChild(structCard); grid.appendChild(pathCard); grid.appendChild(cc.card);
   view.appendChild(grid);
+  cc.conv.refresh();
 
   // The poke ("send message") box: created ONCE so its input survives repaints.
   const poke = el('div', 'poke-box');
@@ -806,9 +937,11 @@ function renderMachine(name) {
   live = new EventSource(base + '/events');
   live.onmessage = ev => {
     let data; try { data = JSON.parse(ev.data); } catch (_) { return; }
-    paintMachine(structBody, pathBody, reasonBody, cards, ctx, data);
+    paintMachine(structBody, pathBody, cards, ctx, data);
+    hbState.spin++;
     if (data.machine && data.machine.ended) closeLive(); // machine done; stop the stream
   };
+  if (!hbTimer) hbTimer = setInterval(() => { hbState.spin++; hbTick(); }, 1000);
 }
 
 function machineNotify(ctx, m) {
@@ -838,7 +971,7 @@ function machineNotify(ctx, m) {
   }
 }
 
-function paintMachine(structBody, pathBody, reasonBody, cards, ctx, data) {
+function paintMachine(structBody, pathBody, cards, ctx, data) {
   if (data.error) { structBody.innerHTML=''; structBody.appendChild(el('div', 'err', data.error)); return; }
   const m = data.machine || {};
   // Pending approval/question/steer come from the current agent state's RunState.
@@ -873,15 +1006,19 @@ function paintMachine(structBody, pathBody, reasonBody, cards, ctx, data) {
   pathBody.appendChild(path);
   if (m.ended) pathBody.appendChild(el('div', 'sub muted', `ended: ${m.ended.status} (${m.ended.reason}) at ${m.ended.state}`));
 
-  reasonBody.innerHTML = '';
+  // The current state's conversation: live turn from this frame, completed
+  // turns re-folded on a debounce. A live-but-silent state ticks the heartbeat.
   const r = data.reasoning || {};
-  if (r.last_role && (r.last_role.streamed_thinking || r.last_role.streamed_text)) {
-    if (r.last_role.streamed_thinking) { const t = el('pre', 'think'); t.textContent = r.last_role.streamed_thinking; reasonBody.appendChild(t); }
-    if (r.last_role.streamed_text) { const t = el('pre'); t.textContent = r.last_role.streamed_text; reasonBody.appendChild(t); }
-  } else if ((r.log_tail||[]).length) {
-    const log = el('div', 'log'); for (const line of r.log_tail.slice(-60)) log.appendChild(el('div', null, line)); reasonBody.appendChild(log);
-  } else { reasonBody.appendChild(el('div', 'muted', 'no agent state running')); }
-  reasonBody.scrollTop = reasonBody.scrollHeight;
+  cards._conv.setLive(r);
+  cards._conv.poke();
+  const streaming = r.last_role && (r.last_role.streamed_thinking || r.last_role.streamed_text);
+  hbState = {
+    active: !r.finished && !!r.last_role && !streaming,
+    role: (r.last_role && r.last_role.role) || 'agent',
+    last: Date.now(),
+    spin: hbState.spin,
+  };
+  hbTick();
 }
 
 // --- config ------------------------------------------------------------------

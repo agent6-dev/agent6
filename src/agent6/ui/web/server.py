@@ -421,11 +421,11 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json(model.config_payload(self.cwd))
             return
         parts = path.strip("/").split("/")
-        # /api/run/<id>[/transcript|/events]
+        # /api/run/<id>[/conversation|/events]
         if len(parts) in (3, 4) and parts[0] == "api" and parts[1] == "run":
             self._route_run(parts[2], parts[3] if len(parts) > 3 else "")
             return
-        # /api/machine/<name>[/reasoning|/events]
+        # /api/machine/<name>[/reasoning|/conversation|/events]
         if len(parts) in (3, 4) and parts[0] == "api" and parts[1] == "machine":
             self._route_machine(parts[2], parts[3] if len(parts) > 3 else "")
             return
@@ -442,6 +442,8 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if sub == "":
             self._send_json(model.run_snapshot(draft_dir))
+        elif sub == "conversation":
+            self._send_json(model.conversation_payload(draft_dir))
         elif sub == "events":
             self._sse_run(draft_dir)
         else:
@@ -454,8 +456,8 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if sub == "":
             self._send_json(model.run_snapshot(run_dir))
-        elif sub == "transcript":
-            self._send_json(model.transcript_payload(run_dir))
+        elif sub == "conversation":
+            self._send_json(model.conversation_payload(run_dir))
         elif sub == "events":
             self._sse_run(run_dir)
         else:
@@ -471,6 +473,8 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send_json(model.machine_snapshot(machine_dir))
             elif sub == "reasoning":
                 self._send_json(model.machine_reasoning_snapshot(machine_dir))
+            elif sub == "conversation":
+                self._send_json(model.machine_conversation_payload(machine_dir))
             elif sub == "events":
                 self._sse_machine(machine_dir)
             else:

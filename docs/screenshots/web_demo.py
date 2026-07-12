@@ -4,8 +4,8 @@
 """Record a web-UI tour with Playwright (dev tool, not run in CI by default).
 
 Drives `agent6 web` in a headless Chromium, recording a .webm at a given
-viewport (desktop or phone) while touring the hub, a run dashboard, the
-transcript, and the config page. A virtual circle cursor glides between targets
+viewport (desktop or phone) while touring the hub, a run view, the
+conversation, and the config page. A virtual circle cursor glides between targets
 and a bottom-center toast narrates each step, the browser analogue of the TUI
 reel's keystroke overlay (keystroke_overlay.py).
 
@@ -146,6 +146,17 @@ def scroll_to(page: Page, y: int, *, wait: int = 1500) -> None:
     page.wait_for_timeout(wait)
 
 
+def scroll_card(page: Page, selector: str, y: int, *, wait: int = 1500) -> None:
+    """Smooth-scroll INSIDE a scroll-capped card (the conversation card scrolls
+    internally; window scrolling would not move it)."""
+    page.evaluate(
+        "([sel, y]) => { const c = document.querySelector(sel);"
+        " if (c) c.scrollTo({ top: y, behavior: 'smooth' }); }",
+        [selector, y],
+    )
+    page.wait_for_timeout(wait)
+
+
 def drive(page: Page, base: str, mode: str, t0: float) -> float:
     page.goto(base, wait_until="networkidle")
     page.wait_for_selector(".item")
@@ -160,19 +171,21 @@ def drive(page: Page, base: str, mode: str, t0: float) -> float:
 
     # Open the featured run (the first, newest).
     click(page, ".item", label="Open a run", settle=1100)
-    page.wait_for_selector(".tree")
-    toast(page, "Run dashboard: task, reasoning, tools, log, budget")
+    page.wait_for_selector(".conv .ci")
+    toast(page, "A run: the conversation, task graph, tools, budget")
     page.wait_for_timeout(1400)
-    scroll_to(page, 520, wait=1900)
+    scroll_card(page, ".card-conv .conv-box", 400, wait=1600)
     toast(page, "Steer, merge, approve, and answer — from the browser")
     page.wait_for_timeout(1500)
     scroll_to(page, 0, wait=1200)
 
-    # Full transcript.
-    click(page, "button:has-text('Transcript')", label="Read the full transcript")
+    # The full-page conversation; flip the detail level to expand every step.
+    click(page, "button:has-text('Conversation')", label="Read the conversation")
+    page.wait_for_selector(".conv .ci")
     page.wait_for_timeout(700)
-    scroll_to(page, 620, wait=2100)
-    scroll_to(page, 0, wait=1000)
+    click(page, "button.mini", label="Cycle the detail level", settle=900)
+    scroll_card(page, ".conv-box", 0, wait=1800)
+    scroll_card(page, ".conv-box", 4000, wait=1600)
 
     # Config page: the left nav rail on desktop, the bottom tab bar on phone
     # (data-tab is the stable hook; the other nav is display:none per viewport).

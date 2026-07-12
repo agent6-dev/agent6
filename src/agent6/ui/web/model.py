@@ -12,7 +12,6 @@ are exactly `run_state_as_dict` / `machine_state_as_dict` (identical to
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +20,7 @@ from agent6.machine import JournalError, MachineError, MachineJournal, load_mach
 from agent6.ui.viewmodel import (
     fold_machine,
     fold_run,
+    fold_transcript,
     machine_state_as_dict,
     newest_state_log,
     run_state_as_dict,
@@ -29,7 +29,7 @@ from agent6.ui.viewmodel import (
     task_snippet,
 )
 from agent6.ui.viewmodel.config_view import render_show
-from agent6.ui.viewmodel.transcript_render import fold_conversation, load_transcripts
+from agent6.ui.viewmodel.transcript_style import item_lines
 
 RUN_SUBDIRS = ("runs", "asks")
 
@@ -197,7 +197,7 @@ def hub_payload(cwd: Path) -> dict[str, Any]:
     }
 
 
-# --- run snapshot + transcript ----------------------------------------------
+# --- run snapshot + conversation ----------------------------------------------
 
 
 def run_snapshot(run_dir: Path) -> dict[str, Any]:
@@ -207,10 +207,37 @@ def run_snapshot(run_dir: Path) -> dict[str, Any]:
     return run_state_as_dict(fold_run(tail_events(logs, follow=False)))
 
 
-def transcript_payload(run_dir: Path) -> dict[str, Any]:
-    """The full conversation as ordered turns (provider-agnostic)."""
-    turns = fold_conversation(load_transcripts(run_dir / "transcripts"))
-    return {"run_id": run_dir.name, "turns": [asdict(t) for t in turns]}
+def conversation_items(log_path: Path) -> list[dict[str, Any]]:
+    """The log folded into rendered conversation items, one entry per
+    ``TranscriptItem``: its ``kind``, the collapsed ``lines`` (lists of
+    ``[text, style]`` spans from the shared ``item_lines`` renderer, the same
+    fold the CLI stream and the TUI conversation view draw), and ``full`` (the
+    expanded rendering) only when it differs, so the page can offer per-item
+    expansion without re-implementing any clipping client-side."""
+    out: list[dict[str, Any]] = []
+    for item in fold_transcript(list(tail_events(log_path, follow=False))):
+        collapsed = item_lines(item, detail="collapsed")
+        expanded = item_lines(item, detail="expanded")
+        entry: dict[str, Any] = {"kind": item.kind, "lines": collapsed}
+        if expanded != collapsed:
+            entry["full"] = expanded
+        out.append(entry)
+    return out
+
+
+def conversation_payload(run_dir: Path) -> dict[str, Any]:
+    """A run's conversation, folded from its event log."""
+    return {"run_id": run_dir.name, "items": conversation_items(run_dir / "logs.jsonl")}
+
+
+def machine_conversation_payload(machine_dir: Path) -> dict[str, Any]:
+    """The conversation of the machine's most recent agent-state execution
+    (empty when no agent state has produced a log yet), plus the per-state dir
+    it came from so a client can tell when the machine advanced."""
+    log = newest_state_log(machine_dir)
+    if log is None:
+        return {"state_dir": "", "items": []}
+    return {"state_dir": log.parent.name, "items": conversation_items(log)}
 
 
 # --- machine snapshot (structure + watch + reasoning) -----------------------

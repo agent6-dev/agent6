@@ -9,7 +9,7 @@
 CLI and TUI use (via `agent6.ui.bridge`). It is a thin renderer of shared state.
 
 Layout:
-    model.py   pure JSON payload builders (hub / run / machine / transcript / config).
+    model.py   pure JSON payload builders (hub / run / machine / conversation / config).
     server.py  ThreadingHTTPServer + routing + SSE (`run_web`).
     page.py    the embedded HTML/CSS/JS single-page app.
 

@@ -47,10 +47,51 @@ def test_run_summary_survives_torn_utf8_tail(tmp_path: Path) -> None:
     assert s["task"] == "torn tail"
 
 
-def test_transcript_payload_empty_when_no_transcripts(tmp_path: Path) -> None:
-    d = _run(tmp_path, "r2", [{"type": "run.start", "user_task": "x"}])
-    payload = model.transcript_payload(d)
-    assert payload == {"run_id": "r2", "turns": []}
+def test_conversation_payload_folds_the_event_log(tmp_path: Path) -> None:
+    # Items come from the shared TranscriptFold + item_lines renderer: a tool's
+    # multi-line result is clipped to its first line + a "+N more lines" note,
+    # with the full rendering carried separately for per-item expansion.
+    dump = "3 validation errors for ApplyEditInput\npath\n  Field required"
+    d = _run(
+        tmp_path,
+        "r2",
+        [
+            {"type": "run.start", "user_task": "x"},
+            {"type": "tool.call", "name": "apply_edit", "args": {"path": "a.py"}},
+            {"type": "tool.result", "name": "apply_edit", "ok": False, "summary": dump},
+        ],
+    )
+    payload = model.conversation_payload(d)
+    assert payload["run_id"] == "r2"
+    (item,) = payload["items"]
+    assert item["kind"] == "tool"
+    flat = "".join(text for line in item["lines"] for text, _style in line)
+    assert "(+2 more lines)" in flat
+    assert "Field required" not in flat  # clipped in the collapsed rendering
+    full = "".join(text for line in item["full"] for text, _style in line)
+    assert "Field required" in full  # the expanded rendering carries it
+
+
+def test_conversation_payload_empty_without_log(tmp_path: Path) -> None:
+    d = model.runs_root(tmp_path) / "r2b"
+    d.mkdir(parents=True)
+    assert model.conversation_payload(d) == {"run_id": "r2b", "items": []}
+
+
+def test_machine_conversation_payload_uses_newest_state_log(tmp_path: Path) -> None:
+    md = model.machines_root(tmp_path) / "m2"
+    (md / "states" / "0001-work").mkdir(parents=True)
+    (md / "states" / "0001-work" / "logs.jsonl").write_text(
+        json.dumps({"type": "loop.steer.injected", "text": "hello"}) + "\n", encoding="utf-8"
+    )
+    payload = model.machine_conversation_payload(md)
+    assert payload["state_dir"] == "0001-work"
+    (item,) = payload["items"]
+    assert item["kind"] == "operator"
+    assert model.machine_conversation_payload(model.machines_root(tmp_path) / "nope") == {
+        "state_dir": "",
+        "items": [],
+    }
 
 
 def test_reasoning_snapshot_empty_without_state_log(tmp_path: Path) -> None:

@@ -2,7 +2,7 @@
 
 `agent6 web` serves a browser front-end for driving agent6 from a desktop or a
 phone: watch a run stream, steer it, approve prompts, answer questions, read the
-transcript, and browse, create, run, and watch state machines.
+conversation, and browse, create, run, and watch state machines.
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox">
   <source src="/screenshots/out/web-desktop.webm" type="video/webm">
@@ -31,13 +31,18 @@ invocation. Stop it with Ctrl-C.
 - **Hub**: every run (mode, status, last activity, cost) and machine instance;
   start new work (run / plan / ask); run an authored machine or create one;
   prune merged run branches.
-- **Run dashboard** (live over SSE): the task graph, the model's streamed
-  reasoning, tool calls and results, the event log, the latest commit diff, and a
-  budget bar. Steer the run, merge its branch, approve `run_command` prompts, and
-  answer `ask_user` questions inline.
-- **Transcript**: the full provider-agnostic conversation.
+- **Run view** (live over SSE): the conversation front and center — the same
+  folded transcript the CLI stream and the TUI render (reasoning, every tool
+  call with its result, commits, the verdict), with the in-progress turn
+  streaming underneath. A detail toggle cycles collapsed / expanded / hidden,
+  and any clipped item (a long tool result, folded reasoning) expands on click.
+  Alongside it: the task graph, budget, clipped tool-call table (hover for the
+  full args and result), latest commit diff, and the raw event log. Steer the
+  run, merge its branch, approve `run_command` prompts, and answer `ask_user`
+  questions inline.
+- **Conversation**: the same view full-page, following the run live.
 - **Machines**: the state overview, the path taken, and the current agent
-  state's live reasoning. Steer, approve, and answer the current agent state's
+  state's conversation. Steer, approve, and answer the current agent state's
   prompts inline (same controls as a run); send a message to a waiting machine
   (a `poke` payload the next tool reads); and see `machine.notify`/end as
   ephemeral banners and OS notifications.
@@ -65,7 +70,7 @@ The page reads the same wire form as `agent6 watch --json`:
 ```bash
 curl -s localhost:7658/api/hub                 # runs + machines + machine files
 curl -s localhost:7658/api/run/<id>            # a run's state, as JSON
-curl -s localhost:7658/api/run/<id>/transcript # the conversation turns
+curl -s localhost:7658/api/run/<id>/conversation # the folded conversation items
 curl -s localhost:7658/api/machine/<name>      # a machine's state, as JSON
 curl -s localhost:7658/api/config              # effective config (no secrets)
 curl -sN localhost:7658/api/run/<id>/events    # SSE: a fresh snapshot per change

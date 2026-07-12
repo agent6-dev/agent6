@@ -201,6 +201,29 @@ def test_unknown_run_is_404(server: tuple[WebServer, int]) -> None:
     assert "no run" in json.loads(body)["error"]
 
 
+def test_run_conversation_endpoint(server: tuple[WebServer, int], tmp_path: Path) -> None:
+    _srv, port = server
+    _make_run(
+        tmp_path,
+        "run-c",
+        [
+            {"type": "run.start", "mode": "run", "user_task": "task c"},
+            {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}},
+            {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
+            {"type": "run.end", "all_passed": True, "reason": "finish_run"},
+        ],
+    )
+    status, body, _ = _get(port, "/api/run/run-c/conversation")
+    assert status == 200
+    payload = json.loads(body)
+    assert payload["run_id"] == "run-c"
+    kinds = [it["kind"] for it in payload["items"]]
+    assert kinds == ["tool", "done"]
+    tool = payload["items"][0]
+    flat = "".join(text for line in tool["lines"] for text, _style in line)
+    assert "read_file" in flat and "12 bytes" in flat
+
+
 def test_config_endpoint(server: tuple[WebServer, int]) -> None:
     _srv, port = server
     status, body, _ = _get(port, "/api/config")
