@@ -1412,6 +1412,16 @@ class Workflow:
                 else "(no summary)"
             )
             raw_result = tool_input.get("result") if isinstance(tool_input, dict) else None
+            if isinstance(raw_result, str):
+                # Weak models routinely STRINGIFY the structured result
+                # (observed live: qwen returned result="{\"found\": true, ...}"
+                # and the machine state's whole cycle failed on shape; deepseek
+                # does the same). One tolerant parse here; the schema
+                # validation downstream stays strict about content.
+                try:
+                    raw_result = json.loads(raw_result)
+                except ValueError:
+                    raw_result = None
             turn.finish_payload = raw_result if isinstance(raw_result, dict) else None
         elif name == FinishPlanningInput.TOOL_NAME:
             turn.finish_kind = "finish_planning"
