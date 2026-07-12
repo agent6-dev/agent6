@@ -54,9 +54,16 @@ def _resolve_plan_run_id(run_id: str) -> str | None:
     """Resolve a (possibly prefix) run-id under the per-repo run-state dir.
 
     Prints an error and returns None on failure. Used by ``run --from-plan``,
-    ``plan show``, and ``plan edit``.
+    ``plan show``, and ``plan edit``. An empty *run_id* resolves the most recent
+    planning run, matching the omit-for-latest convention of the runs commands.
     """
     runs_dir = _runs_dir(Path.cwd())
+    if not run_id:
+        latest = _most_recent_plan_run_id(runs_dir)
+        if latest is None:
+            print("ERROR: no planning runs yet (start one with `agent6 plan`).", file=sys.stderr)
+            return None
+        run_id = latest
     try:
         resolved = resolve_run_id(runs_dir, run_id)
     except RunIdError as exc:

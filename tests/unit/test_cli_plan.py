@@ -44,6 +44,29 @@ def test_plan_show_resolves_prefix(
     assert "# Plan: foo" in capsys.readouterr().out
 
 
+def test_plan_show_omit_id_uses_most_recent_plan(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Matches the omit-for-latest convention of the runs commands.
+    monkeypatch.chdir(tmp_path)
+    _seed_plan(tmp_path, "only-plan-abcd", "# Plan: the latest\n\nsteps\n")
+    rc = main(["plan", "show"])
+    assert rc == 0
+    assert "# Plan: the latest" in capsys.readouterr().out
+
+
+def test_plan_show_omit_id_with_no_plans_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    assert main(["plan", "show"]) == 2
+    assert "no planning runs yet" in capsys.readouterr().err
+
+
 def test_plan_show_missing_run_errors(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

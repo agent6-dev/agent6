@@ -256,14 +256,24 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     _add_budget_flags(plan_run)
     _add_sandbox_flags(plan_run)
     plan_show = _sub(plan_sub, "show", help="Print the plan.md for a prior plan run and exit.")
-    plan_show_id = plan_show.add_argument("run_id", help="Plan run id (or unambiguous prefix).")
+    plan_show_id = plan_show.add_argument(
+        "run_id",
+        nargs="?",
+        default="",
+        help="Plan run id (or unambiguous prefix); omit for the most recent plan.",
+    )
     plan_show_id.completer = _complete_plan_run_ids  # type: ignore[attr-defined]
     plan_edit = _sub(
         plan_sub,
         "edit",
         help="Open the plan.md for a prior plan run in $EDITOR (default: vi) and exit.",
     )
-    plan_edit_id = plan_edit.add_argument("run_id", help="Plan run id (or unambiguous prefix).")
+    plan_edit_id = plan_edit.add_argument(
+        "run_id",
+        nargs="?",
+        default="",
+        help="Plan run id (or unambiguous prefix); omit for the most recent plan.",
+    )
     plan_edit_id.completer = _complete_plan_run_ids  # type: ignore[attr-defined]
 
     ask_p = _sub(
