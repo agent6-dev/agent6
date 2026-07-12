@@ -182,6 +182,25 @@ def _runs_dir(repo_root: Path) -> Path:
     return _state_dir(repo_root) / "runs"
 
 
+# Every run-style bucket a listing spans: `run`/`plan` under runs/, `ask` under
+# asks/, `machine create` authoring logs under machine-drafts/. Kept in one place
+# so "most recent" and "search all history" match what `agent6 runs` lists.
+RUN_BUCKETS: tuple[str, ...] = ("runs", "asks", "machine-drafts")
+
+
+def all_run_dirs(repo_root: Path) -> list[Path]:
+    """Every run directory across all RUN_BUCKETS. So latest-run resolution and
+    history search cover asks and machine-drafts, not just runs/ (a bare `attach`
+    or `history search` right after an `ask` must find that ask)."""
+    state = _state_dir(repo_root)
+    dirs: list[Path] = []
+    for subdir in RUN_BUCKETS:
+        bucket = state / subdir
+        if bucket.is_dir():
+            dirs.extend(p for p in bucket.iterdir() if p.is_dir())
+    return dirs
+
+
 def _machines_dir(repo_root: Path) -> Path:
     """The ``machines/`` directory under the per-repo state dir."""
     return _state_dir(repo_root) / "machines"

@@ -10,6 +10,7 @@ import os
 import subprocess
 import sys
 import time
+from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
 
@@ -24,7 +25,7 @@ from agent6.ui.bridge.approval import (
     write_frontend_pid,
     write_question_answers,
 )
-from agent6.ui.cli._common import _runs_dir, _state_dir, resolve_run_layout
+from agent6.ui.cli._common import _runs_dir, _state_dir, all_run_dirs, resolve_run_layout
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._interact import default_stdin_approver, default_stdin_questioner
 from agent6.ui.viewmodel import run_mtime, tail_events
@@ -100,23 +101,25 @@ def _cmd_plan_edit(run_id: str) -> int:
     return result.returncode
 
 
-def _most_recent_run_id(runs_dir: Path) -> str | None:
-    """Return the directory name (= run id) of the most recently active run.
+def _newest_dir(candidates: Iterable[Path]) -> Path | None:
+    """The most recently active run dir among *candidates* (by logs.jsonl mtime,
+    not dir mtime: a viewer writing frontend.pid must not float a run to latest)."""
+    dirs = sorted((p for p in candidates if p.is_dir()), key=run_mtime, reverse=True)
+    return dirs[0] if dirs else None
 
-    Used by `agent6 attach` (no arg), `agent6 run --continue`, and the
-    history-graph subcommand. Returns None when there are no runs yet (the
-    per-repo run-state dir is missing) or when the directory exists but is empty.
+
+def _most_recent_run_id(runs_dir: Path) -> str | None:
+    """Id (dir name) of the most recently active run under a single bucket dir.
+
+    Used where "latest" is scoped to one bucket: `run --continue`, fork, resume
+    (runs/), `ask --continue` (asks/). Attach / runs show / history use the
+    cross-bucket ``all_run_dirs`` instead. Returns None when the dir is missing
+    or empty.
     """
     if not runs_dir.is_dir():
         return None
-    candidates = sorted(
-        (p for p in runs_dir.iterdir() if p.is_dir()),
-        key=run_mtime,
-        reverse=True,
-    )
-    if not candidates:
-        return None
-    return candidates[0].name
+    newest = _newest_dir(runs_dir.iterdir())
+    return newest.name if newest else None
 
 
 def _most_recent_plan_run_id(runs_dir: Path) -> str | None:
@@ -140,22 +143,23 @@ def _cmd_watch(run_id: str, *, tui: bool = False, since: int = 0, raw: bool = Fa
     Default follows the run's conversation (the same render as ``agent6 run``).
     ``--raw`` is the no-deps event-line tail; ``--tui`` the full-screen dashboard.
     """
-    runs_dir = _runs_dir(Path.cwd())
+    cwd = Path.cwd()
     if run_id:
         # Across every run-style bucket (runs/asks/machine-drafts): a listed
         # ask or a `machine create` draft is watchable by id too.
         try:
-            target = resolve_run_layout(Path.cwd(), run_id).run_dir
+            target = resolve_run_layout(cwd, run_id).run_dir
         except RunIdError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
     else:
-        latest = _most_recent_run_id(runs_dir)
-        if latest is None:
-            print(f"ERROR: no runs found under {runs_dir}", file=sys.stderr)
+        # Most-recent spans every bucket, so a bare `attach` after an `ask` finds it.
+        latest_dir = _newest_dir(all_run_dirs(cwd))
+        if latest_dir is None:
+            print("ERROR: no runs found for this cwd.", file=sys.stderr)
             return 2
-        target = runs_dir / latest
-        print(f"[agent6] watching most recent run: {target.name}", file=sys.stderr)
+        target = latest_dir
+        print(f"[agent6] attached to most recent run: {target.name}", file=sys.stderr)
     if not target.is_dir():
         print(f"ERROR: no such run dir: {target}", file=sys.stderr)
         return 2
@@ -184,17 +188,9 @@ def _resolve_run_dir(repo_root: Path, run_id: str) -> Path | None:
             return resolve_run_layout(repo_root, run_id).run_dir
         except RunIdError:
             return None
-    runs_dir = _runs_dir(repo_root)
-    if not runs_dir.is_dir():
-        return None
-    # Sort by logs.jsonl activity (run_mtime), not dir mtime: a viewer opening a
-    # run writes frontend.pid into its dir and would otherwise float it to latest.
-    candidates = sorted(
-        (p for p in runs_dir.iterdir() if p.is_dir()),
-        key=run_mtime,
-        reverse=True,
-    )
-    return candidates[0] if candidates else None
+    # Empty (most-recent) spans every bucket, so a bare `attach` right after an
+    # `ask` finds that ask -- matching what `agent6 runs` lists.
+    return _newest_dir(all_run_dirs(repo_root))
 
 
 def _fmt_dur(seconds: float | None) -> str:

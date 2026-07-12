@@ -17,6 +17,7 @@ from agent6.runs.layout import RunLayout
 from agent6.ui.cli._common import (
     _runs_dir,
     _state_dir,
+    all_run_dirs,
     resolve_run_layout,
 )
 from agent6.ui.cli._common import sgr as _sgr
@@ -40,27 +41,29 @@ def _cmd_history_search(query: str, *, fixed: bool, run_id: str) -> int:
         return 2
     cwd = Path.cwd()
     if run_id:
-        # Resolve across runs/ + asks/ so an ask's logs/transcript are searchable.
+        # Resolve across every bucket so an ask's logs/transcript are searchable.
         try:
-            target = resolve_run_layout(cwd, run_id).run_dir
+            targets = [resolve_run_layout(cwd, run_id).run_dir]
         except RunIdError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
     else:
-        target = _runs_dir(cwd)
-    if not target.is_dir():
-        print(f"ERROR: no such directory: {target}", file=sys.stderr)
-        return 2
+        # No id: search every run across runs/ + asks/ + machine-drafts/, so a
+        # search right after an `ask` finds it (matching what `agent6 runs` lists).
+        targets = all_run_dirs(cwd)
+        if not targets:
+            print("[agent6] no runs to search yet.")
+            return 1
     argv: list[str] = [rg, "--json"]
     if fixed:
         argv.append("--fixed-strings")
-    argv.extend(["--", query, str(target)])
+    argv.extend(["--", query, *(str(t) for t in targets)])
     completed = subprocess.run(argv, check=False, capture_output=True, text=True)
     if completed.returncode not in (0, 1):  # 1 == no matches, not an error
         sys.stderr.write(completed.stderr)
         return completed.returncode
     hits = _parse_rg_matches(completed.stdout)
-    _render_history_hits(hits, target)
+    _render_history_hits(hits, _state_dir(cwd))
     return 0 if hits else 1
 
 
