@@ -148,6 +148,9 @@ def test_run_snapshot_matches_watch_json(
     from_cli = json.loads(capsys.readouterr().out)
     assert from_web == from_cli
     assert from_web["tool_calls"][0]["name"] == "grep"
+    # Even for a log whose run.start predates the run_id field, both surfaces
+    # stamp the authoritative id from the dir (never an empty run_id).
+    assert from_web["run_id"] == "willing-glen-001"
 
 
 def test_hub_lists_runs(server: tuple[WebServer, int], tmp_path: Path) -> None:

@@ -55,6 +55,16 @@ def test_run_start_records_task() -> None:
     assert s.user_task == "fix bug"
 
 
+def test_run_start_records_run_id() -> None:
+    # The loop now stamps the run dir name into run.start; the fold picks it up,
+    # so watch --json / the web snapshot report a real id, not "".
+    s = apply_event(
+        initial_state(),
+        {"type": "run.start", "run_id": "deep-granite-CSSYTJ", "user_task": "t"},
+    )
+    assert s.run_id == "deep-granite-CSSYTJ"
+
+
 def test_graph_update_builds_task_tree_dfs_with_depth() -> None:
     # root -> (a -> a1), b  (children order preserved, DFS pre-order, depths)
     nodes = {

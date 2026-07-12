@@ -819,7 +819,12 @@ class Workflow:
         """Drive the single-loop agent to completion."""
         if self.mode == "plan" and self.plan_output_path is None:
             raise ValueError("Workflow(mode='plan') requires plan_output_path to be set")
-        self._emit("run.start", user_task=user_task[:200], mode=self.mode)
+        # The run dir name is the authoritative run id; stamp it into run.start so
+        # every fold (watch --json, the web snapshot + SSE, the TUI) reports it,
+        # rather than each snapshot layer re-deriving it from the path (they used
+        # to leave run_id="" because no event carried one).
+        run_id = self.events.path.parent.name if self.events is not None else ""
+        self._emit("run.start", run_id=run_id, user_task=user_task[:200], mode=self.mode)
         self._log("LOOP: LOAD_CONTEXT")
         repo = self._load_repo_summary()
         system = _build_system_prompt(

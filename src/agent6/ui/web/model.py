@@ -204,7 +204,12 @@ def run_snapshot(run_dir: Path) -> dict[str, Any]:
     """A run's folded RunState as the wire dict. Identical to
     `agent6 watch <id> --json` so `curl` and the CLI agree."""
     logs = run_dir / "logs.jsonl"
-    return run_state_as_dict(fold_run(tail_events(logs, follow=False)))
+    snap = run_state_as_dict(fold_run(tail_events(logs, follow=False)))
+    # The dir we looked up under is the authoritative run id: stamp it so the
+    # payload never carries an empty run_id (older logs predate run.start
+    # carrying one) and matches sibling endpoints like /conversation.
+    snap["run_id"] = snap.get("run_id") or run_dir.name
+    return snap
 
 
 def conversation_items(log_path: Path) -> list[dict[str, Any]]:
