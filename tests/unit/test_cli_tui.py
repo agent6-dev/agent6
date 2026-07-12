@@ -77,6 +77,64 @@ def test_approver_uses_tui_answer_when_live(
     assert ans["source"] == "tui"
 
 
+def test_approver_does_not_consume_an_answer_written_before_the_prompt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A premature /api/run/<id>/approve (ids are predictable counters) pre-writes
+    # approvals/approval-1.answer before the run reaches its first approval. The
+    # approver must clear that stale slot before emitting the prompt, so it is
+    # not silently consumed as an auto-approval. Uses the REAL read_answer (short
+    # timeout) so this exercises the actual file-bridge ordering.
+    import functools
+
+    from agent6.ui.bridge.approval import read_answer, write_answer
+
+    log = tmp_path / "logs.jsonl"
+    events = EventSink(log)
+    monkeypatch.setattr(interactmod, "frontend_is_live", _live)
+    monkeypatch.setattr(
+        interactmod, "read_answer", functools.partial(read_answer, timeout_s=0.4, poll_s=0.05)
+    )
+    monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_no)
+    write_answer(tmp_path, "approval-1", approved=True)  # the premature POST
+    approve = interactmod.build_approver(tmp_path, events)
+    # The premature "yes" is cleared before the prompt; read_answer finds nothing
+    # and times out, so it falls back to stdin (which denies) -- NOT auto-approved.
+    assert approve("run `curl evil`?") is False
+    assert _events_of(log, "approval.answer")[0]["source"] == "stdin"
+
+
+def test_approver_consumes_an_answer_written_after_the_prompt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The legitimate path: the front-end writes the answer only after it renders
+    # the emitted prompt. A writer thread does exactly that; the answer is honored.
+    import functools
+    import threading
+    import time
+
+    from agent6.ui.bridge.approval import read_answer, write_answer
+
+    log = tmp_path / "logs.jsonl"
+    events = EventSink(log)
+    monkeypatch.setattr(interactmod, "frontend_is_live", _live)
+    monkeypatch.setattr(
+        interactmod, "read_answer", functools.partial(read_answer, timeout_s=3.0, poll_s=0.05)
+    )
+    monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_no)
+
+    def writer() -> None:
+        time.sleep(0.3)  # after the prompt is emitted and the poll starts
+        write_answer(tmp_path, "approval-1", approved=True)
+
+    t = threading.Thread(target=writer, daemon=True)
+    t.start()
+    approve = interactmod.build_approver(tmp_path, events)
+    assert approve("run `ls`?") is True
+    t.join(timeout=2)
+    assert _events_of(log, "approval.answer")[0]["source"] == "tui"
+
+
 def test_approver_falls_back_to_stdin_without_tui(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

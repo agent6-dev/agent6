@@ -202,6 +202,27 @@ def write_answer(run_dir: Path, prompt_id: str, *, approved: bool) -> None:
     _write_answer_atomic(target, "yes" if approved else "no")
 
 
+def clear_answer(run_dir: Path, prompt_id: str) -> None:
+    """Drop any pre-existing answer for *prompt_id* so an answer written BEFORE
+    the prompt was emitted is never consumed. Prompt ids are deterministic
+    sequential counters (approval-1, ...), so a front-end (or a hostile POST)
+    could pre-write approvals/approval-1.answer and the run would silently
+    honor it the moment it reached that approval, auto-approving a command the
+    operator never saw. The run process clears the slot immediately before
+    emitting the prompt (it alone knows the exact emit moment); a legitimate
+    answer is only ever written after the front-end renders the prompt, so
+    none is lost. Mirrors clear_steer_answer for the steer bridge."""
+    with contextlib.suppress(OSError):
+        _answer_path(approvals_dir(run_dir), prompt_id).unlink(missing_ok=True)
+
+
+def clear_question_answers(run_dir: Path, question_id: str) -> None:
+    """The ask_user analogue of :func:`clear_answer`: drop a pre-written answer
+    for *question_id* before its prompt is emitted."""
+    with contextlib.suppress(OSError):
+        _answer_path(questions_dir(run_dir), question_id).unlink(missing_ok=True)
+
+
 # "Allow for the rest of the session": one marker file, checked before every
 # prompt. It is NOT an `*.answer`, so clear_pending_answers leaves it in place --
 # the choice persists across this run's resumes (a detached run then keeps going

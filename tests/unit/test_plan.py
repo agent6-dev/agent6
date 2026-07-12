@@ -91,8 +91,9 @@ def test_finish_planning_fields_are_documented_in_the_schema() -> None:
     # exact surface it fills -- without it, models dumped the whole plan into
     # `summary` and left a degenerate plan.md.
     props = FinishPlanningInput.model_json_schema()["properties"]
-    assert "plan_markdown" in props["plan_markdown"]["description"] or "plan.md" in (
-        props["plan_markdown"]["description"]
+    assert (
+        "plan_markdown" in props["plan_markdown"]["description"]
+        or "plan.md" in (props["plan_markdown"]["description"])
     )
     assert "NOT the plan" in props["summary"]["description"]
 

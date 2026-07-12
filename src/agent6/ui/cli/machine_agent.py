@@ -36,7 +36,9 @@ from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.schema import UserQuestion
 from agent6.types import SandboxProfile
 from agent6.ui.bridge.approval import (
+    clear_answer,
     clear_pending_answers,
+    clear_question_answers,
     clear_steer_answer,
     clear_steer_request,
     frontend_is_live,
@@ -120,6 +122,9 @@ def _build_machine_bridges(
         if session_allow_set(state_dir):
             events.emit("approval.answer", id=prompt_id, approved=True, source="session")
             return True
+        # Clear a pre-written answer for this id before emitting (see the run
+        # approver): a premature /api/machine/<name>/approve must not auto-pass.
+        clear_answer(state_dir, prompt_id)
         events.emit("approval.prompt", id=prompt_id, prompt=prompt)
         approved: bool | None = None
         source = "headless"
@@ -135,6 +140,7 @@ def _build_machine_bridges(
     def ask(questions: tuple[UserQuestion, ...]) -> tuple[str, ...]:
         counters["question"] += 1
         question_id = f"question-{counters['question']}"
+        clear_question_answers(state_dir, question_id)  # drop any premature answer
         events.emit(
             "question.prompt",
             id=question_id,

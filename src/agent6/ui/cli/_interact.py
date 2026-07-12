@@ -17,6 +17,8 @@ from agent6.events import EventSink
 from agent6.tools.schema import UserQuestion
 from agent6.ui.bridge.approval import (
     away_mode,
+    clear_answer,
+    clear_question_answers,
     frontend_is_live,
     read_answer,
     read_question_answers,
@@ -129,6 +131,11 @@ def build_approver(
         if away == "deny":
             events.emit("approval.answer", id=prompt_id, approved=False, source="away-deny")
             return False
+        # Clear any answer pre-written for this id BEFORE emitting the prompt, so
+        # an answer that arrived before the operator saw the prompt (a premature
+        # /api/run/<id>/approve POST, ids being predictable counters) cannot
+        # silently auto-approve. A real answer is only written after the prompt.
+        clear_answer(run_dir, prompt_id)
         events.emit("approval.prompt", id=prompt_id, prompt=prompt)
         if away == "wait":  # block until a reattached front-end answers (or stops)
             reply = _wait_for_reply(
@@ -182,6 +189,9 @@ def build_questioner(
     def ask(questions: tuple[UserQuestion, ...]) -> tuple[str, ...]:
         counter["n"] += 1
         question_id = f"question-{counter['n']}"
+        # Clear a pre-written answer before emitting (see build_approver): an
+        # ask_user answer that arrived before the prompt must not be consumed.
+        clear_question_answers(run_dir, question_id)
         events.emit(
             "question.prompt",
             id=question_id,
