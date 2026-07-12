@@ -290,6 +290,20 @@ aside.rail { display: none; }
     max-height: calc(100vh - 88px);
   }
   .run-grid .card-conv .conv-box { flex: 1 1 auto; min-height: 0; max-height: none; height: auto; }
+
+  /* Flat detail views (the run dashboard, a draft, the full conversation):
+     edge-to-edge panes split by single hairlines; floating cards waste width at
+     desktop sizes. route() stamps .flat on these views only, so the hub /
+     config / machines pages keep their cards, and mobile keeps cards everywhere. */
+  main.flat { max-width: none; margin: 0; padding: 12px 0 20px; }
+  main.flat > :not(.grid) { margin-left: 22px; margin-right: 22px; }
+  main.flat .grid { gap: 0; }
+  main.flat .card { background: none; border: 0; border-radius: 0; padding: 14px 22px; }
+  main.flat .card-conv { background: var(--bg); } /* the sticky pane must stay opaque */
+  main.flat .run-grid .card-head { border-bottom: 1px solid var(--border); }
+  main.flat .run-grid .run-side { border-left: 1px solid var(--border); }
+  main.flat .run-side > .card + .card { border-top: 1px solid var(--border); }
+  main.flat .run-grid .card-log { border-top: 1px solid var(--border); }
 }
 </style>
 </head>
@@ -414,6 +428,9 @@ async function route() {
     }
   }
   const parts = h.split('/').filter(Boolean); // e.g. ['run','abc']
+  // Detail views (run/draft/conversation) render flat edge-to-edge panes on
+  // wide screens; list/settings pages keep their cards.
+  view.classList.toggle('flat', ['run', 'draft', 'conversation'].includes(parts[0]));
   try {
     if (parts.length === 0) { setTab('hub'); await renderHub(); }
     else if (parts[0] === 'machines') { setTab('machines'); await renderHub('machines'); }
@@ -433,7 +450,7 @@ window.addEventListener('hashchange', route);
 // --- hub ---------------------------------------------------------------------
 function newWorkCard() {
   const card = el('div', 'card');
-  card.appendChild(el('h2', null, 'New work'));
+  card.appendChild(el('h2', null, 'Start a run'));
   const task = el('textarea', 'field'); task.placeholder = 'task / question…';
   card.appendChild(task);
   const row = el('div', 'form-row');
@@ -527,8 +544,9 @@ async function renderHub(focus) {
   const grid = el('div', 'grid cols2');
   const stack = el('div', 'grid');
   // On the Machines tab, lead with machines; else lead with new-work + runs.
+  // The Runs tab starts runs; machine creation lives on the Machines page.
   if (focus === 'machines') { stack.appendChild(mCard); }
-  else { stack.appendChild(nCard); stack.appendChild(mCard); }
+  else { stack.appendChild(nCard); }
   grid.appendChild(stack); grid.appendChild(runsCard);
   view.appendChild(grid);
 }
