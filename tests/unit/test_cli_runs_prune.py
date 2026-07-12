@@ -88,6 +88,31 @@ def test_runs_prune_classifies_branches(
     assert cap.out.index("kept agent6/sqush11") < cap.out.index("[agent6] deleted 1; kept 2")
 
 
+def test_runs_commits_and_diff_after_prune_say_where_the_work_went(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A pruned (deleted) run branch: diff/commits must not leak a raw git fatal.
+    # The manifest recorded the squash merge, so report it instead.
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+    # Manifest says the run branch existed and was squash-merged, but the branch
+    # itself is gone (never created here = pruned).
+    _manifest(tmp_path, "gone11", base, merged=True)
+
+    assert main(["runs", "commits", "gone11"]) == 0
+    out = capsys.readouterr().out
+    assert "was pruned" in out and "squash-merged into main" in out
+
+    assert main(["runs", "diff", "gone11"]) == 0
+    assert "was pruned" in capsys.readouterr().out
+
+
 def test_runs_prune_delete_squashed_removes_only_confirmed_squash_merged(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

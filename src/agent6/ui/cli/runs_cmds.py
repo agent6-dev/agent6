@@ -133,6 +133,11 @@ def _cmd_diff(*, run_id: str, stat: bool, paths: tuple[str, ...]) -> int:
     if not base_sha:
         print("ERROR: manifest has no base_sha; nothing to diff against", file=sys.stderr)
         return 2
+    if run_branch:
+        pruned = _pruned_branch_note(cwd, manifest, str(run_branch))
+        if pruned is not None:  # branch gone (pruned): say where the work went
+            print(pruned)
+            return 0
 
     head_ref = str(run_branch) if run_branch else "HEAD"
     # The logical command; printed without the -c hardening overrides (the
@@ -272,6 +277,22 @@ def _cmd_stop(*, run_id: str) -> int:
     return 0
 
 
+def _pruned_branch_note(cwd: Path, manifest: dict[str, Any], run_branch: str) -> str | None:
+    """A friendly message when a run's branch no longer exists (it was pruned),
+    or None if the branch is still present. Uses the manifest's recorded merge so
+    diff/commits say where the work went instead of leaking a raw git fatal."""
+    if branch_exists(cwd, run_branch):
+        return None
+    merged_into = manifest.get("merged_into")
+    merged_sha = str(manifest.get("merged_sha") or "")
+    if merged_into:
+        note = f"[agent6] run branch {run_branch} was pruned; squash-merged into {merged_into}"
+        if merged_sha and set(merged_sha) != {"0"}:
+            note += f" as {merged_sha[:12]}\n  see: git show {merged_sha[:12]}"
+        return note
+    return f"[agent6] run branch {run_branch} no longer exists (deleted, and no merge recorded)."
+
+
 def _cmd_commits(*, run_id: str) -> int:
     """List the per-step commits on a run's branch (manifest.base_sha -> run branch)."""
     cwd = Path.cwd()
@@ -287,6 +308,10 @@ def _cmd_commits(*, run_id: str) -> int:
             file=sys.stderr,
         )
         return 2
+    pruned = _pruned_branch_note(cwd, manifest, str(run_branch))
+    if pruned is not None:
+        print(pruned)
+        return 0
     rows = list_run_commits(cwd, base_sha, str(run_branch))
     if not rows:
         print("[agent6] no commits on the run branch.")
