@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Interactive `agent6 watch` attaches as a CLI front-end: an unanswered
+"""Interactive `agent6 attach` attaches as a CLI front-end: an unanswered
 run_command approval / ask_user question in the streamed log is prompted on the
 terminal and the answer is written back over the file bridge. Historical and
 already-answered prompts are not re-asked on the replay."""

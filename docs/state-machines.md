@@ -464,7 +464,7 @@ to be surfaced. The message is a template over the blackboard, checked at
 a resume re-enters the current state and re-emits.
 
 Two independent channels render it. Device-present front-ends (`agent6
-web`, the TUI Machines page, `agent6 watch`) show an ephemeral
+web`, the TUI Machines page, `agent6 attach`) show an ephemeral
 notification. For out-of-band delivery (a phone in a pocket), set the
 operator notify hook `[machine.notify].on_event` (see
 [config.md](config.md)): an operator argv run on the host, outside the
@@ -783,7 +783,7 @@ and a corrupt newest snapshot falls back to the retained tail.
 - **Single writer.** `machine.lock` (flock) guarantees one process per
   machine id; a second invocation refuses rather than double-acting.
 - **Health/visibility.** `agent6 machine status <id>` prints the current
-  state, blackboard, last N events, spend, and next wake. `agent6 watch <id>`
+  state, blackboard, last N events, spend, and next wake. `agent6 attach <id>`
   (the unified watcher) follows a RUNNING instance live: the state overview with
   the current state marked, each transition as it lands, and the current agent
   state's reasoning streamed from its per-state log. The `agent6 tui` Machines
@@ -804,7 +804,7 @@ and a corrupt newest snapshot falls back to the retained tail.
 | `agent6 machine graph <file> [--format mermaid\|dot]` | emit the machine as a diagram. `mermaid` (default) prints `stateDiagram-v2`; `dot` prints Graphviz DOT for `dot -Tsvg`/`dot -Tpng` and the broader Graphviz/`xdot` ecosystem. Reachability is already computed at load, so both are pure renders of the same validated graph. |
 | `agent6 machine run <file> [--exit-on-wait]` | start (or resume) a machine. Acquires the lock, drives the loop. With `--exit-on-wait`, persist the next wake and exit 0 (status `waiting`) at the first not-ready `wait`, for an external scheduler (systemd timer / cron) to resume. |
 | `agent6 machine status <id>`              | current state, blackboard, spend, next wake. Read-only. |
-| `agent6 watch <id>`                       | follow a running instance live (the unified watcher; the same command follows a run): state overview + current state, each transition as it lands, and the active agent state's reasoning (its per-state `logs.jsonl`). Read-only; Ctrl-C to stop. |
+| `agent6 attach <id>`                       | follow a running instance live (the unified watcher; the same command follows a run): state overview + current state, each transition as it lands, and the active agent state's reasoning (its per-state `logs.jsonl`). Read-only; Ctrl-C to stop. |
 | `agent6 machine poke <id> [--data <json>\|--message <text>]` | signal a waiting instance to wake on its next check; an optional payload reaches the next `tool` at `$AGENT6_MACHINE_DATA_DIR/poke.json` (journaled, replay-safe). |
 | `agent6 machine replay <id>`              | deterministic replay from the journal (no world I/O); backtesting. |
 

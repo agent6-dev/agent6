@@ -312,7 +312,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             sandbox_overrides=_SandboxOverrides.from_args(args),
             profile=getattr(args, "profile", ""),
         )
-    if args.command == "watch":
+    if args.command == "attach":
         return _cmd_watch_target(
             args.target, tui=args.tui, json_out=args.json, since=args.since, raw=args.raw
         )

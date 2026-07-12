@@ -289,7 +289,7 @@ and the browser web UI
 layers sit under all three: the read side
 [src/agent6/ui/viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/viewmodel)
 (the `RunState`/`MachineState` fold + its `*_as_dict` wire form, exactly what
-`agent6 watch --json` and the web JSON/SSE endpoints emit) and the textual-free
+`agent6 attach --json` and the web JSON/SSE endpoints emit) and the textual-free
 write bridge
 [src/agent6/ui/bridge/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/bridge)
 (spawn the CLI detached, plus the approval / question / steer / compact-request

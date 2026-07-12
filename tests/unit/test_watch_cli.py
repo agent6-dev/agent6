@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""CLI tests for the unified `agent6 watch <target>` (run + machine, --json)."""
+"""CLI tests for the unified `agent6 attach <target>` (run + machine, --json)."""
 
 from __future__ import annotations
 
@@ -59,7 +59,7 @@ def test_watch_run_json_snapshot(
             {"type": "tool.call", "name": "grep", "args": {"q": "x"}},
         ],
     )
-    assert main(["watch", "willing-glen-001", "--json"]) == 0
+    assert main(["attach", "willing-glen-001", "--json"]) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["user_task"] == "demo"
     assert out["tool_calls"][0]["name"] == "grep"
@@ -75,7 +75,7 @@ def test_watch_machine_json_snapshot(
     f.write_text(TINY, encoding="utf-8")
     assert main(["machine", "run", str(f)]) == 0
     capsys.readouterr()  # drop run output
-    assert main(["watch", "tiny", "--json"]) == 0
+    assert main(["attach", "tiny", "--json"]) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["machine"] == "tiny"
     assert out["current"] == "done"
@@ -86,7 +86,7 @@ def test_watch_unknown_target_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    assert main(["watch", "nope"]) == 2
+    assert main(["attach", "nope"]) == 2
     assert "no run or machine matches" in capsys.readouterr().err
 
 
@@ -98,7 +98,7 @@ def test_watch_ambiguous_prefix_surfaces_disambiguation(
     monkeypatch.chdir(tmp_path)
     _make_run(tmp_path, "willing-glen-001", [{"type": "run.start"}])
     _make_run(tmp_path, "willing-glen-002", [{"type": "run.start"}])
-    assert main(["watch", "willing-glen"]) == 2
+    assert main(["attach", "willing-glen"]) == 2
     err = capsys.readouterr().err
     assert "ambiguous" in err
     assert "no run or machine matches" not in err

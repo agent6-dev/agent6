@@ -145,7 +145,7 @@ def build_approver(
             events.emit("approval.answer", id=prompt_id, approved=True, source="session")
             return True
         # Clear any premature answer for this id, then emit the prompt so ANY live
-        # front-end (a re-attached `agent6 watch`, the TUI, the web) can render and
+        # front-end (a re-attached `agent6 attach`, the TUI, the web) can render and
         # answer it. clear_answer stops a pre-written answer (a premature approve
         # POST, ids being predictable) from silently auto-passing.
         clear_answer(run_dir, prompt_id)

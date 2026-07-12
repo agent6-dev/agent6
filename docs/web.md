@@ -67,7 +67,7 @@ a push service you already use.
 
 ## How it talks to the server
 
-The page reads the same wire form as `agent6 watch --json`:
+The page reads the same wire form as `agent6 attach --json`:
 
 ```bash
 curl -s localhost:7658/api/hub                 # runs + machines + machine files
@@ -78,7 +78,7 @@ curl -s localhost:7658/api/config              # effective config (no secrets)
 curl -sN localhost:7658/api/run/<id>/events    # SSE: a fresh snapshot per change
 ```
 
-`curl /api/run/<id>` returns exactly what `agent6 watch <id> --json` prints.
+`curl /api/run/<id>` returns exactly what `agent6 attach <id> --json` prints.
 Writes are small JSON `POST`s (`/api/new`,
 `/api/run/<id>/{steer,approve,answer,merge,resume,stop_step,compact}`,
 `/api/machine/<name>/{poke,steer,approve,answer}`, `/api/runs/prune`,

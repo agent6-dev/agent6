@@ -4,7 +4,7 @@
 
 The machine analogue of state.py: where RunState folds a run's logs.jsonl, this
 folds a machine instance's journal (the StepEvent / MachineEnd stream) plus its
-spec into a MachineState that the CLI `agent6 watch`, the TUI
+spec into a MachineState that the CLI `agent6 attach`, the TUI
 MachineWatchScreen, and a future web client all render. The agent reasoning
 inside an `agent` state is itself a run log, so it folds through RunState
 (state.py); this module models only the machine level: which states exist, where
@@ -234,5 +234,5 @@ class MachineWatchCursor:
 
 def machine_state_as_dict(ms: MachineState) -> dict[str, Any]:
     """The JSON-able wire form of a MachineState, stable field names: what
-    `agent6 watch --json` and a web client serialize."""
+    `agent6 attach --json` and a web client serialize."""
     return asdict(ms)

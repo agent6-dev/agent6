@@ -747,7 +747,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
             # worker lock, then spawns a detached `resume` that picks it up.
             detach_requested = True
             print(f"\n[agent6] detached: {layout.run_id} continues in the background.")
-            print(f"          reattach:  agent6 watch {layout.run_id}")
+            print(f"          reattach:  agent6 attach {layout.run_id}")
             return 0
 
         _print_run_end(result, layout=layout, budget=budget, console_stream=console_stream)

@@ -152,7 +152,7 @@ def _complete_machine_ids(prefix: str, **_kw: object) -> list[str]:
 
 
 def _complete_watch_targets(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: run ids and machine ids -- everything `agent6 watch` accepts."""
+    """argcomplete: run ids and machine ids -- everything `agent6 attach` accepts."""
     return sorted(set(_complete_run_ids(prefix) + _complete_machine_ids(prefix)))
 
 

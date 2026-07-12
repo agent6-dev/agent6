@@ -6,7 +6,7 @@ The web server is a thin renderer: every payload it serves is built here from th
 shared read-side (viewmodel folds, config_layer, transcript_render, the machine
 spec/journal). Pure functions, no HTTP or threads, so the run/machine snapshots
 are exactly `run_state_as_dict` / `machine_state_as_dict` (identical to
-`agent6 watch --json`).
+`agent6 attach --json`).
 """
 
 from __future__ import annotations
@@ -202,7 +202,7 @@ def hub_payload(cwd: Path) -> dict[str, Any]:
 
 def run_snapshot(run_dir: Path) -> dict[str, Any]:
     """A run's folded RunState as the wire dict. Identical to
-    `agent6 watch <id> --json` so `curl` and the CLI agree."""
+    `agent6 attach <id> --json` so `curl` and the CLI agree."""
     logs = run_dir / "logs.jsonl"
     snap = run_state_as_dict(fold_run(tail_events(logs, follow=False)))
     # The dir we looked up under is the authoritative run id: stamp it so the
@@ -250,7 +250,7 @@ def machine_conversation_payload(machine_dir: Path) -> dict[str, Any]:
 
 def machine_snapshot(machine_dir: Path) -> dict[str, Any]:
     """A machine instance's folded MachineState as the wire dict. Identical to
-    `agent6 watch <name> --json`."""
+    `agent6 attach <name> --json`."""
     spec = load_machine(machine_dir / "machine.asm.toml")
     ms = fold_machine(spec, MachineJournal(machine_dir).read())
     return machine_state_as_dict(ms)

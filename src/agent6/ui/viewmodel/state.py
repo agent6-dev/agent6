@@ -586,7 +586,7 @@ def run_status_label(state: RunState) -> str:
 
 def run_state_as_dict(state: RunState) -> dict[str, Any]:
     """The JSON-able wire form of a RunState, stable field names: what
-    `agent6 watch --json` and a web client serialize. Tuples become lists, nested
+    `agent6 attach --json` and a web client serialize. Tuples become lists, nested
     view dataclasses become dicts. `status_label` is a computed convenience the
     web/CLI render verbatim so the label logic lives in one place."""
     d = asdict(state)

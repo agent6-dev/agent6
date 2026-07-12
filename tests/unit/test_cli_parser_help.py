@@ -100,9 +100,9 @@ def test_plan_task_help_does_not_promise_omission() -> None:
     assert "Omit" not in help_text
 
 
-def test_watch_and_web_say_machine_id() -> None:
+def test_attach_and_web_say_machine_id() -> None:
     parser = build_parser()
-    for cmd in ("watch", "web"):
+    for cmd in ("attach", "web"):
         help_text = _positional(_find(parser, cmd), "target").help or ""
         assert "machine id" in help_text
         assert "machine name" not in help_text

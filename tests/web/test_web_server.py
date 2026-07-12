@@ -4,7 +4,7 @@
 
 Starts the stdlib server on an ephemeral loopback port and drives it with
 `http.client`, asserting the JSON endpoints emit the same wire form as
-`agent6 watch --json` and that SSE streams a folded snapshot. No browser."""
+`agent6 attach --json` and that SSE streams a folded snapshot. No browser."""
 
 from __future__ import annotations
 
@@ -137,14 +137,14 @@ def test_run_snapshot_matches_watch_json(
             {"type": "tool.result", "name": "grep", "ok": True, "summary": "1 hit"},
         ],
     )
-    # The web GET must equal `agent6 watch <id> --json` byte-for-byte in content.
+    # The web GET must equal `agent6 attach <id> --json` byte-for-byte in content.
     status, body, ctype = _get(port, "/api/run/willing-glen-001")
     assert status == 200
     assert "application/json" in ctype
     from_web = json.loads(body)
 
     monkeypatch.chdir(tmp_path)
-    assert main(["watch", "willing-glen-001", "--json"]) == 0
+    assert main(["attach", "willing-glen-001", "--json"]) == 0
     from_cli = json.loads(capsys.readouterr().out)
     assert from_web == from_cli
     assert from_web["tool_calls"][0]["name"] == "grep"
@@ -190,7 +190,7 @@ def test_machine_snapshot_matches_watch_json(
     assert status == 200
     from_web = json.loads(body)
 
-    assert main(["watch", "tiny", "--json"]) == 0
+    assert main(["attach", "tiny", "--json"]) == 0
     from_cli = json.loads(capsys.readouterr().out)
     assert from_web == from_cli
     assert from_web["machine"] == "tiny"

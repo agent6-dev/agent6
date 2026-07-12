@@ -40,7 +40,7 @@ def test_resolves_runs_and_asks_with_correct_subdir(tmp_path: Path) -> None:
 
 
 def test_resolves_a_machine_create_draft(tmp_path: Path) -> None:
-    # `agent6 watch <draft-id>` follows the authoring agent's live log.
+    # `agent6 attach <draft-id>` follows the authoring agent's live log.
     repo = tmp_path / "repo"
     repo.mkdir()
     state = resolved_state_dir(repo)

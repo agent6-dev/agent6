@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The agent6 run dashboard (`agent6 run` / `agent6 watch` / `agent6 tui`).
+"""The agent6 run dashboard (`agent6 run` / `agent6 attach` / `agent6 tui`).
 
 `textual` ships in the base install; importing this module fails clearly if it
 has been stripped out. The CLI imports it lazily.
@@ -1011,7 +1011,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
 
     def run_controllable(self) -> bool:
         """Steer/Stop are no-ops once the run is over: finished (the case that
-        matters for `agent6 watch`, where `run_ended` never trips) or the
+        matters for `agent6 attach`, where `run_ended` never trips) or the
         co-process app closing on run.end."""
         return not self.run_ended and not self.state.finished
 

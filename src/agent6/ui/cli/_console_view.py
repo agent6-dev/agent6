@@ -5,7 +5,7 @@
 The CLI skin over `viewmodel.TranscriptFold`: assistant reasoning and text stream
 inline as they arrive, every tool call shows with its result, and nothing prints
 a blank block. One `ConsoleView` serves both `agent6 run` (in-process, subscribed
-to the EventSink) and `agent6 watch` (out-of-process, fed by the log tailer), so
+to the EventSink) and `agent6 attach` (out-of-process, fed by the log tailer), so
 the two render identically.
 
 Reasoning/text deltas are streamed by this class (the live-typing feel); the

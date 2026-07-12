@@ -125,7 +125,7 @@ def _cmd_history_transcript(
     The transcripts (``<run>/transcripts/*.json``) are the complete, self-
     contained record -- no join with logs.jsonl is needed. This is the CONVERSATION
     view (assistant text/thinking + every tool call with full I/O); for the terse
-    EVENT timeline use `agent6 watch` / `agent6 history search`.
+    EVENT timeline use `agent6 attach` / `agent6 history search`.
     """
     cwd = Path.cwd()
     if run_id:

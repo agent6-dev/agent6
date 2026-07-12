@@ -572,7 +572,7 @@ Every surface fails closed:
 - **Notifications.** A machine surfaces attention two ways, neither of which
   widens the agent's surface. Device-present: each front-end renders a
   `machine.notify` (a state's `notify` message) as an ephemeral overlay, and
-  `agent6 watch`/the TUI also call `notify-send` with a FIXED argv (exe + two
+  `agent6 attach`/the TUI also call `notify-send` with a FIXED argv (exe + two
   positional data arguments, no shell), so a model-authored message is inert
   data, never a command. Out-of-band: the operator hook
   `[machine.notify].on_event` runs an operator-controlled argv on the host,

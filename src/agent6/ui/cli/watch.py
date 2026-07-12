@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The unified `agent6 watch <target>`: follow a run or a machine, live.
+"""The unified `agent6 attach <target>`: follow a run or a machine, live.
 
 Resolves <target> to a run (id or unique prefix) or a machine (by name) and
 dispatches to the right viewer. Both default to a plain CLI stream (a run is a

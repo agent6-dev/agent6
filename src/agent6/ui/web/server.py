@@ -3,7 +3,7 @@
 """The `agent6 web` server: a stdlib HTTP front-end over the shared read-side.
 
 Serves web.page to a browser, fed by:
-  - plain GET JSON endpoints (the same wire form as `agent6 watch --json`), and
+  - plain GET JSON endpoints (the same wire form as `agent6 attach --json`), and
   - SSE (`text/event-stream`) streams that re-fold logs.jsonl / the machine
     journal on each change and push a fresh snapshot.
 

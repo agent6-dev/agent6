@@ -70,7 +70,7 @@ def clear_pending_answers(run_dir: Path) -> None:
     answer-poll block until timeout). Best-effort.
 
     The `frontend.pid` is only dropped when NO live front-end owns it: a concurrently-live
-    `agent6 watch` watcher must keep bridging the resumed run's approval/question
+    `agent6 attach` watcher must keep bridging the resumed run's approval/question
     modals, so we must not unlink a pid that still points at a running process."""
     for sub in (APPROVAL_DIR_NAME, QUESTION_DIR_NAME):
         d = run_dir / sub

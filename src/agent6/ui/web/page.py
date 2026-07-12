@@ -3,7 +3,7 @@
 """The web-UI page: HTML + CSS + vanilla JS, served as one string.
 
 Served verbatim by web.server at `GET /`. It renders the wire form the JSON / SSE
-endpoints emit (the same shape as `agent6 watch --json`); it is a thin renderer,
+endpoints emit (the same shape as `agent6 attach --json`); it is a thin renderer,
 so all domain logic stays in the Python read-side.
 
 Kept as a module-level constant so the server has nothing to read from disk and

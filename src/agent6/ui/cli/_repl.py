@@ -132,7 +132,7 @@ def repl_show_recent_events(root: Path, run_id: str, *, n: int) -> None:
 
     Intentionally NOT a live tail - the REPL is between turns of the
     agent loop; a tail would block the next iteration. Operators who
-    want continuous tail use ``agent6 watch`` in another shell.
+    want continuous tail use ``agent6 attach`` in another shell.
     """
     if not run_id:
         print("[agent6] /watch: no run id available", file=sys.stderr)

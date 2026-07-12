@@ -344,12 +344,14 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
 
     watch_p = _sub(
         sub,
-        "watch",
+        "attach",
         help=(
-            "Follow a run or machine live as a readable conversation (the same"
-            " render as `agent6 run`). --raw is the no-deps event-line tail, --tui"
-            " the full-screen TUI, --json a one-shot snapshot of the folded"
-            " state. Omit the target for the most recent run."
+            "Attach to a run or machine live and drive it: follow the conversation"
+            " (the same render as `agent6 run`) and, on a terminal, answer its"
+            " run_command approvals and ask_user questions right here -- as if you"
+            " never detached. --raw is the no-deps event-line tail, --tui the"
+            " full-screen TUI, --json a one-shot snapshot of the folded state."
+            " Omit the target for the most recent run."
         ),
     )
     watch_target = watch_p.add_argument(
@@ -389,7 +391,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
             "List this repo's runs (`agent6 runs`, or `runs list`) or inspect one:"
             " show (liveness/progress), diff, transcript, graph. The run id is a"
             " positional everywhere (exact or unambiguous prefix; omit for the"
-            " most recent). To follow a run live, use `agent6 watch`."
+            " most recent). To follow a run live, use `agent6 attach`."
         ),
     )
     # No subcommand = list: "show me my runs" is the obvious bare meaning.
@@ -404,7 +406,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     runs_show = _sub(
         runs_sub,
         "show",
-        help="One-shot liveness + progress of a run, then exit (vs `agent6 watch`, which follows).",
+        help="One-shot liveness + progress of a run, then exit (`agent6 attach` follows live).",
     )
     runs_show_id = runs_show.add_argument(
         "run_id",

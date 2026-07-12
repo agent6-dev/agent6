@@ -68,7 +68,7 @@ streamed live like a run.
 
 For terminal-first workflows, `agent6 run` executes in the foreground: steer it with
 Ctrl-C, no TUI required. Runs started from the TUI or web hub are detached instead, and
-`agent6 watch` attaches to either kind: a plain no-deps line tail by default, `--tui` for
+`agent6 attach` attaches to either kind: a plain no-deps line tail by default, `--tui` for
 the full-screen TUI, `--json` for a one-shot snapshot of the same state.
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox">

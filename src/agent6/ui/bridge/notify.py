@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Best-effort desktop notification via `notify-send` (device-present channel).
 
-Used by the CLI (`agent6 watch`) and the TUI to surface a machine's
+Used by the CLI (`agent6 attach`) and the TUI to surface a machine's
 `machine.notify`/end while an operator is at the machine. Fire-and-forget with a
 FIXED argv (`notify-send -- <title> <body>`): the `--` end-of-options terminator
 plus positional-only data arguments that never reach a shell means a model-authored

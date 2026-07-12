@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 plan`/`agent6 watch` and run-id resolution helpers."""
+"""`agent6 plan`/`agent6 attach` and run-id resolution helpers."""
 
 from __future__ import annotations
 
@@ -103,7 +103,7 @@ def _cmd_plan_edit(run_id: str) -> int:
 def _most_recent_run_id(runs_dir: Path) -> str | None:
     """Return the directory name (= run id) of the most recently active run.
 
-    Used by `agent6 watch` (no arg), `agent6 run --continue`, and the
+    Used by `agent6 attach` (no arg), `agent6 run --continue`, and the
     history-graph subcommand. Returns None when there are no runs yet (the
     per-repo run-state dir is missing) or when the directory exists but is empty.
     """
@@ -274,7 +274,7 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:  # noqa: PLR0915
     alone: the worker.pid (probed with signal 0, so liveness is known even while
     the worker is blocked in a long provider call that emits no events) plus the
     last event, current iteration, and elapsed time from logs.jsonl. For a quick
-    or scripted check; `agent6 watch` is the live follower.
+    or scripted check; `agent6 attach` is the live follower.
     """
     target = _resolve_run_dir(Path.cwd(), run_id)
     if target is None or not target.is_dir():
@@ -461,7 +461,7 @@ def format_plain_event(line: str, *, run_start_ts: float | None) -> str:
 
 
 class _CliFrontEnd:
-    """Makes an interactive ``agent6 watch`` a real run FRONT-END, not just a
+    """Makes an interactive ``agent6 attach`` a real run FRONT-END, not just a
     reader. When the streamed log surfaces an unanswered ``run_command`` approval
     or ``ask_user`` question, it prompts on the controlling terminal with the SAME
     CLI prompts a foreground run uses and writes the answer back over the file

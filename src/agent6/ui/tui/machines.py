@@ -120,7 +120,7 @@ class MachineWatchScreen(Screen[None]):
     """Live view of a running (or finished) machine: the state overview with the
     current state marked, each transition as it lands, and the active agent
     state's reasoning streamed from its per-state logs.jsonl -- the in-TUI
-    equivalent of `agent6 watch`. Polls every 0.5s.
+    equivalent of `agent6 attach`. Polls every 0.5s.
 
     Interactive: while open it registers as the answer front-end (frontend.pid on
     the instance dir), so the current agent state's `run_command` approvals and
@@ -211,7 +211,7 @@ class MachineWatchScreen(Screen[None]):
         return log.parent if log is not None else None
 
     def action_close(self) -> None:
-        # Standalone `agent6 watch <machine> --tui` mounts this directly on the
+        # Standalone `agent6 attach <machine> --tui` mounts this directly on the
         # app's base screen, so there is nothing to pop back to; exit instead.
         if len(self.app.screen_stack) > 2:
             self.app.pop_screen()
@@ -755,7 +755,7 @@ class MachinesScreen(Screen[None]):
 
 
 class _MachineWatchApp(MuxPointerShapes, App[None]):
-    """One-screen host for `agent6 watch <machine> --tui`: the same live machine
+    """One-screen host for `agent6 attach <machine> --tui`: the same live machine
     view the Machines page opens, runnable straight from the CLI."""
 
     CSS = (

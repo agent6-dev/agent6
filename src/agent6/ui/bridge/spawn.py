@@ -37,7 +37,7 @@ def spawn_detached_resume(cwd: Path, run_id: str, *, steer: str = "") -> str:
 
     The caller must have released the run's worker lock first, so the child
     acquires it cleanly. ``AGENT6_STREAM_TO_LOG=1`` keeps the headless child
-    emitting delta events, so a later ``agent6 watch`` shows its full reasoning,
+    emitting delta events, so a later ``agent6 attach`` shows its full reasoning,
     not just tool calls. argv is the agent6 exe + the run id (never LLM output).
     Returns "" on success, else an error message."""
     argv = [agent6_exe(), "resume", run_id]
