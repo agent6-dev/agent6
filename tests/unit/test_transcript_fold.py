@@ -50,7 +50,7 @@ def test_finish_tool_becomes_the_verdict_not_a_step() -> None:
     assert [i.kind for i in items] == ["done"]
     done = items[0]
     assert done.ok is True and done.body == "all green"
-    assert done.detail == "0 tools · 0 commit(s)"
+    assert done.detail == "0 tools · 0 commits"
 
 
 def test_failed_tool_keeps_a_tail() -> None:

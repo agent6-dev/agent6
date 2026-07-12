@@ -45,7 +45,21 @@ def test_tool_tail_clipped_to_one_length_and_neutral() -> None:
     item = TranscriptItem("tool", name="run_command", ok=False, detail="d", tail="x" * 500)
     tail = item_lines(item, detail="collapsed")[-1]
     assert tail[0][1] == "tail"
-    assert len(tail[0][0]) <= TAIL_CLIP + 4  # tail + the 4-space relative indent
+    # tail + the 4-space relative indent + the clip ellipsis
+    assert len(tail[0][0]) <= TAIL_CLIP + 5
+    assert tail[0][0].endswith("…")  # a clipped tail says so
+
+
+def test_tool_tail_expands_to_full_lines() -> None:
+    # Expanded shows the WHOLE captured output line-by-line; without this the
+    # detail toggle was a no-op exactly where users want more (command output).
+    out = "\n".join(f"line {i}" for i in range(6)) + "\n" + "y" * 300
+    item = TranscriptItem("tool", name="run_command", ok=True, detail="d", tail=out)
+    collapsed = item_lines(item, detail="collapsed")
+    expanded = item_lines(item, detail="expanded")
+    assert expanded != collapsed
+    tail_text = "".join(span[0] for line in expanded for span in line if span[1] == "tail")
+    assert "line 5" in tail_text and "y" * 300 in tail_text  # nothing clipped
 
 
 def test_thinking_detail_levels() -> None:

@@ -167,7 +167,9 @@ class TranscriptFold:
             return out
         if etype == "run.end":
             out = self._flush_message()
-            counts = f"{self._tools} tools · {self._commits} commit(s)"
+            tools = f"{self._tools} tool{'' if self._tools == 1 else 's'}"
+            commits = f"{self._commits} commit{'' if self._commits == 1 else 's'}"
+            counts = f"{tools} · {commits}"
             reason = str(event.get("reason", ""))
             # Pair the finish summary with the done line ONLY on a clean finish.
             # On a failure/stop the summary is from an EARLIER finish_run call and

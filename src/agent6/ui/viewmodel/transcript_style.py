@@ -87,7 +87,15 @@ def _tool_lines(item: TranscriptItem, *, expanded: bool) -> list[Line]:
             result.append((f"  (+{extra} more line{'' if extra == 1 else 's'})", "more"))
         lines = [head, result]
     if item.tail:
-        lines.append([(f"    {' '.join(item.tail.split())[:TAIL_CLIP]}", "tail")])
+        if expanded:
+            # Full captured output, line-structured -- without this, expanded ==
+            # collapsed for tool items and the web/TUI detail toggle is a no-op
+            # exactly where the user wants more (a run_command's output).
+            lines.extend([(f"    {ln}", "tail")] for ln in item.tail.split("\n"))
+        else:
+            flat = " ".join(item.tail.split())
+            clip = flat[:TAIL_CLIP] + ("…" if len(flat) > TAIL_CLIP else "")
+            lines.append([(f"    {clip}", "tail")])
     return lines
 
 
