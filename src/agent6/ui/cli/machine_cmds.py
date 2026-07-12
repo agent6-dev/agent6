@@ -235,8 +235,8 @@ def _cmd_machine_test(path: Path, *, blackboard: Path | None) -> int:
     _print_dry_run_report(spec, report)
     if report.ok:
         print(
-            f"\nOK: {path} dry-run passed ({len(report.states)} states, "
-            f"{len(report.branches)} branches)"
+            f"\nOK: {path} dry-run passed ({_plural(len(report.states), 'state')}, "
+            f"{_plural(len(report.branches), 'branch', 'branches')})"
         )
         return 0
     print(f"\nFAIL: {path} dry-run found problems", file=sys.stderr)
@@ -788,12 +788,14 @@ def _cmd_machine_run(  # noqa: PLR0911, PLR0912, PLR0915
     if result.status == "waiting":
         print(
             f"WAITING: {spec.machine} paused in {result.state!r}"
-            f" after {result.transitions} transitions ({result.reason})"
+            f" after {_plural(result.transitions, 'transition')} ({result.reason})"
         )
         return 0
+    usd, _, _, _ = _machine_spend(journal.read(), root, alive=False)
     print(
         f"{result.status.upper()}: {spec.machine} ended in {result.state!r}"
-        f" after {result.transitions} transitions ({result.reason})"
+        f" after {_plural(result.transitions, 'transition')} ({result.reason})"
+        f" -- spent ${usd:.4f}"
     )
     return 0 if result.status == "ok" else 1
 
@@ -822,6 +824,12 @@ def _cmd_machine_replay(machine_id: str) -> int:
         f" after {result.transitions} transitions ({result.reason})"
     )
     return 0 if result.status in ("ok", "incomplete") else 1
+
+
+def _plural(n: int, singular: str, plural: str | None = None) -> str:
+    """'1 transition' / '3 transitions' -- no '1 branches' in user-facing counts."""
+    word = singular if n == 1 else (plural or singular + "s")
+    return f"{n} {word}"
 
 
 def _state_dir_seq(dir_name: str) -> int | None:
