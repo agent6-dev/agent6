@@ -15,7 +15,7 @@ import sys
 import tempfile
 import time
 import tomllib
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any, Literal
 
@@ -62,7 +62,7 @@ from agent6.paths import chown_to_real_user
 from agent6.runs.id import new_friendly_id
 from agent6.sandbox.detect import ProfileUnavailableError, select_profile
 from agent6.types import SandboxProfile
-from agent6.ui.bridge.approval import write_worker_pid
+from agent6.ui.bridge.approval import read_worker_pid, worker_is_alive, write_worker_pid
 from agent6.ui.bridge.notify import desktop_notify
 from agent6.ui.cli._common import _check_provider_keys, _machines_dir, _state_dir, detect_env
 from agent6.ui.cli.egress import (
@@ -77,6 +77,7 @@ from agent6.ui.viewmodel import (
     MachineWatchCursor,
     fold_machine,
 )
+from agent6.ui.viewmodel.machine_state import newest_state_log
 
 
 def _is_inside(path: Path, root: Path) -> bool:
@@ -823,6 +824,63 @@ def _cmd_machine_replay(machine_id: str) -> int:
     return 0 if result.status in ("ok", "incomplete") else 1
 
 
+def _state_dir_seq(dir_name: str) -> int | None:
+    """The transition seq encoded in a ``<seq>-<state>`` per-state log dir name."""
+    head = dir_name.split("-", 1)[0]
+    return int(head) if head.isdigit() else None
+
+
+def _read_state_log_totals(log_path: Path) -> tuple[float, int, int]:
+    """The latest running budget totals (usd, in-tok, out-tok) from an agent
+    state's per-state log; (0,0,0) if none. Mirrors salvage_spend, but for the
+    LIVE status of an in-flight state whose StepEvent is not written yet."""
+    usd, tin, tout = 0.0, 0, 0
+    with contextlib.suppress(OSError):
+        for line in log_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            if e.get("type") == "budget.update":
+                usd = float(e.get("usd_total", usd) or 0.0)
+                tin = int(e.get("input_total", tin) or 0)
+                tout = int(e.get("output_total", tout) or 0)
+    return usd, tin, tout
+
+
+def _machine_spend(
+    events: Sequence[object], root: Path, *, alive: bool
+) -> tuple[float, int, int, str]:
+    """Total (usd, in-tok, out-tok, in-flight-state) for a machine instance:
+    the sum of completed states' booked AgentFacts, PLUS the live spend of the
+    currently-running state. A state books its StepEvent only when it completes,
+    so a machine mid-agent-state otherwise reads $0/dead while burning money. The
+    running state's per-state log dir is numbered with the current transition
+    seq, which has no StepEvent yet, so a newest-log seq absent from the booked
+    seqs is unambiguously the in-flight state (no double-count); we fold it only
+    when the worker is alive so a crashed in-flight log is ignored."""
+    usd, tin, tout = 0.0, 0, 0
+    step_seqs: set[int] = set()
+    for event in events:
+        if isinstance(event, StepEvent):
+            step_seqs.add(event.seq)
+            if isinstance(event.fact, AgentFact):
+                usd += event.fact.usd
+                tin += event.fact.input_tokens
+                tout += event.fact.output_tokens
+    inflight_state = ""
+    newest = newest_state_log(root) if alive else None
+    if newest is not None:
+        seq = _state_dir_seq(newest.parent.name)
+        if seq is not None and seq not in step_seqs:
+            live_usd, live_in, live_out = _read_state_log_totals(newest)
+            usd += live_usd
+            tin += live_in
+            tout += live_out
+            inflight_state = newest.parent.name.split("-", 1)[-1]
+    return usd, tin, tout, inflight_state
+
+
 def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
     root = _machines_dir(Path.cwd()) / machine_id
     if not root.is_dir():
@@ -846,17 +904,16 @@ def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
-    usd_total = 0.0
-    input_total = 0
-    output_total = 0
-    for event in events:
-        if isinstance(event, StepEvent) and isinstance(event.fact, AgentFact):
-            usd_total += event.fact.usd
-            input_total += event.fact.input_tokens
-            output_total += event.fact.output_tokens
+    alive = worker_is_alive(root)
+    usd_total, input_total, output_total, inflight_state = _machine_spend(events, root, alive=alive)
 
     print(f"machine: {spec.machine} (v{spec.version})")
-    print(f"  status: {result.status}")
+    if alive:
+        pid = read_worker_pid(root)
+        running_in = f" -- running {inflight_state!r}" if inflight_state else ""
+        print(f"  status: running (worker pid {pid} alive){running_in}")
+    else:
+        print(f"  status: {result.status}")
     print(f"  state: {result.state!r}")
     print(f"  transitions: {result.transitions}")
     print(f"  spend: ${usd_total:.4f} (in={input_total} tok, out={output_total} tok)")
