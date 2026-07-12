@@ -176,6 +176,29 @@ def test_config_set_keeps_a_valid_write_despite_a_stale_value_elsewhere(
     assert "WARNING" not in capsys.readouterr().err
 
 
+def test_config_set_rejects_a_masked_invalid_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A repo overlay masks the key in the merged view; setting an INVALID value in
+    # a lower layer must still be rejected, or it lands unvalidated and only
+    # explodes later where the mask is absent.
+    import subprocess
+
+    from agent6.ui.cli import main
+
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    monkeypatch.chdir(tmp_path)
+    assert main(["config", "set", "--repo", "sandbox.run_commands", "yes"]) == 0  # the mask
+    capsys.readouterr()
+    # Global set of an invalid value -> rejected despite the repo mask.
+    rc = main(["config", "set", "sandbox.run_commands", "bogus"])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "sandbox.run_commands" in err  # a friendly per-field error, not a merge dump
+    # A valid global set still succeeds.
+    assert main(["config", "set", "sandbox.run_commands", "no"]) == 0
+
+
 def test_config_set_rejects_a_newly_invalid_value(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -210,11 +233,10 @@ def test_config_set_reverts_a_write_that_trips_a_non_pydantic_check(
 def test_config_set_keeps_a_write_on_an_already_invalid_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # config set reverts only a write that BROKE a previously-valid config. When the
-    # config was ALREADY invalid (a value left stale by a schema change), the write is
-    # kept + warned so the config stays fixable -- the deliberate tradeoff being that a
-    # still-invalid value on an already-broken config is warned, not reverted. A valid
-    # value then lands and clears the error.
+    # config set never lands a known-INVALID written value (it validates the value
+    # standalone), but a config left invalid by a stale value elsewhere STAYS
+    # fixable: a VALID write still succeeds. So on an already-broken config,
+    # writing another invalid value is rejected, while a valid value lands + clears.
     from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
@@ -222,8 +244,8 @@ def test_config_set_keeps_a_write_on_an_already_invalid_config(
     gpath.write_text("[prompt]\ndecompose = true\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    assert main(["config", "set", "prompt.decompose", "enabled"]) == 0  # kept, not reverted
-    assert "WARNING" in capsys.readouterr().err
+    assert main(["config", "set", "prompt.decompose", "enabled"]) == 2  # invalid value: rejected
+    assert "prompt.decompose" in capsys.readouterr().err  # friendly per-field error
     assert main(["config", "set", "prompt.decompose", "on"]) == 0  # a valid value clears it
     assert "WARNING" not in capsys.readouterr().err
 

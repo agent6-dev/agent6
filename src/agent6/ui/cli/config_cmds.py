@@ -8,7 +8,10 @@ import sys
 import tempfile
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from agent6.config import (
+    Config,
     ConfigError,
 )
 from agent6.config.io import (
@@ -167,13 +170,55 @@ def _merged_config_error() -> str | None:
         return str(exc)
 
 
-def _revalidate_layered(target: Path, prior_text: str | None, *, was_valid: bool) -> str | None:
+def _written_value_error(key: str, value: object) -> str | None:
+    """Validate the just-written ``key = value`` against the Config model on its
+    own (a minimal dict, defaults for the rest), independent of the layer merge.
+    A plain `config set` of an invalid value into a layer that a HIGHER layer
+    masks (e.g. a global set the repo overlay shadows) would otherwise validate
+    the merged config -- where the value is hidden -- and land the bad value in
+    the file, only to explode later where the mask is absent. Rejects only when
+    the error is exactly at *key* (not a parent), so a partial dynamic entry
+    (a provider being filled in over several sets) is not falsely reverted."""
+    parts = key.split(".")
+    nested: dict[str, object] = {}
+    cur = nested
+    for part in parts[:-1]:
+        child: dict[str, object] = {}
+        cur[part] = child
+        cur = child
+    cur[parts[-1]] = value
+    try:
+        Config.model_validate(nested)
+    except ValidationError as exc:
+        for err in exc.errors():
+            if ".".join(str(x) for x in err["loc"]) == key:
+                return f"{key}: {err['msg']}"
+    except ConfigError as exc:
+        return str(exc)
+    return None
+
+
+def _revalidate_layered(
+    target: Path,
+    prior_text: str | None,
+    *,
+    was_valid: bool,
+    written: tuple[str, object] | None = None,
+) -> str | None:
     """Re-validate after a plain (global/repo) config write: revert only if this write
     BROKE a previously-valid config. If the config was already invalid -- a value left
     stale in a different, unedited layer -- keep the write and warn (a global set that
     the repo layer shadows hits this), so an already-broken config stays fixable through
     `config set` instead of the old catch-22 where one stale value blocked every write.
+
+    *written* is the ``(key, value)`` a `config set` just wrote; its value is
+    validated against the model even when a higher layer masks it in the merge.
     """
+    if written is not None:
+        value_err = _written_value_error(*written)
+        if value_err is not None:
+            _restore_file(target, prior_text)
+            return value_err
     after = _merged_config_error()
     if after is None:
         return None  # valid -> success
@@ -189,7 +234,12 @@ def _revalidate_layered(target: Path, prior_text: str | None, *, was_valid: bool
 
 
 def _revalidate_config(
-    target: Path, prior_text: str | None, *, machine: Path | None, was_valid: bool = False
+    target: Path,
+    prior_text: str | None,
+    *,
+    machine: Path | None,
+    was_valid: bool = False,
+    written: tuple[str, object] | None = None,
 ) -> str | None:
     """Re-validate the config after a write; restore *prior_text* on real failure.
 
@@ -197,10 +247,12 @@ def _revalidate_config(
     config (so the caller fails loud and the file is reverted), else None. A value
     left stale in a different, unedited layer never blocks an otherwise-valid write;
     *was_valid* is whether the merged config loaded before this write (see
-    :func:`_revalidate_layered`). The machine path keeps its own spec guard.
+    :func:`_revalidate_layered`). *written* is the ``(key, value)`` a `config set`
+    wrote, checked standalone so a masked bad value is caught. The machine path
+    keeps its own spec guard.
     """
     if machine is None:
-        return _revalidate_layered(target, prior_text, was_valid=was_valid)
+        return _revalidate_layered(target, prior_text, was_valid=was_valid, written=written)
     err: str | None = None
     try:
         data = read_toml_file(target)
@@ -263,7 +315,9 @@ def _cmd_config_set(key: str, value: str, *, repo: bool, machine: Path | None) -
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
-    if err := _revalidate_config(target, prior, machine=machine, was_valid=was_valid):
+    if err := _revalidate_config(
+        target, prior, machine=machine, was_valid=was_valid, written=(key, parsed)
+    ):
         print(f"ERROR: {err}", file=sys.stderr)
         return 2
     chown_to_real_user(target.parent)
