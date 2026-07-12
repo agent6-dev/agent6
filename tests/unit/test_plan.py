@@ -85,6 +85,18 @@ def test_finish_planning_tool_name() -> None:
     assert FinishPlanningInput.TOOL_NAME == "finish_planning"
 
 
+def test_finish_planning_fields_are_documented_in_the_schema() -> None:
+    # Both fields must carry a description in the emitted JSON schema, so the
+    # model disambiguates plan_markdown (the deliverable) from summary at the
+    # exact surface it fills -- without it, models dumped the whole plan into
+    # `summary` and left a degenerate plan.md.
+    props = FinishPlanningInput.model_json_schema()["properties"]
+    assert "plan_markdown" in props["plan_markdown"]["description"] or "plan.md" in (
+        props["plan_markdown"]["description"]
+    )
+    assert "NOT the plan" in props["summary"]["description"]
+
+
 def test_plan_extra_tools_includes_finish_planning_excludes_finish_run() -> None:
     names = {t.TOOL_NAME for t in PLAN_EXTRA_TOOLS}
     assert FinishPlanningInput.TOOL_NAME in names

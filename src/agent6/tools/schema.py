@@ -246,8 +246,29 @@ class FinishPlanningInput(_ToolInput):
         "other tools after finish_planning."
     )
 
-    summary: str = Field(min_length=1)
-    plan_markdown: str = Field(min_length=1)
+    # Per-field descriptions so the disambiguation lives IN the JSON schema the
+    # model fills, not only in the prose above. finish_planning is the one finish
+    # tool whose fields were self-undocumented, and models put the whole plan
+    # into `summary` (listed first, and a natural sink for "primary output"),
+    # leaving a degenerate plan.md that still passed min_length=1. finish_run's
+    # `result` already carries a field description; this matches it.
+    summary: str = Field(
+        min_length=1,
+        description=(
+            "A one-paragraph description of the plan, surfaced to the operator at "
+            "exit. This is NOT the plan itself -- the full plan goes in plan_markdown."
+        ),
+    )
+    plan_markdown: str = Field(
+        min_length=1,
+        description=(
+            "The FULL plan document in markdown, saved verbatim to plan.md and fed "
+            "to `agent6 run --from-plan`. This is the deliverable: put the entire "
+            "plan here (title, task, context, ordered task list with acceptance "
+            "criteria, open questions, verification) -- not a short blurb, and not "
+            "in summary."
+        ),
+    )
 
 
 # DAG-as-tool surface. Lets the agent maintain its own task
