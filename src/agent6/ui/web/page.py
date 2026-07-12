@@ -88,20 +88,31 @@ nav.tabs a {
 nav.tabs a.active { color: var(--accent); }
 nav.tabs a .ic { font-size: 18px; line-height: 1; }
 
-main { padding: 16px; max-width: 1200px; margin: 0 auto; }
-.grid { display: grid; gap: 14px; }
+/* Flat layout everywhere: sections run edge to edge, split by single
+   hairline borders; floating cards wasted width. Mobile and desktop keep
+   their own layouts, only the skin is flat. The one boxed survivor is the
+   config-edit dialog (.overlay .card): a modal has to float. */
+main { padding: 0; }
+.grid { display: grid; gap: 0; }
+.grid > * + * { border-top: 1px solid var(--border); }
+/* Toolbar / prompt rows sit outside the section grid; align them with the
+   section padding. */
+.page-pad { margin: 0 16px; }
+.page-pad.row { margin-top: 12px; }
 /* align-items:start: columns keep their natural heights (the left new-work +
    machines stack was stretching to match the runs column, leaving dead space
    inside its cards). */
-@media (min-width: 900px) { .grid.cols2 { grid-template-columns: 1fr 1fr; align-items: start; } }
+@media (min-width: 900px) {
+  .grid.cols2 { grid-template-columns: 1fr 1fr; align-items: start; }
+  .grid.cols2 > * { border-top: 0; }
+  .grid.cols2 > :nth-child(2n) { border-left: 1px solid var(--border); }
+  .grid.cols2 > :nth-child(n+3) { border-top: 1px solid var(--border); }
+}
 /* Phone: the runs list is what you open the app to see; it leads, the
    new-work/machines composer cards follow. Desktop keeps them side by side. */
 @media (max-width: 899px) { .grid.cols2 .lead-mobile { order: -1; } }
 
-.card {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
-  padding: 14px; overflow: hidden;
-}
+.card { padding: 14px 16px; overflow: hidden; }
 .card h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
 .card.scroll { max-height: 420px; overflow: auto; }
 
@@ -114,13 +125,13 @@ main { padding: 16px; max-width: 1200px; margin: 0 auto; }
 .pill.stopped { color: var(--warn); border-color: var(--warn); }
 .pill.stale, .pill.failed { color: var(--err); border-color: var(--err); }
 
-.list { display: flex; flex-direction: column; gap: 8px; }
+.list { display: flex; flex-direction: column; }
 .item {
-  display: flex; gap: 10px; align-items: center; padding: 12px; border-radius: 10px;
-  background: var(--surface2); border: 1px solid transparent; cursor: pointer;
-  transition: border-color .15s;
+  display: flex; gap: 10px; align-items: center; padding: 12px 8px;
+  border-top: 1px solid var(--border); border-left: 2px solid transparent;
+  cursor: pointer; transition: background .15s, border-color .15s;
 }
-.item:hover { border-color: var(--accent); }
+@media (hover: hover) { .item:hover { background: var(--surface2); border-left-color: var(--accent); } }
 .item .grow { flex: 1; min-width: 0; }
 .item .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item .sub { font-size: 12px; color: var(--muted); }
@@ -207,7 +218,7 @@ textarea.field { min-height: 72px; resize: vertical; }
 button.primary { background: var(--accent); color: #05121f; border-color: var(--accent); font-weight: 600; }
 :root.light button.primary { color: #fff; }
 button.danger:hover { border-color: var(--err); color: var(--err); }
-.prompt-box { background: var(--surface2); border: 1px solid var(--warn); border-radius: 10px; padding: 12px; margin-bottom: 10px; }
+.prompt-box { background: var(--surface2); border-left: 3px solid var(--warn); padding: 12px; margin-bottom: 10px; }
 .prompt-box .q { margin-bottom: 8px; }
 .toast {
   position: fixed; left: 50%; transform: translateX(-50%); z-index: 50;
@@ -216,25 +227,28 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
   padding: 10px 16px; box-shadow: 0 4px 16px rgba(0,0,0,.4);
 }
 .toast.bad { border-color: var(--err); color: var(--err); }
-.notif-banner { display: flex; align-items: flex-start; gap: 10px; background: var(--surface2); border: 1px solid var(--accent); border-left-width: 4px; border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+.notif-banner { display: flex; align-items: flex-start; gap: 10px; background: var(--surface2); border-left: 3px solid var(--accent); padding: 10px 12px; margin-bottom: 10px; }
 .notif-banner.warn { border-color: var(--warn); }
 .notif-banner.error { border-color: var(--err); }
 .notif-banner .grow { flex: 1; min-width: 0; }
 .notif-banner .nb-msg { word-break: break-word; }
 .notif-banner .nb-sub { font-size: 12px; color: var(--muted); }
 .notif-banner .nb-x { cursor: pointer; color: var(--muted); background: none; border: none; min-height: auto; padding: 0 4px; font-size: 16px; }
-.poke-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-top: 10px; }
+.poke-box { border-top: 1px solid var(--border); padding: 12px 0 0; margin-top: 12px; }
 
 .overlay {
   position: fixed; inset: 0; z-index: 60; padding: 16px;
   display: flex; align-items: center; justify-content: center;
   background: rgba(0,0,0,.55);
 }
-.overlay .card { max-height: 90vh; overflow: auto; }
+.overlay .card {
+  max-height: 90vh; overflow: auto;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+}
 
 @media (max-width: 780px) {
   nav.tabs { display: flex; }
-  main { padding: 12px 12px calc(var(--nav-h) + 24px); }
+  main { padding: 0 0 calc(var(--nav-h) + 24px); }
   .card.scroll { max-height: 60vh; }
   header .desktop-only { display: none; }
 }
@@ -261,7 +275,9 @@ aside.rail { display: none; }
   .content { margin-left: 216px; }
   header { justify-content: flex-start; }
   header .brand, header > button { display: none; }  /* the rail owns brand + actions */
-  main { max-width: 1280px; margin: 0; padding: 20px 28px; }
+  main { max-width: none; margin: 0; padding: 0; }
+  .card { padding: 14px 22px; }
+  .page-pad { margin: 0 22px; }
 }
 
 /* --- run dashboard: conversation-primary on wide screens. The folded
@@ -291,19 +307,8 @@ aside.rail { display: none; }
   }
   .run-grid .card-conv .conv-box { flex: 1 1 auto; min-height: 0; max-height: none; height: auto; }
 
-  /* Flat detail views (the run dashboard, a draft, the full conversation):
-     edge-to-edge panes split by single hairlines; floating cards waste width at
-     desktop sizes. route() stamps .flat on these views only, so the hub /
-     config / machines pages keep their cards, and mobile keeps cards everywhere. */
-  main.flat { max-width: none; margin: 0; padding: 12px 0 20px; }
-  main.flat > :not(.grid) { margin-left: 22px; margin-right: 22px; }
-  main.flat .grid { gap: 0; }
-  main.flat .card { background: none; border: 0; border-radius: 0; padding: 14px 22px; }
-  main.flat .card-conv { background: var(--bg); } /* the sticky pane must stay opaque */
-  main.flat .run-grid .card-head { border-bottom: 1px solid var(--border); }
-  main.flat .run-grid .run-side { border-left: 1px solid var(--border); }
-  main.flat .run-side > .card + .card { border-top: 1px solid var(--border); }
-  main.flat .run-grid .card-log { border-top: 1px solid var(--border); }
+  .run-grid .run-side { border-left: 1px solid var(--border); }
+  .run-grid .card-conv { background: var(--bg); } /* the sticky pane must stay opaque */
 }
 </style>
 </head>
@@ -428,9 +433,6 @@ async function route() {
     }
   }
   const parts = h.split('/').filter(Boolean); // e.g. ['run','abc']
-  // Detail views (run/draft/conversation) render flat edge-to-edge panes on
-  // wide screens; list/settings pages keep their cards.
-  view.classList.toggle('flat', ['run', 'draft', 'conversation'].includes(parts[0]));
   try {
     if (parts.length === 0) { setTab('hub'); await renderHub(); }
     else if (parts[0] === 'machines') { setTab('machines'); await renderHub('machines'); }
@@ -765,7 +767,7 @@ function renderRun(id, opts) {
   const readOnly = !!opts.readOnly;
   setCrumb(opts.crumb || id);
   view.innerHTML = '';
-  const prompts = el('div'); view.appendChild(prompts); // approval/question boxes surface here
+  const prompts = el('div', 'page-pad'); view.appendChild(prompts); // approval/question boxes surface here
   const grid = el('div', 'grid run-grid');
   const side = el('div', 'grid run-side'); // the narrow column of context cards
   const cards = { _id: id, _prompts: prompts, _readOnly: readOnly };
@@ -781,7 +783,7 @@ function renderRun(id, opts) {
   grid.appendChild(side);
   mk('log', 'Event log', 'scroll');
   if (!readOnly) {  // controls at the TOP so Stop stays reachable without scrolling
-    const actions = el('div', 'row wrap'); actions.style.marginBottom = '14px';
+    const actions = el('div', 'row wrap page-pad'); actions.style.marginBottom = '14px';
     const post = (verb, okMsg) => async () => {
       try { const d = await postJSON('/api/run/' + encodeURIComponent(id) + '/' + verb, {}); toast(d.message || okMsg); }
       catch (e) { toast(e.message, true); }
@@ -1047,14 +1049,14 @@ function renderMachine(name) {
   // Ephemeral notification banners live here; the prompts host holds pending
   // approval/question boxes; both are APPENDED to, never wiped, so a repaint can
   // never clear a half-typed answer or the poke box below.
-  const notifs = el('div'); view.appendChild(notifs);
-  const prompts = el('div'); view.appendChild(prompts);
+  const notifs = el('div', 'page-pad'); view.appendChild(notifs);
+  const prompts = el('div', 'page-pad'); view.appendChild(prompts);
   const cards = { _prompts: prompts, _base: base };
 
-  const controls = el('div', 'row wrap'); controls.style.marginBottom = '10px';
+  const controls = el('div', 'row wrap page-pad'); controls.style.marginBottom = '10px';
   const bell = el('button', null, '🔔 Notifications');
   bell.onclick = enableNotifications;
-  const steerBtn = el('button', null, '↪ Steer');
+  const steerBtn = el('button', null, '↪ Steer agent state');
   steerBtn.onclick = () => steerDialog('Steer the current agent state', async (text) => {
     if (text === null) return;
     // cards._state is set each frame to the agent state currently rendered, so
@@ -1077,11 +1079,11 @@ function renderMachine(name) {
 
   // The poke ("send message") box: created ONCE so its input survives repaints.
   const poke = el('div', 'poke-box');
-  poke.appendChild(el('div', 'sub muted', 'Send a message to a waiting machine (poke payload):'));
+  poke.appendChild(el('div', 'sub muted', 'Wake a waiting machine (the message is delivered to its next tool):'));
   const prow = el('div', 'form-row');
   const pin = el('input', 'field'); pin.placeholder = 'message…'; pin.style.flex = '1';
   const psend = el('button', 'primary', 'Send');
-  const doPoke = async () => { try { await postJSON(base + '/poke', { message: pin.value }); toast('poked'); pin.value = ''; } catch (e) { toast(e.message, true); } };
+  const doPoke = async () => { try { await postJSON(base + '/poke', { message: pin.value }); toast('woke the machine'); pin.value = ''; } catch (e) { toast(e.message, true); } };
   psend.onclick = doPoke;
   pin.onkeydown = e => { if (e.key === 'Enter') doPoke(); };
   prow.appendChild(pin); prow.appendChild(psend); poke.appendChild(prow);
