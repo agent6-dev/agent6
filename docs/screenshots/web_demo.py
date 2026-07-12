@@ -174,10 +174,11 @@ def drive(page: Page, base: str, mode: str, t0: float) -> float:
     scroll_to(page, 620, wait=2100)
     scroll_to(page, 0, wait=1000)
 
-    # Config page (header button on desktop, bottom nav on phone).
+    # Config page: the left nav rail on desktop, the bottom tab bar on phone
+    # (data-tab is the stable hook; the other nav is display:none per viewport).
     click(
         page,
-        "nav.tabs a:has-text('Config')" if mode == "phone" else "header button:has-text('config')",
+        "nav.tabs a[data-tab='config']" if mode == "phone" else "aside.rail a[data-tab='config']",
         label="Every setting, with its source",
     )
     click(page, "input.filter", settle=300)
