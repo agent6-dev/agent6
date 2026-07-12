@@ -490,14 +490,15 @@ class DashboardScreen(Screen[None]):
             finished = f"[b {color}]{escape(run_status_label(s))}[/]"
         cost = f"[b]{format_cost(s.budget.usd_total, partial=s.budget.usd_partial)}[/]"
         # The token-budget consumption, up here as a readout (the bottom bar it
-        # used to be gave that row to the composer).
+        # used to be gave that row to the composer). Labelled "token budget": a
+        # bare "budget: 11%" right after "cost: $0.05" read as a dollar cap.
         used = s.budget.input_total + s.budget.output_total
         cap = s.budget.input_cap + s.budget.output_cap
-        budget = f"   budget: {min(used / cap, 1.0):.0%}" if cap > 0 else ""
+        budget = f"   token budget: {min(used / cap, 1.0):.0%}" if cap > 0 else ""
         pct = tui.context_pct()
         ctx = f"   ctx: {pct}%" if pct is not None else ""
         self.query_one("#top", Static).update(
-            f"[b]agent6[/]  {step}   role: {escape(role_line)}   cost: {cost}{ctx}{budget}"
+            f"[b]agent6[/]  {step}   role: {escape(role_line)}   cost: {cost}{budget}{ctx}"
             f"   {finished}\n"
             f"task: {escape(s.user_task[:120])}"
         )
