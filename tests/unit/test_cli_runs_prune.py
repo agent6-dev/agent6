@@ -88,6 +88,40 @@ def test_runs_prune_classifies_branches(
     assert cap.out.index("kept agent6/sqush11") < cap.out.index("[agent6] deleted 1; kept 2")
 
 
+def test_runs_prune_delete_squashed_removes_only_confirmed_squash_merged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # --delete-squashed force-deletes a manifest-confirmed squash-merged branch
+    # (content-safe in the base commit) and prints an undelete hint; an unmerged
+    # branch is NEVER force-deleted.
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+
+    _make_branch(tmp_path, "sqush22", "s.txt")
+    sha = _git(tmp_path, "rev-parse", "agent6/sqush22")
+    _git(tmp_path, "merge", "--squash", "agent6/sqush22")
+    _git(tmp_path, "commit", "-q", "-m", "squash sqush22")
+    _manifest(tmp_path, "sqush22", base, merged=True)
+    _make_branch(tmp_path, "unmrg22", "u.txt")
+    _manifest(tmp_path, "unmrg22", base, merged=False)
+
+    rc = main(["runs", "prune", "--delete-squashed"])
+    cap = capsys.readouterr()
+    text = cap.out + cap.err
+    assert rc == 0
+    assert not _branch_exists(tmp_path, "agent6/sqush22")  # force-deleted (content safe)
+    assert _branch_exists(tmp_path, "agent6/unmrg22")  # unmerged: never force-deleted
+    assert "deleted agent6/sqush22 (squash-merged into main)" in text
+    assert f"undelete: git branch agent6/sqush22 {sha[:12]}" in text  # recoverable
+    assert "(1 squash-merged)" in text
+
+
 def test_runs_prune_from_non_base_does_not_mislabel_merge_as_squash(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

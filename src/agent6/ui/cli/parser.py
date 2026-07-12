@@ -489,10 +489,19 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     runs_commits_id.completer = _complete_run_ids  # type: ignore[attr-defined]
 
-    _sub(
+    runs_prune = _sub(
         runs_sub,
         "prune",
         help="Delete agent6/* run branches that are safely merged; report the rest.",
+    )
+    runs_prune.add_argument(
+        "--delete-squashed",
+        action="store_true",
+        help=(
+            "Also force-delete run branches confirmed squash-merged into their base"
+            " (git branch -d refuses these; the content is safe in the base commit)."
+            " Each deletion prints an undelete command."
+        ),
     )
 
     runs_tr = _sub(

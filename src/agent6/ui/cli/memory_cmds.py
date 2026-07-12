@@ -22,11 +22,7 @@ from agent6.memory import (
     list_entries as memory_list,
 )
 from agent6.ui.cli._common import _state_dir
-
-
-def _sgr(text: str, code: str) -> str:
-    """Wrap in an ANSI style, tty only, so piped output stays plain."""
-    return f"\x1b[{code}m{text}\x1b[0m" if sys.stdout.isatty() else text
+from agent6.ui.cli._common import sgr as _sgr
 
 
 def _cmd_memory_add(scope: MemoryScope, body: str) -> int:

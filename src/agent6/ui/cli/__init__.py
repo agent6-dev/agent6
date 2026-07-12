@@ -333,7 +333,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
         if args.runs_command == "commits":
             return _cmd_commits(run_id=args.run_id)
         if args.runs_command == "prune":
-            return _cmd_prune()
+            return _cmd_prune(delete_squashed=args.delete_squashed)
         if args.runs_command == "transcript":
             return _cmd_history_transcript(
                 args.run_id,

@@ -159,6 +159,13 @@ class _SandboxOverrides:
         )
 
 
+def sgr(text: str, code: str) -> str:
+    """Wrap *text* in an ANSI style, tty only, so piped output stays plain.
+    The one place the CLI's faded/bold hints are styled (was duplicated in
+    skills_cmds / memory_cmds)."""
+    return f"\x1b[{code}m{text}\x1b[0m" if sys.stdout.isatty() else text
+
+
 def _state_dir(repo_root: Path) -> Path:
     """The per-repo agent6 state dir (config + run state), out of the workspace.
 

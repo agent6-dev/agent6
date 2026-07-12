@@ -21,7 +21,9 @@ from agent6.git_ops import (
     CommitIdentity,
     GitError,
     branch_exists,
+    branch_tip_sha,
     delete_branch_if_merged,
+    force_delete_squash_merged_branch,
     git_hardening_flags,
     is_ancestor,
     is_git_repo,
@@ -32,7 +34,7 @@ from agent6.git_ops import (
 from agent6.git_ops import status as git_status
 from agent6.runs.id import RunIdError, resolve_run_id
 from agent6.runs.layout import RunLayout
-from agent6.ui.cli._common import _runs_dir, _state_dir
+from agent6.ui.cli._common import _runs_dir, _state_dir, sgr
 from agent6.ui.cli._merge import execute_merge
 from agent6.ui.cli.plan_watch import _most_recent_run_id
 from agent6.ui.viewmodel import summarize_run_dir, task_snippet
@@ -401,11 +403,16 @@ def _manifest_merged_into(state_dir: Path, branch: str) -> str:
     return str(manifest.get("merged_into") or "") if manifest.get("merged_sha") else ""
 
 
-def _cmd_prune() -> int:
+def _cmd_prune(*, delete_squashed: bool = False) -> int:
     """Delete agent6/* run branches that `git branch -d` can safely remove
     (reachable-merged into HEAD, i.e. merge/ff strategies). Report squash-merged
-    ones (remove by hand with git branch -D) and unmerged ones (review first);
-    agent6 never force-deletes."""
+    ones and unmerged ones (review first).
+
+    With ``--delete-squashed`` also force-delete branches the manifest confirms
+    were squash-merged into an existing base -- their content is safe in that
+    base commit, and each deletion prints the exact command to undelete it (the
+    commit survives in the reflog until GC). Unmerged branches are never
+    force-deleted."""
     cwd = Path.cwd()
     if not is_git_repo(cwd):
         print("ERROR: not a git repository", file=sys.stderr)
@@ -420,7 +427,7 @@ def _cmd_prune() -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     state_dir = _state_dir(cwd)
-    deleted = merged_kept = unmerged_kept = 0
+    deleted = squashed_deleted = merged_kept = unmerged_kept = 0
     for br in branches:
         if br == current:
             print(f"[agent6] skipped {br} (checked out)", file=sys.stderr)
@@ -434,21 +441,36 @@ def _cmd_prune() -> int:
             unmerged_kept += 1
             print(f"[agent6] kept {br} (NOT merged; review, then: git branch -D {br})")
             continue
-        merged_kept += 1
-        if branch_exists(cwd, merged_into) and is_ancestor(cwd, br, merged_into):
+        reachable = branch_exists(cwd, merged_into) and is_ancestor(cwd, br, merged_into)
+        if reachable:
             # Reachable-merged into its base, so `git branch -d` only refused because
             # HEAD is not the base; deleting it cleanly needs to run from the base.
+            merged_kept += 1
             print(
                 f"[agent6] kept {br} (merged into {merged_into} but not reachable from "
                 f"{current!r}; re-run prune on {merged_into}, or: git branch -D {br})"
             )
-        else:
-            print(
-                f"[agent6] kept {br} (squash-merged into {merged_into}, unreachable; "
-                f"remove with: git branch -D {br})"
-            )
+            continue
+        # Squash-merged into its base: content is in the base commit but the branch
+        # is unreachable, so `git branch -d` refuses it.
+        if delete_squashed and branch_exists(cwd, merged_into):
+            sha = branch_tip_sha(cwd, br)
+            if sha is not None and force_delete_squash_merged_branch(cwd, br):
+                squashed_deleted += 1
+                print(f"[agent6] deleted {br} (squash-merged into {merged_into})")
+                # A faded undelete hint: the commit survives in the reflog until GC.
+                print(sgr(f"          undelete: git branch {br} {sha[:12]}", "2"))
+                continue
+        merged_kept += 1
+        print(
+            f"[agent6] kept {br} (squash-merged into {merged_into}, unreachable; "
+            f"remove with: runs prune --delete-squashed, or: git branch -D {br})"
+        )
+    kept = merged_kept + unmerged_kept
+    total_deleted = deleted + squashed_deleted
+    squashed_note = f" ({squashed_deleted} squash-merged)" if squashed_deleted else ""
     print(
-        f"\n[agent6] deleted {deleted}; kept {merged_kept + unmerged_kept} "
+        f"\n[agent6] deleted {total_deleted}{squashed_note}; kept {kept} "
         f"({merged_kept} merged, {unmerged_kept} unmerged)",
     )
     return 0

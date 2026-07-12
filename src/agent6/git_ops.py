@@ -322,9 +322,35 @@ def delete_branch_if_merged(path: Path, branch: str) -> bool:
     """Delete *branch* with `git branch -d`, the SAFE delete: git refuses unless the
     branch is reachable-merged into the current HEAD (or its upstream). Returns True
     if deleted, False if git refused -- a squash-merged or genuinely unmerged branch,
-    since neither is reachable. Never `branch -D`; forced deletion is refused by
-    agent6, so an unreachable branch is reported, never force-removed."""
+    since neither is reachable. Never `branch -D` here; see
+    ``force_delete_squash_merged_branch`` for the one operator-gated exception."""
     return _run(path, "branch", "-d", branch, check=False).ok
+
+
+def branch_tip_sha(path: Path, branch: str) -> str | None:
+    """The commit sha a branch points at, or None if it does not resolve."""
+    res = _run(path, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", check=False)
+    sha = res.stdout.strip()
+    return sha or None
+
+
+def force_delete_squash_merged_branch(path: Path, branch: str) -> bool:
+    """`git branch -D` a run branch, the ONE sanctioned force-delete in agent6.
+
+    `git branch -d` refuses a squash-merged branch because its commits are not
+    reachable from the base (the squash collapsed them into one commit ON the
+    base), even though the branch's content is safely in that base commit. So a
+    default `runs prune` can never remove a squash-merged branch, and the whole
+    run -> merge -> prune lifecycle leaves the branch behind.
+
+    This is the operator's explicit `runs prune --delete-squashed` opt-in, only
+    for a branch the manifest CONFIRMS was squash-merged into an existing base
+    (its content is in that base commit; the individual per-step commits were
+    collapsed anyway and survive in the reflog until GC). It is NEVER reachable
+    by the model: the LLM-facing `_git_guard.refuse_mutating_git_command` still
+    blocks a `git branch -D` run through run_command. Operator-initiated, fixed
+    argv, content-preserving. Returns True if deleted."""
+    return _run(path, "branch", "-D", branch, check=False).ok
 
 
 def create_branch(path: Path, name: str) -> None:

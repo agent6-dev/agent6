@@ -33,16 +33,12 @@ from agent6.skills import (
     resolve_states,
     skill_search_dirs,
 )
+from agent6.ui.cli._common import sgr as _sgr
 from agent6.ui.cli._steer_menu import COMMANDS as _MENU_COMMANDS
 
 _ORIGIN_FILE = ".origin.toml"
 _FETCH_TIMEOUT_S = 30.0
 _FETCH_MAX_BYTES = 1_048_576  # a SKILL.md is prose; 1 MiB is already generous
-
-
-def _sgr(text: str, code: str) -> str:
-    """Wrap in an ANSI style, tty only, so piped output stays plain."""
-    return f"\x1b[{code}m{text}\x1b[0m" if sys.stdout.isatty() else text
 
 
 def _term_width() -> int:

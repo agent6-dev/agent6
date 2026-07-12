@@ -8,8 +8,12 @@ list of invariants that PRs are not allowed to weaken.
 
 The load-bearing invariants, collected; each is detailed in its section below.
 
-- No `git push`, `--force`, history rewrite, `reset --hard`, or `branch -D`.
-  `git_ops.py` refuses them unconditionally; don't add overrides.
+- No `git push`, `--force`, history rewrite, or `reset --hard`. `git_ops.py`
+  refuses them unconditionally; don't add overrides. `branch -D` is refused for
+  the model (the `_git_guard` run_command boundary is absolute), with ONE
+  operator-only exception: `runs prune --delete-squashed` force-deletes a run
+  branch the manifest confirms was squash-merged into its base (content-safe,
+  the commit survives in the reflog). That path never touches LLM output.
 - Every child process whose argv depends on LLM output goes through
   `run_in_jail`; never a direct `subprocess` of model output
   (audit: `rg 'subprocess\.(run|Popen)' src/agent6/`).
