@@ -368,6 +368,18 @@ instance to make an in-jail verify pass) would silently corrupt the venv, and
 because venvs are gitignored the damage never surfaces in `runs diff` / merge.
 Reads stay allowed; only writes are refused, on both profiles.
 
+A related limitation: the jail bind-mounts the repo at a fixed path
+(`/workspace`), but a Python **editable install** records this checkout's
+absolute host path in its `.pth`, which does not exist under `/workspace`. So a
+`verify_command` that imports the project's own package can fail in the jail
+with `ModuleNotFoundError` even though it works on the host. This is inherent to
+the stable mount point (remounting at the host path would couple the sandbox to
+the host layout); it is not auto-worked-around. Make the package importable
+without the host-path `.pth`: set pytest `pythonpath` (agent6's own `pyproject`
+does, so it can run its suite on itself in the jail), add a `conftest.py`, or
+use a non-editable install. Flat-layout projects that import from the repo root
+are unaffected.
+
 ### 5b. Secrets, `connect`, and running as root
 
 - **Secrets at rest.** Provider API keys live in
