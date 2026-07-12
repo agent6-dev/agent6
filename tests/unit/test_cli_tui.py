@@ -10,6 +10,7 @@ These cover the wiring that fixes that.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -263,10 +264,12 @@ def test_approver_away_deny_auto_denies(tmp_path: Path, monkeypatch: pytest.Monk
     assert _events_of(log, "approval.answer")[0]["source"] == "away-deny"
 
 
-def test_approver_away_wait_uses_reattached_front_end(
+def test_approver_live_front_end_wins_over_away_mode(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Detach chose "wait": approval blocks until a reattached front-end answers.
+    # A live front-end (a re-attached watch/TUI/web) is always asked, in its own
+    # UI, regardless of the detach away-mode -- away-mode governs only the window
+    # when nothing is attached. Even under away="deny", a live front-end answers.
     from agent6.ui.bridge.approval import set_away_mode
 
     log = tmp_path / "logs.jsonl"
@@ -274,7 +277,33 @@ def test_approver_away_wait_uses_reattached_front_end(
     monkeypatch.setattr(interactmod, "frontend_is_live", _live)  # a front-end is attached
     monkeypatch.setattr(interactmod, "read_answer", _ans_yes)  # and it approved
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)  # no stdin fall
+    set_away_mode(tmp_path, "deny")  # would deny if the front-end did NOT win
+    approve = interactmod.build_approver(tmp_path, events)
+    assert approve("ls") is True  # the attached front-end approved despite away=deny
+    assert _events_of(log, "approval.answer")[0]["source"] == "frontend"
+
+
+def test_approver_away_wait_blocks_for_a_front_end_when_none_attached(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # away="wait" with NOTHING attached: block until a front-end attaches and
+    # answers. A writer thread attaches (frontend.pid) + answers after a beat.
+    import threading
+    import time
+
+    from agent6.ui.bridge.approval import set_away_mode, write_answer, write_frontend_pid
+
+    log = tmp_path / "logs.jsonl"
+    events = EventSink(log)
+    monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)  # never stdin
     set_away_mode(tmp_path, "wait")
+
+    def attach_and_answer() -> None:
+        time.sleep(0.3)
+        write_frontend_pid(tmp_path, os.getpid())  # a front-end re-attaches
+        write_answer(tmp_path, "approval-1", approved=True)  # and answers
+
+    threading.Thread(target=attach_and_answer, daemon=True).start()
     approve = interactmod.build_approver(tmp_path, events)
     assert approve("ls") is True
     assert _events_of(log, "approval.answer")[0]["source"] == "away-wait"
