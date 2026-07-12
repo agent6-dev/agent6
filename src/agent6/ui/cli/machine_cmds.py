@@ -298,6 +298,28 @@ def _build_machine_agent_runner(
     passes the draft log, so the subprocess writes a watchable event stream there.
     """
 
+    def salvage_spend(events_log: Path | None) -> tuple[float, int, int]:
+        """Best-effort spend recovery for a killed/timed-out agent subprocess:
+        its result.json never landed, but the state's own event log carries the
+        loop's running ``budget.update`` totals. Without this every timed-out
+        state books usd=0, so a 24/7 machine whose weak model times out often
+        burns real money against a $0 ledger and its budget guard never trips
+        (observed live: a 600s hunt state spent $0.059, journaled as $0)."""
+        if events_log is None or not events_log.is_file():
+            return 0.0, 0, 0
+        usd, tokens_in, tokens_out = 0.0, 0, 0
+        with contextlib.suppress(OSError):
+            for line in events_log.read_text(encoding="utf-8", errors="replace").splitlines():
+                try:
+                    e = json.loads(line)
+                except ValueError:
+                    continue
+                if e.get("type") == "budget.update":
+                    usd = float(e.get("usd_total", usd) or 0.0)
+                    tokens_in = int(e.get("input_total", tokens_in) or 0)
+                    tokens_out = int(e.get("output_total", tokens_out) or 0)
+        return usd, tokens_in, tokens_out
+
     def run_agent(request: AgentRequest, events_log: Path | None = None) -> AgentExecResult:
         payload = {
             "cwd": str(cwd),
@@ -352,13 +374,34 @@ def _build_machine_agent_runner(
                 with contextlib.suppress(ProcessLookupError):
                     os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
                 proc.wait()
-                return AgentExecResult(reason="timeout", payload=None)
+                usd, tokens_in, tokens_out = salvage_spend(events_log)
+                return AgentExecResult(
+                    reason="timeout",
+                    payload=None,
+                    usd=usd,
+                    input_tokens=tokens_in,
+                    output_tokens=tokens_out,
+                )
             if proc.returncode != 0 or not out_file.is_file():
-                return AgentExecResult(reason="error", payload=None)
+                usd, tokens_in, tokens_out = salvage_spend(events_log)
+                return AgentExecResult(
+                    reason="error",
+                    payload=None,
+                    usd=usd,
+                    input_tokens=tokens_in,
+                    output_tokens=tokens_out,
+                )
             try:
                 out = json.loads(out_file.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
-                return AgentExecResult(reason="error", payload=None)
+                usd, tokens_in, tokens_out = salvage_spend(events_log)
+                return AgentExecResult(
+                    reason="error",
+                    payload=None,
+                    usd=usd,
+                    input_tokens=tokens_in,
+                    output_tokens=tokens_out,
+                )
             result_payload = out.get("payload")
             return AgentExecResult(
                 reason=str(out.get("reason", "error")),

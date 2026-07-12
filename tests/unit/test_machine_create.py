@@ -623,3 +623,48 @@ def test_create_never_ships_script_exits_1(
     # no half-written bundle left behind.
     assert not (tmp_path / "scripted.asm.toml").exists()
     assert not (tmp_path / "scripts").exists()
+
+
+def test_timed_out_agent_state_salvages_spend_from_its_event_log(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A SIGKILLed (timed-out) agent subprocess never writes result.json, but
+    its event log carries the loop's running budget totals. The runner must
+    book that real spend, or a 24/7 machine full of weak-model timeouts burns
+    money against a $0 ledger and its budget guard never trips."""
+    import subprocess as sp
+
+    events_log = tmp_path / "logs.jsonl"
+    events_log.write_text(
+        json.dumps({"type": "budget.update", "input_total": 100, "output_total": 5})
+        + "\n"
+        + json.dumps(
+            {
+                "type": "budget.update",
+                "input_total": 66084,
+                "output_total": 838,
+                "usd_total": 0.0588752,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    class _HungProc:
+        pid = 424242
+        returncode = None
+
+        def wait(self, timeout: float | None = None) -> int:
+            if timeout is not None:
+                raise sp.TimeoutExpired(cmd="agent", timeout=timeout)
+            return 0
+
+    monkeypatch.setattr(cli.subprocess, "Popen", lambda *a, **k: _HungProc())
+    monkeypatch.setattr(cli.os, "getpgid", lambda _pid: 424242)
+    monkeypatch.setattr(cli.os, "killpg", lambda _pgid, _sig: None)
+
+    runner = cli._build_machine_agent_runner({}, tmp_path, "strict", tmp_path / "tr")  # pyright: ignore[reportPrivateUsage]
+    res = runner(AgentRequest(prompt="p", timeout_s=1.0, mode="agent"), events_log)
+    assert res.reason == "timeout"
+    assert res.usd == pytest.approx(0.0588752)
+    assert (res.input_tokens, res.output_tokens) == (66084, 838)
