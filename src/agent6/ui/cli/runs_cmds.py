@@ -34,9 +34,10 @@ from agent6.git_ops import (
 from agent6.git_ops import status as git_status
 from agent6.runs.id import RunIdError, resolve_run_id
 from agent6.runs.layout import RunLayout
-from agent6.ui.cli._common import _runs_dir, _state_dir, sgr
+from agent6.ui.bridge.approval import request_stop, worker_is_alive
+from agent6.ui.cli._common import _runs_dir, _state_dir, all_run_dirs, resolve_run_layout, sgr
 from agent6.ui.cli._merge import execute_merge
-from agent6.ui.cli.plan_watch import _most_recent_run_id
+from agent6.ui.cli.plan_watch import _most_recent_run_id, _newest_dir
 from agent6.ui.viewmodel import summarize_run_dir, task_snippet
 from agent6.ui.viewmodel.format import format_cost, status_label
 
@@ -238,6 +239,37 @@ def _resolve_run_manifest(
         print(f"ERROR: could not read manifest: {exc}", file=sys.stderr)
         return 2
     return layout, manifest
+
+
+def _cmd_stop(*, run_id: str) -> int:
+    """Ask a running detached run to stop cleanly after its current step.
+
+    Drops the same 'stop after this step' marker the TUI/web Stop button uses:
+    the run finishes the in-flight step (its tool results and auto-commit land),
+    then ends and is resumable. For a running run only; a finished one is a no-op
+    with a note."""
+    cwd = Path.cwd()
+    try:
+        layout = resolve_run_layout(cwd, run_id) if run_id else None
+    except RunIdError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    if layout is None:
+        latest = _newest_dir(all_run_dirs(cwd))
+        if latest is None:
+            print("ERROR: no runs to stop.", file=sys.stderr)
+            return 2
+        run_dir = latest
+    else:
+        run_dir = layout.run_dir
+    rid = run_dir.name
+    if not worker_is_alive(run_dir):
+        print(f"[agent6] {rid} is not running; nothing to stop.", file=sys.stderr)
+        return 0
+    request_stop(run_dir)
+    print(f"[agent6] requested stop for {rid}; it ends after the current step.")
+    print(f"  resume with:  agent6 resume {rid}")
+    return 0
 
 
 def _cmd_commits(*, run_id: str) -> int:

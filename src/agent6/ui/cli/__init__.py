@@ -86,6 +86,7 @@ from agent6.ui.cli.runs_cmds import (
     _cmd_list,
     _cmd_merge,
     _cmd_prune,
+    _cmd_stop,
 )
 from agent6.ui.cli.skills_cmds import (
     _cmd_skills_disable,
@@ -332,6 +333,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             )
         if args.runs_command == "commits":
             return _cmd_commits(run_id=args.run_id)
+        if args.runs_command == "stop":
+            return _cmd_stop(run_id=args.run_id)
         if args.runs_command == "prune":
             return _cmd_prune(delete_squashed=args.delete_squashed)
         if args.runs_command == "transcript":

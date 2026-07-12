@@ -489,6 +489,15 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     runs_commits_id.completer = _complete_run_ids  # type: ignore[attr-defined]
 
+    runs_stop = _sub(
+        runs_sub,
+        "stop",
+        help="Ask a running detached run to stop cleanly after its current step (resumable).",
+    )
+    runs_stop.add_argument(
+        "run_id", nargs="?", default="", help="Run id or unique prefix; omit for the most recent."
+    )
+
     runs_prune = _sub(
         runs_sub,
         "prune",
