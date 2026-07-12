@@ -576,7 +576,31 @@ def _watch_transcript(target: Path) -> int:
     return 0
 
 
-def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0912, PLR0915
+def _line_is_run_end(raw: bytes | str) -> bool:
+    """True if a logs.jsonl line is a ``run.end`` event."""
+    text = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
+    try:
+        obj = json.loads(text)
+    except (ValueError, TypeError):
+        return False
+    return isinstance(obj, dict) and obj.get("type") == "run.end"
+
+
+def _run_has_ended(events_path: Path) -> bool:
+    """True if the run's last logged event is ``run.end`` (finished, nothing to
+    follow). A resume appends events after a run.end, so only the LAST line
+    counts."""
+    try:
+        with events_path.open("rb") as fh:
+            last = b""
+            for last in fh:  # noqa: B007 - keep the final line
+                pass
+    except OSError:
+        return False
+    return bool(last) and _line_is_run_end(last)
+
+
+def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0911, PLR0912, PLR0915
     """Tail ``logs.jsonl`` line-by-line with no extra deps.
 
     Polls the file with 0.25s sleeps; rotates when the inode changes.
@@ -627,8 +651,16 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0912, PLR0
                 return 2
             for raw in lines[-since:]:
                 line = raw.decode("utf-8", errors="replace")
-                print(format_plain_event(line, run_start_ts=run_start_ts))
+                # flush: piped/redirected output must not lose the replay to the
+                # block buffer when the run is idle/finished (nothing else flushes).
+                print(format_plain_event(line, run_start_ts=run_start_ts), flush=True)
+            if lines and _line_is_run_end(lines[-1]):
+                return 0  # already finished: replayed, nothing to follow
         else:
+            # A finished run has no new events to follow; seeking to end would hang.
+            if _run_has_ended(events_path):
+                print("[agent6] run already finished.", file=sys.stderr)
+                return 0
             # Seek to end; only show new events going forward.
             fh.seek(0, 2)
         try:
@@ -645,6 +677,8 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0912, PLR0
                 line = pending.decode("utf-8", errors="replace")
                 pending = b""
                 print(format_plain_event(line, run_start_ts=run_start_ts), flush=True)
+                if _line_is_run_end(line):
+                    return 0  # run ended: stop, like the default follower
                 continue
             # No new data: check for rotation and sleep briefly.
             try:
