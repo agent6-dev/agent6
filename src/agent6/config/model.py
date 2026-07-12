@@ -503,6 +503,16 @@ class GitConfig(BaseModel):
     # the stash with a message rather than risk a conflicted auto-apply.
     auto_stash_pop: bool = False
     branch_per_run: bool = True
+    # Where a run's branch is cut from when you are NOT on the base branch (e.g.
+    # you are still on a previous run's `agent6/*` branch, having not merged it):
+    #   "current" (default) -- cut from HEAD, STACKING the new run on the current
+    #      branch's work. Serial runs pile up; deliberate if you are iterating.
+    #   "base" -- cut from the base branch (the nearest non-run branch this branch
+    #      descends from), so each run starts from a clean line, not the last run.
+    #   "ask" -- prompt when you are not on the base branch (stack / from base /
+    #      abort); non-interactive falls back to "base" (the un-surprising choice).
+    # No effect when you are already on the base branch (nothing to stack on).
+    branch_from: Literal["current", "base", "ask"] = "current"
     # Default strategy for `agent6 runs merge`: how the run branch lands on
     # your branch. `squash` (one combined commit), `merge` (a
     # --no-ff merge keeping the per-step history), or `ff` (fast-forward only).

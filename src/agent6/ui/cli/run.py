@@ -118,6 +118,9 @@ from agent6.ui.cli._manifest import (
     write_run_manifest as _write_run_manifest,
 )
 from agent6.ui.cli._preflight import (
+    choose_branch_start_point as _choose_branch_start_point,
+)
+from agent6.ui.cli._preflight import (
     confirm_run_on_run_branch as _confirm_run_on_run_branch,
 )
 from agent6.ui.cli._preflight import (
@@ -437,8 +440,16 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         # is pure litter. create_branch is idempotent (reuses an existing branch).
         if cfg.git.branch_per_run and mode == "run":
             run_branch = f"agent6/{effective_run_id}"
+            # git.branch_from decides whether to cut from HEAD (stack) or from the
+            # base line when you are on a previous run's branch (see BranchChoice).
+            branch_choice = _choose_branch_start_point(cfg, layout.state_dir, base_branch)
+            if branch_choice.abort:
+                print("[agent6] aborted; nothing was started.", file=sys.stderr)
+                clear_worker_pid(layout.run_dir)
+                _release_single_writer(worker_lock_fd)
+                return 0
             try:
-                create_branch(cwd, run_branch)
+                create_branch(cwd, run_branch, start_point=branch_choice.start_point)
             except GitError as exc:
                 print(f"ERROR: could not cut run branch {run_branch}: {exc}", file=sys.stderr)
                 return 2

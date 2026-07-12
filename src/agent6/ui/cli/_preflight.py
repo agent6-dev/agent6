@@ -5,7 +5,9 @@ warnings, and per-run verify-command resolution."""
 
 from __future__ import annotations
 
+import json
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from agent6.budget import BudgetTracker
@@ -14,6 +16,7 @@ from agent6.events import EventSink
 from agent6.git_ops import is_git_repo
 from agent6.models.pricing import lookup_price
 from agent6.providers import TranscriptSink
+from agent6.runs.layout import RunLayout
 from agent6.types import SandboxProfile
 from agent6.ui.cli._steer import tty_prompt as _tty_prompt
 from agent6.ui.cli.providers import (
@@ -151,21 +154,99 @@ def confirm_unconfined_autorun(selected_profile: SandboxProfile, cfg: Config) ->
 
 
 def warn_if_headless_ask(cfg: Config, *, tui_enabled: bool) -> None:
-    """Warn when run_commands='ask' but no approver is reachable.
+    """Note when run_commands='ask' but no approver is reachable at start.
 
-    A headless run (no TUI, no controlling TTY) has nothing to answer the
-    Allow/Deny prompt, so every ``run_command`` is auto-denied. Surface that up
-    front instead of letting the agent hit confusing mid-run "denied" errors
-    (observed dogfooding a headless run). run_verify_command is unaffected.
+    A headless run (no TUI, no controlling TTY) has nothing here to answer the
+    Allow/Deny prompt, so a run_command PAUSES for a front-end to attach. Say so
+    up front instead of letting the agent look wedged. run_verify_command is
+    unaffected.
     """
     if cfg.sandbox.run_commands == "ask" and not tui_enabled and not sys.stdin.isatty():
         print(
-            "[agent6] NOTE: sandbox.run_commands='ask' but this run is headless (no TUI,"
-            " no TTY), so run_command calls will be auto-denied. Pass --auto-approve"
-            " (or set sandbox.run_commands='yes') to auto-approve, or 'no' to withhold"
-            " run_command, for headless/CI runs.",
+            "[agent6] NOTE: sandbox.run_commands='ask' with no terminal here, so a"
+            " run_command will PAUSE until you attach a front-end to approve it"
+            " (`agent6 attach <run>`, the TUI, or the web). Set"
+            " sandbox.run_commands='yes'/'no' to auto-approve/deny for unattended runs.",
             file=sys.stderr,
         )
+
+
+_RUN_BRANCH_PREFIX = "agent6/"
+
+
+@dataclass(frozen=True, slots=True)
+class BranchChoice:
+    """Where a run's branch is cut from (``git.branch_from``). ``start_point`` is
+    a branch/sha to cut from, or None to cut from the current HEAD (stack).
+    ``abort`` is set when the operator declined at the ``ask`` prompt."""
+
+    start_point: str | None
+    abort: bool = False
+
+
+def _manifest_base_branch(state_dir: Path, run_id: str) -> str | None:
+    """The base branch a run recorded it was cut from (manifest.base_branch)."""
+    layout = RunLayout(state_dir=state_dir, run_id=run_id)
+    try:
+        manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    base = manifest.get("base_branch")
+    return str(base) if base else None
+
+
+def resolve_base_branch(state_dir: Path, current_branch: str) -> str:
+    """Walk the run-branch chain down to the base line: the nearest ancestor
+    branch that is NOT an ``agent6/*`` run branch. A run records the branch it
+    was cut from, so we follow those manifests (guarding against a cycle) until a
+    non-run branch or the chain breaks. Returns *current_branch* unchanged when
+    it is already a base branch."""
+    branch = current_branch
+    seen: set[str] = set()
+    while branch.startswith(_RUN_BRANCH_PREFIX) and branch not in seen:
+        seen.add(branch)
+        base = _manifest_base_branch(state_dir, branch[len(_RUN_BRANCH_PREFIX) :])
+        if not base:
+            break
+        branch = base
+    return branch
+
+
+def _ask_branch_start_point(current_branch: str, base: str) -> BranchChoice:
+    """The ``branch_from = "ask"`` prompt: on a terminal, choose base / stack /
+    abort; headless falls back to the clean base (the un-surprising choice)."""
+    if not sys.stdin.isatty():
+        return BranchChoice(start_point=base)
+    print(
+        f"[agent6] You are on {current_branch!r}, not the base branch {base!r}.",
+        file=sys.stderr,
+    )
+    ans = _tty_prompt(
+        f"  Cut this run from: [b]ase {base!r} (clean start) /"
+        f" [s]tack on {current_branch!r} / [a]bort? [b]: ",
+        fall_back_to_stdin=False,
+    )
+    choice = (ans or "").strip().lower()
+    if choice in {"s", "stack"}:
+        return BranchChoice(start_point=None)
+    if choice in {"a", "abort"}:
+        return BranchChoice(start_point=None, abort=True)
+    return BranchChoice(start_point=base)
+
+
+def choose_branch_start_point(cfg: Config, state_dir: Path, current_branch: str) -> BranchChoice:
+    """Decide where the run branch is cut from, per ``git.branch_from``:
+    ``current`` stacks on HEAD; ``base`` cuts from the resolved base line;
+    ``ask`` prompts (base / stack / abort) when you are not already on the base.
+    No decision to make when the current branch IS the base."""
+    if cfg.git.branch_from == "current":
+        return BranchChoice(start_point=None)
+    base = resolve_base_branch(state_dir, current_branch)
+    if current_branch == base:
+        return BranchChoice(start_point=None)  # already on the base; nothing to stack on
+    if cfg.git.branch_from == "base":
+        return BranchChoice(start_point=base)
+    return _ask_branch_start_point(current_branch, base)
 
 
 def infer_verify_if_unset(

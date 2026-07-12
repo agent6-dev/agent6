@@ -353,14 +353,19 @@ def force_delete_squash_merged_branch(path: Path, branch: str) -> bool:
     return _run(path, "branch", "-D", branch, check=False).ok
 
 
-def create_branch(path: Path, name: str) -> None:
-    """Create *name* from HEAD and check it out, or just check it out if it
-    already exists. Idempotent so re-running/resuming a run reuses the run's
-    branch instead of cutting a near-duplicate (no `branch -D` needed, which we
-    refuse anyway)."""
+def create_branch(path: Path, name: str, *, start_point: str | None = None) -> None:
+    """Create *name* and check it out, or just check it out if it already exists.
+
+    *start_point* (a branch/sha) is where a NEW branch is cut from; None means
+    the current HEAD. Idempotent: an existing branch is only checked out, never
+    moved (that would be a force/rewrite, which is refused), so re-running or
+    resuming a run reuses the run's branch. ``git.branch_from`` uses start_point
+    to cut a run from its base instead of stacking on the current checkout."""
     existing = _run(path, "branch", "--list", name, check=False)
     if existing.ok and existing.stdout.strip():
         _run(path, "checkout", name)
+    elif start_point:
+        _run(path, "checkout", "-b", name, start_point)
     else:
         _run(path, "checkout", "-b", name)
 
