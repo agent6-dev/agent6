@@ -62,7 +62,10 @@ def spawn_new_work(cwd: Path, mode: str, task: str, profile: str = "") -> tuple[
         cwd,
         before=set(model.run_dir_paths(cwd)),
         list_dirs=lambda: model.run_dir_paths(cwd),
-        env={**os.environ, "AGENT6_STREAM_TO_LOG": "1"},
+        # AGENT6_DETACHED_AWAY=wait: this run is driven from the browser over the
+        # bridge, so approvals and questions must WAIT for a viewer, not fabricate
+        # empty answers when the tab is momentarily disconnected (see run.py).
+        env={**os.environ, "AGENT6_STREAM_TO_LOG": "1", "AGENT6_DETACHED_AWAY": "wait"},
     )
     return (run_dir.name if run_dir is not None else None), err
 

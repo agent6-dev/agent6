@@ -289,6 +289,32 @@ def test_tui_session_disabled_is_noop(tmp_path: Path) -> None:
     assert not (tmp_path / "tui_console.log").exists()
 
 
+def test_spawned_away_default_sets_wait_from_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A front-end launcher (web/TUI hub) sets AGENT6_DETACHED_AWAY so a spawned,
+    # terminal-less run WAITS for a viewer instead of fabricating empty answers.
+    from agent6.ui.bridge.approval import away_mode
+    from agent6.ui.cli.run import _apply_spawned_away_default  # pyright: ignore[reportPrivateUsage]
+
+    monkeypatch.setenv("AGENT6_DETACHED_AWAY", "wait")
+    _apply_spawned_away_default(tmp_path)
+    assert away_mode(tmp_path) == "wait"
+
+
+def test_spawned_away_default_is_noop_without_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A pure headless run (no launcher, no env) is untouched, keeping its
+    # non-hanging default so CI never blocks on an unanswerable question.
+    from agent6.ui.bridge.approval import away_mode
+    from agent6.ui.cli.run import _apply_spawned_away_default  # pyright: ignore[reportPrivateUsage]
+
+    monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
+    _apply_spawned_away_default(tmp_path)
+    assert away_mode(tmp_path) == ""
+
+
 def test_approver_away_deny_auto_denies(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Detach chose "deny all": every run_command is denied without prompting.
     from agent6.ui.bridge.approval import set_away_mode

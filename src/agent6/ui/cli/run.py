@@ -57,6 +57,7 @@ from agent6.ui.bridge.approval import (
     clear_worker_pid,
     compact_request_pending,
     session_allow_set,
+    set_away_mode,
     stop_request_pending,
     write_worker_pid,
 )
@@ -206,6 +207,17 @@ def _skills_task_prefix(cfg: Config, names: tuple[str, ...]) -> tuple[str, str]:
         f"Apply the operator-installed skill(s) below to this task.\n\n{joined}\n\n---\n\n",
         "",
     )
+
+
+def _apply_spawned_away_default(run_dir: Path) -> None:
+    """Honor AGENT6_DETACHED_AWAY, set by a front-end launcher (web/TUI hub) that
+    spawns a run detached and drives it over the bridge. Without it a spawned run
+    with no terminal fabricates empty ask_user answers when no viewer is live;
+    'wait' makes approvals and questions block for a front-end. A pure headless
+    run (no launcher) sets no env, so this is a no-op and it keeps its default."""
+    away = os.environ.get("AGENT6_DETACHED_AWAY", "")
+    if away in ("wait", "approve", "deny"):
+        set_away_mode(run_dir, away)
 
 
 def _discard_husk_dir(run_dir: Path) -> None:
@@ -404,6 +416,14 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     clear_pending_answers(layout.run_dir)
     if sys.stdin.isatty():  # a foreground start clears a stale detach away-mode
         clear_away_mode(layout.run_dir)
+    else:
+        # A front-end launcher (web/TUI hub) spawns this run detached and drives
+        # it over the bridge, but with no controlling terminal ask_user would
+        # otherwise fabricate an empty answer when no viewer happens to be
+        # connected. The launcher sets AGENT6_DETACHED_AWAY so approvals AND
+        # questions WAIT for a front-end instead. A pure headless run (CI, no
+        # launcher) sets no env, so it keeps its non-hanging default.
+        _apply_spawned_away_default(layout.run_dir)
     # Record this worker's pid so `agent6 runs show` can probe liveness even while
     # the worker is blocked in a long provider call (which emits no events).
     write_worker_pid(layout.run_dir, os.getpid())

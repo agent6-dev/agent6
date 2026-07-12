@@ -548,7 +548,9 @@ def _spawn_and_locate(
         # reasoning + answer from role.*_delta events. Tell the detached (non-TTY)
         # run to emit those deltas to its logs.jsonl; without this it takes the
         # non-streaming path and the dashboard shows only worker status.
-        env={**os.environ, "AGENT6_STREAM_TO_LOG": "1"},
+        # AGENT6_DETACHED_AWAY=wait: driven from the dashboard over the bridge, so
+        # approvals/questions WAIT for the front-end, never fabricate an answer.
+        env={**os.environ, "AGENT6_STREAM_TO_LOG": "1", "AGENT6_DETACHED_AWAY": "wait"},
     )
 
 
