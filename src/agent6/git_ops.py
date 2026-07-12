@@ -15,6 +15,7 @@ import os
 import re
 import shutil
 import subprocess
+import textwrap
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -664,14 +665,37 @@ def condense_commit_message(
             if m and m.group(1).strip().lower() not in seen_ca:
                 seen_ca.add(m.group(1).strip().lower())
                 coauthors.append(m.group(1).strip())
-    headline = _ITER_SUBJECT_RE.sub("", subject).strip() or (
-        bullets[0] if bullets else "agent6 run"
-    )
+    task = _ITER_SUBJECT_RE.sub("", subject).strip()
+    headline = _headline_subject(task) or (bullets[0] if bullets else "agent6 run")
     parts = [headline]
+    # If the subject truncated the task, wrap the full task into the body so
+    # nothing is lost (git never wraps the subject line itself).
+    full = " ".join(task.split())
+    if full and full != headline:
+        parts.append("")
+        parts.extend(textwrap.wrap(full, width=72))
     if bullets:
         parts.append("")
         parts.extend(f"- {b}" for b in bullets)
     return "\n".join(parts), tuple(coauthors)
+
+
+_SUBJECT_LIMIT = 72  # git's soft subject cap; conventional tooling truncates past it
+
+
+def _headline_subject(task: str, *, limit: int = _SUBJECT_LIMIT) -> str:
+    """A short commit subject derived from the task's first clause: its first
+    line, up to the first sentence end, whitespace-collapsed, capped at *limit*
+    (an ellipsis marks a truncation). A run's whole task text as the subject
+    reads as one unwrapped 180-char line that every git tool clips; the full
+    task is wrapped into the body by the caller when this truncates it."""
+    first_line = next((ln for ln in task.splitlines() if ln.strip()), "")
+    match = re.search(r"[.!?](?:\s|$)", first_line)
+    clause = first_line[: match.start()] if match else first_line
+    clause = " ".join(clause.split())
+    if len(clause) <= limit:
+        return clause
+    return clause[: limit - 1].rstrip() + "…"
 
 
 def recent_log(path: Path, n: int = 20) -> str:

@@ -572,6 +572,27 @@ def test_condense_dedups_coauthors_and_strips_prefix(tmp_path: Path) -> None:
     assert "- add a" in message and "- add b" in message  # prefix stripped, bulleted
 
 
+def test_condense_subject_is_first_clause_and_wraps_the_rest(tmp_path: Path) -> None:
+    # A long multi-clause task must not become one 180-char subject line: the
+    # subject is the first clause (<= 72 chars); the whole task wraps into the body.
+    task = (
+        "Add a --limit flag to runs list. Then update the parser help and add a "
+        "focused unit test covering the newest-N slice and the argcomplete choices"
+    )
+    message, _ = condense_commit_message((), subject=task)
+    lines = message.splitlines()
+    assert lines[0] == "Add a --limit flag to runs list"  # first clause only
+    assert all(len(ln) <= 72 for ln in lines)  # nothing over the subject/body cap
+    assert "focused unit test" in message  # the rest is preserved, wrapped
+
+
+def test_condense_subject_truncates_a_clauseless_run_on_with_ellipsis(tmp_path: Path) -> None:
+    task = "make the thing " * 20  # 300 chars, no sentence break
+    message, _ = condense_commit_message((), subject=task)
+    subject = message.splitlines()[0]
+    assert len(subject) <= 72 and subject.endswith("…")
+
+
 def test_squash_merge_is_one_commit_with_single_coauthor(tmp_path: Path) -> None:
     _init_repo(tmp_path)
     base = status(tmp_path).head_sha
