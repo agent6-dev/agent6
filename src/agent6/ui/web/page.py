@@ -268,11 +268,19 @@ aside.rail { display: none; }
   .run-grid .card-head { grid-area: head; }
   .run-grid .run-side { grid-area: side; }
   .run-grid .card-log { grid-area: log; }
-  /* The conversation pins to the viewport (sticky under the 57px header) and
-     scrolls internally, so it stays in view while the page scrolls the side
-     cards; the side column keeps its own natural height. */
-  .run-grid .card-conv { grid-area: conv; position: sticky; top: 72px; }
-  .run-grid .card-conv .conv-box { height: calc(100vh - 190px); max-height: none; }
+  /* The conversation pins to the viewport (sticky under the header) and scrolls
+     internally, so it stays in view while the page scrolls the side cards. Cap
+     the whole CARD to the viewport (minus the sticky offset + a gap) and let the
+     header and composer take their natural height while .conv-box flexes to fill
+     the rest -- otherwise the card's chrome pushed it past the viewport and it
+     overhung the full-width event log below it. */
+  .run-grid .card-conv {
+    grid-area: conv;
+    position: sticky;
+    top: 72px;
+    max-height: calc(100vh - 88px);
+  }
+  .run-grid .card-conv .conv-box { flex: 1 1 auto; min-height: 0; max-height: none; height: auto; }
 }
 </style>
 </head>
