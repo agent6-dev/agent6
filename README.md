@@ -62,9 +62,9 @@ cd your-repo
 agent6 run "add a --json output mode to the CLI"
 
 # Watch and drive runs from a terminal, a full-screen TUI, or a browser.
-agent6 watch <run-id>         # plain live event stream (default)
+agent6 attach <run-id>        # follow + answer a run live (default: conversation view; --raw for the event stream)
 agent6 tui                    # full-screen dashboard hub
-agent6 web                    # browser UI on http://127.0.0.1:8901 (phone-friendly)
+agent6 web                    # browser UI on http://127.0.0.1:7658 (phone-friendly)
 
 # Audit the effective config, pre-flight the sandbox, resume or fork a run.
 agent6 config show
