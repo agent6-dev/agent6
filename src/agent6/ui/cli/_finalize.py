@@ -28,7 +28,7 @@ from agent6.git_ops import (
 )
 from agent6.runs.layout import RunLayout
 from agent6.ui.cli._merge import execute_merge
-from agent6.ui.viewmodel import status_word
+from agent6.ui.viewmodel import summarize_run_dir
 from agent6.workflows.loop import RunResult
 
 # Distinct exit code for a budget-exhausted run so automation can tell "raise
@@ -74,7 +74,15 @@ def print_run_end(
     plus a re-print of the summary. When the live ConsoleView already rendered the
     `● done <summary>` terminator (console_stream), this omits the summary and
     just adds what the stream lacks: cost and the branch / next-step footer."""
-    word, reason = status_word(finished=True, all_passed=result.completed, end_reason=result.reason)
+    # Read the outcome from the SAME fold `agent6 runs` uses, not from
+    # result.completed: completed means "the agent finished deliberately", which
+    # is true for a finish_run even when verify never went green. status_word off
+    # result.completed then prints "passed" while runs list reads the run.end
+    # event's real all_passed and prints "finished" -- the exact disagreement
+    # status_word exists to prevent. summarize_run_dir folds that event, so the
+    # console headline and the listing can never diverge.
+    summary = summarize_run_dir(layout.run_dir)
+    word, reason = summary.status, summary.reason
     if not console_stream:
         # Headless: no ConsoleView ran, so this block is the only end output.
         headline = word if not reason else f"{word} · {reason.replace('_', ' ')}"
