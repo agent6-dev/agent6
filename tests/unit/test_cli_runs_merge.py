@@ -228,6 +228,37 @@ def test_runs_diff_zero_commit_branch_prints_no_changes(
     assert "(no changes)" in capfd.readouterr().out
 
 
+def test_runs_diff_notes_uncommitted_work_on_the_live_run_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # A live run mid-work has uncommitted edits on its branch (a run commits
+    # only after a verify pass), so base..HEAD shows no committed changes. If
+    # that branch is the current checkout and dirty, say so instead of a bare
+    # "(no changes)" that reads as "the agent did nothing".
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-LIVE01", commits=[])
+    _git(tmp_path, "checkout", "-q", "agent6/run-LIVE01")  # the run's own checkout
+    (tmp_path / "work.py").write_text("in progress\n", encoding="utf-8")  # uncommitted
+    rc = main(["runs", "diff", "run-LIVE01"])
+    assert rc == 0
+    out = capfd.readouterr().out
+    assert "no committed changes yet" in out
+    assert "1 file modified" in out
+
+
+def test_runs_diff_stays_silent_when_dirty_tree_is_a_different_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    # The note only fires when the CURRENT branch is the diffed run's branch;
+    # uncommitted work on main (or another run) is not attributed to this run.
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-OTHER1", commits=[])
+    (tmp_path / "unrelated.py").write_text("x\n", encoding="utf-8")  # dirty, but on main
+    rc = main(["runs", "diff", "run-OTHER1"])
+    assert rc == 0
+    assert "(no changes)" in capfd.readouterr().out
+
+
 def test_runs_diff_with_commits_prints_the_patch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:

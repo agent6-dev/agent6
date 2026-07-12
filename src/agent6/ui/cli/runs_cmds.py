@@ -146,10 +146,47 @@ def _cmd_diff(*, run_id: str, stat: bool, paths: tuple[str, ...]) -> int:
         ["git", *git_hardening_flags(), *probe_args], cwd=cwd, check=False, capture_output=True
     )
     if probe.returncode == 0:
-        print("(no changes)")
+        # No COMMITTED changes yet. A run commits only after a verify pass, so a
+        # live run mid-work has its edits uncommitted on the worktree and this
+        # reads as "the agent did nothing". If the run branch is the current
+        # checkout and its worktree is dirty, say so instead of a bare silence.
+        dirty = _dirty_worktree_note(cwd, run_branch)
+        print(dirty if dirty else "(no changes)")
         return 0
     proc = subprocess.run(["git", *git_hardening_flags(), *args], cwd=cwd, check=False)
     return proc.returncode
+
+
+def _dirty_worktree_note(cwd: Path, run_branch: object) -> str:
+    """A note when the diffed run's branch is the current checkout and its
+    worktree has uncommitted work (a run commits only after each verify pass),
+    else "". Only speaks when the dirty files are unambiguously THIS run's:
+    the current branch must equal run_branch. Best-effort; git errors -> "" ."""
+    if not run_branch:
+        return ""
+    try:
+        current = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=cwd,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if current.returncode != 0 or current.stdout.strip() != str(run_branch):
+            return ""
+        status = subprocess.run(
+            ["git", "status", "--porcelain"], cwd=cwd, check=False, capture_output=True, text=True
+        )
+    except OSError:
+        return ""
+    n = len([ln for ln in status.stdout.splitlines() if ln.strip()])
+    if n == 0:
+        return ""
+    files = "file" if n == 1 else "files"
+    return (
+        f"(no committed changes yet; {n} {files} modified in the working tree — "
+        "a run commits after each verify pass)"
+    )
 
 
 def _resolve_run_manifest(
