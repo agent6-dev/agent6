@@ -13,8 +13,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from agent6.budget import BudgetTracker
+from agent6.git_ops import GitStatus
 from agent6.runs.layout import RunLayout
+from agent6.ui.cli import _finalize
 from agent6.ui.cli._finalize import print_run_end
 from agent6.workflows._run_state import RunResult
 
@@ -69,6 +73,42 @@ def test_all_green_finish_is_headlined_passed(tmp_path: Path, capsys: object) ->
     )
     out = capsys.readouterr().out  # type: ignore[attr-defined]
     assert "passed" in out
+
+
+def test_end_banner_warns_when_checkout_is_parked_on_the_run_branch(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    layout = _layout(
+        tmp_path,
+        "r3",
+        [
+            {"type": "run.start", "run_id": "r3", "user_task": "t"},
+            {"type": "run.end", "reason": "finish_run", "all_passed": True},
+        ],
+    )
+    layout.manifest_path.write_text(
+        json.dumps({"run_branch": "agent6/r3", "base_branch": "main"}), encoding="utf-8"
+    )
+
+    # The checkout is still on the run branch (branch_per_run never switches back).
+    def _on_run_branch(_p: Path) -> GitStatus:
+        return GitStatus(
+            branch="agent6/r3", head_sha="x", is_clean=True, untracked_count=0, modified_count=0
+        )
+
+    monkeypatch.setattr(_finalize, "git_status", _on_run_branch)
+    result = RunResult(
+        completed=True, reason="finish_run", summary="done", iterations=1, tool_calls=1
+    )
+    print_run_end(
+        result,
+        layout=layout,
+        budget=BudgetTracker(max_input_tokens=1000, max_output_tokens=1000),
+        console_stream=False,
+    )
+    out = capsys.readouterr().out
+    assert "you are on agent6/r3" in out
+    assert "git switch main" in out
 
 
 def test_provider_error_is_headlined_failed(tmp_path: Path, capsys: object) -> None:

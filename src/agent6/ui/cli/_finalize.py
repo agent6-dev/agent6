@@ -105,14 +105,23 @@ def print_run_end(
         print("    - add its real directory to [sandbox].extra_read_paths")
     print(budget.format_summary())
     run_branch = ""
+    base_branch = ""
     with contextlib.suppress(OSError, ValueError):
-        run_branch = json.loads(layout.manifest_path.read_text(encoding="utf-8")).get(
-            "run_branch", ""
-        )
+        manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+        run_branch = manifest.get("run_branch", "")
+        base_branch = manifest.get("base_branch", "")
     if result.completed and run_branch:
         print(f"\nchanges are on {run_branch}")
         print(f"  merge with:  agent6 runs merge {layout.run_id}")
         print(f"  inspect:     agent6 runs diff {layout.run_id}")
+        # The run left the checkout ON its branch (branch_per_run cuts it and
+        # never switches back). Say so + how to leave, or the next run stacks on
+        # it (see git.branch_from) and merge/prune defaults quietly shift.
+        current = ""
+        with contextlib.suppress(GitError):
+            current = git_status(Path.cwd()).branch
+        if current == run_branch and base_branch and base_branch != run_branch:
+            print(f"  you are on {run_branch}; return with: git switch {base_branch}")
     elif not result.completed:
         print(f"\nresume with:  agent6 resume {layout.run_id}")
 
