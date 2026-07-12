@@ -254,6 +254,22 @@ def paths_dirty(path: Path, rel_paths: tuple[str, ...]) -> bool:
     return bool(res.stdout.strip())
 
 
+def dirty_paths(path: Path, *, limit: int = 10) -> list[str]:
+    """Up to *limit* working-tree paths with uncommitted changes, each tagged
+    ``M`` (modified/staged) or ``?`` (untracked), for a dirty-tree refusal that
+    names what to deal with instead of just saying 'not clean'."""
+    res = _run(path, "status", "--porcelain=v1", "--untracked-files=all", check=False)
+    out: list[str] = []
+    for line in res.stdout.splitlines():
+        if not line.strip():
+            continue
+        tag = "?" if line.startswith("??") else "M"
+        out.append(f"{tag} {line[3:]}")
+        if len(out) >= limit:
+            break
+    return out
+
+
 def status(path: Path) -> GitStatus:
     if not is_git_repo(path):
         raise GitError(f"Not a git repository: {path}")

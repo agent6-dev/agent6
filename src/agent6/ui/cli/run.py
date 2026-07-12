@@ -27,6 +27,7 @@ from agent6.git_ops import (
     CommitIdentity,
     GitError,
     create_branch,
+    dirty_paths,
     set_repo_hook_policy,
     stash_all,
     verify_git_identity,
@@ -205,6 +206,17 @@ def _skills_task_prefix(cfg: Config, names: tuple[str, ...]) -> tuple[str, str]:
         f"Apply the operator-installed skill(s) below to this task.\n\n{joined}\n\n---\n\n",
         "",
     )
+
+
+def _discard_husk_dir(run_dir: Path) -> None:
+    """Remove a run dir a preflight refused before any real content was written
+    (no manifest, no logs). Otherwise a refused start (e.g. dirty worktree)
+    leaves an empty husk that `agent6 runs` lists as '(no logs)' forever. Guarded
+    on the manifest/logs check so a real run's dir is never removed."""
+    if (run_dir / "manifest.json").exists() or (run_dir / "logs.jsonl").exists():
+        return
+    with contextlib.suppress(OSError):
+        shutil.rmtree(run_dir)
 
 
 def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
@@ -414,16 +426,22 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                 print(f"ERROR: could not auto-stash before run: {exc}", file=sys.stderr)
                 clear_worker_pid(layout.run_dir)
                 _release_single_writer(worker_lock_fd)
+                _discard_husk_dir(layout.run_dir)
                 return 2
         elif cfg.git.require_clean_worktree:
+            dirty = dirty_paths(cwd)
+            listed = "\n".join(f"    {p}" for p in dirty)
+            more = "\n    ..." if len(dirty) >= 10 else ""
             print(
-                "REFUSING: working tree is not clean. Commit, stash, or discard "
-                "your changes, set [git].auto_stash=true, or set "
-                "[git].require_clean_worktree=false to override.",
+                "REFUSING: working tree is not clean:\n"
+                f"{listed}{more}\n"
+                "Commit, stash, or discard your changes, set [git].auto_stash=true, "
+                "or set [git].require_clean_worktree=false to override.",
                 file=sys.stderr,
             )
             clear_worker_pid(layout.run_dir)
             _release_single_writer(worker_lock_fd)
+            _discard_husk_dir(layout.run_dir)
             return 2
 
     egress_guard = EgressGuard()
@@ -447,6 +465,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                 print("[agent6] aborted; nothing was started.", file=sys.stderr)
                 clear_worker_pid(layout.run_dir)
                 _release_single_writer(worker_lock_fd)
+                _discard_husk_dir(layout.run_dir)
                 return 0
             try:
                 create_branch(cwd, run_branch, start_point=branch_choice.start_point)

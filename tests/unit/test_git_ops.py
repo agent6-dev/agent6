@@ -20,6 +20,7 @@ from agent6.git_ops import (
     create_branch,
     create_branch_at,
     diff_since,
+    dirty_paths,
     init_repo,
     is_git_repo,
     list_run_commits,
@@ -48,6 +49,20 @@ def _init_repo(path: Path) -> None:
     (path / "README.md").write_text("hi\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(path), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(path), "commit", "-q", "-m", "init"], check=True)
+
+
+def test_dirty_paths_tags_and_caps(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    assert dirty_paths(tmp_path) == []  # clean tree
+    (tmp_path / "new.txt").write_text("x\n", encoding="utf-8")  # untracked
+    (tmp_path / "README.md").write_text("changed\n", encoding="utf-8")  # modified
+    paths = dirty_paths(tmp_path)
+    assert "? new.txt" in paths
+    assert "M README.md" in paths
+    # the cap bounds the listing
+    for i in range(15):
+        (tmp_path / f"f{i}.txt").write_text("y\n", encoding="utf-8")
+    assert len(dirty_paths(tmp_path, limit=5)) == 5
 
 
 def test_commit_paths_ignores_unrelated_staged_work(tmp_path: Path) -> None:

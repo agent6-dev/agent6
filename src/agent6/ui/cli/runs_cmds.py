@@ -72,7 +72,14 @@ def _cmd_list() -> int:
     for sub in ("runs", "asks"):
         d = _state_dir(cwd) / sub
         if d.is_dir():
-            dirs.extend(p for p in d.iterdir() if p.is_dir())
+            # Skip husks: a dir with neither manifest nor logs never really started
+            # (a preflight refused it, or a crash orphaned it) -- listing it as
+            # "(no logs)" forever is noise, not a run.
+            dirs.extend(
+                p
+                for p in d.iterdir()
+                if p.is_dir() and ((p / "manifest.json").exists() or (p / "logs.jsonl").exists())
+            )
     if not dirs:
         print('no runs yet. Start one with `agent6 run "<task>"`.')
         return 0
@@ -87,8 +94,7 @@ def _cmd_list() -> int:
     status_w = max(6, *(len(plain) for _, _, plain, *_ in rows))
     id_w = max(2, *(len(r[5]) for r in rows))
     print(
-        f"{'updated':<11}  {'status':<{status_w}}  {'mode':<4}  "
-        f"{'cost':<8}  {'id':<{id_w}}  task"
+        f"{'updated':<11}  {'status':<{status_w}}  {'mode':<4}  {'cost':<8}  {'id':<{id_w}}  task"
     )
     for when, styled, plain, mode, cost, run_id, task in rows:
         pad = " " * (status_w - len(plain))
