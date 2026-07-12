@@ -301,6 +301,72 @@ def test_apply_edit_allows_git_write_when_protect_git_false(tmp_path: Path) -> N
     assert (tmp_path / ".git" / "description").read_text(encoding="utf-8") == "ok\n"
 
 
+def test_apply_edit_refuses_writes_inside_a_virtualenv(tmp_path: Path) -> None:
+    # A run rewriting an editable-install .pth inside .venv to make an in-jail
+    # verify pass silently corrupts the operator's environment (venvs are
+    # gitignored, so it never shows in the run's diff). pyvenv.cfg marks the
+    # venv root; the name is irrelevant.
+    cfg = _config(tmp_path)
+    venv = tmp_path / ".venv"
+    site = venv / "lib" / "python3.14" / "site-packages"
+    site.mkdir(parents=True)
+    (venv / "pyvenv.cfg").write_text("home = /usr/bin\n", encoding="utf-8")
+    pth = site / "_editable_impl_pkg.pth"
+    pth.write_text("/home/user/proj/src\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(ToolError, match=r"virtualenv|site-packages"):
+        d.dispatch(
+            "apply_edit",
+            {
+                "path": ".venv/lib/python3.14/site-packages/_editable_impl_pkg.pth",
+                "edits": [
+                    {
+                        "kind": "replace",
+                        "old_string": "/home/user/proj/src",
+                        "new_string": "/workspace/src",
+                    }
+                ],
+            },
+        )
+    assert pth.read_text(encoding="utf-8") == "/home/user/proj/src\n"  # untouched
+
+
+def test_apply_edit_refuses_site_packages_outside_a_pyvenv(tmp_path: Path) -> None:
+    # A site-packages tree without a pyvenv.cfg above it (a bare install layout)
+    # is still installed environment, not source.
+    cfg = _config(tmp_path)
+    site = tmp_path / "env" / "site-packages" / "pkg"
+    site.mkdir(parents=True)
+    (site / "mod.py").write_text("x = 1\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(ToolError, match="site-packages"):
+        d.dispatch(
+            "apply_edit",
+            {
+                "path": "env/site-packages/pkg/mod.py",
+                "edits": [{"kind": "replace", "old_string": "x = 1", "new_string": "x = 2"}],
+            },
+        )
+
+
+def test_apply_edit_allows_a_normal_source_file_named_like_env(tmp_path: Path) -> None:
+    # The guard keys on pyvenv.cfg / a site-packages ancestor, not on a name:
+    # a source file under a dir merely called "env" (no pyvenv.cfg) is fine.
+    cfg = _config(tmp_path)
+    src = tmp_path / "env" / "settings.py"
+    src.parent.mkdir()
+    src.write_text("DEBUG = False\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d.dispatch(
+        "apply_edit",
+        {
+            "path": "env/settings.py",
+            "edits": [{"kind": "replace", "old_string": "False", "new_string": "True"}],
+        },
+    )
+    assert "DEBUG = True" in src.read_text(encoding="utf-8")
+
+
 def test_apply_edit_refuses_extra_protect_paths(tmp_path: Path) -> None:
     # A machine bundle's .asm.toml + scripts/ are passed as extra_protect_paths.
     # The jail marks them read-only for run_command, but the in-process edit tools

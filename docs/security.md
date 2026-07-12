@@ -360,6 +360,14 @@ gated by `run_commands` (default `ask`), recoverable (branch-per-run,
 commits go through `git_ops`), and the surrounding container is the blast
 radius.
 
+The in-process edit tools (`apply_edit` / `apply_patch`) also refuse writes
+into an in-repo **virtualenv or installed-package tree** (a directory with
+`pyvenv.cfg`, or any `site-packages` ancestor). These are the operator's
+environment, not source: a run rewriting an editable-install `.pth` (for
+instance to make an in-jail verify pass) would silently corrupt the venv, and
+because venvs are gitignored the damage never surfaces in `runs diff` / merge.
+Reads stay allowed; only writes are refused, on both profiles.
+
 ### 5b. Secrets, `connect`, and running as root
 
 - **Secrets at rest.** Provider API keys live in

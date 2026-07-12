@@ -337,6 +337,42 @@ def _refuse_protected_write(
             )
 
 
+def _refuse_env_write(candidate: str, resolved: _SafePath) -> None:
+    """Refuse an in-process edit into an in-repo virtualenv or installed-package
+    tree. These are the operator's ENVIRONMENT, not source: a run editing them
+    (e.g. rewriting an editable-install ``.pth`` to make an in-jail verify pass)
+    silently corrupts the operator's venv, and since venvs are gitignored the
+    damage never shows in ``runs diff`` / merge. Observed live: a run rewrote
+    ``.venv/.../_editable_impl_*.pth`` from the host path to the jail's
+    ``/workspace`` and broke ``import`` on the host afterward.
+
+    A directory holding ``pyvenv.cfg`` is a virtualenv root (the canonical
+    marker, name-agnostic: ``.venv`` / ``venv`` / ``env``); a ``site-packages``
+    ancestor is an installed tree. Reads stay allowed; only writes are refused.
+    The check walks the post-symlink-resolution path so a decoy symlink can't
+    launder the write."""
+    ancestors = [resolved.abs_path, *resolved.abs_path.parents]
+    for anc in ancestors:
+        if anc.name == "site-packages":
+            raise ToolError(
+                f"Refusing to write into an installed-package tree (site-packages): "
+                f"{candidate!r}. Installed packages are environment, not source; "
+                f"editing them corrupts the operator's virtualenv."
+            )
+    # A venv root is an ancestor DIRECTORY containing pyvenv.cfg. Check ancestors
+    # of the target (not the target itself, which is the file being written).
+    for anc in resolved.abs_path.parents:
+        try:
+            if (anc / "pyvenv.cfg").is_file():
+                raise ToolError(
+                    f"Refusing to write inside a virtualenv ({anc.name}/): {candidate!r}. "
+                    f"A venv is environment, not source; editing it corrupts the "
+                    f"operator's setup and never shows in the run's diff."
+                )
+        except OSError:
+            continue
+
+
 class ToolDispatcher:
     """Runtime tool dispatcher. Constructed once per workflow run."""
 
@@ -741,13 +777,16 @@ class ToolDispatcher:
 
     def _refuse_protected_writes(self, path: str, resolved: _SafePath | None = None) -> None:
         """Refuse an in-process edit into a protected location (it bypasses the
-        jail entirely). ``.git`` under ``protect_git``, plus any operator/machine
+        jail entirely). ``.git`` under ``protect_git``, a virtualenv / installed
+        package tree (see ``_refuse_env_write``), plus any operator/machine
         protect paths (a machine bundle's ``.asm.toml`` + ``scripts/``), which the
         jail marks read-only for ``run_command`` but the in-process edit tools
         would otherwise let a ``mode="run"`` state rewrite -- persisting a payload
         for the next run. Applies on both sandbox profiles."""
         if self._config.sandbox.protect_git:
             _refuse_protected_write(path, ".git", why="git history/metadata", resolved=resolved)
+        if resolved is not None:
+            _refuse_env_write(path, resolved)
         if resolved is not None and self._extra_protect_paths:
             target = resolved.abs_path
             for prot in self._extra_protect_paths:
