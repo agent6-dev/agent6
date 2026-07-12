@@ -244,6 +244,37 @@ def _truncate(text: str, width: int) -> str:
     return text[: width - 1] + "\u2026"
 
 
+def render_key_detail(
+    eff: EffectiveConfig,
+    key: str,
+    *,
+    resolved: dict[str, Any] | None = None,
+    color: bool = False,
+) -> str | None:
+    """Render one config leaf (or a whole section prefix) UNTRUNCATED, for
+    ``agent6 config show <key>``: the full-width table clips long values (e.g. a
+    verify_command), so a single-key view prints the whole value plus its source,
+    default, and choices. Returns None when nothing matches *key*."""
+    view = build_config_view(eff, resolved=resolved)
+    matched = [s for s in view.settings if s.key == key or s.key.startswith(key + ".")]
+    if not matched:
+        return None
+    lines: list[str] = []
+    for s in matched:
+        value = (
+            f"{_fmt_value(s.effective_value)}  (adaptive)" if s.is_adaptive else _fmt_value(s.value)
+        )
+        header = f"{'*' if s.modified else ' '} {s.key}"
+        lines.append(f"\x1b[1m{header}\x1b[0m" if color else header)
+        lines.append(f"    value:   {value}")
+        if s.modified:
+            lines.append(f"    default: {_fmt_value(s.default)}")
+        lines.append(f"    source:  {s.source}")
+        if s.choices:
+            lines.append(f"    choices: {', '.join(str(c) for c in s.choices)}")
+    return "\n".join(lines) + "\n"
+
+
 def render_show(
     eff: EffectiveConfig,
     *,

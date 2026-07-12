@@ -36,16 +36,27 @@ from agent6.paths import (
     global_config_path,
     secrets_path,
 )
-from agent6.ui.viewmodel.config_view import format_value, render_show
+from agent6.ui.viewmodel.config_view import format_value, render_key_detail, render_show
 
 
-def _cmd_config_show(config_path: Path | None, *, as_json: bool) -> int:
+def _cmd_config_show(config_path: Path | None, *, as_json: bool, key: str = "") -> int:
     try:
         eff = load_effective(Path.cwd(), config_path)
     except ConfigError as exc:
         print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
         return 2
     resolved = models_registry.resolved_adaptive_values(eff.config)
+    if key and not as_json:
+        # `config show <key>`: one leaf (or a whole section prefix), untruncated.
+        detail = render_key_detail(eff, key, resolved=resolved, color=sys.stdout.isatty())
+        if detail is None:
+            print(
+                f"ERROR: no config key matches {key!r} (see `agent6 config show`).",
+                file=sys.stderr,
+            )
+            return 2
+        print(detail, end="")
+        return 0
     text = render_show(eff, as_json=as_json, resolved=resolved, color=sys.stdout.isatty())
     print(text, end="")
     return 0

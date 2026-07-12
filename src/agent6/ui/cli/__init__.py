@@ -380,7 +380,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
         )
     if args.command == "config":
         if args.config_command == "show":
-            return _cmd_config_show(args.config, as_json=args.as_json)
+            return _cmd_config_show(args.config, as_json=args.as_json, key=args.key)
         if args.config_command == "fill":
             return _cmd_config_fill(args.config, to_repo=args.repo, force=args.force)
         if args.config_command == "path":

@@ -754,6 +754,12 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
     config_show.add_argument(
+        "key",
+        nargs="?",
+        default="",
+        help="Show just this leaf (or a section prefix, e.g. 'sandbox') UNTRUNCATED.",
+    )
+    config_show.add_argument(
         "--json", action="store_true", dest="as_json", help="Emit JSON instead of a table."
     )
     config_fill = _sub(

@@ -77,6 +77,30 @@ def test_revalidate_machine_accepts_valid_spec(
     assert target.read_text(encoding="utf-8") == _GOOD  # untouched
 
 
+def test_config_show_single_key_prints_untruncated_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from agent6.ui.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    assert main(["config", "show", "sandbox.run_commands"]) == 0
+    out = capsys.readouterr().out
+    assert "sandbox.run_commands" in out and "value:" in out and "source:" in out
+    # A section prefix shows all its leaves.
+    assert main(["config", "show", "sandbox"]) == 0
+    assert "sandbox.agent_network" in capsys.readouterr().out
+
+
+def test_config_show_unknown_key_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from agent6.ui.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    assert main(["config", "show", "nope.nope"]) == 2
+    assert "no config key matches" in capsys.readouterr().err
+
+
 def test_config_add_on_scalar_key_says_not_a_list(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
