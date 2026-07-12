@@ -103,6 +103,14 @@ jobs:
           WEB_DEMO_PY=/tmp/pw/bin/python bash docs/screenshots/web_demo.sh
           WEB_DEMO_PY=/tmp/pw/bin/python bash docs/screenshots/web_machine_demo.sh
 
+      - name: Compose the README cover image
+        # Splices the CLI / TUI / web stills into one cover (out/cover.png),
+        # which the README embeds from agent6.dev. Pillow goes into the same
+        # isolated docs-tools venv as Playwright.
+        run: |
+          /tmp/pw/bin/pip install --quiet pillow
+          /tmp/pw/bin/python docs/screenshots/make_cover.py
+
       - name: Build the site (strict)
         run: >
           uvx --with mkdocs-material==9.7.6 --with mkdocs-glightbox==0.5.2

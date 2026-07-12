@@ -161,7 +161,7 @@ def scroll_card(page: Page, selector: str, y: int, *, wait: int = 1500) -> None:
     page.wait_for_timeout(wait)
 
 
-def drive(page: Page, base: str, mode: str, t0: float) -> float:
+def drive(page: Page, base: str, mode: str, t0: float, shot: Path | None = None) -> float:
     page.goto(base, wait_until="networkidle")
     page.wait_for_selector(".item")
     page.wait_for_timeout(500)
@@ -176,6 +176,12 @@ def drive(page: Page, base: str, mode: str, t0: float) -> float:
     # Open the featured run (the first, newest).
     click(page, ".item", label="Open a run", settle=1100)
     page.wait_for_selector(".conv .ci")
+    if shot is not None:  # the curated web still for the README cover (make_cover.py):
+        # taken BEFORE the narration toast so neither it nor the cursor is baked in.
+        page.evaluate("document.getElementById('__a6_cursor').style.visibility = 'hidden'")
+        page.wait_for_timeout(400)
+        page.screenshot(path=str(shot))
+        page.evaluate("document.getElementById('__a6_cursor').style.visibility = ''")
     toast(page, "A run: the conversation, task graph, tools, budget")
     page.wait_for_timeout(1400)
     scroll_card(page, ".card-conv .conv-box", 400, wait=1600)
@@ -294,7 +300,8 @@ def main() -> None:
         if args.mode == "machine":
             trim_s = drive_machine(page, args.url, t0)
         else:
-            trim_s = drive(page, args.url, args.mode, t0)
+            shot = args.out.parent / "web-shot.png" if args.mode == "desktop" else None
+            trim_s = drive(page, args.url, args.mode, t0, shot=shot)
         video = page.video
         context.close()  # flushes the recording
         browser.close()
