@@ -2730,6 +2730,15 @@ class Workflow:
             if sha:
                 self._log(f"  final checkpoint: {sha[:12]}")
                 self._emit("loop.auto_commit", iteration=iteration, sha=sha)
+                # Also emit diff.updated so the commit is COUNTED: every fold
+                # (web/TUI/CLI) tallies commits + the latest diff from diff.updated,
+                # so without this the final checkpoint's work read as "0 commit(s)"
+                # and an empty diff even though git had the commit.
+                self._emit(
+                    "diff.updated",
+                    sha=sha,
+                    patch=commit_diff(self.root, sha, max_bytes=8000),
+                )
         except (GitError, OSError) as exc:
             msg = str(exc).lower()
             benign = (

@@ -345,7 +345,13 @@ def test_final_checkpoint_commits_dirty_worktree_on_gated_run(tmp_path: Path) ->
             metric=SimpleNamespace(goal=None),
         )
     )
-    wf = _wf(root=repo, config=config, mode="run")
+    emitted: list[tuple[str, dict[str, Any]]] = []
+
+    class _Sink:
+        def emit(self, event_type: str, **fields: Any) -> None:
+            emitted.append((event_type, fields))
+
+    wf = _wf(root=repo, config=config, mode="run", events=_Sink())
     # Worker edited a file via run_command; never re-verified, never committed.
     (repo / "edit.txt").write_text("a real edit\n")
     head_before = sp.run(
@@ -366,6 +372,10 @@ def test_final_checkpoint_commits_dirty_worktree_on_gated_run(tmp_path: Path) ->
         ["git", "log", "-1", "--pretty=%s"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout.strip()
     assert "checkpoint" in subject
+    # The commit must be COUNTABLE by the folds: a diff.updated is emitted, not
+    # only loop.auto_commit, so web/TUI/CLI don't read the final work as 0 commits.
+    kinds = [k for k, _ in emitted]
+    assert "loop.auto_commit" in kinds and "diff.updated" in kinds
 
 
 def test_final_checkpoint_noop_when_clean_or_not_run_mode(tmp_path: Path) -> None:
