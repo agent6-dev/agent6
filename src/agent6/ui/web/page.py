@@ -560,7 +560,11 @@ function makeConv(url, box, body) {
       }
       itemsHost.appendChild(div); shown++;
     });
-    if (!shown) itemsHost.appendChild(el('div', 'muted', 'no conversation yet — it appears as the run streams'));
+    // The empty note yields to the live pane: streamed text under a
+    // "no conversation yet" banner reads as a contradiction.
+    if (!shown && liveHost.style.display === 'none') {
+      itemsHost.appendChild(el('div', 'muted conv-empty', 'no conversation yet — it appears as the run streams'));
+    }
     if (follow) box.scrollTop = box.scrollHeight;
   };
 
@@ -583,9 +587,11 @@ function makeConv(url, box, body) {
     const r = s.last_role;
     const follow = following();
     liveHost.innerHTML = '';
-    if (s.finished || !r) { liveHost.style.display = 'none'; return; }
+    const note = itemsHost.querySelector('.conv-empty');
+    if (s.finished || !r) { liveHost.style.display = 'none'; if (note) note.style.display = ''; return; }
     const think = r.streamed_thinking, text = r.streamed_text;
     liveHost.style.display = '';
+    if (note) note.style.display = 'none'; // the live pane replaces the empty note
     if (think || text) {
       if (think) {
         const line = el('div');
