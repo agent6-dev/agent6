@@ -400,7 +400,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     _sub(
         runs_sub,
         "list",
-        help="List runs newest-first: when, status (+ failure reason), mode, cost, id, task.",
+        help="List runs newest-first by update time: updated, status, mode, cost, id, task.",
     )
 
     runs_show = _sub(

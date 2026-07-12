@@ -62,9 +62,9 @@ def _styled_status(status: str, reason: str, *, color: bool) -> tuple[str, str]:
 
 
 def _cmd_list() -> int:
-    """List this repo's runs (runs/ + asks/), newest first: when, status (with
-    the failure reason), mode, cost, id, task. The listing twin of the TUI/web
-    hubs, built on the same shared summary."""
+    """List this repo's runs (runs/ + asks/), newest first: updated (last-activity
+    time), status (with the failure reason), mode, cost, id, task. The listing twin
+    of the TUI/web hubs, built on the same shared summary."""
     import time  # noqa: PLC0415
 
     cwd = Path.cwd()
@@ -86,7 +86,10 @@ def _cmd_list() -> int:
         rows.append((when, styled, plain, s.mode, cost, s.run_id, task_snippet(s.task)[:60]))
     status_w = max(6, *(len(plain) for _, _, plain, *_ in rows))
     id_w = max(2, *(len(r[5]) for r in rows))
-    print(f"{'when':<11}  {'status':<{status_w}}  {'mode':<4}  {'cost':<8}  {'id':<{id_w}}  task")
+    print(
+        f"{'updated':<11}  {'status':<{status_w}}  {'mode':<4}  "
+        f"{'cost':<8}  {'id':<{id_w}}  task"
+    )
     for when, styled, plain, mode, cost, run_id, task in rows:
         pad = " " * (status_w - len(plain))
         print(f"{when:<11}  {styled}{pad}  {mode:<4}  {cost:<8}  {run_id:<{id_w}}  {task}")
