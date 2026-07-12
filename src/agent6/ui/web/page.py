@@ -38,7 +38,10 @@ PAGE_HTML = r"""<!doctype html>
   --bg: #f6f8fa; --surface: #ffffff; --surface2: #eef1f5; --border: #d5dae1;
   --text: #1b2028; --muted: #5a6472; --accent: #2d6fe0; --accent2: #8250df;
 }
-* { box-sizing: border-box; }
+* { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
 html, body { margin: 0; height: 100%; }
 body {
   background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, sans-serif;
@@ -60,6 +63,10 @@ header .crumb { color: var(--muted); overflow: hidden; text-overflow: ellipsis; 
 button, .btn {
   font: inherit; color: var(--text); background: var(--surface2); border: 1px solid var(--border);
   border-radius: 8px; padding: 8px 12px; cursor: pointer; min-height: 40px;
+  transition: border-color .15s, background .15s;
+}
+button:focus-visible, .field:focus-visible, input.filter:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
 }
 button:hover, .btn:hover { border-color: var(--accent); }
 button:active { transform: translateY(1px); }
@@ -103,6 +110,7 @@ main { padding: 16px; max-width: 1200px; margin: 0 auto; }
 .item {
   display: flex; gap: 10px; align-items: center; padding: 12px; border-radius: 10px;
   background: var(--surface2); border: 1px solid transparent; cursor: pointer;
+  transition: border-color .15s;
 }
 .item:hover { border-color: var(--accent); }
 .item .grow { flex: 1; min-width: 0; }
@@ -495,10 +503,14 @@ async function renderHub(focus) {
   mCard.appendChild(machineControls());
 
   const nCard = newWorkCard();
+  // Two independent column stacks (not one grid of cards): cards keep their
+  // natural heights instead of stretching to the tallest row neighbour.
   const grid = el('div', 'grid cols2');
-  // On the Machines tab (phone), lead with machines; else lead with new-work + runs.
-  if (focus === 'machines') { grid.appendChild(mCard); grid.appendChild(runsCard); }
-  else { grid.appendChild(nCard); grid.appendChild(runsCard); grid.appendChild(mCard); }
+  const stack = el('div', 'grid');
+  // On the Machines tab, lead with machines; else lead with new-work + runs.
+  if (focus === 'machines') { stack.appendChild(mCard); }
+  else { stack.appendChild(nCard); stack.appendChild(mCard); }
+  grid.appendChild(stack); grid.appendChild(runsCard);
   view.appendChild(grid);
 }
 
