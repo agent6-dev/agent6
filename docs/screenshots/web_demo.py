@@ -35,6 +35,10 @@ except ImportError:  # pragma: no cover - dev tool
 VIEWPORTS = {
     "desktop": {"width": 1280, "height": 800},
     "phone": {"width": 390, "height": 844},
+    # The state-machine tour records at the desktop viewport; it is a separate
+    # mode because it needs the replay-proxy environment (web_machine_demo.sh),
+    # not the static seeds web_demo.sh serves.
+    "machine": {"width": 1280, "height": 800},
 }
 
 # A virtual circle cursor (headless recordings have no OS pointer), a click
@@ -206,6 +210,46 @@ def drive(page: Page, base: str, mode: str, t0: float) -> float:
     return hub_ready
 
 
+def drive_machine(page: Page, base: str, t0: float) -> float:
+    """The state-machine tour: start the seeded code-fixer machine from the
+    Machines page and watch it run to green, all from the browser. The machine
+    is a REAL `agent6 machine run` whose agent calls the replay proxy serves
+    (web_machine_demo.sh), so the stream is deterministic and key-free."""
+    page.goto(base + "/#/machines", wait_until="networkidle")
+    page.wait_for_selector("button:has-text('code-fixer')")
+    page.wait_for_timeout(600)
+    ready = time.monotonic() - t0
+    toast(page, "State machines: author, run, and watch — from the browser")
+    page.wait_for_timeout(1400)
+
+    # Start it: POST /api/machine/run spawns a detached `agent6 machine run`.
+    click(page, "button:has-text('code-fixer')", label="Run the code-fixer machine", settle=1300)
+    # The instance registers its journal + worker pid almost immediately; the
+    # page re-renders itself once, then the instance row is clickable.
+    page.wait_for_selector(".list .item", timeout=30000)
+    toast(page, "The instance appears in the list — open it to watch")
+    page.wait_for_timeout(600)
+    click(page, ".list .item", label="Watch it live", settle=1300)
+    page.wait_for_selector(".tree", timeout=15000)
+    toast(page, "A fix-loop: an agent edits, a tool re-checks, a branch routes on the result")
+    page.wait_for_timeout(1800)
+
+    # The agent state streams its reasoning into the current-state pane.
+    page.wait_for_selector(".conv .ci", timeout=90000)
+    page.wait_for_timeout(2200)
+    toast(page, "The current agent state streams its reasoning, like any run")
+    page.wait_for_timeout(2000)
+    scroll_card(page, ".conv-box", 4000, wait=2200)
+
+    # The end banner names the terminal state; linger on the finished machine.
+    page.wait_for_selector(".notif-banner:has-text('ended')", timeout=180000)
+    toast(page, "Green: the check passes and the machine ends ok", ms=2400)
+    page.wait_for_timeout(2400)
+    scroll_to(page, 0, wait=1400)
+    page.wait_for_timeout(1000)
+    return ready
+
+
 def write_trimmed(raw: Path, out: Path, trim_s: float) -> None:
     """Re-encode `raw` dropping the leading `trim_s` seconds so the first frame is
     the loaded hub, not the SPA loading screen (the poster the browser shows
@@ -247,7 +291,10 @@ def main() -> None:
         page = context.new_page()
         page.add_init_script(OVERLAY_INIT_SCRIPT)
         t0 = time.monotonic()
-        trim_s = drive(page, args.url, args.mode, t0)
+        if args.mode == "machine":
+            trim_s = drive_machine(page, args.url, t0)
+        else:
+            trim_s = drive(page, args.url, args.mode, t0)
         video = page.video
         context.close()  # flushes the recording
         browser.close()

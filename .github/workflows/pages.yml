@@ -89,16 +89,19 @@ jobs:
           bash docs/screenshots/cli_demo.sh
 
       - name: Generate web-UI tour videos (Playwright)
-        # Drives `agent6 web` against the same committed seed fixtures in a
-        # headless Chromium at desktop + phone viewports. Playwright's Chromium is
-        # installed into an isolated venv (a docs tool, never a runtime dep); no
-        # API key, no network beyond the browser download.
+        # Drives `agent6 web` in a headless Chromium: the hub tours at desktop +
+        # phone viewports from the committed seed fixtures, then the state-machine
+        # tour (a real `agent6 machine run` replayed from the committed cassette,
+        # watched from the browser). Playwright's Chromium is installed into an
+        # isolated venv (a docs tool, never a runtime dep); no API key, no network
+        # beyond the browser download.
         run: |
           source .venv/bin/activate
           python3 -m venv /tmp/pw
           /tmp/pw/bin/pip install --quiet playwright
           /tmp/pw/bin/playwright install --with-deps chromium
           WEB_DEMO_PY=/tmp/pw/bin/python bash docs/screenshots/web_demo.sh
+          WEB_DEMO_PY=/tmp/pw/bin/python bash docs/screenshots/web_machine_demo.sh
 
       - name: Build the site (strict)
         run: >

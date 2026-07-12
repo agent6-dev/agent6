@@ -64,6 +64,13 @@ streamed live like a run.
   <source src="/screenshots/out/machine-demo.webm" type="video/webm">
 </video>
 
+The same machine from the browser: start it on the Machines page and watch the
+current state stream, with the run's approvals and questions answerable in place.
+
+<video controls muted loop playsinline preload="metadata" class="no-lightbox">
+  <source src="/screenshots/out/web-machine.webm" type="video/webm">
+</video>
+
 ## From the terminal
 
 For terminal-first workflows, `agent6 run` executes in the foreground: steer it with
