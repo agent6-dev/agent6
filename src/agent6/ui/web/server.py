@@ -426,7 +426,13 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_bytes(ICON_SVG.encode("utf-8"), "image/svg+xml")
             return
         if path == "/api/meta":
-            self._send_json({"version": __version__, "target": self.server.target})
+            self._send_json(
+                {
+                    "version": __version__,
+                    "target": self.server.target,
+                    "target_kind": self._target_kind(),
+                }
+            )
             return
         if path == "/api/hub":
             self._send_json(model.hub_payload(self.cwd))
@@ -448,6 +454,21 @@ class _Handler(BaseHTTPRequestHandler):
             self._route_draft(parts[2], parts[3] if len(parts) > 3 else "")
             return
         self._send_json({"error": f"not found: {path}"}, status=404)
+
+    def _target_kind(self) -> str:
+        """Which view the CLI-given target deep-links to (run / draft / machine),
+        or "" when there is no target or it matches nothing. Resolved per request,
+        so a target that appears after startup still resolves."""
+        t = self.server.target
+        if not t:
+            return ""
+        if model.run_dir_for(self.cwd, t) is not None:
+            return "run"
+        if model.draft_dir_for(self.cwd, t) is not None:
+            return "draft"
+        if model.machine_dir_for(self.cwd, t) is not None:
+            return "machine"
+        return ""
 
     def _route_draft(self, name: str, sub: str) -> None:
         draft_dir = model.draft_dir_for(self.cwd, name)

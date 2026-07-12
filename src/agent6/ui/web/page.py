@@ -369,10 +369,25 @@ function setTab(name) {
 }
 
 // --- router ------------------------------------------------------------------
+let booted = false; // the one-shot deep-link to `agent6 web <target>` ran
 async function route() {
   closeLive();
   closeOverlay();
   const h = location.hash.replace(/^#/, '') || '/';
+  // First load with no hash: honor the CLI's target (`agent6 web <run-id>`
+  // opens that run; a machine name its machine). Explicit hashes win.
+  if (!booted) {
+    booted = true;
+    if (h === '/') {
+      try {
+        const meta = await getJSON('/api/meta');
+        if (meta.target && meta.target_kind) {
+          location.hash = '#/' + meta.target_kind + '/' + encodeURIComponent(meta.target);
+          return; // the hashchange re-enters route()
+        }
+      } catch (_) { /* no meta: fall through to the hub */ }
+    }
+  }
   const parts = h.split('/').filter(Boolean); // e.g. ['run','abc']
   try {
     if (parts.length === 0) { setTab('hub'); await renderHub(); }

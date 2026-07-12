@@ -201,6 +201,27 @@ def test_unknown_run_is_404(server: tuple[WebServer, int]) -> None:
     assert "no run" in json.loads(body)["error"]
 
 
+def test_meta_resolves_the_target_kind(tmp_path: Path) -> None:
+    # `agent6 web <target>` deep-links on load; the page asks /api/meta what
+    # kind of view the target names.
+    runs = resolved_state_dir(tmp_path) / "runs" / "run-t"
+    runs.mkdir(parents=True)
+    (runs / "logs.jsonl").write_text('{"type": "run.start"}\n', encoding="utf-8")
+    srv = WebServer(("127.0.0.1", 0), tmp_path, "run-t")
+    port = srv.server_address[1]
+    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    try:
+        status, body, _ = _get(port, "/api/meta")
+        assert status == 200
+        meta = json.loads(body)
+        assert meta["target"] == "run-t"
+        assert meta["target_kind"] == "run"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
 def test_resume_spawns_a_detached_resume_with_the_follow_up(
     server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
