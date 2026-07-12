@@ -120,36 +120,47 @@ def test_worker_pid_clear(tmp_path: Path) -> None:
     assert not worker_is_alive(tmp_path)
 
 
-def test_status_shows_usage_from_loop_budget_event(
+def test_status_shows_usage_from_budget_update_event(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    # `runs show` must read budget.update (the authoritative post-call totals),
+    # not loop.budget (emitted BEFORE each call: lags one call, 0 on iter 1).
+    # A stray loop.budget must NOT override the real usage.
     d = _make_run(
         tmp_path,
         monkeypatch,
         [
             {"ts": _ts(40), "type": "run.start"},
             {
-                "ts": _ts(20),
+                "ts": _ts(30),
                 "type": "loop.budget",
                 "iteration": 1,
-                "input_tokens": 1000,
-                "output_tokens": 200,
-                "cost_usd": 0.0123,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cost_usd": 0.0,
+            },
+            {
+                "ts": _ts(20),
+                "type": "budget.update",
+                "input_total": 1000,
+                "output_total": 200,
+                "usd_total": 0.0123,
+                "usd_partial": False,
             },
             {
                 "ts": _ts(5),
-                "type": "loop.budget",
-                "iteration": 2,
-                "input_tokens": 4200,
-                "output_tokens": 800,
-                "cost_usd": 0.0456,
+                "type": "budget.update",
+                "input_total": 4200,
+                "output_total": 800,
+                "usd_total": 0.0456,
+                "usd_partial": False,
             },
         ],
     )
     write_worker_pid(d, os.getpid())
     _cmd_status("winsome-dawn-YWH5ZS")
     out = capsys.readouterr().out
-    assert "in=4200 out=800" in out  # latest loop.budget wins
+    assert "in=4200 out=800" in out  # latest budget.update wins, not the 0/0 loop.budget
     assert "$0.0456" in out
     # json carries the same
     _cmd_status("winsome-dawn-YWH5ZS", as_json=True)

@@ -200,7 +200,7 @@ def _fmt_dur(seconds: float | None) -> str:
 
 def _scan_run_events(events_path: Path) -> dict[str, object]:
     """Single pass over logs.jsonl. Returns start_ep, last_ep, last_type,
-    iteration, end_reason, and the latest `loop.budget` token/cost totals.
+    iteration, end_reason, and the latest `budget.update` token/cost totals.
     Tolerant of torn/short lines."""
     out: dict[str, object] = {
         "start_ep": None,
@@ -211,6 +211,7 @@ def _scan_run_events(events_path: Path) -> dict[str, object]:
         "input_tokens": None,
         "output_tokens": None,
         "cost_usd": None,
+        "usd_partial": None,
     }
     if not events_path.is_file():
         return out
@@ -228,10 +229,16 @@ def _scan_run_events(events_path: Path) -> dict[str, object]:
                 out["iteration"] = e["iteration"]
             if etype == "run.end":
                 out["end_reason"] = e.get("reason")
-            if etype == "loop.budget":
-                for k in ("input_tokens", "output_tokens", "cost_usd"):
-                    if e.get(k) is not None:
-                        out[k] = e[k]
+            if etype == "budget.update":
+                # The authoritative running totals, emitted after each provider
+                # call (providers.py). `loop.budget` (emitted BEFORE the call)
+                # lags one call and reads 0 on iteration 1, so `runs show` used
+                # to under-report; every other cost consumer (watch --json,
+                # runs list) reads budget.update, so this makes them agree.
+                out["input_tokens"] = e.get("input_total")
+                out["output_tokens"] = e.get("output_total")
+                out["cost_usd"] = e.get("usd_total")
+                out["usd_partial"] = e.get("usd_partial")
             if ep is not None:
                 out["last_ep"] = ep
             if isinstance(etype, str):
