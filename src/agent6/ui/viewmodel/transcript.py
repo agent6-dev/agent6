@@ -22,7 +22,7 @@ from typing import Any, Literal
 # Shared glyph vocabulary (text characters, not graphics, so every terminal font
 # renders them). One place so cli/tui/web agree.
 CALL = "→"  # a tool call
-RESULT = "⎿"  # its result, on the line below
+RESULT = "└"  # its result, on the line below (U+2514: base box-drawing, renders in every mono font)
 COMMIT = "✎"  # an auto-commit
 THINK = "·"  # a reasoning block
 DONE = "●"  # run start / final verdict

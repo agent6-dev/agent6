@@ -523,9 +523,6 @@ async function renderHub(focus) {
 const DETAIL_CYCLE = { collapsed: 'expanded', expanded: 'hidden', hidden: 'collapsed' };
 function tailStr(s, n) { return s.length <= n ? s : '…' + s.slice(-n); }
 function firstLine(s, n) { const t = String(s == null ? '' : s).split('\n')[0]; return t.length > n ? t.slice(0, n - 1) + '…' : t; }
-// The web skin's one glyph substitution: browser mono stacks reliably cover the
-// box-drawing block but often lack U+23BF (the terminal fonts' result glyph).
-const webGlyphs = s => s.replaceAll('⎿', '└');
 // `box` is the scroll container, `body` the host the items render into.
 function makeConv(url, box, body) {
   const conv = {
@@ -554,7 +551,7 @@ function makeConv(url, box, body) {
       }
       for (const line of lines) {
         const ln = el('div');
-        for (const [text, style] of line) ln.appendChild(el('span', 's-' + style, webGlyphs(text)));
+        for (const [text, style] of line) ln.appendChild(el('span', 's-' + style, text));
         if (!line.length) ln.appendChild(document.createTextNode(' '));
         div.appendChild(ln);
       }

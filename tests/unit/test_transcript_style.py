@@ -29,7 +29,7 @@ def test_expanded_shows_the_full_tool_detail() -> None:
     detail = "old_string not found\n" + "\n".join(f"line {i}" for i in range(50))
     item = TranscriptItem("tool", name="apply_edit", ok=False, detail=detail)
     lines = item_lines(item, detail="expanded")
-    assert lines[1] == [("  ⎿ ", "fail"), ("old_string not found", "detail")]
+    assert lines[1] == [("  └ ", "fail"), ("old_string not found", "detail")]
     assert all(span[1] == "detail" for line in lines[2:52] for span in line)  # every line neutral
     assert "line 49" in lines[51][0][0]  # the last detail line is present, no "+N more"
 
