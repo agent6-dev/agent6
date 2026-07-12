@@ -99,9 +99,13 @@ def parse_tape(path: Path) -> tuple[list[Event], float]:
     typing_speed = 0.05
     hidden = False
     t = 0.0
+    # Named keys plus modifier chords (Ctrl+D, Alt+Enter, ...). A bare single
+    # letter is NOT a vhs command (letters come via Type), so the single-char
+    # branch requires at least one modifier; without chord support the tour's
+    # Ctrl+D (conversation <-> dashboard) produced no toast at all.
+    named = r"Enter|Tab|Escape|Backspace|Space|Up|Down|Left|Right|PageUp|PageDown|Home|End|Delete"
     key_re = re.compile(
-        r"^(Enter|Tab|Escape|Backspace|Space|Up|Down|Left|Right|"
-        r"PageUp|PageDown|Home|End|Delete)"
+        rf"^((?:(?:Ctrl|Alt|Shift)\+)+(?:{named}|[A-Za-z0-9])|{named})"
         r"(?:@(\S+))?(?:\s+(\d+))?$"
     )
     for raw in path.read_text().splitlines():
