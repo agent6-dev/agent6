@@ -65,6 +65,43 @@ def test_tty_prompt_round_trips_on_the_controlling_terminal() -> None:
     assert _drive_pty(child, b"PICK>", b"two\n") == 0
 
 
+def test_tty_prompt_discards_type_ahead() -> None:
+    # Text typed before the prompt existed must not be consumed as its answer:
+    # a "/detach" typed during the "pausing after this step" window once rode
+    # into the next run_command [y/N/a] approval and silently denied it (and a
+    # buffered "y" would have silently approved).
+    def child() -> int:
+        import time as _t
+
+        from agent6.ui.cli._steer import tty_prompt
+
+        _t.sleep(0.5)  # let the parent stuff type-ahead into the pty first
+        ans = tty_prompt("APPROVE> ", fall_back_to_stdin=False)
+        return 0 if ans == "y" else 13
+
+    pid, master = pty.fork()
+    if pid == 0:  # pragma: no cover - child process
+        os._exit(child())
+    buf = b""
+    deadline = time.monotonic() + 15
+    try:
+        os.write(master, b"/detach\n")  # type-ahead, before any prompt exists
+        while b"APPROVE>" not in buf and time.monotonic() < deadline:
+            ready, _, _ = select.select([master], [], [], 0.5)
+            if not ready:
+                continue
+            try:
+                buf += os.read(master, 4096)
+            except OSError:
+                break
+        assert b"APPROVE>" in buf, f"prompt never appeared: {buf[-500:]!r}"
+        os.write(master, b"y\n")
+        _, status = os.waitpid(pid, 0)
+        assert os.waitstatus_to_exitcode(status) == 0, "type-ahead was consumed as the answer"
+    finally:
+        os.close(master)
+
+
 def test_ask_one_stdin_prompts_and_maps_a_digit_to_its_option() -> None:
     def child() -> int:
         from agent6.ui.cli._interact import ask_one_stdin

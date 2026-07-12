@@ -15,6 +15,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import termios
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -142,6 +143,12 @@ def tty_prompt(text: str, *, fall_back_to_stdin: bool = True) -> str | None:
         # prompt silently used the stdin fallback (or, without the fallback,
         # returned no answer at all).
         fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
+        # Discard type-ahead before prompting (the sudo/ssh rule): text typed
+        # before this prompt existed was aimed at something else -- e.g. a
+        # pause-menu command typed during the "pausing after this step" window
+        # must not ride into a run_command [y/N/a] approval as its answer.
+        with contextlib.suppress(Exception):
+            termios.tcflush(fd, termios.TCIFLUSH)
         tty = io.TextIOWrapper(
             io.FileIO(fd, "r+"), encoding="utf-8", errors="replace", write_through=True
         )
