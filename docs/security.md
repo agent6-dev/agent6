@@ -1,664 +1,433 @@
 # SECURITY
 
-agent6 treats the LLM as untrusted. This document is the layer-by-layer
-breakdown of how that assumption is enforced and what the known limits are.
+agent6 treats the LLM as untrusted. Concrete claims below, layer by layer, each
+with what it means and where it stops.
 
 ## Reporting
 
-For now: open a GitHub issue prefixed `[security]`, or, for embargoed
-issues, email the maintainer listed in `pyproject.toml`. Once agent6 has
-a stable distribution, this will move to a private channel + GitHub
-Security Advisories.
-
-Please include:
-
-- agent6 version (`agent6 --version`).
-- Linux kernel version + distro (`uname -a` + `/etc/os-release`).
-- The output of `agent6 check sandbox`.
-- Minimal reproduction, ideally as a failing test under `tests/security/`.
+Open a GitHub issue prefixed `[security]`. Include: agent6 version
+(`agent6 --version`), kernel + distro (`uname -a`, `/etc/os-release`),
+`agent6 check sandbox` output, and a minimal repro (ideally a failing test under
+`tests/security/`).
 
 ## Threat model
 
 Adversary: a fully malicious worker model, or an honest model that has
-been prompt-injected by a file in the repository under analysis.
+been prompt-injected by a file in the workspace.
 
 We assume the adversary controls:
 
-- the text of every LLM response,
+- the text of every LLM response
 - the choice of tool calls and their arguments (within the published
-  JSON schema),
-- the content of any file the agent reads during the run.
+  JSON schema)
+- the content of any file the agent reads during the run
 
 We do NOT assume the adversary controls:
 
-- the kernel,
-- the agent6 source code (i.e., supply-chain compromise of the agent6
-  binary itself is out of scope; sign your releases),
-- the Anthropic / OpenAI API endpoints.
+- the kernel
+- the agent6 binary
+- the provider endpoints
 
-Under that adversary, agent6 aims to make the following true:
+Under that adversary, agent6 aims to hold:
 
-1. No writes outside the project working directory.
-2. No reads of files outside the project working directory (+ read-only
-   sibling paths, if explicitly configured).
-3. No network egress except to the configured provider endpoints. This is
-   enforced structurally for the agent process when `sandbox.agent_network =
-   "providers"` (the default; see Defense Layer 1b); `"local"` narrows it to
-   loopback providers, `"open"` lifts it. Jailed commands (`run_command`,
-   machine `tool` states) are governed separately by `sandbox.tool_network`
-   (default `"block"`); see Defense Layer 1b and §8.
-4. No `git push`, no `--force`, no history rewrite, no `reset --hard`.
-5. No persistence after the run terminates (no daemon, no cron, no
-   `.bashrc` mutation; the jail's mount namespace is the
-   only place children can write to anyway).
+1. **No writes outside the workspace.**
+2. **No reads outside the workspace and a read-only system set.**
+    - The system set (`/usr /bin /sbin /lib /lib64 /etc /dev /proc /tmp`) exists
+      so installed toolchains resolve.
+    - `hardened` also exposes `$HOME` + `/run` (Landlock can't carve them out);
+      `sandbox.extra_read_paths` adds more.
+3. **No agent egress except the configured providers** (+ `sandbox.allow_urls`),
+   under `sandbox.agent_network = "providers"` (default; §1b).
+    - Jailed commands are governed separately by `sandbox.tool_network`
+      (default `block`; §8).
+4. **agent6's own git never pushes, `--force`s, rewrites history, or `reset
+   --hard`s** (§5).
+    - This does NOT bind a `git` the model runs via `run_command`; that path is
+      bounded by the sandbox (`protect_git` read-only-binds `.git` on `strict`;
+      push needs egress).
+5. **No persistence after the run:** no daemon, cron, or `.bashrc` write.
+    - Children can only write inside the jail's mount namespace.
 
 ## Defense layers
 
-### 1. Agent-process Landlock (hardened profile)
+### 1. Agent-process Landlock (`hardened` only)
 
-Applied at the start of `agent6 run`/`resume`, before any provider or
-network object is built, **on the `hardened` profile only**. The `strict`
-profile does not take this path: it runs every child command in its own
-user+mount+pid+net namespace (a strictly stronger boundary than Landlocking
-the parent) and confines provider egress with the broker (Defense Layer
-1b); applying agent-process Landlock there would additionally break the
-jail's `pivot_root(2)`/`mount(2)` on kernels at Landlock ABI ≥ 7. Where it
-applies it restricts the Python process itself (irrevocably, inherited by
-every child it spawns):
+Applied at `run`/`resume` start, before any network object. Restricts the Python
+process irrevocably, inherited by every child:
 
 | Landlock rule | Allowed |
 |---|---|
-| FS read+exec | cwd, `$HOME`, `/usr`, `/etc`, `/tmp`, the system exec dirs `/bin` `/sbin` `/lib` `/lib64` `/dev` (when present), and `/run` + `/proc` when present. The system dirs mirror the jail child's read+exec roots: the launcher opens each from inside this domain to grant the child, so omitting one (notably `/dev` on a merged-`/usr` host) makes the child's execve fail EACCES |
-| FS write | cwd, `/tmp`, the `/dev` char devices, and `/proc` when present |
-| TCP connect (kernel ≥ 6.7) | the *ports* of configured providers: the effective `base_url` port of each entry, `anthropic` and `openai` alike (default `443`) |
+| FS read+exec | cwd, `$HOME`, `/usr`, `/etc`, `/tmp`, `/bin` `/sbin` `/lib` `/lib64` `/dev`, `/run` + `/proc` when present |
+| FS write | cwd, `/tmp`, the `/dev` char devices, `/proc` when present |
+| TCP connect (kernel ≥ 6.7) | the *ports* of configured providers (each `base_url` port, default `443`) |
 
-Landlock's network hook filters by destination **port only** (it has no
-host/IP primitive), so it blocks connections on other ports but does **not**
-pin egress to a specific host; for that use `sandbox.agent_network = "providers"`
-(Defense Layer 1b). On older kernels (no TCP rules) agent6 warns and runs
-FS-only Landlock; don't run there on a host whose UID can read credentials the
-agent could exfiltrate.
+- **`strict` skips this layer.**
+    - Its per-command namespaces + broker (§1b) are stronger, and this would
+      break the jail's `pivot_root`/`mount` at Landlock ABI ≥ 7.
+- **The read+exec set mirrors the jail child's roots.**
+    - The launcher opens each from here to grant the child, so a missing one
+      (e.g. `/dev` on merged-`/usr`) makes the child's execve fail EACCES.
+- **The network rule filters by port, not host.**
+    - It blocks other ports but can't pin egress to a host; use
+      `agent_network = "providers"` (§1b) for that.
+- **Kernels < 6.7 get FS-only Landlock, with a warning.**
+    - Don't run there if the host UID can read exfiltratable credentials.
 
-### 1b. Provider-only egress broker (`sandbox.agent_network = "providers"`)
+### 1b. Provider-only egress broker (`agent_network = "providers"`, default)
 
-When enabled (strict profile only; it relies on unprivileged user
-namespaces), `agent6 run` confines its own process to host-level egress:
+- **The agent's only path off-host is one hard-wired unix socket per allowed
+  provider; the LLM never chooses a destination.**
+    - Setup, `strict`-only (needs user namespaces): in the host netns and
+      single-threaded, the agent binds one `AF_UNIX` socket per provider
+      `host:port` and forks a **broker** that stays in the host netns.
+    - The agent then `unshare(CLONE_NEWUSER|CLONE_NEWNET)`s into an empty netns
+      (loopback only). Off-host is only those sockets.
+    - Per connection the broker dials that socket's fixed `host:port` (resolved
+      per-connect, robust to CDN IP churn). TLS is end-to-end, so it sees only
+      ciphertext.
+- **Fail-closed: the netns is the boundary, not a filter.**
+    - A missing route is no connectivity, never a silent leak; the allow-list is
+      fixed at bind time, so the agent can't widen it.
+    - Hosts that only support `hardened` refuse rather than run unconfined.
+- **`local` pins to loopback providers; `open` skips the broker.**
+    - `local` refuses a non-local provider. `machine run` applies the same setup
+      per `agent`-state subprocess.
+- **A detached resume is spawned from the host, not the empty netns.**
+    - **Host spawner** (`sandbox/host_spawn.py`): a helper forked beside the
+      broker before isolation spawns `agent6 resume <run_id>` from the host, on
+      request over a close-on-exec pipe, exec'ing only the agent6 binary captured
+      at fork. Neither argv nor pipe is reachable from LLM output.
+    - **Inherited-namespace refusal**: `AGENT6_NETNS_ISOLATED=1` makes a child
+      that sees it refuse with the cause, not burn provider retries.
+- **`sandbox.allow_urls` widens the allow-list; only the operator can.**
+    - Each entry (`host` / `host:port` / URL) gets its own broker socket, same
+      properties. Default empty, validated at load, honored only under
+      `providers`, agent path only. Last-overlay-wins, so `config show` is
+      authoritative.
+- **MCP servers get no outbound network under `providers`** (a deliberate limit;
+  curator and other `AF_UNIX` helpers are unaffected).
 
-1. While still in the host network namespace (netns) and single-threaded, the
-   agent binds one `AF_UNIX` listening socket per allow-listed provider
-   `host:port` and `fork()`s a small **broker** child. The broker stays
-   in the host netns; for each connection accepted on a given socket it
-   dials the single fixed `host:port` that socket represents (resolved
-   per-connect, so the allow-list is robust to CDN IP rotation) and
-   splices bytes. TLS is end-to-end: the broker only ever sees ciphertext.
-2. The agent then `unshare(CLONE_NEWUSER | CLONE_NEWNET)` into a fresh,
-   empty network namespace (loopback only: no veth, no default
-   route). Its sole path off-host is the set of unix sockets, each of
-   which is hard-wired to one provider endpoint chosen by the operator,
-   never by the (untrusted) LLM at connect time.
+### 2. `agent6-jail` (Rust), for every child command
 
-This is **fail-closed**: the kernel network namespace is the real
-boundary. A missing route means no connectivity (the agent cannot connect
-at all), never a silent leak. Because the upstream of each socket is fixed
-at bind time, the egress allow-list is structural rather than a filter the
-agent could be tricked into widening. On hosts that only support the
-hardened profile agent6 refuses to run rather than execute unconfined.
+`apply_edit` is in-process; every `run_verify_command`/`run_command` runs in
+`agent6-jail`. Under `strict` it:
 
-`sandbox.agent_network = "local"` uses the same broker but pins it to *loopback*
-provider endpoints only (local models such as Ollama) and refuses a non-local
-provider; `sandbox.agent_network = "open"` skips the broker entirely. For `agent6
-machine run`, each `agent` state runs in its own subprocess that performs this
-same broker setup for itself (the engine is a thin host-netns supervisor), so a
-machine agent's egress is confined exactly as a normal run's is.
+- Forks a new user/mount/PID/IPC/UTS/net namespace.
+- `pivot_root`s into a minimal bind-mount rootfs on a fresh tmpfs: cwd + private
+  `/tmp` writable, system paths (+ `extra_read_paths`) read-only.
+- Exposes curated `/dev` (`null zero urandom random full`); omits `/dev/tty`
+  (it would let a child write escape sequences to the parent's terminal).
+- Mounts a fresh private `/proc`; if that fails, leaves `/proc` empty (never the
+  host's, which would leak process info).
+- Applies Landlock FS rules (net confinement is the namespace).
+- Installs a seccomp deny-list: dangerous syscalls (ptrace, mount, setns,
+  unshare, kexec, bpf, perf, keyctl, module loading, reboot, clock-set, …)
+  return `EPERM`, the rest allowed.
+- Sets `NO_NEW_PRIVS`, so the kernel ignores setuid bits (`sudo`/setuid can't
+  escalate).
+- `execve`s the binary and SIGKILLs the group at the wall-clock timeout.
 
-Because the namespace is inherited by every later child, a detached background
-resume cannot be spawned from inside it (its own broker would dial from an
-empty netns and every provider call dies locally). Two guards cover this:
+Notes:
 
-- **Host spawner** (`sandbox/host_spawn.py`): `agent6 run`/`resume` pre-fork a
-  second helper child next to the broker, before isolation. On detach the
-  isolated parent writes `{run_id, cwd}` over a pipe and the helper, still in
-  the host namespaces, spawns the detached `agent6 resume <run_id>` and
-  confirms. The helper only ever executes the agent6 executable captured at
-  fork time with a `resume` argv; the request pipe exists only in the trusted
-  operator process (close-on-exec), so neither the argv nor the channel is
-  reachable from LLM output.
-- **Inherited-namespace refusal**: `enter_network_isolation` marks the
-  environment (`AGENT6_NETNS_ISOLATED=1`); an agent6 child that finds the mark
-  refuses to run with the cause stated, instead of burning provider retries
-  into an opaque `provider_error`.
+- **The memory cap is operational, not a threat-model control.** A per-process
+  `RLIMIT_DATA` (`[sandbox].memory_limit_mb`, default 4096, `0` off; not
+  `RLIMIT_AS`, so V8/JVM/ASAN keep working) stops one runaway allocation, nothing
+  more.
+- **No `capset`.** `strict` maps namespaced-root to your uid; `hardened` keeps the
+  caller's caps (none for a normal user).
+- **`hardened` drops the namespaces + rootfs;** Landlock, seccomp,
+  `NO_NEW_PRIVS`, and the timeout remain.
+- The policy arrives as JSON on stdin from `run_in_jail`; the Rust side validates
+  it against a strict schema and refuses unknown fields.
 
-Curator and other `AF_UNIX`-based helpers are unaffected (unix sockets
-cross the netns boundary). MCP servers that need their own outbound
-network access will not have it under `providers`; that is a
-deliberate limitation, not a bug.
+### 2a. Environment: sudo, packages, provisioning
 
-**`sandbox.allow_urls` (operator-controlled egress additions).** The
-allow-list above is, by default, exactly the configured provider
-endpoints. An operator may widen it with `sandbox.allow_urls`: a set of
-`host` / `host:port` / URL entries that get their own broker sockets
-alongside the providers (effective egress = union of provider endpoints
-and `allow_urls`). Security properties are unchanged: each added socket is
-still hard-wired at bind time to one operator-chosen `host:port`, resolved
-per-connect, and the LLM cannot add, widen, or redirect an entry: it is a
-static config field, never written from model output. The default is empty
-(secure by default), entries are validated at config-load time, and the
-field is only consulted under `sandbox.agent_network = "providers"` (refused
-at config load under `local`; moot under `open`, which does not confine
-egress). It widens only the agent path, never a jailed command.
-Merge is last-overlay-wins: the most-specific config tier that sets
-`allow_urls` replaces it wholesale, so a repo or machine overlay cannot
-silently *append* to a narrower global allow-list; it must restate the
-full set, keeping the effective allow-list auditable via `config show`.
+The jail is one-way: the agent works within the environment you give it and
+can't expand it.
 
-
-### 2. `agent6-jail` (Rust) for every child command
-
-Every `apply_edit` is in-process, but every `run_verify_command` and
-`run_command` is executed by `agent6-jail`. Under `strict` (the default
-where user namespaces are available) the jail:
-
-- Forks a new user, mount, PID, IPC, UTS, and network namespace.
-- Sets up a minimal rootfs of bind mounts under a fresh tmpfs and
-  `pivot_root`s into it. The working directory and a private `/tmp` are
-  the writable mounts; system paths (and any `sandbox.extra_read_paths`)
-  are bind-mounted read-only.
-- Bind-mounts a curated subset of `/dev`: `null`, `zero`, `urandom`,
-  `random`, `full`. `/dev/tty` is not exposed: TTY access lets a
-  child write escape sequences to the controlling terminal of the parent.
-- Mounts a fresh `proc` (private to the new PID namespace). If that
-  fails on the host kernel, `/proc` is left empty inside the jail rather
-  than bind-mounting the host `/proc`; the latter would expose host
-  process info to the child.
-- Applies Landlock (FS rules); network confinement is the net namespace above.
-  The agent process (not this jailed child) additionally takes Landlock TCP-port
-  rules under the hardened profile.
-- Installs a seccomp deny-list: the dangerous syscalls (ptrace, mount,
-  setns, unshare, kexec, bpf, perf, keyctl, module loading, reboot,
-  clock setting, …) return `EPERM`; everything else is allowed. The
-  namespaces and Landlock carry the confinement; seccomp removes the
-  escape hatches.
-- Sets `NO_NEW_PRIVS`: the kernel then ignores setuid bits, so `sudo`
-  and every setuid binary cannot escalate.
-- Then `execve`s the requested binary, SIGKILLing the jail's whole
-  process group at the policy's wall-clock timeout. A per-process memory
-  cap (`[sandbox].memory_limit_mb`, default 4096 MiB, `0` disables) is set
-  as `RLIMIT_DATA` on the child before exec (not `RLIMIT_AS`, so runtimes
-  that reserve large address space without committing it -- V8, JVM, ASAN
-  -- keep working). It is an operational guardrail, NOT part of the threat
-  model: it stops a single runaway allocation from driving the host to the
-  OOM killer. Its incompleteness (per process, not per tree; no fork-bomb
-  bound) is by design, not a security gap. The jail does not call `capset` (under `strict` the
-  child's namespaced-root already maps to your unprivileged uid; under
-  `hardened` the child keeps the invoking user's capabilities, none for
-  a normal user).
-
-Under `hardened` (§3) the namespace and rootfs steps drop out; Landlock,
-seccomp, `NO_NEW_PRIVS`, and the timeout still apply.
-
-The jail's policy is passed as a JSON document on stdin from
-`agent6.sandbox.jail.run_in_jail`. The Rust side validates it against a
-strict schema and refuses on any unknown field.
-
-### 2a. Environment setup: sudo, packages, and what the operator provides
-
-The jail is a one-way boundary: the agent works *within* the environment you
-give it and cannot expand it. Concretely, what an agent can and cannot do to the
-host (verified empirically under both `strict` and `hardened`):
-
-- **`sudo` cannot escalate, even with passwordless sudo.** The jail sets
-  `NO_NEW_PRIVS`, so the kernel ignores the setuid bit on `sudo` (and every
-  setuid binary). A jailed `sudo -n true` fails with *"the 'no new privileges'
-  flag is set, which prevents sudo from running as root"*, whether or not the
-  host has a `NOPASSWD` sudoers rule. An agent on a box where *you* can `sudo`
-  freely still cannot.
-- **Installing system packages from inside the jail is impossible.**
-  `apt-get`/`dnf`/`apk` may be present (mounted read-only) but are unusable:
-  they need root (blocked above), network to the package mirrors (egress only
-  permits your provider endpoints, §1b/§7), and writes to `/usr`, `/var`
-  (Landlock denies everything outside the workspace). All three are blocked.
-- **Compiling and running code works.** `run_verify_command` and, when
-  `sandbox.run_commands` permits, `run_command` execute jailed, so the agent can
-  invoke a compiler, test runner, or build tool that is *already installed on
-  the host*. It just cannot install new ones, and a build step that needs the
-  network is blocked unless `sandbox.tool_network` is loosened.
-- **The provisioning model is operator-first.** You install the toolchain,
-  create the venv, and fetch dependencies with your own shell and sudo, *before*
-  or *outside* agent6; agent6 then works inside the jail with what you provided.
-  To widen what a command may read or reach, use config, never sudo:
-  `sandbox.extra_read_paths` (extra read mounts), `sandbox.tool_network` (let
-  jailed commands reach the network), `[providers.*].base_url` (which hosts
-  egress allows). All operator-controlled and visible in `agent6 config show`.
-
-**Running agent6 itself as root is opt-in and weakens the boundary.** Under
-`strict` the jail's user namespace maps inside-uid-0 to *the real uid agent6
-runs as* (`uid_map "0 <uid> 1"`). As your normal user, the jailed child's
-namespaced-root is your unprivileged uid outside, so no real privileges. If you
-start agent6 as **root** (`--allow-root` / `AGENT6_ALLOW_ROOT=1`), that
-inside-root maps to **real root**, so jailed children run as real root confined
-only by Landlock + seccomp + `NO_NEW_PRIVS`: still no write outside the
-workspace and no network beyond the provider (so still no package installs),
-but a larger blast radius: as root those allowed *reads* include root-only host
-files (e.g. `/etc/shadow` under `hardened`; `strict`'s minimal rootfs hides
-them). `sudo` adds nothing either way (`NO_NEW_PRIVS`). Run agent6 as your
-normal user and pre-provision with your own sudo.
+- **`sudo` can't escalate, even passwordless.** `NO_NEW_PRIVS` voids setuid, so
+  jailed `sudo` fails regardless of any `NOPASSWD` rule.
+- **Package installs are impossible.** `apt`/`dnf`/`apk` need all three of root
+  (blocked), mirror network (provider-only egress), and `/usr`/`/var` writes
+  (denied).
+- **Compiling and running host-installed toolchains works.**
+    - `run_verify_command` and (when `run_commands` permits) `run_command` run
+      jailed; they just can't install new tools, and a networked build step needs
+      `tool_network` loosened.
+- **Provisioning is operator-first.** Install toolchains, venvs, and deps
+  yourself before/outside agent6; widen access via config, never sudo
+  (`extra_read_paths`, `tool_network`, `[providers.*].base_url`, all in
+  `config show`).
+- **Running agent6 as root** (`--allow-root` / `AGENT6_ALLOW_ROOT=1`) **weakens
+  the boundary.**
+    - `strict` maps inside-root to real root, so jailed children run as real root
+      under only Landlock + seccomp + `NO_NEW_PRIVS`.
+    - Still no writes outside the workspace and no egress beyond providers, but
+      the allowed *reads* now include root-only files (`/etc/shadow` under
+      `hardened`; `strict`'s rootfs hides them). Run as your normal user.
 
 ### 3. Profile selection
 
-You *set* the `sandbox.profile` field; it resolves against the host to an
-*effective profile*: what actually runs. `auto` is never itself an effective
-profile (it is resolved away), and `auto` never resolves to `none` on Linux. No
-silent downgrade: an explicit request the host can't satisfy is refused, not
-weakened. `none` (unsandboxed) is a deliberate opt-out; see below.
+You set `sandbox.profile`; it resolves against the host to the *effective*
+profile. No silent downgrade: a request the host can't meet is refused, and
+`auto` reaches `none` only by detecting a non-Linux host.
 
-| `sandbox.profile` | Host | Effective profile |
+| `sandbox.profile` | Host | Effective |
 |---|---|---|
-| `auto` *(default)* | Linux, user namespaces available | `strict` |
+| `auto` *(default)* | Linux + user namespaces | `strict` |
 | `auto` | Linux, no user namespaces | `hardened` |
-| `auto` | non-Linux (macOS / Windows) | `none` |
-| `strict` | Linux, user namespaces available | `strict` |
-| `strict` | anything else | ⛔ refuse to run |
-| `hardened` | Linux (user namespaces or not) | `hardened` |
-| `hardened` | non-Linux (macOS / Windows) | ⛔ refuse to run |
-| `none` *(explicit opt-out)* | any host | `none` (the environment is the boundary) |
+| `auto` | non-Linux | `none` |
+| `strict` | Linux + user namespaces | `strict` |
+| `strict` | else | ⛔ refuse |
+| `hardened` | Linux | `hardened` |
+| `hardened` | non-Linux | ⛔ refuse |
+| `none` *(opt-out)* | any | `none` (the environment is the boundary) |
 
-`auto` reaches `none` only by **detection** (a non-Linux host, where there is
-no kernel sandbox); on Linux it always resolves to strict/hardened, so a run
-never ends up unconfined by accident.
+- **strict**: full namespaces + `pivot_root` + Landlock + seccomp + `NO_NEW_PRIVS`.
+- **hardened**: Landlock + seccomp + `NO_NEW_PRIVS`, no namespaces.
+    - Works in default-seccomp Docker (the container blocks the inner
+      `clone(CLONE_NEW*)`); the container is the blast radius.
+- **none**: unsandboxed, always with a loud warning.
 
-Unsandboxing is instead an **explicit, operator-only** choice, and it
-self-authorizes: `sandbox.profile = "none"` in config, the
-`--dangerously-disable-sandbox` flag, and `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`
-each run the agent unconfined, on any host, with a loud startup warning. There
-is no second gate: `sandbox.profile` and the env are unreachable by the LLM
-(it cannot edit the launcher's argv or environment), so writing one of them is
-the consent. Intended for a disposable or already-isolated machine (a VM, a
-container), where that environment is the blast radius. The flag and env are
-per-invocation and never sync across machines; config `none` is standing.
-
-When the sandbox is off **and** `run_command` is auto-approved
-(`run_commands = "yes"` or `--auto-approve`), the agent can run any command on
-the host with no confinement and no prompt. That one combination adds a startup
-confirmation: an interactive `Continue? [y/N]` when a terminal is present, or a
-loud warning and proceed when not (CI / `machine run`, where the explicit
-opt-outs are the consent). It is a one-time consent gate, not a per-command
-guard: once unconfined, guarding individual commands would be theatre.
-
-The three effective profiles:
-
-- **strict**: full namespaces (user/mount/pid/ipc/uts/net) + `pivot_root` +
-  Landlock + seccomp + `NO_NEW_PRIVS`.
-- **hardened**: Landlock + seccomp + `NO_NEW_PRIVS`,
-  but no namespaces (so it works inside default-seccomp Docker, where the
-  container blocks the inner `clone(CLONE_NEW*)`; the container is the blast
-  radius).
-- **none**: *unsandboxed*. Child commands run as plain subprocesses with no
-  kernel-enforced confinement; always with a loud warning.
-
-CI should set `profile = "strict"` to fail loudly if the sandbox is weaker than
-expected. "User namespaces available" means `unshare -U -r true` succeeds.
+- **Unsandboxing is explicit and self-authorizing.** `profile = "none"`,
+  `--dangerously-disable-sandbox`, or `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`. The
+  LLM can't reach argv/env, so setting one is the consent.
+- **Sandbox-off + auto-approved `run_command` adds a one-time gate.** For that
+  combination only: `Continue? [y/N]` interactively, a warning in CI/`machine
+  run`.
+- CI should set `strict` to fail loud if the sandbox is weaker than expected.
 
 ### 4. Fixed tool surface
 
-The LLM only ever sees the fixed set declared in
-`src/agent6/tools/schema.py`: structured
-edits, read-only navigation, fixed-argv verify/metric commands, a
-terminal `finish_run`, an `ask_user` question channel, a
-curator-backed task notepad, a cross-run memory notepad, and the
-capability-gated `run_command`. There is no `shell`, no `write_file`
-(writes go through `apply_edit`, an in-process rewriter that refuses
-paths outside cwd), no `web_fetch`, and no `eval`. Adding a tool requires
-a security review note in the commit message; see [AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md).
-
-The memory notepad (`add_memory` / `invalidate_memory`, run mode only) is
-the one tool pair whose writes outlive the run: notes land in fixed
-markdown files under `<state-dir>/<repo-id>/memories/` (trusted code
-picks the path; the model supplies only a schema-validated scope and the
-note text) and active notes are injected into the system prompt of later
-runs on the same repo. That makes it a persistence channel for prompt
-injection: a poisoned note can try to steer future runs. The mitigations
-are that notes are inert data (never executed, never an argv), the
-injected block is size-capped and framed as untrusted context, and the
-store is fully operator-auditable: `agent6 memory list --all` shows every
-entry including invalidated ones, and `agent6 memory invalidate` retires
-one without deleting the audit trail. Memories do not weaken any boundary
-in this document: sandbox, egress, and git policy come from config, not
-from prompt content.
+- **The LLM only sees the fixed set in `src/agent6/tools/schema.py`.**
+    - Structured edits, read-only navigation, fixed-argv verify/metric commands,
+      `finish_run`, `ask_user`, a curator task notepad, a cross-run memory
+      notepad, and capability-gated `run_command`.
+    - No `shell`, no `write_file` (writes go through `apply_edit`, which refuses
+      paths outside cwd), no `web_fetch`, no `eval`.
+    - Adding a tool needs a security review note ([AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md)).
+- **The memory notepad is a prompt-injection persistence channel.**
+    - `add_memory`/`invalidate_memory` (run mode) write fixed markdown under
+      `<state-dir>/<repo-id>/memories/` (code picks the path; the model supplies
+      only a schema-validated scope + text); active notes join later runs' system
+      prompt on the same repo.
+    - Mitigated: notes are inert data (never executed), the injected block is
+      size-capped and framed as untrusted, and the store is operator-auditable
+      (`agent6 memory list --all`, `agent6 memory invalidate` keeps the trail).
+    - It weakens no boundary here: sandbox/egress/git policy come from config, not
+      prompt content.
 
 ### 5. Git invariants
 
-`src/agent6/git_ops.py` is the only module that invokes `git`. It
-exposes typed wrappers for the safe operations (status, add, commit,
-diff, branch creation, checkout) and refuses, by construction, to call:
+- **agent6's own git refuses the destructive ops, by construction.**
+    - `git_ops.py` is the only module through which agent6 invokes git; it wraps
+      the safe ops (status, add, commit, diff, branch, checkout) and refuses
+      `push`, `reset --hard`, `commit --amend`, `rebase`,
+      `filter-branch`/`filter-repo`, `branch -D`/`--force`, and any `--force`/`-f`
+      on a destructive verb.
+    - `git.allow_push`/`allow_force`/`allow_history_rewrite` exist for
+      forward-compat but are ignored.
+- **A `git` the model runs via `run_command` is bounded by the sandbox, not this
+  list.**
+    - On `strict`, `protect_git` read-only-binds `.git`, so a rewrite fails and
+      `push` has no egress. On `hardened`, `.git` is writable, so the container is
+      the boundary.
+- **git_ops neutralizes repo-controlled host code in a poisoned `.git/config`.**
+    - `core.fsmonitor` and `diff.external` are always off; `.git/hooks/*` run only
+      under `git.run_repo_hooks = true` (default false; `core.hooksPath` points
+      away so a hook can't fire on agent6's auto-commit).
+    - On `strict` this complements `protect_git`'s RO `.git`. On `hardened` the cwd is
+      blanket RW (an RO `.git` would break cargo/pytest creating
+      `target/`/`.pytest_cache/`), so `.git` is writable there; acceptable, gated
+      by `run_commands`, recoverable (branch-per-run, commits via git_ops),
+      container is the blast radius.
+- **The edit tools refuse writes into an in-repo venv or `site-packages`.**
+    - A `pyvenv.cfg` dir or `site-packages` ancestor: a run rewriting an
+      editable-install `.pth` would silently corrupt the venv, invisible in `runs
+      diff`/merge since venvs are gitignored. Reads stay allowed.
+    - Related limit: an editable install records the host path in its `.pth`,
+      absent under the jail's `/workspace`, so a `verify_command` importing the
+      project can `ModuleNotFoundError`. Fix with pytest `pythonpath`, a
+      `conftest.py`, or a non-editable install.
 
-- `git push` (any form, any remote),
-- `git reset --hard`,
-- `git commit --amend`,
-- `git rebase`, `git filter-branch`, `git filter-repo`,
-- `git branch -D`, `git branch --force`,
-- anything containing `--force` or `-f` on a destructive verb.
+### 5b. Secrets, `connect`, root
 
-`git.allow_push`, `git.allow_force`, and `git.allow_history_rewrite` in
-the agent6 config exist for forward compatibility but are currently
-ignored; they will stay ignored until there is a concrete review of what
-a "safe push" would look like.
+- **Provider keys are `0600`, owner-only, and never leave agent6's process.**
+    - In `$XDG_CONFIG_HOME/agent6/secrets.toml` (refused if group/other-readable
+      or foreign-owned, like an SSH key), or from `[providers.<name>].api_key_env`
+      (env wins). Never in transcripts, never in `config show` (redacted), never
+      mounted into the jail.
+- **`agent6 connect` never executes remote input.**
+    - It only prompts locally (`getpass`) and writes config/secrets. It makes one
+      read-only `GET` to the provider's key endpoint to confirm auth (status only;
+      `--no-verify` to skip).
+    - During a run agent6 opens no listening socket (MCP is stdio, the broker is a
+      private unix socket); the only accept-side socket is opt-in `agent6 web` (§7).
+- **Running as root is refused without an explicit opt-in.**
+    - `--allow-root` / `AGENT6_ALLOW_ROOT=1` (+ a banner). Under `sudo`, agent6
+      reads the *real* user's config/secrets (from `SUDO_UID`/`SUDO_USER`), not
+      root's, and chowns state-dir writes back. It doesn't drop privileges
+      in-process: the jail, not the uid, is the boundary.
 
-Every `git_ops` invocation is also hardened against **repo-controlled host
-code execution**: a cloned/poisoned `.git/config` can otherwise run a
-command on the host (outside the jail) the moment agent6 runs git in it.
-`core.fsmonitor` (fires on index refresh) and `diff.external` (fires on
-`git diff`) are always overridden off; the repo's `.git/hooks/*` run only
-when `git.run_repo_hooks = true` (default false; `core.hooksPath` is
-pointed away from the repo so a `pre-commit` hook can't fire on agent6's
-own auto-commit). On strict this complements `protect_git`, which
-RO-binds `.git` to stop the worker from *writing* into it. On hardened
-the cwd is blanket read-write (no mount namespace to carve, and carving
-`.git` read-only would also deny new top-level entries and break
-toolchains like cargo/pytest that create `target/` or `.pytest_cache/`),
-so `.git` is writable by jailed commands there. That is acceptable: it is
-gated by `run_commands` (default `ask`), recoverable (branch-per-run,
-commits go through `git_ops`), and the surrounding container is the blast
-radius.
+### 6. Curator subprocess + state location
 
-The in-process edit tools (`apply_edit` / `apply_patch`) also refuse writes
-into an in-repo **virtualenv or installed-package tree** (a directory with
-`pyvenv.cfg`, or any `site-packages` ancestor). These are the operator's
-environment, not source: a run rewriting an editable-install `.pth` (for
-instance to make an in-jail verify pass) would silently corrupt the venv, and
-because venvs are gitignored the damage never surfaces in `runs diff` / merge.
-Reads stay allowed; only writes are refused, on both profiles.
-
-A related limitation: the jail bind-mounts the repo at a fixed path
-(`/workspace`), but a Python **editable install** records this checkout's
-absolute host path in its `.pth`, which does not exist under `/workspace`. So a
-`verify_command` that imports the project's own package can fail in the jail
-with `ModuleNotFoundError` even though it works on the host. This is inherent to
-the stable mount point (remounting at the host path would couple the sandbox to
-the host layout); it is not auto-worked-around. Make the package importable
-without the host-path `.pth`: set pytest `pythonpath` (agent6's own `pyproject`
-does, so it can run its suite on itself in the jail), add a `conftest.py`, or
-use a non-editable install. Flat-layout projects that import from the repo root
-are unaffected.
-
-### 5b. Secrets, `connect`, and running as root
-
-- **Secrets at rest.** Provider API keys live in
-  `$XDG_CONFIG_HOME/agent6/secrets.toml`, created and enforced `0600`
-  (owner read/write only). agent6 refuses to read the file if it is
-  group/other-accessible or owned by another user, the same posture as
-  an SSH private key. Keys may alternatively come from an environment
-  variable named by `[providers.<name>].api_key_env`; the env var takes
-  precedence. Keys are never written to transcripts, never printed by
-  `agent6 config show` (redacted), and never mounted into the jail;
-  provider calls happen in agent6's own process, outside the sandbox.
-- **`agent6 connect` never executes remote input.** The connect flow only
-  prompts locally (key via `getpass`: hidden, or masked with `*` on Python
-  3.14+) and writes config/secrets. It does not run any command, URL, or
-  script returned by a provider or any remote, by construction. This is a
-  deliberate guard against the class of bug where a login flow runs an
-  attacker-supplied shell command. After saving a key it makes one read-only
-  `GET` to the provider's models/key endpoint to confirm the key authenticates
-  (a 401 is caught at setup, not mid-run); the response is only inspected for
-  the HTTP status, never executed. Skip it with `--no-verify` for offline or
-  local endpoints.
-  During a run agent6 opens no listening network socket of any kind (MCP is
-  stdio; the egress broker is a private Unix socket). The one accept-side
-  socket is the opt-in `agent6 web` front-end, loopback by default (§7).
-- **Root.** Running an LLM-driven agent as root is dangerous, so agent6
-  refuses unless the operator explicitly opts in with `--allow-root` (or
-  `AGENT6_ALLOW_ROOT=1`), and prints a loud banner. When invoked through
-  `sudo`, agent6 resolves the *real* user from `SUDO_UID`/`SUDO_GID`/
-  `SUDO_USER`, reads that user's config + secrets (not root's), and
-  `chown`s anything it writes under the per-repo state dir back to them so
-  no root-owned files are left behind. agent6 does not drop privileges
-  in-process: under `sudo` the worker's verify/run commands are expected
-  to need root and run as root inside the jail, so the jail, not the
-  process uid, is the security boundary.
-
-### 6. Curator subprocess and run-state location
-
-The task graph is written by a separate `graph-curator` subprocess. The
-main agent process talks to it over a Unix domain socket inside the run
-directory and never writes graph data directly, so a bug in the worker /
-planner cannot corrupt the on-disk graph; the curator's append-only
-`graph.jsonl` is the durable source of truth. The main process writes the
-rest of the run state in-process: the resume snapshot (`loop_state.json`),
-the event log (`logs.jsonl`), and transcripts.
-
-What keeps the whole run directory safe from jailed commands is its
-**location**, not any single writer. Per-repo state (config + run state)
-lives out of the workspace under `$XDG_STATE_HOME/agent6/<repo-id>/`
-(override with `[agent6].state_dir` or `AGENT6_STATE_HOME`). Jailed
-commands run on the repo cwd, and the state dir is outside it, so they
-cannot reach it.
+- **A separate `graph-curator` subprocess owns the task graph.**
+    - The main process talks to it over a unix socket and never writes graph data,
+      so a worker/planner bug can't corrupt the append-only `graph.jsonl` (the
+      source of truth).
+- **The run directory is safe because of its location, not any single writer.**
+    - Per-repo state lives at `$XDG_STATE_HOME/agent6/<repo-id>/` (override with
+      `[agent6].state_dir`), outside the cwd jailed commands run on.
 
 ### 7. No agent-owned network surface (except opt-in `agent6 web`)
 
-The agent loop does not run an HTTP server, gRPC server, or any other
-accept-side socket. The only sockets it opens are:
+- **The loop opens no accept-side socket.**
+    - Only outbound HTTPS to the provider and a per-run `0600` unix socket to its
+      curator.
+- **`agent6 web` is the one accept-side socket, and only when you start it.**
+    - Loopback (`127.0.0.1`) by default, no app auth (run behind `tailscale
+      serve`; the tailnet identity is the access control, see [the web UI](web.md)).
+    - A non-loopback bind is refused unless opted in: `[web].host` needs
+      `[web].allow_non_loopback = true`, `--host` needs `--allow-non-loopback`.
+- **The server renders folded state and drives typed contracts only; it executes
+  nothing.**
+    - New-work spawns fixed argv with the task behind `--`; machine-run is
+      allow-listed to authored files; answers write only the addressed run's
+      answer files (run id, answer id, machine target state dir each validated to
+      one path component); merge/prune/config-set are fixed agent6 subcommands.
+- **State-changing POSTs carry a CSRF guard.**
+    - Body must be `Content-Type: application/json` (a cross-site `fetch` with it
+      triggers a preflight the server never answers) and any `Origin` must match
+      `Host`. Holds on loopback and behind `tailscale serve`.
+    - It does NOT cover DNS rebinding (that needs a Host allow-list incompatible
+      with the tailnet name).
+- **Request framing is bounded.** 1 MiB body cap (413), chunked refused (411),
+  any unread-body refusal closes the connection.
+- **The machine write surface (`POST /api/machine/<name>/{poke,answer,approve,steer}`)
+  uses the same guards.** `poke` writes only the instance signal file (inert JSON
+  the next `tool` reads); the others write only the current agent state's
+  per-state dir. PWA assets are static; the service worker is a no-op passthrough
+  (no Web Push/VAPID).
+- No telemetry, no auto-update, no remote control plane.
 
-- outbound HTTPS to the LLM provider,
-- a per-run Unix domain socket under the run directory
-  (`<state-dir>/<repo-id>/runs/<run-id>/`) with mode `0600` for talking to
-  its own curator.
+### 8. State-machine egress + script bundles
 
-The one accept-side socket agent6 can open is the **`agent6 web`** front-end,
-and only when you start it. It binds `127.0.0.1` by default and has no
-app-level auth: remote access is meant to run behind `tailscale serve`, so the
-tailnet/WireGuard identity is the access control (see [the web UI](web.md)).
-Binding a non-loopback host exposes the write surface (spawn runs, answer
-prompts) and is refused unless you opt in: a non-loopback `[web].host` needs
-`[web].allow_non_loopback = true` (checked at config load) and a `--host`
-override needs `--allow-non-loopback`, so a copied config or command cannot
-silently expose you. The server only ever renders folded
-view-model state and drives the typed front-end contracts, it never serves
-secrets and never executes arbitrary input: new-work spawns fixed argv with the
-task as one argv element behind `--` (so a value starting with `-` cannot be
-read as a flag), machine run is allow-listed to the authored files,
-answers write only into the addressed run's own answer files (the run id,
-answer id, and a machine answer's target state dir are each validated to a
-single path component, so a request cannot escape the run's
-approvals/questions dir), and merge/prune/config-set are fixed agent6
-subcommands.
+- **`machine run` is a supervisor in the host netns that makes no network calls.**
+    - Each `agent` state confines its own egress per `agent_network` (the broker,
+      §1b); each `tool` state is jailed, so a per-tool `allow_network` sets its
+      netns independently.
+    - This lets a machine keep agents on the provider API while one reviewed,
+      fixed-argv `tool` reaches the network: unlike `run_command` (LLM-chosen
+      argv), a `tool` isn't a free exfil channel.
 
-State-changing POSTs also carry a CSRF guard so another site open in the
-operator's browser cannot drive the agent: a POST body must be
-`Content-Type: application/json` (a cross-site `fetch` with that type triggers
-a CORS preflight the server never answers), and any `Origin` header must match
-`Host`. This holds on both the loopback bind and behind `tailscale serve`
-(same-origin requests pass either way). It does not cover DNS rebinding, which
-would need a Host allow-list incompatible with the tailnet hostname; that
-vector stays with the network layer.
+Egress = `agent_network` × `tool_network` × per-tool `allow_network`; the
+effective profile decides what's enforceable. "offline" = no egress.
 
-Request framing is bounded: a POST body is capped at 1 MiB (413 over it),
-chunked bodies are refused (411), and any refusal that leaves a body unread
-closes the connection (announced with `Connection: close`) so a keep-alive
-client cannot have the leftover bytes parsed as its next request line.
+**Agent egress** by `agent_network`:
 
-The same rules cover the **machine write surface** (`POST
-/api/machine/<name>/{poke,answer,approve,steer}`): the machine name goes through
-the identical single-path-component guard as a run id, and each answer id is
-contained the same way. `poke` writes only the instance signal file (the payload
-is inert JSON the next `tool` reads); `answer`/`approve`/`steer` write only into
-the current agent state's per-state dir under the per-repo state dir. The
-liveness gate registers `frontend.pid` on the instance dir while a browser
-streams, so a machine agent state's prompts bridge to the browser exactly as a
-run's do. The web PWA assets (manifest, service worker, icon) are static; the
-service worker is a no-op passthrough with no Web Push / VAPID and no push
-handler.
-
-There is no telemetry, no auto-update, and no remote control plane.
-
-### 8. State-machine egress (the supervisor model) + script bundles
-
-A `agent6 machine run` engine is a thin **supervisor** that stays in the host
-network namespace and makes no network calls itself. Each `agent` state runs in
-its own subprocess that confines its egress per `sandbox.agent_network` (the
-broker, §1b); each `tool` state is jailed by the engine, so a per-tool
-`allow_network` decides its netns independently of the agent. This is what lets
-a machine confine its agents to the provider API while letting one
-deterministic tool reach the network: a `tool` command is fixed and
-operator-reviewed (unlike `run_command`, whose argv the LLM chooses), so a
-networked tool is not a free exfiltration channel.
-
-Egress is set by `sandbox.agent_network`, `sandbox.tool_network`, and a per-tool
-`allow_network`; the effective profile (§3) decides what is *enforceable*. The
-tables cover every case; "offline" = no egress.
-
-**Agent-process egress** (the agent's own LLM/provider HTTP), by `sandbox.agent_network`:
-
-| `sandbox.agent_network` | `strict` | `hardened` | `none` |
+| `agent_network` | `strict` | `hardened` | `none` |
 |---|---|---|---|
-| `providers` *(def)* | provider endpoints + `allow_urls`, broker-pinned (§1b) | provider *ports* only (Landlock) | unconfined ⚠ |
-| `local` | loopback providers only, broker-pinned (refuse to run if any provider isn't loopback) | ⛔ refuse to run | unconfined ⚠ |
+| `providers` *(def)* | providers + `allow_urls`, broker-pinned | provider *ports* only (Landlock) | unconfined ⚠ |
+| `local` | loopback providers only, broker-pinned | ⛔ refuse | unconfined ⚠ |
 | `open` | unconfined | unconfined | unconfined ⚠ |
 
-**Jailed-command egress** (`run_command` and machine `tool` states), by
-`sandbox.tool_network` (columns; cells are the `strict` profile):
+**Jailed-command egress** (`run_command`, machine `tool`) by `tool_network`
+(cells = `strict`):
 
 | jailed command | `block` *(def)* | `only_explicit_states` | `allow` |
 |---|---|---|---|
 | `run_command` | offline | offline | host network |
-| `tool`, `allow_network = "auto"` (def) / `"block"` | offline | offline | offline |
-| `tool`, `allow_network = "allow"` | ⛔ refuse to run | host network | host network |
+| `tool`, `allow_network` `auto`(def)/`block` | offline | offline | offline |
+| `tool`, `allow_network = allow` | ⛔ refuse | host network | host network |
 
-**Refusals**: these configurations refuse to run (fail-closed):
+**Refusals** (fail-closed):
 
 | Configuration | When |
 |---|---|
-| `sandbox.tool_network = "allow"` without `sandbox.agent_network = "open"` | config load, any profile ¹ |
-| a `tool` sets `allow_network = "allow"` under `sandbox.tool_network = "block"` | machine start, any profile |
-| `sandbox.agent_network = "local"` or `sandbox.tool_network = "only_explicit_states"` | run start, `hardened` ² |
-| a machine with `tool` states under `sandbox.tool_network = "block"`, or a `tool` with `allow_network = "block"` | machine start, `hardened` ² |
+| `tool_network = allow` without `agent_network = open` | config load ¹ |
+| a `tool` sets `allow_network = allow` under `tool_network = block` | machine start |
+| `agent_network = local` or `tool_network = only_explicit_states` | run start, `hardened` ² |
+| a machine with `tool` states, or a `tool` with `allow_network = block`, under `tool_network = block` | machine start, `hardened` ² |
 
-- ⚠ `none` (non-Linux) is **unsandboxed**: nothing above is enforced and nothing
-  is refused; the run proceeds with a loud warning.
-- ¹ `run_command` runs inside the agent process, so it can't reach the network
-  while the agent is confined; hence `sandbox.tool_network = "allow"` needs
-  `sandbox.agent_network = "open"`.
-- ² `sandbox.tool_network`'s per-command isolation needs a network namespace, so
-  it is `strict`-only. On `hardened` (no namespaces) a jailed child instead
-  inherits the agent's Landlock and follows `sandbox.agent_network`; the cases
-  that would need real per-command isolation are refused rather than mis-confined.
+- ⚠ `none` (non-Linux) is unsandboxed: nothing enforced, nothing refused, loud
+  warning.
+- ¹ `run_command` runs in the agent process, so it can't reach the network while
+  the agent is confined.
+- ² per-command isolation needs a netns, so it's `strict`-only; on `hardened` a
+  jailed child inherits the agent's Landlock and the cases needing real isolation
+  are refused.
 
-Every surface fails closed:
+More fail-closed properties:
 
-- **Operator-gated, machine-declared.** `sandbox.agent_network`/
-  `sandbox.tool_network` are read only from the operator's global/repo config; a
-  machine's `[config]` overlay (possibly LLM-drafted or shared) is rejected at
-  load if it declares `[providers.*]`, `[sandbox.*]`, `[profiles.*]`, or
-  `git.run_repo_hooks` (a profile preset would otherwise splice that same
-  operator-only policy, or a host `[machine.notify]` argv, into the effective
-  config, since the operator's selected profile is resolved from every layer
-  including the overlay; `run_repo_hooks` would honor the repo's `.git/hooks`,
-  running host code outside the jail on a `mode="run"` commit). A `tool` merely
-  *declares* `allow_network`; whether `"allow"` is honored is the operator's call
-  via `sandbox.tool_network`, and
-  every conflict or unenforceable demand is refused at startup naming the state
-  (see the rows/notes above), never silently mis-confined.
-- **Bundle confinement.** Helper scripts live in an operator-reviewed
-  `scripts/` directory beside the `.asm.toml`. `machine check` validates
-  that every entry under `scripts/` resolves *inside* the bundle (symlinks
-  that escape via `..`/absolute are rejected) and that every static
-  `scripts/...` command reference exists and stays inside the bundle, so a
-  machine cannot smuggle a path that reads or executes outside its own
-  directory. Scripts are drafted at authoring time and reviewed/committed
-  by the operator, never fetched or generated from untrusted model output
-  at run time. And during a run, the machine's own `.asm.toml` + `scripts/`
-  are made read-only in every jail (the same mechanism that RO-binds
-  `.git` on strict), so a
-  tool or agent state cannot rewrite its own logic, add an `allow_network`
-  flag, or alter a bundled script mid-run or for a future run.
-- **Notifications.** A machine surfaces attention two ways, neither of which
-  widens the agent's surface. Device-present: each front-end renders a
-  `machine.notify` (a state's `notify` message) as an ephemeral overlay, and
-  `agent6 attach`/the TUI also call `notify-send` with a FIXED argv (exe + two
-  positional data arguments, no shell), so a model-authored message is inert
-  data, never a command. Out-of-band: the operator hook
-  `[machine.notify].on_event` runs an operator-controlled argv on the host,
-  outside the jail, on each `machine.notify` and `machine.end`, with only
-  `AGENT6_MACHINE_*` env (id, dir, event, state, message, level), mirroring
-  `[notify].on_complete`. The hook argv is operator config, never LLM output; a
-  machine `[config]` overlay that sets `[machine.notify]` is rejected at load, so
-  a shared or LLM-drafted machine cannot inject a host command. There is no Web
-  Push / VAPID; the web notification is the foreground Notification API only.
+- **Operator-gated policy.** `agent_network`/`tool_network` are read only from the
+  operator's config; a machine's `[config]` overlay is rejected at load if it
+  declares `[providers.*]`, `[sandbox.*]`, `[profiles.*]`, or `git.run_repo_hooks`.
+    - Otherwise a profile preset or a host `[machine.notify]` argv could splice
+      into the resolved config, and `run_repo_hooks` would run repo `.git/hooks`
+      on the host on a `mode="run"` commit. A `tool` only *declares*
+      `allow_network`; honoring `allow` is the operator's call, and every conflict
+      is refused at startup naming the state.
+- **Bundle confinement.** Scripts live in a reviewed `scripts/` beside the
+  `.asm.toml`; `machine check` verifies every entry and static reference resolves
+  inside the bundle (escaping symlinks rejected).
+    - Scripts are operator-authored and committed, never fetched/generated at run
+      time, and the `.asm.toml` + `scripts/` are RO in every jail during a run, so
+      a state can't rewrite its own logic or add an `allow_network` flag.
+- **Notifications don't widen the agent's surface.** Front-ends render
+  `machine.notify` as an overlay, and `attach`/TUI call `notify-send` with a FIXED
+  argv (no shell), so a model message is inert data.
+    - The out-of-band hook `[machine.notify].on_event` runs an operator argv on the
+      host with only `AGENT6_MACHINE_*` env (mirrors `[notify].on_complete`); a
+      `[config]` overlay setting `[machine.notify]` is rejected at load. No Web
+      Push/VAPID.
 
 ## Skills trust model
 
-Skills are operator-installed prompt text: `agent6 skills install <url>` is an
-operator-initiated fetch from the CLI (the same trust class as `agent6
-connect`), and what it installs enters the worker's system prompt or tool
-results verbatim. That makes a skill equivalent to config, not to repository
-content: install one only from a source you trust, exactly like adding a
-provider or widening the sandbox.
-
-The mechanics keep the surface narrow:
-
-- Nothing in a skill is ever executed at install or load time. A skill's
-  helper scripts only run if the model chooses to run them through the normal
-  jailed command path, subject to `sandbox.run_commands` like any command.
-- The `use_skill` tool is read-only and path-contained: it serves files from
-  the skill's own directory only (symlinks and `../` resolve before the
-  containment check), never the repository, never the network.
-- Skill directories are not mounted into the jail; content reaches the model
-  engine-side.
-- Repo-local skills (a `.claude/skills/` inside a checkout you work on) are
-  deliberately NOT discovered: third-party repo content must not silently
-  enter the system prompt. Only the installed dir and the operator's
+- **A skill is config, not repo content: install only from trusted sources.**
+    - `agent6 skills install <url>` is an operator-initiated CLI fetch (same trust
+      class as `connect`); what it installs enters the system prompt/tool results
+      verbatim.
+- **Nothing in a skill runs at install or load.**
+    - Its scripts run only if the model runs them through the jailed command path,
+      subject to `run_commands`.
+- **`use_skill` is read-only and path-contained.** Serves the skill's own dir only
+  (symlinks/`..` resolved first), never the repo or network. Skill dirs aren't
+  mounted into the jail; content reaches the model engine-side.
+- **Repo-local `.claude/skills/` are deliberately NOT discovered.** Third-party
+  repo content must not enter the prompt; only the installed dir +
   `[skills].extra_dirs` are scanned.
-- The agent-loop egress allow-list is unchanged: the install fetch happens in
-  the operator's CLI process before any agent runs, never from the loop.
 
 ## Prompt-injection resilience
 
-The test suite under [`tests/security/test_prompt_injection.py`](https://github.com/agent6-dev/agent6/blob/master/tests/security/test_prompt_injection.py)
-runs a small corpus of adversarial inputs through the planner, worker,
-and reviewer prompts and asserts that the agent does not exfiltrate
-file content, does not attempt out-of-policy tool calls, and does not
-follow embedded instructions to weaken its own constraints.
-
-This is a smoke test, not a proof. The structural defenses above
-(sandbox, fixed tool surface, git invariants) are the real mitigation;
-prompt-injection corpus tests exist to catch regressions in the prompts,
-not to bound what an attacker can do.
+[`tests/security/test_prompt_injection.py`](https://github.com/agent6-dev/agent6/blob/master/tests/security/test_prompt_injection.py)
+runs an adversarial corpus through the planner/worker/reviewer prompts and
+asserts no exfiltration, no out-of-policy tool calls, and no following embedded
+instructions to weaken constraints. It's a smoke test, not a proof: the
+structural defenses above are the real mitigation; the corpus catches prompt
+regressions.
 
 ## Known limitations
 
-- **Landlock TCP rules** require Linux ≥ 6.7 (ABI ≥ 4). On older kernels
-  the *agent process itself* is not network-confined. Children are still
-  net-isolated in `strict` via the empty network namespace.
-- **User namespaces** must be enabled
-  (`kernel.unprivileged_userns_clone = 1`). Some distros disable this
-  by default; agent6 detects that and refuses to run `strict`.
-- **AppArmor userns restriction** (Ubuntu 24.04+:
-  `kernel.apparmor_restrict_unprivileged_userns = 1`) blocks unprivileged
-  userns unless the process has an AppArmor profile granting `userns`.
-  agent6 ships such a profile, scoped to just the launcher binary; install
-  it with `agent6 system apparmor install` (`remove` reverts it) -- the
-  surgical fix for strict per-command jailing. agent6's profile detection
-  probes the *real launcher binary* (not `/usr/bin/unshare`), so once the
-  profile is installed it selects `strict` for per-command jailing; without
-  it, `hardened`. One limitation: strict's provider-egress broker
-  (`agent_network = "providers"`, the default) needs the *agent process*
-  itself to create a userns, which the launcher-only profile does not grant
-  -- so a default run downgrades to `hardened` (egress confined by Landlock)
-  with a note unless you set the sysctl to 0 host-wide or use
-  `agent_network = "open"`.
-- **seccomp** is required by the jail; on rare hardened kernels that
-  block seccomp from unprivileged callers, the jail fails closed.
-- **Devcontainers**: the jail's `hardened` profile is what you get
-  inside Docker / VS Code dev containers. The container itself becomes
-  the FS blast radius. Network restrictions still apply via the
-  agent-process Landlock when the kernel supports it. The XDG state base
-  is inside the container and ephemeral (lost on rebuild), so to persist
-  run state mount a volume at the state dir or set `[agent6].state_dir` /
-  `AGENT6_STATE_HOME` to a persisted out-of-cwd path.
-- **Side channels**: agent6 makes no claim about timing, cache, or
-  speculative-execution side channels. If your threat model includes
-  Spectre-class attacks, do not co-locate agent6 on a host with secrets.
-- **Supply chain**: pin your install. The runtime deps are `pydantic`,
-  `httpx2`, `argcomplete`, the `tree-sitter` pair (`tree-sitter` +
-  `tree-sitter-language-pack`), and `textual` (the live dashboard);
-  build-dep is `hatchling`; and the jail pulls a small set of well-known
-  Rust crates (`nix`, `libc`, `landlock`, `seccompiler`, `serde`,
-  `serde_json`). Verify before upgrading any of them.
+- **Landlock TCP rules need Linux ≥ 6.7** (ABI ≥ 4); older kernels leave the agent
+  process net-unconfined (children stay net-isolated in `strict` via the empty netns).
+- **User namespaces must be enabled;** some distros disable them, and agent6
+  refuses `strict` there.
+- **AppArmor userns (Ubuntu 24.04+)** blocks unprivileged userns without a profile.
+    - agent6 ships one scoped to the launcher (`agent6 system apparmor install`);
+      with it, per-command jailing is `strict`, without it `hardened`.
+    - Caveat: the egress broker needs the *agent process* to make a userns, which
+      the launcher-only profile doesn't grant, so a default run downgrades to
+      `hardened` (Landlock egress) unless you set the sysctl to 0 host-wide or use
+      `agent_network = "open"`.
+- **seccomp is required;** kernels that block it from unprivileged callers make the
+  jail fail closed.
+- **Devcontainers get `hardened`;** the container is the FS blast radius, network
+  still Landlock-confined when supported. The XDG state base is ephemeral (lost on
+  rebuild), so mount a volume at the state dir or set `[agent6].state_dir` to
+  persist runs.
+- **Side channels:** no claim about timing/cache/speculative side channels; don't
+  co-locate agent6 with secrets if Spectre-class attacks are in your model.
+- **Supply chain:** pin your install. Runtime deps `pydantic`, `httpx2`,
+  `argcomplete`, the `tree-sitter` pair, `textual`; build-dep `hatchling`; the
+  jail's Rust crates `nix`, `libc`, `landlock`, `seccompiler`, `serde`,
+  `serde_json`.
