@@ -18,6 +18,7 @@ from typing import Any, Literal
 RunReason = Literal[
     "finish_run",
     "finish_planning",
+    "answered",  # ask mode: the final prose IS the answer (a normal, successful end)
     "silent_finish",
     "went_quiet",
     "budget_exhausted",

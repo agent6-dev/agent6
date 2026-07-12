@@ -50,6 +50,7 @@ _FINISH_TOOLS = frozenset({"finish_run", "finish_planning"})
 _END_REASON_LABEL = {
     "steer_abort": "stopped",
     "finish_run": "finished",
+    "answered": "answered",
     "provider_error": "provider error",
     "budget_exhausted": "budget exhausted",
     "went_quiet": "went quiet",

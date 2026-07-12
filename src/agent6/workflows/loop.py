@@ -300,6 +300,7 @@ from agent6.workflows._run_state import (
 )
 from agent6.workflows._run_state import (
     ResumeError,
+    RunReason,
     RunResult,
 )
 from agent6.workflows._run_state import (
@@ -2484,12 +2485,22 @@ class Workflow:
                 {"role": "user", "content": [{"type": "text", "text": _QUESTION_NUDGE}]}
             )
             return None
-        self._log(f"LOOP: silent_finish at iter {iteration} - agent emitted text but no tool_use")
+        # In ask mode a prose answer with no tool call is the NORMAL success (the
+        # answer IS the text), so end as "answered", not "silent_finish" -- the
+        # latter read as a failure diagnostic on a perfectly good answer. run/plan
+        # keep silent_finish: there, stopping without finish_run is mildly anomalous.
+        reason: RunReason = "answered" if self.mode == "ask" else "silent_finish"
+        if self.mode == "ask":
+            self._log(f"  ask answered at iter {iteration}")
+        else:
+            self._log(
+                f"LOOP: silent_finish at iter {iteration} - agent emitted text but no tool_use"
+            )
         self._final_checkpoint(iteration)
-        self._emit_run_end_passed(reason="silent_finish", iterations=iteration)
+        self._emit_run_end_passed(reason=reason, iterations=iteration)
         return RunResult(
             completed=True,
-            reason="silent_finish",
+            reason=reason,
             # In ask mode the final prose IS the answer the caller
             # prints, so keep it whole; run/plan only need a short
             # summary line.

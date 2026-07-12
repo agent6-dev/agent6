@@ -58,6 +58,30 @@ def _state(**kw: Any) -> Any:
     return _LoopState(**defaults)
 
 
+def test_ask_silent_finish_ends_as_answered_not_silent_finish() -> None:
+    # In ask mode a prose answer with no tool call is the normal success: it must
+    # end as "answered", not the failure-sounding "silent_finish".
+    wf = _wf(mode="ask")
+    result = wf._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
+        "The answer is 42.", [], _state(), iteration=2
+    )
+    assert result is not None
+    assert result.reason == "answered"
+    assert result.completed is True
+    assert result.summary == "The answer is 42."  # ask keeps the whole answer
+
+
+def test_run_silent_finish_stays_silent_finish() -> None:
+    # In run mode (engaged: edited + verified), a no-tool prose turn is still an
+    # implicit silent_finish, not "answered".
+    wf = _wf(mode="run")
+    result = wf._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
+        "Done.", [], _state(ever_edited=True, verify_ever_passed=True), iteration=5
+    )
+    assert result is not None
+    assert result.reason == "silent_finish"
+
+
 def _turn(**kw: Any) -> Any:
     """A bare _TurnState for direct turn-phase method tests."""
     from agent6.workflows.loop import _TurnState  # pyright: ignore[reportPrivateUsage]
