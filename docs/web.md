@@ -37,9 +37,11 @@ invocation. Stop it with Ctrl-C.
   streaming underneath. A detail toggle cycles collapsed / expanded / hidden,
   and any clipped item (a long tool result, folded reasoning) expands on click.
   Alongside it: the task graph, budget, clipped tool-call table (hover for the
-  full args and result), latest commit diff, and the raw event log. Steer the
-  run, merge its branch, approve `run_command` prompts, and answer `ask_user`
-  questions inline.
+  full args and result), latest commit diff, and the raw event log. A composer
+  under the conversation steers a live run (Enter sends, Shift+Enter newline)
+  and, once the run has ended, resumes it with the typed follow-up. Stop now,
+  stop after the current step, compact the context, merge the branch, approve
+  `run_command` prompts, and answer `ask_user` questions inline.
 - **Conversation**: the same view full-page, following the run live.
 - **Machines**: the state overview, the path taken, and the current agent
   state's conversation. Steer, approve, and answer the current agent state's
@@ -77,7 +79,8 @@ curl -sN localhost:7658/api/run/<id>/events    # SSE: a fresh snapshot per chang
 ```
 
 `curl /api/run/<id>` returns exactly what `agent6 watch <id> --json` prints.
-Writes are small JSON `POST`s (`/api/new`, `/api/run/<id>/{steer,approve,answer,merge}`,
+Writes are small JSON `POST`s (`/api/new`,
+`/api/run/<id>/{steer,approve,answer,merge,resume,stop_step,compact}`,
 `/api/machine/<name>/{poke,steer,approve,answer}`, `/api/runs/prune`,
 `/api/config`, `/api/machine/{create,run}`) that only ever drive the typed spawn /
 answer-file contracts, never arbitrary execution. A machine's `approve`/`answer`/

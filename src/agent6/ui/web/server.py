@@ -96,6 +96,11 @@ class MergeBody(_Body):
     strategy: str = ""
 
 
+class ResumeBody(_Body):
+    # The follow-up instruction a finished run is resumed with; empty = plain resume.
+    text: str = ""
+
+
 class MachineCreateBody(_Body):
     task: str
 
@@ -367,6 +372,15 @@ class _Handler(BaseHTTPRequestHandler):
         elif verb == "merge":
             mb = MergeBody.model_validate(self._read_body())
             ok, msg = actions.merge_run(self.cwd, run_id, mb.strategy)
+        elif verb == "resume":
+            rb = ResumeBody.model_validate(self._read_body())
+            ok, msg = actions.resume_run(self.cwd, run_id, rb.text)
+        elif verb == "stop_step":
+            self._read_body()  # drain the `{}` body (keep-alive framing)
+            ok, msg = actions.stop_after_step(self.cwd, run_id)
+        elif verb == "compact":
+            self._read_body()  # drain the `{}` body (keep-alive framing)
+            ok, msg = actions.compact_run(self.cwd, run_id)
         else:
             self._post_not_found(f"run/{run_id}/{verb}")
             return

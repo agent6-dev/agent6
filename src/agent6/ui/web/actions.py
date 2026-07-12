@@ -20,8 +20,11 @@ from typing import Any
 from agent6.machine import JournalError, MachineError, MachineJournal, load_machine
 from agent6.ui.bridge.approval import (
     read_worker_pid,
+    request_compact,
     request_steer,
+    request_stop,
     set_session_allow,
+    worker_is_alive,
     write_answer,
     write_question_answers,
     write_steer_answer,
@@ -31,6 +34,7 @@ from agent6.ui.bridge.spawn import (
     run_cli_capture,
     spawn_and_confirm,
     spawn_and_locate,
+    spawn_detached_resume,
 )
 from agent6.ui.viewmodel import newest_state_log
 from agent6.ui.web import model
@@ -137,6 +141,43 @@ def steer(cwd: Path, run_id: str, text: str) -> tuple[bool, str]:
     write_steer_answer(run_dir, text)  # ready before the run reads it
     request_steer(run_dir)
     return True, "steer requested"
+
+
+def resume_run(cwd: Path, run_id: str, text: str = "") -> tuple[bool, str]:
+    """Resume a finished/stopped run detached, optionally seeding *text* as the
+    first steering instruction (the composer's Enter on a finished run). Refused
+    while the run's worker is alive: a live run is steered, not resumed."""
+    run_dir = model.run_dir_for(cwd, run_id)
+    if run_dir is None:
+        return False, f"no run {run_id!r}"
+    if worker_is_alive(run_dir):
+        return False, "run is still live; steer it instead"
+    err = spawn_detached_resume(cwd, run_dir.name, steer=text)
+    return (err == ""), (err or "resuming")
+
+
+def stop_after_step(cwd: Path, run_id: str) -> tuple[bool, str]:
+    """Ask a live run to end cleanly at its next completed-iteration boundary
+    (the finished step's tool results and auto-commit land first). The immediate
+    stop stays the steer "abort" answer."""
+    run_dir = model.run_dir_for(cwd, run_id)
+    if run_dir is None:
+        return False, f"no run {run_id!r}"
+    if not worker_is_alive(run_dir):
+        return False, "run is not live"
+    request_stop(run_dir)
+    return True, "stopping after the current step"
+
+
+def compact_run(cwd: Path, run_id: str) -> tuple[bool, str]:
+    """Ask a live run to compact its context at the next safe boundary."""
+    run_dir = model.run_dir_for(cwd, run_id)
+    if run_dir is None:
+        return False, f"no run {run_id!r}"
+    if not worker_is_alive(run_dir):
+        return False, "run is not live"
+    request_compact(run_dir)
+    return True, "compaction requested"
 
 
 def _machine_state_dir(cwd: Path, name: str, state: str = "") -> Path | None:

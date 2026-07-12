@@ -201,6 +201,64 @@ def test_unknown_run_is_404(server: tuple[WebServer, int]) -> None:
     assert "no run" in json.loads(body)["error"]
 
 
+def test_resume_spawns_a_detached_resume_with_the_follow_up(
+    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from agent6.ui.web import actions
+
+    _srv, port = server
+    _make_run(tmp_path, "run-r", [{"type": "run.start"}, {"type": "run.end"}])
+    calls: list[tuple[Path, str, str]] = []
+
+    def fake_resume(cwd: Path, run_id: str, *, steer: str = "") -> str:
+        calls.append((cwd, run_id, steer))
+        return ""
+
+    monkeypatch.setattr(actions, "spawn_detached_resume", fake_resume)
+    status, data = _post(port, "/api/run/run-r/resume", {"text": "also fix the docs"})
+    assert status == 200 and data["ok"] is True
+    assert calls == [(tmp_path, "run-r", "also fix the docs")]
+
+
+def test_resume_refused_while_the_worker_is_alive(
+    server: tuple[WebServer, int], tmp_path: Path
+) -> None:
+    import os
+
+    _srv, port = server
+    _make_run(tmp_path, "run-l", [{"type": "run.start"}])
+    runs = resolved_state_dir(tmp_path) / "runs" / "run-l"
+    (runs / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    status, data = _post(port, "/api/run/run-l/resume", {"text": ""})
+    assert status == 422
+    assert "still live" in str(data["error"])
+
+
+def test_stop_step_and_compact_drop_markers_on_a_live_run(
+    server: tuple[WebServer, int], tmp_path: Path
+) -> None:
+    import os
+
+    _srv, port = server
+    _make_run(tmp_path, "run-m", [{"type": "run.start"}])
+    runs = resolved_state_dir(tmp_path) / "runs" / "run-m"
+    (runs / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    status, data = _post(port, "/api/run/run-m/stop_step", {})
+    assert status == 200 and data["ok"] is True
+    assert (runs / "stop.request").exists()
+    status, data = _post(port, "/api/run/run-m/compact", {})
+    assert status == 200 and data["ok"] is True
+    assert (runs / "compact.request").exists()
+
+
+def test_stop_step_refused_on_a_dead_run(server: tuple[WebServer, int], tmp_path: Path) -> None:
+    _srv, port = server
+    _make_run(tmp_path, "run-d", [{"type": "run.start"}, {"type": "run.end"}])
+    status, data = _post(port, "/api/run/run-d/stop_step", {})
+    assert status == 422
+    assert "not live" in str(data["error"])
+
+
 def test_run_conversation_endpoint(server: tuple[WebServer, int], tmp_path: Path) -> None:
     _srv, port = server
     _make_run(

@@ -154,6 +154,11 @@ table.tools .args { color: var(--muted); font-family: var(--mono); word-break: b
 .conv .s-operator { color: var(--ok); font-weight: 600; }
 .conv-live { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 8px; }
 .conv-live .lt { color: var(--accent); font-weight: 600; }
+/* The composer: docked under the conversation, the web analogue of the TUI's
+   steer bar (steer a live run; type the follow-up a finished run resumes with). */
+.composer { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px; }
+.composer textarea { min-height: 46px; }
+.composer .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
 .more-note { color: var(--muted); font-style: italic; }
 .card-head-row { display: flex; align-items: baseline; gap: 8px; }
 .card-head-row h2 { flex: 1; }
@@ -597,6 +602,67 @@ function convCard(url, title, cls) {
   return { card, conv, box };
 }
 
+// The composer bar under a run's conversation. On a LIVE run Enter sends the
+// text as a steer (injected at the run's next safe boundary); on a FINISHED
+// run Enter resumes the run with the text as the follow-up instruction (empty
+// = plain resume), then waits for the resumed worker to take over and
+// re-renders. Shift+Enter inserts a newline. setState(s) keeps the mode in
+// sync with each SSE frame.
+function makeComposer(id) {
+  const root = el('div', 'composer');
+  const ta = el('textarea', 'field');
+  const hint = el('div', 'hint');
+  let finished = null; // unknown until the first SSE frame
+  let busy = false;
+  const apply = () => {
+    ta.disabled = busy;
+    if (busy) { hint.textContent = 'resuming…'; return; }
+    if (finished) {
+      ta.placeholder = 'continue the run…';
+      hint.textContent = 'Enter resumes this run with the instruction (empty = just resume) · Shift+Enter newline';
+    } else {
+      ta.placeholder = 'steer the run…';
+      hint.textContent = 'Enter sends the instruction at the run’s next safe boundary · Shift+Enter newline';
+    }
+  };
+  const resume = async (text) => {
+    busy = true; apply();
+    try {
+      await postJSON('/api/run/' + encodeURIComponent(id) + '/resume', { text });
+      toast('resuming the run…');
+      // The resume is a detached spawn: wait for it to take over (the folded
+      // state un-finishes once it appends events), then re-open the view so
+      // the SSE stream and controls come back live.
+      for (let i = 0; i < 25; i++) {
+        await new Promise(r => setTimeout(r, 1000));
+        if (!root.isConnected) return; // navigated away
+        let s; try { s = await getJSON('/api/run/' + encodeURIComponent(id)); } catch (_) { continue; }
+        if (s && s.finished === false) { ta.value = ''; route(); return; }
+      }
+      toast('the resume has not started yet — check `agent6 runs`', true);
+    } catch (e) { toast(e.message, true); }
+    busy = false; apply();
+  };
+  ta.onkeydown = (e) => {
+    if (e.key !== 'Enter' || e.shiftKey) return;
+    e.preventDefault();
+    if (finished === null || busy) return;
+    const text = ta.value.trim();
+    if (!finished) {
+      if (!text) return;
+      postJSON('/api/run/' + encodeURIComponent(id) + '/steer', { text })
+        .then(() => { toast('steer sent'); ta.value = ''; })
+        .catch(err => toast(err.message, true));
+    } else {
+      resume(text);
+    }
+  };
+  root.appendChild(ta); root.appendChild(hint);
+  root.setState = (s) => { if (!busy && typeof s.finished === 'boolean') { finished = s.finished; apply(); } };
+  apply();
+  return root;
+}
+
 // --- run dashboard -----------------------------------------------------------
 // A multi-line steer dialog (browser prompt() is single-line). onResult(text|null):
 // the instruction to send (may be multi-line), or null to cancel. Steering never
@@ -647,22 +713,29 @@ function renderRun(id, opts) {
   mk('diff', 'Latest commit', 'scroll', side);
   grid.appendChild(side);
   mk('log', 'Event log', 'scroll');
-  if (!readOnly) {  // controls at the TOP so Steer/Stop are reachable without scrolling
+  if (!readOnly) {  // controls at the TOP so Stop stays reachable without scrolling
     const actions = el('div', 'row wrap'); actions.style.marginBottom = '14px';
-    const steerBtn = el('button', null, '↪ Steer');
-    steerBtn.onclick = () => steerDialog('Steer this run', async (text) => {
-      if (text === null) return;
-      try { await postJSON('/api/run/' + encodeURIComponent(id) + '/steer', { text }); toast('steer sent'); } catch (e) { toast(e.message, true); }
-    });
-    const stopBtn = el('button', 'danger', '■ Stop');
+    const post = (verb, okMsg) => async () => {
+      try { const d = await postJSON('/api/run/' + encodeURIComponent(id) + '/' + verb, {}); toast(d.message || okMsg); }
+      catch (e) { toast(e.message, true); }
+    };
+    const stopBtn = el('button', 'danger', '■ Stop now');
     stopBtn.onclick = () => stopRun('/api/run/' + encodeURIComponent(id), 'the run');
+    const stepBtn = el('button', null, 'Stop after step');
+    stepBtn.onclick = post('stop_step', 'stopping after the current step');
+    const compactBtn = el('button', null, 'Compact context');
+    compactBtn.onclick = post('compact', 'compaction requested');
     const mergeBtn = el('button', null, '⑃ Merge');
-    mergeBtn.onclick = async () => { try { const d = await postJSON('/api/run/' + encodeURIComponent(id) + '/merge', {}); toast(d.message || 'merged'); } catch (e) { toast(e.message, true); } };
+    mergeBtn.onclick = post('merge', 'merged');
     const tbtn = el('button', null, 'Conversation →');
     tbtn.onclick = () => location.hash = '#/conversation/' + encodeURIComponent(id);
-    actions.appendChild(steerBtn); actions.appendChild(stopBtn); actions.appendChild(mergeBtn); actions.appendChild(tbtn);
-    cards._steer = steerBtn; cards._stop = stopBtn; // paintRun disables these once the run is finished
+    for (const b of [stopBtn, stepBtn, compactBtn, mergeBtn, tbtn]) actions.appendChild(b);
+    cards._live_btns = [stopBtn, stepBtn, compactBtn]; // paintRun disables these once finished
     view.appendChild(actions);
+    // The composer replaces the steer dialog: steer while live, resume when done.
+    const composer = makeComposer(id);
+    cc.card.appendChild(composer);
+    cards._composer = composer;
   }
   view.appendChild(grid);
   cc.conv.refresh();
@@ -750,8 +823,10 @@ function paintPrompts(cards, s) {
 
 function paintRun(cards, s) {
   if (!cards._readOnly) paintPrompts(cards, s);
-  // Steer/Stop only mean something on a live run; a finished run ignores the bridge.
-  if (cards._steer) { cards._steer.disabled = s.finished; cards._stop.disabled = s.finished; }
+  // Stop/compact only mean something on a live run; a finished run ignores the
+  // bridge markers. The composer flips to resume mode instead of disabling.
+  if (cards._live_btns) for (const b of cards._live_btns) b.disabled = s.finished;
+  if (cards._composer) cards._composer.setState(s);
   // header
   cards.head.innerHTML = '';
   const kv = el('div', 'kv');
@@ -859,7 +934,9 @@ async function renderConversation(id) {
   view.innerHTML = '';
   const base = '/api/run/' + encodeURIComponent(id);
   const cc = convCard(base + '/conversation', 'Conversation');
-  cc.box.style.maxHeight = '82vh';
+  cc.box.style.maxHeight = '76vh';
+  const composer = makeComposer(id);
+  cc.card.appendChild(composer);
   view.appendChild(cc.card);
   await cc.conv.refresh();
   cc.box.scrollTop = cc.box.scrollHeight; // open at the tail, like the TUI
@@ -867,6 +944,7 @@ async function renderConversation(id) {
   live = new EventSource(base + '/events');
   live.onmessage = ev => {
     let s; try { s = JSON.parse(ev.data); } catch (_) { return; }
+    composer.setState(s);
     cc.conv.setLive(s);
     cc.conv.poke();
     hbState = {
