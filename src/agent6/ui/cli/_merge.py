@@ -128,14 +128,21 @@ def execute_merge(
         create_branch(cwd, target)  # checkout the (now-verified) target
     except GitError as exc:
         return MergeOutcome("error", error=f"could not check out target branch {target!r}: {exc}")
+    # A run strands the checkout on its OWN branch (branch_per_run switches at
+    # start and never switches back), so `runs merge <id>` is often invoked from
+    # agent6/<id> -- meaning `original` IS the branch being merged. Restoring to
+    # it would leave the user on a now-merged (squash: unreachable) branch whose
+    # tree no longer matches the target. Land on the target instead; that is
+    # where the work now lives.
+    land_on = target if original == run_branch else original
     try:
         result = dispatch_merge(
             cwd, strategy, run_branch, base_sha, manifest, message, cfg, identity
         )
     except GitError as exc:
-        restore_checkout(cwd, original, target)
+        restore_checkout(cwd, land_on, target)
         return MergeOutcome("error", error=f"merge failed: {exc}")
-    restore_checkout(cwd, original, target)
+    restore_checkout(cwd, land_on, target)
     if result.conflicted:
         return MergeOutcome("conflict", conflicts=result.conflicts)
     record_merge_in_manifest(layout, merged_into=target, merged_sha=result.merged_sha)

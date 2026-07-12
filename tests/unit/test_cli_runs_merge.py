@@ -165,6 +165,22 @@ def test_runs_merge_restores_original_checkout(
     assert "a.txt" in _git(tmp_path, "show", "--stat", "main")  # merge still landed on main
 
 
+def test_runs_merge_from_the_run_branch_lands_on_the_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A run strands the checkout on agent6/<id> (branch_per_run never switches
+    # back), so `runs merge` is typically invoked FROM the run branch. Restoring
+    # to it would leave the user on a squash-dead branch whose tree no longer
+    # matches main. They should land on the merge target instead.
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-STRAND1", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _git(tmp_path, "checkout", "-q", "agent6/run-STRAND1")  # stranded on the run branch
+    rc = main(["runs", "merge", "run-STRAND1", "--into", "main"])
+    assert rc == 0
+    assert _git(tmp_path, "rev-parse", "--abbrev-ref", "HEAD") == "main"  # landed on target
+    assert "a.txt" in _git(tmp_path, "show", "--stat", "main")
+
+
 def test_runs_merge_without_identity_refuses_with_clean_tree(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
