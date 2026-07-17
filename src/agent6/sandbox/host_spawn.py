@@ -31,12 +31,25 @@ import select
 import signal
 import subprocess
 import sys
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
 from agent6.sandbox.broker import close_inherited_fds, set_parent_death_signal
 
 _ACK_TIMEOUT_S = 10.0
+
+
+def _write_all(fd: int, data: bytes) -> None:
+    """Write the WHOLE payload, looping over partial writes.
+
+    ``os.write`` returns the count actually written and is neither atomic nor
+    guaranteed complete once a lane request exceeds PIPE_BUF; trusting one call
+    would silently truncate the JSON on a full pipe. Raises OSError on failure,
+    which the caller maps to a 'helper is gone' error."""
+    view = memoryview(data)
+    while view:
+        view = view[os.write(fd, view) :]
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,11 +59,20 @@ class HostSpawner:
     ``spawn_resume`` asks it to launch a detached ``agent6 resume <run_id>`` in
     the host namespaces and waits for its confirmation; ``close`` shuts the
     helper down (pipe EOF) and reaps it.
+
+    ``lock`` serializes the request+ack round-trip: the coordinator dispatches
+    ``/parallel`` lanes CONCURRENTLY (a per-group thread pool), and the single
+    request/ack pipe pair is shared. Without it two ``spawn_lane`` calls would
+    tear each other's request bytes (a lane payload can exceed PIPE_BUF, so
+    ``os.write`` is neither atomic nor complete in one call) and cross their acks
+    (one ``os.read`` swallowing both ``ok`` lines -> a phantom "failed" lane that
+    actually started). Uncontended for a lone resume caller, so a no-op there.
     """
 
     pid: int
     req_wfd: int
     ack_rfd: int
+    lock: threading.Lock
 
     def spawn_resume(self, cwd: Path, run_id: str) -> str:
         """Spawn the background resume; return "" on a confirmed start, else an
@@ -73,19 +95,23 @@ class HostSpawner:
 
     def _request(self, payload: dict[str, object], *, noun: str) -> str:
         """Send one spawn *payload* to the helper and await its ack. Returns "" on
-        a confirmed start, else an error naming the *noun* (resume / lane)."""
-        req = json.dumps(payload) + "\n"
-        try:
-            os.write(self.req_wfd, req.encode("utf-8"))
-        except OSError as exc:
-            return f"detach helper is gone ({exc}); could not spawn the background {noun}"
-        ready, _, _ = select.select([self.ack_rfd], [], [], _ACK_TIMEOUT_S)
-        if not ready:
-            return f"detach helper did not confirm the background {noun}"
-        try:
-            ack = os.read(self.ack_rfd, 4096).decode("utf-8", "replace").strip()
-        except OSError as exc:
-            return f"detach helper confirmation failed: {exc}"
+        a confirmed start, else an error naming the *noun* (resume / lane).
+
+        The whole write+ack is held under ``lock`` so concurrent callers can't tear
+        requests or cross acks on the shared pipe (see the class docstring)."""
+        req = (json.dumps(payload) + "\n").encode("utf-8")
+        with self.lock:
+            try:
+                _write_all(self.req_wfd, req)
+            except OSError as exc:
+                return f"detach helper is gone ({exc}); could not spawn the background {noun}"
+            ready, _, _ = select.select([self.ack_rfd], [], [], _ACK_TIMEOUT_S)
+            if not ready:
+                return f"detach helper did not confirm the background {noun}"
+            try:
+                ack = os.read(self.ack_rfd, 4096).decode("utf-8", "replace").strip()
+            except OSError as exc:
+                return f"detach helper confirmation failed: {exc}"
         if ack == "ok":
             return ""
         return f"background {noun} failed to start: {ack.removeprefix('err ')}"
@@ -119,7 +145,7 @@ def fork_host_spawner(argv_prefix: list[str]) -> HostSpawner:
             os._exit(0)
     os.close(req_r)
     os.close(ack_w)
-    return HostSpawner(pid=pid, req_wfd=req_w, ack_rfd=ack_r)
+    return HostSpawner(pid=pid, req_wfd=req_w, ack_rfd=ack_r, lock=threading.Lock())
 
 
 def _run_helper(

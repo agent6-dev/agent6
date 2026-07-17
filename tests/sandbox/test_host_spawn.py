@@ -12,17 +12,19 @@ isolation mutates the calling process irreversibly.
 
 from __future__ import annotations
 
+import json
 import os
 import socket
 import subprocess
 import sys
 import textwrap
+import threading
 import time
 from pathlib import Path
 
 import pytest
 
-from agent6.sandbox.host_spawn import fork_host_spawner
+from agent6.sandbox.host_spawn import HostSpawner, fork_host_spawner
 
 pytestmark = pytest.mark.filterwarnings(
     "ignore:This process.*is multi-threaded, use of fork:DeprecationWarning"
@@ -92,6 +94,60 @@ def test_spawn_lane_error_is_reported(tmp_path: Path) -> None:
         assert "background lane failed to start" in err
     finally:
         spawner.close()
+
+
+def test_concurrent_spawn_lane_gives_each_caller_its_own_ack(tmp_path: Path) -> None:
+    """The coordinator dispatches `/parallel` lanes CONCURRENTLY over one shared
+    request/ack pipe pair. Each caller must get ITS OWN ack and deliver its request
+    to the helper intact -- even with a payload over PIPE_BUF, where without the
+    lock the writes tear and the acks cross. A fake helper echoes each request's
+    distinct id back so cross-talk shows up as a mismatched result."""
+    req_r, req_w = os.pipe()
+    ack_r, ack_w = os.pipe()
+    spawner = HostSpawner(pid=-1, req_wfd=req_w, ack_rfd=ack_r, lock=threading.Lock())
+
+    received: list[str] = []
+
+    def fake_helper() -> None:
+        try:
+            with os.fdopen(req_r, "r", encoding="utf-8", errors="replace") as reqs:
+                for line in reqs:
+                    try:
+                        rid = str(json.loads(line)["args"][-1]).split(":", 1)[0]
+                    except (ValueError, KeyError, IndexError):
+                        os.write(ack_w, b"err torn\n")  # a torn/interleaved request
+                        continue
+                    received.append(rid)
+                    os.write(ack_w, f"err {rid}\n".encode())  # echo the id back
+        finally:
+            os.close(ack_w)
+
+    helper = threading.Thread(target=fake_helper, daemon=True)
+    helper.start()
+
+    pad = "X" * 9000  # over PIPE_BUF: os.write is not atomic vs concurrent writers
+    ids = [f"id{i:02d}" for i in range(8)]
+    results: dict[str, str] = {}
+    barrier = threading.Barrier(len(ids))
+
+    def call(rid: str) -> None:
+        barrier.wait()  # release all callers at once, maximizing the race
+        results[rid] = spawner.spawn_lane(tmp_path, ["run", "--", f"{rid}:{pad}"], {})
+
+    threads = [threading.Thread(target=call, args=(rid,)) for rid in ids]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+
+    os.close(req_w)  # EOF the helper
+    helper.join(timeout=5)
+    os.close(ack_r)
+
+    # Each caller got ITS OWN id back: no swallowed/merged ack, no cross-talk.
+    assert results == {rid: f"background lane failed to start: {rid}" for rid in ids}
+    # The helper parsed every request intact: no tearing, all distinct ids present.
+    assert sorted(received) == sorted(ids)
 
 
 def test_spawn_error_is_reported(tmp_path: Path) -> None:
