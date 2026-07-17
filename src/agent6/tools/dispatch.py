@@ -31,6 +31,9 @@ from agent6.skills import (
     resolve_states,
     skill_search_dirs,
 )
+from agent6.tools._control_tools import ask_user as _ask_user_impl
+from agent6.tools._control_tools import finish_planning as _finish_planning_impl
+from agent6.tools._control_tools import finish_run as _finish_run_impl
 from agent6.tools._dag_tools import add_dependency as _add_dependency
 from agent6.tools._dag_tools import add_task as _add_task
 from agent6.tools._dag_tools import list_tasks as _list_tasks
@@ -685,32 +688,13 @@ class ToolDispatcher:
         return self._run_argv_in_jail(args.argv, label="run_command")
 
     def _ask_user(self, raw: dict[str, Any]) -> dict[str, Any]:
-        """Pose one or more questions to the operator and return the answers. The
-        injected questioner does the actual prompting (TUI modal / stdin / headless
-        skip) and owns the question.prompt/answer events; this handler just
-        validates. Answers align to `questions` by index."""
-        args = AskUserInput.model_validate(raw)
-        answers = self._questioner(args.questions)
-        return {"answers": list(answers)}
+        return _ask_user_impl(self._questioner, raw)
 
     def _finish_run(self, raw: dict[str, Any]) -> dict[str, Any]:
-        """Signal the workflow to terminate. The workflow checks
-        for this tool name in the response's tool_uses and exits after
-        dispatching it. Handler echoes the validated summary (and any
-        structured ``result`` payload, used by state-machine agent states)."""
-        args = FinishRunInput.model_validate(raw)
-        return {"acknowledged": True, "summary": args.summary, "result": args.result}
+        return _finish_run_impl(raw)
 
     def _finish_planning(self, raw: dict[str, Any]) -> dict[str, Any]:
-        """Signal the planning pass is done. Plan-mode counterpart
-        of finish_run; the workflow writes ``plan_markdown`` to disk and
-        exits after dispatching it. Handler echoes the validated summary."""
-        args = FinishPlanningInput.model_validate(raw)
-        return {
-            "acknowledged": True,
-            "summary": args.summary,
-            "plan_bytes": len(args.plan_markdown.encode("utf-8")),
-        }
+        return _finish_planning_impl(raw)
 
     # DAG-as-tool handlers. All raise ToolError if no graph_client
     # was wired so standalone test instantiation works unchanged.
