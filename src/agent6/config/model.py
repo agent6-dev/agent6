@@ -59,6 +59,9 @@ AuthStyle = Literal["x_api_key", "bearer", "api_key_header", "none"]
 # ``worker`` when unset (see ModelsConfig.resolve).
 RoleName = Literal["worker", "reviewer", "planner"]
 ThinkingLevel = Literal["off", "low", "medium", "high"]
+# The review-seat depth (`[review].tier`); ReviewSeat.tier mirrors this, so the
+# vocabulary has one owner.
+ReviewTier = Literal["diff", "explore"]
 
 
 def validate_base_url(url: str) -> None:
@@ -799,7 +802,7 @@ class ReviewConfig(BaseModel):
     # Reviewer tier: "diff" (one grounded call over the diff) or "explore" (a
     # read-only tool-using mini-loop that reads the broader repo first to catch
     # cross-file impact). explore is more thorough but costs several calls/seat.
-    tier: Literal["diff", "explore"] = "diff"
+    tier: ReviewTier = "diff"
 
     @model_validator(mode="after")
     def _check_review_seats(self) -> ReviewConfig:

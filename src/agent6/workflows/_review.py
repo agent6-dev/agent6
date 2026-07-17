@@ -21,6 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from typing import Any
 
+from agent6.config import ReviewTier
 from agent6.prompts.review import EXPLORE_REVIEW_SYSTEM_PROMPT, REVIEW_SYSTEM_PROMPT
 from agent6.providers import Provider, ProviderError, ToolDefinition
 from agent6.tools.results import ToolResult
@@ -43,12 +44,13 @@ class ReviewSeat:
     """One panel seat: a persona stance bound to a provider/model.
 
     ``tier`` is "diff" (a single grounded call over the diff) or "explore" (a
-    read-only tool-using mini-loop that investigates the broader repo first)."""
+    read-only tool-using mini-loop that investigates the broader repo first);
+    typed as the config's ``ReviewTier`` Literal, the vocabulary's one owner."""
 
     persona: str
     model: str
     provider: Provider
-    tier: str = "diff"
+    tier: ReviewTier = "diff"
 
 
 def parse_seat_spec(spec: str) -> tuple[str, str, str]:
