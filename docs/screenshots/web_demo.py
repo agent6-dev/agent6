@@ -191,13 +191,19 @@ def drive(page: Page, base: str, mode: str, t0: float, shot: Path | None = None)
     page.wait_for_timeout(1500)
     scroll_to(page, 0, wait=1200)
 
-    # The full-page conversation; flip the detail level to expand every step.
-    click(page, "button:has-text('Conversation')", label="Read the conversation")
-    page.wait_for_selector(".conv .ci")
-    page.wait_for_timeout(700)
+    # The conversation IS the page: cycle the detail level, then (desktop) fold
+    # the details drawer away to show the focus mode.
     click(page, "button.mini", label="Cycle the detail level", settle=900)
-    scroll_card(page, ".conv-box", 0, wait=1800)
-    scroll_card(page, ".conv-box", 4000, wait=1600)
+    scroll_card(page, ".card-conv .conv-box", 0, wait=1400)
+    scroll_card(page, ".card-conv .conv-box", 4000, wait=1600)
+    if mode == "desktop":
+        click(
+            page,
+            "button:has-text('Details')",
+            label="Fold the details away — pure conversation",
+            settle=1400,
+        )
+        click(page, "button:has-text('Details')", settle=900)
 
     # Config page: the left nav rail on desktop, the bottom tab bar on phone
     # (data-tab is the stable hook; the other nav is display:none per viewport).

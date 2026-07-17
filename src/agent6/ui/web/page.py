@@ -196,7 +196,9 @@ button.mini { min-height: 26px; padding: 2px 10px; font-size: 12px; border-radiu
 /* The conversation card: header fixed, the body scrolls inside .conv-box (so
    the detail toggle stays reachable while following the tail). */
 .conv-card { display: flex; flex-direction: column; }
-.conv-box { overflow: auto; max-height: 62vh; }
+/* x hidden: .ci's -4px hover-bleed margins otherwise leave a permanent
+   horizontal scrollbar; item text always wraps, so x never scrolls for real. */
+.conv-box { overflow: hidden auto; max-height: 62vh; }
 
 .cfg { width: 100%; border-collapse: collapse; font-size: 13px; }
 .cfg td, .cfg th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
@@ -250,7 +252,17 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
 
 @media (max-width: 780px) {
   nav.tabs { display: flex; }
-  main { padding: 0 0 calc(var(--nav-h) + 24px); }
+  /* The top bar is a compact FIXED strip, the mirror of the bottom tab bar:
+     sticky slid away with horizontal overflow, fixed never moves. It takes no
+     flow space, so main pads down to clear it (--hdr-h = 6+34+6 padding+row
+     plus the 1px border). */
+  :root { --hdr-h: 47px; }
+  header {
+    position: fixed; top: 0; left: 0; right: 0;
+    padding: 6px 12px; padding-top: calc(6px + env(safe-area-inset-top));
+  }
+  header > button { min-height: 34px; padding: 4px 10px; }
+  main { padding: calc(var(--hdr-h) + env(safe-area-inset-top)) 0 calc(var(--nav-h) + 24px); }
   .card.scroll { max-height: 60vh; }
   header .desktop-only { display: none; }
 }
@@ -301,9 +313,13 @@ aside.rail { display: none; }
    (the mobile widget menu picks what is shown). --- */
 .composer.dock {
   border-top: 1px solid var(--border); margin: 0; background: var(--surface);
-  padding: 10px 22px calc(10px + env(safe-area-inset-bottom));
+  padding: 6px 22px calc(10px + env(safe-area-inset-bottom));
 }
-.composer.dock textarea.field { min-height: 46px; }
+/* Docked at the screen bottom there is no room to drag a native bottom-right
+   resize grip down; the strip along the dock's TOP resizes instead (drag up). */
+.composer.dock textarea.field { min-height: 46px; resize: none; }
+.composer .grow-grip { height: 8px; margin: 0 0 2px; cursor: ns-resize; border-radius: 4px; }
+@media (hover: hover) { .composer .grow-grip:hover, .composer .grow-grip.dragging { background: var(--border); } }
 /* Page-scrolling views (hub, machine view) pin their dock to the viewport
    bottom; app-pane views (run, conversation) dock it as their last flex child. */
 @media (min-width: 781px) {
@@ -353,13 +369,12 @@ aside.rail { display: none; }
      Scoped to .card: the menu's own buttons carry data-w as their choice id. */
   .run-app.paged .card[data-w] { display: none; }
   .run-app.paged .card[data-w].w-active { display: block; }
-  .wmenu-btn {
-    display: block; position: fixed; z-index: 18; top: 52px; right: 10px;
-    width: 42px; height: 42px; min-height: 42px; padding: 0; border-radius: 50%;
-    box-shadow: 0 2px 10px rgba(0,0,0,.35);
-  }
+  /* the widget menu button rides in the top bar, right of the theme toggle
+     (the run view mounts it there), so it shares the theme button's skin */
+  .wmenu-btn { display: block; }
   .wmenu {
-    position: fixed; z-index: 19; top: 100px; right: 10px; min-width: 170px;
+    position: fixed; z-index: 21; right: 12px; min-width: 170px;
+    top: calc(var(--hdr-h) + env(safe-area-inset-top) + 4px); /* just under the fixed header */
     display: flex; flex-direction: column; background: var(--surface);
     border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
     box-shadow: 0 8px 24px rgba(0,0,0,.45);
@@ -367,6 +382,7 @@ aside.rail { display: none; }
   .wmenu button { border: 0; border-radius: 0; text-align: left; background: none; }
   .wmenu button.w-on { color: var(--accent); }
   .details-btn { display: none; } /* the drawer is a desktop shape */
+  .composer .hint { display: none; } /* the keyboard's enter key says it; space is tight */
 }
 button.active { border-color: var(--accent); color: var(--accent); }
 </style>
@@ -490,6 +506,7 @@ let booted = false; // the one-shot deep-link to `agent6 web <target>` ran
 async function route() {
   closeLive();
   closeOverlay();
+  document.querySelectorAll('.wmenu-btn').forEach(b => b.remove()); // header-mounted by the run view
   const h = location.hash.replace(/^#/, '') || '/';
   // First load with no hash: honor the CLI's target (`agent6 web <run-id>`
   // opens that run; a machine name its machine). Explicit hashes win.
@@ -541,6 +558,7 @@ function newWorkDock() {
   go.onclick = start;
   task.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); start(); } };
   row.appendChild(task); row.appendChild(mode); row.appendChild(go);
+  root.appendChild(growGrip(task));
   root.appendChild(row);
   root.appendChild(el('div', 'hint', 'Enter starts the run / plan / ask · Shift+Enter newline'));
   return root;
@@ -560,6 +578,7 @@ function createMachineDock() {
   cbtn.onclick = create;
   ct.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); create(); } };
   row.appendChild(ct); row.appendChild(cbtn);
+  root.appendChild(growGrip(ct));
   root.appendChild(row);
   root.appendChild(el('div', 'hint', 'Enter creates a machine draft from the description · Shift+Enter newline'));
   return root;
@@ -763,6 +782,29 @@ function convCard(url, title, cls) {
   return { card, conv, box };
 }
 
+// A horizontal grip along a docked composer's top edge: dragging it up grows
+// the text entry (the native grip sits bottom-right, where the screen ends).
+function growGrip(ta) {
+  const g = el('div', 'grow-grip');
+  g.title = 'drag to resize';
+  g.onpointerdown = (e) => {
+    e.preventDefault();
+    g.setPointerCapture(e.pointerId);
+    g.classList.add('dragging');
+    const startY = e.clientY;
+    const startH = ta.getBoundingClientRect().height;
+    g.onpointermove = (ev) => {
+      ta.style.height = Math.round(Math.max(46, Math.min(window.innerHeight * 0.5, startH + startY - ev.clientY))) + 'px';
+    };
+    g.onpointerup = (ev) => {
+      g.releasePointerCapture(ev.pointerId);
+      g.classList.remove('dragging');
+      g.onpointermove = null; g.onpointerup = null;
+    };
+  };
+  return g;
+}
+
 // The composer bar under a run's conversation. On a LIVE run Enter sends the
 // text as a steer (injected at the run's next safe boundary); on a FINISHED
 // run Enter resumes the run with the text as the follow-up instruction (empty
@@ -818,7 +860,7 @@ function makeComposer(id) {
       resume(text);
     }
   };
-  root.appendChild(ta); root.appendChild(hint);
+  root.appendChild(growGrip(ta)); root.appendChild(ta); root.appendChild(hint);
   root.setState = (s) => { if (!busy && typeof s.finished === 'boolean') { finished = s.finished; apply(); } };
   apply();
   return root;
@@ -906,14 +948,12 @@ async function renderRun(id, opts) {
     const mergeBtn = el('button', null, 'Merge'); // no glyph: U+2443 was tofu in common fonts
     mergeBtn.onclick = post('merge', 'merged');
     cards._merge_btn = mergeBtn; // paintRun gates it on the run actually having a branch
-    const tbtn = el('button', null, 'Conversation →');
-    tbtn.onclick = () => location.hash = '#/conversation/' + encodeURIComponent(id);
-    for (const b of [stopBtn, stepBtn, compactBtn, mergeBtn, tbtn]) actions.appendChild(b);
+    for (const b of [stopBtn, stepBtn, compactBtn, mergeBtn]) actions.appendChild(b);
     cards._live_btns = [stopBtn, stepBtn, compactBtn]; // paintRun disables these once finished
   }
   app.appendChild(actions);
 
-  mk('head', opts.title || 'Run', '', app); // the status/summary, full width on top
+  mk('head', opts.title || 'Run', ''); // status/summary leads the drawer
   mk('tasks', 'Task graph', 'scroll');
   mk('budget', 'Budget', '');
   mk('tools', 'Tool calls', 'scroll');
@@ -936,6 +976,7 @@ async function renderRun(id, opts) {
                    ['budget', 'Budget'], ['tools', 'Tool calls'], ['diff', 'Latest commit'],
                    ['log', 'Event log']];
   const wbtn = el('button', 'wmenu-btn', '☰');
+  wbtn.title = 'widgets';
   const wmenu = el('div', 'wmenu'); wmenu.style.display = 'none';
   const setW = (key) => {
     app.querySelectorAll('[data-w]').forEach(c => c.classList.toggle('w-active', c.dataset.w === key));
@@ -948,7 +989,10 @@ async function renderRun(id, opts) {
   }
   wbtn.onclick = () => { wmenu.style.display = wmenu.style.display === 'none' ? '' : 'none'; };
   setW('conv');
-  app.appendChild(wbtn); app.appendChild(wmenu);
+  // The button lives in the header (next to the theme toggle) so the two share
+  // one row and skin; route() removes it since clearing #view won't.
+  document.querySelector('header').appendChild(wbtn);
+  app.appendChild(wmenu);
 
   if (!readOnly) {
     // The composer replaces the steer dialog: steer while live, resume when
@@ -1267,6 +1311,7 @@ async function renderMachine(name) {
     try { await postJSON(base + '/poke', { message: din.value }); toast('message sent'); din.value = ''; } catch (e) { toast(e.message, true); }
   };
   drow.appendChild(din); drow.appendChild(steerBtn); drow.appendChild(msgBtn);
+  dock.appendChild(growGrip(din));
   dock.appendChild(drow);
   dock.appendChild(el('div', 'hint', 'Steer injects into the current agent state · Message wakes a waiting machine (its next tool reads it)'));
   view.appendChild(dock);

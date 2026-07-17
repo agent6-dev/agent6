@@ -40,15 +40,13 @@ Shift+Enter inserts a newline.
   its result, commits, the verdict), with the in-progress turn streaming
   underneath. A detail toggle cycles collapsed / expanded / hidden, and any
   clipped item (a long tool result, folded reasoning) expands on click. The
-  run's context — task graph, budget, clipped tool-call table (hover for the
-  full args and result), latest commit diff, and the raw event log — lives in a
-  collapsible details drawer on the left (drag its edge to resize; both
-  persist). The docked composer steers a live run and, once the run has ended,
-  resumes it with the typed follow-up. Stop now, stop after the current step,
-  compact the context, merge the branch, approve `run_command` prompts, and
-  answer `ask_user` questions inline.
-- **Conversation**: the same view full-width without the drawer, following the
-  run live.
+  run's context — status overview, task graph, budget, clipped tool-call table
+  (hover for the full args and result), latest commit diff, and the raw event
+  log — lives in a collapsible details drawer on the left (drag its edge to
+  resize; both persist). The docked composer steers a live run and, once the
+  run has ended, resumes it with the typed follow-up. Stop now, stop after the
+  current step, compact the context, merge the branch, approve `run_command`
+  prompts, and answer `ask_user` questions inline.
 - **Machines**: the state overview, the path taken, and the current agent
   state's conversation. Approve and answer the current agent state's prompts
   inline (same controls as a run). The docked entry submits as one of the two
@@ -63,10 +61,11 @@ Shift+Enter inserts a newline.
 
 The layout reflows. On a desktop, the nav rail collapses to an icon strip and
 the run view is a fixed pane whose drawer and conversation scroll internally.
-On a phone, a bottom tab bar navigates, the composer docks above it, and the
-run view shows one widget at a time — conversation by default; a floating menu
-switches to the task graph, budget, tool calls, latest commit, or event log —
-so the page is the only scroller.
+On a phone, a fixed top bar holds the theme toggle, a bottom tab bar navigates,
+the composer docks above it, and the run view shows one widget at a time —
+conversation by default; the ☰ menu in the top bar switches to the task graph,
+budget, tool calls, latest commit, or event log — so the page is the only
+scroller.
 
 ## Notifications and installing (PWA)
 
