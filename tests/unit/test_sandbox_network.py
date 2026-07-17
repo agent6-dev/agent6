@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 
+from agent6.app import machine_agent
 from agent6.app.egress import (
     EgressGuard,
     _is_loopback,  # pyright: ignore[reportPrivateUsage]
@@ -20,7 +21,6 @@ from agent6.app.egress import (
 from agent6.config import Config, validate_config
 from agent6.machine.model import ToolState
 from agent6.types import SandboxProfile
-from agent6.ui.cli import machine_agent
 from agent6.ui.cli.machine_cmds import (
     _machine_network_refusal,  # pyright: ignore[reportPrivateUsage]
 )
@@ -165,7 +165,7 @@ def test_egress_reaps_broker_when_isolation_fails(monkeypatch: pytest.MonkeyPatc
     assert closed["n"] == 1  # the forked broker was closed, not leaked
 
 
-# --- supervisor subprocess: machine_agent._run_one -------------------------
+# --- supervisor subprocess: machine_agent.run_one -------------------------
 
 
 @pytest.fixture
@@ -225,7 +225,7 @@ def test_run_one_returns_finish_payload(
             "max_output_tokens": None,
         },
     }
-    out = machine_agent._run_one(req)  # pyright: ignore[reportPrivateUsage]
+    out = machine_agent.run_one(req)  # pyright: ignore[reportPrivateUsage]
     assert out["reason"] == "finish_run"
     assert out["payload"] == {"label": "ok"}
 
@@ -290,7 +290,7 @@ def test_run_one_drops_out_of_cwd_protect_paths(
             "max_output_tokens": None,
         },
     }
-    machine_agent._run_one(req)  # pyright: ignore[reportPrivateUsage]
+    machine_agent.run_one(req)  # pyright: ignore[reportPrivateUsage]
     # Only the in-cwd path survives the subprocess-boundary re-validation.
     assert captured["extra_protect_paths"] == (inside.resolve(),)
 
@@ -326,7 +326,7 @@ def test_run_one_exports_commit_identity(
             "mode": "run",
         },
     }
-    out = machine_agent._run_one(req)  # pyright: ignore[reportPrivateUsage]
+    out = machine_agent.run_one(req)  # pyright: ignore[reportPrivateUsage]
     assert out["reason"] == "finish_run"
     assert os.environ["GIT_AUTHOR_NAME"] == "Machine Bot"
     assert os.environ["GIT_COMMITTER_NAME"] == "Machine Bot"

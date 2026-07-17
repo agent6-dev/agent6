@@ -13,6 +13,9 @@ import threading
 import time
 from pathlib import Path
 
+from agent6.app.machine_agent import (
+    _build_machine_bridges,  # pyright: ignore[reportPrivateUsage]
+)
 from agent6.events import EventSink
 from agent6.runs.bridge import (
     write_answer,
@@ -21,9 +24,6 @@ from agent6.runs.bridge import (
     write_steer_answer,
 )
 from agent6.tools.schema import UserQuestion
-from agent6.ui.cli.machine_agent import (
-    _build_machine_bridges,  # pyright: ignore[reportPrivateUsage]
-)
 
 
 def _dirs(tmp_path: Path) -> tuple[Path, Path, EventSink]:
@@ -94,7 +94,7 @@ def test_machine_approval_ignores_a_premature_answer(tmp_path: Path) -> None:
     # No writer thread: nothing arrives after the prompt, so with the premature
     # answer cleared the approver falls through to the headless deny. Shrink the
     # read timeout so the poll gives up quickly instead of blocking 600s.
-    from agent6.ui.cli import machine_agent
+    from agent6.app import machine_agent
 
     orig = machine_agent.read_answer
 
