@@ -16,9 +16,10 @@ depends_on = []
 
 [[modules]]
 # Application pipelines composed over the engine, never a front-end and never
-# importing agent6.ui: the parallel fan-out / coordinator dispatch and the
-# candidate-ranking core. The front-end injects the process-spawn + run-dir
-# bridge callables it needs (see app/__init__.py).
+# importing agent6.ui: the run/resume lifecycle and the parallel fan-out /
+# coordinator dispatch + candidate-ranking core. The front-end injects the
+# presentation, process-spawn, and run-dir bridge callables it needs
+# (see app/__init__.py: RunFrontend, LaneRuntime).
 path = "agent6.app"
 depends_on = [
   "agent6",
