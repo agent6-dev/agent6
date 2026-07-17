@@ -182,7 +182,9 @@ def test_pause_menu_status_shows_ctx_and_profile(
         ),
         encoding="utf-8",
     )
-    (tmp_path / "manifest.json").write_text(json.dumps({"profile": "paranoid"}), encoding="utf-8")
+    (tmp_path / "manifest.json").write_text(
+        json.dumps({"workflow": {"profile": "paranoid"}}), encoding="utf-8"
+    )
     assert pause_menu(tmp_path, input_fn=_feed(["/status"])) is None
     printed = capsys.readouterr().out
     assert "ctx 90,000 tok" in printed

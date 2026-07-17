@@ -127,7 +127,8 @@ def _read_profile(run_dir: Path) -> str:
         data = read_manifest(run_dir)
     except ManifestError:
         return ""
-    profile = data.get("profile")
+    workflow = data.get("workflow")
+    profile = workflow.get("profile") if isinstance(workflow, dict) else None
     return profile if isinstance(profile, str) else ""
 
 
