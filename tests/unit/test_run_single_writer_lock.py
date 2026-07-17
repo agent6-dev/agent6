@@ -16,7 +16,7 @@ import time
 from multiprocessing.synchronize import Event as EventType
 from pathlib import Path
 
-from agent6.ui.cli._single_writer import acquire_single_writer, release_single_writer
+from agent6.runs.lock import acquire_single_writer, release_single_writer
 
 
 def test_second_acquire_on_same_dir_is_refused(tmp_path: Path) -> None:

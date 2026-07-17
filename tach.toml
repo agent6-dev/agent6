@@ -75,6 +75,7 @@ depends_on = [
   "agent6.graph.storage",
   "agent6.runs.id",
   "agent6.runs.layout",
+  "agent6.runs.lock",
   "agent6.ui.mcp_server",
   "agent6.machine",
   "agent6.verify_infer",
@@ -312,6 +313,12 @@ depends_on = [
 [[modules]]
 path = "agent6.runs.layout"
 depends_on = []
+
+[[modules]]
+# One authoritative writer per run dir: the worker.lock flock run/resume/fork
+# take before touching a run's shared state.
+path = "agent6.runs.lock"
+depends_on = ["agent6.portable"]
 
 [[modules]]
 path = "agent6.graph.storage"

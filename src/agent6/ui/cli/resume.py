@@ -66,6 +66,15 @@ from agent6.providers import (
 )
 from agent6.runs.id import RunIdError, resolve_run_id
 from agent6.runs.layout import RunLayout
+from agent6.runs.lock import (
+    SINGLE_WRITER_BUSY as _SINGLE_WRITER_BUSY,
+)
+from agent6.runs.lock import (
+    acquire_single_writer as _acquire_single_writer,
+)
+from agent6.runs.lock import (
+    release_single_writer as _release_single_writer,
+)
 from agent6.sandbox.detect import ProfileUnavailableError, select_profile
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.ui.bridge.approval import (
@@ -144,15 +153,6 @@ from agent6.ui.cli._preflight import (
 )
 from agent6.ui.cli._preflight import (
     warn_if_usd_unenforceable as _warn_if_usd_unenforceable,
-)
-from agent6.ui.cli._single_writer import (
-    SINGLE_WRITER_BUSY as _SINGLE_WRITER_BUSY,
-)
-from agent6.ui.cli._single_writer import (
-    acquire_single_writer as _acquire_single_writer,
-)
-from agent6.ui.cli._single_writer import (
-    release_single_writer as _release_single_writer,
 )
 from agent6.ui.cli._steer import (
     make_steer_state as _make_steer_state,
