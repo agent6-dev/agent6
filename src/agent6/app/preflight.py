@@ -108,14 +108,20 @@ def require_git_repo(cwd: Path) -> bool:
     return False
 
 
-def warn_if_headless_ask(cfg: Config, *, tui_enabled: bool) -> None:
+def warn_if_headless_ask(cfg: Config, *, tui_enabled: bool, mode: str = "run") -> None:
     """Note when run_commands='ask' but no approver is reachable at start.
 
     A headless run (no TUI, no controlling TTY) has nothing here to answer the
     Allow/Deny prompt, so a run_command PAUSES for a front-end to attach. Say so
     up front instead of letting the agent look wedged. run_verify_command is
     unaffected.
+
+    Skipped in ``ask`` mode: read-only Q&A exposes no run_command tool, so the
+    note (about `sandbox.run_commands='ask'`, an unrelated config knob) is pure
+    noise there.
     """
+    if mode == "ask":
+        return
     if cfg.sandbox.run_commands == "ask" and not tui_enabled and not sys.stdin.isatty():
         print(
             "[agent6] NOTE: sandbox.run_commands='ask' with no terminal here, so a"

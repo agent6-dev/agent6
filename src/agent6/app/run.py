@@ -502,7 +502,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         # heartbeats during long requests, which corrupt the non-streaming
         # response body (resp.json() blows up with JSONDecodeError).
         tui_enabled = frontend.should_spawn_tui(tui, interactive, mode)
-        warn_if_headless_ask(cfg, tui_enabled=tui_enabled)
+        warn_if_headless_ask(cfg, tui_enabled=tui_enabled, mode=mode)
         # The interactive revision prompt reads the terminal; with the TUI owning
         # it the prompt would land invisibly in the console log and contend for
         # stdin. Skip revision for this run instead.
