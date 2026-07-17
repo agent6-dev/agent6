@@ -33,7 +33,7 @@ import contextlib
 import json
 import os
 import sys
-from collections.abc import Generator, Iterable
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -329,7 +329,7 @@ def load_graph(layout: RunLayout) -> dict[str, TaskNode]:
         except (ValueError, OSError) as exc:
             # A hand-edited or torn node file must not brick resume; the rest of
             # the graph is still loadable, so degrade to a missing node (mirrors
-            # the torn-line tolerance in iter_journal / _iter_recent_journal).
+            # the torn-line tolerance in _iter_recent_journal).
             sys.stderr.write(f"agent6: skipping malformed node file {md}: {exc}\n")
             continue
         nodes[node.id] = node
@@ -411,20 +411,3 @@ def write_dot(layout: RunLayout, nodes: dict[str, TaskNode]) -> None:
     lines.append("}")
     _atomic_write(layout.dot_path, "\n".join(lines) + "\n")
 
-
-def iter_journal(layout: RunLayout) -> Iterable[dict[str, object]]:
-    """Yield every recorded journal entry in order."""
-    if not layout.journal_path.is_file():
-        return
-    for raw in layout.journal_path.read_text(encoding="utf-8").splitlines():
-        stripped = raw.strip()
-        if not stripped:
-            continue
-        try:
-            yield json.loads(stripped)
-        except json.JSONDecodeError:
-            # Tolerate a torn final line from a crash mid-append; the node .md
-            # files are the source of truth, so a corrupt journal entry must not
-            # crash readers (history graph, curator startup).
-            sys.stderr.write(f"agent6: skipping malformed journal line: {stripped[:80]!r}\n")
-            continue
