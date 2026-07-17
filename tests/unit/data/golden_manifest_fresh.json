@@ -1,0 +1,33 @@
+{
+  "version": 2,
+  "agent6_version": "0.1.0",
+  "run_id": "r-fresh01",
+  "mode": "run",
+  "start_ts": "2026-07-16T00:00:00.000000+00:00",
+  "user_task": "add a feature",
+  "base_sha": "0000000000000000000000000000000000000000",
+  "base_branch": "master",
+  "run_branch": "agent6/r-fresh01",
+  "models": {
+    "worker": {
+      "provider": "anthropic",
+      "model": "claude-x"
+    },
+    "reviewer": {
+      "provider": "anthropic",
+      "model": "claude-y"
+    }
+  },
+  "workflow": {
+    "critic": "off",
+    "revise_prompt": "on",
+    "profile": "strict"
+  },
+  "parent_run_id": null,
+  "forked_from_turn": null,
+  "forked_from_sha": null,
+  "merged": null,
+  "parallel_id": null,
+  "lane": null,
+  "compare": null
+}

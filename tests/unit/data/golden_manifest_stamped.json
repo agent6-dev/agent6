@@ -1,0 +1,40 @@
+{
+  "version": 2,
+  "agent6_version": "0.1.0",
+  "run_id": "r-lane02",
+  "mode": "run",
+  "start_ts": "2026-07-16T00:00:00.000000+00:00",
+  "user_task": "fan-out lane",
+  "base_sha": "1111111111111111111111111111111111111111",
+  "base_branch": "master",
+  "run_branch": "agent6/r-lane02",
+  "models": {
+    "worker": {
+      "provider": "openai",
+      "model": "gpt-z"
+    },
+    "reviewer": null
+  },
+  "workflow": {
+    "critic": "on",
+    "revise_prompt": "off",
+    "profile": ""
+  },
+  "parent_run_id": "r-parent",
+  "forked_from_turn": 7,
+  "forked_from_sha": "2222222222222222222222222222222222222222",
+  "merged": {
+    "into": "master",
+    "sha": "3333333333333333333333333333333333333333",
+    "ts": "2026-07-16T01:00:00.000000+00:00"
+  },
+  "parallel_id": "p-abc",
+  "lane": 1,
+  "compare": {
+    "rank": 1,
+    "of": 3,
+    "winner": true,
+    "ranked_by": "judge",
+    "rationale": "cleanest diff"
+  }
+}

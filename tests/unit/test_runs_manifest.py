@@ -16,6 +16,8 @@ import pytest
 
 from agent6.runs.manifest import ManifestError, read_manifest
 
+_DATA = Path(__file__).parent / "data"
+
 
 def _write(run_dir: Path, payload: object) -> None:
     (run_dir / "manifest.json").write_text(json.dumps(payload), encoding="utf-8")
@@ -131,6 +133,78 @@ def test_non_object_manifest_raises(tmp_path: Path) -> None:
         (tmp_path / "manifest.json").write_text(bad, encoding="utf-8")
         with pytest.raises(ManifestError, match="not a JSON object"):
             read_manifest(tmp_path)
+
+
+def test_write_manifest_bytes_fresh(tmp_path: Path) -> None:
+    # Byte pin of the writer's emitted JSON (the read side is pinned above; this
+    # pins the EXACT bytes write_manifest lands on disk: key set, key order,
+    # indent, null shape, trailing newline). A fresh run: no fork/merge/compare.
+    from agent6.app.manifest import write_manifest
+    from agent6.runs.manifest import ModelBrief, ModelsBrief, RunManifest, WorkflowStamp
+
+    m = RunManifest(
+        agent6_version="0.1.0",
+        run_id="r-fresh01",
+        mode="run",
+        start_ts="2026-07-16T00:00:00.000000+00:00",
+        user_task="add a feature",
+        base_sha="0" * 40,
+        base_branch="master",
+        run_branch="agent6/r-fresh01",
+        models=ModelsBrief(
+            worker=ModelBrief(provider="anthropic", model="claude-x"),
+            reviewer=ModelBrief(provider="anthropic", model="claude-y"),
+        ),
+        workflow=WorkflowStamp(critic="off", revise_prompt="on", profile="strict"),
+    )
+    path = tmp_path / "manifest.json"
+    write_manifest(path, m)
+    assert path.read_text(encoding="utf-8") == (_DATA / "golden_manifest_fresh.json").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_write_manifest_bytes_stamped_lane(tmp_path: Path) -> None:
+    # Byte pin of a fully-stamped fan-out lane: fork lineage + merge stamp +
+    # parallel_id/lane + compare, so every optional nested stamp's serialized
+    # shape is frozen, not just the fresh subset.
+    from agent6.app.manifest import write_manifest
+    from agent6.runs.manifest import (
+        CompareStamp,
+        MergeStamp,
+        ModelBrief,
+        ModelsBrief,
+        RunManifest,
+        WorkflowStamp,
+    )
+
+    m = RunManifest(
+        agent6_version="0.1.0",
+        run_id="r-lane02",
+        mode="run",
+        start_ts="2026-07-16T00:00:00.000000+00:00",
+        user_task="fan-out lane",
+        base_sha="1" * 40,
+        base_branch="master",
+        run_branch="agent6/r-lane02",
+        models=ModelsBrief(worker=ModelBrief(provider="openai", model="gpt-z")),
+        workflow=WorkflowStamp(critic="on", revise_prompt="off", profile=""),
+        parent_run_id="r-parent",
+        forked_from_turn=7,
+        forked_from_sha="2" * 40,
+        merged=MergeStamp(into="master", sha="3" * 40, ts="2026-07-16T01:00:00.000000+00:00"),
+        parallel_id="p-abc",
+        lane=1,
+        compare=CompareStamp(
+            rank=1, of=3, winner=True, ranked_by="judge", rationale="cleanest diff"
+        ),
+    )
+    path = tmp_path / "manifest.json"
+    write_manifest(path, m)
+    golden = (_DATA / "golden_manifest_stamped.json").read_text(encoding="utf-8")
+    assert path.read_text(encoding="utf-8") == golden
+    # The pinned bytes round-trip back to an equal model (writer <-> reader).
+    assert read_manifest(tmp_path) == m
 
 
 def test_stamp_rewrite_restamps_version_to_the_shape_written(tmp_path: Path) -> None:

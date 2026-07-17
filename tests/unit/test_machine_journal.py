@@ -15,6 +15,7 @@ from agent6.machine.journal import (
     MachineBegin,
     MachineEnd,
     MachineJournal,
+    MachineNotify,
     PendingWait,
     Snapshot,
     StepEvent,
@@ -25,11 +26,116 @@ from agent6.machine.journal import (
     write_source,
 )
 
+_DATA = Path(__file__).parent / "data"
+
 
 def _journal(tmp_path: Path) -> MachineJournal:
     j = MachineJournal(tmp_path / "m")
     j.ensure_dirs()
     return j
+
+
+def _golden_events() -> list[object]:
+    """One event of every journal family (all four Facts), fixed timestamps: the
+    sequence the golden line format is pinned against."""
+    return [
+        MachineBegin(ts="2026-07-16T00:00:00.000000+00:00", machine="demo", version=1),
+        StepEvent(
+            ts="2026-07-16T00:00:01.000000+00:00",
+            seq=0,
+            state="scan",
+            label="ok",
+            goto="branch",
+            fact=ToolFact(exit_code=0, stdout='{"note": "ok"}', timed_out=False),
+        ),
+        StepEvent(
+            ts="2026-07-16T00:00:02.000000+00:00",
+            seq=1,
+            state="branch",
+            label="else",
+            goto="poll",
+            fact=BranchFact(clause_index=2),
+        ),
+        StepEvent(
+            ts="2026-07-16T00:00:03.000000+00:00",
+            seq=2,
+            state="poll",
+            label="signal",
+            goto="review",
+            fact=WaitFact(wake_epoch=None, woke_by="signal", payload={"from": "operator"}),
+        ),
+        StepEvent(
+            ts="2026-07-16T00:00:04.000000+00:00",
+            seq=3,
+            state="review",
+            label="ok",
+            goto="stop_ok",
+            fact=AgentFact(
+                outcome="ok",
+                reason="finish_run",
+                payload={"approved": True},
+                usd=0.25,
+                input_tokens=1000,
+                output_tokens=200,
+            ),
+        ),
+        MachineNotify(
+            ts="2026-07-16T00:00:05.000000+00:00",
+            state="review",
+            message="all checks passed",
+            level="info",
+        ),
+        MachineEnd(
+            ts="2026-07-16T00:00:06.000000+00:00",
+            status="ok",
+            reason="approved",
+            state="stop_ok",
+            transitions=4,
+        ),
+    ]
+
+
+def test_journal_line_format_matches_golden(tmp_path: Path) -> None:
+    # Byte pin of the replay-critical line format: appending the fixed event
+    # sequence must reproduce the golden journal exactly (one line per event,
+    # compact JSON, discriminator keys first). A drift here silently breaks
+    # replay of every journal an older instance wrote.
+    j = _journal(tmp_path)
+    for event in _golden_events():
+        j.append(event)  # type: ignore[arg-type]
+    written = j.journal_path.read_text(encoding="utf-8")
+    assert written == (_DATA / "golden_journal.jsonl").read_text(encoding="utf-8")
+
+
+def test_replay_of_golden_journal_bytes_reproduces_state(tmp_path: Path) -> None:
+    # The other half of the contract: those exact bytes replay back to the same
+    # typed events and values, so an on-disk journal keeps reducing identically.
+    j = _journal(tmp_path)
+    j.journal_path.write_bytes((_DATA / "golden_journal.jsonl").read_bytes())
+    events = j.read()
+    assert [type(e) for e in events] == [
+        MachineBegin,
+        StepEvent,
+        StepEvent,
+        StepEvent,
+        StepEvent,
+        MachineNotify,
+        MachineEnd,
+    ]
+    assert [type(e.fact) for e in events if isinstance(e, StepEvent)] == [
+        ToolFact,
+        BranchFact,
+        WaitFact,
+        AgentFact,
+    ]
+    wait = events[3]
+    assert isinstance(wait, StepEvent) and isinstance(wait.fact, WaitFact)
+    assert wait.fact.wake_epoch is None and wait.fact.payload == {"from": "operator"}
+    agent = events[4]
+    assert isinstance(agent, StepEvent) and isinstance(agent.fact, AgentFact)
+    assert agent.fact.usd == 0.25 and agent.fact.output_tokens == 200
+    end = events[6]
+    assert isinstance(end, MachineEnd) and end.transitions == 4
 
 
 def test_read_survives_unicode_line_separators(tmp_path: Path) -> None:

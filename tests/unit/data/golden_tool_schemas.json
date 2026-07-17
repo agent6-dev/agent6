@@ -1,0 +1,124 @@
+[
+  {
+    "name": "read_file",
+    "required": [
+      "path"
+    ],
+    "properties": {
+      "limit": "anyOf[integer,null]",
+      "offset": "integer",
+      "path": "string"
+    }
+  },
+  {
+    "name": "list_dir",
+    "required": [],
+    "properties": {
+      "path": "string"
+    }
+  },
+  {
+    "name": "grep",
+    "required": [
+      "pattern"
+    ],
+    "properties": {
+      "case_insensitive": "boolean",
+      "path": "string",
+      "pattern": "string"
+    }
+  },
+  {
+    "name": "outline",
+    "required": [
+      "path"
+    ],
+    "properties": {
+      "path": "string"
+    }
+  },
+  {
+    "name": "find_definition",
+    "required": [
+      "name"
+    ],
+    "properties": {
+      "name": "string"
+    }
+  },
+  {
+    "name": "find_references",
+    "required": [
+      "name"
+    ],
+    "properties": {
+      "name": "string"
+    }
+  },
+  {
+    "name": "find_definition_lsp",
+    "required": [
+      "path",
+      "symbol"
+    ],
+    "properties": {
+      "path": "string",
+      "symbol": "string"
+    }
+  },
+  {
+    "name": "find_references_lsp",
+    "required": [
+      "path",
+      "symbol"
+    ],
+    "properties": {
+      "path": "string",
+      "symbol": "string"
+    }
+  },
+  {
+    "name": "apply_edit",
+    "required": [
+      "edits",
+      "path"
+    ],
+    "properties": {
+      "edits": "array[EditPair]",
+      "path": "string",
+      "preview": "boolean"
+    },
+    "defs": {
+      "EditPair": {
+        "kind": "string",
+        "new_string": "string",
+        "old_string": "string"
+      }
+    }
+  },
+  {
+    "name": "apply_patch",
+    "required": [
+      "patch"
+    ],
+    "properties": {
+      "patch": "string",
+      "path": "string",
+      "preview": "boolean"
+    }
+  },
+  {
+    "name": "run_verify_command",
+    "required": [],
+    "properties": {}
+  },
+  {
+    "name": "run_command",
+    "required": [
+      "argv"
+    ],
+    "properties": {
+      "argv": "array[string]"
+    }
+  }
+]
