@@ -8,18 +8,16 @@ import argparse
 from pathlib import Path
 
 from agent6 import __version__
-from agent6.ui.cli._common import _add_sandbox_flags, _sub
+from agent6.ui.cli._common import _sub
 from agent6.ui.cli._config_args import _add_config_parser, _add_connect_parser, _add_model_parser
+from agent6.ui.cli._machine_args import _add_machine_parser
 from agent6.ui.cli._plan_args import _add_ask_parser, _add_plan_parser
 from agent6.ui.cli._review_args import _add_check_parser, _add_review_parser, _add_system_parser
 from agent6.ui.cli._run_args import _add_fork_parser, _add_resume_parser, _add_run_parser
 from agent6.ui.cli._runs_args import _add_runs_parser
 from agent6.ui.cli._skills_args import _add_skills_parser
 from agent6.ui.cli._watch_args import _add_attach_parser, _add_tui_parser, _add_web_parser
-from agent6.ui.cli.completers import (
-    _complete_machine_ids,
-    _complete_run_ids,
-)
+from agent6.ui.cli.completers import _complete_run_ids
 
 # Commands with a default verb: `plan <task>` == `plan run <task>`, and
 # `ask <q>` == `ask query <q>`. _inject_default_verb rewrites argv so a bare
@@ -287,133 +285,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Explicit config file (layered over global + repo configs).",
     )
 
-    machine_p = _sub(
-        sub,
-        "machine",
-        help="Author-time tooling for agent6 state machines (.asm.toml).",
-    )
-    machine_sub = machine_p.add_subparsers(
-        dest="machine_command", required=True, metavar="<subcommand>"
-    )
-    machine_check = _sub(
-        machine_sub,
-        "check",
-        help=(
-            "Validate a .asm.toml machine file: parse, type-check, reachability,"
-            " bundle paths, and static script lint/types (ruff + ty). No execution."
-        ),
-    )
-    machine_check.add_argument("file", type=Path, help="Path to the .asm.toml machine file.")
-    machine_test = _sub(
-        machine_sub,
-        "test",
-        help=(
-            "Simulate a machine offline: everything `check` does, plus run the"
-            " bundle's scripts/*_test.py mocks in a no-network jail, plus a pure"
-            " dry-run (synthesized facts, branch routing against a fixture)."
-            " No provider calls, no real network."
-        ),
-    )
-    machine_test.add_argument("file", type=Path, help="Path to the .asm.toml machine file.")
-    machine_test.add_argument(
-        "--blackboard",
-        type=Path,
-        default=None,
-        metavar="FIXTURE.toml",
-        help="TOML fixture of variable values, overlaid on defaults for branch routing.",
-    )
-    machine_graph = _sub(
-        machine_sub,
-        "graph",
-        help="Emit the machine as a state diagram (mermaid or Graphviz dot).",
-    )
-    machine_graph.add_argument("file", type=Path, help="Path to the .asm.toml machine file.")
-    machine_graph.add_argument(
-        "--format",
-        choices=("mermaid", "dot"),
-        default="mermaid",
-        help="Diagram format (default: mermaid).",
-    )
-    machine_run = _sub(
-        machine_sub,
-        "run",
-        help="Run (or resume) a machine, driving its states to a terminal one.",
-    )
-    machine_run.add_argument("file", type=Path, help="Path to the .asm.toml machine file.")
-    machine_run.add_argument(
-        "--exit-on-wait",
-        action="store_true",
-        help=(
-            "Persist the next wake instant and exit 0 (status 'waiting') at the first"
-            " not-ready wait instead of blocking, for an external scheduler to resume."
-        ),
-    )
-    # Sandbox only; a machine's approvals are config-driven (its states set
-    # run_commands), so --auto-approve is not offered here.
-    _add_sandbox_flags(machine_run, auto_approve=False)
-    machine_status = _sub(
-        machine_sub,
-        "status",
-        help="Report a machine instance's current state, spend, and next wake. Read-only.",
-    )
-    machine_status_id = machine_status.add_argument(
-        "machine_id", help="Machine id (directory under the per-repo state dir, machines subdir)."
-    )
-    machine_status_id.completer = _complete_machine_ids  # type: ignore[attr-defined]
-    machine_poke = _sub(
-        machine_sub,
-        "poke",
-        help="Signal a waiting machine to wake on its next check (drops a signal file).",
-    )
-    machine_poke_id = machine_poke.add_argument(
-        "machine_id", help="Machine id (directory under the per-repo state dir, machines subdir)."
-    )
-    machine_poke_id.completer = _complete_machine_ids  # type: ignore[attr-defined]
-    machine_poke_payload = machine_poke.add_mutually_exclusive_group()
-    machine_poke_payload.add_argument(
-        "--data",
-        metavar="JSON",
-        help="A JSON value delivered to the waking wait as its poke payload"
-        " (readable by the next tool at $AGENT6_MACHINE_DATA_DIR/poke.json).",
-    )
-    machine_poke_payload.add_argument(
-        "--message",
-        metavar="TEXT",
-        help="Shorthand for --data with a JSON string payload.",
-    )
-    machine_replay = _sub(
-        machine_sub,
-        "replay",
-        help="Deterministically replay a machine's journal offline (no world I/O).",
-    )
-    machine_replay_id = machine_replay.add_argument(
-        "machine_id", help="Machine id (directory under the per-repo state dir, machines subdir)."
-    )
-    machine_replay_id.completer = _complete_machine_ids  # type: ignore[attr-defined]
-
-    machine_create = _sub(
-        machine_sub,
-        "create",
-        help="Draft a .asm.toml machine from a natural-language task (LLM-assisted).",
-    )
-    machine_create.add_argument("task", help="Natural-language description of the loop to author.")
-    machine_create.add_argument(
-        "-o",
-        "--output",
-        type=Path,
-        default=None,
-        help=(
-            "Write the draft here (overwriting freely). Default: <machine-name>.asm.toml"
-            " in cwd, which is never overwritten."
-        ),
-    )
-    machine_create.add_argument(
-        "--max-attempts",
-        type=int,
-        default=3,
-        metavar="N",
-        help="Maximum draft->check->fix attempts before giving up (default: 3).",
-    )
+    _add_machine_parser(sub)
 
     # Shell tab-completion. argcomplete is a hard dependency; the call is a
     # no-op unless the shell sourced its completion script for this binary
