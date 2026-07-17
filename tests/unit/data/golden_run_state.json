@@ -71,6 +71,7 @@
     "input_cap": 1500000,
     "output_cap": 200000,
     "usd_total": 0.004841036,
+    "usd_prior_legs": 0.004841036,
     "usd_partial": false
   },
   "pending_approvals": [
