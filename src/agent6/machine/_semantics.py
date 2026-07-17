@@ -16,7 +16,7 @@ import tomllib
 from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import ValidationError
 
@@ -753,14 +753,21 @@ def _validate_wait(
     # than letting them surface only when the wait is first reached at run.
     if state.every_secs is not None:
         problems.extend(
-            _int_timing_problems(
-                name, "every_secs", state.every_secs, var_types, var_owner, var_values, schemas
+            _timing_problems(
+                name,
+                "every_secs",
+                state.every_secs,
+                var_types,
+                var_owner,
+                var_values,
+                schemas,
+                kind="int",
             )
         )
     if state.until is not None:
         problems.extend(
-            _iso_timing_problems(
-                name, "until", state.until, var_types, var_owner, var_values, schemas
+            _timing_problems(
+                name, "until", state.until, var_types, var_owner, var_values, schemas, kind="iso"
             )
         )
     return problems
@@ -806,54 +813,36 @@ def _static_ref_value(ref: Reference, var_values: dict[str, Any]) -> Any:
     return current
 
 
-def _int_timing_problems(
-    name: str,
-    key: str,
-    text: str,
-    var_types: dict[str, TypeRef],
-    var_owner: dict[str, str],
-    var_values: dict[str, Any],
-    schemas: dict[str, dict[str, TypeRef]],
+def _timing_literal_problems(
+    name: str, key: str, literal: str, kind: Literal["int", "iso"]
 ) -> list[str]:
-    problems: list[str] = []
-    literal = _timing_literal(text)
-    if literal is not None:
+    """Range/format-check a constant timing literal: `every_secs` (kind="int",
+    a positive integer) or `until` (kind="iso", an ISO-8601 instant)."""
+    if kind == "int":
         try:
             seconds = int(literal)
         except ValueError:
-            problems.append(
+            return [
                 f"state {name!r}: `{key}` must be an integer literal or an int variable"
                 f" reference; got {literal!r}"
-            )
-        else:
-            if seconds < 1:
-                problems.append(
-                    f"state {name!r}: `{key}` must be >= 1; got {seconds}"
-                    " (a zero or negative interval would busy-loop)"
-                )
-        return problems
-
-    ref = _timing_ref(text)
-    if ref is None:
-        return problems
-    ref_type, error = _resolve_ref_type(ref, var_types, schemas, None)
-    if error is None:
-        assert ref_type is not None
-        if ref_type != ScalarT("int"):
-            problems.append(
-                f"state {name!r}: `{key}` must reference an int variable, not {type_str(ref_type)}"
-            )
-        elif var_owner.get(ref.root) == "operator":
-            value = _static_ref_value(ref, var_values)
-            if isinstance(value, int) and not isinstance(value, bool) and value < 1:
-                problems.append(
-                    f"state {name!r}: `{key}` must be >= 1; {ref.dotted!r} is {value}"
-                    " (a zero or negative interval would busy-loop)"
-                )
-    return problems
+            ]
+        if seconds < 1:
+            return [
+                f"state {name!r}: `{key}` must be >= 1; got {seconds}"
+                " (a zero or negative interval would busy-loop)"
+            ]
+        return []
+    try:
+        datetime.fromisoformat(literal)
+    except ValueError:
+        return [
+            f"state {name!r}: `{key}` must be an ISO-8601 instant or a str variable"
+            f" reference; got {literal!r}"
+        ]
+    return []
 
 
-def _iso_timing_problems(
+def _timing_problems(
     name: str,
     key: str,
     text: str,
@@ -861,18 +850,18 @@ def _iso_timing_problems(
     var_owner: dict[str, str],
     var_values: dict[str, Any],
     schemas: dict[str, dict[str, TypeRef]],
+    *,
+    kind: Literal["int", "iso"],
 ) -> list[str]:
+    """Value-validate a wait timing template: `every_secs` (kind="int") or `until`
+    (kind="iso"). A literal is range/format-checked; a lone variable reference is
+    type-checked, and an operator-owned constant is checked statically. The two
+    kinds share this reference-resolution skeleton and differ only in the parser,
+    the required scalar type, and the constant check."""
     problems: list[str] = []
     literal = _timing_literal(text)
     if literal is not None:
-        try:
-            datetime.fromisoformat(literal)
-        except ValueError:
-            problems.append(
-                f"state {name!r}: `{key}` must be an ISO-8601 instant or a str variable"
-                f" reference; got {literal!r}"
-            )
-        return problems
+        return _timing_literal_problems(name, key, literal, kind)
 
     ref = _timing_ref(text)
     if ref is None:
@@ -880,13 +869,21 @@ def _iso_timing_problems(
     ref_type, error = _resolve_ref_type(ref, var_types, schemas, None)
     if error is None:
         assert ref_type is not None
-        if ref_type != ScalarT("str"):
+        expected = ScalarT("int") if kind == "int" else ScalarT("str")
+        if ref_type != expected:
+            noun = "an int" if kind == "int" else "a str"
             problems.append(
-                f"state {name!r}: `{key}` must reference a str variable, not {type_str(ref_type)}"
+                f"state {name!r}: `{key}` must reference {noun} variable, not {type_str(ref_type)}"
             )
         elif var_owner.get(ref.root) == "operator":
             value = _static_ref_value(ref, var_values)
-            if isinstance(value, str):
+            if kind == "int":
+                if isinstance(value, int) and not isinstance(value, bool) and value < 1:
+                    problems.append(
+                        f"state {name!r}: `{key}` must be >= 1; {ref.dotted!r} is {value}"
+                        " (a zero or negative interval would busy-loop)"
+                    )
+            elif isinstance(value, str):  # kind == "iso"
                 try:
                     datetime.fromisoformat(value)
                 except ValueError:
