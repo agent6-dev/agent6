@@ -22,8 +22,8 @@ from agent6.ui.cli._common import (
 )
 from agent6.ui.cli._common import sgr as _sgr
 from agent6.ui.cli._task_tree import task_tree_lines
-from agent6.ui.viewmodel import run_mtime
-from agent6.ui.viewmodel.transcript_render import (
+from agent6.viewmodel import run_mtime
+from agent6.viewmodel.transcript_render import (
     fold_conversation,
     load_transcripts,
     render_markdown,

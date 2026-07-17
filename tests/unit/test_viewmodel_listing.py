@@ -8,7 +8,7 @@ import json
 import os
 from pathlib import Path
 
-from agent6.ui.viewmodel import (
+from agent6.viewmodel import (
     is_run_husk,
     is_winner,
     run_compare,
@@ -16,7 +16,7 @@ from agent6.ui.viewmodel import (
     summarize_run_dir,
     task_snippet,
 )
-from agent6.ui.viewmodel.format import format_compare
+from agent6.viewmodel.format import format_compare
 
 
 def test_run_mtime_prefers_log_over_dir(tmp_path: Path) -> None:

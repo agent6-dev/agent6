@@ -15,8 +15,8 @@ ui  ──▶  workflows  ──▶  agents  ──▶  tools  ──▶  sandbo
 ```
 
 `ui/` is the presentation layer and composition root: `ui/cli`, `ui/tui`,
-`ui/web` (the three front-ends), `ui/viewmodel` (the shared read-model fold),
-and `ui/bridge` (spawn / approval / notify). Boundaries are enforced by
+`ui/web` (the three front-ends) and `ui/bridge` (spawn / approval / notify),
+over the shared headless read-model fold (`viewmodel`). Boundaries are enforced by
 [tach](https://docs.gauge.sh/) (see
 [tach.toml](https://github.com/agent6-dev/agent6/blob/master/tach.toml)). Workflows never import each other; the engine
 (workflows and everything below) never imports the UI. Crossing a boundary is
@@ -264,7 +264,7 @@ knows how to actually run a lane.
   `failed` (all lanes failed or conflicted); a conflict aborts that one merge
   and tells the model to resolve it manually, and the run continues either way.
   Events `loop.parallel.dispatched`/`joined`/`failed` record the fan-out; the
-  shared transcript fold (`ui/viewmodel/transcript.py`) renders them as
+  shared transcript fold (`viewmodel/transcript.py`) renders them as
   conversation markers on every surface (dispatched: the task count + tasks,
   truthfully -- lane ids do not exist yet; joined: each lane's id/branch/sha/
   status; a dispatch failure: the error), so the coordinator's blocked wait is
@@ -393,7 +393,7 @@ and the browser web UI
 ([src/agent6/ui/web/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/web),
 `agent6 web`) all fold the same event stream and render their own way. Two shared
 layers sit under all three: the read side
-[src/agent6/ui/viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/viewmodel)
+[src/agent6/viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel)
 (the `RunState`/`MachineState` fold + its `*_as_dict` wire form, exactly what
 `agent6 attach --json` and the web JSON/SSE endpoints emit) and the textual-free
 write bridge
@@ -403,7 +403,7 @@ file contract the workflow process polls). See [the web UI](web.md).
 
 The `logs.jsonl` vocabulary is small and stable: the data contract for
 any external viewer (the fold to render-ready state lives in
-[src/agent6/ui/viewmodel/state.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/viewmodel/state.py) as a pure function, shared by the CLI, the TUI, and the web client):
+[src/agent6/viewmodel/state.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state.py) as a pure function, shared by the CLI, the TUI, and the web client):
 
 | Event                       | Notable fields                              |
 | --------------------------- | ------------------------------------------- |
@@ -454,7 +454,7 @@ graph`).
 | Fan-out orchestrator (`run --parallel`, coordinator spawner) | [src/agent6/ui/cli/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/cli/parallel.py) |
 | Provider clients                 | [src/agent6/providers/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/providers)                        |
 | Knowledge graph (curator)        | [src/agent6/graph/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/graph)                                |
-| Event log + view-model fold      | [src/agent6/events.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/events.py) (writer), [src/agent6/ui/viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/viewmodel) (RunState/MachineState fold), [src/agent6/ui/tui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/tui) (textual render) |
+| Event log + view-model fold      | [src/agent6/events.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/events.py) (writer), [src/agent6/viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel) (RunState/MachineState fold), [src/agent6/ui/tui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/tui) (textual render) |
 | Front-end write bridge           | [src/agent6/ui/bridge/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/bridge) (spawn detached + approval/question/steer/compact bridge files; shared by CLI, TUI, web) |
 | Web UI (`agent6 web`)            | [src/agent6/ui/web/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/web) (stdlib HTTP server + one embedded page over the view-model + frontend) |
 | Cross-run memory store           | [src/agent6/memory.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/memory.py) (store), `<state-dir>/<repo-id>/memories/` (data) |

@@ -9,7 +9,7 @@ import threading
 import time
 from pathlib import Path
 
-from agent6.ui.viewmodel.tail import LogTail, tail_events
+from agent6.viewmodel.tail import LogTail, tail_events
 
 
 def test_tail_yields_existing_lines_in_non_follow_mode(tmp_path: Path) -> None:

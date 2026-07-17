@@ -23,7 +23,7 @@ from agent6.ui.cli._common import _machines_dir, _runs_dir, resolve_run_layout
 from agent6.ui.cli.machine_cmds import _cmd_machine_watch
 from agent6.ui.cli.plan_watch import _cmd_watch as _watch_run
 from agent6.ui.cli.plan_watch import _resolve_run_dir
-from agent6.ui.viewmodel import (
+from agent6.viewmodel import (
     fold_machine,
     fold_run,
     machine_state_as_dict,

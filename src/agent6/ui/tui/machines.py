@@ -67,7 +67,7 @@ from agent6.ui.tui.modals import (
     TextInputModal,
 )
 from agent6.ui.tui.theme import PALETTE_CSS, MuxPointerShapes, open_theme_picker, setup_theme
-from agent6.ui.viewmodel import (
+from agent6.viewmodel import (
     MachineState,
     MachineWatchCursor,
     fold_machine,

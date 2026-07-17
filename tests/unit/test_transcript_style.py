@@ -5,8 +5,8 @@ and the collapsed/expanded/hidden detail levels."""
 
 from __future__ import annotations
 
-from agent6.ui.viewmodel.transcript import TranscriptItem
-from agent6.ui.viewmodel.transcript_style import TAIL_CLIP, item_lines
+from agent6.viewmodel.transcript import TranscriptItem
+from agent6.viewmodel.transcript_style import TAIL_CLIP, item_lines
 
 
 def test_failed_tool_detail_is_a_neutral_span_not_the_fail_colour() -> None:

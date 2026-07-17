@@ -28,7 +28,7 @@ from agent6.git_ops import (
 )
 from agent6.runs.layout import RunLayout
 from agent6.ui.cli._merge import execute_merge
-from agent6.ui.viewmodel import summarize_run_dir
+from agent6.viewmodel import summarize_run_dir
 from agent6.workflows.loop import RunResult
 
 # Distinct exit code for a budget-exhausted run so automation can tell "raise

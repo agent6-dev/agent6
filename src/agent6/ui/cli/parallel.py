@@ -51,7 +51,7 @@ from agent6.ui.cli._compare import (
 from agent6.ui.cli._compare import (
     verify_ok as _verify_ok,
 )
-from agent6.ui.viewmodel import summarize_run_dir
+from agent6.viewmodel import summarize_run_dir
 from agent6.workflows.judge import CandidateBrief
 from agent6.workflows.subrun import (
     GroupLaneSpawner,

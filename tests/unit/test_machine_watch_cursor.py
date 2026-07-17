@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent6.ui.viewmodel import MachineWatchCursor, read_complete_lines
-from agent6.ui.viewmodel.machine_state import MachineState, NotificationView, TransitionView
+from agent6.viewmodel import MachineWatchCursor, read_complete_lines
+from agent6.viewmodel.machine_state import MachineState, NotificationView, TransitionView
 
 
 def _ms(

@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from agent6.ui.viewmodel.transcript import (
+from agent6.viewmodel.transcript import (
     CALL,
     COMMIT,
     DONE,

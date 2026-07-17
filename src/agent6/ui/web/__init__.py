@@ -5,7 +5,7 @@
 `agent6 web [target]` serves a single page (web.page) from a stdlib
 `http.server` (web.server), fed by JSON + SSE endpoints that fold the same
 `<run>/logs.jsonl` and machine journals every other front-end reads (via
-`agent6.ui.viewmodel`) and driven by the same spawn / approval / steer contract the
+`agent6.viewmodel`) and driven by the same spawn / approval / steer contract the
 CLI and TUI use (via `agent6.ui.bridge`). It is a thin renderer of shared state.
 
 Layout:

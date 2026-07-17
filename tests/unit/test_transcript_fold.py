@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from agent6.ui.viewmodel import TranscriptItem, fold_transcript, salient_arg
+from agent6.viewmodel import TranscriptItem, fold_transcript, salient_arg
 
 
 def _read(path: str) -> list[dict[str, object]]:
@@ -182,8 +182,8 @@ def test_operator_steer_text_becomes_an_operator_item() -> None:
     """The loop's steer injection (a typed steer, or the follow-up a resume was
     started with) shows in the conversation as an operator turn; old logs that
     carry only a char count yield nothing."""
-    from agent6.ui.viewmodel.transcript import OPERATOR, TranscriptFold
-    from agent6.ui.viewmodel.transcript_style import item_lines
+    from agent6.viewmodel.transcript import OPERATOR, TranscriptFold
+    from agent6.viewmodel.transcript_style import item_lines
 
     fold = TranscriptFold()
     items = fold.feed({"type": "loop.steer.injected", "chars": 9, "text": "try it\nagain"})

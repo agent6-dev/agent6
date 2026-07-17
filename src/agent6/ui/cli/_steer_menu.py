@@ -42,9 +42,9 @@ from agent6.paths import data_dir
 from agent6.skills import discover_skills, resolve_states, skill_search_dirs
 from agent6.ui.bridge.approval import request_compact
 from agent6.ui.cli._menu_input import menu_capable, menu_input
-from agent6.ui.viewmodel import fold_run, tail_events
-from agent6.ui.viewmodel.format import TASK_STATUS_GLYPH, format_cost
-from agent6.ui.viewmodel.state import RunState, run_status_label
+from agent6.viewmodel import fold_run, tail_events
+from agent6.viewmodel.format import TASK_STATUS_GLYPH, format_cost
+from agent6.viewmodel.state import RunState, run_status_label
 
 PROMPT = "[agent6] paused: Enter=continue · type to steer · /help: "
 

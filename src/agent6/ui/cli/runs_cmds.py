@@ -40,8 +40,8 @@ from agent6.ui.cli._common import _runs_dir, _state_dir, all_run_dirs, resolve_r
 from agent6.ui.cli._compare import manifest_task, print_ranked_candidates, rank, verify_ok
 from agent6.ui.cli._merge import execute_merge
 from agent6.ui.cli.plan_watch import _most_recent_run_id, _newest_dir
-from agent6.ui.viewmodel import is_run_husk, is_winner, summarize_run_dir, task_snippet
-from agent6.ui.viewmodel.format import WINNER_GLYPH, format_cost, status_label
+from agent6.viewmodel import is_run_husk, is_winner, summarize_run_dir, task_snippet
+from agent6.viewmodel.format import WINNER_GLYPH, format_cost, status_label
 from agent6.workflows.judge import CandidateBrief
 
 # ANSI styles for the shared status words (viewmodel.status_word), tty only:

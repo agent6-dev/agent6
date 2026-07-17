@@ -16,7 +16,7 @@ from agent6.config.layer import (
     set_config_value,
     unset_config_value,
 )
-from agent6.ui.viewmodel.config_view import (
+from agent6.viewmodel.config_view import (
     ConfigSetting,
     ConfigView,
     build_config_view,

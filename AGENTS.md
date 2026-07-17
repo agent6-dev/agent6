@@ -110,9 +110,9 @@ and the principles the Zen doesn't cover:
 - **Layering** is `ui -> workflows -> agents -> tools -> sandbox`; workflows
   never import each other, and the engine (workflows and below) never imports
   the UI. `ui/` is the presentation layer and the composition root: the three
-  front-ends (`ui/cli`, `ui/tui`, `ui/web`), the shared read-model fold
-  (`ui/viewmodel`), and the front-end bridge (`ui/bridge`: spawn / approval /
-  notify). `ui/cli` is the entry point that wires a run.
+  front-ends (`ui/cli`, `ui/tui`, `ui/web`) and the front-end bridge
+  (`ui/bridge`: spawn / approval / notify), over the shared headless read-model
+  fold (`viewmodel`). `ui/cli` is the entry point that wires a run.
   [tach](https://docs.gauge.sh/) (`tach.toml`) checks it.
 - **`tach.toml` mirrors the design.** Write the right design, then update
   `tach.toml` to match; never contort code (or add an indirection) to satisfy

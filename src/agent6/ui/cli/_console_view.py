@@ -23,13 +23,13 @@ from threading import Event, RLock, Thread
 from typing import Any, TextIO
 
 from agent6.ui.cli._task_tree import tree_lines_from_event_nodes
-from agent6.ui.viewmodel.transcript import (
+from agent6.viewmodel.transcript import (
     DONE,
     THINK,
     TranscriptFold,
     TranscriptItem,
 )
-from agent6.ui.viewmodel.transcript_style import StyleName, item_lines
+from agent6.viewmodel.transcript_style import StyleName, item_lines
 
 _ANSI = {
     "dim": "\033[2m",

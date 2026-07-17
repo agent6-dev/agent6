@@ -84,9 +84,9 @@ from agent6.ui.tui.modals import (
 )
 from agent6.ui.tui.settings import get_copy_method
 from agent6.ui.tui.theme import PALETTE_CSS, MuxPointerShapes, open_theme_picker, setup_theme
-from agent6.ui.viewmodel import run_compare
-from agent6.ui.viewmodel.format import TASK_STATUS_GLYPH, format_compare, format_cost
-from agent6.ui.viewmodel.state import (
+from agent6.viewmodel import run_compare
+from agent6.viewmodel.format import TASK_STATUS_GLYPH, format_compare, format_cost
+from agent6.viewmodel.state import (
     MAX_LOG_TAIL,
     STREAM_DELTA_EVENTS,
     ApprovalPrompt,
@@ -97,7 +97,7 @@ from agent6.ui.viewmodel.state import (
     initial_state,
     run_status_label,
 )
-from agent6.ui.viewmodel.tail import tail_events
+from agent6.viewmodel.tail import tail_events
 
 _TASK_ICONS = TASK_STATUS_GLYPH
 

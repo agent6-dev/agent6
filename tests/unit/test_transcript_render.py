@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from agent6.ui.viewmodel.transcript_render import (
+from agent6.viewmodel.transcript_render import (
     fold_conversation,
     load_transcripts,
     render_markdown,

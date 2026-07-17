@@ -72,12 +72,12 @@ from agent6.ui.cli.egress import (
 )
 from agent6.ui.cli.plan_watch import event_epoch, format_plain_event
 from agent6.ui.cli.scriptcheck import lint_and_typecheck, run_offline_tests
-from agent6.ui.viewmodel import (
+from agent6.viewmodel import (
     MachineState,
     MachineWatchCursor,
     fold_machine,
 )
-from agent6.ui.viewmodel.machine_state import newest_state_log
+from agent6.viewmodel.machine_state import newest_state_log
 
 
 def _is_inside(path: Path, root: Path) -> bool:

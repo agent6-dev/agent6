@@ -21,7 +21,7 @@ from agent6.machine import JournalError, MachineError, MachineJournal, load_mach
 from agent6.models.cache import cached_models, list_models
 from agent6.models.validate import known_models
 from agent6.secrets import resolve_api_key
-from agent6.ui.viewmodel import (
+from agent6.viewmodel import (
     fold_machine,
     fold_run,
     fold_transcript,
@@ -35,8 +35,8 @@ from agent6.ui.viewmodel import (
     tail_events,
     task_snippet,
 )
-from agent6.ui.viewmodel.config_view import render_show
-from agent6.ui.viewmodel.transcript_style import item_lines
+from agent6.viewmodel.config_view import render_show
+from agent6.viewmodel.transcript_style import item_lines
 
 RUN_SUBDIRS = ("runs", "asks")
 

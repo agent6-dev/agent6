@@ -49,10 +49,10 @@ from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bind
 from agent6.ui.tui.modals import ConfirmModal
 from agent6.ui.tui.theme import PALETTE_CSS, MuxPointerShapes, open_theme_picker, setup_theme
 from agent6.ui.tui.widgets import FORM_CSS, ActionItem
-from agent6.ui.viewmodel import RunSummary, is_run_husk, is_winner, summarize_run_dir
-from agent6.ui.viewmodel import run_mtime as _run_mtime
-from agent6.ui.viewmodel import task_snippet as _task_snippet
-from agent6.ui.viewmodel.format import WINNER_GLYPH, format_cost, status_label
+from agent6.viewmodel import RunSummary, is_run_husk, is_winner, summarize_run_dir
+from agent6.viewmodel import run_mtime as _run_mtime
+from agent6.viewmodel import task_snippet as _task_snippet
+from agent6.viewmodel.format import WINNER_GLYPH, format_cost, status_label
 
 # Subdirs (relative to the agent6 dir) that hold watchable run directories.
 _RUN_SUBDIRS = ("runs", "asks")

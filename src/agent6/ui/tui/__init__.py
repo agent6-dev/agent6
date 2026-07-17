@@ -7,7 +7,7 @@ Everything in this package is **optional, side-effect-free, and consumes
 core agent loop; reviewers can skip this directory and still understand
 how agent6 actually plans and edits code.
 
-The render-ready state and the JSONL tailer live in `agent6.ui.viewmodel` (shared
+The render-ready state and the JSONL tailer live in `agent6.viewmodel` (shared
 with the CLI and the web client); this package is the textual painting of that
 state. The file-based write bridge (approve / ask_user / steer, spawn) lives in
 `agent6.ui.bridge`, shared with the CLI and web.

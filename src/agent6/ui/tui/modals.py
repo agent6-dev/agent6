@@ -25,7 +25,7 @@ from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Static, TextArea
 
-from agent6.ui.viewmodel.state import Question
+from agent6.viewmodel.state import Question
 
 # Uniform arrow-key focus navigation for every consequential modal: Tab already
 # moves focus; these make the arrows do the same, so the dialogs navigate the way

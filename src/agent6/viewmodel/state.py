@@ -18,8 +18,8 @@ from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any, Literal
 
-from agent6.ui.viewmodel.format import status_label
-from agent6.ui.viewmodel.listing import status_word
+from agent6.viewmodel.format import status_label
+from agent6.viewmodel.listing import status_word
 
 NodeStatus = Literal["pending", "in_progress", "passed", "failed", "skipped", "obsolete"]
 

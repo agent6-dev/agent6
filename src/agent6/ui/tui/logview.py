@@ -43,8 +43,8 @@ from agent6.ui.tui.menubar import (
     MenuItem,
     menu_bindings,
 )
-from agent6.ui.viewmodel.state import STREAM_DELTA_EVENTS, format_log_line
-from agent6.ui.viewmodel.tail import LogTail
+from agent6.viewmodel.state import STREAM_DELTA_EVENTS, format_log_line
+from agent6.viewmodel.tail import LogTail
 
 
 class LogScreen(Screen[None]):

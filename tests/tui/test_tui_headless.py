@@ -26,7 +26,7 @@ from agent6.ui.tui.modals import (
     QuestionModal,
     ToolCallDetailModal,
 )
-from agent6.ui.viewmodel.state import Question
+from agent6.viewmodel.state import Question
 
 
 def _ev(**fields: Any) -> dict[str, object]:
@@ -429,7 +429,7 @@ def test_dashboard_inline_log_is_a_bounded_gapless_window(tmp_path: Path) -> Non
     window: feed a pre-burst, then a burst larger than the window in one tick, and the
     RichLog caps at MAX_LOG_TAIL -- the gap-causing pre-burst lines are evicted, so it
     is the gapless recent window, not pre-burst lines + a hole + the tail."""
-    from agent6.ui.viewmodel.state import MAX_LOG_TAIL
+    from agent6.viewmodel.state import MAX_LOG_TAIL
 
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")

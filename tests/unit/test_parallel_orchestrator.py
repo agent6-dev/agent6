@@ -416,7 +416,7 @@ def test_await_lanes_status_line_flags_a_waiting_lane(
     """A lane the fold still calls "running" but which is blocked on an
     unanswered question shows the "waiting on ... (answer via the web or TUI
     hub)" note, so the operator knows to open a front-end."""
-    from agent6.ui.viewmodel import RunSummary
+    from agent6.viewmodel import RunSummary
 
     lane = tmp_path / "lane"
     _lane_logs(

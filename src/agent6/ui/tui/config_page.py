@@ -61,7 +61,7 @@ from agent6.ui.tui.widgets import (
     choice_field,
     focus_neighbor,
 )
-from agent6.ui.viewmodel.config_view import (
+from agent6.viewmodel.config_view import (
     ConfigSetting,
     ConfigView,
     build_config_view,

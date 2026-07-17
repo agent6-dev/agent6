@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for the pure machine-journal fold in agent6.ui.viewmodel.machine_state."""
+"""Tests for the pure machine-journal fold in agent6.viewmodel.machine_state."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 
 from agent6.machine import load_machine
 from agent6.machine.journal import BranchFact, MachineEnd, MachineNotify, StepEvent
-from agent6.ui.viewmodel.machine_state import (
+from agent6.viewmodel.machine_state import (
     _NOTIFY_KEEP,  # pyright: ignore[reportPrivateUsage]
     NotificationView,
     fold_machine,
@@ -133,7 +133,7 @@ def test_notification_key_is_stable_identity() -> None:
 def test_machine_state_as_dict_is_json_serializable(tmp_path: Path) -> None:
     import json
 
-    from agent6.ui.viewmodel.machine_state import machine_state_as_dict
+    from agent6.viewmodel.machine_state import machine_state_as_dict
 
     events = [
         StepEvent(

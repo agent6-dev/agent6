@@ -41,7 +41,6 @@ from agent6.ui.bridge.approval import (
     worker_is_alive,
     write_frontend_pid,
 )
-from agent6.ui.viewmodel import apply_event, initial_state, run_state_as_dict, tail_events
 from agent6.ui.web import actions, model
 from agent6.ui.web.page import (
     FAVICON_SVG,
@@ -50,6 +49,7 @@ from agent6.ui.web.page import (
     PAGE_HTML,
     SERVICE_WORKER_JS,
 )
+from agent6.viewmodel import apply_event, initial_state, run_state_as_dict, tail_events
 
 # SSE tuning: coalesce high-frequency streaming deltas, heartbeat idle streams so
 # a disconnected client is noticed and its worker thread exits.

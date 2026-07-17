@@ -40,8 +40,8 @@ from agent6.ui.bridge.spawn import (
     spawn_and_locate,
     spawn_detached_resume,
 )
-from agent6.ui.viewmodel import newest_state_log
 from agent6.ui.web import model
+from agent6.viewmodel import newest_state_log
 
 # Modes `agent6 web` can start as new work, mapped 1:1 to the CLI subcommand.
 NEW_WORK_MODES = frozenset({"run", "plan", "ask"})

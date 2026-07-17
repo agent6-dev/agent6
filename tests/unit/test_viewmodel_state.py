@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for the pure event-fold in agent6.ui.viewmodel.state."""
+"""Tests for the pure event-fold in agent6.viewmodel.state."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from agent6.ui.viewmodel.state import (
+from agent6.viewmodel.state import (
     ApprovalPrompt,
     BudgetView,
     RunState,
@@ -275,7 +275,7 @@ def test_log_count_is_monotonic_past_window_cap() -> None:
     # log_tail is a sliding window (MAX_LOG_TAIL); log_count must keep growing
     # so a live viewer can diff on it. A length-based diff freezes once the
     # window saturates -- this is the bug log_count fixes.
-    from agent6.ui.viewmodel.state import MAX_LOG_TAIL
+    from agent6.viewmodel.state import MAX_LOG_TAIL
 
     s = initial_state()
     n = MAX_LOG_TAIL + 50
@@ -345,7 +345,7 @@ def test_role_result_tracks_context_tokens_and_provider() -> None:
     (fresh + cache read + cache write) into ctx_tokens -- the context size the
     ctx% readout is computed from. The value survives the next role.call (no
     per-turn blink) and an error result without usage keeps the last known."""
-    from agent6.ui.viewmodel.state import apply_event, initial_state
+    from agent6.viewmodel.state import apply_event, initial_state
 
     s = initial_state()
     s = apply_event(s, {"type": "role.call", "role": "worker", "model": "m", "provider": "p"})

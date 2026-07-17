@@ -39,7 +39,7 @@ from agent6.paths import (
     global_config_path,
     secrets_path,
 )
-from agent6.ui.viewmodel.config_view import format_value, render_key_detail, render_show
+from agent6.viewmodel.config_view import format_value, render_key_detail, render_show
 
 
 def _cmd_config_show(config_path: Path | None, *, as_json: bool, key: str = "") -> int:

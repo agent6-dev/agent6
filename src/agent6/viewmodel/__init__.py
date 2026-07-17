@@ -24,7 +24,7 @@ mirror `RunState` / `MachineState` field-for-field.
 
 from __future__ import annotations
 
-from agent6.ui.viewmodel.listing import (
+from agent6.viewmodel.listing import (
     RunSummary,
     first_task_line,
     is_run_husk,
@@ -35,7 +35,7 @@ from agent6.ui.viewmodel.listing import (
     summarize_run_dir,
     task_snippet,
 )
-from agent6.ui.viewmodel.machine_state import (
+from agent6.viewmodel.machine_state import (
     MachineEndView,
     MachineState,
     MachineStateView,
@@ -48,7 +48,7 @@ from agent6.ui.viewmodel.machine_state import (
     notification_key,
     read_complete_lines,
 )
-from agent6.ui.viewmodel.state import (
+from agent6.viewmodel.state import (
     MAX_LOG_TAIL,
     ApprovalPrompt,
     BudgetView,
@@ -65,8 +65,8 @@ from agent6.ui.viewmodel.state import (
     run_state_as_dict,
     run_status_label,
 )
-from agent6.ui.viewmodel.tail import LogTail, tail_events
-from agent6.ui.viewmodel.transcript import (
+from agent6.viewmodel.tail import LogTail, tail_events
+from agent6.viewmodel.transcript import (
     TranscriptFold,
     TranscriptItem,
     fold_transcript,

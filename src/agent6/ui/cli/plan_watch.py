@@ -28,8 +28,8 @@ from agent6.ui.bridge.approval import (
 from agent6.ui.cli._common import _runs_dir, _state_dir, all_run_dirs, resolve_run_layout
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._interact import default_stdin_approver, default_stdin_questioner
-from agent6.ui.viewmodel import run_mtime, tail_events
-from agent6.ui.viewmodel.format import format_compare, format_cost
+from agent6.viewmodel import run_mtime, tail_events
+from agent6.viewmodel.format import format_compare, format_cost
 
 
 def event_epoch(value: object) -> float | None:

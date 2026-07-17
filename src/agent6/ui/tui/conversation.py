@@ -65,13 +65,13 @@ from agent6.ui.tui.menubar import (
 )
 from agent6.ui.tui.settings import get_copy_method
 from agent6.ui.tui.theme import open_theme_picker
-from agent6.ui.viewmodel.tail import LogTail
-from agent6.ui.viewmodel.transcript import (
+from agent6.viewmodel.tail import LogTail
+from agent6.viewmodel.transcript import (
     THINK,
     TranscriptFold,
     TranscriptItem,
 )
-from agent6.ui.viewmodel.transcript_style import DetailLevel, StyleName, item_lines
+from agent6.viewmodel.transcript_style import DetailLevel, StyleName, item_lines
 
 _LIVE_TAIL = 1600  # chars of the in-progress turn kept in the live pane
 # Sealed-chunk size for the transcript body. The body is a SEQUENCE of Static
