@@ -670,6 +670,11 @@ class Workflow:
     # read-only mount) warns once instead of every turn. Snapshot persistence is
     # recovery state; a failure disables resume/fork but must not abort the run.
     _snapshot_write_failed: bool = field(default=False, init=False)
+    # The loop iteration currently being driven (0 before the loop starts). The
+    # app-level KeyboardInterrupt fallbacks in run/resume read it so their
+    # emergency run.end carries a truthful iteration count, matching the shape
+    # the loop's own run.end emitters use.
+    iterations_reached: int = field(default=0, init=False)
 
     def run(self, user_task: str) -> RunResult:
         """Drive the single-loop agent to completion."""
@@ -878,6 +883,7 @@ class Workflow:
                 )
             )
         for iteration in range(start_iteration, self.max_iterations + 1):
+            self.iterations_reached = iteration
             self._turn_pre_call(
                 system=system,
                 messages=messages,

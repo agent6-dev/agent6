@@ -576,6 +576,65 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(tmp_path: Path) -> None:
     assert dispatcher.calls == ["run_verify_command", "run_metric_command", "finish_run"]
 
 
+def test_drive_loop_tracks_iterations_reached(tmp_path: Path) -> None:
+    """The loop records the absolute iteration it is driving on the Workflow, so
+    the app-level KeyboardInterrupt fallbacks in run/resume can emit a run.end
+    carrying a truthful iteration count (matching the loop's own run.end shape).
+    Uses a resumed start_iteration to prove it is the absolute number, not a
+    zero-based counter."""
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.n = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            del kwargs
+            self.n += 1
+            if self.n == 1:
+                return _tool_resp("run_verify_command")
+            return _tool_resp("finish_run", {"summary": "done"}, tool_id="tool-2")
+
+    class DispatcherStub:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+            if name == "run_verify_command":
+                return {"returncode": 0, "stdout": "", "stderr": "", "duration_s": 0.1}
+            if name == "finish_run":
+                return {"acknowledged": True, "summary": raw_input["summary"]}
+            raise AssertionError(f"unexpected tool: {name}")
+
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=("true",),
+            metric=SimpleNamespace(goal=None),
+        ),
+    )
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        provider=ProviderStub(),
+        dispatcher=DispatcherStub(),
+        max_iterations=20,
+    )
+    assert wf.iterations_reached == 0  # untouched before the loop runs
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ngo"}]}]
+
+    with patch("agent6.workflows.loop.commit_all", return_value="abc1234567890"):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="system",
+            messages=messages,
+            tools=[],
+            tool_calls=0,
+            start_iteration=7,  # a resumed run picks up mid-way
+            root_task_id=None,
+        )
+
+    assert result.completed is True
+    # verify ran at iter 7, finish_run at iter 8 -> the loop reached iteration 8.
+    assert wf.iterations_reached == 8
+
+
 def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: Path) -> None:
     """An unexecutable metric command must abort the run the SAME graceful way
     whether the model called run_metric_command or the auto-after-verify path

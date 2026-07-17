@@ -254,7 +254,12 @@ def test_create_writes_watchable_event_log(tmp_path: Path, monkeypatch: pytest.M
     events = [json.loads(line) for line in logs[0].read_text(encoding="utf-8").splitlines()]
     assert events[0]["type"] == "run.start"
     assert events[0]["user_task"] == "Greet the user"  # the dashboard header
-    assert any(e["type"] == "run.end" for e in events)
+    end = next(e for e in events if e["type"] == "run.end")
+    # run.end carries the one shape every emitter agrees on: reason + iterations
+    # (authoring attempts) + all_passed. One attempt succeeded here.
+    assert {"reason", "iterations", "all_passed"} <= end.keys()
+    assert end["iterations"] == 1
+    assert end["all_passed"] is True
 
 
 def test_create_saves_the_prompt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

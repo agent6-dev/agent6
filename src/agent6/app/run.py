@@ -669,8 +669,14 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 interrupted = True
                 reporter.err("\n[agent6] run interrupted")
                 # The loop was cut mid-step, so it never emitted run.end; do it
-                # here so an attached watcher/TUI stops instead of hanging.
-                events.emit("run.end", reason="interrupted", all_passed=False)
+                # here so an attached watcher/TUI stops instead of hanging. Carry
+                # the iteration the loop reached so run.end keeps one shape.
+                events.emit(
+                    "run.end",
+                    reason="interrupted",
+                    iterations=wf.iterations_reached,
+                    all_passed=False,
+                )
         finally:
             steer_state.restore()
             if dispatcher is not None:

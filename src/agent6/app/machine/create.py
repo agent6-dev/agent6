@@ -160,6 +160,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     valid_toml: str | None = None
     valid_scripts: dict[str, str] = {}
     total_usd = 0.0
+    attempt = 0  # bound for the run.end below (the loop always runs: max_attempts >= 1)
     for attempt in range(1, max_attempts + 1):
         prompt = build_authoring_prompt(
             task,
@@ -239,10 +240,12 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     reporter.err(f"machine create: spent ~${total_usd:.4f}")
     # End the watchable session (the file-write below is fast and event-less);
     # all_passed marks whether a valid machine was authored, for the TUI status.
+    # `iterations` = authoring attempts made, so run.end keeps one shape.
     events.emit(
         "run.end",
-        all_passed=spec is not None and valid_toml is not None,
         reason="machine create finished",
+        iterations=attempt,
+        all_passed=spec is not None and valid_toml is not None,
     )
 
     if spec is None or valid_toml is None:

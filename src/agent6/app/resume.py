@@ -606,7 +606,12 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             except KeyboardInterrupt:
                 interrupted = True
                 reporter.err("\n[agent6] resume interrupted")
-                events.emit("run.end", reason="interrupted", all_passed=False)
+                events.emit(
+                    "run.end",
+                    reason="interrupted",
+                    iterations=wf.iterations_reached,
+                    all_passed=False,
+                )
         finally:
             steer_state.restore()
             if dispatcher is not None:
