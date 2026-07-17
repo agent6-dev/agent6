@@ -20,7 +20,7 @@ Two outputs:
 - ``docs/data-contracts.md`` -- the mkdocs page, pinned byte-for-byte by
   ``tests/unit/test_data_contracts_doc.py``. Regenerate with:
       uv run python docs/gen_contracts.py
-- a self-contained HTML artifact (cards + a derived writer/reader graph) under
+- a self-contained HTML artifact (the tach.toml module graph + the cards) under
   the gitignored ``docs/screenshots/out/``, which the operator publishes by hand.
 """
 
@@ -30,6 +30,7 @@ import argparse
 import ast
 import html
 import re
+import tomllib
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -107,6 +108,21 @@ CONTRACTS: tuple[Contract, ...] = (
         pins=("tests/unit/data/golden_run_logs.jsonl",),
     ),
 )
+
+# The module graph's column families, leftmost first: a tach module lands in the
+# column naming its top-level package under agent6 (unplaced ones, including
+# `agent6` itself and `_data`, sit with the leaves). A declared input like
+# CONTRACTS; the nodes, edges, and row ordering are derived from tach.toml.
+COLS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("leaves", ("types", "portable", "paths", "directive", "prompts", "secrets", "events",
+                "budget", "init", "verify_infer", "git_ops")),
+    ("state & data", ("config", "models", "runs", "memory", "skills", "graph")),
+    ("exec & tools", ("sandbox", "tools", "providers")),
+    ("engine", ("workflows", "machine")),
+    ("read-model", ("viewmodel",)),
+    ("composition", ("app",)),
+    ("presentation", ("ui",)),
+)  # fmt: skip
 
 
 # --- AST + prose helpers -----------------------------------------------------
@@ -352,26 +368,119 @@ def build_markdown() -> str:
     return f"{_MD_HEADER}\n{body}\n"
 
 
+# --- the module graph (derived from tach.toml) ---------------------------------
+
+
+def _tach_modules() -> dict[str, tuple[str, ...]]:
+    data = tomllib.loads((_ROOT / "tach.toml").read_text(encoding="utf-8"))
+    return {
+        m["path"]: tuple(d if isinstance(d, str) else d["path"] for d in m.get("depends_on", ()))
+        for m in data["modules"]
+    }
+
+
+def _col_of(module: str) -> int:
+    root = module.removeprefix("agent6.").split(".")[0]
+    return next((i for i, (_, roots) in enumerate(COLS) if root in roots), 0)
+
+
+def _module_graph_svg() -> tuple[str, int, int, int]:
+    """The tach.toml dependency graph as a layered SVG: columns from COLS, rows
+    ordered by six barycenter passes (each column sorts by the mean position of
+    its neighbours) to minimize edge crossings. Returns the svg plus the derived
+    (modules, edges, upward-edge) counts for the header line."""
+    mods = _tach_modules()
+    colidx = {m: _col_of(m) for m in mods}
+    edges = [(s, d) for s, deps in mods.items() for d in deps if d in mods]
+    order: dict[int, list[str]] = {c: [] for c in range(len(COLS))}
+    for m in sorted(mods):
+        order[colidx[m]].append(m)
+    pos = {m: i for column in order.values() for i, m in enumerate(column)}
+
+    def bary(m: str) -> float:
+        near = [pos[d] for s, d in edges if s == m] + [pos[s] for s, d in edges if d == m]
+        return sum(near) / len(near) if near else pos[m]
+
+    for _ in range(6):
+        for column in order.values():
+            column.sort(key=bary)
+            for i, m in enumerate(column):
+                pos[m] = i
+
+    cw, xpad, nh, vg, top = 200, 64, 26, 10, 70
+    width = len(COLS) * (cw + xpad) + xpad
+    height = top + max(len(c) for c in order.values()) * (nh + vg) + 40
+
+    def xy(m: str) -> tuple[int, int]:
+        c = colidx[m]
+        return xpad + c * (cw + xpad), top + order[c].index(m) * (nh + vg)
+
+    out = [
+        f'<svg id="modgraph" viewBox="0 0 {width} {height}" style="min-width:{width}px" '
+        'xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace,Menlo,monospace">'
+    ]
+    for i, (name, _) in enumerate(COLS):
+        x = xpad + i * (cw + xpad) + cw / 2
+        out.append(
+            f'<text x="{x}" y="34" text-anchor="middle" class="colhead">{html.escape(name)}</text>'
+        )
+        out.append(f'<line x1="{x}" y1="46" x2="{x}" y2="{height - 20}" class="colline"/>')
+    out.append('<g id="edges">')
+    for s, d in edges:
+        (sx, sy), (dx, dy) = xy(s), xy(d)
+        y1, y2 = sy + nh / 2, dy + nh / 2
+        up = colidx[d] > colidx[s]  # a dependency pointing right, against the layering
+        if colidx[d] == colidx[s]:  # same column: a short loop off the right edge
+            x = sx + cw
+            path = f"M {x} {y1} C {x + 34} {y1}, {x + 34} {y2}, {x} {y2}"
+        else:
+            x1, x2 = (sx + cw, dx) if up else (sx, dx + cw)
+            mx = (x1 + x2) / 2
+            path = f"M {x1} {y1} C {mx} {y1}, {mx} {y2}, {x2} {y2}"
+        cls = "edge up" if up else "edge"
+        out.append(f'<path class="{cls}" data-s="{s}" data-d="{d}" d="{path}"/>')
+    out.append('</g><g id="nodes">')
+    for m in sorted(mods):
+        x, y = xy(m)
+        fan_out = sum(1 for s, _ in edges if s == m)
+        fan_in = sum(1 for _, d in edges if d == m)
+        out.append(
+            f'<g class="node g{colidx[m]}" data-id="{m}" tabindex="0">'
+            f'<rect x="{x}" y="{y}" rx="5" width="{cw}" height="{nh}"/>'
+            f'<text x="{x + 10}" y="{y + 17.5}">{html.escape(m.removeprefix("agent6."))}</text>'
+            f'<text x="{x + cw - 8}" y="{y + 17.5}" text-anchor="end" class="deg">'
+            f"{fan_out}&#8594; &#8592;{fan_in}</text></g>"
+        )
+    out.append("</g></svg>")
+    upward = sum(1 for s, d in edges if colidx[d] > colidx[s])
+    return "\n".join(out), len(mods), len(edges), upward
+
+
 # --- HTML artifact -----------------------------------------------------------
 
 _HTML_STYLE = """
-:root{--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#8a8984;--node:#eef1f5;--nodeline:#c9cdd4;--edge:#b9bcc4;--hi:#2a78d6;--wr:#1baf7a}
-@media(prefers-color-scheme:dark){:root{--surface:#1a1a19;--ink:#fff;--ink2:#c3c2b7;--muted:#87867e;--node:#26262a;--nodeline:#43434a;--edge:#4a4a52;--hi:#3987e5;--wr:#199e70}}
-:root[data-theme=dark]{--surface:#1a1a19;--ink:#fff;--ink2:#c3c2b7;--muted:#87867e;--node:#26262a;--nodeline:#43434a;--edge:#4a4a52;--hi:#3987e5;--wr:#199e70}
-:root[data-theme=light]{--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#8a8984;--node:#eef1f5;--nodeline:#c9cdd4;--edge:#b9bcc4;--hi:#2a78d6;--wr:#1baf7a}
+:root{--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#8a8984;--node:#eef1f5;--nodeline:#c9cdd4;--edge:#b9bcc4;--hi:#2a78d6;--up:#e34948;--g5:#1baf7a;--g6:#2a78d6}
+@media(prefers-color-scheme:dark){:root{--surface:#1a1a19;--ink:#fff;--ink2:#c3c2b7;--muted:#87867e;--node:#26262a;--nodeline:#43434a;--edge:#4a4a52;--hi:#3987e5;--up:#e66767;--g5:#199e70;--g6:#3987e5}}
+:root[data-theme=dark]{--surface:#1a1a19;--ink:#fff;--ink2:#c3c2b7;--muted:#87867e;--node:#26262a;--nodeline:#43434a;--edge:#4a4a52;--hi:#3987e5;--up:#e66767;--g5:#199e70;--g6:#3987e5}
+:root[data-theme=light]{--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#8a8984;--node:#eef1f5;--nodeline:#c9cdd4;--edge:#b9bcc4;--hi:#2a78d6;--up:#e34948;--g5:#1baf7a;--g6:#2a78d6}
 body{background:var(--surface);color:var(--ink);margin:0;font:14px/1.45 system-ui,sans-serif}
-header{padding:18px 24px 6px}
+header{padding:18px 24px 6px;display:flex;gap:18px;align-items:baseline;flex-wrap:wrap}
 h1{font-size:16px;margin:0;font-weight:600}
 h2{font-size:14px;margin:22px 24px 4px;font-weight:600}
 .sub{color:var(--ink2);font-size:12.5px}
 .note{color:var(--ink2);font-size:12.5px;margin:6px 24px 10px;max-width:74ch}
-.legend{display:flex;gap:14px;font-size:12px;color:var(--ink2);align-items:center;margin:4px 24px}
-.k{display:inline-block;width:18px;height:3px;border-radius:2px;background:var(--edge);vertical-align:middle;margin-right:5px}.k.wr{background:var(--wr)}.k.rd{background:var(--hi)}
-.wrap{overflow:auto;padding:0 12px 8px}svg{display:block;margin:0 auto}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--ink2);align-items:center}
+.k{display:inline-block;width:18px;height:3px;border-radius:2px;background:var(--edge);vertical-align:middle;margin-right:5px}.k.up{background:var(--up)}.k.hi{background:var(--hi)}
+.wrap{overflow:auto;padding:0 12px 8px}.wrap svg{display:block}
 .colhead{font:600 12px system-ui,sans-serif;fill:var(--ink2);letter-spacing:.06em;text-transform:uppercase}
-.edge{fill:none;stroke-width:1.2;opacity:.5}.edge.wr{stroke:var(--wr)}.edge.rd{stroke:var(--hi)}
-.node rect{fill:var(--node);stroke:var(--nodeline);stroke-width:1}.node.contract rect{stroke:var(--hi);stroke-width:1.6}
-.node text{font-size:12px;fill:var(--ink)}.node .sm{fill:var(--muted);font-size:10px}
+.colline{stroke:var(--nodeline);stroke-width:.5;stroke-dasharray:2 6;opacity:.45}
+.edge{fill:none;stroke:var(--edge);stroke-width:1;opacity:.42}.edge.up{stroke:var(--up);stroke-width:1.4;stroke-dasharray:5 3;opacity:.9}
+.node rect{fill:var(--node);stroke:var(--nodeline);stroke-width:1}.node.g5 rect{stroke:var(--g5);stroke-width:1.6}.node.g6 rect{stroke:var(--g6);stroke-width:1.6}
+.node text{font-size:12.5px;fill:var(--ink)}.node .deg{fill:var(--muted);font-size:10px}
+svg.focus .edge{opacity:.06}svg.focus .edge.rel{opacity:.95;stroke:var(--hi);stroke-width:1.6}svg.focus .edge.rel.up{stroke:var(--up)}
+svg.focus .node{opacity:.28}svg.focus .node.rel,svg.focus .node.self{opacity:1}
+.node:focus{outline:none}.node:focus rect{stroke:var(--hi);stroke-width:2}
+@media(prefers-reduced-motion:no-preference){.edge,.node{transition:opacity .12s ease}}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px;padding:4px 24px 26px}
 .card{border:1px solid var(--nodeline);border-radius:8px;padding:12px 14px;background:var(--node)}
 .cname{font-weight:600;font-size:13.5px}
@@ -385,67 +494,48 @@ dd{margin:0;color:var(--ink2)}
 """
 
 
+# Hover/keyboard isolation for the module graph: entering a node dims everything
+# but the node, its edges, and their endpoints (the CSS `svg.focus ... .rel/.self`
+# contract). Self-contained; no external requests.
+_HTML_SCRIPT = """
+(() => {
+  const svg = document.getElementById('modgraph');
+  if (!svg) return;
+  const edges = [...svg.querySelectorAll('.edge')];
+  const nodes = [...svg.querySelectorAll('.node')];
+  const clear = () => {
+    svg.classList.remove('focus');
+    edges.forEach(e => e.classList.remove('rel'));
+    nodes.forEach(n => n.classList.remove('rel', 'self'));
+  };
+  for (const node of nodes) {
+    const id = node.dataset.id;
+    const isolate = () => {
+      clear();
+      svg.classList.add('focus');
+      const rel = new Set();
+      for (const e of edges) {
+        if (e.dataset.s === id || e.dataset.d === id) {
+          e.classList.add('rel');
+          rel.add(e.dataset.s);
+          rel.add(e.dataset.d);
+        }
+      }
+      node.classList.add('self');
+      for (const n of nodes) if (n !== node && rel.has(n.dataset.id)) n.classList.add('rel');
+    };
+    node.addEventListener('mouseenter', isolate);
+    node.addEventListener('focus', isolate);
+    node.addEventListener('mouseleave', clear);
+    node.addEventListener('blur', clear);
+  }
+})();
+"""
+
+
 def _inline(text: str) -> str:
     """Markdown-inline prose -> safe HTML: escape, then `code` -> <code>."""
     return re.sub(r"`([^`]+)`", r"<code>\1</code>", html.escape(text))
-
-
-def _svg(cards: tuple[Card, ...]) -> str:
-    """A derived bipartite graph: writer packages -> contract -> reader packages,
-    grouped by top-level package (the same data the cards carry)."""
-    contracts = [c.title for c in cards]
-    writers: dict[str, set[str]] = defaultdict(set)  # pkg -> {contract titles}
-    readers: dict[str, set[str]] = defaultdict(set)
-    for card in cards:
-        for path in card.writers:
-            writers[Path(path).parts[0]].add(card.title)
-        for path in card.readers:
-            readers[Path(path).parts[0]].add(card.title)
-    left = sorted(writers)
-    right = sorted(readers)
-    rows = max(len(left), len(contracts), len(right))
-    row_h, top, node_w = 46, 60, 150
-    height = top + rows * row_h + 20
-    cols = {"w": 40, "c": 340, "r": 640}
-
-    def ys(count: int) -> list[float]:
-        span = rows * row_h
-        gap = span / count
-        return [top + gap * (i + 0.5) - 13 for i in range(count)]
-
-    ly, cy, ry = ys(len(left)), ys(len(contracts)), ys(len(right))
-    cpos = {t: cy[i] for i, t in enumerate(contracts)}
-    lpos = {p: ly[i] for i, p in enumerate(left)}
-    rpos = {p: ry[i] for i, p in enumerate(right)}
-
-    def node(x: float, y: float, label: str, klass: str = "") -> str:
-        return (
-            f'<g class="node {klass}"><rect x="{x}" y="{y}" rx="5" width="{node_w}" '
-            f'height="26"/><text x="{x + 10}" y="{y + 17}">{html.escape(label)}</text></g>'
-        )
-
-    def edge(x1: float, y1: float, x2: float, y2: float, klass: str) -> str:
-        mx = (x1 + node_w + x2) / 2
-        return f'<path class="edge {klass}" d="M {x1 + node_w} {y1} C {mx} {y1}, {mx} {y2}, {x2} {y2}"/>'
-
-    parts = [
-        f'<svg viewBox="0 0 {cols["r"] + node_w + 40} {height}" width="{cols["r"] + node_w + 40}" '
-        f'height="{height}" xmlns="http://www.w3.org/2000/svg">',
-        f'<text x="{cols["w"] + node_w / 2}" y="40" text-anchor="middle" class="colhead">writers</text>',
-        f'<text x="{cols["c"] + node_w / 2}" y="40" text-anchor="middle" class="colhead">contracts</text>',
-        f'<text x="{cols["r"] + node_w / 2}" y="40" text-anchor="middle" class="colhead">readers</text>',
-    ]
-    for pkg, y in lpos.items():
-        for title in writers[pkg]:
-            parts.append(edge(cols["w"], y + 13, cols["c"], cpos[title] + 13, "wr"))
-    for pkg, y in rpos.items():
-        for title in readers[pkg]:
-            parts.append(edge(cols["c"], cpos[title] + 13, cols["r"], y + 13, "rd"))
-    parts += [node(cols["w"], y, pkg) for pkg, y in lpos.items()]
-    parts += [node(cols["c"], y, t, "contract") for t, y in cpos.items()]
-    parts += [node(cols["r"], y, pkg) for pkg, y in rpos.items()]
-    parts.append("</svg>")
-    return "\n".join(parts)
 
 
 def _html_card(card: Card) -> str:
@@ -468,26 +558,26 @@ def _html_card(card: Card) -> str:
 
 
 def build_html() -> str:
-    cards = tuple(_derive(c) for c in CONTRACTS)
-    body = "".join(_html_card(c) for c in cards)
+    cards = "".join(_html_card(_derive(c)) for c in CONTRACTS)
+    graph, n_modules, n_edges, n_upward = _module_graph_svg()
     return (
         "<!doctype html><html><head><meta charset=utf-8>"
         '<meta name=viewport content="width=device-width,initial-scale=1">'
-        "<title>agent6 data contracts</title>"
+        "<title>agent6 structure &amp; data contracts</title>"
         f"<style>{_HTML_STYLE}</style></head><body>"
-        "<header><h1>agent6 data contracts</h1>"
-        '<div class="sub">five typed contracts, derived from the source tree</div></header>'
+        "<header><h1>agent6 structure</h1>"
+        f'<span class="sub">derived from tach.toml &middot; modules: {n_modules} / '
+        f"edges: {n_edges} / upward: {n_upward}</span>"
+        '<span class="legend"><span><span class="k"></span>depends on (right&rarr;left)</span>'
+        '<span><span class="k up"></span>upward edge</span>'
+        '<span><span class="k hi"></span>hover a node to isolate</span></span></header>'
+        f'<div class="wrap">{graph}</div>'
+        "<h2>Data contracts</h2>"
         '<p class="note">Every card below is generated from the module and class '
         "docstrings, the AST, and an import scan &mdash; a card that reads badly means a "
         "docstring worth fixing.</p>"
-        "<h2>Who writes and reads each contract</h2>"
-        '<div class="legend"><span><span class="k wr"></span>writes</span>'
-        '<span><span class="k rd"></span>reads</span>'
-        "<span>packages grouped by top-level name</span></div>"
-        f'<div class="wrap">{_svg(cards)}</div>'
-        "<h2>The contracts</h2>"
-        f'<div class="cards">{body}</div>'
-        "</body></html>"
+        f'<div class="cards">{cards}</div>'
+        f"<script>{_HTML_SCRIPT}</script></body></html>"
     )
 
 
