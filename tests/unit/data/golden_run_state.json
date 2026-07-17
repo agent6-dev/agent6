@@ -1,0 +1,160 @@
+{
+  "run_id": "golden-run-GLDN01",
+  "user_task": "# Fix the bug\n\nRestore the thing.",
+  "tasks": [
+    {
+      "id": "ok",
+      "title": "ok",
+      "status": "pending",
+      "depth": 0,
+      "is_cursor": false
+    }
+  ],
+  "cursor_task_id": null,
+  "last_role": {
+    "role": "worker",
+    "model": "kimi-k2",
+    "in_flight": false,
+    "provider": "openrouter",
+    "ctx_tokens": 10714,
+    "streamed_text": "",
+    "streamed_thinking": ""
+  },
+  "tool_calls": [
+    {
+      "name": "read_file",
+      "args_preview": "path=src/x.py",
+      "args_full": "path=src/x.py",
+      "result_summary": "4773 bytes",
+      "ok": true,
+      "task_id": "n1"
+    },
+    {
+      "name": "run_command",
+      "args_preview": "argv=ls /nope",
+      "args_full": "argv=ls /nope",
+      "result_summary": "exit=2",
+      "ok": false,
+      "task_id": "n1"
+    },
+    {
+      "name": "apply_patch",
+      "args_preview": "path=src/x.py",
+      "args_full": "path=src/x.py",
+      "result_summary": "applied=1",
+      "ok": true,
+      "task_id": "n1"
+    },
+    {
+      "name": "finish_run",
+      "args_preview": "summary=all green",
+      "args_full": "summary=all green",
+      "result_summary": "finish_run",
+      "ok": true,
+      "task_id": null
+    }
+  ],
+  "last_verify": {
+    "cmd": [
+      "pytest",
+      "-x",
+      "-q"
+    ],
+    "exit_code": 1,
+    "duration_s": 1.714,
+    "stdout_tail": "1 failed",
+    "stderr_tail": ""
+  },
+  "budget": {
+    "input_total": 5850,
+    "output_total": 82,
+    "input_cap": 1500000,
+    "output_cap": 200000,
+    "usd_total": 0.004841036,
+    "usd_partial": false
+  },
+  "pending_approvals": [
+    {
+      "id": "approval-1",
+      "prompt": "Allow run_command: rm -rf build",
+      "answered": true,
+      "approved": true
+    }
+  ],
+  "pending_questions": [
+    {
+      "id": "question-1",
+      "questions": [
+        {
+          "question": "Which greeting?",
+          "options": [
+            "hi",
+            "hello"
+          ]
+        },
+        {
+          "question": "Apply to all?",
+          "options": []
+        }
+      ],
+      "answered": true,
+      "answers": [
+        "hello",
+        "yes"
+      ]
+    }
+  ],
+  "log_tail": [
+    "10:00:00.000  run.start          # Fix the bug\n\nRestore the thing.",
+    "10:00:00.100  graph.update       2 tasks",
+    "10:00:01.000  role.call          worker/kimi-k2",
+    "10:00:02.000  budget.update      in=5850 out=82 $0.004841036",
+    "10:00:02.500  role.result        worker in=5850 out=82",
+    "10:00:03.100  tool.call          read_file(path=src/x.py)",
+    "10:00:03.200  tool.result        read_file ok=True 4773 bytes",
+    "10:00:04.000  tool.call          run_command(argv=ls /nope)",
+    "10:00:04.200  tool.result        run_command ok=False exit=2 | ls: /nope: No such file",
+    "10:00:04.500  tool.call          apply_patch(path=src/x.py)",
+    "10:00:04.700  tool.result        apply_patch ok=True applied=1",
+    "10:00:05.000  verify.start      ",
+    "10:00:06.700  verify.end         exit=1 dur=1.714s",
+    "10:00:07.000  loop.auto_commit  ",
+    "10:00:07.100  diff.updated       3 lines",
+    "10:00:07.500  loop.provider.retry attempt 2: upstream 502",
+    "10:00:08.000  loop.metric.sample",
+    "10:00:09.000  approval.prompt    Allow run_command: rm -rf build",
+    "10:00:09.500  approval.answer    id=approval-1 approved=True",
+    "10:00:10.000  question.prompt    [2] Which greeting?",
+    "10:00:10.500  question.answer    id=question-1 answers=2",
+    "10:00:11.000  run.steer_requested",
+    "10:00:11.500  loop.steer.injected",
+    "10:00:12.000  loop.parallel.dispatched",
+    "10:00:13.000  loop.parallel.joined",
+    "10:00:13.500  loop.parallel.failed",
+    "10:00:14.000  totally.new       ",
+    "10:00:14.500  ?                 ",
+    "10:00:15.000  graph.update      ",
+    "10:00:15.200  graph.update       2 tasks",
+    "10:00:16.000  loop.resume.start  iteration=22 messages=44",
+    "10:00:16.500  role.call          worker/kimi-k2",
+    "10:00:17.000  role.result        worker error: boom upstream",
+    "10:00:18.000  tool.call          finish_run(summary=all green)",
+    "10:00:18.200  tool.result        finish_run ok=True finish_run",
+    "10:00:18.500  run.end            finish_run all_passed=True"
+  ],
+  "log_count": 36,
+  "recent_diffs": [
+    {
+      "patch": "diff --git a/src/x.py b/src/x.py\n@@ -1 +1,2 @@\n+added\n",
+      "task_id": "n1",
+      "sha": "29251c4be62e06bd4de05693aeff4472db5c5626"
+    }
+  ],
+  "finished": true,
+  "all_passed": true,
+  "end_reason": "finish_run",
+  "finish_summary": "all green",
+  "latest_diff": "diff --git a/src/x.py b/src/x.py\n@@ -1 +1,2 @@\n+added\n",
+  "steer_requests": 1,
+  "status_label": "passed"
+}

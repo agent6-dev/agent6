@@ -1,0 +1,92 @@
+[
+  {
+    "kind": "thinking",
+    "body": "Let me read the file.",
+    "name": "",
+    "arg": "",
+    "ok": null,
+    "detail": "",
+    "tail": ""
+  },
+  {
+    "kind": "text",
+    "body": "Reading now",
+    "name": "",
+    "arg": "",
+    "ok": null,
+    "detail": "",
+    "tail": ""
+  },
+  {
+    "kind": "tool",
+    "body": "",
+    "name": "read_file",
+    "arg": "src/x.py",
+    "ok": true,
+    "detail": "4773 bytes",
+    "tail": ""
+  },
+  {
+    "kind": "tool",
+    "body": "",
+    "name": "run_command",
+    "arg": "ls /nope",
+    "ok": false,
+    "detail": "exit=2",
+    "tail": "ls: /nope: No such file"
+  },
+  {
+    "kind": "tool",
+    "body": "",
+    "name": "apply_patch",
+    "arg": "src/x.py",
+    "ok": true,
+    "detail": "applied=1",
+    "tail": ""
+  },
+  {
+    "kind": "commit",
+    "body": "",
+    "name": "",
+    "arg": "",
+    "ok": null,
+    "detail": "3 lines",
+    "tail": ""
+  },
+  {
+    "kind": "operator",
+    "body": "also add a -n alias",
+    "name": "",
+    "arg": "",
+    "ok": null,
+    "detail": "",
+    "tail": ""
+  },
+  {
+    "kind": "marker",
+    "body": "dispatched 2 parallel tasks (group p1); lanes run detached and appear as runs in the hub\n• fix the race\n• add a test",
+    "name": "",
+    "arg": "",
+    "ok": null,
+    "detail": "",
+    "tail": ""
+  },
+  {
+    "kind": "marker",
+    "body": "joined group p1: 2 lane(s)\njoined  co-p1-l1  agent6/co-p1-l1  abcdef123456\nconflict  co-p1-l2  agent6/co-p1-l2",
+    "name": "",
+    "arg": "",
+    "ok": null,
+    "detail": "",
+    "tail": ""
+  },
+  {
+    "kind": "done",
+    "body": "all green",
+    "name": "finished",
+    "arg": "",
+    "ok": true,
+    "detail": "3 tools · 1 commit",
+    "tail": ""
+  }
+]
