@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Append-only journal, blackboard snapshots, and the single-writer lock.
+"""Append-only journal, blackboard snapshots, and the single-writer lock for one
+machine instance. The journal is the source of truth: every impure observation a
+state makes is appended as a JournalEvent *before* the blackboard is reduced, so
+replaying the events reproduces the exact path from the pure reducer.
 
-The journal is the source of truth (§5.1): every impure observation a state
-makes, a tool's exit code and stdout, a wait's resolved wake instant, a
-branch's chosen clause, is appended as a fact *before* the blackboard is
-reduced. Replaying the journal therefore reproduces the exact path, because
-the pure reducer reads recorded facts instead of re-touching the world.
+The recorded observations are a tool's exit code and stdout, a wait's resolved
+wake instant, and a branch's chosen clause (§5.1); the reducer reads them back
+instead of re-touching the world.
 
 Events are read back from disk, so they re-enter at a trust boundary and are
 re-validated by pydantic (`extra="forbid", frozen=True`), exactly like the

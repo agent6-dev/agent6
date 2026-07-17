@@ -5,8 +5,8 @@ tests/unit/test_data_contracts_doc.py fails if this file drifts. -->
 
 # Data contracts
 
-Five typed contracts own facts that used to travel as `dict[str, Any]`, each with
-one writer set, a known reader set, and byte-level pins guarding its frozen
+Eight typed contracts own facts that used to travel as `dict[str, Any]`, each
+with one writer set, a known reader set, and byte-level pins guarding its frozen
 surface. This page is **generated** by `docs/gen_contracts.py` from those
 modules' docstrings and the source tree; edit the docstrings, not this file
 (regenerate with `uv run python docs/gen_contracts.py`).
@@ -68,3 +68,37 @@ Typed read model for the ~19 logs.jsonl event families the RunState fold consume
 - **Written by:** viewmodel/{events}
 - **Read by:** viewmodel/{state}
 - **Guarded by:** golden_run_logs.jsonl (2 test files exercise it)
+
+## MachineSpec
+
+`agent6.machine.model` &middot; pydantic model + 13 nested models
+
+Parse and validate a `.asm.toml` machine file into a `MachineSpec`.
+
+**MachineSpec** &mdash; A validated `.asm.toml` machine definition: budget, typed `schemas`, the named `states` graph, and an optional agent6 `[config]` overlay whose operator-only security tables (providers/sandbox/profiles) are refused so an untrusted machine file cannot weaken the sandbox.
+
+- **Written by:** machine/{_semantics}
+- **Read by:** machine/{__init__, dryrun, engine, graph, journal}, viewmodel/{machine_state}
+- **Guarded by:** test_machine_model.py (3 test files exercise it)
+
+## JournalEvent
+
+`agent6.machine.journal` &middot; tagged union of 4 frozen families
+
+Append-only journal, blackboard snapshots, and the single-writer lock for one machine instance. The journal is the source of truth: every impure observation a state makes is appended as a JournalEvent *before* the blackboard is reduced, so replaying the events reproduces the exact path from the pure reducer.
+
+- **Written by:** machine/{engine, journal}
+- **Read by:** machine/{__init__, dryrun}, viewmodel/{machine_state}
+- **Guarded by:** golden_journal.jsonl (3 test files exercise it)
+
+## TaskNode
+
+`agent6.graph.models` &middot; pydantic model + 8 nested models
+
+The persistent task-graph models: nodes plus the LLM-emitted curator intents that mutate them, a doubly-linked tree keyed by time-sortable ULID ids.
+
+**TaskNode** &mdash; A persisted task-graph node: a time-sortable 26-char ULID `id`, a `parent_id`/`children` pair the curator keeps mutually consistent, and a `status` drawn from the fixed NodeStatus vocabulary.
+
+- **Written by:** graph/{curator, storage}
+- **Read by:** tools/{_dag_tools}, ui/cli/{_task_tree}, workflows/{_dag_focus, loop}
+- **Guarded by:** test_graph_storage.py (8 test files exercise it)

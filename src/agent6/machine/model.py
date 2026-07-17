@@ -380,6 +380,11 @@ StateSpec = Annotated[
 
 
 class MachineSpec(BaseModel):
+    """A validated `.asm.toml` machine definition: budget, typed `schemas`, the
+    named `states` graph, and an optional agent6 `[config]` overlay whose
+    operator-only security tables (providers/sandbox/profiles) are refused so an
+    untrusted machine file cannot weaken the sandbox."""
+
     model_config = _MODEL_CONFIG
 
     machine: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")

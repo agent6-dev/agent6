@@ -3,7 +3,7 @@
 # Copyright 2026 Eric Lesiuta
 """Derive the data-contract reference from the source tree (dev tool, not CI).
 
-The five typed contracts that own facts which used to travel as ``dict[str,
+The eight typed contracts that own facts which used to travel as ``dict[str,
 Any]`` each get a card: name, home module, kind, invariant, who writes it, who
 reads it, what pins guard it. The cards are DERIVED, not hand-curated -- the
 invariant prose is lifted from the module and class docstrings, the kind and
@@ -50,7 +50,7 @@ REGEN_CMD = "uv run python docs/gen_contracts.py"
 class Contract:
     """One data contract. ``module`` and ``pins``/``writers`` are the judgement
     inputs a scan cannot honestly derive; ``title`` and ``primary`` name the card
-    and which classes' docstrings drive the invariant. Adding a sixth contract is
+    and which classes' docstrings drive the invariant. Adding another contract is
     one more entry."""
 
     title: str
@@ -106,6 +106,31 @@ CONTRACTS: tuple[Contract, ...] = (
         # the typed shape exists only on the read side).
         writers=("viewmodel/events.py",),
         pins=("tests/unit/data/golden_run_logs.jsonl",),
+    ),
+    Contract(
+        title="MachineSpec",
+        module="agent6.machine.model",
+        primary=("MachineSpec",),
+        # load_machine constructs it from the .asm.toml at the parse boundary.
+        writers=("machine/_semantics.py",),
+        pins=("tests/unit/test_machine_model.py",),
+    ),
+    Contract(
+        title="JournalEvent",
+        module="agent6.machine.journal",
+        primary=("JournalEvent",),
+        # engine.py builds step/notify/end events; journal.begin builds the
+        # begin event.
+        writers=("machine/engine.py", "machine/journal.py"),
+        pins=("tests/unit/data/golden_journal.jsonl",),
+    ),
+    Contract(
+        title="TaskNode",
+        module="agent6.graph.models",
+        primary=("TaskNode",),
+        # curator mints new nodes; storage reconstructs them from the on-disk .md.
+        writers=("graph/curator.py", "graph/storage.py"),
+        pins=("tests/unit/test_graph_storage.py",),
     ),
 )
 
@@ -171,6 +196,20 @@ def _flatten_bitor(node: ast.expr) -> list[str]:
     return [node.id] if isinstance(node, ast.Name) else []
 
 
+def _union_members(node: ast.expr) -> list[str]:
+    """Member names of a module-level union alias, unwrapping the pydantic
+    tagged-union form ``Annotated[A | B, Field(discriminator=...)]`` to the
+    ``A | B`` inside (a bare ``A | B`` alias flows straight through)."""
+    if (
+        isinstance(node, ast.Subscript)
+        and _base_name(node.value) == "Annotated"
+        and isinstance(node.slice, ast.Tuple)
+        and node.slice.elts
+    ):
+        node = node.slice.elts[0]
+    return _flatten_bitor(node)
+
+
 @dataclass(frozen=True)
 class ModuleFacts:
     module_doc: str
@@ -200,7 +239,7 @@ def _module_facts(dotted: str) -> ModuleFacts:
             for base in bases:
                 subclasses[base].append(node.name)
         elif isinstance(node, ast.Assign):
-            members = _flatten_bitor(node.value)
+            members = _union_members(node.value)
             for tgt in node.targets:
                 if isinstance(tgt, ast.Name) and len(members) > 1:
                     unions[tgt.id] = tuple(members)
@@ -342,8 +381,8 @@ tests/unit/test_data_contracts_doc.py fails if this file drifts. -->
 
 # Data contracts
 
-Five typed contracts own facts that used to travel as `dict[str, Any]`, each with
-one writer set, a known reader set, and byte-level pins guarding its frozen
+Eight typed contracts own facts that used to travel as `dict[str, Any]`, each
+with one writer set, a known reader set, and byte-level pins guarding its frozen
 surface. This page is **generated** by `docs/gen_contracts.py` from those
 modules' docstrings and the source tree; edit the docstrings, not this file
 (regenerate with `{REGEN_CMD}`).
