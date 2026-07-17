@@ -49,7 +49,7 @@ from agent6.viewmodel.state import RunState, run_status_label
 PROMPT = "[agent6] paused: Enter=continue · type to steer · /help: "
 
 # Command -> one-line help. The Tab preview menu and /help both read this table.
-COMMANDS: dict[str, str] = {
+MENU_COMMANDS: dict[str, str] = {
     "/status": "run status: tasks, tools, cost, context, profile",
     "/tasks": "the task graph with statuses",
     "/compact": "compact the context before the next model call",
@@ -81,7 +81,7 @@ def skill_menu_table() -> dict[str, tuple[str, str]]:
     return {
         f"/{s.name}": (s.description, s.text)
         for s in (*resolved.enabled, *resolved.always)
-        if f"/{s.name}" not in COMMANDS
+        if f"/{s.name}" not in MENU_COMMANDS
     }
 
 
@@ -114,7 +114,7 @@ _HISTORY: list[str] = []
 
 
 def _menu_read(prompt: str) -> str:
-    return menu_input(prompt, COMMANDS, _HISTORY)
+    return menu_input(prompt, MENU_COMMANDS, _HISTORY)
 
 
 def _fold(run_dir: Path) -> RunState:
@@ -162,8 +162,8 @@ def _print_tasks(run_dir: Path) -> None:
 
 
 def _print_help() -> None:
-    width = max(len(c) for c in COMMANDS)
-    for cmd, what in COMMANDS.items():
+    width = max(len(c) for c in MENU_COMMANDS)
+    for cmd, what in MENU_COMMANDS.items():
         print(f"  {cmd:<{width}}  {what}")
     print("  anything else is sent to the run as a steering instruction")
     print("  /parallel [N|models] <task>  fan out lanes for <task> (repeat to queue more)")
@@ -196,7 +196,7 @@ def pause_menu(  # noqa: PLR0911, PLR0912
     skills = skill_menu_table()
     if input_fn is None:
         if menu_capable():
-            display = {**COMMANDS, **{c: d[:70] for c, (d, _t) in skills.items()}}
+            display = {**MENU_COMMANDS, **{c: d[:70] for c, (d, _t) in skills.items()}}
             input_fn = lambda p: menu_input(p, display, _HISTORY)  # noqa: E731
         else:
             input_fn = input
@@ -221,11 +221,11 @@ def pause_menu(  # noqa: PLR0911, PLR0912
             if len(smatches) == 1:
                 return skill_steer_payload(smatches[0][1:], skills[smatches[0]][1], args.strip())
             return stripped
-        if word in COMMANDS or word in skills:  # exact match (never both: the
+        if word in MENU_COMMANDS or word in skills:  # exact match (never both: the
             # table builder drops skills that collide with a built-in)
             matches = [word]
         else:
-            builtin = [c for c in COMMANDS if c.startswith(word)]
+            builtin = [c for c in MENU_COMMANDS if c.startswith(word)]
             matches = builtin + [c for c in skills if c.startswith(word) and c not in builtin]
         if len(matches) > 1:
             print(f"[agent6] ambiguous: {'  '.join(matches)} (type more)")

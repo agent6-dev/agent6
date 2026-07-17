@@ -24,8 +24,7 @@ from agent6.ui.cli._common import (
     _runs_dir,
     _state_dir,
 )
-from agent6.viewmodel import first_task_line, run_mtime
-from agent6.viewmodel import newest_run_dir as _newest_dir
+from agent6.viewmodel import first_task_line, newest_run_dir, run_mtime
 from agent6.workflows.loop import (
     RunResult,
     Workflow,
@@ -123,7 +122,7 @@ def build_ask_run_digest(cwd: Path, run_id: str, *, latest: bool) -> str | None:
         print(f"ERROR: no runs directory at {runs_dir}", file=sys.stderr)
         return None
     if latest:
-        newest = _newest_dir([runs_dir])
+        newest = newest_run_dir([runs_dir])
         if newest is None:
             print(f"ERROR: --seed-latest: no runs under {runs_dir}", file=sys.stderr)
             return None

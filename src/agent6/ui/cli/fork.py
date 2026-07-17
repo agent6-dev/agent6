@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from agent6.app._setup import BudgetOverrides as _BudgetOverrides
+from agent6.app._setup import BudgetOverrides
 from agent6.app.fork import create_fork
 from agent6.ui.cli.resume import _cmd_resume
 
@@ -22,7 +22,7 @@ def _cmd_fork(
     new_run_id: str = "",
     no_run: bool = False,
     tui: bool = False,
-    budget_overrides: _BudgetOverrides | None = None,
+    budget_overrides: BudgetOverrides | None = None,
 ) -> int:
     """Create a new run cloned from *source_run_id* at checkpoint *at_turn*.
 

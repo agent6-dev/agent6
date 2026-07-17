@@ -9,10 +9,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from agent6.app._setup import (
-    BudgetOverrides as _BudgetOverrides,
-)
-from agent6.app._setup import (
-    SandboxOverrides as _SandboxOverrides,
+    BudgetOverrides,
+    SandboxOverrides,
 )
 from agent6.app.resume import resume_task
 from agent6.ui.cli.run import run_frontend
@@ -24,8 +22,8 @@ def _cmd_resume(
     *,
     force: bool,
     tui: bool = False,
-    budget_overrides: _BudgetOverrides | None = None,
-    sandbox_overrides: _SandboxOverrides | None = None,
+    budget_overrides: BudgetOverrides | None = None,
+    sandbox_overrides: SandboxOverrides | None = None,
     profile: str = "",
     steer: str = "",
 ) -> int:

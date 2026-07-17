@@ -11,16 +11,12 @@ from pathlib import Path
 from typing import Literal
 
 from agent6.app._setup import (
-    BudgetOverrides as _BudgetOverrides,
-)
-from agent6.app._setup import (
-    SandboxOverrides as _SandboxOverrides,
-)
-from agent6.app._setup import (
-    check_provider_keys as _check_provider_keys,
+    BudgetOverrides,
+    SandboxOverrides,
+    check_provider_keys,
 )
 from agent6.app.preflight import (
-    require_git_repo as _require_git_repo,
+    require_git_repo,
 )
 from agent6.app.run import RunFrontend, run_task
 from agent6.config import (
@@ -36,57 +32,37 @@ from agent6.git_ops import set_repo_hook_policy
 from agent6.paths import data_dir
 from agent6.skills import discover_skills, resolve_states, skill_search_dirs
 from agent6.ui.cli._ask import (
-    run_ask_repl as _run_ask_repl,
-)
-from agent6.ui.cli._ask import (
-    save_ask_transcript as _save_ask_transcript,
+    run_ask_repl,
+    save_ask_transcript,
 )
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._interact import (
-    build_approver as _build_approver,
-)
-from agent6.ui.cli._interact import (
-    build_questioner as _build_questioner,
-)
-from agent6.ui.cli._interact import (
-    prompt_detach_away_mode as _prompt_detach_away_mode,
+    build_approver,
+    build_questioner,
+    prompt_detach_away_mode,
 )
 from agent6.ui.cli._live import (
-    loop_logger as _loop_logger,
-)
-from agent6.ui.cli._live import (
-    should_spawn_tui as _should_spawn_tui,
-)
-from agent6.ui.cli._live import (
-    stream_modes as _stream_modes,
-)
-from agent6.ui.cli._live import (
-    tui_session as _tui_session,
+    loop_logger,
+    should_spawn_tui,
+    stream_modes,
+    tui_session,
 )
 from agent6.ui.cli._preflight import (
-    choose_branch_start_point as _choose_branch_start_point,
+    choose_branch_start_point,
+    confirm_run_on_run_branch,
+    confirm_unconfined_autorun,
 )
-from agent6.ui.cli._preflight import (
-    confirm_run_on_run_branch as _confirm_run_on_run_branch,
-)
-from agent6.ui.cli._preflight import (
-    confirm_unconfined_autorun as _confirm_unconfined_autorun,
-)
-from agent6.ui.cli._repl import build_repl_hook as _build_repl_hook
+from agent6.ui.cli._repl import build_repl_hook
 from agent6.ui.cli._steer import (
-    make_steer_state as _make_steer_state,
-)
-from agent6.ui.cli._steer import (
-    select_revised_prompt as _select_revised_prompt,
+    make_steer_state,
+    select_revised_prompt,
 )
 from agent6.ui.cli._task_refs import (
-    expand_task_file_refs as _expand_task_file_refs,
+    expand_task_file_refs,
 )
 from agent6.ui.cli.parallel import (
-    build_coordinator_spawner as _build_coordinator_spawner,
-)
-from agent6.ui.cli.parallel import (
-    dispatch_parallel as _dispatch_parallel,
+    build_coordinator_spawner,
+    dispatch_parallel,
 )
 from agent6.ui.spawn import agent6_exe, spawn_detached_resume
 
@@ -130,37 +106,33 @@ def run_frontend() -> RunFrontend:
             view.close()
 
     return RunFrontend(
-        should_spawn_tui=lambda tui, interactive, mode: _should_spawn_tui(
+        should_spawn_tui=lambda tui, interactive, mode: should_spawn_tui(
             tui=tui, interactive=interactive, mode=mode
         ),
-        stream_modes=lambda tui_enabled: _stream_modes(tui_enabled=tui_enabled),
+        stream_modes=lambda tui_enabled: stream_modes(tui_enabled=tui_enabled),
         attach_console_view=attach_console_view,
         close_console_view=close_console_view,
-        loop_logger=lambda mode: _loop_logger(mode, console_cell[0]),
-        tui_session=lambda run_dir, enabled: _tui_session(run_dir, enabled=enabled),
-        build_approver=lambda run_dir, events: _build_approver(run_dir, events, console_cell[0]),
-        build_questioner=lambda run_dir, events: _build_questioner(
-            run_dir, events, console_cell[0]
-        ),
-        make_steer_state=lambda events, run_dir: _make_steer_state(
-            events, run_dir, console_cell[0]
-        ),
-        confirm_unconfined_autorun=_confirm_unconfined_autorun,
-        confirm_run_on_run_branch=_confirm_run_on_run_branch,
-        choose_branch_start_point=_choose_branch_start_point,
-        prompt_detach_away_mode=_prompt_detach_away_mode,
-        select_revised_prompt=_select_revised_prompt,
-        build_repl_hook=lambda cwd, budget, run_id, mcp_manager: _build_repl_hook(
+        loop_logger=lambda mode: loop_logger(mode, console_cell[0]),
+        tui_session=lambda run_dir, enabled: tui_session(run_dir, enabled=enabled),
+        build_approver=lambda run_dir, events: build_approver(run_dir, events, console_cell[0]),
+        build_questioner=lambda run_dir, events: build_questioner(run_dir, events, console_cell[0]),
+        make_steer_state=lambda events, run_dir: make_steer_state(events, run_dir, console_cell[0]),
+        confirm_unconfined_autorun=confirm_unconfined_autorun,
+        confirm_run_on_run_branch=confirm_run_on_run_branch,
+        choose_branch_start_point=choose_branch_start_point,
+        prompt_detach_away_mode=prompt_detach_away_mode,
+        select_revised_prompt=select_revised_prompt,
+        build_repl_hook=lambda cwd, budget, run_id, mcp_manager: build_repl_hook(
             cwd, budget, run_id=run_id, mcp_manager=mcp_manager
         ),
-        run_ask_repl=lambda wf, budget, layout, first_question: _run_ask_repl(
+        run_ask_repl=lambda wf, budget, layout, first_question: run_ask_repl(
             wf, budget, layout, first_question=first_question
         ),
-        save_ask_transcript=lambda layout, question, answer: _save_ask_transcript(
+        save_ask_transcript=lambda layout, question, answer: save_ask_transcript(
             layout, question=question, answer=answer
         ),
         build_coordinator_spawner=lambda cfg, cwd, state_dir, mode, run_id, max_usd, auto_approve: (
-            _build_coordinator_spawner(
+            build_coordinator_spawner(
                 cfg,
                 cwd,
                 state_dir,
@@ -185,8 +157,8 @@ def _cmd_run(  # noqa: PLR0911
     decompose: bool = False,
     mode: Literal["run", "plan", "ask"] = "run",
     skills: tuple[str, ...] = (),
-    budget_overrides: _BudgetOverrides | None = None,
-    sandbox_overrides: _SandboxOverrides | None = None,
+    budget_overrides: BudgetOverrides | None = None,
+    sandbox_overrides: SandboxOverrides | None = None,
     profile: str = "",
     parallel_spec: str = "",
 ) -> int:
@@ -218,7 +190,7 @@ def _cmd_run(  # noqa: PLR0911
     # non-git dir clears the provider, model, and key walls serially only to
     # discover at the end that they also need git. Mirrors the resume path,
     # which already checks git before require_runnable.
-    if mode != "ask" and not _require_git_repo(Path.cwd()):
+    if mode != "ask" and not require_git_repo(Path.cwd()):
         return 2
     role: RoleName = "planner" if mode == "plan" else "worker"
     try:
@@ -230,14 +202,14 @@ def _cmd_run(  # noqa: PLR0911
     # Resolve @path references in the task string before the
     # workflow ever sees it. Lets the user write "fix the bug in @src/x.py
     # described in @notes.md" and have those files inlined verbatim.
-    task = _expand_task_file_refs(task, Path.cwd())
+    task = expand_task_file_refs(task, Path.cwd())
 
     # Provider key + models-cache preflight, shared by the single run and the
     # --parallel fan-out: resolves each referenced provider's key AND refreshes
     # its models cache, which carries the pricing _explicit_usd_flag_error reads.
     # Runs before the --parallel route so dispatch_parallel's own --max-usd check
     # sees the same refreshed cache a plain --max-usd run does.
-    missing = _check_provider_keys(cfg)
+    missing = check_provider_keys(cfg)
     if missing is not None:
         print(missing, file=sys.stderr)
         return 2
@@ -255,7 +227,7 @@ def _cmd_run(  # noqa: PLR0911
                 file=sys.stderr,
             )
             return 2
-        return _dispatch_parallel(
+        return dispatch_parallel(
             cfg,
             task,
             parallel_spec,

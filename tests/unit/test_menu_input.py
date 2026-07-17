@@ -13,7 +13,7 @@ from agent6.ui.cli._menu_input import (
     _read_key,  # pyright: ignore[reportPrivateUsage]
     menu_input,
 )
-from agent6.ui.cli._steer_menu import COMMANDS
+from agent6.ui.cli._steer_menu import MENU_COMMANDS
 
 
 def _chars(text: str) -> list[str]:
@@ -26,7 +26,7 @@ def _run(keys: list[str], history: list[str] | None = None) -> tuple[str, str]:
     it = iter(keys)
     line = menu_input(
         "P> ",
-        COMMANDS,
+        MENU_COMMANDS,
         history if history is not None else [],
         read_key=lambda: next(it),
         write=out.append,
@@ -48,7 +48,7 @@ def test_tab_on_empty_line_previews_all_commands_and_cycles() -> None:
     line, out = _run(["tab", "enter"])
     assert line == "/status"  # first candidate selected
     # The menu rendered every command with its description.
-    assert "/detach" in out and COMMANDS["/detach"] in out
+    assert "/detach" in out and MENU_COMMANDS["/detach"] in out
     assert "\x1b[7m" in out  # the selection is highlighted
     line, _ = _run(["tab", "tab", "enter"])
     assert line == "/tasks"  # second candidate

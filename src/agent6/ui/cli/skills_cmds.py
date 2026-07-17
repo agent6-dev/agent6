@@ -33,8 +33,8 @@ from agent6.skills import (
     resolve_states,
     skill_search_dirs,
 )
-from agent6.ui.cli._common import sgr as _sgr
-from agent6.ui.cli._steer_menu import COMMANDS as _MENU_COMMANDS
+from agent6.ui.cli._common import sgr
+from agent6.ui.cli._steer_menu import MENU_COMMANDS
 
 _ORIGIN_FILE = ".origin.toml"
 _FETCH_TIMEOUT_S = 30.0
@@ -247,23 +247,23 @@ def _cmd_skills_install(url: str, *, force: bool) -> int:
     width = _term_width()
     if len(installed) == 1:
         name = installed[0]
-        print(f"Installed {_sgr(name, '1')}")
+        print(f"Installed {sgr(name, '1')}")
         if desc := (by_name[name].description if name in by_name else ""):
-            print(f"  {_sgr(_one_line(desc, width - 2), '2')}")
+            print(f"  {sgr(_one_line(desc, width - 2), '2')}")
     else:
-        print(_sgr(f"Installed {len(installed)} skills from {_short_source(url)}:", "1"))
+        print(sgr(f"Installed {len(installed)} skills from {_short_source(url)}:", "1"))
         name_w = min(32, max(len(n) for n in installed))
         for name in sorted(installed):
             desc = by_name[name].description if name in by_name else ""
             prefix = f"  {name:<{name_w}}  "
-            print(f"{prefix}{_sgr(_one_line(desc, max(20, width - len(prefix))), '2')}")
+            print(f"{prefix}{sgr(_one_line(desc, max(20, width - len(prefix))), '2')}")
     for name in installed:
-        if f"/{name}" in _MENU_COMMANDS:
+        if f"/{name}" in MENU_COMMANDS:
             print(
                 f"note: /{name} is a built-in pause-menu command and keeps its meaning;"
                 " the skill stays reachable via the <skills> index, use_skill, and --skill"
             )
-    print(_sgr("Enabled and active now; `agent6 skills list` to review.", "2"))
+    print(sgr("Enabled and active now; `agent6 skills list` to review.", "2"))
     return 0
 
 
@@ -322,7 +322,7 @@ def _cmd_skills_update(name: str) -> int:
 
     def _row(skill: str, status: str, *, dim: bool, note: str = "") -> None:
         line = f"  {skill:<{name_w}}  {f'{status}  {note}'.rstrip()}"
-        print(_sgr(line, "2") if dim else line)
+        print(sgr(line, "2") if dim else line)
 
     counts = {"updated": 0, "unchanged": 0, "skipped": 0}
     for skill_dir in targets:
@@ -349,7 +349,7 @@ def _cmd_skills_update(name: str) -> int:
             _row(skill_dir.name, "unchanged", dim=True)
             counts["unchanged"] += 1
     parts = [f"{counts[k]} {k}" for k in ("updated", "unchanged", "skipped") if counts[k]]
-    print(_sgr(", ".join(parts), "1"))
+    print(sgr(", ".join(parts), "1"))
     return 0
 
 
@@ -377,7 +377,7 @@ def _cmd_skills_list() -> int:
     summary = f"{len(skills)} skill{'s' if len(skills) != 1 else ''}"
     if detail:
         summary += f"  ({', '.join(detail)})"
-    print(_sgr(summary, "1"))
+    print(sgr(summary, "1"))
 
     # Group by origin so a repo that ships 20 skills prints its URL once, not
     # once per line. The state tag column only appears when some skill is not
@@ -391,7 +391,7 @@ def _cmd_skills_list() -> int:
     name_w = min(32, max(len(s.name) for s in skills))
     tag_w = len("[disabled]")
     for src, items in groups.items():
-        print(f"\n{_sgr(_short_source(src), '2')}")
+        print(f"\n{sgr(_short_source(src), '2')}")
         for s in sorted(items, key=lambda k: k.name):
             st = state.get(s.name, "enabled")
             name = s.name if len(s.name) <= name_w else s.name[: name_w - 1] + "…"

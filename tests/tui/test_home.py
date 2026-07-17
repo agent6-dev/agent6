@@ -16,7 +16,7 @@ from agent6.runs.ipc import (
     write_frontend_pid,
     write_question_answers,
 )
-from agent6.ui.tui.home import _list_runs, _run_mtime
+from agent6.ui.tui.home import _list_runs, run_mtime
 
 
 def _write_run(agent6_dir: Path, sub: str, run_id: str, events: list[dict[str, object]]) -> Path:
@@ -47,7 +47,7 @@ def test_run_mtime_is_log_activity_not_dir_mtime(tmp_path: Path) -> None:
     # mtime well past the log's. Pre-fix this became the displayed/sort time.
     (rd / "frontend.pid").write_text("123", encoding="utf-8")
     os.utime(rd, (5000, 5000))
-    assert _run_mtime(rd) == 1000.0  # pyright: ignore[reportPrivateUsage]
+    assert run_mtime(rd) == 1000.0  # pyright: ignore[reportPrivateUsage]
 
 
 def test_run_mtime_falls_back_to_dir_before_log_exists(tmp_path: Path) -> None:
@@ -56,7 +56,7 @@ def test_run_mtime_falls_back_to_dir_before_log_exists(tmp_path: Path) -> None:
     rd = tmp_path / "runs" / "fresh"
     rd.mkdir(parents=True)
     os.utime(rd, (2000, 2000))
-    assert _run_mtime(rd) == 2000.0  # pyright: ignore[reportPrivateUsage] - no log yet -> dir mtime
+    assert run_mtime(rd) == 2000.0  # pyright: ignore[reportPrivateUsage] - no log yet -> dir mtime
 
 
 def test_question_bridge_round_trip(tmp_path: Path) -> None:

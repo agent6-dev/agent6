@@ -27,7 +27,7 @@ import pytest
 
 from agent6.budget import BudgetTracker
 from agent6.git_ops import GitError, revert_head
-from agent6.ui.cli.run import _build_repl_hook  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli.run import build_repl_hook  # pyright: ignore[reportPrivateUsage]
 
 
 def _init_repo(path: Path) -> None:
@@ -87,19 +87,19 @@ def _budget() -> BudgetTracker:
 
 def test_hook_empty_input_continues(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("builtins.input", lambda _p="": "")
-    hook = _build_repl_hook(tmp_path, _budget())
+    hook = build_repl_hook(tmp_path, _budget())
     assert hook(1, "deadbeefcafe1234") == "continue"
 
 
 def test_hook_slash_continue(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("builtins.input", lambda _p="": "/continue")
-    hook = _build_repl_hook(tmp_path, _budget())
+    hook = build_repl_hook(tmp_path, _budget())
     assert hook(2, "abc") == "continue"
 
 
 def test_hook_quit_stops(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("builtins.input", lambda _p="": "/quit")
-    hook = _build_repl_hook(tmp_path, _budget())
+    hook = build_repl_hook(tmp_path, _budget())
     assert hook(3, "abc") == "stop"
 
 
@@ -108,7 +108,7 @@ def test_hook_eof_stops(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
         raise EOFError
 
     monkeypatch.setattr("builtins.input", _raise)
-    hook = _build_repl_hook(tmp_path, _budget())
+    hook = build_repl_hook(tmp_path, _budget())
     assert hook(1, "abc") == "stop"
 
 
@@ -117,14 +117,14 @@ def test_hook_cost_reprompts_then_continues(
 ) -> None:
     answers = iter(["/cost", ""])
     monkeypatch.setattr("builtins.input", lambda _p="": next(answers))
-    hook = _build_repl_hook(tmp_path, _budget())
+    hook = build_repl_hook(tmp_path, _budget())
     assert hook(1, "abc") == "continue"
 
 
 def test_hook_unknown_reprompts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     answers = iter(["/wat", "/quit"])
     monkeypatch.setattr("builtins.input", lambda _p="": next(answers))
-    hook = _build_repl_hook(tmp_path, _budget())
+    hook = build_repl_hook(tmp_path, _budget())
     assert hook(1, "abc") == "stop"
 
 
@@ -135,7 +135,7 @@ def test_hook_undo_invokes_revert_and_reprompts(
     _commit(tmp_path, "b.txt", "bad\n", "bad change")
     answers = iter(["/undo", ""])
     monkeypatch.setattr("builtins.input", lambda _p="": next(answers))
-    hook = _build_repl_hook(tmp_path, _budget())
+    hook = build_repl_hook(tmp_path, _budget())
     assert hook(1, "abc") == "continue"
     # /undo actually ran: b.txt should be gone.
     assert not (tmp_path / "b.txt").exists()
@@ -145,7 +145,7 @@ def test_hook_undo_failure_reprompts(tmp_path: Path, monkeypatch: pytest.MonkeyP
     # tmp_path is not a git repo: revert_head will raise GitError.
     answers = iter(["/undo", "/quit"])
     monkeypatch.setattr("builtins.input", lambda _p="": next(answers))
-    hook = _build_repl_hook(tmp_path, _budget())
+    hook = build_repl_hook(tmp_path, _budget())
     assert hook(1, "abc") == "stop"
 
 

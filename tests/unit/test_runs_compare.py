@@ -248,7 +248,7 @@ def test_compare_uses_judge_when_reviewer_configured(
     _write_reviewer_config(repo)
     verdict = '{"ranking": ["run-BBBB22", "run-AAAA11"], "rationale": "b is cleaner"}'
     provider = _FakeProvider([verdict])
-    monkeypatch.setattr(compare_mod, "_build_role_provider", _stub_builder(provider))
+    monkeypatch.setattr(compare_mod, "build_role_provider", _stub_builder(provider))
 
     rc = main(["runs", "compare", "run-AAAA11", "run-BBBB22"])
 
@@ -285,7 +285,7 @@ def test_compare_falls_back_to_mechanical_on_judge_error(
     )
     _write_reviewer_config(repo)
     provider = _FakeProvider(["not json at all", "still not json"])
-    monkeypatch.setattr(compare_mod, "_build_role_provider", _stub_builder(provider))
+    monkeypatch.setattr(compare_mod, "build_role_provider", _stub_builder(provider))
 
     rc = main(["runs", "compare", "run-AAAA11", "run-BBBB22"])
 
@@ -366,7 +366,7 @@ def test_rank_plain_judging_line_on_non_tty(
     """Piped/detached (not a terminal, the default under capsys): one truthful
     line around the judge call, no animation frames."""
     provider = _FakeProvider([_VERDICT])
-    monkeypatch.setattr(compare_mod, "_build_role_provider", _stub_builder(provider))
+    monkeypatch.setattr(compare_mod, "build_role_provider", _stub_builder(provider))
 
     compare_mod.rank(_reviewer_cfg(), _two_candidates(), transcript_dir=tmp_path)
 
@@ -381,7 +381,7 @@ def test_rank_animates_the_judging_status_on_a_tty(
     fake = _FakeTTYOut()
     monkeypatch.setattr(sys, "stdout", fake)
     provider = _SlowFakeProvider(sleep_s=_HEARTBEAT_TICK_S * 2.4, text=_VERDICT)
-    monkeypatch.setattr(compare_mod, "_build_role_provider", _stub_builder(provider))
+    monkeypatch.setattr(compare_mod, "build_role_provider", _stub_builder(provider))
 
     compare_mod.rank(_reviewer_cfg(), _two_candidates(), transcript_dir=tmp_path)
 
@@ -399,7 +399,7 @@ def test_rank_clears_the_judging_status_even_when_the_judge_call_fails(
     fake = _FakeTTYOut()
     monkeypatch.setattr(sys, "stdout", fake)
     provider = _SlowFakeProvider(sleep_s=_HEARTBEAT_TICK_S * 1.2, raise_exc=ProviderError("down"))
-    monkeypatch.setattr(compare_mod, "_build_role_provider", _stub_builder(provider))
+    monkeypatch.setattr(compare_mod, "build_role_provider", _stub_builder(provider))
 
     _ranking, _rationale, ranked_by = compare_mod.rank(
         _reviewer_cfg(), _two_candidates(), transcript_dir=tmp_path

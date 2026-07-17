@@ -25,9 +25,9 @@ from agent6.app.compare import (
     verify_ok,
 )
 from agent6.app.compare import (
-    rank as _core_rank,
+    rank as core_rank,
 )
-from agent6.app.providers import build_role_provider as _build_role_provider
+from agent6.app.providers import build_role_provider
 from agent6.budget import BudgetTracker
 from agent6.config import Config
 from agent6.providers import Provider, TranscriptSink
@@ -72,7 +72,7 @@ def _judging_status() -> Generator[None]:
 
 def _reviewer_provider(cfg: Config, sink: TranscriptSink, budget: BudgetTracker) -> Provider:
     """Build the configured `reviewer` provider for the judge call."""
-    return _build_role_provider(cfg, "reviewer", transcript_sink=sink, budget=budget)
+    return build_role_provider(cfg, "reviewer", transcript_sink=sink, budget=budget)
 
 
 def rank(
@@ -81,7 +81,7 @@ def rank(
     """Rank candidates best-first via the shared core, injecting the CLI's
     console judging-status and reviewer-provider builder. The single rank
     implementation `runs compare` and `--parallel`'s auto-compare both use."""
-    return _core_rank(
+    return core_rank(
         cfg,
         candidates,
         transcript_dir=transcript_dir,

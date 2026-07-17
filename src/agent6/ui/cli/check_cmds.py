@@ -10,13 +10,9 @@ from pathlib import Path
 from typing import Literal
 
 from agent6.app._setup import (
-    check_provider_keys as _check_provider_keys,
-)
-from agent6.app._setup import (
+    check_provider_keys,
     detect_env,
-)
-from agent6.app._setup import (
-    start_mcp_manager_if_enabled as _start_mcp_manager_if_enabled,
+    start_mcp_manager_if_enabled,
 )
 from agent6.config import (
     Config,
@@ -272,7 +268,7 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
                 detail="not configured (cfg.mcp.enabled=False or empty servers)",
             )
         ]
-    manager = _start_mcp_manager_if_enabled(cfg)
+    manager = start_mcp_manager_if_enabled(cfg)
     if manager is None:
         return [_DoctorCheck(name="mcp", status="PASS", detail="no enabled servers")]
     out: list[_DoctorCheck] = []
@@ -330,7 +326,7 @@ def _doctor_check_config(cfg: Config) -> list[_DoctorCheck]:
         print(f"[INFO] config.provider_keys: {detail_env}")
         out.append(_DoctorCheck(name="config.provider_keys", status="INFO", detail=detail_env))
     else:
-        env_err = _check_provider_keys(cfg)
+        env_err = check_provider_keys(cfg)
         ok_env = env_err is None
         detail_env = "all referenced provider keys resolve" if ok_env else env_err or ""
         print(f"[{'PASS' if ok_env else 'FAIL'}] config.provider_keys: {detail_env}")

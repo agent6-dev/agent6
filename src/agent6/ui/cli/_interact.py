@@ -29,10 +29,8 @@ from agent6.runs.ipc import (
 )
 from agent6.tools.schema import UserQuestion
 from agent6.ui.cli._steer import (
-    tty_message as _tty_message,
-)
-from agent6.ui.cli._steer import (
-    tty_prompt as _tty_prompt,
+    tty_message,
+    tty_prompt,
 )
 
 if TYPE_CHECKING:
@@ -64,7 +62,7 @@ def default_stdin_approver(prompt: str) -> str:
     timed out). Returns "yes", "no", or "session" (allow all for the rest of this
     run). Routed via /dev/tty so the prompt stays visible when a TUI has redirected
     the std streams to its console log; plain stdin without one."""
-    ans = _tty_prompt(f"{prompt} [y/N/a]  (a = allow all this session): ")
+    ans = tty_prompt(f"{prompt} [y/N/a]  (a = allow all this session): ")
     if ans is None:
         return "no"
     ans = ans.strip().lower()
@@ -88,7 +86,7 @@ def prompt_detach_away_mode(run_dir: Path) -> None:
         "[agent6] Detaching with run_commands=ask -- nothing will be watching to approve.",
         file=sys.stderr,
     )
-    ans = _tty_prompt(
+    ans = tty_prompt(
         "  While away: [w]ait for a reattached front-end / [a]pprove all / [d]eny all? [w]: ",
         fall_back_to_stdin=False,
     )
@@ -236,7 +234,7 @@ def build_questioner(
                     # where a watcher will see it instead of failing silently.
                     answers = tuple("" for _ in questions)
                     source = "headless-default"
-                    _tty_message(
+                    tty_message(
                         "[agent6] ask_user: no front-end attached and no terminal;"
                         " returning empty answers\n"
                     )
@@ -255,7 +253,7 @@ def ask_one_stdin(q: UserQuestion, prefix: str = "") -> str | None:
         f"{prefix}{q.question}",
         *(f"  {i}) {opt}" for i, opt in enumerate(q.options, start=1)),
     ]
-    ans = _tty_prompt("\n".join(lines) + "\n> ", fall_back_to_stdin=False)
+    ans = tty_prompt("\n".join(lines) + "\n> ", fall_back_to_stdin=False)
     if ans is None:
         return None
     ans = ans.strip()
@@ -283,7 +281,7 @@ def default_stdin_questioner(questions: tuple[UserQuestion, ...]) -> tuple[str, 
             f"  {n}) {q.question} -> {a or '(empty)'}"
             for n, (q, a) in enumerate(zip(questions, answers, strict=True), start=1)
         )
-        pick = _tty_prompt(
+        pick = tty_prompt(
             f"Review:\n{summary}\nEnter to submit, or a number to change that answer: ",
             fall_back_to_stdin=False,
         )

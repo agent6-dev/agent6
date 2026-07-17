@@ -47,8 +47,7 @@ from agent6.ui.cli._common import (
     sgr,
 )
 from agent6.ui.cli._compare import manifest_task, print_ranked_candidates, rank, verify_ok
-from agent6.viewmodel import is_run_husk, is_winner, summarize_run_dir, task_snippet
-from agent6.viewmodel import newest_run_dir as _newest_dir
+from agent6.viewmodel import is_run_husk, is_winner, newest_run_dir, summarize_run_dir, task_snippet
 from agent6.viewmodel.format import WINNER_GLYPH, format_cost, status_label
 from agent6.workflows.judge import CandidateBrief
 
@@ -230,7 +229,7 @@ def _resolve_run_manifest(
         return 2
     target_id = run_id
     if not target_id:
-        latest = _newest_dir([runs_dir])
+        latest = newest_run_dir([runs_dir])
         if latest is None:
             print(f"ERROR: no runs under {runs_dir}", file=sys.stderr)
             return 2

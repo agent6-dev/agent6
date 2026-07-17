@@ -19,8 +19,8 @@ from agent6.ui.cli._common import (
     _state_dir,
     all_run_dirs,
     resolve_run_layout,
+    sgr,
 )
-from agent6.ui.cli._common import sgr as _sgr
 from agent6.ui.cli._task_tree import task_tree_lines
 from agent6.viewmodel import run_mtime
 from agent6.viewmodel.transcript_render import (
@@ -167,7 +167,7 @@ def _render_history_hits(hits: list[_SearchHit], target: Path) -> None:
     total = 0
     for i, (run_id, run_hits) in enumerate(grouped.items()):
         print("" if i == 0 else "\n", end="")
-        print(_sgr(run_id, "1"))
+        print(sgr(run_id, "1"))
         # Dedup by snippet text (not by kind): the same boilerplate repeated
         # across cumulative transcript snapshots collapses to one line with a count.
         counts: dict[str, int] = {}
@@ -180,10 +180,10 @@ def _render_history_hits(hits: list[_SearchHit], target: Path) -> None:
             # Show the timestamp only for a unique hit; a collapsed group spans
             # several times, so a count is clearer than any one of them.
             meta = "  ".join(p for p in (hit.when, hit.kind) if p) if n == 1 else hit.kind
-            tag = f" {_sgr(f'(x{n})', '2')}" if n > 1 else ""
-            print(f"  {_sgr(meta, '2')}  {snippet}{tag}")
+            tag = f" {sgr(f'(x{n})', '2')}" if n > 1 else ""
+            print(f"  {sgr(meta, '2')}  {snippet}{tag}")
         total += len(run_hits)
-    print(_sgr(f"\n{total} match{'es' if total != 1 else ''} in {len(grouped)} run(s)", "2"))
+    print(sgr(f"\n{total} match{'es' if total != 1 else ''} in {len(grouped)} run(s)", "2"))
 
 
 def _cmd_history_graph(run_id: str) -> int:

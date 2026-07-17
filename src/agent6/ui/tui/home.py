@@ -49,9 +49,14 @@ from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bind
 from agent6.ui.tui.modals import ConfirmModal
 from agent6.ui.tui.theme import PALETTE_CSS, MuxPointerShapes, open_theme_picker, setup_theme
 from agent6.ui.tui.widgets import FORM_CSS, ActionItem
-from agent6.viewmodel import RunSummary, is_run_husk, is_winner, summarize_run_dir
-from agent6.viewmodel import run_mtime as _run_mtime
-from agent6.viewmodel import task_snippet as _task_snippet
+from agent6.viewmodel import (
+    RunSummary,
+    is_run_husk,
+    is_winner,
+    run_mtime,
+    summarize_run_dir,
+    task_snippet,
+)
 from agent6.viewmodel.format import WINNER_GLYPH, format_cost, status_label
 
 # Subdirs (relative to the agent6 dir) that hold watchable run directories.
@@ -128,7 +133,7 @@ def _list_runs(agent6_dir: Path) -> list[Path]:
         d = agent6_dir / sub
         if d.is_dir():
             out.extend(p for p in d.iterdir() if p.is_dir() and not is_run_husk(p))
-    out.sort(key=_run_mtime, reverse=True)
+    out.sort(key=run_mtime, reverse=True)
     return out
 
 
@@ -420,7 +425,7 @@ class HomeScreen(Screen[None]):
             s = summarize_run_dir(rd)
             # last-activity time (logs.jsonl), so opening a run to view it does not
             # bump its "when" the way the run-dir mtime did.
-            when = time.strftime("%m-%d %H:%M", time.localtime(_run_mtime(rd)))
+            when = time.strftime("%m-%d %H:%M", time.localtime(run_mtime(rd)))
             # Text cells: task is model/user input and may carry markup brackets.
             run_id = f"{s.run_id} {WINNER_GLYPH}" if is_winner(rd) else s.run_id
             table.add_row(
@@ -429,7 +434,7 @@ class HomeScreen(Screen[None]):
                 _status_cell(s),
                 _cost_cell(s.cost_usd),
                 Text(run_id),
-                Text(_task_snippet(s.task)[:60]),
+                Text(task_snippet(s.task)[:60]),
             )
             survivors.append(rd)
         self._runs = survivors

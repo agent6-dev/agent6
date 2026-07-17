@@ -17,7 +17,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from agent6.app._setup import explicit_usd_flag_error as _explicit_usd_flag_error
+from agent6.app._setup import explicit_usd_flag_error
 from agent6.app.parallel import (
     LaneRuntime,
     ParallelError,
@@ -25,7 +25,7 @@ from agent6.app.parallel import (
     run_parallel,
 )
 from agent6.app.parallel import (
-    build_coordinator_spawner as _app_build_coordinator_spawner,
+    build_coordinator_spawner as app_build_coordinator_spawner,
 )
 from agent6.config import Config
 from agent6.config.layer import resolved_state_dir
@@ -80,7 +80,7 @@ def build_coordinator_spawner(
     Injects the CLI's `LaneRuntime` into the headless pipeline. run.py / resume.py
     call this to build the loop's `lane_spawner`, passing the coordinator run's
     own effective `--auto-approve` (same as `max_usd`)."""
-    return _app_build_coordinator_spawner(
+    return app_build_coordinator_spawner(
         cfg,
         origin,
         origin_state,
@@ -107,7 +107,7 @@ def dispatch_parallel(
     `auto_approve` forwards `--auto-approve` to every lane, same as `max_usd`."""
     origin = cwd
     origin_state = resolved_state_dir(origin)
-    usd_err = _explicit_usd_flag_error(max_usd, cfg)
+    usd_err = explicit_usd_flag_error(max_usd, cfg)
     if usd_err is not None:
         print(f"REFUSING: {usd_err}", file=sys.stderr)
         return 2

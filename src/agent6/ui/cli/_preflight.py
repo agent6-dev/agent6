@@ -13,7 +13,7 @@ from pathlib import Path
 from agent6.app.preflight import BranchChoice, resolve_base_branch
 from agent6.config import Config
 from agent6.types import SandboxProfile
-from agent6.ui.cli._steer import tty_prompt as _tty_prompt
+from agent6.ui.cli._steer import tty_prompt
 
 
 def confirm_run_on_run_branch(base_branch: str) -> bool:
@@ -57,7 +57,7 @@ def confirm_unconfined_autorun(selected_profile: SandboxProfile, cfg: Config) ->
     if not sys.stdin.isatty():
         print("[agent6] proceeding (non-interactive).", file=sys.stderr)
         return True
-    answer = _tty_prompt("Continue? [y/N]: ")
+    answer = tty_prompt("Continue? [y/N]: ")
     return (answer or "").strip().lower() in {"y", "yes"}
 
 
@@ -70,7 +70,7 @@ def _ask_branch_start_point(current_branch: str, base: str) -> BranchChoice:
         f"[agent6] You are on {current_branch!r}, not the base branch {base!r}.",
         file=sys.stderr,
     )
-    ans = _tty_prompt(
+    ans = tty_prompt(
         f"  Cut this run from: [b]ase {base!r} (clean start) /"
         f" [s]tack on {current_branch!r} / [a]bort? [b]: ",
         fall_back_to_stdin=False,

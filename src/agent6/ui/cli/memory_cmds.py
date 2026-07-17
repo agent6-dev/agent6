@@ -21,8 +21,7 @@ from agent6.memory import (
 from agent6.memory import (
     list_entries as memory_list,
 )
-from agent6.ui.cli._common import _state_dir
-from agent6.ui.cli._common import sgr as _sgr
+from agent6.ui.cli._common import _state_dir, sgr
 
 
 def _cmd_memory_add(scope: MemoryScope, body: str) -> int:
@@ -55,15 +54,15 @@ def _cmd_memory_list(scope: MemoryScope | None, *, include_invalidated: bool) ->
         groups.setdefault(e.scope, []).append(e)
     for i, (scope_name, items) in enumerate(groups.items()):
         print("" if i == 0 else "\n", end="")
-        print(_sgr(scope_name, "1"))
+        print(sgr(scope_name, "1"))
         for e in items:
             active = e.is_active
             for line in e.body.splitlines():
-                print(f"  {line}" if active else _sgr(f"  {line}", "2"))
+                print(f"  {line}" if active else sgr(f"  {line}", "2"))
             meta = f"{e.id}  ·  {e.created_at}"
             if not active:
                 meta = f"[invalidated] {meta}  ·  {e.invalidation_reason or 'no reason'}"
-            print(_sgr(f"  {meta}", "2"))
+            print(sgr(f"  {meta}", "2"))
     return 0
 
 

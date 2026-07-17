@@ -16,26 +16,20 @@ from pathlib import Path
 import argcomplete
 
 from agent6.app._setup import (
-    BudgetOverrides as _BudgetOverrides,
-)
-from agent6.app._setup import (
-    SandboxOverrides as _SandboxOverrides,
+    BudgetOverrides,
+    SandboxOverrides,
 )
 from agent6.ui.cli._ask import (
-    build_ask_run_digest as _build_ask_run_digest,
-)
-from agent6.ui.cli._ask import (
-    cmd_ask_list as _cmd_ask_list,
-)
-from agent6.ui.cli._ask import (
-    seed_files as _seed_files,
+    build_ask_run_digest,
+    cmd_ask_list,
+    seed_files,
 )
 from agent6.ui.cli._common import (
     _enforce_root_policy,
     _runs_dir,
 )
 from agent6.ui.cli.check_cmds import _cmd_check
-from agent6.ui.cli.completions_cmd import cmd_completions as _cmd_completions
+from agent6.ui.cli.completions_cmd import cmd_completions
 from agent6.ui.cli.config_cmds import (
     _cmd_config_add,
     _cmd_config_fill,
@@ -105,7 +99,7 @@ from agent6.ui.cli.skills_cmds import (
 from agent6.ui.cli.system_cmds import _cmd_system_apparmor
 from agent6.ui.cli.watch import _cmd_watch_target
 from agent6.ui.cli.web_cmds import _cmd_web
-from agent6.viewmodel import newest_run_dir as _newest_dir
+from agent6.viewmodel import newest_run_dir
 
 
 def _first_markdown_line(text: str, max_len: int = 80) -> str:
@@ -179,7 +173,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
                 file=sys.stderr,
             )
             return 2
-        newest = _newest_dir([_runs_dir(Path.cwd())])
+        newest = newest_run_dir([_runs_dir(Path.cwd())])
         if newest is None:
             print(
                 "ERROR: --continue: no prior runs for this cwd.",
@@ -193,8 +187,8 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
             target,
             force=False,
             tui=args.tui,
-            budget_overrides=_BudgetOverrides.from_args(args),
-            sandbox_overrides=_SandboxOverrides.from_args(args),
+            budget_overrides=BudgetOverrides.from_args(args),
+            sandbox_overrides=SandboxOverrides.from_args(args),
         )
     if args.from_plan:
         if args.task:
@@ -254,8 +248,8 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         tui=args.tui,
         decompose=args.decompose,
         skills=tuple(args.skill),
-        budget_overrides=_BudgetOverrides.from_args(args),
-        sandbox_overrides=_SandboxOverrides.from_args(args),
+        budget_overrides=BudgetOverrides.from_args(args),
+        sandbox_overrides=SandboxOverrides.from_args(args),
         profile=getattr(args, "profile", ""),
         parallel_spec=getattr(args, "parallel", ""),
     )
@@ -277,15 +271,15 @@ def _dispatch_plan(args: argparse.Namespace) -> int:
         args.task,
         run_id=args.run_id,
         mode="plan",
-        budget_overrides=_BudgetOverrides.from_args(args),
-        sandbox_overrides=_SandboxOverrides.from_args(args),
+        budget_overrides=BudgetOverrides.from_args(args),
+        sandbox_overrides=SandboxOverrides.from_args(args),
         profile=getattr(args, "profile", ""),
     )
 
 
 def _dispatch_ask(args: argparse.Namespace) -> int:
     if args.ask_command == "list":
-        return _cmd_ask_list()
+        return cmd_ask_list()
     # REPL when -i is given, or no question + an interactive stdin.
     repl = args.interactive or (not args.task and sys.stdin.isatty())
     if not args.task and not repl:
@@ -297,12 +291,12 @@ def _dispatch_ask(args: argparse.Namespace) -> int:
     question = args.task
     prefix: list[str] = []
     if args.ask_seed_latest or args.ask_run:
-        digest = _build_ask_run_digest(Path.cwd(), args.ask_run, latest=args.ask_seed_latest)
+        digest = build_ask_run_digest(Path.cwd(), args.ask_run, latest=args.ask_seed_latest)
         if digest is None:
             return 2
         prefix.append(digest)
     if args.ask_files:
-        seeds = _seed_files(Path.cwd(), args.ask_files)
+        seeds = seed_files(Path.cwd(), args.ask_files)
         if seeds:
             prefix.append(seeds)
     if prefix:
@@ -312,8 +306,8 @@ def _dispatch_ask(args: argparse.Namespace) -> int:
         question,
         mode="ask",
         interactive=repl,
-        budget_overrides=_BudgetOverrides.from_args(args),
-        sandbox_overrides=_SandboxOverrides.from_args(args),
+        budget_overrides=BudgetOverrides.from_args(args),
+        sandbox_overrides=SandboxOverrides.from_args(args),
         profile=getattr(args, "profile", ""),
     )
 
@@ -364,7 +358,7 @@ def _dispatch_tui(args: argparse.Namespace) -> int:
 
 
 def _dispatch_completions(args: argparse.Namespace) -> int:
-    return _cmd_completions(args.shell, print_only=args.print_only)
+    return cmd_completions(args.shell, print_only=args.print_only)
 
 
 def _dispatch_web(args: argparse.Namespace) -> int:
@@ -389,8 +383,8 @@ def _dispatch_resume(args: argparse.Namespace) -> int:
         args.run_id,
         force=args.force_resume,
         tui=args.tui,
-        budget_overrides=_BudgetOverrides.from_args(args),
-        sandbox_overrides=_SandboxOverrides.from_args(args),
+        budget_overrides=BudgetOverrides.from_args(args),
+        sandbox_overrides=SandboxOverrides.from_args(args),
         steer=args.steer,
     )
 
@@ -403,7 +397,7 @@ def _dispatch_fork(args: argparse.Namespace) -> int:
         new_run_id=args.new_run_id,
         no_run=args.no_run,
         tui=args.tui,
-        budget_overrides=_BudgetOverrides.from_args(args),
+        budget_overrides=BudgetOverrides.from_args(args),
     )
 
 

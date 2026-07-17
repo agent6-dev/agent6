@@ -9,7 +9,7 @@ run that never opened the TUI #plan pane)."""
 from __future__ import annotations
 
 from agent6.graph.models import TaskNode
-from agent6.viewmodel.format import TASK_STATUS_GLYPH as _STATUS_GLYPH
+from agent6.viewmodel.format import TASK_STATUS_GLYPH
 
 
 def tree_lines_from_event_nodes(nodes: dict[str, object], cursor: str | None = None) -> list[str]:
@@ -26,7 +26,7 @@ def tree_lines_from_event_nodes(nodes: dict[str, object], cursor: str | None = N
             return
         seen.add(nid)
         status = "in_progress" if nid == cursor else str(node.get("status", "pending"))
-        glyph = _STATUS_GLYPH.get(status, "·")
+        glyph = TASK_STATUS_GLYPH.get(status, "·")
         out.append(f"{'  ' * depth}{glyph} {node.get('title', '')}")
         for child in node.get("children", ()) or ():
             visit(str(child), depth + 1)
@@ -58,7 +58,7 @@ def task_tree_lines(nodes: dict[str, TaskNode], *, show_commit: bool = False) ->
 def _walk(
     node: TaskNode, nodes: dict[str, TaskNode], *, depth: int, out: list[str], show_commit: bool
 ) -> None:
-    glyph = _STATUS_GLYPH.get(node.status, "·")
+    glyph = TASK_STATUS_GLYPH.get(node.status, "·")
     commit = f"  ({node.commit_sha[:7]})" if show_commit and node.commit_sha else ""
     out.append(f"{'  ' * depth}{glyph} {node.title}{commit}")
     for child_id in node.children:
