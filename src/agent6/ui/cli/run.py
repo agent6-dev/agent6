@@ -13,6 +13,9 @@ import tempfile
 from pathlib import Path
 from typing import Literal
 
+from agent6.app.manifest import (
+    write_run_manifest as _write_run_manifest,
+)
 from agent6.budget import BudgetTracker
 from agent6.config import (
     Config,
@@ -115,9 +118,6 @@ from agent6.ui.cli._live import (
 )
 from agent6.ui.cli._live import (
     tui_session as _tui_session,
-)
-from agent6.ui.cli._manifest import (
-    write_run_manifest as _write_run_manifest,
 )
 from agent6.ui.cli._preflight import (
     choose_branch_start_point as _choose_branch_start_point,

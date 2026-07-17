@@ -21,6 +21,7 @@ depends_on = []
 # bridge callables it needs (see app/__init__.py).
 path = "agent6.app"
 depends_on = [
+  "agent6",
   "agent6.budget",
   "agent6.config",
   "agent6.config.layer",
@@ -30,6 +31,7 @@ depends_on = [
   "agent6.paths",
   "agent6.portable",
   "agent6.providers",
+  "agent6.runs.layout",
   "agent6.viewmodel",
   "agent6.workflows",
 ]
