@@ -244,6 +244,13 @@ path = "agent6.skills"
 depends_on = []
 
 [[modules]]
+# Pure prompt + template text (the strings agent6 sends to models). A leaf: it
+# imports nothing from agent6, so the typed assembly that fills these templates
+# lives one layer up (workflows/_prompt_blocks, machine/authoring).
+path = "agent6.prompts"
+depends_on = []
+
+[[modules]]
 path = "agent6.graph"
 depends_on = []
 
@@ -305,7 +312,7 @@ depends_on = ["agent6.machine.authoring", "agent6.machine.model", "agent6.machin
 
 [[modules]]
 path = "agent6.machine.authoring"
-depends_on = []
+depends_on = ["agent6.prompts"]
 
 [[modules]]
 path = "agent6.machine.predicate"
