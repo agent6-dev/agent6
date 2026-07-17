@@ -47,7 +47,7 @@ from agent6.runs.id import RunIdError, new_friendly_id, resolve_run_id, validate
 from agent6.runs.layout import RunLayout
 from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.viewmodel import newest_run_dir
-from agent6.workflows._run_state import load_checkpoint
+from agent6.workflows._run_state import load_run_snapshot
 
 # Curator-owned DAG artifacts copied verbatim into the fork (Phase 1). Each is a
 # top-level entry under the run dir; `graph/` is a directory.
@@ -188,7 +188,7 @@ def create_fork(  # noqa: PLR0911
         return "", 2
 
     try:
-        checkpoint = load_checkpoint(checkpoint_path)
+        checkpoint = load_run_snapshot(checkpoint_path)
     except (OSError, ValueError) as exc:
         reporter.err(f"ERROR: failed to load checkpoint {checkpoint_path}: {exc}")
         return "", 1
@@ -237,7 +237,7 @@ def create_fork(  # noqa: PLR0911
         src=src,
         dst=RunLayout(state_dir=state_dir, run_id=child_id),
         checkpoint_path=checkpoint_path,
-        forked_from_turn=checkpoint.turn,
+        forked_from_turn=checkpoint.next_iteration,
         forked_from_sha=forked_from_sha,
         base_sha=src_base_sha,
         base_branch=src_base_branch,

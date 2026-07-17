@@ -17,7 +17,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 from agent6.workflows._metric import MetricSample as _MetricSample
-from agent6.workflows._run_state import load_resume_snapshot
+from agent6.workflows._run_state import RunSnapshot, load_run_snapshot
 from agent6.workflows.loop import (
     Workflow,
     _LoopState,  # pyright: ignore[reportPrivateUsage]
@@ -76,15 +76,19 @@ def test_snapshot_persists_completion_scalars(tmp_path: Path) -> None:
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
         system="s", messages=[], tool_calls=2, next_iteration=4, root_task_id=None, state=state
     )
-    loaded = load_resume_snapshot(snap)
+    loaded = load_run_snapshot(snap)
     assert loaded.verify_ever_passed is True
     assert loaded.gateless_ever_committed is True
     assert loaded.metric_best_score == 27.0
     assert loaded.metric_at_ceiling is True
 
 
-def test_old_snapshot_without_scalars_loads_with_safe_defaults(tmp_path: Path) -> None:
-    """A pre-field snapshot (no completion scalars) still loads, with defaults."""
+def test_pre_version_bump_snapshot_refused_loudly(tmp_path: Path) -> None:
+    """An in-flight run written before a state-format change (an older
+    SNAPSHOT_VERSION) must refuse to resume/fork with a clear reason -- never a
+    garbage parse or a silent default. Deliberately fabricates the OLD shape."""
+    import pytest
+
     snap = tmp_path / "loop_state.json"
     snap.write_text(
         json.dumps(
@@ -99,11 +103,8 @@ def test_old_snapshot_without_scalars_loads_with_safe_defaults(tmp_path: Path) -
         ),
         encoding="utf-8",
     )
-    loaded = load_resume_snapshot(snap)
-    assert loaded.verify_ever_passed is False
-    assert loaded.gateless_ever_committed is False
-    assert loaded.metric_best_score is None
-    assert loaded.metric_at_ceiling is False
+    with pytest.raises(ValueError, match="predates a state-format change"):
+        load_run_snapshot(snap)
 
 
 def test_malformed_snapshot_shapes_fail_loud(tmp_path: Path) -> None:
@@ -116,19 +117,19 @@ def test_malformed_snapshot_shapes_fail_loud(tmp_path: Path) -> None:
     for bad in ("null", "[]", "123", '"str"'):
         snap.write_text(bad, encoding="utf-8")
         with pytest.raises(ValueError, match="expected a JSON object"):
-            load_resume_snapshot(snap)
-    # valid object, wrong internals: missing required key, and a non-list messages
-    snap.write_text(json.dumps({"version": 1, "system": "s"}), encoding="utf-8")
-    with pytest.raises(ValueError, match="malformed resume snapshot"):
-        load_resume_snapshot(snap)
+            load_run_snapshot(snap)
+    # current version, wrong internals: missing required keys, and a non-list messages
+    snap.write_text(json.dumps({"version": 2, "system": "s"}), encoding="utf-8")
+    with pytest.raises(ValueError, match="malformed run-state snapshot"):
+        load_run_snapshot(snap)
     snap.write_text(
         json.dumps(
-            {"version": 1, "system": "s", "messages": "oops", "tool_calls": 0, "next_iteration": 1}
+            {"version": 2, "system": "s", "messages": "oops", "tool_calls": 0, "next_iteration": 1}
         ),
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="messages"):
-        load_resume_snapshot(snap)
+        load_run_snapshot(snap)
 
 
 def test_resume_seeds_state_from_snapshot_scalars() -> None:
@@ -184,8 +185,17 @@ def test_resume_seeds_state_from_snapshot_scalars() -> None:
         start_iteration=3,
         root_task_id=None,
         original_task="go",
-        metric_best_score=27.0,
-        metric_at_ceiling=True,
+        resume_from=RunSnapshot(
+            system="s",
+            messages=[],
+            tool_calls=0,
+            next_iteration=3,
+            root_task_id=None,
+            original_task="go",
+            verify_command=(),
+            metric_best_score=27.0,
+            metric_at_ceiling=True,
+        ),
     )
     assert result.completed is True
     assert result.reason == "finish_run"

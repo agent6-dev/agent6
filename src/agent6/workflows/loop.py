@@ -163,11 +163,11 @@ from agent6.workflows._provider_call import (
 )
 from agent6.workflows._review import ReviewDispatch, ReviewSeat, run_panel
 from agent6.workflows._run_state import (
-    SNAPSHOT_VERSION,
     ResumeError,
     RunReason,
     RunResult,
-    load_resume_snapshot,
+    RunSnapshot,
+    load_run_snapshot,
 )
 from agent6.workflows._toolset import (
     build_readonly_review_tools,
@@ -392,6 +392,33 @@ class _LoopState:
     # How many `/parallel` sibling groups this run has dispatched. Names each
     # group's lanes (`<run-id>-p<seq>-l<i>`); increments per dispatch.
     parallel_groups_dispatched: int = 0
+
+
+def _restore_completion_state(state: _LoopState, snap: RunSnapshot) -> None:
+    """Carry a resume snapshot's completion-relevant bookkeeping into fresh loop
+    state, so the review gate-disarm, metric, and verify-settled stop logic don't
+    regress to zero after a resume (re-rejecting a correct finish_run, re-counting
+    idle). A fresh run() never calls this and keeps _LoopState's defaults. Adding a
+    persisted completion field is one field on RunSnapshot plus one line here."""
+    state.review_rejections_total = snap.review_rejections_total
+    state.verify_ever_passed = snap.verify_ever_passed
+    state.gateless_ever_committed = snap.gateless_ever_committed
+    if snap.metric_at_ceiling or snap.metric_best_score is not None:
+        # Seed one synthetic sample so `_metric_at_ceiling` and the plateau guard
+        # see the prior best (we persist a compact summary, not the full history,
+        # by design). `label` marks it resume-reconstructed. Consequence:
+        # `metric_plateau_summary` needs several parsed samples to fire, so a
+        # resumed already-plateaued run takes a few measurements to re-arm the
+        # plateau-stop (it never stops early; the ceiling-stop is immediate) -- the
+        # predictable trade for not carrying the whole sample history across resume.
+        state.metric_history.append(
+            MetricSample(
+                label="resumed",
+                score=snap.metric_best_score,
+                returncode=0,
+                at_ceiling=snap.metric_at_ceiling,
+            )
+        )
 
 
 class _NextTurn:
@@ -787,7 +814,7 @@ class Workflow:
         if self.resume_state_path is None:
             raise ResumeError("resume() called but resume_state_path is None")
         try:
-            snapshot = load_resume_snapshot(self.resume_state_path)
+            snapshot = load_run_snapshot(self.resume_state_path)
         except (OSError, json.JSONDecodeError, ValueError) as exc:
             raise ResumeError(
                 f"failed to load resume snapshot from {self.resume_state_path}: {exc}"
@@ -818,11 +845,8 @@ class Workflow:
             tool_calls=snapshot.tool_calls,
             start_iteration=snapshot.next_iteration,
             root_task_id=snapshot.root_task_id,
-            review_rejections_total=snapshot.review_rejections_total,
-            verify_ever_passed=snapshot.verify_ever_passed,
-            gateless_ever_committed=snapshot.gateless_ever_committed,
-            metric_best_score=snapshot.metric_best_score,
-            metric_at_ceiling=snapshot.metric_at_ceiling,
+            original_task=snapshot.original_task,
+            resume_from=snapshot,
         )
 
     def _drive_loop(  # noqa: PLR0911
@@ -835,11 +859,7 @@ class Workflow:
         start_iteration: int,
         root_task_id: str | None,
         original_task: str | None = None,
-        review_rejections_total: int = 0,
-        verify_ever_passed: bool = False,
-        gateless_ever_committed: bool = False,
-        metric_best_score: float | None = None,
-        metric_at_ceiling: bool = False,
+        resume_from: RunSnapshot | None = None,
     ) -> RunResult:
         """Shared loop body for both fresh ``run()`` and ``resume()``: one
         ``_TurnState`` per tool-use iteration, driven through the turn phases
@@ -858,30 +878,8 @@ class Workflow:
         original_task = original_task or _extract_initial_task(messages)
         state = _LoopState(original_task=original_task, tool_calls=tool_calls)
         state.root_task_id = root_task_id  # steer-boundary phases parent DAG nodes here
-        state.review_rejections_total = review_rejections_total  # survives resume
-        # Restore completion-relevant state from the snapshot (all default to the
-        # fresh-run values, so run() is unaffected). Without this the metric and
-        # verify-settled stop logic regress to zero after a resume.
-        state.verify_ever_passed = verify_ever_passed
-        state.gateless_ever_committed = gateless_ever_committed
-        if metric_at_ceiling or metric_best_score is not None:
-            # Seed a single synthetic sample so `_metric_at_ceiling` and the
-            # plateau guard see the prior best (we persist a compact summary, not
-            # the full history, by design). `label` marks it as
-            # resume-reconstructed. A consequence of that summary-only model:
-            # `metric_plateau_summary` needs several parsed samples to fire, so a
-            # resumed already-plateaued run takes a few measurements to re-arm the
-            # plateau-stop (it never stops early, and the ceiling-stop above is
-            # immediate) -- the predictable trade for not carrying the whole
-            # sample history across resume.
-            state.metric_history.append(
-                MetricSample(
-                    label="resumed",
-                    score=metric_best_score,
-                    returncode=0,
-                    at_ceiling=metric_at_ceiling,
-                )
-            )
+        if resume_from is not None:
+            _restore_completion_state(state, resume_from)
         for iteration in range(start_iteration, self.max_iterations + 1):
             self.iterations_reached = iteration
             self._turn_pre_call(
@@ -2780,36 +2778,30 @@ class Workflow:
             return
         goal = metric_goal(self.config.workflow.metric)
         best = best_metric_sample(state.metric_history, goal=goal) if goal is not None else None
-        payload = {
-            "version": SNAPSHOT_VERSION,
-            "system": system,
-            "messages": messages,
-            "tool_calls": tool_calls,
-            "next_iteration": next_iteration,
-            "root_task_id": root_task_id,
-            "review_rejections_total": state.review_rejections_total,
-            # So resume reuses the exact verify resolution (gated argv or [] for
-            # gateless) instead of re-inferring and possibly diverging from the
-            # frozen `system` prompt's verify/no-verify block.
-            "verify_command": list(self.config.workflow.verify_command),
-            # Completion-relevant scalars: without these the metric / verify-
-            # settled stop logic restarts from zero on resume (re-rejecting a
-            # correct finish_run, re-counting idle from scratch). Compact metric
-            # summary only -- enough to seed `_metric_at_ceiling` + the plateau.
-            "verify_ever_passed": state.verify_ever_passed,
-            "gateless_ever_committed": state.gateless_ever_committed,
-            "metric_best_score": best.score if best is not None else None,
-            "metric_at_ceiling": self._metric_at_ceiling(state.metric_history),
-            # Fork checkpoint extras: the workspace HEAD + curator DAG version at
-            # this turn, so `agent6 fork --at-turn N` can cut the new run's branch
-            # at the right sha and clone the DAG as of that version. Plain resume
-            # reads head_sha (its divergence guard) but ignores graph_version.
-            # Best-effort: a checkpoint is recovery state, so an
-            # unreadable git/curator degrades to "" / 0 rather than crashing.
-            "head_sha": self._checkpoint_head_sha(),
-            "graph_version": self._checkpoint_graph_version(),
-        }
-        blob = json.dumps(payload)
+        # One RunSnapshot owns every persisted fact: resume reuses the exact verify
+        # resolution (gated argv or () for gateless) instead of re-inferring; the
+        # completion scalars keep the metric / verify-settled stop logic from
+        # restarting at zero; the fork extras (head_sha / graph_version, best-effort
+        # "" / 0 when git/curator was unreadable) let `fork --at-turn N` cut the
+        # branch and clone the DAG. loop_state.json and the checkpoint get the same
+        # bytes.
+        snapshot = RunSnapshot(
+            system=system,
+            messages=messages,
+            tool_calls=tool_calls,
+            next_iteration=next_iteration,
+            root_task_id=root_task_id,
+            original_task=state.original_task,
+            verify_command=self.config.workflow.verify_command,
+            review_rejections_total=state.review_rejections_total,
+            verify_ever_passed=state.verify_ever_passed,
+            gateless_ever_committed=state.gateless_ever_committed,
+            metric_best_score=best.score if best is not None else None,
+            metric_at_ceiling=self._metric_at_ceiling(state.metric_history),
+            head_sha=self._checkpoint_head_sha(),
+            graph_version=self._checkpoint_graph_version(),
+        )
+        blob = snapshot.model_dump_json()
         # The snapshot is recovery state, not run output: an unwritable state dir
         # (full disk, quota, read-only mount) disables resume/fork but must not
         # abort an otherwise-healthy run whose edits + commits are already on disk

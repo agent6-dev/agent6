@@ -60,8 +60,8 @@ class RunLayout:
     def checkpoints_dir(self) -> Path:
         """Append-only per-turn resume checkpoints (``<NNNN>.json``).
 
-        Each holds the same payload as ``loop_state.json`` for that turn plus
-        the workspace ``head_sha`` and curator ``graph_version`` at the turn, so
+        Each holds the same RunSnapshot bytes as ``loop_state.json`` for that
+        turn (workspace ``head_sha`` + curator ``graph_version`` included), so
         ``agent6 fork`` can roll a run back to turn N. ``loop_state.json`` stays
         the "latest" pointer for plain ``resume``.
         """

@@ -2888,9 +2888,9 @@ def test_save_resume_snapshot_noop_when_path_unset(tmp_path: Path) -> None:
     assert list(tmp_path.iterdir()) == []
 
 
-def test_save_and_load_resume_snapshot_round_trip(tmp_path: Path) -> None:
+def test_save_and_load_run_snapshot_round_trip(tmp_path: Path) -> None:
     """Snapshot written by _save_resume_snapshot loads back identically."""
-    from agent6.workflows.loop import load_resume_snapshot  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import load_run_snapshot  # pyright: ignore[reportPrivateUsage]
 
     snap_path = tmp_path / "loop_state.json"
     wf = _wf(resume_state_path=snap_path)
@@ -2907,7 +2907,7 @@ def test_save_and_load_resume_snapshot_round_trip(tmp_path: Path) -> None:
         state=_state(tool_calls=3),
     )
     assert snap_path.is_file()
-    loaded = load_resume_snapshot(snap_path)
+    loaded = load_run_snapshot(snap_path)
     assert loaded.system == "SYSTEM PROMPT"
     assert loaded.messages == msgs
     assert loaded.tool_calls == 3
@@ -2957,11 +2957,11 @@ def test_save_resume_snapshot_uses_durable_atomic_writer(
     assert writes == [tmp_path / "checkpoints" / "0009.json", snap_path]
 
 
-def test_load_resume_snapshot_rejects_version_mismatch(tmp_path: Path) -> None:
+def test_load_run_snapshot_rejects_version_mismatch(tmp_path: Path) -> None:
     """A snapshot with a wrong version must raise ValueError."""
     import json as _json
 
-    from agent6.workflows.loop import load_resume_snapshot  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import load_run_snapshot  # pyright: ignore[reportPrivateUsage]
 
     snap_path = tmp_path / "loop_state.json"
     snap_path.write_text(
@@ -2977,8 +2977,8 @@ def test_load_resume_snapshot_rejects_version_mismatch(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    with pytest.raises(ValueError, match="version mismatch"):
-        load_resume_snapshot(snap_path)
+    with pytest.raises(ValueError, match="is version 999, not 2"):
+        load_run_snapshot(snap_path)
 
 
 def test_resume_raises_when_path_unset() -> None:
@@ -3005,9 +3005,10 @@ def test_resume_drives_loop_from_snapshot(tmp_path: Path) -> None:
     # Pre-seed the snapshot as if a prior run had just completed iter 4
     # and was about to start iter 5.
     snap_path.write_text(
-        '{"version": 1, "system": "S", "messages": [{"role": "user", '
+        '{"version": 2, "system": "S", "messages": [{"role": "user", '
         '"content": [{"type": "text", "text": "go"}]}], "tool_calls": 2, '
-        '"next_iteration": 5, "root_task_id": null}',
+        '"next_iteration": 5, "root_task_id": null, "original_task": "go", '
+        '"verify_command": []}',
         encoding="utf-8",
     )
 
@@ -3032,9 +3033,10 @@ def test_resume_restores_root_task_id_on_dispatcher(tmp_path: Path) -> None:
     """A non-null root_task_id in the snapshot must be re-set on dispatcher."""
     snap_path = tmp_path / "loop_state.json"
     snap_path.write_text(
-        '{"version": 1, "system": "S", "messages": [{"role": "user", '
+        '{"version": 2, "system": "S", "messages": [{"role": "user", '
         '"content": [{"type": "text", "text": "go"}]}], "tool_calls": 0, '
-        '"next_iteration": 1, "root_task_id": "task-xyz"}',
+        '"next_iteration": 1, "root_task_id": "task-xyz", "original_task": "go", '
+        '"verify_command": []}',
         encoding="utf-8",
     )
     provider = MagicMock()
@@ -3093,9 +3095,9 @@ def test_crash_mid_run_then_resume_continues_from_snapshot(tmp_path: Path) -> No
 
     # Snapshot must exist after the crash and be loadable.
     assert snap_path.is_file(), "snapshot must be written before every LLM call"
-    from agent6.workflows.loop import load_resume_snapshot  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import load_run_snapshot  # pyright: ignore[reportPrivateUsage]
 
-    snap = load_resume_snapshot(snap_path)
+    snap = load_run_snapshot(snap_path)
     # The user's task message survived in the snapshot.
     user_text = "".join(
         block.get("text", "")
@@ -3378,10 +3380,8 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: Path) -> None:
 def test_resume_snapshot_carries_verify_command(tmp_path: Path) -> None:
     """The snapshot stores the run's resolved verify_command so resume reuses it
     rather than re-inferring (which could diverge from the frozen prompt). A
-    gateless run stores []; an older snapshot without the field loads as None."""
-    import json as _json
-
-    from agent6.workflows._run_state import load_resume_snapshot
+    gateless run stores [] and loads back as ()."""
+    from agent6.workflows._run_state import load_run_snapshot
 
     snap = tmp_path / "loop_state.json"
     config = SimpleNamespace(
@@ -3396,18 +3396,13 @@ def test_resume_snapshot_carries_verify_command(tmp_path: Path) -> None:
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
         system="s", messages=[], tool_calls=0, next_iteration=1, root_task_id=None, state=_state()
     )
-    assert load_resume_snapshot(snap).verify_command == ("pytest", "-q")
+    assert load_run_snapshot(snap).verify_command == ("pytest", "-q")
 
     config.workflow.verify_command = ()  # gateless run -> stored as [] -> loads as ()
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
         system="s", messages=[], tool_calls=0, next_iteration=1, root_task_id=None, state=_state()
     )
-    assert load_resume_snapshot(snap).verify_command == ()
-
-    raw = _json.loads(snap.read_text(encoding="utf-8"))  # older snapshot: no field
-    del raw["verify_command"]
-    snap.write_text(_json.dumps(raw), encoding="utf-8")
-    assert load_resume_snapshot(snap).verify_command is None
+    assert load_run_snapshot(snap).verify_command == ()
 
 
 def test_provider_error_hint_for_auth_and_quota() -> None:

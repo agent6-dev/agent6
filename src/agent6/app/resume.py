@@ -111,7 +111,7 @@ from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.sandbox.detect import ProfileUnavailableError, select_profile
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.viewmodel import newest_run_dir
-from agent6.workflows._run_state import load_resume_snapshot
+from agent6.workflows._run_state import load_run_snapshot
 from agent6.workflows.loop import ResumeError, Workflow
 
 
@@ -486,16 +486,17 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # Resume reuses the verify command the ORIGINAL run resolved (stored in the
         # snapshot), so the tool list, prompt, and commit branch stay consistent with
         # the frozen system prompt -- never re-inferring (which could flip and
-        # diverge). Fall back to re-inference only for a pre-field snapshot, and only
-        # when the operator hasn't since pinned a command in config.
+        # diverge). Re-infer only when the snapshot can't be read (missing/corrupt/an
+        # old format resume refuses loudly right after), and only when the operator
+        # hasn't since pinned a command in config.
         if not cfg.workflow.verify_command:
             snap_verify: tuple[str, ...] | None = None
             if snapshot_path.is_file():
                 try:
-                    snap_verify = load_resume_snapshot(snapshot_path).verify_command
+                    snap_verify = load_run_snapshot(snapshot_path).verify_command
                 except (ValueError, OSError, KeyError):
                     snap_verify = None
-            if snap_verify is None:  # older snapshot: re-infer as the original did
+            if snap_verify is None:  # snapshot unreadable: re-infer as the original did
                 cfg = infer_verify_if_unset(
                     cfg,
                     cwd,

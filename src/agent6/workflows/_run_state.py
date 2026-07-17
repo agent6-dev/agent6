@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from pydantic import BaseModel, ConfigDict, ValidationError
+
 # Every way a run can end. The loop constructs all of these except
 # "ask_repl_empty" (an interactive ask session that ended before any question
 # was asked, ui/cli/_ask.py). Typed so a new outcome must be declared here
@@ -81,58 +83,57 @@ class ResumeError(Exception):
     """Raised when resume cannot proceed (missing/corrupt snapshot)."""
 
 
-@dataclass(frozen=True, slots=True)
-class _ResumeSnapshot:
-    """provider-agnostic in-memory snapshot of loop state.
+# Bump on ANY change to the persisted shape below. An in-flight run written by an
+# older agent6 then refuses to resume/fork loudly (see load_run_snapshot) rather
+# than parsing into a half-populated run. Finished runs never need a snapshot, so
+# they keep rendering across the bump.
+SNAPSHOT_VERSION = 2
 
-    Written before each LLM call so a crash mid-call can be resumed from
-    the same point. Provider-agnostic because the OpenAI provider
-    translates anthropic-shaped messages before its transcript sink runs
-    - we cannot reuse provider transcripts for cross-provider resume.
+
+class RunSnapshot(BaseModel):
+    """The persisted state of an in-flight run: what ``resume`` re-enters and what
+    ``fork`` clones. The loop writes it before each LLM call and again after each
+    iteration's tools land, to ``loop_state.json`` and an append-only
+    ``checkpoints/<NNNN>.json`` (identical bytes), so a crash resumes from the last
+    safe point. Provider-agnostic (anthropic-shaped ``messages``): the OpenAI
+    provider translates per call, so its transcript can't seed a cross-provider
+    resume.
+
+    On-disk JSON crossing a process + trust boundary, so pydantic owns the shape.
+    ``extra="forbid"`` plus a bumped ``version`` mean a snapshot from before a
+    state-format change is refused loudly, never coerced into a partial run.
     """
 
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    version: int = SNAPSHOT_VERSION
     system: str
     messages: list[dict[str, Any]]
     tool_calls: int
     next_iteration: int
     root_task_id: str | None
-    # The verify command the original run resolved (possibly inferred), so resume
+    # The exact task string the run launched with. Resume re-enters with it
+    # verbatim, instead of recovering a truncated copy out of messages[0].
+    original_task: str
+    # The verify command the original run resolved (possibly inferred): resume
     # reuses it rather than re-inferring (which could flip and diverge from the
-    # frozen system prompt's verify/no-verify block). `()` = the run was gateless;
-    # `None` = a pre-field snapshot (resume falls back to re-inference).
-    verify_command: tuple[str, ...] | None = None
-    # Per-run review-panel block counter, so the anti-stall gate-disarm survives
-    # resume instead of resetting to 0 (additive; absent in older snapshots = 0).
+    # frozen system prompt's verify/no-verify block). ``()`` = the run was gateless.
+    verify_command: tuple[str, ...]
+    # Completion-relevant bookkeeping, so the metric / verify-settled stop logic
+    # doesn't regress across a resume. A compact metric *summary* (best score +
+    # at-ceiling flag), not the full history: all `_metric_at_ceiling` and the
+    # plateau seed need. review_rejections_total keeps the anti-stall gate-disarm.
     review_rejections_total: int = 0
-    # Completion-relevant scalars, so the metric / verify-settled stop logic
-    # doesn't regress across a resume (all additive; absent in older snapshots
-    # = the safe defaults below). We persist a compact metric *summary* (best
-    # score + at-ceiling flag) rather than the full list[MetricSample]: that is
-    # all `_metric_at_ceiling` and the plateau seed need.
     verify_ever_passed: bool = False
     gateless_ever_committed: bool = False
     metric_best_score: float | None = None
     metric_at_ceiling: bool = False
-
-
-SNAPSHOT_VERSION = 1
-
-
-@dataclass(frozen=True, slots=True)
-class _Checkpoint:
-    """One per-turn fork checkpoint: a resume snapshot payload plus the workspace
-    HEAD sha and curator graph_version captured at that turn.
-
-    ``payload`` is the exact dict the loop wrote (a superset of ``loop_state.json``);
-    ``agent6 fork`` copies it verbatim as the new run's ``loop_state.json`` and seed
-    checkpoint. ``head_sha`` is the workspace HEAD at the turn (``""`` if it could
-    not be read), used to cut the fork's git branch; ``graph_version`` is the
-    curator DAG version (0 = no curator/empty graph)."""
-
-    turn: int
-    head_sha: str
-    graph_version: int
-    payload: dict[str, Any]
+    # Fork extras: the workspace HEAD and curator graph_version at this turn, so
+    # ``fork --at-turn N`` cuts the branch at the right sha and clones the DAG as of
+    # that version. Best-effort at write time: "" / 0 when git/curator was
+    # unreadable. Plain resume reads head_sha (its divergence guard) only.
+    head_sha: str = ""
+    graph_version: int = 0
 
 
 def _load_state_object(path: Path, what: str) -> dict[str, Any]:
@@ -151,49 +152,21 @@ def _load_state_object(path: Path, what: str) -> dict[str, Any]:
     return raw
 
 
-def load_checkpoint(path: Path) -> _Checkpoint:
-    """Load a per-turn checkpoint. Raises ValueError on bad shape (fail loudly)."""
-    raw = _load_state_object(path, "checkpoint")
+def load_run_snapshot(path: Path) -> RunSnapshot:
+    """Load a persisted run-state snapshot (``loop_state.json`` or a checkpoint).
+
+    Refuses a snapshot from before the current ``SNAPSHOT_VERSION`` loudly: an
+    in-flight run started before a state-format change predates this format and
+    cannot be resumed or forked. Raises ``ValueError`` on any bad shape (fail
+    loudly); ``resume``/``fork`` map it to a friendly refusal."""
+    raw = _load_state_object(path, "run-state snapshot")
     version = raw.get("version")
     if version != SNAPSHOT_VERSION:
         raise ValueError(
-            f"checkpoint version mismatch at {path}: {version!r} != {SNAPSHOT_VERSION}"
+            f"run-state snapshot at {path} is version {version!r}, not {SNAPSHOT_VERSION}: this "
+            "run predates a state-format change and cannot be resumed or forked. Start a new run."
         )
     try:
-        return _Checkpoint(
-            turn=int(raw["next_iteration"]),
-            head_sha=str(raw.get("head_sha", "")),
-            graph_version=int(raw.get("graph_version", 0)),
-            payload=raw,
-        )
-    except (KeyError, TypeError, ValueError) as exc:
-        raise ValueError(f"malformed checkpoint at {path}: {exc}") from exc
-
-
-def load_resume_snapshot(path: Path) -> _ResumeSnapshot:
-    """Load and validate a resume snapshot. Raises ValueError on bad shape."""
-    raw = _load_state_object(path, "resume snapshot")
-    version = raw.get("version")
-    if version != SNAPSHOT_VERSION:
-        raise ValueError(f"snapshot version mismatch at {path}: {version!r} != {SNAPSHOT_VERSION}")
-    vc = raw.get("verify_command")  # additive field; absent in older snapshots
-    best = raw.get("metric_best_score")  # additive; absent in older snapshots
-    try:
-        messages = raw["messages"]
-        if not isinstance(messages, list):
-            raise ValueError(f"'messages' must be a list, got {type(messages).__name__}")
-        return _ResumeSnapshot(
-            system=raw["system"],
-            messages=messages,
-            tool_calls=int(raw["tool_calls"]),
-            next_iteration=int(raw["next_iteration"]),
-            root_task_id=raw.get("root_task_id"),
-            verify_command=tuple(vc) if isinstance(vc, list) else None,
-            review_rejections_total=int(raw.get("review_rejections_total", 0)),
-            verify_ever_passed=bool(raw.get("verify_ever_passed", False)),
-            gateless_ever_committed=bool(raw.get("gateless_ever_committed", False)),
-            metric_best_score=float(best) if isinstance(best, int | float) else None,
-            metric_at_ceiling=bool(raw.get("metric_at_ceiling", False)),
-        )
-    except (KeyError, TypeError, ValueError) as exc:
-        raise ValueError(f"malformed resume snapshot at {path}: {exc}") from exc
+        return RunSnapshot.model_validate(raw)
+    except ValidationError as exc:
+        raise ValueError(f"malformed run-state snapshot at {path}: {exc}") from exc
