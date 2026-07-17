@@ -190,7 +190,7 @@ function attachParallelSuggest(task, root) {
 function newWorkDock() {
   const root = el('div', 'composer dock dock-fixed');
   const row = el('div', 'row');
-  const task = el('textarea', 'field'); task.placeholder = 'task / question…'; task.style.flex = '1';
+  const task = el('textarea', 'field'); task.placeholder = 'task / question…';
   const mode = el('select', 'field'); mode.style.flex = '0 0 auto'; mode.style.width = 'auto';
   for (const m of ['run', 'plan', 'ask']) { const o = el('option', null, m); o.value = m; mode.appendChild(o); }
   const go = el('button', 'primary', 'Start');
@@ -218,7 +218,7 @@ function newWorkDock() {
 function createMachineDock() {
   const root = el('div', 'composer dock dock-fixed');
   const row = el('div', 'row');
-  const ct = el('textarea', 'field'); ct.placeholder = 'describe a machine to create…'; ct.style.flex = '1';
+  const ct = el('textarea', 'field'); ct.placeholder = 'describe a machine to create…';
   const cbtn = el('button', 'primary', 'Create machine');
   const create = async () => {
     if (!ct.value.trim()) return; cbtn.disabled = true;
@@ -976,7 +976,7 @@ async function renderMachine(name) {
   // repaints; paintMachine gates the buttons.
   const dock = el('div', 'composer dock dock-fixed');
   const drow = el('div', 'row');
-  const din = el('textarea', 'field'); din.style.flex = '1';
+  const din = el('textarea', 'field');
   din.placeholder = 'steer the agent state, or message the machine…';
   const steerBtn = el('button', 'primary', 'Steer');
   steerBtn.onclick = async () => {

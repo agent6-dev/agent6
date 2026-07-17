@@ -164,6 +164,11 @@ table.tools .args { color: var(--muted); font-family: var(--mono); word-break: b
    steer bar (steer a live run; type the follow-up a finished run resumes with). */
 .composer { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px; }
 .composer textarea { min-height: 46px; }
+/* The docked composers (new-work, create-machine, machine steer/message) lay the
+   textarea + actions in a .row; the textarea grows to fill it. flex-basis 0 +
+   min-width 0 lets it shrink so a long placeholder wraps instead of clipping --
+   the sizing lives here (not an inline flex the phone rule must override). */
+.composer .row > textarea.field { flex: 1 1 0; min-width: 0; }
 .composer .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
 /* /parallel model-id autocomplete popup (a textarea can't carry a native
    datalist, so this is the composer analogue of the config editor's list). */
@@ -347,10 +352,9 @@ aside.rail { display: none; }
   }
   /* Give the input the full row so a long placeholder ("describe a machine to
      create…") can't clip mid-word in the sliver left beside the button on a
-     narrow phone; the action drops onto the next line. `!important` overrides the
-     inline `flex:1` the JS sets on each composer textarea. */
+     narrow phone; the action drops onto the next line. */
   .composer.dock .row { flex-wrap: wrap; }
-  .composer.dock .row > textarea.field { flex: 1 1 100% !important; }
+  .composer.dock .row > textarea.field { flex-basis: 100%; }
   .composer.dock .row > button { flex: 1 1 auto; }
   main:has(.composer.dock) { padding-bottom: calc(var(--nav-h) + 140px); }
   /* No nested scrolling on a phone: an inner scroller traps the page scroll,
