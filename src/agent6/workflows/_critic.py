@@ -12,8 +12,10 @@ system prompt lives in agent6.prompts.revision; the loop owns running the call.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+
+from agent6.workflows._conversation import AssistantTurn, Notice, Turn
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,41 +24,31 @@ class CritiqueResult:
     satisfied: bool
 
 
-def format_messages_tail_for_critic(
-    messages: list[dict[str, Any]], *, max_messages: int = 6, max_chars: int = 6000
+def format_tail_for_critic(
+    turns: Sequence[Turn], *, max_messages: int = 6, max_chars: int = 6000
 ) -> str:
-    """Render the last few messages as a plain-text transcript for the
-    critic. Tool calls / results are shown as compact summaries; long
-    payloads are truncated so the critic call stays cheap.
-    """
-    tail = messages[-max_messages:]
+    """Render the last few turns as a plain-text transcript for the critic.
+    Tool calls / results are shown as compact summaries; long payloads are
+    truncated so the critic call stays cheap. Assistant thinking blocks are
+    skipped - the critic doesn't need them."""
     parts: list[str] = []
-    for msg in tail:
-        role = str(msg.get("role", "?"))
-        content = msg.get("content", "")
-        if isinstance(content, str):
-            parts.append(f"[{role}] {content[:1500]}")
+    for turn in turns[-max_messages:]:
+        if isinstance(turn, AssistantTurn):
+            for block in turn.raw_content:
+                if not isinstance(block, dict):
+                    continue
+                btype = block.get("type")
+                if btype == "text":
+                    parts.append(f"[assistant:text] {str(block.get('text', ''))[:1500]}")
+                elif btype == "tool_use":
+                    inp = json.dumps(block.get("input") or {}, ensure_ascii=False)
+                    parts.append(f"[assistant:tool_use {block.get('name', '')}] {inp[:800]}")
             continue
-        if not isinstance(content, list):
-            parts.append(f"[{role}] {str(content)[:1500]}")
-            continue
-        for block in content:
-            if not isinstance(block, dict):
-                continue
-            btype = block.get("type")
-            if btype == "text":
-                parts.append(f"[{role}:text] {str(block.get('text', ''))[:1500]}")
-            elif btype == "tool_use":
-                inp = json.dumps(block.get("input") or {}, ensure_ascii=False)
-                parts.append(f"[{role}:tool_use {block.get('name', '')}] {inp[:800]}")
-            elif btype == "tool_result":
-                body = block.get("content", "")
-                if not isinstance(body, str):
-                    body = json.dumps(body, ensure_ascii=False)
-                parts.append(f"[{role}:tool_result] {body[:800]}")
-            elif btype == "thinking":
-                # Skip reasoning blocks - the critic doesn't need them.
-                continue
+        for item in turn.items:
+            if isinstance(item, Notice):
+                parts.append(f"[user:text] {item.text[:1500]}")
+            else:
+                parts.append(f"[user:tool_result] {item.content[:800]}")
     joined = "\n".join(parts)
     if len(joined) > max_chars:
         joined = joined[-max_chars:]

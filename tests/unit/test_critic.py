@@ -72,26 +72,28 @@ def test_parse_critic_verdict_case_insensitive() -> None:
     assert loopmod.parse_critic_verdict(text) is True  # pyright: ignore[reportPrivateUsage]
 
 
-# --- _format_messages_tail_for_critic -----------------------------------
+# --- format_tail_for_critic -----------------------------------------------
 
 
-def test_format_messages_tail_renders_roles() -> None:
-    msgs: list[dict[str, Any]] = [
-        {"role": "user", "content": [{"type": "text", "text": "hello"}]},
-        {
-            "role": "assistant",
-            "content": [
-                {"type": "thinking", "thinking": "internal reasoning"},
-                {"type": "text", "text": "doing it"},
-                {"type": "tool_use", "name": "run_command", "input": {}, "id": "x"},
-            ],
-        },
-        {
-            "role": "user",
-            "content": [{"type": "tool_result", "tool_use_id": "x", "content": "output"}],
-        },
-    ]
-    out = loopmod.format_messages_tail_for_critic(msgs)  # pyright: ignore[reportPrivateUsage]
+def test_format_tail_renders_roles() -> None:
+    conversation = Conversation.from_wire(
+        [
+            {"role": "user", "content": [{"type": "text", "text": "hello"}]},
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "thinking", "thinking": "internal reasoning"},
+                    {"type": "text", "text": "doing it"},
+                    {"type": "tool_use", "name": "run_command", "input": {}, "id": "x"},
+                ],
+            },
+            {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "x", "content": "output"}],
+            },
+        ]
+    )
+    out = loopmod.format_tail_for_critic(conversation.turns)
     assert "internal reasoning" not in out  # thinking blocks are stripped
     assert "hello" in out
     assert "doing it" in out
@@ -106,7 +108,7 @@ def test_run_critic_returns_none_when_no_provider() -> None:
     wf = _wf()
     assert (
         wf._run_critic(  # pyright: ignore[reportPrivateUsage]
-            task="t", messages=[], trigger="periodic", iteration=1
+            task="t", conversation=Conversation(), trigger="periodic", iteration=1
         )
         is None
     )
@@ -117,7 +119,7 @@ def test_run_critic_returns_critique_on_success() -> None:
     critic.call.return_value = _resp("* fine\n\nVERDICT: SATISFIED")
     wf = _wf(critic_provider=critic, critic_mode="periodic")
     out = wf._run_critic(  # pyright: ignore[reportPrivateUsage]
-        task="t", messages=[], trigger="periodic", iteration=1
+        task="t", conversation=Conversation(), trigger="periodic", iteration=1
     )
     assert out is not None
     assert out.satisfied is True
@@ -129,7 +131,7 @@ def test_run_critic_returns_none_on_provider_error() -> None:
     critic.call.side_effect = ProviderError("upstream 500")
     wf = _wf(critic_provider=critic, critic_mode="on_verify_fail")
     out = wf._run_critic(  # pyright: ignore[reportPrivateUsage]
-        task="t", messages=[], trigger="verify_failed", iteration=2
+        task="t", conversation=Conversation(), trigger="verify_failed", iteration=2
     )
     assert out is None
 

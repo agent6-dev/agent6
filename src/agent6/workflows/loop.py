@@ -88,7 +88,7 @@ from agent6.workflows._conversation import (
 )
 from agent6.workflows._critic import (
     CritiqueResult,
-    format_messages_tail_for_critic,
+    format_tail_for_critic,
     parse_critic_verdict,
 )
 from agent6.workflows._dag_focus import (
@@ -739,9 +739,9 @@ class Workflow:
             f" tools={len(tools)}, task={len(effective_task)} chars"
         )
 
-        # Initial user message - the task + a brief operational header.
-        # Cache breakpoints are placed by roll_cache_breakpoints each
-        # iteration, so the growing history stays cached across turns.
+        # Initial user turn - the task + a brief operational header.
+        # Cache breakpoints are rolled by the conversation each iteration,
+        # so the growing history stays cached across turns.
         dag_hint = initial_dag_hint(root_id, self.mode, self.config.prompt.decompose == "on")
         if self.mode == "plan":
             instructions = (
@@ -3030,9 +3030,8 @@ class Workflow:
         context is kept and the run continues).
         """
         provider = self.summariser_provider or self.provider
-        wire = conversation.to_wire()
-        transcript = format_messages_tail_for_critic(
-            wire[1:], max_messages=len(wire), max_chars=60_000
+        transcript = format_tail_for_critic(
+            conversation.turns[1:], max_messages=len(conversation), max_chars=60_000
         )
         # The DAG is agent6's compaction memory: at each restart we ask the
         # summariser to check off finished tasks and surface newly-found ones, so
@@ -3374,7 +3373,7 @@ class Workflow:
             return self._run_review_panel(state, trigger=trigger, iteration=iteration)
         return self._run_critic(
             task=state.original_task,
-            messages=conversation.to_wire(),
+            conversation=conversation,
             trigger=trigger,
             iteration=iteration,
         )
@@ -3500,7 +3499,7 @@ class Workflow:
         self,
         *,
         task: str,
-        messages: list[dict[str, Any]],
+        conversation: Conversation,
         trigger: str,
         iteration: int,
     ) -> CritiqueResult | None:
@@ -3512,7 +3511,7 @@ class Workflow:
         """
         if self.critic_provider is None:
             return None
-        transcript = format_messages_tail_for_critic(messages)
+        transcript = format_tail_for_critic(conversation.turns)
         user_msg = (
             f"TASK:\n{task}\n\nTRIGGER: {trigger}\n\n"
             f"RECENT WORKER ACTIVITY (most recent last):\n{transcript}\n\n"
