@@ -17,7 +17,6 @@ import sys
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
@@ -61,6 +60,8 @@ from agent6.tools._edit_diag import (
 )
 from agent6.tools._git_guard import refuse_mutating_git_command
 from agent6.tools._grep_safety import reject_pathological_regex
+from agent6.tools._path_safety import SafePath as _SafePath
+from agent6.tools._path_safety import resolve_in_root as _resolve_in_root
 from agent6.tools._result_format import (
     parse_metric_score as _parse_metric_score,
 )
@@ -284,27 +285,6 @@ def _default_questioner(  # pragma: no cover — interactive
             ans = q.options[int(ans) - 1]
         answers.append(ans)
     return tuple(answers)
-
-
-@dataclass(frozen=True, slots=True)
-class _SafePath:
-    abs_path: Path
-    rel_path: Path
-
-
-def _resolve_in_root(root: Path, candidate: str) -> _SafePath:
-    """Resolve *candidate* relative to *root* and ensure it stays inside *root*."""
-    if candidate.startswith("/"):
-        raise ToolError(f"Absolute paths not allowed: {candidate!r}")
-    parts = Path(candidate).parts
-    if ".." in parts:
-        raise ToolError(f"Path contains '..': {candidate!r}")
-    abs_path = (root / candidate).resolve()
-    try:
-        rel = abs_path.relative_to(root.resolve())
-    except ValueError as exc:
-        raise ToolError(f"Path escapes repo root: {candidate!r}") from exc
-    return _SafePath(abs_path=abs_path, rel_path=rel)
 
 
 def _refuse_protected_write(
