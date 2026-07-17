@@ -1,28 +1,40 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Shared candidate-ranking + report pieces for `--parallel`'s auto-compare
-(`parallel.py`) and the standalone `runs compare` (`runs_cmds.py`): rank
-candidates (judge via the reviewer model when configured, else the
-deterministic mechanical fallback) and print the ranked table. One
-implementation so the two callers can never drift, including the `judging...`
-status shown while the judge call is in flight (`_judging_status`).
+"""CLI adapter over the shared ranking core (`agent6.app.compare`).
+
+The rank/report core is headless in `app.compare`; this module supplies the two
+presentation pieces it cannot: the console `judging...` spinner shown while the
+judge call is in flight, and the reviewer-provider builder wired from the
+configured `reviewer` role. `rank` binds those into `app.compare.rank` so
+`runs compare` (`runs_cmds.py`) and the fan-out's auto-compare share one
+implementation. `verify_ok` / `manifest_task` / `print_ranked_candidates` are
+re-exported from the core so existing call sites import them from here.
 """
 
 from __future__ import annotations
 
 import contextlib
-import json
 import sys
 import threading
 from collections.abc import Generator
 from pathlib import Path
 
+from agent6.app.compare import (
+    manifest_task,
+    print_ranked_candidates,
+    verify_ok,
+)
+from agent6.app.compare import (
+    rank as _core_rank,
+)
 from agent6.budget import BudgetTracker
 from agent6.config import Config
-from agent6.providers import Provider, ProviderError, TranscriptSink
+from agent6.providers import Provider, TranscriptSink
 from agent6.ui.cli._console_view import _HEARTBEAT_TICK_S, _SPINNER
 from agent6.ui.cli.providers import _build_role_provider
-from agent6.workflows.judge import CandidateBrief, JudgeError, compare, mechanical_ranking
+from agent6.workflows.judge import CandidateBrief
+
+__all__ = ["manifest_task", "print_ranked_candidates", "rank", "verify_ok"]
 
 
 @contextlib.contextmanager
@@ -58,74 +70,21 @@ def _judging_status() -> Generator[None]:
         sys.stdout.flush()
 
 
-def verify_ok(status: str) -> bool | None:
-    """Map a run's folded status to the judge's verify tri-state."""
-    if status == "passed":
-        return True
-    if status == "failed":
-        return False
-    return None
-
-
-def manifest_task(run_dir: Path, fallback: str) -> str:
-    """The run's own recorded `user_task`, else *fallback*."""
-    try:
-        manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return fallback
-    task = manifest.get("user_task") if isinstance(manifest, dict) else None
-    return task if isinstance(task, str) and task else fallback
+def _reviewer_provider(cfg: Config, sink: TranscriptSink, budget: BudgetTracker) -> Provider:
+    """Build the configured `reviewer` provider for the judge call."""
+    return _build_role_provider(cfg, "reviewer", transcript_sink=sink, budget=budget)
 
 
 def rank(
     cfg: Config, candidates: list[CandidateBrief], *, transcript_dir: Path
 ) -> tuple[tuple[str, ...], str, str]:
-    """Rank candidates best-first. Use the configured reviewer model as the
-    compare judge when one resolves; fall back to the deterministic mechanical
-    ranking when it is unset or the judge call fails.
-
-    Returns ``(ranking, rationale, ranked_by)`` where ``ranked_by`` is ``"judge"``
-    only when the reviewer model actually produced the order, else ``"mechanical"``
-    (reviewer unset, one candidate, or the judge call failed) -- the honest signal
-    the compare stamp records, not a guess from whether the rationale is empty."""
-    reviewer = cfg.models.resolve("reviewer")
-    if len(candidates) > 1 and reviewer is not None:
-        try:
-            sink = TranscriptSink(transcript_dir)
-            budget = BudgetTracker(
-                max_input_tokens=cfg.budget.max_input_tokens,
-                max_output_tokens=cfg.budget.max_output_tokens,
-                max_usd=cfg.budget.best_effort_usd_limit,
-            )
-            provider: Provider = _build_role_provider(
-                cfg, "reviewer", transcript_sink=sink, budget=budget
-            )
-            with _judging_status():
-                verdict = compare(provider, reviewer.model, candidates)
-            return verdict.ranking, verdict.rationale, "judge"
-        except (ProviderError, JudgeError) as exc:
-            # A configured reviewer that fails must not degrade to the mechanical
-            # table silently: say so, so the report isn't mistaken for a judged one.
-            detail = str(exc).splitlines()[0] if str(exc).strip() else exc.__class__.__name__
-            print(f"judge failed ({detail}); ranked mechanically", file=sys.stderr)
-    return mechanical_ranking(candidates), "", "mechanical"
-
-
-def print_ranked_candidates(
-    candidates: list[CandidateBrief], ranking: tuple[str, ...], rationale: str
-) -> None:
-    """Print the ranked table (best first) + a `runs merge` line per
-    candidate, then the judge's rationale if there is one. Prints nothing when
-    *ranking* is empty."""
-    if not ranking:
-        return
-    by_id = {c.run_id: c for c in candidates}
-    print("ranked candidates (best first):")
-    for rnk, rid in enumerate(ranking, start=1):
-        c = by_id[rid]
-        verify = "passed" if c.verify_ok else "failed" if c.verify_ok is False else "no-verify"
-        print(
-            f"  {rnk}. {rid}  {verify:<9} ${c.cost_usd:.4f}   merge with: agent6 runs merge {rid}"
-        )
-    if rationale:
-        print(f"\njudge: {rationale}")
+    """Rank candidates best-first via the shared core, injecting the CLI's
+    console judging-status and reviewer-provider builder. The single rank
+    implementation `runs compare` and `--parallel`'s auto-compare both use."""
+    return _core_rank(
+        cfg,
+        candidates,
+        transcript_dir=transcript_dir,
+        build_provider=_reviewer_provider,
+        judging_status=_judging_status,
+    )
