@@ -20,10 +20,9 @@ import httpx2
 import pytest
 
 from agent6.providers import OpenAIProvider, ToolDefinition
+from agent6.providers._openai_messages import anthropic_to_openai_messages, tools_to_openai
 from agent6.providers.openai import (
     _coerce_text_tool_calls,  # pyright: ignore[reportPrivateUsage]
-    anthropic_to_openai_messages,
-    tools_to_openai,
 )
 
 
@@ -836,7 +835,7 @@ def test_blank_name_tool_use_and_orphan_result_dropped_in_translation() -> None:
     """Serialization defense: a blank-name assistant tool_use already in
     history (e.g. a resumed snapshot) and its orphaned tool_result are both
     dropped so the request stays well-formed for strict backends."""
-    from agent6.providers.openai import anthropic_to_openai_messages
+    from agent6.providers._openai_messages import anthropic_to_openai_messages
 
     history = [
         {
