@@ -54,6 +54,7 @@ from agent6.app.providers import (
 )
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
+from agent6.config import ConfigError
 from agent6.config.layer import load_effective_with_overlay, resolved_state_dir
 from agent6.events import EventSink
 from agent6.git_ops import CommitIdentity, set_repo_hook_policy
@@ -231,15 +232,24 @@ def run_one(
 ) -> AgentExecResult:
     profile = req.profile
     r = req.request
-    cfg = load_effective_with_overlay(req.cwd, req.overlay).config.with_machine_agent_overrides(
-        provider=r.provider,
-        model=r.model,
-        thinking=r.thinking,
-        temperature=r.temperature,
-        max_usd=r.max_usd,
-        max_input_tokens=r.max_input_tokens,
-        max_output_tokens=r.max_output_tokens,
-    )
+    # Config load + per-state overrides run FIRST, and can raise (a bad overlay,
+    # or an override naming a provider that isn't configured). Salvage that into
+    # a clean AgentExecResult the subprocess writes to result.json -- otherwise
+    # the exception escapes to a pydantic traceback + a non-zero exit, and the
+    # host runner only recovers it via its missing-result fallback.
+    try:
+        cfg = load_effective_with_overlay(req.cwd, req.overlay).config.with_machine_agent_overrides(
+            provider=r.provider,
+            model=r.model,
+            thinking=r.thinking,
+            temperature=r.temperature,
+            max_usd=r.max_usd,
+            max_input_tokens=r.max_input_tokens,
+            max_output_tokens=r.max_output_tokens,
+        )
+    except (ConfigError, ValidationError) as exc:
+        reporter.err(f"REFUSING: machine agent config error: {exc}")
+        return _result("error", None, None)
     set_repo_hook_policy(cfg.git.run_repo_hooks)
     # A mode="run" state commits its work, but this confined process can't read
     # ~/.gitconfig (not a Landlock read root): export the host-resolved identity
