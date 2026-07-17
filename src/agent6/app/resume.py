@@ -109,6 +109,19 @@ from agent6.providers import (
     Provider,
     TranscriptSink,
 )
+from agent6.runs.bridge import (
+    clear_away_mode,
+    clear_compact_request,
+    clear_pending_answers,
+    clear_stop_request,
+    clear_worker_pid,
+    compact_request_pending,
+    request_steer,
+    session_allow_set,
+    stop_request_pending,
+    write_steer_answer,
+    write_worker_pid,
+)
 from agent6.runs.id import RunIdError, resolve_run_id
 from agent6.runs.layout import RunLayout
 from agent6.runs.lock import (
@@ -275,18 +288,18 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         return 2
     # Drop a prior session's stale answer files + frontend.pid (the id counters reset
     # on resume, an old answer must not be read instead of re-prompting).
-    frontend.bridge.clear_pending_answers(layout.run_dir)
+    clear_pending_answers(layout.run_dir)
     if steer.strip():
         # --steer: queue the operator's follow-up as the first steering
         # instruction. Seeded AFTER the stale-state clear (which drops steer
         # files), so the loop's steer poll injects it at its first boundary.
-        frontend.bridge.request_steer(layout.run_dir)
-        frontend.bridge.write_steer_answer(layout.run_dir, steer.strip())
+        request_steer(layout.run_dir)
+        write_steer_answer(layout.run_dir, steer.strip())
     if sys.stdin.isatty():  # a foreground start clears a stale detach away-mode
-        frontend.bridge.clear_away_mode(layout.run_dir)
+        clear_away_mode(layout.run_dir)
     # Record this worker's pid so `agent6 runs show` can probe liveness even while
     # the worker is blocked in a long provider call (which emits no events).
-    frontend.bridge.write_worker_pid(layout.run_dir, os.getpid())
+    write_worker_pid(layout.run_dir, os.getpid())
 
     detach_requested = False
     cfg: Config | None = None  # bound below; the finally reads it (detach away-mode)
@@ -582,12 +595,10 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                     steer_prompt=steer_state.prompt,
                     # "Compact now" from a front-end: the same file-bridge
                     # pattern as steer, honored at the next pre-call boundary.
-                    compact_requested=lambda: frontend.bridge.compact_request_pending(
-                        layout.run_dir
-                    ),
-                    compact_clear=lambda: frontend.bridge.clear_compact_request(layout.run_dir),
-                    stop_requested=lambda: frontend.bridge.stop_request_pending(layout.run_dir),
-                    stop_clear=lambda: frontend.bridge.clear_stop_request(layout.run_dir),
+                    compact_requested=lambda: compact_request_pending(layout.run_dir),
+                    compact_clear=lambda: clear_compact_request(layout.run_dir),
+                    stop_requested=lambda: stop_request_pending(layout.run_dir),
+                    stop_clear=lambda: clear_stop_request(layout.run_dir),
                     should_abort=steer_state.abort_pending,
                     should_interrupt=steer_state.interrupt,
                     # `/parallel` steer dispatch: the coordinator's group spawner
@@ -685,13 +696,11 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # Single owner of worker.pid + egress teardown for every resume exit
         # path; refusals and Ctrl-C during verify inference used to leak both.
         frontend.close_console_view()  # stop the heartbeat thread, clear any spinner line
-        frontend.bridge.clear_worker_pid(layout.run_dir)
+        clear_worker_pid(layout.run_dir)
         frontend.egress.stop()
         _release_single_writer(worker_lock_fd)
         if detach_requested and cfg is not None:
-            if cfg.sandbox.run_commands == "ask" and not frontend.bridge.session_allow_set(
-                layout.run_dir
-            ):
+            if cfg.sandbox.run_commands == "ask" and not session_allow_set(layout.run_dir):
                 frontend.prompt_detach_away_mode(layout.run_dir)
             err = frontend.egress.spawn_detached(cwd, layout.run_id)
             if err:

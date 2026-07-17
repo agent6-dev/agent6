@@ -106,6 +106,18 @@ from agent6.git_ops import (
 from agent6.graph.client import CuratorClientError, GraphClient, spawn_curator
 from agent6.paths import chown_to_real_user
 from agent6.providers import Provider, TranscriptSink
+from agent6.runs.bridge import (
+    clear_away_mode,
+    clear_compact_request,
+    clear_pending_answers,
+    clear_stop_request,
+    clear_worker_pid,
+    compact_request_pending,
+    session_allow_set,
+    set_away_mode,
+    stop_request_pending,
+    write_worker_pid,
+)
 from agent6.runs.id import RunIdError, new_friendly_id, validate_explicit_run_id
 from agent6.runs.layout import RunLayout
 from agent6.runs.lock import (
@@ -143,25 +155,15 @@ class SteerHooks(Protocol):
     interrupt: Callable[[], bool]
 
 
-@dataclass(frozen=True, slots=True)
-class RunBridge:
-    """The run-dir file-bridge contract (`runs.bridge`), injected so the
-    lifecycle never imports `agent6.ui` (the same seam `LaneRuntime` uses for
-    its liveness probe)."""
-
-    clear_pending_answers: Callable[[Path], None]
-    clear_away_mode: Callable[[Path], None]
-    apply_spawned_away_default: Callable[[Path], None]
-    write_worker_pid: Callable[[Path, int], None]
-    clear_worker_pid: Callable[[Path], None]
-    compact_request_pending: Callable[[Path], bool]
-    clear_compact_request: Callable[[Path], None]
-    stop_request_pending: Callable[[Path], bool]
-    clear_stop_request: Callable[[Path], None]
-    session_allow_set: Callable[[Path], bool]
-    # resume --steer seeds the first steering instruction over the same bridge.
-    request_steer: Callable[[Path], None]
-    write_steer_answer: Callable[[Path, str], None]
+def _apply_spawned_away_default(run_dir: Path) -> None:
+    """Honor AGENT6_DETACHED_AWAY, set by a front-end launcher (web/TUI hub) that
+    spawns a run detached and drives it over the bridge. Without it a spawned run
+    with no terminal fabricates empty ask_user answers when no viewer is live;
+    'wait' makes approvals and questions block for a front-end. A pure headless
+    run (no launcher) sets no env, so this is a no-op and it keeps its default."""
+    away = os.environ.get("AGENT6_DETACHED_AWAY", "")
+    if away in ("wait", "approve", "deny"):
+        set_away_mode(run_dir, away)
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,8 +221,7 @@ class RunFrontend:
     build_coordinator_spawner: Callable[
         [Config, Path, Path, str, str, float | None, bool], GroupLaneSpawner | None
     ]
-    # sub-seams
-    bridge: RunBridge
+    # sub-seam
     egress: EgressHooks
 
 
@@ -381,9 +382,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     # Drop stale approve/ask/steer answers + frontend.pid from a prior session (the
     # id counters reset on resume, so an old answer must not be read instead of
     # re-prompting; a stale frontend.pid would otherwise stall the answer-poll).
-    frontend.bridge.clear_pending_answers(layout.run_dir)
+    clear_pending_answers(layout.run_dir)
     if sys.stdin.isatty():  # a foreground start clears a stale detach away-mode
-        frontend.bridge.clear_away_mode(layout.run_dir)
+        clear_away_mode(layout.run_dir)
     else:
         # A front-end launcher (web/TUI hub) spawns this run detached and drives
         # it over the bridge, but with no controlling terminal ask_user would
@@ -391,10 +392,10 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         # connected. The launcher sets AGENT6_DETACHED_AWAY so approvals AND
         # questions WAIT for a front-end instead. A pure headless run (CI, no
         # launcher) sets no env, so it keeps its non-hanging default.
-        frontend.bridge.apply_spawned_away_default(layout.run_dir)
+        _apply_spawned_away_default(layout.run_dir)
     # Record this worker's pid so `agent6 runs show` can probe liveness even while
     # the worker is blocked in a long provider call (which emits no events).
-    frontend.bridge.write_worker_pid(layout.run_dir, os.getpid())
+    write_worker_pid(layout.run_dir, os.getpid())
 
     # Enforce the dirty-tree policy BEFORE cutting the run branch, so the
     # branch is cut from a clean tree and the agent's per-step auto-commits
@@ -412,7 +413,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 stashed = True
             except GitError as exc:
                 print(f"ERROR: could not auto-stash before run: {exc}", file=sys.stderr)
-                frontend.bridge.clear_worker_pid(layout.run_dir)
+                clear_worker_pid(layout.run_dir)
                 _release_single_writer(worker_lock_fd)
                 discard_husk_dir(layout.run_dir)
                 return 2
@@ -427,7 +428,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 "or set [git].require_clean_worktree=false to override.",
                 file=sys.stderr,
             )
-            frontend.bridge.clear_worker_pid(layout.run_dir)
+            clear_worker_pid(layout.run_dir)
             _release_single_writer(worker_lock_fd)
             discard_husk_dir(layout.run_dir)
             return 2
@@ -451,7 +452,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             branch_choice = frontend.choose_branch_start_point(cfg, layout.state_dir, base_branch)
             if branch_choice.abort:
                 print("[agent6] aborted; nothing was started.", file=sys.stderr)
-                frontend.bridge.clear_worker_pid(layout.run_dir)
+                clear_worker_pid(layout.run_dir)
                 _release_single_writer(worker_lock_fd)
                 discard_husk_dir(layout.run_dir)
                 return 0
@@ -659,12 +660,10 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                     steer_prompt=steer_state.prompt,
                     # "Compact now" from a front-end: the same file-bridge
                     # pattern as steer, honored at the next pre-call boundary.
-                    compact_requested=lambda: frontend.bridge.compact_request_pending(
-                        layout.run_dir
-                    ),
-                    compact_clear=lambda: frontend.bridge.clear_compact_request(layout.run_dir),
-                    stop_requested=lambda: frontend.bridge.stop_request_pending(layout.run_dir),
-                    stop_clear=lambda: frontend.bridge.clear_stop_request(layout.run_dir),
+                    compact_requested=lambda: compact_request_pending(layout.run_dir),
+                    compact_clear=lambda: clear_compact_request(layout.run_dir),
+                    stop_requested=lambda: stop_request_pending(layout.run_dir),
+                    stop_clear=lambda: clear_stop_request(layout.run_dir),
                     should_abort=steer_state.abort_pending,
                     should_interrupt=steer_state.interrupt,
                     # `/parallel` steer dispatch: the coordinator's group spawner
@@ -794,7 +793,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         # setup-window crashes used to skip these, leaving a stale pid, a
         # leaked broker process, and the user's stashed work silently hidden.
         frontend.close_console_view()  # stop the heartbeat thread, clear any spinner line
-        frontend.bridge.clear_worker_pid(layout.run_dir)
+        clear_worker_pid(layout.run_dir)
         frontend.egress.stop()
         if stashed:
             _finalize_auto_stash(
@@ -808,9 +807,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             # Ask how to handle approvals while away BEFORE spawning, so the marker is
             # set when the background run reads it. The worker lock is released now, so
             # the detached `resume` acquires it.
-            if cfg.sandbox.run_commands == "ask" and not frontend.bridge.session_allow_set(
-                layout.run_dir
-            ):
+            if cfg.sandbox.run_commands == "ask" and not session_allow_set(layout.run_dir):
                 frontend.prompt_detach_away_mode(layout.run_dir)
             err = frontend.egress.spawn_detached(cwd, layout.run_id)
             if err:

@@ -22,7 +22,7 @@ from agent6.app._setup import (
 from agent6.app.preflight import (
     require_git_repo as _require_git_repo,
 )
-from agent6.app.run import EgressHooks, RunBridge, RunFrontend, run_task
+from agent6.app.run import EgressHooks, RunFrontend, run_task
 from agent6.config import (
     Config,
     ConfigError,
@@ -34,20 +34,6 @@ from agent6.config.layer import (
 from agent6.events import EventSink
 from agent6.git_ops import set_repo_hook_policy
 from agent6.paths import data_dir
-from agent6.runs.bridge import (
-    clear_away_mode,
-    clear_compact_request,
-    clear_pending_answers,
-    clear_stop_request,
-    clear_worker_pid,
-    compact_request_pending,
-    request_steer,
-    session_allow_set,
-    set_away_mode,
-    stop_request_pending,
-    write_steer_answer,
-    write_worker_pid,
-)
 from agent6.skills import discover_skills, resolve_states, skill_search_dirs
 from agent6.types import SandboxProfile
 from agent6.ui.cli._ask import (
@@ -136,17 +122,6 @@ def _skills_task_prefix(cfg: Config, names: tuple[str, ...]) -> tuple[str, str]:
     )
 
 
-def _apply_spawned_away_default(run_dir: Path) -> None:
-    """Honor AGENT6_DETACHED_AWAY, set by a front-end launcher (web/TUI hub) that
-    spawns a run detached and drives it over the bridge. Without it a spawned run
-    with no terminal fabricates empty ask_user answers when no viewer is live;
-    'wait' makes approvals and questions block for a front-end. A pure headless
-    run (no launcher) sets no env, so this is a no-op and it keeps its default."""
-    away = os.environ.get("AGENT6_DETACHED_AWAY", "")
-    if away in ("wait", "approve", "deny"):
-        set_away_mode(run_dir, away)
-
-
 def run_frontend() -> RunFrontend:
     """Build the presentation seam `app.run.run_task` / `app.resume.resume_task`
     drive: one per invocation (the console-view and egress-guard cells are
@@ -224,20 +199,6 @@ def run_frontend() -> RunFrontend:
                 max_usd=max_usd,
                 auto_approve=auto_approve,
             )
-        ),
-        bridge=RunBridge(
-            clear_pending_answers=clear_pending_answers,
-            clear_away_mode=clear_away_mode,
-            apply_spawned_away_default=_apply_spawned_away_default,
-            write_worker_pid=write_worker_pid,
-            clear_worker_pid=clear_worker_pid,
-            compact_request_pending=compact_request_pending,
-            clear_compact_request=clear_compact_request,
-            stop_request_pending=stop_request_pending,
-            clear_stop_request=clear_stop_request,
-            session_allow_set=session_allow_set,
-            request_steer=request_steer,
-            write_steer_answer=write_steer_answer,
         ),
         egress=EgressHooks(
             warn_if_unsandboxed=_warn_if_unsandboxed,
