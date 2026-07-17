@@ -410,4 +410,3 @@ def write_dot(layout: RunLayout, nodes: dict[str, TaskNode]) -> None:
             lines.append(f'  "{dep}" -> "{n.id}" [style=dashed, color=blue];')
     lines.append("}")
     _atomic_write(layout.dot_path, "\n".join(lines) + "\n")
-
