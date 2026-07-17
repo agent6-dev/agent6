@@ -7,7 +7,7 @@ Trust posture: the subprocess runs in the agent process, **not** in
 the jail. Argv is constant (``ty server`` or ``uvx ty server``); no
 LLM-controlled arguments reach the spawn. The JSON-RPC stream is
 constructed entirely from validated tool input (a path that's already
-been ``_resolve_in_root``-checked and a symbol name we look up
+been ``resolve_in_root``-checked and a symbol name we look up
 verbatim). Same trust boundary as ``tools/index.py``.
 
 The client is intentionally small: synchronous request/response,

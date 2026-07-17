@@ -87,7 +87,7 @@ and the principles the Zen doesn't cover:
   shape.
 - **Decompose proactively.** When a module grows past ~600 lines or a method
   past a few hundred, split it before it ossifies (exemplars:
-  `workflows/loop.py` with its `_prompts` / `_metric` / `_compaction`
+  `workflows/loop.py` with its `_prompt_blocks` / `_metric` / `_compaction`
   siblings, the `ui/cli` split of `run.py`). The rules:
   - Lift cohesive pure-helper groups into sibling `_name.py` modules. Move
     verbatim; give moved symbols public names and import them back aliased
@@ -275,7 +275,7 @@ these are the invariants a change must preserve.
   `AGENT6_ALLOW_ROOT=1`); the jail, not the uid, is the boundary.
 - Agent egress is bounded to the hosts derived from configured
   `[providers.*]` `base_url`s, unioned with operator-set `sandbox.allow_urls`
-  (default empty); see `ui/cli/egress.py`. Never add a code path that dials a
+  (default empty); see `app/egress.py`. Never add a code path that dials a
   host not derived from them. Operator-initiated CLI fetches before any agent
   runs (`agent6 connect` OAuth, `agent6 skills install <url>`) are the
   operator dialling a host they typed, outside that boundary.

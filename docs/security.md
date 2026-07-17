@@ -88,7 +88,7 @@ process irrevocably, inherited by every child:
     - The allowed set derives uniformly from each provider's effective
       `base_url` host (every `api_format` and `deployment` carries the dialled
       host there; the deployment profile only appends path/model), unioned with
-      `sandbox.allow_urls` (`ui/cli/egress.py`).
+      `sandbox.allow_urls` (`app/egress.py`).
 - **Fail-closed: the netns is the boundary, not a filter.**
     - A missing route is no connectivity, never a silent leak; the allow-list is
       fixed at bind time, so the agent can't widen it.

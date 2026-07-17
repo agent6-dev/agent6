@@ -410,10 +410,12 @@ layers sit under all three: the read side
 [src/agent6/viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel)
 (the `RunState`/`MachineState` fold + its `*_as_dict` wire form, exactly what
 `agent6 attach --json` and the web JSON/SSE endpoints emit) and the textual-free
-write bridge
+write side:
 [src/agent6/ui/bridge/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/bridge)
-(spawn the CLI detached, plus the approval / question / steer / compact-request
-file contract the workflow process polls). See [the web UI](web.md).
+spawns the CLI detached, and
+[src/agent6/runs/bridge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/runs/bridge.py)
+holds the approval / question / steer / compact-request file contract the
+workflow process polls. See [the web UI](web.md).
 
 The `logs.jsonl` vocabulary is small and stable: the data contract for
 any external viewer (the fold to render-ready state lives in
@@ -444,7 +446,7 @@ headless (stdin prompt, or deny for a machine state) only after the front-end
 has stayed dead for 30 consecutive seconds, so a transient drop (a page
 reload, a phone locking its browser) does not convert a pending approval into
 a deny. The web UI drives the same answer-file contract (via
-[src/agent6/ui/bridge/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/bridge)):
+[src/agent6/runs/bridge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/runs/bridge.py)):
 while a browser watches a run it registers as the run's answer front-end, so
 approval / question / steer prompts bridge to the page. The task DAG is not in this stream; it is
 curator-owned and lives in `graph.jsonl` (read via `agent6 runs
@@ -458,18 +460,20 @@ graph`).
 | Tool surface                     | [src/agent6/tools/schema.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/schema.py)              |
 | Tool dispatch                    | [src/agent6/tools/dispatch.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/dispatch.py)          |
 | agent loop                       | [src/agent6/workflows/loop.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/loop.py)          |
+| Prompt/template text             | [src/agent6/prompts/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/prompts) (pure strings; loop/review/judge/machine assemble them) |
 | Review workflow                  | [src/agent6/workflows/review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/review.py)      |
 | Code-review agent                | [src/agent6/agents/code_review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/agents/code_review.py)  |
 | Jail launcher (Python wrapper)   | [src/agent6/sandbox/jail.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail.py)              |
 | Jail launcher (Rust binary)      | [src/agent6/jail/src/main.rs](https://github.com/agent6-dev/agent6/blob/master/src/agent6/jail/src/main.rs)            |
 | Git policy                       | [src/agent6/git_ops.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/git_ops.py)                        |
 | Subordinate-run primitive (clone/import/join) | [src/agent6/workflows/subrun.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/subrun.py) |
+| Run-dir single-writer lock       | [src/agent6/runs/lock.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/runs/lock.py) (the `worker.lock` flock; see "Curator subprocess") |
 | Compare judge (structured ranking) | [src/agent6/workflows/judge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/judge.py) |
 | Fan-out orchestrator (`run --parallel`, coordinator spawner) | [src/agent6/app/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel.py) (pipeline), [src/agent6/ui/cli/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/cli/parallel.py) (CLI adapter) |
 | Provider clients                 | [src/agent6/providers/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/providers)                        |
 | Knowledge graph (curator)        | [src/agent6/graph/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/graph)                                |
 | Event log + view-model fold      | [src/agent6/events.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/events.py) (writer), [src/agent6/viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel) (RunState/MachineState fold), [src/agent6/ui/tui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/tui) (textual render) |
-| Front-end write bridge           | [src/agent6/ui/bridge/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/bridge) (spawn detached + approval/question/steer/compact bridge files; shared by CLI, TUI, web) |
+| Front-end write bridge           | [src/agent6/ui/bridge/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/bridge) (spawn detached + desktop notify), [src/agent6/runs/bridge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/runs/bridge.py) (approval/question/steer/compact file contract); shared by CLI, TUI, web |
 | Web UI (`agent6 web`)            | [src/agent6/ui/web/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/web) (stdlib HTTP server + one embedded page over the view-model + frontend) |
 | Cross-run memory store           | [src/agent6/memory.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/memory.py) (store), `<state-dir>/<repo-id>/memories/` (data) |
 | Run state on disk                | `<state-dir>/<repo-id>/runs/<run-id>/` (out of the workspace)         |
