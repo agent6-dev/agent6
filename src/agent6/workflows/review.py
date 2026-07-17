@@ -4,7 +4,7 @@
 
 Re-exports the freeform review call (`code_review`, driving `agent6 review`)
 and the adversarial review panel (`ReviewContext`, `render_findings`,
-`run_panel`, `Seat`, `parse_seat_spec`) from their private `_review`/`_panel`
+`run_panel`, `ReviewSeat`, `parse_seat_spec`) from their private `_review`/`_panel`
 siblings, so `ui/cli` imports both from one workflow-layer module instead of
 reaching into privates.
 """
@@ -12,13 +12,13 @@ reaching into privates.
 from __future__ import annotations
 
 from agent6.workflows._panel import ReviewContext, render_findings
-from agent6.workflows._review import Seat, parse_seat_spec, run_panel
+from agent6.workflows._review import ReviewSeat, parse_seat_spec, run_panel
 from agent6.workflows.code_review import CodeReviewError, code_review
 
 __all__ = [
     "CodeReviewError",
     "ReviewContext",
-    "Seat",
+    "ReviewSeat",
     "code_review",
     "parse_seat_spec",
     "render_findings",

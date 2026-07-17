@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from agent6.workflows._review import Seat
+from agent6.workflows._review import ReviewSeat
 from agent6.workflows.loop import Workflow
 from tests.unit.test_critic import (
     _finish_tool_use,  # pyright: ignore[reportPrivateUsage]
@@ -36,8 +36,8 @@ _NONGATING = (  # grounded but a non-block-eligible category -> downgraded, neve
 )
 
 
-def _seat(provider: Any, persona: str = "security", model: str = "m1") -> Seat:
-    return Seat(persona=persona, model=model, provider=provider)
+def _seat(provider: Any, persona: str = "security", model: str = "m1") -> ReviewSeat:
+    return ReviewSeat(persona=persona, model=model, provider=provider)
 
 
 def _disp() -> MagicMock:

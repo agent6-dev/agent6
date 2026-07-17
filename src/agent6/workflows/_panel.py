@@ -22,7 +22,7 @@ from typing import Literal
 
 Severity = Literal["block", "warn", "nit"]
 Verdict = Literal["pass", "block"]
-Decision = Literal["advisory", "veto", "quorum", "all"]
+ReviewDecision = Literal["advisory", "veto", "quorum", "all"]
 
 # Categories a finding may carry. Only the first set is allowed to GATE; the rest
 # can advise but never block (taste/test-gaps/over-engineering historically drove
@@ -69,7 +69,7 @@ class ReviewContext:
 @dataclass(frozen=True, slots=True)
 class PanelResult:
     panel_id: str
-    decision: Decision
+    decision: ReviewDecision
     blocked: bool
     merged_findings: tuple[Finding, ...]
     per_seat: tuple[ReviewVerdict, ...]
@@ -227,7 +227,7 @@ def _has_new_block(v: ReviewVerdict, prior_keys: set[tuple[str, str]]) -> bool:
 
 
 def _decide(
-    decision: Decision,
+    decision: ReviewDecision,
     n_block: int,
     quorum: int,
     non_abstain: list[ReviewVerdict],
@@ -259,7 +259,7 @@ def aggregate_verdicts(
     per_seat: list[ReviewVerdict],
     ctx: ReviewContext,
     *,
-    decision: Decision,
+    decision: ReviewDecision,
     quorum: int,
     panel_id: str,
 ) -> PanelResult:
@@ -340,10 +340,10 @@ def render_findings(findings: tuple[Finding, ...]) -> str:
 __all__ = [
     "ALLOWED_BLOCK_CATEGORIES",
     "ALL_CATEGORIES",
-    "Decision",
     "Finding",
     "PanelResult",
     "ReviewContext",
+    "ReviewDecision",
     "ReviewVerdict",
     "aggregate_verdicts",
     "diff_touched_ranges",

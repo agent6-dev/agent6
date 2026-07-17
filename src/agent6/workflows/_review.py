@@ -25,10 +25,10 @@ from agent6.prompts.review import EXPLORE_REVIEW_SYSTEM_PROMPT, REVIEW_SYSTEM_PR
 from agent6.providers import Provider, ProviderError, ToolDefinition
 from agent6.workflows._panel import (
     ALL_CATEGORIES,
-    Decision,
     Finding,
     PanelResult,
     ReviewContext,
+    ReviewDecision,
     ReviewVerdict,
     aggregate_verdicts,
 )
@@ -38,7 +38,7 @@ ReviewDispatch = Callable[[str, dict[str, Any]], Any]
 
 
 @dataclass(frozen=True, slots=True)
-class Seat:
+class ReviewSeat:
     """One panel seat: a persona stance bound to a provider/model.
 
     ``tier`` is "diff" (a single grounded call over the diff) or "explore" (a
@@ -254,10 +254,10 @@ def explore_review(
 
 
 def run_panel(
-    seats: list[Seat],
+    seats: list[ReviewSeat],
     ctx: ReviewContext,
     *,
-    decision: Decision,
+    decision: ReviewDecision,
     quorum: int,
     panel_id: str,
     concurrency: int = 1,
@@ -270,7 +270,7 @@ def run_panel(
     each seat has its own provider); results stay in seat order, so the merged
     verdict is deterministic regardless of how the calls interleave."""
 
-    def _run(s: Seat) -> ReviewVerdict:
+    def _run(s: ReviewSeat) -> ReviewVerdict:
         seat_ctx = replace(ctx, persona=s.persona)
         if s.tier == "explore" and tools is not None and dispatch is not None:
             return explore_review(
@@ -288,7 +288,7 @@ def run_panel(
 
 __all__ = [
     "ReviewDispatch",
-    "Seat",
+    "ReviewSeat",
     "explore_review",
     "parse_seat_spec",
     "run_panel",

@@ -9,7 +9,7 @@ from typing import Any, cast
 from agent6.providers import Provider, ProviderError
 from agent6.workflows._panel import ReviewContext
 from agent6.workflows._review import (
-    Seat,
+    ReviewSeat,
     _coerce_findings,  # pyright: ignore[reportPrivateUsage]
     _extract_json,  # pyright: ignore[reportPrivateUsage]
     run_panel,
@@ -95,15 +95,15 @@ def test_coerce_findings_normalizes_bad_category_and_severity() -> None:
 
 def test_run_panel_distinct_models_quorum_blocks() -> None:
     seats = [
-        Seat(persona="security", model="m1", provider=_prov(_BLOCK_JSON)),
-        Seat(persona="correctness", model="m2", provider=_prov(_BLOCK_JSON)),
+        ReviewSeat(persona="security", model="m1", provider=_prov(_BLOCK_JSON)),
+        ReviewSeat(persona="correctness", model="m2", provider=_prov(_BLOCK_JSON)),
     ]
     res = run_panel(seats, _ctx(), decision="quorum", quorum=2, panel_id="p")
     assert res.blocked is True and res.n_block == 2
 
 
 def test_run_panel_advisory_never_blocks() -> None:
-    seats = [Seat(persona="security", model="m1", provider=_prov(_BLOCK_JSON))]
+    seats = [ReviewSeat(persona="security", model="m1", provider=_prov(_BLOCK_JSON))]
     res = run_panel(seats, _ctx(), decision="advisory", quorum=2, panel_id="p")
     assert res.blocked is False
     assert (
@@ -115,9 +115,9 @@ def test_run_panel_concurrent_preserves_order_and_aggregates() -> None:
     # 3 seats, distinct models, concurrency=3: results stay in seat order and the
     # grounded quorum still blocks (thread pool must not change the verdict).
     seats = [
-        Seat(persona="security", model="m1", provider=_prov(_BLOCK_JSON)),
-        Seat(persona="correctness", model="m2", provider=_prov(_BLOCK_JSON)),
-        Seat(persona="edge", model="m3", provider=_prov(_BLOCK_JSON)),
+        ReviewSeat(persona="security", model="m1", provider=_prov(_BLOCK_JSON)),
+        ReviewSeat(persona="correctness", model="m2", provider=_prov(_BLOCK_JSON)),
+        ReviewSeat(persona="edge", model="m3", provider=_prov(_BLOCK_JSON)),
     ]
     res = run_panel(seats, _ctx(), decision="quorum", quorum=2, panel_id="p", concurrency=3)
     assert [v.seat for v in res.per_seat] == ["security", "correctness", "edge"]
@@ -320,7 +320,7 @@ def test_run_panel_routes_explore_tier_seats() -> None:
             _ExploreResp(text=_BLOCK_JSON),
         ]
     )
-    seat = Seat(persona="security", model="m1", provider=cast(Provider, prov), tier="explore")
+    seat = ReviewSeat(persona="security", model="m1", provider=cast(Provider, prov), tier="explore")
     res = run_panel(
         [seat],
         _ctx(),

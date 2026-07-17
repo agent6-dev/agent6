@@ -13,10 +13,10 @@ from __future__ import annotations
 from typing import Any
 
 from agent6.workflows._panel import (
-    Decision,
     Finding,
     PanelResult,
     ReviewContext,
+    ReviewDecision,
     ReviewVerdict,
     aggregate_verdicts,
     diff_touched_ranges,
@@ -59,7 +59,7 @@ def _block(category: str, file_line: str) -> Finding:
 def _agg(
     seats: list[ReviewVerdict],
     *,
-    decision: Decision = "veto",
+    decision: ReviewDecision = "veto",
     quorum: int = 2,
     ctx: ReviewContext | None = None,
 ) -> PanelResult:

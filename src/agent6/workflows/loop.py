@@ -145,8 +145,7 @@ from agent6.workflows._nudges import (
     verify_did_not_run,
     verify_failure_signature,
 )
-from agent6.workflows._panel import Decision as ReviewDecision
-from agent6.workflows._panel import ReviewContext, render_findings
+from agent6.workflows._panel import ReviewContext, ReviewDecision, render_findings
 from agent6.workflows._prompt_blocks import build_system_prompt
 from agent6.workflows._prompt_revision import (
     PromptRevision,
@@ -162,8 +161,7 @@ from agent6.workflows._provider_call import (
     is_empty_tool_call_response,
     provider_error_hint,
 )
-from agent6.workflows._review import ReviewDispatch, run_panel
-from agent6.workflows._review import Seat as ReviewSeat
+from agent6.workflows._review import ReviewDispatch, ReviewSeat, run_panel
 from agent6.workflows._run_state import (
     SNAPSHOT_VERSION,
     ResumeError,
