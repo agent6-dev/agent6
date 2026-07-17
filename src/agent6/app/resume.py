@@ -188,6 +188,8 @@ def snapshot_head_mismatch(
     with contextlib.suppress(OSError, ValueError):
         loaded = json.loads(snapshot_path.read_text(encoding="utf-8"))
         if isinstance(loaded, dict):
+            # Raw single-key peek (must not raise); "head_sha" is
+            # RunSnapshot.head_sha -- keep in sync on a field rename.
             snap_head = str(loaded.get("head_sha") or "")
     if not snap_head:
         return None

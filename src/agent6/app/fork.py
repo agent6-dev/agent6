@@ -136,6 +136,8 @@ def _snapshot_turn(path: Path) -> int | None:
         return None
     if not isinstance(raw, dict):
         return None
+    # Raw single-key peek (must not raise); "next_iteration" is
+    # RunSnapshot.next_iteration -- keep in sync on a field rename.
     value = raw.get("next_iteration")
     if not isinstance(value, str | int):
         return None

@@ -114,6 +114,8 @@ class RunSnapshot(BaseModel):
     root_task_id: str | None
     # The exact task string the run launched with. Resume re-enters with it
     # verbatim, instead of recovering a truncated copy out of messages[0].
+    # RunManifest.user_task is the DISPLAY twin (truncated [:4000]); this is
+    # engine state -- never read one where the other is meant.
     original_task: str
     # The verify command the original run resolved (possibly inferred): resume
     # reuses it rather than re-inferring (which could flip and diverge from the

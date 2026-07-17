@@ -78,6 +78,8 @@ def write_run_manifest(
         run_id=run_id,
         mode=mode,  # run | plan (ask runs live under asks/, not here)
         start_ts=_dt.datetime.now(tz=_dt.UTC).isoformat(timespec="microseconds"),
+        # Display stamp only; RunSnapshot.original_task carries the verbatim
+        # engine copy. Truncation here must never feed the engine.
         user_task=user_task[:4000],
         base_sha=base_sha,
         base_branch=base_branch,
