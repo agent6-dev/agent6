@@ -94,8 +94,14 @@ def is_run_husk(run_dir: Path) -> bool:
     """True for a run dir that never really started: neither manifest.json nor
     logs.jsonl (a preflight refused it, or a crash orphaned it). Listings skip
     husks -- "(no logs)" forever is noise, not a run -- and id lookups must not
-    let one shadow a real run of the same id in another bucket (runs/ vs asks/)."""
-    return not (run_dir / "manifest.json").exists() and not (run_dir / "logs.jsonl").exists()
+    let one shadow a real run of the same id in another bucket (runs/ vs asks/).
+
+    Exception: a dir with a LIVE worker.pid is a just-launched run in its
+    pre-manifest preflight window, not a husk -- keep it listed (it reads
+    "starting"). Only a dir with no live worker is a true husk."""
+    if (run_dir / "manifest.json").exists() or (run_dir / "logs.jsonl").exists():
+        return False
+    return not worker_is_alive(run_dir)
 
 
 def run_compare(run_dir: Path) -> CompareStamp | None:
@@ -125,7 +131,7 @@ class RunSummary:
     run_id: str
     mode: str  # run | plan | ask | ?
     task: str  # raw task text; callers snippet/truncate for their layout
-    status: str  # running | stale | passed | planned | finished | stopped | failed | ?
+    status: str  # starting | running | stale | passed | planned | finished | stopped | failed | ?
     reason: str  # end reason detail when status is "failed", else ""
     cost_usd: float
     mtime: float
@@ -167,40 +173,35 @@ def _running_is_stale(run_dir: Path, stale_after_s: float) -> bool:
     return (time.time() - run_mtime(run_dir)) > stale_after_s
 
 
-def summarize_run_dir(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) -> RunSummary:
-    """Single pass over ``logs.jsonl``: run.start (mode/task), the last run.end
-    (status, un-finished again by a later resume), and the last budget.update
-    (cost). An "ask" run's task is replaced by its transcript, which shows what
-    was asked. Replaced the near-duplicate scanners in the TUI hub and the web
-    hub that badged a provider_error death as a neutral "done"."""
-    logs = run_dir / "logs.jsonl"
+@dataclass(frozen=True, slots=True)
+class _LogScan:
+    """What one pass over ``logs.jsonl`` yields: whether run.start was seen (a
+    run that hasn't emitted it is still launching), its mode/task, the end state,
+    and the cumulative cost across resume legs."""
+
+    saw_start: bool
+    mode: str
+    task: str
+    finished: bool
+    all_passed: bool
+    end_reason: str
+    cost: float
+
+
+def _scan_run_log(logs: Path) -> _LogScan:
+    """Fold ``logs.jsonl``: run.start (mode/task), the last run.end (status,
+    un-finished again by a later resume), and the running per-leg budget banked
+    across resumes into a cumulative total.
+
+    errors="replace": a live writer can leave a torn multibyte UTF-8 tail; strict
+    decoding would take down the whole listing. The mangled line just fails
+    json.loads and is skipped."""
     mode, task = "?", ""
     finished, all_passed, end_reason = False, False, ""
+    saw_start = False
     cost = 0.0  # latest leg's running total
     cost_prior_legs = 0.0  # summed totals of completed (resumed-past) legs
-    if not logs.is_file():
-        # A manifest-only run (a `fork --no-run` fork, not yet started) has no
-        # logs yet, but the manifest already carries its mode + task -- show them
-        # instead of a blank "? ? (no logs)". Best-effort: a truly empty husk
-        # (no manifest either) keeps the "?" / "(no logs)" placeholder.
-        m_mode, m_task = "?", "(no logs)"
-        with contextlib.suppress(ManifestError):
-            manifest = read_manifest(run_dir)
-            m_mode = manifest.mode
-            m_task = manifest.user_task or "(no logs)"
-        return RunSummary(
-            run_id=run_dir.name,
-            mode=m_mode,
-            task=m_task,
-            status="?",
-            reason="",
-            cost_usd=0.0,
-            mtime=run_mtime(run_dir),
-        )
     try:
-        # errors="replace": a live writer can leave a torn multibyte UTF-8 tail;
-        # strict decoding would take down the whole listing. The mangled line
-        # just fails json.loads and is skipped.
         with logs.open(encoding="utf-8", errors="replace") as fh:
             for line in fh:
                 try:
@@ -211,6 +212,7 @@ def summarize_run_dir(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) ->
                     continue  # a valid-JSON non-object line (torn/adversarial)
                 etype = ev.get("type")
                 if etype == "run.start":
+                    saw_start = True
                     mode = str(ev.get("mode", mode))
                     task = str(ev.get("user_task", ""))
                 elif etype == "run.end":
@@ -230,10 +232,41 @@ def summarize_run_dir(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) ->
                     cost = float(ev.get("usd_total", cost) or 0.0)
     except OSError:
         pass
-    cost += cost_prior_legs
-    word, reason = status_word(finished=finished, all_passed=all_passed, end_reason=end_reason)
-    if word == "running" and _running_is_stale(run_dir, stale_after_s):
-        word = "stale"
+    return _LogScan(saw_start, mode, task, finished, all_passed, end_reason, cost + cost_prior_legs)
+
+
+def summarize_run_dir(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) -> RunSummary:
+    """One listing row from ``logs.jsonl`` + the manifest. Replaced the
+    near-duplicate scanners in the TUI hub and the web hub that badged a
+    provider_error death as a neutral "done". An "ask" run's task is replaced by
+    its transcript, which shows what was asked."""
+    logs = run_dir / "logs.jsonl"
+    empty = _LogScan(False, "?", "", False, False, "", 0.0)
+    scan = _scan_run_log(logs) if logs.is_file() else empty
+    mode, task = scan.mode, scan.task
+    if not scan.saw_start:
+        # Before run.start the log carries no mode/task: either a launching run
+        # still in preflight (verify inference is a ~80s LLM call BEFORE the
+        # loop's first turn), or a manifest-only `fork --no-run`. Read mode+task
+        # from the manifest so the row shows its real work, not a blank
+        # "? ? (no logs)". A truly empty husk (no manifest) keeps "(no logs)".
+        mode, task = "?", "(no logs)"
+        with contextlib.suppress(ManifestError):
+            manifest = read_manifest(run_dir)
+            mode = manifest.mode
+            task = manifest.user_task or "(no logs)"
+    word, reason = status_word(
+        finished=scan.finished, all_passed=scan.all_passed, end_reason=scan.end_reason
+    )
+    if word == "running":
+        if not scan.saw_start:
+            # No run.start yet. A live worker means the run is still launching
+            # (egress + verify inference); show "starting", not a bare "running"
+            # on an empty row. No live worker (a `fork --no-run`, or a run that
+            # died before starting) stays the neutral "?", never a false "stale".
+            word, reason = ("starting" if worker_is_alive(run_dir) else "?"), ""
+        elif _running_is_stale(run_dir, stale_after_s):
+            word = "stale"
     if mode == "ask":
         with contextlib.suppress(OSError):
             task = (run_dir / "transcript.md").read_text(encoding="utf-8", errors="replace")
@@ -243,6 +276,6 @@ def summarize_run_dir(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) ->
         task=task,
         status=word,
         reason=reason,
-        cost_usd=cost,
+        cost_usd=scan.cost,
         mtime=run_mtime(run_dir),
     )

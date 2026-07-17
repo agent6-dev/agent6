@@ -265,6 +265,34 @@ def test_summary_manifest_only_fork_shows_mode_and_task(tmp_path: Path) -> None:
     assert (s.mode, s.task, s.status) == ("plan", "carry this forward", "?")
 
 
+def test_summary_launching_run_reads_starting(tmp_path: Path) -> None:
+    # A run with no verify_command spends ~80s inferring one BEFORE run.start.
+    # During it the log has a role.call (the inference LLM call) but no run.start,
+    # and the worker is alive -- it must read "starting" (its real mode+task from
+    # the manifest), not a blank "? / (no task) / running" that looks missing.
+    import os
+
+    rd = _write_run(tmp_path, "runs", "boot", [{"type": "role.call", "role": "verify_inferer"}])
+    (rd / "manifest.json").write_text(
+        json.dumps({"mode": "run", "user_task": "refactor the loop"}), encoding="utf-8"
+    )
+    (rd / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")  # a live worker
+    s = summarize_run_dir(rd, stale_after_s=0.0)
+    assert (s.mode, s.task, s.status) == ("run", "refactor the loop", "starting")
+
+
+def test_summary_pre_start_dead_worker_is_neutral_not_stale(tmp_path: Path) -> None:
+    # The converse: no run.start and no LIVE worker (a `fork --no-run`, or a run
+    # that died in preflight) must NOT read a false "stale" -- it never claimed to
+    # be running. It stays the neutral "?".
+    rd = _write_run(tmp_path, "runs", "dead", [{"type": "role.call", "role": "verify_inferer"}])
+    (rd / "manifest.json").write_text(
+        json.dumps({"mode": "run", "user_task": "t"}), encoding="utf-8"
+    )
+    (rd / "worker.pid").write_text("999999999", encoding="utf-8")  # never alive
+    assert summarize_run_dir(rd, stale_after_s=0.0).status == "?"
+
+
 def test_summary_cost_sums_across_resume_legs(tmp_path: Path) -> None:
     # Each resume leg starts a fresh budget (usd_total resets to 0). The listing
     # total must be the cumulative spend across legs, not just the latest leg's.
@@ -301,6 +329,19 @@ def test_is_run_husk(tmp_path: Path) -> None:
     with_manifest.mkdir()
     (with_manifest / "manifest.json").write_text("{}", encoding="utf-8")
     assert not is_run_husk(with_manifest)
+    # A dir with neither file but a LIVE worker.pid is a launching run in its
+    # pre-manifest preflight window, not a husk -- keep it listed (as "starting").
+    import os
+
+    launching = tmp_path / "launching"
+    launching.mkdir()
+    (launching / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    assert not is_run_husk(launching)
+    # ... but a dead worker.pid with no files is still a husk.
+    dead = tmp_path / "dead-husk"
+    dead.mkdir()
+    (dead / "worker.pid").write_text("999999999", encoding="utf-8")
+    assert is_run_husk(dead)
 
 
 def test_summary_survives_a_valid_json_non_object_line(tmp_path: Path) -> None:

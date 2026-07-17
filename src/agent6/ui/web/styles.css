@@ -96,7 +96,9 @@ main { padding: 0; }
 /* A completed plan verifies nothing, so it is informational (mauve), not the
    green "passed". */
 .pill.planned { color: var(--accent2); border-color: var(--accent2); }
-.pill.running { color: var(--accent); border-color: var(--accent); }
+/* A launching run (alive, still in preflight before its first loop turn):
+   in-progress, so the accent hue -- the word says it has not started work yet. */
+.pill.starting, .pill.running { color: var(--accent); border-color: var(--accent); }
 .pill.waiting { color: var(--warn); border-color: var(--warn); }
 .pill.stopped { color: var(--warn); border-color: var(--warn); }
 .pill.stale, .pill.failed { color: var(--err); border-color: var(--err); }

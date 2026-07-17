@@ -108,6 +108,7 @@ def _spec_fragment(text: str) -> str | None:
 # Colors for the shared status words, so a dead run cannot read as a neutral
 # "done" in the listing. Unlisted words ("finished", "?") render plain.
 _STATUS_STYLE = {
+    "starting": "cyan",  # launching (pre-loop): in progress, lighter than running
     "running": "bold cyan",
     "stale": "dim",
     "passed": "green",
