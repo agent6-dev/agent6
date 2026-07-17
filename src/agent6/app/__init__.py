@@ -10,7 +10,9 @@ fan-out and the coordinator's `/parallel` dispatch, `parallel`/`compare`) over
 `agent6.ui`. What it cannot do itself -- own a terminal, render a live view,
 spawn a detached `agent6` process, or drive the run-dir bridge -- is injected
 by the front-end (`ui/cli`) as frozen values of callables (`run.RunFrontend`,
-`parallel.LaneRuntime`), so the pipelines stay testable and ui-free.
+`parallel.LaneRuntime`), so the pipelines stay testable and ui-free. Output goes
+through the injected two-channel `reporter.Reporter` (default `STDIO_REPORTER`),
+never a direct `print`.
 """
 
 from __future__ import annotations

@@ -287,7 +287,6 @@ def run_panel(
 
 
 __all__ = [
-    "REVIEW_SYSTEM_PROMPT",
     "ReviewDispatch",
     "Seat",
     "explore_review",

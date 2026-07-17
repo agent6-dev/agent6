@@ -25,10 +25,14 @@ from agent6.providers import (
 )
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.ui.cli._common import _state_dir
-from agent6.workflows._panel import ReviewContext, render_findings
-from agent6.workflows._review import run_panel
 from agent6.workflows.loop import build_readonly_review_tools
-from agent6.workflows.review import CodeReviewError, run_review
+from agent6.workflows.review import (
+    CodeReviewError,
+    ReviewContext,
+    render_findings,
+    run_panel,
+    run_review,
+)
 
 
 def _collect_review_diff(

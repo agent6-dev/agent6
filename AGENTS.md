@@ -112,7 +112,8 @@ and the principles the Zen doesn't cover:
   imports the UI. `app/` holds the application pipelines that compose the engine
   but are not a front-end -- the run/resume/fork/machine-agent lifecycles and
   the `--parallel` fan-out -- taking the presentation, process-spawn, and
-  run-dir bridge callables the front-end injects (`RunFrontend`, `LaneRuntime`).
+  run-dir bridge callables the front-end injects (`RunFrontend`, `LaneRuntime`),
+  and printing only through the injected two-channel `Reporter`.
   `ui/` is the presentation layer and the composition root: the three
   front-ends (`ui/cli`, `ui/tui`, `ui/web`) and the front-end bridge
   (`ui/bridge`: spawn / notify), over the shared headless read-model fold
