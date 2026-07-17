@@ -816,7 +816,7 @@ def run_parallel(
     )
     _cleanup(imported, workdir_root=lanes[0].workdir.parent, cfg=cfg)
 
-    ranking, rationale, ranked_by = rank(
+    outcome = rank(
         cfg,
         candidates,
         transcript_dir=origin_state / "parallel" / fanout_id,
@@ -826,14 +826,19 @@ def run_parallel(
     )
     _stamp_compare_outcomes(
         candidates,
-        ranking,
+        outcome.ranking,
         origin_state=origin_state,
-        ranked_by=ranked_by,
-        rationale=rationale,
+        ranked_by=outcome.ranked_by,
+        rationale=outcome.rationale,
         reporter=reporter,
     )
     _print_report(
-        candidates, ranking, failed, fanout_id=fanout_id, rationale=rationale, reporter=reporter
+        candidates,
+        outcome.ranking,
+        failed,
+        fanout_id=fanout_id,
+        rationale=outcome.rationale,
+        reporter=reporter,
     )
 
     if interrupted:

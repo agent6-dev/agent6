@@ -20,6 +20,7 @@ from collections.abc import Generator
 from pathlib import Path
 
 from agent6.app.compare import (
+    RankOutcome,
     manifest_task,
     print_ranked_candidates,
     verify_ok,
@@ -34,7 +35,7 @@ from agent6.providers import Provider, TranscriptSink
 from agent6.ui.cli._console_view import _HEARTBEAT_TICK_S, _SPINNER
 from agent6.workflows.judge import CandidateBrief
 
-__all__ = ["manifest_task", "print_ranked_candidates", "rank", "verify_ok"]
+__all__ = ["RankOutcome", "manifest_task", "print_ranked_candidates", "rank", "verify_ok"]
 
 
 @contextlib.contextmanager
@@ -75,9 +76,7 @@ def _reviewer_provider(cfg: Config, sink: TranscriptSink, budget: BudgetTracker)
     return build_role_provider(cfg, "reviewer", transcript_sink=sink, budget=budget)
 
 
-def rank(
-    cfg: Config, candidates: list[CandidateBrief], *, transcript_dir: Path
-) -> tuple[tuple[str, ...], str, str]:
+def rank(cfg: Config, candidates: list[CandidateBrief], *, transcript_dir: Path) -> RankOutcome:
     """Rank candidates best-first via the shared core, injecting the CLI's
     console judging-status and reviewer-provider builder. The single rank
     implementation `runs compare` and `--parallel`'s auto-compare both use."""

@@ -16,7 +16,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import AbstractContextManager
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
@@ -31,6 +33,21 @@ BuildProvider = Callable[[Config, TranscriptSink, BudgetTracker], Provider]
 # A no-arg context manager shown around the (~50-60s, otherwise silent) judge
 # call. ui/cli supplies the console spinner; `nullcontext` shows nothing.
 JudgingStatus = Callable[[], AbstractContextManager[None]]
+
+
+@dataclass(frozen=True, slots=True)
+class RankOutcome:
+    """`rank()`'s result: candidates best-first, plus which path produced them.
+
+    ``ranked_by`` is ``"judge"`` only when the reviewer model actually produced
+    the order, else ``"mechanical"`` -- the honest signal the compare stamp
+    records (``CompareStamp.ranked_by``, which stays a lenient ``str`` for
+    reads of history). ``rationale`` is empty on the mechanical path.
+    """
+
+    ranking: tuple[str, ...]
+    rationale: str
+    ranked_by: Literal["judge", "mechanical"]
 
 
 def verify_ok(status: str) -> bool | None:
@@ -59,15 +76,11 @@ def rank(
     build_provider: BuildProvider,
     judging_status: JudgingStatus,
     reporter: Reporter = STDIO_REPORTER,
-) -> tuple[tuple[str, ...], str, str]:
+) -> RankOutcome:
     """Rank candidates best-first. Use the configured reviewer model as the
     compare judge when one resolves; fall back to the deterministic mechanical
-    ranking when it is unset or the judge call fails.
-
-    Returns ``(ranking, rationale, ranked_by)`` where ``ranked_by`` is ``"judge"``
-    only when the reviewer model actually produced the order, else ``"mechanical"``
-    (reviewer unset, one candidate, or the judge call failed) -- the honest signal
-    the compare stamp records, not a guess from whether the rationale is empty."""
+    ranking when it is unset, there is only one candidate, or the judge call
+    fails (see ``RankOutcome.ranked_by``)."""
     reviewer = cfg.models.resolve("reviewer")
     if len(candidates) > 1 and reviewer is not None:
         try:
@@ -80,13 +93,13 @@ def rank(
             provider: Provider = build_provider(cfg, sink, budget)
             with judging_status():
                 verdict = compare(provider, reviewer.model, candidates)
-            return verdict.ranking, verdict.rationale, "judge"
+            return RankOutcome(verdict.ranking, verdict.rationale, "judge")
         except (ProviderError, JudgeError) as exc:
             # A configured reviewer that fails must not degrade to the mechanical
             # table silently: say so, so the report isn't mistaken for a judged one.
             detail = str(exc).splitlines()[0] if str(exc).strip() else exc.__class__.__name__
             reporter.err(f"judge failed ({detail}); ranked mechanically")
-    return mechanical_ranking(candidates), "", "mechanical"
+    return RankOutcome(mechanical_ranking(candidates), "", "mechanical")
 
 
 def print_ranked_candidates(

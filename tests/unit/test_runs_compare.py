@@ -401,11 +401,9 @@ def test_rank_clears_the_judging_status_even_when_the_judge_call_fails(
     provider = _SlowFakeProvider(sleep_s=_HEARTBEAT_TICK_S * 1.2, raise_exc=ProviderError("down"))
     monkeypatch.setattr(compare_mod, "build_role_provider", _stub_builder(provider))
 
-    _ranking, _rationale, ranked_by = compare_mod.rank(
-        _reviewer_cfg(), _two_candidates(), transcript_dir=tmp_path
-    )
+    outcome = compare_mod.rank(_reviewer_cfg(), _two_candidates(), transcript_dir=tmp_path)
 
-    assert ranked_by == "mechanical"  # judge failed -> fell back
+    assert outcome.ranked_by == "mechanical"  # judge failed -> fell back
     assert fake.getvalue().endswith("\r\x1b[2K")  # no leftover spinner droppings
 
 
@@ -414,11 +412,9 @@ def test_rank_mechanical_path_prints_no_judging_line(
 ) -> None:
     """No reviewer configured -> the mechanical fallback is instant; nothing to
     show a status for."""
-    _ranking, _rationale, ranked_by = compare_mod.rank(
-        Config(), _two_candidates(), transcript_dir=tmp_path
-    )
+    outcome = compare_mod.rank(Config(), _two_candidates(), transcript_dir=tmp_path)
 
-    assert ranked_by == "mechanical"
+    assert outcome.ranked_by == "mechanical"
     assert capsys.readouterr().out == ""
 
 

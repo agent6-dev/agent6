@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 
 from agent6.app import parallel
+from agent6.app.compare import RankOutcome
 from agent6.app.parallel import (
     LaneRuntime,
     ParallelError,
@@ -587,8 +588,8 @@ def test_compare_stamp_records_judge_rationale_truncated(
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
     long_rationale = "x" * 3000
 
-    def fake_rank(*_a: object, **_k: object) -> tuple[tuple[str, ...], str, str]:
-        return ("fan-l1", "fan-l2"), long_rationale, "judge"
+    def fake_rank(*_a: object, **_k: object) -> RankOutcome:
+        return RankOutcome(("fan-l1", "fan-l2"), long_rationale, "judge")
 
     monkeypatch.setattr(parallel, "rank", fake_rank)
 
