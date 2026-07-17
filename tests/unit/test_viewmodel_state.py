@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from agent6.viewmodel.state import (
     ApprovalPrompt,
     BudgetView,
@@ -214,6 +216,29 @@ def test_budget_update_carries_usd_total() -> None:
     )
     assert s.budget.usd_total == 0.1234
     assert s.budget.usd_partial is True
+
+
+def test_budget_usd_cumulative_across_resume_legs() -> None:
+    # Each resume leg's budget.update restarts usd_total from 0; the view banks
+    # the finished leg on loop.resume.start so "cost" stays the cumulative
+    # spend -- the same rule the hub scanner applies (listing._scan_run_log),
+    # keeping the hub row and the run view in agreement.
+    def _update(usd: float, *, partial: bool = False) -> dict[str, object]:
+        return {"type": "budget.update", "usd_total": usd, "usd_partial": partial}
+
+    s = apply_event(initial_state(), _update(0.02, partial=True))
+    s = apply_event(s, {"type": "run.end", "reason": "finish_run", "all_passed": True})
+    s = apply_event(s, {"type": "loop.resume.start"})
+    # Banked, and the header keeps the old total until the new leg reports.
+    assert s.budget.usd_total == 0.02
+    s = apply_event(s, _update(0.005))
+    assert s.budget.usd_total == pytest.approx(0.025)
+    # partial is sticky: leg 1's unpriced spend keeps the total an under-estimate.
+    assert s.budget.usd_partial is True
+    # A second resume banks the cumulative, not just the last leg.
+    s = apply_event(s, {"type": "loop.resume.start"})
+    s = apply_event(s, _update(0.001))
+    assert s.budget.usd_total == pytest.approx(0.026)
 
 
 def test_verify_lifecycle() -> None:

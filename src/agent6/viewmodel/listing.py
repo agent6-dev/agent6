@@ -225,7 +225,9 @@ def _scan_run_log(logs: Path) -> _LogScan:
                     # 0), so bank the finished leg's total before it does -- the
                     # displayed cost is then the true cumulative spend across all
                     # legs, not just the latest leg's (per-leg budgets stay the
-                    # enforcement mechanism; only the shown total changes).
+                    # enforcement mechanism; only the shown total changes). The
+                    # typed fold applies the same rule (state.BudgetView), so the
+                    # hub row and the run view can never disagree.
                     cost_prior_legs += cost
                     cost = 0.0
                 elif etype == "budget.update":

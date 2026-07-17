@@ -77,11 +77,16 @@ class VerifyView:
 
 @dataclass(frozen=True, slots=True)
 class BudgetView:
+    # Token counters are the CURRENT leg's (they pair with the per-leg
+    # enforcement caps); usd_total is CUMULATIVE across resume legs -- "cost"
+    # on any surface means what the run cost, and the hub scanner
+    # (listing._scan_run_log) sums legs the same way, so the surfaces agree.
     input_total: int = 0
     output_total: int = 0
     input_cap: int = 0
     output_cap: int = 0
     usd_total: float = 0.0
+    usd_prior_legs: float = 0.0  # banked spend of completed resume legs
     usd_partial: bool = False  # True if some models had no price (under-estimate)
 
 
@@ -209,8 +214,15 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
 
         case events.ResumeStart():
             # A resume restarts a finished/stopped run in place (it appends to the
-            # same log): it is running again, so clear the terminal state.
-            return replace(state, finished=False, end_reason="")
+            # same log): it is running again, so clear the terminal state. The new
+            # leg's budget counters start fresh, so bank the cumulative spend now;
+            # usd_total keeps its value until the leg's first budget.update.
+            return replace(
+                state,
+                finished=False,
+                end_reason="",
+                budget=replace(state.budget, usd_prior_legs=state.budget.usd_total),
+            )
 
         case events.GraphUpdate(nodes=nodes, cursor=cursor):
             return replace(
@@ -331,6 +343,9 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
             usd_total=usd,
             usd_partial=partial,
         ):
+            # The event's usd_total is the current LEG's; the view's is
+            # cumulative. usd_partial is sticky: unpriced spend in any prior
+            # leg keeps the cumulative total an under-estimate.
             return replace(
                 state,
                 budget=BudgetView(
@@ -338,8 +353,9 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
                     output_total=ot,
                     input_cap=ic,
                     output_cap=oc,
-                    usd_total=usd,
-                    usd_partial=partial,
+                    usd_total=state.budget.usd_prior_legs + usd,
+                    usd_prior_legs=state.budget.usd_prior_legs,
+                    usd_partial=partial or state.budget.usd_partial,
                 ),
             )
 
