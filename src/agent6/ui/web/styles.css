@@ -93,6 +93,9 @@ main { padding: 0; }
 .muted { color: var(--muted); }
 .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); }
 .pill.ok, .pill.passed { color: var(--ok); border-color: var(--ok); }
+/* A completed plan verifies nothing, so it is informational (mauve), not the
+   green "passed". */
+.pill.planned { color: var(--accent2); border-color: var(--accent2); }
 .pill.running { color: var(--accent); border-color: var(--accent); }
 .pill.waiting { color: var(--warn); border-color: var(--warn); }
 .pill.stopped { color: var(--warn); border-color: var(--warn); }

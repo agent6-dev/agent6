@@ -111,6 +111,7 @@ _STATUS_STYLE = {
     "running": "bold cyan",
     "stale": "dim",
     "passed": "green",
+    "planned": "#b48ead",  # informational mauve (matches the web pill); not green, not red
     "stopped": "yellow",
     "failed": "bold red",
 }
