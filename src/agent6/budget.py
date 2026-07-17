@@ -138,6 +138,48 @@ class ModelUsage:
 
 
 @dataclass(frozen=True, slots=True)
+class _ModelCost:
+    """One model's resolved cost: the USD figure plus whether it is the
+    provider-reported sum (vs the price-table estimate)."""
+
+    usd: float
+    reported: bool
+
+
+def _model_cost_usd(model: str, t: _ModelTotals | ModelUsage) -> _ModelCost | None:
+    """Per-model USD cost: the ONE owner of the pricing arithmetic, shared by
+    ``_estimate_usd_locked`` (the enforced USD ceiling) and ``format_summary``
+    (the printed figure) so a drifted copy can never misreport spend.
+
+    When the provider returned an authoritative ``usage.cost`` for EVERY call
+    to this model, prefer that sum over the price-table estimate. If even one
+    call lacked the field (mixed-route, transient OpenRouter quirk, etc.) fall
+    back to the table for the whole model so the numbers are consistent rather
+    than partially-mixed. Returns None when the model has no cached price (and
+    no fully-reported figure): the caller reports it as unknown.
+
+    Pricing model (Anthropic-accurate):
+      fresh input:      price[0]         (already excludes cached portion)
+      cache_creation:   price[0] * 1.25  (5-min cache write surcharge)
+      cache_read:       price[0] * 0.10  (cache hit discount)
+      output:           price[1]
+    OpenAI-route models (Kimi etc.) currently report cache_creation_tokens=0
+    since the chat-completions usage block has no separate write-surcharge
+    field, so the 1.25x branch is a no-op for them.
+    """
+    if t.reported_cost_usd > 0.0 and t.reported_calls == t.calls:
+        return _ModelCost(t.reported_cost_usd, reported=True)
+    price = lookup_price(model)
+    if price is None:
+        return None
+    in_usd = t.input_tokens * price[0] / 1e6
+    cache_creation_usd = t.cache_creation_tokens * (price[0] * 1.25) / 1e6
+    cache_read_usd = t.cache_read_tokens * (price[0] * 0.1) / 1e6
+    out_usd = t.output_tokens * price[1] / 1e6
+    return _ModelCost(in_usd + cache_creation_usd + cache_read_usd + out_usd, reported=False)
+
+
+@dataclass(frozen=True, slots=True)
 class BudgetSnapshot:
     """Immutable snapshot of a BudgetTracker's counters at one instant."""
 
@@ -325,32 +367,11 @@ class BudgetTracker:
         total_usd = 0.0
         any_unknown = False
         for model, t in self._per_model.items():
-            # When the provider returned an authoritative ``usage.cost`` for
-            # EVERY call to this model, prefer that sum over the price-table
-            # estimate. If even one call lacked the field (mixed-route, transient
-            # OpenRouter quirk, etc.) we fall back to the table for the whole
-            # model so the numbers are consistent rather than partially-mixed.
-            if t.reported_cost_usd > 0.0 and t.reported_calls == t.calls:
-                total_usd += t.reported_cost_usd
-                continue
-            price = lookup_price(model)
-            if price is None:
+            cost = _model_cost_usd(model, t)
+            if cost is None:
                 any_unknown = True
                 continue
-            # pricing model (Anthropic-accurate):
-            #   fresh input:      price[0]         (already excludes cached portion)
-            #   cache_creation:   price[0] * 1.25  (5-min cache write surcharge)
-            #   cache_read:       price[0] * 0.10  (cache hit discount)
-            #   output:           price[1]
-            # OpenAI-route models (Kimi etc.) currently report
-            # cache_creation_tokens=0 since the chat-completions usage
-            # block has no separate write-surcharge field, so the 1.25x
-            # branch is a no-op for them.
-            in_usd = t.input_tokens * price[0] / 1e6
-            cache_creation_usd = t.cache_creation_tokens * (price[0] * 1.25) / 1e6
-            cache_read_usd = t.cache_read_tokens * (price[0] * 0.1) / 1e6
-            out_usd = t.output_tokens * price[1] / 1e6
-            total_usd += in_usd + cache_creation_usd + cache_read_usd + out_usd
+            total_usd += cost.usd
         return total_usd, any_unknown
 
     def format_summary(self) -> str:
@@ -360,24 +381,14 @@ class BudgetTracker:
         total_usd = 0.0
         any_unknown = False
         for model, totals in snap.per_model.items():
-            price = lookup_price(model)
+            cost = _model_cost_usd(model, totals)
             cost_str: str
-            if totals.reported_cost_usd > 0.0 and totals.reported_calls == totals.calls:
-                # Provider-authoritative.
-                total_usd += totals.reported_cost_usd
-                cost_str = f"${totals.reported_cost_usd:.4f} (reported)"
-            elif price is None:
+            if cost is None:
                 cost_str = "$? (unknown price)"
                 any_unknown = True
             else:
-                # See estimate_usd for the pricing model rationale.
-                in_usd = totals.input_tokens * price[0] / 1e6
-                cache_creation_usd = totals.cache_creation_tokens * (price[0] * 1.25) / 1e6
-                cache_read_usd = totals.cache_read_tokens * (price[0] * 0.1) / 1e6
-                out_usd = totals.output_tokens * price[1] / 1e6
-                model_usd = in_usd + cache_creation_usd + cache_read_usd + out_usd
-                total_usd += model_usd
-                cost_str = f"${model_usd:.4f}"
+                total_usd += cost.usd
+                cost_str = f"${cost.usd:.4f} (reported)" if cost.reported else f"${cost.usd:.4f}"
             lines.append(
                 f"  {model}: "
                 f"in={totals.input_tokens} out={totals.output_tokens} "
