@@ -125,7 +125,7 @@ ignore = [
 "docs/gen_contracts.py" = ["E501"]
 
 [tool.pyright]
-include = ["src", "tests"]
+include = ["src", "tests", "docs/gen_contracts.py"]
 pythonVersion = "3.12"
 typeCheckingMode = "strict"
 reportMissingTypeStubs = false

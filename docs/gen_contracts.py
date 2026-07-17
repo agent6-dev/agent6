@@ -102,9 +102,9 @@ CONTRACTS: tuple[Contract, ...] = (
         title="Event union",
         module="agent6.viewmodel.events",
         primary=("Event",),
-        writers=(
-            "events.py",
-        ),  # the raw EventSink writes dicts; viewmodel.events types the read side
+        # parse_event constructs the union (the raw EventSink writes dicts;
+        # the typed shape exists only on the read side).
+        writers=("viewmodel/events.py",),
         pins=("tests/unit/data/golden_run_logs.jsonl",),
     ),
 )
