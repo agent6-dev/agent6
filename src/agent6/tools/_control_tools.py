@@ -12,35 +12,35 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from agent6.tools.results import AnswersResult, FinishPlanningResult, FinishRunResult
 from agent6.tools.schema import AskUserInput, FinishPlanningInput, FinishRunInput, UserQuestion
 
 
 def ask_user(
     questioner: Callable[[tuple[UserQuestion, ...]], tuple[str, ...]],
     raw: dict[str, Any],
-) -> dict[str, Any]:
+) -> AnswersResult:
     """Pose one or more questions to the operator and return the answers.
     Answers align to `questions` by index."""
     args = AskUserInput.model_validate(raw)
     answers = questioner(args.questions)
-    return {"answers": list(answers)}
+    return AnswersResult(answers=tuple(answers))
 
 
-def finish_run(raw: dict[str, Any]) -> dict[str, Any]:
+def finish_run(raw: dict[str, Any]) -> FinishRunResult:
     """Signal the workflow to terminate. Handler echoes the validated summary
     (and any structured ``result`` payload, used by state-machine agent
     states)."""
     args = FinishRunInput.model_validate(raw)
-    return {"acknowledged": True, "summary": args.summary, "result": args.result}
+    return FinishRunResult(summary_text=args.summary, result=args.result)
 
 
-def finish_planning(raw: dict[str, Any]) -> dict[str, Any]:
+def finish_planning(raw: dict[str, Any]) -> FinishPlanningResult:
     """Signal the planning pass is done. Plan-mode counterpart of finish_run;
     the workflow writes ``plan_markdown`` to disk and exits after dispatching
     it. Handler echoes the validated summary."""
     args = FinishPlanningInput.model_validate(raw)
-    return {
-        "acknowledged": True,
-        "summary": args.summary,
-        "plan_bytes": len(args.plan_markdown.encode("utf-8")),
-    }
+    return FinishPlanningResult(
+        summary_text=args.summary,
+        plan_bytes=len(args.plan_markdown.encode("utf-8")),
+    )

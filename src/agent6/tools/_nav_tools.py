@@ -21,6 +21,7 @@ from agent6.tools._path_safety import resolve_in_root
 from agent6.tools.errors import ToolError
 from agent6.tools.index import SymbolIndex
 from agent6.tools.lsp import LspClient, LspError
+from agent6.tools.results import DefinitionsResult, OutlineResult, ReferencesResult
 from agent6.tools.schema import (
     FindDefinitionInput,
     FindDefinitionLspInput,
@@ -34,7 +35,7 @@ INDEX_RESULT_CAP = 500
 
 def outline(
     root: Path, ensure_index: Callable[[], SymbolIndex], raw: dict[str, Any]
-) -> dict[str, Any]:
+) -> OutlineResult:
     args = OutlineInput.model_validate(raw)
     sp = resolve_in_root(root, args.path)
     if not sp.abs_path.is_file():
@@ -42,12 +43,12 @@ def outline(
     syms = ensure_index().outline(sp.abs_path)
     out = [{"name": s.name, "kind": s.kind, "line": s.line, "col": s.col} for s in syms]
     truncated = len(out) > INDEX_RESULT_CAP
-    return {"symbols": out[:INDEX_RESULT_CAP], "truncated": truncated}
+    return OutlineResult(symbols=tuple(out[:INDEX_RESULT_CAP]), truncated=truncated)
 
 
 def find_definition(
     root: Path, ensure_index: Callable[[], SymbolIndex], raw: dict[str, Any]
-) -> dict[str, Any]:
+) -> DefinitionsResult:
     args = FindDefinitionInput.model_validate(raw)
     defs = ensure_index().find_definition(args.name)
     out: list[dict[str, Any]] = []
@@ -58,12 +59,12 @@ def find_definition(
             continue
         out.append({"name": s.name, "kind": s.kind, "path": str(rel), "line": s.line, "col": s.col})
     truncated = len(out) > INDEX_RESULT_CAP
-    return {"definitions": out[:INDEX_RESULT_CAP], "truncated": truncated}
+    return DefinitionsResult(definitions=tuple(out[:INDEX_RESULT_CAP]), truncated=truncated)
 
 
 def find_references(
     root: Path, ensure_index: Callable[[], SymbolIndex], raw: dict[str, Any]
-) -> dict[str, Any]:
+) -> ReferencesResult:
     args = FindReferencesInput.model_validate(raw)
     refs = ensure_index().find_references(args.name)
     out: list[dict[str, Any]] = []
@@ -74,12 +75,12 @@ def find_references(
             continue
         out.append({"name": r.name, "path": str(rel), "line": r.line, "col": r.col})
     truncated = len(out) > INDEX_RESULT_CAP
-    return {"references": out[:INDEX_RESULT_CAP], "truncated": truncated}
+    return ReferencesResult(references=tuple(out[:INDEX_RESULT_CAP]), truncated=truncated)
 
 
 def find_definition_lsp(
     root: Path, ensure_lsp: Callable[[], LspClient], raw: dict[str, Any]
-) -> dict[str, Any]:
+) -> DefinitionsResult:
     args = FindDefinitionLspInput.model_validate(raw)
     sp = resolve_in_root(root, args.path)
     if not sp.abs_path.is_file():
@@ -96,12 +97,12 @@ def find_definition_lsp(
             continue
         out.append({"path": str(rel), "line": loc.line, "col": loc.col})
     truncated = len(out) > INDEX_RESULT_CAP
-    return {"definitions": out[:INDEX_RESULT_CAP], "truncated": truncated}
+    return DefinitionsResult(definitions=tuple(out[:INDEX_RESULT_CAP]), truncated=truncated)
 
 
 def find_references_lsp(
     root: Path, ensure_lsp: Callable[[], LspClient], raw: dict[str, Any]
-) -> dict[str, Any]:
+) -> ReferencesResult:
     args = FindReferencesLspInput.model_validate(raw)
     sp = resolve_in_root(root, args.path)
     if not sp.abs_path.is_file():
@@ -118,4 +119,4 @@ def find_references_lsp(
             continue
         out.append({"path": str(rel), "line": loc.line, "col": loc.col})
     truncated = len(out) > INDEX_RESULT_CAP
-    return {"references": out[:INDEX_RESULT_CAP], "truncated": truncated}
+    return ReferencesResult(references=tuple(out[:INDEX_RESULT_CAP]), truncated=truncated)

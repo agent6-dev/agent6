@@ -22,10 +22,11 @@ from agent6.memory import add as memory_add
 from agent6.memory import invalidate as memory_invalidate
 from agent6.skills import ResolvedSkills
 from agent6.tools.errors import ToolError
+from agent6.tools.results import AddMemoryResult, InvalidateMemoryResult, SkillResult
 from agent6.tools.schema import AddMemoryInput, InvalidateMemoryInput, UseSkillInput
 
 
-def add_memory(state_dir: Path | None, raw: dict[str, Any]) -> dict[str, Any]:
+def add_memory(state_dir: Path | None, raw: dict[str, Any]) -> AddMemoryResult:
     if state_dir is None:
         raise ToolError("add_memory: no memory store wired for this run")
     args = AddMemoryInput.model_validate(raw)
@@ -33,10 +34,10 @@ def add_memory(state_dir: Path | None, raw: dict[str, Any]) -> dict[str, Any]:
         entry = memory_add(state_dir, args.scope, args.body)
     except MemoryStoreError as exc:
         raise ToolError(f"add_memory: {exc}") from exc
-    return {"id": entry.id, "scope": entry.scope, "created_at": entry.created_at}
+    return AddMemoryResult(id=entry.id, scope=entry.scope, created_at=entry.created_at)
 
 
-def invalidate_memory(state_dir: Path | None, raw: dict[str, Any]) -> dict[str, Any]:
+def invalidate_memory(state_dir: Path | None, raw: dict[str, Any]) -> InvalidateMemoryResult:
     if state_dir is None:
         raise ToolError("invalidate_memory: no memory store wired for this run")
     args = InvalidateMemoryInput.model_validate(raw)
@@ -44,10 +45,10 @@ def invalidate_memory(state_dir: Path | None, raw: dict[str, Any]) -> dict[str, 
         entry = memory_invalidate(state_dir, args.memory_id, args.reason)
     except MemoryStoreError as exc:
         raise ToolError(f"invalidate_memory: {exc}") from exc
-    return {"id": entry.id, "invalidated_at": entry.invalidated_at}
+    return InvalidateMemoryResult(id=entry.id, invalidated_at=entry.invalidated_at)
 
 
-def use_skill(resolve_skills: Callable[[], ResolvedSkills], raw: dict[str, Any]) -> dict[str, Any]:
+def use_skill(resolve_skills: Callable[[], ResolvedSkills], raw: dict[str, Any]) -> SkillResult:
     args = UseSkillInput.model_validate(raw)
     # Resolve after validation, exactly where the original handler did (the
     # first-use disk scan never happens for a rejected call).
@@ -60,7 +61,7 @@ def use_skill(resolve_skills: Callable[[], ResolvedSkills], raw: dict[str, Any])
             f" available: {', '.join(sorted(by_name)) or '(none)'}"
         )
     if args.file is None:
-        return {"skill": skill.name, "file": "SKILL.md", "content": skill.text}
+        return SkillResult(skill=skill.name, file="SKILL.md", content=skill.text)
     # Supplementary files stay inside the skill's own directory: resolve()
     # collapses ../ and symlinks BEFORE the containment check, so neither
     # traversal nor a symlink pointing out of the directory can escape.
@@ -73,4 +74,4 @@ def use_skill(resolve_skills: Callable[[], ResolvedSkills], raw: dict[str, Any])
     if target.stat().st_size > 262_144:
         raise ToolError(f"use_skill: {args.file!r} exceeds the 256 KiB cap")
     content = target.read_text(encoding="utf-8", errors="replace")
-    return {"skill": skill.name, "file": args.file, "content": content}
+    return SkillResult(skill=skill.name, file=args.file, content=content)

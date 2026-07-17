@@ -46,13 +46,13 @@ from agent6.tools._nav_tools import (
 from agent6.tools._result_format import (
     parse_metric_score,
     passthrough_env,
-    summarize_result,
     truncate_args,
 )
 from agent6.tools.errors import OperatorCommandUnexecutable, ToolError
 from agent6.tools.index import Symbol, SymbolIndex
 from agent6.tools.lsp import LspClient, LspError, lsp_tools_useful
 from agent6.tools.mcp_client import MCP_TOOL_PREFIX, MCPError, MCPManager
+from agent6.tools.results import ExecResult, MetricResult, RawResult, ToolResult
 from agent6.tools.schema import (
     ALL_TOOLS,
     AddMemoryInput,
@@ -203,13 +203,13 @@ _EXEC_OUTPUT_TOOLS = frozenset({RunCommandInput.TOOL_NAME, RunMetricInput.TOOL_N
 _TOOL_OUTPUT_TAIL = 2000  # chars, matching verify.end's stdout_tail/stderr_tail
 
 
-def _output_tails(name: str, result: Any) -> dict[str, str]:
+def _output_tails(name: str, result: ToolResult) -> dict[str, str]:
     """Capped stdout/stderr tails for an execution tool's result, else {}."""
-    if name not in _EXEC_OUTPUT_TOOLS or not isinstance(result, dict):
+    if name not in _EXEC_OUTPUT_TOOLS or not isinstance(result, ExecResult | MetricResult):
         return {}
     return {
-        "stdout_tail": str(result.get("stdout", ""))[-_TOOL_OUTPUT_TAIL:],
-        "stderr_tail": str(result.get("stderr", ""))[-_TOOL_OUTPUT_TAIL:],
+        "stdout_tail": result.stdout[-_TOOL_OUTPUT_TAIL:],
+        "stderr_tail": result.stderr[-_TOOL_OUTPUT_TAIL:],
     }
 
 
@@ -299,7 +299,7 @@ class ToolDispatcher:
         # leaves add_memory / invalidate_memory unwired: they raise ToolError,
         # like the DAG tools without a curator.
         self._state_dir = state_dir
-        self._handlers: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
+        self._handlers: dict[str, Callable[[dict[str, Any]], ToolResult]] = {
             Agent6DocsInput.TOOL_NAME: self._agent6_docs,
             ReadFileInput.TOOL_NAME: self._read_file,
             ListDirInput.TOOL_NAME: self._list_dir,
@@ -402,6 +402,8 @@ class ToolDispatcher:
         return tuple(sorted(names))
 
     def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        # Returns the model-facing wire dict (result.to_wire()). The typed
+        # result is used here to build the tool.result event, then flattened.
         # Emit `tool.call` UP FRONT, before any guard, so EVERY dispatched tool
         # -- including ones a guard rejects (unknown name, disabled, wrong mode)
         # -- produces a matching `tool.result(ok=...)` pair. Otherwise a reader
@@ -434,12 +436,12 @@ class ToolDispatcher:
             "tool.result",
             name=name,
             ok=True,
-            summary=summarize_result(name, result),
+            summary=result.summary(),
             **_output_tails(name, result),
         )
-        return result
+        return result.to_wire()
 
-    def _dispatch_inner(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+    def _dispatch_inner(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
         """Resolve + execute a tool. Raises ToolError on a rejected/failed call;
         the caller (`dispatch`) owns the tool.call/tool.result events."""
         # MCP routing happens BEFORE the built-in handler check so mcp__* names
@@ -448,7 +450,7 @@ class ToolDispatcher:
             if self._mcp_manager is None:
                 raise ToolError(f"{name}: MCP is not configured")
             try:
-                return self._mcp_manager.call(name, raw_input)
+                return RawResult(self._mcp_manager.call(name, raw_input))
             except MCPError as exc:
                 raise ToolError(str(exc)) from exc
         if name not in self._handlers:
@@ -491,7 +493,7 @@ class ToolDispatcher:
             raise ToolError(f"{name} is not available in {self._mode} mode")
         return self._run_handler(name, raw_input)
 
-    def _run_handler(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+    def _run_handler(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
         """Execute the handler, retrying once with stringified-JSON args coerced."""
         # The provider couldn't parse the tool-call arguments as JSON and left the
         # `_raw_arguments` sentinel (after a lenient re-parse already failed). A
@@ -537,22 +539,22 @@ class ToolDispatcher:
 
     # ----- handlers -----
 
-    def _agent6_docs(self, raw: dict[str, Any]) -> dict[str, Any]:
+    def _agent6_docs(self, raw: dict[str, Any]) -> ToolResult:
         return agent6_docs(raw)
 
-    def _read_file(self, raw: dict[str, Any]) -> dict[str, Any]:
+    def _read_file(self, raw: dict[str, Any]) -> ToolResult:
         return read_file(self._root, raw)
 
-    def _list_dir(self, raw: dict[str, Any]) -> dict[str, Any]:
+    def _list_dir(self, raw: dict[str, Any]) -> ToolResult:
         return list_dir(self._root, raw)
 
-    def _grep(self, raw: dict[str, Any]) -> dict[str, Any]:
+    def _grep(self, raw: dict[str, Any]) -> ToolResult:
         return grep(self._root, raw)
 
-    def _apply_edit(self, raw: dict[str, Any]) -> dict[str, Any]:
+    def _apply_edit(self, raw: dict[str, Any]) -> ToolResult:
         return apply_edit(self._root, self._config, self._extra_protect_paths, self._index, raw)
 
-    def _apply_patch(self, raw: dict[str, Any]) -> dict[str, Any]:
+    def _apply_patch(self, raw: dict[str, Any]) -> ToolResult:
         return apply_patch(self._root, self._config, self._extra_protect_paths, self._index, raw)
 
     # ----- tree-sitter index handlers -----
@@ -592,13 +594,13 @@ class ToolDispatcher:
         idx = self._ensure_index()
         return idx.file_outlines()
 
-    def _outline(self, raw: dict[str, Any]) -> dict[str, Any]:
+    def _outline(self, raw: dict[str, Any]) -> ToolResult:
         return outline(self._root, self._ensure_index, raw)
 
-    def _find_definition(self, raw: dict[str, Any]) -> dict[str, Any]:
+    def _find_definition(self, raw: dict[str, Any]) -> ToolResult:
         return find_definition(self._root, self._ensure_index, raw)
 
-    def _find_references(self, raw: dict[str, Any]) -> dict[str, Any]:
+    def _find_references(self, raw: dict[str, Any]) -> ToolResult:
         return find_references(self._root, self._ensure_index, raw)
 
     # LSP-backed navigation. Lazy spawn so runs that never
@@ -613,10 +615,10 @@ class ToolDispatcher:
             self._lsp = client
         return self._lsp
 
-    def _find_definition_lsp(self, raw: dict[str, Any]) -> dict[str, Any]:
+    def _find_definition_lsp(self, raw: dict[str, Any]) -> ToolResult:
         return find_definition_lsp(self._root, self._ensure_lsp, raw)
 
-    def _find_references_lsp(self, raw: dict[str, Any]) -> dict[str, Any]:
+    def _find_references_lsp(self, raw: dict[str, Any]) -> ToolResult:
         return find_references_lsp(self._root, self._ensure_lsp, raw)
 
     def close(self) -> None:
@@ -629,7 +631,7 @@ class ToolDispatcher:
             self._lsp.close()
             self._lsp = None
 
-    def _run_verify(self, _raw: dict[str, Any]) -> dict[str, Any]:
+    def _run_verify(self, _raw: dict[str, Any]) -> ExecResult:
         argv = tuple(self._config.workflow.verify_command)
         # per-call timeout from config. Defaults to the jail's
         # general 600s but bench configs crank it down so infinite-loop
@@ -640,16 +642,16 @@ class ToolDispatcher:
         self._emit(
             "verify.end",
             cmd=list(argv),
-            exit_code=res["returncode"],
-            duration_s=res["duration_s"],
+            exit_code=res.returncode,
+            duration_s=res.duration_s,
             timeout_s=timeout_s,
-            stdout_tail=str(res["stdout"])[-2000:],
-            stderr_tail=str(res["stderr"])[-2000:],
+            stdout_tail=res.stdout[-2000:],
+            stderr_tail=res.stderr[-2000:],
         )
-        if res.get("exec_failed"):
+        if res.exec_failed:
             raise OperatorCommandUnexecutable(
                 f"verify_command {list(argv)} could not be executed in the sandbox: "
-                f"{res['stderr']}. The jail PATH is /usr/bin:/bin plus the standard bin "
+                f"{res.stderr}. The jail PATH is /usr/bin:/bin plus the standard bin "
                 "dirs that exist (/usr/local/bin, ~/.local/bin, ~/.cargo/bin, "
                 "/opt/homebrew/bin, /snap/bin), each mounted read-only; the command is on "
                 "none of them. Install the tool into one of those on the host, or grant "
@@ -657,7 +659,7 @@ class ToolDispatcher:
             )
         return res
 
-    def _run_command(self, raw: dict[str, Any]) -> dict[str, Any]:
+    def _run_command(self, raw: dict[str, Any]) -> ExecResult:
         args = RunCommandInput.model_validate(raw)
         refuse_mutating_git_command(args.argv)
         if self._config.sandbox.run_commands == "ask":
@@ -668,31 +670,31 @@ class ToolDispatcher:
                 raise ToolError("run_command denied by user")
         return self._run_argv_in_jail(args.argv, label="run_command")
 
-    def _ask_user(self, raw: dict[str, Any]) -> dict[str, Any]:
+    def _ask_user(self, raw: dict[str, Any]) -> ToolResult:
         return ask_user(self._questioner, raw)
 
-    def _finish_run(self, raw: dict[str, Any]) -> dict[str, Any]:
+    def _finish_run(self, raw: dict[str, Any]) -> ToolResult:
         return finish_run(raw)
 
-    def _finish_planning(self, raw: dict[str, Any]) -> dict[str, Any]:
+    def _finish_planning(self, raw: dict[str, Any]) -> ToolResult:
         return finish_planning(raw)
 
     # DAG-as-tool handlers. All raise ToolError if no curator
     # was wired so standalone test instantiation works unchanged.
 
-    def _dag_add_task(self, raw: dict[str, Any]) -> dict[str, Any]:
+    def _dag_add_task(self, raw: dict[str, Any]) -> ToolResult:
         return add_task(self._curator, self._run_root_node_id, raw)
 
-    def _dag_update_task(self, raw: dict[str, Any]) -> dict[str, Any]:
+    def _dag_update_task(self, raw: dict[str, Any]) -> ToolResult:
         return update_task(self._curator, raw)
 
-    def _dag_set_cursor(self, raw: dict[str, Any]) -> dict[str, Any]:
+    def _dag_set_cursor(self, raw: dict[str, Any]) -> ToolResult:
         return set_cursor(self._curator, raw)
 
-    def _dag_add_dependency(self, raw: dict[str, Any]) -> dict[str, Any]:
+    def _dag_add_dependency(self, raw: dict[str, Any]) -> ToolResult:
         return add_dependency(self._curator, raw)
 
-    def _dag_list_tasks(self, raw: dict[str, Any]) -> dict[str, Any]:
+    def _dag_list_tasks(self, raw: dict[str, Any]) -> ToolResult:
         return list_tasks(self._curator, raw)
 
     # Cross-run memory handlers. Writes go through trusted code
@@ -700,10 +702,10 @@ class ToolDispatcher:
     # outside the workspace and the jail; the LLM controls only the scope
     # (schema-validated literal) and the note text, which is inert data.
 
-    def _add_memory(self, raw: dict[str, Any]) -> dict[str, Any]:
+    def _add_memory(self, raw: dict[str, Any]) -> ToolResult:
         return add_memory(self._state_dir, raw)
 
-    def _invalidate_memory(self, raw: dict[str, Any]) -> dict[str, Any]:
+    def _invalidate_memory(self, raw: dict[str, Any]) -> ToolResult:
         return invalidate_memory(self._state_dir, raw)
 
     def resolved_skills(self) -> ResolvedSkills:
@@ -733,10 +735,10 @@ class ToolDispatcher:
         resolved = self.resolved_skills()
         return bool(resolved.enabled or resolved.always)
 
-    def _use_skill(self, raw: dict[str, Any]) -> dict[str, Any]:
+    def _use_skill(self, raw: dict[str, Any]) -> ToolResult:
         return use_skill(self.resolved_skills, raw)
 
-    def _run_metric(self, _raw: dict[str, Any]) -> dict[str, Any]:
+    def _run_metric(self, _raw: dict[str, Any]) -> MetricResult:
         """Run ``cfg.workflow.metric.command`` in the jail.
 
         Exposed to the agent loop so the LLM can call it directly between
@@ -757,25 +759,24 @@ class ToolDispatcher:
         argv = tuple(metric_cfg.command)
         self._emit("metric.start", cmd=list(argv))
         res = self._run_argv_in_jail(argv, label="metric_command")
-        if res.get("exec_failed"):
+        if res.exec_failed:
             raise OperatorCommandUnexecutable(
                 f"metric_command {list(argv)} could not be executed in the sandbox: "
-                f"{res['stderr']}. See run_verify_command's note: PATH is /usr/bin:/bin "
+                f"{res.stderr}. See run_verify_command's note: PATH is /usr/bin:/bin "
                 "plus the standard bin dirs; install the tool into one of those on the "
                 "host, or grant its real path via sandbox.extra_read_paths."
             )
-        score = parse_metric_score(res, pattern=metric_cfg.pattern)
-        res["score"] = score
+        score = parse_metric_score(res.stdout, res.stderr, pattern=metric_cfg.pattern)
         self._emit(
             "metric.end",
             cmd=list(argv),
-            exit_code=res["returncode"],
-            duration_s=res["duration_s"],
-            stdout_tail=str(res["stdout"])[-2000:],
-            stderr_tail=str(res["stderr"])[-2000:],
+            exit_code=res.returncode,
+            duration_s=res.duration_s,
+            stdout_tail=res.stdout[-2000:],
+            stderr_tail=res.stderr[-2000:],
             score=score,
         )
-        return res
+        return MetricResult.from_exec(res, score)
 
     def _run_argv_in_jail(
         self,
@@ -783,7 +784,7 @@ class ToolDispatcher:
         *,
         label: str,
         timeout_s: float | None = None,
-    ) -> dict[str, Any]:
+    ) -> ExecResult:
         # run_command reaches the network only under tool_network = "allow"
         # (which the config validator pins to agent_network = "open", so this
         # process is in the host netns and the child inherits it).
@@ -840,10 +841,10 @@ class ToolDispatcher:
             res: CommandResult = run_in_jail(policy)
         except JailUnavailableError as exc:
             raise ToolError(f"{label}: jail unavailable: {exc}") from exc
-        return {
-            "returncode": res.returncode,
-            "stdout": res.stdout[-20_000:],
-            "stderr": res.stderr[-20_000:],
-            "duration_s": res.duration_s,
-            "exec_failed": res.exec_failed,
-        }
+        return ExecResult(
+            returncode=res.returncode,
+            stdout=res.stdout[-20_000:],
+            stderr=res.stderr[-20_000:],
+            duration_s=res.duration_s,
+            exec_failed=res.exec_failed,
+        )

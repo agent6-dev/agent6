@@ -899,12 +899,11 @@ def test_parse_metric_score_optional_group_is_no_score() -> None:
     TypeError, which must be caught as "no score this turn", not propagate."""
     from agent6.tools._result_format import parse_metric_score
 
-    res = {"stdout": "build done", "stderr": ""}
     # Group 1 is in the first alternative; the matched text hits the second, so
     # group(1) is None. Pre-fix this raised TypeError instead of returning None.
-    assert parse_metric_score(res, pattern=r"score: (\d+)|done") is None
+    assert parse_metric_score("build done", "", pattern=r"score: (\d+)|done") is None
     # A genuinely matched numeric group still parses.
-    assert parse_metric_score({"stdout": "score: 42"}, pattern=r"score: (\d+)|done") == 42.0
+    assert parse_metric_score("score: 42", "", pattern=r"score: (\d+)|done") == 42.0
 
 
 def test_passthrough_env_is_fixed_allowlist() -> None:
@@ -1388,13 +1387,16 @@ def test_run_command_result_carries_output_tails(
     logs = tmp_path / "logs.jsonl"
     d = ToolDispatcher(root=tmp_path, config=cfg, events=EventSink(logs))
 
-    def _fake_run_argv(self: object, argv: object, **kw: object) -> dict[str, object]:
-        return {
-            "returncode": 1,
-            "stdout": "OUT-X" * 500,
-            "stderr": "ERR-Y" * 500,
-            "duration_s": 0.1,
-        }
+    def _fake_run_argv(self: object, argv: object, **kw: object) -> object:
+        from agent6.tools.results import ExecResult
+
+        return ExecResult(
+            returncode=1,
+            stdout="OUT-X" * 500,
+            stderr="ERR-Y" * 500,
+            duration_s=0.1,
+            exec_failed=False,
+        )
 
     monkeypatch.setattr(ToolDispatcher, "_run_argv_in_jail", _fake_run_argv)
     d.dispatch("run_command", {"argv": ["echo", "hi"]})

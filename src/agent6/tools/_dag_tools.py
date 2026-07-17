@@ -17,6 +17,13 @@ from agent6.graph.models import (
     UpdateStatusIntent,
 )
 from agent6.tools.errors import ToolError
+from agent6.tools.results import (
+    AddDependencyResult,
+    AddTaskResult,
+    ListTasksResult,
+    SetCursorResult,
+    UpdateTaskResult,
+)
 from agent6.tools.schema import (
     DagAddDependencyInput,
     DagAddTaskInput,
@@ -28,7 +35,7 @@ from agent6.tools.schema import (
 
 def add_task(
     curator: GraphCurator | None, run_root_node_id: str | None, raw: dict[str, Any]
-) -> dict[str, Any]:
+) -> AddTaskResult:
     if curator is None:
         raise ToolError("add_task: DAG curator not available in this run")
     args = DagAddTaskInput.model_validate(raw)
@@ -42,15 +49,15 @@ def add_task(
     )
     intent = AddSubtaskIntent(parent_id=parent_id, draft=draft)
     node = curator.add_subtask(intent)
-    return {
-        "id": node.id,
-        "parent_id": node.parent_id,
-        "title": node.title,
-        "status": node.status,
-    }
+    return AddTaskResult(
+        id=node.id,
+        parent_id=node.parent_id,
+        title=node.title,
+        status=node.status,
+    )
 
 
-def update_task(curator: GraphCurator | None, raw: dict[str, Any]) -> dict[str, Any]:
+def update_task(curator: GraphCurator | None, raw: dict[str, Any]) -> UpdateTaskResult:
     if curator is None:
         raise ToolError("update_task: DAG curator not available in this run")
     args = DagUpdateTaskInput.model_validate(raw)
@@ -60,18 +67,18 @@ def update_task(curator: GraphCurator | None, raw: dict[str, Any]) -> dict[str, 
         note=args.note,
     )
     node = curator.update_status(intent)
-    return {"id": node.id, "status": node.status, "title": node.title}
+    return UpdateTaskResult(id=node.id, status=node.status, title=node.title)
 
 
-def set_cursor(curator: GraphCurator | None, raw: dict[str, Any]) -> dict[str, Any]:
+def set_cursor(curator: GraphCurator | None, raw: dict[str, Any]) -> SetCursorResult:
     if curator is None:
         raise ToolError("set_cursor: DAG curator not available in this run")
     args = DagSetCursorInput.model_validate(raw)
     curator.set_cursor(SetCursorIntent(id=args.id))
-    return {"acknowledged": True, "cursor": args.id}
+    return SetCursorResult(cursor=args.id)
 
 
-def add_dependency(curator: GraphCurator | None, raw: dict[str, Any]) -> dict[str, Any]:
+def add_dependency(curator: GraphCurator | None, raw: dict[str, Any]) -> AddDependencyResult:
     if curator is None:
         raise ToolError("add_dependency: DAG curator not available in this run")
     args = DagAddDependencyInput.model_validate(raw)
@@ -79,14 +86,14 @@ def add_dependency(curator: GraphCurator | None, raw: dict[str, Any]) -> dict[st
     # Unknown ids and cycles are rejected by the curator; dispatch()'s
     # generic wrapper surfaces that rejection to the model as a ToolError.
     node = curator.add_dependency(intent)
-    return {"id": node.id, "title": node.title, "depends_on": list(node.depends_on)}
+    return AddDependencyResult(id=node.id, title=node.title, depends_on=tuple(node.depends_on))
 
 
-def list_tasks(curator: GraphCurator | None, raw: dict[str, Any]) -> dict[str, Any]:
+def list_tasks(curator: GraphCurator | None, raw: dict[str, Any]) -> ListTasksResult:
     if curator is None:
         raise ToolError("list_tasks: DAG curator not available in this run")
     args = DagListTasksInput.model_validate(raw)
-    # Wire surface: the returned dict is JSON'd to the model; the projected shape
+    # Wire surface: to_wire() JSONs each task to the model; the projected shape
     # (and its list-valued relevant_paths/depends_on) is what tool callers hold.
     out: list[dict[str, Any]] = []
     for node_id, node in curator.nodes().items():
@@ -103,4 +110,4 @@ def list_tasks(curator: GraphCurator | None, raw: dict[str, Any]) -> dict[str, A
                 "depends_on": list(node.depends_on),
             }
         )
-    return {"tasks": out, "count": len(out)}
+    return ListTasksResult(tasks=tuple(out), count=len(out))

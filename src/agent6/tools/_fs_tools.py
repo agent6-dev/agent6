@@ -36,6 +36,16 @@ from agent6.tools.patch_apply import (
     is_v4a_patch,
     patch_target_path,
 )
+from agent6.tools.results import (
+    DocsContentResult,
+    DocsIndexResult,
+    EditResult,
+    GrepResult,
+    ListDirResult,
+    PatchResult,
+    ReadFileResult,
+    ToolResult,
+)
 from agent6.tools.schema import (
     Agent6DocsInput,
     ApplyEditInput,
@@ -51,25 +61,25 @@ from agent6.tools.schema import (
 MAX_GREP_WALL_S = 10.0
 
 
-def agent6_docs(raw: dict[str, Any]) -> dict[str, Any]:
+def agent6_docs(raw: dict[str, Any]) -> ToolResult:
     args = Agent6DocsInput.model_validate(raw)
     available = list_agent6_docs()
     if not args.name:
-        return {"available": available}
+        return DocsIndexResult(available=tuple(available))
     content = read_agent6_doc(args.name)
     if content is None:
         raise ToolError(
             f"unknown agent6 doc {args.name!r}; available: {', '.join(available) or '(none)'}"
         )
     cap = 60_000
-    return {
-        "name": args.name,
-        "content": content[:cap],
-        "truncated": len(content) > cap,
-    }
+    return DocsContentResult(
+        name=args.name,
+        content=content[:cap],
+        truncated=len(content) > cap,
+    )
 
 
-def read_file(root: Path, raw: dict[str, Any]) -> dict[str, Any]:
+def read_file(root: Path, raw: dict[str, Any]) -> ReadFileResult:
     args = ReadFileInput.model_validate(raw)
     sp = resolve_in_root(root, args.path)
     if not sp.abs_path.is_file():
@@ -79,20 +89,20 @@ def read_file(root: Path, raw: dict[str, Any]) -> dict[str, Any]:
     except UnicodeDecodeError as exc:
         raise ToolError(f"File is not UTF-8 text: {args.path}") from exc
     if args.offset == 0 and args.limit is None:
-        return {"content": full, "size": len(full), "lines_total": full.count("\n") + 1}
+        return ReadFileResult(content=full, size=len(full), lines_total=full.count("\n") + 1)
     lines = full.splitlines(keepends=True)
     end = len(lines) if args.limit is None else min(len(lines), args.offset + args.limit)
     slice_text = "".join(lines[args.offset : end])
-    return {
-        "content": slice_text,
-        "size": len(slice_text),
-        "lines_total": len(lines),
-        "offset": args.offset,
-        "lines_returned": end - args.offset,
-    }
+    return ReadFileResult(
+        content=slice_text,
+        size=len(slice_text),
+        lines_total=len(lines),
+        offset=args.offset,
+        lines_returned=end - args.offset,
+    )
 
 
-def list_dir(root: Path, raw: dict[str, Any]) -> dict[str, Any]:
+def list_dir(root: Path, raw: dict[str, Any]) -> ListDirResult:
     args = ListDirInput.model_validate(raw)
     sp = resolve_in_root(root, args.path)
     if not sp.abs_path.is_dir():
@@ -101,10 +111,10 @@ def list_dir(root: Path, raw: dict[str, Any]) -> dict[str, Any]:
     for entry in sorted(sp.abs_path.iterdir()):
         suffix = "/" if entry.is_dir() else ""
         entries.append(entry.name + suffix)
-    return {"entries": entries}
+    return ListDirResult(entries=tuple(entries))
 
 
-def grep(root: Path, raw: dict[str, Any]) -> dict[str, Any]:
+def grep(root: Path, raw: dict[str, Any]) -> GrepResult:
     args = GrepInput.model_validate(raw)
     sp = resolve_in_root(root, args.path)
     reject_pathological_regex(args.pattern)
@@ -143,7 +153,7 @@ def grep(root: Path, raw: dict[str, Any]) -> dict[str, Any]:
         if time.monotonic() > deadline:
             # Bound total wall-clock: a pathological pattern/large tree can't
             # hang the run. Report partial hits rather than stalling.
-            return {"hits": hits, "truncated": True, "timeout": True}
+            return GrepResult(hits=tuple(hits), truncated=True, timeout=True)
         try:
             for lineno, line in enumerate(
                 path.read_text(encoding="utf-8", errors="ignore").splitlines(),
@@ -154,7 +164,7 @@ def grep(root: Path, raw: dict[str, Any]) -> dict[str, Any]:
                 # (It still can't interrupt one in-progress C-level match —
                 # the static screen above is the defence for that.)
                 if time.monotonic() > deadline:
-                    return {"hits": hits, "truncated": True, "timeout": True}
+                    return GrepResult(hits=tuple(hits), truncated=True, timeout=True)
                 if pat.search(line):
                     hits.append(
                         {
@@ -164,10 +174,10 @@ def grep(root: Path, raw: dict[str, Any]) -> dict[str, Any]:
                         }
                     )
                     if len(hits) >= 500:
-                        return {"hits": hits, "truncated": True}
+                        return GrepResult(hits=tuple(hits), truncated=True)
         except OSError:
             continue
-    return {"hits": hits, "truncated": False}
+    return GrepResult(hits=tuple(hits), truncated=False)
 
 
 def _refuse_protected_write(
@@ -269,7 +279,7 @@ def apply_edit(
     extra_protect_paths: tuple[Path, ...],
     index: SymbolIndex | None,
     raw: dict[str, Any],
-) -> dict[str, Any]:
+) -> ToolResult:
     args = ApplyEditInput.model_validate(raw)
     refuse_protected_writes(args.path, config, extra_protect_paths)
     sp = resolve_in_root(root, args.path)
@@ -320,7 +330,7 @@ def apply_edit(
     sp.abs_path.write_text(new_content, encoding="utf-8")
     if index is not None:
         index.mark_changed(sp.abs_path)
-    return {"applied": applied, "path": str(sp.rel_path)}
+    return EditResult(applied=tuple(applied), path=str(sp.rel_path))
 
 
 def apply_patch(
@@ -329,7 +339,7 @@ def apply_patch(
     extra_protect_paths: tuple[Path, ...],
     index: SymbolIndex | None,
     raw: dict[str, Any],
-) -> dict[str, Any]:
+) -> ToolResult:
     args = ApplyPatchInput.model_validate(raw)
     v4a = is_v4a_patch(args.patch)
     # The write location: the explicit `path` arg if given, else derived from
@@ -366,4 +376,4 @@ def apply_patch(
     sp.abs_path.write_text(new_content, encoding="utf-8")
     if index is not None:
         index.mark_changed(sp.abs_path)
-    return {"path": str(sp.rel_path), "bytes_written": len(new_content)}
+    return PatchResult(path=str(sp.rel_path), bytes_written=len(new_content))

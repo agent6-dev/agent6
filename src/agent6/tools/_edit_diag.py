@@ -7,7 +7,8 @@ match the closest on-disk region so the model can retry without re-reading.
 from __future__ import annotations
 
 import difflib
-from typing import Any
+
+from agent6.tools.results import PreviewResult
 
 
 def preview_result(
@@ -16,7 +17,7 @@ def preview_result(
     new_text: str,
     *,
     applied: list[str] | None = None,
-) -> dict[str, Any]:
+) -> PreviewResult:
     """Build the dry-run response for ``apply_edit``/``apply_patch`` with
     ``preview=true``. Returns the unified diff (old vs new) and a hunk
     count, but does NOT write anything to disk.
@@ -37,18 +38,15 @@ def preview_result(
     if len(diff) > _MAX_DIFF_CHARS:
         diff = diff[:_MAX_DIFF_CHARS] + f"\n... <truncated {len(diff) - _MAX_DIFF_CHARS} chars>\n"
         truncated = True
-    result: dict[str, Any] = {
-        "preview": True,
-        "path": path,
-        "diff": diff or "(no changes)",
-        "hunks": hunks,
-        "bytes_before": len(old_text or ""),
-        "bytes_after": len(new_text),
-        "truncated": truncated,
-    }
-    if applied is not None:
-        result["would_apply"] = applied
-    return result
+    return PreviewResult(
+        path=path,
+        diff=diff or "(no changes)",
+        hunks=hunks,
+        bytes_before=len(old_text or ""),
+        bytes_after=len(new_text),
+        truncated=truncated,
+        would_apply=None if applied is None else tuple(applied),
+    )
 
 
 # Cap the closest-match scan so a failed edit on a very large file does not turn
