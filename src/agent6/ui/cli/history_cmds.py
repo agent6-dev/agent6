@@ -140,17 +140,43 @@ def _event_when_kind(path: Path, raw: str) -> tuple[str, str]:
     return "", path.name
 
 
+def _collapse_escapes(s: str) -> str:
+    """Render a JSON-encoded fragment readably, scanning left-to-right so a real
+    escaped backslash (``\\\\``) is never mistaken for the start of a ``\\n``.
+
+    The old naive ``str.replace("\\n", " ")`` matched the ``n`` of a
+    double-encoded newline (``\\\\n`` in a transcript that embeds a JSON body),
+    splitting the ``\\\\`` and leaving the ugly ``\\ `` the operator saw. Here
+    the whitespace escapes (``\\n`` ``\\t`` ``\\r``) become spaces and
+    ``\\\\`` / ``\\"`` / ``\\/`` decode to their literal char; an unknown or
+    window-clipped dangling escape keeps its backslash."""
+    out: list[str] = []
+    i, n = 0, len(s)
+    while i < n:
+        c = s[i]
+        if c == "\\" and i + 1 < n:
+            nxt = s[i + 1]
+            if nxt in "ntr":
+                out.append(" ")
+                i += 2
+                continue
+            if nxt in '\\"/':
+                out.append(nxt)
+                i += 2
+                continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
 def _window(text: str, start: int) -> str:
     """A cleaned excerpt of *text* around byte offset *start*, capped at
     ~2*_SNIPPET_HALF chars with leading/trailing ellipses when it was clipped.
-    Literal JSON escapes (``\\n`` etc. inside transcript strings) and real
-    whitespace both collapse to single spaces so the snippet reads as one line."""
+    JSON escapes inside transcript strings are decoded and real whitespace
+    collapses to single spaces so the snippet reads as one line."""
     lo = max(0, start - _SNIPPET_HALF)
     hi = min(len(text), start + _SNIPPET_HALF)
-    excerpt = text[lo:hi]
-    for esc in ("\\n", "\\t", "\\r"):
-        excerpt = excerpt.replace(esc, " ")
-    excerpt = " ".join(excerpt.split())
+    excerpt = " ".join(_collapse_escapes(text[lo:hi]).split())
     return f"{'…' if lo > 0 else ''}{excerpt}{'…' if hi < len(text) else ''}"
 
 

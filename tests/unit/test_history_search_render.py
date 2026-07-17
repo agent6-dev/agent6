@@ -42,6 +42,19 @@ def test_window_collapses_json_escaped_newlines() -> None:
     assert _window("the\\nfirst message here", 0) == "the first message here"
 
 
+def test_window_decodes_backslashes_not_bare_backslash_space() -> None:
+    # A double-encoded newline (a transcript embedding a JSON body) is the chars
+    # \\ \\ n; the old naive replace matched the trailing \\n and left the ugly
+    # "\ ". Now \\\\ decodes to one backslash first, so no "\ " artifact.
+    assert "\\ " not in _window("cmd = tail \\\\nlog NEEDLE", 0)
+    # An escaped backslash renders as ONE backslash, and an escaped quote as a
+    # quote -- not the raw doubled JSON escapes.
+    assert (
+        _window('path C:\\\\Users and \\"quoted\\" NEEDLE', 0)
+        == 'path C:\\Users and "quoted" NEEDLE'
+    )
+
+
 def test_run_id_from_path_finds_the_run_dir_child() -> None:
     assert _run_id_from_path(Path("/s/runs/deep-poppy-AB/logs.jsonl")) == "deep-poppy-AB"
     assert _run_id_from_path(Path("/s/asks/quiet-fox-CD/transcripts/0003.json")) == "quiet-fox-CD"
