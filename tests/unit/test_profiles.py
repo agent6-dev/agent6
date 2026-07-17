@@ -34,6 +34,7 @@ def test_profile_via_profile_field_expands_review_knobs(repo: Path) -> None:
     assert cfg.review.trigger == "before_finish"
     assert cfg.review.panel_size == 3
     assert cfg.review.decision == "veto"
+    assert cfg.review.concurrency == 3  # seats run in parallel, not in series
 
 
 def test_profile_via_flag_overrides_field(repo: Path) -> None:
@@ -42,6 +43,7 @@ def test_profile_via_flag_overrides_field(repo: Path) -> None:
     assert cfg.review.panel_size == 5
     assert cfg.review.tier == "explore"
     assert cfg.review.decision == "veto"
+    assert cfg.review.concurrency == 5  # seats run in parallel, not in series
 
 
 def test_repo_selected_profile_beats_same_layer_setting(repo: Path) -> None:

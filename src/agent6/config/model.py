@@ -1290,6 +1290,7 @@ BUILTIN_PROFILES: dict[str, dict[str, Any]] = {
             # block per DISTINCT model, so quorum>1 would be unreachable here).
             "decision": "veto",
             "personas": ["security", "correctness", "tests"],
+            "concurrency": 3,  # seats in parallel: panel latency = slowest seat
         },
     },
     # Maximum scrutiny: 5 explore-tier seats, before_finish veto, bigger budget.
@@ -1306,6 +1307,7 @@ BUILTIN_PROFILES: dict[str, dict[str, Any]] = {
                 "edge-cases",
                 "over-engineering",
             ],
+            "concurrency": 5,  # seats in parallel: panel latency = slowest seat
         },
         "budget": {"max_output_tokens": 400_000},
     },
