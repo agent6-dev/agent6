@@ -71,30 +71,6 @@ def test_parse_critic_verdict_case_insensitive() -> None:
     assert loopmod.parse_critic_verdict(text) is True  # pyright: ignore[reportPrivateUsage]
 
 
-# --- _extract_initial_task ----------------------------------------------
-
-
-def test_extract_initial_task_typical_shape() -> None:
-    msgs: list[dict[str, Any]] = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": "TASK:\nFix the bug\n\nBegin."},
-            ],
-        }
-    ]
-    assert loopmod._extract_initial_task(msgs) == "Fix the bug"  # pyright: ignore[reportPrivateUsage]
-
-
-def test_extract_initial_task_empty() -> None:
-    assert loopmod._extract_initial_task([]) == ""  # pyright: ignore[reportPrivateUsage]
-
-
-def test_extract_initial_task_string_content() -> None:
-    msgs: list[dict[str, Any]] = [{"role": "user", "content": "just a string"}]
-    assert loopmod._extract_initial_task(msgs) == "just a string"  # pyright: ignore[reportPrivateUsage]
-
-
 # --- _format_messages_tail_for_critic -----------------------------------
 
 
@@ -228,6 +204,7 @@ def test_before_finish_critic_revokes_finish_and_injects_critique() -> None:
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
+        original_task="t",
     )
 
     # First finish revoked by the critic; the early prose turns bounce off
@@ -274,6 +251,7 @@ def test_before_finish_critic_satisfied_accepts_finish() -> None:
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
+        original_task="t",
     )
 
     assert result.iterations == 1
@@ -318,6 +296,7 @@ def test_before_finish_rejection_cap_lets_finish_through() -> None:
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
+        original_task="t",
     )
 
     assert result.iterations == 3
@@ -365,6 +344,7 @@ def test_before_finish_satisfied_resets_rejection_counter() -> None:
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
+        original_task="t",
     )
     assert result.iterations == 2
     assert result.reason == "finish_run"
@@ -395,6 +375,7 @@ def test_critic_mode_off_never_calls_critic() -> None:
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
+        original_task="t",
     )
     assert critic.call.call_count == 0
 
@@ -438,6 +419,7 @@ def test_silent_finish_critic_revokes_and_continues() -> None:
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
+        original_task="t",
     )
     assert result.iterations == 4
     assert result.reason == "silent_finish"
@@ -483,6 +465,7 @@ def test_silent_finish_critic_cap_lets_finish_through() -> None:
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
+        original_task="t",
     )
     assert result.iterations == 5
     assert result.reason == "silent_finish"
@@ -518,6 +501,7 @@ def test_silent_finish_critic_off_bypasses() -> None:
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
         assert result.reason == "silent_finish"
         # the (critic-independent) early no-work gate bounces twice first

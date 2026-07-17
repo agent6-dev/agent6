@@ -66,6 +66,7 @@ def test_periodic_critic_fires_every_n_iterations() -> None:
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
     assert result.iterations == 5
     assert result.reason == "finish_run"
@@ -105,6 +106,7 @@ def test_periodic_critic_injects_text_into_next_user_msg() -> None:
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
+        original_task="t",
     )
     iter1_user_msg = messages[2]
     text_blocks = [b for b in iter1_user_msg["content"] if b.get("type") == "text"]
@@ -152,6 +154,7 @@ def test_on_verify_fail_critic_fires_only_on_nonzero_exit() -> None:
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
+        original_task="t",
     )
     assert result.iterations == 4
     assert result.reason == "finish_run"
@@ -195,5 +198,6 @@ def test_on_verify_fail_critic_skipped_when_no_verify_call() -> None:
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
+        original_task="t",
     )
     assert critic.call.call_count == 0

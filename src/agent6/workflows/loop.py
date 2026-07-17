@@ -247,33 +247,6 @@ def _plan_is_title_only(plan_md: str) -> bool:
     )
 
 
-def _extract_initial_task(messages: list[dict[str, Any]]) -> str:
-    """Recover the original task string from the first user message built
-    by ``Workflow.run`` (``"TASK:\\n<task>\\n\\n..."``). Returns empty
-    string if the shape is unexpected (resume from a different shape, or
-    test fixtures that don't seed a task)."""
-    if not messages:
-        return ""
-    first = messages[0]
-    content = first.get("content", "")
-    text = ""
-    if isinstance(content, str):
-        text = content
-    elif isinstance(content, list):
-        for block in content:
-            if isinstance(block, dict) and block.get("type") == "text":
-                text = str(block.get("text", ""))
-                break
-    if not text.startswith("TASK:\n"):
-        return text[:2000]
-    body = text[len("TASK:\n") :]
-    # The TASK section ends at the first blank line we added.
-    end = body.find("\n\n")
-    if end == -1:
-        return body[:2000]
-    return body[:end][:2000]
-
-
 @dataclass(frozen=True, slots=True)
 class _LaneJoin:
     """Per-lane outcome of a `/parallel` dispatch, for the summary + events.
@@ -859,24 +832,21 @@ class Workflow:
         tool_calls: int,
         start_iteration: int,
         root_task_id: str | None,
-        original_task: str | None = None,
+        original_task: str,
         resume_from: RunSnapshot | None = None,
     ) -> RunResult:
         """Shared loop body for both fresh ``run()`` and ``resume()``: one
         ``_TurnState`` per tool-use iteration, driven through the turn phases
         in order. Any phase returning a RunResult ends the run.
 
+        ``original_task`` is the exact task string (in-loop critic calls ground
+        on it): run() threads it straight through, resume() reads it verbatim
+        from the snapshot -- never re-derived from the message history.
+
         Before each provider call, writes a snapshot of the workflow's
         in-memory state to ``self.resume_state_path`` (if set) so a
         crash mid-call can be resumed from the same point.
         """
-        # Cache the original task for in-loop critic calls.
-        # Prefer the task passed straight from run() (exact, never truncated);
-        # fall back to recovering it from messages[0] for resume(), where only
-        # the snapshotted messages list is available. The fallback splits on the
-        # first blank line, so a multi-paragraph task survives intact only via
-        # the passed-in value -- which is why run() threads it explicitly.
-        original_task = original_task or _extract_initial_task(messages)
         state = _LoopState(original_task=original_task, tool_calls=tool_calls)
         state.root_task_id = root_task_id  # steer-boundary phases parent DAG nodes here
         if resume_from is not None:

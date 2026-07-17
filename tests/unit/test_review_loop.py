@@ -62,6 +62,7 @@ def _drive(wf: Workflow, messages: list[dict[str, Any]]) -> Any:
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
 
 

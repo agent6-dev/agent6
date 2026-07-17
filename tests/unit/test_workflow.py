@@ -608,6 +608,7 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(tmp_path: Path) -> None:
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
 
     assert result.completed is True
@@ -670,6 +671,7 @@ def test_drive_loop_tracks_iterations_reached(tmp_path: Path) -> None:
             tool_calls=0,
             start_iteration=7,  # a resumed run picks up mid-way
             root_task_id=None,
+            original_task="t",
         )
 
     assert result.completed is True
@@ -730,6 +732,7 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: Path) -
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
 
     assert result.completed is False
@@ -815,6 +818,7 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(tmp_path
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
 
     # The verify->edit turn produced no 'verify passed' commit (old code did).
@@ -923,6 +927,7 @@ def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: Path) -> None
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
+        original_task="t",
     )
     # Recovered (finished) rather than dying on went_quiet.
     assert result.reason == "finish_run"
@@ -998,6 +1003,7 @@ def test_drive_loop_finishes_on_metric_plateau(tmp_path: Path) -> None:
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
 
     assert result.completed is True
@@ -1080,6 +1086,7 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: Path) -> None:
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
 
     # The plateau at the 5th sample injected a pivot nudge instead of
@@ -1179,6 +1186,7 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: Pa
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
 
     # The FINAL nudge must have fired in the final slice before the run stopped.
@@ -1226,7 +1234,13 @@ def test_drive_loop_plan_finish_nudge_fires_once_at_iter_cap(tmp_path: Path) -> 
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nplan a feature"}]}]
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
-        system="s", messages=messages, tools=[], tool_calls=0, start_iteration=1, root_task_id=None
+        system="s",
+        messages=messages,
+        tools=[],
+        tool_calls=0,
+        start_iteration=1,
+        root_task_id=None,
+        original_task="t",
     )
     # Injected exactly once, on the turn-cap iteration (mode stays "plan" on
     # every later turn, so the latch is what keeps it to one).
@@ -1271,7 +1285,13 @@ def test_drive_loop_plan_finish_nudge_fires_on_low_budget(
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nplan"}]}]
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
-        system="s", messages=messages, tools=[], tool_calls=0, start_iteration=1, root_task_id=None
+        system="s",
+        messages=messages,
+        tools=[],
+        tool_calls=0,
+        start_iteration=1,
+        root_task_id=None,
+        original_task="t",
     )
     # Budget already below the threshold -> nudge on the very first turn, once.
     assert provider.nudged_on == [1]
@@ -1316,7 +1336,13 @@ def test_drive_loop_run_budget_nudge_forces_verify_and_finish(
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
-        system="s", messages=messages, tools=[], tool_calls=0, start_iteration=1, root_task_id=None
+        system="s",
+        messages=messages,
+        tools=[],
+        tool_calls=0,
+        start_iteration=1,
+        root_task_id=None,
+        original_task="t",
     )
     # fires once, on the first turn at/below the threshold, and only once.
     assert provider.nudged_on == [1]
@@ -1375,6 +1401,7 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: Path) -> None:
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
     assert provider.saw_nudge is True
     assert result.reason == "verify_settled"
@@ -1420,7 +1447,13 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(tmp_path: P
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
-        system="s", messages=messages, tools=[], tool_calls=0, start_iteration=1, root_task_id=None
+        system="s",
+        messages=messages,
+        tools=[],
+        tool_calls=0,
+        start_iteration=1,
+        root_task_id=None,
+        original_task="t",
     )
     # never verified -> never nudged/stopped by the settled detector
     assert provider.saw_nudge is False
@@ -1472,6 +1505,7 @@ def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: Path) -> None:
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
     assert result.reason != "verify_settled"
 
@@ -1533,6 +1567,7 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: Path) -> Non
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
     # would have been killed at idle 6 without the metric gate
     assert result.reason != "verify_settled"
@@ -1650,6 +1685,7 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: Path) -> N
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
 
     # Ran out the iteration cap rather than stopping on the plateau, and
@@ -1714,6 +1750,7 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: Path) -> No
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
+        original_task="t",
     )
 
     # Rejected for the fixed patience of 3, then honoured on the 4th call.
@@ -1770,6 +1807,7 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: Path) -> None:
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
+        original_task="t",
     )
 
     assert result.reason == "finish_run"
@@ -1891,6 +1929,7 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
 
     # Honoured on the very first finish_run, with no budget nudges.
@@ -2652,6 +2691,7 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: Path) -> None:
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
     assert result.reason == "steer_abort"  # the resumable stopped shape
     assert "stopped the run after step 1" in result.summary
@@ -2747,6 +2787,7 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: Path) -> 
             tool_calls=0,
             start_iteration=1,
             root_task_id="root",
+            original_task="t",
         )
     types = [
         json.loads(line)["type"]
@@ -3315,6 +3356,7 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: Path) -> None:
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
 
     assert result.completed is True
@@ -3413,6 +3455,7 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: Path) -> None:
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
     assert result.reason == "verify_settled"
     assert result.completed is True
@@ -3598,6 +3641,7 @@ def test_question_nudge_then_accept(tmp_path: Path) -> None:
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
+        original_task="t",
     )
     # Turn 1 asked a question -> nudged -> turn 2 called ask_user -> turn 3 asked
     # again, but the one-shot nudge is spent, so it silently finished.
@@ -3691,6 +3735,7 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: Path) -> 
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
     assert provider.nudges == 1
     assert provider.escalations == 1
@@ -3757,6 +3802,7 @@ def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: Path) -> N
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
     assert provider.nudges == 0
 
@@ -3833,6 +3879,7 @@ def test_drive_loop_spec_recheck_bounces_first_green_finish(tmp_path: Path) -> N
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
     assert provider.nudges == 1
     assert result.completed is True
@@ -3866,6 +3913,7 @@ def test_drive_loop_spec_recheck_off_by_default_and_when_disabled(tmp_path: Path
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
     assert provider.nudges == 0
     assert result.completed is True
@@ -3898,6 +3946,7 @@ def test_drive_loop_spec_recheck_silent_without_green_verify(tmp_path: Path) -> 
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
     assert provider.nudges == 0
 
@@ -3961,6 +4010,7 @@ def test_drive_loop_no_progress_stops_after_unheeded_interventions(tmp_path: Pat
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
     assert result.completed is False
     assert result.reason == "no_progress"
@@ -4011,6 +4061,7 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: Path) ->
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
     assert provider.nudges == 2
     assert result.reason == "silent_finish"
@@ -4069,6 +4120,7 @@ def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: Path) -> 
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
     assert provider.nudges == 0
     assert result.reason == "silent_finish"
@@ -4141,6 +4193,7 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: Path) -> None:
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
     assert provider.nudges == 0
     assert result.reason != "no_progress"
@@ -4197,6 +4250,7 @@ def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: Path) 
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
     # collect the served tool_result contents for read_file
     served = []
@@ -4273,6 +4327,7 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: Path) -> None:
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
     assert provider.nudges == 1
     assert provider.escs == 1
@@ -4336,6 +4391,7 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: Path) -> None:
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
     assert provider.nudges == 0
     assert result.reason != "tool_error_stuck"
@@ -4459,6 +4515,7 @@ def test_tool_error_spiral_names_a_host_present_tool(tmp_path: Path) -> None:
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
     assert provider.reach_hits >= 1
     assert result.reason == "tool_error_stuck"
@@ -4515,5 +4572,6 @@ def test_tool_error_spiral_silent_for_nonexistent_binary(tmp_path: Path) -> None
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
+            original_task="t",
         )
     assert provider.reach_hits == 0
