@@ -107,7 +107,7 @@ and the principles the Zen doesn't cover:
 
 ### Architecture
 
-- **Layering** is `ui -> app -> workflows -> agents -> tools -> sandbox`;
+- **Layering** is `ui -> app -> workflows -> tools -> sandbox`;
   workflows never import each other, and the engine (`app` and below) never
   imports the UI. `app/` holds the application pipelines that compose the engine
   but are not a front-end -- the run/resume/fork/machine-agent lifecycles and

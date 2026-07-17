@@ -29,9 +29,9 @@ from agent6.workflows.loop import build_readonly_review_tools
 from agent6.workflows.review import (
     CodeReviewError,
     ReviewContext,
+    code_review,
     render_findings,
     run_panel,
-    run_review,
 )
 
 
@@ -254,7 +254,7 @@ def _cmd_review(  # noqa: PLR0911
     )
     print(f"[agent6] reviewing: {label}", file=sys.stderr)
     try:
-        text = run_review(
+        text = code_review(
             reviewer,
             diff=diff,
             agents_md=agents_md,

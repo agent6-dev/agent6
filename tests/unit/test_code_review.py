@@ -8,8 +8,8 @@ from dataclasses import dataclass
 
 import pytest
 
-from agent6.agents.code_review import CodeReviewError, code_review
 from agent6.providers import ProviderError, ProviderResponse, ToolDefinition
+from agent6.workflows.code_review import CodeReviewError, code_review
 
 
 @dataclass

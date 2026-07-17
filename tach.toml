@@ -95,7 +95,6 @@ depends_on = [
 [[modules]]
 path = "agent6.workflows"
 depends_on = [
-  "agent6.agents",
   "agent6.prompts",  # pure prompt/template text the loop assembles
   "agent6.tools",
   "agent6.tools.schema",
@@ -110,12 +109,6 @@ depends_on = [
   "agent6.graph.models",
   "agent6.memory",  # cross-run memories injected into the system prompt
   "agent6.skills",  # operator-installed skills indexed in the system prompt
-]
-
-[[modules]]
-path = "agent6.agents"
-depends_on = [
-  "agent6.providers",
 ]
 
 [[modules]]

@@ -9,9 +9,9 @@ see [security.md](security.md).
 ## Layering
 
 ```
-ui  ──▶  app  ──▶  workflows  ──▶  agents  ──▶  tools  ──▶  sandbox
-                                      │
-                                      └─▶ providers (anthropic | openai)
+ui  ──▶  app  ──▶  workflows  ──▶  tools  ──▶  sandbox
+                       │
+                       └─▶ providers (anthropic | openai)
 ```
 
 `ui/` is the presentation layer and composition root: `ui/cli`, `ui/tui`,
@@ -48,10 +48,9 @@ almost always a sign of the wrong design.
   `Reporter`. That keeps `ui/` presentation-only.
 - **workflows** ([src/agent6/workflows/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/workflows)): two
   exist, `loop` (the agent loop driving `agent6 run` / `agent6 resume`)
-  and `review` (the read-only review pass driving `agent6 review`).
-- **agents** ([src/agent6/agents/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/agents)): single-turn
-  LLM call shapes. The only one is `code_review`; the agent loop makes
-  its own provider calls inline.
+  and `review` (the read-only review pass driving `agent6 review`). The
+  single-turn `code_review` call shape lives here too (`code_review.py`); the
+  agent loop makes its own provider calls inline.
 - **tools** ([src/agent6/tools/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/tools)): the fixed
   tool surface the LLM sees, plus dispatch.
 - **sandbox** ([src/agent6/sandbox/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/sandbox)): Landlock
@@ -170,7 +169,7 @@ Notes:
 
 A single read-only pass ([src/agent6/workflows/review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/review.py))
 over a diff (working tree, branch-vs-base, or arbitrary range) using
-the `agents/code_review.py` agent. Produces structured findings; no
+the `workflows/code_review.py` call shape. Produces structured findings; no
 edits, no commits, no `run_command`.
 
 ```mermaid
@@ -463,7 +462,7 @@ graph`).
 | agent loop                       | [src/agent6/workflows/loop.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/loop.py)          |
 | Prompt/template text             | [src/agent6/prompts/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/prompts) (pure strings; loop/review/judge/machine assemble them) |
 | Review workflow                  | [src/agent6/workflows/review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/review.py)      |
-| Code-review agent                | [src/agent6/agents/code_review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/agents/code_review.py)  |
+| Code-review call shape           | [src/agent6/workflows/code_review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/code_review.py)  |
 | Jail launcher (Python wrapper)   | [src/agent6/sandbox/jail.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail.py)              |
 | Jail launcher (Rust binary)      | [src/agent6/jail/src/main.rs](https://github.com/agent6-dev/agent6/blob/master/src/agent6/jail/src/main.rs)            |
 | Git policy                       | [src/agent6/git_ops.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/git_ops.py)                        |

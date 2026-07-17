@@ -1,47 +1,26 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Read-only `agent6 review` workflow, and the public face of the review panel.
+"""Public face of the review surfaces.
 
-`run_review` is a thin wrapper around `agents.code_review.code_review` so the
-CLI can stay on the right side of the workflows-vs-agents module boundary
-(tach forbids `cli -> agents` directly). `ReviewContext`, `render_findings`,
-and `run_panel` are re-exported from the private `_panel`/`_review` siblings
-so `ui/cli` (and any other cross-boundary consumer) imports the adversarial
-review panel from here instead of reaching into those private modules.
+Re-exports the freeform review call (`code_review`, driving `agent6 review`)
+and the adversarial review panel (`ReviewContext`, `render_findings`,
+`run_panel`, `Seat`, `parse_seat_spec`) from their private `_review`/`_panel`
+siblings, so `ui/cli` imports both from one workflow-layer module instead of
+reaching into privates.
 """
 
 from __future__ import annotations
 
-from agent6.agents.code_review import CodeReviewError, code_review
-from agent6.providers import Provider
 from agent6.workflows._panel import ReviewContext, render_findings
 from agent6.workflows._review import Seat, parse_seat_spec, run_panel
-
-
-def run_review(
-    reviewer: Provider,
-    *,
-    diff: str,
-    agents_md: str = "",
-    recent_log: str = "",
-    extra_context: str = "",
-) -> str:
-    """Return the reviewer's markdown verdict for *diff*."""
-    return code_review(
-        reviewer,
-        diff=diff,
-        agents_md=agents_md,
-        recent_log=recent_log,
-        extra_context=extra_context,
-    )
-
+from agent6.workflows.code_review import CodeReviewError, code_review
 
 __all__ = [
     "CodeReviewError",
     "ReviewContext",
     "Seat",
+    "code_review",
     "parse_seat_spec",
     "render_findings",
     "run_panel",
-    "run_review",
 ]

@@ -1,11 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Standalone code-review sub-agent.
+"""Standalone freeform code review: one provider call, markdown out.
 
-Used by `agent6 review`. It is freeform (no Step / acceptance criterion) and
-emits markdown text rather than a structured verdict. It's intentionally
-read-only: the agent gets a diff plus optional context and returns a
-human-readable review.
+Used by `agent6 review`. Freeform (no Step / acceptance criterion), emitting
+markdown text rather than a structured verdict. Read-only: given a diff plus
+optional context, it returns a human-readable review.
 """
 
 from __future__ import annotations
