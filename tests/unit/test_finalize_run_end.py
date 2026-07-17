@@ -15,11 +15,11 @@ from pathlib import Path
 
 import pytest
 
+from agent6.app import finalize as _finalize
+from agent6.app.finalize import print_run_end
 from agent6.budget import BudgetTracker
 from agent6.git_ops import GitStatus
 from agent6.runs.layout import RunLayout
-from agent6.ui.cli import _finalize
-from agent6.ui.cli._finalize import print_run_end
 from agent6.workflows._run_state import RunResult
 
 

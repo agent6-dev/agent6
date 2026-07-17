@@ -31,6 +31,21 @@ from agent6.app._setup import (
 from agent6.app._setup import (
     start_mcp_manager_if_enabled as _start_mcp_manager_if_enabled,
 )
+from agent6.app.finalize import (
+    finalize_auto_merge as _finalize_auto_merge,
+)
+from agent6.app.finalize import (
+    finalize_auto_stash as _finalize_auto_stash,
+)
+from agent6.app.finalize import (
+    fire_notify_hook as _fire_notify_hook,
+)
+from agent6.app.finalize import (
+    print_run_end as _print_run_end,
+)
+from agent6.app.finalize import (
+    run_exit_code as _run_exit_code,
+)
 from agent6.app.manifest import (
     write_run_manifest as _write_run_manifest,
 )
@@ -125,21 +140,6 @@ from agent6.ui.cli._common import (
     _state_dir,
 )
 from agent6.ui.cli._console_view import ConsoleView
-from agent6.ui.cli._finalize import (
-    finalize_auto_merge as _finalize_auto_merge,
-)
-from agent6.ui.cli._finalize import (
-    finalize_auto_stash as _finalize_auto_stash,
-)
-from agent6.ui.cli._finalize import (
-    fire_notify_hook as _fire_notify_hook,
-)
-from agent6.ui.cli._finalize import (
-    print_run_end as _print_run_end,
-)
-from agent6.ui.cli._finalize import (
-    run_exit_code as _run_exit_code,
-)
 from agent6.ui.cli._interact import (
     build_approver as _build_approver,
 )

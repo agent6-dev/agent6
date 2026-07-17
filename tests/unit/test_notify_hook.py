@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from agent6.app.finalize import fire_notify_hook
 from agent6.config import NotifyConfig, load_config
-from agent6.ui.cli._finalize import fire_notify_hook
 from agent6.ui.cli.machine_cmds import (
     _build_machine_notify_hook,  # pyright: ignore[reportPrivateUsage]
 )

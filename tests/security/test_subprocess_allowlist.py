@@ -20,6 +20,7 @@ _PATTERN = re.compile(r"subprocess\.(run|Popen)")
 # completions_cmd.py matches inside a string literal only (the generated xonsh
 # completer, which runs in the operator's shell, not in agent6).
 ALLOWED = {
+    "app/finalize.py",
     "git_ops.py",
     "graph/client.py",
     "providers/token_command.py",
@@ -31,7 +32,6 @@ ALLOWED = {
     "ui/bridge/notify.py",
     "ui/bridge/spawn.py",
     "ui/cli/_ask.py",
-    "ui/cli/_finalize.py",
     "ui/cli/_live.py",
     "ui/cli/_steer.py",
     "ui/cli/completions_cmd.py",

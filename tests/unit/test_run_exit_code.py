@@ -8,7 +8,7 @@ and `agent6 resume`); everything else completed=False is exit 1, success is 0.
 
 from __future__ import annotations
 
-from agent6.ui.cli._finalize import run_exit_code
+from agent6.app.finalize import run_exit_code
 from agent6.workflows._run_state import RunReason
 from agent6.workflows.loop import RunResult
 

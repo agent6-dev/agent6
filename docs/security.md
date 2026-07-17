@@ -203,7 +203,7 @@ fixed argv depending only on operator input, never LLM output.
       argv from the run manifest the CLI wrote outside the jail.
     - `rg` for history search.
     - The fixed-argv `python -m agent6.ui.tui` co-process behind `run --tui`.
-    - `ui/cli/_finalize.py`: the operator `[notify].on_complete` hook fired at
+    - `app/finalize.py`: the operator `[notify].on_complete` hook fired at
       run end; argv from config.
     - `ui/cli/scriptcheck.py`: ruff/ty with fixed argv to statically read
       generated scripts, which only ever execute via `run_in_jail`.
