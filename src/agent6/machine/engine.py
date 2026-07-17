@@ -389,6 +389,12 @@ class MachineResult:
     state: str
     transitions: int
 
+    @classmethod
+    def from_end(cls, end: MachineEnd) -> MachineResult:
+        """The engine outcome for a recorded end. `waiting`/`incomplete` outcomes
+        (no journaled end) are built directly; only the end fact projects here."""
+        return cls(end.status, end.reason, end.state, end.transitions)
+
 
 # --------------------------------------------------------------------------
 # Pure blackboard helpers.
@@ -672,13 +678,12 @@ def _emit_end(
     transitions: int,
 ) -> MachineResult:
     """Journal a `machine.end` and fire the operator notify hook for it."""
-    journal.append(
-        MachineEnd(
-            ts=_now_iso(), status=status, reason=reason, state=state, transitions=transitions
-        )
+    end = MachineEnd(
+        ts=_now_iso(), status=status, reason=reason, state=state, transitions=transitions
     )
+    journal.append(end)
     world.notify("end", state, reason, status)
-    return MachineResult(status, reason, state, transitions)
+    return MachineResult.from_end(end)
 
 
 def _end_failed(
@@ -907,8 +912,7 @@ def drive(
     """
     events = journal.read()
     if events and isinstance(events[-1], MachineEnd):
-        end = events[-1]
-        return MachineResult(end.status, end.reason, end.state, end.transitions)
+        return MachineResult.from_end(events[-1])
 
     # The instance is keyed only by the `machine` id, so a different file (or an
     # incompatible edit) can land on the same journal. Cross-check the recorded

@@ -52,12 +52,17 @@ class TransitionView:
 
 @dataclass(frozen=True, slots=True)
 class MachineEndView:
-    """The terminal/failed end the journal recorded, if any."""
+    """The terminal/failed end the journal recorded, if any: a render projection
+    of the journal's `MachineEnd`, dropping its `type`/`ts` wire fields."""
 
     status: str
     reason: str
     state: str
     transitions: int
+
+    @classmethod
+    def from_end(cls, end: MachineEnd) -> MachineEndView:
+        return cls(end.status, end.reason, end.state, end.transitions)
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,13 +111,7 @@ def fold_machine(spec: MachineSpec, events: Sequence[object]) -> MachineState:
     transitions = tuple(
         TransitionView(seq=s.seq, state=s.state, label=s.label, goto=s.goto) for s in steps
     )
-    ended = (
-        MachineEndView(
-            status=end.status, reason=end.reason, state=end.state, transitions=end.transitions
-        )
-        if end is not None
-        else None
-    )
+    ended = MachineEndView.from_end(end) if end is not None else None
     notes = [e for e in events if isinstance(e, MachineNotify)]
     notifications = tuple(
         NotificationView(ts=n.ts, state=n.state, message=n.message, level=n.level)
