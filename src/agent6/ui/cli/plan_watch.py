@@ -24,12 +24,9 @@ from agent6.runs.ipc import (
     write_question_answers,
 )
 from agent6.tools.schema import UserQuestion
-from agent6.ui.cli._common import _runs_dir, _state_dir, resolve_run_layout, run_bucket_dirs
+from agent6.ui.cli._common import _runs_dir, _state_dir, resolve_or_newest_layout
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._interact import default_stdin_approver, default_stdin_questioner
-from agent6.viewmodel import (
-    newest_run_dir as _newest_dir,
-)
 from agent6.viewmodel import run_mtime, tail_events
 from agent6.viewmodel.format import format_compare, format_cost
 
@@ -132,21 +129,20 @@ def _cmd_watch(run_id: str, *, tui: bool = False, since: int = 0, raw: bool = Fa
     ``--raw`` is the no-deps event-line tail; ``--tui`` the full-screen dashboard.
     """
     cwd = Path.cwd()
-    if run_id:
-        # Across every run-style bucket (runs/asks/machine-drafts): a listed
-        # ask or a `machine create` draft is watchable by id too.
-        try:
-            target = resolve_run_layout(cwd, run_id).run_dir
-        except RunIdError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
-            return 2
-    else:
-        # Most-recent spans every bucket, so a bare `attach` after an `ask` finds it.
-        latest_dir = _newest_dir(run_bucket_dirs(cwd))
-        if latest_dir is None:
-            print("ERROR: no runs found for this cwd.", file=sys.stderr)
-            return 2
-        target = latest_dir
+    # An explicit id resolves across every run-style bucket (runs/asks/machine-
+    # drafts): a listed ask or a `machine create` draft is watchable by id too.
+    # Empty most-recent spans every bucket, so a bare `attach` after an `ask`
+    # finds it.
+    try:
+        layout = resolve_or_newest_layout(cwd, run_id)
+    except RunIdError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    if layout is None:
+        print("ERROR: no runs found for this cwd.", file=sys.stderr)
+        return 2
+    target = layout.run_dir
+    if not run_id:
         print(f"[agent6] attached to most recent run: {target.name}", file=sys.stderr)
     if not target.is_dir():
         print(f"ERROR: no such run dir: {target}", file=sys.stderr)
@@ -170,15 +166,13 @@ def _resolve_run_dir(repo_root: Path, run_id: str) -> Path | None:
 
     An explicit id resolves across every run-style bucket (runs/, asks/,
     machine-drafts/): anything `agent6 runs` lists must also be inspectable
-    by id. The empty (most-recent) case stays runs/ only."""
-    if run_id:
-        try:
-            return resolve_run_layout(repo_root, run_id).run_dir
-        except RunIdError:
-            return None
-    # Empty (most-recent) spans every bucket, so a bare `attach` right after an
-    # `ask` finds that ask -- matching what `agent6 runs` lists.
-    return _newest_dir(run_bucket_dirs(repo_root))
+    by id. The empty (most-recent) case also spans every bucket, so a bare
+    `attach` right after an `ask` finds that ask."""
+    try:
+        layout = resolve_or_newest_layout(repo_root, run_id)
+    except RunIdError:
+        return None
+    return layout.run_dir if layout is not None else None
 
 
 def _fmt_dur(seconds: float | None) -> str:

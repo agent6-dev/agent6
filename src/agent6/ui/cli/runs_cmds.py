@@ -38,7 +38,7 @@ from agent6.git_ops import status as git_status
 from agent6.runs.id import RunIdError, resolve_run_id
 from agent6.runs.ipc import request_stop, worker_is_alive
 from agent6.runs.layout import RunLayout
-from agent6.ui.cli._common import _runs_dir, _state_dir, resolve_run_layout, run_bucket_dirs, sgr
+from agent6.ui.cli._common import _runs_dir, _state_dir, resolve_or_newest_layout, sgr
 from agent6.ui.cli._compare import manifest_task, print_ranked_candidates, rank, verify_ok
 from agent6.viewmodel import is_run_husk, is_winner, summarize_run_dir, task_snippet
 from agent6.viewmodel import newest_run_dir as _newest_dir
@@ -256,18 +256,14 @@ def _cmd_stop(*, run_id: str) -> int:
     with a note."""
     cwd = Path.cwd()
     try:
-        layout = resolve_run_layout(cwd, run_id) if run_id else None
+        layout = resolve_or_newest_layout(cwd, run_id)
     except RunIdError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     if layout is None:
-        latest = _newest_dir(run_bucket_dirs(cwd))
-        if latest is None:
-            print("ERROR: no runs to stop.", file=sys.stderr)
-            return 2
-        run_dir = latest
-    else:
-        run_dir = layout.run_dir
+        print("ERROR: no runs to stop.", file=sys.stderr)
+        return 2
+    run_dir = layout.run_dir
     rid = run_dir.name
     if not worker_is_alive(run_dir):
         print(f"[agent6] {rid} is not running; nothing to stop.", file=sys.stderr)

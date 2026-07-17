@@ -18,6 +18,7 @@ from agent6.paths import (
 )
 from agent6.runs.id import RunIdError, list_run_ids
 from agent6.runs.layout import RunLayout
+from agent6.viewmodel import newest_run_dir
 
 
 def _sub(
@@ -189,6 +190,25 @@ def resolve_run_layout(repo_root: Path, query: str) -> RunLayout:
             ambiguous=True,
         )
     raise RunIdError(f"no run matches {query!r} under {state}/(runs|asks|machine-drafts)")
+
+
+def resolve_or_newest_layout(repo_root: Path, run_id: str) -> RunLayout | None:
+    """Resolve an explicit *run_id* across every run-style bucket, or fall back to
+    the newest run across all buckets when *run_id* is empty.
+
+    Returns the resolved ``RunLayout``. Returns None only for the empty-*run_id*
+    "no runs exist" case, so the caller phrases its own 'no runs' message. Raises
+    ``RunIdError`` (``.ambiguous`` set for a prefix clash) when an explicit id has
+    no or many matches. The one 'a run by id, or the latest' resolution behind
+    ``attach`` / ``runs stop`` / ``runs status``: a new such command resolves the
+    same way instead of re-deriving the id-or-newest glue.
+    """
+    if run_id:
+        return resolve_run_layout(repo_root, run_id)
+    newest = newest_run_dir(run_bucket_dirs(repo_root))
+    if newest is None:
+        return None
+    return RunLayout(state_dir=_state_dir(repo_root), run_id=newest.name, subdir=newest.parent.name)
 
 
 def _enforce_root_policy(allow_root: bool) -> int | None:
