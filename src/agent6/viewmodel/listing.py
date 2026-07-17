@@ -192,6 +192,8 @@ def summarize_run_dir(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) ->
                     ev = json.loads(line)
                 except ValueError:
                     continue
+                if not isinstance(ev, dict):
+                    continue  # a valid-JSON non-object line (torn/adversarial)
                 etype = ev.get("type")
                 if etype == "run.start":
                     mode = str(ev.get("mode", mode))
