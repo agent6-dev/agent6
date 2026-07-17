@@ -21,6 +21,11 @@ from typing import Any, Literal
 
 from agent6.app._setup import check_provider_keys as _check_provider_keys
 from agent6.app._setup import detect_env
+from agent6.app.egress import (
+    check_network_profile,
+    resolve_strict_egress_viability,
+    warn_if_unsandboxed,
+)
 from agent6.config import (
     Config,
     ConfigError,
@@ -67,11 +72,6 @@ from agent6.sandbox.detect import ProfileUnavailableError, select_profile
 from agent6.types import SandboxProfile
 from agent6.ui.bridge.notify import desktop_notify
 from agent6.ui.cli._common import _machines_dir, _state_dir
-from agent6.ui.cli.egress import (
-    _check_network_profile,
-    _warn_if_unsandboxed,
-    resolve_strict_egress_viability,
-)
 from agent6.ui.cli.plan_watch import event_epoch, format_plain_event
 from agent6.ui.cli.scriptcheck import lint_and_typecheck, run_offline_tests
 from agent6.viewmodel import (
@@ -494,7 +494,7 @@ def _machine_network_refusal(
 ) -> str | None:
     """A refusal message if this machine's tool-network needs can't be honored.
 
-    Layers machine-specific rules on top of `_check_network_profile` (which
+    Layers machine-specific rules on top of `check_network_profile` (which
     handles agent_network=local / tool_network=only_explicit_states on
     `hardened`). On `hardened` per-tool isolation is impossible, so we refuse,
     rather than silently mis-confine, whenever isolation is *required*: by the
@@ -502,7 +502,7 @@ def _machine_network_refusal(
     A networked state under `tool_network = "block"` is a config conflict and is
     refused on any profile. Returns None when fine.
     """
-    net_err = _check_network_profile(cfg, profile)
+    net_err = check_network_profile(cfg, profile)
     if net_err is not None:
         return net_err
     tn = cfg.sandbox.tool_network
@@ -754,7 +754,7 @@ def _cmd_machine_run(  # noqa: PLR0911, PLR0912, PLR0915
                 protect_paths,
                 commit_identity,
             )
-    _warn_if_unsandboxed(profile)
+    warn_if_unsandboxed(profile)
     root = _machines_dir(cwd) / spec.machine
     journal = MachineJournal(root, snapshot_keep=snapshot_keep)
     # Persistent, writable scratch for tool scripts (see LiveWorld.data_dir).
@@ -1122,11 +1122,11 @@ def _cmd_machine_create(  # noqa: PLR0911, PLR0912, PLR0915
     if egress_err is not None:
         print(egress_err, file=sys.stderr)
         return 2
-    net_err = _check_network_profile(cfg, profile)
+    net_err = check_network_profile(cfg, profile)
     if net_err is not None:
         print(f"REFUSING: {net_err}", file=sys.stderr)
         return 2
-    _warn_if_unsandboxed(profile)
+    warn_if_unsandboxed(profile)
 
     scratch = _state_dir(cwd) / "machine-drafts" / new_friendly_id()
     scratch.mkdir(parents=True, exist_ok=True)

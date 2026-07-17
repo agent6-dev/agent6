@@ -10,8 +10,8 @@ from typing import cast
 
 import pytest
 
+from agent6.app import egress
 from agent6.config import Config
-from agent6.ui.cli import egress
 
 
 def _cfg(profile: str, agent_network: str, tool_network: str = "block") -> Config:
@@ -68,7 +68,7 @@ def test_explicit_strict_refuses_with_guidance(monkeypatch: pytest.MonkeyPatch) 
 def test_local_refuses_rather_than_downgrade(monkeypatch: pytest.MonkeyPatch) -> None:
     # agent_network='local' needs the broker and has no hardened fallback, so it
     # must refuse (even for auto) -- NOT silently downgrade to hardened, which
-    # would bypass _check_network_profile's local-on-hardened refusal.
+    # would bypass check_network_profile's local-on-hardened refusal.
     monkeypatch.setattr(egress, "probe_userns_supported", lambda: False)
     profile, err = egress.resolve_strict_egress_viability(_cfg("auto", "local"), "strict")
     assert profile == "strict" and err is not None

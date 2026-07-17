@@ -22,7 +22,7 @@ from agent6.app._setup import (
 from agent6.app.preflight import (
     require_git_repo as _require_git_repo,
 )
-from agent6.app.run import EgressHooks, RunFrontend, run_task
+from agent6.app.run import RunFrontend, run_task
 from agent6.config import (
     Config,
     ConfigError,
@@ -35,7 +35,7 @@ from agent6.events import EventSink
 from agent6.git_ops import set_repo_hook_policy
 from agent6.paths import data_dir
 from agent6.skills import discover_skills, resolve_states, skill_search_dirs
-from agent6.types import SandboxProfile
+from agent6.ui.bridge.spawn import agent6_exe, spawn_detached_resume
 from agent6.ui.cli._ask import (
     run_ask_repl as _run_ask_repl,
 )
@@ -51,9 +51,6 @@ from agent6.ui.cli._interact import (
 )
 from agent6.ui.cli._interact import (
     prompt_detach_away_mode as _prompt_detach_away_mode,
-)
-from agent6.ui.cli._interact import (
-    spawn_detached as _spawn_detached,
 )
 from agent6.ui.cli._live import (
     loop_logger as _loop_logger,
@@ -86,15 +83,6 @@ from agent6.ui.cli._steer import (
 from agent6.ui.cli._task_refs import (
     expand_task_file_refs as _expand_task_file_refs,
 )
-from agent6.ui.cli.egress import (
-    EgressGuard,
-    _check_network_profile,
-    _maybe_apply_agent_landlock,
-    _maybe_start_egress,
-    _stop_egress,
-    _warn_if_unsandboxed,
-    resolve_strict_egress_viability,
-)
 from agent6.ui.cli.parallel import (
     build_coordinator_spawner as _build_coordinator_spawner,
 )
@@ -124,13 +112,12 @@ def _skills_task_prefix(cfg: Config, names: tuple[str, ...]) -> tuple[str, str]:
 
 def run_frontend() -> RunFrontend:
     """Build the presentation seam `app.run.run_task` / `app.resume.resume_task`
-    drive: one per invocation (the console-view and egress-guard cells are
-    run-scoped). The console view is created lazily on ``attach_console_view``;
-    the builders that need it close over its cell, so the lifecycle never holds
-    a UI type. The egress hooks close over the guard the same way (interim seam
-    until the egress guard itself moves into `app`)."""
+    drive: one per invocation (the console-view cell is run-scoped). The console
+    view is created lazily on ``attach_console_view``; the builders that need it
+    close over its cell, so the lifecycle never holds a UI type. The lifecycle
+    owns egress (`app.egress`) itself; only the two exe-spawn primitives it
+    can't reach (`ui.bridge.spawn`) are injected."""
     console_cell: list[ConsoleView | None] = [None]
-    guard_cell: list[EgressGuard] = [EgressGuard()]
 
     def attach_console_view(events: EventSink) -> None:
         view = ConsoleView(sys.stderr)
@@ -141,23 +128,6 @@ def run_frontend() -> RunFrontend:
         view = console_cell[0]
         if view is not None:
             view.close()
-
-    def egress_start(cfg: Config, profile: SandboxProfile) -> str | None:
-        guard, err = _maybe_start_egress(cfg, profile, with_detach_spawner=True)
-        guard_cell[0] = guard
-        if err is not None:
-            return err
-        if guard.broker is not None:
-            print(
-                f"[agent6] provider-only egress: confined to host network "
-                f"namespace via broker pid {guard.broker.pid}",
-                file=sys.stderr,
-            )
-        return None
-
-    def close_detach_spawner() -> None:
-        if guard_cell[0].detach_spawner is not None:
-            guard_cell[0].detach_spawner.close()
 
     return RunFrontend(
         should_spawn_tui=lambda tui, interactive, mode: _should_spawn_tui(
@@ -200,16 +170,8 @@ def run_frontend() -> RunFrontend:
                 auto_approve=auto_approve,
             )
         ),
-        egress=EgressHooks(
-            warn_if_unsandboxed=_warn_if_unsandboxed,
-            check_network_profile=_check_network_profile,
-            resolve_strict_viability=resolve_strict_egress_viability,
-            start=egress_start,
-            apply_agent_landlock=_maybe_apply_agent_landlock,
-            stop=lambda: _stop_egress(guard_cell[0]),
-            spawn_detached=lambda cwd, run_id: _spawn_detached(guard_cell[0], cwd, run_id),
-            close_detach_spawner=close_detach_spawner,
-        ),
+        agent6_exe=agent6_exe,
+        spawn_detached_resume=spawn_detached_resume,
     )
 
 

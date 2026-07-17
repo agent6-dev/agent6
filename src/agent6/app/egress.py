@@ -8,6 +8,7 @@ import os
 import shutil
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -26,18 +27,17 @@ from agent6.sandbox import (
     start_egress_broker,
 )
 from agent6.sandbox.detect import Environment, probe_userns_supported
-from agent6.sandbox.jail import _locate_jail_binary
+from agent6.sandbox.jail import _locate_jail_binary  # pyright: ignore[reportPrivateUsage]
 from agent6.types import SandboxProfile
-from agent6.ui.bridge.spawn import agent6_exe
 
 
 @dataclass(frozen=True, slots=True)
 class EgressGuard:
-    """What `_maybe_start_egress` established for one run.
+    """What `maybe_start_egress` established for one run.
 
-    ``broker`` + ``sock_dir`` are torn down by `_stop_egress`. The
+    ``broker`` + ``sock_dir`` are torn down by `stop_egress`. The
     ``detach_spawner`` (run/resume only) must OUTLIVE that teardown: the detach
-    branch uses it after `_stop_egress`, then closes it last.
+    branch uses it after `stop_egress`, then closes it last.
     """
 
     broker: BrokerHandle | None = None
@@ -80,7 +80,7 @@ def _allow_url_endpoints(cfg: Config) -> set[Endpoint]:
     return eps
 
 
-def _warn_if_unsandboxed(selected_profile: SandboxProfile) -> None:
+def warn_if_unsandboxed(selected_profile: SandboxProfile) -> None:
     """Print a prominent warning when running without the kernel sandbox.
 
     The `none` profile is reached either on a non-Linux host (no kernel sandbox)
@@ -106,7 +106,7 @@ def _is_loopback(host: str) -> bool:
     return host in ("localhost", "127.0.0.1", "::1", "0.0.0.0") or host.startswith("127.")  # noqa: S104
 
 
-def _check_network_profile(cfg: Config, selected_profile: SandboxProfile) -> str | None:
+def check_network_profile(cfg: Config, selected_profile: SandboxProfile) -> str | None:
     """A refusal message if the network config can't be enforced on this profile.
 
     ``agent_network = "local"`` (loopback-pinning) and ``tool_network =
@@ -173,10 +173,10 @@ def resolve_strict_egress_viability(
     # Downgrade to hardened ONLY when the config can actually run there. An
     # explicit profile='strict' must not be silently downgraded; and a config
     # that itself requires strict (agent_network='local', tool_network=
-    # 'only_explicit_states') has no hardened fallback. _check_network_profile is
+    # 'only_explicit_states') has no hardened fallback. check_network_profile is
     # the authority on what hardened refuses, so reusing it also covers future
     # strict-only knobs.
-    hardened_blocker = _check_network_profile(cfg, "hardened")
+    hardened_blocker = check_network_profile(cfg, "hardened")
     if hardened_blocker is not None:
         return selected_profile, (
             f"REFUSING: {core} That config also requires strict on hardened"
@@ -192,8 +192,8 @@ def resolve_strict_egress_viability(
     return "hardened", None
 
 
-def _maybe_start_egress(
-    cfg: Config, selected_profile: SandboxProfile, *, with_detach_spawner: bool = False
+def maybe_start_egress(
+    cfg: Config, selected_profile: SandboxProfile, *, detach_exe: str | None = None
 ) -> tuple[EgressGuard, str | None]:
     """Confine the agent process's egress via the broker, if configured.
 
@@ -201,14 +201,15 @@ def _maybe_start_egress(
     run. Only acts on the ``strict`` profile under
     ``agent_network ∈ {providers, local}``, on ``open`` nothing is confined,
     and on ``hardened`` the agent-process Landlock (see
-    :func:`_maybe_apply_agent_landlock`) provides port-level confinement
+    :func:`maybe_apply_agent_landlock`) provides port-level confinement
     instead. ``local`` restricts to loopback provider endpoints and refuses any
     non-local provider.
 
-    ``with_detach_spawner`` (run/resume) also pre-forks the host spawner so a
-    later detach can launch the background resume OUTSIDE the network
-    namespace; a resume spawned from inside it inherits the empty namespace
-    and every provider call dies locally.
+    ``detach_exe`` (run/resume, the agent6 exe path) also pre-forks the host
+    spawner on that exe so a later detach can launch the background resume
+    OUTSIDE the network namespace; a resume spawned from inside it inherits the
+    empty namespace and every provider call dies locally. The front-end supplies
+    the exe (``ui.bridge.spawn.agent6_exe``); None skips the pre-fork (machines).
 
     Must run before any network object is built and while single-threaded
     (``unshare(CLONE_NEWUSER)``). On success the process is left inside an empty
@@ -243,8 +244,8 @@ def _maybe_start_egress(
     broker: BrokerHandle | None = None
     spawner: HostSpawner | None = None
     try:
-        if with_detach_spawner:
-            spawner = fork_host_spawner([agent6_exe()])
+        if detach_exe is not None:
+            spawner = fork_host_spawner([detach_exe])
         broker = start_egress_broker(endpoints, sock_dir=sock_dir)
         enter_network_isolation()
     except (EgressBrokerError, OSError) as exc:
@@ -266,7 +267,7 @@ def _maybe_start_egress(
     return EgressGuard(broker=broker, sock_dir=sock_dir, detach_spawner=spawner), None
 
 
-def _stop_egress(guard: EgressGuard) -> None:
+def stop_egress(guard: EgressGuard) -> None:
     """Tear down the egress broker and clear its routes. Idempotent.
 
     Leaves ``guard.detach_spawner`` alive: the detach branch runs AFTER this
@@ -279,7 +280,21 @@ def _stop_egress(guard: EgressGuard) -> None:
         shutil.rmtree(guard.sock_dir, ignore_errors=True)
 
 
-def _maybe_apply_agent_landlock(
+def spawn_detached(
+    guard: EgressGuard, cwd: Path, run_id: str, *, fallback: Callable[[Path, str], str]
+) -> str:
+    """Spawn the detached background resume for this run.
+
+    Under network isolation a direct spawn inherits the empty namespace and the
+    resume's provider egress is dead on arrival, so it goes through the
+    pre-forked host spawner; without isolation the front-end's *fallback*
+    (``ui.bridge.spawn.spawn_detached_resume``) does the plain detached spawn."""
+    if guard.detach_spawner is not None:
+        return guard.detach_spawner.spawn_resume(cwd, run_id)
+    return fallback(cwd, run_id)
+
+
+def maybe_apply_agent_landlock(
     cfg: Config, selected_profile: SandboxProfile, env: Environment
 ) -> str | None:
     """Confine the agent's OWN process with Landlock on hardened hosts.
@@ -391,7 +406,7 @@ def _maybe_apply_agent_landlock(
     # Hardened can't run the broker, so we fall back to Landlock TCP-connect
     # rules: under `providers` confine to the provider ports (host-level, weaker
     # than the broker but the best hardened offers); under `open` impose no TCP
-    # restriction. (`local` is refused on hardened by `_check_network_profile`.)
+    # restriction. (`local` is refused on hardened by `check_network_profile`.)
     ports: tuple[int, ...] = (
         ()
         if cfg.sandbox.agent_network == "open"

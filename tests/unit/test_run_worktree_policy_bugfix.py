@@ -70,13 +70,13 @@ def _patch_common(monkeypatch: pytest.MonkeyPatch, cfg: Config) -> None:
     # the environment-dependent steps between the stash guard and the cut must
     # pass cleanly for the cut-time assertions below to be reached.
     def _no_egress(*a: object, **k: object) -> tuple[object, None]:
-        return run_mod.EgressGuard(), None
+        return app_run_mod.EgressGuard(), None
 
     monkeypatch.setattr(run_mod, "load_effective", _load_effective)
     monkeypatch.setattr(run_mod, "set_repo_hook_policy", _noop)
     monkeypatch.setattr(app_run_mod, "verify_git_identity", _noop)
-    monkeypatch.setattr(run_mod, "_maybe_start_egress", _no_egress)
-    monkeypatch.setattr(run_mod, "_maybe_apply_agent_landlock", _noop)
+    monkeypatch.setattr(app_run_mod, "maybe_start_egress", _no_egress)
+    monkeypatch.setattr(app_run_mod, "maybe_apply_agent_landlock", _noop)
 
 
 def test_dirty_tree_refused_with_default_config(
@@ -160,9 +160,9 @@ def test_post_guard_refusal_leaves_checkout_untouched(
     _patch_common(monkeypatch, cfg)
 
     def _refuse_egress(*a: object, **k: object) -> tuple[object, str]:
-        return run_mod.EgressGuard(), "no egress today"
+        return app_run_mod.EgressGuard(), "no egress today"
 
-    monkeypatch.setattr(run_mod, "_maybe_start_egress", _refuse_egress)
+    monkeypatch.setattr(app_run_mod, "maybe_start_egress", _refuse_egress)
 
     rc = run_mod._cmd_run(None, "do a thing")  # pyright: ignore[reportPrivateUsage]
 

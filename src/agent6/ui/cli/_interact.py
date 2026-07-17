@@ -28,14 +28,12 @@ from agent6.runs.bridge import (
     steer_answer_is_abort,
 )
 from agent6.tools.schema import UserQuestion
-from agent6.ui.bridge.spawn import spawn_detached_resume
 from agent6.ui.cli._steer import (
     tty_message as _tty_message,
 )
 from agent6.ui.cli._steer import (
     tty_prompt as _tty_prompt,
 )
-from agent6.ui.cli.egress import EgressGuard
 
 if TYPE_CHECKING:
     from agent6.ui.cli._console_view import ConsoleView
@@ -187,17 +185,6 @@ def build_approver(
         return approved
 
     return approve
-
-
-def spawn_detached(guard: EgressGuard, cwd: Path, run_id: str) -> str:
-    """Spawn the detached background resume for this run.
-
-    Under network isolation a direct spawn inherits the empty namespace and the
-    resume's provider egress is dead on arrival, so it goes through the
-    pre-forked host spawner; without isolation the direct spawn is fine."""
-    if guard.detach_spawner is not None:
-        return guard.detach_spawner.spawn_resume(cwd, run_id)
-    return spawn_detached_resume(cwd, run_id)
 
 
 def build_questioner(

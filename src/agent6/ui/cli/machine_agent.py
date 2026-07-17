@@ -26,6 +26,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from agent6.app.egress import (
+    check_network_profile,
+    maybe_apply_agent_landlock,
+    maybe_start_egress,
+    stop_egress,
+)
 from agent6.app.providers import (
     InstrumentedProvider as _InstrumentedProvider,
 )
@@ -60,12 +66,6 @@ from agent6.tools.schema import UserQuestion
 from agent6.types import SandboxProfile
 from agent6.ui.cli._common import _state_dir
 from agent6.ui.cli._console_view import ConsoleView
-from agent6.ui.cli.egress import (
-    _check_network_profile,
-    _maybe_apply_agent_landlock,
-    _maybe_start_egress,
-    _stop_egress,
-)
 from agent6.workflows.loop import Workflow
 
 
@@ -209,17 +209,17 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
     # Confine THIS process's egress per sandbox.agent_network (single-threaded
     # here, as required by unshare). The engine already validated the combo, but
     # re-check defensively and fail closed.
-    net_err = _check_network_profile(cfg, profile)
+    net_err = check_network_profile(cfg, profile)
     if net_err is not None:
         print(f"REFUSING: {net_err}", file=sys.stderr)
         return _result("error", None, None)
-    egress_guard, egress_err = _maybe_start_egress(cfg, profile)
+    egress_guard, egress_err = maybe_start_egress(cfg, profile)
     if egress_err is not None:
         print(f"REFUSING: {egress_err}", file=sys.stderr)
         return _result("error", None, None)
     budget: BudgetTracker | None = None
     try:
-        landlock_err = _maybe_apply_agent_landlock(cfg, profile, detect())
+        landlock_err = maybe_apply_agent_landlock(cfg, profile, detect())
         if landlock_err is not None:
             print(f"REFUSING: {landlock_err}", file=sys.stderr)
             return _result("error", None, None)
@@ -327,7 +327,7 @@ def _run_one(req: dict[str, Any]) -> dict[str, Any]:
         payload = result.finish_payload if result.reason == "finish_run" else None
         return _result(result.reason, payload, budget)
     finally:
-        _stop_egress(egress_guard)
+        stop_egress(egress_guard)
 
 
 def main() -> int:

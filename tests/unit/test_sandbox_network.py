@@ -11,16 +11,16 @@ from typing import Any
 
 import pytest
 
+from agent6.app.egress import (
+    EgressGuard,
+    _is_loopback,  # pyright: ignore[reportPrivateUsage]
+    check_network_profile,
+    maybe_start_egress,
+)
 from agent6.config import Config, validate_config
 from agent6.machine.model import ToolState
 from agent6.types import SandboxProfile
 from agent6.ui.cli import machine_agent
-from agent6.ui.cli.egress import (
-    EgressGuard,
-    _check_network_profile,  # pyright: ignore[reportPrivateUsage]
-    _is_loopback,  # pyright: ignore[reportPrivateUsage]
-    _maybe_start_egress,  # pyright: ignore[reportPrivateUsage]
-)
 from agent6.ui.cli.machine_cmds import (
     _machine_network_refusal,  # pyright: ignore[reportPrivateUsage]
 )
@@ -40,23 +40,23 @@ def test_is_loopback() -> None:
     assert not _is_loopback("api.anthropic.com")
 
 
-# --- _check_network_profile (profile compatibility) ------------------------
+# --- check_network_profile (profile compatibility) ------------------------
 
 
 @pytest.mark.parametrize("profile", ["strict", "none"])
 def test_check_network_profile_allows_off_hardened(profile: SandboxProfile) -> None:
     # local/only_explicit_states only refused on hardened; strict supports them,
     # none is unsandboxed (warned elsewhere), so neither refuses here.
-    assert _check_network_profile(_cfg("local", "block"), profile) is None
-    assert _check_network_profile(_cfg("open", "only_explicit_states"), profile) is None
+    assert check_network_profile(_cfg("local", "block"), profile) is None
+    assert check_network_profile(_cfg("open", "only_explicit_states"), profile) is None
 
 
 def test_check_network_profile_refuses_local_on_hardened() -> None:
-    assert "local" in (_check_network_profile(_cfg("local", "block"), "hardened") or "")
+    assert "local" in (check_network_profile(_cfg("local", "block"), "hardened") or "")
 
 
 def test_check_network_profile_refuses_only_explicit_states_on_hardened() -> None:
-    msg = _check_network_profile(_cfg("open", "only_explicit_states"), "hardened")
+    msg = check_network_profile(_cfg("open", "only_explicit_states"), "hardened")
     assert msg is not None and "only_explicit_states" in msg
 
 
@@ -100,26 +100,26 @@ def test_refusal_allow_auto_tools_on_hardened_ok() -> None:
     assert _machine_network_refusal(_cfg("open", "allow"), "hardened", [_TOOL]) is None
 
 
-# --- _maybe_start_egress (local / open / non-strict short-circuits) --------
+# --- maybe_start_egress (local / open / non-strict short-circuits) --------
 
 
 def test_egress_open_does_nothing() -> None:
-    assert _maybe_start_egress(_cfg("open", "block"), "strict") == (EgressGuard(), None)
+    assert maybe_start_egress(_cfg("open", "block"), "strict") == (EgressGuard(), None)
 
 
 def test_egress_non_strict_defers_to_landlock() -> None:
-    assert _maybe_start_egress(_cfg("providers", "block"), "hardened") == (EgressGuard(), None)
+    assert maybe_start_egress(_cfg("providers", "block"), "hardened") == (EgressGuard(), None)
 
 
 def test_egress_refuses_inherited_isolation(monkeypatch: pytest.MonkeyPatch) -> None:
     # A child spawned from inside enter_network_isolation() can never reach a
     # provider; it must refuse with the cause, not die later as provider_error.
     monkeypatch.setenv("AGENT6_NETNS_ISOLATED", "1")
-    guard, err = _maybe_start_egress(_cfg("providers", "block"), "strict")
+    guard, err = maybe_start_egress(_cfg("providers", "block"), "strict")
     assert guard == EgressGuard()
     assert err is not None and "inherited" in err
     # Even the unconfined mode refuses: the namespace has no routes at all.
-    guard, err = _maybe_start_egress(_cfg("open", "block"), "strict")
+    guard, err = maybe_start_egress(_cfg("open", "block"), "strict")
     assert err is not None and "inherited" in err
 
 
@@ -132,7 +132,7 @@ def test_egress_local_refuses_non_local_provider() -> None:
             "sandbox": {"agent_network": "local"},
         }
     )
-    guard, err = _maybe_start_egress(cfg, "strict")
+    guard, err = maybe_start_egress(cfg, "strict")
     assert guard == EgressGuard()
     assert err is not None and "loopback" in err and "openrouter.ai" in err
 
@@ -140,7 +140,7 @@ def test_egress_local_refuses_non_local_provider() -> None:
 def test_egress_reaps_broker_when_isolation_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     # If enter_network_isolation() fails AFTER the broker child is forked, the
     # broker must be reaped (not leaked) and the run refused.
-    from agent6.ui.cli import egress as eg
+    from agent6.app import egress as eg
 
     closed = {"n": 0}
 
@@ -159,7 +159,7 @@ def test_egress_reaps_broker_when_isolation_fails(monkeypatch: pytest.MonkeyPatc
 
     monkeypatch.setattr(eg, "start_egress_broker", _fake_start)
     monkeypatch.setattr(eg, "enter_network_isolation", _boom)
-    guard, err = _maybe_start_egress(_cfg("providers", "block"), "strict")
+    guard, err = maybe_start_egress(_cfg("providers", "block"), "strict")
     assert guard == EgressGuard()
     assert err is not None and "confinement" in err
     assert closed["n"] == 1  # the forked broker was closed, not leaked
@@ -337,7 +337,7 @@ def test_run_one_exports_commit_identity(
 def test_egress_fails_closed_and_cleans_up_on_socket_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import agent6.ui.cli.egress as eg
+    import agent6.app.egress as eg
 
     sock = tmp_path / "egress-sock"
 
@@ -356,7 +356,7 @@ def test_egress_fails_closed_and_cleans_up_on_socket_error(
             "sandbox": {"agent_network": "providers"},
         }
     )
-    guard, err = _maybe_start_egress(cfg, "strict")
+    guard, err = maybe_start_egress(cfg, "strict")
     assert guard == EgressGuard()
     assert err is not None and "too many open files" in err
     assert not sock.exists()  # the socket dir was cleaned up, not leaked

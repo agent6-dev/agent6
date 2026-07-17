@@ -30,6 +30,16 @@ from agent6.app._setup import (
 from agent6.app._setup import (
     start_mcp_manager_if_enabled as _start_mcp_manager_if_enabled,
 )
+from agent6.app.egress import (
+    EgressGuard,
+    check_network_profile,
+    maybe_apply_agent_landlock,
+    maybe_start_egress,
+    resolve_strict_egress_viability,
+    spawn_detached,
+    stop_egress,
+    warn_if_unsandboxed,
+)
 from agent6.app.finalize import (
     finalize_auto_merge as _finalize_auto_merge,
 )
@@ -303,6 +313,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
 
     detach_requested = False
     cfg: Config | None = None  # bound below; the finally reads it (detach away-mode)
+    guard = EgressGuard()  # replaced at egress start; the finally tears it down
     try:
         snapshot_path = layout.run_dir / "loop_state.json"
         if not snapshot_path.is_file():
@@ -393,21 +404,19 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         except ProfileUnavailableError as exc:
             print(f"REFUSING: {exc}", file=sys.stderr)
             return 2
-        frontend.egress.warn_if_unsandboxed(selected_profile)
+        warn_if_unsandboxed(selected_profile)
         if not frontend.confirm_unconfined_autorun(selected_profile, cfg):
             print("[agent6] aborted.", file=sys.stderr)
             return 1
 
-        net_err = frontend.egress.check_network_profile(cfg, selected_profile)
+        net_err = check_network_profile(cfg, selected_profile)
         if net_err is not None:
             print(f"REFUSING: {net_err}", file=sys.stderr)
             return 2
         # strict can be selected because the jail launcher has userns, yet this
         # process can't create one for the egress broker (surgical AppArmor profile).
         # Downgrade auto->hardened, or refuse an explicit strict, with guidance.
-        selected_profile, egress_err = frontend.egress.resolve_strict_viability(
-            cfg, selected_profile
-        )
+        selected_profile, egress_err = resolve_strict_egress_viability(cfg, selected_profile)
         if egress_err is not None:
             print(egress_err, file=sys.stderr)
             return 2
@@ -438,12 +447,20 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         transcript_sink = TranscriptSink(layout.transcripts_dir)
         events = EventSink(layout.logs_path)
 
-        egress_err = frontend.egress.start(cfg, selected_profile)
+        guard, egress_err = maybe_start_egress(
+            cfg, selected_profile, detach_exe=frontend.agent6_exe()
+        )
         if egress_err is not None:
             print(f"REFUSING: {egress_err}", file=sys.stderr)
             return 2
+        if guard.broker is not None:
+            print(
+                f"[agent6] provider-only egress: confined to host network "
+                f"namespace via broker pid {guard.broker.pid}",
+                file=sys.stderr,
+            )
 
-        landlock_err = frontend.egress.apply_agent_landlock(cfg, selected_profile, env)
+        landlock_err = maybe_apply_agent_landlock(cfg, selected_profile, env)
         if landlock_err is not None:
             print(f"REFUSING: {landlock_err}", file=sys.stderr)
             # The egress broker is already running; the outer finally tears it
@@ -697,12 +714,13 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # path; refusals and Ctrl-C during verify inference used to leak both.
         frontend.close_console_view()  # stop the heartbeat thread, clear any spinner line
         clear_worker_pid(layout.run_dir)
-        frontend.egress.stop()
+        stop_egress(guard)
         _release_single_writer(worker_lock_fd)
         if detach_requested and cfg is not None:
             if cfg.sandbox.run_commands == "ask" and not session_allow_set(layout.run_dir):
                 frontend.prompt_detach_away_mode(layout.run_dir)
-            err = frontend.egress.spawn_detached(cwd, layout.run_id)
+            err = spawn_detached(guard, cwd, layout.run_id, fallback=frontend.spawn_detached_resume)
             if err:
                 print(f"[agent6] {err}", file=sys.stderr)
-        frontend.egress.close_detach_spawner()
+        if guard.detach_spawner is not None:
+            guard.detach_spawner.close()

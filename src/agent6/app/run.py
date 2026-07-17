@@ -31,6 +31,16 @@ from agent6.app._setup import (
 from agent6.app._setup import (
     start_mcp_manager_if_enabled as _start_mcp_manager_if_enabled,
 )
+from agent6.app.egress import (
+    EgressGuard,
+    check_network_profile,
+    maybe_apply_agent_landlock,
+    maybe_start_egress,
+    resolve_strict_egress_viability,
+    spawn_detached,
+    stop_egress,
+    warn_if_unsandboxed,
+)
 from agent6.app.finalize import (
     finalize_auto_merge as _finalize_auto_merge,
 )
@@ -129,7 +139,7 @@ from agent6.runs.lock import (
 from agent6.runs.lock import (
     release_single_writer as _release_single_writer,
 )
-from agent6.sandbox.detect import Environment, ProfileUnavailableError, select_profile
+from agent6.sandbox.detect import ProfileUnavailableError, select_profile
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.mcp_client import MCPManager
 from agent6.tools.schema import UserQuestion
@@ -167,29 +177,14 @@ def _apply_spawned_away_default(run_dir: Path) -> None:
 
 
 @dataclass(frozen=True, slots=True)
-class EgressHooks:
-    """Interim egress seam (the guard moves into `app` with `ui/cli/egress.py`):
-    the `EgressGuard` lives cli-side behind these closures, so the lifecycle
-    drives WHEN egress starts/stops without holding the guard value. The
-    ``start`` hook also prints the broker banner (presentation)."""
-
-    warn_if_unsandboxed: Callable[[SandboxProfile], None]
-    check_network_profile: Callable[[Config, SandboxProfile], str | None]
-    resolve_strict_viability: Callable[[Config, SandboxProfile], tuple[SandboxProfile, str | None]]
-    start: Callable[[Config, SandboxProfile], str | None]
-    apply_agent_landlock: Callable[[Config, SandboxProfile, Environment], str | None]
-    stop: Callable[[], None]
-    spawn_detached: Callable[[Path, str], str]
-    close_detach_spawner: Callable[[], None]
-
-
-@dataclass(frozen=True, slots=True)
 class RunFrontend:
-    """The presentation callables `ui/cli` injects into the run/resume
-    lifecycle: the live console view (held cli-side; the lifecycle only signals
-    attach/close), the interactive prompts, the REPLs, and the bridge/egress
-    sub-seams. One value serves both `run_task` and `resume_task`; resume simply
-    never calls the run-only fields."""
+    """The presentation + process-spawn callables `ui/cli` injects into the
+    run/resume lifecycle: the live console view (held cli-side; the lifecycle
+    only signals attach/close), the interactive prompts, and the REPLs. The
+    lifecycle owns egress itself (`app.egress`) and the run-dir bridge
+    (`runs.bridge`); only the exe-spawn primitives it can't reach stay injected.
+    One value serves both `run_task` and `resume_task`; resume simply never
+    calls the run-only fields."""
 
     # live view: the console-view instance lives cli-side; builders that need it
     # (approver/questioner/steer/logger) close over it there.
@@ -221,8 +216,11 @@ class RunFrontend:
     build_coordinator_spawner: Callable[
         [Config, Path, Path, str, str, float | None, bool], GroupLaneSpawner | None
     ]
-    # sub-seam
-    egress: EgressHooks
+    # process-spawn primitives the front-end owns (`ui.bridge.spawn`, mirroring
+    # LaneRuntime's injected spawner): the agent6 exe path the egress detach host
+    # spawner pre-forks, and the plain detached-resume launch used off isolation.
+    agent6_exe: Callable[[], str]
+    spawn_detached_resume: Callable[[Path, str], str]
 
 
 def discard_husk_dir(run_dir: Path) -> None:
@@ -275,19 +273,19 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     except ProfileUnavailableError as exc:
         print(f"REFUSING: {exc}", file=sys.stderr)
         return 2
-    frontend.egress.warn_if_unsandboxed(selected_profile)
+    warn_if_unsandboxed(selected_profile)
     if not frontend.confirm_unconfined_autorun(selected_profile, cfg):
         print("[agent6] aborted.", file=sys.stderr)
         return 1
 
-    net_err = frontend.egress.check_network_profile(cfg, selected_profile)
+    net_err = check_network_profile(cfg, selected_profile)
     if net_err is not None:
         print(f"REFUSING: {net_err}", file=sys.stderr)
         return 2
     # strict can be selected because the jail launcher has userns, yet this
     # process can't create one for the egress broker (surgical AppArmor profile).
     # Downgrade auto->hardened, or refuse an explicit strict, with guidance.
-    selected_profile, egress_err = frontend.egress.resolve_strict_viability(cfg, selected_profile)
+    selected_profile, egress_err = resolve_strict_egress_viability(cfg, selected_profile)
     if egress_err is not None:
         print(egress_err, file=sys.stderr)
         return 2
@@ -436,6 +434,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     run_branch: str | None = None
     branch_start_point: str | None = None
     detach_requested = False
+    guard = EgressGuard()  # replaced at egress start; the finally tears it down
     try:
         # A fresh branch named after the run id is 1:1 with the run (find it
         # from any run id, `agent6 runs diff <id>`, or just delete the branch to
@@ -461,12 +460,20 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         transcript_sink = TranscriptSink(layout.transcripts_dir)
         events = EventSink(layout.logs_path)
 
-        egress_err = frontend.egress.start(cfg, selected_profile)
+        guard, egress_err = maybe_start_egress(
+            cfg, selected_profile, detach_exe=frontend.agent6_exe()
+        )
         if egress_err is not None:
             print(f"REFUSING: {egress_err}", file=sys.stderr)
             return 2
+        if guard.broker is not None:
+            print(
+                f"[agent6] provider-only egress: confined to host network "
+                f"namespace via broker pid {guard.broker.pid}",
+                file=sys.stderr,
+            )
 
-        landlock_err = frontend.egress.apply_agent_landlock(cfg, selected_profile, env)
+        landlock_err = maybe_apply_agent_landlock(cfg, selected_profile, env)
         if landlock_err is not None:
             print(f"REFUSING: {landlock_err}", file=sys.stderr)
             return 2
@@ -794,7 +801,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         # leaked broker process, and the user's stashed work silently hidden.
         frontend.close_console_view()  # stop the heartbeat thread, clear any spinner line
         clear_worker_pid(layout.run_dir)
-        frontend.egress.stop()
+        stop_egress(guard)
         if stashed:
             _finalize_auto_stash(
                 cwd,
@@ -809,7 +816,8 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             # the detached `resume` acquires it.
             if cfg.sandbox.run_commands == "ask" and not session_allow_set(layout.run_dir):
                 frontend.prompt_detach_away_mode(layout.run_dir)
-            err = frontend.egress.spawn_detached(cwd, layout.run_id)
+            err = spawn_detached(guard, cwd, layout.run_id, fallback=frontend.spawn_detached_resume)
             if err:
                 print(f"[agent6] {err}", file=sys.stderr)
-        frontend.egress.close_detach_spawner()
+        if guard.detach_spawner is not None:
+            guard.detach_spawner.close()

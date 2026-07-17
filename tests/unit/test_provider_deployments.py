@@ -134,8 +134,8 @@ def test_openai_none_auth_sends_no_auth_header() -> None:
 def test_egress_allowlist_derives_from_anthropic_base_url() -> None:
     # Security: the egress allow-list must follow a provider's effective base_url
     # host (now configurable for anthropic too), not a hardcoded api.anthropic.com.
+    from agent6.app.egress import _provider_endpoints  # pyright: ignore[reportPrivateUsage]
     from agent6.config import AnthropicProviderEntry
-    from agent6.ui.cli.egress import _provider_endpoints  # pyright: ignore[reportPrivateUsage]
 
     entry = AnthropicProviderEntry(
         api_format="anthropic", deployment="vertex", base_url=_VERTEX_ANTHROPIC, auth_style="bearer"
