@@ -13,11 +13,11 @@ from agent6.ui.cli._config_args import _add_config_parser, _add_connect_parser, 
 from agent6.ui.cli._plan_args import _add_ask_parser, _add_plan_parser
 from agent6.ui.cli._run_args import _add_fork_parser, _add_resume_parser, _add_run_parser
 from agent6.ui.cli._runs_args import _add_runs_parser
+from agent6.ui.cli._skills_args import _add_skills_parser
 from agent6.ui.cli._watch_args import _add_attach_parser, _add_tui_parser, _add_web_parser
 from agent6.ui.cli.completers import (
     _complete_machine_ids,
     _complete_run_ids,
-    _complete_skills,
 )
 
 # Commands with a default verb: `plan <task>` == `plan run <task>`, and
@@ -258,45 +258,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     mem_inv.add_argument("memory_id", help="26-char ULID of the entry to invalidate.")
     mem_inv.add_argument("reason", help="Why this entry is no longer valid.")
 
-    skills_p = _sub(sub, "skills", help="Manage operator-installed skills (SKILL.md packs).")
-    skills_sub = skills_p.add_subparsers(
-        dest="skills_command", required=True, metavar="<subcommand>"
-    )
-    sk_install = _sub(
-        skills_sub,
-        "install",
-        help="Install skills from a SKILL.md URL, a git repository URL, or a local path.",
-    )
-    sk_install.add_argument("url", help="Direct SKILL.md URL, git repo URL, or local path.")
-    sk_install.add_argument(
-        "--force", action="store_true", help="Replace an already-installed skill of the same name."
-    )
-    sk_update = _sub(skills_sub, "update", help="Re-fetch installed skills from their origins.")
-    sk_update_name = sk_update.add_argument(
-        "name", nargs="?", default="", help="Skill to update (default: all with an origin)."
-    )
-    sk_update_name.completer = _complete_skills  # type: ignore[attr-defined]
-    _sub(skills_sub, "list", help="List installed skills with state and origin.")
-    sk_enable = _sub(skills_sub, "enable", help="Re-enable a skill (or promote it to always-on).")
-    sk_enable_name = sk_enable.add_argument("name", help="Skill name.")
-    sk_enable_name.completer = _complete_skills  # type: ignore[attr-defined]
-    sk_enable.add_argument(
-        "--always",
-        action="store_true",
-        help="Inject the skill's full text into every run's system prompt instead of the index.",
-    )
-    sk_enable.add_argument(
-        "--repo", action="store_true", help="Write to the per-repo config instead of the global."
-    )
-    sk_disable = _sub(skills_sub, "disable", help="Drop a skill from the index and use_skill.")
-    sk_disable_name = sk_disable.add_argument("name", help="Skill name.")
-    sk_disable_name.completer = _complete_skills  # type: ignore[attr-defined]
-    sk_disable.add_argument(
-        "--repo", action="store_true", help="Write to the per-repo config instead of the global."
-    )
-    sk_remove = _sub(skills_sub, "remove", help="Delete an installed skill from the data dir.")
-    sk_remove_name = sk_remove.add_argument("name", help="Skill name.")
-    sk_remove_name.completer = _complete_skills  # type: ignore[attr-defined]
+    _add_skills_parser(sub)
 
     hist_p = _sub(
         sub,
