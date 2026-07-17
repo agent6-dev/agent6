@@ -29,8 +29,8 @@ from agent6.providers import (
     TranscriptSink,
 )
 from agent6.secrets import resolve_api_key
-from agent6.workflows._review import Seat as ReviewSeat
-from agent6.workflows._review import parse_seat_spec
+from agent6.workflows.review import Seat as ReviewSeat
+from agent6.workflows.review import parse_seat_spec
 
 
 def resolve_compaction_thresholds(

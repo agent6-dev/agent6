@@ -15,7 +15,7 @@ from __future__ import annotations
 from agent6.agents.code_review import CodeReviewError, code_review
 from agent6.providers import Provider
 from agent6.workflows._panel import ReviewContext, render_findings
-from agent6.workflows._review import run_panel
+from agent6.workflows._review import Seat, parse_seat_spec, run_panel
 
 
 def run_review(
@@ -39,6 +39,8 @@ def run_review(
 __all__ = [
     "CodeReviewError",
     "ReviewContext",
+    "Seat",
+    "parse_seat_spec",
     "render_findings",
     "run_panel",
     "run_review",
