@@ -13,8 +13,8 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from agent6.app.providers import review_panel_configured
 from agent6.config import Config, ReviewConfig
-from agent6.ui.cli.providers import review_panel_configured
 
 
 def test_review_seats_malformed_rejected() -> None:

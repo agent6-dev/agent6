@@ -14,6 +14,27 @@ import tempfile
 from pathlib import Path
 from typing import Any, Literal
 
+from agent6.app.providers import (
+    InstrumentedProvider as _InstrumentedProvider,
+)
+from agent6.app.providers import (
+    build_critic_provider as _build_critic_provider,
+)
+from agent6.app.providers import (
+    build_review_seats,
+    resolve_compaction_thresholds,
+    resolve_decompose,
+    review_panel_configured,
+)
+from agent6.app.providers import (
+    build_role_provider as _build_role_provider,
+)
+from agent6.app.providers import (
+    build_summariser_provider as _build_summariser_provider,
+)
+from agent6.app.providers import (
+    role_temperature as _role_temperature,
+)
 from agent6.budget import BudgetTracker
 from agent6.config import (
     Config,
@@ -149,17 +170,6 @@ from agent6.ui.cli.parallel import (
     build_coordinator_spawner as _build_coordinator_spawner,
 )
 from agent6.ui.cli.plan_watch import _most_recent_run_id
-from agent6.ui.cli.providers import (
-    _build_critic_provider,
-    _build_role_provider,
-    _build_summariser_provider,
-    _InstrumentedProvider,
-    _role_temperature,
-    build_review_seats,
-    resolve_compaction_thresholds,
-    resolve_decompose,
-    review_panel_configured,
-)
 from agent6.workflows._run_state import load_resume_snapshot
 from agent6.workflows.loop import ResumeError, Workflow
 

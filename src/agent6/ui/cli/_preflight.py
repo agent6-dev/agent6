@@ -10,6 +10,12 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from agent6.app.providers import (
+    InstrumentedProvider as _InstrumentedProvider,
+)
+from agent6.app.providers import (
+    build_role_provider as _build_role_provider,
+)
 from agent6.budget import BudgetTracker
 from agent6.config import Config
 from agent6.events import EventSink
@@ -19,10 +25,6 @@ from agent6.providers import TranscriptSink
 from agent6.runs.layout import RunLayout
 from agent6.types import SandboxProfile
 from agent6.ui.cli._steer import tty_prompt as _tty_prompt
-from agent6.ui.cli.providers import (
-    _build_role_provider,
-    _InstrumentedProvider,
-)
 from agent6.verify_infer import VERIFY_INFER_SYSTEM_PROMPT, infer_verify_command
 
 

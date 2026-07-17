@@ -27,11 +27,11 @@ from agent6.app.compare import (
 from agent6.app.compare import (
     rank as _core_rank,
 )
+from agent6.app.providers import build_role_provider as _build_role_provider
 from agent6.budget import BudgetTracker
 from agent6.config import Config
 from agent6.providers import Provider, TranscriptSink
 from agent6.ui.cli._console_view import _HEARTBEAT_TICK_S, _SPINNER
-from agent6.ui.cli.providers import _build_role_provider
 from agent6.workflows.judge import CandidateBrief
 
 __all__ = ["manifest_task", "print_ranked_candidates", "rank", "verify_ok"]

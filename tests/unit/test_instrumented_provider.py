@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The cli ``_InstrumentedProvider`` wrapper must forward every
+"""The cli ``InstrumentedProvider`` wrapper must forward every
 provider.call kwarg to the inner provider. A missing passthrough is
 invisible to unit tests that call providers directly but crashes every
 real run (regression: ``reasoning_effort`` was added to the providers
@@ -13,9 +13,9 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock
 
+from agent6.app.providers import InstrumentedProvider
 from agent6.budget import BudgetTracker
 from agent6.providers import ProviderResponse
-from agent6.ui.cli.providers import _InstrumentedProvider  # pyright: ignore[reportPrivateUsage]
 
 
 def _resp() -> ProviderResponse:
@@ -31,8 +31,8 @@ def _resp() -> ProviderResponse:
     )
 
 
-def _wrap(inner: MagicMock) -> _InstrumentedProvider:
-    return _InstrumentedProvider(
+def _wrap(inner: MagicMock) -> InstrumentedProvider:
+    return InstrumentedProvider(
         inner=inner,
         role="worker",
         model="moonshotai/kimi-k2.6",

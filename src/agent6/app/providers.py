@@ -80,7 +80,7 @@ def resolve_decompose(
     return cfg.with_decompose("on" if on else "off")
 
 
-def _build_role_provider(
+def build_role_provider(
     cfg: Config,
     role: RoleName,
     *,
@@ -121,7 +121,7 @@ def _provider_from_entry(
     budget: BudgetTracker,
 ) -> Provider:
     """Build a Provider for an explicit ``[providers.<provider_name>]`` entry +
-    model + thinking. Shared by ``_build_role_provider`` (role routing) and the
+    model + thinking. Shared by ``build_role_provider`` (role routing) and the
     review panel's explicit per-seat ``provider/model`` routing."""
     key = resolve_api_key(provider_name, entry.api_key_env)
     credential = (
@@ -173,14 +173,14 @@ def _provider_from_entry(
     )
 
 
-def _role_temperature(cfg: Config, role: RoleName) -> float | None:
+def role_temperature(cfg: Config, role: RoleName) -> float | None:
     """The configured sampling temperature for *role* (worker fallback)."""
     rm = cfg.models.resolve(role)
     return rm.temperature if rm is not None else None
 
 
 @dataclass(frozen=True, slots=True)
-class _InstrumentedProvider:
+class InstrumentedProvider:
     """Wraps any Provider with role.call / role.result / budget.update emission.
 
     Pure decoration; the inner provider is unchanged. Lives in cli.py
@@ -288,7 +288,7 @@ class _InstrumentedProvider:
         return resp
 
 
-def _build_critic_provider(
+def build_critic_provider(
     cfg: Config,
     *,
     transcript_sink: TranscriptSink,
@@ -300,12 +300,12 @@ def _build_critic_provider(
     disabled so Workflow leaves the critic path inert."""
     if cfg.review.trigger == "off":
         return None
-    critic_inner = _build_role_provider(
+    critic_inner = build_role_provider(
         cfg, "reviewer", transcript_sink=transcript_sink, budget=budget
     )
     rm = cfg.models.resolve("reviewer")
     assert rm is not None  # critic only runs once a worker/reviewer model exists
-    return _InstrumentedProvider(
+    return InstrumentedProvider(
         inner=critic_inner,
         role="critic",
         model=rm.model,
@@ -376,7 +376,7 @@ def build_review_seats(
                 label = f"{provider_name}/{seat_model}"
             else:  # bare persona -> reviewer route
                 rm = cfg.models.resolve("reviewer")
-                provider = _build_role_provider(
+                provider = build_role_provider(
                     cfg,
                     "reviewer",
                     transcript_sink=transcript_sink,
@@ -399,7 +399,7 @@ def build_review_seats(
     pool = list(personas) if personas else list(_DEFAULT_PERSONAS)
     seats = []
     for i in range(max(1, n)):
-        provider = _build_role_provider(
+        provider = build_role_provider(
             cfg,
             "reviewer",
             transcript_sink=transcript_sink,
@@ -417,7 +417,7 @@ def build_review_seats(
     return seats
 
 
-def _build_prompt_reviser_provider(
+def build_prompt_reviser_provider(
     cfg: Config,
     *,
     transcript_sink: TranscriptSink,
@@ -427,12 +427,12 @@ def _build_prompt_reviser_provider(
     """Route the reviewer role as a one-shot prompt reviser."""
     if cfg.prompt.revise_prompt == "off":
         return None
-    reviser_inner = _build_role_provider(
+    reviser_inner = build_role_provider(
         cfg, "reviewer", transcript_sink=transcript_sink, budget=budget
     )
     rm = cfg.models.resolve("reviewer")
     assert rm is not None  # reviser only runs once a worker/reviewer model exists
-    return _InstrumentedProvider(
+    return InstrumentedProvider(
         inner=reviser_inner,
         role="prompt_reviser",
         model=rm.model,
@@ -442,7 +442,7 @@ def _build_prompt_reviser_provider(
     )
 
 
-def _build_summariser_provider(
+def build_summariser_provider(
     cfg: Config,
     *,
     transcript_sink: TranscriptSink,
@@ -452,12 +452,12 @@ def _build_summariser_provider(
     """Route the reviewer role as the tier-2 context summariser. Always
     available (context compaction can fire on any run) and cheaper than the
     worker model."""
-    summariser_inner = _build_role_provider(
+    summariser_inner = build_role_provider(
         cfg, "reviewer", transcript_sink=transcript_sink, budget=budget
     )
     rm = cfg.models.resolve("reviewer")
     assert rm is not None  # summariser falls back to the worker model
-    return _InstrumentedProvider(
+    return InstrumentedProvider(
         inner=summariser_inner,
         role="summariser",
         model=rm.model,

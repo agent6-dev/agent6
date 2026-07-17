@@ -26,6 +26,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from agent6.app.providers import (
+    InstrumentedProvider as _InstrumentedProvider,
+)
+from agent6.app.providers import (
+    build_role_provider as _build_role_provider,
+)
+from agent6.app.providers import (
+    resolve_compaction_thresholds,
+    resolve_decompose,
+)
 from agent6.budget import BudgetTracker
 from agent6.config.layer import load_effective_with_overlay
 from agent6.events import EventSink
@@ -55,12 +65,6 @@ from agent6.ui.cli.egress import (
     _maybe_apply_agent_landlock,
     _maybe_start_egress,
     _stop_egress,
-)
-from agent6.ui.cli.providers import (
-    _build_role_provider,
-    _InstrumentedProvider,
-    resolve_compaction_thresholds,
-    resolve_decompose,
 )
 from agent6.workflows.loop import Workflow
 

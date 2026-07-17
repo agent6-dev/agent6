@@ -160,7 +160,7 @@ def _stub_seat_provider(*_a: Any, **_k: Any) -> Provider:
 def test_build_review_seats_model_override_overrides_pinned_seat(monkeypatch: Any) -> None:
     # `review --model X` must override each configured seat's pinned model while
     # keeping its provider routing -- otherwise the flag silently does nothing.
-    from agent6.ui.cli import providers as prov_mod
+    from agent6.app import providers as prov_mod
 
     monkeypatch.setattr(prov_mod, "_provider_from_entry", _stub_seat_provider)
     cfg = _cfg_with_seats(
@@ -182,7 +182,7 @@ def test_build_review_seats_model_override_overrides_pinned_seat(monkeypatch: An
 
 
 def test_build_review_seats_no_override_keeps_pinned_models(monkeypatch: Any) -> None:
-    from agent6.ui.cli import providers as prov_mod
+    from agent6.app import providers as prov_mod
 
     monkeypatch.setattr(prov_mod, "_provider_from_entry", _stub_seat_provider)
     cfg = _cfg_with_seats(("security@anthropic/claude-opus-4-8",))
@@ -196,9 +196,9 @@ def test_build_review_seats_no_override_keeps_pinned_models(monkeypatch: Any) ->
 def test_build_review_seats_model_override_on_bare_persona_seat(monkeypatch: Any) -> None:
     # A bare-persona seat routes via the reviewer role; --model must override that
     # role's model too (mirroring the non-configured simple-form branch).
-    from agent6.ui.cli import providers as prov_mod
+    from agent6.app import providers as prov_mod
 
-    monkeypatch.setattr(prov_mod, "_build_role_provider", _stub_seat_provider)
+    monkeypatch.setattr(prov_mod, "build_role_provider", _stub_seat_provider)
     cfg = _cfg_with_seats(("correctness",))
 
     seats = prov_mod.build_review_seats(

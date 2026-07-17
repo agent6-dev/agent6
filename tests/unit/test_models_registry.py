@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
+from agent6.app.providers import resolve_decompose
 from agent6.config import Config
 from agent6.models import registry as models_registry
-from agent6.ui.cli.providers import resolve_decompose
 
 
 @pytest.fixture
