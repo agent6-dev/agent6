@@ -376,7 +376,7 @@ class MCPServer:
             summary: dict[str, Any] = {"run_id": d.name}
             # A missing/corrupt manifest lists the run without one.
             with contextlib.suppress(ManifestError):
-                summary["manifest"] = read_manifest(d)
+                summary["manifest"] = read_manifest(d).model_dump(mode="json")
             entries.append(summary)
         return {"runs": entries}
 

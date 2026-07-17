@@ -134,7 +134,7 @@ def ensure_on_run_branch(cwd: Path, layout: RunLayout) -> str | None:
         manifest = read_manifest(layout.run_dir)
     except ManifestError:
         return None
-    run_branch = manifest.get("run_branch")
+    run_branch = manifest.run_branch
     try:
         st = git_status(cwd)
     except GitError:

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent6.runs.ipc import read_worker_pid, worker_is_alive
-from agent6.runs.manifest import ManifestError, read_manifest
+from agent6.runs.manifest import CompareStamp, ManifestError, read_manifest
 
 STALE_AFTER_S = 600.0
 
@@ -98,24 +98,24 @@ def is_run_husk(run_dir: Path) -> bool:
     return not (run_dir / "manifest.json").exists() and not (run_dir / "logs.jsonl").exists()
 
 
-def run_compare(run_dir: Path) -> object:
-    """The ``compare`` block a fan-out's auto-compare stamped into an imported
-    lane's manifest (group/rank/of/winner/ranked_by/rationale), or None for a run
-    that was never part of a compared fan-out. The event fold doesn't carry it (it
-    is post-import manifest state), so every run view reads it from here. Best
-    effort: a missing/corrupt manifest reads as None, never an error."""
+def run_compare(run_dir: Path) -> CompareStamp | None:
+    """The ``compare`` stamp a fan-out's auto-compare recorded on an imported
+    lane's manifest (rank/of/winner/ranked_by/rationale), or None for a run that
+    was never part of a compared fan-out. The event fold doesn't carry it (it is
+    post-import manifest state), so every run view reads it from here. Best effort:
+    a missing/corrupt manifest reads as None, never an error."""
     try:
         manifest = read_manifest(run_dir)
     except ManifestError:
         return None
-    return manifest.get("compare")
+    return manifest.compare
 
 
 def is_winner(run_dir: Path) -> bool:
     """True when a run is the fan-out compare winner (rank 1), for a listing
     marker. False for any run outside a compared fan-out."""
     compare = run_compare(run_dir)
-    return isinstance(compare, dict) and bool(compare.get("winner"))
+    return compare is not None and compare.winner
 
 
 @dataclass(frozen=True, slots=True)

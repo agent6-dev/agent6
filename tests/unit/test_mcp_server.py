@@ -201,7 +201,9 @@ def test_list_runs_reads_manifests(tmp_path: Path) -> None:
     runs = resolved_state_dir(tmp_path) / "runs"
     (runs / "run-a").mkdir(parents=True)
     (runs / "run-b").mkdir(parents=True)
-    (runs / "run-a" / "manifest.json").write_text(json.dumps({"task": "alpha"}), encoding="utf-8")
+    (runs / "run-a" / "manifest.json").write_text(
+        json.dumps({"user_task": "alpha"}), encoding="utf-8"
+    )
     # run-b has no manifest -> entry without one. Pin the dir mtimes so the
     # newest-first ordering is deterministic regardless of the filesystem's
     # mtime granularity: writing run-a's manifest bumps run-a's dir mtime, so
@@ -223,7 +225,10 @@ def test_list_runs_reads_manifests(tmp_path: Path) -> None:
     )
     runs_out = resps[0]["result"]["structuredContent"]["runs"]
     assert [r["run_id"] for r in runs_out] == ["run-b", "run-a"]
-    assert runs_out[1]["manifest"] == {"task": "alpha"}
+    # Shipped as the typed RunManifest dump (full shape, defaults filled), not the
+    # raw dict: the recorded user_task survives, the version stamp is present.
+    assert runs_out[1]["manifest"]["user_task"] == "alpha"
+    assert runs_out[1]["manifest"]["version"] == 2
     assert "manifest" not in runs_out[0]
 
 

@@ -197,19 +197,19 @@ def create_fork(  # noqa: PLR0911
     # `mode` is security-relevant: a missing/corrupt source manifest must NOT
     # fall open to the more-privileged "run" (write) mode -- forking a plan run
     # as a write run would hand it the mutating tools. A valid run always wrote
-    # a manifest, so anything else here is a damaged run dir; fail loud rather
-    # than silently escalating (same contract as resume).
+    # a manifest, so a damaged run dir (unreadable, corrupt, or an unknown mode
+    # value) fails loud via read_manifest / strict_mode rather than silently
+    # escalating (same contract as resume).
     try:
         sm = read_manifest(src.run_dir)
+        src_mode = sm.strict_mode()
     except ManifestError as exc:
         reporter.err(f"ERROR: cannot read source run manifest {src.manifest_path}: {exc}")
         return "", 2
-    src_base_sha = str(sm.get("base_sha", "")) or ""
-    src_base_branch = str(sm.get("base_branch", "")) or ""
-    src_user_task = str(sm.get("user_task", "")) or ""
-    src_mode = str(sm.get("mode", "run")) or "run"
-    src_workflow = sm.get("workflow")
-    src_profile = str(src_workflow.get("profile", "")) if isinstance(src_workflow, dict) else ""
+    src_base_sha = sm.base_sha
+    src_base_branch = sm.base_branch
+    src_user_task = sm.user_task
+    src_profile = sm.workflow.profile
 
     forked_from_sha = checkpoint.head_sha
     if not forked_from_sha:

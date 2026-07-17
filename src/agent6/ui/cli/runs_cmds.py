@@ -5,12 +5,10 @@ lifecycle)."""
 
 from __future__ import annotations
 
-import json
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from agent6.app.merge import execute_merge
 from agent6.config import (
@@ -38,7 +36,7 @@ from agent6.git_ops import status as git_status
 from agent6.runs.id import RunIdError, resolve_run_id
 from agent6.runs.ipc import request_stop, worker_is_alive
 from agent6.runs.layout import RunLayout
-from agent6.runs.manifest import ManifestError, read_manifest
+from agent6.runs.manifest import ManifestError, RunManifest, read_manifest
 from agent6.ui.cli._common import (
     _runs_dir,
     _state_dir,
@@ -135,18 +133,18 @@ def _cmd_diff(*, run_id: str, stat: bool, paths: tuple[str, ...]) -> int:
         return res
     _layout, manifest = res
 
-    base_sha = str(manifest.get("base_sha") or "")
-    run_branch = manifest.get("run_branch")
+    base_sha = manifest.base_sha
+    run_branch = manifest.run_branch
     if not base_sha:
         print("ERROR: manifest has no base_sha; nothing to diff against", file=sys.stderr)
         return 2
     if run_branch:
-        pruned = _pruned_branch_note(cwd, manifest, str(run_branch))
+        pruned = _pruned_branch_note(cwd, manifest, run_branch)
         if pruned is not None:  # branch gone (pruned): say where the work went
             print(pruned)
             return 0
 
-    head_ref = str(run_branch) if run_branch else "HEAD"
+    head_ref = run_branch if run_branch else "HEAD"
     # The logical command; printed without the -c hardening overrides (the
     # same convention as git_ops error messages), executed with them.
     args: list[str] = ["diff", *DIFF_SHOW_SAFETY_FLAGS]
@@ -157,7 +155,7 @@ def _cmd_diff(*, run_id: str, stat: bool, paths: tuple[str, ...]) -> int:
         args.append("--")
         args.extend(paths)
     print(
-        f"[agent6] git {' '.join(args)}  (base_branch={manifest.get('base_branch')!r})",
+        f"[agent6] git {' '.join(args)}  (base_branch={manifest.base_branch!r})",
         file=sys.stderr,
     )
     # A zero-commit run would print the headers and then nothing; probe first
@@ -219,7 +217,7 @@ def _resolve_run_manifest(
     *,
     recent_note: str = "using most recent run",
     missing_hint: str = "",
-) -> tuple[RunLayout, dict[str, Any]] | int:
+) -> tuple[RunLayout, RunManifest] | int:
     """Resolve a run id (or '' for most-recent) to its (layout, manifest), or an exit
     code on error. Shared by `runs diff`/`merge`/`commits`; the two note strings vary
     per caller."""
@@ -280,14 +278,14 @@ def _cmd_stop(*, run_id: str) -> int:
     return 0
 
 
-def _pruned_branch_note(cwd: Path, manifest: dict[str, Any], run_branch: str) -> str | None:
+def _pruned_branch_note(cwd: Path, manifest: RunManifest, run_branch: str) -> str | None:
     """A friendly message when a run's branch no longer exists (it was pruned),
     or None if the branch is still present. Uses the manifest's recorded merge so
     diff/commits say where the work went instead of leaking a raw git fatal."""
     if branch_exists(cwd, run_branch):
         return None
-    merged_into = manifest.get("merged_into")
-    merged_sha = str(manifest.get("merged_sha") or "")
+    merged_into = manifest.merged.into if manifest.merged else ""
+    merged_sha = manifest.merged.sha if manifest.merged else ""
     if merged_into:
         note = f"[agent6] run branch {run_branch} was pruned; squash-merged into {merged_into}"
         if merged_sha and set(merged_sha) != {"0"}:
@@ -303,19 +301,19 @@ def _cmd_commits(*, run_id: str) -> int:
     if isinstance(res, int):
         return res
     _layout, manifest = res
-    base_sha = str(manifest.get("base_sha") or "")
-    run_branch = manifest.get("run_branch")
+    base_sha = manifest.base_sha
+    run_branch = manifest.run_branch
     if not run_branch or not base_sha:
         print(
             "ERROR: this run has no branch/base recorded (branch_per_run was off?).",
             file=sys.stderr,
         )
         return 2
-    pruned = _pruned_branch_note(cwd, manifest, str(run_branch))
+    pruned = _pruned_branch_note(cwd, manifest, run_branch)
     if pruned is not None:
         print(pruned)
         return 0
-    rows = list_run_commits(cwd, base_sha, str(run_branch))
+    rows = list_run_commits(cwd, base_sha, run_branch)
     if not rows:
         print("[agent6] no commits on the run branch.")
         return 0
@@ -331,7 +329,7 @@ class _MergePlan:
     guard has passed. `_plan_merge` builds it without touching the repo."""
 
     layout: RunLayout
-    manifest: dict[str, Any]
+    manifest: RunManifest
     run_branch: str
     target: str
     base_sha: str
@@ -350,7 +348,7 @@ def _plan_merge(  # noqa: PLR0911
     if isinstance(res, int):
         return res
     layout, manifest = res
-    run_branch = manifest.get("run_branch")
+    run_branch = manifest.run_branch
     if not run_branch:
         print(
             "ERROR: this run has no branch to merge (branch_per_run was off, so the "
@@ -358,8 +356,7 @@ def _plan_merge(  # noqa: PLR0911
             file=sys.stderr,
         )
         return 2
-    run_branch = str(run_branch)
-    target = into or str(manifest.get("base_branch") or "")
+    target = into or manifest.base_branch
     if not target:
         print(
             "ERROR: no target branch (manifest has no base_branch); pass --into <branch>.",
@@ -406,7 +403,7 @@ def _plan_merge(  # noqa: PLR0911
         manifest=manifest,
         run_branch=run_branch,
         target=target,
-        base_sha=str(manifest.get("base_sha") or ""),
+        base_sha=manifest.base_sha,
         strategy=strategy or cfg.git.merge_strategy,
         identity=identity,
         cfg=cfg,
@@ -461,15 +458,20 @@ def _cmd_merge(*, run_id: str, strategy: str | None, into: str | None, message: 
 
 def _manifest_merged_into(state_dir: Path, branch: str) -> str:
     """The base branch the run owning *branch* (agent6/<run_id>) was merged into, or
-    "" if there is no manifest or it was never recorded as merged."""
+    "" if there is no (readable) manifest or it was never recorded as merged.
+
+    Frozen semantics: `runs prune --delete-squashed` force-deletes a branch ONLY
+    when this returns a base name (a manifest-confirmed merge with a recorded sha).
+    An unreadable/corrupt/unmerged manifest returns "" -> the branch is KEPT, never
+    force-deleted (fail-safe). The model's leniency preserves that: the legacy flat
+    merged_into/merged_sha keys fold into `merged`, and any parse failure raises
+    ManifestError -> ""."""
     run_id = branch.removeprefix("agent6/")
     try:
-        manifest = json.loads(
-            RunLayout(state_dir=state_dir, run_id=run_id).manifest_path.read_text(encoding="utf-8")
-        )
-    except (OSError, json.JSONDecodeError):
+        manifest = read_manifest(RunLayout(state_dir=state_dir, run_id=run_id).run_dir)
+    except ManifestError:
         return ""
-    return str(manifest.get("merged_into") or "") if manifest.get("merged_sha") else ""
+    return manifest.merged.into if (manifest.merged and manifest.merged.sha) else ""
 
 
 def _cmd_prune(*, delete_squashed: bool = False) -> int:
@@ -569,7 +571,7 @@ def _cmd_compare(*, run_ids: tuple[str, ...]) -> int:
         )
         return 2
     cwd = Path.cwd()
-    resolved: list[tuple[RunLayout, dict[str, Any]]] = []
+    resolved: list[tuple[RunLayout, RunManifest]] = []
     seen: set[str] = set()
     for query in run_ids:
         res = _resolve_run_manifest(cwd, query)
@@ -588,8 +590,8 @@ def _cmd_compare(*, run_ids: tuple[str, ...]) -> int:
 
     candidates: list[CandidateBrief] = []
     for layout, manifest in resolved:
-        base_sha = str(manifest.get("base_sha") or "")
-        run_branch = str(manifest.get("run_branch") or "")
+        base_sha = manifest.base_sha
+        run_branch = manifest.run_branch or ""
         summary = summarize_run_dir(layout.run_dir)
         candidates.append(
             CandidateBrief(

@@ -10,6 +10,8 @@ characters in page.py; keep them in sync.
 
 from __future__ import annotations
 
+from agent6.runs.manifest import CompareStamp
+
 # Task-node status glyphs. Text characters (not graphics) so every terminal font
 # renders them. ruff's ambiguous-glyph rule (RUF001) flags the en-dash /
 # multiplication-sign, which is the intended distinct look here.
@@ -39,25 +41,20 @@ def format_cost(usd: float, *, partial: bool = False) -> str:
 WINNER_GLYPH = "★"
 
 
-def format_compare(compare: object) -> tuple[str, str] | None:
+def format_compare(compare: CompareStamp | None) -> tuple[str, str] | None:
     """A lane's fan-out compare outcome as ``(headline, rationale)``, or None when
-    the manifest carries no (well-formed) ``compare`` block. The headline reads
-    e.g. ``rank 1/2 · winner · judge``; the rationale is the judge's text (empty
-    for a mechanical ranking). Shared by `runs show` and the TUI run header; the
-    web SPA mirrors the same shape in page.py."""
-    if not isinstance(compare, dict):
+    the run carries no ``compare`` stamp. The headline reads e.g.
+    ``rank 1/2 · winner · judge``; the rationale is the judge's text (empty for a
+    mechanical ranking). Shared by `runs show` and the TUI run header; the web SPA
+    mirrors the same shape in page.py."""
+    if compare is None:
         return None
-    rank, of = compare.get("rank"), compare.get("of")
-    if not isinstance(rank, int) or not isinstance(of, int):
-        return None
-    parts = [f"rank {rank}/{of}"]
-    if compare.get("winner"):
+    parts = [f"rank {compare.rank}/{compare.of}"]
+    if compare.winner:
         parts.append("winner")
-    ranked_by = compare.get("ranked_by")
-    if isinstance(ranked_by, str) and ranked_by:
-        parts.append(ranked_by)
-    rationale = compare.get("rationale")
-    return " · ".join(parts), rationale if isinstance(rationale, str) else ""
+    if compare.ranked_by:
+        parts.append(compare.ranked_by)
+    return " · ".join(parts), compare.rationale
 
 
 def status_label(status: str, reason: str = "") -> str:

@@ -178,7 +178,7 @@ def _seed_source_run(
                 "base_sha": "basesha000",
                 "base_branch": "main",
                 "run_branch": f"agent6/{run_id}",
-                "workflow": {"critic": "off", "revise_prompt": False, "profile": workflow_profile},
+                "workflow": {"critic": "off", "revise_prompt": "off", "profile": workflow_profile},
             }
         ),
         encoding="utf-8",

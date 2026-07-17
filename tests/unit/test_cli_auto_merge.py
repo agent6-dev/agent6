@@ -81,8 +81,8 @@ def test_auto_merge_squashes_and_lands_on_base(
     m = json.loads(
         (resolved_state_dir(tmp_path) / "runs" / "run-AM1111" / "manifest.json").read_text()
     )
-    assert m["merged_into"] == "main"
-    assert m.get("merged_sha")
+    assert m["merged"]["into"] == "main"
+    assert m["merged"]["sha"]
 
 
 def test_auto_merge_noop_without_run_branch(
@@ -153,7 +153,7 @@ def test_auto_merge_skips_when_base_branch_is_gone(
     manifest = json.loads(
         (resolved_state_dir(tmp_path) / "runs" / "run-GONE11" / "manifest.json").read_text()
     )
-    assert "merged_into" not in manifest  # no phantom merge recorded
+    assert manifest.get("merged") is None  # no phantom merge recorded
     assert "failed" in capsys.readouterr().err.lower()
 
 

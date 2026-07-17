@@ -243,8 +243,9 @@ pipelines composed over the engine, never importing `agent6.ui`.
   (`workflows/judge.py`'s structured judge call when a reviewer model is
   configured, else a mechanical verify-then-cost ranking) into a ranked
   report with `agent6 runs merge <id>` lines. The auto-compare also stamps a
-  `compare` block (`group`/`rank`/`of`/`winner`/`ranked_by`/`rationale`) into
-  each imported lane's manifest -- the ONE writer (`runs compare` stays
+  `compare` block (`rank`/`of`/`winner`/`ranked_by`/`rationale`; the fan-out id
+  itself is the manifest's top-level `parallel_id`) into each imported lane's
+  manifest -- the ONE writer (`runs compare` stays
   stateless, the coordinator never compares its lanes) -- so every run view
   (`runs show`, TUI/web run headers) shows where a lane placed and why, and the
   listings mark the winner with a `★`. Nothing merges automatically.

@@ -11,11 +11,11 @@ from __future__ import annotations
 
 import contextlib
 import datetime as _dt
-import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
+from agent6.app.manifest import write_manifest
 from agent6.config import Config
 from agent6.git_ops import (
     CommitIdentity,
@@ -29,9 +29,8 @@ from agent6.git_ops import (
     set_repo_hook_policy,
     squash_merge,
 )
-from agent6.portable import atomic_write
 from agent6.runs.layout import RunLayout
-from agent6.runs.manifest import ManifestError, read_manifest
+from agent6.runs.manifest import ManifestError, MergeStamp, RunManifest, read_manifest
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,14 +49,20 @@ def record_merge_in_manifest(layout: RunLayout, *, merged_into: str, merged_sha:
     merged run branch from an unmerged one. Best-effort: a missing/corrupt manifest
     must not fail a merge that already happened."""
     try:
-        manifest = read_manifest(layout.run_dir)
+        m = read_manifest(layout.run_dir)
     except ManifestError:
         return
-    manifest["merged_into"] = merged_into
-    manifest["merged_sha"] = merged_sha
-    manifest["merged_ts"] = _dt.datetime.now(tz=_dt.UTC).isoformat(timespec="seconds")
+    stamped = m.model_copy(
+        update={
+            "merged": MergeStamp(
+                into=merged_into,
+                sha=merged_sha,
+                ts=_dt.datetime.now(tz=_dt.UTC).isoformat(timespec="seconds"),
+            )
+        }
+    )
     with contextlib.suppress(OSError):
-        atomic_write(layout.manifest_path, json.dumps(manifest, indent=2) + "\n")
+        write_manifest(layout.manifest_path, stamped)
 
 
 def restore_checkout(cwd: Path, original: str, target: str) -> None:
@@ -74,7 +79,7 @@ def dispatch_merge(
     strategy: str,
     run_branch: str,
     base_sha: str,
-    manifest: dict[str, Any],
+    manifest: RunManifest,
     message: str | None,
     cfg: Config,
     identity: CommitIdentity,
@@ -87,7 +92,7 @@ def dispatch_merge(
         )
     rows = list_run_commits(cwd, base_sha, run_branch)
     default_msg, coauthors = condense_commit_message(
-        rows, subject=str(manifest.get("user_task") or "agent6 run")
+        rows, subject=manifest.user_task or "agent6 run"
     )
     if cfg.git.commit.coauthor and cfg.git.commit.coauthor.lower() not in {
         c.lower() for c in coauthors
@@ -106,7 +111,7 @@ def execute_merge(
     cwd: Path,
     *,
     layout: RunLayout,
-    manifest: dict[str, Any],
+    manifest: RunManifest,
     run_branch: str,
     target: str,
     base_sha: str,

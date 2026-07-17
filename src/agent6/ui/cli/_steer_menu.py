@@ -124,12 +124,9 @@ def _fold(run_dir: Path) -> RunState:
 def _read_profile(run_dir: Path) -> str:
     """The effective profile the run started with (manifest.json), or ""."""
     try:
-        data = read_manifest(run_dir)
+        return read_manifest(run_dir).workflow.profile
     except ManifestError:
         return ""
-    workflow = data.get("workflow")
-    profile = workflow.get("profile") if isinstance(workflow, dict) else None
-    return profile if isinstance(profile, str) else ""
 
 
 def _print_status(run_dir: Path) -> None:

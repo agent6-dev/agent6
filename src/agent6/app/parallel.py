@@ -40,6 +40,7 @@ from agent6.app.compare import (
     rank,
     verify_ok,
 )
+from agent6.app.manifest import write_manifest
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config
 from agent6.config.layer import materialize
@@ -48,8 +49,8 @@ from agent6.git_ops import GitError, diff_since
 from agent6.git_ops import status as git_status
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
 from agent6.paths import cache_dir, state_dir
-from agent6.portable import atomic_write
 from agent6.runs.ipc import request_stop, worker_is_alive
+from agent6.runs.manifest import CompareStamp, ManifestError, read_manifest
 from agent6.viewmodel import summarize_run_dir
 from agent6.workflows.judge import CandidateBrief
 from agent6.workflows.subrun import (
@@ -563,23 +564,20 @@ def _print_lane_status(
 # ---------------------------------------------------------------------------
 
 
-def _rewrite_manifest(run_dir: Path, updates: dict[str, object]) -> str | None:
-    """Merge *updates* into an imported lane's manifest.json (read, add, atomic
-    rewrite). Returns an error string when the manifest cannot be read/parsed or
-    written (the import itself stands; the caller reports the degradation). The
-    one stamping helper: `_stamp_lineage` (post-import) and `_stamp_compare`
-    (post-ranking) both go through it, so the atomic rewrite + loud-degrade
-    contract lives in one place."""
+def _stamp(run_dir: Path, **updates: object) -> str | None:
+    """Apply typed field *updates* to an imported lane's manifest (read the model,
+    ``model_copy``, atomic rewrite). Returns an error string when the manifest
+    cannot be read/parsed or written (the import itself stands; the caller reports
+    the degradation). The one stamping helper: `_stamp_lineage` (post-import) and
+    `_stamp_compare_outcomes` (post-ranking) both go through it, so the read +
+    atomic rewrite + loud-degrade contract lives in one place."""
     mpath = run_dir / "manifest.json"
     try:
-        manifest = json.loads(mpath.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        m = read_manifest(run_dir)
+    except ManifestError as exc:
         return f"could not read {mpath}: {exc}"
-    if not isinstance(manifest, dict):
-        return f"manifest is not a JSON object: {mpath}"
-    manifest.update(updates)
     try:
-        atomic_write(mpath, json.dumps(manifest, indent=2) + "\n")
+        write_manifest(mpath, m.model_copy(update=updates))
     except OSError as exc:
         # Disk full / read-only mount: the import already stands, so report the
         # degradation and let the loop keep importing/stamping the remaining lanes.
@@ -591,7 +589,7 @@ def _stamp_lineage(run_dir: Path, fanout_id: str, lane: int) -> str | None:
     """Record fan-out lineage on an imported lane's manifest. The lane process
     wrote the manifest not knowing it was a lane, so the orchestrator adds
     `parallel_id`/`lane` post-import."""
-    return _rewrite_manifest(run_dir, {"parallel_id": fanout_id, "lane": lane})
+    return _stamp(run_dir, parallel_id=fanout_id, lane=lane)
 
 
 def _stamp_compare_outcomes(
@@ -599,7 +597,6 @@ def _stamp_compare_outcomes(
     ranking: tuple[str, ...],
     *,
     origin_state: Path,
-    fanout_id: str,
     ranked_by: str,
     rationale: str,
     reporter: Reporter = STDIO_REPORTER,
@@ -615,15 +612,14 @@ def _stamp_compare_outcomes(
     of = len(candidates)
     text = rationale[:2000] if ranked_by == "judge" else ""
     for rank_pos, run_id in enumerate(ranking, start=1):
-        compare: dict[str, object] = {
-            "group": fanout_id,
-            "rank": rank_pos,
-            "of": of,
-            "winner": rank_pos == 1,
-            "ranked_by": ranked_by,
-            "rationale": text,
-        }
-        err = _rewrite_manifest(_lane_link(origin_state, run_id), {"compare": compare})
+        compare = CompareStamp(
+            rank=rank_pos,
+            of=of,
+            winner=rank_pos == 1,
+            ranked_by=ranked_by,
+            rationale=text,
+        )
+        err = _stamp(_lane_link(origin_state, run_id), compare=compare)
         if err is not None:
             reporter.err(f"[agent6] lane [{run_id}]: imported, but the compare stamp failed: {err}")
 
@@ -832,7 +828,6 @@ def run_parallel(
         candidates,
         ranking,
         origin_state=origin_state,
-        fanout_id=fanout_id,
         ranked_by=ranked_by,
         rationale=rationale,
         reporter=reporter,

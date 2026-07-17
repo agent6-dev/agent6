@@ -23,7 +23,7 @@ from agent6.runs.ipc import (
     write_frontend_pid,
     write_question_answers,
 )
-from agent6.runs.manifest import ManifestError, read_manifest
+from agent6.runs.manifest import ManifestError, RunManifest, read_manifest
 from agent6.tools.schema import UserQuestion
 from agent6.ui.cli._common import _runs_dir, _state_dir, resolve_or_newest_layout
 from agent6.ui.cli._console_view import ConsoleView
@@ -235,22 +235,22 @@ def _scan_run_events(events_path: Path) -> dict[str, object]:
     return out
 
 
-def _print_fork_lineage(manifest: dict[str, object]) -> None:
+def _print_fork_lineage(manifest: RunManifest) -> None:
     """Print the fork-lineage line for a run created by `agent6 fork` (no-op
     otherwise)."""
-    parent = manifest.get("parent_run_id")
-    if not (isinstance(parent, str) and parent):
+    parent = manifest.parent_run_id
+    if not parent:
         return
-    sha = manifest.get("forked_from_sha")
-    sha_note = f" ({sha[:12]})" if isinstance(sha, str) and sha else ""
-    print(f"forked from: {parent}@turn {manifest.get('forked_from_turn')}{sha_note}")
+    sha = manifest.forked_from_sha
+    sha_note = f" ({sha[:12]})" if sha else ""
+    print(f"forked from: {parent}@turn {manifest.forked_from_turn}{sha_note}")
 
 
-def _print_parallel_compare(manifest: dict[str, object]) -> None:
+def _print_parallel_compare(manifest: RunManifest) -> None:
     """Print the fan-out compare outcome for a lane (no-op for a non-lane run):
     where it placed, whether it won, judged or mechanical, and the judge's
     rationale when there is one."""
-    formatted = format_compare(manifest.get("compare"))
+    formatted = format_compare(manifest.compare)
     if formatted is None:
         return
     headline, rationale = formatted
@@ -277,9 +277,13 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:  # noqa: PLR0915
         )
         return 2
 
-    manifest: dict[str, object] = {}
+    loaded: RunManifest | None = None
     with contextlib.suppress(ManifestError):
-        manifest = read_manifest(target)
+        loaded = read_manifest(target)
+    # A missing/corrupt manifest still renders (defaults), but `mode` reads "?"
+    # rather than the model default so a manifest-less run isn't shown as "run".
+    manifest = loaded or RunManifest()
+    mode_display = loaded.mode if loaded is not None else None
 
     ev = _scan_run_events(target / "logs.jsonl")
     start_ep = ev["start_ep"]
@@ -312,16 +316,16 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:  # noqa: PLR0915
     else:
         state = "stopped (no worker, no run.end: likely crashed or killed)"
 
-    models = manifest.get("models")
-    worker = models.get("worker") if isinstance(models, dict) else None
-    model = (worker.get("model") if isinstance(worker, dict) else worker) or "?"
+    worker = manifest.models.worker
+    model = (worker.model if worker else "") or "?"
+    compare_json = manifest.compare.model_dump(mode="json") if manifest.compare else None
 
     if as_json:
         print(
             json.dumps(
                 {
                     "run_id": target.name,
-                    "mode": manifest.get("mode"),
+                    "mode": mode_display,
                     "model": model,
                     "state": state,
                     "alive": alive,
@@ -334,10 +338,10 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:  # noqa: PLR0915
                     "input_tokens": ev["input_tokens"],
                     "output_tokens": ev["output_tokens"],
                     "cost_usd": ev["cost_usd"],
-                    "parent_run_id": manifest.get("parent_run_id"),
-                    "forked_from_turn": manifest.get("forked_from_turn"),
-                    "forked_from_sha": manifest.get("forked_from_sha"),
-                    "compare": manifest.get("compare"),
+                    "parent_run_id": manifest.parent_run_id,
+                    "forked_from_turn": manifest.forked_from_turn,
+                    "forked_from_sha": manifest.forked_from_sha,
+                    "compare": compare_json,
                 }
             )
         )
@@ -348,7 +352,7 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:  # noqa: PLR0915
         pid_note = f"  (worker pid {pid} alive)"
     elif pid is not None and end_reason is None:
         pid_note = f"  (worker pid {pid} not running)"
-    print(f"run:        {target.name}  (mode={manifest.get('mode', '?')})")
+    print(f"run:        {target.name}  (mode={mode_display or '?'})")
     _print_fork_lineage(manifest)
     _print_parallel_compare(manifest)
     print(f"model:      {model}")

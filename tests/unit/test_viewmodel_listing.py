@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 
+from agent6.runs.manifest import CompareStamp
 from agent6.viewmodel import (
     is_run_husk,
     is_winner,
@@ -59,10 +60,12 @@ def _stamp(run_dir: Path, compare: object) -> None:
 
 
 def test_run_compare_and_is_winner_read_the_manifest_block(tmp_path: Path) -> None:
+    # The fixture writes the legacy `group` key; the model ignores it (old-shape
+    # compat), so a fan-out lane recorded before the dedup still reads its stamp.
     win = tmp_path / "win"
     _stamp(win, {"group": "fan", "rank": 1, "of": 2, "winner": True, "ranked_by": "judge"})
     assert is_winner(win) is True
-    assert isinstance(run_compare(win), dict)
+    assert isinstance(run_compare(win), CompareStamp)
     loser = tmp_path / "loser"
     _stamp(loser, {"group": "fan", "rank": 2, "of": 2, "winner": False, "ranked_by": "judge"})
     assert is_winner(loser) is False
@@ -74,16 +77,16 @@ def test_run_compare_and_is_winner_read_the_manifest_block(tmp_path: Path) -> No
 
 def test_format_compare_headline_and_rationale() -> None:
     won = format_compare(
-        {"rank": 1, "of": 3, "winner": True, "ranked_by": "judge", "rationale": "cleanest diff"}
+        CompareStamp(rank=1, of=3, winner=True, ranked_by="judge", rationale="cleanest diff")
     )
     assert won == ("rank 1/3 · winner · judge", "cleanest diff")
     # A loser, mechanical, no rationale.
     lost = format_compare(
-        {"rank": 2, "of": 3, "winner": False, "ranked_by": "mechanical", "rationale": ""}
+        CompareStamp(rank=2, of=3, winner=False, ranked_by="mechanical", rationale="")
     )
     assert lost == ("rank 2/3 · mechanical", "")
-    # Absent / malformed -> None (no rank/of ints).
-    assert format_compare(None) is None and format_compare({"rank": "x"}) is None
+    # No stamp -> None.
+    assert format_compare(None) is None
 
 
 # --- summarize_run_dir / status_word (shared by TUI hub, web hub, runs list) --

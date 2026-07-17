@@ -109,8 +109,8 @@ def print_run_end(
     base_branch = ""
     with contextlib.suppress(ManifestError):
         manifest = read_manifest(layout.run_dir)
-        run_branch = manifest.get("run_branch", "")
-        base_branch = manifest.get("base_branch", "")
+        run_branch = manifest.run_branch or ""
+        base_branch = manifest.base_branch
     if result.completed and run_branch:
         print(f"\nchanges are on {run_branch}")
         print(f"  merge with:  agent6 runs merge {layout.run_id}")
@@ -138,11 +138,10 @@ def finalize_auto_merge(cwd: Path, *, layout: RunLayout, cfg: Config) -> None:
         manifest = read_manifest(layout.run_dir)
     except ManifestError:
         return
-    run_branch = manifest.get("run_branch")
-    base_branch = manifest.get("base_branch")
+    run_branch = manifest.run_branch
+    base_branch = manifest.base_branch
     if not run_branch or not base_branch:
         return  # branch_per_run was off: the work already landed on the base branch
-    run_branch, base_branch = str(run_branch), str(base_branch)
     try:
         st = git_status(cwd)
     except GitError:
@@ -168,7 +167,7 @@ def finalize_auto_merge(cwd: Path, *, layout: RunLayout, cfg: Config) -> None:
         manifest=manifest,
         run_branch=run_branch,
         target=base_branch,
-        base_sha=str(manifest.get("base_sha") or ""),
+        base_sha=manifest.base_sha,
         strategy=cfg.git.merge_strategy,
         message=None,
         cfg=cfg,

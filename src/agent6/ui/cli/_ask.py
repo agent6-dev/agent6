@@ -142,9 +142,9 @@ def build_ask_run_digest(cwd: Path, run_id: str, *, latest: bool) -> str | None:
     except ManifestError as exc:
         print(f"ERROR: could not read manifest for {target}: {exc}", file=sys.stderr)
         return None
-    base_sha = str(manifest.get("base_sha") or "")
-    run_branch = manifest.get("run_branch")
-    head_ref = str(run_branch) if run_branch else "HEAD"
+    base_sha = manifest.base_sha
+    run_branch = manifest.run_branch
+    head_ref = run_branch if run_branch else "HEAD"
     diff = ""
     if base_sha:
         # operator-controlled argv, no LLM input (same as `agent6 runs diff`).
@@ -168,7 +168,7 @@ def build_ask_run_digest(cwd: Path, run_id: str, *, latest: bool) -> str | None:
         "This question is about a PRIOR agent6 run. Its run state lives outside the"
         " workspace and is not reachable with read_file, so everything you have"
         " about it is in this digest.\n\n"
-        f"## Run task\n{manifest.get('user_task', '')}\n\n"
+        f"## Run task\n{manifest.user_task}\n\n"
         f"## Outcome / key events\n{summarize_run_log(layout.logs_path)}\n\n"
         f"## Diff base_sha..{head_ref} (truncated)\n```diff\n{diff_excerpt}\n```\n"
         f"</prior-run>"

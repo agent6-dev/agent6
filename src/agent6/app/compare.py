@@ -48,8 +48,7 @@ def manifest_task(run_dir: Path, fallback: str) -> str:
         manifest = read_manifest(run_dir)
     except ManifestError:
         return fallback
-    task = manifest.get("user_task")
-    return task if isinstance(task, str) and task else fallback
+    return manifest.user_task or fallback
 
 
 def rank(

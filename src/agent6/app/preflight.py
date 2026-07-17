@@ -146,8 +146,7 @@ def _manifest_base_branch(state_dir: Path, run_id: str) -> str | None:
         manifest = read_manifest(layout.run_dir)
     except ManifestError:
         return None
-    base = manifest.get("base_branch")
-    return str(base) if base else None
+    return manifest.base_branch or None
 
 
 def resolve_base_branch(state_dir: Path, current_branch: str) -> str:

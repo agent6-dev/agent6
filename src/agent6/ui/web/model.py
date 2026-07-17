@@ -232,10 +232,12 @@ def manifest_branches(run_dir: Path) -> dict[str, str]:
     except ManifestError:
         return {}
     out: dict[str, str] = {}
-    for key in ("run_branch", "base_branch", "merged_into"):
-        value = manifest.get(key)
-        if value:
-            out[key] = str(value)
+    if manifest.run_branch:
+        out["run_branch"] = manifest.run_branch
+    if manifest.base_branch:
+        out["base_branch"] = manifest.base_branch
+    if manifest.merged and manifest.merged.into:
+        out["merged_into"] = manifest.merged.into
     return out
 
 
@@ -248,7 +250,7 @@ def manifest_header(run_dir: Path) -> dict[str, Any]:
     header: dict[str, Any] = dict(manifest_branches(run_dir))
     compare = run_compare(run_dir)
     if compare is not None:
-        header["compare"] = compare
+        header["compare"] = compare.model_dump(mode="json")
     return header
 
 

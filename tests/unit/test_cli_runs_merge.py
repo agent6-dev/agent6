@@ -84,8 +84,8 @@ def test_runs_merge_squash_is_one_commit_and_records_manifest(
     assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "1"
     layout = RunLayout(state_dir=resolved_state_dir(tmp_path), run_id="run-AAAA11")
     m = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
-    assert m["merged_into"] == "main"
-    assert m.get("merged_sha")
+    assert m["merged"]["into"] == "main"
+    assert m["merged"]["sha"]
 
 
 def test_runs_merge_strategy_merge_keeps_history(

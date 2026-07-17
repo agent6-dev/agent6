@@ -77,7 +77,7 @@ def test_mcp_serve_roundtrip(tmp_path: Path) -> None:
     # Seed a run dir so list_runs has something to enumerate.
     (resolved_state_dir(tmp_path) / "runs" / "demo").mkdir(parents=True)
     (resolved_state_dir(tmp_path) / "runs" / "demo" / "manifest.json").write_text(
-        json.dumps({"task": "demo-task"}), encoding="utf-8"
+        json.dumps({"user_task": "demo-task"}), encoding="utf-8"
     )
 
     proc = subprocess.Popen(
@@ -147,7 +147,11 @@ def test_mcp_serve_roundtrip(tmp_path: Path) -> None:
     list_runs_resp = by_id[3]["result"]
     assert isinstance(list_runs_resp, dict)
     runs = list_runs_resp["structuredContent"]["runs"]
-    assert runs == [{"run_id": "demo", "manifest": {"task": "demo-task"}}]
+    assert len(runs) == 1
+    assert runs[0]["run_id"] == "demo"
+    # The manifest ships as the typed RunManifest dump (defaults filled in).
+    assert runs[0]["manifest"]["user_task"] == "demo-task"
+    assert runs[0]["manifest"]["version"] == 2
 
 
 def test_mcp_run_verify_resolves_through_real_dispatcher(tmp_path: Path) -> None:

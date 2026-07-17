@@ -563,11 +563,11 @@ def test_compare_outcome_stamped_into_each_lane_manifest(
     m1 = json.loads((origin_state / "runs" / "fan-l1" / "manifest.json").read_text("utf-8"))
     m2 = json.loads((origin_state / "runs" / "fan-l2" / "manifest.json").read_text("utf-8"))
     assert m2["compare"] == {
-        "group": "fan", "rank": 1, "of": 2, "winner": True,
+        "rank": 1, "of": 2, "winner": True,
         "ranked_by": "mechanical", "rationale": "",
     }  # fmt: skip
     assert m1["compare"] == {
-        "group": "fan", "rank": 2, "of": 2, "winner": False,
+        "rank": 2, "of": 2, "winner": False,
         "ranked_by": "mechanical", "rationale": "",
     }  # fmt: skip
     # The lineage stamp is untouched by the compare stamp (shared rewrite merges).
@@ -738,10 +738,10 @@ def test_lineage_stamp_oserror_does_not_abort_import_loop(
     lanes = _specs(tmp_path, cfg, "fan", "2")
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
 
-    def boom(_path: Path, _data: str) -> None:
+    def boom(_path: Path, _m: object) -> None:
         raise OSError("disk full")
 
-    monkeypatch.setattr(parallel, "atomic_write", boom)
+    monkeypatch.setattr(parallel, "write_manifest", boom)
 
     rc = run_parallel(
         "t",
