@@ -695,56 +695,41 @@ def _end_failed(
     )
 
 
-def drive(  # noqa: PLR0911, PLR0912, PLR0915
-    spec: MachineSpec,
-    journal: MachineJournal,
-    world: World | None,
-    *,
-    live: bool,
-    exit_on_wait: bool = False,
-) -> MachineResult:
-    """Run or replay *spec* against its *journal*.
+@dataclass(slots=True)
+class _EngineState:
+    """Mutable bookkeeping threaded through the engine's two phases.
 
-    With ``live=True`` (``machine run``) the engine recovers from any existing
-    journal, then continues to a terminal state, appending new facts. With
-    ``live=False`` (``machine replay``) it only reconstructs the recorded path
-    and reports where the journal ends; *world* is ignored.
-
-    With ``exit_on_wait=True`` (``machine run --exit-on-wait``) the engine makes
-    all the progress it can, but the first time it reaches a ``wait`` that is
-    not yet ready it persists the absolute wake instant and returns a
-    ``"waiting"`` result instead of blocking, for an external scheduler
-    (systemd timer / cron) to re-invoke and resume (§6).
+    ``drive`` builds one, ``_rebuild_from_journal`` folds the recorded facts
+    into it (crash recovery when live, offline backtest when not), then -- live
+    only -- ``_run_live_loop`` continues from where the journal ends. Carrying
+    the four cross-phase values in one object (rather than a six-arg call
+    returning a four-tuple) lets each phase be a function taking ``state``, per
+    the AGENTS.md decompose rule.
     """
-    events = journal.read()
-    if events and isinstance(events[-1], MachineEnd):
-        end = events[-1]
-        return MachineResult(end.status, end.reason, end.state, end.transitions)
 
-    # The instance is keyed only by the `machine` id, so a different file (or an
-    # incompatible edit) can land on the same journal. Cross-check the recorded
-    # identity so a mismatch fails loudly here, not as a KeyError mid-recovery.
-    begin = events[0] if events else None
-    if isinstance(begin, MachineBegin) and (
-        begin.machine != spec.machine or begin.version != spec.version
-    ):
-        raise EngineError(
-            f"this journal was started by machine {begin.machine!r} v{begin.version},"
-            f" but the file declares {spec.machine!r} v{spec.version}. A different"
-            " machine reused the id, or the file changed since this instance began;"
-            " archive the instance directory to start fresh."
-        )
+    spec: MachineSpec
+    journal: MachineJournal
+    world: World | None
+    exit_on_wait: bool
+    # Blackboard + position, folded by replay then advanced by the live loop.
+    # `state` is the current state name; `spent_usd` sums agent-fact spend for
+    # the cumulative usd_limit check.
+    blackboard: dict[str, Any]
+    state: str
+    transitions: int = 0
+    spent_usd: float = 0.0
 
-    blackboard = initial_blackboard(spec)
-    state = spec.initial
-    transitions = 0
-    spent_usd = 0.0
 
-    if not events and live:
-        journal.ensure_dirs()
-        journal.begin(machine=spec.machine, version=spec.version)
-
-    # Rebuild from recorded facts (recovery / replay).
+def _rebuild_from_journal(eng: _EngineState, events: list[Any]) -> None:
+    """Replay recorded StepEvents through the pure reducer to rebuild the
+    blackboard and position, advancing *eng* in place. Non-StepEvents
+    (begin/notify/end) are skipped; a fact that no longer reduces surfaces as a
+    clean EngineError."""
+    spec = eng.spec
+    blackboard = eng.blackboard
+    state = eng.state
+    transitions = eng.transitions
+    spent_usd = eng.spent_usd
     for event in events:
         if not isinstance(event, StepEvent):
             continue
@@ -766,18 +751,26 @@ def drive(  # noqa: PLR0911, PLR0912, PLR0915
             spent_usd += event.fact.usd
         state = event.goto
         transitions = event.seq + 1
+    eng.blackboard = blackboard
+    eng.state = state
+    eng.transitions = transitions
+    eng.spent_usd = spent_usd
 
-    if not live:
-        current = spec.states.get(state)
-        if isinstance(current, TerminalState):
-            return MachineResult(current.status, current.reason, state, transitions)
-        return MachineResult(
-            "incomplete", "journal ends before a terminal state", state, transitions
-        )
 
+def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: PLR0912, PLR0915
+    """Continue live from where the journal ends: execute one state per
+    iteration, journal its fact, and advance, until a terminal state (or a
+    budget cap, a runtime state error, or an ``--exit-on-wait`` park) ends it."""
+    spec = eng.spec
+    journal = eng.journal
+    exit_on_wait = eng.exit_on_wait
+    world = eng.world
     if world is None:  # pragma: no cover - defensive
         raise EngineError("live execution requires a World")
-
+    blackboard = eng.blackboard
+    state = eng.state
+    transitions = eng.transitions
+    spent_usd = eng.spent_usd
     while True:
         current = spec.states.get(state)
         if current is None:
@@ -889,3 +882,68 @@ def drive(  # noqa: PLR0911, PLR0912, PLR0915
         transitions += 1
         journal.write_snapshot(Snapshot(seq=transitions, state=goto, blackboard=blackboard))
         state = goto
+
+
+def drive(
+    spec: MachineSpec,
+    journal: MachineJournal,
+    world: World | None,
+    *,
+    live: bool,
+    exit_on_wait: bool = False,
+) -> MachineResult:
+    """Run or replay *spec* against its *journal*.
+
+    With ``live=True`` (``machine run``) the engine recovers from any existing
+    journal, then continues to a terminal state, appending new facts. With
+    ``live=False`` (``machine replay``) it only reconstructs the recorded path
+    and reports where the journal ends; *world* is ignored.
+
+    With ``exit_on_wait=True`` (``machine run --exit-on-wait``) the engine makes
+    all the progress it can, but the first time it reaches a ``wait`` that is
+    not yet ready it persists the absolute wake instant and returns a
+    ``"waiting"`` result instead of blocking, for an external scheduler
+    (systemd timer / cron) to re-invoke and resume (§6).
+    """
+    events = journal.read()
+    if events and isinstance(events[-1], MachineEnd):
+        end = events[-1]
+        return MachineResult(end.status, end.reason, end.state, end.transitions)
+
+    # The instance is keyed only by the `machine` id, so a different file (or an
+    # incompatible edit) can land on the same journal. Cross-check the recorded
+    # identity so a mismatch fails loudly here, not as a KeyError mid-recovery.
+    begin = events[0] if events else None
+    if isinstance(begin, MachineBegin) and (
+        begin.machine != spec.machine or begin.version != spec.version
+    ):
+        raise EngineError(
+            f"this journal was started by machine {begin.machine!r} v{begin.version},"
+            f" but the file declares {spec.machine!r} v{spec.version}. A different"
+            " machine reused the id, or the file changed since this instance began;"
+            " archive the instance directory to start fresh."
+        )
+
+    if not events and live:
+        journal.ensure_dirs()
+        journal.begin(machine=spec.machine, version=spec.version)
+
+    eng = _EngineState(
+        spec=spec,
+        journal=journal,
+        world=world,
+        exit_on_wait=exit_on_wait,
+        blackboard=initial_blackboard(spec),
+        state=spec.initial,
+    )
+    _rebuild_from_journal(eng, events)
+
+    if not live:
+        current = spec.states.get(eng.state)
+        if isinstance(current, TerminalState):
+            return MachineResult(current.status, current.reason, eng.state, eng.transitions)
+        return MachineResult(
+            "incomplete", "journal ends before a terminal state", eng.state, eng.transitions
+        )
+
+    return _run_live_loop(eng)
