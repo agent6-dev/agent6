@@ -17,10 +17,8 @@ import json
 from typing import Any
 
 from agent6.providers._openai_recovery import (
-    coerce_text_tool_calls as _coerce_text_tool_calls,
-)
-from agent6.providers._openai_recovery import (
-    lenient_json_object as _lenient_json_object,
+    coerce_text_tool_calls,
+    lenient_json_object,
 )
 from agent6.providers.types import ProviderResponse
 
@@ -91,7 +89,7 @@ def parse_response(  # noqa: PLR0912, PLR0915
                 # feed the handler garbage; anything still unparseable becomes the
                 # `_raw_arguments` sentinel (dispatch turns that into a clear
                 # "resend valid JSON" error).
-                repaired = _lenient_json_object(args_raw)
+                repaired = lenient_json_object(args_raw)
                 if repaired is not None:
                     parsed_input = repaired
                 else:
@@ -122,7 +120,7 @@ def parse_response(  # noqa: PLR0912, PLR0915
         # offered and never for flagship models (which populate
         # tool_calls) or models legitimately answering with JSON.
         if not tool_uses and tool_names:
-            recovered, remaining_text = _coerce_text_tool_calls(text, tool_names, tool_schemas)
+            recovered, remaining_text = coerce_text_tool_calls(text, tool_names, tool_schemas)
             if recovered:
                 tool_uses = tuple(
                     {"id": f"call_text_{i}", "name": r["name"], "input": r["input"]}

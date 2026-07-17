@@ -933,7 +933,7 @@ def test_passthrough_env_is_fixed_allowlist() -> None:
         os.environ["LD_PRELOAD"] = "/tmp/evil.so"
         os.environ["LD_LIBRARY_PATH"] = "/tmp/evil"
         os.environ["PYTHONPATH"] = "/tmp/evil"
-        env = _disp._passthrough_env()  # pyright: ignore[reportPrivateUsage]
+        env = _disp.passthrough_env()  # pyright: ignore[reportPrivateUsage]
         assert "LD_PRELOAD" not in env
         assert "LD_LIBRARY_PATH" not in env
         assert "PYTHONPATH" not in env

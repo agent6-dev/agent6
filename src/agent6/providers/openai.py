@@ -57,7 +57,7 @@ import httpx2
 
 from agent6.budget import BudgetTracker
 from agent6.providers._openai_messages import anthropic_to_openai_messages, tools_to_openai
-from agent6.providers._openai_parse import parse_response as _parse_response
+from agent6.providers._openai_parse import parse_response
 from agent6.providers._stream import SseCall, StreamClock
 from agent6.providers._transport import ProviderCall
 from agent6.providers.token_command import CommandToken
@@ -446,7 +446,7 @@ class OpenAIProvider:
             body.update({k: v for k, v in self.extra_body.items() if k not in reserved})
         # Names of the tools actually offered this turn. Used purely as
         # a guard for the text-embedded-tool-call recovery in
-        # `_parse_response`: we only ever coerce a text blob into a
+        # `parse_response`: we only ever coerce a text blob into a
         # tool_use when its `name` matches a tool we really offered, so
         # well-behaved models (native tool_calls) and models that happen
         # to answer with JSON are never affected.
@@ -480,7 +480,7 @@ class OpenAIProvider:
             require_metered=lambda data: _require_metered_usage(
                 data.get("usage"), source="OpenAI response"
             ),
-            parse=lambda data: _parse_response(
+            parse=lambda data: parse_response(
                 data, tool_names=tool_names, tool_schemas=tool_schemas
             ),
             stream=(
@@ -727,7 +727,7 @@ class OpenAIProvider:
         call.record(status=200, response=synthesised)
         if self.budget is not None:
             _require_metered_usage(usage, source="OpenAI stream")
-        parsed = _parse_response(synthesised, tool_names=tool_names, tool_schemas=tool_schemas)
+        parsed = parse_response(synthesised, tool_names=tool_names, tool_schemas=tool_schemas)
         if self.budget is not None:
             self.budget.record(
                 model=self.model,

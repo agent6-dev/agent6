@@ -31,40 +31,23 @@ from agent6.skills import (
     resolve_states,
     skill_search_dirs,
 )
-from agent6.tools._control_tools import ask_user as _ask_user_impl
-from agent6.tools._control_tools import finish_planning as _finish_planning_impl
-from agent6.tools._control_tools import finish_run as _finish_run_impl
-from agent6.tools._dag_tools import add_dependency as _add_dependency
-from agent6.tools._dag_tools import add_task as _add_task
-from agent6.tools._dag_tools import list_tasks as _list_tasks
-from agent6.tools._dag_tools import set_cursor as _set_cursor
-from agent6.tools._dag_tools import update_task as _update_task
-from agent6.tools._fs_tools import agent6_docs as _fs_agent6_docs
-from agent6.tools._fs_tools import apply_edit as _fs_apply_edit
-from agent6.tools._fs_tools import apply_patch as _fs_apply_patch
-from agent6.tools._fs_tools import grep as _fs_grep
-from agent6.tools._fs_tools import list_dir as _fs_list_dir
-from agent6.tools._fs_tools import read_file as _fs_read_file
+from agent6.tools._control_tools import ask_user, finish_planning, finish_run
+from agent6.tools._dag_tools import add_dependency, add_task, list_tasks, set_cursor, update_task
+from agent6.tools._fs_tools import agent6_docs, apply_edit, apply_patch, grep, list_dir, read_file
 from agent6.tools._git_guard import refuse_mutating_git_command
-from agent6.tools._memory_tools import add_memory as _add_memory_impl
-from agent6.tools._memory_tools import invalidate_memory as _invalidate_memory_impl
-from agent6.tools._memory_tools import use_skill as _use_skill_impl
-from agent6.tools._nav_tools import find_definition as _nav_find_definition
-from agent6.tools._nav_tools import find_definition_lsp as _nav_find_definition_lsp
-from agent6.tools._nav_tools import find_references as _nav_find_references
-from agent6.tools._nav_tools import find_references_lsp as _nav_find_references_lsp
-from agent6.tools._nav_tools import outline as _nav_outline
-from agent6.tools._result_format import (
-    parse_metric_score as _parse_metric_score,
+from agent6.tools._memory_tools import add_memory, invalidate_memory, use_skill
+from agent6.tools._nav_tools import (
+    find_definition,
+    find_definition_lsp,
+    find_references,
+    find_references_lsp,
+    outline,
 )
 from agent6.tools._result_format import (
-    passthrough_env as _passthrough_env,
-)
-from agent6.tools._result_format import (
-    summarize_result as _summarize_result,
-)
-from agent6.tools._result_format import (
-    truncate_args as _truncate_args,
+    parse_metric_score,
+    passthrough_env,
+    summarize_result,
+    truncate_args,
 )
 from agent6.tools.errors import OperatorCommandUnexecutable, ToolError
 from agent6.tools.index import Symbol, SymbolIndex
@@ -430,7 +413,7 @@ class ToolDispatcher:
         # The finish tools' `summary` is the human end-of-run statement (shown on
         # the done line + in `watch`); keep it whole. Generic args stay clipped.
         max_chars = 2000 if name in ("finish_run", "finish_planning") else 200
-        preview = _truncate_args(raw_input, max_value_chars=max_chars)
+        preview = truncate_args(raw_input, max_value_chars=max_chars)
         self._emit("tool.call", name=name, args=preview)
         try:
             result = self._dispatch_inner(name, raw_input)
@@ -451,7 +434,7 @@ class ToolDispatcher:
             "tool.result",
             name=name,
             ok=True,
-            summary=_summarize_result(name, result),
+            summary=summarize_result(name, result),
             **_output_tails(name, result),
         )
         return result
@@ -555,24 +538,22 @@ class ToolDispatcher:
     # ----- handlers -----
 
     def _agent6_docs(self, raw: dict[str, Any]) -> dict[str, Any]:
-        return _fs_agent6_docs(raw)
+        return agent6_docs(raw)
 
     def _read_file(self, raw: dict[str, Any]) -> dict[str, Any]:
-        return _fs_read_file(self._root, raw)
+        return read_file(self._root, raw)
 
     def _list_dir(self, raw: dict[str, Any]) -> dict[str, Any]:
-        return _fs_list_dir(self._root, raw)
+        return list_dir(self._root, raw)
 
     def _grep(self, raw: dict[str, Any]) -> dict[str, Any]:
-        return _fs_grep(self._root, raw)
+        return grep(self._root, raw)
 
     def _apply_edit(self, raw: dict[str, Any]) -> dict[str, Any]:
-        return _fs_apply_edit(self._root, self._config, self._extra_protect_paths, self._index, raw)
+        return apply_edit(self._root, self._config, self._extra_protect_paths, self._index, raw)
 
     def _apply_patch(self, raw: dict[str, Any]) -> dict[str, Any]:
-        return _fs_apply_patch(
-            self._root, self._config, self._extra_protect_paths, self._index, raw
-        )
+        return apply_patch(self._root, self._config, self._extra_protect_paths, self._index, raw)
 
     # ----- tree-sitter index handlers -----
 
@@ -612,13 +593,13 @@ class ToolDispatcher:
         return idx.file_outlines()
 
     def _outline(self, raw: dict[str, Any]) -> dict[str, Any]:
-        return _nav_outline(self._root, self._ensure_index, raw)
+        return outline(self._root, self._ensure_index, raw)
 
     def _find_definition(self, raw: dict[str, Any]) -> dict[str, Any]:
-        return _nav_find_definition(self._root, self._ensure_index, raw)
+        return find_definition(self._root, self._ensure_index, raw)
 
     def _find_references(self, raw: dict[str, Any]) -> dict[str, Any]:
-        return _nav_find_references(self._root, self._ensure_index, raw)
+        return find_references(self._root, self._ensure_index, raw)
 
     # LSP-backed navigation. Lazy spawn so runs that never
     # call a *_lsp tool don't pay the server-startup tax.
@@ -633,10 +614,10 @@ class ToolDispatcher:
         return self._lsp
 
     def _find_definition_lsp(self, raw: dict[str, Any]) -> dict[str, Any]:
-        return _nav_find_definition_lsp(self._root, self._ensure_lsp, raw)
+        return find_definition_lsp(self._root, self._ensure_lsp, raw)
 
     def _find_references_lsp(self, raw: dict[str, Any]) -> dict[str, Any]:
-        return _nav_find_references_lsp(self._root, self._ensure_lsp, raw)
+        return find_references_lsp(self._root, self._ensure_lsp, raw)
 
     def close(self) -> None:
         """Release subprocess resources (LSP server).
@@ -688,31 +669,31 @@ class ToolDispatcher:
         return self._run_argv_in_jail(args.argv, label="run_command")
 
     def _ask_user(self, raw: dict[str, Any]) -> dict[str, Any]:
-        return _ask_user_impl(self._questioner, raw)
+        return ask_user(self._questioner, raw)
 
     def _finish_run(self, raw: dict[str, Any]) -> dict[str, Any]:
-        return _finish_run_impl(raw)
+        return finish_run(raw)
 
     def _finish_planning(self, raw: dict[str, Any]) -> dict[str, Any]:
-        return _finish_planning_impl(raw)
+        return finish_planning(raw)
 
     # DAG-as-tool handlers. All raise ToolError if no curator
     # was wired so standalone test instantiation works unchanged.
 
     def _dag_add_task(self, raw: dict[str, Any]) -> dict[str, Any]:
-        return _add_task(self._curator, self._run_root_node_id, raw)
+        return add_task(self._curator, self._run_root_node_id, raw)
 
     def _dag_update_task(self, raw: dict[str, Any]) -> dict[str, Any]:
-        return _update_task(self._curator, raw)
+        return update_task(self._curator, raw)
 
     def _dag_set_cursor(self, raw: dict[str, Any]) -> dict[str, Any]:
-        return _set_cursor(self._curator, raw)
+        return set_cursor(self._curator, raw)
 
     def _dag_add_dependency(self, raw: dict[str, Any]) -> dict[str, Any]:
-        return _add_dependency(self._curator, raw)
+        return add_dependency(self._curator, raw)
 
     def _dag_list_tasks(self, raw: dict[str, Any]) -> dict[str, Any]:
-        return _list_tasks(self._curator, raw)
+        return list_tasks(self._curator, raw)
 
     # Cross-run memory handlers. Writes go through trusted code
     # (agent6.memory) to fixed markdown files under <state_dir>/memories/,
@@ -720,10 +701,10 @@ class ToolDispatcher:
     # (schema-validated literal) and the note text, which is inert data.
 
     def _add_memory(self, raw: dict[str, Any]) -> dict[str, Any]:
-        return _add_memory_impl(self._state_dir, raw)
+        return add_memory(self._state_dir, raw)
 
     def _invalidate_memory(self, raw: dict[str, Any]) -> dict[str, Any]:
-        return _invalidate_memory_impl(self._state_dir, raw)
+        return invalidate_memory(self._state_dir, raw)
 
     def resolved_skills(self) -> ResolvedSkills:
         """Discover + state-resolve operator skills, once per dispatcher.
@@ -753,7 +734,7 @@ class ToolDispatcher:
         return bool(resolved.enabled or resolved.always)
 
     def _use_skill(self, raw: dict[str, Any]) -> dict[str, Any]:
-        return _use_skill_impl(self.resolved_skills, raw)
+        return use_skill(self.resolved_skills, raw)
 
     def _run_metric(self, _raw: dict[str, Any]) -> dict[str, Any]:
         """Run ``cfg.workflow.metric.command`` in the jail.
@@ -783,7 +764,7 @@ class ToolDispatcher:
                 "plus the standard bin dirs; install the tool into one of those on the "
                 "host, or grant its real path via sandbox.extra_read_paths."
             )
-        score = _parse_metric_score(res, pattern=metric_cfg.pattern)
+        score = parse_metric_score(res, pattern=metric_cfg.pattern)
         res["score"] = score
         self._emit(
             "metric.end",
@@ -825,7 +806,7 @@ class ToolDispatcher:
         policy_kwargs: dict[str, Any] = {}
         if timeout_s is not None:
             policy_kwargs["timeout_s"] = timeout_s
-        env = _passthrough_env()
+        env = passthrough_env()
         # Toolchains need a writable cache root (go test -> $HOME/.cache/go-build,
         # cargo -> $CARGO_HOME or $HOME/.cargo, pip/uv likewise). The jail's /tmp
         # is writable on both profiles (fresh tmpfs on strict, Landlock rw grant
