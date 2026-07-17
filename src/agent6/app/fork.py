@@ -208,6 +208,8 @@ def create_fork(  # noqa: PLR0911
     src_base_branch = str(sm.get("base_branch", "")) or ""
     src_user_task = str(sm.get("user_task", "")) or ""
     src_mode = str(sm.get("mode", "run")) or "run"
+    src_workflow = sm.get("workflow")
+    src_profile = str(src_workflow.get("profile", "")) if isinstance(src_workflow, dict) else ""
 
     forked_from_sha = checkpoint.head_sha
     if not forked_from_sha:
@@ -241,6 +243,7 @@ def create_fork(  # noqa: PLR0911
         base_branch=src_base_branch,
         user_task=src_user_task,
         mode=src_mode,
+        profile=src_profile,
         cfg=cfg,
         reporter=reporter,
     )
@@ -261,6 +264,7 @@ def _materialize_fork(
     base_branch: str,
     user_task: str,
     mode: str,
+    profile: str,
     cfg: Config,
     reporter: Reporter = STDIO_REPORTER,
 ) -> int:
@@ -289,6 +293,7 @@ def _materialize_fork(
         run_branch=run_branch,
         cfg=cfg,
         mode=mode,
+        effective_profile=profile,
         parent_run_id=src.run_id,
         forked_from_turn=forked_from_turn,
         forked_from_sha=forked_from_sha,

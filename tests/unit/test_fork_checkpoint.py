@@ -158,7 +158,13 @@ def test_load_checkpoint_rejects_malformed_shapes(tmp_path: Path) -> None:
 
 
 def _seed_source_run(
-    state_dir: Path, run_id: str, *, head_sha: str, turns: tuple[int, ...], mode: str = "run"
+    state_dir: Path,
+    run_id: str,
+    *,
+    head_sha: str,
+    turns: tuple[int, ...],
+    mode: str = "run",
+    workflow_profile: str = "",
 ) -> RunLayout:
     """Lay down a source run dir with a manifest, graph DAG, and checkpoints."""
     layout = RunLayout(state_dir=state_dir, run_id=run_id)
@@ -173,6 +179,7 @@ def _seed_source_run(
                 "base_sha": "basesha000",
                 "base_branch": "main",
                 "run_branch": f"agent6/{run_id}",
+                "workflow": {"critic": "off", "revise_prompt": False, "profile": workflow_profile},
             }
         ),
         encoding="utf-8",
@@ -215,6 +222,26 @@ def test_fork_preserves_source_run_mode(tmp_path: Path, monkeypatch: pytest.Monk
 
     dst = RunLayout(state_dir=state_dir, run_id="plan-fork-BBBB22")
     assert json.loads(dst.manifest_path.read_text(encoding="utf-8"))["mode"] == "plan"
+
+
+def test_fork_preserves_source_run_profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # A fork carries the source run's effective profile forward so `resume`
+    # re-applies the same strategy; dropping it (writing profile="") would
+    # silently change how the forked run behaves.
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state_dir = _state_dir(repo)
+    _seed_source_run(
+        state_dir, "src-AAAA11", head_sha=head, turns=(1, 2), workflow_profile="paranoid"
+    )
+
+    rc = _cmd_fork(None, "src", new_run_id="child-BBBB22", no_run=True)
+    assert rc == 0
+
+    dst = RunLayout(state_dir=state_dir, run_id="child-BBBB22")
+    manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["workflow"]["profile"] == "paranoid"
 
 
 def test_fork_fails_loud_on_a_bad_source_manifest(
