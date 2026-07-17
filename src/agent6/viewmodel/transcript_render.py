@@ -25,7 +25,12 @@ from typing import Any
 
 @dataclass
 class Turn:
-    """One normalized conversation turn (provider-agnostic)."""
+    """One normalized conversation turn (provider-agnostic).
+
+    Deliberately mutable: `fold_conversation` builds a turn in a shape helper
+    that does not know the call it came from, then stamps `seq` on it. Freezing
+    would force threading seq through every builder for no gain.
+    """
 
     role: str  # "system" | "user" | "assistant" | "tool" | "marker"
     text: str = ""

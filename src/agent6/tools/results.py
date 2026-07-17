@@ -110,6 +110,7 @@ class ListDirResult(ToolResult):
 
 @dataclass(frozen=True, slots=True)
 class GrepResult(ToolResult):
+    # Each hit row: {path: str, line: int, text: str (first 500 chars)}.
     hits: tuple[dict[str, Any], ...]
     truncated: bool
     # Only the wall-clock-timeout return carries this key.
@@ -127,6 +128,7 @@ class GrepResult(ToolResult):
 
 @dataclass(frozen=True, slots=True)
 class OutlineResult(ToolResult):
+    # Each symbol row: {name: str, kind: str, line: int, col: int}.
     symbols: tuple[dict[str, Any], ...]
     truncated: bool
 
@@ -141,6 +143,8 @@ class OutlineResult(ToolResult):
 class DefinitionsResult(ToolResult):
     """find_definition and find_definition_lsp: same envelope, different rows."""
 
+    # find_definition rows: {name: str, kind: str, path: str, line: int, col: int}.
+    # find_definition_lsp rows: {path: str, line: int, col: int} (no name/kind).
     definitions: tuple[dict[str, Any], ...]
     truncated: bool
 
@@ -155,6 +159,8 @@ class DefinitionsResult(ToolResult):
 class ReferencesResult(ToolResult):
     """find_references and find_references_lsp."""
 
+    # find_references rows: {name: str, path: str, line: int, col: int}.
+    # find_references_lsp rows: {path: str, line: int, col: int} (no name).
     references: tuple[dict[str, Any], ...]
     truncated: bool
 
@@ -375,6 +381,8 @@ class AddDependencyResult(ToolResult):
 
 @dataclass(frozen=True, slots=True)
 class ListTasksResult(ToolResult):
+    # Each task row: {id: str, parent_id: str | None, title: str, status: str,
+    # acceptance: str, relevant_paths: list[str], depends_on: list[str]}.
     tasks: tuple[dict[str, Any], ...]
     count: int
 

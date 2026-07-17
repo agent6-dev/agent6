@@ -41,7 +41,7 @@ _INLINE_VERIFY = re.compile(r"^\s*(?:verify|test)\s*:\s*(.+)$", re.IGNORECASE)
 _MAKE_TARGET = re.compile(r"^([A-Za-z0-9_-]+)\s*:", re.MULTILINE)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class InferredVerify:
     """A verify command agent6 inferred for one run (never persisted)."""
 

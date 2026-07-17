@@ -1,9 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Pydantic models for the persistent task graph.
+"""The persistent task-graph models: nodes plus the LLM-emitted curator intents
+that mutate them, a doubly-linked tree keyed by time-sortable ULID ids.
 
-These cross trust boundaries (LLM-emitted intents, disk reload), so they
-are pydantic per project convention. Internal-only value types remain frozen
+Every node carries a 26-char Crockford-base32 ULID `id` and a `parent_id`; the
+tree is doubly linked (a parent lists each child's id in `children`, each child
+names its `parent_id`), a symmetry the curator maintains on every mutation.
+`status` ranges over the fixed `NodeStatus` vocabulary (pending, in_progress,
+passed, failed, skipped, obsolete).
+
+These cross trust boundaries (LLM-emitted intents, disk reload), so they are
+pydantic per project convention. Internal-only value types remain frozen
 dataclasses in `agent6.types`.
 """
 
@@ -52,7 +59,9 @@ class TaskNodeDraft(BaseModel):
 
 
 class TaskNode(BaseModel):
-    """A persisted task graph node."""
+    """A persisted task-graph node: a time-sortable 26-char ULID `id`, a
+    `parent_id`/`children` pair the curator keeps mutually consistent, and a
+    `status` drawn from the fixed NodeStatus vocabulary."""
 
     model_config = _MODEL_CONFIG
 

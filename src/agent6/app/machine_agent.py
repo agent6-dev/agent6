@@ -97,7 +97,7 @@ def _result(
     }
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class _MachineBridges:
     """The interactivity bridges for one machine `agent` state.
 

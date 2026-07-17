@@ -274,9 +274,10 @@ class RoleModel(BaseModel):
     Anthropic and OpenAI models are tuned to behave well at any
     temperature; OpenRouter routes to provider defaults that vary by
     model, so pinning is the only way to make benches reproducible.
-    Set to ``null`` (TOML: omit-and-rely-on-default doesn't apply here;
-    use ``temperature = nan`` is invalid, explicitly write the value)
-    only if you specifically want the provider's default behaviour.
+    Set to ``null`` only if you specifically want the provider's default
+    behaviour. TOML has no null literal and ``temperature = nan`` fails the
+    0.0-2.0 bounds, so null is reachable only via the Python API; omitting the
+    key leaves the ``0.0`` default, not the provider's default.
     """
 
     model_config = _BASE_MODEL_CONFIG
