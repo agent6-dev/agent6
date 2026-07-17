@@ -169,7 +169,7 @@ def drive(page: Page, base: str, mode: str, t0: float, shot: Path | None = None)
     # loading screen. Return its offset so the recording can be trimmed to open
     # on the hub -- the still users see as the poster frame before pressing play.
     hub_ready = time.monotonic() - t0
-    toast(page, "agent6 web — the hub: runs, machines, new work")
+    toast(page, "agent6 web — the hub: your runs, new work one click away")
     move_to(page, ".item")
     page.wait_for_timeout(900)
 

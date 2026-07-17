@@ -28,9 +28,10 @@ invocation. Stop it with Ctrl-C.
 
 ## What you can do
 
-- **Hub**: every run (mode, status, last activity, cost) and machine instance;
-  start new work (run / plan / ask); run an authored machine or create one;
-  prune merged run branches.
+- **Runs page**: every run (mode, status, last activity, cost) beside the
+  composer that starts new work (run / plan / ask); prune merged run branches.
+- **Machines page**: machine instances and `machine create` drafts, beside
+  cards that run an authored machine file or create a new one.
 - **Run view** (live over SSE): the conversation front and center — the same
   folded transcript the CLI stream and the TUI render (reasoning, every tool
   call with its result, commits, the verdict), with the in-progress turn
