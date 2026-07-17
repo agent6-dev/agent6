@@ -103,6 +103,45 @@ def test_status_missing_instance_errors(
     assert "no machine instance" in capsys.readouterr().err
 
 
+def test_uncommitted_refusal_logs_a_git_error_instead_of_silently_failing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The dirty-file gate fails OPEN on a GitError (it is review-discipline, not
+    # security) but must never do so SILENTLY: a broken-git env stays visible.
+    import agent6.app.machine.run as machine_run
+    from agent6.git_ops import GitError
+
+    _git_init(tmp_path)
+    f = tmp_path / "m.asm.toml"
+    f.write_text('machine="m"\nversion=1\ninitial="s"\n[states.s]\nkind="terminal"\n')
+
+    def _boom(*_a: object, **_k: object) -> bool:
+        raise GitError("git index is corrupt")
+
+    monkeypatch.setattr(machine_run, "paths_dirty", _boom)
+    assert machine_run.uncommitted_refusal(f, tmp_path) is None  # fail-open preserved
+    err = capsys.readouterr().err
+    assert "could not check" in err and "git index is corrupt" in err
+
+
+def test_status_asm_file_path_hints_the_instance_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `machine run` takes a FILE (waiter.asm.toml); status/replay/poke/watch take
+    # the instance ID (waiter_delayed). Passing the file where the id belongs must
+    # suggest the id, not dead-end.
+    monkeypatch.chdir(tmp_path)
+    f = _write_machine(tmp_path)  # machine = "waiter_delayed"
+    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    capsys.readouterr()
+    clear_worker_pid(resolved_state_dir(tmp_path) / "machines" / "waiter_delayed")
+    code = main(["machine", "status", "waiter.asm.toml"])
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "no machine instance" in err
+    assert "waiter_delayed" in err  # the did-you-mean names the real instance id
+
+
 # A no-I/O machine that reaches a terminal immediately (branch -> terminal), so
 # `agent6 attach` on it takes the finished path (overview + end) without blocking
 # in the follow loop and without needing a model or the jail.

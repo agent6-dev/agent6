@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import contextlib
 import datetime as _dt
+import difflib
 import json
 import sys
 import time
@@ -269,6 +270,30 @@ def _resolve_network_refusal(  # noqa: PLR0911
     return new_cfg, new_profile
 
 
+def _no_instance_hint(machine_id: str, cwd: Path) -> str:
+    """A ' Did you mean ...' suffix for a missing-instance error.
+
+    `machine run` takes a FILE (`greet.asm.toml`); status/replay/poke/watch take
+    a machine ID (`greet-ok`). Passing the file where an id is expected otherwise
+    dead-ends at "no machine instance at .../greet.asm.toml". When the argument is
+    an `.asm.toml` file, read its `machine` name and suggest that instance id;
+    else offer the closest existing instance name."""
+    machines = _machines_dir(cwd)
+    existing = sorted(p.name for p in machines.iterdir() if p.is_dir()) if machines.is_dir() else []
+    candidate = Path(machine_id)
+    if machine_id.endswith(".asm.toml") or candidate.is_file():
+        with contextlib.suppress(MachineError, OSError):
+            name = load_machine(candidate).machine
+            if name in existing:
+                return (
+                    f" Did you mean the instance id {name!r}?"
+                    " (`machine run` takes the FILE; status/replay/poke/watch take the ID.)"
+                )
+            return f" That is a machine file; run it first with `agent6 machine run {machine_id}`."
+    close = difflib.get_close_matches(candidate.name, existing, n=1)
+    return f" Did you mean {close[0]!r}?" if close else ""
+
+
 def _cmd_machine_run(
     path: Path, *, exit_on_wait: bool = False, disable_sandbox: bool = False
 ) -> int:
@@ -278,9 +303,13 @@ def _cmd_machine_run(
 
 
 def _cmd_machine_replay(machine_id: str) -> int:
-    root = _machines_dir(Path.cwd()) / machine_id
+    cwd = Path.cwd()
+    root = _machines_dir(cwd) / machine_id
     if not root.is_dir():
-        print(f"ERROR: no machine instance at {root}", file=sys.stderr)
+        print(
+            f"ERROR: no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}",
+            file=sys.stderr,
+        )
         return 1
     source_path = root / "machine.asm.toml"
     try:
@@ -310,9 +339,13 @@ def _plural(n: int, singular: str, plural: str | None = None) -> str:
 
 
 def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
-    root = _machines_dir(Path.cwd()) / machine_id
+    cwd = Path.cwd()
+    root = _machines_dir(cwd) / machine_id
     if not root.is_dir():
-        print(f"ERROR: no machine instance at {root}", file=sys.stderr)
+        print(
+            f"ERROR: no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}",
+            file=sys.stderr,
+        )
         return 1
     source_path = root / "machine.asm.toml"
     try:
@@ -370,9 +403,13 @@ def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
 def _cmd_machine_poke(
     machine_id: str, *, data: str | None = None, message: str | None = None
 ) -> int:
-    root = _machines_dir(Path.cwd()) / machine_id
+    cwd = Path.cwd()
+    root = _machines_dir(cwd) / machine_id
     if not root.is_dir():
-        print(f"ERROR: no machine instance at {root}", file=sys.stderr)
+        print(
+            f"ERROR: no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}",
+            file=sys.stderr,
+        )
         return 1
     journal = MachineJournal(root)
     try:
@@ -424,9 +461,13 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0912
     """Follow a running machine: the state overview, each transition as it lands,
     and the current agent state's live reasoning (its per-state logs.jsonl). Exits
     when the machine ends/waits, or on Ctrl-C. Read-only."""
-    root = _machines_dir(Path.cwd()) / machine_id
+    cwd = Path.cwd()
+    root = _machines_dir(cwd) / machine_id
     if not root.is_dir():
-        print(f"ERROR: no machine instance at {root}", file=sys.stderr)
+        print(
+            f"ERROR: no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}",
+            file=sys.stderr,
+        )
         return 1
     source = root / "machine.asm.toml"
     try:

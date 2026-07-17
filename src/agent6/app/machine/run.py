@@ -13,6 +13,7 @@ interactive step, held cli-side). The machine ENGINE is unchanged.
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -83,7 +84,14 @@ def uncommitted_refusal(path: Path, cwd: Path) -> str | None:
     try:
         if not paths_dirty(cwd, (rel,)):
             return None
-    except GitError:
+    except GitError as exc:
+        # Fail-open (this is a review-discipline gate, not a security boundary),
+        # but never SILENTLY: a broken-git environment that can't be probed must
+        # be visible, not read as "clean".
+        print(
+            f"[agent6] WARNING: could not check {rel} for uncommitted changes: {exc}",
+            file=sys.stderr,
+        )
         return None
     return (
         f"{path} has uncommitted changes; `machine run` only accepts a committed"
