@@ -12,6 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from agent6.app.merge import execute_merge
 from agent6.budget import BudgetTracker
 from agent6.config import Config, NotifyConfig
 from agent6.git_ops import (
@@ -27,7 +28,6 @@ from agent6.git_ops import (
     status as git_status,
 )
 from agent6.runs.layout import RunLayout
-from agent6.ui.cli._merge import execute_merge
 from agent6.viewmodel import summarize_run_dir
 from agent6.workflows.loop import RunResult
 
