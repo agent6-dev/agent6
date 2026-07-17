@@ -49,7 +49,9 @@ and the principles the Zen doesn't cover:
   the simplest fix for the actual request; name the edges you skip instead of
   chasing every one a review surfaces. The inverse holds: when these
   principles already decide, act; don't ask permission to follow them or
-  offer options that violate them.
+  offer options that violate them. Rules bind as written: never enforce a
+  stricter constraint the operator did not set (invented rules have blocked
+  real work more than once); when unsure what a rule says, reread it.
 - **Evidence over churn.** When measurement shows something is better, adopt
   it and delete the old shape; no backward-compat shims, deprecation aliases,
   or migrations until `1.0.0` brings semantic versioning and real migrations.
@@ -212,16 +214,19 @@ version that still carries the point wins.
   iterative churn: fix-ups (bug/regression fixes) to unpushed work.
 - Never push; the operator signs and pushes from another machine. For the same
   reason, never reference commit hashes (signing changes them) or branch names
-  (transient) in messages or docs.
+  (transient) in messages or docs. No personal traces in messages or committed
+  content: emails, absolute home paths, hostnames, real names outside the
+  author field.
 - Never rewrite pushed history. Rewrite unpushed commits only when asked, and
   never force-push.
 - Stage named files only, never `git add -A`; never commit scratch notes,
   session artifacts, or generated output.
-- A release squashes only that churn, keeps clean commits as-is, and verifies
-  zero diff after. Unpushed history, master included, may be reorganized; the
-  pushed-history rule above is the only hard line. A squashed body preserves
-  the decisions and what was tried and rejected; durable design reasoning
-  goes to docs.
+- Working directly on master is fine, but the agent folds its session's churn
+  BEFORE returning control (zero-diff verified), so the operator always takes
+  over a release-ready master; a push must never need a squash first. Unpushed
+  history, master included, may be reorganized; the pushed-history rule above
+  is the only hard line. A squashed body preserves the decisions and what was
+  tried and rejected; durable design reasoning goes to docs.
 
 ### Verify command
 
