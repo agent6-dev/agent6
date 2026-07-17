@@ -26,7 +26,26 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
+
+
+def event_epoch(value: object) -> float | None:
+    """Parse an event ``ts`` to epoch seconds, or None if unparseable.
+
+    EventSink writes ``ts`` as an ISO-8601 string (``datetime.isoformat``),
+    so the elapsed-time anchor must parse that, not only bare numbers.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value).timestamp()
+        except ValueError:
+            return None
+    return None
 
 
 def readable_summary(value: Any) -> str:

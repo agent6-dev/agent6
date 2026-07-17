@@ -221,7 +221,7 @@ def test_budget_update_carries_usd_total() -> None:
 def test_budget_usd_cumulative_across_resume_legs() -> None:
     # Each resume leg's budget.update restarts usd_total from 0; the view banks
     # the finished leg on loop.resume.start so "cost" stays the cumulative
-    # spend -- the same rule the hub scanner applies (listing._scan_run_log),
+    # spend -- the same rule the hub scanner applies (listing.scan_run_log),
     # keeping the hub row and the run view in agreement.
     def _update(usd: float, *, partial: bool = False) -> dict[str, object]:
         return {"type": "budget.update", "usd_total": usd, "usd_partial": partial}

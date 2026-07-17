@@ -24,7 +24,9 @@ mirror `RunState` / `MachineState` field-for-field.
 
 from __future__ import annotations
 
+from agent6.viewmodel.events import event_epoch
 from agent6.viewmodel.listing import (
+    LogScan,
     RunSummary,
     first_task_line,
     is_run_husk,
@@ -32,6 +34,7 @@ from agent6.viewmodel.listing import (
     newest_run_dir,
     run_compare,
     run_mtime,
+    scan_run_log,
     status_word,
     summarize_run_dir,
     task_snippet,
@@ -79,6 +82,7 @@ __all__ = [
     "MAX_LOG_TAIL",
     "ApprovalPrompt",
     "BudgetView",
+    "LogScan",
     "LogTail",
     "MachineEndView",
     "MachineState",
@@ -96,6 +100,7 @@ __all__ = [
     "TransitionView",
     "VerifyView",
     "apply_event",
+    "event_epoch",
     "first_task_line",
     "fold_machine",
     "fold_run",
@@ -115,6 +120,7 @@ __all__ = [
     "run_state_as_dict",
     "run_status_label",
     "salient_arg",
+    "scan_run_log",
     "status_word",
     "summarize_run_dir",
     "tail_events",

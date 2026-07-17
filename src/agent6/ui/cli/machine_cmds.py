@@ -60,11 +60,12 @@ from agent6.runs.ipc import read_worker_pid, worker_is_alive
 from agent6.sandbox.detect import ProfileUnavailableError, select_profile
 from agent6.types import SandboxProfile
 from agent6.ui.cli._common import _machines_dir
-from agent6.ui.cli.plan_watch import event_epoch, format_plain_event
+from agent6.ui.cli.plan_watch import format_plain_event
 from agent6.ui.notify import desktop_notify
 from agent6.viewmodel import (
     MachineState,
     MachineWatchCursor,
+    event_epoch,
     fold_machine,
 )
 

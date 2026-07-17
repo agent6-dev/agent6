@@ -80,7 +80,7 @@ class BudgetView:
     # Token counters are the CURRENT leg's (they pair with the per-leg
     # enforcement caps); usd_total is CUMULATIVE across resume legs -- "cost"
     # on any surface means what the run cost, and the hub scanner
-    # (listing._scan_run_log) sums legs the same way, so the surfaces agree.
+    # (listing.scan_run_log) sums legs the same way, so the surfaces agree.
     input_total: int = 0
     output_total: int = 0
     input_cap: int = 0

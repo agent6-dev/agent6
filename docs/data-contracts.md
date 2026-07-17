@@ -66,7 +66,7 @@ Typed tool-handler results: every handler returns one of these frozen values ins
 Typed read model for the ~19 logs.jsonl event families the RunState fold consumes.
 
 - **Written by:** viewmodel/{events}
-- **Read by:** viewmodel/{state}
+- **Read by:** viewmodel/{__init__, listing, state}
 - **Guarded by:** golden_run_logs.jsonl (2 test files exercise it)
 
 ## MachineSpec

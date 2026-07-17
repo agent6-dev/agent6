@@ -10,7 +10,6 @@ import os
 import subprocess
 import sys
 import time
-from datetime import datetime
 from pathlib import Path
 
 from agent6.runs.id import RunIdError, resolve_run_id
@@ -28,26 +27,15 @@ from agent6.tools.schema import UserQuestion
 from agent6.ui.cli._common import _runs_dir, _state_dir, resolve_or_newest_layout
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._interact import default_stdin_approver, default_stdin_questioner
-from agent6.viewmodel import run_mtime, status_word, tail_events
+from agent6.viewmodel import (
+    LogScan,
+    event_epoch,
+    run_mtime,
+    scan_run_log,
+    status_word,
+    tail_events,
+)
 from agent6.viewmodel.format import format_compare, format_cost
-
-
-def event_epoch(value: object) -> float | None:
-    """Parse an event ``ts`` to epoch seconds, or None if unparseable.
-
-    EventSink writes ``ts`` as an ISO-8601 string (``datetime.isoformat``),
-    so the elapsed-time anchor must parse that, not only bare numbers.
-    """
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        try:
-            return datetime.fromisoformat(value).timestamp()
-        except ValueError:
-            return None
-    return None
 
 
 def _resolve_plan_run_id(run_id: str) -> str | None:
@@ -187,71 +175,6 @@ def _fmt_dur(seconds: float | None) -> str:
     return f"{s // 3600}h{(s % 3600) // 60:02d}m"
 
 
-def _scan_run_events(events_path: Path) -> dict[str, object]:
-    """Single pass over logs.jsonl. Returns start_ep, last_ep, last_type,
-    iteration, end_reason, and the latest `budget.update` token/cost totals.
-    Tolerant of torn/short lines."""
-    out: dict[str, object] = {
-        "start_ep": None,
-        "last_ep": None,
-        "last_type": None,
-        "iteration": None,
-        "end_reason": None,
-        "all_passed": None,
-        "input_tokens": None,
-        "output_tokens": None,
-        "cost_usd": None,
-        "usd_partial": None,
-    }
-    if not events_path.is_file():
-        return out
-    usd_prior_legs = 0.0  # banked totals of completed (resumed-past) legs
-    usd_leg = 0.0
-    with contextlib.suppress(OSError):
-        for line in events_path.read_text(encoding="utf-8").splitlines():
-            try:
-                e = json.loads(line)
-            except (json.JSONDecodeError, ValueError):
-                continue
-            if not isinstance(e, dict):
-                continue  # a valid-JSON non-object line (torn/adversarial)
-            ep = event_epoch(e.get("ts"))
-            etype = e.get("type")
-            if etype == "run.start" and out["start_ep"] is None:
-                out["start_ep"] = ep
-            if isinstance(e.get("iteration"), int):
-                out["iteration"] = e["iteration"]
-            if etype == "run.end":
-                out["end_reason"] = e.get("reason")
-                out["all_passed"] = bool(e.get("all_passed"))
-            if etype == "loop.resume.start":
-                # A resume leg restarts the budget from 0; bank the finished
-                # leg so cost_usd is the cumulative spend -- the same rule as
-                # listing._scan_run_log and the state fold's BudgetView, so
-                # `runs show` agrees with `runs list` and the run view.
-                usd_prior_legs += usd_leg
-                usd_leg = 0.0
-                out["end_reason"] = None  # un-finished: the run is live again
-                out["all_passed"] = None
-            if etype == "budget.update":
-                # The authoritative running totals, emitted after each provider
-                # call (providers.py). `loop.budget` (emitted BEFORE the call)
-                # lags one call and reads 0 on iteration 1, so `runs show` used
-                # to under-report.
-                out["input_tokens"] = e.get("input_total")
-                out["output_tokens"] = e.get("output_total")
-                usd_leg = float(e.get("usd_total") or 0.0)
-                out["cost_usd"] = usd_prior_legs + usd_leg
-                # Sticky across legs: unpriced spend anywhere keeps the
-                # cumulative total an under-estimate.
-                out["usd_partial"] = bool(e.get("usd_partial")) or bool(out["usd_partial"])
-            if ep is not None:
-                out["last_ep"] = ep
-            if isinstance(etype, str):
-                out["last_type"] = etype
-    return out
-
-
 def _print_fork_lineage(manifest: RunManifest) -> None:
     """Print the fork-lineage line for a run created by `agent6 fork` (no-op
     otherwise)."""
@@ -276,7 +199,7 @@ def _print_parallel_compare(manifest: RunManifest) -> None:
         print(f"  judge: {rationale}")
 
 
-def _cmd_status(run_id: str, *, as_json: bool = False) -> int:  # noqa: PLR0915
+def _cmd_status(run_id: str, *, as_json: bool = False) -> int:
     """One-shot liveness + progress summary for a run, then exit (no follower).
 
     Answers "is this run still alive, and what is it doing?" from the run dir
@@ -302,37 +225,30 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:  # noqa: PLR0915
     manifest = loaded or RunManifest()
     mode_display = loaded.mode if loaded is not None else None
 
-    ev = _scan_run_events(target / "logs.jsonl")
-    start_ep = ev["start_ep"]
-    last_ep = ev["last_ep"]
-    last_type = ev["last_type"]
-    iteration = ev["iteration"]
-    end_reason = ev["end_reason"]
+    logs = target / "logs.jsonl"
+    scan = scan_run_log(logs) if logs.is_file() else LogScan()
 
     pid = read_worker_pid(target)
     alive = worker_is_alive(target)
-    now = time.time()
-    last_age = (now - last_ep) if isinstance(last_ep, (int, float)) else None
+    last_age = (time.time() - scan.last_ep) if scan.last_ep is not None else None
     elapsed = (
-        (last_ep - start_ep)
-        if isinstance(last_ep, (int, float)) and isinstance(start_ep, (int, float))
+        (scan.last_ep - scan.start_ep)
+        if scan.last_ep is not None and scan.start_ep is not None
         else None
     )
 
-    if end_reason is not None:
+    if scan.finished:
         # Lead with the SAME outcome word `runs list` uses (status_word owns it, so
         # the two surfaces can't disagree -- a finish_run+all_passed run reads
         # "passed" here, not the listing's opposite "finished"), then keep the raw
         # reason (steer_abort, provider_error, ...) in parens as the diagnostic.
-        word, _ = status_word(
-            finished=True, all_passed=bool(ev["all_passed"]), end_reason=str(end_reason)
-        )
-        state = f"{word} ({end_reason})"
+        word, _ = status_word(finished=True, all_passed=scan.all_passed, end_reason=scan.end_reason)
+        state = f"{word} ({scan.end_reason})"
     elif alive and last_age is not None and last_age > 120:
         state = "running (long step, likely a provider call)"
     elif alive:
         state = "running"
-    elif last_ep is None:
+    elif scan.last_ep is None:
         state = "unknown (no events yet)"
     else:
         state = "stopped (no worker, no run.end: likely crashed or killed)"
@@ -351,17 +267,17 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:  # noqa: PLR0915
                     "state": state,
                     "alive": alive,
                     "pid": pid,
-                    "iteration": iteration,
-                    "last_event": last_type,
+                    "iteration": scan.iteration,
+                    "last_event": scan.last_type,
                     "last_event_age_s": round(last_age, 1) if last_age is not None else None,
                     "elapsed_s": round(elapsed, 1) if elapsed is not None else None,
-                    "reason": end_reason,
-                    "input_tokens": ev["input_tokens"],
-                    "output_tokens": ev["output_tokens"],
-                    "cost_usd": ev["cost_usd"],
+                    "reason": scan.end_reason if scan.finished else None,
+                    "input_tokens": scan.input_tokens,
+                    "output_tokens": scan.output_tokens,
+                    "cost_usd": scan.cost_usd,
                     # cost_usd is an under-estimate when some spend was
                     # unpriced; the text render marks it, so the JSON must too.
-                    "usd_partial": ev["usd_partial"],
+                    "usd_partial": scan.usd_partial if scan.cost_usd is not None else None,
                     "parent_run_id": manifest.parent_run_id,
                     "forked_from_turn": manifest.forked_from_turn,
                     "forked_from_sha": manifest.forked_from_sha,
@@ -374,27 +290,26 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:  # noqa: PLR0915
     pid_note = ""
     if alive:
         pid_note = f"  (worker pid {pid} alive)"
-    elif pid is not None and end_reason is None:
+    elif pid is not None and not scan.finished:
         pid_note = f"  (worker pid {pid} not running)"
     print(f"run:        {target.name}  (mode={mode_display or '?'})")
     _print_fork_lineage(manifest)
     _print_parallel_compare(manifest)
     print(f"model:      {model}")
     print(f"state:      {state}{pid_note}")
-    print(f"iteration:  {iteration if iteration is not None else '-'}")
+    print(f"iteration:  {scan.iteration if scan.iteration is not None else '-'}")
     print(
-        f"last event: {last_type or '-'}"
+        f"last event: {scan.last_type or '-'}"
         f"{f'  ({_fmt_dur(last_age)} ago)' if last_age is not None else ''}"
     )
     print(f"elapsed:    {_fmt_dur(elapsed)}")
-    if ev["input_tokens"] is not None or ev["cost_usd"] is not None:
-        cost = ev["cost_usd"]
+    if scan.input_tokens is not None or scan.cost_usd is not None:
         cost_s = (
-            f"  cost {format_cost(cost, partial=bool(ev.get('usd_partial')))}"
-            if isinstance(cost, (int, float))
+            f"  cost {format_cost(scan.cost_usd, partial=scan.usd_partial)}"
+            if scan.cost_usd is not None
             else ""
         )
-        print(f"usage:      in={ev['input_tokens'] or 0} out={ev['output_tokens'] or 0}{cost_s}")
+        print(f"usage:      in={scan.input_tokens or 0} out={scan.output_tokens or 0}{cost_s}")
     _print_task_tree(target)
     return 0
 

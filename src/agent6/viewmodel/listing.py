@@ -17,6 +17,7 @@ from pathlib import Path
 
 from agent6.runs.ipc import read_worker_pid, worker_is_alive
 from agent6.runs.manifest import CompareStamp, ManifestError, read_manifest
+from agent6.viewmodel.events import event_epoch
 
 STALE_AFTER_S = 600.0
 
@@ -174,24 +175,38 @@ def _running_is_stale(run_dir: Path, stale_after_s: float) -> bool:
 
 
 @dataclass(frozen=True, slots=True)
-class _LogScan:
-    """What one pass over ``logs.jsonl`` yields: whether run.start was seen (a
-    run that hasn't emitted it is still launching), its mode/task, the end state,
-    and the cumulative cost across resume legs."""
+class LogScan:
+    """One tolerant pass over a run's ``logs.jsonl``: the shared scan behind the
+    hub listing and ``runs show``. One owner, because the resume rules (bank
+    cost legs, un-finish) and the torn-line tolerances drifted when each
+    consumer scanned for itself.
 
-    saw_start: bool
-    mode: str
-    task: str
-    finished: bool
-    all_passed: bool
-    end_reason: str
-    cost: float
+    Token counters are the CURRENT leg's; ``cost_usd`` is cumulative across
+    resume legs (None = no budget.update ever), matching the typed fold's
+    BudgetView so no two surfaces can disagree on what a run cost.
+    """
+
+    saw_start: bool = False  # run.start seen (a run without it is still launching)
+    mode: str = "?"
+    task: str = ""
+    finished: bool = False  # a later resume un-finishes
+    all_passed: bool = False
+    end_reason: str = ""
+    cost_usd: float | None = None
+    usd_partial: bool = False  # sticky: unpriced spend in any leg -> under-estimate
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    iteration: int | None = None  # last event carrying an int iteration
+    start_ep: float | None = None  # run.start ts (epoch seconds)
+    last_ep: float | None = None  # last event with a parseable ts
+    last_type: str | None = None  # last event's type
 
 
-def _scan_run_log(logs: Path) -> _LogScan:
-    """Fold ``logs.jsonl``: run.start (mode/task), the last run.end (status,
-    un-finished again by a later resume), and the running per-leg budget banked
-    across resumes into a cumulative total.
+def scan_run_log(logs: Path) -> LogScan:  # noqa: PLR0915 (linear fold, like build_parser)
+    """Fold ``logs.jsonl`` into a :class:`LogScan`: run.start (mode/task), the
+    last run.end (un-finished again by a later resume), the running per-leg
+    budget banked across resumes into a cumulative total, and the liveness
+    anchors (timestamps, iteration, last event type) ``runs show`` reads.
 
     errors="replace": a live writer can leave a torn multibyte UTF-8 tail; strict
     decoding would take down the whole listing. The mangled line just fails
@@ -199,8 +214,16 @@ def _scan_run_log(logs: Path) -> _LogScan:
     mode, task = "?", ""
     finished, all_passed, end_reason = False, False, ""
     saw_start = False
-    cost = 0.0  # latest leg's running total
-    cost_prior_legs = 0.0  # summed totals of completed (resumed-past) legs
+    usd_leg = 0.0  # latest leg's running total
+    usd_prior_legs = 0.0  # summed totals of completed (resumed-past) legs
+    saw_budget = False
+    usd_partial = False
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    iteration: int | None = None
+    start_ep: float | None = None
+    last_ep: float | None = None
+    last_type: str | None = None
     try:
         with logs.open(encoding="utf-8", errors="replace") as fh:
             for line in fh:
@@ -211,10 +234,19 @@ def _scan_run_log(logs: Path) -> _LogScan:
                 if not isinstance(ev, dict):
                     continue  # a valid-JSON non-object line (torn/adversarial)
                 etype = ev.get("type")
+                ep = event_epoch(ev.get("ts"))
+                if ep is not None:
+                    last_ep = ep
+                if isinstance(etype, str):
+                    last_type = etype
+                if isinstance(ev.get("iteration"), int):
+                    iteration = ev["iteration"]
                 if etype == "run.start":
                     saw_start = True
                     mode = str(ev.get("mode", mode))
                     task = str(ev.get("user_task", ""))
+                    if start_ep is None:
+                        start_ep = ep
                 elif etype == "run.end":
                     finished = True
                     all_passed = bool(ev.get("all_passed"))
@@ -228,13 +260,33 @@ def _scan_run_log(logs: Path) -> _LogScan:
                     # enforcement mechanism; only the shown total changes). The
                     # typed fold applies the same rule (state.BudgetView), so the
                     # hub row and the run view can never disagree.
-                    cost_prior_legs += cost
-                    cost = 0.0
+                    usd_prior_legs += usd_leg
+                    usd_leg = 0.0
                 elif etype == "budget.update":
-                    cost = float(ev.get("usd_total", cost) or 0.0)
+                    saw_budget = True
+                    usd_leg = float(ev.get("usd_total", usd_leg) or 0.0)
+                    usd_partial = bool(ev.get("usd_partial")) or usd_partial
+                    ti, to = ev.get("input_total"), ev.get("output_total")
+                    input_tokens = ti if isinstance(ti, int) else input_tokens
+                    output_tokens = to if isinstance(to, int) else output_tokens
     except OSError:
         pass
-    return _LogScan(saw_start, mode, task, finished, all_passed, end_reason, cost + cost_prior_legs)
+    return LogScan(
+        saw_start=saw_start,
+        mode=mode,
+        task=task,
+        finished=finished,
+        all_passed=all_passed,
+        end_reason=end_reason,
+        cost_usd=(usd_prior_legs + usd_leg) if saw_budget else None,
+        usd_partial=usd_partial,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        iteration=iteration,
+        start_ep=start_ep,
+        last_ep=last_ep,
+        last_type=last_type,
+    )
 
 
 def summarize_run_dir(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) -> RunSummary:
@@ -243,8 +295,7 @@ def summarize_run_dir(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) ->
     provider_error death as a neutral "done". An "ask" run's task is replaced by
     its transcript, which shows what was asked."""
     logs = run_dir / "logs.jsonl"
-    empty = _LogScan(False, "?", "", False, False, "", 0.0)
-    scan = _scan_run_log(logs) if logs.is_file() else empty
+    scan = scan_run_log(logs) if logs.is_file() else LogScan()
     mode, task = scan.mode, scan.task
     if not scan.saw_start:
         # Before run.start the log carries no mode/task: either a launching run
@@ -278,6 +329,6 @@ def summarize_run_dir(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) ->
         task=task,
         status=word,
         reason=reason,
-        cost_usd=scan.cost,
+        cost_usd=scan.cost_usd or 0.0,
         mtime=run_mtime(run_dir),
     )
