@@ -195,8 +195,8 @@ version that still carries the point wins.
   [Conventional Commits](https://www.conventionalcommits.org/):
   `feat(scope):`, `fix(scope):`, `ci:`, `docs:`, `bench:`. The scope matches a
   directory under `src/agent6/` or a top-level area.
-- Granularity follows maturity: edits to stable areas land one concern per
-  commit; an overhaul of an immature area lands grouped.
+- One concern per commit; individual commits are worth keeping. Squash only
+  iterative churn: fix-ups (bug/regression fixes) to unpushed work.
 - Never push; the operator signs and pushes from another machine. For the same
   reason, never reference commit hashes (signing changes them) or branch names
   (transient) in messages or docs.
@@ -204,11 +204,10 @@ version that still carries the point wins.
   never force-push.
 - Stage named files only, never `git add -A`; never commit scratch notes,
   session artifacts, or generated output.
-- A release squashes noisy iteration into one clean commit per feature, keeps
-  already-clean commits as-is, and verifies zero diff after; master only
-  advances (fast-forward, never rewritten). A squashed body preserves the
-  decisions and what was tried and rejected; durable design reasoning goes to
-  docs.
+- A release squashes only that churn, keeps clean commits as-is, and verifies
+  zero diff after; master only advances (fast-forward, never rewritten). A
+  squashed body preserves the decisions and what was tried and rejected;
+  durable design reasoning goes to docs.
 
 ### Verify command
 
