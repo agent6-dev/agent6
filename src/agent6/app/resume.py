@@ -11,7 +11,6 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, Literal
 
 from agent6.app._setup import (
     BudgetOverrides,
@@ -295,32 +294,20 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # read-only with the plan tools, never as a write run), `profile` (resume
         # has no --profile flag), `base_sha` (the review-panel diff base), and
         # `run_branch` (the head guard + the checkout below).
-        # `mode` is security-relevant: a missing/corrupt manifest must NOT fall
-        # open to the more-privileged "run" (write) mode. A valid run always
-        # wrote a manifest, so anything else here is a damaged run dir -- fail
-        # loud rather than silently escalating a plan run to a write run.
+        # `mode` is security-relevant: a damaged run dir (unreadable, corrupt, or
+        # an unknown mode value) must NOT fall open to the more-privileged "run"
+        # (write) mode. read_manifest / strict_mode fail loud on any of those --
+        # the underlying cause carries in the ManifestError detail -- rather than
+        # silently escalating a plan run to a write run.
         try:
-            loaded = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
-        except OSError as exc:
+            manifest = read_manifest(layout.run_dir)
+            mode = manifest.strict_mode()
+        except ManifestError as exc:
             reporter.err(f"ERROR: cannot read run manifest {layout.manifest_path}: {exc}")
             return 2
-        except ValueError as exc:
-            reporter.err(f"ERROR: run manifest {layout.manifest_path} is corrupt: {exc}")
-            return 2
-        if not isinstance(loaded, dict):
-            reporter.err(
-                f"ERROR: run manifest {layout.manifest_path} is malformed"
-                f" (expected a JSON object, got {type(loaded).__name__})."
-            )
-            return 2
-        manifest: dict[str, Any] = loaded
-        mode: Literal["run", "plan"] = "plan" if manifest.get("mode") == "plan" else "run"
-        workflow_section = manifest.get("workflow")
-        manifest_profile = (
-            str(workflow_section.get("profile") or "") if isinstance(workflow_section, dict) else ""
-        )
-        resume_base_sha = str(manifest.get("base_sha") or "")
-        run_branch = str(manifest.get("run_branch") or "")
+        manifest_profile = manifest.workflow.profile
+        resume_base_sha = manifest.base_sha
+        run_branch = manifest.run_branch or ""
 
         # Safety check: refuse when the code resume would continue on DIVERGED
         # from the run's last snapshot (a rebase, reset, or a commit on another
