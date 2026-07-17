@@ -40,10 +40,15 @@ import sys
 from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict
 
 from agent6.graph.models import (
     AddDependencyIntent,
     AddSubtaskIntent,
+    NodeActor,
+    NodeStatus,
     ObsoleteIntent,
     RecordCommitIntent,
     ReorderChildrenIntent,
@@ -66,6 +71,73 @@ from agent6.graph.ulid import new_ulid
 
 class CuratorError(Exception):
     """A curator intent was rejected (validation, not I/O)."""
+
+
+class _JournalBase(BaseModel):
+    """Base of the typed graph.jsonl entries: what each mutation appends to the
+    append-only audit log. The node `.md` files are the source of truth; the
+    only field read back is ``graph_version`` (``_compute_graph_version``),
+    stamped by ``_post_mutation`` after the bump (0 only pre-stamp). The
+    ``ts`` timestamp is added by ``storage.write_journal``, which also sorts
+    keys, so field order here is presentational only.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    graph_version: int = 0
+
+
+class AddSubtaskJournal(_JournalBase):
+    op: Literal["add_subtask"] = "add_subtask"
+    id: str  # the ASSIGNED ULID (the intent has none yet)
+    parent_id: str | None
+    by: NodeActor
+
+
+class UpdateStatusJournal(_JournalBase):
+    op: Literal["update_status"] = "update_status"
+    id: str
+    new_status: NodeStatus
+
+
+class AddDependencyJournal(_JournalBase):
+    op: Literal["add_dependency"] = "add_dependency"
+    id: str
+    depends_on: str
+
+
+class ObsoleteJournal(_JournalBase):
+    op: Literal["obsolete"] = "obsolete"
+    id: str
+    reason: str
+
+
+class ReorderChildrenJournal(_JournalBase):
+    op: Literal["reorder_children"] = "reorder_children"
+    parent_id: str
+    new_order: tuple[str, ...]
+
+
+class RecordCommitJournal(_JournalBase):
+    op: Literal["record_commit"] = "record_commit"
+    id: str
+    sha: str
+
+
+class SetCursorJournal(_JournalBase):
+    op: Literal["set_cursor"] = "set_cursor"
+    id: str | None
+
+
+JournalEntry = (
+    AddSubtaskJournal
+    | UpdateStatusJournal
+    | AddDependencyJournal
+    | ObsoleteJournal
+    | ReorderChildrenJournal
+    | RecordCommitJournal
+    | SetCursorJournal
+)
 
 
 def _now() -> datetime:
@@ -173,12 +245,9 @@ class GraphCurator:
                 self._nodes[parent.id] = updated_parent
                 write_node(self._layout, self._nodes, updated_parent)
             self._post_mutation(
-                {
-                    "op": "add_subtask",
-                    "id": node.id,
-                    "parent_id": intent.parent_id,
-                    "by": intent.draft.created_by,
-                }
+                AddSubtaskJournal(
+                    id=node.id, parent_id=intent.parent_id, by=intent.draft.created_by
+                )
             )
             return node
 
@@ -200,13 +269,7 @@ class GraphCurator:
             )
             self._nodes[updated.id] = updated
             write_node(self._layout, self._nodes, updated)
-            self._post_mutation(
-                {
-                    "op": "update_status",
-                    "id": updated.id,
-                    "new_status": intent.new_status,
-                }
-            )
+            self._post_mutation(UpdateStatusJournal(id=updated.id, new_status=intent.new_status))
             return updated
 
     def add_dependency(self, intent: AddDependencyIntent) -> TaskNode:
@@ -228,13 +291,7 @@ class GraphCurator:
             )
             self._nodes[updated.id] = updated
             write_node(self._layout, self._nodes, updated)
-            self._post_mutation(
-                {
-                    "op": "add_dependency",
-                    "id": updated.id,
-                    "depends_on": intent.depends_on,
-                }
-            )
+            self._post_mutation(AddDependencyJournal(id=updated.id, depends_on=intent.depends_on))
             return updated
 
     def obsolete(self, intent: ObsoleteIntent) -> TaskNode:
@@ -253,7 +310,7 @@ class GraphCurator:
             )
             self._nodes[updated.id] = updated
             write_node(self._layout, self._nodes, updated)
-            self._post_mutation({"op": "obsolete", "id": updated.id, "reason": intent.reason})
+            self._post_mutation(ObsoleteJournal(id=updated.id, reason=intent.reason))
             return updated
 
     def reorder_children(self, intent: ReorderChildrenIntent) -> TaskNode:
@@ -270,11 +327,7 @@ class GraphCurator:
             self._nodes[updated.id] = updated
             write_node(self._layout, self._nodes, updated)
             self._post_mutation(
-                {
-                    "op": "reorder_children",
-                    "parent_id": intent.parent_id,
-                    "new_order": list(intent.new_order),
-                }
+                ReorderChildrenJournal(parent_id=intent.parent_id, new_order=intent.new_order)
             )
             return updated
 
@@ -284,7 +337,7 @@ class GraphCurator:
             updated = node.model_copy(update={"commit_sha": intent.sha, "updated_at": _now()})
             self._nodes[updated.id] = updated
             write_node(self._layout, self._nodes, updated)
-            self._post_mutation({"op": "record_commit", "id": updated.id, "sha": intent.sha})
+            self._post_mutation(RecordCommitJournal(id=updated.id, sha=intent.sha))
             return updated
 
     def set_cursor(self, intent: SetCursorIntent) -> None:
@@ -292,15 +345,14 @@ class GraphCurator:
             if intent.id is not None and intent.id not in self._nodes:
                 raise CuratorError(f"set_cursor: unknown node {intent.id!r}")
             write_cursor(self._layout, intent.id)
-            self._post_mutation({"op": "set_cursor", "id": intent.id}, regen_dot=False)
+            self._post_mutation(SetCursorJournal(id=intent.id), regen_dot=False)
 
     # ---- internals --------------------------------------------------------
 
-    def _post_mutation(self, entry: dict[str, object], *, regen_dot: bool = True) -> None:
+    def _post_mutation(self, entry: JournalEntry, *, regen_dot: bool = True) -> None:
         self._graph_version += 1
-        full_entry = dict(entry)
-        full_entry["graph_version"] = self._graph_version
-        write_journal(self._layout, full_entry)
+        stamped = entry.model_copy(update={"graph_version": self._graph_version})
+        write_journal(self._layout, stamped.model_dump(mode="json"))
         if regen_dot:
             write_dot(self._layout, self._nodes)
 

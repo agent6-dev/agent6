@@ -150,3 +150,64 @@ def test_curator_reload_preserves_state(tmp_path: Path) -> None:
     again = c2.get(n.id)
     assert again.status == "in_progress"
     assert c2.graph_version == v_before
+
+
+def test_journal_entry_shapes_are_pinned(tmp_path: Path) -> None:
+    # The typed JournalEntry union owns the graph.jsonl audit shape; this pins
+    # the per-op key sets/values against the pre-typed writer's format (old
+    # journal dirs and the typed writer serialize identically).
+    import json
+
+    layout = _layout(tmp_path)
+    c = GraphCurator(layout)
+    root = c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft("root")))
+    a = c.add_subtask(AddSubtaskIntent(parent_id=root.id, draft=_draft("a")))
+    b = c.add_subtask(AddSubtaskIntent(parent_id=root.id, draft=_draft("b")))
+    c.update_status(UpdateStatusIntent(id=a.id, new_status="in_progress"))
+    c.add_dependency(AddDependencyIntent(id=b.id, depends_on=a.id))
+    c.reorder_children(ReorderChildrenIntent(parent_id=root.id, new_order=(b.id, a.id)))
+    c.record_commit(RecordCommitIntent(id=a.id, sha="abcd1234"))
+    c.obsolete(ObsoleteIntent(id=b.id, reason="dropped"))
+    c.set_cursor(SetCursorIntent(id=a.id))
+
+    lines = [
+        json.loads(raw)
+        for raw in layout.journal_path.read_text(encoding="utf-8").splitlines()
+        if raw.strip()
+    ]
+    for entry in lines:
+        assert entry.pop("ts")  # storage stamps it; not part of the typed shape
+    assert lines == [
+        {
+            "op": "add_subtask",
+            "id": root.id,
+            "parent_id": None,
+            "by": "planner",
+            "graph_version": 1,
+        },
+        {
+            "op": "add_subtask",
+            "id": a.id,
+            "parent_id": root.id,
+            "by": "planner",
+            "graph_version": 2,
+        },
+        {
+            "op": "add_subtask",
+            "id": b.id,
+            "parent_id": root.id,
+            "by": "planner",
+            "graph_version": 3,
+        },
+        {"op": "update_status", "id": a.id, "new_status": "in_progress", "graph_version": 4},
+        {"op": "add_dependency", "id": b.id, "depends_on": a.id, "graph_version": 5},
+        {
+            "op": "reorder_children",
+            "parent_id": root.id,
+            "new_order": [b.id, a.id],
+            "graph_version": 6,
+        },
+        {"op": "record_commit", "id": a.id, "sha": "abcd1234", "graph_version": 7},
+        {"op": "obsolete", "id": b.id, "reason": "dropped", "graph_version": 8},
+        {"op": "set_cursor", "id": a.id, "graph_version": 9},
+    ]
