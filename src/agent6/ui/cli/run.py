@@ -206,7 +206,7 @@ def _cmd_run(  # noqa: PLR0911
 
     # Provider key + models-cache preflight, shared by the single run and the
     # --parallel fan-out: resolves each referenced provider's key AND refreshes
-    # its models cache, which carries the pricing _explicit_usd_flag_error reads.
+    # its models cache, which carries the pricing explicit_usd_flag_error reads.
     # Runs before the --parallel route so dispatch_parallel's own --max-usd check
     # sees the same refreshed cache a plain --max-usd run does.
     missing = check_provider_keys(cfg)

@@ -36,7 +36,7 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
     """
     out: list[dict[str, Any]] = [{"role": "system", "content": system}]
     # Ids of assistant tool_use blocks dropped for a blank name (see
-    # `_parse_response`). Their paired tool_result must be dropped too, else
+    # `parse_response`). Their paired tool_result must be dropped too, else
     # the request carries a role=tool message with no matching tool_call and
     # strict backends reject it. Defense-in-depth for resumed runs whose
     # snapshot history predates the parse-time filter.

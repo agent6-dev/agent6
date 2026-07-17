@@ -6,7 +6,7 @@ Fallback parsing for models whose server does not populate the native
 ``tool_calls`` array and instead leaks the call into the assistant
 ``content`` text (Qwen/Hermes tags, Qwen-Coder XML, Gemma ``tool_code``
 fences, bare or fenced JSON). The rationale and the guards live on the
-comment block below; ``providers/openai.py``'s ``_parse_response`` is the
+comment block below; ``providers/_openai_parse.py``'s ``parse_response`` is the
 only production caller.
 """
 
@@ -31,7 +31,7 @@ from typing import Any
 # ("went quiet" / "silent_finish"), which kills an entire family of
 # open-weight coding models (qwen3-coder, hermes, devstral, ...). We
 # recover these into real tool_uses, but ONLY as a fallback: see
-# `_parse_response` for the guards (no native tool_calls present AND the
+# `parse_response` for the guards (no native tool_calls present AND the
 # recovered name matches a tool that was actually offered). Flagship
 # models that emit native tool_calls, and any model that legitimately
 # answers with JSON, never hit this path.

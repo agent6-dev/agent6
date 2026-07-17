@@ -26,7 +26,7 @@ from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.workflows.judge import CandidateBrief, JudgeError, compare, mechanical_ranking
 
 # The reviewer provider the judge call uses, built by the caller from the
-# configured `reviewer` role (ui/cli wires it via `_build_role_provider`).
+# configured `reviewer` role (ui/cli wires it via `build_role_provider`).
 BuildProvider = Callable[[Config, TranscriptSink, BudgetTracker], Provider]
 # A no-arg context manager shown around the (~50-60s, otherwise silent) judge
 # call. ui/cli supplies the console spinner; `nullcontext` shows nothing.
