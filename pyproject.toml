@@ -76,6 +76,7 @@ exclude = [
 
 [dependency-groups]
 dev = [
+    "pyan3>=2.6.2",
     "pyright>=1.1.380",
     "pytest>=8",
     "pytest-cov>=5",
