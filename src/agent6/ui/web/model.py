@@ -15,8 +15,11 @@ import json
 from pathlib import Path
 from typing import Any
 
+from agent6.config import ConfigError
 from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.machine import JournalError, MachineError, MachineJournal, load_machine
+from agent6.models.cache import cached_models, list_models
+from agent6.secrets import resolve_api_key
 from agent6.ui.viewmodel import (
     fold_machine,
     fold_run,
@@ -328,3 +331,31 @@ def config_payload(cwd: Path, config_path: Path | None = None) -> dict[str, Any]
     `agent6 config show --json` prints; never includes secrets."""
     eff = load_effective(cwd, config_path)
     return json.loads(render_show(eff, as_json=True))
+
+
+def config_suggestions(cwd: Path, key: str) -> list[str]:
+    """Value suggestions for one open-text config leaf, from the same sources
+    the TUI config page and CLI TAB completion use: ``models.<role>.provider``
+    offers the configured provider names, ``models.<role>.model`` the role's
+    provider's model ids (cache-first, refreshed from the live listing; the
+    fetch dials only that operator-configured provider's base_url). Enum leaves
+    already carry their choices in the config payload; everything else (and any
+    error) suggests nothing -- suggestions are best-effort, never a failure."""
+    parts = key.split(".")
+    if len(parts) != 3 or parts[0] != "models" or parts[2] not in ("provider", "model"):
+        return []
+    try:
+        cfg = load_effective(cwd).config
+    except ConfigError:
+        return []
+    if parts[2] == "provider":
+        return sorted(cfg.providers)
+    role_cfg = getattr(cfg.models, parts[1], None)
+    provider = getattr(role_cfg, "provider", None)
+    if not provider:
+        return []
+    entry = cfg.providers.get(provider)
+    if entry is None:
+        return cached_models(provider)
+    api_key = resolve_api_key(provider, getattr(entry, "api_key_env", None))
+    return list_models(provider, entry, api_key)

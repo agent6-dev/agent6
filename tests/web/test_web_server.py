@@ -882,3 +882,12 @@ def test_machine_answer_state_hint_traversal_is_contained(
     )
     assert status != 200
     assert not escape.exists()
+
+
+def test_config_suggest_endpoint(server: tuple[WebServer, int]) -> None:
+    # Best-effort value suggestions; an env with no providers suggests nothing
+    # but the endpoint always answers.
+    _srv, port = server
+    st, body, _ = _get(port, "/api/config/suggest/models.worker.provider")
+    assert st == 200
+    assert json.loads(body) == {"values": []}

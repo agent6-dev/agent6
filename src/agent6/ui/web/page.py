@@ -109,18 +109,10 @@ main { padding: 0; }
   .grid.cols2 > * { border-top: 0; }
   .grid.cols2 > :nth-child(2n) { border-left: 1px solid var(--border); }
   .grid.cols2 > :nth-child(n+3) { border-top: 1px solid var(--border); }
-  /* The hub: the listing column carries the content, give it the width; the
-     composer stack pins under the header so scrolling a long runs list never
-     drags the Start-a-run / Create-a-machine cards along. */
-  .grid.cols2.hub { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); }
-  .grid.cols2.hub > :first-child { position: sticky; top: 42px; }
   /* A full-width row inside a cols2 grid (the machine view's conversation:
      half-width left an empty cell beside it). */
   .grid.cols2 > .span2 { grid-column: 1 / -1; }
 }
-/* Phone: the runs list is what you open the app to see; it leads, the
-   new-work/machines composer cards follow. Desktop keeps them side by side. */
-@media (max-width: 899px) { .grid.cols2 .lead-mobile { order: -1; } }
 
 .card { padding: 14px 16px; overflow: hidden; }
 .card h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
@@ -232,7 +224,7 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
 .prompt-box .q { margin-bottom: 8px; }
 .toast {
   position: fixed; left: 50%; transform: translateX(-50%); z-index: 50;
-  bottom: calc(20px + env(safe-area-inset-bottom)); max-width: 90vw;
+  bottom: calc(120px + env(safe-area-inset-bottom)); max-width: 90vw; /* clears the docked composer */
   background: var(--surface); border: 1px solid var(--accent); border-radius: 10px;
   padding: 10px 16px; box-shadow: 0 4px 16px rgba(0,0,0,.4);
   white-space: pre-line; /* CLI-captured messages (merge, prune) are line-shaped */
@@ -245,7 +237,6 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
 .notif-banner .nb-msg { word-break: break-word; }
 .notif-banner .nb-sub { font-size: 12px; color: var(--muted); }
 .notif-banner .nb-x { cursor: pointer; color: var(--muted); background: none; border: none; min-height: auto; padding: 0 4px; font-size: 16px; }
-.poke-box { border-top: 1px solid var(--border); padding: 12px 0 0; margin-top: 12px; }
 
 .overlay {
   position: fixed; inset: 0; z-index: 60; padding: 16px;
@@ -265,12 +256,16 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
 }
 
 /* --- desktop: a persistent left nav rail (>=781px); phones keep the bottom
-   tab bar and the plain single-column stack, untouched. --- */
+   tab bar and the plain single-column stack, untouched. --rail-w drives the
+   rail, the content margin, and any fixed bottom bar, so collapsing the rail
+   (html.rail-min, persisted) re-lays everything out together. --- */
+:root { --rail-w: 216px; }
+html.rail-min { --rail-w: 64px; }
 aside.rail { display: none; }
 @media (min-width: 781px) {
   aside.rail {
     display: flex; flex-direction: column; gap: 4px; z-index: 30;
-    position: fixed; left: 0; top: 0; width: 216px; height: 100vh; overflow: auto;
+    position: fixed; left: 0; top: 0; width: var(--rail-w); height: 100vh; overflow: auto;
     padding: 16px 12px calc(16px + env(safe-area-inset-bottom));
     background: var(--surface); border-right: 1px solid var(--border);
   }
@@ -283,7 +278,14 @@ aside.rail { display: none; }
   aside.rail .rail-nav a.active { background: var(--surface2); color: var(--accent); }
   aside.rail .rail-nav .ic { font-size: 16px; width: 18px; text-align: center; }
   aside.rail .rail-gap { flex: 1; }
-  .content { margin-left: 216px; }
+  /* collapsed: an icon-only strip; labels and the brand name hide, icons centre */
+  html.rail-min aside.rail { padding-left: 8px; padding-right: 8px; }
+  html.rail-min aside.rail .rail-brand { justify-content: center; padding-left: 0; padding-right: 0; }
+  html.rail-min aside.rail .rail-brand b,
+  html.rail-min aside.rail .rail-nav a span:not(.ic),
+  html.rail-min aside.rail .rail-label { display: none; }
+  html.rail-min aside.rail .rail-nav a { justify-content: center; padding: 10px 0; }
+  .content { margin-left: var(--rail-w); }
   header { justify-content: flex-start; }
   header .brand, header > button { display: none; }  /* the rail owns brand + actions */
   main { max-width: none; margin: 0; padding: 0; }
@@ -291,52 +293,95 @@ aside.rail { display: none; }
   .page-pad { margin: 0 22px; }
 }
 
-/* --- run dashboard: conversation-primary on wide screens. The folded
-   conversation fills the main column; the task graph, budget, tool calls, and
-   latest commit sit in a narrower side column; the raw event log runs full
-   width underneath (the audit view). --- */
-@media (min-width: 1024px) {
-  .run-grid {
-    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
-    grid-template-areas: "head head" "conv side" "log log";
-    align-items: start;
-  }
-  .run-grid .card-head { grid-area: head; }
-  .run-grid .run-side { grid-area: side; }
-  .run-grid .card-log { grid-area: log; }
-  /* The conversation pins to the viewport (sticky under the header) and scrolls
-     internally, so it stays in view while the page scrolls the side cards. Cap
-     the whole CARD to the viewport (minus the sticky offset + a gap) and let the
-     header and composer take their natural height while .conv-box flexes to fill
-     the rest -- otherwise the card's chrome pushed it past the viewport and it
-     overhung the full-width event log below it.
-     The sticky card lives inside .conv-wrap, a stretched wrapper that owns the
-     grid area: Chromium confines a sticky element to its nearest block container,
-     not its grid area, so an unwrapped card slid past its row and hung over the
-     full-width event log while the log's text bled out around it. */
-  .run-grid .conv-wrap { grid-area: conv; align-self: stretch; min-width: 0; }
-  .run-grid .conv-wrap .card-conv {
-    position: sticky;
-    top: 72px;
-    max-height: calc(100vh - 88px);
-  }
-  .run-grid .card-conv .conv-box { flex: 1 1 auto; min-height: 0; max-height: none; height: auto; }
-
-  .run-grid .run-side { border-left: 1px solid var(--border); }
-  .run-grid .card-conv { background: var(--bg); } /* the sticky pane must stay opaque */
+/* --- run dashboard: conversation-primary. The conversation is the page: it
+   fills the view and scrolls internally, the status/summary sits on top, and
+   the composer docks at the bottom. The task graph, budget, tool calls,
+   latest commit, and event log live in a collapsible, drag-resizable details
+   drawer on the left. Below 781px everything stacks and the page scrolls
+   (the mobile widget menu picks what is shown). --- */
+.composer.dock {
+  border-top: 1px solid var(--border); margin: 0; background: var(--surface);
+  padding: 10px 22px calc(10px + env(safe-area-inset-bottom));
 }
+.composer.dock textarea.field { min-height: 46px; }
+/* Page-scrolling views (hub, machine view) pin their dock to the viewport
+   bottom; app-pane views (run, conversation) dock it as their last flex child. */
+@media (min-width: 781px) {
+  .dock-fixed { position: fixed; left: var(--rail-w); right: 0; bottom: 0; z-index: 15; }
+  main:has(.dock-fixed) { padding-bottom: 150px; }
+}
+@media (min-width: 781px) {
+  .run-app { display: flex; flex-direction: column; height: calc(100vh - 42px); min-height: 0; }
+  /* prompts / controls / status keep their natural height; only the body pane
+     flexes (without this the column SHRINKS them and clips the status kv) */
+  .run-app > * { flex: none; }
+  .run-app > .page-pad { max-height: 40vh; overflow: auto; } /* a prompt pile can't push the composer off-screen */
+  .run-app .run-body { flex: 1 1 auto; min-height: 0; display: flex; border-top: 1px solid var(--border); }
+  .run-app .drawer {
+    /* block, not grid: a definite-height grid distributes its rows and
+       compresses the cards (overflow:hidden makes their minimum size 0);
+       block children keep natural heights and the drawer scrolls them */
+    display: block;
+    width: var(--drawer-w, 340px); min-width: 220px; max-width: 60vw;
+    overflow: auto; border-right: 1px solid var(--border); flex: none;
+  }
+  .run-app .drawer.closed { display: none; }
+  /* ONE scroll surface: the drawer itself; its cards lose their own caps
+     (except the event log, which keeps a follow-the-tail window). */
+  .run-app .drawer .card.scroll { max-height: none; overflow: visible; }
+  .run-app .drawer .card-log .card-body { max-height: 45vh; overflow: auto; }
+  .run-app .drawer-handle { flex: none; width: 6px; cursor: col-resize; }
+  .run-app .drawer-handle:hover, .run-app .drawer-handle.dragging { background: var(--accent); }
+  .run-app .drawer.closed + .drawer-handle { display: none; }
+  .run-app .card-conv { flex: 1 1 auto; min-width: 0; }
+  .run-app .card-conv .conv-box { flex: 1 1 auto; min-height: 0; max-height: none; }
+}
+.wmenu-btn, .wmenu { display: none; } /* desktop: the drawer holds the widgets */
+@media (max-width: 780px) {
+  /* the composer rides above the tab bar; content padding keeps the page tail
+     reachable under it */
+  .composer.dock {
+    position: fixed; left: 0; right: 0; z-index: 15;
+    bottom: calc(var(--nav-h) + env(safe-area-inset-bottom)); padding: 8px 12px;
+  }
+  main:has(.composer.dock) { padding-bottom: calc(var(--nav-h) + 140px); }
+  /* No nested scrolling on a phone: an inner scroller traps the page scroll,
+     so every card flows at natural height and the PAGE is the one scroller. */
+  .card.scroll, .conv-box { max-height: none !important; overflow: visible; }
+  /* The run view shows ONE widget at a time (the widget menu picks it):
+     stacked, the transcripts and the event log made the page a mile long.
+     Scoped to .card: the menu's own buttons carry data-w as their choice id. */
+  .run-app.paged .card[data-w] { display: none; }
+  .run-app.paged .card[data-w].w-active { display: block; }
+  .wmenu-btn {
+    display: block; position: fixed; z-index: 18; top: 52px; right: 10px;
+    width: 42px; height: 42px; min-height: 42px; padding: 0; border-radius: 50%;
+    box-shadow: 0 2px 10px rgba(0,0,0,.35);
+  }
+  .wmenu {
+    position: fixed; z-index: 19; top: 100px; right: 10px; min-width: 170px;
+    display: flex; flex-direction: column; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0,0,0,.45);
+  }
+  .wmenu button { border: 0; border-radius: 0; text-align: left; background: none; }
+  .wmenu button.w-on { color: var(--accent); }
+  .details-btn { display: none; } /* the drawer is a desktop shape */
+}
+button.active { border-color: var(--accent); color: var(--accent); }
 </style>
 </head>
 <body>
 <aside class="rail">
   <div class="rail-brand" onclick="location.hash='#/'"><img src="/icon.svg" width="24" height="24" alt=""><b>agent6</b></div>
   <nav class="rail-nav">
-    <a href="#/" data-tab="hub"><span class="ic">▤</span><span>Runs</span></a>
-    <a href="#/machines" data-tab="machines"><span class="ic">◈</span><span>Machines</span></a>
-    <a href="#/config" data-tab="config"><span class="ic">⚙</span><span>Config</span></a>
+    <a href="#/" data-tab="hub" title="Runs"><span class="ic">▤</span><span>Runs</span></a>
+    <a href="#/machines" data-tab="machines" title="Machines"><span class="ic">◈</span><span>Machines</span></a>
+    <a href="#/config" data-tab="config" title="Config"><span class="ic">⚙</span><span>Config</span></a>
   </nav>
   <span class="rail-gap"></span>
-  <button onclick="toggleTheme()" title="theme">◐ theme</button>
+  <button onclick="toggleTheme()" title="theme">◐<span class="rail-label"> theme</span></button>
+  <button id="rail-toggle" onclick="toggleRail()" title="collapse the sidebar"><span id="rail-arrow">«</span><span class="rail-label"> collapse</span></button>
 </aside>
 <div class="content">
 <header>
@@ -381,6 +426,19 @@ function toggleTheme() {
   const on = document.documentElement.classList.toggle('light');
   localStorage.setItem('a6-theme', on ? 'light' : 'dark');
 }
+
+// --- nav rail collapse ---------------------------------------------------------
+if (localStorage.getItem('a6-rail') === 'min') document.documentElement.classList.add('rail-min');
+function railArrow() {
+  const a = document.getElementById('rail-arrow');
+  if (a) a.textContent = document.documentElement.classList.contains('rail-min') ? '»' : '«';
+}
+function toggleRail() {
+  const on = document.documentElement.classList.toggle('rail-min');
+  localStorage.setItem('a6-rail', on ? 'min' : '');
+  railArrow();
+}
+railArrow(); // reflect the persisted state on load
 
 // --- PWA + notifications -----------------------------------------------------
 // Install the service worker so the page is an installable PWA (manifest + SW).
@@ -465,41 +523,46 @@ async function route() {
 window.addEventListener('hashchange', route);
 
 // --- hub ---------------------------------------------------------------------
-function newWorkCard() {
-  const card = el('div', 'card');
-  card.appendChild(el('h2', null, 'Start a run'));
-  const task = el('textarea', 'field'); task.placeholder = 'task / question…';
-  card.appendChild(task);
-  const row = el('div', 'form-row');
+// The new-work composer, docked at the bottom of the Runs page: task text +
+// mode + Start (Enter starts, Shift+Enter newline).
+function newWorkDock() {
+  const root = el('div', 'composer dock dock-fixed');
+  const row = el('div', 'row');
+  const task = el('textarea', 'field'); task.placeholder = 'task / question…'; task.style.flex = '1';
   const mode = el('select', 'field'); mode.style.flex = '0 0 auto'; mode.style.width = 'auto';
   for (const m of ['run', 'plan', 'ask']) { const o = el('option', null, m); o.value = m; mode.appendChild(o); }
-  row.appendChild(mode);
   const go = el('button', 'primary', 'Start');
-  go.onclick = async () => {
+  const start = async () => {
     if (!task.value.trim()) return;
     go.disabled = true;
     try { const d = await postJSON('/api/new', { mode: mode.value, task: task.value }); if (d.run_id) location.hash = '#/run/' + encodeURIComponent(d.run_id); }
     catch (e) { toast(e.message, true); go.disabled = false; }
   };
-  row.appendChild(go);
-  card.appendChild(row);
-  return card;
+  go.onclick = start;
+  task.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); start(); } };
+  row.appendChild(task); row.appendChild(mode); row.appendChild(go);
+  root.appendChild(row);
+  root.appendChild(el('div', 'hint', 'Enter starts the run / plan / ask · Shift+Enter newline'));
+  return root;
 }
 
-function machineControls() {
-  const wrap = el('div');
-  const ct = el('textarea', 'field'); ct.placeholder = 'describe a machine to create…'; ct.style.minHeight = '52px';
-  wrap.appendChild(ct);
-  const row = el('div', 'form-row');
-  const cbtn = el('button', null, 'Create machine');
-  cbtn.onclick = async () => {
+// The create-machine composer, docked at the bottom of the Machines page.
+function createMachineDock() {
+  const root = el('div', 'composer dock dock-fixed');
+  const row = el('div', 'row');
+  const ct = el('textarea', 'field'); ct.placeholder = 'describe a machine to create…'; ct.style.flex = '1';
+  const cbtn = el('button', 'primary', 'Create machine');
+  const create = async () => {
     if (!ct.value.trim()) return; cbtn.disabled = true;
     try { const d = await postJSON('/api/machine/create', { task: ct.value }); ct.value=''; if (d.draft) location.hash = '#/draft/' + encodeURIComponent(d.draft); }
     catch (e) { toast(e.message, true); cbtn.disabled = false; }
   };
-  row.appendChild(cbtn);
-  wrap.appendChild(row);
-  return wrap;
+  cbtn.onclick = create;
+  ct.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); create(); } };
+  row.appendChild(ct); row.appendChild(cbtn);
+  root.appendChild(row);
+  root.appendChild(el('div', 'hint', 'Enter creates a machine draft from the description · Shift+Enter newline'));
+  return root;
 }
 
 // A list card: h2 title + one clickable row per entry.
@@ -568,27 +631,18 @@ async function renderHub(focus) {
   const data = await getJSON('/api/hub');
   view.innerHTML = '';
   const machinesTab = focus === 'machines';
-  // The wide column holds the tab's listing (runs, or machines + drafts); the
-  // narrow one the composer cards. lead-mobile: on a phone the listing renders
-  // first. Two independent column stacks (not one grid of cards): cards keep
-  // their natural heights instead of stretching to the tallest row neighbour.
-  const lists = el('div', 'grid lead-mobile');
-  const stack = el('div', 'grid');
+  // Full-width listing stack; the tab's composer docks at the bottom of the
+  // viewport (new work on Runs, create-machine on Machines).
+  const lists = el('div', 'grid');
   if (machinesTab) {
+    if ((data.machine_files || []).length) lists.appendChild(machineFilesCard(data.machine_files));
     lists.appendChild(machinesCard(data.machines));
     if ((data.drafts || []).length) lists.appendChild(draftsCard(data.drafts));
-    if ((data.machine_files || []).length) stack.appendChild(machineFilesCard(data.machine_files));
-    const cCard = el('div', 'card');
-    cCard.appendChild(el('h2', null, 'Create a machine'));
-    cCard.appendChild(machineControls());
-    stack.appendChild(cCard);
   } else {
     lists.appendChild(runsCard(data.runs));
-    stack.appendChild(newWorkCard());
   }
-  const grid = el('div', 'grid cols2 hub');
-  grid.appendChild(stack); grid.appendChild(lists);
-  view.appendChild(grid);
+  view.appendChild(lists);
+  view.appendChild(machinesTab ? createMachineDock() : newWorkDock());
 }
 
 // --- conversation ------------------------------------------------------------
@@ -771,27 +825,6 @@ function makeComposer(id) {
 }
 
 // --- run dashboard -----------------------------------------------------------
-// A multi-line steer dialog (browser prompt() is single-line). onResult(text|null):
-// the instruction to send (may be multi-line), or null to cancel. Steering never
-// stops the run -- that is the separate Stop button.
-function steerDialog(title, onResult) {
-  const back = el('div'); back.className = 'overlay';
-  const box = el('div', 'card'); box.style.width = 'min(680px, 92vw)';
-  box.appendChild(el('h2', null, title));
-  const ta = el('textarea', 'field'); ta.placeholder = 'instruction (blank = continue)';
-  ta.style.minHeight = '120px'; box.appendChild(ta);
-  const row = el('div', 'form-row');
-  const send = el('button', 'primary', 'Send'), cont = el('button', null, 'Continue'), cancel = el('button', null, 'Cancel');
-  row.appendChild(send); row.appendChild(cont); row.appendChild(cancel); box.appendChild(row);
-  back.appendChild(box); document.body.appendChild(back); ta.focus();
-  const close = (r) => { activeOverlayClose = null; back.remove(); document.removeEventListener('keydown', onKey); onResult(r); };
-  activeOverlayClose = () => close(null); // navigating away dismisses it (no orphaned overlay/listener)
-  function onKey(e) { if (e.key === 'Escape') close(null); }
-  document.addEventListener('keydown', onKey);
-  send.onclick = () => close(ta.value); cont.onclick = () => close(''); cancel.onclick = () => close(null);
-  back.onclick = (e) => { if (e.target === back) close(null); };
-}
-
 async function stopRun(base, label) {
   if (!confirm('Stop ' + label + '? It ends now and can be resumed later.')) return;
   try { await postJSON(base + '/steer', { text: 'abort' }); toast('stopping…'); } catch (e) { toast(e.message, true); }
@@ -803,6 +836,36 @@ async function stopRun(base, label) {
 // hollow dashboard: the conversation fetch swallowed its 404 and the
 // EventSource error is silent) and the first paint, so the view never flashes
 // empty while waiting for the first SSE frame.
+// The details drawer: the run's context widgets combined into one collapsible,
+// drag-resizable panel on the left, so the conversation keeps the focus.
+function drawerHandle(drawer) {
+  const h = el('div', 'drawer-handle');
+  h.title = 'drag to resize · double-click to reset';
+  h.onpointerdown = (e) => {
+    e.preventDefault();
+    h.setPointerCapture(e.pointerId);
+    h.classList.add('dragging');
+    const startX = e.clientX;
+    const startW = drawer.getBoundingClientRect().width;
+    h.onpointermove = (ev) => {
+      const w = Math.round(Math.max(220, Math.min(window.innerWidth * 0.6, startW + ev.clientX - startX)));
+      document.documentElement.style.setProperty('--drawer-w', w + 'px');
+      localStorage.setItem('a6-drawer-w', w + 'px');
+    };
+    h.onpointerup = (ev) => {
+      h.releasePointerCapture(ev.pointerId);
+      h.classList.remove('dragging');
+      h.onpointermove = null; h.onpointerup = null;
+    };
+  };
+  h.ondblclick = () => {
+    document.documentElement.style.removeProperty('--drawer-w');
+    localStorage.removeItem('a6-drawer-w');
+  };
+  return h;
+}
+{ const w = localStorage.getItem('a6-drawer-w'); if (w) document.documentElement.style.setProperty('--drawer-w', w); }
+
 async function renderRun(id, opts) {
   opts = opts || {};
   const base = opts.base || ('/api/run/' + encodeURIComponent(id));
@@ -810,25 +873,26 @@ async function renderRun(id, opts) {
   const readOnly = !!opts.readOnly;
   setCrumb(opts.crumb || id);
   view.innerHTML = '';
-  const prompts = el('div', 'page-pad'); view.appendChild(prompts); // approval/question boxes surface here
-  const grid = el('div', 'grid run-grid');
-  const side = el('div', 'grid run-side'); // the narrow column of context cards
+  // "paged" only acts on phones: one widget shows at a time there, picked by
+  // the floating menu; the desktop drawer ignores it.
+  const app = el('div', 'run-app paged');
+  const prompts = el('div', 'page-pad'); app.appendChild(prompts); // approval/question boxes surface here
   const cards = { _id: id, _prompts: prompts, _readOnly: readOnly };
-  const mk = (key, title, cls, parent) => { const c = el('div', 'card card-' + key + ' ' + (cls||'')); c.appendChild(el('h2', null, title)); const body = el('div'); c.appendChild(body); cards[key] = body; (parent || grid).appendChild(c); return body; };
-  mk('head', opts.title || 'Run');
-  const cc = convCard(base + '/conversation', 'Conversation', 'card-conv');
-  const convWrap = el('div', 'conv-wrap'); // sticky containment: see .run-grid .conv-wrap
-  convWrap.appendChild(cc.card);
-  grid.appendChild(convWrap);
-  cards._conv = cc.conv;
-  mk('tasks', 'Task graph', 'scroll', side);
-  mk('budget', 'Budget', '', side);
-  mk('tools', 'Tool calls', 'scroll', side);
-  mk('diff', 'Latest commit', 'scroll', side);
-  grid.appendChild(side);
-  mk('log', 'Event log', 'scroll');
-  if (!readOnly) {  // controls at the TOP so Stop stays reachable without scrolling
-    const actions = el('div', 'row wrap page-pad'); actions.style.marginBottom = '14px';
+  const drawer = el('div', 'grid drawer');
+  const mk = (key, title, cls, parent) => { const c = el('div', 'card card-' + key + ' ' + (cls||'')); c.dataset.w = key; c.appendChild(el('h2', null, title)); const body = el('div', 'card-body'); c.appendChild(body); cards[key] = body; (parent || drawer).appendChild(c); return body; };
+
+  // Controls at the TOP so Stop stays reachable without scrolling; the Details
+  // toggle folds the drawer away (persisted; default open on wide screens).
+  const actions = el('div', 'row wrap page-pad'); actions.style.margin = '10px 22px';
+  const dBtn = el('button', 'details-btn', 'Details'); // desktop drawer toggle; phones page widgets instead
+  const applyDrawer = (open) => {
+    drawer.classList.toggle('closed', !open);
+    dBtn.classList.toggle('active', open);
+    localStorage.setItem('a6-drawer', open ? 'open' : 'closed');
+  };
+  dBtn.onclick = () => applyDrawer(drawer.classList.contains('closed'));
+  actions.appendChild(dBtn);
+  if (!readOnly) {
     const post = (verb, okMsg) => async () => {
       try { const d = await postJSON('/api/run/' + encodeURIComponent(id) + '/' + verb, {}); toast(d.message || okMsg); }
       catch (e) { toast(e.message, true); }
@@ -846,15 +910,60 @@ async function renderRun(id, opts) {
     tbtn.onclick = () => location.hash = '#/conversation/' + encodeURIComponent(id);
     for (const b of [stopBtn, stepBtn, compactBtn, mergeBtn, tbtn]) actions.appendChild(b);
     cards._live_btns = [stopBtn, stepBtn, compactBtn]; // paintRun disables these once finished
-    view.appendChild(actions);
-    // The composer replaces the steer dialog: steer while live, resume when done.
+  }
+  app.appendChild(actions);
+
+  mk('head', opts.title || 'Run', '', app); // the status/summary, full width on top
+  mk('tasks', 'Task graph', 'scroll');
+  mk('budget', 'Budget', '');
+  mk('tools', 'Tool calls', 'scroll');
+  mk('diff', 'Latest commit', 'scroll');
+  mk('log', 'Event log', 'scroll');
+
+  const cc = convCard(base + '/conversation', 'Conversation', 'card-conv');
+  cards._conv = cc.conv;
+  cc.card.dataset.w = 'conv';
+  const body = el('div', 'run-body');
+  body.appendChild(drawer);
+  body.appendChild(drawerHandle(drawer));
+  body.appendChild(cc.card);
+  app.appendChild(body);
+  const saved = localStorage.getItem('a6-drawer');
+  applyDrawer(saved ? saved === 'open' : window.innerWidth >= 1024);
+
+  // The phone widget menu: pick which single widget the page shows.
+  const entries = [['conv', 'Conversation'], ['head', 'Overview'], ['tasks', 'Task graph'],
+                   ['budget', 'Budget'], ['tools', 'Tool calls'], ['diff', 'Latest commit'],
+                   ['log', 'Event log']];
+  const wbtn = el('button', 'wmenu-btn', '☰');
+  const wmenu = el('div', 'wmenu'); wmenu.style.display = 'none';
+  const setW = (key) => {
+    app.querySelectorAll('[data-w]').forEach(c => c.classList.toggle('w-active', c.dataset.w === key));
+    wmenu.querySelectorAll('button').forEach(mb => mb.classList.toggle('w-on', mb.dataset.w === key));
+  };
+  for (const [key, label] of entries) {
+    const mb = el('button', null, label); mb.dataset.w = key;
+    mb.onclick = () => { setW(key); wmenu.style.display = 'none'; window.scrollTo(0, 0); };
+    wmenu.appendChild(mb);
+  }
+  wbtn.onclick = () => { wmenu.style.display = wmenu.style.display === 'none' ? '' : 'none'; };
+  setW('conv');
+  app.appendChild(wbtn); app.appendChild(wmenu);
+
+  if (!readOnly) {
+    // The composer replaces the steer dialog: steer while live, resume when
+    // done. Docked at the bottom of the view.
     const composer = makeComposer(id);
-    cc.card.appendChild(composer);
+    composer.classList.add('dock');
+    app.appendChild(composer);
     cards._composer = composer;
   }
-  view.appendChild(grid);
+  view.appendChild(app);
   paintRun(cards, snap);
-  cc.conv.refresh();
+  cc.conv.refresh().then(() => {
+    // On a phone the page (not the box) scrolls the conversation: open at the tail.
+    if (window.innerWidth < 781) window.scrollTo(0, document.body.scrollHeight);
+  });
 
   live = new EventSource(base + '/events');
   live.onmessage = ev => {
@@ -1071,13 +1180,20 @@ async function renderConversation(id) {
   await getJSON(base); // existence probe: throws -> route() shows the error
   setCrumb('conversation ' + id);
   view.innerHTML = '';
-  const cc = convCard(base + '/conversation', 'Conversation');
-  cc.box.style.maxHeight = '76vh';
+  // The same app shell as the run view, minus the drawer: the conversation
+  // fills the view full width and the composer docks at the bottom.
+  const app = el('div', 'run-app');
+  const cc = convCard(base + '/conversation', 'Conversation', 'card-conv');
+  const body = el('div', 'run-body');
+  body.appendChild(cc.card);
+  app.appendChild(body);
   const composer = makeComposer(id);
-  cc.card.appendChild(composer);
-  view.appendChild(cc.card);
+  composer.classList.add('dock');
+  app.appendChild(composer);
+  view.appendChild(app);
   await cc.conv.refresh();
   cc.box.scrollTop = cc.box.scrollHeight; // open at the tail, like the TUI
+  if (window.innerWidth < 781) window.scrollTo(0, document.body.scrollHeight); // phone: the page scrolls
 
   live = new EventSource(base + '/events');
   live.onmessage = ev => {
@@ -1107,7 +1223,7 @@ async function renderMachine(name) {
   view.innerHTML = '';
   // Ephemeral notification banners live here; the prompts host holds pending
   // approval/question boxes; both are APPENDED to, never wiped, so a repaint can
-  // never clear a half-typed answer or the poke box below.
+  // never clear a half-typed answer.
   const notifs = el('div', 'page-pad'); view.appendChild(notifs);
   const prompts = el('div', 'page-pad'); view.appendChild(prompts);
   const cards = { _prompts: prompts, _base: base };
@@ -1115,17 +1231,8 @@ async function renderMachine(name) {
   const controls = el('div', 'row wrap page-pad'); controls.style.marginBottom = '10px';
   const bell = el('button', null, '🔔 Notifications');
   bell.onclick = enableNotifications;
-  const steerBtn = el('button', null, '↪ Steer agent state');
-  steerBtn.onclick = () => steerDialog('Steer the current agent state', async (text) => {
-    if (text === null) return;
-    // cards._state is set each frame to the agent state currently rendered, so
-    // the steer routes to that state, not whichever is newest at click time.
-    const body = cards._state ? { text, state: cards._state } : { text };
-    try { await postJSON(base + '/steer', body); toast('steer sent'); } catch (e) { toast(e.message, true); }
-  });
-  controls.appendChild(bell); controls.appendChild(steerBtn);
+  controls.appendChild(bell);
   view.appendChild(controls);
-  cards._steer_btn = steerBtn; // paintMachine disables it once the machine ends
 
   const grid = el('div', 'grid cols2');
   const structCard = el('div', 'card scroll'); structCard.appendChild(el('h2', null, 'States')); const structBody = el('div'); structCard.appendChild(structBody);
@@ -1138,18 +1245,32 @@ async function renderMachine(name) {
   view.appendChild(grid);
   cc.conv.refresh();
 
-  // The poke ("send message") box: created ONCE so its input survives repaints.
-  const poke = el('div', 'poke-box');
-  poke.appendChild(el('div', 'sub muted', 'Wake a waiting machine (the message is delivered to its next tool):'));
-  const prow = el('div', 'form-row');
-  const pin = el('input', 'field'); pin.placeholder = 'message…'; pin.style.flex = '1';
-  const psend = el('button', 'primary', 'Send');
-  const doPoke = async () => { try { await postJSON(base + '/poke', { message: pin.value }); toast('woke the machine'); pin.value = ''; } catch (e) { toast(e.message, true); } };
-  psend.onclick = doPoke;
-  pin.onkeydown = e => { if (e.key === 'Enter') doPoke(); };
-  prow.appendChild(pin); prow.appendChild(psend); poke.appendChild(prow);
-  view.appendChild(poke);
-  cards._poke = poke; // paintMachine hides it once the machine ends
+  // The machine composer, docked at the bottom: ONE text entry with the two
+  // machine verbs, matching the TUI machine watch (s = Steer, m = Message).
+  // Steer injects into the current agent state at its next safe boundary
+  // (blank = continue); Message is a poke payload a waiting machine's next
+  // tool reads (blank = a bare wake). Created once, so the input survives
+  // repaints; paintMachine gates the buttons.
+  const dock = el('div', 'composer dock dock-fixed');
+  const drow = el('div', 'row');
+  const din = el('textarea', 'field'); din.style.flex = '1';
+  din.placeholder = 'steer the agent state, or message the machine…';
+  const steerBtn = el('button', 'primary', 'Steer');
+  steerBtn.onclick = async () => {
+    // cards._state is set each frame to the agent state currently rendered, so
+    // the steer routes to that state, not whichever is newest at click time.
+    const body = cards._state ? { text: din.value, state: cards._state } : { text: din.value };
+    try { await postJSON(base + '/steer', body); toast('steer sent'); din.value = ''; } catch (e) { toast(e.message, true); }
+  };
+  const msgBtn = el('button', null, 'Message');
+  msgBtn.onclick = async () => {
+    try { await postJSON(base + '/poke', { message: din.value }); toast('message sent'); din.value = ''; } catch (e) { toast(e.message, true); }
+  };
+  drow.appendChild(din); drow.appendChild(steerBtn); drow.appendChild(msgBtn);
+  dock.appendChild(drow);
+  dock.appendChild(el('div', 'hint', 'Steer injects into the current agent state · Message wakes a waiting machine (its next tool reads it)'));
+  view.appendChild(dock);
+  cards._steer_btn = steerBtn; cards._msg_btn = msgBtn; // paintMachine gates these
 
   // Notification de-dup across repaints: seed with history on the first frame so
   // opening a machine does not replay every past notification; banner + OS-notify
@@ -1230,13 +1351,20 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
 
   // An ended machine takes no input: poking or steering it would only pretend
   // to work (nothing reads the signal), and its final state's log often has no
-  // run.end, which would leave a live "thinking..." marker up forever.
+  // run.end, which would leave a live "thinking..." marker up forever. Steer
+  // additionally needs an agent state to inject into.
   const ended = !!m.ended;
   if (cards._steer_btn) {
-    cards._steer_btn.disabled = ended;
-    cards._steer_btn.title = ended ? 'the machine has ended' : '';
+    cards._steer_btn.disabled = ended || !cards._state;
+    cards._steer_btn.title = ended ? 'the machine has ended'
+      : !cards._state ? 'no agent state is active to steer'
+      : 'inject into the current agent state at its next safe boundary';
   }
-  if (cards._poke) cards._poke.style.display = ended ? 'none' : '';
+  if (cards._msg_btn) {
+    cards._msg_btn.disabled = ended;
+    cards._msg_btn.title = ended ? 'the machine has ended'
+      : 'wake a waiting machine; its next tool reads the message';
+  }
 
   // The current state's conversation: live turn from this frame, completed
   // turns re-folded on a debounce. A live-but-silent state ticks the heartbeat.
@@ -1309,6 +1437,16 @@ function editConfig(key, s) {
     field = el('input', 'field');
     field.value = cur;
     if (s.type === 'list') field.placeholder = 'comma-separated values';
+    // Dynamic suggestions (configured provider names, the provider's model
+    // ids) from the same sources the TUI config page and CLI TAB completion
+    // use, attached as a native datalist autocomplete.
+    getJSON('/api/config/suggest/' + encodeURIComponent(key)).then(d => {
+      if (!d.values || !d.values.length || !field.isConnected) return;
+      const dl = el('datalist'); dl.id = 'cfg-suggest';
+      for (const v of d.values) { const o = el('option'); o.value = v; dl.appendChild(o); }
+      box.appendChild(dl);
+      field.setAttribute('list', dl.id);
+    }).catch(() => {});
   }
   box.appendChild(field);
   const repoRow = el('label', 'row'); repoRow.style.marginTop = '8px'; repoRow.style.cursor = 'pointer';

@@ -109,6 +109,10 @@ depends_on = [
   "agent6.config",
   "agent6.config.layer",
   "agent6.machine",
+  # config-editor value suggestions: the same model-listing cache + key
+  # resolution the TUI config page uses
+  "agent6.models.cache",
+  "agent6.secrets",
 ]
 
 [[modules]]

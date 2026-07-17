@@ -453,6 +453,10 @@ class _Handler(BaseHTTPRequestHandler):
         if path == "/api/config":
             self._send_json(model.config_payload(self.cwd))
             return
+        if path.startswith("/api/config/suggest/"):
+            key = path.removeprefix("/api/config/suggest/")
+            self._send_json({"values": model.config_suggestions(self.cwd, key)})
+            return
         parts = path.strip("/").split("/")
         # /api/run/<id>[/conversation|/events]
         if len(parts) in (3, 4) and parts[0] == "api" and parts[1] == "run":

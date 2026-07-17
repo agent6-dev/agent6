@@ -5,7 +5,10 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+
+import pytest
 
 from agent6.ui.web import model
 
@@ -149,3 +152,31 @@ def test_hub_and_lookup_skip_husk_run_dirs(tmp_path: Path) -> None:
     hub = model.hub_payload(tmp_path)
     assert [r["mode"] for r in hub["runs"]] == ["ask"]
     assert model.run_dir_for(tmp_path, "echo-fern-AA11BB") == ask
+
+
+def test_config_suggestions_providers_and_models(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # models.<role>.provider offers the configured provider names;
+    # models.<role>.model the role's provider's model ids via the same
+    # cache-first listing the TUI config page and CLI completion use.
+    cfg_home = Path(os.environ["AGENT6_CONFIG_HOME"])
+    (cfg_home / "config.toml").write_text(
+        '[providers.openrouter]\napi_format = "openai"\n'
+        'base_url = "https://openrouter.ai/api/v1"\n'
+        '[models.worker]\nprovider = "openrouter"\nmodel = "kimi"\n',
+        encoding="utf-8",
+    )
+    seen: dict[str, object] = {}
+
+    def _fake_list(provider: str, entry: object, api_key: object) -> list[str]:
+        seen["provider"] = provider
+        return ["kimi", "qwen3"]
+
+    monkeypatch.setattr(model, "list_models", _fake_list)
+    assert model.config_suggestions(tmp_path, "models.worker.provider") == ["openrouter"]
+    assert model.config_suggestions(tmp_path, "models.worker.model") == ["kimi", "qwen3"]
+    assert seen["provider"] == "openrouter"
+    # unknown keys / roles suggest nothing
+    assert model.config_suggestions(tmp_path, "web.port") == []
+    assert model.config_suggestions(tmp_path, "models.nosuch.model") == []
