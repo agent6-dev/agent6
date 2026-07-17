@@ -31,11 +31,9 @@ import pytest
 
 from agent6.budget import BudgetTracker
 from agent6.providers import _stream as stream_mod
+from agent6.providers._openai_parse import parse_response as _parse_response
 from agent6.providers.anthropic import AnthropicProvider, ProviderError
-from agent6.providers.openai import (
-    OpenAIProvider,
-    _parse_response,  # pyright: ignore[reportPrivateUsage]
-)
+from agent6.providers.openai import OpenAIProvider
 
 
 # --------------------------------------------------------------------------
