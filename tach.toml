@@ -207,8 +207,10 @@ path = "agent6.tools"
 depends_on = ["agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.config", "agent6.events", "agent6.graph.curator", "agent6.graph.models", "agent6.memory", "agent6.skills", "agent6.paths"]
 
 [[modules]]
+# graph.models: the update_task/list_tasks status pattern is derived from the
+# NodeStatus Literal (one owner for the task-status vocabulary).
 path = "agent6.tools.schema"
-depends_on = []
+depends_on = ["agent6.graph.models"]
 
 [[modules]]
 path = "agent6.git_ops"

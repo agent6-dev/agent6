@@ -100,5 +100,5 @@ The persistent task-graph models: nodes plus the LLM-emitted curator intents tha
 **TaskNode** &mdash; A persisted task-graph node: a time-sortable 26-char ULID `id`, a `parent_id`/`children` pair the curator keeps mutually consistent, and a `status` drawn from the fixed NodeStatus vocabulary.
 
 - **Written by:** graph/{curator, storage}
-- **Read by:** tools/{_dag_tools}, ui/cli/{_task_tree}, workflows/{_dag_focus, loop}
+- **Read by:** tools/{_dag_tools, schema}, ui/cli/{_task_tree}, workflows/{_dag_focus, loop}
 - **Guarded by:** test_graph_storage.py (8 test files exercise it)

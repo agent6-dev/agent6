@@ -66,3 +66,16 @@ def test_tool_schemas_structure_matches_golden() -> None:
         'golden: python -c "import json,tests.unit.test_tool_schema_wire as t; '
         "open(t._GOLDEN,'w').write(json.dumps(t._digest(),indent=2)+chr(10))\""
     )
+
+
+def test_status_pattern_bytes_are_pinned() -> None:
+    # The update_task/list_tasks status pattern is DERIVED from the NodeStatus
+    # Literal (one owner); this pins the emitted LLM-facing bytes, so growing
+    # the vocabulary is a deliberate schema change, not a silent one.
+    from agent6.tools.schema import DagListTasksInput, DagUpdateTaskInput
+
+    expected = "^(pending|in_progress|passed|failed|skipped|obsolete)$"
+    update = DagUpdateTaskInput.model_json_schema()["properties"]["status"]
+    assert update["pattern"] == expected
+    anyof = DagListTasksInput.model_json_schema()["properties"]["status"]["anyOf"]
+    assert [s.get("pattern") for s in anyof if s.get("type") == "string"] == [expected]

@@ -4,9 +4,17 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from agent6.graph.models import NodeStatus
+
+# Derived from the NodeStatus Literal so the task-status vocabulary has ONE
+# owner (a new status can't silently drift the tool schema). Same order, so
+# the LLM-facing pattern bytes are unchanged; pinned in
+# tests/unit/test_tool_schema_wire.py.
+_STATUS_PATTERN = f"^({'|'.join(get_args(NodeStatus))})$"
 
 
 class _ToolInput(BaseModel):
@@ -306,7 +314,7 @@ class DagUpdateTaskInput(_ToolInput):
     )
 
     id: str = Field(min_length=26, max_length=26)
-    status: str = Field(pattern="^(pending|in_progress|passed|failed|skipped|obsolete)$")
+    status: str = Field(pattern=_STATUS_PATTERN)
     note: str = ""
 
 
@@ -337,10 +345,7 @@ class DagListTasksInput(_ToolInput):
     # audit finding: enforce the same status enum here that
     # update_task uses, so an agent typo gets a clear schema rejection
     # rather than a silently-empty result.
-    status: str | None = Field(
-        default=None,
-        pattern="^(pending|in_progress|passed|failed|skipped|obsolete)$",
-    )
+    status: str | None = Field(default=None, pattern=_STATUS_PATTERN)
 
 
 class DagAddDependencyInput(_ToolInput):
