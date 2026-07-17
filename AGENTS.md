@@ -89,10 +89,10 @@ and the principles the Zen doesn't cover:
   past a few hundred, split it before it ossifies (exemplars:
   `workflows/loop.py` with its `_prompt_blocks` / `_metric` / `_compaction`
   siblings, the `ui/cli` split of `run.py`). The rules:
-  - Lift cohesive pure-helper groups into sibling `_name.py` modules. Move
-    verbatim; give moved symbols public names and import them back aliased
-    (`foo as _foo`) so call sites don't change. A mechanical move with the
-    suite green is the proof there's no regression.
+  - Lift cohesive helper groups into sibling `_name.py` modules, improving
+    names and shapes in passing when strictly better. Moved symbols get
+    public names and call sites use them directly; no alias-back shims
+    (`foo as _foo`). The green suite is the proof there's no regression.
   - Give a large stateful method's cross-iteration bookkeeping ONE mutable
     state dataclass so each phase becomes a method taking `state`; never a
     9-parameter helper or a multi-value tuple return.
