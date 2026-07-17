@@ -225,7 +225,11 @@ def _cmd_run(  # noqa: PLR0911
     # provider with no listing (Anthropic) or a fresh machine is never blocked.
     verdict = validate_configured_model(cfg, role)
     if verdict.refused:
-        print(f"REFUSING: {configured_model_refusal(verdict, role)}", file=sys.stderr)
+        # Name the entry the user actually wrote: a plan whose planner fell
+        # back to the worker model must say models.worker.model, not point at
+        # a models.planner section absent from their config.
+        source = cfg.models.source_role(role)
+        print(f"REFUSING: {configured_model_refusal(verdict, source)}", file=sys.stderr)
         return 2
 
     # `--parallel`: fan out isolated lanes instead of a single run. Routed here,

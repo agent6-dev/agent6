@@ -178,6 +178,20 @@ def test_configured_model_typo_refuses_with_suggestion(cache_home: Path) -> None
     assert "agent6 model" in msg
 
 
+def test_refusal_names_the_entry_the_user_wrote_on_worker_fallback(cache_home: Path) -> None:
+    # `plan` validates the planner role, but with no [models.planner] the model
+    # comes from the worker entry; the refusal must point at models.worker.model
+    # (the key that exists in the user's config), not a phantom models.planner.
+    _write_cache(cache_home, "o", ["moonshotai/kimi-k2.6"])
+    cfg = _cfg("moonshotai/kimi-k2.7")
+    assert cfg.models.source_role("planner") == "worker"
+    v = validate.validate_configured_model(cfg, "planner")
+    assert v.refused
+    msg = validate.configured_model_refusal(v, cfg.models.source_role("planner"))
+    assert "models.worker.model" in msg
+    assert "models.planner" not in msg
+
+
 def test_configured_model_no_cache_never_refuses(cache_home: Path) -> None:
     # No cached listing (fresh machine, or a provider that lists nothing like
     # Anthropic): must proceed, never block a configured model.

@@ -343,6 +343,12 @@ class ModelsConfig(BaseModel):
             return self.reviewer or self.worker
         return None
 
+    def source_role(self, role: RoleName) -> RoleName:
+        """The configured entry ``resolve(role)`` reads: *role* itself when
+        explicitly set, else the worker fallback. Lets an error message name
+        the config key the user actually wrote (mirrors ``resolve`` above)."""
+        return role if role in self.configured() else "worker"
+
 
 class SandboxConfig(BaseModel):
     model_config = _BASE_MODEL_CONFIG
