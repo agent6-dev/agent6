@@ -245,6 +245,23 @@ def test_poke_rejects_invalid_json_data(
     assert "not valid JSON" in capsys.readouterr().err
 
 
+def test_poke_refuses_ended_machine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A terminal machine consumes no signals; poking it would sit unread, so the
+    # CLI refuses instead of claiming "it will wake on its next signal check".
+    monkeypatch.chdir(tmp_path)
+    f = tmp_path / "tiny.asm.toml"
+    f.write_text(TINY, encoding="utf-8")
+    assert main(["machine", "run", str(f)]) == 0
+    capsys.readouterr()
+    code = main(["machine", "poke", "tiny"])
+    assert code == 1
+    assert "already ended" in capsys.readouterr().err
+    root = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    assert not (root / "signal").exists()  # no signal was dropped
+
+
 def test_poke_missing_instance_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

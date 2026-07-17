@@ -43,6 +43,7 @@ from agent6.machine import (
     DryRunReport,
     EngineError,
     JournalError,
+    MachineEnd,
     MachineError,
     MachineJournal,
     MachineSpec,
@@ -369,6 +370,22 @@ def _cmd_machine_poke(
     if not root.is_dir():
         print(f"ERROR: no machine instance at {root}", file=sys.stderr)
         return 1
+    journal = MachineJournal(root)
+    try:
+        events = journal.read()
+    except JournalError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    # An ended machine consumes no signals: a poke would sit unread, so the
+    # "it will wake on its next signal check" reply would be a lie. Refuse.
+    if events and isinstance(events[-1], MachineEnd):
+        end = events[-1]
+        print(
+            f"ERROR: {machine_id} already ended in {end.state!r} ({end.status}: {end.reason});"
+            " a poke would never be consumed.",
+            file=sys.stderr,
+        )
+        return 1
     if message is not None:
         payload: Any = message
     elif data is not None:
@@ -380,7 +397,7 @@ def _cmd_machine_poke(
     else:
         payload = None
     try:
-        MachineJournal(root).poke(payload)
+        journal.poke(payload)
     except JournalError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
