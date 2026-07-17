@@ -293,6 +293,17 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         if not require_git_repo(cwd):
             return 2
 
+        # Snapshot version guard, BEFORE maybe_start_egress spawns a broker +
+        # netns: a v1 snapshot cannot be resumed, and the refusal must land in
+        # preflight (like `fork`) with the checkout and the network untouched --
+        # not after a broker + preamble already printed. wf.resume() re-validates
+        # the same snapshot; a corrupt/old file refuses identically here (exit 1).
+        try:
+            load_run_snapshot(snapshot_path)
+        except (ValueError, OSError) as exc:
+            reporter.err(f"ERROR: {exc}")
+            return 1
+
         # The original run's manifest drives resume: `mode` (a plan run resumes
         # read-only with the plan tools, never as a write run), `profile` (resume
         # has no --profile flag), `base_sha` (the review-panel diff base), and
