@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+import agent6.app.run as app_run_mod
 import agent6.ui.cli.run as run_mod
 from agent6.config import (
     Config,
@@ -73,7 +74,7 @@ def _patch_common(monkeypatch: pytest.MonkeyPatch, cfg: Config) -> None:
 
     monkeypatch.setattr(run_mod, "load_effective", _load_effective)
     monkeypatch.setattr(run_mod, "set_repo_hook_policy", _noop)
-    monkeypatch.setattr(run_mod, "verify_git_identity", _noop)
+    monkeypatch.setattr(app_run_mod, "verify_git_identity", _noop)
     monkeypatch.setattr(run_mod, "_maybe_start_egress", _no_egress)
     monkeypatch.setattr(run_mod, "_maybe_apply_agent_landlock", _noop)
 
@@ -95,7 +96,7 @@ def test_dirty_tree_refused_with_default_config(
     def _loud_spawn(*a: object, **k: object) -> object:
         return pytest.fail("spawned past the guard")
 
-    monkeypatch.setattr(run_mod, "spawn_curator", _loud_spawn)
+    monkeypatch.setattr(app_run_mod, "spawn_curator", _loud_spawn)
 
     rc = run_mod._cmd_run(None, "do a thing")  # pyright: ignore[reportPrivateUsage]
 
@@ -126,7 +127,7 @@ def test_dirty_tree_auto_stashed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         assert git_status(repo).is_clean, "tree should be clean after auto-stash"
         raise _Stop
 
-    monkeypatch.setattr(run_mod, "create_branch", _branch_stub)
+    monkeypatch.setattr(app_run_mod, "create_branch", _branch_stub)
 
     with pytest.raises(_Stop):
         run_mod._cmd_run(None, "do a thing")  # pyright: ignore[reportPrivateUsage]

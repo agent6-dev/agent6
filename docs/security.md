@@ -205,6 +205,9 @@ fixed argv depending only on operator input, never LLM output.
     - The fixed-argv `python -m agent6.ui.tui` co-process behind `run --tui`.
     - `app/finalize.py`: the operator `[notify].on_complete` hook fired at
       run end; argv from config.
+    - `app/run.py`: holds the curator co-process handle (spawned by
+      `graph/client.py`) to terminate and reap it at run end; spawns nothing
+      itself.
     - `ui/cli/scriptcheck.py`: ruff/ty with fixed argv to statically read
       generated scripts, which only ever execute via `run_in_jail`.
     - `ui/cli/system_cmds.py`: `cp`/`rm`/`apparmor_parser` via sudo with fixed
