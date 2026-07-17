@@ -368,6 +368,29 @@ def test_create_never_valid_exits_1(
     assert not (tmp_path / "greeter.asm.toml").exists()
 
 
+def test_create_surfaces_a_reason_per_failed_attempt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Each failed attempt logs a one-line reason, not a bare "attempt N/M" with
+    # the only diagnostics buried at the very end.
+    monkeypatch.chdir(tmp_path)
+    _stub_preflight(monkeypatch)
+    _stub_runner(
+        monkeypatch,
+        [
+            AgentExecResult(reason="max_iterations", payload=None, usd=0.0),  # returned no draft
+            AgentExecResult(  # a structurally invalid draft
+                reason="finish_run", payload={TOML_PAYLOAD_KEY: INVALID_MACHINE}, usd=0.01
+            ),
+        ],
+    )
+    code = main(["machine", "create", "Greet the user", "--max-attempts", "2"])
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "attempt 1 failed: returned no draft" in err
+    assert "attempt 2 failed:" in err  # a concrete reason, not silence
+
+
 def test_create_no_payload_gives_diagnostic_and_retries(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

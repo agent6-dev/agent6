@@ -92,6 +92,17 @@ def _check_machine_text(
     return spec, []
 
 
+def _attempt_reason(problems: list[str]) -> str:
+    """A one-line summary of why an attempt failed: the first problem's first
+    line, trimmed, plus a count of the rest. Keeps the per-attempt log to a line
+    while the full diagnostics still feed back into the next prompt."""
+    head = problems[0].splitlines()[0].strip() if problems and problems[0].strip() else "unknown"
+    if len(head) > 160:
+        head = head[:157] + "..."
+    extra = f" (+{len(problems) - 1} more)" if len(problems) > 1 else ""
+    return f"{head}{extra}"
+
+
 def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     task: str, frontend: MachineFrontend, *, output: Path | None, max_attempts: int
 ) -> int:
@@ -195,6 +206,10 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
             ]
             prior_toml = None
             prior_scripts = {}
+            reporter.err(
+                f"machine create: attempt {attempt} failed:"
+                f" returned no draft (agent stop reason: {result.reason})"
+            )
             if result.reason in _CREATE_STOP_REASONS:
                 break
             continue
@@ -231,6 +246,9 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 valid_toml = candidate
                 valid_scripts = candidate_scripts
                 break
+        # Reached only on a failed attempt (the success path broke above), so
+        # surface a one-line reason instead of leaving "attempt N/M" unexplained.
+        reporter.err(f"machine create: attempt {attempt} failed: {_attempt_reason(problems)}")
         prior_toml = candidate
         prior_scripts = candidate_scripts
         diagnostics = problems
