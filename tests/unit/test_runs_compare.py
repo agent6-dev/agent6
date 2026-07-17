@@ -423,9 +423,14 @@ def test_rank_mechanical_path_prints_no_judging_line(
 
 
 def test_parallel_and_runs_compare_share_one_rank_implementation() -> None:
-    """No second spinner/rank implementation to drift: both call sites import
-    the SAME `rank` (and thus the same judging status) from `_compare.py`."""
-    from agent6.ui.cli import parallel, runs_cmds
+    """No second spinner/rank implementation to drift: the fan-out auto-compare
+    and `runs compare` both route through the ONE core in `app.compare`; the CLI
+    side only injects the console spinner + reviewer-provider wiring."""
+    from agent6.app import compare as app_compare
+    from agent6.app import parallel
+    from agent6.ui.cli import runs_cmds
 
-    assert getattr(parallel, "_rank") is compare_mod.rank  # noqa: B009
+    # The fan-out's auto-compare calls the core directly.
+    assert getattr(parallel, "_rank") is app_compare.rank  # noqa: B009
+    # `runs compare` goes through the CLI wrapper, which delegates to that core.
     assert runs_cmds.rank is compare_mod.rank

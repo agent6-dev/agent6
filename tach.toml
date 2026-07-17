@@ -23,7 +23,14 @@ path = "agent6.app"
 depends_on = [
   "agent6.budget",
   "agent6.config",
+  "agent6.config.layer",
+  "agent6.directive",
+  "agent6.git_ops",
+  "agent6.models.validate",
+  "agent6.paths",
+  "agent6.portable",
   "agent6.providers",
+  "agent6.viewmodel",
   "agent6.workflows",
 ]
 

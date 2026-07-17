@@ -210,10 +210,13 @@ primitive is pure git plumbing in
 - `LaneSpawner` / `GroupLaneSpawner` Protocols: one lane, or a sibling group,
   dispatched and awaited to completion.
 
-`ui/cli/parallel.py` is the composition-root orchestrator: it implements the
-spawner Protocols over the existing front-end bridge (`ui.bridge.spawn`, the
-same detached-spawn path `attach`/`resume` use) and is the only module that
-knows how to actually run a lane.
+[src/agent6/app/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel.py)
+is the orchestrator: it implements the spawner Protocols and is the only module
+that knows how to actually run a lane; the detached spawn + run-dir bridge it
+drives (`ui.bridge.spawn`, the same path `attach`/`resume` use) is injected as
+a `LaneRuntime` by the CLI adapter `ui/cli/parallel.py`. `agent6.app` is the
+application layer: pipelines composed over the engine, never importing
+`agent6.ui`.
 
 - **`agent6 run --parallel N|model-a,model-b`** (`dispatch_parallel` /
   `run_parallel`): plans one `LaneSpec` per lane, spawns each as an ordinary
@@ -451,7 +454,7 @@ graph`).
 | Git policy                       | [src/agent6/git_ops.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/git_ops.py)                        |
 | Subordinate-run primitive (clone/import/join) | [src/agent6/workflows/subrun.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/subrun.py) |
 | Compare judge (structured ranking) | [src/agent6/workflows/judge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/judge.py) |
-| Fan-out orchestrator (`run --parallel`, coordinator spawner) | [src/agent6/ui/cli/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/cli/parallel.py) |
+| Fan-out orchestrator (`run --parallel`, coordinator spawner) | [src/agent6/app/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel.py) (pipeline), [src/agent6/ui/cli/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/cli/parallel.py) (CLI adapter) |
 | Provider clients                 | [src/agent6/providers/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/providers)                        |
 | Knowledge graph (curator)        | [src/agent6/graph/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/graph)                                |
 | Event log + view-model fold      | [src/agent6/events.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/events.py) (writer), [src/agent6/viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel) (RunState/MachineState fold), [src/agent6/ui/tui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/tui) (textual render) |

@@ -355,8 +355,8 @@ each spawn subordinate work. Nothing here loosens the sandbox:
   etc.) -- `Config` never holds a raw API key. The lane's own process reads
   the same `secrets.toml` / provider env var as any other run, same user, same
   host.
-- **No new subprocess call site.** `workflows/subrun.py` and
-  `ui/cli/parallel.py` add no direct `subprocess` use; lane git plumbing
+- **No new subprocess call site.** `workflows/subrun.py`, `app/parallel.py`,
+  and `ui/cli/parallel.py` add no direct `subprocess` use; lane git plumbing
   (clone/fetch/merge) goes through `git_ops.py` and lane spawning goes through
   `ui/bridge/spawn.py`, both already on the §2b allowlist. The
   `tests/security/test_subprocess_allowlist.py` pin needed no new entry.
