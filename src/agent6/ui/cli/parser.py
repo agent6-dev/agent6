@@ -11,6 +11,7 @@ from agent6 import __version__
 from agent6.ui.cli._common import _add_sandbox_flags, _sub
 from agent6.ui.cli._config_args import _add_config_parser, _add_connect_parser, _add_model_parser
 from agent6.ui.cli._plan_args import _add_ask_parser, _add_plan_parser
+from agent6.ui.cli._review_args import _add_check_parser, _add_review_parser, _add_system_parser
 from agent6.ui.cli._run_args import _add_fork_parser, _add_resume_parser, _add_run_parser
 from agent6.ui.cli._runs_args import _add_runs_parser
 from agent6.ui.cli._skills_args import _add_skills_parser
@@ -180,60 +181,11 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
 
     _add_config_parser(sub)
 
-    check_p = _sub(
-        sub,
-        "check",
-        help=(
-            "Pre-flight checks: sandbox + config + provider keys + MCP +"
-            " verify_command. Read-only; safe on any clean repo."
-        ),
-    )
-    check_p.add_argument(
-        "section",
-        nargs="?",
-        default="all",
-        choices=("all", "sandbox", "config", "mcp", "verify"),
-        help=(
-            "Limit the report to one section. 'all' (default) runs every check"
-            " and prints a single PASS/FAIL summary."
-        ),
-    )
-    check_p.add_argument(
-        "--config",
-        type=Path,
-        # SUPPRESS (not None): a subparser default would otherwise clobber a
-        # top-level `agent6 --config FILE <cmd>` back to None. With SUPPRESS the
-        # subparser only sets `config` when --config is given AFTER the
-        # subcommand, so both `agent6 --config F run` and `agent6 run --config F`
-        # work; the top-level --config supplies the always-present default.
-        default=argparse.SUPPRESS,
-        metavar="FILE",
-        help="Explicit config file (layered over global + repo configs).",
-    )
+    _add_check_parser(sub)
 
     _add_connect_parser(sub)
 
-    # `agent6 system <component> <action>`: privileged host/OS setup (uses sudo).
-    system_p = _sub(
-        sub,
-        "system",
-        help="Host/OS setup that needs privileges (e.g. the AppArmor profile for the"
-        " strict sandbox). Uses sudo.",
-    )
-    system_sub = system_p.add_subparsers(
-        dest="system_command", required=True, metavar="<subcommand>"
-    )
-    apparmor_p = _sub(
-        system_sub,
-        "apparmor",
-        help="Install/remove the agent6-jail AppArmor profile (Ubuntu 24.04+: lets the"
-        " strict sandbox use user namespaces).",
-    )
-    apparmor_p.add_argument(
-        "action",
-        choices=("install", "remove", "status"),
-        help="install the profile and reload AppArmor, remove it, or report its state.",
-    )
+    _add_system_parser(sub)
 
     _add_model_parser(sub)
 
@@ -303,55 +255,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
 
-    review_p = _sub(
-        sub,
-        "review",
-        help="Read-only code review of a diff (working tree, branch-vs-base, or arbitrary range).",
-    )
-    review_p.add_argument(
-        "--base",
-        default="",
-        help="Base ref. Default: review uncommitted changes (working tree vs HEAD).",
-    )
-    review_p.add_argument(
-        "--head",
-        default="HEAD",
-        help="Head ref (default: HEAD). Only used when --base is set.",
-    )
-    review_p.add_argument(
-        "--paths",
-        nargs="*",
-        default=(),
-        help="Restrict the diff to these paths (forwarded to `git diff -- PATHS`).",
-    )
-    review_p.add_argument(
-        "--model",
-        default="",
-        help=(
-            "Override the reviewer model for this one-shot review "
-            "(e.g. claude-sonnet-4-5 for a cheaper read). "
-            "Default: reviewer_model from config."
-        ),
-    )
-    review_p.add_argument(
-        "--reviewers",
-        type=int,
-        default=0,
-        metavar="N",
-        help=(
-            "Run an adversarial REVIEW PANEL of N grounded reviewers instead of one"
-            " freeform review. Findings are grounded against the diff (only real,"
-            " block-eligible problems gate). 0 (default) = the classic single review."
-        ),
-    )
-    review_p.add_argument(
-        "--personas",
-        default="",
-        help=(
-            "Comma-separated adversarial stances for the panel seats, cycled across"
-            " --reviewers (e.g. 'security,correctness,tests'). Default: a built-in set."
-        ),
-    )
+    _add_review_parser(sub)
 
     mcp_p = _sub(
         sub,
