@@ -554,7 +554,7 @@ def test_lenient_json_object_recovers_common_malformations() -> None:
     """Weak/open models emit args strict JSON rejects; the lenient re-parse
     recovers the safe cases (raw newline, trailing junk) so the tool just runs,
     and refuses the ambiguous ones so the _raw_arguments sentinel is kept."""
-    from agent6.providers.openai import _lenient_json_object  # pyright: ignore[reportPrivateUsage]
+    from agent6.providers._openai_recovery import lenient_json_object as _lenient_json_object
 
     # Raw newline inside a string value (a multiline code param).
     assert _lenient_json_object('{"new_string": "a\nb"}') == {"new_string": "a\nb"}

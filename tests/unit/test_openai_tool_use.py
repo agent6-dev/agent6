@@ -21,8 +21,8 @@ import pytest
 
 from agent6.providers import OpenAIProvider, ToolDefinition
 from agent6.providers._openai_messages import anthropic_to_openai_messages, tools_to_openai
-from agent6.providers.openai import (
-    _coerce_text_tool_calls,  # pyright: ignore[reportPrivateUsage]
+from agent6.providers._openai_recovery import (
+    coerce_text_tool_calls as _coerce_text_tool_calls,
 )
 
 
