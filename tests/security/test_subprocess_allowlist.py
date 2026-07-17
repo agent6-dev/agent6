@@ -22,6 +22,7 @@ _PATTERN = re.compile(r"subprocess\.(run|Popen)")
 ALLOWED = {
     "app/finalize.py",
     "app/machine/_preflight.py",
+    "app/machine_agent.py",
     "git_ops.py",
     "providers/token_command.py",
     "sandbox/detect.py",
@@ -34,7 +35,6 @@ ALLOWED = {
     "ui/cli/_steer.py",
     "ui/cli/completions_cmd.py",
     "ui/cli/history_cmds.py",
-    "ui/cli/machine_cmds.py",
     "ui/cli/plan_watch.py",
     "ui/cli/review_cmds.py",
     "ui/cli/runs_cmds.py",

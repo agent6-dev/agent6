@@ -1,24 +1,35 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Run ONE machine `agent` state, self-confined.
+"""The two sides of a machine `agent` state: the host-side launcher that spawns
+the confined subprocess, and the confined runner itself.
 
 A machine run's engine is a thin supervisor that stays in the host network
 namespace and makes no network calls itself. Each `agent` state runs in its own
-fresh process (`ui/cli/machine_agent` is the `python -m` entry that spawns it),
-so it can confine its OWN egress per `sandbox.agent_network` (the broker on
-`strict`, Landlock on `hardened`), independently of the engine and of sibling
-`tool` states. That is what lets a machine run a broker-confined agent alongside
-an operator-reviewed, network-carved-out tool in the same run.
+fresh process (`ui/cli/machine_agent` is the `python -m` entry), so it can
+confine its OWN egress per `sandbox.agent_network` (the broker on `strict`,
+Landlock on `hardened`), independently of the engine and of sibling `tool`
+states. That is what lets a machine run a broker-confined agent alongside an
+operator-reviewed, network-carved-out tool in the same run.
 
-`run_one` reads a request, sets up the sandbox while still single-threaded, runs
-the agent loop to completion, and returns the result. The live conversation view
-is the one presentation piece: `ui/cli` injects `attach_console` so this module
-never imports `agent6.ui`.
+`build_machine_agent_runner` (host side) builds the callable an `agent` state
+fires: it spawns the subprocess with a fixed argv, hands it the request via a
+temp file, and enforces the timeout by killing the process group. `run_one`
+(subprocess side) reads that request, sets up the sandbox while still
+single-threaded, runs the agent loop to completion, and writes the result;
+co-locating both sides keeps the request/result wire contract legible in one
+place. The live conversation view is the one presentation piece: `ui/cli` injects
+`attach_console` so this module never imports `agent6.ui`.
 """
 
 from __future__ import annotations
 
+import contextlib
+import json
 import os
+import signal
+import subprocess
+import sys
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,6 +41,7 @@ from agent6.app.egress import (
     maybe_start_egress,
     stop_egress,
 )
+from agent6.app.machine._spend import Spend, read_budget_totals
 from agent6.app.providers import (
     InstrumentedProvider as _InstrumentedProvider,
 )
@@ -44,7 +56,8 @@ from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
 from agent6.config.layer import load_effective_with_overlay, resolved_state_dir
 from agent6.events import EventSink
-from agent6.git_ops import set_repo_hook_policy
+from agent6.git_ops import CommitIdentity, set_repo_hook_policy
+from agent6.machine import AgentExecResult, AgentRequest
 from agent6.providers import TranscriptSink
 from agent6.runs.ipc import (
     clear_answer,
@@ -330,3 +343,114 @@ def run_one(
         return _result(result.reason, payload, budget)
     finally:
         stop_egress(egress_guard)
+
+
+def build_machine_agent_runner(
+    overlay: dict[str, Any],
+    cwd: Path,
+    profile: SandboxProfile,
+    transcript_dir: Path,
+    protect_paths: tuple[Path, ...] = (),
+    commit_identity: CommitIdentity | None = None,
+) -> Callable[[AgentRequest, Path | None], AgentExecResult]:
+    """Build the host-side runner an `agent` state uses to drive a confined loop.
+
+    The machine engine is a host-netns supervisor; each `agent` state runs in
+    its OWN subprocess (`agent6.ui.cli.machine_agent`) which confines its egress
+    per `sandbox.agent_network` before running the loop (`run_one` above),
+    independently of the engine and of sibling `tool` states. The subprocess is
+    spawned with a fixed argv (no LLM-derived content) and handed the request via
+    a temp file; the operator-authored prompt travels in that file, never on the
+    command line. ``timeout_secs`` is enforced by killing the subprocess's whole
+    process group (true mid-call cancellation, and the per-agent broker is torn
+    down with it).
+
+    ``events_log`` is per CALL: the live World passes each agent-state execution
+    its own ``<instance>/states/<seq>-<state>/logs.jsonl`` and `machine create`
+    passes the draft log, so the subprocess writes a watchable event stream there.
+    """
+
+    def run_agent(request: AgentRequest, events_log: Path | None = None) -> AgentExecResult:
+        def salvaged(reason: str) -> AgentExecResult:
+            # No result.json (killed/timed-out/crashed): recover the loop's
+            # running budget.update totals from the state's own event log, else a
+            # timed-out state books $0 and the budget guard never trips.
+            spend = read_budget_totals(events_log) if events_log is not None else Spend()
+            return AgentExecResult(
+                reason=reason,
+                payload=None,
+                usd=spend.usd,
+                input_tokens=spend.input_tokens,
+                output_tokens=spend.output_tokens,
+            )
+
+        payload = {
+            "cwd": str(cwd),
+            "root": str(cwd),
+            "overlay": overlay,
+            "profile": profile,
+            "transcript_dir": str(transcript_dir),
+            # When set, the agent subprocess writes a watchable logs.jsonl here
+            # (role.*_delta + tool.* events), so `machine create` is followable in
+            # the TUI dashboard exactly like a run.
+            "events_log": str(events_log) if events_log is not None else None,
+            "protect_paths": [str(p) for p in protect_paths],
+            # Resolved on the host (pre-Landlock, so it sees global git config);
+            # the confined agent subprocess can't read ~/.gitconfig, so its
+            # mode="run" commits would otherwise fail with "Author identity
+            # unknown". None for read-only (mode="agent"/"machine") states.
+            "commit_identity": (
+                {"name": commit_identity.name, "email": commit_identity.email}
+                if commit_identity is not None
+                else None
+            ),
+            "request": {
+                "model": request.model,
+                "prompt": request.prompt,
+                "timeout_s": request.timeout_s,
+                "provider": request.provider,
+                "thinking": request.thinking,
+                "temperature": request.temperature,
+                "max_usd": request.max_usd,
+                "max_input_tokens": request.max_input_tokens,
+                "max_output_tokens": request.max_output_tokens,
+                "mode": request.mode,
+            },
+        }
+        with tempfile.TemporaryDirectory(prefix="agent6-machine-agent-") as td:
+            req_file = Path(td) / "request.json"
+            out_file = Path(td) / "result.json"
+            req_file.write_text(json.dumps(payload), encoding="utf-8")
+            argv = [
+                sys.executable,
+                "-m",
+                "agent6.ui.cli.machine_agent",
+                str(req_file),
+                str(out_file),
+            ]
+            # Own session/process group so the timeout kill takes the agent
+            # subprocess AND its broker/jail children with it.
+            proc = subprocess.Popen(argv, start_new_session=True)
+            try:
+                proc.wait(timeout=request.timeout_s)
+            except subprocess.TimeoutExpired:
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                proc.wait()
+                return salvaged("timeout")
+            if proc.returncode != 0 or not out_file.is_file():
+                return salvaged("error")
+            try:
+                out = json.loads(out_file.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return salvaged("error")
+            result_payload = out.get("payload")
+            return AgentExecResult(
+                reason=str(out.get("reason", "error")),
+                payload=result_payload if isinstance(result_payload, dict) else None,
+                usd=float(out.get("usd", 0.0)),
+                input_tokens=int(out.get("input_tokens", 0)),
+                output_tokens=int(out.get("output_tokens", 0)),
+            )
+
+    return run_agent

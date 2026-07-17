@@ -14,6 +14,7 @@ preflight, and spawns the per-`agent`-state runner.
 from __future__ import annotations
 
 from agent6.app.machine._bundle import is_inside, validate_bundle
+from agent6.app.machine._frontend import MachineFrontend
 from agent6.app.machine._preflight import (
     build_machine_notify_hook,
     hard_usd_preflight_error,
@@ -27,7 +28,13 @@ from agent6.app.machine._scriptcheck import (
 )
 from agent6.app.machine._spend import Spend, machine_spend, read_budget_totals
 
+# The composition entry points `create_machine` / `run_machine` are the public
+# modules `agent6.app.machine.create` / `.run` (mirroring `agent6.app.run`),
+# imported directly by `ui/cli`, NOT re-exported here: both pull in
+# `app.machine_agent`, which imports this package's `_spend` submodule, so
+# re-exporting them from this `__init__` would loop back through it.
 __all__ = [
+    "MachineFrontend",
     "Spend",
     "available_tools",
     "build_machine_notify_hook",

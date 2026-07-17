@@ -1,6 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 machine` subcommands + bundle validation + agent runner."""
+"""`agent6 machine` subcommands: argv adaptation + console rendering.
+
+The read-only commands (check/test/graph/status/replay/poke/watch) load + render
+directly; run/create adapt argv and hand the lifecycle to `app.machine` behind
+the `MachineFrontend` seam. The interactive network-refusal resolver stays here
+(it needs a TTY)."""
 
 from __future__ import annotations
 
@@ -8,11 +13,7 @@ import contextlib
 import datetime as _dt
 import json
 import os
-import shutil
-import signal
-import subprocess
 import sys
-import tempfile
 import time
 import tomllib
 from collections.abc import Callable
@@ -22,37 +23,34 @@ from typing import Any, Literal
 from agent6.app._setup import check_provider_keys as _check_provider_keys
 from agent6.app._setup import detect_env
 from agent6.app.egress import (
-    check_network_profile,
     resolve_strict_egress_viability,
     warn_if_unsandboxed,
 )
 from agent6.app.machine import (
-    Spend,
+    MachineFrontend,
     build_machine_notify_hook,
     hard_usd_preflight_error,
     lint_and_typecheck,
     machine_network_refusal,
     machine_protect_paths,
     machine_spend,
-    read_budget_totals,
     run_offline_tests,
     validate_bundle,
 )
+from agent6.app.machine.create import create_machine
+from agent6.app.machine_agent import build_machine_agent_runner
+from agent6.app.reporter import STDIO_REPORTER
 from agent6.config import (
     Config,
     ConfigError,
 )
 from agent6.config.io import upsert_toml_leaf
 from agent6.config.layer import (
-    load_effective,
     load_effective_with_overlay,
     repo_config_path_for,
 )
-from agent6.events import EventSink
 from agent6.git_ops import CommitIdentity, GitError, verify_git_identity
 from agent6.machine import (
-    SCRIPTS_PAYLOAD_KEY,
-    TOML_PAYLOAD_KEY,
     AgentExecResult,
     AgentRequest,
     AgentState,
@@ -65,23 +63,18 @@ from agent6.machine import (
     MachineSpec,
     StepEvent,
     ToolState,
-    build_authoring_prompt,
     drive,
     dry_run,
-    extract_scripts,
-    extract_toml,
     load_machine,
     machine_lock,
     render,
     write_source,
 )
-from agent6.models.pricing import lookup_price
 from agent6.paths import chown_to_real_user
-from agent6.runs.id import new_friendly_id
 from agent6.runs.ipc import read_worker_pid, worker_is_alive, write_worker_pid
 from agent6.sandbox.detect import ProfileUnavailableError, select_profile
 from agent6.types import SandboxProfile
-from agent6.ui.cli._common import _machines_dir, _state_dir
+from agent6.ui.cli._common import _machines_dir
 from agent6.ui.cli.plan_watch import event_epoch, format_plain_event
 from agent6.ui.notify import desktop_notify
 from agent6.viewmodel import (
@@ -192,116 +185,6 @@ def _cmd_machine_graph(path: Path, *, fmt: str) -> int:
     render_fmt: Literal["mermaid", "dot"] = "dot" if fmt == "dot" else "mermaid"
     print(render(spec, render_fmt), end="")
     return 0
-
-
-def _build_machine_agent_runner(
-    overlay: dict[str, Any],
-    cwd: Path,
-    profile: SandboxProfile,
-    transcript_dir: Path,
-    protect_paths: tuple[Path, ...] = (),
-    commit_identity: CommitIdentity | None = None,
-) -> Callable[[AgentRequest, Path | None], AgentExecResult]:
-    """Build the runner an `agent` state uses to drive a confined agent6 loop.
-
-    The machine engine is a host-netns supervisor; each `agent` state runs in
-    its OWN subprocess (`agent6.ui.cli.machine_agent`) which confines its egress
-    per `sandbox.agent_network` before running the loop, independently of the
-    engine and of sibling `tool` states. The subprocess is spawned with a fixed
-    argv (no LLM-derived content) and handed the request via a temp file; the
-    operator-authored prompt travels in that file, never on the command line.
-    ``timeout_secs`` is enforced by killing the subprocess's whole process group
-    (true mid-call cancellation, and the per-agent broker is torn down with it).
-
-    ``events_log`` is per CALL: the live World passes each agent-state execution
-    its own ``<instance>/states/<seq>-<state>/logs.jsonl`` and `machine create`
-    passes the draft log, so the subprocess writes a watchable event stream there.
-    """
-
-    def run_agent(request: AgentRequest, events_log: Path | None = None) -> AgentExecResult:
-        def salvaged(reason: str) -> AgentExecResult:
-            # No result.json (killed/timed-out/crashed): recover the loop's
-            # running budget.update totals from the state's own event log, else a
-            # timed-out state books $0 and the budget guard never trips.
-            spend = read_budget_totals(events_log) if events_log is not None else Spend()
-            return AgentExecResult(
-                reason=reason,
-                payload=None,
-                usd=spend.usd,
-                input_tokens=spend.input_tokens,
-                output_tokens=spend.output_tokens,
-            )
-
-        payload = {
-            "cwd": str(cwd),
-            "root": str(cwd),
-            "overlay": overlay,
-            "profile": profile,
-            "transcript_dir": str(transcript_dir),
-            # When set, the agent subprocess writes a watchable logs.jsonl here
-            # (role.*_delta + tool.* events), so `machine create` is followable in
-            # the TUI dashboard exactly like a run.
-            "events_log": str(events_log) if events_log is not None else None,
-            "protect_paths": [str(p) for p in protect_paths],
-            # Resolved on the host (pre-Landlock, so it sees global git config);
-            # the confined agent subprocess can't read ~/.gitconfig, so its
-            # mode="run" commits would otherwise fail with "Author identity
-            # unknown". None for read-only (mode="agent"/"machine") states.
-            "commit_identity": (
-                {"name": commit_identity.name, "email": commit_identity.email}
-                if commit_identity is not None
-                else None
-            ),
-            "request": {
-                "model": request.model,
-                "prompt": request.prompt,
-                "timeout_s": request.timeout_s,
-                "provider": request.provider,
-                "thinking": request.thinking,
-                "temperature": request.temperature,
-                "max_usd": request.max_usd,
-                "max_input_tokens": request.max_input_tokens,
-                "max_output_tokens": request.max_output_tokens,
-                "mode": request.mode,
-            },
-        }
-        with tempfile.TemporaryDirectory(prefix="agent6-machine-agent-") as td:
-            req_file = Path(td) / "request.json"
-            out_file = Path(td) / "result.json"
-            req_file.write_text(json.dumps(payload), encoding="utf-8")
-            argv = [
-                sys.executable,
-                "-m",
-                "agent6.ui.cli.machine_agent",
-                str(req_file),
-                str(out_file),
-            ]
-            # Own session/process group so the timeout kill takes the agent
-            # subprocess AND its broker/jail children with it.
-            proc = subprocess.Popen(argv, start_new_session=True)
-            try:
-                proc.wait(timeout=request.timeout_s)
-            except subprocess.TimeoutExpired:
-                with contextlib.suppress(ProcessLookupError):
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                proc.wait()
-                return salvaged("timeout")
-            if proc.returncode != 0 or not out_file.is_file():
-                return salvaged("error")
-            try:
-                out = json.loads(out_file.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                return salvaged("error")
-            result_payload = out.get("payload")
-            return AgentExecResult(
-                reason=str(out.get("reason", "error")),
-                payload=result_payload if isinstance(result_payload, dict) else None,
-                usd=float(out.get("usd", 0.0)),
-                input_tokens=int(out.get("input_tokens", 0)),
-                output_tokens=int(out.get("output_tokens", 0)),
-            )
-
-    return run_agent
 
 
 def _safe_input(prompt: str) -> str | None:
@@ -511,7 +394,7 @@ def _cmd_machine_run(  # noqa: PLR0911, PLR0912, PLR0915
             root = _machines_dir(cwd) / spec.machine
             # The engine is a host-netns supervisor; each agent state confines
             # itself in its own subprocess per sandbox.agent_network.
-            agent_runner = _build_machine_agent_runner(
+            agent_runner = build_machine_agent_runner(
                 spec.config,
                 cwd,
                 agent_profile,
@@ -756,247 +639,12 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0912
         return 0
 
 
-_CREATE_TIMEOUT_S = 900.0
+def _machine_frontend() -> MachineFrontend:
+    """The presentation seam `app.machine` run/create drive: stdio output plus
+    the interactive network-refusal resolver (needs a TTY, so it stays cli-side;
+    `create_machine` uses only the reporter)."""
+    return MachineFrontend(reporter=STDIO_REPORTER, resolve_network_fix=_resolve_network_refusal)
 
 
-_CREATE_STOP_REASONS = frozenset(
-    {"budget_exhausted", "timeout", "provider_error", "prompt_revision_failed"}
-)
-
-
-def _write_scripts(base_dir: Path, scripts: dict[str, str]) -> None:
-    """Write the bundle's helper scripts (keys are bundle-relative, already
-    validated by extract_scripts to live under scripts/ with no `..`).
-
-    Defense-in-depth: unlink a pre-existing symlink at the target before writing
-    so a planted `scripts/<name>` -> elsewhere link can't redirect the write out
-    of the bundle. `validate_bundle` (run by check/run before any execution) is
-    the comprehensive backstop for symlinks anywhere in the tree."""
-    for rel, content in scripts.items():
-        p = base_dir / rel
-        p.parent.mkdir(parents=True, exist_ok=True)
-        if p.is_symlink():
-            p.unlink()
-        p.write_text(content if content.endswith("\n") else content + "\n", encoding="utf-8")
-
-
-def _check_machine_text(
-    text: str, scripts: dict[str, str], scratch: Path
-) -> tuple[MachineSpec | None, list[str]]:
-    """Validate a candidate `.asm.toml` + its scripts via `load_machine`.
-
-    The scripts are written into the scratch bundle first so the missing-script
-    check resolves against this attempt's files only (stale scripts from a prior
-    attempt are cleared). Returns the parsed spec + empty problems on success, or
-    `(None, problems)` when the source or its script bundle is invalid.
-    """
-    candidate_path = scratch / "candidate.asm.toml"
-    candidate_path.write_text(text, encoding="utf-8")
-    shutil.rmtree(scratch / "scripts", ignore_errors=True)
-    _write_scripts(scratch, scripts)
-    try:
-        spec = load_machine(candidate_path)
-    except MachineError as exc:
-        return None, list(exc.problems)
-    bundle_problems = validate_bundle(spec, candidate_path)
-    if bundle_problems:
-        return None, bundle_problems
-    return spec, []
-
-
-def _cmd_machine_create(  # noqa: PLR0911, PLR0912, PLR0915
-    task: str, *, output: Path | None, max_attempts: int
-) -> int:
-    if max_attempts < 1:
-        print("ERROR: --max-attempts must be >= 1.", file=sys.stderr)
-        return 2
-    cwd = Path.cwd()
-    try:
-        cfg = load_effective(cwd, None).config
-        cfg.require_runnable("worker")
-    except ConfigError as exc:
-        print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
-        return 2
-    missing = _check_provider_keys(cfg)
-    if missing is not None:
-        print(missing, file=sys.stderr)
-        return 2
-    try:
-        profile = select_profile(cfg.sandbox.profile, detect_env())
-    except ProfileUnavailableError as exc:
-        print(f"REFUSING: {exc}", file=sys.stderr)
-        return 2
-    profile, egress_err = resolve_strict_egress_viability(cfg, profile)
-    if egress_err is not None:
-        print(egress_err, file=sys.stderr)
-        return 2
-    net_err = check_network_profile(cfg, profile)
-    if net_err is not None:
-        print(f"REFUSING: {net_err}", file=sys.stderr)
-        return 2
-    warn_if_unsandboxed(profile)
-
-    scratch = _state_dir(cwd) / "machine-drafts" / new_friendly_id()
-    scratch.mkdir(parents=True, exist_ok=True)
-    # Persist the natural-language task that drove this draft, so the draft dir is
-    # self-describing (the agent_transcripts/ embed it inside the authoring prompt,
-    # but a plain prompt.txt is what a human looks for).
-    (scratch / "prompt.txt").write_text(task, encoding="utf-8")
-    # A watchable event log for the draft: the TUI opens the dashboard on this dir
-    # and follows the authoring agent live. The parent owns the run.start header
-    # (the NL task) + the per-attempt markers + the final run.end; each attempt's
-    # subprocess appends its own role.*_delta / tool.* events to the same file.
-    events_log = scratch / "logs.jsonl"
-    events = EventSink(events_log)
-    events.emit("run.start", user_task=task, mode="machine")
-    # Authoring can take minutes with nothing on this terminal; say where the
-    # live reasoning streams so the operator can follow instead of wondering.
-    print(
-        f"machine create: drafting as {scratch.name} (follow live: agent6 attach {scratch.name})",
-        file=sys.stderr,
-    )
-    # Authoring drafts a machine; it has no machine [config] overlay of its own.
-    runner = _build_machine_agent_runner({}, cwd, profile, scratch / "agent_transcripts")
-
-    # The drafted machine's agent states inherit this worker model. If it is
-    # unpriced (anthropic-direct, local), steer the draft to best_effort_usd_limit
-    # so the freshly-created machine actually runs -- a hard max_usd would refuse.
-    # Checked after _check_provider_keys refreshed the price cache.
-    worker = cfg.models.resolve("worker")
-    worker_unpriced = worker is None or lookup_price(worker.model) is None
-
-    prior_toml: str | None = None
-    prior_scripts: dict[str, str] = {}
-    diagnostics: list[str] | None = None
-    spec: MachineSpec | None = None
-    valid_toml: str | None = None
-    valid_scripts: dict[str, str] = {}
-    total_usd = 0.0
-    for attempt in range(1, max_attempts + 1):
-        prompt = build_authoring_prompt(
-            task,
-            attempt=attempt,
-            prior_toml=prior_toml,
-            diagnostics=diagnostics,
-            prior_scripts=prior_scripts,
-            worker_unpriced=worker_unpriced,
-        )
-        print(f"machine create: attempt {attempt}/{max_attempts}...", file=sys.stderr)
-        events.emit("loop.note", text=f"attempt {attempt}/{max_attempts}")
-        # model omitted (=None): inherit the operator's effective worker model.
-        # mode="machine": authoring system prompt + read-only tools (see loop.py).
-        # thinking="off": authoring is transcription of a described design, not
-        # deep derivation. "low" is already the provider default and did not
-        # help: kimi-k2.6 spiralled into 30-minute length-capped thinks and
-        # timed out on every attempt (0/3 drafts across two spec sizes). With
-        # the reasoning channel off it drafted in ~2.5 minutes for $0.02.
-        result = runner(
-            AgentRequest(
-                prompt=prompt, timeout_s=_CREATE_TIMEOUT_S, mode="machine", thinking="off"
-            ),
-            events_log,
-        )
-        total_usd += result.usd
-        candidate = extract_toml(result.payload)
-        if candidate is None:
-            diagnostics = [
-                f"You did not return a draft: call finish_run with result.{TOML_PAYLOAD_KEY}"
-                " set to the complete .asm.toml source as a single string."
-                f" (agent loop reason: {result.reason})"
-            ]
-            prior_toml = None
-            prior_scripts = {}
-            if result.reason in _CREATE_STOP_REASONS:
-                break
-            continue
-        candidate_scripts = extract_scripts(result.payload)
-        candidate_spec, problems = _check_machine_text(candidate, candidate_scripts, scratch)
-        if candidate_spec is None:
-            # Structural / bundle failure. A missing-script problem (only produced
-            # here, never by the lint/test pass below) gets an extra hint pointing
-            # the agent at result.scripts.
-            if any("not found in bundle" in p for p in problems):
-                hint = (
-                    f"Return each missing scripts/... file in finish_run"
-                    f" result.{SCRIPTS_PAYLOAD_KEY} (a map of the path to its complete source)."
-                )
-                problems = [*problems, hint]
-        else:
-            # Structurally valid. Now make it production-ready: lint + type-check
-            # the scripts, run their offline `*_test.py` mocks in a jail, and
-            # dry-run the routing (synthesized facts through the real reducer;
-            # catches e.g. a branch reading a field the schema doesn't declare).
-            # Any failure becomes a retry diagnostic so the agent fixes it itself.
-            print("machine create: linting + offline-testing scripts...", file=sys.stderr)
-            events.emit("loop.note", text="linting + offline-testing the draft")
-            problems = lint_and_typecheck(scratch / "scripts")
-            problems.extend(run_offline_tests(scratch, profile))
-            report = dry_run(candidate_spec, None)
-            problems.extend(
-                f"dry-run state {c.name!r}: {c.detail}"
-                for c in (*report.states, *report.branches)
-                if not c.ok
-            )
-            if not problems:
-                spec = candidate_spec
-                valid_toml = candidate
-                valid_scripts = candidate_scripts
-                break
-        prior_toml = candidate
-        prior_scripts = candidate_scripts
-        diagnostics = problems
-        if result.reason in _CREATE_STOP_REASONS:
-            break
-
-    print(f"machine create: spent ~${total_usd:.4f}", file=sys.stderr)
-    # End the watchable session (the file-write below is fast and event-less);
-    # all_passed marks whether a valid machine was authored, for the TUI status.
-    events.emit(
-        "run.end",
-        all_passed=spec is not None and valid_toml is not None,
-        reason="machine create finished",
-    )
-
-    if spec is None or valid_toml is None:
-        print(f"FAILED: no valid machine after {max_attempts} attempt(s).", file=sys.stderr)
-        if diagnostics:
-            print("Last diagnostics:", file=sys.stderr)
-            for problem in diagnostics:
-                print(f"  - {problem}", file=sys.stderr)
-        if prior_toml is not None:
-            print("The last (invalid) draft is on stdout for reference.", file=sys.stderr)
-            print(prior_toml if prior_toml.endswith("\n") else prior_toml + "\n", end="")
-        return 1
-
-    payload = valid_toml if valid_toml.endswith("\n") else valid_toml + "\n"
-    target = output if output is not None else cwd / f"{spec.machine}.asm.toml"
-    if output is None and target.exists():
-        print(f"REFUSING to overwrite existing {target}.", file=sys.stderr)
-        print(
-            "The validated draft is on stdout; redirect it or re-run with -o <file>.",
-            file=sys.stderr,
-        )
-        print(payload, end="")
-        return 1
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(payload, encoding="utf-8")
-    _write_scripts(target.parent, valid_scripts)
-    scripts_note = f" + {len(valid_scripts)} script(s)" if valid_scripts else ""
-    print(
-        f"OK: wrote draft to {target} ({spec.machine}, {len(spec.states)} states){scripts_note}.",
-        file=sys.stderr,
-    )
-    # The scratch validation ran against a clean copy; re-run the STRUCTURAL
-    # bundle check on the output dir, which can differ from scratch (e.g. a
-    # pre-existing symlink under scripts/). Lint/types are NOT re-run: the
-    # written files are byte-identical to the scratch copy that just passed.
-    out_problems = validate_bundle(spec, target)
-    if out_problems:
-        print("WARNING: the written bundle has problems and won't run yet:", file=sys.stderr)
-        for problem in out_problems:
-            print(f"  - {problem}", file=sys.stderr)
-    print(
-        "Review and commit it; `machine run` only accepts committed machines.",
-        file=sys.stderr,
-    )
-    return 0
+def _cmd_machine_create(task: str, *, output: Path | None, max_attempts: int) -> int:
+    return create_machine(task, _machine_frontend(), output=output, max_attempts=max_attempts)

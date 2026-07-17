@@ -12,6 +12,8 @@ from typing import Any
 
 import pytest
 
+from agent6.app import machine_agent
+from agent6.app.machine import create as _create
 from agent6.machine import (
     SCRIPTS_PAYLOAD_KEY,
     TOML_PAYLOAD_KEY,
@@ -21,7 +23,6 @@ from agent6.machine import (
     extract_scripts,
     extract_toml,
 )
-from agent6.ui.cli import machine_cmds as cli  # create + its preflight helpers live here now
 from agent6.ui.cli import main
 
 VALID_MACHINE = """\
@@ -154,9 +155,9 @@ def _stub_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     def _profile(_profile_name: object, _env: object) -> object:
         return object()
 
-    monkeypatch.setattr(cli, "load_effective", _load)
-    monkeypatch.setattr(cli, "_check_provider_keys", _keys_ok)
-    monkeypatch.setattr(cli, "select_profile", _profile)
+    monkeypatch.setattr(_create, "load_effective", _load)
+    monkeypatch.setattr(_create, "check_provider_keys", _keys_ok)
+    monkeypatch.setattr(_create, "select_profile", _profile)
 
 
 def _stub_runner(monkeypatch: pytest.MonkeyPatch, results: Iterable[AgentExecResult]) -> None:
@@ -170,7 +171,7 @@ def _stub_runner(monkeypatch: pytest.MonkeyPatch, results: Iterable[AgentExecRes
 
         return run
 
-    monkeypatch.setattr(cli, "_build_machine_agent_runner", fake_build)
+    monkeypatch.setattr(_create, "build_machine_agent_runner", fake_build)
 
 
 def test_create_inherits_worker_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -193,7 +194,7 @@ def test_create_inherits_worker_model(tmp_path: Path, monkeypatch: pytest.Monkey
 
         return run
 
-    monkeypatch.setattr(cli, "_build_machine_agent_runner", fake_build)
+    monkeypatch.setattr(_create, "build_machine_agent_runner", fake_build)
     code = main(["machine", "create", "Greet the user"])
     assert code == 0
     assert captured, "runner was never invoked"
@@ -243,7 +244,7 @@ def test_create_writes_watchable_event_log(tmp_path: Path, monkeypatch: pytest.M
 
         return run
 
-    monkeypatch.setattr(cli, "_build_machine_agent_runner", fake_build)
+    monkeypatch.setattr(_create, "build_machine_agent_runner", fake_build)
     assert main(["machine", "create", "Greet the user"]) == 0
 
     logs = list((tmp_path / "state").glob("**/machine-drafts/*/logs.jsonl"))
@@ -450,7 +451,7 @@ def test_create_retry_prompt_carries_prior_scripts(
 
         return run
 
-    monkeypatch.setattr(cli, "_build_machine_agent_runner", fake_build)
+    monkeypatch.setattr(_create, "build_machine_agent_runner", fake_build)
     code = main(["machine", "create", "Run a script"])
     assert code == 0
     assert len(prompts) == 2
@@ -669,11 +670,11 @@ def test_timed_out_agent_state_salvages_spend_from_its_event_log(
     def _killpg(_pgid: int, _sig: int) -> None:
         return None
 
-    monkeypatch.setattr(cli.subprocess, "Popen", _popen)
-    monkeypatch.setattr(cli.os, "getpgid", _getpgid)
-    monkeypatch.setattr(cli.os, "killpg", _killpg)
+    monkeypatch.setattr(machine_agent.subprocess, "Popen", _popen)
+    monkeypatch.setattr(machine_agent.os, "getpgid", _getpgid)
+    monkeypatch.setattr(machine_agent.os, "killpg", _killpg)
 
-    runner = cli._build_machine_agent_runner({}, tmp_path, "strict", tmp_path / "tr")  # pyright: ignore[reportPrivateUsage]
+    runner = machine_agent.build_machine_agent_runner({}, tmp_path, "strict", tmp_path / "tr")
     res = runner(AgentRequest(prompt="p", timeout_s=1.0, mode="agent"), events_log)
     assert res.reason == "timeout"
     assert res.usd == pytest.approx(0.0588752)
