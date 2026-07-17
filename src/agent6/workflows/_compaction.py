@@ -13,7 +13,7 @@ Two tiers keep a long run inside the model's context window:
 
 `cap_tool_result` separately bounds a single tool_result so one huge payload
 cannot blow the budget on the turn it arrives. Everything here is a pure
-function of the message list; the loop owns the policy of when to call them
+function of the conversation; the loop owns the policy of when to call them
 and supplies the one impure seam (the `gister` callable that distills
 about-to-be-elided file reads with the summariser model).
 """
@@ -25,6 +25,12 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
+
+from agent6.workflows._conversation import (
+    AssistantTurn,
+    Conversation,
+    ToolResultItem,
+)
 
 # Stable prefix shared by every placeholder variant: idempotency checks and
 # tests key on it.
@@ -284,28 +290,28 @@ def strip_checkoff(text: str) -> str:
     return _CHECKOFF_FENCE_RE.sub("", text).strip()
 
 
-def context_chars(messages: list[dict[str, Any]]) -> int:
+def context_chars(conversation: Conversation) -> int:
     """Approximate the full character size of the conversation context.
 
-    Sums string content plus, for structured content blocks, their text,
-    tool_result content, and tool_use inputs -- i.e. everything that grows the
+    Sums notice text, tool_result content, and -- for assistant turns' raw
+    blocks -- their text and tool_use inputs; i.e. everything that grows the
     context and is sent back to the model each turn, not just tool_result bytes.
     Used as the tier-2 (summarise-and-restart) trigger, which must measure
     something tier-1 elision does not already cap.
     """
     total = 0
-    for msg in messages:
-        content = msg.get("content")
-        if isinstance(content, str):
-            total += len(content)
-        elif isinstance(content, list):
-            for item in content:
+    for turn in conversation.turns:
+        if isinstance(turn, AssistantTurn):
+            for item in turn.raw_content:
                 if not isinstance(item, dict):
                     continue
                 total += len(str(item.get("text", "") or ""))
                 total += len(str(item.get("content", "") or ""))
                 if item.get("type") == "tool_use":
                     total += len(str(item.get("input", "") or ""))
+        else:
+            for item in turn.items:
+                total += len(item.content if isinstance(item, ToolResultItem) else item.text)
     return total
 
 
@@ -317,9 +323,9 @@ _PATCH_TARGET_RE = re.compile(
 )
 
 
-def recently_edited_paths(messages: list[dict[str, Any]], *, last_turns: int = 8) -> frozenset[str]:
+def recently_edited_paths(conversation: Conversation, *, last_turns: int = 8) -> frozenset[str]:
     """Paths targeted by apply_edit / apply_patch in the last *last_turns*
-    assistant messages: the files the worker is actively editing. Tier-1
+    assistant turns: the files the worker is actively editing. Tier-1
     elision deprioritises their read_file results (see
     ``compact_old_tool_results``), because a placeholder there triggers a paid
     re-read before the very next edit. Best-effort: an apply_patch without a
@@ -328,68 +334,43 @@ def recently_edited_paths(messages: list[dict[str, Any]], *, last_turns: int = 8
     """
     out: set[str] = set()
     seen_assistant = 0
-    for msg in reversed(messages):
-        if msg.get("role") != "assistant":
+    for turn in reversed(conversation.turns):
+        if not isinstance(turn, AssistantTurn):
             continue
         seen_assistant += 1
         if seen_assistant > last_turns:
             break
-        content = msg.get("content")
-        if not isinstance(content, list):
-            continue
-        for item in content:
-            if not isinstance(item, dict) or item.get("type") != "tool_use":
+        for tu in turn.tool_uses:
+            if tu.name not in ("apply_edit", "apply_patch") or not isinstance(tu.input, dict):
                 continue
-            name = item.get("name")
-            tool_input = item.get("input")
-            if name not in ("apply_edit", "apply_patch") or not isinstance(tool_input, dict):
-                continue
-            path = str(tool_input.get("path", "") or "")
-            if not path and name == "apply_patch":
-                m = _PATCH_TARGET_RE.search(str(tool_input.get("patch", "")))
+            path = str(tu.input.get("path", "") or "")
+            if not path and tu.name == "apply_patch":
+                m = _PATCH_TARGET_RE.search(str(tu.input.get("patch", "")))
                 path = ((m.group("u") or m.group("v") or "") if m else "").strip()
             if path:
                 out.add(path)
     return frozenset(out)
 
 
-def _tool_use_index(messages: list[dict[str, Any]]) -> dict[str, tuple[str, Any]]:
-    """id -> (tool name, input) for every tool_use block, pairing each
-    tool_result to the call that produced it (placeholder identity + hot-file
-    protection)."""
-    out: dict[str, tuple[str, Any]] = {}
-    for msg in messages:
-        content = msg.get("content")
-        if not isinstance(content, list):
-            continue
-        for item in content:
-            if isinstance(item, dict) and item.get("type") == "tool_use":
-                out[str(item.get("id", ""))] = (str(item.get("name", "")), item.get("input"))
-    return out
-
-
 def _tool_result_pointers(
-    messages: list[dict[str, Any]],
+    conversation: Conversation,
 ) -> tuple[list[tuple[int, int, int]], int]:
-    """((msg_idx, item_idx, size) per tool_result, total size) in order."""
+    """((turn_idx, item_idx, size) per tool_result, total size) in order."""
     pointers: list[tuple[int, int, int]] = []
     total = 0
-    for msg_idx, msg in enumerate(messages):
-        content = msg.get("content")
-        if not isinstance(content, list):
+    for turn_idx, turn in enumerate(conversation.turns):
+        if isinstance(turn, AssistantTurn):
             continue
-        for item_idx, item in enumerate(content):
-            if not isinstance(item, dict) or item.get("type") != "tool_result":
+        for item_idx, item in enumerate(turn.items):
+            if not isinstance(item, ToolResultItem):
                 continue
-            raw_content = item.get("content")
-            size = len(raw_content) if isinstance(raw_content, str) else len(str(raw_content))
-            pointers.append((msg_idx, item_idx, size))
-            total += size
+            pointers.append((turn_idx, item_idx, len(item.content)))
+            total += len(item.content)
     return pointers, total
 
 
 def compact_old_tool_results(
-    messages: list[dict[str, Any]],
+    conversation: Conversation,
     *,
     max_total_bytes: int,
     keep_recent: int = 2,
@@ -397,15 +378,15 @@ def compact_old_tool_results(
     gister: Gister | None = None,
 ) -> CompactionStats:
     """Elide old tool_result blocks once cumulative content exceeds the
-    threshold. Walks messages oldest-first, replaces each tool_result's
+    threshold. Walks the conversation oldest-first, replaces each tool_result's
     ``content`` with a short identity-bearing placeholder, stops once total
     size is back under ``max_total_bytes``. The most recent ``keep_recent``
     are always preserved, as is every tool_result in the last
-    tool_result-bearing message: the loop compacts at top-of-iteration, before
+    tool_result-bearing turn: the loop compacts at top-of-iteration, before
     the provider call that would deliver that batch, so the model has never
     seen it and the placeholder's "re-call the tool" guidance would trigger a
-    paid re-call cycle. (Keying on the final message alone is not enough: a
-    trailing steer or nudge user message pushes the fresh, still undelivered
+    paid re-call cycle. (Keying on the final turn alone is not enough: a
+    trailing steer or nudge user turn pushes the fresh, still undelivered
     results off the final index, and one turn can carry several such blocks.)
 
     ``protect_paths`` (the actively-edited set from ``recently_edited_paths``)
@@ -427,25 +408,23 @@ def compact_old_tool_results(
 
     Idempotent on already-elided entries. Returns per-pass counts.
     """
-    tool_uses = _tool_use_index(messages)
-    pointers, total = _tool_result_pointers(messages)
+    pointers, total = _tool_result_pointers(conversation)
     if total <= max_total_bytes or len(pointers) <= keep_recent:
         return CompactionStats()
 
-    def _is_protected(msg_idx: int, item_idx: int) -> bool:
-        item = messages[msg_idx]["content"][item_idx]
-        name, tool_input = tool_uses.get(str(item.get("tool_use_id", "")), ("", None))
-        if name != "read_file" or not isinstance(tool_input, dict):
+    def _is_protected(turn_idx: int, item_idx: int) -> bool:
+        call = _result_at(conversation, turn_idx, item_idx).for_call
+        if call.name != "read_file" or not isinstance(call.input, dict):
             return False
-        return str(tool_input.get("path", "")) in protect_paths
+        return str(call.input.get("path", "")) in protect_paths
 
-    # The undelivered batch is always in the last tool_result-bearing message:
-    # at top-of-iteration only text-only steer/nudge user messages can trail the
+    # The undelivered batch is always in the last tool_result-bearing turn:
+    # at top-of-iteration only text-only steer/nudge user turns can trail the
     # fresh results, and the delivering provider call runs after this compaction.
-    # Exempt that whole message -- see docstring. Keying on the final message
+    # Exempt that whole turn -- see docstring. Keying on the final turn
     # index alone missed a trailing steer/nudge, and one turn can carry several
     # such blocks, so this is broader than keep_recent or the final index.
-    last_tool_result_idx = max(msg_idx for msg_idx, _, _ in pointers)
+    last_tool_result_idx = max(turn_idx for turn_idx, _, _ in pointers)
     candidates = pointers[:-keep_recent]
     if protect_paths:
         # Protected reads go last, each group staying oldest-first.
@@ -454,10 +433,9 @@ def compact_old_tool_results(
         ]
 
     walk = _Tier1Pass(
-        messages=messages,
+        conversation=conversation,
         max_total_bytes=max_total_bytes,
         protect_paths=protect_paths,
-        tool_uses=tool_uses,
         candidates=candidates,
         last_tool_result_idx=last_tool_result_idx,
         total=total,
@@ -470,15 +448,22 @@ def compact_old_tool_results(
     return CompactionStats(elided=walk.elided, gisted=walk.gisted, demoted=walk.demoted)
 
 
+def _result_at(conversation: Conversation, turn_idx: int, item_idx: int) -> ToolResultItem:
+    turn = conversation.turns[turn_idx]
+    assert not isinstance(turn, AssistantTurn)
+    item = turn.items[item_idx]
+    assert isinstance(item, ToolResultItem)  # pointers only ever index tool_results
+    return item
+
+
 @dataclass(slots=True)
 class _Tier1Pass:
     """State shared by the phases of one tier-1 pass (the loop's ``_TurnState``
     pattern: one mutable object instead of six hand-threaded locals)."""
 
-    messages: list[dict[str, Any]]
+    conversation: Conversation
     max_total_bytes: int
     protect_paths: frozenset[str]
-    tool_uses: dict[str, tuple[str, Any]]
     candidates: list[tuple[int, int, int]]
     last_tool_result_idx: int
     total: int
@@ -488,33 +473,28 @@ class _Tier1Pass:
     gisted: int = 0
     demoted: int = 0
 
-    def _item(self, msg_idx: int, item_idx: int) -> dict[str, Any]:
-        return self.messages[msg_idx]["content"][item_idx]
-
-    def _call_of(self, item: dict[str, Any]) -> tuple[str, Any]:
-        return self.tool_uses.get(str(item.get("tool_use_id", "")), ("", None))
+    def _item(self, turn_idx: int, item_idx: int) -> ToolResultItem:
+        return _result_at(self.conversation, turn_idx, item_idx)
 
     def plan(self) -> None:
         """Pick the victim set under bare-placeholder accounting (the maximum
         shrink); nothing is mutated yet so the distiller can still read the
         content."""
         planned = self.total
-        for msg_idx, item_idx, size in self.candidates:
+        for turn_idx, item_idx, size in self.candidates:
             if planned <= self.max_total_bytes:
                 break
-            if msg_idx == self.last_tool_result_idx:
+            if turn_idx == self.last_tool_result_idx:
                 continue
-            item = self._item(msg_idx, item_idx)
-            current = item.get("content")
-            if isinstance(current, str) and current.startswith(ELISION_PREFIX):
+            item = self._item(turn_idx, item_idx)
+            if item.content.startswith(ELISION_PREFIX):
                 continue
-            name, tool_input = self._call_of(item)
-            placeholder = elision_placeholder(name, tool_input)
+            placeholder = elision_placeholder(item.for_call.name, item.for_call.input)
             if size <= len(placeholder):
                 # Replacing content already smaller than the placeholder would
                 # GROW the total, defeating the point; skip it.
                 continue
-            self.victims.append((msg_idx, item_idx, size))
+            self.victims.append((turn_idx, item_idx, size))
             planned -= size - len(placeholder)
 
     def distill(self, gister: Gister) -> None:
@@ -522,29 +502,28 @@ class _Tier1Pass:
         unprotected read_file results, the newest read per path, largest files
         first under the input caps."""
         newest_by_path: dict[str, tuple[int, int, int]] = {}
-        for msg_idx, item_idx, size in self.victims:
-            name, tool_input = self._call_of(self._item(msg_idx, item_idx))
-            if name != "read_file" or not isinstance(tool_input, dict):
+        for turn_idx, item_idx, size in self.victims:
+            call = self._item(turn_idx, item_idx).for_call
+            if call.name != "read_file" or not isinstance(call.input, dict):
                 continue
-            path = str(tool_input.get("path", ""))
+            path = str(call.input.get("path", ""))
             if not path or path in self.protect_paths or size < GIST_MIN_SOURCE_CHARS:
                 continue
-            newest_by_path[path] = (msg_idx, item_idx, size)  # victims are oldest-first
+            newest_by_path[path] = (turn_idx, item_idx, size)  # victims are oldest-first
         batch: list[GistRequest] = []
         keys: dict[str, tuple[int, int]] = {}
         input_budget = GIST_INPUT_CAP_CHARS
         by_size = sorted(newest_by_path.items(), key=lambda kv: kv[1][2], reverse=True)
-        for path, (msg_idx, item_idx, _size) in by_size:
+        for path, (turn_idx, item_idx, _size) in by_size:
             if len(batch) >= GIST_MAX_FILES_PER_CALL or input_budget <= 0:
                 break
-            raw = self._item(msg_idx, item_idx).get("content")
-            text = read_file_text_from_result(raw if isinstance(raw, str) else str(raw))
+            text = read_file_text_from_result(self._item(turn_idx, item_idx).content)
             if len(text) < GIST_MIN_SOURCE_CHARS:
                 continue
             excerpt = text[: min(GIST_FILE_SLICE_CHARS, input_budget)]
             input_budget -= len(excerpt)
             batch.append(GistRequest(path=path, content=excerpt))
-            keys[path] = (msg_idx, item_idx)
+            keys[path] = (turn_idx, item_idx)
         if not batch:
             return
         for path, gist in gister(tuple(batch)).items():
@@ -555,17 +534,16 @@ class _Tier1Pass:
     def apply(self) -> None:
         """Apply the whole plan (``plan`` already chose the minimal set; gist
         placeholders only add back a bounded extra on top of it)."""
-        for msg_idx, item_idx, size in self.victims:
-            item = self._item(msg_idx, item_idx)
-            name, tool_input = self._call_of(item)
-            placeholder = elision_placeholder(name, tool_input)
-            gist = self.gists.get((msg_idx, item_idx))
-            if gist is not None and isinstance(tool_input, dict):
-                candidate = elision_gist_placeholder(str(tool_input.get("path", "")), gist)
+        for turn_idx, item_idx, size in self.victims:
+            call = self._item(turn_idx, item_idx).for_call
+            placeholder = elision_placeholder(call.name, call.input)
+            gist = self.gists.get((turn_idx, item_idx))
+            if gist is not None and isinstance(call.input, dict):
+                candidate = elision_gist_placeholder(str(call.input.get("path", "")), gist)
                 if len(candidate) < size:  # a gist longer than the content is useless
                     placeholder = candidate
                     self.gisted += 1
-            item["content"] = placeholder
+            self.conversation.set_result_content(turn_idx, item_idx, placeholder)
             self.total -= size - len(placeholder)
             self.elided += 1
 
@@ -575,19 +553,17 @@ class _Tier1Pass:
         until the bound holds or none remain."""
         if self.total <= self.max_total_bytes:
             return
-        for msg_idx, item_idx, _size in self.candidates:
+        for turn_idx, item_idx, _size in self.candidates:
             if self.total <= self.max_total_bytes:
                 break
-            if msg_idx == self.last_tool_result_idx:
+            if turn_idx == self.last_tool_result_idx:
                 continue
-            item = self._item(msg_idx, item_idx)
-            current = item.get("content")
-            if not (isinstance(current, str) and current.startswith(ELISION_GIST_PREFIX)):
+            item = self._item(turn_idx, item_idx)
+            if not item.content.startswith(ELISION_GIST_PREFIX):
                 continue
-            name, tool_input = self._call_of(item)
-            bare = elision_placeholder(name, tool_input)
-            if len(current) <= len(bare):
+            bare = elision_placeholder(item.for_call.name, item.for_call.input)
+            if len(item.content) <= len(bare):
                 continue
-            item["content"] = bare
-            self.total -= len(current) - len(bare)
+            self.conversation.set_result_content(turn_idx, item_idx, bare)
+            self.total -= len(item.content) - len(bare)
             self.demoted += 1

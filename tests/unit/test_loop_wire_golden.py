@@ -33,6 +33,7 @@ from typing import Any
 
 from agent6.providers import ProviderResponse
 from agent6.tools.results import ExecResult, RawResult, ToolResult
+from agent6.workflows._conversation import Conversation
 from agent6.workflows.loop import Workflow
 
 _GOLDEN = Path(__file__).parent / "data" / "golden_loop_wire.json"
@@ -237,7 +238,7 @@ def _run_scenario(tmp_dir: Path) -> dict[str, Any]:
     initial = {"role": "user", "content": [{"type": "text", "text": f"TASK:\n{_TASK}\n\nBegin."}]}
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="SYSTEM",
-        messages=[initial],
+        conversation=Conversation.from_wire([initial]),
         tools=[],
         tool_calls=0,
         start_iteration=1,

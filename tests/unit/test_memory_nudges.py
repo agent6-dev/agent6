@@ -13,6 +13,7 @@ from unittest.mock import MagicMock
 
 from agent6.config import Config
 from agent6.tools.results import AddMemoryResult, ExecResult
+from agent6.workflows._conversation import AssistantTurn, Notice
 from agent6.workflows._nudges import MEMORY_FINISH_NUDGE, MEMORY_FLIP_NUDGE
 from agent6.workflows.loop import (
     Workflow,
@@ -38,7 +39,7 @@ def _state(**kw: Any) -> _LoopState:
 
 
 def _turn(iteration: int = 1, **kw: Any) -> _TurnState:
-    return _TurnState(iteration=iteration, resp=MagicMock(), **kw)
+    return _TurnState(iteration=iteration, resp=MagicMock(), assistant=AssistantTurn((), ()), **kw)
 
 
 def _verify(wf: Workflow, state: _LoopState, turn: _TurnState, rc: int) -> None:
@@ -51,7 +52,7 @@ def _verify(wf: Workflow, state: _LoopState, turn: _TurnState, rc: int) -> None:
 
 
 def _notice_texts(turn: _TurnState) -> list[str]:
-    return [b["text"] for b in turn.tool_results if b.get("type") == "text"]
+    return [item.text for item in turn.tool_results if isinstance(item, Notice)]
 
 
 def test_flip_advisory_fires_once_at_first_red_green_flip() -> None:

@@ -17,6 +17,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 from agent6.tools.results import ExecResult, RawResult
+from agent6.workflows._conversation import Conversation
 from agent6.workflows._metric import MetricSample as _MetricSample
 from agent6.workflows._run_state import RunSnapshot, load_run_snapshot
 from agent6.workflows.loop import (
@@ -180,7 +181,9 @@ def test_resume_seeds_state_from_snapshot_scalars() -> None:
     wf._metric_at_ceiling = _spy  # type: ignore[method-assign]
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
-        messages=[{"role": "user", "content": [{"type": "text", "text": "go"}]}],
+        conversation=Conversation.from_wire(
+            [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
+        ),
         tools=[],
         tool_calls=0,
         start_iteration=3,
@@ -303,7 +306,9 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
     wf._maybe_compact = _spy_compact  # type: ignore[method-assign]
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
-        messages=[{"role": "user", "content": [{"type": "text", "text": "go"}]}],
+        conversation=Conversation.from_wire(
+            [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
+        ),
         tools=[],
         tool_calls=0,
         start_iteration=1,

@@ -9,6 +9,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 from agent6.tools.results import ExecResult, RawResult
+from agent6.workflows._conversation import Conversation
 from tests.unit.test_critic import (
     _finish_tool_use,  # pyright: ignore[reportPrivateUsage]
     _resp,  # pyright: ignore[reportPrivateUsage]
@@ -61,7 +62,7 @@ def test_periodic_critic_fires_every_n_iterations() -> None:
     with patch("agent6.workflows.loop.commit_all", return_value="sha"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -101,14 +102,14 @@ def test_periodic_critic_injects_text_into_next_user_msg() -> None:
     ]
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="S",
-        messages=messages,
+        conversation=(conversation := Conversation.from_wire(messages)),
         tools=[],
         tool_calls=0,
         start_iteration=1,
         root_task_id=None,
         original_task="t",
     )
-    iter1_user_msg = messages[2]
+    iter1_user_msg = conversation.to_wire()[2]
     text_blocks = [b for b in iter1_user_msg["content"] if b.get("type") == "text"]
     assert any("[critic]" in b["text"] for b in text_blocks)
     assert any("CONSIDER X" in b["text"] for b in text_blocks)
@@ -149,7 +150,7 @@ def test_on_verify_fail_critic_fires_only_on_nonzero_exit() -> None:
     ]
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="S",
-        messages=messages,
+        conversation=(conversation := Conversation.from_wire(messages)),
         tools=[],
         tool_calls=0,
         start_iteration=1,
@@ -159,7 +160,7 @@ def test_on_verify_fail_critic_fires_only_on_nonzero_exit() -> None:
     assert result.iterations == 4
     assert result.reason == "finish_run"
     assert critic.call.call_count == 1
-    iter2_user_msg = messages[4]
+    iter2_user_msg = conversation.to_wire()[4]
     text_blocks = [b for b in iter2_user_msg["content"] if b.get("type") == "text"]
     assert any("[critic]" in b["text"] for b in text_blocks)
 
@@ -193,7 +194,7 @@ def test_on_verify_fail_critic_skipped_when_no_verify_call() -> None:
     ]
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="S",
-        messages=messages,
+        conversation=Conversation.from_wire(messages),
         tools=[],
         tool_calls=0,
         start_iteration=1,

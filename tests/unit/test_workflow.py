@@ -23,6 +23,7 @@ import pytest
 
 from agent6.providers import ProviderError, ProviderResponse
 from agent6.tools.results import ExecResult, MetricResult, RawResult, ToolResult
+from agent6.workflows._conversation import AssistantTurn, Conversation, Notice
 from agent6.workflows.loop import Workflow
 
 
@@ -100,7 +101,7 @@ def test_ask_silent_finish_ends_as_answered_not_silent_finish() -> None:
     # end as "answered", not the failure-sounding "silent_finish".
     wf = _wf(mode="ask")
     result = wf._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
-        "The answer is 42.", [], _state(), iteration=2
+        "The answer is 42.", Conversation(), _state(), iteration=2
     )
     assert result is not None
     assert result.reason == "answered"
@@ -113,7 +114,7 @@ def test_run_silent_finish_stays_silent_finish() -> None:
     # implicit silent_finish, not "answered".
     wf = _wf(mode="run")
     result = wf._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
-        "Done.", [], _state(ever_edited=True, verify_ever_passed=True), iteration=5
+        "Done.", Conversation(), _state(ever_edited=True, verify_ever_passed=True), iteration=5
     )
     assert result is not None
     assert result.reason == "silent_finish"
@@ -123,7 +124,11 @@ def _turn(**kw: Any) -> Any:
     """A bare _TurnState for direct turn-phase method tests."""
     from agent6.workflows.loop import _TurnState  # pyright: ignore[reportPrivateUsage]
 
-    defaults: dict[str, Any] = {"iteration": 1, "resp": None}
+    defaults: dict[str, Any] = {
+        "iteration": 1,
+        "resp": _resp(""),
+        "assistant": AssistantTurn((), ()),
+    }
     defaults.update(kw)
     return _TurnState(**defaults)
 
@@ -603,7 +608,7 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(tmp_path: Path) -> None:
     with patch("agent6.workflows.loop.commit_all", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -666,7 +671,7 @@ def test_drive_loop_tracks_iterations_reached(tmp_path: Path) -> None:
     with patch("agent6.workflows.loop.commit_all", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=7,  # a resumed run picks up mid-way
@@ -727,7 +732,7 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: Path) -
     with patch("agent6.workflows.loop.commit_all", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -813,7 +818,7 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(tmp_path
     with patch("agent6.workflows.loop.commit_all", side_effect=_fake_commit):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -922,7 +927,7 @@ def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: Path) -> None
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
-        messages=messages,
+        conversation=Conversation.from_wire(messages),
         tools=[],
         tool_calls=0,
         start_iteration=1,
@@ -998,7 +1003,7 @@ def test_drive_loop_finishes_on_metric_plateau(tmp_path: Path) -> None:
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -1081,7 +1086,7 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: Path) -> None:
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -1181,7 +1186,7 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: Pa
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -1235,7 +1240,7 @@ def test_drive_loop_plan_finish_nudge_fires_once_at_iter_cap(tmp_path: Path) -> 
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nplan a feature"}]}]
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
-        messages=messages,
+        conversation=Conversation.from_wire(messages),
         tools=[],
         tool_calls=0,
         start_iteration=1,
@@ -1286,7 +1291,7 @@ def test_drive_loop_plan_finish_nudge_fires_on_low_budget(
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nplan"}]}]
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
-        messages=messages,
+        conversation=Conversation.from_wire(messages),
         tools=[],
         tool_calls=0,
         start_iteration=1,
@@ -1337,7 +1342,7 @@ def test_drive_loop_run_budget_nudge_forces_verify_and_finish(
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
-        messages=messages,
+        conversation=Conversation.from_wire(messages),
         tools=[],
         tool_calls=0,
         start_iteration=1,
@@ -1396,7 +1401,7 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: Path) -> None:
     with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -1448,7 +1453,7 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(tmp_path: P
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
-        messages=messages,
+        conversation=Conversation.from_wire(messages),
         tools=[],
         tool_calls=0,
         start_iteration=1,
@@ -1500,7 +1505,7 @@ def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: Path) -> None:
     with patch("agent6.workflows.loop.commit_all", return_value=""):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -1562,7 +1567,7 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: Path) -> Non
     with patch("agent6.workflows.loop.commit_all", return_value=""):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -1680,7 +1685,7 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: Path) -> N
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -1745,7 +1750,7 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: Path) -> No
 
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="system",
-        messages=messages,
+        conversation=Conversation.from_wire(messages),
         tools=[],
         tool_calls=0,
         start_iteration=1,
@@ -1802,7 +1807,7 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: Path) -> None:
 
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="system",
-        messages=messages,
+        conversation=Conversation.from_wire(messages),
         tools=[],
         tool_calls=0,
         start_iteration=1,
@@ -1924,7 +1929,7 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -2102,6 +2107,19 @@ def _long_history(n_pairs: int) -> list[dict[str, Any]]:
     return msgs
 
 
+def _restart_via_wire(wf: Workflow, messages: list[dict[str, Any]]) -> None:
+    conversation = Conversation.from_wire(messages)
+    wf._summarise_and_restart(conversation)  # pyright: ignore[reportPrivateUsage]
+    messages[:] = conversation.to_wire()
+
+
+def _compact_via_wire(wf: Workflow, messages: list[dict[str, Any]]) -> bool:
+    conversation = Conversation.from_wire(messages)
+    out = wf._maybe_compact(conversation)  # pyright: ignore[reportPrivateUsage]
+    messages[:] = conversation.to_wire()
+    return out
+
+
 def test_summarise_and_restart_replaces_history() -> None:
     summariser = MagicMock()
     summariser.call.return_value = _resp("done: tried A (kept), B (reverted); best=42 at sha9")
@@ -2109,11 +2127,11 @@ def test_summarise_and_restart_replaces_history() -> None:
     messages = _long_history(6)
     original = messages[0]
 
-    wf._summarise_and_restart(messages)  # pyright: ignore[reportPrivateUsage]
+    _restart_via_wire(wf, messages)
 
     # Collapsed to (original task, restart-with-summary).
     assert len(messages) == 2
-    assert messages[0] is original
+    assert messages[0] == original
     text = messages[1]["content"][0]["text"]
     assert "[harness context restart]" in text
     assert "best=42 at sha9" in text
@@ -2156,7 +2174,7 @@ def test_summarise_and_restart_applies_dag_checkoff() -> None:
     )
     wf = _wf(summariser_provider=summariser, curator=fake)
     messages = _long_history(6)
-    wf._summarise_and_restart(messages)  # pyright: ignore[reportPrivateUsage]
+    _restart_via_wire(wf, messages)
 
     assert fake.passed == ["01DONE"]  # valid completed id passed; hallucinated id ignored
     assert fake.added == [("01ROOT", "fix the budget rounding bug")]  # queued under the root
@@ -2389,7 +2407,10 @@ class _FakeCurator:
 
 
 def _surface(wf: Workflow, st: Any, messages: list[dict[str, Any]]) -> None:
-    wf._maybe_surface_current_task(messages, st)  # pyright: ignore[reportPrivateUsage]
+    """Wire-in/wire-out driver so the tests keep asserting on message dicts."""
+    conversation = Conversation.from_wire(messages)
+    wf._maybe_surface_current_task(conversation, st)  # pyright: ignore[reportPrivateUsage]
+    messages[:] = conversation.to_wire()
 
 
 def test_surface_current_task_surfaces_advances_then_quiets() -> None:
@@ -2597,10 +2618,10 @@ def test_maybe_compact_returns_restart_signal() -> None:
     wf = _wf(summariser_provider=summariser, compact_summarise_at_chars=500_000)
     # Below the tier-2 threshold -> no restart, returns False.
     short = [{"role": "user", "content": [{"type": "text", "text": "hi"}]}]
-    assert wf._maybe_compact(short) is False  # pyright: ignore[reportPrivateUsage]
+    assert _compact_via_wire(wf, short) is False
     # Over the threshold -> restart, returns True.
     big = _big_text_history("TASK: x", blocks=8, block_chars=100_000)
-    assert wf._maybe_compact(big) is True  # pyright: ignore[reportPrivateUsage]
+    assert _compact_via_wire(wf, big) is True
     assert len(big) == 2  # history was replaced
 
 
@@ -2618,11 +2639,11 @@ def test_compact_request_forces_a_tier2_restart() -> None:
         compact_clear=lambda: pending.__setitem__("req", False),
     )
     small = _big_text_history("TASK: x", blocks=2, block_chars=100)  # nowhere near tier 2
-    assert wf._maybe_compact(small) is True  # pyright: ignore[reportPrivateUsage]
+    assert _compact_via_wire(wf, small) is True
     assert pending["req"] is False  # the marker was consumed
     assert len(small) == 2  # history replaced by (task + summary)
     # No re-trigger without a fresh request (and still below the threshold).
-    assert wf._maybe_compact(small) is False  # pyright: ignore[reportPrivateUsage]
+    assert _compact_via_wire(wf, small) is False
 
 
 def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: Path) -> None:
@@ -2686,7 +2707,7 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: Path) -> None:
     with patch("agent6.workflows.loop.commit_all", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -2782,7 +2803,7 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: Path) -> 
     with patch("agent6.workflows.loop.commit_all", return_value="abc1234567890"):
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -2806,7 +2827,7 @@ def test_summarise_and_restart_falls_back_to_worker_provider() -> None:
     wf = _wf(provider=worker, summariser_provider=None)
     messages = _long_history(4)
 
-    wf._summarise_and_restart(messages)  # pyright: ignore[reportPrivateUsage]
+    _restart_via_wire(wf, messages)
 
     assert len(messages) == 2
     worker.call.assert_called_once()
@@ -2819,7 +2840,7 @@ def test_summarise_and_restart_keeps_history_on_empty_summary() -> None:
     messages = _long_history(5)
     before = list(messages)
 
-    wf._summarise_and_restart(messages)  # pyright: ignore[reportPrivateUsage]
+    _restart_via_wire(wf, messages)
 
     # Empty summary -> message list untouched (fail-safe).
     assert messages == before
@@ -2832,7 +2853,7 @@ def test_summarise_and_restart_keeps_history_on_provider_error() -> None:
     messages = _long_history(5)
     before = list(messages)
 
-    wf._summarise_and_restart(messages)  # pyright: ignore[reportPrivateUsage]
+    _restart_via_wire(wf, messages)
 
     assert messages == before
 
@@ -2840,11 +2861,23 @@ def test_summarise_and_restart_keeps_history_on_provider_error() -> None:
 # --- _maybe_handle_steer --------------------------------------------------
 
 
+def _steer_via_wire(
+    wf: Workflow, messages: list[dict[str, Any]], *, iteration: int, state: Any
+) -> str | None:
+    conversation = Conversation.from_wire(messages)
+    try:
+        return wf._maybe_handle_steer(  # pyright: ignore[reportPrivateUsage]
+            conversation, iteration, state
+        )
+    finally:
+        messages[:] = conversation.to_wire()
+
+
 def test_steer_noop_when_not_requested() -> None:
     """steer_requested() returns False -> _maybe_handle_steer is a no-op."""
     wf = _wf()  # default steer_requested = lambda: False
     messages: list[dict[str, Any]] = []
-    result = wf._maybe_handle_steer(messages, iteration=1, state=_state())  # pyright: ignore[reportPrivateUsage]
+    result = _steer_via_wire(wf, messages, iteration=1, state=_state())
     assert result is None
     assert messages == []
 
@@ -2858,7 +2891,7 @@ def test_steer_injects_instruction() -> None:
         steer_prompt=lambda: "focus on perf_takehome.py first",
     )
     messages: list[dict[str, Any]] = []
-    result = wf._maybe_handle_steer(messages, iteration=3, state=_state())  # pyright: ignore[reportPrivateUsage]
+    result = _steer_via_wire(wf, messages, iteration=3, state=_state())
     assert result is None
     assert cleared == [True], "steer_clear must be called even on success"
     assert len(messages) == 1
@@ -2879,7 +2912,7 @@ def test_steer_empty_text_continues_without_inject() -> None:
         steer_prompt=lambda: "   ",
     )
     messages: list[dict[str, Any]] = []
-    result = wf._maybe_handle_steer(messages, iteration=2, state=_state())  # pyright: ignore[reportPrivateUsage]
+    result = _steer_via_wire(wf, messages, iteration=2, state=_state())
     assert result is None
     assert cleared == [True]
     assert messages == []
@@ -2894,7 +2927,7 @@ def test_steer_none_text_continues_without_inject() -> None:
         steer_prompt=lambda: None,
     )
     messages: list[dict[str, Any]] = []
-    result = wf._maybe_handle_steer(messages, iteration=2, state=_state())  # pyright: ignore[reportPrivateUsage]
+    result = _steer_via_wire(wf, messages, iteration=2, state=_state())
     assert result is None
     assert cleared == [True]
     assert messages == []
@@ -2917,7 +2950,7 @@ def test_steer_abort_signal() -> None:
             steer_prompt=_typed,
         )
         messages: list[dict[str, Any]] = []
-        result = wf._maybe_handle_steer(messages, iteration=5, state=_state())  # pyright: ignore[reportPrivateUsage]
+        result = _steer_via_wire(wf, messages, iteration=5, state=_state())
         assert result == "abort", f"typed={typed!r}"
         assert cleared == [True]
         assert messages == [], "abort must not inject a message"
@@ -2932,7 +2965,7 @@ def test_steer_detach_signal() -> None:
         steer_prompt=lambda: "detach",
     )
     messages: list[dict[str, Any]] = []
-    result = wf._maybe_handle_steer(messages, iteration=4, state=_state())  # pyright: ignore[reportPrivateUsage]
+    result = _steer_via_wire(wf, messages, iteration=4, state=_state())
     assert result == "detach"
     assert cleared == [True]
     assert messages == [], "detach must not inject a message"
@@ -2952,7 +2985,7 @@ def test_steer_clear_called_even_when_prompt_raises() -> None:
     )
     messages: list[dict[str, Any]] = []
     with pytest.raises(RuntimeError, match="input EOF"):
-        wf._maybe_handle_steer(messages, iteration=1, state=_state())  # pyright: ignore[reportPrivateUsage]
+        _steer_via_wire(wf, messages, iteration=1, state=_state())
     assert cleared == [True], "finally must run steer_clear even on prompt failure"
 
 
@@ -3212,7 +3245,7 @@ def test_crash_mid_run_then_resume_continues_from_snapshot(tmp_path: Path) -> No
 def _ctx_chars(messages: list[dict[str, Any]]) -> int:
     from agent6.workflows._compaction import context_chars
 
-    return context_chars(messages)
+    return context_chars(Conversation.from_wire(messages))
 
 
 def _big_text_history(task: str, *, blocks: int, block_chars: int) -> list[dict[str, Any]]:
@@ -3246,7 +3279,7 @@ def test_tier2_summarise_fires_and_restarts_past_threshold(tmp_path: Path) -> No
     messages = _big_text_history("TASK: optimize the kernel", blocks=8, block_chars=100_000)
     assert _ctx_chars(messages) > 500_000  # over the tier-2 threshold
 
-    wf._maybe_compact(messages)  # pyright: ignore[reportPrivateUsage]
+    _compact_via_wire(wf, messages)
 
     assert summ.calls == 1  # tier-2 summariser ran
     assert len(messages) == 2  # restarted to [original task, restart+summary]
@@ -3269,7 +3302,7 @@ def test_tier2_summarise_failsafe_keeps_context_on_empty_summary(tmp_path: Path)
     messages = _big_text_history("TASK", blocks=8, block_chars=100_000)
     n_before = len(messages)
 
-    wf._maybe_compact(messages)  # pyright: ignore[reportPrivateUsage]
+    _compact_via_wire(wf, messages)
 
     assert len(messages) == n_before  # unchanged; the run continues on tier-1 elision
 
@@ -3351,7 +3384,7 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: Path) -> None:
     with patch("agent6.workflows.loop.commit_all", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -3450,7 +3483,7 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: Path) -> None:
     with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -3636,7 +3669,7 @@ def test_question_nudge_then_accept(tmp_path: Path) -> None:
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nadd a theme"}]}]
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
-        messages=messages,
+        conversation=Conversation.from_wire(messages),
         tools=[],
         tool_calls=0,
         start_iteration=1,
@@ -3730,7 +3763,7 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: Path) -> 
     with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -3797,7 +3830,7 @@ def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: Path) -> N
     with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -3874,7 +3907,7 @@ def test_drive_loop_spec_recheck_bounces_first_green_finish(tmp_path: Path) -> N
     with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -3908,7 +3941,7 @@ def test_drive_loop_spec_recheck_off_by_default_and_when_disabled(tmp_path: Path
     with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -3941,7 +3974,7 @@ def test_drive_loop_spec_recheck_silent_without_green_verify(tmp_path: Path) -> 
     with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -4005,7 +4038,7 @@ def test_drive_loop_no_progress_stops_after_unheeded_interventions(tmp_path: Pat
     with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -4056,7 +4089,7 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: Path) ->
     with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -4115,7 +4148,7 @@ def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: Path) -> 
     with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -4188,7 +4221,7 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: Path) -> None:
     with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -4242,10 +4275,11 @@ def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: Path) 
         max_iterations=10,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nread"}]}]
+    conversation = Conversation.from_wire(messages)
     with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
-            messages=messages,
+            conversation=conversation,
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -4254,7 +4288,7 @@ def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: Path) 
         )
     # collect the served tool_result contents for read_file
     served = []
-    for m in messages:
+    for m in conversation.to_wire():
         if m.get("role") == "user" and isinstance(m.get("content"), list):
             for b in m["content"]:
                 if isinstance(b, dict) and b.get("type") == "tool_result":
@@ -4322,7 +4356,7 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: Path) -> None:
     with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -4386,7 +4420,7 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: Path) -> None:
     with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -4419,7 +4453,7 @@ def test_note_verify_result_flags_a_dead_verify(tmp_path: Path) -> None:
             exec_failed=False,
         ),
     )
-    texts = [b["text"] for b in turn.tool_results if b.get("type") == "text"]
+    texts = [it.text for it in turn.tool_results if isinstance(it, Notice)]
     assert any(VERIFY_BROKEN_NUDGE[:24] in t for t in texts)
     assert st.verify_broken_warned is True
 
@@ -4436,7 +4470,9 @@ def test_note_verify_result_flags_a_dead_verify(tmp_path: Path) -> None:
             exec_failed=False,
         ),
     )
-    assert not any("verify-broken" in b.get("text", "") for b in turn2.tool_results)
+    assert not any(
+        isinstance(it, Notice) and "verify-broken" in it.text for it in turn2.tool_results
+    )
 
 
 def test_note_verify_result_does_not_flag_real_failure(tmp_path: Path) -> None:
@@ -4457,7 +4493,7 @@ def test_note_verify_result_does_not_flag_real_failure(tmp_path: Path) -> None:
             exec_failed=False,
         ),
     )
-    texts = [b.get("text", "") for b in turn.tool_results]
+    texts = [it.text for it in turn.tool_results if isinstance(it, Notice)]
     assert not any(VERIFY_BROKEN_NUDGE[:24] in t for t in texts)
     assert st.verify_broken_warned is False
 
@@ -4510,7 +4546,7 @@ def test_tool_error_spiral_names_a_host_present_tool(tmp_path: Path) -> None:
     with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,
@@ -4567,7 +4603,7 @@ def test_tool_error_spiral_silent_for_nonexistent_binary(tmp_path: Path) -> None
     with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="s",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,

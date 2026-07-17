@@ -19,24 +19,36 @@ from agent6.workflows._compaction import (
     parse_gist_lines,
     read_file_text_from_result,
 )
+from agent6.workflows._conversation import Conversation, ToolResultItem, UserTurn
 
 
-def _assistant_read(tid: str, path: str) -> dict[str, Any]:
-    return {
-        "role": "assistant",
-        "content": [{"type": "tool_use", "id": tid, "name": "read_file", "input": {"path": path}}],
-    }
+def _add_call(conv: Conversation, name: str, tool_input: dict[str, Any], content: str) -> None:
+    """One (assistant tool_use, result) exchange."""
+    turn = conv.assistant(
+        [{"type": "tool_use", "id": f"t{len(conv)}", "name": name, "input": tool_input}]
+    )
+    conv.results(
+        [
+            ToolResultItem(
+                tool_use_id=turn.tool_uses[0].id, content=content, for_call=turn.tool_uses[0]
+            )
+        ]
+    )
 
 
-def _result(tid: str, content: str) -> dict[str, Any]:
-    return {
-        "role": "user",
-        "content": [{"type": "tool_result", "tool_use_id": tid, "content": content}],
-    }
+def _add_read(conv: Conversation, path: str, text: str) -> None:
+    """A read_file exchange whose result carries the real JSON envelope."""
+    _add_call(conv, "read_file", {"path": path}, json.dumps({"content": text, "size": len(text)}))
 
 
-def _read_result(tid: str, text: str) -> dict[str, Any]:
-    return _result(tid, json.dumps({"content": text, "size": len(text)}))
+def _contents(conv: Conversation) -> list[str]:
+    return [
+        item.content
+        for turn in conv.turns
+        if isinstance(turn, UserTurn)
+        for item in turn.items
+        if isinstance(item, ToolResultItem)
+    ]
 
 
 class _SpyGister:
@@ -51,19 +63,15 @@ class _SpyGister:
 
 def test_large_read_decays_to_gist_placeholder() -> None:
     doc = "R01 requires headers under 80 chars. END: lines are exempt (R10). " * 60
-    msgs = [
-        _assistant_read("r0", "rules/r01.md"),
-        _read_result("r0", doc),
-        _assistant_read("r1", "b.py"),
-        _read_result("r1", "x" * 500),
-        _assistant_read("r2", "c.py"),
-        _read_result("r2", "y" * 500),
-    ]
+    conv = Conversation()
+    _add_read(conv, "rules/r01.md", doc)
+    _add_read(conv, "b.py", "x" * 500)
+    _add_read(conv, "c.py", "y" * 500)
     gister = _SpyGister({"rules/r01.md": "R01: headers <80 chars; END: lines exempt (R10)"})
-    stats = compact_old_tool_results(msgs, max_total_bytes=1500, keep_recent=2, gister=gister)
+    stats = compact_old_tool_results(conv, max_total_bytes=1500, keep_recent=2, gister=gister)
     assert stats.elided == 1
     assert stats.gisted == 1
-    got = msgs[1]["content"][0]["content"]
+    got = _contents(conv)[0]
     assert got.startswith(ELISION_GIST_PREFIX)
     assert "rules/r01.md" in got
     assert "gist: R01: headers <80 chars; END: lines exempt (R10)" in got
@@ -74,43 +82,28 @@ def test_large_read_decays_to_gist_placeholder() -> None:
 def test_no_gister_and_failed_gister_fall_back_to_bare() -> None:
     doc = "spec " * 1000
     for gister in (None, _SpyGister({})):
-        msgs = [
-            _assistant_read("r0", "docs/spec.md"),
-            _read_result("r0", doc),
-            _assistant_read("r1", "b.py"),
-            _read_result("r1", "x" * 500),
-            _assistant_read("r2", "c.py"),
-            _read_result("r2", "y" * 500),
-        ]
-        stats = compact_old_tool_results(msgs, max_total_bytes=1500, keep_recent=2, gister=gister)
+        conv = Conversation()
+        _add_read(conv, "docs/spec.md", doc)
+        _add_read(conv, "b.py", "x" * 500)
+        _add_read(conv, "c.py", "y" * 500)
+        stats = compact_old_tool_results(conv, max_total_bytes=1500, keep_recent=2, gister=gister)
         assert stats.elided == 1
         assert stats.gisted == 0
-        got = msgs[1]["content"][0]["content"]
+        got = _contents(conv)[0]
         assert got.startswith(ELISION_PREFIX)
         assert not got.startswith(ELISION_GIST_PREFIX)
 
 
 def test_small_protected_and_non_read_results_are_never_gisted() -> None:
-    msgs = [
-        _assistant_read("r0", "hot.py"),
-        _read_result("r0", "h" * 5000),  # protected: actively edited
-        _assistant_read("r1", "tiny.md"),
-        _read_result("r1", "t" * 300),  # below GIST_MIN_SOURCE_CHARS
-        {
-            "role": "assistant",
-            "content": [
-                {"type": "tool_use", "id": "r2", "name": "grep", "input": {"pattern": "q"}}
-            ],
-        },
-        _result("r2", "g" * 5000),  # not a read_file
-        _assistant_read("r3", "b.py"),
-        _read_result("r3", "x" * 500),
-        _assistant_read("r4", "c.py"),
-        _read_result("r4", "y" * 500),
-    ]
+    conv = Conversation()
+    _add_read(conv, "hot.py", "h" * 5000)  # protected: actively edited
+    _add_read(conv, "tiny.md", "t" * 300)  # below GIST_MIN_SOURCE_CHARS
+    _add_call(conv, "grep", {"pattern": "q"}, "g" * 5000)  # not a read_file
+    _add_read(conv, "b.py", "x" * 500)
+    _add_read(conv, "c.py", "y" * 500)
     gister = _SpyGister({"hot.py": "nope", "tiny.md": "nope", "grep": "nope"})
     stats = compact_old_tool_results(
-        msgs,
+        conv,
         max_total_bytes=1000,
         keep_recent=2,
         protect_paths=frozenset({"hot.py"}),
@@ -124,51 +117,43 @@ def test_small_protected_and_non_read_results_are_never_gisted() -> None:
 def test_newest_read_per_path_wins_the_gist() -> None:
     doc_v1 = "OLD spec text. " * 300
     doc_v2 = "NEW spec text. " * 300
-    msgs = [
-        _assistant_read("r0", "docs/spec.md"),
-        _read_result("r0", doc_v1),
-        _assistant_read("r1", "docs/spec.md"),
-        _read_result("r1", doc_v2),
-        _assistant_read("r2", "b.py"),
-        _read_result("r2", "x" * 500),
-        _assistant_read("r3", "c.py"),
-        _read_result("r3", "y" * 500),
-    ]
+    conv = Conversation()
+    _add_read(conv, "docs/spec.md", doc_v1)
+    _add_read(conv, "docs/spec.md", doc_v2)
+    _add_read(conv, "b.py", "x" * 500)
+    _add_read(conv, "c.py", "y" * 500)
     gister = _SpyGister({"docs/spec.md": "the spec facts"})
-    stats = compact_old_tool_results(msgs, max_total_bytes=1200, keep_recent=2, gister=gister)
+    stats = compact_old_tool_results(conv, max_total_bytes=1200, keep_recent=2, gister=gister)
     assert stats.elided == 2
     assert stats.gisted == 1
     assert len(gister.calls) == 1 and len(gister.calls[0]) == 1
     assert gister.calls[0][0].content.startswith("NEW spec text")
     # The newer read keeps the gist; the older one gets the bare marker.
-    assert msgs[1]["content"][0]["content"].startswith(ELISION_PREFIX)
-    assert not msgs[1]["content"][0]["content"].startswith(ELISION_GIST_PREFIX)
-    assert msgs[3]["content"][0]["content"].startswith(ELISION_GIST_PREFIX)
+    contents = _contents(conv)
+    assert contents[0].startswith(ELISION_PREFIX)
+    assert not contents[0].startswith(ELISION_GIST_PREFIX)
+    assert contents[1].startswith(ELISION_GIST_PREFIX)
 
 
 def test_continued_pressure_demotes_gists_oldest_first() -> None:
     doc = "authoritative spec. " * 300
-    msgs = [
-        _assistant_read("r0", "docs/spec.md"),
-        _read_result("r0", doc),
-        _assistant_read("r1", "b.py"),
-        _read_result("r1", "x" * 500),
-        _assistant_read("r2", "c.py"),
-        _read_result("r2", "y" * 500),
-    ]
+    conv = Conversation()
+    _add_read(conv, "docs/spec.md", doc)
+    _add_read(conv, "b.py", "x" * 500)
+    _add_read(conv, "c.py", "y" * 500)
     gister = _SpyGister({"docs/spec.md": "spec facts " * 30})
-    first = compact_old_tool_results(msgs, max_total_bytes=1800, keep_recent=2, gister=gister)
+    first = compact_old_tool_results(conv, max_total_bytes=1800, keep_recent=2, gister=gister)
     assert (first.gisted, first.demoted) == (1, 0)
-    gist_ph = msgs[1]["content"][0]["content"]
+    gist_ph = _contents(conv)[0]
     assert gist_ph.startswith(ELISION_GIST_PREFIX)
     # Re-running under the same budget is a no-op (idempotent).
-    again = compact_old_tool_results(msgs, max_total_bytes=1800, keep_recent=2, gister=gister)
+    again = compact_old_tool_results(conv, max_total_bytes=1800, keep_recent=2, gister=gister)
     assert (again.elided, again.gisted, again.demoted) == (0, 0, 0)
-    assert msgs[1]["content"][0]["content"] == gist_ph
+    assert _contents(conv)[0] == gist_ph
     # A tighter budget demotes the gist to the bare marker; the bound holds.
-    tighter = compact_old_tool_results(msgs, max_total_bytes=1100, keep_recent=2, gister=gister)
+    tighter = compact_old_tool_results(conv, max_total_bytes=1100, keep_recent=2, gister=gister)
     assert tighter.demoted == 1
-    got = msgs[1]["content"][0]["content"]
+    got = _contents(conv)[0]
     assert got.startswith(ELISION_PREFIX)
     assert not got.startswith(ELISION_GIST_PREFIX)
     assert "docs/spec.md" in got
@@ -177,18 +162,15 @@ def test_continued_pressure_demotes_gists_oldest_first() -> None:
 def test_gist_longer_than_content_stays_bare() -> None:
     # A gist placeholder that would not shrink the block is pointless.
     text = "z" * 2100  # just over GIST_MIN_SOURCE_CHARS
-    msgs = [
-        _assistant_read("r0", "a.md"),
-        _result("r0", text),  # raw (non-JSON) read result: falls back verbatim
-        _assistant_read("r1", "b.py"),
-        _read_result("r1", "x" * 500),
-        _assistant_read("r2", "c.py"),
-        _read_result("r2", "y" * 500),
-    ]
+    conv = Conversation()
+    # raw (non-JSON) read result: read_file_text_from_result falls back verbatim
+    _add_call(conv, "read_file", {"path": "a.md"}, text)
+    _add_read(conv, "b.py", "x" * 500)
+    _add_read(conv, "c.py", "y" * 500)
     gister = _SpyGister({"a.md": "g" * 3000})  # clipped to GIST_MAX_CHARS, still fits
-    stats = compact_old_tool_results(msgs, max_total_bytes=1500, keep_recent=2, gister=gister)
+    stats = compact_old_tool_results(conv, max_total_bytes=1500, keep_recent=2, gister=gister)
     assert stats.gisted == 1
-    assert len(msgs[1]["content"][0]["content"]) < 2100
+    assert len(_contents(conv)[0]) < 2100
 
 
 def test_elision_gist_placeholder_shares_the_elision_prefix() -> None:

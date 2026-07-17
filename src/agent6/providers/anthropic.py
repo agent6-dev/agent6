@@ -132,7 +132,7 @@ def strip_cache_control_messages(messages: list[dict[str, Any]]) -> list[dict[st
     """Return ``messages`` with every ``cache_control`` marker removed.
 
     The workflow places rolling breakpoints in the message list (see
-    ``agent6.workflows._cache``); when the operator sets
+    ``agent6.workflows._conversation``); when the operator sets
     ``prompt_caching = false`` this strips them before the request is built.
     Copy-on-write: unmarked messages pass through untouched, marked blocks are
     shallow-copied so the caller's list (shared with resume snapshots) is
@@ -286,7 +286,7 @@ class AnthropicProvider:
 
         # Breakpoint budget (Anthropic max 4 per request): this provider marks
         # the system block and the last tool (2); the workflow's rolling pair
-        # in `messages` (agent6.workflows._cache) accounts for the other 2.
+        # in `messages` (agent6.workflows._conversation) accounts for the other 2.
         system_blocks: list[dict[str, Any]] = [{"type": "text", "text": system}]
         if self.prompt_caching:
             system_blocks[0]["cache_control"] = {"type": "ephemeral"}

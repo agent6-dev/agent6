@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 from agent6.providers import ProviderError, ProviderResponse
 from agent6.tools.results import RawResult
 from agent6.workflows import loop as loopmod
+from agent6.workflows._conversation import Conversation
 from agent6.workflows.loop import Workflow
 
 
@@ -146,6 +147,8 @@ def _finish_tool_use(tu_id: str = "tu1", summary: str = "done") -> dict[str, Any
 
 
 def _resp_with_tool_use(text: str, tool_use: dict[str, Any]) -> ProviderResponse:
+    blocks: list[dict[str, Any]] = [{"type": "text", "text": text}] if text else []
+    blocks.append({"type": "tool_use", **tool_use})
     return ProviderResponse(
         text=text,
         tool_uses=(tool_use,),
@@ -154,6 +157,7 @@ def _resp_with_tool_use(text: str, tool_use: dict[str, Any]) -> ProviderResponse
         output_tokens=20,
         cache_read_tokens=0,
         cache_creation_tokens=0,
+        raw={"content": blocks},
     )
 
 
@@ -199,7 +203,7 @@ def test_before_finish_critic_revokes_finish_and_injects_critique() -> None:
 
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="S",
-        messages=messages,
+        conversation=(conversation := Conversation.from_wire(messages)),
         tools=[],
         tool_calls=0,
         start_iteration=1,
@@ -214,7 +218,7 @@ def test_before_finish_critic_revokes_finish_and_injects_critique() -> None:
     assert critic.call.call_count == 2
     # The user message appended after iter 1 must carry the critic block.
     # Each iteration appends assistant then user, so 's user is at index 2.
-    iter1_user_msg = messages[2]
+    iter1_user_msg = conversation.to_wire()[2]
     assert iter1_user_msg["role"] == "user"
     content_blocks = iter1_user_msg["content"]
     critic_blocks = [b for b in content_blocks if b.get("type") == "text"]
@@ -246,7 +250,7 @@ def test_before_finish_critic_satisfied_accepts_finish() -> None:
     ]
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="S",
-        messages=messages,
+        conversation=Conversation.from_wire(messages),
         tools=[],
         tool_calls=0,
         start_iteration=1,
@@ -291,7 +295,7 @@ def test_before_finish_rejection_cap_lets_finish_through() -> None:
     ]
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="S",
-        messages=messages,
+        conversation=(conversation := Conversation.from_wire(messages)),
         tools=[],
         tool_calls=0,
         start_iteration=1,
@@ -304,7 +308,7 @@ def test_before_finish_rejection_cap_lets_finish_through() -> None:
     assert critic.call.call_count == 3
     # The iter-3 user message must carry the cap-reached critic warning.
     # iter N user msg is at index 2N (initial user + 2 entries per iter).
-    iter3_user_msg = messages[6]
+    iter3_user_msg = conversation.to_wire()[6]
     critic_text = next(b["text"] for b in iter3_user_msg["content"] if b.get("type") == "text")
     assert "rejection cap" in critic_text.lower() or "cap was" in critic_text.lower()
 
@@ -339,7 +343,7 @@ def test_before_finish_satisfied_resets_rejection_counter() -> None:
     ]
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="S",
-        messages=messages,
+        conversation=Conversation.from_wire(messages),
         tools=[],
         tool_calls=0,
         start_iteration=1,
@@ -370,7 +374,7 @@ def test_critic_mode_off_never_calls_critic() -> None:
     ]
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="S",
-        messages=messages,
+        conversation=Conversation.from_wire(messages),
         tools=[],
         tool_calls=0,
         start_iteration=1,
@@ -414,7 +418,7 @@ def test_silent_finish_critic_revokes_and_continues() -> None:
     ]
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="S",
-        messages=messages,
+        conversation=(conversation := Conversation.from_wire(messages)),
         tools=[],
         tool_calls=0,
         start_iteration=1,
@@ -426,7 +430,7 @@ def test_silent_finish_critic_revokes_and_continues() -> None:
     assert result.summary == "ok now actually done"
     assert critic.call.call_count == 2
     # critique injected as a user msg after the iter-3 assistant turn.
-    iter1_user_msg = messages[6]
+    iter1_user_msg = conversation.to_wire()[6]
     assert iter1_user_msg["role"] == "user"
     text_blocks = [b for b in iter1_user_msg["content"] if b.get("type") == "text"]
     assert any("[critic]" in b["text"] for b in text_blocks)
@@ -460,7 +464,7 @@ def test_silent_finish_critic_cap_lets_finish_through() -> None:
     ]
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="S",
-        messages=messages,
+        conversation=Conversation.from_wire(messages),
         tools=[],
         tool_calls=0,
         start_iteration=1,
@@ -496,7 +500,7 @@ def test_silent_finish_critic_off_bypasses() -> None:
         ]
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
-            messages=messages,
+            conversation=Conversation.from_wire(messages),
             tools=[],
             tool_calls=0,
             start_iteration=1,

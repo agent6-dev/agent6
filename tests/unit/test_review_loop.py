@@ -9,6 +9,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 from agent6.tools.results import RawResult
+from agent6.workflows._conversation import Conversation
 from agent6.workflows._review import ReviewSeat
 from agent6.workflows.loop import Workflow
 from tests.unit.test_critic import (
@@ -54,16 +55,20 @@ def _begin() -> list[dict[str, Any]]:
 
 
 def _drive(wf: Workflow, messages: list[dict[str, Any]]) -> Any:
+    conversation = Conversation.from_wire(messages)
     with patch.object(Workflow, "_run_diff", return_value=_DIFF):
-        return wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
-            messages=messages,
+            conversation=conversation,
             tools=[],
             tool_calls=0,
             start_iteration=1,
             root_task_id=None,
             original_task="t",
         )
+    # The callers' fixtures still read the final history via *messages*.
+    messages[:] = conversation.to_wire()
+    return result
 
 
 def test_has_reviewer_true_with_seats() -> None:

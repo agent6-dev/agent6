@@ -61,6 +61,7 @@ def _head(repo: Path) -> str:
 
 
 def _resp_tool(name: str, args: dict[str, Any], tu_id: str) -> ProviderResponse:
+    block = {"type": "tool_use", "id": tu_id, "name": name, "input": args}
     return ProviderResponse(
         text="",
         tool_uses=({"id": tu_id, "name": name, "input": args},),
@@ -69,6 +70,7 @@ def _resp_tool(name: str, args: dict[str, Any], tu_id: str) -> ProviderResponse:
         output_tokens=1,
         cache_read_tokens=0,
         cache_creation_tokens=0,
+        raw={"content": [block]},
     )
 
 

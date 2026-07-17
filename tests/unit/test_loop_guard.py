@@ -28,6 +28,7 @@ def _silent(_msg: str) -> None:
 
 def _resp_with_tool(name: str, args: dict[str, Any], tu_id: str = "tu1") -> ProviderResponse:
     """Provider response with a single tool_use."""
+    block = {"type": "tool_use", "id": tu_id, "name": name, "input": args}
     return ProviderResponse(
         text="",
         tool_uses=({"id": tu_id, "name": name, "input": args},),
@@ -36,6 +37,7 @@ def _resp_with_tool(name: str, args: dict[str, Any], tu_id: str = "tu1") -> Prov
         output_tokens=1,
         cache_read_tokens=0,
         cache_creation_tokens=0,
+        raw={"content": [block]},
     )
 
 

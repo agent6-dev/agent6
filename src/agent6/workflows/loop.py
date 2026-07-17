@@ -56,6 +56,7 @@ from agent6.providers import (
     ProviderAborted,
     ProviderError,
     ProviderInterrupted,
+    ProviderResponse,
     ToolDefinition,
 )
 from agent6.skills import ResolvedSkills
@@ -66,9 +67,6 @@ from agent6.tools.schema import (
     FinishRunInput,
 )
 from agent6.types import RepoSummary
-from agent6.workflows._cache import (
-    roll_cache_breakpoints,
-)
 from agent6.workflows._compaction import (
     DROP_BLOCKS_AT_CHARS,
     SUMMARISE_AT_CHARS,
@@ -82,6 +80,12 @@ from agent6.workflows._compaction import (
     strip_checkoff,
 )
 from agent6.workflows._context import load_repo_summary
+from agent6.workflows._conversation import (
+    AssistantTurn,
+    Conversation,
+    Notice,
+    ToolResultItem,
+)
 from agent6.workflows._critic import (
     CritiqueResult,
     format_messages_tail_for_critic,
@@ -416,16 +420,20 @@ class _TurnState:
     """
 
     iteration: int
-    # The provider response driving this turn (duck-typed; see Provider.call).
-    resp: Any
+    # The provider response driving this turn.
+    resp: ProviderResponse
+    # The response's turn in the conversation; its parsed tool_uses drive the
+    # dispatch (the conversation is the single source of what was called).
+    assistant: AssistantTurn
     # A finish_run/finish_planning call captured this turn; the finish gates
     # may revoke it (set back to None) before the stop checks honour it.
     finish_signal: str | None = None
     finish_payload: dict[str, Any] | None = None
     finish_kind: Literal["finish_run", "finish_planning"] = "finish_run"
-    # The user-turn content accumulated for this turn: tool_result blocks
-    # first, then any advisory text notices (critic, metric, nudges).
-    tool_results: list[dict[str, Any]] = field(default_factory=list)
+    # The user-turn items accumulated for this turn: tool results in dispatch
+    # order, with advisory notices (critic, metric, nudges) appended after
+    # (or, for the broken-verify flag, between them).
+    tool_results: list[ToolResultItem | Notice] = field(default_factory=list)
     verify_just_passed: bool = False
     verify_just_failed: bool = False
     # Verify went green THIS turn after the run's last verify was red; feeds
@@ -760,13 +768,12 @@ class Workflow:
                 " run verify, and call `finish_run` when done."
             )
         initial_user = f"TASK:\n{effective_task}\n\n{instructions}{dag_hint}"
-        messages: list[dict[str, Any]] = [
-            {"role": "user", "content": [{"type": "text", "text": initial_user}]}
-        ]
+        conversation = Conversation()
+        conversation.notice(initial_user)
 
         return self._drive_loop(
             system=system,
-            messages=messages,
+            conversation=conversation,
             tools=tools,
             tool_calls=0,
             start_iteration=1,
@@ -780,7 +787,7 @@ class Workflow:
         Reads ``self.resume_state_path`` (the snapshot written by the
         loop before each LLM call), reattaches the DAG root task id to
         the dispatcher, and re-enters the loop at the saved iteration
-        with the saved messages list. The budget tracker is fresh per
+        with the saved conversation. The budget tracker is fresh per
         invocation (by design - see ``agent6.budget`` docstring); the
         DAG state on disk is restored by spawning a curator against the
         same run layout in the CLI.
@@ -789,6 +796,7 @@ class Workflow:
             raise ResumeError("resume() called but resume_state_path is None")
         try:
             snapshot = load_run_snapshot(self.resume_state_path)
+            conversation = Conversation.from_wire(snapshot.messages)
         except (OSError, json.JSONDecodeError, ValueError) as exc:
             raise ResumeError(
                 f"failed to load resume snapshot from {self.resume_state_path}: {exc}"
@@ -814,7 +822,7 @@ class Workflow:
         tools = tool_definitions(self.dispatcher, mode=self.mode)
         return self._drive_loop(
             system=snapshot.system,
-            messages=snapshot.messages,
+            conversation=conversation,
             tools=tools,
             tool_calls=snapshot.tool_calls,
             start_iteration=snapshot.next_iteration,
@@ -827,7 +835,7 @@ class Workflow:
         self,
         *,
         system: str,
-        messages: list[dict[str, Any]],
+        conversation: Conversation,
         tools: list[ToolDefinition],
         tool_calls: int,
         start_iteration: int,
@@ -853,28 +861,30 @@ class Workflow:
             _restore_completion_state(state, resume_from)
         for iteration in range(start_iteration, self.max_iterations + 1):
             self.iterations_reached = iteration
-            self._turn_pre_call(
+            wire = self._turn_pre_call(
                 system=system,
-                messages=messages,
+                conversation=conversation,
                 state=state,
                 iteration=iteration,
                 start_iteration=start_iteration,
                 root_task_id=root_task_id,
             )
-            got = self._turn_provider_call(system, messages, tools, state, iteration=iteration)
+            got = self._turn_provider_call(
+                system, conversation, wire, tools, state, iteration=iteration
+            )
             if isinstance(got, RunResult):
                 return got
             if isinstance(got, _NextTurn):
                 continue
-            # Reconstruct the assistant message exactly from the response
-            # content blocks so tool_use IDs round-trip cleanly.
-            messages.append({"role": "assistant", "content": got.raw.get("content") or []})
-            if not got.tool_uses:
-                result = self._handle_no_tool_use(got, messages, state, iteration=iteration)
+            # The response's blocks enter the history verbatim, so tool_use
+            # IDs (and thinking blocks) round-trip cleanly.
+            assistant = conversation.assistant(got.raw.get("content") or [])
+            if not assistant.tool_uses:
+                result = self._handle_no_tool_use(got, conversation, state, iteration=iteration)
                 if result is not None:
                     return result
                 continue
-            turn = _TurnState(iteration=iteration, resp=got)
+            turn = _TurnState(iteration=iteration, resp=got, assistant=assistant)
             result = self._turn_dispatch_tools(state, turn)
             if result is not None:
                 return result
@@ -885,24 +895,24 @@ class Workflow:
             result = self._turn_auto_commit_and_metric(state, turn)
             if result is not None:
                 return result
-            self._turn_critic_triggers(state, turn, messages)
-            self._turn_finish_gates(state, turn, messages)
+            self._turn_critic_triggers(state, turn, conversation)
+            self._turn_finish_gates(state, turn, conversation)
             self._turn_notices(state, turn)
             self._turn_metric_plateau(state, turn)
             self._turn_verify_settled(state, turn)
             self._turn_no_progress(state, turn)
-            messages.append({"role": "user", "content": turn.tool_results})
+            conversation.results(turn.tool_results)
             # Snapshot AFTER the executed tools (assistant turn + tool_results
-            # are now in `messages`) so a crash before iteration N+1's pre-call
-            # snapshot resumes from AFTER the dispatched tools instead of
-            # replaying them. Without this, a kill after a non-idempotent tool
-            # (run_command `>>`, apply_patch, a migration) but before the next
-            # iteration would re-issue iteration N's identical provider call and
-            # re-dispatch the same tool_uses (temperature 0.0 makes re-emission
-            # likely) -- double-applying edits / re-running commands.
+            # are now in the conversation) so a crash before iteration N+1's
+            # pre-call snapshot resumes from AFTER the dispatched tools instead
+            # of replaying them. Without this, a kill after a non-idempotent
+            # tool (run_command `>>`, apply_patch, a migration) but before the
+            # next iteration would re-issue iteration N's identical provider
+            # call and re-dispatch the same tool_uses (temperature 0.0 makes
+            # re-emission likely) -- double-applying edits / re-running commands.
             self._save_resume_snapshot(
                 system=system,
-                messages=messages,
+                messages=conversation.to_wire(),
                 tool_calls=state.tool_calls,
                 next_iteration=iteration + 1,
                 root_task_id=root_task_id,
@@ -932,7 +942,7 @@ class Workflow:
             # The safe boundary is AFTER a complete iter so we never split a
             # tool_use / tool_result pair.
             outcome = self._steer_outcome(
-                self._maybe_handle_steer(messages, iteration, state), iteration, state
+                self._maybe_handle_steer(conversation, iteration, state), iteration, state
             )
             if outcome is not None:
                 return outcome
@@ -957,55 +967,61 @@ class Workflow:
         self,
         *,
         system: str,
-        messages: list[dict[str, Any]],
+        conversation: Conversation,
         state: _LoopState,
         iteration: int,
         start_iteration: int,
         root_task_id: str | None,
-    ) -> None:
+    ) -> list[dict[str, Any]]:
         """Prepare the context for this turn's provider call: budget heartbeat,
         tiered compaction, pre-call nudges, rolling cache breakpoints, then the
-        pre-call resume snapshot.
+        pre-call resume snapshot. Returns the serialized wire, so the snapshot
+        on disk and the provider call carry the same list by construction.
 
         The cache breakpoints advance AFTER compaction + nudges (the tail must
         be final) and BEFORE the snapshot (markers persist across resume).
         After the snapshot write, a crash anywhere up to the next iteration's
         snapshot can be resumed by re-running this same call."""
         self._emit_budget(iteration)
-        if self._maybe_compact(messages):
+        if self._maybe_compact(conversation):
             # A tier-2 restart wiped the surfaced focus banner; let the next
             # nudge pass re-surface the current task into the fresh context.
             state.surfaced_task_id = None
         self._maybe_pre_call_nudges(
-            messages, state, iteration=iteration, start_iteration=start_iteration
+            conversation, state, iteration=iteration, start_iteration=start_iteration
         )
-        roll_cache_breakpoints(messages)
+        conversation.roll_cache_marks()
+        wire = conversation.to_wire()
         self._save_resume_snapshot(
             system=system,
-            messages=messages,
+            messages=wire,
             tool_calls=state.tool_calls,
             next_iteration=iteration,
             root_task_id=root_task_id,
             state=state,
         )
+        return wire
 
     def _turn_provider_call(
         self,
         system: str,
-        messages: list[dict[str, Any]],
+        conversation: Conversation,
+        wire: list[dict[str, Any]],
         tools: list[ToolDefinition],
         state: _LoopState,
         *,
         iteration: int,
-    ) -> RunResult | _NextTurn | Any:
+    ) -> RunResult | _NextTurn | ProviderResponse:
         """One worker call with terminal-error classification. Returns the
         provider response on success, a RunResult to end the run, or
         ``_NEXT_TURN`` when a mid-stream steer discarded the turn (the menu
-        chose continue, or injected an instruction, so the turn is re-done)."""
+        chose continue, or injected an instruction, so the turn is re-done).
+        ``wire`` is the pre-call serialization (already snapshotted); the
+        conversation is only touched on the steer path."""
         try:
             return self._call_with_retry(
                 system,
-                messages,
+                wire,
                 tools,
                 self._worker_max_tokens(state),
             )
@@ -1041,7 +1057,7 @@ class Workflow:
             # is discarded; the menu decides continue / steer / stop / detach.
             self._log(f"LOOP: steer requested mid-turn at iter {iteration}")
             outcome = self._steer_outcome(
-                self._maybe_handle_steer(messages, iteration, state), iteration, state
+                self._maybe_handle_steer(conversation, iteration, state), iteration, state
             )
             if outcome is not None:
                 return outcome
@@ -1071,11 +1087,10 @@ class Workflow:
         # This iteration produced tool_uses, so the went_quiet
         # nudge budget refills (failures are per-streak, not per-run).
         state.went_quiet_nudges_used = 0
-        for tu in turn.resp.tool_uses:
+        for tu in turn.assistant.tool_uses:
             state.tool_calls += 1
-            name = tu.get("name", "")
-            tool_input = tu.get("input", {})
-            tu_id = tu.get("id", "")
+            name = tu.name
+            tool_input = tu.input
             # degenerate-loop signature tracking. Stable
             # JSON so dict key order does not break equality. Same
             # (name, args) back-to-back across iterations increments
@@ -1141,13 +1156,13 @@ class Workflow:
                     exc, iteration=turn.iteration, tool_calls=state.tool_calls
                 )
             turn.tool_results.append(
-                {
-                    "type": "tool_result",
-                    "tool_use_id": tu_id,
-                    "content": cap_tool_result(
+                ToolResultItem(
+                    tool_use_id=tu.id,
+                    content=cap_tool_result(
                         served if served is not None else content, tool_name=name
                     ),
-                }
+                    for_call=tu,
+                )
             )
             self._capture_finish(turn, name, tool_input)
         return None
@@ -1174,7 +1189,7 @@ class Workflow:
                 result.stdout, result.stderr, result.duration_s
             ):
                 state.verify_broken_warned = True
-                turn.tool_results.append({"type": "text", "text": VERIFY_BROKEN_NUDGE})
+                turn.tool_results.append(Notice(VERIFY_BROKEN_NUDGE))
                 self._emit("loop.verify_broken.nudge", iteration=turn.iteration)
         state.last_verify_ok = rc == 0
         tail = f"{result.stdout}\n{result.stderr}"
@@ -1410,7 +1425,7 @@ class Workflow:
         )
 
     def _turn_critic_triggers(
-        self, state: _LoopState, turn: _TurnState, messages: list[dict[str, Any]]
+        self, state: _LoopState, turn: _TurnState, conversation: Conversation
     ) -> None:
         """Observe-only critic triggers (before_finish, which can revoke a
         finish, lives in the finish gates):
@@ -1427,7 +1442,7 @@ class Workflow:
         ):
             critique = self._review_or_critic(
                 state=state,
-                messages=messages,
+                conversation=conversation,
                 trigger="verify_failed",
                 iteration=turn.iteration,
             )
@@ -1440,7 +1455,7 @@ class Workflow:
         ):
             critique = self._review_or_critic(
                 state=state,
-                messages=messages,
+                conversation=conversation,
                 trigger="periodic",
                 iteration=turn.iteration,
             )
@@ -1448,14 +1463,14 @@ class Workflow:
                 turn.critic_text = critique.text
 
     def _turn_finish_gates(
-        self, state: _LoopState, turn: _TurnState, messages: list[dict[str, Any]]
+        self, state: _LoopState, turn: _TurnState, conversation: Conversation
     ) -> None:
         """Gates that can revoke this turn's finish_run, in precedence order:
         critic (before_finish), metric early-finish, open subtasks, verify
         green, memory backstop. Each clears ``turn.finish_signal`` and appends
         its nudge; later gates then see the finish as already revoked and stay
         quiet."""
-        self._gate_before_finish_critic(state, turn, messages)
+        self._gate_before_finish_critic(state, turn, conversation)
         self._gate_metric_early_finish(state, turn)
         self._gate_task_finish(state, turn)
         self._gate_verify_green(state, turn)
@@ -1463,7 +1478,7 @@ class Workflow:
         self._gate_memory_finish(state, turn)
 
     def _gate_before_finish_critic(
-        self, state: _LoopState, turn: _TurnState, messages: list[dict[str, Any]]
+        self, state: _LoopState, turn: _TurnState, conversation: Conversation
     ) -> None:
         """Gate the agent's finish_run on critic approval. If the critic says
         NEEDS_WORK, suppress the finish (the tool_result still goes back so the
@@ -1480,7 +1495,7 @@ class Workflow:
             return
         critique = self._review_or_critic(
             state=state,
-            messages=messages,
+            conversation=conversation,
             trigger="before_finish",
             iteration=turn.iteration,
         )
@@ -1542,7 +1557,7 @@ class Workflow:
             state.metric_finish_nudges_used += 1
             turn.finish_signal = None
             turn.finish_payload = None
-            turn.tool_results.append({"type": "text", "text": METRIC_FINISH_NUDGE})
+            turn.tool_results.append(Notice(METRIC_FINISH_NUDGE))
             self._log(
                 f"  metric early-finish rejected #{state.metric_finish_nudges_used}"
                 f" at iter {turn.iteration} (budget {finish_budget_remaining:.0%} left)"
@@ -1568,7 +1583,7 @@ class Workflow:
             return
         turn.finish_signal = None
         turn.finish_payload = None
-        turn.tool_results.append({"type": "text", "text": task_nudge})
+        turn.tool_results.append(Notice(task_nudge))
         self._log(
             f"  finish_run gated: open subtasks remain (nudge"
             f" #{state.task_finish_nudges_used}) at iter {turn.iteration}"
@@ -1597,7 +1612,7 @@ class Workflow:
         state.verify_finish_nudges_used += 1
         turn.finish_signal = None
         turn.finish_payload = None
-        turn.tool_results.append({"type": "text", "text": VERIFY_FINISH_GATE})
+        turn.tool_results.append(Notice(VERIFY_FINISH_GATE))
         self._log(
             f"  finish_run gated: verify not green (nudge"
             f" #{state.verify_finish_nudges_used}) at iter {turn.iteration}"
@@ -1624,7 +1639,7 @@ class Workflow:
         state.spec_recheck_done = True
         turn.finish_signal = None
         turn.finish_payload = None
-        turn.tool_results.append({"type": "text", "text": SPEC_RECHECK_NUDGE})
+        turn.tool_results.append(Notice(SPEC_RECHECK_NUDGE))
         self._log(f"  finish_run gated: spec recheck at iter {turn.iteration}")
         self._emit("loop.spec_recheck.gated", iteration=turn.iteration)
 
@@ -1648,7 +1663,7 @@ class Workflow:
         state.memory_finish_nudged = True
         turn.finish_signal = None
         turn.finish_payload = None
-        turn.tool_results.append({"type": "text", "text": MEMORY_FINISH_NUDGE})
+        turn.tool_results.append(Notice(MEMORY_FINISH_NUDGE))
         self._log(f"  finish_run deferred once: memory backstop at iter {turn.iteration}")
         self._emit("loop.memory_finish.gated", iteration=turn.iteration)
 
@@ -1668,9 +1683,9 @@ class Workflow:
         only triggers once per latch episode. The repeat counter resets on any
         new signature, so a normal re-read after an edit does not trigger."""
         if turn.critic_text:
-            turn.tool_results.append({"type": "text", "text": f"[critic]\n{turn.critic_text}"})
+            turn.tool_results.append(Notice(f"[critic]\n{turn.critic_text}"))
         if turn.metric_feedback:
-            turn.tool_results.append({"type": "text", "text": turn.metric_feedback})
+            turn.tool_results.append(Notice(turn.metric_feedback))
         if (
             turn.verify_flipped_green
             and self.mode == "run"
@@ -1679,7 +1694,7 @@ class Workflow:
             and not state.memory_flip_nudged
         ):
             state.memory_flip_nudged = True
-            turn.tool_results.append({"type": "text", "text": MEMORY_FLIP_NUDGE})
+            turn.tool_results.append(Notice(MEMORY_FLIP_NUDGE))
             self._log("  memory: verify flipped green - injecting add_memory advisory")
             self._emit("loop.memory_flip.nudged", iteration=turn.iteration)
         repeat_threshold = 3
@@ -1698,7 +1713,7 @@ class Workflow:
                 " tool, commit to an edit, or call `finish_run` if"
                 " you have already done what the task requires."
             )
-            turn.tool_results.append({"type": "text", "text": notice})
+            turn.tool_results.append(Notice(notice))
             self._emit(
                 "loop.loop_guard.triggered",
                 iteration=turn.iteration,
@@ -1749,7 +1764,7 @@ class Workflow:
             if in_final_slice:
                 state.plateau_nudges_used += 1
             nudge_text = metric_plateau_nudge(budget_remaining)
-            turn.tool_results.append({"type": "text", "text": nudge_text})
+            turn.tool_results.append(Notice(nudge_text))
             budget_note = "n/a" if budget_remaining is None else f"{budget_remaining:.0%} left"
             self._log(
                 f"  metric_plateau pivot-nudge at iter {turn.iteration} (budget"
@@ -1811,7 +1826,7 @@ class Workflow:
             and not state.verify_settled_nudged
         ):
             state.verify_settled_nudged = True
-            turn.tool_results.append({"type": "text", "text": VERIFY_SETTLED_NUDGE})
+            turn.tool_results.append(Notice(VERIFY_SETTLED_NUDGE))
             self._emit(
                 "loop.verify_settled.nudge",
                 iteration=turn.iteration,
@@ -1833,11 +1848,11 @@ class Workflow:
         reach = self._sandbox_unreachable_note(state)
         if streak >= TOOL_ERROR_ESCALATE_AFTER and state.tool_error_nudges_used == 1:
             state.tool_error_nudges_used = 2
-            turn.tool_results.append({"type": "text", "text": TOOL_ERROR_ESCALATION + reach})
+            turn.tool_results.append(Notice(TOOL_ERROR_ESCALATION + reach))
             self._emit("loop.tool_error.nudge", iteration=turn.iteration, streak=streak, level=2)
         elif streak >= TOOL_ERROR_NUDGE_AFTER and state.tool_error_nudges_used == 0:
             state.tool_error_nudges_used = 1
-            turn.tool_results.append({"type": "text", "text": TOOL_ERROR_NUDGE + reach})
+            turn.tool_results.append(Notice(TOOL_ERROR_NUDGE + reach))
             self._emit("loop.tool_error.nudge", iteration=turn.iteration, streak=streak, level=1)
 
     def _sandbox_unreachable_note(self, state: _LoopState) -> str:
@@ -1881,11 +1896,11 @@ class Workflow:
             return
         if streak >= NO_PROGRESS_ESCALATE_AFTER and state.no_progress_nudges_used == 1:
             state.no_progress_nudges_used = 2
-            turn.tool_results.append({"type": "text", "text": NO_PROGRESS_ESCALATION})
+            turn.tool_results.append(Notice(NO_PROGRESS_ESCALATION))
             self._emit("loop.no_progress.nudge", iteration=turn.iteration, streak=streak, level=2)
         elif streak >= NO_PROGRESS_NUDGE_AFTER and state.no_progress_nudges_used == 0:
             state.no_progress_nudges_used = 1
-            turn.tool_results.append({"type": "text", "text": NO_PROGRESS_NUDGE})
+            turn.tool_results.append(Notice(NO_PROGRESS_NUDGE))
             self._emit("loop.no_progress.nudge", iteration=turn.iteration, streak=streak, level=1)
 
     def _turn_stop_checks(  # noqa: PLR0911 - a flat precedence ladder of terminal checks
@@ -2029,7 +2044,7 @@ class Workflow:
 
     def _maybe_pre_call_nudges(
         self,
-        messages: list[dict[str, Any]],
+        conversation: Conversation,
         state: _LoopState,
         *,
         iteration: int,
@@ -2042,7 +2057,7 @@ class Workflow:
         # Surface-current-task first, so when a low budget ALSO fires a finish
         # directive below, that finish nudge is the most-recent (strongest)
         # message rather than the focus banner.
-        self._maybe_surface_current_task(messages, state)
+        self._maybe_surface_current_task(conversation, state)
         # Force a verbose planner to land a plan. Trigger on EITHER a low
         # token budget OR too many planning turns, with prompt caching a
         # planner can take many cheap turns, so an iteration cap is the
@@ -2054,9 +2069,7 @@ class Workflow:
             too_many_turns = iteration - start_iteration + 1 >= PLAN_NUDGE_AFTER_ITERS
             if low_budget or too_many_turns:
                 state.plan_finish_nudged = True
-                messages.append(
-                    {"role": "user", "content": [{"type": "text", "text": PLAN_BUDGET_NUDGE}]}
-                )
+                conversation.notice(PLAN_BUDGET_NUDGE)
                 self._log(
                     f"LOOP: plan finish-nudge at iter {iteration}"
                     f" (turns={too_many_turns}, low_budget={low_budget})"
@@ -2080,13 +2093,11 @@ class Workflow:
                     if self.config.workflow.verify_command
                     else RUN_BUDGET_NUDGE_GATELESS
                 )
-                messages.append({"role": "user", "content": [{"type": "text", "text": nudge}]})
+                conversation.notice(nudge)
                 self._log(f"LOOP: run budget-nudge at iter {iteration}")
                 self._emit("loop.run_budget.nudge", iteration=iteration, budget_remaining=remaining)
 
-    def _maybe_surface_current_task(
-        self, messages: list[dict[str, Any]], state: _LoopState
-    ) -> None:
+    def _maybe_surface_current_task(self, conversation: Conversation, state: _LoopState) -> None:
         """Surface-current-task: keep the worker on ONE task at a time.
 
         Compute the current task (the cursor if it still points at an open
@@ -2141,18 +2152,8 @@ class Workflow:
                 and state.stuck_nudges_fired < STUCK_NUDGE_MAX
             ):
                 state.stuck_nudges_fired += 1
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": stuck_on_task_nudge(
-                                    current_id, nodes[current_id], state.turns_on_task
-                                ),
-                            }
-                        ],
-                    }
+                conversation.notice(
+                    stuck_on_task_nudge(current_id, nodes[current_id], state.turns_on_task)
                 )
                 self._log(
                     f"LOOP: stuck-on-task nudge #{state.stuck_nudges_fired} for"
@@ -2179,7 +2180,7 @@ class Workflow:
         banner = current_task_banner(
             current_id, node, decompose=self.config.prompt.decompose == "on"
         )
-        messages.append({"role": "user", "content": [{"type": "text", "text": banner}]})
+        conversation.notice(banner)
         state.surfaced_task_id = current_id
         self._log(f"LOOP: surfaced current task {current_id}")
         self._emit("loop.task.surfaced", task_id=current_id)
@@ -2188,7 +2189,12 @@ class Workflow:
         self._emit_graph_snapshot()
 
     def _handle_no_tool_use(
-        self, resp: Any, messages: list[dict[str, Any]], state: _LoopState, *, iteration: int
+        self,
+        resp: ProviderResponse,
+        conversation: Conversation,
+        state: _LoopState,
+        *,
+        iteration: int,
     ) -> RunResult | None:
         """Handle a turn with no tool_use. Either a silent finish (the agent
         emitted text; gated like an explicit finish_run) or went-quiet (an
@@ -2201,15 +2207,15 @@ class Workflow:
         or a confused agent) that bench scoring must NOT treat as success."""
         text = resp.text.strip() if resp.text else ""
         if text:
-            return self._handle_silent_finish(text, messages, state, iteration=iteration)
-        return self._handle_went_quiet(resp, messages, state, iteration=iteration)
+            return self._handle_silent_finish(text, conversation, state, iteration=iteration)
+        return self._handle_went_quiet(resp, conversation, state, iteration=iteration)
 
     def _handle_silent_finish(
-        self, text: str, messages: list[dict[str, Any]], state: _LoopState, *, iteration: int
+        self, text: str, conversation: Conversation, state: _LoopState, *, iteration: int
     ) -> RunResult | None:
         """A no-tool_use turn WITH text: treat it as an implicit finish and run
         it through the same gates as an explicit finish_run. Returns None (with
-        a nudge appended to ``messages``) when a gate sends the worker back to
+        a nudge appended to the conversation) when a gate sends the worker back to
         work; the silent_finish RunResult once every gate lets it through."""
         # An EARLY prose turn on an untouched tree is a stall, not an
         # implicit finish (observed: kimi answering a SWE-bench problem in
@@ -2224,12 +2230,7 @@ class Workflow:
             and state.silent_no_work_nudges_used < SILENT_NO_WORK_PATIENCE
         ):
             state.silent_no_work_nudges_used += 1
-            messages.append(
-                {
-                    "role": "user",
-                    "content": [{"type": "text", "text": SILENT_NO_WORK_NUDGE}],
-                }
-            )
+            conversation.notice(SILENT_NO_WORK_NUDGE)
             self._log(
                 f"  silent finish rejected: no work yet (nudge"
                 f" #{state.silent_no_work_nudges_used}) at iter {iteration}"
@@ -2247,7 +2248,7 @@ class Workflow:
         if (
             self.critic_mode == "before_finish"
             and self._has_reviewer()
-            and self._silent_finish_critic_rejects(state, messages, iteration=iteration)
+            and self._silent_finish_critic_rejects(state, conversation, iteration=iteration)
         ):
             return None
         # metric-run early-finish guard, mirroring the finish_run path: a
@@ -2268,12 +2269,7 @@ class Workflow:
             if has_runway and state.metric_finish_nudges_used < METRIC_EARLY_FINISH_PATIENCE:
                 assert finish_budget_remaining is not None
                 state.metric_finish_nudges_used += 1
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": [{"type": "text", "text": METRIC_FINISH_NUDGE}],
-                    }
-                )
+                conversation.notice(METRIC_FINISH_NUDGE)
                 self._log(
                     f"  metric early-finish (silent) rejected"
                     f" #{state.metric_finish_nudges_used} at iter {iteration}"
@@ -2303,7 +2299,7 @@ class Workflow:
                 nudges_used=state.task_finish_nudges_used,
                 trigger="silent_finish",
             )
-            messages.append({"role": "user", "content": [{"type": "text", "text": task_nudge}]})
+            conversation.notice(task_nudge)
             return None
         # Question-nudge (run mode, once): the model ended by asking the
         # operator something in prose without calling ask_user, so the run
@@ -2314,7 +2310,7 @@ class Workflow:
             state.question_nudged = True
             self._log(f"  silent_finish nudged: ended on a question at iter {iteration}")
             self._emit("loop.question_nudge", iteration=iteration)
-            messages.append({"role": "user", "content": [{"type": "text", "text": QUESTION_NUDGE}]})
+            conversation.notice(QUESTION_NUDGE)
             return None
         # In ask mode a prose answer with no tool call is the NORMAL success (the
         # answer IS the text), so end as "answered", not "silent_finish" -- the
@@ -2341,15 +2337,15 @@ class Workflow:
         )
 
     def _silent_finish_critic_rejects(
-        self, state: _LoopState, messages: list[dict[str, Any]], *, iteration: int
+        self, state: _LoopState, conversation: Conversation, *, iteration: int
     ) -> bool:
         """Run the before_finish critic against a silent finish. True = the
-        finish was rejected (critique appended to ``messages``; the loop
+        finish was rejected (critique appended to the conversation; the loop
         continues). A cap-reached rejection or an approval resets the
         rejection counter and lets the finish proceed."""
         critique = self._review_or_critic(
             state=state,
-            messages=messages,
+            conversation=conversation,
             trigger="before_finish",
             iteration=iteration,
         )
@@ -2362,24 +2358,14 @@ class Workflow:
                 iteration=iteration,
             )
             state.consecutive_critic_rejections += 1
-            messages.append(
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": (
-                                "[critic]\nThe critic"
-                                " rejected your"
-                                " silent finish (no"
-                                " tool_use, just"
-                                " text). Address the"
-                                " issues below and"
-                                " continue the task.\n\n" + critique.text
-                            ),
-                        }
-                    ],
-                }
+            conversation.notice(
+                "[critic]\nThe critic"
+                " rejected your"
+                " silent finish (no"
+                " tool_use, just"
+                " text). Address the"
+                " issues below and"
+                " continue the task.\n\n" + critique.text
             )
             return True
         if critique is not None and not critique.satisfied and cap_reached:
@@ -2400,7 +2386,12 @@ class Workflow:
         return False
 
     def _handle_went_quiet(
-        self, resp: Any, messages: list[dict[str, Any]], state: _LoopState, *, iteration: int
+        self,
+        resp: ProviderResponse,
+        conversation: Conversation,
+        state: _LoopState,
+        *,
+        iteration: int,
     ) -> RunResult | None:
         """A fully-empty turn (no text, no tool_use): surface reasoning
         starvation explicitly, then nudge-and-retry up to the per-streak cap
@@ -2408,7 +2399,7 @@ class Workflow:
 
         The nudge is cheap (~50 input tokens vs aborting the entire run) and
         almost always gets a weak open-weights model back on track. The empty
-        assistant turn is dropped from ``messages`` first: Anthropic rejects an
+        assistant turn is dropped from the conversation first: Anthropic rejects an
         assistant message with empty content, a THINKING-ONLY turn (reasoning
         starvation: blocks but no text/tool_use) translates to one with no
         content and no tool_calls that strict OpenAI-compatible backends reject
@@ -2451,18 +2442,7 @@ class Workflow:
         effective_max_nudges = int(env_max) if env_max.isdigit() else self.went_quiet_max_nudges
         if state.went_quiet_nudges_used < effective_max_nudges:
             state.went_quiet_nudges_used += 1
-            if messages and messages[-1].get("role") == "assistant":
-                last_content = messages[-1].get("content") or []
-                substantive = isinstance(last_content, list) and any(
-                    isinstance(b, dict)
-                    and (
-                        (b.get("type") == "text" and str(b.get("text", "")).strip())
-                        or b.get("type") == "tool_use"
-                    )
-                    for b in last_content
-                )
-                if not substantive:
-                    messages.pop()
+            conversation.pop_quiet_assistant()
             # starvation-specific nudge. When the previous turn ended with
             # stop_reason=length AND reasoning_content ate the entire budget,
             # the generic "your turn was empty" message gives the model no
@@ -2492,7 +2472,7 @@ class Workflow:
                     " with a summary if the task is complete. Do"
                     " not reply with another empty turn."
                 )
-            messages.append({"role": "user", "content": [{"type": "text", "text": nudge_text}]})
+            conversation.notice(nudge_text)
             self._emit(
                 "loop.went_quiet.nudge",
                 iteration=iteration,
@@ -2962,7 +2942,7 @@ class Workflow:
             return max(self.per_call_max_tokens, self.metric_task_max_tokens)
         return self.per_call_max_tokens
 
-    def _maybe_compact(self, messages: list[dict[str, Any]]) -> bool:
+    def _maybe_compact(self, conversation: Conversation) -> bool:
         """Tiered compaction. Returns True iff a tier-2 summarise-and-restart
         actually replaced the history (so the caller can re-surface the
         current-task banner the restart wiped); False otherwise.
@@ -2973,10 +2953,10 @@ class Workflow:
         Tier 2 (expensive): once the WHOLE post-elision context (text +
         tool_use inputs + surviving tool_results, via ``context_chars``)
         crosses ``compact_summarise_at_chars``, summarise the elided history
-        into a compact progress block and restart the message list from
+        into a compact progress block and restart the conversation from
         (original task + summary). Measuring only tool_results here -- which
         tier 1 just capped -- left tier 2 unreachable. Fail-safe: if
-        summarisation errors or returns nothing, the message list is left
+        summarisation errors or returns nothing, the conversation is left
         untouched (tier-1 elision already ran) and the run continues.
 
         An operator compact request (``compact_requested``, the TUI's
@@ -2989,10 +2969,10 @@ class Workflow:
             self._log("LOOP: operator requested a manual compaction")
             self._emit("loop.compact.requested")
         stats = compact_old_tool_results(
-            messages,
+            conversation,
             max_total_bytes=self.compact_drop_at_chars,
             keep_recent=2,
-            protect_paths=recently_edited_paths(messages),
+            protect_paths=recently_edited_paths(conversation),
             gister=self._distill_gists if self.compact_elision_gists else None,
         )
         if stats.elided:
@@ -3010,12 +2990,12 @@ class Workflow:
         # elision context (text + tool_use inputs + surviving tool_results),
         # which keeps growing across a long run from assistant prose and
         # tool-call args even after old tool_results are dropped.
-        total = context_chars(messages)
-        # Tier 2 needs at least an original-task message plus enough history
+        total = context_chars(conversation)
+        # Tier 2 needs at least an original-task turn plus enough history
         # to be worth summarising; below that a restart would lose more than
         # it saves.
-        if (forced or total > self.compact_summarise_at_chars) and len(messages) > 3:
-            return self._summarise_and_restart(messages)
+        if (forced or total > self.compact_summarise_at_chars) and len(conversation) > 3:
+            return self._summarise_and_restart(conversation)
         return False
 
     def _distill_gists(self, requests: tuple[GistRequest, ...]) -> dict[str, str]:
@@ -3040,19 +3020,19 @@ class Workflow:
             return {}
         return parse_gist_lines(resp.text or "", paths=[r.path for r in requests])
 
-    def _summarise_and_restart(self, messages: list[dict[str, Any]]) -> bool:
-        """Replace the message history with (original task + a model-written
-        progress summary). Mutates ``messages`` in place. The loop only calls
-        this at the top of an iteration, where the history is balanced (every
-        ``tool_use`` already has its ``tool_result``), so the restart can drop
-        the middle without orphaning a tool-call pairing. Returns True iff the
-        history was actually replaced; False on every fail-safe path (the
-        tier-1-elided context is kept and the run continues).
+    def _summarise_and_restart(self, conversation: Conversation) -> bool:
+        """Replace the history with (original task + a model-written progress
+        summary), in place. The loop only calls this at the top of an
+        iteration, where the history is balanced (every ``tool_use`` already
+        has its ``tool_result``), so the restart can drop the middle without
+        orphaning a tool-call pairing. Returns True iff the history was
+        actually replaced; False on every fail-safe path (the tier-1-elided
+        context is kept and the run continues).
         """
         provider = self.summariser_provider or self.provider
-        original = messages[0]
+        wire = conversation.to_wire()
         transcript = format_messages_tail_for_critic(
-            messages[1:], max_messages=len(messages), max_chars=60_000
+            wire[1:], max_messages=len(wire), max_chars=60_000
         )
         # The DAG is agent6's compaction memory: at each restart we ask the
         # summariser to check off finished tasks and surface newly-found ones, so
@@ -3078,8 +3058,8 @@ class Workflow:
             "Summarise the following agent transcript for a context restart."
             f"{checkoff_req}\n\nTRANSCRIPT (oldest first):\n{transcript}"
         )
-        self._log(f"LOOP: tier-2 compaction summarise-and-restart ({len(messages)} msgs)")
-        self._emit("loop.compact.summarise.call", messages=len(messages))
+        self._log(f"LOOP: tier-2 compaction summarise-and-restart ({len(conversation)} msgs)")
+        self._emit("loop.compact.summarise.call", messages=len(conversation))
         try:
             resp = provider.call(
                 system=CONTEXT_SUMMARY_SYSTEM_PROMPT,
@@ -3103,11 +3083,7 @@ class Workflow:
         if open_tasks:
             self._apply_compaction_checkoff(raw, valid_ids={tid for tid, _ in open_tasks})
         summary = strip_checkoff(raw) if open_tasks else raw
-        restart = {
-            "role": "user",
-            "content": [{"type": "text", "text": context_restart_notice(self.mode) + summary}],
-        }
-        messages[:] = [original, restart]
+        conversation.restart(context_restart_notice(self.mode) + summary)
         self._emit("loop.compact.summarise.done", summary_chars=len(summary))
         return True
 
@@ -3284,7 +3260,7 @@ class Workflow:
         messages: list[dict[str, Any]],
         tools: list[ToolDefinition],
         max_tokens: int,
-    ) -> Any:
+    ) -> ProviderResponse:
         """Bounded-retry wrapper around ``provider.call``: up to
         ``provider_retry_count + 1`` attempts. Two retry paths share that budget:
 
@@ -3387,7 +3363,7 @@ class Workflow:
         self,
         *,
         state: _LoopState,
-        messages: list[dict[str, Any]],
+        conversation: Conversation,
         trigger: str,
         iteration: int,
     ) -> CritiqueResult | None:
@@ -3397,7 +3373,10 @@ class Workflow:
         if self.review_seats:
             return self._run_review_panel(state, trigger=trigger, iteration=iteration)
         return self._run_critic(
-            task=state.original_task, messages=messages, trigger=trigger, iteration=iteration
+            task=state.original_task,
+            messages=conversation.to_wire(),
+            trigger=trigger,
+            iteration=iteration,
         )
 
     def _run_diff(self) -> str:
@@ -3591,7 +3570,7 @@ class Workflow:
 
     def _maybe_handle_steer(
         self,
-        messages: list[dict[str, Any]],
+        conversation: Conversation,
         iteration: int,
         state: _LoopState,
     ) -> str | None:
@@ -3600,7 +3579,7 @@ class Workflow:
         Returns ``"abort"`` if the operator typed "abort" at the prompt;
         the loop should then return a steer_abort result. Returns ``None``
         in all other cases (no request, empty steer, ``/parallel`` dispatch,
-        or instruction injected into messages).
+        or instruction injected into the conversation).
 
         Polls steer_requested() and, on a positive, calls steer_prompt()
         to capture operator text. Empty / None / KeyboardInterrupt aborts;
@@ -3629,24 +3608,14 @@ class Workflow:
             self._emit("loop.steer.detached")
             self._log("  detach - stopping to resume in the background")
             return "detach"
-        if self._steer_directive(messages, iteration, state, steer_text):
+        if self._steer_directive(conversation, iteration, state, steer_text):
             return None
         self._log(f"  injecting steering instruction ({len(steer_text)} chars)")
         self._emit("loop.steer.injected", chars=len(steer_text), text=steer_text)
-        messages.append(
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": (
-                            "OPERATOR STEERING (mid-run instruction; "
-                            "incorporate this into your next step):\n"
-                            f"{steer_text}"
-                        ),
-                    }
-                ],
-            }
+        conversation.notice(
+            "OPERATOR STEERING (mid-run instruction; "
+            "incorporate this into your next step):\n"
+            f"{steer_text}"
         )
         return None
 
@@ -3654,7 +3623,7 @@ class Workflow:
 
     def _steer_directive(
         self,
-        messages: list[dict[str, Any]],
+        conversation: Conversation,
         iteration: int,
         state: _LoopState,
         steer_text: str,
@@ -3666,16 +3635,16 @@ class Workflow:
         try:
             segments = parse_directive(steer_text)
         except DirectiveError as exc:
-            self._inject_parallel_feedback(messages, f"nothing dispatched: {exc}")
+            self._inject_parallel_feedback(conversation, f"nothing dispatched: {exc}")
             return True
         if segments is None:
             return False
-        self._dispatch_parallel(messages, iteration, state, segments)
+        self._dispatch_parallel(conversation, iteration, state, segments)
         return True
 
     def _dispatch_parallel(
         self,
-        messages: list[dict[str, Any]],
+        conversation: Conversation,
         iteration: int,
         state: _LoopState,
         segments: list[Segment],
@@ -3693,7 +3662,7 @@ class Workflow:
         each answer the steer with a message and continue."""
         if self.lane_spawner is None:
             self._inject_parallel_feedback(
-                messages,
+                conversation,
                 "parallel dispatch is not available in this front-end; continuing normally.",
             )
             return
@@ -3702,7 +3671,7 @@ class Workflow:
             per_segment = [self._segment_lanes(seg) for seg in segments]
         except DirectiveError as exc:
             self._inject_parallel_feedback(
-                messages, f"bad /parallel spec: {exc}; nothing dispatched."
+                conversation, f"bad /parallel spec: {exc}; nothing dispatched."
             )
             return
         lanes = [lane for seg_lanes in per_segment for lane in seg_lanes]
@@ -3710,7 +3679,7 @@ class Workflow:
         # refuse (rather than dispatch stale work) if it will not come clean.
         if not self._ensure_clean_for_dispatch(iteration):
             self._inject_parallel_feedback(
-                messages,
+                conversation,
                 "refusing to dispatch: the working tree is not clean and could not be"
                 " auto-committed. Commit or discard your changes, then retry /parallel.",
             )
@@ -3751,7 +3720,7 @@ class Workflow:
             self._emit_graph_snapshot()
             self._emit("loop.parallel.failed", group=group, error=str(exc))
             self._inject_parallel_feedback(
-                messages,
+                conversation,
                 f"group {group} dispatch failed: {exc}. Nothing was joined; continuing normally.",
             )
             return
@@ -3775,7 +3744,7 @@ class Workflow:
         failures = [p for p, j in zip(payload, joined, strict=True) if j.status != "joined"]
         if failures:
             self._emit("loop.parallel.failed", group=group, lanes=failures)
-        self._inject_parallel_summary(messages, group, joined)
+        self._inject_parallel_summary(conversation, group, joined)
 
     def _segment_lanes(self, seg: Segment) -> list[LaneTask]:
         """Expand one segment into its lanes: `parse_spec` maps the spec to one
@@ -3883,15 +3852,13 @@ class Workflow:
             return f"{j.run_id} conflicted; merge manually"
         return f"{j.run_id} failed: {j.detail}"
 
-    def _inject_parallel_feedback(self, messages: list[dict[str, Any]], msg: str) -> None:
+    def _inject_parallel_feedback(self, conversation: Conversation, msg: str) -> None:
         """Answer a `/parallel` steer with a one-line notice and continue."""
         self._log(f"PARALLEL: {msg}")
-        messages.append(
-            {"role": "user", "content": [{"type": "text", "text": f"[parallel] {msg}"}]}
-        )
+        conversation.notice(f"[parallel] {msg}")
 
     def _inject_parallel_summary(
-        self, messages: list[dict[str, Any]], group: str, joined: list[_LaneJoin]
+        self, conversation: Conversation, group: str, joined: list[_LaneJoin]
     ) -> None:
         """Inject ONE user message summarizing every lane's outcome so the model
         continues informed (joined sha, conflict-to-resolve, or failure reason)."""
@@ -3908,7 +3875,7 @@ class Workflow:
             else:
                 lines.append(f"  - {j.run_id} ({j.branch}): FAILED -- {j.detail}; nothing joined.")
         lines.append("Review what landed and continue.")
-        messages.append({"role": "user", "content": [{"type": "text", "text": "\n".join(lines)}]})
+        conversation.notice("\n".join(lines))
 
     def _log(self, msg: str) -> None:
         self.logger(f"[agent6] {msg}")
