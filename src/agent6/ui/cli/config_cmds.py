@@ -39,15 +39,14 @@ from agent6.paths import (
     global_config_path,
     secrets_path,
 )
+from agent6.ui.cli._common import load_config_or_exit
 from agent6.viewmodel.config_view import format_value, render_key_detail, render_show
 
 
 def _cmd_config_show(config_path: Path | None, *, as_json: bool, key: str = "") -> int:
-    try:
-        eff = load_effective(Path.cwd(), config_path)
-    except ConfigError as exc:
-        print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
-        return 2
+    eff = load_config_or_exit(Path.cwd(), config_path)
+    if isinstance(eff, int):
+        return eff
     resolved = models_registry.resolved_adaptive_values(eff.config)
     if key and not as_json:
         # `config show <key>`: one leaf (or a whole section prefix), untruncated.
@@ -77,11 +76,9 @@ def _cmd_config_path() -> int:
 
 
 def _cmd_config_fill(config_path: Path | None, *, to_repo: bool, force: bool) -> int:
-    try:
-        eff = load_effective(Path.cwd(), config_path)
-    except ConfigError as exc:
-        print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
-        return 2
+    eff = load_config_or_exit(Path.cwd(), config_path)
+    if isinstance(eff, int):
+        return eff
     target = repo_config_path_for(Path.cwd()) if to_repo else global_config_path()
     if target.is_file() and not force:
         print(

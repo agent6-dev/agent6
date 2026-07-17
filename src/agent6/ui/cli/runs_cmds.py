@@ -38,7 +38,13 @@ from agent6.git_ops import status as git_status
 from agent6.runs.id import RunIdError, resolve_run_id
 from agent6.runs.ipc import request_stop, worker_is_alive
 from agent6.runs.layout import RunLayout
-from agent6.ui.cli._common import _runs_dir, _state_dir, resolve_or_newest_layout, sgr
+from agent6.ui.cli._common import (
+    _runs_dir,
+    _state_dir,
+    load_config_or_exit,
+    resolve_or_newest_layout,
+    sgr,
+)
 from agent6.ui.cli._compare import manifest_task, print_ranked_candidates, rank, verify_ok
 from agent6.viewmodel import is_run_husk, is_winner, summarize_run_dir, task_snippet
 from agent6.viewmodel import newest_run_dir as _newest_dir
@@ -575,11 +581,10 @@ def _cmd_compare(*, run_ids: tuple[str, ...]) -> int:
             return 2
         seen.add(layout.run_id)
         resolved.append((layout, manifest))
-    try:
-        cfg = load_effective(cwd, None).config
-    except ConfigError as exc:
-        print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
-        return 2
+    eff = load_config_or_exit(cwd, None)
+    if isinstance(eff, int):
+        return eff
+    cfg = eff.config
 
     candidates: list[CandidateBrief] = []
     for layout, manifest in resolved:

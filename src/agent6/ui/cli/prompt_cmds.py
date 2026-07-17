@@ -4,12 +4,10 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import Literal
 
-from agent6.config import ConfigError
-from agent6.config.layer import load_effective
+from agent6.ui.cli._common import load_config_or_exit
 from agent6.workflows import system_prompt_for
 
 
@@ -24,10 +22,8 @@ def _cmd_prompt_show(
     recent commits) is assembled from the current repo. Useful for seeing what
     the worker actually receives, and as the basis for a custom prompt override."""
     cwd = Path.cwd()
-    try:
-        eff = load_effective(cwd, config_path)
-    except ConfigError as exc:
-        print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
-        return 2
+    eff = load_config_or_exit(cwd, config_path)
+    if isinstance(eff, int):
+        return eff
     print(system_prompt_for(eff.config, cwd, mode))
     return 0

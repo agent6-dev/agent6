@@ -21,6 +21,7 @@ from agent6.config.layer import (
 from agent6.models.cache import list_models
 from agent6.paths import global_config_path
 from agent6.secrets import resolve_api_key
+from agent6.ui.cli._common import load_config_or_exit
 
 
 def _safe_input(prompt: str) -> str | None:
@@ -109,11 +110,9 @@ def _cmd_model(
 ) -> int:
     """Show or set the model + thinking level for a role."""
     if not role:
-        try:
-            eff = load_effective(Path.cwd(), config_path)
-        except ConfigError as exc:
-            print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
-            return 2
+        eff = load_config_or_exit(Path.cwd(), config_path)
+        if isinstance(eff, int):
+            return eff
         print("Role assignments (planner/reviewer fall back to worker when unset):\n")
         show_roles: tuple[RoleName, ...] = ("planner", "worker", "reviewer")
         for r in show_roles:

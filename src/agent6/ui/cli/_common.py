@@ -8,7 +8,10 @@ import argparse
 import sys
 from pathlib import Path
 
+from agent6.config import ConfigError
 from agent6.config.layer import (
+    EffectiveConfig,
+    load_effective,
     resolved_state_dir,
 )
 from agent6.paths import (
@@ -209,6 +212,20 @@ def resolve_or_newest_layout(repo_root: Path, run_id: str) -> RunLayout | None:
     if newest is None:
         return None
     return RunLayout(state_dir=_state_dir(repo_root), run_id=newest.name, subdir=newest.parent.name)
+
+
+def load_config_or_exit(repo_root: Path, config_path: Path | None) -> EffectiveConfig | int:
+    """Load the merged effective config, or print ``CONFIG ERROR:`` and return
+    exit code 2. Callers do ``eff = load_config_or_exit(...); if isinstance(eff,
+    int): return eff``. The one 'must have a valid config to proceed' path (the
+    commands that fail loudly on a bad config, reporting it the same way);
+    commands that DEGRADE to a default on a bad config keep their own handling.
+    """
+    try:
+        return load_effective(repo_root, config_path)
+    except ConfigError as exc:
+        print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
+        return 2
 
 
 def _enforce_root_policy(allow_root: bool) -> int | None:
