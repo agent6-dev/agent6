@@ -1,15 +1,4 @@
-# SPDX-License-Identifier: Apache-2.0
-# Copyright 2026 Eric Lesiuta
-"""CSS for the web-UI page: the `<style>` block `page.PAGE_HTML` embeds.
-
-Split out of page.py so the HTML/JS composition stays readable. Byte-identical
-to the block page.py used to embed inline; page.py splices it back into
-PAGE_HTML unchanged.
-"""
-
-from __future__ import annotations
-
-STYLES_CSS = r""":root {
+:root {
   --bg: #0e1116; --surface: #161b22; --surface2: #1c2230; --border: #2a3140;
   --text: #d7dde5; --muted: #8b95a5; --accent: #6ea8fe; --accent2: #b48ead;
   --ok: #4ec9a5; --warn: #e2c08d; --err: #f07178; --nav-h: 56px;
@@ -375,4 +364,3 @@ aside.rail { display: none; }
   .composer .hint { display: none; } /* the keyboard's enter key says it; space is tight */
 }
 button.active { border-color: var(--accent); color: var(--accent); }
-"""
