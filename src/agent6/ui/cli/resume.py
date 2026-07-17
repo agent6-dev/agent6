@@ -169,7 +169,7 @@ from agent6.ui.cli.egress import (
 from agent6.ui.cli.parallel import (
     build_coordinator_spawner as _build_coordinator_spawner,
 )
-from agent6.ui.cli.plan_watch import _most_recent_run_id
+from agent6.viewmodel import most_recent_run_id as _most_recent_run_id
 from agent6.workflows._run_state import load_resume_snapshot
 from agent6.workflows.loop import ResumeError, Workflow
 

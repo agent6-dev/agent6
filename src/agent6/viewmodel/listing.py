@@ -36,6 +36,27 @@ def run_mtime(run_dir: Path) -> float:
     return 0.0
 
 
+def newest_run_dir(candidates: Iterable[Path]) -> Path | None:
+    """The most recently active run dir among *candidates* (by logs.jsonl mtime,
+    not dir mtime: a viewer writing frontend.pid must not float a run to latest)."""
+    dirs = sorted((p for p in candidates if p.is_dir()), key=run_mtime, reverse=True)
+    return dirs[0] if dirs else None
+
+
+def most_recent_run_id(runs_dir: Path) -> str | None:
+    """Id (dir name) of the most recently active run under a single bucket dir.
+
+    Used where "latest" is scoped to one bucket: `run --continue`, fork, resume
+    (runs/), `ask --continue` (asks/). Attach / runs show / history use the
+    cross-bucket ``all_run_dirs`` instead. Returns None when the dir is missing
+    or empty.
+    """
+    if not runs_dir.is_dir():
+        return None
+    newest = newest_run_dir(runs_dir.iterdir())
+    return newest.name if newest else None
+
+
 def first_task_line(lines: Iterable[str]) -> str | None:
     """First user-authored line, skipping the ask headers and the multi-line body
     of a ``<file ...>`` / ``<prior-run ...>`` block (a seeded ask prepends those).

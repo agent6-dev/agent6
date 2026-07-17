@@ -10,7 +10,6 @@ import os
 import subprocess
 import sys
 import time
-from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
 
@@ -28,6 +27,9 @@ from agent6.ui.bridge.approval import (
 from agent6.ui.cli._common import _runs_dir, _state_dir, all_run_dirs, resolve_run_layout
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._interact import default_stdin_approver, default_stdin_questioner
+from agent6.viewmodel import (
+    newest_run_dir as _newest_dir,
+)
 from agent6.viewmodel import run_mtime, tail_events
 from agent6.viewmodel.format import format_compare, format_cost
 
@@ -106,27 +108,6 @@ def _cmd_plan_edit(run_id: str) -> int:
         print(f"ERROR: failed to spawn editor {editor!r}: {exc}", file=sys.stderr)
         return 1
     return result.returncode
-
-
-def _newest_dir(candidates: Iterable[Path]) -> Path | None:
-    """The most recently active run dir among *candidates* (by logs.jsonl mtime,
-    not dir mtime: a viewer writing frontend.pid must not float a run to latest)."""
-    dirs = sorted((p for p in candidates if p.is_dir()), key=run_mtime, reverse=True)
-    return dirs[0] if dirs else None
-
-
-def _most_recent_run_id(runs_dir: Path) -> str | None:
-    """Id (dir name) of the most recently active run under a single bucket dir.
-
-    Used where "latest" is scoped to one bucket: `run --continue`, fork, resume
-    (runs/), `ask --continue` (asks/). Attach / runs show / history use the
-    cross-bucket ``all_run_dirs`` instead. Returns None when the dir is missing
-    or empty.
-    """
-    if not runs_dir.is_dir():
-        return None
-    newest = _newest_dir(runs_dir.iterdir())
-    return newest.name if newest else None
 
 
 def _most_recent_plan_run_id(runs_dir: Path) -> str | None:

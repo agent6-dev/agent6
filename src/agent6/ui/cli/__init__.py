@@ -73,7 +73,6 @@ from agent6.ui.cli.plan_watch import (
     _cmd_status,
     _cmd_tui,
     _most_recent_plan_run_id,
-    _most_recent_run_id,
     _resolve_plan_run_id,
 )
 from agent6.ui.cli.prompt_cmds import _cmd_prompt_show
@@ -100,6 +99,7 @@ from agent6.ui.cli.skills_cmds import (
 from agent6.ui.cli.system_cmds import _cmd_system_apparmor
 from agent6.ui.cli.watch import _cmd_watch_target
 from agent6.ui.cli.web_cmds import _cmd_web
+from agent6.viewmodel import most_recent_run_id as _most_recent_run_id
 
 
 def _first_markdown_line(text: str, max_len: int = 80) -> str:

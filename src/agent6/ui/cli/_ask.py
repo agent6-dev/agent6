@@ -23,8 +23,8 @@ from agent6.ui.cli._common import (
     _runs_dir,
     _state_dir,
 )
-from agent6.ui.cli.plan_watch import _most_recent_run_id
 from agent6.viewmodel import first_task_line, run_mtime
+from agent6.viewmodel import most_recent_run_id as _most_recent_run_id
 from agent6.workflows.loop import (
     RunResult,
     Workflow,

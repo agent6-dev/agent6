@@ -13,8 +13,8 @@ from agent6.config.layer import resolved_state_dir
 from agent6.ui.cli import main
 from agent6.ui.cli.plan_watch import (
     _most_recent_plan_run_id,  # pyright: ignore[reportPrivateUsage]
-    _most_recent_run_id,  # pyright: ignore[reportPrivateUsage]
 )
+from agent6.viewmodel import most_recent_run_id as _most_recent_run_id
 
 
 def test_most_recent_run_id_none_outside_workspace(tmp_path: Path) -> None:
