@@ -36,6 +36,7 @@ import shutil
 import sys
 from pathlib import Path
 
+from agent6.app._setup import BudgetOverrides as _BudgetOverrides
 from agent6.app.manifest import write_run_manifest as _write_run_manifest
 from agent6.config import Config, ConfigError
 from agent6.config.layer import load_effective
@@ -44,7 +45,7 @@ from agent6.graph.storage import append_jsonl, list_checkpoint_turns
 from agent6.portable import atomic_write
 from agent6.runs.id import RunIdError, new_friendly_id, resolve_run_id, validate_explicit_run_id
 from agent6.runs.layout import RunLayout
-from agent6.ui.cli._common import _BudgetOverrides, _state_dir
+from agent6.ui.cli._common import _state_dir
 from agent6.ui.cli.resume import _cmd_resume
 from agent6.viewmodel import most_recent_run_id as _most_recent_run_id
 from agent6.workflows._run_state import load_checkpoint

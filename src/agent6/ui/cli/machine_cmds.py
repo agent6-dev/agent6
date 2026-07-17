@@ -19,6 +19,8 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any, Literal
 
+from agent6.app._setup import check_provider_keys as _check_provider_keys
+from agent6.app._setup import detect_env
 from agent6.config import (
     Config,
     ConfigError,
@@ -64,7 +66,7 @@ from agent6.sandbox.detect import ProfileUnavailableError, select_profile
 from agent6.types import SandboxProfile
 from agent6.ui.bridge.approval import read_worker_pid, worker_is_alive, write_worker_pid
 from agent6.ui.bridge.notify import desktop_notify
-from agent6.ui.cli._common import _check_provider_keys, _machines_dir, _state_dir, detect_env
+from agent6.ui.cli._common import _machines_dir, _state_dir
 from agent6.ui.cli.egress import (
     _check_network_profile,
     _warn_if_unsandboxed,

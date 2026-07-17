@@ -99,10 +99,10 @@ def test_explicit_usd_flag_refused_when_unpriced(
 ) -> None:
     # An explicit --max-usd is a promise for the run; with no price data for
     # the worker model it cannot be kept, so the CLI refuses to start.
-    from agent6.config import Config
-    from agent6.ui.cli._common import (
-        _explicit_usd_flag_error,  # pyright: ignore[reportPrivateUsage]
+    from agent6.app._setup import (
+        explicit_usd_flag_error as _explicit_usd_flag_error,
     )
+    from agent6.config import Config
 
     monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "empty-cache"))
     cfg = Config.model_validate(
@@ -119,10 +119,10 @@ def test_explicit_usd_flag_refused_when_unpriced(
 
 
 def test_explicit_usd_flag_ok_when_priced(price_cache: Path) -> None:
-    from agent6.config import Config
-    from agent6.ui.cli._common import (
-        _explicit_usd_flag_error,  # pyright: ignore[reportPrivateUsage]
+    from agent6.app._setup import (
+        explicit_usd_flag_error as _explicit_usd_flag_error,
     )
+    from agent6.config import Config
 
     cfg = Config.model_validate(
         {

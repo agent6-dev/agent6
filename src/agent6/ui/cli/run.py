@@ -13,6 +13,24 @@ import tempfile
 from pathlib import Path
 from typing import Literal
 
+from agent6.app._setup import (
+    BudgetOverrides as _BudgetOverrides,
+)
+from agent6.app._setup import (
+    SandboxOverrides as _SandboxOverrides,
+)
+from agent6.app._setup import (
+    check_provider_keys as _check_provider_keys,
+)
+from agent6.app._setup import (
+    detect_env,
+)
+from agent6.app._setup import (
+    explicit_usd_flag_error as _explicit_usd_flag_error,
+)
+from agent6.app._setup import (
+    start_mcp_manager_if_enabled as _start_mcp_manager_if_enabled,
+)
 from agent6.app.manifest import (
     write_run_manifest as _write_run_manifest,
 )
@@ -104,13 +122,7 @@ from agent6.ui.cli._ask import (
     save_ask_transcript as _save_ask_transcript,
 )
 from agent6.ui.cli._common import (
-    _BudgetOverrides,
-    _check_provider_keys,
-    _explicit_usd_flag_error,
-    _SandboxOverrides,
-    _start_mcp_manager_if_enabled,
     _state_dir,
-    detect_env,
 )
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._finalize import (

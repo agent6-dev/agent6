@@ -17,6 +17,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from agent6.app._setup import explicit_usd_flag_error as _explicit_usd_flag_error
 from agent6.app.parallel import (
     LaneRuntime,
     ParallelError,
@@ -35,7 +36,6 @@ from agent6.models.validate import refusal_message, validate_spec_models, warnin
 from agent6.runs.id import new_friendly_id
 from agent6.ui.bridge.approval import request_stop, worker_is_alive
 from agent6.ui.bridge.spawn import agent6_exe, spawn_and_locate
-from agent6.ui.cli._common import _explicit_usd_flag_error
 from agent6.ui.cli._compare import _judging_status, _reviewer_provider
 from agent6.workflows.subrun import GroupLaneSpawner
 

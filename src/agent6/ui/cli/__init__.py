@@ -13,6 +13,12 @@ from pathlib import Path
 
 import argcomplete
 
+from agent6.app._setup import (
+    BudgetOverrides as _BudgetOverrides,
+)
+from agent6.app._setup import (
+    SandboxOverrides as _SandboxOverrides,
+)
 from agent6.ui.cli._ask import (
     build_ask_run_digest as _build_ask_run_digest,
 )
@@ -23,10 +29,8 @@ from agent6.ui.cli._ask import (
     seed_files as _seed_files,
 )
 from agent6.ui.cli._common import (
-    _BudgetOverrides,
     _enforce_root_policy,
     _runs_dir,
-    _SandboxOverrides,
 )
 from agent6.ui.cli.check_cmds import _cmd_check
 from agent6.ui.cli.completions_cmd import cmd_completions as _cmd_completions

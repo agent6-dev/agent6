@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
+from agent6.app import _setup
 from agent6.sandbox.detect import Environment, KernelInfo
-from agent6.ui.cli import _common
 
 
 def _env(userns: bool, *, sandbox: bool = True) -> Environment:
@@ -32,25 +32,25 @@ def _fail_probe() -> bool:
 def test_detect_env_keeps_userns_when_cheap_probe_already_true(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(_common, "detect", lambda: _env(True))
-    monkeypatch.setattr(_common, "strict_namespaces_work", _fail_probe)  # not consulted
-    assert _common.detect_env().userns_supported is True
+    monkeypatch.setattr(_setup, "detect", lambda: _env(True))
+    monkeypatch.setattr(_setup, "strict_namespaces_work", _fail_probe)  # not consulted
+    assert _setup.detect_env().userns_supported is True
 
 
 def test_detect_env_upgrades_to_strict_via_jail_probe(monkeypatch: pytest.MonkeyPatch) -> None:
     # The AppArmor-profile case: unshare blocked, but the jail binary can userns.
-    monkeypatch.setattr(_common, "detect", lambda: _env(False))
-    monkeypatch.setattr(_common, "strict_namespaces_work", lambda: True)
-    assert _common.detect_env().userns_supported is True
+    monkeypatch.setattr(_setup, "detect", lambda: _env(False))
+    monkeypatch.setattr(_setup, "strict_namespaces_work", lambda: True)
+    assert _setup.detect_env().userns_supported is True
 
 
 def test_detect_env_stays_hardened_when_jail_probe_fails(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(_common, "detect", lambda: _env(False))
-    monkeypatch.setattr(_common, "strict_namespaces_work", lambda: False)
-    assert _common.detect_env().userns_supported is False
+    monkeypatch.setattr(_setup, "detect", lambda: _env(False))
+    monkeypatch.setattr(_setup, "strict_namespaces_work", lambda: False)
+    assert _setup.detect_env().userns_supported is False
 
 
 def test_detect_env_skips_probe_off_linux(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(_common, "detect", lambda: _env(False, sandbox=False))
-    monkeypatch.setattr(_common, "strict_namespaces_work", _fail_probe)  # not consulted
-    assert _common.detect_env().userns_supported is False
+    monkeypatch.setattr(_setup, "detect", lambda: _env(False, sandbox=False))
+    monkeypatch.setattr(_setup, "strict_namespaces_work", _fail_probe)  # not consulted
+    assert _setup.detect_env().userns_supported is False

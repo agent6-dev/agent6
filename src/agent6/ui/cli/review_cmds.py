@@ -9,6 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from agent6.app._setup import check_provider_keys as _check_provider_keys
 from agent6.app.providers import build_review_seats
 from agent6.app.providers import build_role_provider as _build_role_provider
 from agent6.budget import BudgetExceeded, BudgetTracker
@@ -23,7 +24,7 @@ from agent6.providers import (
     TranscriptSink,
 )
 from agent6.tools.dispatch import ToolDispatcher
-from agent6.ui.cli._common import _check_provider_keys, _state_dir
+from agent6.ui.cli._common import _state_dir
 from agent6.workflows._panel import ReviewContext, render_findings
 from agent6.workflows._review import run_panel
 from agent6.workflows.loop import build_readonly_review_tools

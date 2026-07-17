@@ -9,6 +9,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from agent6.app._setup import (
+    check_provider_keys as _check_provider_keys,
+)
+from agent6.app._setup import (
+    detect_env,
+)
+from agent6.app._setup import (
+    start_mcp_manager_if_enabled as _start_mcp_manager_if_enabled,
+)
 from agent6.config import (
     Config,
     ConfigError,
@@ -27,11 +36,6 @@ from agent6.sandbox.detect import (
     select_profile,
 )
 from agent6.types import CommandResult, JailPolicy, SandboxReport
-from agent6.ui.cli._common import (
-    _check_provider_keys,
-    _start_mcp_manager_if_enabled,
-    detect_env,
-)
 
 
 def _cmd_check_sandbox() -> int:
