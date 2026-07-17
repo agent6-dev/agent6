@@ -74,17 +74,25 @@ and the principles the Zen doesn't cover:
   abstraction or indirection for a future that hasn't arrived. A reviewer
   should read a module top to bottom in one sitting; inline a one-caller
   helper, make a stateless class a function, and if it's hard to explain it's
-  a bad idea.
+  a bad idea. No boilerplate: delete pass-through wrappers, shims, and
+  ceremony kept for symmetry.
 - **Fix the root cause, never the symptom.** No hacks, workarounds, blind
   retries, or special cases that hide the real defect. Prefer rethinking and
   deleting over adding: removing a wrong shape beats guarding against it. A
   problem the operator keeps hitting has a systematic cause; correlate every
   occurrence before concluding "transient". When you cannot find the root
   cause, say so rather than paper over it.
-- **Right-shaped data.** Get the data structure right and the code around it
-  stays small. A field that can never be half-set belongs in one frozen type,
-  not two parallel dicts; when code keeps converting between shapes, fix the
-  shape.
+- **Right-shaped data.** Data structures and their relationships matter more
+  than the code (Torvalds); when simplifying, fix the shape first and the
+  code around it gets small. A field that can never be half-set belongs in
+  one frozen type, not two parallel dicts; when code keeps converting
+  between shapes, fix the shape. A name collision, or a rename on import, is
+  a smell: one side deserves a better name at its definition, or the two
+  structures belong together.
+- **Structures over scores.** A measure that becomes a target stops
+  measuring: never chase line counts, module counts, or graph-edge numbers.
+  Tools may point at where to look; the test is reading the structure and
+  asking "can this be simpler?", then making it so.
 - **Decompose proactively.** When a module grows past ~600 lines or a method
   past a few hundred, split it before it ossifies (exemplars:
   `workflows/loop.py` with its `_prompt_blocks` / `_metric` / `_compaction`
