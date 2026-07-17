@@ -26,6 +26,7 @@ from agent6.events import EventSink
 from agent6.git_ops import (
     CommitIdentity,
     GitError,
+    branch_tip_sha,
     create_branch,
     is_ancestor,
     set_repo_hook_policy,
@@ -204,16 +205,23 @@ def _ensure_on_run_branch(cwd: Path, layout: RunLayout) -> str | None:
     return None
 
 
-def snapshot_head_mismatch(snapshot_path: Path, repo_root: Path) -> tuple[str, str] | None:
-    """(snapshot head, current head) when the workspace HEAD DIVERGED from the
-    run's last snapshot, else None.
+def snapshot_head_mismatch(
+    snapshot_path: Path, repo_root: Path, *, run_branch: str = ""
+) -> tuple[str, str] | None:
+    """(snapshot head, resume-onto head) when the code resume would continue on
+    DIVERGED from the run's last snapshot, else None.
 
-    Divergence, not mere movement: the run's own per-step commits advance HEAD
-    forward from the snapshot between snapshot writes (a turn commits, then a
-    critic/metric call runs before the next snapshot), so a kill in that window
-    leaves HEAD ahead of the recorded head_sha on the SAME line. That must
-    resume cleanly. Only refuse when HEAD is not a descendant of the snapshot
-    head -- an operator commit on another line, a rebase, a reset, or a
+    The head compared is the one resume will commit on top of: the run branch's
+    tip when *run_branch* resolves, so the guard needs NO checkout and runs
+    before any workspace mutation; the current HEAD otherwise (branch_per_run
+    off, or a deleted branch the checkout step re-cuts at HEAD).
+
+    Divergence, not mere movement: the run's own per-step commits advance the
+    branch forward from the snapshot between snapshot writes (a turn commits,
+    then a critic/metric call runs before the next snapshot), so a kill in that
+    window leaves the tip ahead of the recorded head_sha on the SAME line. That
+    must resume cleanly. Only refuse when the tip is not a descendant of the
+    snapshot head -- an operator commit on another line, a rebase, a reset, or a
     snapshot commit that git-gc made unreachable -- i.e. the model would resume
     against code that changed under it. Working-tree (uncommitted) divergence
     is not checked; only committed history.
@@ -230,15 +238,17 @@ def snapshot_head_mismatch(snapshot_path: Path, repo_root: Path) -> tuple[str, s
             snap_head = str(loaded.get("head_sha") or "")
     if not snap_head:
         return None
-    try:
-        current_head = git_status(repo_root).head_sha
-    except GitError:
-        return None
+    current_head = branch_tip_sha(repo_root, run_branch) if run_branch else None
+    if current_head is None:
+        try:
+            current_head = git_status(repo_root).head_sha
+        except GitError:
+            return None
     if not current_head or current_head == snap_head:
         return None
     if is_ancestor(repo_root, snap_head, current_head):
-        # HEAD moved forward from the snapshot on the same line (the run's own
-        # commits): not divergence.
+        # The tip moved forward from the snapshot on the same line (the run's
+        # own commits): not divergence.
         return None
     return (snap_head, current_head)
 
@@ -324,45 +334,15 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
             )
             return 2
 
-        # Friendly no-repo guard BEFORE any git-touching resume-diff (which would
+        # Friendly no-repo guard BEFORE any git-touching check (which would
         # otherwise print zeroed-out heads first, then the real error).
         if not _require_git_repo(cwd):
             return 2
 
-        # Get onto the run's branch before diffing or committing. A fork cuts
-        # agent6/<id> without checking it out; do it here so the loop's commits land
-        # on the run branch and the resume-diff below references the right HEAD.
-        branch_err = _ensure_on_run_branch(cwd, layout)
-        if branch_err is not None:
-            print(branch_err, file=sys.stderr)
-            return 2
-
-        # Safety check: refuse when the workspace HEAD DIVERGED from the run's last
-        # snapshot (a rebase, reset, or a commit on another line would leave the
-        # model reasoning about code that changed under it). Plain forward movement
-        # on the same line -- the run's own per-step commits -- resumes cleanly. The
-        # snapshot records head_sha best-effort ("" when git was unreadable at write
-        # time); skip the check then, and let the loud snapshot load below handle a
-        # corrupt file.
-        mismatch = snapshot_head_mismatch(snapshot_path, cwd)
-        if mismatch is not None:
-            snap_head, current_head = mismatch
-            print(
-                "GUARD: the workspace HEAD diverged from this run's last snapshot.",
-                file=sys.stderr,
-            )
-            print(f"  snapshot head: {snap_head}", file=sys.stderr)
-            print(f"  current head:  {current_head}", file=sys.stderr)
-            if not force:
-                print(
-                    "REFUSING to resume. Re-run with --force-resume to override.",
-                    file=sys.stderr,
-                )
-                return 1
-
         # The original run's manifest drives resume: `mode` (a plan run resumes
         # read-only with the plan tools, never as a write run), `profile` (resume
-        # has no --profile flag), and `base_sha` (the review-panel diff base).
+        # has no --profile flag), `base_sha` (the review-panel diff base), and
+        # `run_branch` (the head guard + the checkout below).
         # `mode` is security-relevant: a missing/corrupt manifest must NOT fall
         # open to the more-privileged "run" (write) mode. A valid run always
         # wrote a manifest, so anything else here is a damaged run dir -- fail
@@ -389,6 +369,32 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
             str(workflow_section.get("profile") or "") if isinstance(workflow_section, dict) else ""
         )
         resume_base_sha = str(manifest.get("base_sha") or "")
+        run_branch = str(manifest.get("run_branch") or "")
+
+        # Safety check: refuse when the code resume would continue on DIVERGED
+        # from the run's last snapshot (a rebase, reset, or a commit on another
+        # line would leave the model reasoning about code that changed under
+        # it). Compared against the run branch's tip, so no checkout is needed;
+        # plain forward movement on the same line -- the run's own per-step
+        # commits -- resumes cleanly. The snapshot records head_sha best-effort
+        # ("" when git was unreadable at write time); skip the check then, and
+        # let the loud snapshot load below handle a corrupt file.
+        mismatch = snapshot_head_mismatch(snapshot_path, cwd, run_branch=run_branch)
+        if mismatch is not None:
+            snap_head, onto_head = mismatch
+            print(
+                "GUARD: the code this run would resume onto diverged from its last snapshot.",
+                file=sys.stderr,
+            )
+            print(f"  snapshot head: {snap_head}", file=sys.stderr)
+            print(f"  resume onto:   {onto_head}", file=sys.stderr)
+            if not force:
+                print(
+                    "REFUSING to resume. Re-run with --force-resume to override.",
+                    file=sys.stderr,
+                )
+                return 1
+
         try:
             cfg = load_effective(
                 Path.cwd(), config_path, profile=profile or manifest_profile
@@ -470,6 +476,18 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
             print(f"REFUSING: {landlock_err}", file=sys.stderr)
             # The egress broker is already running; the outer finally tears it
             # down (and its socket dir) so this refusal does not leak it.
+            return 2
+
+        # Get onto the run's branch so the loop's commits land there (a fork
+        # cuts agent6/<id> without checking it out; the operator may have moved
+        # branches since the original run). This is the ONLY workspace mutation
+        # in preflight, and deliberately the LAST step: every refusal above
+        # exits with the operator's checkout untouched. From here on a failure
+        # is a failed RUN, parked on the run branch like any crashed run (the
+        # end-of-run banner says how to switch back).
+        branch_err = _ensure_on_run_branch(cwd, layout)
+        if branch_err is not None:
+            print(branch_err, file=sys.stderr)
             return 2
 
         budget = BudgetTracker(

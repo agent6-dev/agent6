@@ -65,9 +65,17 @@ def _patch_common(monkeypatch: pytest.MonkeyPatch, cfg: Config) -> None:
     def _noop(*a: object, **k: object) -> None:
         return None
 
+    # The branch cut is now the LAST preflight step (after egress/landlock), so
+    # the environment-dependent steps between the stash guard and the cut must
+    # pass cleanly for the cut-time assertions below to be reached.
+    def _no_egress(*a: object, **k: object) -> tuple[object, None]:
+        return run_mod.EgressGuard(), None
+
     monkeypatch.setattr(run_mod, "load_effective", _load_effective)
     monkeypatch.setattr(run_mod, "set_repo_hook_policy", _noop)
     monkeypatch.setattr(run_mod, "verify_git_identity", _noop)
+    monkeypatch.setattr(run_mod, "_maybe_start_egress", _no_egress)
+    monkeypatch.setattr(run_mod, "_maybe_apply_agent_landlock", _noop)
 
 
 def test_dirty_tree_refused_with_default_config(
@@ -128,3 +136,48 @@ def test_dirty_tree_auto_stashed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         ["git", "-C", str(repo), "stash", "list"], check=True, capture_output=True, text=True
     ).stdout
     assert "agent6 auto-stash before run" in stash_list
+
+
+def test_post_guard_refusal_leaves_checkout_untouched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A refusal AFTER the clean-tree guard (egress here) must leave the
+    # checkout untouched -- the branch cut is the LAST preflight step -- and
+    # leave no manifest'd "(no logs)" run dir behind.
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    monkeypatch.chdir(repo)
+    branch_before = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "--abbrev-ref", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
+    cfg = _runnable_cfg(GitConfig())
+    _patch_common(monkeypatch, cfg)
+
+    def _refuse_egress(*a: object, **k: object) -> tuple[object, str]:
+        return run_mod.EgressGuard(), "no egress today"
+
+    monkeypatch.setattr(run_mod, "_maybe_start_egress", _refuse_egress)
+
+    rc = run_mod._cmd_run(None, "do a thing")  # pyright: ignore[reportPrivateUsage]
+
+    assert rc == 2
+    assert "REFUSING: no egress today" in capsys.readouterr().err
+    after = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "--abbrev-ref", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert after == branch_before
+    cut = subprocess.run(
+        ["git", "-C", str(repo), "branch", "--list", "agent6/*"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert cut == ""  # the run branch was never cut

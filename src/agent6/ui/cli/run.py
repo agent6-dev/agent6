@@ -467,15 +467,17 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     egress_guard = EgressGuard()
     console_view: ConsoleView | None = None
     run_branch: str | None = None
+    branch_start_point: str | None = None
     detach_requested = False
     try:
-        # Cut a fresh branch named after the run id so it is 1:1 with the run
-        # (find it from any run id, `agent6 runs diff <id>`, or just delete the
-        # branch to discard everything the agent did). The name is the unique
-        # run id, never a timestamp+task-slug that collides into a pile of
-        # near-duplicate `agent6/<ts>-<same-task>` branches on re-runs. Only real
-        # `run` mode branches: `plan`/`ask` make no commits, so a branch for them
-        # is pure litter. create_branch is idempotent (reuses an existing branch).
+        # A fresh branch named after the run id is 1:1 with the run (find it
+        # from any run id, `agent6 runs diff <id>`, or just delete the branch to
+        # discard everything the agent did). The name is the unique run id,
+        # never a timestamp+task-slug that collides into a pile of near-
+        # duplicate `agent6/<ts>-<same-task>` branches on re-runs. Only real
+        # `run` mode branches: `plan`/`ask` make no commits, so a branch for
+        # them is pure litter. Decided here; the CUT happens below, after every
+        # refusal-capable preflight step.
         if cfg.git.branch_per_run and mode == "run":
             run_branch = f"agent6/{effective_run_id}"
             # git.branch_from decides whether to cut from HEAD (stack) or from the
@@ -487,27 +489,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                 _release_single_writer(worker_lock_fd)
                 _discard_husk_dir(layout.run_dir)
                 return 0
-            try:
-                create_branch(cwd, run_branch, start_point=branch_choice.start_point)
-            except GitError as exc:
-                print(f"ERROR: could not cut run branch {run_branch}: {exc}", file=sys.stderr)
-                return 2
-
-        # Write the run manifest. This is the canonical record of where the
-        # run started (base_sha + base_branch), which model+provider drove
-        # it, and the user_task it was given. `agent6 runs diff <run-id>` and
-        # any future tooling that wants to reproduce a run reads from here.
-        _write_run_manifest(
-            layout,
-            run_id=effective_run_id,
-            user_task=task,
-            base_sha=base_sha,
-            base_branch=base_branch,
-            run_branch=run_branch,
-            cfg=cfg,
-            mode=mode,
-            effective_profile=profile or cfg.profile,
-        )
+            branch_start_point = branch_choice.start_point
 
         transcript_sink = TranscriptSink(layout.transcripts_dir)
         events = EventSink(layout.logs_path)
@@ -529,6 +511,35 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         if landlock_err is not None:
             print(f"REFUSING: {landlock_err}", file=sys.stderr)
             return 2
+
+        # Cut the run branch, then write the manifest that records it. The cut
+        # is the ONLY workspace mutation in preflight and deliberately its LAST
+        # step (mirroring resume): every refusal above -- and a failed cut
+        # itself -- exits with the operator's checkout untouched and the run
+        # dir still a discardable husk, not a manifest'd "(no logs)" ghost.
+        if run_branch is not None:
+            try:
+                create_branch(cwd, run_branch, start_point=branch_start_point)
+            except GitError as exc:
+                print(f"ERROR: could not cut run branch {run_branch}: {exc}", file=sys.stderr)
+                _discard_husk_dir(layout.run_dir)
+                return 2
+
+        # Write the run manifest. This is the canonical record of where the
+        # run started (base_sha + base_branch), which model+provider drove
+        # it, and the user_task it was given. `agent6 runs diff <run-id>` and
+        # any future tooling that wants to reproduce a run reads from here.
+        _write_run_manifest(
+            layout,
+            run_id=effective_run_id,
+            user_task=task,
+            base_sha=base_sha,
+            base_branch=base_branch,
+            run_branch=run_branch,
+            cfg=cfg,
+            mode=mode,
+            effective_profile=profile or cfg.profile,
+        )
 
         # ask gets a small default USD ceiling so an exploratory question can't run
         # away; an explicit [budget].best_effort_usd_limit or --max-usd overrides it.

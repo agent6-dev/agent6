@@ -581,3 +581,52 @@ def test_ensure_on_run_branch_noop_without_run_branch(tmp_path: Path) -> None:
     layout = _layout_with_run_branch(tmp_path / "state", "child", None)
     assert _ensure_on_run_branch(repo, layout) is None
     assert _current_branch(repo) == "main"
+
+
+# --- resume preflight refusals leave the checkout untouched -------------------
+
+
+def test_resume_config_refusal_leaves_checkout_untouched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # No providers configured: resume refuses BEFORE any workspace mutation.
+    # It used to check out agent6/<id> first and leave the operator parked
+    # there on every preflight refusal.
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state_dir = _state_dir(repo)
+    _seed_source_run(state_dir, "cfgfail-AAAA11", head_sha=head, turns=(1,))
+    rc = _cmd_resume(None, "cfgfail-AAAA11", force=False)
+    assert rc == 2
+    assert "No providers configured" in capsys.readouterr().err
+    assert _current_branch(repo) == "main"
+    missing = sp.run(
+        ["git", "rev-parse", "--verify", "--quiet", "refs/heads/agent6/cfgfail-AAAA11"],
+        cwd=repo,
+        capture_output=True,
+        check=False,
+    )
+    assert missing.returncode != 0  # the run branch was never created either
+
+
+def test_resume_diverged_branch_refuses_without_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The head guard reads the run BRANCH's tip: a diverged run branch refuses
+    # with HEAD still on the operator's branch, not parked on agent6/<id>.
+    repo = tmp_path / "repo"
+    base = _git_repo(repo)
+    sp.run(["git", "branch", "agent6/divg-AAAA11", base], cwd=repo, check=True)
+    (repo / "seed.txt").write_text("moved on\n")
+    sp.run(["git", "commit", "-aqm", "advance main"], cwd=repo, check=True)
+    new_head = sp.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    monkeypatch.chdir(repo)
+    state_dir = _state_dir(repo)
+    _seed_source_run(state_dir, "divg-AAAA11", head_sha=new_head, turns=(1,))
+    rc = _cmd_resume(None, "divg-AAAA11", force=False)
+    assert rc == 1
+    assert "diverged" in capsys.readouterr().err
+    assert _current_branch(repo) == "main"

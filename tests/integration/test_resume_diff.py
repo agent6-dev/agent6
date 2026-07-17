@@ -123,3 +123,44 @@ def test_non_dict_snapshot_skips_check(tmp_path: Path) -> None:
     repo = _init_repo(tmp_path)
     snap = _write_snapshot(tmp_path, ["not", "a", "dict"])
     assert snapshot_head_mismatch(snap, repo) is None
+
+
+# --- run-branch tip comparison (the guard needs no checkout) -------------------
+
+
+def test_run_branch_tip_is_checked_without_checkout(tmp_path: Path) -> None:
+    # With a run_branch the guard reads the BRANCH tip, not HEAD: divergence is
+    # detected while the operator's checkout sits on another branch, before any
+    # workspace mutation.
+    repo = _init_repo(tmp_path)
+    base = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "branch", "agent6/r1", base)
+    (repo / "a.txt").write_text("moved on\n")
+    _git(repo, "commit", "-aqm", "advance main")
+    new_head = _git(repo, "rev-parse", "HEAD")
+    # The snapshot recorded main's new head; the run branch still points at the
+    # base commit, which is not a descendant of it.
+    snap = _write_snapshot(tmp_path, {"head_sha": new_head})
+    assert snapshot_head_mismatch(snap, repo, run_branch="agent6/r1") == (new_head, base)
+    assert _git(repo, "rev-parse", "--abbrev-ref", "HEAD") == "main"
+
+
+def test_run_branch_aligned_tip_passes_from_another_branch(tmp_path: Path) -> None:
+    # The run branch tip matches the snapshot: no refusal, even though HEAD (on
+    # main) has moved somewhere else entirely.
+    repo = _init_repo(tmp_path)
+    base = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "branch", "agent6/r2", base)
+    (repo / "a.txt").write_text("moved on\n")
+    _git(repo, "commit", "-aqm", "advance main")
+    snap = _write_snapshot(tmp_path, {"head_sha": base})
+    assert snapshot_head_mismatch(snap, repo, run_branch="agent6/r2") is None
+
+
+def test_missing_run_branch_falls_back_to_head(tmp_path: Path) -> None:
+    # A recorded branch that no longer exists: the checkout step re-cuts it at
+    # HEAD, so the guard compares the snapshot against HEAD.
+    repo = _init_repo(tmp_path)
+    head = _git(repo, "rev-parse", "HEAD")
+    snap = _write_snapshot(tmp_path, {"head_sha": head})
+    assert snapshot_head_mismatch(snap, repo, run_branch="agent6/gone") is None
