@@ -1,24 +1,29 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Pre-spawn validation for `/parallel` model specs: catch a bogus model id
-before any lane is cloned or spawned, with a did-you-mean.
+"""Pre-spawn model validation: catch a bogus model id before any run or lane
+spawns, with a did-you-mean, instead of dying at the first provider call where
+the raw upstream 400 leaks.
 
-A `/parallel` spec (and `run --parallel`) names one model per lane. A typo
-(`opsu`, `moonshotai/kimi-k2.7`) would otherwise spawn a lane that dies at its
-first provider call -- late and wasteful. Every lane runs on the WORKER
-provider by construction (the lane config overrides only the model; see
-`_write_lane_config` in ui/cli/parallel.py), so the universe a spec model is
-checked against is worker-scoped: the worker's configured model unioned with
-the worker provider's on-disk model-list cache snapshot. A sibling provider's
-catalog is unrunnable in a lane, so it can neither accept a model nor vouch
-that validation is possible. On a miss, either refuse with the closest matches
-(the worker provider has a cache to check against) or proceed with a warning
-(no cache: a fresh/offline machine must never be blocked on a regenerable
-cache).
+Two callers, one policy: `validate_configured_model` checks a configured
+`models.<role>.model` at run start; `validate_spec_models` checks a `/parallel`
+spec's per-lane models (every lane runs on the WORKER provider by construction
+-- the lane config overrides only the model -- so the universe is worker-scoped:
+the worker's configured model unioned with the worker provider's listing. A
+sibling provider's catalog is unrunnable in a lane).
 
-Cache-only, never a network fetch, never raises. Lives in the models layer so
-all three front-ends and the coordinator's group dispatcher share one policy
-without a UI or workflows dependency.
+Matching is cache-first: exact id, or the registry's normalization so a
+dated/tagged variant of a listed id (``...-20251001``, ``...:free``) passes. A
+MISS against an existing cache fetches the provider's live listing once (TTL
+bypassed, ~1.5s cap) before any hard stop: `refused` always rests on a listing
+fetched by this invocation, so a just-pulled local model or a just-published
+listing entry is never refused off a stale snapshot. A failed fetch (offline,
+provider down) degrades the miss to `warned` and the run proceeds -- the first
+provider call is the final arbiter. With no cache at all nothing is fetched and
+nothing blocks: a fresh/offline machine, or a provider that lists no models,
+keeps its existing behaviour. Never raises.
+
+Lives in the models layer so all three front-ends and the coordinator's group
+dispatcher share one policy without a UI or workflows dependency.
 """
 
 from __future__ import annotations
@@ -27,7 +32,9 @@ import difflib
 from dataclasses import dataclass
 
 from agent6.config import Config, RoleName
-from agent6.models.cache import cached_models
+from agent6.models.cache import cached_models, fetch_models_live
+from agent6.models.registry import normalize_model_id
+from agent6.secrets import SecretsError, load_secrets, resolve_api_key
 
 __all__ = [
     "ModelValidation",
@@ -55,13 +62,15 @@ def known_models(cfg: Config) -> set[str]:
 
 @dataclass(frozen=True, slots=True)
 class ModelValidation:
-    """Outcome of checking a spec's per-lane models against `known_models`.
+    """Outcome of a model check.
 
     `unknown` lists the named models not found (deduped, in spec order);
-    `suggestions` maps each to its closest known ids; `can_validate` is True when
-    the worker provider has a cache to check against. `refused` (unknown +
-    can_validate) is a hard stop; `warned` (unknown + no cache) proceeds -- an
-    offline machine is never blocked on a regenerable cache."""
+    `suggestions` maps each to its closest known ids; `can_validate` is True
+    when the miss was judged against real evidence (a matching cache, or a
+    listing fetched live by this invocation). `refused` (unknown +
+    can_validate) is a hard stop resting on a just-fetched listing; `warned`
+    (unknown + no fresh evidence: no cache, or the live re-fetch failed)
+    proceeds -- an offline machine is never blocked on a regenerable cache."""
 
     unknown: tuple[str, ...]
     suggestions: dict[str, tuple[str, ...]]
@@ -74,6 +83,30 @@ class ModelValidation:
     @property
     def warned(self) -> bool:
         return bool(self.unknown) and not self.can_validate
+
+
+def _fresh_listing(cfg: Config, provider_name: str) -> list[str] | None:
+    """The provider's LIVE model listing, fetched now (TTL bypassed): the
+    evidence a hard refusal needs. None when the fetch fails -- the caller
+    degrades to the warn path rather than refuse on a snapshot it could not
+    freshen. Keyless (local) providers list without auth; a secrets problem
+    just means an unauthenticated attempt."""
+    entry = cfg.providers.get(provider_name)
+    if entry is None:
+        return None
+    try:
+        secrets = load_secrets()
+    except SecretsError:
+        secrets = {}
+    key = resolve_api_key(provider_name, entry.api_key_env, secrets=secrets)
+    return fetch_models_live(provider_name, entry, key)
+
+
+def _matches(model: str, pool: set[str], norm_pool: set[str]) -> bool:
+    """True when *model* is listed: exact id, or its normalized form matches a
+    listed id's (a dated/tagged variant of a listed model is provider-plausible,
+    so it must never hard-refuse; the call itself is the final arbiter)."""
+    return model in pool or normalize_model_id(model) in norm_pool
 
 
 def _close_ids(typo: str, pool: list[str], bare_to_full: dict[str, list[str]]) -> tuple[str, ...]:
@@ -90,68 +123,90 @@ def _close_ids(typo: str, pool: list[str], bare_to_full: dict[str, list[str]]) -
     return tuple(close[:_MAX_SUGGESTIONS])
 
 
-def validate_spec_models(models: list[str | None], cfg: Config) -> ModelValidation:
-    """Check per-lane *models* (a `parse_spec` result; `None` = the worker model,
-    skipped) against `known_models`. Cache-only, never raises."""
-    known = known_models(cfg)
-    pool = sorted(known)
+def _suggest(unknown: list[str], pool: list[str]) -> dict[str, tuple[str, ...]]:
+    """Did-you-mean suggestions for each unknown model, drawn from *pool*."""
     bare_to_full: dict[str, list[str]] = {}
     for full in pool:
         bare_to_full.setdefault(full.rsplit("/", 1)[-1], []).append(full)
-    unknown: list[str] = []
-    suggestions: dict[str, tuple[str, ...]] = {}
+    return {model: _close_ids(model, pool, bare_to_full) for model in unknown}
+
+
+def validate_spec_models(models: list[str | None], cfg: Config) -> ModelValidation:
+    """Check per-lane *models* (a `parse_spec` result; `None` = the worker model,
+    skipped) against `known_models`. A miss against an existing cache re-checks
+    the live listing once before refusing (see module docstring)."""
+    known = known_models(cfg)
+    norm_known = {normalize_model_id(m) for m in known}
+    misses: list[str] = []
     for model in models:
-        if model is None or model in known or model in suggestions:
+        if model is None or model in misses or _matches(model, known, norm_known):
             continue
-        suggestions[model] = _close_ids(model, pool, bare_to_full)
-        unknown.append(model)
+        misses.append(model)
     worker = cfg.models.worker
-    can_validate = worker is not None and bool(cached_models(worker.provider))
+    if not misses:
+        can = worker is not None and bool(cached_models(worker.provider))
+        return ModelValidation(unknown=(), suggestions={}, can_validate=can)
+    if worker is None or not cached_models(worker.provider):
+        # No snapshot to judge against: proceed with a warning, never block a
+        # fresh/offline machine (and no fetch attempt -- keyed providers already
+        # got one in check_provider_keys; a fetchable listing would be cached).
+        return ModelValidation(unknown=tuple(misses), suggestions={}, can_validate=False)
+    fresh = _fresh_listing(cfg, worker.provider)
+    if fresh is None:
+        return ModelValidation(unknown=tuple(misses), suggestions={}, can_validate=False)
+    known = {worker.model} | set(fresh)
+    norm_known = {normalize_model_id(m) for m in known}
+    unknown = [m for m in misses if not _matches(m, known, norm_known)]
+    if not unknown:
+        return ModelValidation(unknown=(), suggestions={}, can_validate=True)
     return ModelValidation(
-        unknown=tuple(unknown), suggestions=suggestions, can_validate=can_validate
+        unknown=tuple(unknown), suggestions=_suggest(unknown, sorted(known)), can_validate=True
     )
 
 
 def validate_configured_model(cfg: Config, role: RoleName) -> ModelValidation:
-    """Check the CONFIGURED model for *role* against ITS provider's cached model
-    list, so a typo'd `models.<role>.model` is caught at run start, not at the
-    first provider call (where the raw upstream 400 leaks).
+    """Check the CONFIGURED model for *role* against ITS provider's listing, so a
+    typo'd `models.<role>.model` is caught at run start.
 
     Unlike `validate_spec_models` the pool EXCLUDES the model itself -- a
     configured model is trivially in `known_models`, so that check can never
-    fail. Cache-only, never raises. `refused` (cache present, model absent) is a
-    hard stop; no cache means `can_validate` is False and the caller proceeds --
-    a fresh/offline machine, or a provider that lists no models (Anthropic), is
-    never blocked."""
+    fail. A miss against an existing cache re-checks the live listing once;
+    `refused` always rests on a listing fetched by this invocation, `warned`
+    means the re-fetch failed (the caller prints it and proceeds). No cache at
+    all (a fresh/offline machine, or a provider that lists no models) stays a
+    silent proceed, with no fetch attempt."""
     rm = cfg.models.resolve(role)
     if rm is None:
         return ModelValidation(unknown=(), suggestions={}, can_validate=False)
     cache = set(cached_models(rm.provider))
-    can_validate = bool(cache)
-    if not can_validate or rm.model in cache:
-        return ModelValidation(unknown=(), suggestions={}, can_validate=can_validate)
-    pool = sorted(cache)
-    bare_to_full: dict[str, list[str]] = {}
-    for full in pool:
-        bare_to_full.setdefault(full.rsplit("/", 1)[-1], []).append(full)
+    if not cache:
+        return ModelValidation(unknown=(), suggestions={}, can_validate=False)
+    if _matches(rm.model, cache, {normalize_model_id(c) for c in cache}):
+        return ModelValidation(unknown=(), suggestions={}, can_validate=True)
+    fresh = _fresh_listing(cfg, rm.provider)
+    if fresh is None:
+        return ModelValidation(unknown=(rm.model,), suggestions={}, can_validate=False)
+    fresh_set = set(fresh)
+    if _matches(rm.model, fresh_set, {normalize_model_id(c) for c in fresh_set}):
+        return ModelValidation(unknown=(), suggestions={}, can_validate=True)
     return ModelValidation(
         unknown=(rm.model,),
-        suggestions={rm.model: _close_ids(rm.model, pool, bare_to_full)},
-        can_validate=can_validate,
+        suggestions=_suggest([rm.model], sorted(fresh_set)),
+        can_validate=True,
     )
 
 
 def configured_model_refusal(v: ModelValidation, role: str) -> str:
     """Refusal text for a typo'd CONFIGURED role model (a refused
     `validate_configured_model`): name the bad model, its closest known ids, and
-    how to fix it."""
+    how to fix it. The listing was re-fetched live before this refusal, so
+    "refresh the cache" is no longer a remediation."""
     model = v.unknown[0]
     close = v.suggestions.get(model, ())
     suffix = f" Closest: {', '.join(close)}." if close else ""
     return (
-        f"configured models.{role}.model {model!r} is not a known model for its"
-        f" provider.{suffix} Fix it in your config, or run `agent6 model` to"
-        " refresh the cached model list."
+        f"configured models.{role}.model {model!r} is not in its provider's model"
+        f" listing (checked live).{suffix} Fix it in your config."
     )
 
 
@@ -172,8 +227,9 @@ def refusal_message(v: ModelValidation, *, directive: bool) -> str:
 
 def warning_message(v: ModelValidation) -> str:
     """The single warning line for an `unknown + not can_validate` result: no
-    cache to check against, so proceed but name the unvalidated model(s)."""
+    fresh listing to check against (no cache, or the live re-fetch failed), so
+    proceed but name the unvalidated model(s)."""
     return (
-        f"unvalidated model(s) {', '.join(v.unknown)}: no cached model list for the"
-        " worker provider to check against; proceeding (run `agent6 model` to refresh)."
+        f"unvalidated model(s) {', '.join(v.unknown)}: no fresh provider listing"
+        " to check against; proceeding (run `agent6 model` to refresh)."
     )

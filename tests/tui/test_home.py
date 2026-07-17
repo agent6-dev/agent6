@@ -353,6 +353,15 @@ def test_spawn_parallel_refuses_unknown_model_before_spawn(
     )
     monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "cache"))  # type: ignore[attr-defined]
 
+    # The miss now re-checks the live listing before refusing; stub it with the
+    # same ids so the refusal rests on "fresh" evidence (no real network).
+    from agent6.models import validate as models_validate
+
+    def _listing(*_a: object) -> list[str] | None:
+        return ["moonshotai/kimi-k2.6"]
+
+    monkeypatch.setattr(models_validate, "_fresh_listing", _listing)  # type: ignore[attr-defined]
+
     cfg = Config.model_validate(
         {
             "providers": {"o": {"api_format": "openai", "base_url": "https://x/v1"}},

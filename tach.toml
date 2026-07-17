@@ -253,12 +253,13 @@ path = "agent6.models.registry"
 depends_on = ["agent6.config", "agent6.models.cache"]
 
 [[modules]]
-# Pre-spawn `/parallel` model validation + did-you-mean, shared by the three
-# front-ends and the coordinator's group dispatcher (all in ui). Reads the
-# configured roles + the on-disk model cache; keeps workflows free of a models
-# edge (the ui-built dispatcher validates before cloning).
+# Pre-spawn model validation + did-you-mean (configured roles + `/parallel`
+# specs), shared by the three front-ends and the coordinator's group
+# dispatcher. Cache-first matching via the registry's normalization; a miss
+# re-fetches the live listing (secrets: the key for the authed fetch) so a
+# refusal never rests on a stale snapshot.
 path = "agent6.models.validate"
-depends_on = ["agent6.config", "agent6.models.cache"]
+depends_on = ["agent6.config", "agent6.models.cache", "agent6.models.registry", "agent6.secrets"]
 
 [[modules]]
 path = "agent6.sandbox.detect"

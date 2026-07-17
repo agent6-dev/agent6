@@ -34,7 +34,7 @@ __all__ = [
 # covers everything else; this table just guarantees good behaviour offline and
 # on the first run before any listing has been fetched, and wins over the live
 # cache when both know a model. Keep ids canonical (no date/`:tag` suffix --
-# ``_normalize_model_id`` strips those before matching).
+# ``normalize_model_id`` strips those before matching).
 BUNDLED_CONTEXT_WINDOWS: dict[str, int] = {
     # Anthropic (standard window; the 1M-context beta is opt-in, so pin it
     # explicitly in [workflow] if you enable it).
@@ -69,7 +69,7 @@ _FALLBACK_DROP_CHARS = 256_000
 _FALLBACK_SUMMARISE_CHARS = 768_000
 
 
-def _normalize_model_id(model_id: str) -> str:
+def normalize_model_id(model_id: str) -> str:
     """Strip a trailing ``-YYYYMMDD`` snapshot date or ``:tag`` so dated/tagged
     ids (``claude-haiku-4-5-20251001``, ``qwen/qwen3-coder:free``) match the
     canonical bundled key."""
@@ -80,7 +80,7 @@ def _normalize_model_id(model_id: str) -> str:
 def _bundled_context_window(model_id: str) -> int | None:
     if model_id in BUNDLED_CONTEXT_WINDOWS:
         return BUNDLED_CONTEXT_WINDOWS[model_id]
-    return BUNDLED_CONTEXT_WINDOWS.get(_normalize_model_id(model_id))
+    return BUNDLED_CONTEXT_WINDOWS.get(normalize_model_id(model_id))
 
 
 def context_window(provider_name: str, model_id: str) -> int | None:
@@ -92,7 +92,7 @@ def context_window(provider_name: str, model_id: str) -> int | None:
     network fetch -- so it is safe and fast on the run path.
     """
     return _bundled_context_window(model_id) or cached_context_window(
-        provider_name, (model_id, _normalize_model_id(model_id))
+        provider_name, (model_id, normalize_model_id(model_id))
     )
 
 
@@ -137,7 +137,7 @@ def decompose_default(model_id: str) -> bool:
     Family matching ignores the org prefix and any date/``:tag`` suffix, so
     ``mistralai/mistral-small-3.2-24b-instruct:free`` matches
     ``mistral-small-3.2``."""
-    family = _normalize_model_id(model_id).rsplit("/", 1)[-1].lower()
+    family = normalize_model_id(model_id).rsplit("/", 1)[-1].lower()
     return family.startswith(DECOMPOSE_WIN_MODEL_FAMILIES)
 
 

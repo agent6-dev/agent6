@@ -213,6 +213,15 @@ def test_dispatch_parallel_refuses_unknown_model_before_any_clone(
     monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "cache"))
     _write_models_cache(tmp_path / "cache", "o", ["moonshotai/kimi-k2.6", "z-ai/glm-4.6"])
 
+    # The miss now re-checks the live listing before refusing; stub it with the
+    # same ids so the refusal rests on "fresh" evidence (no real network).
+    from agent6.models import validate as models_validate
+
+    def _listing(*_a: object) -> list[str] | None:
+        return ["moonshotai/kimi-k2.6", "z-ai/glm-4.6"]
+
+    monkeypatch.setattr(models_validate, "_fresh_listing", _listing)
+
     def _boom(*_a: object, **_k: object) -> int:
         raise AssertionError("run_parallel must not be reached on a refusal")
 
@@ -276,6 +285,15 @@ def test_coordinator_dispatch_refuses_unknown_model(
     the message to the coordinator -- so workflows needs no models dependency."""
     monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "cache"))
     _write_models_cache(tmp_path / "cache", "o", ["moonshotai/kimi-k2.6"])
+
+    # The miss now re-checks the live listing before refusing; stub it with the
+    # same ids so the refusal rests on "fresh" evidence (no real network).
+    from agent6.models import validate as models_validate
+
+    def _listing(*_a: object) -> list[str] | None:
+        return ["moonshotai/kimi-k2.6"]
+
+    monkeypatch.setattr(models_validate, "_fresh_listing", _listing)
     origin_state = tmp_path / "ostate"
     origin_state.mkdir()
 

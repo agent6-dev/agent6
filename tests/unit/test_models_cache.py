@@ -147,3 +147,24 @@ def test_caches_context_length_and_reads_it_back(
     assert models_cache.cached_context_window("vendorx", ("vendor/big",)) == 200000
     assert models_registry.context_window("vendorx", "vendor/big") == 200000
     assert models_registry.context_window("vendorx", "vendor/nocontext") is None
+
+
+def test_fetch_models_live_bypasses_ttl_and_signals_failure(
+    cache_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The validation seam: a FRESH cache is ignored (the point is live
+    # evidence), success rewrites the cache, and failure returns None -- never
+    # a stale fallback -- so the caller can tell evidence from leftovers.
+    path = cache_home / "models" / "o.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"models": ["stale-1"]}), encoding="utf-8")
+    entry = OpenAIProviderEntry(api_format="openai", base_url="https://x/v1")
+    monkeypatch.setattr(httpx2, "get", _ok_response(["fresh-1"]))
+    assert models_cache.fetch_models_live("o", entry, None) == ["fresh-1"]
+    assert json.loads(path.read_text())["models"] == ["fresh-1"]
+
+    def _fail(*a: object, **k: object) -> httpx2.Response:
+        raise httpx2.ConnectError("down")
+
+    monkeypatch.setattr(httpx2, "get", _fail)
+    assert models_cache.fetch_models_live("o", entry, None) is None

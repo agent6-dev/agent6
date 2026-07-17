@@ -29,7 +29,11 @@ from agent6.config.layer import (
 )
 from agent6.events import EventSink
 from agent6.git_ops import set_repo_hook_policy
-from agent6.models.validate import configured_model_refusal, validate_configured_model
+from agent6.models.validate import (
+    configured_model_refusal,
+    validate_configured_model,
+    warning_message,
+)
 from agent6.paths import data_dir
 from agent6.skills import discover_skills, resolve_states, skill_search_dirs
 from agent6.ui.cli._ask import (
@@ -151,6 +155,29 @@ def run_frontend() -> RunFrontend:
     )
 
 
+def _configured_model_ok(cfg: Config, role: RoleName) -> bool:
+    """The configured-model wall: validate models.<role>.model against its
+    provider's listing so a typo refuses cleanly here -- with a did-you-mean,
+    like the `/parallel` path -- instead of dying at the first provider call
+    and echoing the raw upstream 400. A miss re-checks the live listing before
+    refusing (models.validate); a failed re-check warns and proceeds. False =
+    refused (the caller exits 2)."""
+    verdict = validate_configured_model(cfg, role)
+    if verdict.refused:
+        # Name the entry the user actually wrote: a plan whose planner fell
+        # back to the worker model must say models.worker.model, not point at
+        # a models.planner section absent from their config.
+        source = cfg.models.source_role(role)
+        print(f"REFUSING: {configured_model_refusal(verdict, source)}", file=sys.stderr)
+        return False
+    if verdict.warned:
+        # The cached listing lacks the model and the live re-check failed
+        # (offline, provider down): proceed -- the first provider call is the
+        # final arbiter -- but say why a bad id would die there.
+        print(f"[agent6] WARNING: {warning_message(verdict)}", file=sys.stderr)
+    return True
+
+
 def _cmd_run(  # noqa: PLR0911
     config_path: Path | None,
     task: str,
@@ -218,18 +245,7 @@ def _cmd_run(  # noqa: PLR0911
         print(missing, file=sys.stderr)
         return 2
 
-    # Validate the CONFIGURED role model against the provider's (just-refreshed)
-    # cached model list, so a typo'd models.<role>.model refuses cleanly here --
-    # with a did-you-mean, like the `/parallel` path -- instead of dying at the
-    # first provider call and echoing the raw upstream 400. Cache-only: a
-    # provider with no listing (Anthropic) or a fresh machine is never blocked.
-    verdict = validate_configured_model(cfg, role)
-    if verdict.refused:
-        # Name the entry the user actually wrote: a plan whose planner fell
-        # back to the worker model must say models.worker.model, not point at
-        # a models.planner section absent from their config.
-        source = cfg.models.source_role(role)
-        print(f"REFUSING: {configured_model_refusal(verdict, source)}", file=sys.stderr)
+    if not _configured_model_ok(cfg, role):
         return 2
 
     # `--parallel`: fan out isolated lanes instead of a single run. Routed here,

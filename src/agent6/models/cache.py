@@ -256,14 +256,31 @@ def list_models(
             age = time.time() - path.stat().st_mtime
     if cached is not None and age < ttl_s:
         return cached
+    return fetch_models_live(provider_name, entry, api_key, timeout_s=timeout_s) or cached or []
+
+
+def fetch_models_live(
+    provider_name: str,
+    entry: ProviderEntry,
+    api_key: str | None,
+    *,
+    timeout_s: float = _FETCH_TIMEOUT_S,
+) -> list[str] | None:
+    """Fetch *entry*'s live listing NOW (no TTL gate). Never raises.
+
+    On success rewrites the cache and returns the ids; on any failure (network
+    error, bad payload, empty listing) returns None so the caller can tell
+    fresh evidence from a stale fallback -- `models.validate` hard-refuses only
+    on a listing this returned. The TTL-gated read-through is `list_models`.
+    """
     try:
         models, pricing, context = _fetch(entry, api_key, timeout_s)
     except (httpx2.HTTPError, ValueError, OSError):
-        return cached or []
-    if models:
-        _write_cache(path, models, pricing, context)
-        return models
-    return cached or []
+        return None
+    if not models:
+        return None
+    _write_cache(_cache_path(provider_name), models, pricing, context)
+    return models
 
 
 def cached_models(provider_name: str) -> list[str]:
