@@ -218,9 +218,19 @@ class MachineWatchScreen(Screen[None]):
         else:
             self.app.exit()
 
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        # An ended machine takes no input: dim Steer/Message so the footer never
+        # offers a control that would drop into a dead instance dir (matches the
+        # web, which disables both buttons once the machine has ended).
+        del parameters
+        return not (action in ("steer", "poke") and self._ended)
+
     def action_steer(self) -> None:
         """Steer the current agent state: drop a request marker + open the steer
         box; the state picks it up at its next safe boundary. No-op if none runs."""
+        if self._ended:
+            self.app.notify("machine ended; cannot steer", timeout=4.0)
+            return
         state_dir = self._state_dir()
         if state_dir is None or self._steer_open:
             self.app.notify("no agent state to steer", timeout=4.0)
@@ -239,6 +249,9 @@ class MachineWatchScreen(Screen[None]):
 
     def action_poke(self) -> None:
         """Send a message to a waiting machine (a poke payload the next tool reads)."""
+        if self._ended:
+            self.app.notify("machine ended; cannot send a message", timeout=4.0)
+            return
         self.app.push_screen(
             TextInputModal("Send a message to the machine (poke):", "message…"), self._on_poke
         )
@@ -301,6 +314,7 @@ class MachineWatchScreen(Screen[None]):
 
         if ms.ended is not None:
             self._ended = True
+            self.refresh_bindings()  # dim Steer/Message: a dead machine takes no input
 
     def _dispatch_notifications(self, ms: MachineState) -> None:
         """Pop an in-app + desktop notification for each new machine.notify, and

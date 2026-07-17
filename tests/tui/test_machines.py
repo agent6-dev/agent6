@@ -169,6 +169,49 @@ def test_watch_screen_shows_states_transitions_and_end(tmp_path: Path, monkeypat
     asyncio.run(scenario())
 
 
+def test_watch_screen_disables_steer_and_message_when_ended(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    """An ended machine takes no input: the watch screen dims Steer/Message (like
+    the web disables both buttons) and their actions are no-ops, never dropping a
+    steer marker into the dead per-state dir."""
+    from agent6.config.layer import resolved_state_dir
+    from agent6.machine import load_machine
+    from agent6.ui.cli import main as cli_main
+
+    monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]
+    f = tmp_path / "tiny.asm.toml"
+    f.write_text(TINY, encoding="utf-8")
+    assert cli_main(["machine", "run", str(f)]) == 0
+    instance = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    spec = load_machine(f)
+    # A per-state dir so _state_dir() resolves -- the "dead dir" a steer would hit.
+    state = instance / "states" / "0000-route"
+    state.mkdir(parents=True)
+    (state / "logs.jsonl").write_text("", encoding="utf-8")
+
+    class _WatchHost(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(MachineWatchScreen(instance, spec))
+
+    async def scenario() -> None:
+        app = _WatchHost()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            for _ in range(3):  # let a poll set _ended
+                await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, MachineWatchScreen)
+            assert screen._ended  # pyright: ignore[reportPrivateUsage]
+            assert screen.check_action("steer", ()) is False
+            assert screen.check_action("poke", ()) is False
+            screen.action_steer()  # no-op when ended
+            await pilot.pause()
+            assert not (state / "steer.request").exists()  # nothing dropped in the dead dir
+
+    asyncio.run(scenario())
+
+
 def test_discrete_log_line_renders_tool_events_only() -> None:
     # The shared journal fold (current/visited/transitions) is tested in
     # tests/unit/test_viewmodel_machine_state.py; this covers the TUI-only
