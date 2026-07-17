@@ -162,19 +162,19 @@ def test_run_refuses_uncommitted_machine(
 
 
 def test_uncommitted_refusal_tracks_git_state(tmp_path: Path) -> None:
-    from agent6.app.machine.run import _uncommitted_refusal
+    from agent6.app.machine.run import uncommitted_refusal
 
     # Outside a git repo the gate never fires (nothing to commit against).
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
-    assert _uncommitted_refusal(f, tmp_path) is None
+    assert uncommitted_refusal(f, tmp_path) is None
     _git_init(tmp_path)
-    assert _uncommitted_refusal(f, tmp_path) is not None  # untracked
+    assert uncommitted_refusal(f, tmp_path) is not None  # untracked
     subprocess.run(["git", "-C", str(tmp_path), "add", "tiny.asm.toml"], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "add"], check=True)
-    assert _uncommitted_refusal(f, tmp_path) is None  # committed clean
+    assert uncommitted_refusal(f, tmp_path) is None  # committed clean
     f.write_text(TINY + "\n", encoding="utf-8")
-    assert _uncommitted_refusal(f, tmp_path) is not None  # modified again
+    assert uncommitted_refusal(f, tmp_path) is not None  # modified again
 
 
 def test_run_refuses_rerun_of_ended_instance(

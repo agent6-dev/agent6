@@ -461,7 +461,9 @@ def test_tool_stderr_is_journaled_on_the_fact(tmp_path: Path) -> None:
     tool_steps = [
         e for e in journal.read() if isinstance(e, StepEvent) and isinstance(e.fact, ToolFact)
     ]
-    assert tool_steps and tool_steps[0].fact.stderr == "boom: bad flag\n"
+    assert tool_steps
+    fact = tool_steps[0].fact
+    assert isinstance(fact, ToolFact) and fact.stderr == "boom: bad flag\n"
 
 
 def test_tool_timeout_routes_to_failure(tmp_path: Path) -> None:

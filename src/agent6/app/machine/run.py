@@ -66,7 +66,7 @@ def _transitions(n: int) -> str:
     return f"{n} transition{'' if n == 1 else 's'}"
 
 
-def _uncommitted_refusal(path: Path, cwd: Path) -> str | None:
+def uncommitted_refusal(path: Path, cwd: Path) -> str | None:
     """A refusal message if the machine file has uncommitted changes, else None.
 
     `machine run` only accepts a committed machine (docs state-machines.md
@@ -120,7 +120,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
     cwd = Path.cwd()
     # Machines are operator artifacts: refuse an uncommitted file before running
     # anything (docs §7.1/§9), so a tool/agent never executes unreviewed logic.
-    uncommitted = _uncommitted_refusal(path, cwd)
+    uncommitted = uncommitted_refusal(path, cwd)
     if uncommitted is not None:
         reporter.err(f"REFUSING: {uncommitted}")
         return 1
