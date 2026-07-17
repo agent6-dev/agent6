@@ -270,8 +270,6 @@ def test_summary_launching_run_reads_starting(tmp_path: Path) -> None:
     # During it the log has a role.call (the inference LLM call) but no run.start,
     # and the worker is alive -- it must read "starting" (its real mode+task from
     # the manifest), not a blank "? / (no task) / running" that looks missing.
-    import os
-
     rd = _write_run(tmp_path, "runs", "boot", [{"type": "role.call", "role": "verify_inferer"}])
     (rd / "manifest.json").write_text(
         json.dumps({"mode": "run", "user_task": "refactor the loop"}), encoding="utf-8"
@@ -331,8 +329,6 @@ def test_is_run_husk(tmp_path: Path) -> None:
     assert not is_run_husk(with_manifest)
     # A dir with neither file but a LIVE worker.pid is a launching run in its
     # pre-manifest preflight window, not a husk -- keep it listed (as "starting").
-    import os
-
     launching = tmp_path / "launching"
     launching.mkdir()
     (launching / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
