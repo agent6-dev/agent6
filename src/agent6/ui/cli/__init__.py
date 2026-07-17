@@ -105,7 +105,7 @@ from agent6.ui.cli.skills_cmds import (
 from agent6.ui.cli.system_cmds import _cmd_system_apparmor
 from agent6.ui.cli.watch import _cmd_watch_target
 from agent6.ui.cli.web_cmds import _cmd_web
-from agent6.viewmodel import most_recent_run_id as _most_recent_run_id
+from agent6.viewmodel import newest_run_dir as _newest_dir
 
 
 def _first_markdown_line(text: str, max_len: int = 80) -> str:
@@ -179,13 +179,14 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
                 file=sys.stderr,
             )
             return 2
-        target = _most_recent_run_id(_runs_dir(Path.cwd()))
-        if target is None:
+        newest = _newest_dir([_runs_dir(Path.cwd())])
+        if newest is None:
             print(
                 "ERROR: --continue: no prior runs for this cwd.",
                 file=sys.stderr,
             )
             return 2
+        target = newest.name
         print(f"[agent6] --continue: resuming {target}", file=sys.stderr)
         return _cmd_resume(
             args.config,

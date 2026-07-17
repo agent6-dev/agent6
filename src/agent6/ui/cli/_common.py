@@ -121,14 +121,20 @@ def _runs_dir(repo_root: Path) -> Path:
 RUN_BUCKETS: tuple[str, ...] = ("runs", "asks", "machine-drafts")
 
 
+def run_bucket_dirs(repo_root: Path) -> list[Path]:
+    """The run-style bucket dirs (runs/, asks/, machine-drafts/) under the state
+    dir, the cross-bucket scope for latest-run resolution and history. A missing
+    bucket is still listed; iterators skip non-dirs."""
+    state = _state_dir(repo_root)
+    return [state / subdir for subdir in RUN_BUCKETS]
+
+
 def all_run_dirs(repo_root: Path) -> list[Path]:
     """Every run directory across all RUN_BUCKETS. So latest-run resolution and
     history search cover asks and machine-drafts, not just runs/ (a bare `attach`
     or `history search` right after an `ask` must find that ask)."""
-    state = _state_dir(repo_root)
     dirs: list[Path] = []
-    for subdir in RUN_BUCKETS:
-        bucket = state / subdir
+    for bucket in run_bucket_dirs(repo_root):
         if bucket.is_dir():
             dirs.extend(p for p in bucket.iterdir() if p.is_dir())
     return dirs

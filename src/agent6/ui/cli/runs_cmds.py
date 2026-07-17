@@ -37,10 +37,9 @@ from agent6.git_ops import status as git_status
 from agent6.runs.id import RunIdError, resolve_run_id
 from agent6.runs.ipc import request_stop, worker_is_alive
 from agent6.runs.layout import RunLayout
-from agent6.ui.cli._common import _runs_dir, _state_dir, all_run_dirs, resolve_run_layout, sgr
+from agent6.ui.cli._common import _runs_dir, _state_dir, resolve_run_layout, run_bucket_dirs, sgr
 from agent6.ui.cli._compare import manifest_task, print_ranked_candidates, rank, verify_ok
 from agent6.viewmodel import is_run_husk, is_winner, summarize_run_dir, task_snippet
-from agent6.viewmodel import most_recent_run_id as _most_recent_run_id
 from agent6.viewmodel import newest_run_dir as _newest_dir
 from agent6.viewmodel.format import WINNER_GLYPH, format_cost, status_label
 from agent6.workflows.judge import CandidateBrief
@@ -223,11 +222,11 @@ def _resolve_run_manifest(
         return 2
     target_id = run_id
     if not target_id:
-        latest = _most_recent_run_id(runs_dir)
+        latest = _newest_dir([runs_dir])
         if latest is None:
             print(f"ERROR: no runs under {runs_dir}", file=sys.stderr)
             return 2
-        target_id = latest
+        target_id = latest.name
         print(f"[agent6] {recent_note}: {target_id}", file=sys.stderr)
     else:
         try:
@@ -261,7 +260,7 @@ def _cmd_stop(*, run_id: str) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     if layout is None:
-        latest = _newest_dir(all_run_dirs(cwd))
+        latest = _newest_dir(run_bucket_dirs(cwd))
         if latest is None:
             print("ERROR: no runs to stop.", file=sys.stderr)
             return 2

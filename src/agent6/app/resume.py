@@ -143,7 +143,7 @@ from agent6.runs.lock import (
 )
 from agent6.sandbox.detect import ProfileUnavailableError, select_profile
 from agent6.tools.dispatch import ToolDispatcher
-from agent6.viewmodel import most_recent_run_id as _most_recent_run_id
+from agent6.viewmodel import newest_run_dir as _newest_dir
 from agent6.workflows._run_state import load_resume_snapshot
 from agent6.workflows.loop import ResumeError, Workflow
 
@@ -273,11 +273,11 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     runs_dir = state_dir / "runs"
     if not run_id:
         # "resume my last run" -- the common recovery case, matching `runs *`.
-        latest = _most_recent_run_id(runs_dir)
+        latest = _newest_dir([runs_dir])
         if latest is None:
             reporter.err(f"ERROR: no runs under {runs_dir}; nothing to resume.")
             return 2
-        run_id = latest
+        run_id = latest.name
         reporter.err(f"[agent6] resuming most recent run: {run_id}")
     try:
         resolved = resolve_run_id(runs_dir, run_id)

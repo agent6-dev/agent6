@@ -36,25 +36,23 @@ def run_mtime(run_dir: Path) -> float:
     return 0.0
 
 
-def newest_run_dir(candidates: Iterable[Path]) -> Path | None:
-    """The most recently active run dir among *candidates* (by logs.jsonl mtime,
-    not dir mtime: a viewer writing frontend.pid must not float a run to latest)."""
-    dirs = sorted((p for p in candidates if p.is_dir()), key=run_mtime, reverse=True)
-    return dirs[0] if dirs else None
+def newest_run_dir(buckets: Iterable[Path]) -> Path | None:
+    """The most recently active run dir (by logs.jsonl mtime, not dir mtime: a
+    viewer writing frontend.pid must not float a run to latest) across the given
+    bucket dirs.
 
-
-def most_recent_run_id(runs_dir: Path) -> str | None:
-    """Id (dir name) of the most recently active run under a single bucket dir.
-
-    Used where "latest" is scoped to one bucket: `run --continue`, fork, resume
-    (runs/), `ask --continue` (asks/). Attach / runs show / history use the
-    cross-bucket ``all_run_dirs`` instead. Returns None when the dir is missing
-    or empty.
+    The one run-recency query: callers name the buckets in scope explicitly --
+    a lone ``runs/`` dir for run/plan/resume/fork/ask scope, or every
+    ``RUN_BUCKETS`` dir for a cross-bucket listing (attach / runs stop). A
+    missing bucket dir is skipped; returns None when no bucket holds a run.
+    Callers that key off the id take ``.name`` of the result.
     """
-    if not runs_dir.is_dir():
-        return None
-    newest = newest_run_dir(runs_dir.iterdir())
-    return newest.name if newest else None
+    runs: list[Path] = []
+    for bucket in buckets:
+        if bucket.is_dir():
+            runs.extend(p for p in bucket.iterdir() if p.is_dir())
+    dirs = sorted(runs, key=run_mtime, reverse=True)
+    return dirs[0] if dirs else None
 
 
 def first_task_line(lines: Iterable[str]) -> str | None:

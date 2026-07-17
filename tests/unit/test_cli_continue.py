@@ -14,19 +14,20 @@ from agent6.ui.cli import main
 from agent6.ui.cli.plan_watch import (
     _most_recent_plan_run_id,  # pyright: ignore[reportPrivateUsage]
 )
-from agent6.viewmodel import most_recent_run_id as _most_recent_run_id
+from agent6.viewmodel import newest_run_dir
 
 
-def test_most_recent_run_id_none_outside_workspace(tmp_path: Path) -> None:
-    assert _most_recent_run_id(tmp_path / "missing") is None
+def test_newest_run_dir_none_for_missing_bucket(tmp_path: Path) -> None:
+    assert newest_run_dir([tmp_path / "missing"]) is None
 
 
-def test_most_recent_run_id_none_when_empty(tmp_path: Path) -> None:
-    (resolved_state_dir(tmp_path) / "runs").mkdir(parents=True)
-    assert _most_recent_run_id(resolved_state_dir(tmp_path) / "runs") is None
+def test_newest_run_dir_none_when_empty(tmp_path: Path) -> None:
+    runs = resolved_state_dir(tmp_path) / "runs"
+    runs.mkdir(parents=True)
+    assert newest_run_dir([runs]) is None
 
 
-def test_most_recent_run_id_uses_log_activity_not_frontend_dir_touch(tmp_path: Path) -> None:
+def test_newest_run_dir_uses_log_activity_not_frontend_dir_touch(tmp_path: Path) -> None:
     runs = resolved_state_dir(tmp_path) / "runs"
     runs.mkdir(parents=True)
     older = runs / "alpha-bravo-charlie"
@@ -38,7 +39,9 @@ def test_most_recent_run_id_uses_log_activity_not_frontend_dir_touch(tmp_path: P
     os.utime(older / "logs.jsonl", (100, 100))
     os.utime(newer / "logs.jsonl", (1000, 1000))
     (older / "frontend.pid").write_text("12345", encoding="utf-8")
-    assert _most_recent_run_id(runs) == "delta-echo-foxtrot"
+    newest = newest_run_dir([runs])
+    assert newest is not None
+    assert newest.name == "delta-echo-foxtrot"
 
 
 def test_most_recent_plan_run_id_uses_log_activity_not_frontend_dir_touch(tmp_path: Path) -> None:

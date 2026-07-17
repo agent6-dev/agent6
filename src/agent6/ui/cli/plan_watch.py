@@ -24,7 +24,7 @@ from agent6.runs.ipc import (
     write_question_answers,
 )
 from agent6.tools.schema import UserQuestion
-from agent6.ui.cli._common import _runs_dir, _state_dir, all_run_dirs, resolve_run_layout
+from agent6.ui.cli._common import _runs_dir, _state_dir, resolve_run_layout, run_bucket_dirs
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._interact import default_stdin_approver, default_stdin_questioner
 from agent6.viewmodel import (
@@ -142,7 +142,7 @@ def _cmd_watch(run_id: str, *, tui: bool = False, since: int = 0, raw: bool = Fa
             return 2
     else:
         # Most-recent spans every bucket, so a bare `attach` after an `ask` finds it.
-        latest_dir = _newest_dir(all_run_dirs(cwd))
+        latest_dir = _newest_dir(run_bucket_dirs(cwd))
         if latest_dir is None:
             print("ERROR: no runs found for this cwd.", file=sys.stderr)
             return 2
@@ -178,7 +178,7 @@ def _resolve_run_dir(repo_root: Path, run_id: str) -> Path | None:
             return None
     # Empty (most-recent) spans every bucket, so a bare `attach` right after an
     # `ask` finds that ask -- matching what `agent6 runs` lists.
-    return _newest_dir(all_run_dirs(repo_root))
+    return _newest_dir(run_bucket_dirs(repo_root))
 
 
 def _fmt_dur(seconds: float | None) -> str:

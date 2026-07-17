@@ -45,7 +45,7 @@ from agent6.graph.storage import append_jsonl, list_checkpoint_turns
 from agent6.portable import atomic_write
 from agent6.runs.id import RunIdError, new_friendly_id, resolve_run_id, validate_explicit_run_id
 from agent6.runs.layout import RunLayout
-from agent6.viewmodel import most_recent_run_id as _most_recent_run_id
+from agent6.viewmodel import newest_run_dir as _newest_dir
 from agent6.workflows._run_state import load_checkpoint
 
 # Curator-owned DAG artifacts copied verbatim into the fork (Phase 1). Each is a
@@ -165,11 +165,11 @@ def create_fork(  # noqa: PLR0911
     runs_dir = state_dir / "runs"
     if not source_run_id:
         # "fork my last run" -- omitting the id forks the most recent run.
-        latest = _most_recent_run_id(runs_dir)
+        latest = _newest_dir([runs_dir])
         if latest is None:
             reporter.err(f"ERROR: no runs under {runs_dir}; nothing to fork.")
             return "", 2
-        source_run_id = latest
+        source_run_id = latest.name
         reporter.err(f"[agent6] forking most recent run: {source_run_id}")
     try:
         source_id = resolve_run_id(runs_dir, source_run_id)
