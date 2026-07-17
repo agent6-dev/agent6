@@ -7,9 +7,9 @@ values, and MCP server startup."""
 from __future__ import annotations
 
 import argparse
-import sys
 from dataclasses import dataclass, replace
 
+from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import (
     AnthropicProviderEntry,
     Config,
@@ -152,7 +152,9 @@ def explicit_usd_flag_error(explicit_usd: float | None, cfg: Config) -> str | No
     )
 
 
-def start_mcp_manager_if_enabled(cfg: Config) -> MCPManager | None:
+def start_mcp_manager_if_enabled(
+    cfg: Config, *, reporter: Reporter = STDIO_REPORTER
+) -> MCPManager | None:
     """Spawn all enabled MCP servers from ``cfg.mcp``. Returns None when
     MCP is disabled or no servers are configured (so callers can skip
     teardown entirely). Each server's startup failure is logged and
@@ -167,4 +169,4 @@ def start_mcp_manager_if_enabled(cfg: Config) -> MCPManager | None:
     ]
     if not configs:
         return None
-    return MCPManager.start(configs, logger=lambda m: print(m, file=sys.stderr))
+    return MCPManager.start(configs, logger=reporter.err)

@@ -223,11 +223,12 @@ primitive is pure git plumbing in
 
 [src/agent6/app/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel.py)
 is the orchestrator: it implements the spawner Protocols and is the only module
-that knows how to actually run a lane; the detached spawn + run-dir bridge it
-drives (`ui.bridge.spawn`, the same path `attach`/`resume` use) is injected as
-a `LaneRuntime` by the CLI adapter `ui/cli/parallel.py`. `agent6.app` is the
-application layer: pipelines composed over the engine, never importing
-`agent6.ui`.
+that knows how to actually run a lane; the detached spawn it drives
+(`ui.bridge.spawn`, the same path `attach`/`resume` use) is injected as a
+`LaneRuntime` by the CLI adapter `ui/cli/parallel.py`. Lane liveness/stop
+requests go straight to the run-dir bridge (`agent6.runs.bridge`), which
+`agent6.app` already depends on. `agent6.app` is the application layer:
+pipelines composed over the engine, never importing `agent6.ui`.
 
 - **`agent6 run --parallel N|model-a,model-b`** (`dispatch_parallel` /
   `run_parallel`): plans one `LaneSpec` per lane, spawns each as an ordinary

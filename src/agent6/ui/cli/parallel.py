@@ -5,8 +5,8 @@ dispatch.
 
 The fan-out / coordinator pipeline is headless in `agent6.app.parallel`; this
 module is the front-end seam. It supplies the `LaneRuntime` the pipeline drives
-(the detached process spawn + run-dir bridge from `ui.bridge`, and the reviewer
-provider + judging spinner from `_compare`), and holds the CLI-side preflight +
+(the detached process spawn from `ui.bridge`, and the reviewer provider +
+judging spinner from `_compare`), and holds the CLI-side preflight +
 refusal messages for `run --parallel`. run.py routes here; run.py / resume.py
 wire the coordinator spawner from here.
 """
@@ -33,7 +33,6 @@ from agent6.directive import DirectiveError
 from agent6.git_ops import GitError, dirty_paths
 from agent6.git_ops import status as git_status
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
-from agent6.runs.bridge import request_stop, worker_is_alive
 from agent6.runs.id import new_friendly_id
 from agent6.ui.bridge.spawn import agent6_exe, spawn_and_locate
 from agent6.ui.cli._compare import _judging_status, _reviewer_provider
@@ -42,9 +41,10 @@ from agent6.workflows.subrun import GroupLaneSpawner
 
 def lane_runtime() -> LaneRuntime:
     """The front-end primitives the parallel pipeline drives: the detached
-    process spawn + run-dir bridge (`ui.bridge`) and the reviewer provider +
-    judging spinner (`_compare`). Injected so `agent6.app` never imports
-    `agent6.ui`."""
+    process spawn (`ui.bridge`) and the reviewer provider + judging spinner
+    (`_compare`). Injected so `agent6.app` never imports `agent6.ui`. Lane
+    liveness/stop is the run-dir bridge, imported directly by `agent6.app.parallel`
+    (no longer routed through this seam)."""
 
     def spawn(
         argv: list[str],
@@ -60,8 +60,6 @@ def lane_runtime() -> LaneRuntime:
 
     return LaneRuntime(
         spawn=spawn,
-        worker_is_alive=worker_is_alive,
-        request_stop=request_stop,
         build_provider=_reviewer_provider,
         judging_status=_judging_status,
     )

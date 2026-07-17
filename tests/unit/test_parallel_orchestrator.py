@@ -138,8 +138,9 @@ def origin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 @pytest.fixture
 def runtime() -> LaneRuntime:
     """The real front-end LaneRuntime the pipeline drives (detached process spawn
-    + run-dir bridge + reviewer/judging wiring). Tests faking one primitive use
-    `dataclasses.replace` on it (e.g. a fake `spawn` or `worker_is_alive`)."""
+    + reviewer/judging wiring). Tests faking one primitive use `dataclasses.replace`
+    on it (e.g. a fake `spawn`), or `monkeypatch` the module-level `worker_is_alive`
+    (the run-dir bridge, imported directly -- no longer a LaneRuntime field)."""
     return lane_runtime()
 
 
@@ -461,9 +462,9 @@ def test_await_lanes_status_line_flags_a_waiting_lane(
 
     monkeypatch.setattr(parallel, "summarize_run_dir", fake_summary)
     monkeypatch.setattr(parallel.time, "sleep", fake_sleep)
-    rt = replace(runtime, worker_is_alive=fake_worker_is_alive)
+    monkeypatch.setattr(parallel, "worker_is_alive", fake_worker_is_alive)
 
-    assert parallel._await_lanes([res], runtime=rt) is False  # pyright: ignore[reportPrivateUsage]
+    assert parallel._await_lanes([res], runtime=runtime) is False  # pyright: ignore[reportPrivateUsage]
     assert "waiting on a question (answer via the web or TUI hub)" in capsys.readouterr().err
 
 

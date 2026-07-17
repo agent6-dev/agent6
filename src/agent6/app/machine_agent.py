@@ -19,7 +19,6 @@ never imports `agent6.ui`.
 from __future__ import annotations
 
 import os
-import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,6 +40,7 @@ from agent6.app.providers import (
     resolve_compaction_thresholds,
     resolve_decompose,
 )
+from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
 from agent6.config.layer import load_effective_with_overlay, resolved_state_dir
 from agent6.events import EventSink
@@ -182,7 +182,10 @@ def _build_machine_bridges(
 
 
 def run_one(
-    req: dict[str, Any], *, attach_console: Callable[[EventSink], None] = _no_console
+    req: dict[str, Any],
+    *,
+    attach_console: Callable[[EventSink], None] = _no_console,
+    reporter: Reporter = STDIO_REPORTER,
 ) -> dict[str, Any]:
     cwd = Path(req["cwd"])
     profile: SandboxProfile = req["profile"]
@@ -214,17 +217,17 @@ def run_one(
     # re-check defensively and fail closed.
     net_err = check_network_profile(cfg, profile)
     if net_err is not None:
-        print(f"REFUSING: {net_err}", file=sys.stderr)
+        reporter.err(f"REFUSING: {net_err}")
         return _result("error", None, None)
     egress_guard, egress_err = maybe_start_egress(cfg, profile)
     if egress_err is not None:
-        print(f"REFUSING: {egress_err}", file=sys.stderr)
+        reporter.err(f"REFUSING: {egress_err}")
         return _result("error", None, None)
     budget: BudgetTracker | None = None
     try:
         landlock_err = maybe_apply_agent_landlock(cfg, profile, detect())
         if landlock_err is not None:
-            print(f"REFUSING: {landlock_err}", file=sys.stderr)
+            reporter.err(f"REFUSING: {landlock_err}")
             return _result("error", None, None)
         budget = BudgetTracker(
             max_input_tokens=cfg.budget.max_input_tokens,
@@ -304,16 +307,14 @@ def run_one(
             # the machine/agent prompt assembly keep it inert.
             state_dir=resolved_state_dir(root),
         )
-        compact_drop, compact_summarise = resolve_compaction_thresholds(
-            cfg, rm, log=lambda msg: print(msg, file=sys.stderr)
-        )
-        cfg = resolve_decompose(cfg, rm, log=lambda msg: print(msg, file=sys.stderr))
+        compact_drop, compact_summarise = resolve_compaction_thresholds(cfg, rm, log=reporter.err)
+        cfg = resolve_decompose(cfg, rm, log=reporter.err)
         wf = Workflow(
             root=root,
             config=cfg,
             provider=provider,
             dispatcher=dispatcher,
-            logger=lambda msg: print(msg, file=sys.stderr),
+            logger=reporter.err,
             mode=mode if mode in ("machine", "agent") else "run",
             state_dir=resolved_state_dir(root),
             compact_drop_at_chars=compact_drop,

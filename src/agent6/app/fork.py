@@ -34,10 +34,10 @@ from __future__ import annotations
 import datetime as _dt
 import json
 import shutil
-import sys
 from pathlib import Path
 
 from agent6.app.manifest import write_run_manifest as _write_run_manifest
+from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config, ConfigError
 from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.git_ops import GitError, create_branch_at
@@ -71,7 +71,9 @@ def _copy_dag(src: RunLayout, dst: RunLayout) -> None:
             shutil.copy2(src_path, dst_path)
 
 
-def _select_checkpoint_path(src: RunLayout, at_turn: int | None) -> Path | None:
+def _select_checkpoint_path(
+    src: RunLayout, at_turn: int | None, *, reporter: Reporter = STDIO_REPORTER
+) -> Path | None:
     """Resolve which checkpoint of *src* to fork from, or None on error (printed).
 
     Returns the latest checkpoint by default, the ``--at-turn N`` one when given,
@@ -81,19 +83,20 @@ def _select_checkpoint_path(src: RunLayout, at_turn: int | None) -> Path | None:
     source_id = src.run_id
     turns = list_checkpoint_turns(src)
     if at_turn is None:
-        return _select_latest_checkpoint_path(src, turns, legacy)
-    return _select_explicit_checkpoint_path(src, turns, legacy, at_turn, source_id)
+        return _select_latest_checkpoint_path(src, turns, legacy, reporter=reporter)
+    return _select_explicit_checkpoint_path(
+        src, turns, legacy, at_turn, source_id, reporter=reporter
+    )
 
 
-def _select_latest_checkpoint_path(src: RunLayout, turns: list[int], legacy: Path) -> Path | None:
+def _select_latest_checkpoint_path(
+    src: RunLayout, turns: list[int], legacy: Path, *, reporter: Reporter = STDIO_REPORTER
+) -> Path | None:
     if legacy.is_file():
         return legacy
     if turns:
         return src.checkpoint_path(turns[-1])
-    print(
-        f"ERROR: {src.run_id} has no checkpoints and no loop_state.json; nothing to fork.",
-        file=sys.stderr,
-    )
+    reporter.err(f"ERROR: {src.run_id} has no checkpoints and no loop_state.json; nothing to fork.")
     return None
 
 
@@ -103,6 +106,8 @@ def _select_explicit_checkpoint_path(
     legacy: Path,
     at_turn: int,
     source_id: str,
+    *,
+    reporter: Reporter = STDIO_REPORTER,
 ) -> Path | None:
     if at_turn in turns:
         return src.checkpoint_path(at_turn)
@@ -111,16 +116,14 @@ def _select_explicit_checkpoint_path(
         if legacy_turn == at_turn:
             return legacy
         if not turns:
-            print(
+            reporter.err(
                 f"NOTE: {source_id} predates the checkpoint store; --at-turn is unavailable. "
-                "Forking from its latest snapshot (loop_state.json).",
-                file=sys.stderr,
+                "Forking from its latest snapshot (loop_state.json)."
             )
             return legacy
     avail = ", ".join(str(t) for t in turns)
-    print(
-        f"ERROR: no checkpoint at turn {at_turn} for {source_id}. Available turns: {avail}",
-        file=sys.stderr,
+    reporter.err(
+        f"ERROR: no checkpoint at turn {at_turn} for {source_id}. Available turns: {avail}"
     )
     return None
 
@@ -148,6 +151,7 @@ def create_fork(  # noqa: PLR0911
     at_turn: int | None = None,
     new_run_id: str = "",
     cwd: Path,
+    reporter: Reporter = STDIO_REPORTER,
 ) -> tuple[str, int]:
     """Create a new run cloned from *source_run_id* at checkpoint *at_turn*.
 
@@ -163,29 +167,29 @@ def create_fork(  # noqa: PLR0911
         # "fork my last run" -- omitting the id forks the most recent run.
         latest = _most_recent_run_id(runs_dir)
         if latest is None:
-            print(f"ERROR: no runs under {runs_dir}; nothing to fork.", file=sys.stderr)
+            reporter.err(f"ERROR: no runs under {runs_dir}; nothing to fork.")
             return "", 2
         source_run_id = latest
-        print(f"[agent6] forking most recent run: {source_run_id}", file=sys.stderr)
+        reporter.err(f"[agent6] forking most recent run: {source_run_id}")
     try:
         source_id = resolve_run_id(runs_dir, source_run_id)
     except RunIdError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        reporter.err(f"ERROR: {exc}")
         return "", 2
 
     src = RunLayout(state_dir=state_dir, run_id=source_id)
     if not src.run_dir.is_dir():
-        print(f"ERROR: no such run dir: {src.run_dir}", file=sys.stderr)
+        reporter.err(f"ERROR: no such run dir: {src.run_dir}")
         return "", 2
 
-    checkpoint_path = _select_checkpoint_path(src, at_turn)
+    checkpoint_path = _select_checkpoint_path(src, at_turn, reporter=reporter)
     if checkpoint_path is None:
         return "", 2
 
     try:
         checkpoint = load_checkpoint(checkpoint_path)
     except (OSError, ValueError) as exc:
-        print(f"ERROR: failed to load checkpoint {checkpoint_path}: {exc}", file=sys.stderr)
+        reporter.err(f"ERROR: failed to load checkpoint {checkpoint_path}: {exc}")
         return "", 1
 
     # Read the source manifest to carry base_sha / base_branch forward.
@@ -203,24 +207,23 @@ def create_fork(  # noqa: PLR0911
 
     forked_from_sha = checkpoint.head_sha
     if not forked_from_sha:
-        print(
+        reporter.err(
             "ERROR: the chosen checkpoint records no head_sha, so the fork branch "
-            "cannot be cut. (A checkpoint from before per-turn sha capture.)",
-            file=sys.stderr,
+            "cannot be cut. (A checkpoint from before per-turn sha capture.)"
         )
         return "", 1
 
     try:
         cfg = load_effective(cwd, config_path).config
     except ConfigError as exc:
-        print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
+        reporter.err(f"CONFIG ERROR:\n{exc}")
         return "", 2
 
     if new_run_id:
         try:
             validate_explicit_run_id(new_run_id)
         except RunIdError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
+            reporter.err(f"ERROR: {exc}")
             return "", 2
     child_id = new_run_id or new_friendly_id()
     rc = _materialize_fork(
@@ -235,6 +238,7 @@ def create_fork(  # noqa: PLR0911
         user_task=src_user_task,
         mode=src_mode,
         cfg=cfg,
+        reporter=reporter,
     )
     if rc != 0:
         return "", rc
@@ -254,12 +258,13 @@ def _materialize_fork(
     user_task: str,
     mode: str,
     cfg: Config,
+    reporter: Reporter = STDIO_REPORTER,
 ) -> int:
     """Write the fork's state on disk: clone the checkpoint + DAG, the manifest,
     the git branch, and the lineage record. Returns 0 on success, else an error
     code (after printing). The source run is never touched."""
     if dst.run_dir.exists():
-        print(f"ERROR: target run dir already exists: {dst.run_dir}", file=sys.stderr)
+        reporter.err(f"ERROR: target run dir already exists: {dst.run_dir}")
         return 2
     dst.ensure()
 
@@ -290,7 +295,7 @@ def _materialize_fork(
     try:
         create_branch_at(cwd, run_branch, forked_from_sha)
     except GitError as exc:
-        print(f"ERROR: could not cut fork branch {run_branch}: {exc}", file=sys.stderr)
+        reporter.err(f"ERROR: could not cut fork branch {run_branch}: {exc}")
         # The fork dir was just materialized; don't leave an orphan run dir +
         # manifest (and a lineage gap) when the branch couldn't be cut.
         shutil.rmtree(dst.run_dir, ignore_errors=True)
@@ -307,9 +312,8 @@ def _materialize_fork(
             ts=_dt.datetime.now(tz=_dt.UTC).isoformat(timespec="microseconds"),
         ),
     )
-    print(
+    reporter.err(
         f"[agent6] forked {src.run_id}@turn {forked_from_turn} -> {dst.run_id} "
-        f"(branch {run_branch} at {forked_from_sha[:12]})",
-        file=sys.stderr,
+        f"(branch {run_branch} at {forked_from_sha[:12]})"
     )
     return 0

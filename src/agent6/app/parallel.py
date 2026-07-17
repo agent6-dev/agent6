@@ -46,6 +46,7 @@ from agent6.git_ops import status as git_status
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
 from agent6.paths import cache_dir, state_dir
 from agent6.portable import atomic_write
+from agent6.runs.bridge import request_stop, worker_is_alive
 from agent6.viewmodel import summarize_run_dir
 from agent6.workflows.judge import CandidateBrief
 from agent6.workflows.subrun import (
@@ -94,16 +95,17 @@ class LaneRuntime:
     so `agent6.app` never imports `agent6.ui`:
 
     - `spawn`: launch a detached `agent6` run and locate its run dir.
-    - `worker_is_alive` / `request_stop`: the run-dir bridge liveness probe +
-      clean-stop request (runs.bridge).
     - `build_provider` / `judging_status`: the reviewer provider + judge-progress
       status the fan-out auto-compare's `rank` uses (same wiring `runs compare`
       uses). The coordinator dispatch path leaves these unexercised (it never
-      compares its lanes)."""
+      compares its lanes).
+
+    Lane liveness (`worker_is_alive`) and stop requests (`request_stop`) are the
+    run-dir bridge itself (`agent6.runs.bridge`), imported directly below: `app`
+    already depends on it (`run.py`, `machine_agent.py`), so routing them through
+    this front-end seam was a dead pass-through."""
 
     spawn: SpawnRun
-    worker_is_alive: Callable[[Path], bool]
-    request_stop: Callable[[Path], None]
     build_provider: BuildProvider
     judging_status: JudgingStatus
 
@@ -251,7 +253,7 @@ def _await_lane(
     REAL run dir. Same gate as the fan-out's `_await_lanes`, for a single lane."""
     while True:
         summary = summarize_run_dir(res.run_dir)
-        if _lane_terminal(res.run_dir, summary.status, runtime.worker_is_alive):
+        if _lane_terminal(res.run_dir, summary.status, worker_is_alive):
             return
         time.sleep(poll_interval_s)
 
@@ -479,13 +481,13 @@ def _await_lanes(
                 _print_lane_status(
                     res.spec, summary.status, summary.cost_usd, waiting=waiting, reporter=reporter
                 )
-            if _lane_terminal(res.run_dir, summary.status, runtime.worker_is_alive):
+            if _lane_terminal(res.run_dir, summary.status, worker_is_alive):
                 pending.pop(rid)
 
     def stop_and_drain() -> None:
         reporter.err("\n[agent6] interrupted; stopping lanes...")
         for res in pending.values():
-            runtime.request_stop(res.run_dir)
+            request_stop(res.run_dir)
         deadline = time.monotonic() + _STOP_GRACE_S
         with contextlib.suppress(KeyboardInterrupt):
             while pending and time.monotonic() < deadline:
@@ -650,7 +652,7 @@ def _import_lanes(
             failed.append((res, res.error))
             continue
         link = _lane_link(origin_state, res.spec.run_id)
-        if runtime.worker_is_alive(res.run_dir):
+        if worker_is_alive(res.run_dir):
             failed.append(
                 (
                     res,

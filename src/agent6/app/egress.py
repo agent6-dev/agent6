@@ -12,6 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config
 from agent6.config.layer import resolved_state_dir
 from agent6.providers.egress import clear_routes, parse_endpoint, register_route
@@ -80,7 +81,9 @@ def _allow_url_endpoints(cfg: Config) -> set[Endpoint]:
     return eps
 
 
-def warn_if_unsandboxed(selected_profile: SandboxProfile) -> None:
+def warn_if_unsandboxed(
+    selected_profile: SandboxProfile, *, reporter: Reporter = STDIO_REPORTER
+) -> None:
     """Print a prominent warning when running without the kernel sandbox.
 
     The `none` profile is reached either on a non-Linux host (no kernel sandbox)
@@ -90,14 +93,13 @@ def warn_if_unsandboxed(selected_profile: SandboxProfile) -> None:
     """
     if selected_profile != "none":
         return
-    print(
+    reporter.err(
         "[agent6] WARNING: running UNSANDBOXED (sandbox.profile = 'none'). "
         "Commands -- including the LLM's run_command and verify_command -- "
         "execute as plain subprocesses with NO filesystem, network, or syscall "
         "confinement; the agent is contained only by the surrounding environment "
         "(e.g. the container it runs in). Use 'auto'/'strict'/'hardened' for "
-        "kernel-enforced isolation.",
-        file=sys.stderr,
+        "kernel-enforced isolation."
     )
 
 
@@ -135,7 +137,7 @@ def check_network_profile(cfg: Config, selected_profile: SandboxProfile) -> str 
 
 
 def resolve_strict_egress_viability(
-    cfg: Config, selected_profile: SandboxProfile
+    cfg: Config, selected_profile: SandboxProfile, *, reporter: Reporter = STDIO_REPORTER
 ) -> tuple[SandboxProfile, str | None]:
     """Handle strict selected when this process can't run the egress broker.
 
@@ -184,10 +186,9 @@ def resolve_strict_egress_viability(
         )
     if cfg.sandbox.profile == "strict":
         return selected_profile, f"REFUSING: {core} {fixes}, or set sandbox.profile='hardened'."
-    print(
+    reporter.err(
         f"[agent6] NOTE: {core} Falling back to the hardened profile (egress"
-        f" confined by Landlock). {fixes}.",
-        file=sys.stderr,
+        f" confined by Landlock). {fixes}."
     )
     return "hardened", None
 
@@ -295,7 +296,11 @@ def spawn_detached(
 
 
 def maybe_apply_agent_landlock(
-    cfg: Config, selected_profile: SandboxProfile, env: Environment
+    cfg: Config,
+    selected_profile: SandboxProfile,
+    env: Environment,
+    *,
+    reporter: Reporter = STDIO_REPORTER,
 ) -> str | None:
     """Confine the agent's OWN process with Landlock on hardened hosts.
 
@@ -419,10 +424,9 @@ def maybe_apply_agent_landlock(
             tcp_connect_ports=ports,
         )
     except LandlockNotSupportedError:
-        print(
+        reporter.err(
             "[agent6] WARNING: Landlock unavailable; agent process is NOT "
-            "filesystem/network confined",
-            file=sys.stderr,
+            "filesystem/network confined"
         )
         return None
     except OSError as exc:
@@ -432,9 +436,8 @@ def maybe_apply_agent_landlock(
         if report.tcp_supported
         else " (kernel too old for Landlock TCP rules)"
     )
-    print(
+    reporter.err(
         f"[agent6] agent-process Landlock: ABI {report.abi}, "
-        f"{len(report.fs_read)} read / {len(report.fs_write)} write roots{tcp_note}",
-        file=sys.stderr,
+        f"{len(report.fs_read)} read / {len(report.fs_write)} write roots{tcp_note}"
     )
     return None

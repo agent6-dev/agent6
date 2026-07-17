@@ -275,7 +275,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     except ProfileUnavailableError as exc:
         reporter.err(f"REFUSING: {exc}")
         return 2
-    warn_if_unsandboxed(selected_profile)
+    warn_if_unsandboxed(selected_profile, reporter=reporter)
     if not frontend.confirm_unconfined_autorun(selected_profile, cfg):
         reporter.err("[agent6] aborted.")
         return 1
@@ -287,7 +287,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     # strict can be selected because the jail launcher has userns, yet this
     # process can't create one for the egress broker (surgical AppArmor profile).
     # Downgrade auto->hardened, or refuse an explicit strict, with guidance.
-    selected_profile, egress_err = resolve_strict_egress_viability(cfg, selected_profile)
+    selected_profile, egress_err = resolve_strict_egress_viability(
+        cfg, selected_profile, reporter=reporter
+    )
     if egress_err is not None:
         reporter.err(egress_err)
         return 2
@@ -470,7 +472,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 f"namespace via broker pid {guard.broker.pid}"
             )
 
-        landlock_err = maybe_apply_agent_landlock(cfg, selected_profile, env)
+        landlock_err = maybe_apply_agent_landlock(cfg, selected_profile, env, reporter=reporter)
         if landlock_err is not None:
             reporter.err(f"REFUSING: {landlock_err}")
             return 2
@@ -624,7 +626,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             # Spawn any configured MCP servers BEFORE the workflow
             # starts so their tools are visible from iteration 1. The manager
             # owns its subprocesses; we close it in the finally block.
-            mcp_manager = _start_mcp_manager_if_enabled(cfg)
+            mcp_manager = _start_mcp_manager_if_enabled(cfg, reporter=reporter)
 
             with GraphClient(sock_path, alive=lambda: curator_proc.poll() is None) as graph_client:
                 dispatcher = ToolDispatcher(
