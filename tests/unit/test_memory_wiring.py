@@ -103,11 +103,11 @@ def test_loop_extra_tools_include_memory_tools() -> None:
 def test_tool_definitions_expose_memory_tools_in_run_mode_only(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     d = ToolDispatcher(root=tmp_path, config=cfg, state_dir=tmp_path / "state")
-    run_names = {t.name for t in loopmod._tool_definitions(d, mode="run")}  # pyright: ignore[reportPrivateUsage]
+    run_names = {t.name for t in loopmod.tool_definitions(d, mode="run")}  # pyright: ignore[reportPrivateUsage]
     assert "add_memory" in run_names
     assert "invalidate_memory" in run_names
     for mode in ("plan", "ask", "machine", "agent"):
-        names = {t.name for t in loopmod._tool_definitions(d, mode=mode)}  # pyright: ignore[reportPrivateUsage]
+        names = {t.name for t in loopmod.tool_definitions(d, mode=mode)}  # pyright: ignore[reportPrivateUsage]
         assert "add_memory" not in names, mode
         assert "invalidate_memory" not in names, mode
 
@@ -237,12 +237,12 @@ def test_memories_block_multiline_bodies_indent() -> None:
 def test_build_system_prompt_injects_memories(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     mem = (_entry("facts", "verify needs the venv"),)
-    run = loopmod._build_system_prompt(  # pyright: ignore[reportPrivateUsage]
+    run = loopmod.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
         config=cfg, repo=_repo(tmp_path), mode="run", memories=mem
     )
     assert "<memories>" in run
     assert "verify needs the venv" in run
-    plan = loopmod._build_system_prompt(  # pyright: ignore[reportPrivateUsage]
+    plan = loopmod.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
         config=cfg, repo=_repo(tmp_path), mode="plan", memories=mem
     )
     assert "verify needs the venv" in plan
@@ -250,7 +250,7 @@ def test_build_system_prompt_injects_memories(tmp_path: Path) -> None:
 
 def test_build_system_prompt_run_mode_always_has_memories_block(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
-    run = loopmod._build_system_prompt(  # pyright: ignore[reportPrivateUsage]
+    run = loopmod.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
         config=cfg, repo=_repo(tmp_path), mode="run"
     )
     assert "<memories>" in run
@@ -260,7 +260,7 @@ def test_build_system_prompt_machine_modes_never_see_memories(tmp_path: Path) ->
     cfg = _config(tmp_path)
     mem = (_entry("facts", "verify needs the venv"),)
     for mode in ("machine", "agent"):
-        text = loopmod._build_system_prompt(  # pyright: ignore[reportPrivateUsage]
+        text = loopmod.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
             config=cfg, repo=_repo(tmp_path), mode=mode, memories=mem
         )
         assert "<memories>" not in text, mode

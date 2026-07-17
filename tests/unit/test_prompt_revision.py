@@ -120,7 +120,7 @@ def _wf(tmp_path: Path, **kw: Any) -> Workflow:
 
 
 def test_parse_prompt_revision_tagged_output() -> None:
-    parsed = loopmod._parse_prompt_revision(  # pyright: ignore[reportPrivateUsage]
+    parsed = loopmod.parse_prompt_revision(  # pyright: ignore[reportPrivateUsage]
         "<revised_task>Fix foo and verify with pytest.</revised_task>\n"
         "<clarifying_questions>\n- Which API version?\n- none\n</clarifying_questions>"
     )
@@ -129,7 +129,7 @@ def test_parse_prompt_revision_tagged_output() -> None:
 
 
 def test_parse_prompt_revision_falls_back_to_plain_text() -> None:
-    parsed = loopmod._parse_prompt_revision(  # pyright: ignore[reportPrivateUsage]
+    parsed = loopmod.parse_prompt_revision(  # pyright: ignore[reportPrivateUsage]
         "Fix the failing test with the smallest change."
     )
     assert parsed.revised_task == "Fix the failing test with the smallest change."
@@ -140,7 +140,7 @@ def test_parse_prompt_revision_keeps_leading_digits_in_questions() -> None:
     # Only the list marker is stripped. The old charset lstrip("-*0123456789. ")
     # also ate leading digits of the question itself ("- 32-bit support
     # needed?" became "bit support needed?").
-    parsed = loopmod._parse_prompt_revision(  # pyright: ignore[reportPrivateUsage]
+    parsed = loopmod.parse_prompt_revision(  # pyright: ignore[reportPrivateUsage]
         "<revised_task>t</revised_task>\n"
         "<clarifying_questions>\n"
         "- 32-bit support needed?\n"
@@ -156,7 +156,7 @@ def test_parse_prompt_revision_keeps_leading_digits_in_questions() -> None:
 
 
 def test_parse_prompt_revision_unmarked_question_passes_through() -> None:
-    parsed = loopmod._parse_prompt_revision(  # pyright: ignore[reportPrivateUsage]
+    parsed = loopmod.parse_prompt_revision(  # pyright: ignore[reportPrivateUsage]
         "<revised_task>t</revised_task>\n"
         "<clarifying_questions>\n3rd-party deps allowed?\n* none\n</clarifying_questions>"
     )
@@ -168,7 +168,7 @@ def test_parse_prompt_revision_unmarked_question_passes_through() -> None:
 def test_parse_prompt_revision_keeps_leading_decimal_in_question() -> None:
     # A question that opens with a bare decimal ("0.5s ...") is NOT a numbered
     # list item ("0." has no trailing space); its leading digits must survive.
-    parsed = loopmod._parse_prompt_revision(  # pyright: ignore[reportPrivateUsage]
+    parsed = loopmod.parse_prompt_revision(  # pyright: ignore[reportPrivateUsage]
         "<revised_task>t</revised_task>\n"
         "<clarifying_questions>\n0.5s latency budget acceptable?\n</clarifying_questions>"
     )

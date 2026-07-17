@@ -251,7 +251,7 @@ def test_load_repo_summary_outside_git(tmp_path: Path) -> None:
 def test_system_prompt_names_non_git_directory(tmp_path: Path) -> None:
     from agent6.config import load_config
     from agent6.types import RepoSummary
-    from agent6.workflows.loop import _build_system_prompt  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import build_system_prompt  # pyright: ignore[reportPrivateUsage]
 
     cfg_path = tmp_path / "agent6.toml"
     cfg_path.write_text(
@@ -279,7 +279,7 @@ def test_system_prompt_names_non_git_directory(tmp_path: Path) -> None:
         recent_log="",
         is_git=False,
     )
-    prompt = _build_system_prompt(config=load_config(cfg_path), repo=repo, mode="ask")
+    prompt = build_system_prompt(config=load_config(cfg_path), repo=repo, mode="ask")
     assert "not a git repository" in prompt
     assert "branch=" not in prompt  # no fake repo header
 

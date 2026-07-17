@@ -81,10 +81,10 @@ def test_add_dependency_in_run_and_plan_tool_lists(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     d = ToolDispatcher(root=tmp_path, config=cfg)
     for mode in ("run", "plan"):
-        names = {t.name for t in loopmod._tool_definitions(d, mode=mode)}  # pyright: ignore[reportPrivateUsage]
+        names = {t.name for t in loopmod.tool_definitions(d, mode=mode)}  # pyright: ignore[reportPrivateUsage]
         assert "add_dependency" in names, mode
     for mode in ("ask", "machine", "agent"):
-        names = {t.name for t in loopmod._tool_definitions(d, mode=mode)}  # pyright: ignore[reportPrivateUsage]
+        names = {t.name for t in loopmod.tool_definitions(d, mode=mode)}  # pyright: ignore[reportPrivateUsage]
         assert "add_dependency" not in names, mode
 
 

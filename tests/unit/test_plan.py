@@ -154,7 +154,7 @@ def test_build_system_prompt_plan_mode_mentions_plan(tmp_path: Path) -> None:
         agents_md="",
         recent_log="",
     )
-    text = loopmod._build_system_prompt(  # pyright: ignore[reportPrivateUsage]
+    text = loopmod.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
         config=cfg, repo=repo, mode="plan"
     )
     assert "PLAN mode" in text or "plan mode" in text.lower()
@@ -173,8 +173,8 @@ def test_system_prompt_file_override_replaces_run_base_keeps_blocks(tmp_path: Pa
         agents_md="",
         recent_log="",
     )
-    run = loopmod._build_system_prompt(config=cfg, repo=repo, mode="run")  # pyright: ignore[reportPrivateUsage]
-    plan = loopmod._build_system_prompt(config=cfg, repo=repo, mode="plan")  # pyright: ignore[reportPrivateUsage]
+    run = loopmod.build_system_prompt(config=cfg, repo=repo, mode="run")  # pyright: ignore[reportPrivateUsage]
+    plan = loopmod.build_system_prompt(config=cfg, repo=repo, mode="plan")  # pyright: ignore[reportPrivateUsage]
     # override replaces the run base...
     assert "CUSTOM WORKER" in run and "<edit-rules>" not in run
     # ...but the dynamic blocks (budget, repo-priors) still append
@@ -199,9 +199,9 @@ def test_decompose_swaps_dag_rules_block(tmp_path: Path) -> None:
     off = Config.model_validate({"prompt": {"decompose": "off"}})
     on = Config.model_validate({"prompt": {"decompose": "on"}})
     auto = Config()  # unresolved "auto" reaching the engine renders like off
-    run_off = loopmod._build_system_prompt(config=off, repo=repo, mode="run")  # pyright: ignore[reportPrivateUsage]
-    run_on = loopmod._build_system_prompt(config=on, repo=repo, mode="run")  # pyright: ignore[reportPrivateUsage]
-    run_auto = loopmod._build_system_prompt(config=auto, repo=repo, mode="run")  # pyright: ignore[reportPrivateUsage]
+    run_off = loopmod.build_system_prompt(config=off, repo=repo, mode="run")  # pyright: ignore[reportPrivateUsage]
+    run_on = loopmod.build_system_prompt(config=on, repo=repo, mode="run")  # pyright: ignore[reportPrivateUsage]
+    run_auto = loopmod.build_system_prompt(config=auto, repo=repo, mode="run")  # pyright: ignore[reportPrivateUsage]
     assert "__DAG_RULES_BLOCK__" not in run_off and "__DAG_RULES_BLOCK__" not in run_on
     assert "<dag-rules>" in run_off and "<decompose-first>" not in run_off
     assert "<decompose-first>" in run_on and "<dag-rules>" not in run_on
@@ -209,7 +209,7 @@ def test_decompose_swaps_dag_rules_block(tmp_path: Path) -> None:
     # decompose is a run-mode worker feature: other modes never carry either block
     # or a leaked sentinel.
     for mode in ("plan", "ask", "machine", "agent"):
-        text = loopmod._build_system_prompt(config=on, repo=repo, mode=mode)  # pyright: ignore[reportPrivateUsage]
+        text = loopmod.build_system_prompt(config=on, repo=repo, mode=mode)  # pyright: ignore[reportPrivateUsage]
         assert "__DAG_RULES_BLOCK__" not in text and "<decompose-first>" not in text
 
 
@@ -221,7 +221,7 @@ def test_decompose_hint_is_run_mode_only() -> None:
     """The decompose-first user-message hint must NOT leak into plan/ask, which
     also wire a curator (root_id non-None): it references the run-only
     <decompose-first> block and tells the worker to edit."""
-    hint = loopmod._initial_dag_hint  # pyright: ignore[reportPrivateUsage]
+    hint = loopmod.initial_dag_hint  # pyright: ignore[reportPrivateUsage]
     rid = "01" + "A" * 24
     run_dec = hint(rid, "run", True)
     assert "<decompose-first>" in run_dec and "Do not edit" in run_dec
@@ -275,7 +275,7 @@ def test_build_system_prompt_warns_against_git_checkout_revert(tmp_path: Path) -
         agents_md="",
         recent_log="",
     )
-    text = loopmod._build_system_prompt(  # pyright: ignore[reportPrivateUsage]
+    text = loopmod.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
         config=cfg, repo=repo, mode="run"
     )
     assert "git checkout" in text
@@ -301,7 +301,7 @@ def test_build_system_prompt_describes_auto_metric_feedback(tmp_path: Path) -> N
         agents_md="",
         recent_log="",
     )
-    text = loopmod._build_system_prompt(  # pyright: ignore[reportPrivateUsage]
+    text = loopmod.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
         config=cfg, repo=repo, mode="run"
     )
     assert "automatically runs this" in text
@@ -310,7 +310,7 @@ def test_build_system_prompt_describes_auto_metric_feedback(tmp_path: Path) -> N
     # Run-mode only: plan/ask do not expose `run_metric_command`, and the
     # auto-metric-after-verify behaviour the block describes is the run loop's.
     for mode in ("plan", "ask"):
-        other = loopmod._build_system_prompt(  # pyright: ignore[reportPrivateUsage]
+        other = loopmod.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
             config=cfg, repo=repo, mode=mode
         )
         assert "<metric-command>" not in other, mode
@@ -320,7 +320,7 @@ def test_build_system_prompt_describes_auto_metric_feedback(tmp_path: Path) -> N
 def test_tool_definitions_plan_mode_filters_edit_tools(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     d = ToolDispatcher(root=tmp_path, config=cfg)
-    defs = loopmod._tool_definitions(d, mode="plan")  # pyright: ignore[reportPrivateUsage]
+    defs = loopmod.tool_definitions(d, mode="plan")  # pyright: ignore[reportPrivateUsage]
     names = {t.name for t in defs}
     assert ApplyEditInput.TOOL_NAME not in names
     assert ApplyPatchInput.TOOL_NAME not in names
@@ -331,7 +331,7 @@ def test_tool_definitions_plan_mode_filters_edit_tools(tmp_path: Path) -> None:
 def test_tool_definitions_run_mode_includes_edit_tools(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     d = ToolDispatcher(root=tmp_path, config=cfg)
-    defs = loopmod._tool_definitions(d, mode="run")  # pyright: ignore[reportPrivateUsage]
+    defs = loopmod.tool_definitions(d, mode="run")  # pyright: ignore[reportPrivateUsage]
     names = {t.name for t in defs}
     assert ApplyEditInput.TOOL_NAME in names
     assert ApplyPatchInput.TOOL_NAME in names
@@ -347,7 +347,7 @@ def test_tool_definitions_machine_and_agent_modes_are_read_only_finish(tmp_path:
     cfg = load_config(p)
     d = ToolDispatcher(root=tmp_path, config=cfg)
     for mode in ("machine", "agent"):
-        names = {t.name for t in loopmod._tool_definitions(d, mode=mode)}  # pyright: ignore[reportPrivateUsage]
+        names = {t.name for t in loopmod.tool_definitions(d, mode=mode)}  # pyright: ignore[reportPrivateUsage]
         assert ReadFileInput.TOOL_NAME in names, mode
         assert FinishRunInput.TOOL_NAME in names, mode
         assert ApplyEditInput.TOOL_NAME not in names, mode
@@ -368,10 +368,10 @@ def test_build_system_prompt_machine_and_agent_modes(tmp_path: Path) -> None:
         agents_md="",
         recent_log="",
     )
-    machine = loopmod._build_system_prompt(config=cfg, repo=repo, mode="machine")  # pyright: ignore[reportPrivateUsage]
+    machine = loopmod.build_system_prompt(config=cfg, repo=repo, mode="machine")  # pyright: ignore[reportPrivateUsage]
     assert "MACHINE-AUTHORING" in machine
     assert "run_verify_command" not in machine  # no verify block in authoring mode
-    agent = loopmod._build_system_prompt(config=cfg, repo=repo, mode="agent")  # pyright: ignore[reportPrivateUsage]
+    agent = loopmod.build_system_prompt(config=cfg, repo=repo, mode="agent")  # pyright: ignore[reportPrivateUsage]
     assert "state of a state machine" in agent
     assert "run_verify_command" not in agent
 
@@ -383,7 +383,7 @@ def test_tool_definitions_ask_mode_is_read_only_with_commands(tmp_path: Path) ->
     p.write_text(_VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"'), "utf-8")
     cfg = load_config(p)
     d = ToolDispatcher(root=tmp_path, config=cfg)
-    names = {t.name for t in loopmod._tool_definitions(d, mode="ask")}  # pyright: ignore[reportPrivateUsage]
+    names = {t.name for t in loopmod.tool_definitions(d, mode="ask")}  # pyright: ignore[reportPrivateUsage]
     assert ReadFileInput.TOOL_NAME in names  # can read
     assert RunCommandInput.TOOL_NAME in names  # can run commands to investigate
     assert ApplyEditInput.TOOL_NAME not in names  # but not edit

@@ -52,22 +52,22 @@ def _resp(text: str) -> ProviderResponse:
 
 def test_parse_critic_verdict_satisfied() -> None:
     text = "* did the thing\n* fine\n\nVERDICT: SATISFIED\n"
-    assert loopmod._parse_critic_verdict(text) is True  # pyright: ignore[reportPrivateUsage]
+    assert loopmod.parse_critic_verdict(text) is True  # pyright: ignore[reportPrivateUsage]
 
 
 def test_parse_critic_verdict_needs_work() -> None:
     text = "* broken\n\nVERDICT: NEEDS_WORK"
-    assert loopmod._parse_critic_verdict(text) is False  # pyright: ignore[reportPrivateUsage]
+    assert loopmod.parse_critic_verdict(text) is False  # pyright: ignore[reportPrivateUsage]
 
 
 def test_parse_critic_verdict_missing_defaults_to_needs_work() -> None:
     text = "lol I forgot to include a verdict"
-    assert loopmod._parse_critic_verdict(text) is False  # pyright: ignore[reportPrivateUsage]
+    assert loopmod.parse_critic_verdict(text) is False  # pyright: ignore[reportPrivateUsage]
 
 
 def test_parse_critic_verdict_case_insensitive() -> None:
     text = "x\n\nverdict: satisfied"
-    assert loopmod._parse_critic_verdict(text) is True  # pyright: ignore[reportPrivateUsage]
+    assert loopmod.parse_critic_verdict(text) is True  # pyright: ignore[reportPrivateUsage]
 
 
 # --- _extract_initial_task ----------------------------------------------
@@ -113,7 +113,7 @@ def test_format_messages_tail_renders_roles() -> None:
             "content": [{"type": "tool_result", "tool_use_id": "x", "content": "output"}],
         },
     ]
-    out = loopmod._format_messages_tail_for_critic(msgs)  # pyright: ignore[reportPrivateUsage]
+    out = loopmod.format_messages_tail_for_critic(msgs)  # pyright: ignore[reportPrivateUsage]
     assert "internal reasoning" not in out  # thinking blocks are stripped
     assert "hello" in out
     assert "doing it" in out

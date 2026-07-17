@@ -283,12 +283,12 @@ def test_call_with_retry_returns_last_empty_after_exhausting() -> None:
 
 def test_is_empty_tool_call_response_discriminates() -> None:
     from agent6.workflows.loop import (
-        _is_empty_tool_call_response,  # pyright: ignore[reportPrivateUsage]
+        is_empty_tool_call_response,  # pyright: ignore[reportPrivateUsage]
     )
 
-    assert _is_empty_tool_call_response(_empty_tool_call_resp())
-    assert not _is_empty_tool_call_response(_resp("hi"))  # has text -> a silent finish
-    assert not _is_empty_tool_call_response(_tool_resp("read_file"))  # has a tool_use
+    assert is_empty_tool_call_response(_empty_tool_call_resp())
+    assert not is_empty_tool_call_response(_resp("hi"))  # has text -> a silent finish
+    assert not is_empty_tool_call_response(_tool_resp("read_file"))  # has a tool_use
     # length-truncated reasoning starvation is handled separately, not retried here.
     starved = ProviderResponse(
         text="",
@@ -299,7 +299,7 @@ def test_is_empty_tool_call_response_discriminates() -> None:
         cache_read_tokens=0,
         cache_creation_tokens=0,
     )
-    assert not _is_empty_tool_call_response(starved)
+    assert not is_empty_tool_call_response(starved)
 
 
 def test_call_with_retry_default_rides_out_multiple_flaps() -> None:
@@ -1081,8 +1081,8 @@ def test_drive_loop_plan_finish_nudge_fires_once_at_iter_cap(tmp_path: Path) -> 
     This is the lever that makes Kimi K2.6 actually land a plan; pins the
     off-by-one (iteration - start + 1 >= cap) and the one-shot latch."""
     from agent6.workflows.loop import (
-        _PLAN_BUDGET_NUDGE,  # pyright: ignore[reportPrivateUsage]
-        _PLAN_NUDGE_AFTER_ITERS,  # pyright: ignore[reportPrivateUsage]
+        PLAN_BUDGET_NUDGE,  # pyright: ignore[reportPrivateUsage]
+        PLAN_NUDGE_AFTER_ITERS,  # pyright: ignore[reportPrivateUsage]
     )
 
     class ProviderStub:
@@ -1092,7 +1092,7 @@ def test_drive_loop_plan_finish_nudge_fires_once_at_iter_cap(tmp_path: Path) -> 
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if _PLAN_BUDGET_NUDGE[:24] in str(kwargs["messages"][-1]):
+            if PLAN_BUDGET_NUDGE[:24] in str(kwargs["messages"][-1]):
                 self.nudged_on.append(self.calls)
             # never finish on our own -> the loop must force the issue
             return _tool_resp("read_file", {"path": f"f{self.calls}.py"}, tool_id=f"r-{self.calls}")
@@ -1108,7 +1108,7 @@ def test_drive_loop_plan_finish_nudge_fires_once_at_iter_cap(tmp_path: Path) -> 
         mode="plan",
         provider=provider,
         dispatcher=DispatcherStub(),
-        max_iterations=_PLAN_NUDGE_AFTER_ITERS + 3,
+        max_iterations=PLAN_NUDGE_AFTER_ITERS + 3,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nplan a feature"}]}]
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -1116,7 +1116,7 @@ def test_drive_loop_plan_finish_nudge_fires_once_at_iter_cap(tmp_path: Path) -> 
     )
     # Injected exactly once, on the turn-cap iteration (mode stays "plan" on
     # every later turn, so the latch is what keeps it to one).
-    assert provider.nudged_on == [_PLAN_NUDGE_AFTER_ITERS]
+    assert provider.nudged_on == [PLAN_NUDGE_AFTER_ITERS]
 
 
 def test_drive_loop_plan_finish_nudge_fires_on_low_budget(
@@ -1125,7 +1125,7 @@ def test_drive_loop_plan_finish_nudge_fires_on_low_budget(
     """The nudge also fires early when the token budget runs low (not only on
     the turn cap) -- e.g. a planner reading large files burns budget fast."""
     from agent6.workflows import loop as loopmod
-    from agent6.workflows.loop import _PLAN_BUDGET_NUDGE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import PLAN_BUDGET_NUDGE  # pyright: ignore[reportPrivateUsage]
 
     def _low_budget(_self: object) -> float:
         return 0.2
@@ -1139,7 +1139,7 @@ def test_drive_loop_plan_finish_nudge_fires_on_low_budget(
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if _PLAN_BUDGET_NUDGE[:24] in str(kwargs["messages"][-1]):
+            if PLAN_BUDGET_NUDGE[:24] in str(kwargs["messages"][-1]):
                 self.nudged_on.append(self.calls)
             return _tool_resp("read_file", {"path": f"f{self.calls}.py"}, tool_id=f"r-{self.calls}")
 
@@ -1170,7 +1170,7 @@ def test_drive_loop_run_budget_nudge_forces_verify_and_finish(
     Observed live: the worker solves the task but never re-verifies or calls
     finish_run, so the budget dies on read-only commands."""
     from agent6.workflows import loop as loopmod
-    from agent6.workflows.loop import _RUN_BUDGET_NUDGE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import RUN_BUDGET_NUDGE  # pyright: ignore[reportPrivateUsage]
 
     def _low_budget(_self: object) -> float:
         return 0.2
@@ -1184,7 +1184,7 @@ def test_drive_loop_run_budget_nudge_forces_verify_and_finish(
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if _RUN_BUDGET_NUDGE[:24] in str(kwargs["messages"][-1]):
+            if RUN_BUDGET_NUDGE[:24] in str(kwargs["messages"][-1]):
                 self.nudged_on.append(self.calls)
             return _tool_resp("list_dir", {"path": "."}, tool_id=f"l-{self.calls}")
 
@@ -1213,7 +1213,7 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: Path) -> None:
     commit, no edit) gets one finish nudge, then the loop stops it with
     reason='verify_settled' — the positive completion signal a non-metric run
     otherwise lacks (Kimi K2.6 observed running 128 iters when done at ~45)."""
-    from agent6.workflows.loop import _VERIFY_SETTLED_NUDGE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import VERIFY_SETTLED_NUDGE  # pyright: ignore[reportPrivateUsage]
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -1222,7 +1222,7 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: Path) -> None:
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if _VERIFY_SETTLED_NUDGE[:24] in str(kwargs["messages"][-1]):
+            if VERIFY_SETTLED_NUDGE[:24] in str(kwargs["messages"][-1]):
                 self.saw_nudge = True
             if self.calls == 1:
                 return _tool_resp("run_verify_command", tool_id="v1")  # -> verify passes
@@ -1269,7 +1269,7 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(tmp_path: P
     """The settled detector must stay dormant until verify has passed at least
     once — a worker still reading toward its first green build must not be
     stopped early."""
-    from agent6.workflows.loop import _VERIFY_SETTLED_NUDGE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import VERIFY_SETTLED_NUDGE  # pyright: ignore[reportPrivateUsage]
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -1278,7 +1278,7 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(tmp_path: P
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if _VERIFY_SETTLED_NUDGE[:24] in str(kwargs["messages"][-1]):
+            if VERIFY_SETTLED_NUDGE[:24] in str(kwargs["messages"][-1]):
                 self.saw_nudge = True
             if self.calls >= 6:
                 return _tool_resp("finish_run", {"summary": "done"}, tool_id="fin")
@@ -2002,7 +2002,7 @@ class _FakeGraph:
 def test_task_finish_gate_nudges_open_subtasks_then_caps() -> None:
     """The finish-gate nudges while a SUBTASK is open, naming it, and stops after
     _TASK_FINISH_PATIENCE so a stuck worker can't bounce the loop forever."""
-    from agent6.workflows.loop import _TASK_FINISH_PATIENCE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import TASK_FINISH_PATIENCE  # pyright: ignore[reportPrivateUsage]
 
     nodes = {
         "root": {"parent_id": None, "status": "in_progress", "title": "review repo"},
@@ -2011,7 +2011,7 @@ def test_task_finish_gate_nudges_open_subtasks_then_caps() -> None:
     }
     wf = _wf(curator=_FakeGraph(nodes))
     st = _state()
-    for i in range(1, _TASK_FINISH_PATIENCE + 1):
+    for i in range(1, TASK_FINISH_PATIENCE + 1):
         nudge = wf._task_finish_gate_nudge(st)  # pyright: ignore[reportPrivateUsage]
         assert nudge is not None and "audit providers" in nudge
         assert "audit sandbox" not in nudge  # passed subtask not listed
@@ -2034,20 +2034,20 @@ def test_task_finish_gate_allows_finish_without_open_subtasks() -> None:
 def test_current_task_id_prefers_open_cursor() -> None:
     """The cursor wins when it still points at an open subtask, even if an
     earlier subtask is also open (the worker's explicit focus choice is kept)."""
-    from agent6.workflows.loop import _current_task_id  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import current_task_id  # pyright: ignore[reportPrivateUsage]
 
     nodes = {
         "root": {"parent_id": None, "status": "in_progress", "title": "r"},
         "a": {"parent_id": "root", "status": "pending", "title": "a"},
         "b": {"parent_id": "root", "status": "in_progress", "title": "b"},
     }
-    assert _current_task_id(nodes, "b") == "b"  # cursor respected
-    assert _current_task_id(nodes, None) == "a"  # no cursor -> first open subtask
+    assert current_task_id(nodes, "b") == "b"  # cursor respected
+    assert current_task_id(nodes, None) == "a"  # no cursor -> first open subtask
     # Stale cursor (points at a closed task) -> recompute the frontier.
     nodes["b"]["status"] = "passed"
-    assert _current_task_id(nodes, "b") == "a"
+    assert current_task_id(nodes, "b") == "a"
     # Cursor on the auto-root is not a focus target -> first open subtask.
-    assert _current_task_id(nodes, "root") == "a"
+    assert current_task_id(nodes, "root") == "a"
 
 
 def test_first_ready_subtask_respects_deps_and_order() -> None:
@@ -2098,9 +2098,9 @@ def test_first_ready_subtask_prefers_leaf_over_decomposed_parent() -> None:
 
 
 def test_current_task_banner_carries_title_acceptance_paths() -> None:
-    from agent6.workflows.loop import _current_task_banner  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import current_task_banner  # pyright: ignore[reportPrivateUsage]
 
-    banner = _current_task_banner(
+    banner = current_task_banner(
         "01TASK",
         {"title": "audit providers", "acceptance": "no bugs left", "relevant_paths": ["a.py"]},
     )
@@ -2109,14 +2109,14 @@ def test_current_task_banner_carries_title_acceptance_paths() -> None:
     assert "Relevant paths: a.py" in banner
     assert "ONE task to completion" in banner
     # Absent acceptance/paths are simply omitted, not rendered empty.
-    bare = _current_task_banner("01X", {"title": "t"})
+    bare = current_task_banner("01X", {"title": "t"})
     assert "Acceptance:" not in bare and "Relevant paths:" not in bare
     # Decompose invites a finer plan for a large childless task (recursion);
     # off by default, and never once the task already has children.
     assert "child subtasks" not in bare
-    rec = _current_task_banner("01X", {"title": "t"}, decompose=True)
+    rec = current_task_banner("01X", {"title": "t"}, decompose=True)
     assert "child subtasks under it (parent_id=01X)" in rec
-    has_kids = _current_task_banner("01X", {"title": "t", "children": ["01Y"]}, decompose=True)
+    has_kids = current_task_banner("01X", {"title": "t", "children": ["01Y"]}, decompose=True)
     assert "child subtasks" not in has_kids
 
 
@@ -2258,8 +2258,8 @@ def test_surface_current_task_stuck_nudge_fires_periodically_then_caps() -> None
     same stuck task (a weak model ignored a single nudge live), but caps at
     _STUCK_NUDGE_MAX so it cannot nag forever."""
     from agent6.workflows.loop import (
-        _STUCK_NUDGE_MAX,  # pyright: ignore[reportPrivateUsage]
-        _STUCK_ON_TASK_AFTER,  # pyright: ignore[reportPrivateUsage]
+        STUCK_NUDGE_MAX,  # pyright: ignore[reportPrivateUsage]
+        STUCK_ON_TASK_AFTER,  # pyright: ignore[reportPrivateUsage]
     )
 
     cur = _FakeCurator(
@@ -2272,22 +2272,22 @@ def test_surface_current_task_stuck_nudge_fires_periodically_then_caps() -> None
     st = _state()
     messages: list[dict[str, Any]] = []
     # One nudge after the first period, but not before it.
-    for _ in range(_STUCK_ON_TASK_AFTER):
+    for _ in range(STUCK_ON_TASK_AFTER):
         _surface(wf, st, messages)
     assert _stuck_count(messages) == 0  # turns_on_task is _STUCK_ON_TASK_AFTER-1 here
     _surface(wf, st, messages)
     assert _stuck_count(messages) == 1  # crossed the first period
     # Keep grinding well past the cap; it re-fires periodically then stops.
-    for _ in range((_STUCK_NUDGE_MAX + 2) * _STUCK_ON_TASK_AFTER):
+    for _ in range((STUCK_NUDGE_MAX + 2) * STUCK_ON_TASK_AFTER):
         _surface(wf, st, messages)
-    assert _stuck_count(messages) == _STUCK_NUDGE_MAX
-    assert st.stuck_nudges_fired == _STUCK_NUDGE_MAX
+    assert _stuck_count(messages) == STUCK_NUDGE_MAX
+    assert st.stuck_nudges_fired == STUCK_NUDGE_MAX
 
 
 def test_surface_current_task_stuck_nudge_resets_on_progress() -> None:
     """Forward motion (a task marked passed -> focus advances) resets the grind
     counter, so the stuck nudge does not fire."""
-    from agent6.workflows.loop import _STUCK_ON_TASK_AFTER  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import STUCK_ON_TASK_AFTER  # pyright: ignore[reportPrivateUsage]
 
     nodes = {
         "root": {"parent_id": None, "status": "in_progress", "title": "r"},
@@ -2297,14 +2297,14 @@ def test_surface_current_task_stuck_nudge_resets_on_progress() -> None:
     wf = _wf(curator=_FakeCurator(nodes))
     st = _state()
     messages: list[dict[str, Any]] = []
-    for _ in range(_STUCK_ON_TASK_AFTER - 1):  # grind almost to the threshold on a
+    for _ in range(STUCK_ON_TASK_AFTER - 1):  # grind almost to the threshold on a
         _surface(wf, st, messages)
     assert _stuck_count(messages) == 0
     nodes["a"]["status"] = "passed"  # progress -> focus advances to b
     for _ in range(3):
         _surface(wf, st, messages)
     assert _stuck_count(messages) == 0
-    assert st.last_focus_id == "b" and st.turns_on_task < _STUCK_ON_TASK_AFTER
+    assert st.last_focus_id == "b" and st.turns_on_task < STUCK_ON_TASK_AFTER
 
 
 def test_surface_current_task_stuck_counter_survives_compaction() -> None:
@@ -2732,7 +2732,7 @@ def test_save_resume_snapshot_noop_when_path_unset(tmp_path: Path) -> None:
 
 def test_save_and_load_resume_snapshot_round_trip(tmp_path: Path) -> None:
     """Snapshot written by _save_resume_snapshot loads back identically."""
-    from agent6.workflows.loop import _load_resume_snapshot  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import load_resume_snapshot  # pyright: ignore[reportPrivateUsage]
 
     snap_path = tmp_path / "loop_state.json"
     wf = _wf(resume_state_path=snap_path)
@@ -2749,7 +2749,7 @@ def test_save_and_load_resume_snapshot_round_trip(tmp_path: Path) -> None:
         state=_state(tool_calls=3),
     )
     assert snap_path.is_file()
-    loaded = _load_resume_snapshot(snap_path)
+    loaded = load_resume_snapshot(snap_path)
     assert loaded.system == "SYSTEM PROMPT"
     assert loaded.messages == msgs
     assert loaded.tool_calls == 3
@@ -2803,7 +2803,7 @@ def test_load_resume_snapshot_rejects_version_mismatch(tmp_path: Path) -> None:
     """A snapshot with a wrong version must raise ValueError."""
     import json as _json
 
-    from agent6.workflows.loop import _load_resume_snapshot  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import load_resume_snapshot  # pyright: ignore[reportPrivateUsage]
 
     snap_path = tmp_path / "loop_state.json"
     snap_path.write_text(
@@ -2820,7 +2820,7 @@ def test_load_resume_snapshot_rejects_version_mismatch(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="version mismatch"):
-        _load_resume_snapshot(snap_path)
+        load_resume_snapshot(snap_path)
 
 
 def test_resume_raises_when_path_unset() -> None:
@@ -2935,9 +2935,9 @@ def test_crash_mid_run_then_resume_continues_from_snapshot(tmp_path: Path) -> No
 
     # Snapshot must exist after the crash and be loadable.
     assert snap_path.is_file(), "snapshot must be written before every LLM call"
-    from agent6.workflows.loop import _load_resume_snapshot  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import load_resume_snapshot  # pyright: ignore[reportPrivateUsage]
 
-    snap = _load_resume_snapshot(snap_path)
+    snap = load_resume_snapshot(snap_path)
     # The user's task message survived in the snapshot.
     user_text = "".join(
         block.get("text", "")
@@ -3253,15 +3253,15 @@ def test_resume_snapshot_carries_verify_command(tmp_path: Path) -> None:
 
 
 def test_provider_error_hint_for_auth_and_quota() -> None:
-    from agent6.workflows.loop import _provider_error_hint  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import provider_error_hint  # pyright: ignore[reportPrivateUsage]
 
-    assert "agent6 connect" in _provider_error_hint(401)
-    assert "agent6 connect" in _provider_error_hint(403)
-    assert "credits" in _provider_error_hint(402).lower()
+    assert "agent6 connect" in provider_error_hint(401)
+    assert "agent6 connect" in provider_error_hint(403)
+    assert "credits" in provider_error_hint(402).lower()
     # Transient / unknown statuses get no hint (don't mislead).
-    assert _provider_error_hint(429) == ""
-    assert _provider_error_hint(500) == ""
-    assert _provider_error_hint(None) == ""
+    assert provider_error_hint(429) == ""
+    assert provider_error_hint(500) == ""
+    assert provider_error_hint(None) == ""
 
 
 def test_save_resume_snapshot_degrades_on_unwritable_state_dir(tmp_path: Path) -> None:
@@ -3352,7 +3352,7 @@ def test_question_nudge_then_accept(tmp_path: Path) -> None:
     """A run-mode turn that ends by asking a prose question with no tool call is
     nudged ONCE to call ask_user; if the model then acts it recovers, and if it
     keeps asking the run accepts silent_finish (bounded, no loop)."""
-    from agent6.workflows.loop import _QUESTION_NUDGE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import QUESTION_NUDGE  # pyright: ignore[reportPrivateUsage]
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -3366,7 +3366,7 @@ def test_question_nudge_then_accept(tmp_path: Path) -> None:
             last = msgs[-1] if msgs else {}
             blocks = last.get("content", []) if isinstance(last, dict) else []
             text = " ".join(b.get("text", "") for b in blocks if isinstance(b, dict))
-            if _QUESTION_NUDGE in text:
+            if QUESTION_NUDGE in text:
                 self.saw_nudge = True
                 return _tool_resp("ask_user", {"questions": [{"question": "A?"}]}, tool_id="q1")
             if self.turns == 1:
@@ -3411,12 +3411,12 @@ def test_question_nudge_then_accept(tmp_path: Path) -> None:
 
 
 def test_ends_with_question_detection() -> None:
-    from agent6.workflows.loop import _ends_with_question  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import ends_with_question  # pyright: ignore[reportPrivateUsage]
 
-    assert _ends_with_question("I found two options.\nWhich do you prefer?")
-    assert not _ends_with_question("Done. All tests pass.")
-    assert not _ends_with_question("")
-    assert _ends_with_question("Should I proceed?  ")  # trailing space tolerated
+    assert ends_with_question("I found two options.\nWhich do you prefer?")
+    assert not ends_with_question("Done. All tests pass.")
+    assert not ends_with_question("")
+    assert ends_with_question("Should I proceed?  ")  # trailing space tolerated
 
 
 def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: Path) -> None:
@@ -3425,8 +3425,8 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: Path) -> 
     the 4th identical consecutive failure and one escalation at the 7th; the
     signature ignores cosmetic drift like line numbers."""
     from agent6.workflows.loop import (
-        _NO_PROGRESS_ESCALATION,  # pyright: ignore[reportPrivateUsage]
-        _NO_PROGRESS_NUDGE,  # pyright: ignore[reportPrivateUsage]
+        NO_PROGRESS_ESCALATION,  # pyright: ignore[reportPrivateUsage]
+        NO_PROGRESS_NUDGE,  # pyright: ignore[reportPrivateUsage]
     )
 
     class ProviderStub:
@@ -3438,9 +3438,9 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: Path) -> 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
             last = str(kwargs["messages"][-1])
-            if _NO_PROGRESS_NUDGE[:28] in last:
+            if NO_PROGRESS_NUDGE[:28] in last:
                 self.nudges += 1
-            if _NO_PROGRESS_ESCALATION[:28] in last:
+            if NO_PROGRESS_ESCALATION[:28] in last:
                 self.escalations += 1
             if self.calls >= 18:
                 return _tool_resp("finish_run", {"summary": "stuck"}, tool_id="f")
@@ -3507,7 +3507,7 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: Path) -> 
 def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: Path) -> None:
     """Distinct failures mean real progress through the error list; the guard
     must stay quiet."""
-    from agent6.workflows.loop import _NO_PROGRESS_NUDGE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import NO_PROGRESS_NUDGE  # pyright: ignore[reportPrivateUsage]
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -3516,7 +3516,7 @@ def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: Path) -> N
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if _NO_PROGRESS_NUDGE[:28] in str(kwargs["messages"][-1]):
+            if NO_PROGRESS_NUDGE[:28] in str(kwargs["messages"][-1]):
                 self.nudges += 1
             if self.calls >= 20:
                 return _tool_resp("finish_run", {"summary": "done"}, tool_id="f")
@@ -3611,7 +3611,7 @@ def test_drive_loop_spec_recheck_bounces_first_green_finish(tmp_path: Path) -> N
     once with the spec-recheck directive (the eventflow failure mode: a green
     subset-suite taken as done while spec requirements remain unmet); the
     second finish goes through."""
-    from agent6.workflows.loop import _SPEC_RECHECK_NUDGE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import SPEC_RECHECK_NUDGE  # pyright: ignore[reportPrivateUsage]
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -3620,7 +3620,7 @@ def test_drive_loop_spec_recheck_bounces_first_green_finish(tmp_path: Path) -> N
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if _SPEC_RECHECK_NUDGE[:26] in str(kwargs["messages"][-1]):
+            if SPEC_RECHECK_NUDGE[:26] in str(kwargs["messages"][-1]):
                 self.nudges += 1
             if self.calls == 1:
                 return _tool_resp("run_verify_command", tool_id="v1")
@@ -3644,7 +3644,7 @@ def test_drive_loop_spec_recheck_bounces_first_green_finish(tmp_path: Path) -> N
 
 
 def test_drive_loop_spec_recheck_off_by_default_and_when_disabled(tmp_path: Path) -> None:
-    from agent6.workflows.loop import _SPEC_RECHECK_NUDGE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import SPEC_RECHECK_NUDGE  # pyright: ignore[reportPrivateUsage]
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -3653,7 +3653,7 @@ def test_drive_loop_spec_recheck_off_by_default_and_when_disabled(tmp_path: Path
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if _SPEC_RECHECK_NUDGE[:26] in str(kwargs["messages"][-1]):
+            if SPEC_RECHECK_NUDGE[:26] in str(kwargs["messages"][-1]):
                 self.nudges += 1
             if self.calls == 1:
                 return _tool_resp("run_verify_command", tool_id="v1")
@@ -3678,7 +3678,7 @@ def test_drive_loop_spec_recheck_off_by_default_and_when_disabled(tmp_path: Path
 def test_drive_loop_spec_recheck_silent_without_green_verify(tmp_path: Path) -> None:
     """A finish over a never-green tree is the verify-green gate's territory;
     the spec recheck targets exactly the green-but-incomplete case."""
-    from agent6.workflows.loop import _SPEC_RECHECK_NUDGE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import SPEC_RECHECK_NUDGE  # pyright: ignore[reportPrivateUsage]
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -3687,7 +3687,7 @@ def test_drive_loop_spec_recheck_silent_without_green_verify(tmp_path: Path) -> 
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if _SPEC_RECHECK_NUDGE[:26] in str(kwargs["messages"][-1]):
+            if SPEC_RECHECK_NUDGE[:26] in str(kwargs["messages"][-1]):
                 self.nudges += 1
             return _tool_resp("finish_run", {"summary": "done"}, tool_id="f")
 
@@ -3775,7 +3775,7 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: Path) ->
     implicit finish (observed: kimi answering a SWE-bench problem statement
     in prose at iteration 2, ending the run patchless). Two nudges steer back
     to the tools; a third prose turn is then honored as silent_finish."""
-    from agent6.workflows.loop import _SILENT_NO_WORK_NUDGE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import SILENT_NO_WORK_NUDGE  # pyright: ignore[reportPrivateUsage]
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -3784,7 +3784,7 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: Path) ->
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if _SILENT_NO_WORK_NUDGE[:22] in str(kwargs["messages"][-1]):
+            if SILENT_NO_WORK_NUDGE[:22] in str(kwargs["messages"][-1]):
                 self.nudges += 1
             return _resp("Here is my analysis of the problem.")
 
@@ -3823,7 +3823,7 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: Path) ->
 def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: Path) -> None:
     """Once an edit has landed, a prose wrap-up is the normal implicit finish
     and must not be bounced by the no-work gate."""
-    from agent6.workflows.loop import _SILENT_NO_WORK_NUDGE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import SILENT_NO_WORK_NUDGE  # pyright: ignore[reportPrivateUsage]
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -3832,7 +3832,7 @@ def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: Path) -> 
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if _SILENT_NO_WORK_NUDGE[:22] in str(kwargs["messages"][-1]):
+            if SILENT_NO_WORK_NUDGE[:22] in str(kwargs["messages"][-1]):
                 self.nudges += 1
             if self.calls == 1:
                 return _tool_resp(
@@ -3882,7 +3882,7 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: Path) -> None:
     search are expected, and the metric plateau/early-finish machinery owns
     when the run stops. The no-progress guard must NOT fire (it would truncate
     the budgeted search and end the run completed=false)."""
-    from agent6.workflows.loop import _NO_PROGRESS_NUDGE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import NO_PROGRESS_NUDGE  # pyright: ignore[reportPrivateUsage]
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -3891,7 +3891,7 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: Path) -> None:
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if _NO_PROGRESS_NUDGE[:28] in str(kwargs["messages"][-1]):
+            if NO_PROGRESS_NUDGE[:28] in str(kwargs["messages"][-1]):
                 self.nudges += 1
             if self.calls >= 18:
                 return _tool_resp("finish_run", {"summary": "done"}, tool_id="f")
@@ -4020,8 +4020,8 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: Path) -> None:
     stopped as reason=tool_error_stuck instead of looping to the cap
     (observed: kimi re-issuing malformed grep until timeout)."""
     from agent6.workflows.loop import (
-        _TOOL_ERROR_ESCALATION,  # pyright: ignore[reportPrivateUsage]
-        _TOOL_ERROR_NUDGE,  # pyright: ignore[reportPrivateUsage]
+        TOOL_ERROR_ESCALATION,  # pyright: ignore[reportPrivateUsage]
+        TOOL_ERROR_NUDGE,  # pyright: ignore[reportPrivateUsage]
     )
 
     class ProviderStub:
@@ -4033,9 +4033,9 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: Path) -> None:
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
             last = str(kwargs["messages"][-1])
-            if _TOOL_ERROR_NUDGE[:26] in last:
+            if TOOL_ERROR_NUDGE[:26] in last:
                 self.nudges += 1
-            if _TOOL_ERROR_ESCALATION[:26] in last:
+            if TOOL_ERROR_ESCALATION[:26] in last:
                 self.escs += 1
             # keep issuing grep with a slightly different (runaway) pattern each
             # time — same ERROR signature, different args
@@ -4087,7 +4087,7 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: Path) -> None:
     """A successful tool call between errors clears the streak, so intermittent
     errors never trip the ladder."""
     from agent6.tools.errors import ToolError as _TE
-    from agent6.workflows.loop import _TOOL_ERROR_NUDGE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import TOOL_ERROR_NUDGE  # pyright: ignore[reportPrivateUsage]
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -4096,7 +4096,7 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: Path) -> None:
 
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
-            if _TOOL_ERROR_NUDGE[:26] in str(kwargs["messages"][-1]):
+            if TOOL_ERROR_NUDGE[:26] in str(kwargs["messages"][-1]):
                 self.nudges += 1
             if self.calls >= 12:
                 return _tool_resp("finish_run", {"summary": "ok"}, tool_id="f")
@@ -4148,7 +4148,7 @@ def test_note_verify_result_flags_a_dead_verify(tmp_path: Path) -> None:
     flagged once with the verify-broken nudge (observed: sympy `python -m
     pytest` with pytest missing, exit 1 in 0.0s); a legitimate slow test
     failure is not flagged."""
-    from agent6.workflows.loop import _VERIFY_BROKEN_NUDGE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import VERIFY_BROKEN_NUDGE  # pyright: ignore[reportPrivateUsage]
 
     wf = _wf(root=tmp_path, config=MagicMock(), provider=MagicMock(), dispatcher=MagicMock())
     st = _state()
@@ -4160,7 +4160,7 @@ def test_note_verify_result_flags_a_dead_verify(tmp_path: Path) -> None:
         {"returncode": 1, "stdout": "", "stderr": "No module named pytest", "duration_s": 0.02},
     )
     texts = [b["text"] for b in turn.tool_results if b.get("type") == "text"]
-    assert any(_VERIFY_BROKEN_NUDGE[:24] in t for t in texts)
+    assert any(VERIFY_BROKEN_NUDGE[:24] in t for t in texts)
     assert st.verify_broken_warned is True
 
     # a second dead verify does not re-warn
@@ -4174,7 +4174,7 @@ def test_note_verify_result_flags_a_dead_verify(tmp_path: Path) -> None:
 
 
 def test_note_verify_result_does_not_flag_real_failure(tmp_path: Path) -> None:
-    from agent6.workflows.loop import _VERIFY_BROKEN_NUDGE  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import VERIFY_BROKEN_NUDGE  # pyright: ignore[reportPrivateUsage]
 
     wf = _wf(root=tmp_path, config=MagicMock(), provider=MagicMock(), dispatcher=MagicMock())
     st = _state()
@@ -4191,7 +4191,7 @@ def test_note_verify_result_does_not_flag_real_failure(tmp_path: Path) -> None:
         },
     )
     texts = [b.get("text", "") for b in turn.tool_results]
-    assert not any(_VERIFY_BROKEN_NUDGE[:24] in t for t in texts)
+    assert not any(VERIFY_BROKEN_NUDGE[:24] in t for t in texts)
     assert st.verify_broken_warned is False
 
 

@@ -45,19 +45,11 @@ from agent6.memory import MemoryEntry, MemoryStoreError
 from agent6.memory import list_entries as memory_list_entries
 from agent6.portable import atomic_write
 from agent6.prompts.revision import (
-    CONTEXT_SUMMARY_SYSTEM_PROMPT as _CONTEXT_SUMMARY_SYSTEM_PROMPT,
-)
-from agent6.prompts.revision import (
-    CRITIC_SYSTEM_PROMPT as _CRITIC_SYSTEM_PROMPT,
-)
-from agent6.prompts.revision import (
-    GIST_DISTILL_SYSTEM_PROMPT as _GIST_DISTILL_SYSTEM_PROMPT,
-)
-from agent6.prompts.revision import (
-    PROMPT_REVISION_SYSTEM_PROMPT as _PROMPT_REVISION_SYSTEM_PROMPT,
-)
-from agent6.prompts.revision import (
-    context_restart_notice as _context_restart_notice,
+    CONTEXT_SUMMARY_SYSTEM_PROMPT,
+    CRITIC_SYSTEM_PROMPT,
+    GIST_DISTILL_SYSTEM_PROMPT,
+    PROMPT_REVISION_SYSTEM_PROMPT,
+    context_restart_notice,
 )
 from agent6.providers import (
     Provider,
@@ -74,256 +66,114 @@ from agent6.tools.schema import (
 )
 from agent6.types import RepoSummary
 from agent6.workflows._cache import (
-    roll_cache_breakpoints as _roll_cache_breakpoints,
+    roll_cache_breakpoints,
 )
 from agent6.workflows._compaction import (
-    DROP_BLOCKS_AT_CHARS as _DROP_BLOCKS_AT_CHARS,
-)
-from agent6.workflows._compaction import (
-    SUMMARISE_AT_CHARS as _SUMMARISE_AT_CHARS,
-)
-from agent6.workflows._compaction import (
-    GistRequest as _GistRequest,
-)
-from agent6.workflows._compaction import (
-    cap_tool_result as _cap_tool_result,
-)
-from agent6.workflows._compaction import (
-    compact_old_tool_results as _compact_old_tool_results,
-)
-from agent6.workflows._compaction import (
-    context_chars as _context_chars,
-)
-from agent6.workflows._compaction import (
-    parse_checkoff as _parse_checkoff,
-)
-from agent6.workflows._compaction import (
-    parse_gist_lines as _parse_gist_lines,
-)
-from agent6.workflows._compaction import (
-    recently_edited_paths as _recently_edited_paths,
-)
-from agent6.workflows._compaction import (
-    strip_checkoff as _strip_checkoff,
+    DROP_BLOCKS_AT_CHARS,
+    SUMMARISE_AT_CHARS,
+    GistRequest,
+    cap_tool_result,
+    compact_old_tool_results,
+    context_chars,
+    parse_checkoff,
+    parse_gist_lines,
+    recently_edited_paths,
+    strip_checkoff,
 )
 from agent6.workflows._context import load_repo_summary
 from agent6.workflows._critic import (
-    CritiqueResult as _CritiqueResult,
-)
-from agent6.workflows._critic import (
-    format_messages_tail_for_critic as _format_messages_tail_for_critic,
-)
-from agent6.workflows._critic import (
-    parse_critic_verdict as _parse_critic_verdict,
+    CritiqueResult,
+    format_messages_tail_for_critic,
+    parse_critic_verdict,
 )
 from agent6.workflows._dag_focus import (
-    DAG_MUTATING_TOOLS as _DAG_MUTATING_TOOLS,
-)
-from agent6.workflows._dag_focus import (
-    STUCK_NUDGE_MAX as _STUCK_NUDGE_MAX,
-)
-from agent6.workflows._dag_focus import (
-    STUCK_ON_TASK_AFTER as _STUCK_ON_TASK_AFTER,
-)
-from agent6.workflows._dag_focus import (
-    current_task_banner as _current_task_banner,
-)
-from agent6.workflows._dag_focus import (
-    current_task_id as _current_task_id,
-)
-from agent6.workflows._dag_focus import (
-    initial_dag_hint as _initial_dag_hint,
-)
-from agent6.workflows._dag_focus import (
-    stuck_on_task_nudge as _stuck_on_task_nudge,
+    DAG_MUTATING_TOOLS,
+    STUCK_NUDGE_MAX,
+    STUCK_ON_TASK_AFTER,
+    current_task_banner,
+    current_task_id,
+    initial_dag_hint,
+    stuck_on_task_nudge,
 )
 from agent6.workflows._metric import (
-    METRIC_EARLY_FINISH_PATIENCE as _METRIC_EARLY_FINISH_PATIENCE,
-)
-from agent6.workflows._metric import (
-    METRIC_FINISH_NUDGE as _METRIC_FINISH_NUDGE,
-)
-from agent6.workflows._metric import (
-    METRIC_PLATEAU_PATIENCE as _METRIC_PLATEAU_PATIENCE,
-)
-from agent6.workflows._metric import (
-    METRIC_PLATEAU_STOP_BELOW_BUDGET as _METRIC_PLATEAU_STOP_BELOW_BUDGET,
-)
-from agent6.workflows._metric import (
-    MetricSample as _MetricSample,
-)
-from agent6.workflows._metric import (
-    best_metric_sample as _best_metric_sample,
-)
-from agent6.workflows._metric import (
-    coerce_metric_score as _coerce_metric_score,
-)
-from agent6.workflows._metric import (
-    extract_metric_targets as _extract_metric_targets,
-)
-from agent6.workflows._metric import (
-    format_metric_feedback as _format_metric_feedback,
-)
-from agent6.workflows._metric import (
-    metric_at_fraction_ceiling as _metric_at_fraction_ceiling,
-)
-from agent6.workflows._metric import (
-    metric_goal as _metric_goal,
-)
-from agent6.workflows._metric import (
-    metric_plateau_nudge as _metric_plateau_nudge,
-)
-from agent6.workflows._metric import (
-    metric_plateau_summary as _metric_plateau_summary,
+    METRIC_EARLY_FINISH_PATIENCE,
+    METRIC_FINISH_NUDGE,
+    METRIC_PLATEAU_PATIENCE,
+    METRIC_PLATEAU_STOP_BELOW_BUDGET,
+    MetricSample,
+    best_metric_sample,
+    coerce_metric_score,
+    extract_metric_targets,
+    format_metric_feedback,
+    metric_at_fraction_ceiling,
+    metric_goal,
+    metric_plateau_nudge,
+    metric_plateau_summary,
 )
 from agent6.workflows._nudges import (
-    MEMORY_FINISH_NUDGE as _MEMORY_FINISH_NUDGE,
-)
-from agent6.workflows._nudges import (
-    MEMORY_FLIP_NUDGE as _MEMORY_FLIP_NUDGE,
-)
-from agent6.workflows._nudges import (
-    NO_PROGRESS_ESCALATE_AFTER as _NO_PROGRESS_ESCALATE_AFTER,
-)
-from agent6.workflows._nudges import (
-    NO_PROGRESS_ESCALATION as _NO_PROGRESS_ESCALATION,
-)
-from agent6.workflows._nudges import (
-    NO_PROGRESS_NUDGE as _NO_PROGRESS_NUDGE,
-)
-from agent6.workflows._nudges import (
-    NO_PROGRESS_NUDGE_AFTER as _NO_PROGRESS_NUDGE_AFTER,
-)
-from agent6.workflows._nudges import (
-    NO_PROGRESS_STOP_AFTER as _NO_PROGRESS_STOP_AFTER,
-)
-from agent6.workflows._nudges import (
-    PLAN_BUDGET_NUDGE as _PLAN_BUDGET_NUDGE,
-)
-from agent6.workflows._nudges import (
-    PLAN_BUDGET_NUDGE_BELOW as _PLAN_BUDGET_NUDGE_BELOW,
-)
-from agent6.workflows._nudges import (
-    PLAN_NUDGE_AFTER_ITERS as _PLAN_NUDGE_AFTER_ITERS,
-)
-from agent6.workflows._nudges import (
-    QUESTION_NUDGE as _QUESTION_NUDGE,
-)
-from agent6.workflows._nudges import (
-    RUN_BUDGET_NUDGE as _RUN_BUDGET_NUDGE,
-)
-from agent6.workflows._nudges import (
-    RUN_BUDGET_NUDGE_BELOW as _RUN_BUDGET_NUDGE_BELOW,
-)
-from agent6.workflows._nudges import (
-    RUN_BUDGET_NUDGE_GATELESS as _RUN_BUDGET_NUDGE_GATELESS,
-)
-from agent6.workflows._nudges import (
-    SILENT_NO_WORK_NUDGE as _SILENT_NO_WORK_NUDGE,
-)
-from agent6.workflows._nudges import (
-    SILENT_NO_WORK_PATIENCE as _SILENT_NO_WORK_PATIENCE,
-)
-from agent6.workflows._nudges import (
-    SPEC_RECHECK_NUDGE as _SPEC_RECHECK_NUDGE,
-)
-from agent6.workflows._nudges import (
-    TASK_FINISH_PATIENCE as _TASK_FINISH_PATIENCE,
-)
-from agent6.workflows._nudges import (
-    TOOL_ERROR_ESCALATE_AFTER as _TOOL_ERROR_ESCALATE_AFTER,
-)
-from agent6.workflows._nudges import (
-    TOOL_ERROR_ESCALATION as _TOOL_ERROR_ESCALATION,
-)
-from agent6.workflows._nudges import (
-    TOOL_ERROR_NUDGE as _TOOL_ERROR_NUDGE,
-)
-from agent6.workflows._nudges import (
-    TOOL_ERROR_NUDGE_AFTER as _TOOL_ERROR_NUDGE_AFTER,
-)
-from agent6.workflows._nudges import (
-    TOOL_ERROR_STOP_AFTER as _TOOL_ERROR_STOP_AFTER,
-)
-from agent6.workflows._nudges import (
-    VERIFY_BROKEN_NUDGE as _VERIFY_BROKEN_NUDGE,
-)
-from agent6.workflows._nudges import (
-    VERIFY_FINISH_GATE as _VERIFY_FINISH_GATE,
-)
-from agent6.workflows._nudges import (
-    VERIFY_FINISH_PATIENCE as _VERIFY_FINISH_PATIENCE,
-)
-from agent6.workflows._nudges import (
-    VERIFY_SETTLED_NUDGE as _VERIFY_SETTLED_NUDGE,
-)
-from agent6.workflows._nudges import (
-    VERIFY_SETTLED_NUDGE_AFTER as _VERIFY_SETTLED_NUDGE_AFTER,
-)
-from agent6.workflows._nudges import (
-    VERIFY_SETTLED_STOP_AFTER as _VERIFY_SETTLED_STOP_AFTER,
-)
-from agent6.workflows._nudges import (
-    ends_with_question as _ends_with_question,
-)
-from agent6.workflows._nudges import (
-    tool_error_signature as _tool_error_signature,
-)
-from agent6.workflows._nudges import (
-    verify_did_not_run as _verify_did_not_run,
-)
-from agent6.workflows._nudges import (
-    verify_failure_signature as _verify_failure_signature,
+    MEMORY_FINISH_NUDGE,
+    MEMORY_FLIP_NUDGE,
+    NO_PROGRESS_ESCALATE_AFTER,
+    NO_PROGRESS_ESCALATION,
+    NO_PROGRESS_NUDGE,
+    NO_PROGRESS_NUDGE_AFTER,
+    NO_PROGRESS_STOP_AFTER,
+    PLAN_BUDGET_NUDGE,
+    PLAN_BUDGET_NUDGE_BELOW,
+    PLAN_NUDGE_AFTER_ITERS,
+    QUESTION_NUDGE,
+    RUN_BUDGET_NUDGE,
+    RUN_BUDGET_NUDGE_BELOW,
+    RUN_BUDGET_NUDGE_GATELESS,
+    SILENT_NO_WORK_NUDGE,
+    SILENT_NO_WORK_PATIENCE,
+    SPEC_RECHECK_NUDGE,
+    TASK_FINISH_PATIENCE,
+    TOOL_ERROR_ESCALATE_AFTER,
+    TOOL_ERROR_ESCALATION,
+    TOOL_ERROR_NUDGE,
+    TOOL_ERROR_NUDGE_AFTER,
+    TOOL_ERROR_STOP_AFTER,
+    VERIFY_BROKEN_NUDGE,
+    VERIFY_FINISH_GATE,
+    VERIFY_FINISH_PATIENCE,
+    VERIFY_SETTLED_NUDGE,
+    VERIFY_SETTLED_NUDGE_AFTER,
+    VERIFY_SETTLED_STOP_AFTER,
+    ends_with_question,
+    tool_error_signature,
+    verify_did_not_run,
+    verify_failure_signature,
 )
 from agent6.workflows._panel import Decision as ReviewDecision
 from agent6.workflows._panel import ReviewContext, render_findings
-from agent6.workflows._prompt_blocks import build_system_prompt as _build_system_prompt
+from agent6.workflows._prompt_blocks import build_system_prompt
 from agent6.workflows._prompt_revision import (
-    PromptRevision as _PromptRevision,
-)
-from agent6.workflows._prompt_revision import (
-    PromptRevisionError as _PromptRevisionError,
-)
-from agent6.workflows._prompt_revision import (
-    clip_text as _clip_text,
-)
-from agent6.workflows._prompt_revision import (
-    format_effective_task as _format_effective_task,
-)
-from agent6.workflows._prompt_revision import (
-    format_prompt_revision_context as _format_prompt_revision_context,
-)
-from agent6.workflows._prompt_revision import (
-    parse_prompt_revision as _parse_prompt_revision,
+    PromptRevision,
+    PromptRevisionError,
+    clip_text,
+    format_effective_task,
+    format_prompt_revision_context,
+    parse_prompt_revision,
 )
 from agent6.workflows._provider_call import (
-    NON_RETRYABLE_HTTP_STATUSES as _NON_RETRYABLE_HTTP_STATUSES,
-)
-from agent6.workflows._provider_call import (
-    RETRY_AFTER_CEILING_S as _RETRY_AFTER_CEILING_S,
-)
-from agent6.workflows._provider_call import (
-    is_empty_tool_call_response as _is_empty_tool_call_response,
-)
-from agent6.workflows._provider_call import (
-    provider_error_hint as _provider_error_hint,
+    NON_RETRYABLE_HTTP_STATUSES,
+    RETRY_AFTER_CEILING_S,
+    is_empty_tool_call_response,
+    provider_error_hint,
 )
 from agent6.workflows._review import ReviewDispatch, run_panel
 from agent6.workflows._review import Seat as ReviewSeat
 from agent6.workflows._run_state import (
-    SNAPSHOT_VERSION as _SNAPSHOT_VERSION,
-)
-from agent6.workflows._run_state import (
+    SNAPSHOT_VERSION,
     ResumeError,
     RunReason,
     RunResult,
+    load_resume_snapshot,
 )
-from agent6.workflows._run_state import (
-    load_resume_snapshot as _load_resume_snapshot,
-)
-from agent6.workflows._toolset import build_readonly_review_tools
 from agent6.workflows._toolset import (
-    tool_definitions as _tool_definitions,
+    build_readonly_review_tools,
+    tool_definitions,
 )
 from agent6.workflows.subrun import (
     GroupLaneSpawner,
@@ -456,7 +306,7 @@ class _LoopState:
 
     original_task: str
     tool_calls: int
-    metric_history: list[_MetricSample] = field(default_factory=list)
+    metric_history: list[MetricSample] = field(default_factory=list)
     # Consecutive before_finish critic rejections, so a stubborn worker can't
     # burn the budget bouncing off the critic.
     consecutive_critic_rejections: int = 0
@@ -673,8 +523,8 @@ class Workflow:
     temperature: float | None = 0.0
     critic_temperature: float | None = 0.0
     # Tiered context compaction thresholds (chars).
-    compact_drop_at_chars: int = _DROP_BLOCKS_AT_CHARS
-    compact_summarise_at_chars: int = _SUMMARISE_AT_CHARS
+    compact_drop_at_chars: int = DROP_BLOCKS_AT_CHARS
+    compact_summarise_at_chars: int = SUMMARISE_AT_CHARS
     # Retry the provider call on transient ProviderError before aborting the
     # run. Common cases: Anthropic 529 overload, Anthropic "Server disconnected
     # without sending a response" (httpx2 RemoteProtocolError, no HTTP status),
@@ -835,7 +685,7 @@ class Workflow:
         self._emit("run.start", run_id=run_id, user_task=user_task[:200], mode=self.mode)
         self._log("LOOP: LOAD_CONTEXT")
         repo = self._load_repo_summary()
-        system = _build_system_prompt(
+        system = build_system_prompt(
             config=self.config,
             repo=repo,
             mode=self.mode,
@@ -845,7 +695,7 @@ class Workflow:
 
         try:
             effective_task = self._maybe_revise_prompt(user_task, repo)
-        except _PromptRevisionError as exc:
+        except PromptRevisionError as exc:
             self._log(f"LOOP: prompt revision failed: {exc}")
             self._emit(
                 "run.end",
@@ -871,16 +721,16 @@ class Workflow:
             self._log(f"LOOP: DAG root task seeded: {root_id}")
             self._emit_graph_snapshot()  # show the root in the live task view
 
-        tools = _tool_definitions(self.dispatcher, mode=self.mode)
+        tools = tool_definitions(self.dispatcher, mode=self.mode)
         self._log(
             f"LOOP: mode={self.mode} system={len(system)} chars,"
             f" tools={len(tools)}, task={len(effective_task)} chars"
         )
 
         # Initial user message - the task + a brief operational header.
-        # Cache breakpoints are placed by _roll_cache_breakpoints each
+        # Cache breakpoints are placed by roll_cache_breakpoints each
         # iteration, so the growing history stays cached across turns.
-        dag_hint = _initial_dag_hint(root_id, self.mode, self.config.prompt.decompose == "on")
+        dag_hint = initial_dag_hint(root_id, self.mode, self.config.prompt.decompose == "on")
         if self.mode == "plan":
             instructions = (
                 "Begin planning. Use the read-only tools to gather what you"
@@ -934,7 +784,7 @@ class Workflow:
         if self.resume_state_path is None:
             raise ResumeError("resume() called but resume_state_path is None")
         try:
-            snapshot = _load_resume_snapshot(self.resume_state_path)
+            snapshot = load_resume_snapshot(self.resume_state_path)
         except (OSError, json.JSONDecodeError, ValueError) as exc:
             raise ResumeError(
                 f"failed to load resume snapshot from {self.resume_state_path}: {exc}"
@@ -957,7 +807,7 @@ class Workflow:
 
         # Honour self.mode: resuming a plan run must not hand the worker the
         # mutating run-mode tools (run() builds its list the same way).
-        tools = _tool_definitions(self.dispatcher, mode=self.mode)
+        tools = tool_definitions(self.dispatcher, mode=self.mode)
         return self._drive_loop(
             system=snapshot.system,
             messages=snapshot.messages,
@@ -1016,13 +866,13 @@ class Workflow:
             # plateau guard see the prior best (we persist a compact summary, not
             # the full history, by design). `label` marks it as
             # resume-reconstructed. A consequence of that summary-only model:
-            # `_metric_plateau_summary` needs several parsed samples to fire, so a
+            # `metric_plateau_summary` needs several parsed samples to fire, so a
             # resumed already-plateaued run takes a few measurements to re-arm the
             # plateau-stop (it never stops early, and the ceiling-stop above is
             # immediate) -- the predictable trade for not carrying the whole
             # sample history across resume.
             state.metric_history.append(
-                _MetricSample(
+                MetricSample(
                     label="resumed",
                     score=metric_best_score,
                     returncode=0,
@@ -1156,7 +1006,7 @@ class Workflow:
         self._maybe_pre_call_nudges(
             messages, state, iteration=iteration, start_iteration=start_iteration
         )
-        _roll_cache_breakpoints(messages)
+        roll_cache_breakpoints(messages)
         self._save_resume_snapshot(
             system=system,
             messages=messages,
@@ -1224,7 +1074,7 @@ class Workflow:
                 return outcome
             return _NEXT_TURN  # "continue" or an injected instruction -> re-do the turn
         except ProviderError as exc:
-            hint = _provider_error_hint(exc.status_code)
+            hint = provider_error_hint(exc.status_code)
             self._log(f"LOOP: provider error at iter {iteration}: {exc}{hint}")
             self._emit(
                 "run.end",
@@ -1305,7 +1155,7 @@ class Workflow:
                 if name == "run_command":
                     argv = tool_input.get("argv") or []
                     state.last_error_command_binary = str(argv[0]) if argv else ""
-                sig = _tool_error_signature(name, str(exc))
+                sig = tool_error_signature(name, str(exc))
                 if sig == state.last_tool_error_sig:
                     state.tool_error_streak += 1
                 else:
@@ -1321,7 +1171,7 @@ class Workflow:
                 {
                     "type": "tool_result",
                     "tool_use_id": tu_id,
-                    "content": _cap_tool_result(
+                    "content": cap_tool_result(
                         served if served is not None else content, tool_name=name
                     ),
                 }
@@ -1349,13 +1199,13 @@ class Workflow:
             # A verify that exited instantly without running any tests (runner
             # absent) is a broken verify, not a real failure: flag it once so
             # the model does not "fix" working code or finish unchecked.
-            if not state.verify_broken_warned and _verify_did_not_run(
+            if not state.verify_broken_warned and verify_did_not_run(
                 str(result.get("stdout", "")),
                 str(result.get("stderr", "")),
                 float(result.get("duration_s", 0.0) or 0.0),
             ):
                 state.verify_broken_warned = True
-                turn.tool_results.append({"type": "text", "text": _VERIFY_BROKEN_NUDGE})
+                turn.tool_results.append({"type": "text", "text": VERIFY_BROKEN_NUDGE})
                 self._emit("loop.verify_broken.nudge", iteration=turn.iteration)
         if rc is None:
             return
@@ -1367,9 +1217,7 @@ class Workflow:
             state.verify_fail_streak = 0
             state.no_progress_nudges_used = 0
             return
-        sig = _verify_failure_signature(
-            str(result.get("stdout", "")), str(result.get("stderr", ""))
-        )
+        sig = verify_failure_signature(str(result.get("stdout", "")), str(result.get("stderr", "")))
         if sig == state.verify_fail_signature:
             state.verify_fail_streak += 1
         else:
@@ -1397,7 +1245,7 @@ class Workflow:
                 sha="",
             )
             if turn.verify_just_passed:
-                turn.metric_plateau_finish = self._metric_plateau_summary(state.metric_history)
+                turn.metric_plateau_finish = self.metric_plateau_summary(state.metric_history)
         elif name == "add_memory":
             # Only successful dispatches reach here, so the write persisted;
             # both memory nudges stay quiet for the rest of the run.
@@ -1409,7 +1257,7 @@ class Workflow:
             # gate must not label this edited tree "verify passed".
             turn.edit_since_verify_pass = True
             state.edited_since_verify = True
-        if name in _DAG_MUTATING_TOOLS:
+        if name in DAG_MUTATING_TOOLS:
             turn.dag_mutated = True  # snapshot once after the turn
 
     def _capture_finish(self, turn: _TurnState, name: str, tool_input: Any) -> None:
@@ -1552,7 +1400,7 @@ class Workflow:
                 return self._unexecutable_abort(
                     exc, iteration=turn.iteration, tool_calls=state.tool_calls
                 )
-            turn.metric_plateau_finish = self._metric_plateau_summary(state.metric_history)
+            turn.metric_plateau_finish = self.metric_plateau_summary(state.metric_history)
         return None
 
     def _report_auto_commit_failure(
@@ -1713,21 +1561,21 @@ class Workflow:
             turn.finish_signal is not None
             and turn.finish_kind == "finish_run"
             and self.mode == "run"
-            and _metric_goal(self.config.workflow.metric) is not None
+            and metric_goal(self.config.workflow.metric) is not None
             and not self._metric_at_ceiling(state.metric_history)
         ):
             return
         finish_budget_remaining = self._budget_fraction_remaining()
         has_runway = (
             finish_budget_remaining is not None
-            and finish_budget_remaining > _METRIC_PLATEAU_STOP_BELOW_BUDGET
+            and finish_budget_remaining > METRIC_PLATEAU_STOP_BELOW_BUDGET
         )
-        if has_runway and state.metric_finish_nudges_used < _METRIC_EARLY_FINISH_PATIENCE:
+        if has_runway and state.metric_finish_nudges_used < METRIC_EARLY_FINISH_PATIENCE:
             assert finish_budget_remaining is not None
             state.metric_finish_nudges_used += 1
             turn.finish_signal = None
             turn.finish_payload = None
-            turn.tool_results.append({"type": "text", "text": _METRIC_FINISH_NUDGE})
+            turn.tool_results.append({"type": "text", "text": METRIC_FINISH_NUDGE})
             self._log(
                 f"  metric early-finish rejected #{state.metric_finish_nudges_used}"
                 f" at iter {turn.iteration} (budget {finish_budget_remaining:.0%} left)"
@@ -1776,13 +1624,13 @@ class Workflow:
             and self.mode == "run"
             and self._tree_is_verify_green(state) is False
             and self.config.workflow.require_verify_to_finish
-            and state.verify_finish_nudges_used < _VERIFY_FINISH_PATIENCE
+            and state.verify_finish_nudges_used < VERIFY_FINISH_PATIENCE
         ):
             return
         state.verify_finish_nudges_used += 1
         turn.finish_signal = None
         turn.finish_payload = None
-        turn.tool_results.append({"type": "text", "text": _VERIFY_FINISH_GATE})
+        turn.tool_results.append({"type": "text", "text": VERIFY_FINISH_GATE})
         self._log(
             f"  finish_run gated: verify not green (nudge"
             f" #{state.verify_finish_nudges_used}) at iter {turn.iteration}"
@@ -1809,7 +1657,7 @@ class Workflow:
         state.spec_recheck_done = True
         turn.finish_signal = None
         turn.finish_payload = None
-        turn.tool_results.append({"type": "text", "text": _SPEC_RECHECK_NUDGE})
+        turn.tool_results.append({"type": "text", "text": SPEC_RECHECK_NUDGE})
         self._log(f"  finish_run gated: spec recheck at iter {turn.iteration}")
         self._emit("loop.spec_recheck.gated", iteration=turn.iteration)
 
@@ -1833,7 +1681,7 @@ class Workflow:
         state.memory_finish_nudged = True
         turn.finish_signal = None
         turn.finish_payload = None
-        turn.tool_results.append({"type": "text", "text": _MEMORY_FINISH_NUDGE})
+        turn.tool_results.append({"type": "text", "text": MEMORY_FINISH_NUDGE})
         self._log(f"  finish_run deferred once: memory backstop at iter {turn.iteration}")
         self._emit("loop.memory_finish.gated", iteration=turn.iteration)
 
@@ -1864,7 +1712,7 @@ class Workflow:
             and not state.memory_flip_nudged
         ):
             state.memory_flip_nudged = True
-            turn.tool_results.append({"type": "text", "text": _MEMORY_FLIP_NUDGE})
+            turn.tool_results.append({"type": "text", "text": MEMORY_FLIP_NUDGE})
             self._log("  memory: verify flipped green - injecting add_memory advisory")
             self._emit("loop.memory_flip.nudged", iteration=turn.iteration)
         repeat_threshold = 3
@@ -1903,14 +1751,14 @@ class Workflow:
         pivot to a different approach; only stop once we are in the final
         budget slice and have still failed to beat the best after a few pivot
         nudges. With no budget signal (tests / MCP) the fixed
-        ``_METRIC_PLATEAU_PATIENCE`` bounds the nudging. Sets
+        ``METRIC_PLATEAU_PATIENCE`` bounds the nudging. Sets
         ``turn.plateau_should_stop``; the stop itself happens in the stop
         checks, after the post-tools snapshot."""
         if turn.metric_plateau_finish is None:
             return
         budget_remaining = self._budget_fraction_remaining()
         in_final_slice = (
-            budget_remaining is None or budget_remaining <= _METRIC_PLATEAU_STOP_BELOW_BUDGET
+            budget_remaining is None or budget_remaining <= METRIC_PLATEAU_STOP_BELOW_BUDGET
         )
         if self._metric_at_ceiling(state.metric_history):
             # A metric at its provable ceiling (e.g. SCORE: 27/27) cannot
@@ -1920,26 +1768,26 @@ class Workflow:
             # re-deriving a solved task.
             turn.plateau_should_stop = True
             self._emit("loop.metric_ceiling.stop", iteration=turn.iteration)
-        elif in_final_slice and state.plateau_nudges_used >= _METRIC_PLATEAU_PATIENCE:
+        elif in_final_slice and state.plateau_nudges_used >= METRIC_PLATEAU_PATIENCE:
             turn.plateau_should_stop = True
         else:
             # Count patience only against final-slice nudges. While the run
             # still has runway (in_final_slice False), keep nudging the
             # worker to explore without consuming the budget, exactly as the
             # early-finish guard only counts rejections while it has runway.
-            # Counting runway ties here would exhaust _METRIC_PLATEAU_PATIENCE
+            # Counting runway ties here would exhaust METRIC_PLATEAU_PATIENCE
             # before the final slice, so the run would stop the instant the
             # budget crossed the threshold and the escalating FINAL
             # ("make your one best bet") nudge would never fire.
             if in_final_slice:
                 state.plateau_nudges_used += 1
-            nudge_text = _metric_plateau_nudge(budget_remaining)
+            nudge_text = metric_plateau_nudge(budget_remaining)
             turn.tool_results.append({"type": "text", "text": nudge_text})
             budget_note = "n/a" if budget_remaining is None else f"{budget_remaining:.0%} left"
             self._log(
                 f"  metric_plateau pivot-nudge at iter {turn.iteration} (budget"
                 f" {budget_note}; final-slice patience"
-                f" {state.plateau_nudges_used}/{_METRIC_PLATEAU_PATIENCE})"
+                f" {state.plateau_nudges_used}/{METRIC_PLATEAU_PATIENCE})"
             )
             self._emit(
                 "loop.metric_plateau.nudge",
@@ -1970,7 +1818,7 @@ class Workflow:
         metric hot path.)"""
         if turn.verify_just_passed:
             state.verify_ever_passed = True
-        non_metric_run = self.mode == "run" and _metric_goal(self.config.workflow.metric) is None
+        non_metric_run = self.mode == "run" and metric_goal(self.config.workflow.metric) is None
         # "Settled" once the run reached a good state: a green verify, or (on a
         # gateless run, where verify never fires) a committed edit.
         settled_seeded = state.verify_ever_passed or state.gateless_ever_committed
@@ -1985,18 +1833,18 @@ class Workflow:
             non_metric_run
             and turn.finish_signal is None
             and settled_seeded
-            and state.verify_settled_idle >= _VERIFY_SETTLED_STOP_AFTER
+            and state.verify_settled_idle >= VERIFY_SETTLED_STOP_AFTER
         )
         if (
             non_metric_run
             and turn.finish_signal is None
             and not turn.verify_settled_stop
             and settled_seeded
-            and state.verify_settled_idle >= _VERIFY_SETTLED_NUDGE_AFTER
+            and state.verify_settled_idle >= VERIFY_SETTLED_NUDGE_AFTER
             and not state.verify_settled_nudged
         ):
             state.verify_settled_nudged = True
-            turn.tool_results.append({"type": "text", "text": _VERIFY_SETTLED_NUDGE})
+            turn.tool_results.append({"type": "text", "text": VERIFY_SETTLED_NUDGE})
             self._emit(
                 "loop.verify_settled.nudge",
                 iteration=turn.iteration,
@@ -2008,21 +1856,21 @@ class Workflow:
         that keeps failing the same way -- malformed args, bad path). Fires
         inside the dispatch loop, only on a plain run-mode streak; metric runs
         defer to their own machinery, mirroring the verify no-progress guard."""
-        non_metric_run = self.mode == "run" and _metric_goal(self.config.workflow.metric) is None
+        non_metric_run = self.mode == "run" and metric_goal(self.config.workflow.metric) is None
         if not non_metric_run:
             return
         streak = state.tool_error_streak
-        if streak >= _TOOL_ERROR_STOP_AFTER and state.tool_error_nudges_used >= 2:
+        if streak >= TOOL_ERROR_STOP_AFTER and state.tool_error_nudges_used >= 2:
             turn.tool_error_stop = True
             return
         reach = self._sandbox_unreachable_note(state)
-        if streak >= _TOOL_ERROR_ESCALATE_AFTER and state.tool_error_nudges_used == 1:
+        if streak >= TOOL_ERROR_ESCALATE_AFTER and state.tool_error_nudges_used == 1:
             state.tool_error_nudges_used = 2
-            turn.tool_results.append({"type": "text", "text": _TOOL_ERROR_ESCALATION + reach})
+            turn.tool_results.append({"type": "text", "text": TOOL_ERROR_ESCALATION + reach})
             self._emit("loop.tool_error.nudge", iteration=turn.iteration, streak=streak, level=2)
-        elif streak >= _TOOL_ERROR_NUDGE_AFTER and state.tool_error_nudges_used == 0:
+        elif streak >= TOOL_ERROR_NUDGE_AFTER and state.tool_error_nudges_used == 0:
             state.tool_error_nudges_used = 1
-            turn.tool_results.append({"type": "text", "text": _TOOL_ERROR_NUDGE + reach})
+            turn.tool_results.append({"type": "text", "text": TOOL_ERROR_NUDGE + reach})
             self._emit("loop.tool_error.nudge", iteration=turn.iteration, streak=streak, level=1)
 
     def _sandbox_unreachable_note(self, state: _LoopState) -> str:
@@ -2055,22 +1903,22 @@ class Workflow:
         optimization are expected there, and the metric plateau / early-finish
         / ceiling machinery owns when such a run stops -- firing here would
         truncate the budgeted search and end the run completed=false."""
-        non_metric_run = self.mode == "run" and _metric_goal(self.config.workflow.metric) is None
+        non_metric_run = self.mode == "run" and metric_goal(self.config.workflow.metric) is None
         if not non_metric_run or not turn.verify_just_failed:
             return
         streak = state.verify_fail_streak
-        if streak >= _NO_PROGRESS_STOP_AFTER and state.no_progress_nudges_used >= 2:
+        if streak >= NO_PROGRESS_STOP_AFTER and state.no_progress_nudges_used >= 2:
             # Both nudges delivered and the identical failure persists: stop in
             # the stop checks rather than burn the rest of the budget.
             turn.no_progress_stop = True
             return
-        if streak >= _NO_PROGRESS_ESCALATE_AFTER and state.no_progress_nudges_used == 1:
+        if streak >= NO_PROGRESS_ESCALATE_AFTER and state.no_progress_nudges_used == 1:
             state.no_progress_nudges_used = 2
-            turn.tool_results.append({"type": "text", "text": _NO_PROGRESS_ESCALATION})
+            turn.tool_results.append({"type": "text", "text": NO_PROGRESS_ESCALATION})
             self._emit("loop.no_progress.nudge", iteration=turn.iteration, streak=streak, level=2)
-        elif streak >= _NO_PROGRESS_NUDGE_AFTER and state.no_progress_nudges_used == 0:
+        elif streak >= NO_PROGRESS_NUDGE_AFTER and state.no_progress_nudges_used == 0:
             state.no_progress_nudges_used = 1
-            turn.tool_results.append({"type": "text", "text": _NO_PROGRESS_NUDGE})
+            turn.tool_results.append({"type": "text", "text": NO_PROGRESS_NUDGE})
             self._emit("loop.no_progress.nudge", iteration=turn.iteration, streak=streak, level=1)
 
     def _turn_stop_checks(  # noqa: PLR0911 - a flat precedence ladder of terminal checks
@@ -2235,12 +2083,12 @@ class Workflow:
         # delivered plan beats an exhaustive one that never gets emitted.
         if self.mode == "plan" and not state.plan_finish_nudged:
             remaining = self._budget_fraction_remaining()
-            low_budget = remaining is not None and remaining <= _PLAN_BUDGET_NUDGE_BELOW
-            too_many_turns = iteration - start_iteration + 1 >= _PLAN_NUDGE_AFTER_ITERS
+            low_budget = remaining is not None and remaining <= PLAN_BUDGET_NUDGE_BELOW
+            too_many_turns = iteration - start_iteration + 1 >= PLAN_NUDGE_AFTER_ITERS
             if low_budget or too_many_turns:
                 state.plan_finish_nudged = True
                 messages.append(
-                    {"role": "user", "content": [{"type": "text", "text": _PLAN_BUDGET_NUDGE}]}
+                    {"role": "user", "content": [{"type": "text", "text": PLAN_BUDGET_NUDGE}]}
                 )
                 self._log(
                     f"LOOP: plan finish-nudge at iter {iteration}"
@@ -2255,15 +2103,15 @@ class Workflow:
         if (
             self.mode == "run"
             and not state.run_budget_nudged
-            and _metric_goal(self.config.workflow.metric) is None
+            and metric_goal(self.config.workflow.metric) is None
         ):
             remaining = self._budget_fraction_remaining()
-            if remaining is not None and remaining <= _RUN_BUDGET_NUDGE_BELOW:
+            if remaining is not None and remaining <= RUN_BUDGET_NUDGE_BELOW:
                 state.run_budget_nudged = True
                 nudge = (
-                    _RUN_BUDGET_NUDGE
+                    RUN_BUDGET_NUDGE
                     if self.config.workflow.verify_command
-                    else _RUN_BUDGET_NUDGE_GATELESS
+                    else RUN_BUDGET_NUDGE_GATELESS
                 )
                 messages.append({"role": "user", "content": [{"type": "text", "text": nudge}]})
                 self._log(f"LOOP: run budget-nudge at iter {iteration}")
@@ -2283,7 +2131,7 @@ class Workflow:
         focus to the next ready task -- the cursor walks the frontier on its own.
 
         Also runs the anti-grind counter: when the focus task holds for
-        ``_STUCK_ON_TASK_AFTER`` turns with no forward motion, fire one nudge
+        ``STUCK_ON_TASK_AFTER`` turns with no forward motion, fire one nudge
         offering to split / pass / skip it.
 
         Run mode only; no curator or no open subtask is a no-op (the finish-gate
@@ -2301,7 +2149,7 @@ class Workflow:
         if not isinstance(nodes, dict):
             return
         cursor = gstate.get("cursor")
-        current_id = _current_task_id(nodes, cursor)
+        current_id = current_task_id(nodes, cursor)
         if current_id is None:
             state.turns_on_task = 0  # frontier empty: nothing to grind on
             state.last_focus_id = None
@@ -2317,7 +2165,7 @@ class Workflow:
         # motion (cursor advance, a task marked done, or a decompose that moves the
         # cursor to a new subtask) changes current_id and resets the count; survives
         # compaction (last_focus_id is not reset there). Re-fire every
-        # _STUCK_ON_TASK_AFTER turns, capped at _STUCK_NUDGE_MAX per task.
+        # STUCK_ON_TASK_AFTER turns, capped at STUCK_NUDGE_MAX per task.
         if current_id != state.last_focus_id:
             state.turns_on_task = 0
             state.last_focus_id = current_id
@@ -2325,8 +2173,8 @@ class Workflow:
         else:
             state.turns_on_task += 1
             if (
-                state.turns_on_task % _STUCK_ON_TASK_AFTER == 0
-                and state.stuck_nudges_fired < _STUCK_NUDGE_MAX
+                state.turns_on_task % STUCK_ON_TASK_AFTER == 0
+                and state.stuck_nudges_fired < STUCK_NUDGE_MAX
             ):
                 state.stuck_nudges_fired += 1
                 messages.append(
@@ -2335,7 +2183,7 @@ class Workflow:
                         "content": [
                             {
                                 "type": "text",
-                                "text": _stuck_on_task_nudge(
+                                "text": stuck_on_task_nudge(
                                     current_id, nodes[current_id], state.turns_on_task
                                 ),
                             }
@@ -2364,7 +2212,7 @@ class Workflow:
                 )
             except Exception as exc:
                 self._log(f"LOOP: mark in_progress skipped: {exc}")
-        banner = _current_task_banner(
+        banner = current_task_banner(
             current_id, node, decompose=self.config.prompt.decompose == "on"
         )
         messages.append({"role": "user", "content": [{"type": "text", "text": banner}]})
@@ -2409,13 +2257,13 @@ class Workflow:
             and iteration <= 3
             and not state.ever_edited
             and not state.verify_ever_passed
-            and state.silent_no_work_nudges_used < _SILENT_NO_WORK_PATIENCE
+            and state.silent_no_work_nudges_used < SILENT_NO_WORK_PATIENCE
         ):
             state.silent_no_work_nudges_used += 1
             messages.append(
                 {
                     "role": "user",
-                    "content": [{"type": "text", "text": _SILENT_NO_WORK_NUDGE}],
+                    "content": [{"type": "text", "text": SILENT_NO_WORK_NUDGE}],
                 }
             )
             self._log(
@@ -2445,21 +2293,21 @@ class Workflow:
         # entirely.
         if (
             self.mode == "run"
-            and _metric_goal(self.config.workflow.metric) is not None
+            and metric_goal(self.config.workflow.metric) is not None
             and not self._metric_at_ceiling(state.metric_history)
         ):
             finish_budget_remaining = self._budget_fraction_remaining()
             has_runway = (
                 finish_budget_remaining is not None
-                and finish_budget_remaining > _METRIC_PLATEAU_STOP_BELOW_BUDGET
+                and finish_budget_remaining > METRIC_PLATEAU_STOP_BELOW_BUDGET
             )
-            if has_runway and state.metric_finish_nudges_used < _METRIC_EARLY_FINISH_PATIENCE:
+            if has_runway and state.metric_finish_nudges_used < METRIC_EARLY_FINISH_PATIENCE:
                 assert finish_budget_remaining is not None
                 state.metric_finish_nudges_used += 1
                 messages.append(
                     {
                         "role": "user",
-                        "content": [{"type": "text", "text": _METRIC_FINISH_NUDGE}],
+                        "content": [{"type": "text", "text": METRIC_FINISH_NUDGE}],
                     }
                 )
                 self._log(
@@ -2498,13 +2346,11 @@ class Workflow:
         # would silently finish with an unanswered question. Nudge once to
         # call ask_user / finish_run; if it asks again, accept the finish
         # (bounded, so a stubborn model cannot loop the run).
-        if self.mode == "run" and not state.question_nudged and _ends_with_question(text):
+        if self.mode == "run" and not state.question_nudged and ends_with_question(text):
             state.question_nudged = True
             self._log(f"  silent_finish nudged: ended on a question at iter {iteration}")
             self._emit("loop.question_nudge", iteration=iteration)
-            messages.append(
-                {"role": "user", "content": [{"type": "text", "text": _QUESTION_NUDGE}]}
-            )
+            messages.append({"role": "user", "content": [{"type": "text", "text": QUESTION_NUDGE}]})
             return None
         # In ask mode a prose answer with no tool call is the NORMAL success (the
         # answer IS the text), so end as "answered", not "silent_finish" -- the
@@ -2939,10 +2785,10 @@ class Workflow:
         """
         if self.resume_state_path is None:
             return
-        goal = _metric_goal(self.config.workflow.metric)
-        best = _best_metric_sample(state.metric_history, goal=goal) if goal is not None else None
+        goal = metric_goal(self.config.workflow.metric)
+        best = best_metric_sample(state.metric_history, goal=goal) if goal is not None else None
         payload = {
-            "version": _SNAPSHOT_VERSION,
+            "version": SNAPSHOT_VERSION,
             "system": system,
             "messages": messages,
             "tool_calls": tool_calls,
@@ -3013,7 +2859,7 @@ class Workflow:
 
     def _record_metric_result(
         self,
-        history: list[_MetricSample],
+        history: list[MetricSample],
         result: dict[str, Any],
         *,
         iteration: int,
@@ -3021,25 +2867,25 @@ class Workflow:
         sha: str,
     ) -> str | None:
         metric_cfg = self.config.workflow.metric
-        goal = _metric_goal(metric_cfg)
+        goal = metric_goal(metric_cfg)
         if goal is None:
             return None
         assert metric_cfg is not None  # goal is None otherwise
-        score = _coerce_metric_score(result.get("score"))
+        score = coerce_metric_score(result.get("score"))
         raw_returncode = result.get("returncode")
         returncode = raw_returncode if isinstance(raw_returncode, int) else None
         stdout = str(result.get("stdout", ""))
         stderr = str(result.get("stderr", ""))
         combined = f"{stdout}\n{stderr}"
-        targets = _extract_metric_targets(combined, goal=goal)
+        targets = extract_metric_targets(combined, goal=goal)
         at_ceiling = (
             goal == "maximize"
             and score is not None
             # Only count an X/Y ceiling reported on the score-match line, so an
             # incidental "100/100" progress bar elsewhere cannot latch it.
-            and _metric_at_fraction_ceiling(combined, score, pattern=metric_cfg.pattern)
+            and metric_at_fraction_ceiling(combined, score, pattern=metric_cfg.pattern)
         )
-        sample = _MetricSample(
+        sample = MetricSample(
             label=label,
             score=score,
             returncode=returncode,
@@ -3058,17 +2904,17 @@ class Workflow:
             returncode=returncode,
             sha=sha[:12],
         )
-        return _format_metric_feedback(history, goal=goal)
+        return format_metric_feedback(history, goal=goal)
 
     def _auto_metric_feedback(
         self,
-        history: list[_MetricSample],
+        history: list[MetricSample],
         *,
         iteration: int,
         sha: str,
     ) -> str | None:
         metric_cfg = self.config.workflow.metric
-        goal = _metric_goal(metric_cfg)
+        goal = metric_goal(metric_cfg)
         if self.mode != "run" or goal is None:
             return None
         self._log(f"LOOP: auto metric after verify-pass at iter {iteration}")
@@ -3076,7 +2922,7 @@ class Workflow:
         try:
             result = self.dispatcher.dispatch("run_metric_command", {})
         except ToolError as exc:
-            sample = _MetricSample(
+            sample = MetricSample(
                 label=f"auto iter {iteration}",
                 score=None,
                 returncode=None,
@@ -3089,7 +2935,7 @@ class Workflow:
                 iteration=iteration,
                 error=str(exc)[:200],
             )
-            return _format_metric_feedback(history, goal=goal)
+            return format_metric_feedback(history, goal=goal)
         return self._record_metric_result(
             history,
             result,
@@ -3098,14 +2944,14 @@ class Workflow:
             sha=sha,
         )
 
-    def _metric_plateau_summary(self, history: list[_MetricSample]) -> str | None:
+    def metric_plateau_summary(self, history: list[MetricSample]) -> str | None:
         metric_cfg = self.config.workflow.metric
-        goal = _metric_goal(metric_cfg)
+        goal = metric_goal(metric_cfg)
         if self.mode != "run" or goal is None:
             return None
-        return _metric_plateau_summary(history, goal=goal)
+        return metric_plateau_summary(history, goal=goal)
 
-    def _metric_at_ceiling(self, history: list[_MetricSample]) -> bool:
+    def _metric_at_ceiling(self, history: list[MetricSample]) -> bool:
         """True once any verified sample reached the metric's provable
         ceiling (e.g. ``SCORE: 27/27``). Such a metric cannot be improved, so
         the loop honours an early ``finish_run`` and stops nudging instead of
@@ -3165,7 +3011,7 @@ class Workflow:
         (Kimi K2.x finishes its reasoning within 65k and rarely goes quiet, let
         alone twice in a row), so the backoff targets the spiral, not the model.
         """
-        metric_run = self.mode == "run" and _metric_goal(self.config.workflow.metric) is not None
+        metric_run = self.mode == "run" and metric_goal(self.config.workflow.metric) is not None
         if metric_run and state.went_quiet_nudges_used < _STARVATION_BACKOFF_AFTER_QUIETS:
             return max(self.per_call_max_tokens, self.metric_task_max_tokens)
         return self.per_call_max_tokens
@@ -3179,7 +3025,7 @@ class Workflow:
         exceeds ``compact_drop_at_chars``.
 
         Tier 2 (expensive): once the WHOLE post-elision context (text +
-        tool_use inputs + surviving tool_results, via ``_context_chars``)
+        tool_use inputs + surviving tool_results, via ``context_chars``)
         crosses ``compact_summarise_at_chars``, summarise the elided history
         into a compact progress block and restart the message list from
         (original task + summary). Measuring only tool_results here -- which
@@ -3196,11 +3042,11 @@ class Workflow:
             self.compact_clear()
             self._log("LOOP: operator requested a manual compaction")
             self._emit("loop.compact.requested")
-        stats = _compact_old_tool_results(
+        stats = compact_old_tool_results(
             messages,
             max_total_bytes=self.compact_drop_at_chars,
             keep_recent=2,
-            protect_paths=_recently_edited_paths(messages),
+            protect_paths=recently_edited_paths(messages),
             gister=self._distill_gists if self.compact_elision_gists else None,
         )
         if stats.elided:
@@ -3218,7 +3064,7 @@ class Workflow:
         # elision context (text + tool_use inputs + surviving tool_results),
         # which keeps growing across a long run from assistant prose and
         # tool-call args even after old tool_results are dropped.
-        total = _context_chars(messages)
+        total = context_chars(messages)
         # Tier 2 needs at least an original-task message plus enough history
         # to be worth summarising; below that a restart would lose more than
         # it saves.
@@ -3226,7 +3072,7 @@ class Workflow:
             return self._summarise_and_restart(messages)
         return False
 
-    def _distill_gists(self, requests: tuple[_GistRequest, ...]) -> dict[str, str]:
+    def _distill_gists(self, requests: tuple[GistRequest, ...]) -> dict[str, str]:
         """Distill about-to-be-elided file reads into one-line gists with the
         summariser model (same seat as tier-2). Fail-safe: any provider error
         returns {} and every victim gets the bare placeholder, so gisting can
@@ -3236,7 +3082,7 @@ class Workflow:
         self._emit("loop.compact.gist.call", files=len(requests))
         try:
             resp = provider.call(
-                system=_GIST_DISTILL_SYSTEM_PROMPT,
+                system=GIST_DISTILL_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": files}],
                 tools=[],
                 max_tokens=self.context_summary_max_tokens,
@@ -3246,7 +3092,7 @@ class Workflow:
             self._log(f"  gist distillation failed: {exc}; eliding without gists")
             self._emit("loop.compact.gist.failed", error=str(exc)[:200])
             return {}
-        return _parse_gist_lines(resp.text or "", paths=[r.path for r in requests])
+        return parse_gist_lines(resp.text or "", paths=[r.path for r in requests])
 
     def _summarise_and_restart(self, messages: list[dict[str, Any]]) -> bool:
         """Replace the message history with (original task + a model-written
@@ -3259,7 +3105,7 @@ class Workflow:
         """
         provider = self.summariser_provider or self.provider
         original = messages[0]
-        transcript = _format_messages_tail_for_critic(
+        transcript = format_messages_tail_for_critic(
             messages[1:], max_messages=len(messages), max_chars=60_000
         )
         # The DAG is agent6's compaction memory: at each restart we ask the
@@ -3290,7 +3136,7 @@ class Workflow:
         self._emit("loop.compact.summarise.call", messages=len(messages))
         try:
             resp = provider.call(
-                system=_CONTEXT_SUMMARY_SYSTEM_PROMPT,
+                system=CONTEXT_SUMMARY_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": user_msg}],
                 tools=[],
                 max_tokens=self.context_summary_max_tokens,
@@ -3310,10 +3156,10 @@ class Workflow:
         # from the summary so the restarted worker sees narrative, not bookkeeping.
         if open_tasks:
             self._apply_compaction_checkoff(raw, valid_ids={tid for tid, _ in open_tasks})
-        summary = _strip_checkoff(raw) if open_tasks else raw
+        summary = strip_checkoff(raw) if open_tasks else raw
         restart = {
             "role": "user",
-            "content": [{"type": "text", "text": _context_restart_notice(self.mode) + summary}],
+            "content": [{"type": "text", "text": context_restart_notice(self.mode) + summary}],
         }
         messages[:] = [original, restart]
         self._emit("loop.compact.summarise.done", summary_chars=len(summary))
@@ -3351,7 +3197,7 @@ class Workflow:
         the first root. Best-effort: a curator hiccup must never break the run."""
         if self.curator is None:
             return
-        completed, new_tasks = _parse_checkoff(summary_text)
+        completed, new_tasks = parse_checkoff(summary_text)
         completed = [cid for cid in completed if cid in valid_ids]  # ignore hallucinated ids
         if not completed and not new_tasks:
             return
@@ -3401,7 +3247,7 @@ class Workflow:
 
         Only SUBTASKS (parent_id is not None) gate -- the auto-root is pending
         until the run ends, so gating on it would deadlock. Capped by
-        ``_TASK_FINISH_PATIENCE``: after that many blocked finishes the finish is
+        ``TASK_FINISH_PATIENCE``: after that many blocked finishes the finish is
         honoured (a task the worker can't close, and won't mark obsolete/skipped,
         must not bounce the loop forever). Best-effort: no curator -> no gate."""
         if self.curator is None:
@@ -3421,7 +3267,7 @@ class Workflow:
         ]
         if not open_subtasks:
             return None
-        if state.task_finish_nudges_used >= _TASK_FINISH_PATIENCE:
+        if state.task_finish_nudges_used >= TASK_FINISH_PATIENCE:
             return None  # cap reached: stop bouncing, honour the finish
         state.task_finish_nudges_used += 1
         listing = "\n".join(f"- {tid}: {title}" for tid, title in open_subtasks)
@@ -3437,11 +3283,11 @@ class Workflow:
         if self.revise_prompt == "off":
             return user_task
         if self.prompt_reviser_provider is None:
-            raise _PromptRevisionError(
+            raise PromptRevisionError(
                 "prompt.revise_prompt is enabled but no reviser provider is wired"
             )
 
-        context = _format_prompt_revision_context(repo)
+        context = format_prompt_revision_context(repo)
         user_msg = (
             f"RAW_TASK:\n{user_task}\n\nREPO_CONTEXT:\n{context}\n\nRewrite the raw task now."
         )
@@ -3449,7 +3295,7 @@ class Workflow:
         self._emit("loop.prompt_revision.call", mode=self.revise_prompt)
         try:
             resp = self.prompt_reviser_provider.call(
-                system=_PROMPT_REVISION_SYSTEM_PROMPT,
+                system=PROMPT_REVISION_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": user_msg}],
                 tools=[],
                 max_tokens=self.prompt_revision_max_tokens,
@@ -3457,12 +3303,12 @@ class Workflow:
             )
         except (ProviderError, BudgetExceeded) as exc:
             self._emit("loop.prompt_revision.failed", error=str(exc)[:200])
-            raise _PromptRevisionError(str(exc)) from exc
+            raise PromptRevisionError(str(exc)) from exc
 
-        revision = _parse_prompt_revision(resp.text or "")
+        revision = parse_prompt_revision(resp.text or "")
         if not revision.revised_task:
             self._emit("loop.prompt_revision.failed", error="empty revised task")
-            raise _PromptRevisionError("reviser returned an empty task")
+            raise PromptRevisionError("reviser returned an empty task")
 
         self._emit(
             "loop.prompt_revision.result",
@@ -3473,9 +3319,9 @@ class Workflow:
         self._log(
             "PROMPT REVISION\n"
             "--- original ---\n"
-            f"{_clip_text(user_task, 4000)}\n"
+            f"{clip_text(user_task, 4000)}\n"
             "--- revised ---\n"
-            f"{_clip_text(revision.revised_task, 6000)}"
+            f"{clip_text(revision.revised_task, 6000)}"
         )
         if revision.clarifying_questions:
             self._log(
@@ -3485,7 +3331,7 @@ class Workflow:
 
         if self.revise_prompt == "interactive":
             if self.prompt_revision_selector is None:
-                raise _PromptRevisionError(
+                raise PromptRevisionError(
                     "prompt.revise_prompt='interactive' needs an interactive selector"
                 )
             selected = self.prompt_revision_selector(
@@ -3494,19 +3340,19 @@ class Workflow:
                 revision.clarifying_questions,
             )
             if selected is None or not selected.strip():
-                raise _PromptRevisionError("operator aborted prompt revision")
+                raise PromptRevisionError("operator aborted prompt revision")
             selected_task = selected.strip()
             if selected_task == user_task.strip():
                 return user_task
-            return _format_effective_task(
+            return format_effective_task(
                 user_task,
-                _PromptRevision(
+                PromptRevision(
                     revised_task=selected_task,
                     clarifying_questions=revision.clarifying_questions,
                 ),
             )
 
-        return _format_effective_task(user_task, revision)
+        return format_effective_task(user_task, revision)
 
     def _call_with_retry(
         self,
@@ -3522,12 +3368,12 @@ class Workflow:
           timeout): retried with exponential backoff + full jitter so one flap
           doesn't abort the run. ``BudgetExceeded`` is never retried (hard stop).
           Permanent client errors (``ProviderError.status_code`` in
-          ``_NON_RETRYABLE_HTTP_STATUSES``: 400/401/402/403/404/422) re-raise
+          ``NON_RETRYABLE_HTTP_STATUSES``: 400/401/402/403/404/422) re-raise
           immediately without consuming a retry -- a second identical request
           cannot succeed (observed live: a 402 "Insufficient credits" was
           otherwise retried every remaining turn).
         - A self-contradictory empty tool-call response
-          (``_is_empty_tool_call_response``: stop_reason promises a tool call but
+          (``is_empty_tool_call_response``: stop_reason promises a tool call but
           none and no text came back -- GLM via OpenRouter, ~50% post-restart):
           retried with a short fixed delay (model flakiness, not rate-limiting),
           excluding ``stop_reason=length`` starvation. If every attempt is empty
@@ -3550,7 +3396,7 @@ class Workflow:
                 raise  # operator stop/steer: handle it, never retry as a fault
             except ProviderError as exc:
                 last_exc = exc
-                non_retryable = exc.status_code in _NON_RETRYABLE_HTTP_STATUSES
+                non_retryable = exc.status_code in NON_RETRYABLE_HTTP_STATUSES
                 if attempt < attempts and not non_retryable:
                     base_delay = self.provider_retry_delay_s * (2 ** (attempt - 1))
                     capped_delay = min(base_delay, self.provider_retry_max_delay_s)
@@ -3562,7 +3408,7 @@ class Workflow:
                     # usually shorter and would just burn the retries before the
                     # rate-limit clears.
                     if exc.retry_after_s is not None:
-                        delay = max(delay, min(exc.retry_after_s, _RETRY_AFTER_CEILING_S))
+                        delay = max(delay, min(exc.retry_after_s, RETRY_AFTER_CEILING_S))
                     self._log(
                         f"LOOP: provider error attempt {attempt}/{attempts}: "
                         f"{exc} - retrying in {delay:.2f}s"
@@ -3588,7 +3434,7 @@ class Workflow:
             # if every attempt comes back empty the loop's went_quiet handler takes
             # over. A short delay (no exponential growth) -- this is model
             # flakiness, not rate-limiting.
-            if _is_empty_tool_call_response(resp) and attempt < attempts:
+            if is_empty_tool_call_response(resp) and attempt < attempts:
                 delay = min(self.provider_retry_delay_s, 1.0) * random.uniform(0.5, 1.0)  # noqa: S311
                 self._log(
                     f"LOOP: empty tool-call response attempt {attempt}/{attempts}"
@@ -3620,10 +3466,10 @@ class Workflow:
         messages: list[dict[str, Any]],
         trigger: str,
         iteration: int,
-    ) -> _CritiqueResult | None:
+    ) -> CritiqueResult | None:
         """Dispatch the in-loop second-opinion: the grounded review PANEL when
         ``review_seats`` is configured, else the legacy single critic. Both
-        return a ``_CritiqueResult`` the trigger logic consumes identically."""
+        return a ``CritiqueResult`` the trigger logic consumes identically."""
         if self.review_seats:
             return self._run_review_panel(state, trigger=trigger, iteration=iteration)
         return self._run_critic(
@@ -3653,9 +3499,9 @@ class Workflow:
 
     def _run_review_panel(
         self, state: _LoopState, *, trigger: str, iteration: int
-    ) -> _CritiqueResult | None:
+    ) -> CritiqueResult | None:
         """Run the grounded review panel over the run diff. Returns a
-        ``_CritiqueResult`` (``satisfied=False`` only when the panel BLOCKS and
+        ``CritiqueResult`` (``satisfied=False`` only when the panel BLOCKS and
         the gate is still armed). Per-seat + panel events are emitted in seat
         order; the per-run rejection counter decays on a pass and disarms the gate
         once it hits the cap so a gating panel can never stall the run."""
@@ -3745,7 +3591,7 @@ class Workflow:
             else:
                 state.review_rejections_total = max(0, state.review_rejections_total - 1)
         text = render_findings(result.merged_findings) or "No blocking findings."
-        return _CritiqueResult(text=text, satisfied=not effective_blocked)
+        return CritiqueResult(text=text, satisfied=not effective_blocked)
 
     def _run_critic(
         self,
@@ -3754,7 +3600,7 @@ class Workflow:
         messages: list[dict[str, Any]],
         trigger: str,
         iteration: int,
-    ) -> _CritiqueResult | None:
+    ) -> CritiqueResult | None:
         """Invoke the reviewer model as an in-loop critic.
 
         Returns None when no critic provider is configured (caller treats
@@ -3763,7 +3609,7 @@ class Workflow:
         """
         if self.critic_provider is None:
             return None
-        transcript = _format_messages_tail_for_critic(messages)
+        transcript = format_messages_tail_for_critic(messages)
         user_msg = (
             f"TASK:\n{task}\n\nTRIGGER: {trigger}\n\n"
             f"RECENT WORKER ACTIVITY (most recent last):\n{transcript}\n\n"
@@ -3772,7 +3618,7 @@ class Workflow:
         self._emit("loop.critic.call", iteration=iteration, trigger=trigger)
         try:
             resp = self.critic_provider.call(
-                system=_CRITIC_SYSTEM_PROMPT,
+                system=CRITIC_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": user_msg}],
                 tools=[],
                 max_tokens=self.per_call_max_tokens,
@@ -3783,14 +3629,14 @@ class Workflow:
             self._emit("loop.critic.failed", iteration=iteration, error=str(exc)[:200])
             return None
         text = (resp.text or "").strip()
-        satisfied = _parse_critic_verdict(text)
+        satisfied = parse_critic_verdict(text)
         self._emit(
             "loop.critic.verdict",
             iteration=iteration,
             trigger=trigger,
             satisfied=satisfied,
         )
-        return _CritiqueResult(text=text, satisfied=satisfied)
+        return CritiqueResult(text=text, satisfied=satisfied)
 
     def _steer_outcome(
         self, steer_result: str | None, iteration: int, state: _LoopState
@@ -4041,7 +3887,7 @@ class Workflow:
         nodes = gstate.get("nodes", {})
         if not isinstance(nodes, dict):
             return root_task_id
-        return _current_task_id(nodes, gstate.get("cursor")) or root_task_id
+        return current_task_id(nodes, gstate.get("cursor")) or root_task_id
 
     def _add_parallel_node(self, task: str, parent_id: str | None) -> str | None:
         """Add a steering-created DAG node for one dispatched task; None when no
