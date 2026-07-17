@@ -288,7 +288,13 @@ function machineFilesCard(files) {
   const frow = el('div', 'form-row');
   for (const mf of files) {
     const b = el('button', null, '▶ ' + mf.name);
-    b.onclick = async () => { try { await postJSON('/api/machine/run', { file: mf.path }); toast('started ' + mf.name); setTimeout(route, 800); } catch (e) { toast(e.message, true); } };
+    b.onclick = async () => {
+      // A machine run spends against your provider from this one click, so
+      // confirm the cost first (the deliberate-cost bar the composer's typed
+      // Start and the stop dialog already hold).
+      if (!confirm('Run ' + mf.name + '? It starts a paid machine run now and spends against your provider.')) return;
+      try { await postJSON('/api/machine/run', { file: mf.path }); toast('started ' + mf.name); setTimeout(route, 800); } catch (e) { toast(e.message, true); }
+    };
     frow.appendChild(b);
   }
   card.appendChild(frow);
