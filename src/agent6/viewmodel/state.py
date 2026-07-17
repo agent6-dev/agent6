@@ -80,7 +80,6 @@ class BudgetView:
     output_total: int = 0
     input_cap: int = 0
     output_cap: int = 0
-    per_model_tokens: dict[str, int] = field(default_factory=dict)
     usd_total: float = 0.0
     usd_partial: bool = False  # True if some models had no price (under-estimate)
 
@@ -351,7 +350,6 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
             )
 
         case "budget.update":
-            per_model = event.get("per_model_tokens", {}) or {}
             return replace(
                 state,
                 budget=BudgetView(
@@ -359,7 +357,6 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
                     output_total=int(event.get("output_total", 0)),
                     input_cap=int(event.get("input_cap", 0)),
                     output_cap=int(event.get("output_cap", 0)),
-                    per_model_tokens={str(k): int(v) for k, v in per_model.items()},
                     usd_total=float(event.get("usd_total", 0.0)),
                     usd_partial=bool(event.get("usd_partial", False)),
                 ),

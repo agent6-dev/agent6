@@ -156,6 +156,11 @@ def test_budget_update_populates_view() -> None:
     # USD fields default cleanly when the event omits them.
     assert s.budget.usd_total == 0.0
     assert s.budget.usd_partial is False
+    # budget.update never carries a per-model token breakdown (no emitter ever
+    # wrote one, and no surface reads it); the fold must not resurrect a
+    # permanently-empty field. The per-model breakdown is surfaced from the
+    # budget snapshot directly, not the viewmodel.
+    assert not hasattr(s.budget, "per_model_tokens")
 
 
 def test_budget_update_carries_usd_total() -> None:
