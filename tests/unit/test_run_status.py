@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.runs.bridge import worker_is_alive, write_worker_pid
+from agent6.runs.ipc import worker_is_alive, write_worker_pid
 from agent6.ui.cli._common import _runs_dir  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli.plan_watch import _cmd_status  # pyright: ignore[reportPrivateUsage]
 
@@ -134,7 +134,7 @@ def test_status_shows_fan_out_compare_outcome(
 
 
 def test_worker_pid_clear(tmp_path: Path) -> None:
-    from agent6.runs.bridge import clear_worker_pid, read_worker_pid
+    from agent6.runs.ipc import clear_worker_pid, read_worker_pid
 
     write_worker_pid(tmp_path, os.getpid())
     assert read_worker_pid(tmp_path) == os.getpid()

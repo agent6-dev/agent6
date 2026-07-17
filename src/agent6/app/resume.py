@@ -120,7 +120,8 @@ from agent6.providers import (
     Provider,
     TranscriptSink,
 )
-from agent6.runs.bridge import (
+from agent6.runs.id import RunIdError, resolve_run_id
+from agent6.runs.ipc import (
     clear_away_mode,
     clear_compact_request,
     clear_pending_answers,
@@ -133,7 +134,6 @@ from agent6.runs.bridge import (
     write_steer_answer,
     write_worker_pid,
 )
-from agent6.runs.id import RunIdError, resolve_run_id
 from agent6.runs.layout import RunLayout
 from agent6.runs.lock import (
     SINGLE_WRITER_BUSY as _SINGLE_WRITER_BUSY,

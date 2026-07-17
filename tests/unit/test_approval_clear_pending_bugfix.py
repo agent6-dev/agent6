@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from agent6.runs.bridge import (
+from agent6.runs.ipc import (
     clear_pending_answers,
     frontend_is_live,
     request_steer,

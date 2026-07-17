@@ -46,7 +46,7 @@ from agent6.git_ops import status as git_status
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
 from agent6.paths import cache_dir, state_dir
 from agent6.portable import atomic_write
-from agent6.runs.bridge import request_stop, worker_is_alive
+from agent6.runs.ipc import request_stop, worker_is_alive
 from agent6.viewmodel import summarize_run_dir
 from agent6.workflows.judge import CandidateBrief
 from agent6.workflows.subrun import (
@@ -101,7 +101,7 @@ class LaneRuntime:
       compares its lanes).
 
     Lane liveness (`worker_is_alive`) and stop requests (`request_stop`) are the
-    run-dir bridge itself (`agent6.runs.bridge`), imported directly below: `app`
+    run-dir bridge itself (`agent6.runs.ipc`), imported directly below: `app`
     already depends on it (`run.py`, `machine_agent.py`), so routing them through
     this front-end seam was a dead pass-through."""
 

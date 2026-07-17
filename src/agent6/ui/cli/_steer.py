@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from agent6.events import EventSink
-from agent6.runs.bridge import (
+from agent6.runs.ipc import (
     clear_steer_answer,
     clear_steer_request,
     frontend_is_live,

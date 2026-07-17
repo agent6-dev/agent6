@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from agent6.events import EventSink
-from agent6.runs.bridge import (
+from agent6.runs.ipc import (
     away_mode,
     clear_answer,
     clear_question_answers,

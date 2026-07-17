@@ -225,7 +225,7 @@ is the orchestrator: it implements the spawner Protocols and is the only module
 that knows how to actually run a lane; the detached spawn it drives
 (`ui.bridge.spawn`, the same path `attach`/`resume` use) is injected as a
 `LaneRuntime` by the CLI adapter `ui/cli/parallel.py`. Lane liveness/stop
-requests go straight to the run-dir bridge (`agent6.runs.bridge`), which
+requests go straight to the run-dir bridge (`agent6.runs.ipc`), which
 `agent6.app` already depends on. `agent6.app` is the application layer:
 pipelines composed over the engine, never importing `agent6.ui`.
 
@@ -413,7 +413,7 @@ layers sit under all three: the read side
 write side:
 [src/agent6/ui/bridge/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/bridge)
 spawns the CLI detached, and
-[src/agent6/runs/bridge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/runs/bridge.py)
+[src/agent6/runs/ipc.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/runs/ipc.py)
 holds the approval / question / steer / compact-request file contract the
 workflow process polls. See [the web UI](web.md).
 
@@ -446,7 +446,7 @@ headless (stdin prompt, or deny for a machine state) only after the front-end
 has stayed dead for 30 consecutive seconds, so a transient drop (a page
 reload, a phone locking its browser) does not convert a pending approval into
 a deny. The web UI drives the same answer-file contract (via
-[src/agent6/runs/bridge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/runs/bridge.py)):
+[src/agent6/runs/ipc.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/runs/ipc.py)):
 while a browser watches a run it registers as the run's answer front-end, so
 approval / question / steer prompts bridge to the page. The task DAG is not in this stream; it is
 curator-owned and lives in `graph.jsonl` (read via `agent6 runs
@@ -473,7 +473,7 @@ graph`).
 | Provider clients                 | [src/agent6/providers/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/providers)                        |
 | Knowledge graph (curator)        | [src/agent6/graph/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/graph)                                |
 | Event log + view-model fold      | [src/agent6/events.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/events.py) (writer), [src/agent6/viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel) (RunState/MachineState fold), [src/agent6/ui/tui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/tui) (textual render) |
-| Front-end write bridge           | [src/agent6/ui/bridge/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/bridge) (spawn detached + desktop notify), [src/agent6/runs/bridge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/runs/bridge.py) (approval/question/steer/compact file contract); shared by CLI, TUI, web |
+| Front-end write bridge           | [src/agent6/ui/bridge/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/bridge) (spawn detached + desktop notify), [src/agent6/runs/ipc.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/runs/ipc.py) (approval/question/steer/compact file contract); shared by CLI, TUI, web |
 | Web UI (`agent6 web`)            | [src/agent6/ui/web/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/web) (stdlib HTTP server + one embedded page over the view-model + frontend) |
 | Cross-run memory store           | [src/agent6/memory.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/memory.py) (store), `<state-dir>/<repo-id>/memories/` (data) |
 | Run state on disk                | `<state-dir>/<repo-id>/runs/<run-id>/` (out of the workspace)         |

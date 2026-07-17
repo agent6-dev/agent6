@@ -117,7 +117,8 @@ from agent6.git_ops import (
 from agent6.graph.client import CuratorClientError, GraphClient, spawn_curator
 from agent6.paths import chown_to_real_user
 from agent6.providers import Provider, TranscriptSink
-from agent6.runs.bridge import (
+from agent6.runs.id import RunIdError, new_friendly_id, validate_explicit_run_id
+from agent6.runs.ipc import (
     clear_away_mode,
     clear_compact_request,
     clear_pending_answers,
@@ -129,7 +130,6 @@ from agent6.runs.bridge import (
     stop_request_pending,
     write_worker_pid,
 )
-from agent6.runs.id import RunIdError, new_friendly_id, validate_explicit_run_id
 from agent6.runs.layout import RunLayout
 from agent6.runs.lock import (
     SINGLE_WRITER_BUSY as _SINGLE_WRITER_BUSY,
@@ -183,7 +183,7 @@ class RunFrontend:
     run/resume lifecycle: the live console view (held cli-side; the lifecycle
     only signals attach/close), the interactive prompts, and the REPLs. The
     lifecycle owns egress itself (`app.egress`) and the run-dir bridge
-    (`runs.bridge`); only the exe-spawn primitives it can't reach stay injected.
+    (`runs.ipc`); only the exe-spawn primitives it can't reach stay injected.
     One value serves both `run_task` and `resume_task`; resume simply never
     calls the run-only fields."""
 

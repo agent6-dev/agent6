@@ -34,8 +34,8 @@ from agent6.git_ops import (
     verify_git_identity,
 )
 from agent6.git_ops import status as git_status
-from agent6.runs.bridge import request_stop, worker_is_alive
 from agent6.runs.id import RunIdError, resolve_run_id
+from agent6.runs.ipc import request_stop, worker_is_alive
 from agent6.runs.layout import RunLayout
 from agent6.ui.cli._common import _runs_dir, _state_dir, all_run_dirs, resolve_run_layout, sgr
 from agent6.ui.cli._compare import manifest_task, print_ranked_candidates, rank, verify_ok

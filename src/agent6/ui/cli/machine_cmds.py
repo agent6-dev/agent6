@@ -66,8 +66,8 @@ from agent6.machine import (
 )
 from agent6.models.pricing import lookup_price
 from agent6.paths import chown_to_real_user
-from agent6.runs.bridge import read_worker_pid, worker_is_alive, write_worker_pid
 from agent6.runs.id import new_friendly_id
+from agent6.runs.ipc import read_worker_pid, worker_is_alive, write_worker_pid
 from agent6.sandbox.detect import ProfileUnavailableError, select_profile
 from agent6.types import SandboxProfile
 from agent6.ui.bridge.notify import desktop_notify

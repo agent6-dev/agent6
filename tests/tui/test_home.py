@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agent6.runs.bridge import (
+from agent6.runs.ipc import (
     approvals_dir,
     clear_pending_answers,
     questions_dir,

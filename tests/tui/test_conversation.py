@@ -128,7 +128,7 @@ def test_steer_bar_hidden_for_a_finished_run(tmp_path: Path) -> None:
 
 
 def test_steer_bar_shows_for_a_live_run_and_submits_over_the_bridge(tmp_path: Path) -> None:
-    from agent6.runs.bridge import STEER_ANSWER_FILE, steer_request_pending
+    from agent6.runs.ipc import STEER_ANSWER_FILE, steer_request_pending
 
     logs = tmp_path / "logs.jsonl"
     _write(logs, _EVENTS[:-1])  # drop run.end -> the run is live

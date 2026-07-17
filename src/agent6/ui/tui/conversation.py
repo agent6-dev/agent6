@@ -52,7 +52,7 @@ from textual.screen import Screen
 from textual.timer import Timer
 from textual.widgets import Footer, Static, TextArea
 
-from agent6.runs.bridge import clear_steer_answer, request_steer, write_steer_answer
+from agent6.runs.ipc import clear_steer_answer, request_steer, write_steer_answer
 from agent6.ui.tui import clipboard
 from agent6.ui.tui.copy_method import open_copy_method_picker
 from agent6.ui.tui.logview import LogScreen

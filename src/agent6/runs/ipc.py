@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""File-based approval bridge between the workflow process and a front-end.
+"""File-based IPC between the workflow process and a front-end.
 
 The workflow process and a front-end (the Textual TUI or the `agent6 web`
 server) run as separate OS processes; the front-end just tails JSONL and

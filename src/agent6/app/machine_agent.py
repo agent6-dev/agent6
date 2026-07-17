@@ -46,7 +46,7 @@ from agent6.config.layer import load_effective_with_overlay, resolved_state_dir
 from agent6.events import EventSink
 from agent6.git_ops import set_repo_hook_policy
 from agent6.providers import TranscriptSink
-from agent6.runs.bridge import (
+from agent6.runs.ipc import (
     clear_answer,
     clear_pending_answers,
     clear_question_answers,

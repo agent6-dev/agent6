@@ -43,7 +43,7 @@ from agent6.machine import (
     render,
     validate_semantics,
 )
-from agent6.runs.bridge import (
+from agent6.runs.ipc import (
     clear_frontend_pid,
     clear_steer_answer,
     frontend_is_live,

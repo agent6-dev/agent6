@@ -216,7 +216,7 @@ def test_steer_prompt_clears_request_marker_on_no_answer(
     """A TUI-initiated steer whose modal is dismissed (read_steer_answer -> None
     on timeout) must clear the `steer.request` marker so the run does NOT
     re-enter the 600s blocking prompt at every later boundary."""
-    from agent6.runs.bridge import request_steer, steer_request_pending
+    from agent6.runs.ipc import request_steer, steer_request_pending
     from agent6.ui.cli import _steer
 
     run_dir = tmp_path
@@ -243,7 +243,7 @@ def test_steer_prompt_keeps_marker_on_real_answer(
 ) -> None:
     """A genuinely-answered steer still works: prompt() returns the answer and
     leaves clearing to the caller's clear() (which consumes request+answer)."""
-    from agent6.runs.bridge import request_steer, steer_request_pending
+    from agent6.runs.ipc import request_steer, steer_request_pending
     from agent6.ui.cli import _steer
 
     run_dir = tmp_path

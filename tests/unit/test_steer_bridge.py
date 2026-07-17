@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from agent6.events import EventSink
-from agent6.runs.bridge import (
+from agent6.runs.ipc import (
     request_steer,
     steer_request_pending,
     write_steer_answer,
@@ -71,7 +71,7 @@ def test_make_steer_state_without_tty_uses_bridge(
 def test_steer_answer_is_abort_peeks_without_consuming(tmp_path: Path) -> None:
     """The non-blocking stop peek: True only for abort/stop, and it never consumes
     the answer (the between-step boundary still handles it)."""
-    from agent6.runs.bridge import steer_answer_is_abort
+    from agent6.runs.ipc import steer_answer_is_abort
 
     assert not steer_answer_is_abort(tmp_path)  # no answer file yet
     write_steer_answer(tmp_path, "focus on the parser")

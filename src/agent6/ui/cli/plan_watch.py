@@ -13,7 +13,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from agent6.runs.bridge import (
+from agent6.runs.id import RunIdError, resolve_run_id
+from agent6.runs.ipc import (
     clear_frontend_pid,
     read_worker_pid,
     set_session_allow,
@@ -22,7 +23,6 @@ from agent6.runs.bridge import (
     write_frontend_pid,
     write_question_answers,
 )
-from agent6.runs.id import RunIdError, resolve_run_id
 from agent6.tools.schema import UserQuestion
 from agent6.ui.cli._common import _runs_dir, _state_dir, all_run_dirs, resolve_run_layout
 from agent6.ui.cli._console_view import ConsoleView
