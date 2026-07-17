@@ -34,9 +34,7 @@ from agent6.config.layer import (
 from agent6.events import EventSink
 from agent6.git_ops import set_repo_hook_policy
 from agent6.paths import data_dir
-from agent6.skills import discover_skills, resolve_states, skill_search_dirs
-from agent6.types import SandboxProfile
-from agent6.ui.bridge.approval import (
+from agent6.runs.bridge import (
     clear_away_mode,
     clear_compact_request,
     clear_pending_answers,
@@ -50,6 +48,8 @@ from agent6.ui.bridge.approval import (
     write_steer_answer,
     write_worker_pid,
 )
+from agent6.skills import discover_skills, resolve_states, skill_search_dirs
+from agent6.types import SandboxProfile
 from agent6.ui.cli._ask import (
     run_ask_repl as _run_ask_repl,
 )

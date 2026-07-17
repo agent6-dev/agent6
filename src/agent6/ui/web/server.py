@@ -34,7 +34,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from agent6 import __version__
 from agent6.config import is_loopback_host
 from agent6.machine import MachineError
-from agent6.ui.bridge.approval import (
+from agent6.runs.bridge import (
     FRONTEND_PID_FILE,
     clear_frontend_pid,
     read_worker_pid,

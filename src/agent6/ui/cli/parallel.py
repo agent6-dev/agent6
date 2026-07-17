@@ -33,8 +33,8 @@ from agent6.directive import DirectiveError
 from agent6.git_ops import GitError, dirty_paths
 from agent6.git_ops import status as git_status
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
+from agent6.runs.bridge import request_stop, worker_is_alive
 from agent6.runs.id import new_friendly_id
-from agent6.ui.bridge.approval import request_stop, worker_is_alive
 from agent6.ui.bridge.spawn import agent6_exe, spawn_and_locate
 from agent6.ui.cli._compare import _judging_status, _reviewer_provider
 from agent6.workflows.subrun import GroupLaneSpawner

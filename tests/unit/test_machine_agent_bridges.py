@@ -14,13 +14,13 @@ import time
 from pathlib import Path
 
 from agent6.events import EventSink
-from agent6.tools.schema import UserQuestion
-from agent6.ui.bridge.approval import (
+from agent6.runs.bridge import (
     write_answer,
     write_frontend_pid,
     write_question_answers,
     write_steer_answer,
 )
+from agent6.tools.schema import UserQuestion
 from agent6.ui.cli.machine_agent import (
     _build_machine_bridges,  # pyright: ignore[reportPrivateUsage]
 )
@@ -113,7 +113,7 @@ def test_steer_request_and_answer_bridge(tmp_path: Path) -> None:
     write_frontend_pid(instance, os.getpid())
     b = _build_machine_bridges(instance, state, events)
     # A front-end drops a steer.request in the per-state dir.
-    from agent6.ui.bridge.approval import request_steer
+    from agent6.runs.bridge import request_steer
 
     request_steer(state)
     assert b.steer_requested() is True

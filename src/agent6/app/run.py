@@ -145,7 +145,7 @@ class SteerHooks(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class RunBridge:
-    """The run-dir file-bridge contract (`ui.bridge.approval`), injected so the
+    """The run-dir file-bridge contract (`runs.bridge`), injected so the
     lifecycle never imports `agent6.ui` (the same seam `LaneRuntime` uses for
     its liveness probe)."""
 

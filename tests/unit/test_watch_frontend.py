@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from agent6.ui.bridge.approval import approvals_dir, questions_dir
+from agent6.runs.bridge import approvals_dir, questions_dir
 from agent6.ui.cli import plan_watch
 
 

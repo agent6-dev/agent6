@@ -10,7 +10,7 @@ import threading
 import time
 from pathlib import Path
 
-from agent6.ui.bridge.approval import (
+from agent6.runs.bridge import (
     clear_frontend_pid,
     frontend_is_live,
     read_answer,

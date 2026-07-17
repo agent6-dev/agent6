@@ -95,7 +95,7 @@ class LaneRuntime:
 
     - `spawn`: launch a detached `agent6` run and locate its run dir.
     - `worker_is_alive` / `request_stop`: the run-dir bridge liveness probe +
-      clean-stop request (ui.bridge.approval).
+      clean-stop request (runs.bridge).
     - `build_provider` / `judging_status`: the reviewer provider + judge-progress
       status the fan-out auto-compare's `rank` uses (same wiring `runs compare`
       uses). The coordinator dispatch path leaves these unexercised (it never

@@ -15,8 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from agent6.events import EventSink
-from agent6.tools.schema import UserQuestion
-from agent6.ui.bridge.approval import (
+from agent6.runs.bridge import (
     away_mode,
     clear_answer,
     clear_question_answers,
@@ -28,6 +27,7 @@ from agent6.ui.bridge.approval import (
     set_session_allow,
     steer_answer_is_abort,
 )
+from agent6.tools.schema import UserQuestion
 from agent6.ui.bridge.spawn import spawn_detached_resume
 from agent6.ui.cli._steer import (
     tty_message as _tty_message,

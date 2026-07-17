@@ -148,7 +148,7 @@ def test_pause_menu_prefixes_and_word_rule(
 def test_pause_menu_compact_requests_compaction(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.ui.bridge.approval import compact_request_pending
+    from agent6.runs.bridge import compact_request_pending
     from agent6.ui.cli._steer_menu import pause_menu
 
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")

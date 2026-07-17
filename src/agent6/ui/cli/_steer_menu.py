@@ -39,8 +39,8 @@ from pathlib import Path
 from agent6.config.layer import load_effective
 from agent6.models.registry import context_window
 from agent6.paths import data_dir
+from agent6.runs.bridge import request_compact
 from agent6.skills import discover_skills, resolve_states, skill_search_dirs
-from agent6.ui.bridge.approval import request_compact
 from agent6.ui.cli._menu_input import menu_capable, menu_input
 from agent6.viewmodel import fold_run, tail_events
 from agent6.viewmodel.format import TASK_STATUS_GLYPH, format_cost

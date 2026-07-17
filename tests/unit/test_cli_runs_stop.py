@@ -10,8 +10,8 @@ from pathlib import Path
 import pytest
 
 from agent6.config.layer import resolved_state_dir
+from agent6.runs.bridge import stop_request_pending, write_worker_pid
 from agent6.runs.layout import RunLayout
-from agent6.ui.bridge.approval import stop_request_pending, write_worker_pid
 from agent6.ui.cli import main
 
 

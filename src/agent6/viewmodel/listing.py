@@ -15,7 +15,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent6.ui.bridge.approval import read_worker_pid, worker_is_alive
+from agent6.runs.bridge import read_worker_pid, worker_is_alive
 
 STALE_AFTER_S = 600.0
 

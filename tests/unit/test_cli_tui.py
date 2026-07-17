@@ -88,7 +88,7 @@ def test_approver_does_not_consume_an_answer_written_before_the_prompt(
     # timeout) so this exercises the actual file-bridge ordering.
     import functools
 
-    from agent6.ui.bridge.approval import read_answer, write_answer
+    from agent6.runs.bridge import read_answer, write_answer
 
     log = tmp_path / "logs.jsonl"
     events = EventSink(log)
@@ -115,7 +115,7 @@ def test_approver_consumes_an_answer_written_after_the_prompt(
     import threading
     import time
 
-    from agent6.ui.bridge.approval import read_answer, write_answer
+    from agent6.runs.bridge import read_answer, write_answer
 
     log = tmp_path / "logs.jsonl"
     events = EventSink(log)
@@ -163,7 +163,7 @@ def test_approver_headless_no_frontend_waits_not_denies(
     import threading
     import time
 
-    from agent6.ui.bridge.approval import write_answer, write_frontend_pid
+    from agent6.runs.bridge import write_answer, write_frontend_pid
 
     log = tmp_path / "logs.jsonl"
     events = EventSink(log)
@@ -294,7 +294,7 @@ def test_spawned_away_default_sets_wait_from_env(
 ) -> None:
     # A front-end launcher (web/TUI hub) sets AGENT6_DETACHED_AWAY so a spawned,
     # terminal-less run WAITS for a viewer instead of fabricating empty answers.
-    from agent6.ui.bridge.approval import away_mode
+    from agent6.runs.bridge import away_mode
     from agent6.ui.cli.run import _apply_spawned_away_default  # pyright: ignore[reportPrivateUsage]
 
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "wait")
@@ -307,7 +307,7 @@ def test_spawned_away_default_is_noop_without_env(
 ) -> None:
     # A pure headless run (no launcher, no env) is untouched, keeping its
     # non-hanging default so CI never blocks on an unanswerable question.
-    from agent6.ui.bridge.approval import away_mode
+    from agent6.runs.bridge import away_mode
     from agent6.ui.cli.run import _apply_spawned_away_default  # pyright: ignore[reportPrivateUsage]
 
     monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
@@ -317,7 +317,7 @@ def test_spawned_away_default_is_noop_without_env(
 
 def test_approver_away_deny_auto_denies(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Detach chose "deny all": every run_command is denied without prompting.
-    from agent6.ui.bridge.approval import set_away_mode
+    from agent6.runs.bridge import set_away_mode
 
     log = tmp_path / "logs.jsonl"
     events = EventSink(log)
@@ -334,7 +334,7 @@ def test_approver_live_front_end_wins_over_away_mode(
     # A live front-end (a re-attached watch/TUI/web) is always asked, in its own
     # UI, regardless of the detach away-mode -- away-mode governs only the window
     # when nothing is attached. Even under away="deny", a live front-end answers.
-    from agent6.ui.bridge.approval import set_away_mode
+    from agent6.runs.bridge import set_away_mode
 
     log = tmp_path / "logs.jsonl"
     events = EventSink(log)
@@ -355,7 +355,7 @@ def test_approver_away_wait_blocks_for_a_front_end_when_none_attached(
     import threading
     import time
 
-    from agent6.ui.bridge.approval import set_away_mode, write_answer, write_frontend_pid
+    from agent6.runs.bridge import set_away_mode, write_answer, write_frontend_pid
 
     log = tmp_path / "logs.jsonl"
     events = EventSink(log)

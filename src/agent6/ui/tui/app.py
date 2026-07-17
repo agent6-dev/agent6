@@ -57,7 +57,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
     ) from e
 
 from agent6.models.registry import context_window
-from agent6.ui.bridge.approval import (
+from agent6.runs.bridge import (
     clear_frontend_pid,
     clear_steer_answer,
     frontend_is_live,

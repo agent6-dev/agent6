@@ -569,7 +569,7 @@ def test_resume_reopens_modal_for_reused_prompt_id(tmp_path: Path) -> None:
 
 
 def test_steer_request_marker_round_trip(tmp_path: Path) -> None:
-    from agent6.ui.bridge.approval import clear_steer_request, request_steer, steer_request_pending
+    from agent6.runs.bridge import clear_steer_request, request_steer, steer_request_pending
 
     assert not steer_request_pending(tmp_path)
     request_steer(tmp_path)
@@ -582,7 +582,7 @@ def test_dashboard_bar_is_default_focus_and_steers(tmp_path: Path) -> None:
     """The dashboard opens ready to type -- the composer bar is the default focus
     (like the conversation) -- and Enter drops the steer.request marker + the
     instruction together, for the run to inject at its next boundary."""
-    from agent6.ui.bridge.approval import steer_request_pending
+    from agent6.runs.bridge import steer_request_pending
     from agent6.ui.tui.conversation import SteerInput
 
     async def scenario() -> None:
@@ -652,7 +652,7 @@ def test_finished_run_bar_resumes_with_the_instruction(tmp_path: Path, monkeypat
 def test_stop_now_aborts_via_bridge(tmp_path: Path) -> None:
     """Run > Stop now confirms, then writes an abort over the file bridge -- the
     stream watchdog interrupts the in-flight turn."""
-    from agent6.ui.bridge.approval import steer_request_pending
+    from agent6.runs.bridge import steer_request_pending
     from agent6.ui.tui.modals import ConfirmModal
 
     async def scenario() -> None:
@@ -674,7 +674,7 @@ def test_stop_now_aborts_via_bridge(tmp_path: Path) -> None:
 def test_stop_after_step_drops_the_marker(tmp_path: Path) -> None:
     """Run > Stop after this step confirms, then drops the stop.request marker the
     loop honors at its next completed-iteration boundary."""
-    from agent6.ui.bridge.approval import stop_request_pending
+    from agent6.runs.bridge import stop_request_pending
     from agent6.ui.tui.modals import ConfirmModal
 
     async def scenario() -> None:
@@ -737,7 +737,7 @@ def test_compact_now_drops_the_marker_for_a_live_run(tmp_path: Path) -> None:
     """The Run menu's "Compact context now" drops the compact.request marker for
     the run to honor at its next boundary; a finished run refuses (nothing to
     compact)."""
-    from agent6.ui.bridge.approval import compact_request_pending
+    from agent6.runs.bridge import compact_request_pending
 
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")

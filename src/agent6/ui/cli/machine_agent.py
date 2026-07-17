@@ -41,11 +41,7 @@ from agent6.config.layer import load_effective_with_overlay
 from agent6.events import EventSink
 from agent6.git_ops import set_repo_hook_policy
 from agent6.providers import TranscriptSink
-from agent6.sandbox.detect import detect
-from agent6.tools.dispatch import ToolDispatcher
-from agent6.tools.schema import UserQuestion
-from agent6.types import SandboxProfile
-from agent6.ui.bridge.approval import (
+from agent6.runs.bridge import (
     clear_answer,
     clear_pending_answers,
     clear_question_answers,
@@ -58,6 +54,10 @@ from agent6.ui.bridge.approval import (
     session_allow_set,
     steer_request_pending,
 )
+from agent6.sandbox.detect import detect
+from agent6.tools.dispatch import ToolDispatcher
+from agent6.tools.schema import UserQuestion
+from agent6.types import SandboxProfile
 from agent6.ui.cli._common import _state_dir
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli.egress import (

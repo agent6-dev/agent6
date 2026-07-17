@@ -3,7 +3,7 @@
 """The web write side: drive a run/machine through the shared frontend bridge.
 
 Every mutation the browser can make goes through here, and every one is either
-the typed answer-file contract (`agent6.ui.bridge.approval`) or spawning / running
+the typed answer-file contract (`agent6.runs.bridge`) or spawning / running
 the same `agent6` CLI a user would (`agent6.ui.bridge.spawn`). Nothing here
 executes arbitrary input: new-work spawns fixed argv with the task as a single
 argv element, answers are written to the run's own answer files, and the quick
@@ -22,7 +22,7 @@ from agent6.config.layer import load_effective
 from agent6.directive import DirectiveError, Segment, parse_directive, parse_spec
 from agent6.machine import JournalError, MachineError, MachineJournal, load_machine
 from agent6.models.validate import refusal_message, validate_spec_models
-from agent6.ui.bridge.approval import (
+from agent6.runs.bridge import (
     read_worker_pid,
     request_compact,
     request_steer,

@@ -273,7 +273,7 @@ def test_spawn_machine_run_started_signal_is_child_worker_pid(
     # not read as "this spawn started".
     from collections.abc import Callable
 
-    from agent6.ui.bridge.approval import write_worker_pid
+    from agent6.runs.bridge import write_worker_pid
     from agent6.ui.web import model
 
     mf = tmp_path / "tiny.asm.toml"
