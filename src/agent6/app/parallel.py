@@ -24,7 +24,6 @@ import functools
 import json
 import os
 import shutil
-import sys
 import threading
 import time
 from collections.abc import Callable
@@ -38,6 +37,7 @@ from agent6.app.compare import manifest_task as _manifest_task
 from agent6.app.compare import print_ranked_candidates as _print_ranked_candidates
 from agent6.app.compare import rank as _rank
 from agent6.app.compare import verify_ok as _verify_ok
+from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config
 from agent6.config.layer import materialize
 from agent6.directive import parse_spec
@@ -270,6 +270,7 @@ def run_lane_to_completion(
     spawner: LaneSpawner | None = None,
     import_lock: threading.Lock | None = None,
     poll_interval_s: float = _POLL_INTERVAL_S,
+    reporter: Reporter = STDIO_REPORTER,
 ) -> LaneResult:
     """Run ONE subordinate lane fully and import it into *origin*.
 
@@ -315,10 +316,9 @@ def run_lane_to_completion(
         )
     stamp_err = _stamp_lineage(dest, group, spec.lane)
     if stamp_err is not None:
-        print(
+        reporter.err(
             f"[agent6] lane {spec.lane} [{spec.run_id}]: imported, but the lineage"
-            f" stamp failed: {stamp_err}",
-            file=sys.stderr,
+            f" stamp failed: {stamp_err}"
         )
     return LaneResult(spec=spec, run_dir=dest, branch=res.branch, ok=True, error="")
 
@@ -332,6 +332,7 @@ def build_lane_spawner(
     runtime: LaneRuntime,
     max_usd: float | None = None,
     auto_approve: bool = False,
+    reporter: Reporter = STDIO_REPORTER,
 ) -> GroupLaneSpawner:
     """Build the coordinator's group dispatcher: the `GroupLaneSpawner` the loop
     calls at a `/parallel` steer boundary.
@@ -354,7 +355,7 @@ def build_lane_spawner(
         if verdict.refused:
             raise ParallelError(refusal_message(verdict, directive=True))
         if verdict.warned:
-            print(f"[agent6] WARNING: {warning_message(verdict)}", file=sys.stderr)
+            reporter.err(f"[agent6] WARNING: {warning_message(verdict)}")
         workdir_root = _workdir_root(cfg, coordinator_run_id) / group
         specs = [
             LaneSpec(
@@ -381,6 +382,7 @@ def build_lane_spawner(
                 max_usd=max_usd,
                 auto_approve=auto_approve,
                 import_lock=import_lock,
+                reporter=reporter,
             )
 
         pairs = list(zip(specs, lanes, strict=True))
@@ -402,6 +404,7 @@ def build_coordinator_spawner(
     runtime: LaneRuntime,
     max_usd: float | None = None,
     auto_approve: bool = False,
+    reporter: Reporter = STDIO_REPORTER,
 ) -> GroupLaneSpawner | None:
     """The `/parallel` group dispatcher to wire into a run's loop, or None when
     dispatch is unavailable: a non-write mode (plan/ask make no commits to clone),
@@ -420,6 +423,7 @@ def build_coordinator_spawner(
         runtime=runtime,
         max_usd=max_usd,
         auto_approve=auto_approve,
+        reporter=reporter,
     )
 
 
@@ -444,7 +448,11 @@ def _symlink_lane(origin_state: Path, res: LaneResult) -> None:
 
 
 def _await_lanes(
-    started: list[LaneResult], *, runtime: LaneRuntime, already_interrupted: bool = False
+    started: list[LaneResult],
+    *,
+    runtime: LaneRuntime,
+    already_interrupted: bool = False,
+    reporter: Reporter = STDIO_REPORTER,
 ) -> bool:
     """Poll every started lane's REAL run dir (in the clone's state; the origin
     symlink is a view for the hub, never the source of truth) until it is
@@ -468,12 +476,14 @@ def _await_lanes(
             key = (summary.status, waiting, round(summary.cost_usd, 4))
             if seen.get(rid) != key:
                 seen[rid] = key
-                _print_lane_status(res.spec, summary.status, summary.cost_usd, waiting=waiting)
+                _print_lane_status(
+                    res.spec, summary.status, summary.cost_usd, waiting=waiting, reporter=reporter
+                )
             if _lane_terminal(res.run_dir, summary.status, runtime.worker_is_alive):
                 pending.pop(rid)
 
     def stop_and_drain() -> None:
-        print("\n[agent6] interrupted; stopping lanes...", file=sys.stderr)
+        reporter.err("\n[agent6] interrupted; stopping lanes...")
         for res in pending.values():
             runtime.request_stop(res.run_dir)
         deadline = time.monotonic() + _STOP_GRACE_S
@@ -529,14 +539,18 @@ def _pending_prompt(run_dir: Path) -> str:
     return ""
 
 
-def _print_lane_status(spec: LaneSpec, status: str, cost: float, *, waiting: str = "") -> None:
+def _print_lane_status(
+    spec: LaneSpec,
+    status: str,
+    cost: float,
+    *,
+    waiting: str = "",
+    reporter: Reporter = STDIO_REPORTER,
+) -> None:
     model = f" ({spec.model})" if spec.model else ""
     cost_s = f"  ${cost:.4f}" if cost > 0 else ""
     wait_s = f" · waiting on {waiting} (answer via the web or TUI hub)" if waiting else ""
-    print(
-        f"[agent6] lane {spec.lane} [{spec.run_id}]{model}: {status}{wait_s}{cost_s}",
-        file=sys.stderr,
-    )
+    reporter.err(f"[agent6] lane {spec.lane} [{spec.run_id}]{model}: {status}{wait_s}{cost_s}")
 
 
 # ---------------------------------------------------------------------------
@@ -583,6 +597,7 @@ def _stamp_compare_outcomes(
     fanout_id: str,
     ranked_by: str,
     rationale: str,
+    reporter: Reporter = STDIO_REPORTER,
 ) -> None:
     """Stamp the auto-compare outcome into EACH ranked lane's manifest, so every
     run view can show where a lane placed and why. ONE writer: only the fan-out's
@@ -605,10 +620,7 @@ def _stamp_compare_outcomes(
         }
         err = _rewrite_manifest(_lane_link(origin_state, run_id), {"compare": compare})
         if err is not None:
-            print(
-                f"[agent6] lane [{run_id}]: imported, but the compare stamp failed: {err}",
-                file=sys.stderr,
-            )
+            reporter.err(f"[agent6] lane [{run_id}]: imported, but the compare stamp failed: {err}")
 
 
 def _import_lanes(
@@ -620,6 +632,7 @@ def _import_lanes(
     fanout_id: str,
     task: str,
     runtime: LaneRuntime,
+    reporter: Reporter = STDIO_REPORTER,
 ) -> tuple[list[CandidateBrief], list[tuple[LaneResult, str]], list[LaneSpec]]:
     """Import each finished lane's branch + run dir into the origin, stamp its
     lineage, and build a candidate brief from it. Returns (candidates, failed,
@@ -660,10 +673,9 @@ def _import_lanes(
         imported.append(res.spec)
         stamp_err = _stamp_lineage(dest, fanout_id, res.spec.lane)
         if stamp_err is not None:
-            print(
+            reporter.err(
                 f"[agent6] lane {res.spec.lane} [{res.spec.run_id}]: imported, but the"
-                f" lineage stamp failed: {stamp_err}",
-                file=sys.stderr,
+                f" lineage stamp failed: {stamp_err}"
             )
         summary = summarize_run_dir(dest)
         candidates.append(
@@ -699,18 +711,21 @@ def _print_report(
     *,
     fanout_id: str,
     rationale: str,
+    reporter: Reporter = STDIO_REPORTER,
 ) -> None:
     """Print the ranked candidate table + a `runs merge` line per candidate, and
     list any failed lanes. Nothing is merged automatically."""
-    print(f"\n[agent6] parallel fan-out {fanout_id} complete: {len(candidates)} candidate(s)")
-    _print_ranked_candidates(candidates, ranking, rationale)
+    reporter.out(
+        f"\n[agent6] parallel fan-out {fanout_id} complete: {len(candidates)} candidate(s)"
+    )
+    _print_ranked_candidates(candidates, ranking, rationale, reporter=reporter)
     if failed:
-        print("\nfailed lanes (nothing of theirs was deleted):")
+        reporter.out("\nfailed lanes (nothing of theirs was deleted):")
         for res, err in failed:
-            print(f"  - lane {res.spec.lane} [{res.spec.run_id}]: {err}")
+            reporter.out(f"  - lane {res.spec.lane} [{res.spec.run_id}]: {err}")
             kept = [p for p in (res.spec.workdir, res.run_dir) if p.exists()]
             if kept:
-                print(f"    kept: {', '.join(str(p) for p in kept)}")
+                reporter.out(f"    kept: {', '.join(str(p) for p in kept)}")
 
 
 # ---------------------------------------------------------------------------
@@ -730,6 +745,7 @@ def run_parallel(
     max_usd: float | None = None,
     fanout_id: str | None = None,
     auto_approve: bool = False,
+    reporter: Reporter = STDIO_REPORTER,
 ) -> int:
     """Run *lanes* to completion, import them, and print a ranked comparison.
 
@@ -738,7 +754,7 @@ def run_parallel(
     `auto_approve` forwards to every lane's argv, same as `max_usd`.
     """
     if not lanes:
-        print("ERROR: no lanes to run", file=sys.stderr)
+        reporter.err("ERROR: no lanes to run")
         return 2
     if fanout_id is None:
         fanout_id = lanes[0].run_id.rsplit("-l", 1)[0]
@@ -754,15 +770,14 @@ def run_parallel(
     try:
         base_sha = git_status(origin).head_sha
     except GitError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        reporter.err(f"ERROR: {exc}")
         return 2
 
     (origin_state / "runs").mkdir(parents=True, exist_ok=True)
-    print(f"[agent6] parallel fan-out {fanout_id}: {len(lanes)} lanes", file=sys.stderr)
+    reporter.err(f"[agent6] parallel fan-out {fanout_id}: {len(lanes)} lanes")
     if max_usd is not None:
-        print(
-            f"[agent6] budget: ${max_usd:g}/lane x {len(lanes)} = ${max_usd * len(lanes):g} total",
-            file=sys.stderr,
+        reporter.err(
+            f"[agent6] budget: ${max_usd:g}/lane x {len(lanes)} = ${max_usd * len(lanes):g} total"
         )
 
     results: list[LaneResult] = []
@@ -772,18 +787,20 @@ def run_parallel(
             results.append(res)
             if res.ok:
                 _symlink_lane(origin_state, res)
-                _print_lane_status(spec, "started", 0.0)
+                _print_lane_status(spec, "started", 0.0, reporter=reporter)
             else:
-                print(
-                    f"[agent6] lane {spec.lane} [{spec.run_id}]: FAILED to start: {res.error}",
-                    file=sys.stderr,
+                reporter.err(
+                    f"[agent6] lane {spec.lane} [{spec.run_id}]: FAILED to start: {res.error}"
                 )
-        interrupted = _await_lanes([r for r in results if r.ok], runtime=runtime)
+        interrupted = _await_lanes([r for r in results if r.ok], runtime=runtime, reporter=reporter)
     except KeyboardInterrupt:
         # Ctrl+C mid-spawn (before the await): route the already-started lanes
         # into the same stop-grace path, then import-what-exists + report below.
         interrupted = _await_lanes(
-            [r for r in results if r.ok], runtime=runtime, already_interrupted=True
+            [r for r in results if r.ok],
+            runtime=runtime,
+            already_interrupted=True,
+            reporter=reporter,
         )
 
     candidates, failed, imported = _import_lanes(
@@ -794,6 +811,7 @@ def run_parallel(
         fanout_id=fanout_id,
         task=task,
         runtime=runtime,
+        reporter=reporter,
     )
     _cleanup(imported, workdir_root=lanes[0].workdir.parent, cfg=cfg)
 
@@ -803,6 +821,7 @@ def run_parallel(
         transcript_dir=origin_state / "parallel" / fanout_id,
         build_provider=runtime.build_provider,
         judging_status=runtime.judging_status,
+        reporter=reporter,
     )
     _stamp_compare_outcomes(
         candidates,
@@ -811,8 +830,11 @@ def run_parallel(
         fanout_id=fanout_id,
         ranked_by=ranked_by,
         rationale=rationale,
+        reporter=reporter,
     )
-    _print_report(candidates, ranking, failed, fanout_id=fanout_id, rationale=rationale)
+    _print_report(
+        candidates, ranking, failed, fanout_id=fanout_id, rationale=rationale, reporter=reporter
+    )
 
     if interrupted:
         return 130

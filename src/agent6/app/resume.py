@@ -88,6 +88,7 @@ from agent6.app.providers import (
 from agent6.app.providers import (
     role_temperature as _role_temperature,
 )
+from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.app.run import RunFrontend
 from agent6.budget import BudgetTracker
 from agent6.config import (
@@ -253,6 +254,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     sandbox_overrides: SandboxOverrides | None = None,
     profile: str = "",
     steer: str = "",
+    reporter: Reporter = STDIO_REPORTER,
 ) -> int:
     """Resume a paused/crashed run from its snapshot.
 
@@ -276,25 +278,25 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # "resume my last run" -- the common recovery case, matching `runs *`.
         latest = _most_recent_run_id(runs_dir)
         if latest is None:
-            print(f"ERROR: no runs under {runs_dir}; nothing to resume.", file=sys.stderr)
+            reporter.err(f"ERROR: no runs under {runs_dir}; nothing to resume.")
             return 2
         run_id = latest
-        print(f"[agent6] resuming most recent run: {run_id}", file=sys.stderr)
+        reporter.err(f"[agent6] resuming most recent run: {run_id}")
     try:
         resolved = resolve_run_id(runs_dir, run_id)
     except RunIdError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        reporter.err(f"ERROR: {exc}")
         return 2
     run_id = resolved
     layout = RunLayout(state_dir=state_dir, run_id=run_id)
     if not layout.run_dir.is_dir():
-        print(f"ERROR: no such run dir: {layout.run_dir}", file=sys.stderr)
+        reporter.err(f"ERROR: no such run dir: {layout.run_dir}")
         return 2
     # One authoritative writer per run dir (see acquire_single_writer). Refuse a
     # second resume of a still-live run before touching any shared state.
     worker_lock_fd = _acquire_single_writer(layout.run_dir)
     if worker_lock_fd is None:
-        print(_SINGLE_WRITER_BUSY.format(rid=run_id), file=sys.stderr)
+        reporter.err(_SINGLE_WRITER_BUSY.format(rid=run_id))
         return 2
     # Drop a prior session's stale answer files + frontend.pid (the id counters reset
     # on resume, an old answer must not be read instead of re-prompting).
@@ -317,10 +319,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     try:
         snapshot_path = layout.run_dir / "loop_state.json"
         if not snapshot_path.is_file():
-            print(
-                f"ERROR: no resume snapshot at {snapshot_path}; nothing to resume.",
-                file=sys.stderr,
-            )
+            reporter.err(f"ERROR: no resume snapshot at {snapshot_path}; nothing to resume.")
             return 2
 
         # Friendly no-repo guard BEFORE any git-touching check (which would
@@ -339,16 +338,15 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         try:
             loaded = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
         except OSError as exc:
-            print(f"ERROR: cannot read run manifest {layout.manifest_path}: {exc}", file=sys.stderr)
+            reporter.err(f"ERROR: cannot read run manifest {layout.manifest_path}: {exc}")
             return 2
         except ValueError as exc:
-            print(f"ERROR: run manifest {layout.manifest_path} is corrupt: {exc}", file=sys.stderr)
+            reporter.err(f"ERROR: run manifest {layout.manifest_path} is corrupt: {exc}")
             return 2
         if not isinstance(loaded, dict):
-            print(
+            reporter.err(
                 f"ERROR: run manifest {layout.manifest_path} is malformed"
-                f" (expected a JSON object, got {type(loaded).__name__}).",
-                file=sys.stderr,
+                f" (expected a JSON object, got {type(loaded).__name__})."
             )
             return 2
         manifest: dict[str, Any] = loaded
@@ -371,17 +369,13 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         mismatch = snapshot_head_mismatch(snapshot_path, cwd, run_branch=run_branch)
         if mismatch is not None:
             snap_head, onto_head = mismatch
-            print(
-                "GUARD: the code this run would resume onto diverged from its last snapshot.",
-                file=sys.stderr,
+            reporter.err(
+                "GUARD: the code this run would resume onto diverged from its last snapshot."
             )
-            print(f"  snapshot head: {snap_head}", file=sys.stderr)
-            print(f"  resume onto:   {onto_head}", file=sys.stderr)
+            reporter.err(f"  snapshot head: {snap_head}")
+            reporter.err(f"  resume onto:   {onto_head}")
             if not force:
-                print(
-                    "REFUSING to resume. Re-run with --force-resume to override.",
-                    file=sys.stderr,
-                )
+                reporter.err("REFUSING to resume. Re-run with --force-resume to override.")
                 return 1
 
         try:
@@ -395,30 +389,30 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 cfg = sandbox_overrides.apply(cfg)
             cfg.require_runnable("worker")
         except ConfigError as exc:
-            print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
+            reporter.err(f"CONFIG ERROR:\n{exc}")
             return 2
 
         env = detect_env()
         try:
             selected_profile = select_profile(cfg.sandbox.profile, env)
         except ProfileUnavailableError as exc:
-            print(f"REFUSING: {exc}", file=sys.stderr)
+            reporter.err(f"REFUSING: {exc}")
             return 2
         warn_if_unsandboxed(selected_profile)
         if not frontend.confirm_unconfined_autorun(selected_profile, cfg):
-            print("[agent6] aborted.", file=sys.stderr)
+            reporter.err("[agent6] aborted.")
             return 1
 
         net_err = check_network_profile(cfg, selected_profile)
         if net_err is not None:
-            print(f"REFUSING: {net_err}", file=sys.stderr)
+            reporter.err(f"REFUSING: {net_err}")
             return 2
         # strict can be selected because the jail launcher has userns, yet this
         # process can't create one for the egress broker (surgical AppArmor profile).
         # Downgrade auto->hardened, or refuse an explicit strict, with guidance.
         selected_profile, egress_err = resolve_strict_egress_viability(cfg, selected_profile)
         if egress_err is not None:
-            print(egress_err, file=sys.stderr)
+            reporter.err(egress_err)
             return 2
 
         missing = _check_provider_keys(cfg)
@@ -426,10 +420,10 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             budget_overrides.max_usd if budget_overrides else None, cfg
         )
         if usd_err is not None:
-            print(f"REFUSING: {usd_err}", file=sys.stderr)
+            reporter.err(f"REFUSING: {usd_err}")
             return 2
         if missing is not None:
-            print(missing, file=sys.stderr)
+            reporter.err(missing)
             return 2
 
         identity = CommitIdentity(
@@ -441,7 +435,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         try:
             verify_git_identity(cwd, identity)
         except GitError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
+            reporter.err(f"ERROR: {exc}")
             return 2
 
         transcript_sink = TranscriptSink(layout.transcripts_dir)
@@ -451,18 +445,17 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             cfg, selected_profile, detach_exe=frontend.agent6_exe()
         )
         if egress_err is not None:
-            print(f"REFUSING: {egress_err}", file=sys.stderr)
+            reporter.err(f"REFUSING: {egress_err}")
             return 2
         if guard.broker is not None:
-            print(
+            reporter.err(
                 f"[agent6] provider-only egress: confined to host network "
-                f"namespace via broker pid {guard.broker.pid}",
-                file=sys.stderr,
+                f"namespace via broker pid {guard.broker.pid}"
             )
 
         landlock_err = maybe_apply_agent_landlock(cfg, selected_profile, env)
         if landlock_err is not None:
-            print(f"REFUSING: {landlock_err}", file=sys.stderr)
+            reporter.err(f"REFUSING: {landlock_err}")
             # The egress broker is already running; the outer finally tears it
             # down (and its socket dir) so this refusal does not leak it.
             return 2
@@ -476,7 +469,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # end-of-run banner says how to switch back).
         branch_err = ensure_on_run_branch(cwd, layout)
         if branch_err is not None:
-            print(branch_err, file=sys.stderr)
+            reporter.err(branch_err)
             return 2
 
         budget = BudgetTracker(
@@ -547,10 +540,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 )
             elif snap_verify:  # () means the original run was gateless: stay gateless
                 cfg = cfg.with_inferred_verify(snap_verify)
-                print(
-                    f"[agent6] reusing this run's verify command: {' '.join(snap_verify)}",
-                    file=sys.stderr,
-                )
+                reporter.err(f"[agent6] reusing this run's verify command: {' '.join(snap_verify)}")
 
         sock_path = layout.run_dir / "curator.sock"  # rebound to the /tmp socket inside the try
 
@@ -573,7 +563,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 sock_link.unlink()
             sock_link.symlink_to(sock_path)
             curator_proc = spawn_curator(state_dir, run_id, sock_path, subdir=layout.subdir)
-            print(f"[agent6] resume run id: {run_id}", file=sys.stderr)
+            reporter.err(f"[agent6] resume run id: {run_id}")
 
             mcp_manager = _start_mcp_manager_if_enabled(cfg)
 
@@ -655,14 +645,14 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                     with frontend.tui_session(layout.run_dir, tui_enabled):
                         result = wf.resume()
                 except ResumeError as exc:
-                    print(f"ERROR: {exc}", file=sys.stderr)
+                    reporter.err(f"ERROR: {exc}")
                     return 1
                 except KeyboardInterrupt:
                     interrupted = True
-                    print("\n[agent6] resume interrupted", file=sys.stderr)
+                    reporter.err("\n[agent6] resume interrupted")
                     events.emit("run.end", reason="interrupted", all_passed=False)
         except CuratorClientError as exc:
-            print(f"ERROR: curator failed to start: {exc}", file=sys.stderr)
+            reporter.err(f"ERROR: curator failed to start: {exc}")
             return 1
         finally:
             if curator_proc is not None:
@@ -696,8 +686,8 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
 
         if result.reason == "detached":
             detach_requested = True
-            print(f"\n[agent6] detached: {layout.run_id} continues in the background.")
-            print(f"          reattach:  agent6 attach {layout.run_id}")
+            reporter.out(f"\n[agent6] detached: {layout.run_id} continues in the background.")
+            reporter.out(f"          reattach:  agent6 attach {layout.run_id}")
             return 0
 
         _print_run_end(result, layout=layout, budget=budget, console_stream=console_stream)
@@ -721,6 +711,6 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 frontend.prompt_detach_away_mode(layout.run_dir)
             err = spawn_detached(guard, cwd, layout.run_id, fallback=frontend.spawn_detached_resume)
             if err:
-                print(f"[agent6] {err}", file=sys.stderr)
+                reporter.err(f"[agent6] {err}")
         if guard.detach_spawner is not None:
             guard.detach_spawner.close()

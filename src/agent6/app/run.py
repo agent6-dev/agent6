@@ -98,6 +98,7 @@ from agent6.app.providers import (
 from agent6.app.providers import (
     role_temperature as _role_temperature,
 )
+from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
 from agent6.config import Config, RoleName
 from agent6.config.layer import resolved_state_dir
@@ -246,6 +247,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     budget_overrides: BudgetOverrides | None = None,
     sandbox_overrides: SandboxOverrides | None = None,
     profile: str = "",
+    reporter: Reporter = STDIO_REPORTER,
 ) -> int:
     """Single-loop agent: one provider, one LLM driving via tool
     calls over the fixed tool surface, deterministic harness (jail +
@@ -271,28 +273,28 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     try:
         selected_profile = select_profile(cfg.sandbox.profile, env)
     except ProfileUnavailableError as exc:
-        print(f"REFUSING: {exc}", file=sys.stderr)
+        reporter.err(f"REFUSING: {exc}")
         return 2
     warn_if_unsandboxed(selected_profile)
     if not frontend.confirm_unconfined_autorun(selected_profile, cfg):
-        print("[agent6] aborted.", file=sys.stderr)
+        reporter.err("[agent6] aborted.")
         return 1
 
     net_err = check_network_profile(cfg, selected_profile)
     if net_err is not None:
-        print(f"REFUSING: {net_err}", file=sys.stderr)
+        reporter.err(f"REFUSING: {net_err}")
         return 2
     # strict can be selected because the jail launcher has userns, yet this
     # process can't create one for the egress broker (surgical AppArmor profile).
     # Downgrade auto->hardened, or refuse an explicit strict, with guidance.
     selected_profile, egress_err = resolve_strict_egress_viability(cfg, selected_profile)
     if egress_err is not None:
-        print(egress_err, file=sys.stderr)
+        reporter.err(egress_err)
         return 2
 
     usd_err = _explicit_usd_flag_error(budget_overrides.max_usd if budget_overrides else None, cfg)
     if usd_err is not None:
-        print(f"REFUSING: {usd_err}", file=sys.stderr)
+        reporter.err(f"REFUSING: {usd_err}")
         return 2
 
     # Git pre-flight (verify identity).
@@ -315,7 +317,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         try:
             verify_git_identity(cwd, identity)
         except GitError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
+            reporter.err(f"ERROR: {exc}")
             return 2
 
         # Capture base sha + branch BEFORE we (optionally) cut a run branch
@@ -323,7 +325,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         try:
             pre_status = git_status(cwd)
         except GitError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
+            reporter.err(f"ERROR: {exc}")
             return 2
         base_sha = pre_status.head_sha
         base_branch = pre_status.branch
@@ -336,10 +338,8 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             and base_branch.startswith("agent6/")
             and not frontend.confirm_run_on_run_branch(base_branch)
         ):
-            print(
-                "[agent6] aborted. Merge (agent6 runs merge) or switch branches first,"
-                " then re-run.",
-                file=sys.stderr,
+            reporter.err(
+                "[agent6] aborted. Merge (agent6 runs merge) or switch branches first, then re-run."
             )
             return 2
 
@@ -349,7 +349,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         try:
             validate_explicit_run_id(run_id)
         except RunIdError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
+            reporter.err(f"ERROR: {exc}")
             return 2
     effective_run_id = run_id or new_friendly_id()
     state_dir = resolved_state_dir(cwd)
@@ -363,10 +363,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     # graph/checkpoints/transcripts (mixed state). Refuse and point at resume.
     # (ask sessions are transient Q&A, so reusing their dir is fine.)
     if run_id and mode != "ask" and layout.manifest_path.exists():
-        print(
+        reporter.err(
             f"ERROR: run {run_id!r} already exists. Use `agent6 resume {run_id}` to "
-            "continue it, or choose a different --run-id.",
-            file=sys.stderr,
+            "continue it, or choose a different --run-id."
         )
         return 2
     layout.ensure()
@@ -375,7 +374,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     # process refuses cleanly instead of clobbering the live run.
     worker_lock_fd = _acquire_single_writer(layout.run_dir)
     if worker_lock_fd is None:
-        print(_SINGLE_WRITER_BUSY.format(rid=effective_run_id), file=sys.stderr)
+        reporter.err(_SINGLE_WRITER_BUSY.format(rid=effective_run_id))
         return 2
     # Drop stale approve/ask/steer answers + frontend.pid from a prior session (the
     # id counters reset on resume, so an old answer must not be read instead of
@@ -410,7 +409,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 stash_all(cwd, f"agent6 auto-stash before run {effective_run_id}")
                 stashed = True
             except GitError as exc:
-                print(f"ERROR: could not auto-stash before run: {exc}", file=sys.stderr)
+                reporter.err(f"ERROR: could not auto-stash before run: {exc}")
                 clear_worker_pid(layout.run_dir)
                 _release_single_writer(worker_lock_fd)
                 discard_husk_dir(layout.run_dir)
@@ -419,12 +418,11 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             dirty = dirty_paths(cwd)
             listed = "\n".join(f"    {p}" for p in dirty)
             more = "\n    ..." if len(dirty) >= 10 else ""
-            print(
+            reporter.err(
                 "REFUSING: working tree is not clean:\n"
                 f"{listed}{more}\n"
                 "Commit, stash, or discard your changes, set [git].auto_stash=true, "
-                "or set [git].require_clean_worktree=false to override.",
-                file=sys.stderr,
+                "or set [git].require_clean_worktree=false to override."
             )
             clear_worker_pid(layout.run_dir)
             _release_single_writer(worker_lock_fd)
@@ -450,7 +448,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             # base line when you are on a previous run's branch (see BranchChoice).
             branch_choice = frontend.choose_branch_start_point(cfg, layout.state_dir, base_branch)
             if branch_choice.abort:
-                print("[agent6] aborted; nothing was started.", file=sys.stderr)
+                reporter.err("[agent6] aborted; nothing was started.")
                 clear_worker_pid(layout.run_dir)
                 _release_single_writer(worker_lock_fd)
                 discard_husk_dir(layout.run_dir)
@@ -464,18 +462,17 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             cfg, selected_profile, detach_exe=frontend.agent6_exe()
         )
         if egress_err is not None:
-            print(f"REFUSING: {egress_err}", file=sys.stderr)
+            reporter.err(f"REFUSING: {egress_err}")
             return 2
         if guard.broker is not None:
-            print(
+            reporter.err(
                 f"[agent6] provider-only egress: confined to host network "
-                f"namespace via broker pid {guard.broker.pid}",
-                file=sys.stderr,
+                f"namespace via broker pid {guard.broker.pid}"
             )
 
         landlock_err = maybe_apply_agent_landlock(cfg, selected_profile, env)
         if landlock_err is not None:
-            print(f"REFUSING: {landlock_err}", file=sys.stderr)
+            reporter.err(f"REFUSING: {landlock_err}")
             return 2
 
         # Cut the run branch, then write the manifest that records it. The cut
@@ -487,7 +484,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             try:
                 create_branch(cwd, run_branch, start_point=branch_start_point)
             except GitError as exc:
-                print(f"ERROR: could not cut run branch {run_branch}: {exc}", file=sys.stderr)
+                reporter.err(f"ERROR: could not cut run branch {run_branch}: {exc}")
                 discard_husk_dir(layout.run_dir)
                 return 2
 
@@ -541,10 +538,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         # stdin. Skip revision for this run instead.
         effective_revise_prompt = cfg.prompt.revise_prompt
         if effective_revise_prompt == "interactive" and tui_enabled:
-            print(
+            reporter.err(
                 "[agent6] prompt.revise_prompt='interactive' needs the terminal; the TUI"
-                " owns it. Skipping prompt revision for this run.",
-                file=sys.stderr,
+                " owns it. Skipping prompt revision for this run."
             )
             effective_revise_prompt = "off"
         stream_text, console_stream = frontend.stream_modes(tui_enabled)
@@ -623,7 +619,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             curator_proc = spawn_curator(
                 state_dir, effective_run_id, sock_path, subdir=layout.subdir
             )
-            print(f"[agent6] run id: {effective_run_id}", file=sys.stderr)
+            reporter.err(f"[agent6] run id: {effective_run_id}")
 
             # Spawn any configured MCP servers BEFORE the workflow
             # starts so their tools are visible from iteration 1. The manager
@@ -728,12 +724,12 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                             result = wf.run(task)
                 except KeyboardInterrupt:
                     interrupted = True
-                    print("\n[agent6] run interrupted", file=sys.stderr)
+                    reporter.err("\n[agent6] run interrupted")
                     # The loop was cut mid-step, so it never emitted run.end; do it
                     # here so an attached watcher/TUI stops instead of hanging.
                     events.emit("run.end", reason="interrupted", all_passed=False)
         except CuratorClientError as exc:
-            print(f"ERROR: curator failed to start: {exc}", file=sys.stderr)
+            reporter.err(f"ERROR: curator failed to start: {exc}")
             return 1
         finally:
             if curator_proc is not None:
@@ -768,21 +764,18 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             # The REPL already printed + saved each turn, so only the one-shot path
             # prints/saves here.
             if not interactive:
-                print(result.summary)
+                reporter.out(result.summary)
                 frontend.save_ask_transcript(layout, task, result.summary)
-                print(
-                    f"\n[agent6] answer saved to {layout.run_dir / 'transcript.md'}",
-                    file=sys.stderr,
-                )
-            print(budget.format_summary(), file=sys.stderr)
+                reporter.err(f"\n[agent6] answer saved to {layout.run_dir / 'transcript.md'}")
+            reporter.err(budget.format_summary())
             return 0 if result.completed else 1
 
         if result.reason == "detached":
             # Keep going in the background: the outer finally releases this run's
             # worker lock, then spawns a detached `resume` that picks it up.
             detach_requested = True
-            print(f"\n[agent6] detached: {layout.run_id} continues in the background.")
-            print(f"          reattach:  agent6 attach {layout.run_id}")
+            reporter.out(f"\n[agent6] detached: {layout.run_id} continues in the background.")
+            reporter.out(f"          reattach:  agent6 attach {layout.run_id}")
             return 0
 
         _print_run_end(result, layout=layout, budget=budget, console_stream=console_stream)
@@ -818,6 +811,6 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 frontend.prompt_detach_away_mode(layout.run_dir)
             err = spawn_detached(guard, cwd, layout.run_id, fallback=frontend.spawn_detached_resume)
             if err:
-                print(f"[agent6] {err}", file=sys.stderr)
+                reporter.err(f"[agent6] {err}")
         if guard.detach_spawner is not None:
             guard.detach_spawner.close()

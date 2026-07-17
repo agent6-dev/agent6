@@ -15,11 +15,11 @@ so `app` never imports `ui`. A caller that shows nothing passes
 from __future__ import annotations
 
 import json
-import sys
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from pathlib import Path
 
+from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
 from agent6.config import Config
 from agent6.providers import Provider, ProviderError, TranscriptSink
@@ -59,6 +59,7 @@ def rank(
     transcript_dir: Path,
     build_provider: BuildProvider,
     judging_status: JudgingStatus,
+    reporter: Reporter = STDIO_REPORTER,
 ) -> tuple[tuple[str, ...], str, str]:
     """Rank candidates best-first. Use the configured reviewer model as the
     compare judge when one resolves; fall back to the deterministic mechanical
@@ -85,12 +86,16 @@ def rank(
             # A configured reviewer that fails must not degrade to the mechanical
             # table silently: say so, so the report isn't mistaken for a judged one.
             detail = str(exc).splitlines()[0] if str(exc).strip() else exc.__class__.__name__
-            print(f"judge failed ({detail}); ranked mechanically", file=sys.stderr)
+            reporter.err(f"judge failed ({detail}); ranked mechanically")
     return mechanical_ranking(candidates), "", "mechanical"
 
 
 def print_ranked_candidates(
-    candidates: list[CandidateBrief], ranking: tuple[str, ...], rationale: str
+    candidates: list[CandidateBrief],
+    ranking: tuple[str, ...],
+    rationale: str,
+    *,
+    reporter: Reporter = STDIO_REPORTER,
 ) -> None:
     """Print the ranked table (best first) + a `runs merge` line per
     candidate, then the judge's rationale if there is one. Prints nothing when
@@ -98,12 +103,12 @@ def print_ranked_candidates(
     if not ranking:
         return
     by_id = {c.run_id: c for c in candidates}
-    print("ranked candidates (best first):")
+    reporter.out("ranked candidates (best first):")
     for rnk, rid in enumerate(ranking, start=1):
         c = by_id[rid]
         verify = "passed" if c.verify_ok else "failed" if c.verify_ok is False else "no-verify"
-        print(
+        reporter.out(
             f"  {rnk}. {rid}  {verify:<9} ${c.cost_usd:.4f}   merge with: agent6 runs merge {rid}"
         )
     if rationale:
-        print(f"\njudge: {rationale}")
+        reporter.out(f"\njudge: {rationale}")
