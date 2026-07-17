@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from agent6.config.layer import resolved_state_dir
 from agent6.ui.cli.parser import (
     _inject_default_verb,  # pyright: ignore[reportPrivateUsage]
     build_parser,
@@ -161,3 +162,37 @@ def test_spawn_machine_run_started_signal_is_child_worker_pid(
     write_worker_pid(instance, 4242)
     assert started(4242) is True  # the child owns the instance
     assert started(4243) is False  # someone else's pid (a prior runner)
+
+
+# --- ended machines take no input ---------------------------------------------
+
+
+def _ended_machine(cwd: Path, name: str) -> Path:
+    """An instance whose journal records a MachineEnd, with one state-log dir."""
+    inst = resolved_state_dir(cwd) / "machines" / name
+    (inst / "states" / "0000-route").mkdir(parents=True)
+    (inst / "machine.asm.toml").write_text(TINY, encoding="utf-8")
+    (inst / "states" / "0000-route" / "logs.jsonl").write_text("", encoding="utf-8")
+    (inst / "journal.jsonl").write_text(
+        '{"type":"machine.begin","ts":"2026-07-12T00:00:00+00:00","machine":"tiny","version":1}\n'
+        '{"type":"machine.end","ts":"2026-07-12T00:00:01+00:00","status":"ok",'
+        '"reason":"routed","state":"done","transitions":1}\n',
+        encoding="utf-8",
+    )
+    return inst
+
+
+def test_machine_poke_refuses_ended_machine(tmp_path: Path) -> None:
+    inst = _ended_machine(tmp_path, "tiny")
+    ok, msg = actions.machine_poke(tmp_path, "tiny", message="wake up")
+    assert not ok
+    assert "ended" in msg
+    assert not (inst / "signal").exists()  # nothing pretends to be delivered
+
+
+def test_machine_steer_refuses_ended_machine(tmp_path: Path) -> None:
+    inst = _ended_machine(tmp_path, "tiny")
+    ok, msg = actions.machine_steer(tmp_path, "tiny", "do more")
+    assert not ok
+    assert "ended" in msg
+    assert not list((inst / "states" / "0000-route").glob("*.answer"))

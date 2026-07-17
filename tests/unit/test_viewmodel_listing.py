@@ -7,7 +7,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from agent6.ui.viewmodel import run_mtime, summarize_run_dir, task_snippet
+from agent6.ui.viewmodel import is_run_husk, run_mtime, summarize_run_dir, task_snippet
 
 
 def test_run_mtime_prefers_log_over_dir(tmp_path: Path) -> None:
@@ -179,3 +179,19 @@ def test_summary_no_logs(tmp_path: Path) -> None:
     rd.mkdir(parents=True)
     s = summarize_run_dir(rd)
     assert (s.status, s.task) == ("?", "(no logs)")
+
+
+def test_is_run_husk(tmp_path: Path) -> None:
+    # Neither manifest nor logs: never started, a husk.
+    husk = tmp_path / "husk"
+    husk.mkdir()
+    assert is_run_husk(husk)
+    # Either file makes it a real run.
+    with_logs = tmp_path / "with-logs"
+    with_logs.mkdir()
+    (with_logs / "logs.jsonl").write_text("", encoding="utf-8")
+    assert not is_run_husk(with_logs)
+    with_manifest = tmp_path / "with-manifest"
+    with_manifest.mkdir()
+    (with_manifest / "manifest.json").write_text("{}", encoding="utf-8")
+    assert not is_run_husk(with_manifest)

@@ -154,3 +154,34 @@ def test_spawn_detached_resume_reports_oserror(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(spawn.subprocess, "Popen", _boom)
     err = spawn.spawn_detached_resume(Path("/repo"), "tidy-owl-9Z3")
     assert "could not spawn" in err
+
+
+# --- diagnostics wording: subcommand labels + captured-output cleanup ----------
+
+
+def test_subcommand_label_names_the_full_subcommand() -> None:
+    assert spawn.subcommand_label(["a6", "machine", "run", "m.asm.toml"]) == "machine run"
+    assert spawn.subcommand_label(["a6", "runs", "prune"]) == "runs prune"
+    assert spawn.subcommand_label(["a6", "config", "set", "--", "k", "v"]) == "config set"
+    # One-word subcommands never swallow the value that follows them.
+    assert spawn.subcommand_label(["a6", "run", "--", "fix the bug"]) == "run"
+    assert spawn.subcommand_label(["a6", "plan", "--profile", "p", "--", "t"]) == "plan"
+
+
+def test_run_cli_capture_strips_console_prefixes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The CLI brands its own console lines "[agent6] " to stand apart from
+    # pass-through git output; in a front-end toast that prefix is noise.
+    class _Done:
+        returncode = 0
+        stdout = "[agent6] merged a into b\n\n[agent6] deleted branch a\n"
+        stderr = "[agent6] skipped c (checked out)\n"
+
+    def _fake_run(*_a: object, **_k: object) -> _Done:
+        return _Done()
+
+    monkeypatch.setattr(spawn.subprocess, "run", _fake_run)
+    ok, msg = spawn.run_cli_capture(["a6", "runs", "prune"], tmp_path)
+    assert ok
+    assert msg == "merged a into b\ndeleted branch a\nskipped c (checked out)"

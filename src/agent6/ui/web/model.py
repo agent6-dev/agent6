@@ -21,6 +21,7 @@ from agent6.ui.viewmodel import (
     fold_machine,
     fold_run,
     fold_transcript,
+    is_run_husk,
     machine_state_as_dict,
     newest_state_log,
     run_state_as_dict,
@@ -66,12 +67,13 @@ _safe_component = is_safe_component
 def run_dir_for(cwd: Path, run_id: str) -> Path | None:
     """Locate a run dir by exact id across runs/ and asks/ (no prefix match: the
     web client always sends the full id from the hub payload). Rejects a run_id
-    that is not a single safe path component."""
+    that is not a single safe path component. Husks are skipped so an orphaned
+    dir in runs/ cannot shadow a real ask of the same id."""
     if not _safe_component(run_id):
         return None
     for sub in RUN_SUBDIRS:
         d = state_dir_for(cwd) / sub / run_id
-        if d.is_dir():
+        if d.is_dir() and not is_run_husk(d):
             return d
     return None
 
@@ -129,12 +131,13 @@ def _run_summary(run_dir: Path) -> dict[str, Any]:
 
 
 def _list_runs(cwd: Path) -> list[dict[str, Any]]:
-    """All runs (runs/ + asks/) summarized, newest first by last-activity time."""
+    """All runs (runs/ + asks/) summarized, newest first by last-activity time.
+    Husks (never-started dirs) are skipped, the same rule as `agent6 runs`."""
     dirs: list[Path] = []
     for sub in RUN_SUBDIRS:
         d = state_dir_for(cwd) / sub
         if d.is_dir():
-            dirs.extend(p for p in d.iterdir() if p.is_dir())
+            dirs.extend(p for p in d.iterdir() if p.is_dir() and not is_run_husk(p))
     summaries = [_run_summary(p) for p in dirs]
     summaries.sort(key=lambda s: s["mtime"], reverse=True)
     return summaries
@@ -177,6 +180,15 @@ def _machine_mtime(machine_dir: Path) -> float:
     return 0.0
 
 
+def _list_drafts(cwd: Path) -> list[dict[str, Any]]:
+    """`machine create` drafts summarized like runs (their logs.jsonl is a
+    run-style authoring log), newest first, so the machines page can link to
+    the #/draft/<name> view."""
+    summaries = [_run_summary(p) for p in draft_dir_paths(cwd)]
+    summaries.sort(key=lambda s: s["mtime"], reverse=True)
+    return summaries
+
+
 def list_machine_files(cwd: Path) -> list[dict[str, str]]:
     """Authored .asm.toml machine source files (cwd top level + machines/ subdir):
     the ones a user can run or use as a create starting point."""
@@ -188,12 +200,13 @@ def list_machine_files(cwd: Path) -> list[dict[str, str]]:
 
 
 def hub_payload(cwd: Path) -> dict[str, Any]:
-    """The hub: every run and machine instance, plus the authored machine files
-    (to run or create from), summarized for the listing."""
+    """The hub: every run, machine instance, and machine-create draft, plus the
+    authored machine files (to run or create from), summarized for the listing."""
     return {
         "runs": _list_runs(cwd),
         "machines": _list_machines(cwd),
         "machine_files": list_machine_files(cwd),
+        "drafts": _list_drafts(cwd),
     }
 
 

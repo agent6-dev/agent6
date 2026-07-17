@@ -442,6 +442,16 @@ def test_pwa_assets_served(server: tuple[WebServer, int]) -> None:
     assert _get(port, "/icon.svg")[0] == 200
 
 
+def test_favicon_matches_the_docs_asset(server: tuple[WebServer, int]) -> None:
+    # The tab favicon is docs/assets/favicon.svg embedded verbatim (the padded
+    # /icon.svg tile is only for the PWA surfaces); this pins the copy in sync.
+    _srv, port = server
+    st, body, ctype = _get(port, "/favicon.svg")
+    assert st == 200 and "svg" in ctype
+    docs_svg = Path(__file__).parents[2] / "docs" / "assets" / "favicon.svg"
+    assert body == docs_svg.read_bytes()
+
+
 def test_run_id_traversal_is_404(server: tuple[WebServer, int]) -> None:
     _srv, port = server
     status, _body, _ = _get(port, "/api/run/..")

@@ -120,3 +120,32 @@ def test_hub_payload_shape(tmp_path: Path) -> None:
     hub = model.hub_payload(tmp_path)
     assert [r["id"] for r in hub["runs"]] == ["r3"]
     assert hub["machines"] == []
+
+
+def test_hub_payload_lists_machine_drafts(tmp_path: Path) -> None:
+    draft = model.state_dir_for(tmp_path) / "machine-drafts" / "breezy-fern-AB12CD"
+    draft.mkdir(parents=True)
+    (draft / "logs.jsonl").write_text(
+        json.dumps({"type": "run.start", "mode": "run", "user_task": "author a triage machine"})
+        + "\n",
+        encoding="utf-8",
+    )
+    hub = model.hub_payload(tmp_path)
+    (s,) = hub["drafts"]
+    assert s["id"] == "breezy-fern-AB12CD"
+    assert s["task"] == "author a triage machine"
+
+
+def test_hub_and_lookup_skip_husk_run_dirs(tmp_path: Path) -> None:
+    # A husk (neither manifest nor logs) is not listed, and must not shadow a
+    # real ask of the same id when resolving #/run/<id>.
+    (model.runs_root(tmp_path) / "echo-fern-AA11BB").mkdir(parents=True)
+    ask = model.asks_root(tmp_path) / "echo-fern-AA11BB"
+    ask.mkdir(parents=True)
+    (ask / "logs.jsonl").write_text(
+        json.dumps({"type": "run.start", "mode": "ask", "user_task": "q"}) + "\n",
+        encoding="utf-8",
+    )
+    hub = model.hub_payload(tmp_path)
+    assert [r["mode"] for r in hub["runs"]] == ["ask"]
+    assert model.run_dir_for(tmp_path, "echo-fern-AA11BB") == ask

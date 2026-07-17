@@ -70,6 +70,14 @@ def task_snippet(text: str) -> str:
     return first_task_line(text.splitlines()) or text.strip()
 
 
+def is_run_husk(run_dir: Path) -> bool:
+    """True for a run dir that never really started: neither manifest.json nor
+    logs.jsonl (a preflight refused it, or a crash orphaned it). Listings skip
+    husks -- "(no logs)" forever is noise, not a run -- and id lookups must not
+    let one shadow a real run of the same id in another bucket (runs/ vs asks/)."""
+    return not (run_dir / "manifest.json").exists() and not (run_dir / "logs.jsonl").exists()
+
+
 @dataclass(frozen=True, slots=True)
 class RunSummary:
     """One listing row: everything a hub or `runs list` needs, uncolored."""

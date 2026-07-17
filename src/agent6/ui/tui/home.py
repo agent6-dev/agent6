@@ -44,7 +44,7 @@ from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bind
 from agent6.ui.tui.modals import ConfirmModal
 from agent6.ui.tui.theme import PALETTE_CSS, MuxPointerShapes, open_theme_picker, setup_theme
 from agent6.ui.tui.widgets import FORM_CSS, ActionItem
-from agent6.ui.viewmodel import RunSummary, summarize_run_dir
+from agent6.ui.viewmodel import RunSummary, is_run_husk, summarize_run_dir
 from agent6.ui.viewmodel import run_mtime as _run_mtime
 from agent6.ui.viewmodel import task_snippet as _task_snippet
 from agent6.ui.viewmodel.format import format_cost, status_label
@@ -87,12 +87,13 @@ def _cost_cell(cost_usd: float) -> str:
 
 
 def _list_runs(agent6_dir: Path) -> list[Path]:
-    """All run directories (runs/ + asks/), newest first by last-activity time."""
+    """All run directories (runs/ + asks/), newest first by last-activity time.
+    Husks (never-started dirs) are skipped, the same rule as `agent6 runs`."""
     out: list[Path] = []
     for sub in _RUN_SUBDIRS:
         d = agent6_dir / sub
         if d.is_dir():
-            out.extend(p for p in d.iterdir() if p.is_dir())
+            out.extend(p for p in d.iterdir() if p.is_dir() and not is_run_husk(p))
     out.sort(key=_run_mtime, reverse=True)
     return out
 

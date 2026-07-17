@@ -206,12 +206,28 @@ def _machine_state_dir(cwd: Path, name: str, state: str = "") -> Path | None:
     return log.parent if log is not None else None
 
 
+def _machine_has_ended(cwd: Path, name: str) -> bool:
+    """True when the instance's journal records a MachineEnd. Poking or steering
+    an ended machine would report success while nothing will ever read the
+    signal; an unreadable journal reads as not-ended so the real error surfaces
+    from the operation itself."""
+    machine_dir = model.machine_dir_for(cwd, name)
+    if machine_dir is None:
+        return False
+    try:
+        return model.machine_snapshot(machine_dir).get("ended") is not None
+    except (MachineError, OSError):
+        return False
+
+
 def machine_poke(cwd: Path, name: str, *, data: Any = None, message: str = "") -> tuple[bool, str]:
     """Poke a waiting machine, optionally carrying a payload the next tool reads.
     `data` (any JSON) wins over `message` (a string); neither is a bare wake."""
     machine_dir = model.machine_dir_for(cwd, name)
     if machine_dir is None:
         return False, f"no machine {name!r}"
+    if _machine_has_ended(cwd, name):
+        return False, f"machine {name!r} has ended; nothing is waiting to wake"
     payload: Any = data if data is not None else (message or None)
     try:
         MachineJournal(machine_dir).poke(payload)
@@ -250,6 +266,8 @@ def machine_answer(
 def machine_steer(cwd: Path, name: str, text: str, *, state: str = "") -> tuple[bool, str]:
     """Steer the agent state the operator is viewing (``state``; newest when
     absent). Same contract as a run steer."""
+    if _machine_has_ended(cwd, name):
+        return False, f"machine {name!r} has ended; there is no state to steer"
     state_dir = _machine_state_dir(cwd, name, state)
     if state_dir is None:
         return False, f"no active agent state for machine {name!r}"

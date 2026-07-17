@@ -24,7 +24,7 @@ PAGE_HTML = r"""<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0e1116">
 <link rel="manifest" href="/manifest.webmanifest">
-<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/icon.svg">
 <title>agent6</title>
 <style>
@@ -61,7 +61,9 @@ header {
 header .brand { font-weight: 700; letter-spacing: .3px; }
 header .brand b { color: var(--accent); }
 header .spacer { flex: 1; }
-header .crumb { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* min-height keeps the header the same height with an empty crumb (hub,
+   config): without it the bar shrank 21px and views jumped on navigation. */
+header .crumb { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 21px; }
 button, .btn {
   font: inherit; color: var(--text); background: var(--surface2); border: 1px solid var(--border);
   border-radius: 8px; padding: 8px 12px; cursor: pointer; min-height: 40px;
@@ -107,6 +109,14 @@ main { padding: 0; }
   .grid.cols2 > * { border-top: 0; }
   .grid.cols2 > :nth-child(2n) { border-left: 1px solid var(--border); }
   .grid.cols2 > :nth-child(n+3) { border-top: 1px solid var(--border); }
+  /* The hub: the listing column carries the content, give it the width; the
+     composer stack pins under the header so scrolling a long runs list never
+     drags the Start-a-run / Create-a-machine cards along. */
+  .grid.cols2.hub { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); }
+  .grid.cols2.hub > :first-child { position: sticky; top: 42px; }
+  /* A full-width row inside a cols2 grid (the machine view's conversation:
+     half-width left an empty cell beside it). */
+  .grid.cols2 > .span2 { grid-column: 1 / -1; }
 }
 /* Phone: the runs list is what you open the app to see; it leads, the
    new-work/machines composer cards follow. Desktop keeps them side by side. */
@@ -225,6 +235,7 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
   bottom: calc(20px + env(safe-area-inset-bottom)); max-width: 90vw;
   background: var(--surface); border: 1px solid var(--accent); border-radius: 10px;
   padding: 10px 16px; box-shadow: 0 4px 16px rgba(0,0,0,.4);
+  white-space: pre-line; /* CLI-captured messages (merge, prune) are line-shaped */
 }
 .toast.bad { border-color: var(--err); color: var(--err); }
 .notif-banner { display: flex; align-items: flex-start; gap: 10px; background: var(--surface2); border-left: 3px solid var(--accent); padding: 10px 12px; margin-bottom: 10px; }
@@ -298,9 +309,13 @@ aside.rail { display: none; }
      the whole CARD to the viewport (minus the sticky offset + a gap) and let the
      header and composer take their natural height while .conv-box flexes to fill
      the rest -- otherwise the card's chrome pushed it past the viewport and it
-     overhung the full-width event log below it. */
-  .run-grid .card-conv {
-    grid-area: conv;
+     overhung the full-width event log below it.
+     The sticky card lives inside .conv-wrap, a stretched wrapper that owns the
+     grid area: Chromium confines a sticky element to its nearest block container,
+     not its grid area, so an unwrapped card slid past its row and hung over the
+     full-width event log while the log's text bled out around it. */
+  .run-grid .conv-wrap { grid-area: conv; align-self: stretch; min-width: 0; }
+  .run-grid .conv-wrap .card-conv {
     position: sticky;
     top: 72px;
     max-height: calc(100vh - 88px);
@@ -437,10 +452,10 @@ async function route() {
     if (parts.length === 0) { setTab('hub'); await renderHub(); }
     else if (parts[0] === 'machines') { setTab('machines'); await renderHub('machines'); }
     else if (parts[0] === 'config') { setTab('config'); await renderConfig(); }
-    else if (parts[0] === 'run' && parts[1]) { setTab('hub'); renderRun(decodeURIComponent(parts[1])); }
+    else if (parts[0] === 'run' && parts[1]) { setTab('hub'); await renderRun(decodeURIComponent(parts[1])); }
     else if (parts[0] === 'conversation' && parts[1]) { setTab('hub'); await renderConversation(decodeURIComponent(parts[1])); }
-    else if (parts[0] === 'machine' && parts[1]) { setTab('machines'); renderMachine(decodeURIComponent(parts[1])); }
-    else if (parts[0] === 'draft' && parts[1]) { const n = decodeURIComponent(parts[1]); setTab('machines'); renderRun(n, { base: '/api/draft/' + encodeURIComponent(n), readOnly: true, title: 'Machine draft', crumb: 'draft ' + n }); }
+    else if (parts[0] === 'machine' && parts[1]) { setTab('machines'); await renderMachine(decodeURIComponent(parts[1])); }
+    else if (parts[0] === 'draft' && parts[1]) { const n = decodeURIComponent(parts[1]); setTab('machines'); await renderRun(n, { base: '/api/draft/' + encodeURIComponent(n), readOnly: true, title: 'Machine draft', crumb: 'draft ' + n }); }
     else { view.innerHTML = ''; view.appendChild(el('div', 'empty', 'not found')); }
   } catch (e) {
     view.innerHTML = '';
@@ -487,69 +502,92 @@ function machineControls() {
   return wrap;
 }
 
+// A list card: h2 title + one clickable row per entry.
+function listCard(title, entries, empty, paint) {
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, title));
+  const list = el('div', 'list');
+  if (!entries.length) list.appendChild(el('div', 'empty', empty));
+  for (const e of entries) {
+    const it = el('div', 'item');
+    const g = el('div', 'grow');
+    it.appendChild(g);
+    paint(e, it, g);
+    list.appendChild(it);
+  }
+  card.appendChild(list);
+  return card;
+}
+
+function runsCard(runs) {
+  const card = listCard('Runs', runs, 'no runs yet', (r, it, g) => {
+    it.onclick = () => location.hash = '#/run/' + encodeURIComponent(r.id);
+    g.appendChild(el('div', 'title', r.task || '(no task)'));
+    g.appendChild(el('div', 'sub', `${esc(r.mode)} · ${esc(r.id)} · ${when(r.mtime)} · ${fmtUsd(r.usd)}`));
+    it.appendChild(pill(r.status, r.reason ? r.status + ' · ' + String(r.reason).replaceAll('_', ' ') : r.status));
+  });
+  const prune = el('button', 'danger'); prune.textContent = 'Prune merged runs'; prune.style.marginTop = '10px';
+  prune.onclick = async () => { try { const d = await postJSON('/api/runs/prune', {}); toast(d.message || 'pruned'); route(); } catch (e) { toast(e.message, true); } };
+  card.appendChild(prune);
+  return card;
+}
+
+function machinesCard(machines) {
+  return listCard('Machines', machines, 'no machine instances', (m, it, g) => {
+    it.onclick = () => location.hash = '#/machine/' + encodeURIComponent(m.name);
+    g.appendChild(el('div', 'title', m.machine || m.name));
+    g.appendChild(el('div', 'sub', `${m.name} · at ${esc(m.current || '?')} · ${when(m.mtime)}`));
+    it.appendChild(pill(m.status));
+  });
+}
+
+function draftsCard(drafts) {
+  return listCard('Machine drafts', drafts, '', (d, it, g) => {
+    it.onclick = () => location.hash = '#/draft/' + encodeURIComponent(d.id);
+    g.appendChild(el('div', 'title', d.task || d.id));
+    g.appendChild(el('div', 'sub', `draft · ${esc(d.id)} · ${when(d.mtime)}`));
+    it.appendChild(pill(d.status));
+  });
+}
+
+function machineFilesCard(files) {
+  const card = el('div', 'card');
+  card.appendChild(el('h2', null, 'Run a machine'));
+  const frow = el('div', 'form-row');
+  for (const mf of files) {
+    const b = el('button', null, '▶ ' + mf.name);
+    b.onclick = async () => { try { await postJSON('/api/machine/run', { file: mf.path }); toast('started ' + mf.name); setTimeout(route, 800); } catch (e) { toast(e.message, true); } };
+    frow.appendChild(b);
+  }
+  card.appendChild(frow);
+  return card;
+}
+
 async function renderHub(focus) {
   setCrumb('');
   const data = await getJSON('/api/hub');
   view.innerHTML = '';
-  // lead-mobile: on a phone the runs list renders FIRST (the machines tab keeps
-  // its own lead; see the stack order below).
-  const runsCard = el('div', 'card' + (focus === 'machines' ? '' : ' lead-mobile'));
-  runsCard.appendChild(el('h2', null, 'Runs'));
-  const runsList = el('div', 'list');
-  if (!data.runs.length) runsList.appendChild(el('div', 'empty', 'no runs yet'));
-  for (const r of data.runs) {
-    const it = el('div', 'item');
-    it.onclick = () => location.hash = '#/run/' + encodeURIComponent(r.id);
-    const g = el('div', 'grow');
-    g.appendChild(el('div', 'title', r.task || '(no task)'));
-    g.appendChild(el('div', 'sub', `${esc(r.mode)} · ${esc(r.id)} · ${when(r.mtime)} · ${fmtUsd(r.usd)}`));
-    it.appendChild(g);
-    it.appendChild(pill(r.status, r.reason ? r.status + ' · ' + String(r.reason).replaceAll('_', ' ') : r.status));
-    runsList.appendChild(it);
-  }
-  runsCard.appendChild(runsList);
-  const prune = el('button', 'danger'); prune.textContent = 'Prune merged runs'; prune.style.marginTop = '10px';
-  prune.onclick = async () => { try { const d = await postJSON('/api/runs/prune', {}); toast(d.message || 'pruned'); route(); } catch (e) { toast(e.message, true); } };
-  runsCard.appendChild(prune);
-
-  const mCard = el('div', 'card');
-  mCard.appendChild(el('h2', null, 'Machines'));
-  const mList = el('div', 'list');
-  if (!data.machines.length) mList.appendChild(el('div', 'empty', 'no machine instances'));
-  for (const m of data.machines) {
-    const it = el('div', 'item');
-    it.onclick = () => location.hash = '#/machine/' + encodeURIComponent(m.name);
-    const g = el('div', 'grow');
-    g.appendChild(el('div', 'title', m.machine || m.name));
-    g.appendChild(el('div', 'sub', `${m.name} · at ${esc(m.current || '?')} · ${when(m.mtime)}`));
-    it.appendChild(g);
-    it.appendChild(pill(m.status));
-    mList.appendChild(it);
-  }
-  mCard.appendChild(mList);
-  // Authored machine files: run one, or view its structure.
-  if ((data.machine_files||[]).length) {
-    mCard.appendChild(el('div', 'sub muted', 'run a machine:'));
-    const frow = el('div', 'form-row');
-    for (const mf of data.machine_files) {
-      const b = el('button', null, '▶ ' + mf.name);
-      b.onclick = async () => { try { await postJSON('/api/machine/run', { file: mf.path }); toast('started ' + mf.name); setTimeout(route, 800); } catch (e) { toast(e.message, true); } };
-      frow.appendChild(b);
-    }
-    mCard.appendChild(frow);
-  }
-  mCard.appendChild(machineControls());
-
-  const nCard = newWorkCard();
-  // Two independent column stacks (not one grid of cards): cards keep their
-  // natural heights instead of stretching to the tallest row neighbour.
-  const grid = el('div', 'grid cols2');
+  const machinesTab = focus === 'machines';
+  // The wide column holds the tab's listing (runs, or machines + drafts); the
+  // narrow one the composer cards. lead-mobile: on a phone the listing renders
+  // first. Two independent column stacks (not one grid of cards): cards keep
+  // their natural heights instead of stretching to the tallest row neighbour.
+  const lists = el('div', 'grid lead-mobile');
   const stack = el('div', 'grid');
-  // On the Machines tab, lead with machines; else lead with new-work + runs.
-  // The Runs tab starts runs; machine creation lives on the Machines page.
-  if (focus === 'machines') { stack.appendChild(mCard); }
-  else { stack.appendChild(nCard); }
-  grid.appendChild(stack); grid.appendChild(runsCard);
+  if (machinesTab) {
+    lists.appendChild(machinesCard(data.machines));
+    if ((data.drafts || []).length) lists.appendChild(draftsCard(data.drafts));
+    if ((data.machine_files || []).length) stack.appendChild(machineFilesCard(data.machine_files));
+    const cCard = el('div', 'card');
+    cCard.appendChild(el('h2', null, 'Create a machine'));
+    cCard.appendChild(machineControls());
+    stack.appendChild(cCard);
+  } else {
+    lists.appendChild(runsCard(data.runs));
+    stack.appendChild(newWorkCard());
+  }
+  const grid = el('div', 'grid cols2 hub');
+  grid.appendChild(stack); grid.appendChild(lists);
   view.appendChild(grid);
 }
 
@@ -761,9 +799,14 @@ async function stopRun(base, label) {
 
 // opts: { base, readOnly, title }: a draft (machine-create authoring log) is
 // watched read-only against /api/draft/<name>; a run is driveable at /api/run/<id>.
-function renderRun(id, opts) {
+// The snapshot fetch up front is the existence probe (a bad id used to leave a
+// hollow dashboard: the conversation fetch swallowed its 404 and the
+// EventSource error is silent) and the first paint, so the view never flashes
+// empty while waiting for the first SSE frame.
+async function renderRun(id, opts) {
   opts = opts || {};
   const base = opts.base || ('/api/run/' + encodeURIComponent(id));
+  const snap = await getJSON(base); // throws -> route() shows the error
   const readOnly = !!opts.readOnly;
   setCrumb(opts.crumb || id);
   view.innerHTML = '';
@@ -774,7 +817,9 @@ function renderRun(id, opts) {
   const mk = (key, title, cls, parent) => { const c = el('div', 'card card-' + key + ' ' + (cls||'')); c.appendChild(el('h2', null, title)); const body = el('div'); c.appendChild(body); cards[key] = body; (parent || grid).appendChild(c); return body; };
   mk('head', opts.title || 'Run');
   const cc = convCard(base + '/conversation', 'Conversation', 'card-conv');
-  grid.appendChild(cc.card);
+  const convWrap = el('div', 'conv-wrap'); // sticky containment: see .run-grid .conv-wrap
+  convWrap.appendChild(cc.card);
+  grid.appendChild(convWrap);
   cards._conv = cc.conv;
   mk('tasks', 'Task graph', 'scroll', side);
   mk('budget', 'Budget', '', side);
@@ -796,6 +841,7 @@ function renderRun(id, opts) {
     compactBtn.onclick = post('compact', 'compaction requested');
     const mergeBtn = el('button', null, 'Merge'); // no glyph: U+2443 was tofu in common fonts
     mergeBtn.onclick = post('merge', 'merged');
+    cards._merge_btn = mergeBtn; // paintRun gates it on the run actually having a branch
     const tbtn = el('button', null, 'Conversation →');
     tbtn.onclick = () => location.hash = '#/conversation/' + encodeURIComponent(id);
     for (const b of [stopBtn, stepBtn, compactBtn, mergeBtn, tbtn]) actions.appendChild(b);
@@ -807,6 +853,7 @@ function renderRun(id, opts) {
     cards._composer = composer;
   }
   view.appendChild(grid);
+  paintRun(cards, snap);
   cc.conv.refresh();
 
   live = new EventSource(base + '/events');
@@ -901,6 +948,14 @@ function paintRun(cards, s) {
   // Stop/compact only mean something on a live run; a finished run ignores the
   // bridge markers. The composer flips to resume mode instead of disabling.
   if (cards._live_btns) for (const b of cards._live_btns) b.disabled = s.finished;
+  // Merge needs a run branch: an ask (or a branch_per_run=false run) has none,
+  // and a merged branch is gone, so clicking could only produce a git error.
+  if (cards._merge_btn) {
+    cards._merge_btn.disabled = !s.run_branch || !!s.merged_into;
+    cards._merge_btn.title = s.merged_into ? 'already merged into ' + s.merged_into
+      : s.run_branch ? 'merge ' + s.run_branch + (s.base_branch ? ' into ' + s.base_branch : '')
+      : 'this run has no branch to merge';
+  }
   if (cards._composer) cards._composer.setState(s);
   // header
   cards.head.innerHTML = '';
@@ -1012,9 +1067,10 @@ function renderDiff(text) {
 // live-following: the RunState /events stream is the change signal; the fold
 // re-fetches on it (debounced) and the stream closes once the run finishes.
 async function renderConversation(id) {
+  const base = '/api/run/' + encodeURIComponent(id);
+  await getJSON(base); // existence probe: throws -> route() shows the error
   setCrumb('conversation ' + id);
   view.innerHTML = '';
-  const base = '/api/run/' + encodeURIComponent(id);
   const cc = convCard(base + '/conversation', 'Conversation');
   cc.box.style.maxHeight = '76vh';
   const composer = makeComposer(id);
@@ -1042,10 +1098,13 @@ async function renderConversation(id) {
 }
 
 // --- machine watch -----------------------------------------------------------
-function renderMachine(name) {
+async function renderMachine(name) {
+  const base = '/api/machine/' + encodeURIComponent(name);
+  // Existence + readability probe: a bad name or a corrupt machine throws here
+  // and route() shows the error (the SSE error frame alone left a hollow view).
+  await getJSON(base);
   setCrumb(name);
   view.innerHTML = '';
-  const base = '/api/machine/' + encodeURIComponent(name);
   // Ephemeral notification banners live here; the prompts host holds pending
   // approval/question boxes; both are APPENDED to, never wiped, so a repaint can
   // never clear a half-typed answer or the poke box below.
@@ -1066,12 +1125,14 @@ function renderMachine(name) {
   });
   controls.appendChild(bell); controls.appendChild(steerBtn);
   view.appendChild(controls);
+  cards._steer_btn = steerBtn; // paintMachine disables it once the machine ends
 
   const grid = el('div', 'grid cols2');
   const structCard = el('div', 'card scroll'); structCard.appendChild(el('h2', null, 'States')); const structBody = el('div'); structCard.appendChild(structBody);
   const pathCard = el('div', 'card scroll'); pathCard.appendChild(el('h2', null, 'Path')); const pathBody = el('div'); pathCard.appendChild(pathBody);
-  // The current agent state's conversation: the same folded view a run shows.
-  const cc = convCard(base + '/conversation', 'Current state');
+  // The current agent state's conversation: the same folded view a run shows,
+  // full-width under the states/path pair.
+  const cc = convCard(base + '/conversation', 'Current state', 'span2');
   cards._conv = cc.conv;
   grid.appendChild(structCard); grid.appendChild(pathCard); grid.appendChild(cc.card);
   view.appendChild(grid);
@@ -1088,6 +1149,7 @@ function renderMachine(name) {
   pin.onkeydown = e => { if (e.key === 'Enter') doPoke(); };
   prow.appendChild(pin); prow.appendChild(psend); poke.appendChild(prow);
   view.appendChild(poke);
+  cards._poke = poke; // paintMachine hides it once the machine ends
 
   // Notification de-dup across repaints: seed with history on the first frame so
   // opening a machine does not replay every past notification; banner + OS-notify
@@ -1166,14 +1228,24 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   pathBody.appendChild(path);
   if (m.ended) pathBody.appendChild(el('div', 'sub muted', `ended: ${m.ended.status} (${m.ended.reason}) at ${m.ended.state}`));
 
+  // An ended machine takes no input: poking or steering it would only pretend
+  // to work (nothing reads the signal), and its final state's log often has no
+  // run.end, which would leave a live "thinking..." marker up forever.
+  const ended = !!m.ended;
+  if (cards._steer_btn) {
+    cards._steer_btn.disabled = ended;
+    cards._steer_btn.title = ended ? 'the machine has ended' : '';
+  }
+  if (cards._poke) cards._poke.style.display = ended ? 'none' : '';
+
   // The current state's conversation: live turn from this frame, completed
   // turns re-folded on a debounce. A live-but-silent state ticks the heartbeat.
   const r = data.reasoning || {};
-  cards._conv.setLive(r);
+  cards._conv.setLive(ended ? { finished: true } : r);
   cards._conv.poke();
   const streaming = r.last_role && (r.last_role.streamed_thinking || r.last_role.streamed_text);
   hbState = {
-    active: !r.finished && !!r.last_role && !streaming,
+    active: !ended && !r.finished && !!r.last_role && !streaming,
     role: (r.last_role && r.last_role.role) || 'agent',
     last: Date.now(),
     spin: hbState.spin,
@@ -1214,7 +1286,10 @@ async function renderConfig() {
 // select, everything else a text field, with the default, source, and type
 // shown; "set for this repo" writes the per-repo config instead of the global.
 function editConfig(key, s) {
-  const cur = s.value === null || s.value === undefined ? '' : (Array.isArray(s.value) ? s.value.join(',') : String(s.value));
+  const cur = s.value === null || s.value === undefined ? ''
+    : Array.isArray(s.value) ? s.value.join(',')
+    : typeof s.value === 'object' ? JSON.stringify(s.value)
+    : String(s.value);
   const back = el('div', 'overlay');
   const box = el('div', 'card'); box.style.width = 'min(560px, 92vw)';
   const title = el('h2', null, key);
@@ -1282,7 +1357,12 @@ function editConfig(key, s) {
   };
   field.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } };
 }
-function fmtVal(v) { if (v === null || v === undefined) return '—'; if (Array.isArray(v)) return '[' + v.join(', ') + ']'; return String(v); }
+function fmtVal(v) {
+  if (v === null || v === undefined) return '—';
+  if (Array.isArray(v)) return '[' + v.join(', ') + ']';
+  if (typeof v === 'object') return JSON.stringify(v); // dict leaves (providers, skills.state), not "[object Object]"
+  return String(v);
+}
 
 route();
 </script>
@@ -1316,9 +1396,39 @@ self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', () => {});
 """
 
-# The app icon: the docs site's hex-framed snowflake (docs/assets/favicon.svg),
-# centred on a full-bleed dark backdrop so it stays "maskable"-safe. Self-contained
-# SVG, no raster asset to ship.
+# The browser-tab favicon: docs/assets/favicon.svg verbatim (keep in sync), so
+# the tab shows the same full-bleed glyph as the docs site. The padded ICON_SVG
+# below is only for the PWA surfaces, where the safe-area inset is required.
+FAVICON_SVG = r"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="agent6">
+  <defs><linearGradient id="g" x1="6" y1="4" x2="42" y2="44" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#7aa2f7"/><stop offset="1" stop-color="#06f5f3"/></linearGradient></defs>
+  <path d="M24 3.5 41.7 13.75 V34.25 L24 44.5 6.3 34.25 V13.75 Z" fill="#161618"/>
+  <path d="M24 3.5 41.7 13.75 V34.25 L24 44.5 6.3 34.25 V13.75 Z" stroke="url(#g)" stroke-width="2.4" stroke-linejoin="round" fill="none"/>
+  <g stroke="url(#g)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <line x1="24.00" y1="24.00" x2="24.00" y2="10.00"/>
+    <line x1="24.00" y1="15.32" x2="19.25" y2="12.35"/>
+    <line x1="24.00" y1="15.32" x2="28.75" y2="12.35"/>
+    <line x1="24.00" y1="24.00" x2="11.88" y2="17.00"/>
+    <line x1="16.48" y1="19.66" x2="11.54" y2="22.29"/>
+    <line x1="16.48" y1="19.66" x2="16.29" y2="14.06"/>
+    <line x1="24.00" y1="24.00" x2="11.88" y2="31.00"/>
+    <line x1="16.48" y1="28.34" x2="16.29" y2="33.94"/>
+    <line x1="16.48" y1="28.34" x2="11.54" y2="25.71"/>
+    <line x1="24.00" y1="24.00" x2="24.00" y2="38.00"/>
+    <line x1="24.00" y1="32.68" x2="28.75" y2="35.65"/>
+    <line x1="24.00" y1="32.68" x2="19.25" y2="35.65"/>
+    <line x1="24.00" y1="24.00" x2="36.12" y2="31.00"/>
+    <line x1="31.52" y1="28.34" x2="36.46" y2="25.71"/>
+    <line x1="31.52" y1="28.34" x2="31.71" y2="33.94"/>
+    <line x1="24.00" y1="24.00" x2="36.12" y2="17.00"/>
+    <line x1="31.52" y1="19.66" x2="31.71" y2="14.06"/>
+    <line x1="31.52" y1="19.66" x2="36.46" y2="22.29"/>
+  </g>
+</svg>
+"""
+
+# The PWA app icon (manifest + apple-touch): the same snowflake centred on a
+# full-bleed dark backdrop so it stays "maskable"-safe. Self-contained SVG, no
+# raster asset to ship.
 ICON_SVG = r"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs><linearGradient id="g" x1="6" y1="4" x2="42" y2="44" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#7aa2f7"/><stop offset="1" stop-color="#06f5f3"/></linearGradient></defs>
   <rect width="512" height="512" rx="96" fill="#0e1116"/>

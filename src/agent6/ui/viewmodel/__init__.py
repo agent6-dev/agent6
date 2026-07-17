@@ -27,6 +27,7 @@ from __future__ import annotations
 from agent6.ui.viewmodel.listing import (
     RunSummary,
     first_task_line,
+    is_run_husk,
     run_mtime,
     status_word,
     summarize_run_dir,
@@ -97,6 +98,7 @@ __all__ = [
     "fold_transcript",
     "format_log_line",
     "initial_state",
+    "is_run_husk",
     "machine_state_as_dict",
     "newest_state_log",
     "notification_key",

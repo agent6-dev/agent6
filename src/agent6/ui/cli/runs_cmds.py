@@ -38,7 +38,7 @@ from agent6.ui.bridge.approval import request_stop, worker_is_alive
 from agent6.ui.cli._common import _runs_dir, _state_dir, all_run_dirs, resolve_run_layout, sgr
 from agent6.ui.cli._merge import execute_merge
 from agent6.ui.cli.plan_watch import _most_recent_run_id, _newest_dir
-from agent6.ui.viewmodel import summarize_run_dir, task_snippet
+from agent6.ui.viewmodel import is_run_husk, summarize_run_dir, task_snippet
 from agent6.ui.viewmodel.format import format_cost, status_label
 
 # ANSI styles for the shared status words (viewmodel.status_word), tty only:
@@ -73,14 +73,7 @@ def _cmd_list() -> int:
     for sub in ("runs", "asks"):
         d = _state_dir(cwd) / sub
         if d.is_dir():
-            # Skip husks: a dir with neither manifest nor logs never really started
-            # (a preflight refused it, or a crash orphaned it) -- listing it as
-            # "(no logs)" forever is noise, not a run.
-            dirs.extend(
-                p
-                for p in d.iterdir()
-                if p.is_dir() and ((p / "manifest.json").exists() or (p / "logs.jsonl").exists())
-            )
+            dirs.extend(p for p in d.iterdir() if p.is_dir() and not is_run_husk(p))
     if not dirs:
         print('no runs yet. Start one with `agent6 run "<task>"`.')
         return 0

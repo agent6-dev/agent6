@@ -43,7 +43,13 @@ from agent6.ui.bridge.approval import (
 )
 from agent6.ui.viewmodel import apply_event, initial_state, run_state_as_dict, tail_events
 from agent6.ui.web import actions, model
-from agent6.ui.web.page import ICON_SVG, MANIFEST_JSON, PAGE_HTML, SERVICE_WORKER_JS
+from agent6.ui.web.page import (
+    FAVICON_SVG,
+    ICON_SVG,
+    MANIFEST_JSON,
+    PAGE_HTML,
+    SERVICE_WORKER_JS,
+)
 
 # SSE tuning: coalesce high-frequency streaming deltas, heartbeat idle streams so
 # a disconnected client is noticed and its worker thread exits.
@@ -428,6 +434,9 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if path == "/icon.svg":
             self._send_bytes(ICON_SVG.encode("utf-8"), "image/svg+xml")
+            return
+        if path == "/favicon.svg":
+            self._send_bytes(FAVICON_SVG.encode("utf-8"), "image/svg+xml")
             return
         if path == "/api/meta":
             self._send_json(

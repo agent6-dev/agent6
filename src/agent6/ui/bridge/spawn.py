@@ -58,6 +58,32 @@ def spawn_detached_resume(cwd: Path, run_id: str, *, steer: str = "") -> str:
     return ""
 
 
+# Subcommand groups whose verb is the SECOND argv word ("machine run",
+# "runs prune", "config set"); everything else is a one-word subcommand whose
+# next arg is already a value.
+_COMMAND_GROUPS = frozenset({"machine", "runs", "config"})
+
+
+def subcommand_label(argv: list[str]) -> str:
+    """The agent6 subcommand named by *argv*, for diagnostics: "machine run",
+    not a bare "machine" (or worse, "run" with the task word attached)."""
+    if len(argv) < 2:
+        return argv[0]
+    label = argv[1]
+    if label in _COMMAND_GROUPS and len(argv) > 2 and not argv[2].startswith("-"):
+        return f"{label} {argv[2]}"
+    return label
+
+
+def _capture_message(stdout: str, stderr: str) -> str:
+    """Captured CLI output as front-end message text. The CLI prefixes its own
+    lines with "[agent6] " to stand apart from pass-through git output on a
+    console; in a toast every line already comes from agent6, so the prefix is
+    dropped."""
+    lines = [ln.removeprefix("[agent6] ").strip() for ln in (stdout + "\n" + stderr).splitlines()]
+    return "\n".join(ln for ln in lines if ln)
+
+
 def run_cli_capture(argv: list[str], cwd: Path, *, timeout_s: float = 120.0) -> tuple[bool, str]:
     """Run a quick agent6 subcommand synchronously, capturing its output, and
     return ``(ok, message)``. For the fast, foreground CLI ops a front-end drives
@@ -74,8 +100,8 @@ def run_cli_capture(argv: list[str], cwd: Path, *, timeout_s: float = 120.0) -> 
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        return False, f"failed to run {argv[1] if len(argv) > 1 else argv[0]}: {exc}"
-    message = "\n".join(p for p in (proc.stdout.strip(), proc.stderr.strip()) if p)
+        return False, f"failed to run agent6 {subcommand_label(argv)}: {exc}"
+    message = _capture_message(proc.stdout, proc.stderr)
     return proc.returncode == 0, message or f"exit {proc.returncode}"
 
 
@@ -96,7 +122,7 @@ def spawn_and_confirm(
     held, network refusal, bad bundle) print to stderr and exit nonzero without
     ever starting, which a fire-and-forget spawn (stderr to /dev/null) silently
     swallowed."""
-    label = argv[1] if len(argv) > 1 else argv[0]
+    label = subcommand_label(argv)
     err = tempfile.NamedTemporaryFile(  # noqa: SIM115 - closed in finally
         mode="w+", suffix=".agent6-launch.err", delete=False
     )
@@ -162,7 +188,7 @@ def spawn_and_locate(
     The shared launch+watch path behind both "start a run" (hub) and "create a
     machine" (machines page): spawn the same CLI a user would, then watch the new
     log dir live."""
-    label = argv[1] if len(argv) > 1 else argv[0]
+    label = subcommand_label(argv)
     err = tempfile.NamedTemporaryFile(  # noqa: SIM115 - closed in finally
         mode="w+", suffix=".agent6-launch.err", delete=False
     )
