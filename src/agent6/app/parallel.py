@@ -32,11 +32,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from agent6.app.compare import BuildProvider, JudgingStatus
-from agent6.app.compare import manifest_task as _manifest_task
-from agent6.app.compare import print_ranked_candidates as _print_ranked_candidates
-from agent6.app.compare import rank as _rank
-from agent6.app.compare import verify_ok as _verify_ok
+from agent6.app.compare import (
+    BuildProvider,
+    JudgingStatus,
+    manifest_task,
+    print_ranked_candidates,
+    rank,
+    verify_ok,
+)
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config
 from agent6.config.layer import materialize
@@ -683,9 +686,9 @@ def _import_lanes(
         candidates.append(
             CandidateBrief(
                 run_id=res.spec.run_id,
-                task=_manifest_task(dest, task),
+                task=manifest_task(dest, task),
                 diff=diff_since(res.spec.workdir, base_sha),
-                verify_ok=_verify_ok(summary.status),
+                verify_ok=verify_ok(summary.status),
                 cost_usd=summary.cost_usd,
             )
         )
@@ -720,7 +723,7 @@ def _print_report(
     reporter.out(
         f"\n[agent6] parallel fan-out {fanout_id} complete: {len(candidates)} candidate(s)"
     )
-    _print_ranked_candidates(candidates, ranking, rationale, reporter=reporter)
+    print_ranked_candidates(candidates, ranking, rationale, reporter=reporter)
     if failed:
         reporter.out("\nfailed lanes (nothing of theirs was deleted):")
         for res, err in failed:
@@ -817,7 +820,7 @@ def run_parallel(
     )
     _cleanup(imported, workdir_root=lanes[0].workdir.parent, cfg=cfg)
 
-    ranking, rationale, ranked_by = _rank(
+    ranking, rationale, ranked_by = rank(
         cfg,
         candidates,
         transcript_dir=origin_state / "parallel" / fanout_id,

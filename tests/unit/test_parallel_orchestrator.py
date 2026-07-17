@@ -590,7 +590,7 @@ def test_compare_stamp_records_judge_rationale_truncated(
     def fake_rank(*_a: object, **_k: object) -> tuple[tuple[str, ...], str, str]:
         return ("fan-l1", "fan-l2"), long_rationale, "judge"
 
-    monkeypatch.setattr(parallel, "_rank", fake_rank)
+    monkeypatch.setattr(parallel, "rank", fake_rank)
 
     run_parallel(
         "t", lanes, cfg=cfg, origin=origin, origin_state=origin_state,

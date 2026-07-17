@@ -43,12 +43,8 @@ from agent6.app.egress import (
 )
 from agent6.app.machine._spend import Spend, read_budget_totals
 from agent6.app.providers import (
-    InstrumentedProvider as _InstrumentedProvider,
-)
-from agent6.app.providers import (
-    build_role_provider as _build_role_provider,
-)
-from agent6.app.providers import (
+    InstrumentedProvider,
+    build_role_provider,
     resolve_compaction_thresholds,
     resolve_decompose,
 )
@@ -247,7 +243,7 @@ def run_one(
             max_output_tokens=cfg.budget.max_output_tokens,
             max_usd=cfg.budget.best_effort_usd_limit,
         )
-        inner_provider = _build_role_provider(
+        inner_provider = build_role_provider(
             cfg, "worker", transcript_sink=TranscriptSink(transcript_dir), budget=budget
         )
         # An EventSink only when the caller passes events_log: the machine
@@ -269,7 +265,7 @@ def run_one(
         # default no-op is used. Consumes the same events the sink records.
         if events_sink is not None:
             attach_console(events_sink)
-        provider = _InstrumentedProvider(
+        provider = InstrumentedProvider(
             inner=inner_provider,
             role=r.get("role_label", "agent"),
             model=rm.model if rm is not None else "",

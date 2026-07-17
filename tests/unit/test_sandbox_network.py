@@ -204,7 +204,7 @@ def test_run_one_returns_finish_payload(
         return object()
 
     monkeypatch.setattr(machine_agent, "Workflow", _FakeWf)
-    monkeypatch.setattr(machine_agent, "_build_role_provider", _fake)
+    monkeypatch.setattr(machine_agent, "build_role_provider", _fake)
     monkeypatch.setattr(machine_agent, "ToolDispatcher", _fake)
 
     req = {
@@ -258,7 +258,7 @@ def _stub_loop(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         return object()
 
     monkeypatch.setattr(machine_agent, "Workflow", _FakeWf)
-    monkeypatch.setattr(machine_agent, "_build_role_provider", _prov)
+    monkeypatch.setattr(machine_agent, "build_role_provider", _prov)
     monkeypatch.setattr(machine_agent, "ToolDispatcher", _disp)
     return captured
 

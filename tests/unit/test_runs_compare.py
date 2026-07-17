@@ -431,6 +431,6 @@ def test_parallel_and_runs_compare_share_one_rank_implementation() -> None:
     from agent6.ui.cli import runs_cmds
 
     # The fan-out's auto-compare calls the core directly.
-    assert getattr(parallel, "_rank") is app_compare.rank  # noqa: B009
+    assert getattr(parallel, "rank") is app_compare.rank  # noqa: B009
     # `runs compare` goes through the CLI wrapper, which delegates to that core.
     assert runs_cmds.rank is compare_mod.rank

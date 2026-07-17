@@ -16,16 +16,10 @@ from typing import Any, Literal
 from agent6.app._setup import (
     BudgetOverrides,
     SandboxOverrides,
+    check_provider_keys,
     detect_env,
-)
-from agent6.app._setup import (
-    check_provider_keys as _check_provider_keys,
-)
-from agent6.app._setup import (
-    explicit_usd_flag_error as _explicit_usd_flag_error,
-)
-from agent6.app._setup import (
-    start_mcp_manager_if_enabled as _start_mcp_manager_if_enabled,
+    explicit_usd_flag_error,
+    start_mcp_manager_if_enabled,
 )
 from agent6.app.egress import (
     EgressGuard,
@@ -38,52 +32,28 @@ from agent6.app.egress import (
     warn_if_unsandboxed,
 )
 from agent6.app.finalize import (
-    finalize_auto_merge as _finalize_auto_merge,
-)
-from agent6.app.finalize import (
-    fire_notify_hook as _fire_notify_hook,
-)
-from agent6.app.finalize import (
-    print_run_end as _print_run_end,
-)
-from agent6.app.finalize import (
-    run_exit_code as _run_exit_code,
+    finalize_auto_merge,
+    fire_notify_hook,
+    print_run_end,
+    run_exit_code,
 )
 from agent6.app.preflight import (
-    infer_verify_if_unset as _infer_verify_if_unset,
-)
-from agent6.app.preflight import (
-    require_git_repo as _require_git_repo,
-)
-from agent6.app.preflight import (
-    warn_if_headless_ask as _warn_if_headless_ask,
-)
-from agent6.app.preflight import (
-    warn_if_prompt_override_incomplete as _warn_if_prompt_override_incomplete,
-)
-from agent6.app.preflight import (
-    warn_if_usd_unenforceable as _warn_if_usd_unenforceable,
+    infer_verify_if_unset,
+    require_git_repo,
+    warn_if_headless_ask,
+    warn_if_prompt_override_incomplete,
+    warn_if_usd_unenforceable,
 )
 from agent6.app.providers import (
-    InstrumentedProvider as _InstrumentedProvider,
-)
-from agent6.app.providers import (
-    build_critic_provider as _build_critic_provider,
-)
-from agent6.app.providers import (
+    InstrumentedProvider,
+    build_critic_provider,
     build_review_seats,
+    build_role_provider,
+    build_summariser_provider,
     resolve_compaction_thresholds,
     resolve_decompose,
     review_panel_configured,
-)
-from agent6.app.providers import (
-    build_role_provider as _build_role_provider,
-)
-from agent6.app.providers import (
-    build_summariser_provider as _build_summariser_provider,
-)
-from agent6.app.providers import (
-    role_temperature as _role_temperature,
+    role_temperature,
 )
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.app.run import RunFrontend
@@ -133,18 +103,14 @@ from agent6.runs.ipc import (
 )
 from agent6.runs.layout import RunLayout
 from agent6.runs.lock import (
-    SINGLE_WRITER_BUSY as _SINGLE_WRITER_BUSY,
-)
-from agent6.runs.lock import (
-    acquire_single_writer as _acquire_single_writer,
-)
-from agent6.runs.lock import (
-    release_single_writer as _release_single_writer,
+    SINGLE_WRITER_BUSY,
+    acquire_single_writer,
+    release_single_writer,
 )
 from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.sandbox.detect import ProfileUnavailableError, select_profile
 from agent6.tools.dispatch import ToolDispatcher
-from agent6.viewmodel import newest_run_dir as _newest_dir
+from agent6.viewmodel import newest_run_dir
 from agent6.workflows._run_state import load_resume_snapshot
 from agent6.workflows.loop import ResumeError, Workflow
 
@@ -274,7 +240,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     runs_dir = state_dir / "runs"
     if not run_id:
         # "resume my last run" -- the common recovery case, matching `runs *`.
-        latest = _newest_dir([runs_dir])
+        latest = newest_run_dir([runs_dir])
         if latest is None:
             reporter.err(f"ERROR: no runs under {runs_dir}; nothing to resume.")
             return 2
@@ -292,9 +258,9 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         return 2
     # One authoritative writer per run dir (see acquire_single_writer). Refuse a
     # second resume of a still-live run before touching any shared state.
-    worker_lock_fd = _acquire_single_writer(layout.run_dir)
+    worker_lock_fd = acquire_single_writer(layout.run_dir)
     if worker_lock_fd is None:
-        reporter.err(_SINGLE_WRITER_BUSY.format(rid=run_id))
+        reporter.err(SINGLE_WRITER_BUSY.format(rid=run_id))
         return 2
     # Drop a prior session's stale answer files + frontend.pid (the id counters reset
     # on resume, an old answer must not be read instead of re-prompting).
@@ -322,7 +288,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
 
         # Friendly no-repo guard BEFORE any git-touching check (which would
         # otherwise print zeroed-out heads first, then the real error).
-        if not _require_git_repo(cwd):
+        if not require_git_repo(cwd):
             return 2
 
         # The original run's manifest drives resume: `mode` (a plan run resumes
@@ -415,8 +381,8 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             reporter.err(egress_err)
             return 2
 
-        missing = _check_provider_keys(cfg)
-        usd_err = _explicit_usd_flag_error(
+        missing = check_provider_keys(cfg)
+        usd_err = explicit_usd_flag_error(
             budget_overrides.max_usd if budget_overrides else None, cfg
         )
         if usd_err is not None:
@@ -478,19 +444,19 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             max_usd=cfg.budget.best_effort_usd_limit,
         )
 
-        worker_inner = _build_role_provider(
+        worker_inner = build_role_provider(
             cfg, "worker", transcript_sink=transcript_sink, budget=budget
         )
         rm_worker = cfg.models.resolve("worker")
         assert rm_worker is not None  # require_runnable validated this
-        _warn_if_usd_unenforceable(cfg)
-        _warn_if_prompt_override_incomplete(cfg)
+        warn_if_usd_unenforceable(cfg)
+        warn_if_prompt_override_incomplete(cfg)
         tui_enabled = frontend.should_spawn_tui(tui, False, mode)
-        _warn_if_headless_ask(cfg, tui_enabled=tui_enabled)
+        warn_if_headless_ask(cfg, tui_enabled=tui_enabled)
         stream_text, console_stream = frontend.stream_modes(tui_enabled)
         if console_stream:
             frontend.attach_console_view(events)
-        provider: Provider = _InstrumentedProvider(
+        provider: Provider = InstrumentedProvider(
             inner=worker_inner,
             role="worker",
             model=rm_worker.model,
@@ -500,10 +466,10 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             stream_text=stream_text,
         )
 
-        critic_provider = _build_critic_provider(
+        critic_provider = build_critic_provider(
             cfg, transcript_sink=transcript_sink, budget=budget, events=events
         )
-        summariser_provider = _build_summariser_provider(
+        summariser_provider = build_summariser_provider(
             cfg, transcript_sink=transcript_sink, budget=budget, events=events
         )
         review_seats = (
@@ -530,7 +496,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 except (ValueError, OSError, KeyError):
                     snap_verify = None
             if snap_verify is None:  # older snapshot: re-infer as the original did
-                cfg = _infer_verify_if_unset(
+                cfg = infer_verify_if_unset(
                     cfg,
                     cwd,
                     mode=mode,
@@ -553,7 +519,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         try:
             reporter.err(f"[agent6] resume run id: {run_id}")
 
-            mcp_manager = _start_mcp_manager_if_enabled(cfg, reporter=reporter)
+            mcp_manager = start_mcp_manager_if_enabled(cfg, reporter=reporter)
 
             # The DAG curator runs in-process: the run's worker.lock already
             # makes this the sole writer, so no subprocess or socket is needed.
@@ -623,8 +589,8 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 review_budget_fraction=cfg.review.budget_fraction,
                 review_concurrency=cfg.review.concurrency,
                 base_sha=resume_base_sha,
-                temperature=_role_temperature(cfg, "worker"),
-                critic_temperature=_role_temperature(cfg, "reviewer"),
+                temperature=role_temperature(cfg, "worker"),
+                critic_temperature=role_temperature(cfg, "reviewer"),
                 summariser_provider=summariser_provider,
                 compact_drop_at_chars=compact_drop,
                 compact_summarise_at_chars=compact_summarise,
@@ -652,7 +618,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             # git subprocesses and the notify hook below could recycle it before
             # the outer close() signalled the pid again.
             if not interrupted and result is not None and result.completed and cfg.git.auto_merge:
-                _finalize_auto_merge(cwd, layout=layout, cfg=cfg)
+                finalize_auto_merge(cwd, layout=layout, cfg=cfg)
             # Never leave root-owned run state in the user's repo (sudo case).
             chown_to_real_user(state_dir)
 
@@ -667,22 +633,22 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             reporter.out(f"          reattach:  agent6 attach {layout.run_id}")
             return 0
 
-        _print_run_end(result, layout=layout, budget=budget, console_stream=console_stream)
-        _fire_notify_hook(
+        print_run_end(result, layout=layout, budget=budget, console_stream=console_stream)
+        fire_notify_hook(
             cfg.notify,
             run_id=layout.run_id,
             run_dir=layout.run_dir,
             ok=result.completed,
             reason=result.reason,
         )
-        return _run_exit_code(result)
+        return run_exit_code(result)
     finally:
         # Single owner of worker.pid + egress teardown for every resume exit
         # path; refusals and Ctrl-C during verify inference used to leak both.
         frontend.close_console_view()  # stop the heartbeat thread, clear any spinner line
         clear_worker_pid(layout.run_dir)
         stop_egress(guard)
-        _release_single_writer(worker_lock_fd)
+        release_single_writer(worker_lock_fd)
         if detach_requested and cfg is not None:
             if cfg.sandbox.run_commands == "ask" and not session_allow_set(layout.run_dir):
                 frontend.prompt_detach_away_mode(layout.run_dir)

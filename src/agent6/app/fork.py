@@ -36,7 +36,7 @@ import json
 import shutil
 from pathlib import Path
 
-from agent6.app.manifest import write_run_manifest as _write_run_manifest
+from agent6.app.manifest import write_run_manifest
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config, ConfigError
 from agent6.config.layer import load_effective, resolved_state_dir
@@ -46,7 +46,7 @@ from agent6.portable import atomic_write
 from agent6.runs.id import RunIdError, new_friendly_id, resolve_run_id, validate_explicit_run_id
 from agent6.runs.layout import RunLayout
 from agent6.runs.manifest import ManifestError, read_manifest
-from agent6.viewmodel import newest_run_dir as _newest_dir
+from agent6.viewmodel import newest_run_dir
 from agent6.workflows._run_state import load_checkpoint
 
 # Curator-owned DAG artifacts copied verbatim into the fork (Phase 1). Each is a
@@ -166,7 +166,7 @@ def create_fork(  # noqa: PLR0911
     runs_dir = state_dir / "runs"
     if not source_run_id:
         # "fork my last run" -- omitting the id forks the most recent run.
-        latest = _newest_dir([runs_dir])
+        latest = newest_run_dir([runs_dir])
         if latest is None:
             reporter.err(f"ERROR: no runs under {runs_dir}; nothing to fork.")
             return "", 2
@@ -280,7 +280,7 @@ def _materialize_fork(
     _copy_dag(src, dst)
 
     run_branch = f"agent6/{dst.run_id}"
-    _write_run_manifest(
+    write_run_manifest(
         dst,
         run_id=dst.run_id,
         user_task=user_task,

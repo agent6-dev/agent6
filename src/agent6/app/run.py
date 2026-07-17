@@ -22,12 +22,8 @@ from agent6.app._setup import (
     BudgetOverrides,
     SandboxOverrides,
     detect_env,
-)
-from agent6.app._setup import (
-    explicit_usd_flag_error as _explicit_usd_flag_error,
-)
-from agent6.app._setup import (
-    start_mcp_manager_if_enabled as _start_mcp_manager_if_enabled,
+    explicit_usd_flag_error,
+    start_mcp_manager_if_enabled,
 )
 from agent6.app.egress import (
     EgressGuard,
@@ -40,61 +36,33 @@ from agent6.app.egress import (
     warn_if_unsandboxed,
 )
 from agent6.app.finalize import (
-    finalize_auto_merge as _finalize_auto_merge,
-)
-from agent6.app.finalize import (
-    finalize_auto_stash as _finalize_auto_stash,
-)
-from agent6.app.finalize import (
-    fire_notify_hook as _fire_notify_hook,
-)
-from agent6.app.finalize import (
-    print_run_end as _print_run_end,
-)
-from agent6.app.finalize import (
-    run_exit_code as _run_exit_code,
+    finalize_auto_merge,
+    finalize_auto_stash,
+    fire_notify_hook,
+    print_run_end,
+    run_exit_code,
 )
 from agent6.app.manifest import (
-    write_run_manifest as _write_run_manifest,
+    write_run_manifest,
 )
 from agent6.app.preflight import (
     BranchChoice,
-)
-from agent6.app.preflight import (
-    infer_verify_if_unset as _infer_verify_if_unset,
-)
-from agent6.app.preflight import (
-    warn_if_headless_ask as _warn_if_headless_ask,
-)
-from agent6.app.preflight import (
-    warn_if_prompt_override_incomplete as _warn_if_prompt_override_incomplete,
-)
-from agent6.app.preflight import (
-    warn_if_usd_unenforceable as _warn_if_usd_unenforceable,
+    infer_verify_if_unset,
+    warn_if_headless_ask,
+    warn_if_prompt_override_incomplete,
+    warn_if_usd_unenforceable,
 )
 from agent6.app.providers import (
-    InstrumentedProvider as _InstrumentedProvider,
-)
-from agent6.app.providers import (
-    build_critic_provider as _build_critic_provider,
-)
-from agent6.app.providers import (
-    build_prompt_reviser_provider as _build_prompt_reviser_provider,
-)
-from agent6.app.providers import (
+    InstrumentedProvider,
+    build_critic_provider,
+    build_prompt_reviser_provider,
     build_review_seats,
+    build_role_provider,
+    build_summariser_provider,
     resolve_compaction_thresholds,
     resolve_decompose,
     review_panel_configured,
-)
-from agent6.app.providers import (
-    build_role_provider as _build_role_provider,
-)
-from agent6.app.providers import (
-    build_summariser_provider as _build_summariser_provider,
-)
-from agent6.app.providers import (
-    role_temperature as _role_temperature,
+    role_temperature,
 )
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
@@ -130,13 +98,9 @@ from agent6.runs.ipc import (
 )
 from agent6.runs.layout import RunLayout
 from agent6.runs.lock import (
-    SINGLE_WRITER_BUSY as _SINGLE_WRITER_BUSY,
-)
-from agent6.runs.lock import (
-    acquire_single_writer as _acquire_single_writer,
-)
-from agent6.runs.lock import (
-    release_single_writer as _release_single_writer,
+    SINGLE_WRITER_BUSY,
+    acquire_single_writer,
+    release_single_writer,
 )
 from agent6.sandbox.detect import ProfileUnavailableError, select_profile
 from agent6.tools.dispatch import ToolDispatcher
@@ -292,7 +256,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         reporter.err(egress_err)
         return 2
 
-    usd_err = _explicit_usd_flag_error(budget_overrides.max_usd if budget_overrides else None, cfg)
+    usd_err = explicit_usd_flag_error(budget_overrides.max_usd if budget_overrides else None, cfg)
     if usd_err is not None:
         reporter.err(f"REFUSING: {usd_err}")
         return 2
@@ -372,9 +336,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     # One authoritative writer per run dir. Acquire BEFORE touching any shared
     # run state (clearing answers, the worker pid, the curator) so a second
     # process refuses cleanly instead of clobbering the live run.
-    worker_lock_fd = _acquire_single_writer(layout.run_dir)
+    worker_lock_fd = acquire_single_writer(layout.run_dir)
     if worker_lock_fd is None:
-        reporter.err(_SINGLE_WRITER_BUSY.format(rid=effective_run_id))
+        reporter.err(SINGLE_WRITER_BUSY.format(rid=effective_run_id))
         return 2
     # Drop stale approve/ask/steer answers + frontend.pid from a prior session (the
     # id counters reset on resume, so an old answer must not be read instead of
@@ -411,7 +375,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             except GitError as exc:
                 reporter.err(f"ERROR: could not auto-stash before run: {exc}")
                 clear_worker_pid(layout.run_dir)
-                _release_single_writer(worker_lock_fd)
+                release_single_writer(worker_lock_fd)
                 discard_husk_dir(layout.run_dir)
                 return 2
         elif cfg.git.require_clean_worktree:
@@ -425,7 +389,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 "or set [git].require_clean_worktree=false to override."
             )
             clear_worker_pid(layout.run_dir)
-            _release_single_writer(worker_lock_fd)
+            release_single_writer(worker_lock_fd)
             discard_husk_dir(layout.run_dir)
             return 2
 
@@ -450,7 +414,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             if branch_choice.abort:
                 reporter.err("[agent6] aborted; nothing was started.")
                 clear_worker_pid(layout.run_dir)
-                _release_single_writer(worker_lock_fd)
+                release_single_writer(worker_lock_fd)
                 discard_husk_dir(layout.run_dir)
                 return 0
             branch_start_point = branch_choice.start_point
@@ -492,7 +456,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         # run started (base_sha + base_branch), which model+provider drove
         # it, and the user_task it was given. `agent6 runs diff <run-id>` and
         # any future tooling that wants to reproduce a run reads from here.
-        _write_run_manifest(
+        write_run_manifest(
             layout,
             run_id=effective_run_id,
             user_task=task,
@@ -517,13 +481,13 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         # Workflow uses ONE provider for everything (the worker role, or the
         # planner role in plan mode). No critic/triage/planner/reviewer/escalation
         # cascade inside the loop.
-        worker_inner = _build_role_provider(
+        worker_inner = build_role_provider(
             cfg, role, transcript_sink=transcript_sink, budget=budget
         )
         rm_worker = cfg.models.resolve(role)
         assert rm_worker is not None  # require_runnable validated this
-        _warn_if_usd_unenforceable(cfg)
-        _warn_if_prompt_override_incomplete(cfg)
+        warn_if_usd_unenforceable(cfg)
+        warn_if_prompt_override_incomplete(cfg)
         # Enable SSE streaming when stderr is a TTY (covers TUI
         # and interactive shell use). Bench/CI runs pipe stderr, so they
         # stay on the audited non-streaming code path UNLESS the operator
@@ -532,7 +496,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         # heartbeats during long requests, which corrupt the non-streaming
         # response body (resp.json() blows up with JSONDecodeError).
         tui_enabled = frontend.should_spawn_tui(tui, interactive, mode)
-        _warn_if_headless_ask(cfg, tui_enabled=tui_enabled)
+        warn_if_headless_ask(cfg, tui_enabled=tui_enabled)
         # The interactive revision prompt reads the terminal; with the TUI owning
         # it the prompt would land invisibly in the console log and contend for
         # stdin. Skip revision for this run instead.
@@ -546,7 +510,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         stream_text, console_stream = frontend.stream_modes(tui_enabled)
         if console_stream:
             frontend.attach_console_view(events)
-        provider: Provider = _InstrumentedProvider(
+        provider: Provider = InstrumentedProvider(
             inner=worker_inner,
             role=role,
             model=rm_worker.model,
@@ -556,13 +520,13 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             stream_text=stream_text,
         )
 
-        critic_provider = _build_critic_provider(
+        critic_provider = build_critic_provider(
             cfg, transcript_sink=transcript_sink, budget=budget, events=events
         )
-        prompt_reviser_provider = _build_prompt_reviser_provider(
+        prompt_reviser_provider = build_prompt_reviser_provider(
             cfg, transcript_sink=transcript_sink, budget=budget, events=events
         )
-        summariser_provider = _build_summariser_provider(
+        summariser_provider = build_summariser_provider(
             cfg, transcript_sink=transcript_sink, budget=budget, events=events
         )
         # The grounded review panel runs at the critic trigger WHEN explicitly
@@ -582,7 +546,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
 
         # Verify is optional: if unset, infer one for this run (AGENTS.md -> repo
         # signals -> a cheap LLM call) and inject it in-memory. Never persisted.
-        cfg = _infer_verify_if_unset(
+        cfg = infer_verify_if_unset(
             cfg, cwd, mode=mode, events=events, transcript_sink=transcript_sink, budget=budget
         )
 
@@ -603,7 +567,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             # Spawn any configured MCP servers BEFORE the workflow
             # starts so their tools are visible from iteration 1. The manager
             # owns its subprocesses; we close it in the finally block.
-            mcp_manager = _start_mcp_manager_if_enabled(cfg, reporter=reporter)
+            mcp_manager = start_mcp_manager_if_enabled(cfg, reporter=reporter)
 
             # The DAG curator runs in-process: the run's worker.lock already
             # makes this the sole writer, so no subprocess or socket is needed.
@@ -681,9 +645,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 base_sha=base_sha,
                 prompt_reviser_provider=prompt_reviser_provider,
                 revise_prompt=effective_revise_prompt,
-                temperature=_role_temperature(cfg, role),
-                critic_temperature=_role_temperature(cfg, "reviewer"),
-                prompt_reviser_temperature=_role_temperature(cfg, "reviewer"),
+                temperature=role_temperature(cfg, role),
+                critic_temperature=role_temperature(cfg, "reviewer"),
+                prompt_reviser_temperature=role_temperature(cfg, "reviewer"),
                 prompt_revision_selector=(
                     frontend.select_revised_prompt
                     if effective_revise_prompt == "interactive"
@@ -714,7 +678,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             if mcp_manager is not None:
                 mcp_manager.close()
             if not interrupted and result is not None and result.completed and cfg.git.auto_merge:
-                _finalize_auto_merge(cwd, layout=layout, cfg=cfg)
+                finalize_auto_merge(cwd, layout=layout, cfg=cfg)
             # Never leave root-owned run state in the user's repo (sudo case).
             chown_to_real_user(state_dir)
 
@@ -743,15 +707,15 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             reporter.out(f"          reattach:  agent6 attach {layout.run_id}")
             return 0
 
-        _print_run_end(result, layout=layout, budget=budget, console_stream=console_stream)
-        _fire_notify_hook(
+        print_run_end(result, layout=layout, budget=budget, console_stream=console_stream)
+        fire_notify_hook(
             cfg.notify,
             run_id=layout.run_id,
             run_dir=layout.run_dir,
             ok=result.completed,
             reason=result.reason,
         )
-        return _run_exit_code(result)
+        return run_exit_code(result)
     finally:
         # Single owner of worker.pid, egress-broker, and auto-stash
         # finalization. Refusal returns, Ctrl-C during verify inference, and
@@ -761,13 +725,13 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         clear_worker_pid(layout.run_dir)
         stop_egress(guard)
         if stashed:
-            _finalize_auto_stash(
+            finalize_auto_stash(
                 cwd,
                 base_branch=base_branch,
                 run_branch=run_branch,
                 auto_pop=cfg.git.auto_stash_pop,
             )
-        _release_single_writer(worker_lock_fd)
+        release_single_writer(worker_lock_fd)
         if detach_requested:
             # Ask how to handle approvals while away BEFORE spawning, so the marker is
             # set when the background run reads it. The worker lock is released now, so
