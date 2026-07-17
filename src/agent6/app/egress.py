@@ -295,6 +295,26 @@ def spawn_detached(
     return fallback(cwd, run_id)
 
 
+# The lane-launch escape a coordinator confined to the egress netns hands its
+# `/parallel` lanes: (cwd, exe-less agent6 argv, env extras) -> "" or an error.
+HostLaneLaunch = Callable[[Path, list[str], dict[str, str]], str]
+
+
+def lane_launcher(guard: EgressGuard) -> HostLaneLaunch | None:
+    """The host-namespace lane launcher for a coordinator inside the egress netns,
+    or None when it is unconfined.
+
+    Non-None exactly when ``guard.detach_spawner`` is -- i.e. this process entered
+    an isolated network namespace (strict + provider/local egress). A `/parallel`
+    lane spawned as a plain child would inherit that empty namespace and die with
+    no provider reachable, so under confinement its ``agent6 run`` is launched
+    through the SAME pre-forked host spawner a detached resume already uses. Off
+    confinement (open/hardened) there is no netns to escape, so a plain detached
+    spawn reaches providers and this stays None (the fan-out's default path)."""
+    spawner = guard.detach_spawner
+    return spawner.spawn_lane if spawner is not None else None
+
+
 def maybe_apply_agent_landlock(
     cfg: Config,
     selected_profile: SandboxProfile,

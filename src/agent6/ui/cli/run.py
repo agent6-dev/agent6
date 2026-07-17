@@ -131,15 +131,18 @@ def run_frontend() -> RunFrontend:
         save_ask_transcript=lambda layout, question, answer: save_ask_transcript(
             layout, question=question, answer=answer
         ),
-        build_coordinator_spawner=lambda cfg, cwd, state_dir, mode, run_id, max_usd, auto_approve: (
-            build_coordinator_spawner(
-                cfg,
-                cwd,
-                state_dir,
-                mode=mode,
-                run_id=run_id,
-                max_usd=max_usd,
-                auto_approve=auto_approve,
+        build_coordinator_spawner=(
+            lambda cfg, cwd, state_dir, mode, run_id, max_usd, auto_approve, host_lane_launch: (
+                build_coordinator_spawner(
+                    cfg,
+                    cwd,
+                    state_dir,
+                    mode=mode,
+                    run_id=run_id,
+                    max_usd=max_usd,
+                    auto_approve=auto_approve,
+                    host_lane_launch=host_lane_launch,
+                )
             )
         ),
         agent6_exe=agent6_exe,

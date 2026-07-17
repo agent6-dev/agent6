@@ -27,7 +27,9 @@ from agent6.app._setup import (
 )
 from agent6.app.egress import (
     EgressGuard,
+    HostLaneLaunch,
     check_network_profile,
+    lane_launcher,
     maybe_apply_agent_landlock,
     maybe_start_egress,
     resolve_strict_egress_viability,
@@ -175,9 +177,12 @@ class RunFrontend:
     ]
     run_ask_repl: Callable[[Workflow, BudgetTracker, RunLayout, str], RunResult]
     save_ask_transcript: Callable[[RunLayout, str, str], None]
-    # `/parallel` coordinator dispatch (the cli builds LaneRuntime + spawner)
+    # `/parallel` coordinator dispatch (the cli builds LaneRuntime + spawner). The
+    # trailing `HostLaneLaunch | None` lets lanes escape the coordinator's egress
+    # netns through the pre-forked host spawner (None when unconfined).
     build_coordinator_spawner: Callable[
-        [Config, Path, Path, str, str, float | None, bool], GroupLaneSpawner | None
+        [Config, Path, Path, str, str, float | None, bool, HostLaneLaunch | None],
+        GroupLaneSpawner | None,
     ]
     # process-spawn primitives the front-end owns (`ui.spawn`, mirroring
     # LaneRuntime's injected spawner): the agent6 exe path the egress detach host
@@ -615,7 +620,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 should_abort=steer_state.abort_pending,
                 should_interrupt=steer_state.interrupt,
                 # `/parallel` steer dispatch: the coordinator's group spawner
-                # (None in plan/ask, and inside a lane -- depth 1).
+                # (None in plan/ask, and inside a lane -- depth 1). Under a strict
+                # egress netns, lane_launcher(guard) hands lanes the host-spawner
+                # escape a detached resume uses; None (unconfined) keeps plain spawn.
                 lane_spawner=frontend.build_coordinator_spawner(
                     cfg,
                     cwd,
@@ -624,6 +631,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                     effective_run_id,
                     budget_overrides.max_usd if budget_overrides is not None else None,
                     sandbox_overrides.auto_approve if sandbox_overrides is not None else False,
+                    lane_launcher(guard),
                 ),
                 budget=budget,
                 state_dir=state_dir,

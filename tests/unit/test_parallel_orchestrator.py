@@ -290,6 +290,124 @@ def test_coordinator_dispatch_refuses_unknown_model(
         dispatch([LaneTask(task="do it", model="moonshotai/kimi-k2.7")], "p1")
 
 
+# ---------------------------------------------------------------------------
+# Coordinator lane spawn escapes the egress netns (Fix W1)
+# ---------------------------------------------------------------------------
+
+
+def test_lane_launcher_none_when_unconfined() -> None:
+    """No egress netns (open/hardened): no detach_spawner, so lanes use the plain
+    detached spawn (which reaches providers). lane_launcher stays None."""
+    from agent6.app.egress import EgressGuard, lane_launcher
+
+    assert lane_launcher(EgressGuard()) is None
+
+
+def test_lane_launcher_is_host_spawn_when_confined() -> None:
+    """Inside the egress netns the guard carries the pre-forked host spawner;
+    lane_launcher hands back its `spawn_lane` -- the SAME escape a detached resume
+    uses -- so a `/parallel` lane is launched with host networking."""
+    from types import SimpleNamespace
+    from typing import cast
+
+    from agent6.app.egress import EgressGuard, lane_launcher
+    from agent6.sandbox import HostSpawner
+
+    def _spawn_lane(cwd: Path, args: list[str], env_extra: dict[str, str]) -> str:
+        return ""
+
+    spawner = cast(HostSpawner, SimpleNamespace(spawn_lane=_spawn_lane))
+    launch = lane_launcher(EgressGuard(detach_spawner=spawner))
+    assert launch is not None
+    assert launch == spawner.spawn_lane
+
+
+def test_bridge_spawner_routes_through_host_launch_under_netns(
+    origin: Path, tmp_path: Path, runtime: LaneRuntime
+) -> None:
+    """Under the coordinator's egress netns the lane's `agent6 run` is launched
+    through the host spawner (escaping the netns), never the plain runtime.spawn
+    that would inherit the empty namespace and die 'no provider reachable'. The
+    launch gets the exe-less lane argv + agent6 markers only -- NOT os.environ, so
+    the coordinator's AGENT6_NETNS_ISOLATED never reaches the lane."""
+    from agent6.paths import state_dir
+
+    cfg = Config()
+    spec = LaneSpec(lane=1, run_id="co-p1-l1", workdir=tmp_path / "work" / "lane-1", model=None)
+    launched: list[tuple[Path, list[str], dict[str, str]]] = []
+
+    def fake_launch(cwd: Path, argv: list[str], env_extra: dict[str, str]) -> str:
+        launched.append((cwd, list(argv), dict(env_extra)))
+        # Simulate the lane writing its run dir + logs.jsonl so locate succeeds.
+        rd = state_dir(cwd, cfg.agent6.state_dir) / "runs" / spec.run_id
+        rd.mkdir(parents=True, exist_ok=True)
+        (rd / "logs.jsonl").write_text("{}\n", encoding="utf-8")
+        return ""
+
+    def boom_spawn(*_a: object, **_k: object) -> tuple[Path | None, str]:
+        raise AssertionError("plain runtime.spawn must not run under a netns")
+
+    res = parallel.bridge_spawner(
+        spec,
+        "do it",
+        cfg=cfg,
+        origin=origin,
+        max_usd=2.0,
+        auto_approve=True,
+        runtime=replace(runtime, spawn=boom_spawn),
+        host_lane_launch=fake_launch,
+    )
+
+    assert res.ok  # the spawn path completed without the netns refusal
+    cwd, argv, env_extra = launched[-1]
+    assert cwd == spec.workdir
+    dd = argv.index("--")
+    assert argv[0] == "run" and {"--run-id", "--config", "--max-usd", "--auto-approve"} <= set(
+        argv[:dd]
+    )
+    assert argv[dd + 1 :] == ["do it"]  # the exe-less argv, task after `--`
+    assert env_extra == {
+        "AGENT6_STREAM_TO_LOG": "1",
+        "AGENT6_DETACHED_AWAY": "wait",
+        "AGENT6_SUBRUN": "1",
+    }
+    assert "AGENT6_NETNS_ISOLATED" not in env_extra  # os.environ never rides along
+
+
+def test_build_coordinator_spawner_threads_host_launch(
+    origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runtime: LaneRuntime
+) -> None:
+    """The host launcher threads coordinator -> build_lane_spawner -> the default
+    bridge spawner, so a live `/parallel` dispatch under a netns hits the host
+    spawner rather than the plain child."""
+    origin_state = tmp_path / "ostate"
+    origin_state.mkdir()
+    cfg = Config()
+    seen: list[object] = []
+
+    def fake_bridge(spec: LaneSpec, task: str, **kw: object) -> LaneResult:
+        seen.append(kw.get("host_lane_launch"))
+        return LaneResult(spec=spec, run_dir=spec.workdir, branch="agent6/x", ok=True, error="")
+
+    monkeypatch.setattr(parallel, "bridge_spawner", fake_bridge)
+
+    def sentinel(cwd: Path, args: list[str], env_extra: dict[str, str]) -> str:
+        return ""
+
+    dispatch = parallel.build_coordinator_spawner(
+        cfg,
+        origin,
+        origin_state,
+        mode="run",
+        run_id="co",
+        runtime=runtime,
+        host_lane_launch=sentinel,
+    )
+    assert dispatch is not None
+    dispatch([LaneTask(task="task a", model=None)], "p1")
+    assert seen == [sentinel]  # the launcher reached the real bridge spawner
+
+
 def test_bridge_spawner_argv_ends_options_before_task(
     origin: Path, tmp_path: Path, runtime: LaneRuntime
 ) -> None:

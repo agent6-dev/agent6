@@ -23,6 +23,7 @@ from agent6.app._setup import (
 from agent6.app.egress import (
     EgressGuard,
     check_network_profile,
+    lane_launcher,
     maybe_apply_agent_landlock,
     maybe_start_egress,
     resolve_strict_egress_viability,
@@ -555,7 +556,9 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 should_abort=steer_state.abort_pending,
                 should_interrupt=steer_state.interrupt,
                 # `/parallel` steer dispatch: the coordinator's group spawner
-                # (None in plan resume, and inside a lane -- depth 1).
+                # (None in plan resume, and inside a lane -- depth 1). Under a
+                # strict egress netns, lane_launcher(guard) hands lanes the same
+                # host-spawner escape this resume's own detach uses.
                 lane_spawner=frontend.build_coordinator_spawner(
                     cfg,
                     cwd,
@@ -564,6 +567,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                     run_id,
                     budget_overrides.max_usd if budget_overrides is not None else None,
                     sandbox_overrides.auto_approve if sandbox_overrides is not None else False,
+                    lane_launcher(guard),
                 ),
                 budget=budget,
                 resume_state_path=snapshot_path,

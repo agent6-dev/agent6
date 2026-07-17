@@ -18,6 +18,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from agent6.app._setup import explicit_usd_flag_error
+from agent6.app.egress import HostLaneLaunch
 from agent6.app.parallel import (
     LaneRuntime,
     ParallelError,
@@ -74,12 +75,14 @@ def build_coordinator_spawner(
     run_id: str,
     max_usd: float | None = None,
     auto_approve: bool = False,
+    host_lane_launch: HostLaneLaunch | None = None,
 ) -> GroupLaneSpawner | None:
     """The `/parallel` group dispatcher to wire into a run's loop, or None when
     dispatch is unavailable (non-write mode, or a run already inside a lane).
     Injects the CLI's `LaneRuntime` into the headless pipeline. run.py / resume.py
     call this to build the loop's `lane_spawner`, passing the coordinator run's
-    own effective `--auto-approve` (same as `max_usd`)."""
+    own effective `--auto-approve` (same as `max_usd`) and *host_lane_launch* (the
+    egress guard's host-spawner escape, so lanes survive a strict egress netns)."""
     return app_build_coordinator_spawner(
         cfg,
         origin,
@@ -89,6 +92,7 @@ def build_coordinator_spawner(
         runtime=lane_runtime(),
         max_usd=max_usd,
         auto_approve=auto_approve,
+        host_lane_launch=host_lane_launch,
     )
 
 

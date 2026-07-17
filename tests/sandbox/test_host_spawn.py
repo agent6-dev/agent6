@@ -36,6 +36,15 @@ _FAKE_AGENT6 = (
     "' '.join(sys.argv[1:]) + '|' + os.environ.get('AGENT6_STREAM_TO_LOG', ''))"
 )
 
+# Same, but also records AGENT6_SUBRUN so a lane spawn can assert its env extras
+# were merged over the helper's isolation-free base env.
+_FAKE_LANE = (
+    "import os, sys, pathlib; "
+    "pathlib.Path('lane.txt').write_text("
+    "' '.join(sys.argv[1:]) + '|' + os.environ.get('AGENT6_SUBRUN', '')"
+    " + '|' + os.environ.get('AGENT6_STREAM_TO_LOG', ''))"
+)
+
 
 def _wait_for(path: Path, timeout_s: float = 10.0) -> str:
     deadline = time.monotonic() + timeout_s
@@ -54,6 +63,33 @@ def test_spawn_resume_round_trip(tmp_path: Path) -> None:
         argv_tail, stream_to_log = content.split("|")
         assert argv_tail == "resume RID-1"
         assert stream_to_log == "1"
+    finally:
+        spawner.close()
+
+
+def test_spawn_lane_round_trip(tmp_path: Path) -> None:
+    """A coordinator lane spawn: the helper prepends its trusted exe prefix, passes
+    the exe-less lane argv verbatim, merges the request's env extras, AND keeps its
+    isolation-free base env (AGENT6_STREAM_TO_LOG, set at fork)."""
+    spawner = fork_host_spawner([sys.executable, "-c", _FAKE_LANE])
+    try:
+        err = spawner.spawn_lane(
+            tmp_path, ["run", "--run-id", "L1", "--", "do the task"], {"AGENT6_SUBRUN": "1"}
+        )
+        assert err == ""
+        argv_tail, subrun, stream = _wait_for(tmp_path / "lane.txt").split("|")
+        assert argv_tail == "run --run-id L1 -- do the task"  # exe-less argv, `--` intact
+        assert subrun == "1"  # request env extra merged
+        assert stream == "1"  # helper's base env preserved
+    finally:
+        spawner.close()
+
+
+def test_spawn_lane_error_is_reported(tmp_path: Path) -> None:
+    spawner = fork_host_spawner(["/nonexistent/agent6"])
+    try:
+        err = spawner.spawn_lane(tmp_path, ["run", "--", "x"], {})
+        assert "background lane failed to start" in err
     finally:
         spawner.close()
 
