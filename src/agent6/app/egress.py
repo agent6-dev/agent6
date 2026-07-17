@@ -27,7 +27,7 @@ from agent6.sandbox import (
     start_egress_broker,
 )
 from agent6.sandbox.detect import Environment, probe_userns_supported
-from agent6.sandbox.jail import _locate_jail_binary  # pyright: ignore[reportPrivateUsage]
+from agent6.sandbox.jail import locate_jail_binary
 from agent6.types import SandboxProfile
 
 
@@ -386,7 +386,7 @@ def maybe_apply_agent_landlock(
     # jail cannot start. py_paths cover the bundled (venv) and dev-checkout
     # binaries; an AGENT6_JAIL_BIN override to an out-of-tree path would
     # otherwise EACCES under the agent-process Landlock.
-    jail_bin = _locate_jail_binary()
+    jail_bin = locate_jail_binary()
     jail_paths = (jail_bin.resolve().parent,) if jail_bin is not None else ()
     read_paths = (
         cwd,

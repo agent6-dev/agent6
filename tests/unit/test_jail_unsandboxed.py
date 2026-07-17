@@ -94,7 +94,7 @@ def test_child_exec_failure_is_command_error_not_jail_unavailable(
 
     from agent6.sandbox import jail as jail_mod
 
-    monkeypatch.setattr(jail_mod, "_locate_jail_binary", lambda: Path("/fake/agent6-jail"))
+    monkeypatch.setattr(jail_mod, "locate_jail_binary", lambda: Path("/fake/agent6-jail"))
 
     # run_in_jail now uses Popen (it needs the pid to group-kill on timeout), so
     # fake the launcher there: a clean exec failure -> launcher rc=2 + the child

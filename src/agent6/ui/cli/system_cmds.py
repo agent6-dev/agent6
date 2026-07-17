@@ -142,9 +142,9 @@ def _cmd_system_apparmor(action: Literal["install", "remove", "status"]) -> int:
         return 0
 
     # install
-    from agent6.sandbox.jail import _locate_jail_binary  # noqa: PLC0415 - avoid import cycle
+    from agent6.sandbox.jail import locate_jail_binary  # noqa: PLC0415 - avoid import cycle
 
-    jail_bin = _locate_jail_binary()
+    jail_bin = locate_jail_binary()
     if jail_bin is not None and "/agent6/sandbox/_bin/agent6-jail" not in str(jail_bin):
         print(
             f"NOTE: your jail binary is at {jail_bin}, which the bundled profile's glob"

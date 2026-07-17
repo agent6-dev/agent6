@@ -32,7 +32,7 @@ class JailUnavailableError(Exception):
 _ENV_VAR = "AGENT6_JAIL_BIN"
 
 
-def _locate_jail_binary() -> Path | None:
+def locate_jail_binary() -> Path | None:
     override = os.environ.get(_ENV_VAR)
     if override:
         p = Path(override)
@@ -177,7 +177,7 @@ def run_in_jail(policy: JailPolicy) -> CommandResult:
     """
     if policy.profile == "none":
         return _run_unsandboxed(policy)
-    binary = _locate_jail_binary()
+    binary = locate_jail_binary()
     if binary is None:
         raise JailUnavailableError(
             "agent6-jail binary not found. Install agent6 from a built wheel"

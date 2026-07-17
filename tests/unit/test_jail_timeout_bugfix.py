@@ -50,7 +50,7 @@ def test_jail_timeout_returns_124_and_kills_group(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake = _write_fake_launcher(tmp_path)
-    monkeypatch.setattr(jail, "_locate_jail_binary", lambda: fake)
+    monkeypatch.setattr(jail, "locate_jail_binary", lambda: fake)
 
     def _policy_to_json(policy: JailPolicy) -> str:
         return "{}"
