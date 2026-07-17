@@ -161,6 +161,7 @@ def test_engine_passes_per_state_allow_network(tmp_path: Path) -> None:
 class _FakeJailResult:
     returncode: int = 0
     stdout: str = ""
+    stderr: str = ""
 
 
 def _patch_jail(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
