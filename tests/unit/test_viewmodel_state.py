@@ -122,6 +122,42 @@ def test_tool_call_then_result_pairs_up() -> None:
     assert s.tool_calls[0].result_summary == "100 bytes"
 
 
+def test_apply_edit_args_render_the_edit_kinds_not_a_dict_repr() -> None:
+    # The drawer + TUI tool table read args_preview; apply_edit's `edits` list
+    # used to leak `[{'kind': 'replace', 'old_string': ...}]` as a Python repr.
+    s = apply_event(
+        initial_state(),
+        {
+            "type": "tool.call",
+            "name": "apply_edit",
+            "args": {
+                "path": "calc.py",
+                "edits": [
+                    {"kind": "replace", "old_string": "a", "new_string": "b"},
+                    {"kind": "create", "old_string": "", "new_string": "x"},
+                ],
+            },
+        },
+    )
+    preview = s.tool_calls[0].args_preview
+    assert "old_string" not in preview and "{" not in preview
+    assert "path=calc.py" in preview and "edits=replace, create" in preview
+
+
+def test_dict_valued_tool_summary_renders_as_json_not_python_repr() -> None:
+    # A malformed dict summary must not leak `{'unexpected': ...}` (single-quoted
+    # Python repr) into the tool table or the log tail.
+    s = apply_event(initial_state(), {"type": "tool.call", "name": "weird", "args": {}})
+    s = apply_event(
+        s, {"type": "tool.result", "name": "weird", "ok": True, "summary": {"unexpected": 1}}
+    )
+    assert s.tool_calls[0].result_summary == '{"unexpected": 1}'
+    line = format_log_line(
+        {"type": "tool.result", "name": "weird", "ok": True, "summary": {"unexpected": 1}}
+    )
+    assert '{"unexpected": 1}' in line and "'unexpected'" not in line
+
+
 def test_tool_result_with_mismatched_name_does_not_overwrite() -> None:
     s = apply_event(initial_state(), {"type": "tool.call", "name": "read_file", "args": {}})
     s = apply_event(s, {"type": "tool.result", "name": "other", "ok": True, "summary": "x"})

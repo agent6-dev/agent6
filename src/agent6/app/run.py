@@ -41,6 +41,7 @@ from agent6.app.finalize import (
     finalize_auto_merge,
     finalize_auto_stash,
     fire_notify_hook,
+    print_interrupt_end,
     print_run_end,
     run_exit_code,
 )
@@ -697,6 +698,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             chown_to_real_user(state_dir)
 
         if interrupted:
+            print_interrupt_end(layout=layout, budget=budget)
             return 130
         if result is None:
             return 1

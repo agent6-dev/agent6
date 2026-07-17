@@ -298,7 +298,7 @@ def _cmd_machine_replay(machine_id: str) -> int:
         return 1
     print(
         f"{result.status.upper()}: {spec.machine} replayed to {result.state!r}"
-        f" after {result.transitions} transitions ({result.reason})"
+        f" after {_plural(result.transitions, 'transition')} ({result.reason})"
     )
     return 0 if result.status in ("ok", "incomplete") else 1
 
@@ -341,7 +341,11 @@ def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
         running_in = f" -- running {inflight_state!r}" if inflight_state else ""
         print(f"  status: running (worker pid {pid} alive){running_in}")
     else:
-        print(f"  status: {result.status}")
+        # A parked instance (an armed --exit-on-wait wait, no live worker) reads
+        # "waiting" -- the same word `machine run --exit-on-wait`, the watch
+        # screen, and the web pill use -- not the engine's raw "incomplete".
+        status = "waiting" if pending is not None else result.status
+        print(f"  status: {status}")
     print(f"  state: {result.state!r}")
     print(f"  transitions: {result.transitions}")
     print(f"  spend: ${spend.usd:.4f} (in={spend.input_tokens} tok, out={spend.output_tokens} tok)")

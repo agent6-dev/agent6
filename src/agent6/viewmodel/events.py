@@ -24,8 +24,23 @@ today", not "never raise".
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any
+
+
+def readable_summary(value: Any) -> str:
+    """A tool result's `summary` should be a string; a malformed dict/list value
+    renders as neutral JSON, not the single-quoted Python repr `str()` produces
+    (which leaked `{'unexpected': ...}` into the web/TUI tool detail + log tail)."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (dict, list)):
+        try:
+            return json.dumps(value, default=str)
+        except (TypeError, ValueError):
+            return str(value)
+    return str(value)
 
 
 def _as_int(value: object) -> int:
@@ -250,7 +265,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
             return ToolResult(
                 name=str(raw.get("name", "")),
                 ok=bool(raw.get("ok", False)),
-                summary=str(raw.get("summary", "")),
+                summary=readable_summary(raw.get("summary", "")),
             )
         case "verify.start":
             return VerifyStart(cmd=tuple(str(x) for x in raw.get("cmd", []) or []))

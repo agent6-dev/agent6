@@ -340,6 +340,13 @@ aside.rail { display: none; }
     position: fixed; left: 0; right: 0; z-index: 15;
     bottom: calc(var(--nav-h) + env(safe-area-inset-bottom)); padding: 8px 12px;
   }
+  /* Give the input the full row so a long placeholder ("describe a machine to
+     create…") can't clip mid-word in the sliver left beside the button on a
+     narrow phone; the action drops onto the next line. `!important` overrides the
+     inline `flex:1` the JS sets on each composer textarea. */
+  .composer.dock .row { flex-wrap: wrap; }
+  .composer.dock .row > textarea.field { flex: 1 1 100% !important; }
+  .composer.dock .row > button { flex: 1 1 auto; }
   main:has(.composer.dock) { padding-bottom: calc(var(--nav-h) + 140px); }
   /* No nested scrolling on a phone: an inner scroller traps the page scroll,
      so every card flows at natural height and the PAGE is the one scroller. */

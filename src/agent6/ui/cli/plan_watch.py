@@ -28,7 +28,7 @@ from agent6.tools.schema import UserQuestion
 from agent6.ui.cli._common import _runs_dir, _state_dir, resolve_or_newest_layout
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._interact import default_stdin_approver, default_stdin_questioner
-from agent6.viewmodel import run_mtime, tail_events
+from agent6.viewmodel import run_mtime, status_word, tail_events
 from agent6.viewmodel.format import format_compare, format_cost
 
 
@@ -197,6 +197,7 @@ def _scan_run_events(events_path: Path) -> dict[str, object]:
         "last_type": None,
         "iteration": None,
         "end_reason": None,
+        "all_passed": None,
         "input_tokens": None,
         "output_tokens": None,
         "cost_usd": None,
@@ -218,6 +219,7 @@ def _scan_run_events(events_path: Path) -> dict[str, object]:
                 out["iteration"] = e["iteration"]
             if etype == "run.end":
                 out["end_reason"] = e.get("reason")
+                out["all_passed"] = bool(e.get("all_passed"))
             if etype == "budget.update":
                 # The authoritative running totals, emitted after each provider
                 # call (providers.py). `loop.budget` (emitted BEFORE the call)
@@ -303,10 +305,14 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:  # noqa: PLR0915
     )
 
     if end_reason is not None:
-        # A diagnostic view: show the precise raw reason (steer_abort, provider_error,
-        # verify_settled, ...) rather than a categorized label. The user-facing status
-        # (dashboard/hub) uses the friendly run_status_label, which also has all_passed.
-        state = f"finished ({end_reason})"
+        # Lead with the SAME outcome word `runs list` uses (status_word owns it, so
+        # the two surfaces can't disagree -- a finish_run+all_passed run reads
+        # "passed" here, not the listing's opposite "finished"), then keep the raw
+        # reason (steer_abort, provider_error, ...) in parens as the diagnostic.
+        word, _ = status_word(
+            finished=True, all_passed=bool(ev["all_passed"]), end_reason=str(end_reason)
+        )
+        state = f"{word} ({end_reason})"
     elif alive and last_age is not None and last_age > 120:
         state = "running (long step, likely a provider call)"
     elif alive:

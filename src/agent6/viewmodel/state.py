@@ -425,13 +425,20 @@ def _push_bounded[T](existing: tuple[T, ...], item: T, cap: int) -> tuple[T, ...
 
 def _render_arg_value(key: str, value: Any) -> str:
     """One arg value, human-shaped: argv as a shell line, ask_user's questions as
-    their text, everything else as its string / repr."""
+    their text, apply_edit's edits as their kinds, everything else as its string
+    / repr."""
     if key == "argv" and isinstance(value, (list, tuple)) and value:
         return shlex.join(str(a) for a in value)
     if key == "questions" and isinstance(value, (list, tuple)) and value:
         first = value[0]
         q = first.get("question", "") if isinstance(first, dict) else str(first)
         return str(q) + (f" (+{len(value) - 1})" if len(value) > 1 else "")
+    if key == "edits" and isinstance(value, (list, tuple)) and value:
+        # apply_edit: the kinds (replace/create), not the raw {old_string, ...}
+        # dict repr that flooded the drawer + TUI tool table.
+        return ", ".join(
+            str(e.get("kind", "replace")) if isinstance(e, dict) else str(e) for e in value
+        )
     return value if isinstance(value, str) else repr(value)
 
 
@@ -463,7 +470,8 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
         case "tool.call":
             salient = f"{event.get('name', '')}({_render_args(event.get('args', {}) or {})})"
         case "tool.result":
-            salient = f"{event.get('name', '')} ok={event.get('ok')} {event.get('summary', '')}"
+            summ = events.readable_summary(event.get("summary", ""))
+            salient = f"{event.get('name', '')} ok={event.get('ok')} {summ}"
             # Execution tools carry capped output tails; show a one-line hint of
             # the latest stderr (else stdout) so a command's outcome reads in the
             # log without opening the transcript. The full tail is in the event.

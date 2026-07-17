@@ -171,6 +171,8 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     valid_toml: str | None = None
     valid_scripts: dict[str, str] = {}
     total_usd = 0.0
+    total_in = 0
+    total_out = 0
     attempt = 0  # bound for the run.end below (the loop always runs: max_attempts >= 1)
     for attempt in range(1, max_attempts + 1):
         prompt = build_authoring_prompt(
@@ -197,6 +199,8 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
             events_log,
         )
         total_usd += result.usd
+        total_in += result.input_tokens
+        total_out += result.output_tokens
         candidate = extract_toml(result.payload)
         if candidate is None:
             diagnostics = [
@@ -256,6 +260,16 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
             break
 
     reporter.err(f"machine create: spent ~${total_usd:.4f}")
+    # Each attempt's subprocess logs its OWN budget.update (resetting to that
+    # attempt's spend), so the fold's last one shows only the last attempt. Emit
+    # the true cumulative total across attempts so the watchable draft's cost is
+    # the real spend, not the last retry's slice.
+    events.emit(
+        "budget.update",
+        usd_total=total_usd,
+        input_total=total_in,
+        output_total=total_out,
+    )
     # End the watchable session (the file-write below is fast and event-less);
     # all_passed marks whether a valid machine was authored, for the TUI status.
     # `iterations` = authoring attempts made, so run.end keeps one shape.

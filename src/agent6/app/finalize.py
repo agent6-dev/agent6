@@ -127,6 +127,29 @@ def print_run_end(
         print(f"\nresume with:  agent6 resume {layout.run_id}")
 
 
+def print_interrupt_end(*, layout: RunLayout, budget: BudgetTracker) -> None:
+    """After a Ctrl-C interrupt: the cost so far, the resume hint, and the
+    branch-return hint. The interrupt cuts the run before ``print_run_end``, so
+    without this the user saw only "run interrupted" -- no spend, no way to pick
+    the (auto-committed, resumable) work back up, and no note they were left on
+    the run branch. Mirrors the not-completed footer of ``print_run_end``."""
+    print()
+    print(budget.format_summary())
+    print(f"\nresume with:  agent6 resume {layout.run_id}")
+    run_branch = ""
+    base_branch = ""
+    with contextlib.suppress(ManifestError):
+        manifest = read_manifest(layout.run_dir)
+        run_branch = manifest.run_branch or ""
+        base_branch = manifest.base_branch
+    if run_branch:
+        current = ""
+        with contextlib.suppress(GitError):
+            current = git_status(Path.cwd()).branch
+        if current == run_branch and base_branch and base_branch != run_branch:
+            print(f"  you are on {run_branch}; return with: git switch {base_branch}")
+
+
 def finalize_auto_merge(cwd: Path, *, layout: RunLayout, cfg: Config) -> None:
     """After a successful run, merge the run branch into its base using
     git.merge_strategy (git.auto_merge). Reads the run context from the manifest, so

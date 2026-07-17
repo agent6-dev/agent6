@@ -301,6 +301,12 @@ class MachineWatchScreen(Screen[None]):
             mark = ">" if s.is_current else ("·" if s.is_visited else " ")
             table.update_cell(s.name, "mark", mark)
 
+        # Mark ended BEFORE rendering the log so a terminal instance's final
+        # agent state doesn't render a live "thinking…" line (see C13).
+        if ms.ended is not None and not self._ended:
+            self._ended = True
+            self.refresh_bindings()  # dim Steer/Message: a dead machine takes no input
+
         log = self.query_one("#mw-log", RichLog)
         # New transitions.
         for t in self._cursor.new_transitions(ms):
@@ -318,10 +324,6 @@ class MachineWatchScreen(Screen[None]):
 
         self._dispatch_notifications(ms)
         self._dispatch_prompts()
-
-        if ms.ended is not None:
-            self._ended = True
-            self.refresh_bindings()  # dim Steer/Message: a dead machine takes no input
 
     def _dispatch_notifications(self, ms: MachineState) -> None:
         """Pop an in-app + desktop notification for each new machine.notify, and
@@ -399,6 +401,8 @@ class MachineWatchScreen(Screen[None]):
             if etype in ("role.thinking_delta", "role.text_delta"):
                 self._pending += str(evt.get("text", ""))
                 continue
+            if self._ended and etype == "role.call":
+                continue  # a terminal instance isn't "thinking…"; drop the phantom
             discrete = _discrete_log_line(evt)
             if discrete is not None:
                 self._flush_pending()
@@ -433,7 +437,9 @@ def machine_detail_text(path: Path) -> str:
         "",
         f"states ({len(spec.states)}):",
     ]
-    lines.extend(f"  {name}  ({type(state).__name__})" for name, state in spec.states.items())
+    # `state.kind` (agent/tool/wait/branch/terminal): the user word the watch
+    # screen and the web detail already show, not the internal class name.
+    lines.extend(f"  {name}  ({state.kind})" for name, state in spec.states.items())
     problems = validate_semantics(spec)
     lines.append("")
     if problems:

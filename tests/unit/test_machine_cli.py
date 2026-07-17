@@ -11,6 +11,7 @@ import pytest
 
 from agent6.config.layer import resolved_state_dir
 from agent6.machine import MachineJournal
+from agent6.runs.ipc import clear_worker_pid
 from agent6.ui.cli import main
 
 
@@ -78,10 +79,17 @@ def test_status_reports_waiting_state_and_spend(
     f = _write_machine(tmp_path)
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()  # drop run output
+    # `machine run --exit-on-wait` exits the process, so the worker pid is dead;
+    # in-process it is this live pytest, so clear it to model the parked reality.
+    root = resolved_state_dir(tmp_path) / "machines" / "waiter_delayed"
+    clear_worker_pid(root)
     code = main(["machine", "status", "waiter_delayed"])
     assert code == 0
     out = capsys.readouterr().out
     assert "waiter_delayed" in out
+    # A parked instance reads "waiting" (the word run --exit-on-wait/web use), not
+    # the engine's raw "incomplete".
+    assert "status: waiting" in out
     assert "next wake:" in out
     assert "spend: $0.0000" in out
 
@@ -141,6 +149,20 @@ def test_watch_finished_instance_shows_overview_and_end(
     assert "> done" in out  # current state marked
     assert ". route" in out  # a visited state marked
     assert "OK: ended in 'done'" in out
+
+
+def test_replay_pluralizes_the_transition_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`machine replay` counts "1 transition" (singular), matching `machine run`."""
+    monkeypatch.chdir(tmp_path)
+    f = tmp_path / "tiny.asm.toml"
+    f.write_text(TINY, encoding="utf-8")
+    assert main(["machine", "run", str(f)]) == 0
+    capsys.readouterr()
+    assert main(["machine", "replay", "tiny"]) == 0
+    out = capsys.readouterr().out
+    assert "after 1 transition (" in out and "1 transitions" not in out
 
 
 def test_run_refuses_uncommitted_machine(

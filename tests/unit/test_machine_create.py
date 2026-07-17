@@ -262,6 +262,41 @@ def test_create_writes_watchable_event_log(tmp_path: Path, monkeypatch: pytest.M
     assert end["all_passed"] is True
 
 
+def test_create_logs_the_cumulative_spend_across_attempts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each attempt's subprocess logs its OWN reset budget.update, so the fold's
+    last one showed only the last attempt. create emits the true cumulative total
+    at the end, so the watchable draft's cost is the real spend, not the last try."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    _stub_preflight(monkeypatch)
+    _stub_runner(
+        monkeypatch,
+        [
+            # First attempt returns no draft (fails), second succeeds.
+            AgentExecResult(
+                reason="finish_run", payload=None, usd=0.01, input_tokens=100, output_tokens=20
+            ),
+            AgentExecResult(
+                reason="finish_run",
+                payload={TOML_PAYLOAD_KEY: VALID_MACHINE},
+                usd=0.02,
+                input_tokens=150,
+                output_tokens=30,
+            ),
+        ],
+    )
+    assert main(["machine", "create", "Greet the user", "--max-attempts", "2"]) == 0
+    logs = next((tmp_path / "state").glob("**/machine-drafts/*/logs.jsonl"))
+    events = [json.loads(line) for line in logs.read_text(encoding="utf-8").splitlines()]
+    budgets = [e for e in events if e["type"] == "budget.update"]
+    assert budgets, "no cumulative budget.update emitted"
+    last = budgets[-1]
+    assert abs(last["usd_total"] - 0.03) < 1e-9  # 0.01 + 0.02, not the last 0.02
+    assert last["input_total"] == 250 and last["output_total"] == 50
+
+
 def test_create_saves_the_prompt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The natural-language task is saved to the draft dir as prompt.txt, so the
     draft is self-describing (otherwise the task only survives embedded inside the

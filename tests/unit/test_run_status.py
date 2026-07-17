@@ -87,7 +87,25 @@ def test_status_crashed_when_pid_dead_and_no_run_end(
     assert "likely crashed or killed" in capsys.readouterr().out
 
 
-def test_status_finished_reports_reason(
+def test_status_leads_with_the_listing_word_then_the_raw_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `runs show` must agree with `runs list`: a finish_run+all_passed run reads
+    # "passed", not the opposite "finished" the raw reason alone used to print.
+    # The raw reason stays in parens as the diagnostic.
+    _make_run(
+        tmp_path,
+        monkeypatch,
+        [
+            {"ts": _ts(40), "type": "run.start"},
+            {"ts": _ts(1), "type": "run.end", "reason": "finish_run", "all_passed": True},
+        ],
+    )
+    _cmd_status("winsome-dawn-YWH5ZS")
+    assert "passed (finish_run)" in capsys.readouterr().out
+
+
+def test_status_finish_without_all_passed_reads_finished(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _make_run(
@@ -95,11 +113,26 @@ def test_status_finished_reports_reason(
         monkeypatch,
         [
             {"ts": _ts(40), "type": "run.start"},
-            {"ts": _ts(1), "type": "run.end", "reason": "completed"},
+            {"ts": _ts(1), "type": "run.end", "reason": "finish_run", "all_passed": False},
         ],
     )
     _cmd_status("winsome-dawn-YWH5ZS")
-    assert "finished (completed)" in capsys.readouterr().out
+    assert "finished (finish_run)" in capsys.readouterr().out
+
+
+def test_status_error_reason_reads_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _make_run(
+        tmp_path,
+        monkeypatch,
+        [
+            {"ts": _ts(40), "type": "run.start"},
+            {"ts": _ts(1), "type": "run.end", "reason": "provider_error", "all_passed": False},
+        ],
+    )
+    _cmd_status("winsome-dawn-YWH5ZS")
+    assert "failed (provider_error)" in capsys.readouterr().out
 
 
 def test_status_no_such_run_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

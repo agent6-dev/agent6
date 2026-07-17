@@ -96,6 +96,10 @@ def test_machine_detail_text_parses_a_valid_machine(tmp_path: Path) -> None:
     assert "initial: poll" in text
     assert "validation: OK" in text
     assert "graph (mermaid):" in text
+    # States read as the user's kind word (agent/tool/wait/terminal), matching the
+    # watch screen + web, not the internal class name (AgentState/TerminalState).
+    assert "poll  (wait)" in text and "done  (terminal)" in text
+    assert "State)" not in text
 
 
 def test_machine_detail_text_reports_a_bad_file(tmp_path: Path) -> None:
@@ -208,6 +212,47 @@ def test_watch_screen_disables_steer_and_message_when_ended(
             screen.action_steer()  # no-op when ended
             await pilot.pause()
             assert not (state / "steer.request").exists()  # nothing dropped in the dead dir
+
+    asyncio.run(scenario())
+
+
+def test_watch_screen_suppresses_phantom_thinking_on_an_ended_machine(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    """An ended machine's final agent-state log ends on a role.call ("thinking…"),
+    which must NOT render as a live thinking line while the header says ended."""
+    from textual.widgets import RichLog
+
+    from agent6.config.layer import resolved_state_dir
+    from agent6.machine import load_machine
+    from agent6.ui.cli import main as cli_main
+
+    monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]
+    f = tmp_path / "tiny.asm.toml"
+    f.write_text(TINY, encoding="utf-8")
+    assert cli_main(["machine", "run", str(f)]) == 0  # terminates at once -> ended
+    instance = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    spec = load_machine(f)
+    state = instance / "states" / "0000-route"
+    state.mkdir(parents=True)
+    (state / "logs.jsonl").write_text(
+        '{"type": "role.call", "role": "worker", "model": "kimi"}\n', encoding="utf-8"
+    )
+
+    class _WatchHost(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(MachineWatchScreen(instance, spec))
+
+    async def scenario() -> None:
+        app = _WatchHost()
+        async with app.run_test(size=(120, 40)) as pilot:
+            for _ in range(4):
+                await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, MachineWatchScreen)
+            assert screen._ended  # pyright: ignore[reportPrivateUsage]
+            log = screen.query_one("#mw-log", RichLog)
+            assert not any("thinking" in strip.text for strip in log.lines)
 
     asyncio.run(scenario())
 

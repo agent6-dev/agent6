@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from agent6.app import finalize as _finalize
-from agent6.app.finalize import print_run_end
+from agent6.app.finalize import print_interrupt_end, print_run_end
 from agent6.budget import BudgetTracker
 from agent6.git_ops import GitStatus
 from agent6.runs.layout import RunLayout
@@ -109,6 +109,32 @@ def test_end_banner_warns_when_checkout_is_parked_on_the_run_branch(
     out = capsys.readouterr().out
     assert "you are on agent6/r3" in out
     assert "git switch main" in out
+
+
+def test_interrupt_end_prints_cost_resume_and_branch_hints(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A Ctrl-C interrupt used to print only "run interrupted": no spend, no resume
+    # hint, and no note the user was left on the run branch.
+    layout = _layout(tmp_path, "r4", [{"type": "run.start", "run_id": "r4", "user_task": "t"}])
+    layout.manifest_path.write_text(
+        json.dumps({"run_branch": "agent6/r4", "base_branch": "main"}), encoding="utf-8"
+    )
+
+    def _on_run_branch(_p: Path) -> GitStatus:
+        return GitStatus(
+            branch="agent6/r4", head_sha="x", is_clean=True, untracked_count=0, modified_count=0
+        )
+
+    monkeypatch.setattr(_finalize, "git_status", _on_run_branch)
+    print_interrupt_end(
+        layout=layout,
+        budget=BudgetTracker(max_input_tokens=1000, max_output_tokens=1000),
+    )
+    out = capsys.readouterr().out
+    assert "Token + cost summary" in out  # the budget/cost block
+    assert "resume with:  agent6 resume r4" in out
+    assert "you are on agent6/r4" in out and "git switch main" in out
 
 
 def test_provider_error_is_headlined_failed(tmp_path: Path, capsys: object) -> None:
