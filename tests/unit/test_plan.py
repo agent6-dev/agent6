@@ -113,7 +113,7 @@ def test_dispatch_finish_planning_returns_ack(tmp_path: Path) -> None:
     out = d.dispatch(
         "finish_planning",
         {"summary": "looks good", "plan_markdown": "# Plan\n\n## Tasks\n- t1\n"},
-    )
+    ).to_wire()
     assert out["acknowledged"] is True
     assert out["summary"] == "looks good"
     assert out["plan_bytes"] == len(b"# Plan\n\n## Tasks\n- t1\n")
@@ -129,14 +129,14 @@ def test_dispatch_finish_planning_rejects_empty(tmp_path: Path) -> None:
 def test_dispatch_finish_run_echoes_structured_result(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     d = ToolDispatcher(root=tmp_path, config=cfg)
-    out = d.dispatch("finish_run", {"summary": "done", "result": {"approved": True}})
+    out = d.dispatch("finish_run", {"summary": "done", "result": {"approved": True}}).to_wire()
     assert out == {"acknowledged": True, "summary": "done", "result": {"approved": True}}
 
 
 def test_dispatch_finish_run_result_defaults_none(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     d = ToolDispatcher(root=tmp_path, config=cfg)
-    out = d.dispatch("finish_run", {"summary": "done"})
+    out = d.dispatch("finish_run", {"summary": "done"}).to_wire()
     assert out == {"acknowledged": True, "summary": "done", "result": None}
 
 

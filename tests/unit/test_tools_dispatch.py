@@ -69,7 +69,7 @@ def test_read_file_ok(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "hello.txt").write_text("hi", encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=cfg)
-    out = d.dispatch("read_file", {"path": "hello.txt"})
+    out = d.dispatch("read_file", {"path": "hello.txt"}).to_wire()
     assert out["content"] == "hi"
 
 
@@ -108,7 +108,7 @@ def test_verify_command_unexecutable_raises_loud(tmp_path: Path) -> None:
         argv=("true",), returncode=1, stdout="", stderr="assert", duration_s=0.1, exec_failed=False
     )
     with mock.patch("agent6.tools.dispatch.run_in_jail", return_value=ran_and_failed):
-        out = d.dispatch("run_verify_command", {})
+        out = d.dispatch("run_verify_command", {}).to_wire()
     assert out["returncode"] == 1
 
 
@@ -190,7 +190,9 @@ def test_ask_user_routes_to_questioner(tmp_path: Path) -> None:
         return tuple(q.options[1] if q.options else "typed" for q in questions)
 
     d = ToolDispatcher(root=tmp_path, config=cfg, questioner=questioner)
-    out = d.dispatch("ask_user", {"questions": [{"question": "which?", "options": ["a", "b"]}]})
+    out = d.dispatch(
+        "ask_user", {"questions": [{"question": "which?", "options": ["a", "b"]}]}
+    ).to_wire()
     assert out == {"answers": ["b"]}
     assert seen["questions"] == (UserQuestion(question="which?", options=("a", "b")),)
 
@@ -234,7 +236,7 @@ def test_read_file_allows_nested_dotdir(tmp_path: Path) -> None:
     target = tmp_path / ".cache" / "foo"
     target.mkdir(parents=True)
     (target / "x.jsonl").write_text("{}\n", encoding="utf-8")
-    out = d.dispatch("read_file", {"path": ".cache/foo/x.jsonl"})
+    out = d.dispatch("read_file", {"path": ".cache/foo/x.jsonl"}).to_wire()
     assert out["content"] == "{}\n"
 
 
@@ -597,7 +599,7 @@ def test_apply_patch_ok(tmp_path: Path) -> None:
             "path": "f.py",
             "patch": ("--- a/f.py\n+++ b/f.py\n@@ -1,3 +1,3 @@\n a\n-b\n+B\n c\n"),
         },
-    )
+    ).to_wire()
     assert out["path"] == "f.py"
     assert (tmp_path / "f.py").read_text(encoding="utf-8") == "a\nB\nc\n"
 
@@ -668,7 +670,7 @@ def test_apply_edit_preview_does_not_write(tmp_path: Path) -> None:
             "edits": [{"kind": "replace", "old_string": "x = 1", "new_string": "x = 99"}],
             "preview": True,
         },
-    )
+    ).to_wire()
     # File on disk is unchanged.
     assert (tmp_path / "f.py").read_text(encoding="utf-8") == "x = 1\n"
     # Preview payload has expected shape.
@@ -693,7 +695,7 @@ def test_apply_edit_preview_for_new_file_shows_dev_null(tmp_path: Path) -> None:
             "edits": [{"kind": "create", "old_string": "", "new_string": "hello\n"}],
             "preview": True,
         },
-    )
+    ).to_wire()
     assert not (tmp_path / "new.py").exists()
     assert "/dev/null" in res["diff"]
     assert res["hunks"] == 1
@@ -707,7 +709,7 @@ def test_apply_patch_preview_does_not_write(tmp_path: Path) -> None:
     res = d.dispatch(
         "apply_patch",
         {"path": "f.py", "patch": patch, "preview": True},
-    )
+    ).to_wire()
     assert (tmp_path / "f.py").read_text(encoding="utf-8") == "a\n"
     assert res["preview"] is True
     assert res["hunks"] == 1
@@ -727,7 +729,7 @@ def test_apply_edit_preview_truncates_giant_diff(tmp_path: Path) -> None:
             "edits": [{"kind": "replace", "old_string": big_old, "new_string": big_new}],
             "preview": True,
         },
-    )
+    ).to_wire()
     assert res["truncated"] is True
     assert "<truncated" in res["diff"]
     # Disk untouched.
@@ -836,7 +838,7 @@ def test_grep_finds_match(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text("hello world\nfoo\n", encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=cfg)
-    out = d.dispatch("grep", {"pattern": "hello", "path": "."})
+    out = d.dispatch("grep", {"pattern": "hello", "path": "."}).to_wire()
     assert len(out["hits"]) == 1
     assert out["hits"][0]["text"] == "hello world"
 
@@ -848,10 +850,10 @@ def test_grep_skips_dotdirs_by_default_but_searches_explicit_ones(tmp_path: Path
     (tmp_path / "plain.txt").write_text("needle\n", encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=cfg)
     # Default recursive search from root skips the dot-dir.
-    root_hits = d.dispatch("grep", {"pattern": "needle", "path": "."})["hits"]
+    root_hits = d.dispatch("grep", {"pattern": "needle", "path": "."}).to_wire()["hits"]
     assert [h["path"] for h in root_hits] == ["plain.txt"]
     # Explicitly targeting the dot-dir searches inside it.
-    dot_hits = d.dispatch("grep", {"pattern": "needle", "path": ".github"})["hits"]
+    dot_hits = d.dispatch("grep", {"pattern": "needle", "path": ".github"}).to_wire()["hits"]
     assert any(h["path"].endswith("ci.yml") for h in dot_hits)
 
 
@@ -887,7 +889,7 @@ def test_list_dir(tmp_path: Path) -> None:
     (tmp_path / "y.txt").write_text("y", encoding="utf-8")
     (tmp_path / ".hidden").write_text("h", encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=cfg)
-    out = d.dispatch("list_dir", {"path": "."})
+    out = d.dispatch("list_dir", {"path": "."}).to_wire()
     assert "x/" in out["entries"]
     assert "y.txt" in out["entries"]
     assert ".hidden" in out["entries"]  # hidden entries are included (per the description)
@@ -971,7 +973,7 @@ def test_outline_returns_symbols(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text("def foo():\n    pass\nclass Bar:\n    pass\n", encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=cfg)
-    out = d.dispatch("outline", {"path": "a.py"})
+    out = d.dispatch("outline", {"path": "a.py"}).to_wire()
     names = {(s["name"], s["kind"]) for s in out["symbols"]}
     assert ("foo", "function") in names
     assert ("Bar", "class") in names
@@ -997,7 +999,7 @@ def test_find_definition_returns_relative_paths(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text("def target():\n    pass\n", encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=cfg)
-    out = d.dispatch("find_definition", {"name": "target"})
+    out = d.dispatch("find_definition", {"name": "target"}).to_wire()
     assert len(out["definitions"]) == 1
     assert out["definitions"][0]["path"] == "a.py"
     assert out["definitions"][0]["kind"] == "function"
@@ -1007,7 +1009,7 @@ def test_find_references_returns_relative_paths(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text("def foo():\n    pass\nfoo()\n", encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=cfg)
-    out = d.dispatch("find_references", {"name": "foo"})
+    out = d.dispatch("find_references", {"name": "foo"}).to_wire()
     # Definition + call
     assert len(out["references"]) == 2
     assert all(r["path"] == "a.py" for r in out["references"])
@@ -1018,8 +1020,8 @@ def test_apply_edit_invalidates_index(tmp_path: Path) -> None:
     (tmp_path / "a.py").write_text("def foo():\n    pass\n", encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=cfg)
     # Prime the index
-    assert d.dispatch("find_definition", {"name": "foo"})["definitions"]
-    assert d.dispatch("find_definition", {"name": "bar"})["definitions"] == []
+    assert d.dispatch("find_definition", {"name": "foo"}).to_wire()["definitions"]
+    assert d.dispatch("find_definition", {"name": "bar"}).to_wire()["definitions"] == []
     # Edit the file via the tool layer.
     d.dispatch(
         "apply_edit",
@@ -1034,8 +1036,8 @@ def test_apply_edit_invalidates_index(tmp_path: Path) -> None:
             ],
         },
     )
-    assert d.dispatch("find_definition", {"name": "bar"})["definitions"]
-    assert d.dispatch("find_definition", {"name": "foo"})["definitions"] == []
+    assert d.dispatch("find_definition", {"name": "bar"}).to_wire()["definitions"]
+    assert d.dispatch("find_definition", {"name": "foo"}).to_wire()["definitions"] == []
 
 
 def test_new_index_tools_listed_in_available(tmp_path: Path) -> None:
@@ -1082,7 +1084,7 @@ def test_run_metric_command_invokes_jail(tmp_path: Path, monkeypatch: pytest.Mon
 
     monkeypatch.setattr("agent6.tools.dispatch.run_in_jail", fake_run_in_jail)
     d = ToolDispatcher(root=tmp_path, config=cfg)
-    out = d.dispatch("run_metric_command", {})
+    out = d.dispatch("run_metric_command", {}).to_wire()
     assert out["returncode"] == 0
     assert "CYCLES: 42" in out["stdout"]
     assert captured["argv"] == ("/usr/bin/python3", "-c", 'print("CYCLES: 42")')
@@ -1120,7 +1122,7 @@ def test_run_metric_command_score_null_on_no_match(
 
     monkeypatch.setattr("agent6.tools.dispatch.run_in_jail", fake_run_in_jail)
     d = ToolDispatcher(root=tmp_path, config=cfg)
-    out = d.dispatch("run_metric_command", {})
+    out = d.dispatch("run_metric_command", {}).to_wire()
     assert out["score"] is None
     assert out["returncode"] == 0
     assert "no number here" in out["stdout"]
@@ -1195,10 +1197,10 @@ def test_agent6_docs_tool_lists_and_reads(tmp_path: Path) -> None:
     # agent6_docs reads agent6's own bundled docs (for "how do I use agent6").
     cfg = _config(tmp_path)
     d = ToolDispatcher(root=tmp_path, config=cfg)
-    listing = d.dispatch("agent6_docs", {})
+    listing = d.dispatch("agent6_docs", {}).to_wire()
     assert "CONFIG" in listing["available"]
     assert "README" in listing["available"]
-    doc = d.dispatch("agent6_docs", {"name": "CONFIG"})
+    doc = d.dispatch("agent6_docs", {"name": "CONFIG"}).to_wire()
     assert "content" in doc and len(doc["content"]) > 100
     with pytest.raises(ToolError, match="unknown agent6 doc"):
         d.dispatch("agent6_docs", {"name": "NOPE"})
@@ -1216,7 +1218,7 @@ def test_apply_edit_kind_defaults_to_replace(tmp_path: Path) -> None:
     out = d.dispatch(
         "apply_edit",
         {"path": "f.py", "edits": [{"old_string": "x = 1", "new_string": "x = 9"}]},
-    )
+    ).to_wire()
     assert out["applied"] == ["replace"]
     assert (tmp_path / "f.py").read_text(encoding="utf-8") == "x = 9\ny = 2\n"
 
@@ -1294,7 +1296,7 @@ def test_apply_patch_v4a_update_without_path_arg(tmp_path: Path) -> None:
         "+    return x + 1\n"
         "*** End Patch"
     )
-    out = d.dispatch("apply_patch", {"patch": patch})
+    out = d.dispatch("apply_patch", {"patch": patch}).to_wire()
     assert out["path"] == "m.py"
     assert (tmp_path / "m.py").read_text(
         encoding="utf-8"
@@ -1337,7 +1339,9 @@ def test_apply_patch_unified_still_works_and_path_optional(tmp_path: Path) -> No
     cfg = _config(tmp_path)
     (tmp_path / "x.py").write_text("a\n", encoding="utf-8")
     d = ToolDispatcher(root=tmp_path, config=cfg)
-    out = d.dispatch("apply_patch", {"patch": "--- a/x.py\n+++ b/x.py\n@@ -1 +1 @@\n-a\n+A\n"})
+    out = d.dispatch(
+        "apply_patch", {"patch": "--- a/x.py\n+++ b/x.py\n@@ -1 +1 @@\n-a\n+A\n"}
+    ).to_wire()
     assert out["path"] == "x.py"
     assert (tmp_path / "x.py").read_text(encoding="utf-8") == "A\n"
 
@@ -1531,5 +1535,7 @@ def test_ask_user_accepts_flat_single_question(tmp_path: Path) -> None:
         return tuple(q.options[0] if q.options else "typed" for q in questions)
 
     d = ToolDispatcher(root=tmp_path, config=cfg, questioner=questioner)
-    out = d.dispatch("ask_user", {"question": "Which theme?", "options": ["dark", "light"]})
+    out = d.dispatch(
+        "ask_user", {"question": "Which theme?", "options": ["dark", "light"]}
+    ).to_wire()
     assert out == {"answers": ["dark"]}

@@ -18,6 +18,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 from agent6.providers import ProviderResponse
+from agent6.tools.results import RawResult
 from agent6.workflows.loop import Workflow
 
 
@@ -91,7 +92,7 @@ def _init_repo(repo: Path) -> None:
 
 def _build_wf(repo: Path, provider: MagicMock, **kwargs: Any) -> Workflow:
     dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = {"content": "hi\n"}
+    dispatcher.dispatch.return_value = RawResult({"content": "hi\n"})
     return Workflow(
         root=repo,
         config=MagicMock(

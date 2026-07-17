@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 
 from agent6.config import Config, load_config
 from agent6.providers import ProviderResponse
+from agent6.tools.results import RawResult
 from agent6.types import RepoSummary
 from agent6.workflows import loop as loopmod
 from agent6.workflows.loop import Workflow
@@ -106,7 +107,7 @@ def _finish_resp(summary: str) -> ProviderResponse:
 def _wf(tmp_path: Path, **kw: Any) -> Workflow:
     dispatcher = kw.pop("dispatcher", MagicMock())
     dispatcher.available_tool_names.return_value = []
-    dispatcher.dispatch.return_value = {"acknowledged": True}
+    dispatcher.dispatch.return_value = RawResult({"acknowledged": True})
     defaults: dict[str, Any] = {
         "root": tmp_path,
         "config": _config(tmp_path),

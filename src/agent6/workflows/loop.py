@@ -60,6 +60,7 @@ from agent6.providers import (
 )
 from agent6.skills import ResolvedSkills
 from agent6.tools.dispatch import OperatorCommandUnexecutable, ToolDispatcher, ToolError
+from agent6.tools.results import ExecResult, MetricResult, ToolResult
 from agent6.tools.schema import (
     FinishPlanningInput,
     FinishRunInput,
@@ -1122,7 +1123,7 @@ class Workflow:
             served = None
             try:
                 result = self.dispatcher.dispatch(name, tool_input)
-                content = json.dumps(result, ensure_ascii=False)
+                content = json.dumps(result.to_wire(), ensure_ascii=False)
                 self._note_tool_effects(state, turn, name, result)
                 # Dedupe a back-to-back identical (name, args) call whose result
                 # bytes are unchanged: serve a short stub instead of re-sending
@@ -1181,12 +1182,10 @@ class Workflow:
             self._capture_finish(turn, name, tool_input)
         return None
 
-    def _note_verify_result(
-        self, state: _LoopState, turn: _TurnState, result: dict[str, Any]
-    ) -> None:
+    def _note_verify_result(self, state: _LoopState, turn: _TurnState, result: ExecResult) -> None:
         """Verify bookkeeping: pass/fail flags, the grounding tail, and the
         no-progress streak (consecutive fails sharing one signature)."""
-        rc = result.get("returncode")
+        rc = result.returncode
         if rc == 0:
             turn.verify_just_passed = True
             if state.last_verify_ok is False:
@@ -1195,31 +1194,27 @@ class Workflow:
             # edit is now covered.
             turn.edit_since_verify_pass = False
             state.edited_since_verify = False
-        elif rc is not None:
+        else:
             turn.verify_just_failed = True
             state.verify_ever_failed = True
             # A verify that exited instantly without running any tests (runner
             # absent) is a broken verify, not a real failure: flag it once so
             # the model does not "fix" working code or finish unchecked.
             if not state.verify_broken_warned and verify_did_not_run(
-                str(result.get("stdout", "")),
-                str(result.get("stderr", "")),
-                float(result.get("duration_s", 0.0) or 0.0),
+                result.stdout, result.stderr, result.duration_s
             ):
                 state.verify_broken_warned = True
                 turn.tool_results.append({"type": "text", "text": VERIFY_BROKEN_NUDGE})
                 self._emit("loop.verify_broken.nudge", iteration=turn.iteration)
-        if rc is None:
-            return
         state.last_verify_ok = rc == 0
-        tail = f"{result.get('stdout', '')}\n{result.get('stderr', '')}"
+        tail = f"{result.stdout}\n{result.stderr}"
         state.last_verify_tail = tail.strip()[-2000:]
         if rc == 0:
             state.verify_fail_signature = ""
             state.verify_fail_streak = 0
             state.no_progress_nudges_used = 0
             return
-        sig = verify_failure_signature(str(result.get("stdout", "")), str(result.get("stderr", "")))
+        sig = verify_failure_signature(result.stdout, result.stderr)
         if sig == state.verify_fail_signature:
             state.verify_fail_streak += 1
         else:
@@ -1228,15 +1223,15 @@ class Workflow:
             state.no_progress_nudges_used = 0
 
     def _note_tool_effects(
-        self, state: _LoopState, turn: _TurnState, name: str, result: dict[str, Any]
+        self, state: _LoopState, turn: _TurnState, name: str, result: ToolResult
     ) -> None:
         """Record a dispatched tool's side effects on the turn: verify results
         (they feed auto-commit-on-verify-pass and ground the review panel:
         verify-pass presumes correctness, verify-red is the hard signal),
         manual metric samples, tree edits, and DAG mutations."""
-        if name == "run_verify_command":
+        if name == "run_verify_command" and isinstance(result, ExecResult):
             self._note_verify_result(state, turn, result)
-        elif name == "run_metric_command":
+        elif name == "run_metric_command" and isinstance(result, MetricResult):
             if turn.verify_just_passed:
                 turn.metric_after_verify_pass = True
             turn.metric_feedback = self._record_metric_result(
@@ -2841,7 +2836,7 @@ class Workflow:
     def _record_metric_result(
         self,
         history: list[MetricSample],
-        result: dict[str, Any],
+        result: MetricResult,
         *,
         iteration: int,
         label: str,
@@ -2852,11 +2847,10 @@ class Workflow:
         if goal is None:
             return None
         assert metric_cfg is not None  # goal is None otherwise
-        score = coerce_metric_score(result.get("score"))
-        raw_returncode = result.get("returncode")
-        returncode = raw_returncode if isinstance(raw_returncode, int) else None
-        stdout = str(result.get("stdout", ""))
-        stderr = str(result.get("stderr", ""))
+        score = coerce_metric_score(result.score)
+        returncode = result.returncode
+        stdout = result.stdout
+        stderr = result.stderr
         combined = f"{stdout}\n{stderr}"
         targets = extract_metric_targets(combined, goal=goal)
         at_ceiling = (
@@ -2917,6 +2911,7 @@ class Workflow:
                 error=str(exc)[:200],
             )
             return format_metric_feedback(history, goal=goal)
+        assert isinstance(result, MetricResult)  # run_metric_command's result type
         return self._record_metric_result(
             history,
             result,

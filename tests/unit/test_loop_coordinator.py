@@ -21,6 +21,7 @@ import pytest
 
 from agent6.config import Config
 from agent6.providers import ProviderResponse
+from agent6.tools.results import RawResult
 from agent6.ui.cli.parallel import build_coordinator_spawner
 from agent6.workflows.loop import Workflow
 from agent6.workflows.subrun import LaneResult, LaneSpec, LaneTask
@@ -216,7 +217,7 @@ def _build_wf(
     steer = _OneShotSteer(steer_text)
     disp = dispatcher if dispatcher is not None else MagicMock()
     if dispatcher is None:
-        disp.dispatch.return_value = {"content": "hi\n"}
+        disp.dispatch.return_value = RawResult({"content": "hi\n"})
     return Workflow(
         root=repo,
         config=MagicMock(
@@ -583,9 +584,9 @@ def test_dirty_tree_is_auto_committed_then_dispatched(tmp_path: Path) -> None:
     # The first turn's tool "edits" the tree (an uncommitted run_command write).
     dispatcher = MagicMock()
 
-    def dispatch(_name: str, _input: dict[str, Any]) -> dict[str, Any]:
+    def dispatch(_name: str, _input: dict[str, Any]) -> RawResult:
         (repo / "wip.txt").write_text("uncommitted work\n", encoding="utf-8")
-        return {"content": "wrote wip.txt"}
+        return RawResult({"content": "wrote wip.txt"})
 
     dispatcher.dispatch.side_effect = dispatch
 
@@ -631,9 +632,9 @@ def test_dirty_tree_that_cannot_be_cleaned_refuses(
 
     dispatcher = MagicMock()
 
-    def dispatch(_name: str, _input: dict[str, Any]) -> dict[str, Any]:
+    def dispatch(_name: str, _input: dict[str, Any]) -> RawResult:
         (repo / "wip.txt").write_text("uncommitted\n", encoding="utf-8")
-        return {"content": "ok"}
+        return RawResult({"content": "ok"})
 
     dispatcher.dispatch.side_effect = dispatch
 

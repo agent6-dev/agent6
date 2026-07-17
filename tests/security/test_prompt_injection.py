@@ -158,7 +158,7 @@ def test_grep_skips_symlink_escaping_root_but_searches_in_repo_links(tmp_path: P
         (tmp_path / "real.txt").write_text("GREP-ESCAPE-SECRET in repo", encoding="utf-8")
         (tmp_path / "inlink").symlink_to(tmp_path / "real.txt")
         d = _dispatcher(tmp_path)
-        result = d.dispatch("grep", {"path": ".", "pattern": "GREP-ESCAPE-SECRET"})
+        result = d.dispatch("grep", {"path": ".", "pattern": "GREP-ESCAPE-SECRET"}).to_wire()
         paths = {hit["path"] for hit in result["hits"]}
         assert "leak" not in paths
         assert "sub/nested_leak" not in paths
@@ -261,6 +261,6 @@ def test_injection_in_file_body_is_returned_inert(tmp_path: Path, body: str) -> 
     """
     (tmp_path / "evil.md").write_text(body, encoding="utf-8")
     d = _dispatcher(tmp_path)
-    out = d.dispatch("read_file", {"path": "evil.md"})
+    out = d.dispatch("read_file", {"path": "evil.md"}).to_wire()
     assert out["content"] == body
     assert out["size"] == len(body)

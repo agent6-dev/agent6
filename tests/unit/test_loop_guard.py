@@ -18,6 +18,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 from agent6.providers import ProviderResponse
+from agent6.tools.results import RawResult
 from agent6.workflows.loop import Workflow
 
 
@@ -108,7 +109,7 @@ def test_loop_guard_fires_on_three_identical_calls(tmp_path: Path) -> None:
         _resp_text("ok"),
     ]
     dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = {"content": "hi\n"}
+    dispatcher.dispatch.return_value = RawResult({"content": "hi\n"})
 
     wf = _build_wf(repo, provider, dispatcher)
     result = wf.run("read the file")
@@ -140,7 +141,7 @@ def test_loop_guard_does_not_fire_when_args_change(tmp_path: Path) -> None:
         _resp_text("ok"),
     ]
     dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = {"content": "x"}
+    dispatcher.dispatch.return_value = RawResult({"content": "x"})
 
     wf = _build_wf(repo, provider, dispatcher)
     result = wf.run("read several files")
@@ -162,7 +163,7 @@ def test_loop_guard_does_not_re_fire_back_to_back(tmp_path: Path) -> None:
         _resp_with_tool("read_file", {"path": "x.txt"}, tu_id=f"t{i}") for i in range(5)
     ] + [_resp_text("ok")]
     dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = {"content": "hi\n"}
+    dispatcher.dispatch.return_value = RawResult({"content": "hi\n"})
 
     wf = _build_wf(repo, provider, dispatcher)
     wf.run("loop")
@@ -190,7 +191,7 @@ def test_loop_guard_kills_run_when_streak_passes_threshold(tmp_path: Path) -> No
         _resp_with_tool("read_file", {"path": "x.txt"}, tu_id=f"t{i}") for i in range(12)
     ] + [_resp_text("never reached")]
     dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = {"content": "hi\n"}
+    dispatcher.dispatch.return_value = RawResult({"content": "hi\n"})
 
     wf = Workflow(
         root=repo,
@@ -225,7 +226,7 @@ def test_loop_guard_kill_disabled_when_threshold_zero(tmp_path: Path) -> None:
         _resp_with_tool("read_file", {"path": "x.txt"}, tu_id=f"t{i}") for i in range(6)
     ] + [_resp_text("done")]
     dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = {"content": "hi\n"}
+    dispatcher.dispatch.return_value = RawResult({"content": "hi\n"})
 
     wf = Workflow(
         root=repo,

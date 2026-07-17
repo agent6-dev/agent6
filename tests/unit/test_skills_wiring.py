@@ -147,7 +147,7 @@ class TestUseSkillTool:
         sd = _skills_env(tmp_path, monkeypatch)
         _install(sd, "tidy")
         d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-        out = d.dispatch("use_skill", {"name": "tidy"})
+        out = d.dispatch("use_skill", {"name": "tidy"}).to_wire()
         assert out["skill"] == "tidy"
         assert out["file"] == "SKILL.md"
         assert "Do tidy." in out["content"]
@@ -160,7 +160,7 @@ class TestUseSkillTool:
         (skill_dir / "references").mkdir()
         (skill_dir / "references" / "extra.md").write_text("EXTRA CONTENT\n", encoding="utf-8")
         d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-        out = d.dispatch("use_skill", {"name": "tidy", "file": "references/extra.md"})
+        out = d.dispatch("use_skill", {"name": "tidy", "file": "references/extra.md"}).to_wire()
         assert out["content"] == "EXTRA CONTENT\n"
 
     def test_traversal_refused(self, tmp_path: Path, monkeypatch: object) -> None:

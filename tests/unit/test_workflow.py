@@ -22,6 +22,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agent6.providers import ProviderError, ProviderResponse
+from agent6.tools.results import ExecResult, MetricResult, RawResult, ToolResult
 from agent6.workflows.loop import Workflow
 
 
@@ -561,20 +562,23 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(tmp_path: Path) -> None:
         def __init__(self) -> None:
             self.calls: list[str] = []
 
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             self.calls.append(name)
             if name == "run_verify_command":
-                return {"returncode": 0, "stdout": "", "stderr": "", "duration_s": 0.1}
+                return ExecResult(
+                    returncode=0, stdout="", stderr="", duration_s=0.1, exec_failed=False
+                )
             if name == "run_metric_command":
-                return {
-                    "returncode": 0,
-                    "stdout": "CYCLES: 42\n",
-                    "stderr": "",
-                    "duration_s": 0.1,
-                    "score": 42.0,
-                }
+                return MetricResult(
+                    returncode=0,
+                    stdout="CYCLES: 42\n",
+                    stderr="",
+                    duration_s=0.1,
+                    exec_failed=False,
+                    score=42.0,
+                )
             if name == "finish_run":
-                return {"acknowledged": True, "summary": raw_input["summary"]}
+                return RawResult({"acknowledged": True, "summary": raw_input["summary"]})
             raise AssertionError(f"unexpected tool: {name}")
 
     provider = ProviderStub()
@@ -631,11 +635,13 @@ def test_drive_loop_tracks_iterations_reached(tmp_path: Path) -> None:
             return _tool_resp("finish_run", {"summary": "done"}, tool_id="tool-2")
 
     class DispatcherStub:
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             if name == "run_verify_command":
-                return {"returncode": 0, "stdout": "", "stderr": "", "duration_s": 0.1}
+                return ExecResult(
+                    returncode=0, stdout="", stderr="", duration_s=0.1, exec_failed=False
+                )
             if name == "finish_run":
-                return {"acknowledged": True, "summary": raw_input["summary"]}
+                return RawResult({"acknowledged": True, "summary": raw_input["summary"]})
             raise AssertionError(f"unexpected tool: {name}")
 
     config = SimpleNamespace(
@@ -690,11 +696,13 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: Path) -
         def __init__(self) -> None:
             self.calls: list[str] = []
 
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             del raw_input
             self.calls.append(name)
             if name == "run_verify_command":
-                return {"returncode": 0, "stdout": "", "stderr": "", "duration_s": 0.1}
+                return ExecResult(
+                    returncode=0, stdout="", stderr="", duration_s=0.1, exec_failed=False
+                )
             if name == "run_metric_command":
                 raise OperatorCommandUnexecutable("metric command '/x/uv' not in jail")
             raise AssertionError(f"unexpected tool: {name}")
@@ -762,13 +770,15 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(tmp_path
             return _tool_resp("finish_run", {"summary": "done"}, tool_id="fin")
 
     class DispatcherStub:
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             if name == "run_verify_command":
-                return {"returncode": 0, "stdout": "", "stderr": "", "duration_s": 0.1}
+                return ExecResult(
+                    returncode=0, stdout="", stderr="", duration_s=0.1, exec_failed=False
+                )
             if name == "apply_edit":
-                return {"ok": True}
+                return RawResult({"ok": True})
             if name == "finish_run":
-                return {"acknowledged": True, "summary": raw_input["summary"]}
+                return RawResult({"acknowledged": True, "summary": raw_input["summary"]})
             raise AssertionError(f"unexpected tool: {name}")
 
     provider = ProviderStub()
@@ -882,9 +892,9 @@ def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: Path) -> None
             return _tool_resp("finish_run", {"summary": "done"}, tool_id="fin")
 
     class DispatcherStub:
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             if name == "finish_run":
-                return {"acknowledged": True, "summary": raw_input["summary"]}
+                return RawResult({"acknowledged": True, "summary": raw_input["summary"]})
             raise AssertionError(f"unexpected tool: {name}")
 
     provider = ProviderStub()
@@ -939,20 +949,23 @@ def test_drive_loop_finishes_on_metric_plateau(tmp_path: Path) -> None:
             # only stops on the 4th, so we need four tied samples at the end.
             self.scores = iter([100.0, 80.0, 60.0, 50.0, 50.0, 50.0, 50.0, 50.0])
 
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             del raw_input
             self.calls.append(name)
             if name == "run_verify_command":
-                return {"returncode": 0, "stdout": "", "stderr": "", "duration_s": 0.1}
+                return ExecResult(
+                    returncode=0, stdout="", stderr="", duration_s=0.1, exec_failed=False
+                )
             if name == "run_metric_command":
                 score = next(self.scores)
-                return {
-                    "returncode": 0,
-                    "stdout": f"CYCLES: {score:g}\n",
-                    "stderr": "",
-                    "duration_s": 0.1,
-                    "score": score,
-                }
+                return MetricResult(
+                    returncode=0,
+                    stdout=f"CYCLES: {score:g}\n",
+                    stderr="",
+                    duration_s=0.1,
+                    exec_failed=False,
+                    score=score,
+                )
             raise AssertionError(f"unexpected tool: {name}")
 
     provider = ProviderStub()
@@ -1017,21 +1030,24 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: Path) -> None:
             self.calls: list[str] = []
             self.scores = iter([100.0, 80.0, 60.0, 50.0, 50.0])
 
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             self.calls.append(name)
             if name == "run_verify_command":
-                return {"returncode": 0, "stdout": "", "stderr": "", "duration_s": 0.1}
+                return ExecResult(
+                    returncode=0, stdout="", stderr="", duration_s=0.1, exec_failed=False
+                )
             if name == "run_metric_command":
                 score = next(self.scores)
-                return {
-                    "returncode": 0,
-                    "stdout": f"CYCLES: {score:g}\n",
-                    "stderr": "",
-                    "duration_s": 0.1,
-                    "score": score,
-                }
+                return MetricResult(
+                    returncode=0,
+                    stdout=f"CYCLES: {score:g}\n",
+                    stderr="",
+                    duration_s=0.1,
+                    exec_failed=False,
+                    score=score,
+                )
             if name == "finish_run":
-                return {"acknowledged": True, "summary": raw_input["summary"]}
+                return RawResult({"acknowledged": True, "summary": raw_input["summary"]})
             raise AssertionError(f"unexpected tool: {name}")
 
     provider = ProviderStub()
@@ -1109,21 +1125,24 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: Pa
             # so the FINAL nudge fires on samples 9/10/11 and the run stops on 12.
             self.scores = iter([100.0, 80.0, 60.0, 50.0] + [50.0] * 8)
 
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             del raw_input
             self.calls.append(name)
             if name == "run_verify_command":
-                return {"returncode": 0, "stdout": "", "stderr": "", "duration_s": 0.1}
+                return ExecResult(
+                    returncode=0, stdout="", stderr="", duration_s=0.1, exec_failed=False
+                )
             if name == "run_metric_command":
                 self.metric_count += 1
                 score = next(self.scores)
-                return {
-                    "returncode": 0,
-                    "stdout": f"CYCLES: {score:g}\n",
-                    "stderr": "",
-                    "duration_s": 0.1,
-                    "score": score,
-                }
+                return MetricResult(
+                    returncode=0,
+                    stdout=f"CYCLES: {score:g}\n",
+                    stderr="",
+                    duration_s=0.1,
+                    exec_failed=False,
+                    score=score,
+                )
             raise AssertionError(f"unexpected tool: {name}")
 
     provider = ProviderStub()
@@ -1193,9 +1212,9 @@ def test_drive_loop_plan_finish_nudge_fires_once_at_iter_cap(tmp_path: Path) -> 
             return _tool_resp("read_file", {"path": f"f{self.calls}.py"}, tool_id=f"r-{self.calls}")
 
     class DispatcherStub:
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             assert name == "read_file"
-            return {"content": "..."}
+            return RawResult({"content": "..."})
 
     provider = ProviderStub()
     wf = _wf(
@@ -1239,8 +1258,8 @@ def test_drive_loop_plan_finish_nudge_fires_on_low_budget(
             return _tool_resp("read_file", {"path": f"f{self.calls}.py"}, tool_id=f"r-{self.calls}")
 
     class DispatcherStub:
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
-            return {"content": "..."}
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+            return RawResult({"content": "..."})
 
     provider = ProviderStub()
     wf = _wf(
@@ -1284,8 +1303,8 @@ def test_drive_loop_run_budget_nudge_forces_verify_and_finish(
             return _tool_resp("list_dir", {"path": "."}, tool_id=f"l-{self.calls}")
 
     class DispatcherStub:
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
-            return {"content": "..."}
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+            return RawResult({"content": "..."})
 
     provider = ProviderStub()
     wf = _wf(
@@ -1325,8 +1344,10 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: Path) -> None:
             return _tool_resp("run_command", {"cmd": f"ls {self.calls}"}, tool_id=f"c{self.calls}")
 
     class DispatcherStub:
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
-            return {"returncode": 0, "stdout": "ok", "stderr": "", "duration_s": 0.1}
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+            return ExecResult(
+                returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
+            )
 
     provider = ProviderStub()
     config = SimpleNamespace(
@@ -1380,10 +1401,10 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(tmp_path: P
             return _tool_resp("read_file", {"path": f"f{self.calls}.py"}, tool_id=f"r{self.calls}")
 
     class DispatcherStub:
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             if name == "finish_run":
-                return {"acknowledged": True, "summary": raw_input["summary"]}
-            return {"content": "..."}
+                return RawResult({"acknowledged": True, "summary": raw_input["summary"]})
+            return RawResult({"content": "..."})
 
     provider = ProviderStub()
     config = SimpleNamespace(
@@ -1420,8 +1441,10 @@ def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: Path) -> None:
             return _tool_resp("run_verify_command", tool_id=f"v{self.calls}")  # always re-verify
 
     class DispatcherStub:
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
-            return {"returncode": 0, "stdout": "ok", "stderr": "", "duration_s": 0.1}
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+            return ExecResult(
+                returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
+            )
 
     provider = ProviderStub()
     config = SimpleNamespace(
@@ -1469,8 +1492,19 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: Path) -> Non
             return _tool_resp("run_command", {"cmd": f"ls {self.calls}"}, tool_id=f"c{self.calls}")
 
     class DispatcherStub:
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
-            return {"returncode": 0, "stdout": "ok", "stderr": "", "duration_s": 0.1}
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+            if name == "run_metric_command":
+                return MetricResult(
+                    returncode=0,
+                    stdout="ok",
+                    stderr="",
+                    duration_s=0.1,
+                    exec_failed=False,
+                    score=None,
+                )
+            return ExecResult(
+                returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
+            )
 
     provider = ProviderStub()
     # goal set -> this is a metric run (still mode=="run")
@@ -1561,20 +1595,23 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: Path) -> N
             # Plateaus at the 5th sample and stays flat thereafter.
             self.scores = iter([100.0, 80.0, 60.0, 50.0] + [50.0] * 20)
 
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             del raw_input
             self.calls.append(name)
             if name == "run_verify_command":
-                return {"returncode": 0, "stdout": "", "stderr": "", "duration_s": 0.1}
+                return ExecResult(
+                    returncode=0, stdout="", stderr="", duration_s=0.1, exec_failed=False
+                )
             if name == "run_metric_command":
                 score = next(self.scores)
-                return {
-                    "returncode": 0,
-                    "stdout": f"CYCLES: {score:g}\n",
-                    "stderr": "",
-                    "duration_s": 0.1,
-                    "score": score,
-                }
+                return MetricResult(
+                    returncode=0,
+                    stdout=f"CYCLES: {score:g}\n",
+                    stderr="",
+                    duration_s=0.1,
+                    exec_failed=False,
+                    score=score,
+                )
             raise AssertionError(f"unexpected tool: {name}")
 
     provider = ProviderStub()
@@ -1644,9 +1681,9 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: Path) -> No
             )
 
     class DispatcherStub:
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             del name, raw_input
-            return {"ok": True}
+            return RawResult({"ok": True})
 
     provider = ProviderStub()
     config = SimpleNamespace(
@@ -1702,9 +1739,9 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: Path) -> None:
             return _tool_resp("finish_run", {"summary": "done"}, tool_id=f"finish-{self.calls}")
 
     class DispatcherStub:
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             del name, raw_input
-            return {"ok": True}
+            return RawResult({"ok": True})
 
     provider = ProviderStub()
     config = SimpleNamespace(
@@ -1803,19 +1840,22 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
             )
 
     class DispatcherStub:
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             del raw_input
             if name == "run_verify_command":
-                return {"returncode": 0, "stdout": "", "stderr": "", "duration_s": 0.1}
+                return ExecResult(
+                    returncode=0, stdout="", stderr="", duration_s=0.1, exec_failed=False
+                )
             if name == "run_metric_command":
-                return {
-                    "returncode": 0,
-                    "stdout": "SCORE: 27/27\n",
-                    "stderr": "",
-                    "duration_s": 0.1,
-                    "score": 27.0,
-                }
-            return {"ok": True}
+                return MetricResult(
+                    returncode=0,
+                    stdout="SCORE: 27/27\n",
+                    stderr="",
+                    duration_s=0.1,
+                    exec_failed=False,
+                    score=27.0,
+                )
+            return RawResult({"ok": True})
 
     provider = ProviderStub()
     config = SimpleNamespace(
@@ -2577,9 +2617,9 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: Path) -> None:
             )
 
     class DispatcherStub:
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             del name, raw_input
-            return {"ok": True}
+            return RawResult({"ok": True})
 
     provider = ProviderStub()
     pending = {"stop": True}
@@ -2663,10 +2703,10 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: Path) -> 
             return _resp("SUMMARY of progress so far")  # no checkoff block
 
     class DispatcherStub:
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             if name == "finish_run":
-                return {"acknowledged": True, "summary": raw_input.get("summary", "")}
-            return {"ok": True}
+                return RawResult({"acknowledged": True, "summary": raw_input.get("summary", "")})
+            return RawResult({"ok": True})
 
     events = EventSink(tmp_path / "logs.jsonl")
     cur = _FakeCurator(
@@ -3236,10 +3276,10 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: Path) -> None:
             return _resp("SUMMARY of progress so far")
 
     class DispatcherStub:
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             if name == "finish_run":
-                return {"acknowledged": True, "summary": raw_input.get("summary", "")}
-            return {"ok": True}
+                return RawResult({"acknowledged": True, "summary": raw_input.get("summary", "")})
+            return RawResult({"ok": True})
 
     events = EventSink(tmp_path / "logs.jsonl")
     summ = SummariserStub()
@@ -3342,8 +3382,10 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: Path) -> None:
             return _tool_resp("run_command", {"cmd": f"ls {self.calls}"}, tool_id=f"c{self.calls}")
 
     class DispatcherStub:
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
-            return {"returncode": 0, "stdout": "ok", "stderr": "", "duration_s": 0.1}
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+            return ExecResult(
+                returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
+            )
 
     provider = ProviderStub()
     config = SimpleNamespace(
@@ -3527,9 +3569,9 @@ def test_question_nudge_then_accept(tmp_path: Path) -> None:
             return _resp("Anything else you want?")  # would-be second question
 
     class DispatcherStub:
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             if name == "ask_user":
-                return {"answers": ["dracula"]}
+                return RawResult({"answers": ["dracula"]})
             raise AssertionError(f"unexpected tool: {name}")
 
     provider = ProviderStub()
@@ -3609,21 +3651,19 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: Path) -> 
         def __init__(self) -> None:
             self.verifies = 0
 
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             if name == "run_verify_command":
                 self.verifies += 1
-                return {
-                    "returncode": 1,
-                    "stdout": "",
-                    # line number drifts run to run; the signature must not care
-                    "stderr": (
-                        f'File "t.py", line {40 + self.verifies}\nAssertionError: want 3 got 2'
-                    ),
-                    "duration_s": 0.1,
-                }
+                return ExecResult(
+                    returncode=1,
+                    stdout="",
+                    stderr=f'File "t.py", line {40 + self.verifies}\nAssertionError: want 3 got 2',
+                    duration_s=0.1,
+                    exec_failed=False,
+                )
             if name == "apply_edit":
-                return {"applied": True, "path": "f.py"}
-            return {"ok": True}
+                return RawResult({"applied": True, "path": "f.py"})
+            return RawResult({"ok": True})
 
     provider = ProviderStub()
     config = SimpleNamespace(
@@ -3679,16 +3719,17 @@ def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: Path) -> N
         def __init__(self) -> None:
             self.verifies = 0
 
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             if name == "run_verify_command":
                 self.verifies += 1
-                return {
-                    "returncode": 1,
-                    "stdout": "",
-                    "stderr": f"AssertionError: case {self.verifies} failed",
-                    "duration_s": 0.1,
-                }
-            return {"ok": True}
+                return ExecResult(
+                    returncode=1,
+                    stdout="",
+                    stderr=f"AssertionError: case {self.verifies} failed",
+                    duration_s=0.1,
+                    exec_failed=False,
+                )
+            return RawResult({"ok": True})
 
     provider = ProviderStub()
     config = SimpleNamespace(
@@ -3753,10 +3794,12 @@ def _spec_recheck_wf(tmp_path: Path, provider: Any, dispatcher: Any, *, on: bool
 
 
 class _GreenDispatcher:
-    def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+    def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
         if name == "run_verify_command":
-            return {"returncode": 0, "stdout": "ok", "stderr": "", "duration_s": 0.1}
-        return {"ok": True}
+            return ExecResult(
+                returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
+            )
+        return RawResult({"ok": True})
 
 
 def test_drive_loop_spec_recheck_bounces_first_green_finish(tmp_path: Path) -> None:
@@ -3879,17 +3922,18 @@ def test_drive_loop_no_progress_stops_after_unheeded_interventions(tmp_path: Pat
             return _tool_resp("run_verify_command", tool_id=f"v{self.calls}")
 
     class DispatcherStub:
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             if name == "run_verify_command":
-                return {
-                    "returncode": 1,
-                    "stdout": "",
-                    "stderr": "AssertionError: want 3 got 2",
-                    "duration_s": 0.1,
-                }
+                return ExecResult(
+                    returncode=1,
+                    stdout="",
+                    stderr="AssertionError: want 3 got 2",
+                    duration_s=0.1,
+                    exec_failed=False,
+                )
             if name == "apply_edit":
-                return {"applied": True, "path": "f.py"}
-            return {"ok": True}
+                return RawResult({"applied": True, "path": "f.py"})
+            return RawResult({"ok": True})
 
     provider = ProviderStub()
     config = SimpleNamespace(
@@ -3996,8 +4040,8 @@ def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: Path) -> 
             return _resp("Done: applied the fix.")
 
     class DispatcherStub:
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
-            return {"applied": True, "path": "f.py"}
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+            return RawResult({"applied": True, "path": "f.py"})
 
     provider = ProviderStub()
     config = SimpleNamespace(
@@ -4057,17 +4101,18 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: Path) -> None:
             return _tool_resp("run_verify_command", tool_id=f"v{self.calls}")
 
     class DispatcherStub:
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             if name == "run_verify_command":
-                return {
-                    "returncode": 1,
-                    "stdout": "",
-                    "stderr": "AssertionError: want 3 got 2",
-                    "duration_s": 0.1,
-                }
+                return ExecResult(
+                    returncode=1,
+                    stdout="",
+                    stderr="AssertionError: want 3 got 2",
+                    duration_s=0.1,
+                    exec_failed=False,
+                )
             if name == "apply_edit":
-                return {"applied": True, "path": "f.py"}
-            return {"ok": True}
+                return RawResult({"applied": True, "path": "f.py"})
+            return RawResult({"ok": True})
 
     provider = ProviderStub()
     # metric configured -> this is an optimization run
@@ -4121,10 +4166,10 @@ def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: Path) 
     big = "X" * 4000
 
     class DispatcherStub:
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             if name == "read_file":
-                return {"content": big, "size": len(big)}
-            return {"ok": True}
+                return RawResult({"content": big, "size": len(big)})
+            return RawResult({"ok": True})
 
     provider = ProviderStub()
     config = SimpleNamespace(
@@ -4199,7 +4244,7 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: Path) -> None:
     from agent6.tools.errors import ToolError as _TE
 
     class DispatcherStub:
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             raise _TE("grep: the arguments were not valid JSON. Resend the call.")
 
     provider = ProviderStub()
@@ -4259,10 +4304,10 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: Path) -> None:
         def __init__(self) -> None:
             self.n = 0
 
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             self.n += 1
             if self.n % 2 == 0:  # alternate error / success
-                return {"hits": [], "content": "ok"}
+                return RawResult({"hits": [], "content": "ok"})
             raise _TE("grep: bad pattern")
 
     provider = ProviderStub()
@@ -4310,7 +4355,13 @@ def test_note_verify_result_flags_a_dead_verify(tmp_path: Path) -> None:
     wf._note_verify_result(  # pyright: ignore[reportPrivateUsage]
         st,
         turn,
-        {"returncode": 1, "stdout": "", "stderr": "No module named pytest", "duration_s": 0.02},
+        ExecResult(
+            returncode=1,
+            stdout="",
+            stderr="No module named pytest",
+            duration_s=0.02,
+            exec_failed=False,
+        ),
     )
     texts = [b["text"] for b in turn.tool_results if b.get("type") == "text"]
     assert any(VERIFY_BROKEN_NUDGE[:24] in t for t in texts)
@@ -4321,7 +4372,13 @@ def test_note_verify_result_flags_a_dead_verify(tmp_path: Path) -> None:
     wf._note_verify_result(  # pyright: ignore[reportPrivateUsage]
         st,
         turn2,
-        {"returncode": 1, "stdout": "", "stderr": "No module named pytest", "duration_s": 0.02},
+        ExecResult(
+            returncode=1,
+            stdout="",
+            stderr="No module named pytest",
+            duration_s=0.02,
+            exec_failed=False,
+        ),
     )
     assert not any("verify-broken" in b.get("text", "") for b in turn2.tool_results)
 
@@ -4336,12 +4393,13 @@ def test_note_verify_result_does_not_flag_real_failure(tmp_path: Path) -> None:
     wf._note_verify_result(  # pyright: ignore[reportPrivateUsage]
         st,
         turn,
-        {
-            "returncode": 1,
-            "stdout": "5 failed, 200 passed",
-            "stderr": "AssertionError: x != y",
-            "duration_s": 12.4,
-        },
+        ExecResult(
+            returncode=1,
+            stdout="5 failed, 200 passed",
+            stderr="AssertionError: x != y",
+            duration_s=12.4,
+            exec_failed=False,
+        ),
     )
     texts = [b.get("text", "") for b in turn.tool_results]
     assert not any(VERIFY_BROKEN_NUDGE[:24] in t for t in texts)
@@ -4372,7 +4430,7 @@ def test_tool_error_spiral_names_a_host_present_tool(tmp_path: Path) -> None:
     from agent6.tools.errors import ToolError as _TE
 
     class DispatcherStub:
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             raise _TE("python3: boom in the sandbox")
 
     provider = ProviderStub()
@@ -4428,7 +4486,7 @@ def test_tool_error_spiral_silent_for_nonexistent_binary(tmp_path: Path) -> None
     from agent6.tools.errors import ToolError as _TE
 
     class DispatcherStub:
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
             raise _TE("totally-not-a-real-binary-xyz: not found")
 
     provider = ProviderStub()

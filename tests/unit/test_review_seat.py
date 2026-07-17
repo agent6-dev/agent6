@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 from agent6.providers import Provider, ProviderError
+from agent6.tools.results import RawResult, ToolResult
 from agent6.workflows._panel import ReviewContext
 from agent6.workflows._review import (
     ReviewSeat,
@@ -245,9 +246,9 @@ def test_explore_review_uses_tools_then_verdicts() -> None:
     )
     dispatched: list[str] = []
 
-    def dispatch(name: str, inp: dict[str, Any]) -> dict[str, Any]:
+    def dispatch(name: str, inp: dict[str, Any]) -> ToolResult:
         dispatched.append(name)
-        return {"matches": ["caller.py:9: read_doc(x)"]}
+        return RawResult({"matches": ["caller.py:9: read_doc(x)"]})
 
     v = explore_review(
         cast(Provider, provider), _ctx(), seat="security", model="m1", tools=[], dispatch=dispatch
@@ -273,7 +274,7 @@ def test_explore_review_abstains_when_no_verdict_in_budget() -> None:
         seat="s",
         model="m1",
         tools=[],
-        dispatch=lambda n, i: {"entries": []},
+        dispatch=lambda n, i: RawResult({"entries": []}),
         max_iters=3,
     )
     assert v.error is not None and provider.calls == 3  # bounded, abstains (never false-pass)
@@ -294,9 +295,9 @@ def test_explore_review_skips_dispatch_on_final_iteration() -> None:
     )
     dispatched: list[str] = []
 
-    def dispatch(name: str, inp: dict[str, Any]) -> dict[str, Any]:
+    def dispatch(name: str, inp: dict[str, Any]) -> ToolResult:
         dispatched.append(name)
-        return {"ok": True}
+        return RawResult({"ok": True})
 
     v = explore_review(
         cast(Provider, provider),
@@ -328,7 +329,7 @@ def test_run_panel_routes_explore_tier_seats() -> None:
         quorum=2,
         panel_id="p",
         tools=[],
-        dispatch=lambda n, i: {"ok": True},
+        dispatch=lambda n, i: RawResult({"ok": True}),
     )
     assert prov.calls == 2 and res.blocked is True  # explore seat ran the tool loop + blocked
 
@@ -364,7 +365,7 @@ def test_explore_review_honors_verdict_alongside_tool_use_on_last_iter() -> None
         seat="s",
         model="m1",
         tools=[],
-        dispatch=lambda n, i: {"ok": True},
+        dispatch=lambda n, i: RawResult({"ok": True}),
         max_iters=1,
     )
     assert v.error is None and v.verdict == "block"

@@ -130,7 +130,9 @@ def test_dispatch_add_memory_persists(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     state = tmp_path / "state"
     d = ToolDispatcher(root=tmp_path, config=cfg, state_dir=state)
-    out = d.dispatch("add_memory", {"scope": "facts", "body": "the suite takes 4 minutes"})
+    out = d.dispatch(
+        "add_memory", {"scope": "facts", "body": "the suite takes 4 minutes"}
+    ).to_wire()
     assert len(out["id"]) == 26
     entries = list_entries(state, "facts")
     assert [e.body for e in entries] == ["the suite takes 4 minutes"]
@@ -142,7 +144,9 @@ def test_dispatch_invalidate_memory_roundtrip(tmp_path: Path) -> None:
     state = tmp_path / "state"
     e = add(state, "decisions", "use tabs")
     d = ToolDispatcher(root=tmp_path, config=cfg, state_dir=state)
-    out = d.dispatch("invalidate_memory", {"memory_id": e.id, "reason": "operator uses spaces"})
+    out = d.dispatch(
+        "invalidate_memory", {"memory_id": e.id, "reason": "operator uses spaces"}
+    ).to_wire()
     assert out["id"] == e.id
     assert out["invalidated_at"]
     assert not list_entries(state, "decisions")[0].is_active

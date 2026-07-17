@@ -23,6 +23,7 @@ from typing import Any
 
 from agent6.prompts.review import EXPLORE_REVIEW_SYSTEM_PROMPT, REVIEW_SYSTEM_PROMPT
 from agent6.providers import Provider, ProviderError, ToolDefinition
+from agent6.tools.results import ToolResult
 from agent6.workflows._panel import (
     ALL_CATEGORIES,
     Finding,
@@ -34,7 +35,7 @@ from agent6.workflows._panel import (
 )
 
 # A read-only dispatch callable for explore-tier seats: (tool_name, input) -> result.
-ReviewDispatch = Callable[[str, dict[str, Any]], Any]
+ReviewDispatch = Callable[[str, dict[str, Any]], ToolResult]
 
 
 @dataclass(frozen=True, slots=True)
@@ -243,7 +244,7 @@ def explore_review(
             tu_id = tu.get("id", "")
             try:
                 out = dispatch(name, tu.get("input", {}) or {})
-                content = json.dumps(out, ensure_ascii=False)[:8000]
+                content = json.dumps(out.to_wire(), ensure_ascii=False)[:8000]
             except Exception as exc:
                 content = f"error: {exc}"[:2000]
             tool_results.append({"type": "tool_result", "tool_use_id": tu_id, "content": content})

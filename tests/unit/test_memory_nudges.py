@@ -12,6 +12,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 from agent6.config import Config
+from agent6.tools.results import AddMemoryResult, ExecResult
 from agent6.workflows._nudges import MEMORY_FINISH_NUDGE, MEMORY_FLIP_NUDGE
 from agent6.workflows.loop import (
     Workflow,
@@ -42,7 +43,10 @@ def _turn(iteration: int = 1, **kw: Any) -> _TurnState:
 
 def _verify(wf: Workflow, state: _LoopState, turn: _TurnState, rc: int) -> None:
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
-        state, turn, "run_verify_command", {"returncode": rc, "stdout": "", "stderr": ""}
+        state,
+        turn,
+        "run_verify_command",
+        ExecResult(returncode=rc, stdout="", stderr="", duration_s=0.0, exec_failed=False),
     )
 
 
@@ -102,7 +106,10 @@ def test_add_memory_dispatch_marks_memory_written() -> None:
     state = _state()
     turn = _turn(1)
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
-        state, turn, "add_memory", {"id": "x" * 26, "scope": "facts", "created_at": "2026"}
+        state,
+        turn,
+        "add_memory",
+        AddMemoryResult(id="x" * 26, scope="facts", created_at="2026"),
     )
     assert state.memory_written is True
 

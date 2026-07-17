@@ -9,6 +9,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 from agent6.providers import ProviderError, ProviderResponse
+from agent6.tools.results import RawResult
 from agent6.workflows import loop as loopmod
 from agent6.workflows.loop import Workflow
 
@@ -204,7 +205,7 @@ def test_before_finish_critic_revokes_finish_and_injects_critique() -> None:
     ]
 
     dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = {"ok": True}
+    dispatcher.dispatch.return_value = RawResult({"ok": True})
 
     wf = _wf(
         provider=worker,
@@ -255,7 +256,7 @@ def test_before_finish_critic_satisfied_accepts_finish() -> None:
     critic.call.return_value = _resp("* clean\n\nVERDICT: SATISFIED")
 
     dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = {"ok": True}
+    dispatcher.dispatch.return_value = RawResult({"ok": True})
 
     wf = _wf(
         provider=worker,
@@ -298,7 +299,7 @@ def test_before_finish_rejection_cap_lets_finish_through() -> None:
     critic.call.return_value = _resp("* nope\n\nVERDICT: NEEDS_WORK")
 
     dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = {"ok": True}
+    dispatcher.dispatch.return_value = RawResult({"ok": True})
 
     wf = _wf(
         provider=worker,
@@ -345,7 +346,7 @@ def test_before_finish_satisfied_resets_rejection_counter() -> None:
         _resp("VERDICT: SATISFIED"),
     ]
     dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = {"ok": True}
+    dispatcher.dispatch.return_value = RawResult({"ok": True})
 
     wf = _wf(
         provider=worker,
@@ -377,7 +378,7 @@ def test_critic_mode_off_never_calls_critic() -> None:
     worker.call.return_value = _resp_with_tool_use("done", _finish_tool_use("tu1", "summary"))
     critic = MagicMock()
     dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = {}
+    dispatcher.dispatch.return_value = RawResult({})
     wf = _wf(
         provider=worker,
         dispatcher=dispatcher,

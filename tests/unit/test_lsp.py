@@ -190,7 +190,7 @@ def test_lsp_find_definition_e2e(tmp_path: Path) -> None:
         result = d.dispatch(
             "find_definition_lsp",
             {"path": "mod.py", "symbol": "helper"},
-        )
+        ).to_wire()
     finally:
         d.close()
     assert "definitions" in result
@@ -210,7 +210,7 @@ def test_lsp_find_references_e2e(tmp_path: Path) -> None:
         result = d.dispatch(
             "find_references_lsp",
             {"path": "mod.py", "symbol": "helper"},
-        )
+        ).to_wire()
     finally:
         d.close()
     refs = result["references"]

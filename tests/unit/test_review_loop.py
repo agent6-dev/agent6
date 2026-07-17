@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+from agent6.tools.results import RawResult
 from agent6.workflows._review import ReviewSeat
 from agent6.workflows.loop import Workflow
 from tests.unit.test_critic import (
@@ -42,7 +43,9 @@ def _seat(provider: Any, persona: str = "security", model: str = "m1") -> Review
 
 def _disp() -> MagicMock:
     d = MagicMock()
-    d.dispatch.return_value = {"ok": True}  # JSON-serializable (finish_run is dispatched)
+    d.dispatch.return_value = RawResult(
+        {"ok": True}
+    )  # JSON-serializable (finish_run is dispatched)
     return d
 
 

@@ -332,13 +332,13 @@ class MCPServer:
     # ---- tool handlers -----
 
     def _h_run_verify(self, _args: dict[str, Any]) -> dict[str, Any]:
-        return self._dispatcher.dispatch("run_verify_command", {})
+        return self._dispatcher.dispatch("run_verify_command", {}).to_wire()
 
     def _h_run_in_sandbox(self, args: dict[str, Any]) -> dict[str, Any]:
         argv = args.get("argv")
         if not isinstance(argv, list) or not argv or not all(isinstance(s, str) for s in argv):
             raise ToolError("argv must be a non-empty list of strings")
-        return self._dispatcher.dispatch("run_command", {"argv": list(argv)})
+        return self._dispatcher.dispatch("run_command", {"argv": list(argv)}).to_wire()
 
     def _h_apply_patch_in_sandbox(self, args: dict[str, Any]) -> dict[str, Any]:
         path = args.get("path")
@@ -347,7 +347,7 @@ class MCPServer:
             raise ToolError("path and patch must be strings")
         apply_result = self._dispatcher.dispatch("apply_patch", {"path": path, "patch": patch})
         verify_result = self._dispatcher.dispatch("run_verify_command", {})
-        return {"apply": apply_result, "verify": verify_result}
+        return {"apply": apply_result.to_wire(), "verify": verify_result.to_wire()}
 
     def _h_query_dag(self, args: dict[str, Any]) -> dict[str, Any]:
         run_id_arg = args.get("run_id")

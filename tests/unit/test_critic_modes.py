@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+from agent6.tools.results import ExecResult, RawResult
 from tests.unit.test_critic import (
     _finish_tool_use,  # pyright: ignore[reportPrivateUsage]
     _resp,  # pyright: ignore[reportPrivateUsage]
@@ -42,7 +43,9 @@ def test_periodic_critic_fires_every_n_iterations() -> None:
     critic = MagicMock()
     critic.call.return_value = _resp("looks fine\n\nVERDICT: SATISFIED")
     dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = {"returncode": 0, "stdout": "", "stderr": ""}
+    dispatcher.dispatch.return_value = ExecResult(
+        returncode=0, stdout="", stderr="", duration_s=0.0, exec_failed=False
+    )
     wf = _wf(
         provider=worker,
         dispatcher=dispatcher,
@@ -82,7 +85,9 @@ def test_periodic_critic_injects_text_into_next_user_msg() -> None:
     critic = MagicMock()
     critic.call.return_value = _resp("* CONSIDER X\n\nVERDICT: SATISFIED")
     dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = {"returncode": 0}
+    dispatcher.dispatch.return_value = ExecResult(
+        returncode=0, stdout="", stderr="", duration_s=0.0, exec_failed=False
+    )
     wf = _wf(
         provider=worker,
         dispatcher=dispatcher,
@@ -124,10 +129,12 @@ def test_on_verify_fail_critic_fires_only_on_nonzero_exit() -> None:
     critic.call.return_value = _resp("hmm\n\nVERDICT: NEEDS_WORK")
     dispatcher = MagicMock()
     dispatcher.dispatch.side_effect = [
-        {"returncode": 0},
-        {"returncode": 1, "stderr": "test x failed"},
-        {"returncode": 0},
-        {"ok": True},
+        ExecResult(returncode=0, stdout="", stderr="", duration_s=0.0, exec_failed=False),
+        ExecResult(
+            returncode=1, stdout="", stderr="test x failed", duration_s=0.0, exec_failed=False
+        ),
+        ExecResult(returncode=0, stdout="", stderr="", duration_s=0.0, exec_failed=False),
+        RawResult({"ok": True}),
     ]
     wf = _wf(
         provider=worker,
@@ -171,7 +178,7 @@ def test_on_verify_fail_critic_skipped_when_no_verify_call() -> None:
     critic = MagicMock()
     critic.call.return_value = _resp("VERDICT: SATISFIED")
     dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = {"entries": []}
+    dispatcher.dispatch.return_value = RawResult({"entries": []})
     wf = _wf(
         provider=worker,
         dispatcher=dispatcher,

@@ -99,7 +99,7 @@ def test_add_dependency_in_run_and_plan_tool_lists(tmp_path: Path) -> None:
 def test_dispatch_add_dependency_roundtrip(tmp_path: Path) -> None:
     stub = _StubGraph()
     d = ToolDispatcher(root=tmp_path, config=_config(tmp_path), curator=cast(GraphCurator, stub))
-    out = d.dispatch("add_dependency", {"id": _A, "depends_on": _B})
+    out = d.dispatch("add_dependency", {"id": _A, "depends_on": _B}).to_wire()
     assert out == {"id": _A, "title": "t", "depends_on": [_B]}
     assert stub.seen[0].id == _A and stub.seen[0].depends_on == _B
 
@@ -156,7 +156,7 @@ def test_list_tasks_wire_shape_is_stable(tmp_path: Path) -> None:
     cur.update_status(UpdateStatusIntent(id=a.id, new_status="in_progress"))
 
     d = ToolDispatcher(root=tmp_path, config=_config(tmp_path), curator=cur)
-    out = d.dispatch("list_tasks", {})
+    out = d.dispatch("list_tasks", {}).to_wire()
     # Exact equality also pins list-vs-tuple: ("a.py",) != ["a.py"].
     assert out == {
         "tasks": [
@@ -193,7 +193,7 @@ def test_list_tasks_wire_shape_is_stable(tmp_path: Path) -> None:
     json.dumps(out)  # the loop JSONs the result for the model; must not raise
 
     # The status filter narrows tasks and count together.
-    filtered = d.dispatch("list_tasks", {"status": "in_progress"})
+    filtered = d.dispatch("list_tasks", {"status": "in_progress"}).to_wire()
     assert filtered["count"] == 1
     assert [t["id"] for t in filtered["tasks"]] == [a.id]
 

@@ -16,6 +16,7 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
+from agent6.tools.results import ExecResult, RawResult
 from agent6.workflows._metric import MetricSample as _MetricSample
 from agent6.workflows._run_state import RunSnapshot, load_run_snapshot
 from agent6.workflows.loop import (
@@ -166,7 +167,7 @@ def test_resume_seeds_state_from_snapshot_scalars() -> None:
         },
     )
     dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = {"ok": True}
+    dispatcher.dispatch.return_value = RawResult({"ok": True})
     wf = _wf(provider=provider, dispatcher=dispatcher, config=config, mode="run")
 
     captured: dict[str, Any] = {}
@@ -261,7 +262,9 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
         ),
     ]
     dispatcher = MagicMock()
-    dispatcher.dispatch.return_value = {"returncode": 0, "stdout": "hi", "stderr": ""}
+    dispatcher.dispatch.return_value = ExecResult(
+        returncode=0, stdout="hi", stderr="", duration_s=0.0, exec_failed=False
+    )
     dispatcher.set_run_root_node_id = MagicMock()
 
     events: list[dict[str, Any]] = []

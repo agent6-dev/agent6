@@ -13,6 +13,7 @@ from typing import Any, Literal
 
 from agent6.providers import ToolDefinition
 from agent6.tools.dispatch import ToolDispatcher, ToolError
+from agent6.tools.results import ToolResult
 from agent6.tools.schema import (
     ALL_TOOLS,
     ASK_EXTRA_TOOLS,
@@ -135,7 +136,7 @@ def build_readonly_review_tools(
     panel and the post-hoc ``agent6 review`` path."""
     tools = [t for t in tool_definitions(dispatcher, mode="run") if t.name in READONLY_REVIEW_TOOLS]
 
-    def dispatch(name: str, tool_input: dict[str, Any]) -> Any:
+    def dispatch(name: str, tool_input: dict[str, Any]) -> ToolResult:
         if name not in READONLY_REVIEW_TOOLS:
             raise ToolError(f"review reviewer may not call {name!r} (read-only)")
         return dispatcher.dispatch(name, tool_input)

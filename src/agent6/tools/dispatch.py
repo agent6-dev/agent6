@@ -401,9 +401,9 @@ class ToolDispatcher:
             names.extend(d.qualified_name for d in self._mcp_manager.descriptors())
         return tuple(sorted(names))
 
-    def dispatch(self, name: str, raw_input: dict[str, Any]) -> dict[str, Any]:
-        # Returns the model-facing wire dict (result.to_wire()). The typed
-        # result is used here to build the tool.result event, then flattened.
+    def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+        # Returns the typed result; the caller serializes it with to_wire() at
+        # the single wire boundary (the loop / review seat / mcp server).
         # Emit `tool.call` UP FRONT, before any guard, so EVERY dispatched tool
         # -- including ones a guard rejects (unknown name, disabled, wrong mode)
         # -- produces a matching `tool.result(ok=...)` pair. Otherwise a reader
@@ -439,7 +439,7 @@ class ToolDispatcher:
             summary=result.summary(),
             **_output_tails(name, result),
         )
-        return result.to_wire()
+        return result
 
     def _dispatch_inner(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
         """Resolve + execute a tool. Raises ToolError on a rejected/failed call;
