@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Eric Lesiuta
+"""The typed logs.jsonl read model: parse_event maps raw dicts to the fold families.
+
+Pins the parse boundary itself (the fold's end-to-end behaviour is pinned by
+test_viewmodel_state and the golden compat test). The contract: every family the
+RunState fold consumes parses to its typed shape with the fold's historical
+coercion, and everything else -- telemetry, unknown/future types, a typeless line
+-- degrades to RawEvent so the fold drops it instead of crashing.
+"""
+
+from __future__ import annotations
+
+from agent6.viewmodel import events as ev
+
+
+def test_known_families_parse_to_their_typed_shape() -> None:
+    assert ev.parse_event({"type": "run.start", "user_task": "t"}) == ev.RunStart(user_task="t")
+    assert ev.parse_event({"type": "run.end", "reason": "finish_run", "all_passed": True}) == (
+        ev.RunEnd(all_passed=True, reason="finish_run")
+    )
+    assert ev.parse_event({"type": "loop.resume.start"}) == ev.ResumeStart()
+    assert ev.parse_event({"type": "run.steer_requested"}) == ev.SteerRequested()
+
+
+def test_unknown_and_telemetry_and_typeless_become_rawevent() -> None:
+    # A telemetry type the fold never consumes, an unknown/future type, and a line
+    # with no `type` all fall to RawEvent (the fold's old `case _`).
+    for raw in ({"type": "loop.auto_commit", "sha": "x"}, {"type": "totally.new"}, {"foo": 1}):
+        parsed = ev.parse_event(raw)
+        assert isinstance(parsed, ev.RawEvent)
+        assert parsed.raw is raw  # carries the dict for the log-line renderer
+
+
+def test_coercion_matches_the_folds_historical_defaults() -> None:
+    # Missing fields default, not raise (the fold never validated).
+    assert ev.parse_event({"type": "role.call"}) == ev.RoleCall(role="", model="", provider="")
+    # _as_int swallows a non-numeric token to 0 (role.result context math).
+    assert ev.parse_event({"type": "role.result", "tokens_in": "nope"}).tokens_in == 0  # type: ignore[union-attr]
+    # ok is bool()-coerced (a legacy string "True" folds truthy).
+    assert ev.parse_event({"type": "tool.result", "name": "t", "ok": "True"}).ok is True  # type: ignore[union-attr]
+    # A non-string cursor drops to None; nodes stays raw for the tree walker.
+    gu = ev.parse_event({"type": "graph.update", "nodes": {"a": {}}, "cursor": 123})
+    assert isinstance(gu, ev.GraphUpdate) and gu.cursor is None and gu.nodes == {"a": {}}
+    # A null node map coerces to {} exactly as the fold's `or {}` did.
+    assert ev.parse_event({"type": "graph.update", "nodes": None, "cursor": None}).nodes == {}  # type: ignore[union-attr]
+
+
+def test_question_prompt_filters_non_dict_entries_and_coerces_options() -> None:
+    parsed = ev.parse_event(
+        {
+            "type": "question.prompt",
+            "id": "q1",
+            "questions": [{"question": "Which?", "options": ["a", "b"]}, "garbage", {"bad": 1}],
+        }
+    )
+    assert isinstance(parsed, ev.QuestionPrompt)
+    assert parsed.id == "q1"
+    # The non-dict entry is dropped; the malformed dict keeps defaults.
+    assert parsed.questions == (
+        ev.EventQuestion(question="Which?", options=("a", "b")),
+        ev.EventQuestion(question="", options=()),
+    )

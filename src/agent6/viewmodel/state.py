@@ -18,6 +18,7 @@ from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any, Literal
 
+from agent6.viewmodel import events
 from agent6.viewmodel.format import status_label
 from agent6.viewmodel.listing import status_word
 
@@ -181,16 +182,14 @@ STREAM_DELTA_EVENTS = frozenset({"role.thinking_delta", "role.text_delta"})
 LOG_NOISE_EVENTS = frozenset({"loop.tool.call", "loop.budget"})
 
 
-def _as_int(value: object) -> int:
-    """An event field as an int; 0 for anything unusable (untrusted log data)."""
-    try:
-        return int(value)  # type: ignore[arg-type]  # int() rejects bad types itself
-    except (TypeError, ValueError):
-        return 0
-
-
 def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PLR0911, PLR0912, PLR0915
-    """Fold one event into the run state. Pure function."""
+    """Fold one event into the run state. Pure function.
+
+    The event is parsed once (`events.parse_event`) into a typed family; each arm
+    reads typed fields instead of sniffing the dict. The log line and the run_id
+    peek still read the raw dict (they render arbitrary events, including the
+    RawEvent long tail). An unknown/telemetry type folds to RawEvent -> no state
+    change, the old `case _`."""
     etype = event.get("type", "")
     if not state.run_id and event.get("run_id"):
         state = replace(state, run_id=str(event["run_id"]))
@@ -204,44 +203,39 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
         # the panel once the window saturates at MAX_LOG_TAIL.
         state = replace(state, log_tail=new_log, log_count=state.log_count + 1)
 
-    match etype:
-        case "run.start":
-            return replace(state, user_task=str(event.get("user_task", "")))
+    match events.parse_event(event):
+        case events.RunStart(user_task=task):
+            return replace(state, user_task=task)
 
-        case "loop.resume.start":
+        case events.ResumeStart():
             # A resume restarts a finished/stopped run in place (it appends to the
             # same log): it is running again, so clear the terminal state.
             return replace(state, finished=False, end_reason="")
 
-        case "graph.update":
-            nodes = event.get("nodes", {}) or {}
-            cursor = event.get("cursor")
+        case events.GraphUpdate(nodes=nodes, cursor=cursor):
             return replace(
                 state,
-                tasks=_build_task_tree(nodes, cursor if isinstance(cursor, str) else None),
-                cursor_task_id=cursor if isinstance(cursor, str) else None,
+                tasks=_build_task_tree(nodes, cursor),
+                cursor_task_id=cursor,
             )
 
-        case "diff.updated":
-            patch = str(event.get("patch", ""))
-            entry = DiffView(
-                patch=patch, task_id=state.cursor_task_id, sha=str(event.get("sha", ""))
-            )
+        case events.DiffUpdated(patch=patch, sha=sha):
+            entry = DiffView(patch=patch, task_id=state.cursor_task_id, sha=sha)
             return replace(
                 state,
                 latest_diff=patch,
                 recent_diffs=_push_bounded(state.recent_diffs, entry, _MAX_DIFF_HISTORY),
             )
 
-        case "role.call":
+        case events.RoleCall(role=role, model=model, provider=provider):
             prior = state.last_role
             return replace(
                 state,
                 last_role=RoleCall(
-                    role=str(event.get("role", "")),
-                    model=str(event.get("model", "")),
+                    role=role,
+                    model=model,
                     in_flight=True,
-                    provider=str(event.get("provider", "")),
+                    provider=provider,
                     # Keep the last known context size until this call's result
                     # lands, so the readout doesn't blink to nothing per turn.
                     ctx_tokens=prior.ctx_tokens if prior is not None else 0,
@@ -250,26 +244,20 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
                 ),
             )
 
-        case "role.text_delta":
+        case events.RoleTextDelta(text=piece):
             # Append SSE delta to the in-flight RoleCall.
             last = state.last_role
-            if last is None or not last.in_flight:
-                return state
-            piece = str(event.get("text", ""))
-            if not piece:
+            if last is None or not last.in_flight or not piece:
                 return state
             return replace(
                 state,
                 last_role=replace(last, streamed_text=(last.streamed_text + piece)[-_STREAM_TAIL:]),
             )
 
-        case "role.thinking_delta":
+        case events.RoleThinkingDelta(text=piece):
             # Append a reasoning delta to the in-flight RoleCall.
             last = state.last_role
-            if last is None or not last.in_flight:
-                return state
-            piece = str(event.get("text", ""))
-            if not piece:
+            if last is None or not last.in_flight or not piece:
                 return state
             return replace(
                 state,
@@ -278,16 +266,12 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
                 ),
             )
 
-        case "role.result":
+        case events.RoleResult(tokens_in=tin, cache_read=cr, cache_creation=cc):
             last = state.last_role
             if last is None:
                 return state
             # The full prompt of this call = the context size right now.
-            ctx = (
-                _as_int(event.get("tokens_in"))
-                + _as_int(event.get("cache_read"))
-                + _as_int(event.get("cache_creation"))
-            )
+            ctx = tin + cr + cc
             return replace(
                 state,
                 last_role=replace(
@@ -295,9 +279,7 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
                 ),
             )
 
-        case "tool.call":
-            raw_args = event.get("args", {}) or {}
-            name = str(event.get("name", ""))
+        case events.ToolCall(name=name, args=raw_args):
             tc = ToolCallView(
                 name=name,
                 args_preview=_render_args(raw_args),
@@ -316,107 +298,81 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
                 finish_summary=finish_summary,
             )
 
-        case "tool.result":
+        case events.ToolResult(name=name, ok=ok, summary=summary):
             if not state.tool_calls:
                 return state
             last = state.tool_calls[-1]
-            if last.name != str(event.get("name", "")):
+            if last.name != name:
                 return state
-            updated_last = replace(
-                last,
-                ok=bool(event.get("ok", False)),
-                result_summary=str(event.get("summary", "")),
-            )
+            updated_last = replace(last, ok=ok, result_summary=summary)
             return replace(
                 state,
                 tool_calls=(*state.tool_calls[:-1], updated_last),
             )
 
-        case "verify.start":
-            cmd = tuple(str(x) for x in event.get("cmd", []) or [])
+        case events.VerifyStart(cmd=cmd):
             return replace(state, last_verify=VerifyView(cmd=cmd))
 
-        case "verify.end":
-            cmd = tuple(str(x) for x in event.get("cmd", []) or [])
+        case events.VerifyEnd(
+            cmd=cmd, exit_code=code, duration_s=dur, stdout_tail=out, stderr_tail=err
+        ):
             return replace(
                 state,
                 last_verify=VerifyView(
-                    cmd=cmd,
-                    exit_code=int(event.get("exit_code", -1)),
-                    duration_s=float(event.get("duration_s", 0.0)),
-                    stdout_tail=str(event.get("stdout_tail", "")),
-                    stderr_tail=str(event.get("stderr_tail", "")),
+                    cmd=cmd, exit_code=code, duration_s=dur, stdout_tail=out, stderr_tail=err
                 ),
             )
 
-        case "budget.update":
+        case events.BudgetUpdate(
+            input_total=it,
+            output_total=ot,
+            input_cap=ic,
+            output_cap=oc,
+            usd_total=usd,
+            usd_partial=partial,
+        ):
             return replace(
                 state,
                 budget=BudgetView(
-                    input_total=int(event.get("input_total", 0)),
-                    output_total=int(event.get("output_total", 0)),
-                    input_cap=int(event.get("input_cap", 0)),
-                    output_cap=int(event.get("output_cap", 0)),
-                    usd_total=float(event.get("usd_total", 0.0)),
-                    usd_partial=bool(event.get("usd_partial", False)),
+                    input_total=it,
+                    output_total=ot,
+                    input_cap=ic,
+                    output_cap=oc,
+                    usd_total=usd,
+                    usd_partial=partial,
                 ),
             )
 
-        case "approval.prompt":
-            ap = ApprovalPrompt(
-                id=str(event.get("id", "")),
-                prompt=str(event.get("prompt", "")),
-            )
-            return replace(
-                state,
-                pending_approvals=(*state.pending_approvals, ap),
-            )
+        case events.ApprovalPrompt(id=aid, prompt=prompt):
+            ap = ApprovalPrompt(id=aid, prompt=prompt)
+            return replace(state, pending_approvals=(*state.pending_approvals, ap))
 
-        case "approval.answer":
-            wanted_id = str(event.get("id", ""))
+        case events.ApprovalAnswer(id=wanted_id, approved=approved):
             new = tuple(
-                replace(a, answered=True, approved=bool(event.get("approved", False)))
-                if a.id == wanted_id
-                else a
+                replace(a, answered=True, approved=approved) if a.id == wanted_id else a
                 for a in state.pending_approvals
             )
             return replace(state, pending_approvals=new)
 
-        case "question.prompt":
-            raw_qs = event.get("questions", ()) or ()
-            questions = tuple(
-                Question(
-                    question=str(q.get("question", "")),
-                    options=tuple(str(o) for o in (q.get("options", ()) or ())),
-                )
-                for q in raw_qs
-                if isinstance(q, dict)
-            )
-            qp = QuestionPrompt(id=str(event.get("id", "")), questions=questions)
+        case events.QuestionPrompt(id=qid, questions=qs):
+            questions = tuple(Question(question=q.question, options=q.options) for q in qs)
+            qp = QuestionPrompt(id=qid, questions=questions)
             return replace(state, pending_questions=(*state.pending_questions, qp))
 
-        case "question.answer":
-            wanted = str(event.get("id", ""))
-            raw_ans = event.get("answers", ()) or ()
-            answers = tuple(str(a) for a in raw_ans) if isinstance(raw_ans, (list, tuple)) else ()
+        case events.QuestionAnswer(id=wanted, answers=answers):
             new_q = tuple(
                 replace(q, answered=True, answers=answers) if q.id == wanted else q
                 for q in state.pending_questions
             )
             return replace(state, pending_questions=new_q)
 
-        case "run.steer_requested":
+        case events.SteerRequested():
             return replace(state, steer_requests=state.steer_requests + 1)
 
-        case "run.end":
-            return replace(
-                state,
-                finished=True,
-                all_passed=bool(event.get("all_passed", False)),
-                end_reason=str(event.get("reason", "") or ""),
-            )
+        case events.RunEnd(all_passed=all_passed, reason=reason):
+            return replace(state, finished=True, all_passed=all_passed, end_reason=reason)
 
-        case _:
+        case events.RawEvent():
             return state
 
 
