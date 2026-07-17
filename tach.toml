@@ -43,6 +43,7 @@ depends_on = [
   "agent6.runs.id",
   "agent6.runs.layout",
   "agent6.runs.lock",
+  "agent6.runs.manifest",
   "agent6.sandbox",
   "agent6.sandbox.detect",
   "agent6.secrets",
@@ -89,6 +90,7 @@ depends_on = [
   "agent6.runs.id",
   "agent6.runs.layout",
   "agent6.runs.ipc",
+  "agent6.runs.manifest",
   "agent6.ui.mcp_server",
   "agent6.machine",
 ]
@@ -171,6 +173,7 @@ depends_on = [
   "agent6.machine.journal",
   "agent6.machine.model",
   "agent6.runs.ipc",
+  "agent6.runs.manifest",
 ]
 
 [[modules]]
@@ -323,6 +326,12 @@ depends_on = [
 
 [[modules]]
 path = "agent6.runs.layout"
+depends_on = []
+
+[[modules]]
+# The single manifest.json reader (the writer is app.manifest). A pure leaf:
+# app, the viewmodel, and the CLI parse a run's manifest through this one owner.
+path = "agent6.runs.manifest"
 depends_on = []
 
 [[modules]]

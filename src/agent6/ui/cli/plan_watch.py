@@ -23,6 +23,7 @@ from agent6.runs.ipc import (
     write_frontend_pid,
     write_question_answers,
 )
+from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.tools.schema import UserQuestion
 from agent6.ui.cli._common import _runs_dir, _state_dir, resolve_or_newest_layout
 from agent6.ui.cli._console_view import ConsoleView
@@ -277,8 +278,8 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:  # noqa: PLR0915
         return 2
 
     manifest: dict[str, object] = {}
-    with contextlib.suppress(OSError, ValueError):
-        manifest = json.loads((target / "manifest.json").read_text(encoding="utf-8"))
+    with contextlib.suppress(ManifestError):
+        manifest = read_manifest(target)
 
     ev = _scan_run_events(target / "logs.jsonl")
     start_ep = ev["start_ep"]

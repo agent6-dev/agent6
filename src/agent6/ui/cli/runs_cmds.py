@@ -38,6 +38,7 @@ from agent6.git_ops import status as git_status
 from agent6.runs.id import RunIdError, resolve_run_id
 from agent6.runs.ipc import request_stop, worker_is_alive
 from agent6.runs.layout import RunLayout
+from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.ui.cli._common import (
     _runs_dir,
     _state_dir,
@@ -246,8 +247,8 @@ def _resolve_run_manifest(
         print(f"ERROR: run {target_id} has no manifest.json{missing_hint}", file=sys.stderr)
         return 2
     try:
-        manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        manifest = read_manifest(layout.run_dir)
+    except ManifestError as exc:
         print(f"ERROR: could not read manifest: {exc}", file=sys.stderr)
         return 2
     return layout, manifest

@@ -14,7 +14,6 @@ so `app` never imports `ui`. A caller that shows nothing passes
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from pathlib import Path
@@ -23,6 +22,7 @@ from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
 from agent6.config import Config
 from agent6.providers import Provider, ProviderError, TranscriptSink
+from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.workflows.judge import CandidateBrief, JudgeError, compare, mechanical_ranking
 
 # The reviewer provider the judge call uses, built by the caller from the
@@ -45,10 +45,10 @@ def verify_ok(status: str) -> bool | None:
 def manifest_task(run_dir: Path, fallback: str) -> str:
     """The run's own recorded `user_task`, else *fallback*."""
     try:
-        manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        manifest = read_manifest(run_dir)
+    except ManifestError:
         return fallback
-    task = manifest.get("user_task") if isinstance(manifest, dict) else None
+    task = manifest.get("user_task")
     return task if isinstance(task, str) and task else fallback
 
 

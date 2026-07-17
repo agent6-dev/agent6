@@ -31,6 +31,7 @@ from agent6.git_ops import (
 )
 from agent6.portable import atomic_write
 from agent6.runs.layout import RunLayout
+from agent6.runs.manifest import ManifestError, read_manifest
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,8 +50,8 @@ def record_merge_in_manifest(layout: RunLayout, *, merged_into: str, merged_sha:
     merged run branch from an unmerged one. Best-effort: a missing/corrupt manifest
     must not fail a merge that already happened."""
     try:
-        manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        manifest = read_manifest(layout.run_dir)
+    except ManifestError:
         return
     manifest["merged_into"] = merged_into
     manifest["merged_sha"] = merged_sha

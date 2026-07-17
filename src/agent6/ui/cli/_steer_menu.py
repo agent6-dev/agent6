@@ -32,7 +32,6 @@ repeat the exact `/parallel` token to queue more tasks in one message. See
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from pathlib import Path
 
@@ -40,6 +39,7 @@ from agent6.config.layer import load_effective
 from agent6.models.registry import context_window
 from agent6.paths import data_dir
 from agent6.runs.ipc import request_compact
+from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.skills import discover_skills, resolve_states, skill_search_dirs
 from agent6.ui.cli._menu_input import menu_capable, menu_input
 from agent6.viewmodel import fold_run, tail_events
@@ -124,8 +124,8 @@ def _fold(run_dir: Path) -> RunState:
 def _read_profile(run_dir: Path) -> str:
     """The effective profile the run started with (manifest.json), or ""."""
     try:
-        data = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        data = read_manifest(run_dir)
+    except ManifestError:
         return ""
     profile = data.get("profile")
     return profile if isinstance(profile, str) else ""

@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent6.runs.ipc import read_worker_pid, worker_is_alive
+from agent6.runs.manifest import ManifestError, read_manifest
 
 STALE_AFTER_S = 600.0
 
@@ -104,10 +105,10 @@ def run_compare(run_dir: Path) -> object:
     is post-import manifest state), so every run view reads it from here. Best
     effort: a missing/corrupt manifest reads as None, never an error."""
     try:
-        manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        manifest = read_manifest(run_dir)
+    except ManifestError:
         return None
-    return manifest.get("compare") if isinstance(manifest, dict) else None
+    return manifest.get("compare")
 
 
 def is_winner(run_dir: Path) -> bool:
