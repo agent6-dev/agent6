@@ -4,7 +4,28 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_git(  # pyright: ignore[reportUnusedFunction]
+    monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """Pin a suite-owned git identity; blank the system/global git config.
+
+    Tests commit in throwaway repos and CLONES (a clone does not inherit the
+    origin's repo-local user.name/email). The developer's ~/.gitconfig silently
+    supplied the identity locally while a bare CI runner has none, so the suite
+    was green here and red in CI. One suite-owned global config makes the two
+    environments identical. A test that needs a MISSING identity overrides
+    GIT_CONFIG_GLOBAL itself (see test_verify_git_identity_missing_raises).
+    """
+    cfg = tmp_path_factory.mktemp("git-identity") / "gitconfig"
+    cfg.write_text("[user]\n\tname = t\n\temail = t@t\n", encoding="utf-8")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(cfg))
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
 
 
 @pytest.fixture(autouse=True)
