@@ -26,13 +26,15 @@ from __future__ import annotations
 import difflib
 from dataclasses import dataclass
 
-from agent6.config import Config
+from agent6.config import Config, RoleName
 from agent6.models.cache import cached_models
 
 __all__ = [
     "ModelValidation",
+    "configured_model_refusal",
     "known_models",
     "refusal_message",
+    "validate_configured_model",
     "validate_spec_models",
     "warning_message",
 ]
@@ -107,6 +109,49 @@ def validate_spec_models(models: list[str | None], cfg: Config) -> ModelValidati
     can_validate = worker is not None and bool(cached_models(worker.provider))
     return ModelValidation(
         unknown=tuple(unknown), suggestions=suggestions, can_validate=can_validate
+    )
+
+
+def validate_configured_model(cfg: Config, role: RoleName) -> ModelValidation:
+    """Check the CONFIGURED model for *role* against ITS provider's cached model
+    list, so a typo'd `models.<role>.model` is caught at run start, not at the
+    first provider call (where the raw upstream 400 leaks).
+
+    Unlike `validate_spec_models` the pool EXCLUDES the model itself -- a
+    configured model is trivially in `known_models`, so that check can never
+    fail. Cache-only, never raises. `refused` (cache present, model absent) is a
+    hard stop; no cache means `can_validate` is False and the caller proceeds --
+    a fresh/offline machine, or a provider that lists no models (Anthropic), is
+    never blocked."""
+    rm = cfg.models.resolve(role)
+    if rm is None:
+        return ModelValidation(unknown=(), suggestions={}, can_validate=False)
+    cache = set(cached_models(rm.provider))
+    can_validate = bool(cache)
+    if not can_validate or rm.model in cache:
+        return ModelValidation(unknown=(), suggestions={}, can_validate=can_validate)
+    pool = sorted(cache)
+    bare_to_full: dict[str, list[str]] = {}
+    for full in pool:
+        bare_to_full.setdefault(full.rsplit("/", 1)[-1], []).append(full)
+    return ModelValidation(
+        unknown=(rm.model,),
+        suggestions={rm.model: _close_ids(rm.model, pool, bare_to_full)},
+        can_validate=can_validate,
+    )
+
+
+def configured_model_refusal(v: ModelValidation, role: str) -> str:
+    """Refusal text for a typo'd CONFIGURED role model (a refused
+    `validate_configured_model`): name the bad model, its closest known ids, and
+    how to fix it."""
+    model = v.unknown[0]
+    close = v.suggestions.get(model, ())
+    suffix = f" Closest: {', '.join(close)}." if close else ""
+    return (
+        f"configured models.{role}.model {model!r} is not a known model for its"
+        f" provider.{suffix} Fix it in your config, or run `agent6 model` to"
+        " refresh the cached model list."
     )
 
 

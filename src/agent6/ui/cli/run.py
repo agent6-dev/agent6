@@ -29,6 +29,7 @@ from agent6.config.layer import (
 )
 from agent6.events import EventSink
 from agent6.git_ops import set_repo_hook_policy
+from agent6.models.validate import configured_model_refusal, validate_configured_model
 from agent6.paths import data_dir
 from agent6.skills import discover_skills, resolve_states, skill_search_dirs
 from agent6.ui.cli._ask import (
@@ -215,6 +216,16 @@ def _cmd_run(  # noqa: PLR0911
     missing = check_provider_keys(cfg)
     if missing is not None:
         print(missing, file=sys.stderr)
+        return 2
+
+    # Validate the CONFIGURED role model against the provider's (just-refreshed)
+    # cached model list, so a typo'd models.<role>.model refuses cleanly here --
+    # with a did-you-mean, like the `/parallel` path -- instead of dying at the
+    # first provider call and echoing the raw upstream 400. Cache-only: a
+    # provider with no listing (Anthropic) or a fresh machine is never blocked.
+    verdict = validate_configured_model(cfg, role)
+    if verdict.refused:
+        print(f"REFUSING: {configured_model_refusal(verdict, role)}", file=sys.stderr)
         return 2
 
     # `--parallel`: fan out isolated lanes instead of a single run. Routed here,

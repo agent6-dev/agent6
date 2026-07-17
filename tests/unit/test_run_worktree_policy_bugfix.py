@@ -72,8 +72,17 @@ def _patch_common(monkeypatch: pytest.MonkeyPatch, cfg: Config) -> None:
     def _no_egress(*a: object, **k: object) -> tuple[object, None]:
         return app_run_mod.EgressGuard(), None
 
+    # The fake worker model ("kimi") isn't in the real on-disk model cache, so
+    # the new configured-model preflight would refuse it before the dirty-tree
+    # logic under test. Bypass it here (its own validation is covered separately).
+    def _model_ok(*a: object, **k: object) -> object:
+        from agent6.models.validate import ModelValidation
+
+        return ModelValidation(unknown=(), suggestions={}, can_validate=False)
+
     monkeypatch.setattr(run_mod, "load_effective", _load_effective)
     monkeypatch.setattr(run_mod, "set_repo_hook_policy", _noop)
+    monkeypatch.setattr(run_mod, "validate_configured_model", _model_ok)
     monkeypatch.setattr(app_run_mod, "verify_git_identity", _noop)
     monkeypatch.setattr(app_run_mod, "maybe_start_egress", _no_egress)
     monkeypatch.setattr(app_run_mod, "maybe_apply_agent_landlock", _noop)

@@ -157,6 +157,34 @@ def test_worker_uncached_sibling_cached_warns_and_proceeds(cache_home: Path) -> 
     assert not v.can_validate
 
 
+# --- configured-model validation (a typo'd models.<role>.model, U3) -----------
+
+
+def test_configured_model_ok_when_in_cache(cache_home: Path) -> None:
+    _write_cache(cache_home, "o", ["moonshotai/kimi-k2.6", "z-ai/glm-4.6"])
+    v = validate.validate_configured_model(_cfg("moonshotai/kimi-k2.6"), "worker")
+    assert v.unknown == () and not v.refused and v.can_validate
+
+
+def test_configured_model_typo_refuses_with_suggestion(cache_home: Path) -> None:
+    _write_cache(cache_home, "o", ["moonshotai/kimi-k2.6", "z-ai/glm-4.6"])
+    v = validate.validate_configured_model(_cfg("moonshotai/kimi-k2.7"), "worker")
+    assert v.refused
+    assert v.unknown == ("moonshotai/kimi-k2.7",)
+    assert "moonshotai/kimi-k2.6" in v.suggestions["moonshotai/kimi-k2.7"]
+    msg = validate.configured_model_refusal(v, "worker")
+    assert "models.worker.model 'moonshotai/kimi-k2.7'" in msg
+    assert "moonshotai/kimi-k2.6" in msg
+    assert "agent6 model" in msg
+
+
+def test_configured_model_no_cache_never_refuses(cache_home: Path) -> None:
+    # No cached listing (fresh machine, or a provider that lists nothing like
+    # Anthropic): must proceed, never block a configured model.
+    v = validate.validate_configured_model(_cfg("anything-goes"), "worker")
+    assert not v.refused and not v.can_validate
+
+
 def test_known_models_excludes_sibling_provider_catalog(cache_home: Path) -> None:
     _write_cache(cache_home, "w", ["w/model-a"])
     _write_cache(cache_home, "s", ["s/only-model"])
