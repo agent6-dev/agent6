@@ -22,7 +22,7 @@ from agent6.tools.schema import (
 )
 from agent6.types import RepoSummary
 from agent6.workflows import loop as loopmod
-from agent6.workflows._prompts import memories_block
+from agent6.workflows._prompt_blocks import memories_block
 from agent6.workflows.loop import Workflow
 
 _VALID_TOML = """

@@ -10,7 +10,7 @@ from pathlib import Path
 from agent6.config import Config
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.types import RepoSummary
-from agent6.workflows._prompts import build_system_prompt
+from agent6.workflows._prompt_blocks import build_system_prompt
 
 
 def _cfg(*, verify: bool) -> Config:

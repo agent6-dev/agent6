@@ -228,7 +228,7 @@ def test_compact_never_elides_undelivered_results_behind_a_steer_message() -> No
 def test_restart_notice_is_dag_aware() -> None:
     """The tier-2 summarise-and-restart notice must point the worker at its
     durable task DAG so cross-compaction task state is recovered."""
-    from agent6.workflows._prompts import context_restart_notice
+    from agent6.prompts.revision import context_restart_notice
 
     for mode in ("run", "plan"):
         notice = context_restart_notice(mode)

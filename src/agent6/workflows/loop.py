@@ -44,6 +44,21 @@ from agent6.graph.models import (
 from agent6.memory import MemoryEntry, MemoryStoreError
 from agent6.memory import list_entries as memory_list_entries
 from agent6.portable import atomic_write
+from agent6.prompts.revision import (
+    CONTEXT_SUMMARY_SYSTEM_PROMPT as _CONTEXT_SUMMARY_SYSTEM_PROMPT,
+)
+from agent6.prompts.revision import (
+    CRITIC_SYSTEM_PROMPT as _CRITIC_SYSTEM_PROMPT,
+)
+from agent6.prompts.revision import (
+    GIST_DISTILL_SYSTEM_PROMPT as _GIST_DISTILL_SYSTEM_PROMPT,
+)
+from agent6.prompts.revision import (
+    PROMPT_REVISION_SYSTEM_PROMPT as _PROMPT_REVISION_SYSTEM_PROMPT,
+)
+from agent6.prompts.revision import (
+    context_restart_notice as _context_restart_notice,
+)
 from agent6.providers import (
     Provider,
     ProviderAborted,
@@ -262,6 +277,7 @@ from agent6.workflows._nudges import (
 )
 from agent6.workflows._panel import Decision as ReviewDecision
 from agent6.workflows._panel import ReviewContext, render_findings
+from agent6.workflows._prompt_blocks import build_system_prompt as _build_system_prompt
 from agent6.workflows._prompt_revision import (
     PromptRevision as _PromptRevision,
 )
@@ -279,22 +295,6 @@ from agent6.workflows._prompt_revision import (
 )
 from agent6.workflows._prompt_revision import (
     parse_prompt_revision as _parse_prompt_revision,
-)
-from agent6.workflows._prompts import (
-    CONTEXT_SUMMARY_SYSTEM_PROMPT as _CONTEXT_SUMMARY_SYSTEM_PROMPT,
-)
-from agent6.workflows._prompts import (
-    CRITIC_SYSTEM_PROMPT as _CRITIC_SYSTEM_PROMPT,
-)
-from agent6.workflows._prompts import (
-    GIST_DISTILL_SYSTEM_PROMPT as _GIST_DISTILL_SYSTEM_PROMPT,
-)
-from agent6.workflows._prompts import (
-    PROMPT_REVISION_SYSTEM_PROMPT as _PROMPT_REVISION_SYSTEM_PROMPT,
-)
-from agent6.workflows._prompts import build_system_prompt as _build_system_prompt
-from agent6.workflows._prompts import (
-    context_restart_notice as _context_restart_notice,
 )
 from agent6.workflows._review import ReviewDispatch, run_panel
 from agent6.workflows._review import Seat as ReviewSeat

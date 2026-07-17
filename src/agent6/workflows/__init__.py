@@ -10,7 +10,7 @@ from typing import Literal
 from agent6.config import Config
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.workflows._context import load_repo_summary
-from agent6.workflows._prompts import build_system_prompt
+from agent6.workflows._prompt_blocks import build_system_prompt
 from agent6.workflows.review import CodeReviewError, run_review
 
 __all__ = [

@@ -2121,10 +2121,7 @@ def test_current_task_banner_carries_title_acceptance_paths() -> None:
 
 
 def test_decompose_prompt_describes_nested_phases() -> None:
-    from agent6.workflows._prompts import (  # pyright: ignore[reportPrivateUsage]
-        DAG_RULES_DECOMPOSE,
-        dag_rules_block,
-    )
+    from agent6.prompts.loop import DAG_RULES_DECOMPOSE, dag_rules_block
 
     assert dag_rules_block(True) == DAG_RULES_DECOMPOSE
     # Phases with child subtasks (parent_id), and the re-plan-when-large rule.

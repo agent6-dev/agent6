@@ -6,7 +6,7 @@ The critic is an optional sub-agent the loop can run to second-guess the
 worker (on verify failure, periodically, or before a finish_run). This module
 holds the pure pieces: the `CritiqueResult` record, rendering a compact
 transcript tail for the critic call, and parsing its VERDICT line. The critic's
-system prompt lives in _prompts.py; the loop owns running the critic call.
+system prompt lives in agent6.prompts.revision; the loop owns running the call.
 """
 
 from __future__ import annotations

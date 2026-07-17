@@ -124,7 +124,7 @@ def test_dispatch_add_dependency_validates_ids(tmp_path: Path) -> None:
 
 
 def test_dag_prompt_blocks_mention_add_dependency() -> None:
-    from agent6.workflows._prompts import DAG_RULES_DECOMPOSE, DAG_RULES_OPTIONAL
+    from agent6.prompts.loop import DAG_RULES_DECOMPOSE, DAG_RULES_OPTIONAL
 
     assert "add_dependency" in DAG_RULES_OPTIONAL
     assert "add_dependency" in DAG_RULES_DECOMPOSE
