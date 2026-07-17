@@ -22,6 +22,8 @@ from agent6.app.machine import (
     machine_network_refusal,
 )
 from agent6.config import Config, validate_config
+from agent6.git_ops import CommitIdentity
+from agent6.machine import AgentRequest
 from agent6.machine.model import ToolState
 from agent6.types import SandboxProfile
 
@@ -207,27 +209,17 @@ def test_run_one_returns_finish_payload(
     monkeypatch.setattr(machine_agent, "build_role_provider", _fake)
     monkeypatch.setattr(machine_agent, "ToolDispatcher", _fake)
 
-    req = {
-        "cwd": str(iso),
-        "root": str(iso),
-        "overlay": {},
-        "profile": "none",  # no real sandbox: egress/landlock are no-ops
-        "transcript_dir": str(tmp_path / "t"),
-        "request": {
-            "model": "claude-x",
-            "prompt": "go",
-            "timeout_s": 5.0,
-            "provider": "anthropic",
-            "thinking": None,
-            "temperature": None,
-            "max_usd": None,
-            "max_input_tokens": None,
-            "max_output_tokens": None,
-        },
-    }
+    req = machine_agent.MachineAgentRequest(
+        cwd=iso,
+        root=iso,
+        overlay={},
+        profile="none",  # no real sandbox: egress/landlock are no-ops
+        transcript_dir=tmp_path / "t",
+        request=AgentRequest(model="claude-x", prompt="go", timeout_s=5.0, provider="anthropic"),
+    )
     out = machine_agent.run_one(req)
-    assert out["reason"] == "finish_run"
-    assert out["payload"] == {"label": "ok"}
+    assert out.reason == "finish_run"
+    assert out.payload == {"label": "ok"}
 
 
 def _stub_loop(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
@@ -271,25 +263,15 @@ def test_run_one_drops_out_of_cwd_protect_paths(
     inside.write_text("x", encoding="utf-8")
     outside = tmp_path.parent / "evil.asm.toml"
     outside.write_text("x", encoding="utf-8")
-    req = {
-        "cwd": str(iso),
-        "root": str(iso),
-        "overlay": {},
-        "profile": "none",
-        "transcript_dir": str(tmp_path / "t"),
-        "protect_paths": [str(inside), str(outside)],
-        "request": {
-            "model": "claude-x",
-            "prompt": "go",
-            "timeout_s": 5.0,
-            "provider": "anthropic",
-            "thinking": None,
-            "temperature": None,
-            "max_usd": None,
-            "max_input_tokens": None,
-            "max_output_tokens": None,
-        },
-    }
+    req = machine_agent.MachineAgentRequest(
+        cwd=iso,
+        root=iso,
+        overlay={},
+        profile="none",
+        transcript_dir=tmp_path / "t",
+        protect_paths=(inside, outside),
+        request=AgentRequest(model="claude-x", prompt="go", timeout_s=5.0, provider="anthropic"),
+    )
     machine_agent.run_one(req)
     # Only the in-cwd path survives the subprocess-boundary re-validation.
     assert captured["extra_protect_paths"] == (inside.resolve(),)
@@ -306,28 +288,19 @@ def test_run_one_exports_commit_identity(
         "GIT_COMMITTER_EMAIL",
     ):
         monkeypatch.delenv(key, raising=False)
-    req = {
-        "cwd": str(iso),
-        "root": str(iso),
-        "overlay": {},
-        "profile": "none",
-        "transcript_dir": str(tmp_path / "t"),
-        "commit_identity": {"name": "Machine Bot", "email": "bot@example.com"},
-        "request": {
-            "model": "claude-x",
-            "prompt": "go",
-            "timeout_s": 5.0,
-            "provider": "anthropic",
-            "thinking": None,
-            "temperature": None,
-            "max_usd": None,
-            "max_input_tokens": None,
-            "max_output_tokens": None,
-            "mode": "run",
-        },
-    }
+    req = machine_agent.MachineAgentRequest(
+        cwd=iso,
+        root=iso,
+        overlay={},
+        profile="none",
+        transcript_dir=tmp_path / "t",
+        commit_identity=CommitIdentity(name="Machine Bot", email="bot@example.com"),
+        request=AgentRequest(
+            model="claude-x", prompt="go", timeout_s=5.0, provider="anthropic", mode="run"
+        ),
+    )
     out = machine_agent.run_one(req)
-    assert out["reason"] == "finish_run"
+    assert out.reason == "finish_run"
     assert os.environ["GIT_AUTHOR_NAME"] == "Machine Bot"
     assert os.environ["GIT_COMMITTER_NAME"] == "Machine Bot"
     assert os.environ["GIT_AUTHOR_EMAIL"] == "bot@example.com"

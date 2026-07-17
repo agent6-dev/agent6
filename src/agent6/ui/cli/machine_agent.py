@@ -3,19 +3,19 @@
 """Subprocess entry: run ONE machine `agent` state, self-confined.
 
 Invoked as ``python -m agent6.ui.cli.machine_agent <request.json> <result.json>``.
-Reads the request, runs the agent loop (`agent6.app.machine_agent.run_one`)
-injecting the live-view console, and writes the result. The engine enforces the
-timeout by killing this process, which gives true mid-call cancellation.
+Validates the request (`MachineAgentRequest`, the file-shape owner), runs the
+agent loop (`agent6.app.machine_agent.run_one`) injecting the live-view console,
+and writes the `AgentExecResult` result. The engine enforces the timeout by
+killing this process, which gives true mid-call cancellation.
 """
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 from pathlib import Path
 
-from agent6.app.machine_agent import run_one
+from agent6.app.machine_agent import MachineAgentRequest, run_one
 from agent6.events import EventSink
 from agent6.ui.cli._console_view import ConsoleView
 
@@ -29,9 +29,9 @@ def _attach_console(events: EventSink) -> None:
 
 
 def main() -> int:
-    req = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+    req = MachineAgentRequest.model_validate_json(Path(sys.argv[1]).read_bytes())
     out = run_one(req, attach_console=_attach_console)
-    Path(sys.argv[2]).write_text(json.dumps(out), encoding="utf-8")
+    Path(sys.argv[2]).write_text(out.model_dump_json(), encoding="utf-8")
     return 0
 
 

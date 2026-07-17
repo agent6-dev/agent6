@@ -33,6 +33,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
+from pydantic import BaseModel, ConfigDict
+
 from agent6.machine._semantics import validate_finish_payload
 from agent6.machine.journal import (
     AgentFact,
@@ -117,9 +119,16 @@ class ToolExecResult:
     timed_out: bool
 
 
-@dataclass(frozen=True, slots=True)
-class AgentRequest:
-    """What the engine asks the world to run for one `agent` state."""
+class AgentRequest(BaseModel):
+    """What the engine asks the world to run for one `agent` state.
+
+    Crosses the machine-agent subprocess boundary verbatim: it is the
+    ``request`` block of ``request.json`` (envelope: ``MachineAgentRequest`` in
+    ``app/machine_agent.py``), so it is pydantic per the IPC rule and owns that
+    wire shape. Bytes pinned by ``tests/unit/test_machine_agent_ipc.py``.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     prompt: str
     timeout_s: float
@@ -150,8 +159,7 @@ class AgentRequest:
     step_seq: int = 0
 
 
-@dataclass(frozen=True, slots=True)
-class AgentExecResult:
+class AgentExecResult(BaseModel):
     """The observable result of one agent loop.
 
     ``reason`` is the agent loop's stop reason (e.g. ``"finish_run"``,
@@ -160,7 +168,14 @@ class AgentExecResult:
     never called it or passed no structured result). ``usd`` and the token
     counts report the slice this agent loop spent, summed into machine-level
     spend for ``machine status`` (§6).
+
+    Crosses the machine-agent subprocess boundary verbatim as ``result.json``
+    (written by ``run_one``, validated back by the host runner in
+    ``app/machine_agent.py``), so it is pydantic per the IPC rule and owns that
+    file shape. Bytes pinned by ``tests/unit/test_machine_agent_ipc.py``.
     """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     reason: str
     payload: dict[str, Any] | None

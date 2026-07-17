@@ -15,16 +15,18 @@ operator-reviewed, network-carved-out tool in the same run.
 fires: it spawns the subprocess with a fixed argv, hands it the request via a
 temp file, and enforces the timeout by killing the process group. `run_one`
 (subprocess side) reads that request, sets up the sandbox while still
-single-threaded, runs the agent loop to completion, and writes the result;
-co-locating both sides keeps the request/result wire contract legible in one
-place. The live conversation view is the one presentation piece: `ui/cli` injects
-`attach_console` so this module never imports `agent6.ui`.
+single-threaded, runs the agent loop to completion, and writes the result.
+`MachineAgentRequest` (here) owns the `request.json` file shape and
+`AgentExecResult` (machine/engine.py) owns `result.json`: both sides
+serialize/validate through the models, per the IPC rule
+(`tests/unit/test_machine_agent_ipc.py` pins the bytes). The live conversation
+view is the one presentation piece: `ui/cli` injects `attach_console` so this
+module never imports `agent6.ui`.
 """
 
 from __future__ import annotations
 
 import contextlib
-import json
 import os
 import signal
 import subprocess
@@ -34,6 +36,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from agent6.app.egress import (
     check_network_profile,
@@ -79,22 +83,51 @@ def _no_console(_events: EventSink) -> None:
     """The headless default when no front-end injects a live view."""
 
 
+class MachineAgentRequest(BaseModel):
+    """The ``request.json`` envelope of the machine-agent subprocess IPC.
+
+    The host runner (`build_machine_agent_runner`) serializes it into the temp
+    file the fixed argv (``python -m agent6.ui.cli.machine_agent <request.json>
+    <result.json>``) names; the subprocess validates it back and hands it to
+    `run_one`. One owner of the file shape per the IPC rule; ``result.json`` is
+    owned the same way by `AgentExecResult`. The files are transient
+    per-invocation (both sides are always the same install), and the bytes are
+    pinned by ``tests/unit/test_machine_agent_ipc.py``.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    cwd: Path
+    root: Path
+    # The machine's `[config]` overlay, applied over the effective config.
+    overlay: dict[str, Any]
+    profile: SandboxProfile
+    transcript_dir: Path
+    # When set, the subprocess writes a watchable logs.jsonl here (role.*_delta
+    # + tool.* events), so `machine create` and live `agent` states are
+    # followable in the TUI/web dashboard exactly like a run.
+    events_log: Path | None = None
+    protect_paths: tuple[Path, ...] = ()
+    # Resolved on the host (pre-Landlock, so it sees global git config); the
+    # confined subprocess can't read ~/.gitconfig, so its mode="run" commits
+    # would otherwise fail with "Author identity unknown". None for read-only
+    # (mode="agent"/"machine") states.
+    commit_identity: CommitIdentity | None = None
+    request: AgentRequest
+
+
 def _result(
     reason: str, payload: dict[str, Any] | None, budget: BudgetTracker | None
-) -> dict[str, Any]:
+) -> AgentExecResult:
     usd = 0.0
     inp = out = 0
     if budget is not None:
         usd, _ = budget.estimate_usd()
         snap = budget.snapshot()
         inp, out = snap.input_total, snap.output_total
-    return {
-        "reason": reason,
-        "payload": payload,
-        "usd": usd,
-        "input_tokens": inp,
-        "output_tokens": out,
-    }
+    return AgentExecResult(
+        reason=reason, payload=payload, usd=usd, input_tokens=inp, output_tokens=out
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,36 +224,31 @@ def _build_machine_bridges(
 
 
 def run_one(
-    req: dict[str, Any],
+    req: MachineAgentRequest,
     *,
     attach_console: Callable[[EventSink], None] = _no_console,
     reporter: Reporter = STDIO_REPORTER,
-) -> dict[str, Any]:
-    cwd = Path(req["cwd"])
-    profile: SandboxProfile = req["profile"]
-    root = Path(req["root"])
-    transcript_dir = Path(req["transcript_dir"])
-    r = req["request"]
-    cfg = load_effective_with_overlay(cwd, req["overlay"]).config.with_machine_agent_overrides(
-        provider=r["provider"],
-        model=r["model"],
-        thinking=r["thinking"],
-        temperature=r["temperature"],
-        max_usd=r["max_usd"],
-        max_input_tokens=r["max_input_tokens"],
-        max_output_tokens=r["max_output_tokens"],
+) -> AgentExecResult:
+    profile = req.profile
+    r = req.request
+    cfg = load_effective_with_overlay(req.cwd, req.overlay).config.with_machine_agent_overrides(
+        provider=r.provider,
+        model=r.model,
+        thinking=r.thinking,
+        temperature=r.temperature,
+        max_usd=r.max_usd,
+        max_input_tokens=r.max_input_tokens,
+        max_output_tokens=r.max_output_tokens,
     )
     set_repo_hook_policy(cfg.git.run_repo_hooks)
     # A mode="run" state commits its work, but this confined process can't read
-    # ~/.gitconfig (not a Landlock read root). The engine resolved the identity on
-    # the host and passed it down; export it so git uses it regardless of where
-    # the config lives. None for read-only states (no commits).
-    ident = req.get("commit_identity")
-    if isinstance(ident, dict):
-        if name := ident.get("name"):
-            os.environ["GIT_AUTHOR_NAME"] = os.environ["GIT_COMMITTER_NAME"] = str(name)
-        if email := ident.get("email"):
-            os.environ["GIT_AUTHOR_EMAIL"] = os.environ["GIT_COMMITTER_EMAIL"] = str(email)
+    # ~/.gitconfig (not a Landlock read root): export the host-resolved identity
+    # so git uses it regardless of where the config lives.
+    if req.commit_identity is not None:
+        if name := req.commit_identity.name:
+            os.environ["GIT_AUTHOR_NAME"] = os.environ["GIT_COMMITTER_NAME"] = name
+        if email := req.commit_identity.email:
+            os.environ["GIT_AUTHOR_EMAIL"] = os.environ["GIT_COMMITTER_EMAIL"] = email
     # Confine THIS process's egress per sandbox.agent_network (single-threaded
     # here, as required by unshare). The engine already validated the combo, but
     # re-check defensively and fail closed.
@@ -244,15 +272,14 @@ def run_one(
             max_usd=cfg.budget.best_effort_usd_limit,
         )
         inner_provider = build_role_provider(
-            cfg, "worker", transcript_sink=TranscriptSink(transcript_dir), budget=budget
+            cfg, "worker", transcript_sink=TranscriptSink(req.transcript_dir), budget=budget
         )
         # An EventSink only when the caller passes events_log: the machine
         # supervisor points it at this state's per-state
         # `states/<seq>-<name>/logs.jsonl` (and `machine create` at the draft's
         # logs.jsonl), so the TUI/web can watch the agent's reasoning + tool
         # calls live, exactly like a run. None only when no log path is given.
-        events_log = req.get("events_log")
-        events_sink = EventSink(Path(events_log)) if isinstance(events_log, str) else None
+        events_sink = EventSink(req.events_log) if req.events_log is not None else None
         # stream_text: ALWAYS use the streaming transport. Machine agents run
         # headless (cron / nohup) and produce long generations; the
         # non-streaming path drops the connection mid-body on OpenRouter-style
@@ -267,7 +294,7 @@ def run_one(
             attach_console(events_sink)
         provider = InstrumentedProvider(
             inner=inner_provider,
-            role=r.get("role_label", "agent"),
+            role="agent",
             model=rm.model if rm is not None else "",
             provider_name=rm.provider if rm is not None else "",
             events=events_sink,
@@ -276,30 +303,26 @@ def run_one(
         )
         # Re-confirm the cwd-containment invariant at the subprocess boundary
         # (defense in depth, the engine already filtered these).
-        root_r = root.resolve()
-        protect = tuple(
-            rp
-            for p in req.get("protect_paths", [])
-            if (rp := Path(p).resolve()).is_relative_to(root_r)
-        )
+        root_r = req.root.resolve()
+        protect = tuple(rp for p in req.protect_paths if (rp := p.resolve()).is_relative_to(root_r))
         # "machine" (the `machine create` authoring agent) and "agent" (a
         # running machine's `agent` state, unless it opted into mode="run") are
         # read-only structured-output loops: the dispatcher refuses edits AND
         # run_command/run_verify (defense in depth alongside the read-only tool
         # list) and the loop uses a finish_run-focused prompt.
-        mode = r.get("mode", "agent")
+        mode = r.mode
         read_only = mode in ("machine", "agent")
         # Bridge run-level interactivity (approve/ask_user/steer) to a front-end
         # watching this machine: answers land in the per-state dir, the liveness
         # gate probes the instance dir where the front-end registers frontend.pid.
         # Needs a per-state log (events_sink) for the front-end to see the prompt.
         bridges: _MachineBridges | None = None
-        if events_sink is not None and events_log is not None:
-            state_dir = Path(events_log).parent
-            instance_dir = transcript_dir.parent
+        if events_sink is not None and req.events_log is not None:
+            state_dir = req.events_log.parent
+            instance_dir = req.transcript_dir.parent
             bridges = _build_machine_bridges(instance_dir, state_dir, events_sink)
         dispatcher = ToolDispatcher(
-            root=root,
+            root=req.root,
             config=cfg,
             sandbox_profile=profile,
             approver=bridges.approve if bridges is not None else None,
@@ -314,18 +337,18 @@ def run_one(
             # mode="run" agent state participates in cross-run memory like any
             # other run; for read-only states the dispatcher mode guard and
             # the machine/agent prompt assembly keep it inert.
-            state_dir=resolved_state_dir(root),
+            state_dir=resolved_state_dir(req.root),
         )
         compact_drop, compact_summarise = resolve_compaction_thresholds(cfg, rm, log=reporter.err)
         cfg = resolve_decompose(cfg, rm, log=reporter.err)
         wf = Workflow(
-            root=root,
+            root=req.root,
             config=cfg,
             provider=provider,
             dispatcher=dispatcher,
             logger=reporter.err,
             mode=mode if mode in ("machine", "agent") else "run",
-            state_dir=resolved_state_dir(root),
+            state_dir=resolved_state_dir(req.root),
             compact_drop_at_chars=compact_drop,
             compact_summarise_at_chars=compact_summarise,
             context_summary_max_tokens=cfg.context.summary_max_tokens,
@@ -334,7 +357,7 @@ def run_one(
             steer_clear=bridges.steer_clear if bridges is not None else (lambda: None),
             steer_prompt=bridges.steer_prompt if bridges is not None else (lambda: None),
         )
-        result = wf.run(r["prompt"])
+        result = wf.run(r.prompt)
         payload = result.finish_payload if result.reason == "finish_run" else None
         return _result(result.reason, payload, budget)
     finally:
@@ -380,43 +403,21 @@ def build_machine_agent_runner(
                 output_tokens=spend.output_tokens,
             )
 
-        payload = {
-            "cwd": str(cwd),
-            "root": str(cwd),
-            "overlay": overlay,
-            "profile": profile,
-            "transcript_dir": str(transcript_dir),
-            # When set, the agent subprocess writes a watchable logs.jsonl here
-            # (role.*_delta + tool.* events), so `machine create` is followable in
-            # the TUI dashboard exactly like a run.
-            "events_log": str(events_log) if events_log is not None else None,
-            "protect_paths": [str(p) for p in protect_paths],
-            # Resolved on the host (pre-Landlock, so it sees global git config);
-            # the confined agent subprocess can't read ~/.gitconfig, so its
-            # mode="run" commits would otherwise fail with "Author identity
-            # unknown". None for read-only (mode="agent"/"machine") states.
-            "commit_identity": (
-                {"name": commit_identity.name, "email": commit_identity.email}
-                if commit_identity is not None
-                else None
-            ),
-            "request": {
-                "model": request.model,
-                "prompt": request.prompt,
-                "timeout_s": request.timeout_s,
-                "provider": request.provider,
-                "thinking": request.thinking,
-                "temperature": request.temperature,
-                "max_usd": request.max_usd,
-                "max_input_tokens": request.max_input_tokens,
-                "max_output_tokens": request.max_output_tokens,
-                "mode": request.mode,
-            },
-        }
+        payload = MachineAgentRequest(
+            cwd=cwd,
+            root=cwd,
+            overlay=overlay,
+            profile=profile,
+            transcript_dir=transcript_dir,
+            events_log=events_log,
+            protect_paths=protect_paths,
+            commit_identity=commit_identity,
+            request=request,
+        )
         with tempfile.TemporaryDirectory(prefix="agent6-machine-agent-") as td:
             req_file = Path(td) / "request.json"
             out_file = Path(td) / "result.json"
-            req_file.write_text(json.dumps(payload), encoding="utf-8")
+            req_file.write_text(payload.model_dump_json(), encoding="utf-8")
             argv = [
                 sys.executable,
                 "-m",
@@ -437,16 +438,10 @@ def build_machine_agent_runner(
             if proc.returncode != 0 or not out_file.is_file():
                 return salvaged("error")
             try:
-                out = json.loads(out_file.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
+                return AgentExecResult.model_validate_json(out_file.read_text(encoding="utf-8"))
+            except (OSError, ValidationError):
+                # A malformed result.json is treated like a missing one: the
+                # spend salvage keeps the budget honest.
                 return salvaged("error")
-            result_payload = out.get("payload")
-            return AgentExecResult(
-                reason=str(out.get("reason", "error")),
-                payload=result_payload if isinstance(result_payload, dict) else None,
-                usd=float(out.get("usd", 0.0)),
-                input_tokens=int(out.get("input_tokens", 0)),
-                output_tokens=int(out.get("output_tokens", 0)),
-            )
 
     return run_agent
