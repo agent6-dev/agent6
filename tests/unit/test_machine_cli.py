@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,13 @@ import pytest
 from agent6.config.layer import resolved_state_dir
 from agent6.machine import MachineJournal
 from agent6.ui.cli import main
+
+
+def _git_init(path: Path) -> None:
+    subprocess.run(["git", "init", "-q", "-b", "main", str(path)], check=True)
+    subprocess.run(["git", "-C", str(path), "config", "user.email", "t@t"], check=True)
+    subprocess.run(["git", "-C", str(path), "config", "user.name", "t"], check=True)
+
 
 WAITER_DELAYED = """
 machine = "waiter_delayed"
@@ -133,6 +141,40 @@ def test_watch_finished_instance_shows_overview_and_end(
     assert "> done" in out  # current state marked
     assert ". route" in out  # a visited state marked
     assert "OK: ended in 'done'" in out
+
+
+def test_run_refuses_uncommitted_machine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # docs §7.1/§9: `machine run` only accepts a committed machine. An untracked
+    # .asm.toml is refused before any execution.
+    monkeypatch.chdir(tmp_path)
+    _git_init(tmp_path)
+    f = tmp_path / "tiny.asm.toml"
+    f.write_text(TINY, encoding="utf-8")
+    code = main(["machine", "run", str(f)])
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "uncommitted" in err and "committed machine" in err
+    # Refused before touching the state dir: no instance journal was created.
+    root = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    assert not (root / "journal.jsonl").exists()
+
+
+def test_uncommitted_refusal_tracks_git_state(tmp_path: Path) -> None:
+    from agent6.app.machine.run import _uncommitted_refusal
+
+    # Outside a git repo the gate never fires (nothing to commit against).
+    f = tmp_path / "tiny.asm.toml"
+    f.write_text(TINY, encoding="utf-8")
+    assert _uncommitted_refusal(f, tmp_path) is None
+    _git_init(tmp_path)
+    assert _uncommitted_refusal(f, tmp_path) is not None  # untracked
+    subprocess.run(["git", "-C", str(tmp_path), "add", "tiny.asm.toml"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "add"], check=True)
+    assert _uncommitted_refusal(f, tmp_path) is None  # committed clean
+    f.write_text(TINY + "\n", encoding="utf-8")
+    assert _uncommitted_refusal(f, tmp_path) is not None  # modified again
 
 
 def test_poke_drops_signal_for_waiting_machine(

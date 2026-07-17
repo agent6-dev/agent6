@@ -31,7 +31,7 @@ from agent6.app.machine_agent import build_machine_agent_runner
 from agent6.app.reporter import Reporter
 from agent6.config import ConfigError
 from agent6.config.layer import load_effective_with_overlay, resolved_state_dir
-from agent6.git_ops import CommitIdentity, GitError, verify_git_identity
+from agent6.git_ops import CommitIdentity, GitError, is_git_repo, paths_dirty, verify_git_identity
 from agent6.machine import (
     AgentExecResult,
     AgentRequest,
@@ -65,6 +65,31 @@ def _transitions(n: int) -> str:
     return f"{n} transition{'' if n == 1 else 's'}"
 
 
+def _uncommitted_refusal(path: Path, cwd: Path) -> str | None:
+    """A refusal message if the machine file has uncommitted changes, else None.
+
+    `machine run` only accepts a committed machine (docs state-machines.md
+    §7.1/§9; the `machine create` hint promises it): a tool/agent reads the file
+    as trusted logic, so an untracked or dirty `.asm.toml` is unreviewed. Skipped
+    outside a git repo (nothing to commit against) and for a file that resolves
+    outside the repo tree."""
+    if not is_git_repo(cwd):
+        return None
+    try:
+        rel = path.resolve().relative_to(cwd.resolve()).as_posix()
+    except ValueError:
+        return None
+    try:
+        if not paths_dirty(cwd, (rel,)):
+            return None
+    except GitError:
+        return None
+    return (
+        f"{path} has uncommitted changes; `machine run` only accepts a committed"
+        " machine. Review and commit the .asm.toml first."
+    )
+
+
 def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
     path: Path,
     frontend: MachineFrontend,
@@ -92,6 +117,12 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
     if bundle_problems:
         return _fail(reporter, path, bundle_problems, "bundle")
     cwd = Path.cwd()
+    # Machines are operator artifacts: refuse an uncommitted file before running
+    # anything (docs §7.1/§9), so a tool/agent never executes unreviewed logic.
+    uncommitted = _uncommitted_refusal(path, cwd)
+    if uncommitted is not None:
+        reporter.err(f"REFUSING: {uncommitted}")
+        return 1
     states = list(spec.states.values())
     has_agent_state = any(getattr(s, "kind", None) == "agent" for s in states)
     # mode="run" agent states edit + commit; they need a resolved git identity.
