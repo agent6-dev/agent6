@@ -1,17 +1,4 @@
-# SPDX-License-Identifier: Apache-2.0
-# Copyright 2026 Eric Lesiuta
-"""Client JS for the web-UI page: the `<script>` block `page.PAGE_HTML` embeds.
-
-The whole SPA: router, view renderers (hub / run / conversation / machine /
-config), and the shared widgets (composer, conversation fold, drawer). Split
-out of page.py so the HTML/CSS composition stays readable. Byte-identical to
-the block page.py used to embed inline; page.py splices it back into
-PAGE_HTML unchanged.
-"""
-
-from __future__ import annotations
-
-CLIENT_JS = r""""use strict";
+"use strict";
 const view = document.getElementById('view');
 const crumb = document.getElementById('crumb');
 let live = null; // the active EventSource, closed on navigation
@@ -1223,4 +1210,3 @@ function fmtVal(v) {
 }
 
 route();
-"""

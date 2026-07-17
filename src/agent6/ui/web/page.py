@@ -6,14 +6,19 @@ Served verbatim by web.server at `GET /`. It renders the wire form the JSON / SS
 endpoints emit (the same shape as `agent6 attach --json`); it is a thin renderer,
 so all domain logic stays in the Python read-side.
 
-Kept as a module-level constant so the server has nothing to read from disk and
-tests can assert against it directly.
+`client.js` is a real static asset living alongside this module; read once via
+`importlib.resources` at import time and spliced in verbatim, so `PAGE_HTML`
+stays a module-level constant the server serves straight from memory and tests
+can assert against directly.
 """
 
 from __future__ import annotations
 
-from agent6.ui.web._client_js import CLIENT_JS
+from importlib import resources
+
 from agent6.ui.web._styles import STYLES_CSS
+
+CLIENT_JS = resources.files(__package__).joinpath("client.js").read_text(encoding="utf-8")
 
 # The page is a hash-routed SPA: #/ hub, #/run/<id>, #/machine/<name>,
 # #/conversation/<id>, #/config. Live views open an EventSource against the

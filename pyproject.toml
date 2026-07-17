@@ -118,9 +118,6 @@ ignore = [
 "src/agent6/ui/web/page.py" = ["E501"]
 # _styles.py is the CSS `page.py` embeds; line length is meaningless there.
 "src/agent6/ui/web/_styles.py" = ["E501"]
-# _client_js.py is the client JS `page.py` embeds; line length is meaningless
-# there, and it carries confusable UI glyphs (×, ·) RUF001 would flag.
-"src/agent6/ui/web/_client_js.py" = ["E501", "RUF001"]
 "tests/**" = ["S", "PLR2004", "PLR0915", "PLC0415", "B017"]
 "bench/**" = ["S", "PLR0912", "PLR0915", "PLC0415", "PLW2901", "SIM105", "SIM114", "SIM115", "E501", "PTH"]
 "docs/screenshots/keystroke_overlay.py" = ["PLR0912", "PLR1730"]
