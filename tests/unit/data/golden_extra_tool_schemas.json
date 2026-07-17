@@ -1,0 +1,132 @@
+[
+  {
+    "name": "add_dependency",
+    "required": [
+      "depends_on",
+      "id"
+    ],
+    "properties": {
+      "depends_on": "string",
+      "id": "string"
+    }
+  },
+  {
+    "name": "add_memory",
+    "required": [
+      "body",
+      "scope"
+    ],
+    "properties": {
+      "body": "string",
+      "scope": "string"
+    }
+  },
+  {
+    "name": "add_task",
+    "required": [
+      "title"
+    ],
+    "properties": {
+      "acceptance": "string",
+      "parent_id": "anyOf[null,string]",
+      "rationale": "string",
+      "relevant_paths": "array[string]",
+      "title": "string"
+    }
+  },
+  {
+    "name": "agent6_docs",
+    "required": [],
+    "properties": {
+      "name": "string"
+    }
+  },
+  {
+    "name": "ask_user",
+    "required": [
+      "questions"
+    ],
+    "properties": {
+      "questions": "array[UserQuestion]"
+    },
+    "defs": {
+      "UserQuestion": {
+        "options": "array[string]",
+        "question": "string"
+      }
+    }
+  },
+  {
+    "name": "finish_planning",
+    "required": [
+      "plan_markdown",
+      "summary"
+    ],
+    "properties": {
+      "plan_markdown": "string",
+      "summary": "string"
+    }
+  },
+  {
+    "name": "finish_run",
+    "required": [
+      "summary"
+    ],
+    "properties": {
+      "result": "anyOf[null,object]",
+      "summary": "string"
+    }
+  },
+  {
+    "name": "invalidate_memory",
+    "required": [
+      "memory_id",
+      "reason"
+    ],
+    "properties": {
+      "memory_id": "string",
+      "reason": "string"
+    }
+  },
+  {
+    "name": "list_tasks",
+    "required": [],
+    "properties": {
+      "status": "anyOf[null,string]"
+    }
+  },
+  {
+    "name": "run_metric_command",
+    "required": [],
+    "properties": {}
+  },
+  {
+    "name": "set_cursor",
+    "required": [],
+    "properties": {
+      "id": "anyOf[null,string]"
+    }
+  },
+  {
+    "name": "update_task",
+    "required": [
+      "id",
+      "status"
+    ],
+    "properties": {
+      "id": "string",
+      "note": "string",
+      "status": "string"
+    }
+  },
+  {
+    "name": "use_skill",
+    "required": [
+      "name"
+    ],
+    "properties": {
+      "file": "anyOf[null,string]",
+      "name": "string"
+    }
+  }
+]

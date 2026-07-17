@@ -18,9 +18,20 @@ import json
 from pathlib import Path
 from typing import Any
 
-from agent6.tools.schema import schemas_as_provider_tools
+from agent6.tools.schema import (
+    ASK_EXTRA_TOOLS,
+    LOOP_EXTRA_TOOLS,
+    MACHINE_EXTRA_TOOLS,
+    PLAN_EXTRA_TOOLS,
+    schemas_as_provider_tools,
+)
 
 _GOLDEN = Path(__file__).parent / "data" / "golden_tool_schemas.json"
+# The loop-only control tools (finish_run, run_metric, dag_*, memory, use_skill),
+# plan's finish_planning, ask's agent6_docs, and machine's finish_run -- the
+# LLM-facing surface OUTSIDE ALL_TOOLS that schemas_as_provider_tools() (and so
+# _GOLDEN) does not cover. Pinned as a deduped, name-sorted digest.
+_GOLDEN_EXTRA = Path(__file__).parent / "data" / "golden_extra_tool_schemas.json"
 
 
 def _prop_type(sub: dict[str, Any]) -> str:
@@ -43,19 +54,31 @@ def _props(schema: dict[str, Any]) -> dict[str, str]:
     return {k: _prop_type(v) for k, v in sorted(schema.get("properties", {}).items())}
 
 
+def _entry(name: str, schema: dict[str, Any]) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "name": name,
+        "required": sorted(schema.get("required", [])),
+        "properties": _props(schema),
+    }
+    if schema.get("$defs"):
+        entry["defs"] = {name: _props(d) for name, d in sorted(schema["$defs"].items())}
+    return entry
+
+
 def _digest() -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-    for tool in schemas_as_provider_tools():
-        schema = tool["input_schema"]
-        entry: dict[str, Any] = {
-            "name": tool["name"],
-            "required": sorted(schema.get("required", [])),
-            "properties": _props(schema),
-        }
-        if schema.get("$defs"):
-            entry["defs"] = {name: _props(d) for name, d in sorted(schema["$defs"].items())}
-        out.append(entry)
-    return out
+    return [_entry(tool["name"], tool["input_schema"]) for tool in schemas_as_provider_tools()]
+
+
+def _extra_digest() -> list[dict[str, Any]]:
+    """Structural digest of every tool OUTSIDE ALL_TOOLS, deduped by name (dag_*
+    appear in both LOOP and PLAN; finish_run in both LOOP and MACHINE) and sorted,
+    so the pin is order-independent of the tuples."""
+    by_name: dict[str, dict[str, Any]] = {}
+    for cls in (*LOOP_EXTRA_TOOLS, *PLAN_EXTRA_TOOLS, *ASK_EXTRA_TOOLS, *MACHINE_EXTRA_TOOLS):
+        schema = cls.model_json_schema()
+        schema.setdefault("type", "object")
+        by_name[cls.TOOL_NAME] = _entry(cls.TOOL_NAME, schema)
+    return [by_name[name] for name in sorted(by_name)]
 
 
 def test_tool_schemas_structure_matches_golden() -> None:
@@ -65,6 +88,16 @@ def test_tool_schemas_structure_matches_golden() -> None:
         "LLM-facing tool schema structure drifted; if intended, regenerate the "
         'golden: python -c "import json,tests.unit.test_tool_schema_wire as t; '
         "open(t._GOLDEN,'w').write(json.dumps(t._digest(),indent=2)+chr(10))\""
+    )
+
+
+def test_extra_tool_schemas_structure_matches_golden() -> None:
+    generated = json.dumps(_extra_digest(), indent=2) + "\n"
+    committed = _GOLDEN_EXTRA.read_text(encoding="utf-8")
+    assert generated == committed, (
+        "loop/plan/ask/machine extra tool schema structure drifted; if intended, "
+        'regenerate: python -c "import json,tests.unit.test_tool_schema_wire as t; '
+        "open(t._GOLDEN_EXTRA,'w').write(json.dumps(t._extra_digest(),indent=2)+chr(10))\""
     )
 
 
