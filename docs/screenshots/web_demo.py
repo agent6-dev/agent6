@@ -237,6 +237,10 @@ def drive_machine(page: Page, base: str, t0: float) -> float:
     page.wait_for_timeout(1400)
 
     # Start it: POST /api/machine/run spawns a detached `agent6 machine run`.
+    # The Run button confirms first (a paid run must not start from one click);
+    # Playwright DISMISSES native dialogs by default, silently cancelling the
+    # POST -- accept this one.
+    page.once("dialog", lambda dialog: dialog.accept())
     click(page, "button:has-text('code-fixer')", label="Run the code-fixer machine", settle=1300)
     # The instance registers its journal + worker pid almost immediately; the
     # page re-renders itself once, then the instance row is clickable.
