@@ -20,6 +20,7 @@ from agent6.git_ops import (
     condense_commit_message,
     create_branch,
     create_branch_at,
+    diff_range,
     diff_since,
     dirty_paths,
     fetch_branch,
@@ -171,6 +172,46 @@ def test_git_ops_neutralizes_repo_diff_external(tmp_path: Path) -> None:
     # git >= 2.53 tries to run the empty `-c diff.external=` override and a full
     # patch dies (safe, but empty); --no-ext-diff keeps the patch. Assert the
     # diff still comes back so a broken-but-safe regression can't hide here.
+    assert "README.md" in out, "diff.external neutralization silently emptied the diff"
+
+
+def test_diff_range_reports_a_branch_diff_and_empty_on_bad_ref(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    base = subprocess.run(
+        ["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    subprocess.run(["git", "-C", str(tmp_path), "checkout", "-q", "-b", "agent6/x"], check=True)
+    (tmp_path / "feature.txt").write_text("new\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "feat"], check=True)
+    out = diff_range(tmp_path, base, "agent6/x")
+    assert "feature.txt" in out
+    assert diff_range(tmp_path, base, "no-such-branch") == ""  # unresolvable range -> ""
+
+
+def test_diff_range_survives_poisoned_diff_external(tmp_path: Path) -> None:
+    """`runs compare` diffs candidates via `diff_range`; a poisoned repo config
+    must not run its payload on the host, same guarantee as `diff_since`."""
+    _init_repo(tmp_path)
+    base = subprocess.run(
+        ["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    marker = tmp_path / "PWNED_RANGE"
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "config", "diff.external", f"touch {marker} ;"],
+        check=True,
+    )
+    subprocess.run(["git", "-C", str(tmp_path), "checkout", "-q", "-b", "agent6/x"], check=True)
+    (tmp_path / "README.md").write_text("changed\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-aq", "-m", "change"], check=True)
+    out = diff_range(tmp_path, base, "agent6/x")
+    assert not marker.exists(), "repo diff.external command executed on the host"
     assert "README.md" in out, "diff.external neutralization silently emptied the diff"
 
 

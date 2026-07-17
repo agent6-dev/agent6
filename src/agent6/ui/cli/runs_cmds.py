@@ -25,6 +25,7 @@ from agent6.git_ops import (
     branch_exists,
     branch_tip_sha,
     delete_branch_if_merged,
+    diff_range,
     force_delete_squash_merged_branch,
     git_hardening_flags,
     is_ancestor,
@@ -545,21 +546,11 @@ def _cmd_prune(*, delete_squashed: bool = False) -> int:
 def _candidate_diff(cwd: Path, base_sha: str, run_branch: str) -> str:
     """The diff a run's branch introduced (base_sha..run_branch), read-only,
     without checking out the branch (unlike `_cmd_diff`, several candidates are
-    compared in one call, and only one can be the current checkout). Same
-    hardening as `runs diff`: a poisoned `.git/config` (`diff.external`/
-    `diff.*.textconv`) must not run its payload on the host. "" if the branch
-    is gone or the diff fails -- never blocks the comparison."""
+    compared in one call, and only one can be the current checkout). "" if the
+    branch is gone -- never blocks the comparison."""
     if not base_sha or not run_branch or not branch_exists(cwd, run_branch):
         return ""
-    args = [
-        "git",
-        *git_hardening_flags(),
-        "diff",
-        *DIFF_SHOW_SAFETY_FLAGS,
-        f"{base_sha}..{run_branch}",
-    ]
-    proc = subprocess.run(args, cwd=cwd, capture_output=True, text=True, check=False)
-    return proc.stdout if proc.returncode == 0 else ""
+    return diff_range(cwd, base_sha, run_branch)
 
 
 def _cmd_compare(*, run_ids: tuple[str, ...]) -> int:

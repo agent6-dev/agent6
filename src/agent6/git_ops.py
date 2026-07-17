@@ -828,6 +828,15 @@ def diff_since(path: Path, base_sha: str) -> str:
     return res.stdout if res.ok else ""
 
 
+def diff_range(path: Path, base_sha: str, ref: str) -> str:
+    """The committed diff ``base_sha..ref`` introduces, captured. "" when the
+    range is unresolvable (a pruned branch, a bad sha) -- read-only, never blocks
+    a caller comparing several candidates. Goes through ``_run`` so it carries the
+    same host-RCE hardening + builtin-renderer flags every git diff here does."""
+    res = _run(path, "diff", f"{base_sha}..{ref}", check=False)
+    return res.stdout if res.ok else ""
+
+
 def commit_diff(path: Path, sha: str, *, max_bytes: int = 16384) -> str:
     """The patch a single commit introduced (``git show <sha>``), or "" on error.
 
