@@ -48,7 +48,11 @@ from agent6.tools._fs_tools import grep as _fs_grep
 from agent6.tools._fs_tools import list_dir as _fs_list_dir
 from agent6.tools._fs_tools import read_file as _fs_read_file
 from agent6.tools._git_guard import refuse_mutating_git_command
-from agent6.tools._path_safety import resolve_in_root as _resolve_in_root
+from agent6.tools._nav_tools import find_definition as _nav_find_definition
+from agent6.tools._nav_tools import find_definition_lsp as _nav_find_definition_lsp
+from agent6.tools._nav_tools import find_references as _nav_find_references
+from agent6.tools._nav_tools import find_references_lsp as _nav_find_references_lsp
+from agent6.tools._nav_tools import outline as _nav_outline
 from agent6.tools._result_format import (
     parse_metric_score as _parse_metric_score,
 )
@@ -571,8 +575,6 @@ class ToolDispatcher:
 
     # ----- tree-sitter index handlers -----
 
-    _INDEX_RESULT_CAP = 500
-
     def _ensure_index(self) -> SymbolIndex:
         if self._index is None:
             with self._index_lock:
@@ -609,45 +611,13 @@ class ToolDispatcher:
         return idx.file_outlines()
 
     def _outline(self, raw: dict[str, Any]) -> dict[str, Any]:
-        args = OutlineInput.model_validate(raw)
-        sp = _resolve_in_root(self._root, args.path)
-        if not sp.abs_path.is_file():
-            raise ToolError(f"Not a file: {args.path}")
-        idx = self._ensure_index()
-        syms = idx.outline(sp.abs_path)
-        out = [{"name": s.name, "kind": s.kind, "line": s.line, "col": s.col} for s in syms]
-        truncated = len(out) > self._INDEX_RESULT_CAP
-        return {"symbols": out[: self._INDEX_RESULT_CAP], "truncated": truncated}
+        return _nav_outline(self._root, self._ensure_index, raw)
 
     def _find_definition(self, raw: dict[str, Any]) -> dict[str, Any]:
-        args = FindDefinitionInput.model_validate(raw)
-        idx = self._ensure_index()
-        defs = idx.find_definition(args.name)
-        out: list[dict[str, Any]] = []
-        for s in defs:
-            try:
-                rel = s.path.relative_to(self._root)
-            except ValueError:
-                continue
-            out.append(
-                {"name": s.name, "kind": s.kind, "path": str(rel), "line": s.line, "col": s.col}
-            )
-        truncated = len(out) > self._INDEX_RESULT_CAP
-        return {"definitions": out[: self._INDEX_RESULT_CAP], "truncated": truncated}
+        return _nav_find_definition(self._root, self._ensure_index, raw)
 
     def _find_references(self, raw: dict[str, Any]) -> dict[str, Any]:
-        args = FindReferencesInput.model_validate(raw)
-        idx = self._ensure_index()
-        refs = idx.find_references(args.name)
-        out: list[dict[str, Any]] = []
-        for r in refs:
-            try:
-                rel = r.path.relative_to(self._root)
-            except ValueError:
-                continue
-            out.append({"name": r.name, "path": str(rel), "line": r.line, "col": r.col})
-        truncated = len(out) > self._INDEX_RESULT_CAP
-        return {"references": out[: self._INDEX_RESULT_CAP], "truncated": truncated}
+        return _nav_find_references(self._root, self._ensure_index, raw)
 
     # LSP-backed navigation. Lazy spawn so runs that never
     # call a *_lsp tool don't pay the server-startup tax.
@@ -662,44 +632,10 @@ class ToolDispatcher:
         return self._lsp
 
     def _find_definition_lsp(self, raw: dict[str, Any]) -> dict[str, Any]:
-        args = FindDefinitionLspInput.model_validate(raw)
-        sp = _resolve_in_root(self._root, args.path)
-        if not sp.abs_path.is_file():
-            raise ToolError(f"Not a file: {args.path}")
-        client = self._ensure_lsp()
-        try:
-            locs = client.find_definition(sp.abs_path, args.symbol)
-        except LspError as exc:
-            raise ToolError(str(exc)) from exc
-        out: list[dict[str, Any]] = []
-        for loc in locs:
-            try:
-                rel = loc.path.resolve().relative_to(self._root)
-            except ValueError:
-                continue
-            out.append({"path": str(rel), "line": loc.line, "col": loc.col})
-        truncated = len(out) > self._INDEX_RESULT_CAP
-        return {"definitions": out[: self._INDEX_RESULT_CAP], "truncated": truncated}
+        return _nav_find_definition_lsp(self._root, self._ensure_lsp, raw)
 
     def _find_references_lsp(self, raw: dict[str, Any]) -> dict[str, Any]:
-        args = FindReferencesLspInput.model_validate(raw)
-        sp = _resolve_in_root(self._root, args.path)
-        if not sp.abs_path.is_file():
-            raise ToolError(f"Not a file: {args.path}")
-        client = self._ensure_lsp()
-        try:
-            locs = client.find_references(sp.abs_path, args.symbol)
-        except LspError as exc:
-            raise ToolError(str(exc)) from exc
-        out: list[dict[str, Any]] = []
-        for loc in locs:
-            try:
-                rel = loc.path.resolve().relative_to(self._root)
-            except ValueError:
-                continue
-            out.append({"path": str(rel), "line": loc.line, "col": loc.col})
-        truncated = len(out) > self._INDEX_RESULT_CAP
-        return {"references": out[: self._INDEX_RESULT_CAP], "truncated": truncated}
+        return _nav_find_references_lsp(self._root, self._ensure_lsp, raw)
 
     def close(self) -> None:
         """Release subprocess resources (LSP server).
