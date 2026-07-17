@@ -249,10 +249,12 @@ def test_summary_survives_a_valid_json_non_object_line(tmp_path: Path) -> None:
     rd = tmp_path / "runs" / "weird"
     rd.mkdir(parents=True)
     (rd / "logs.jsonl").write_text(
-        json.dumps({"type": "run.start", "user_task": "do a thing"}) + "\n"
+        json.dumps({"type": "run.start", "user_task": "do a thing"})
+        + "\n"
         + "[1, 2, 3]\n"  # valid JSON, not a dict
         + '"a bare string"\n'
-        + json.dumps({"type": "run.end", "all_passed": True, "reason": "finish_run"}) + "\n",
+        + json.dumps({"type": "run.end", "all_passed": True, "reason": "finish_run"})
+        + "\n",
         encoding="utf-8",
     )
     s = summarize_run_dir(rd)  # must not raise
