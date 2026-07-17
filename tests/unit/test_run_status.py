@@ -222,3 +222,46 @@ def test_status_shows_usage_from_budget_update_event(
     _cmd_status("winsome-dawn-YWH5ZS", as_json=True)
     obj = json.loads(capsys.readouterr().out)
     assert obj["input_tokens"] == 4200 and obj["cost_usd"] == 0.0456
+
+
+def test_status_cost_cumulative_and_unfinished_across_resume(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A resume leg restarts the budget from 0 and un-finishes the run; `runs
+    # show` banks legs (same rule as `runs list` and the run view) and must
+    # not report leg 1's run.end for a run that is live again. A valid-JSON
+    # non-object line is skipped, not a crash.
+    d = _make_run(
+        tmp_path,
+        monkeypatch,
+        [
+            {"ts": _ts(60), "type": "run.start"},
+            {
+                "ts": _ts(50),
+                "type": "budget.update",
+                "input_total": 1000,
+                "output_total": 200,
+                "usd_total": 0.02,
+                "usd_partial": True,
+            },
+            {"ts": _ts(40), "type": "run.end", "reason": "finish_run", "all_passed": True},
+            {"ts": _ts(30), "type": "loop.resume.start", "iteration": 4},
+            {
+                "ts": _ts(5),
+                "type": "budget.update",
+                "input_total": 300,
+                "output_total": 50,
+                "usd_total": 0.005,
+                "usd_partial": False,
+            },
+        ],
+    )
+    logs = d / "logs.jsonl"
+    logs.write_text(logs.read_text(encoding="utf-8") + "42\n", encoding="utf-8")
+    write_worker_pid(d, os.getpid())
+    _cmd_status("winsome-dawn-YWH5ZS", as_json=True)
+    obj = json.loads(capsys.readouterr().out)
+    assert obj["cost_usd"] == pytest.approx(0.025)
+    assert obj["usd_partial"] is True  # sticky: leg 1's unpriced spend
+    assert obj["state"] == "running"  # not leg 1's "passed (finish_run)"
+    assert obj["input_tokens"] == 300  # token gauges stay per-leg

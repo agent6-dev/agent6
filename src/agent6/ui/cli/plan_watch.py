@@ -205,12 +205,16 @@ def _scan_run_events(events_path: Path) -> dict[str, object]:
     }
     if not events_path.is_file():
         return out
+    usd_prior_legs = 0.0  # banked totals of completed (resumed-past) legs
+    usd_leg = 0.0
     with contextlib.suppress(OSError):
         for line in events_path.read_text(encoding="utf-8").splitlines():
             try:
                 e = json.loads(line)
             except (json.JSONDecodeError, ValueError):
                 continue
+            if not isinstance(e, dict):
+                continue  # a valid-JSON non-object line (torn/adversarial)
             ep = event_epoch(e.get("ts"))
             etype = e.get("type")
             if etype == "run.start" and out["start_ep"] is None:
@@ -220,16 +224,27 @@ def _scan_run_events(events_path: Path) -> dict[str, object]:
             if etype == "run.end":
                 out["end_reason"] = e.get("reason")
                 out["all_passed"] = bool(e.get("all_passed"))
+            if etype == "loop.resume.start":
+                # A resume leg restarts the budget from 0; bank the finished
+                # leg so cost_usd is the cumulative spend -- the same rule as
+                # listing._scan_run_log and the state fold's BudgetView, so
+                # `runs show` agrees with `runs list` and the run view.
+                usd_prior_legs += usd_leg
+                usd_leg = 0.0
+                out["end_reason"] = None  # un-finished: the run is live again
+                out["all_passed"] = None
             if etype == "budget.update":
                 # The authoritative running totals, emitted after each provider
                 # call (providers.py). `loop.budget` (emitted BEFORE the call)
                 # lags one call and reads 0 on iteration 1, so `runs show` used
-                # to under-report; every other cost consumer (watch --json,
-                # runs list) reads budget.update, so this makes them agree.
+                # to under-report.
                 out["input_tokens"] = e.get("input_total")
                 out["output_tokens"] = e.get("output_total")
-                out["cost_usd"] = e.get("usd_total")
-                out["usd_partial"] = e.get("usd_partial")
+                usd_leg = float(e.get("usd_total") or 0.0)
+                out["cost_usd"] = usd_prior_legs + usd_leg
+                # Sticky across legs: unpriced spend anywhere keeps the
+                # cumulative total an under-estimate.
+                out["usd_partial"] = bool(e.get("usd_partial")) or bool(out["usd_partial"])
             if ep is not None:
                 out["last_ep"] = ep
             if isinstance(etype, str):
@@ -344,6 +359,9 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:  # noqa: PLR0915
                     "input_tokens": ev["input_tokens"],
                     "output_tokens": ev["output_tokens"],
                     "cost_usd": ev["cost_usd"],
+                    # cost_usd is an under-estimate when some spend was
+                    # unpriced; the text render marks it, so the JSON must too.
+                    "usd_partial": ev["usd_partial"],
                     "parent_run_id": manifest.parent_run_id,
                     "forked_from_turn": manifest.forked_from_turn,
                     "forked_from_sha": manifest.forked_from_sha,
