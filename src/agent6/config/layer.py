@@ -44,13 +44,11 @@ from agent6.config.io import (
     upsert_toml_table,
 )
 from agent6.config.model import (
-    BUILTIN_PROFILES,
     AnthropicProviderEntry,
     Config,
     ConfigError,
     Deployment,
     OpenAIProviderEntry,
-    resolve_profile,
     validate_config,
 )
 from agent6.paths import (
@@ -161,6 +159,69 @@ def discover_layers(repo_root: Path, explicit_path: Path | None) -> list[Layer]:
         _forbid_repo_state_dir("--config", data)
         layers.append(Layer("flag", explicit_path, data))
     return layers
+
+
+# Built-in config profiles: named presets that fill in many settings at once, so
+# a task can pick a strategy with one knob (`--profile ultra`) instead of tuning
+# the [review] / budget knobs by hand. Each value is a nested config dict applied
+# as the LOWEST layer (your explicit settings still win). Users add their own via
+# [profiles.<name>] tables in config.toml.
+BUILTIN_PROFILES: dict[str, dict[str, Any]] = {
+    # The pre-feature baseline: plain defaults, no review panel.
+    "standard": {},
+    # Fast/cheap: no review, tighter output budget.
+    "quick": {
+        "review": {"trigger": "off"},
+        "budget": {"max_output_tokens": 50_000},
+    },
+    # The "ultracode" tier: a 3-seat grounded panel that advises + gates by quorum.
+    "ultra": {
+        "review": {
+            "trigger": "before_finish",
+            "panel_size": 3,
+            # veto, not quorum: the 3 seats share one model (the gate counts one
+            # block per DISTINCT model, so quorum>1 would be unreachable here).
+            "decision": "veto",
+            "personas": ["security", "correctness", "tests"],
+            "concurrency": 3,  # seats in parallel: panel latency = slowest seat
+        },
+    },
+    # Maximum scrutiny: 5 explore-tier seats, before_finish veto, bigger budget.
+    "paranoid": {
+        "review": {
+            "trigger": "before_finish",
+            "panel_size": 5,
+            "decision": "veto",
+            "tier": "explore",
+            "personas": [
+                "security",
+                "correctness",
+                "tests",
+                "edge-cases",
+                "over-engineering",
+            ],
+            "concurrency": 5,  # seats in parallel: panel latency = slowest seat
+        },
+        "budget": {"max_output_tokens": 400_000},
+    },
+}
+
+
+def resolve_profile(name: str, user_profiles: dict[str, Any]) -> dict[str, Any]:
+    """The config-override dict for profile *name* (user profiles win over
+    built-ins of the same name). "" / "standard" -> {} (plain defaults). Raises
+    ConfigError for an unknown name so a typo'd profile fails loudly."""
+    if name in ("", "standard"):
+        return BUILTIN_PROFILES.get(name, {})
+    if name in user_profiles:
+        prof = user_profiles[name]
+        if not isinstance(prof, dict):
+            raise ConfigError(f"[profiles.{name}] must be a table, got {type(prof).__name__}")
+        return prof
+    if name in BUILTIN_PROFILES:
+        return BUILTIN_PROFILES[name]
+    known = ", ".join(sorted({*BUILTIN_PROFILES, *user_profiles}))
+    raise ConfigError(f"unknown profile {name!r}. Known profiles: {known}.")
 
 
 def available_profile_names(repo_root: Path, explicit_path: Path | None = None) -> list[str]:

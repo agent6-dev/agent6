@@ -36,7 +36,6 @@ from agent6.config.model import (
     WorkflowConfig,
     is_loopback_host,
     load_config,
-    resolve_profile,
     validate_base_url,
     validate_config,
 )
@@ -70,7 +69,6 @@ __all__ = [
     "WorkflowConfig",
     "is_loopback_host",
     "load_config",
-    "resolve_profile",
     "validate_base_url",
     "validate_config",
 ]
