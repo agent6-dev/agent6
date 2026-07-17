@@ -177,6 +177,33 @@ def test_uncommitted_refusal_tracks_git_state(tmp_path: Path) -> None:
     assert _uncommitted_refusal(f, tmp_path) is not None  # modified again
 
 
+def test_run_refuses_rerun_of_ended_instance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # An ended instance can only be replayed, never advanced. A rerun must refuse
+    # BEFORE stamping worker.pid, so a dead machine never reads "running".
+    from agent6.machine import drive, load_machine
+    from agent6.runs.ipc import read_worker_pid, write_worker_pid
+
+    monkeypatch.chdir(tmp_path)
+    f = tmp_path / "tiny.asm.toml"
+    f.write_text(TINY, encoding="utf-8")
+    assert main(["machine", "run", str(f)]) == 0  # runs to a terminal
+    capsys.readouterr()
+    root = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    # Stand in for the previous worker having exited: a pid that is never alive.
+    sentinel = 10**9
+    write_worker_pid(root, sentinel)
+    code = main(["machine", "run", str(f)])
+    assert code == 1
+    assert "already ended" in capsys.readouterr().err
+    # worker.pid was NOT re-stamped with the (live) rerun process pid.
+    assert read_worker_pid(root) == sentinel
+    # The journal still reads terminal, unchanged.
+    result = drive(load_machine(root / "machine.asm.toml"), MachineJournal(root), None, live=False)
+    assert result.status == "ok"
+
+
 def test_poke_drops_signal_for_waiting_machine(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

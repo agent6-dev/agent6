@@ -39,6 +39,7 @@ from agent6.machine import (
     EngineError,
     JournalError,
     LiveWorld,
+    MachineEnd,
     MachineError,
     MachineJournal,
     ToolState,
@@ -225,6 +226,21 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
     try:
         with machine_lock(root):
             journal.ensure_dirs()
+            # Refuse a rerun of an ended instance BEFORE any worker.pid stamp: a
+            # terminal journal (last event a MachineEnd) can only be replayed,
+            # not advanced. Stamping the pid here would trip spawn_and_confirm's
+            # started() (false "started"), and the dead child's zombie pid would
+            # then read "running" forever in `machine status`.
+            events = journal.read()
+            if events and isinstance(events[-1], MachineEnd):
+                end = events[-1]
+                reporter.err(
+                    f"REFUSING: {spec.machine} already ended in {end.state!r}"
+                    f" ({end.status}: {end.reason})."
+                    " Replay it with `agent6 machine replay`, or archive the"
+                    " instance directory to start fresh."
+                )
+                return 1
             data_dir.mkdir(parents=True, exist_ok=True)
             # Liveness marker for watchers (the web SSE stream probes it to
             # tell a crashed machine from a parked one), mirroring cli/run.py.
