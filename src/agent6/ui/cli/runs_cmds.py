@@ -53,10 +53,11 @@ from agent6.workflows.judge import CandidateBrief
 # a listing where a provider_error death reads as plain text is how dead runs
 # went unnoticed.
 _STATUS_SGR = {
+    "starting": "36",  # launching (pre-loop): in progress, lighter than running
     "running": "1;36",
     "stale": "2",
     "passed": "32",
-    "planned": "36",
+    "planned": "35",  # informational magenta (mauve on the TUI/web); not green, not red
     "stopped": "33",
     "failed": "1;31",
 }
