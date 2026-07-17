@@ -26,6 +26,13 @@ from agent6.app.egress import (
     resolve_strict_egress_viability,
     warn_if_unsandboxed,
 )
+from agent6.app.machine import (
+    build_machine_notify_hook,
+    hard_usd_preflight_error,
+    machine_network_refusal,
+    machine_protect_paths,
+    validate_bundle,
+)
 from agent6.config import (
     Config,
     ConfigError,
@@ -82,98 +89,6 @@ from agent6.viewmodel import (
 from agent6.viewmodel.machine_state import newest_state_log
 
 
-def _is_inside(path: Path, root: Path) -> bool:
-    """True iff *path* is *root* or lives beneath it (both already resolved)."""
-    try:
-        path.relative_to(root)
-        return True
-    except ValueError:
-        return False
-
-
-def _bundle_script_ref(element: str) -> str | None:
-    """Return the relative script path a static command element names, else None.
-
-    A bundle script reference is a relative path whose first component is
-    ``scripts`` (e.g. ``scripts/fetch.sh`` or ``./scripts/fetch.sh``). Absolute
-    paths (``/usr/bin/bash``) are interpreter/binary paths, not bundle refs.
-    """
-    cleaned = element[2:] if element.startswith("./") else element
-    if not cleaned or cleaned.startswith("/"):
-        return None
-    parts = Path(cleaned).parts
-    if parts and parts[0] == "scripts":
-        return cleaned
-    return None
-
-
-def _check_scripts_dir(scripts_dir: Path, bundle: Path) -> list[str]:
-    """Every entry under ``scripts/`` must resolve to a path inside the bundle."""
-    if not scripts_dir.is_dir():
-        return ["bundle 'scripts' exists but is not a directory"]
-    problems: list[str] = []
-    for entry in sorted(scripts_dir.rglob("*")):
-        rel = entry.relative_to(scripts_dir)
-        try:
-            resolved = entry.resolve()
-            # Python 3.14's resolve() stopped raising on a symlink loop (it
-            # returns the path); stat(), which follows links, still raises
-            # ELOOP, so a circular/broken symlink is reported instead of
-            # silently accepted as an in-bundle path.
-            entry.stat()
-        except (OSError, RuntimeError) as exc:  # RuntimeError: circular symlink (<3.14)
-            problems.append(f"scripts/{rel}: {exc}")
-            continue
-        if not _is_inside(resolved, bundle):
-            problems.append(f"scripts/{rel} resolves outside the bundle ({resolved}); refused")
-    return problems
-
-
-def _check_command_scripts(name: str, state: ToolState, bundle: Path) -> list[str]:
-    """Static tool-command script references must exist and stay in the bundle."""
-    problems: list[str] = []
-    for element in state.command:
-        if "{{" in element:
-            continue  # templated; cannot resolve statically
-        ref = _bundle_script_ref(element)
-        if ref is None:
-            continue
-        target = bundle / ref
-        try:
-            resolved = target.resolve()
-        except (OSError, RuntimeError) as exc:  # RuntimeError: circular symlink
-            problems.append(f"state {name!r}: script {element!r}: {exc}")
-            continue
-        if not _is_inside(resolved, bundle):
-            problems.append(f"state {name!r}: script {element!r} escapes the bundle")
-        elif not target.exists():
-            problems.append(f"state {name!r}: script {element!r} not found in bundle")
-    return problems
-
-
-def _validate_bundle(spec: MachineSpec, machine_path: Path) -> list[str]:
-    """Validate a machine's script bundle (the ``.asm.toml`` + a sibling ``scripts/``).
-
-    Security-critical: every entry under ``scripts/`` must resolve to a path
-    INSIDE the bundle (rejects symlinks that escape via ``..``/absolute), and
-    every static tool-command element that references a bundled script must
-    exist and stay inside the bundle. Dynamic (templated) command elements are
-    skipped, they cannot be resolved without a blackboard.
-    """
-    try:
-        bundle = machine_path.parent.resolve()
-    except OSError as exc:
-        return [f"cannot resolve bundle directory for {machine_path}: {exc}"]
-    problems: list[str] = []
-    scripts_dir = bundle / "scripts"
-    if scripts_dir.exists():
-        problems.extend(_check_scripts_dir(scripts_dir, bundle))
-    for name, state in spec.states.items():
-        if isinstance(state, ToolState):
-            problems.extend(_check_command_scripts(name, state, bundle))
-    return problems
-
-
 def _fail(path: Path, problems: list[str], label: str = "") -> int:
     """Print a FAIL header + problem bullets to stderr; always returns 1."""
     suffix = f" ({label})" if label else ""
@@ -193,7 +108,7 @@ def _load_validated(path: Path) -> tuple[MachineSpec | None, list[str], str]:
         spec = load_machine(path)
     except MachineError as exc:
         return None, list(exc.problems), ""
-    bundle_problems = _validate_bundle(spec, path)
+    bundle_problems = validate_bundle(spec, path)
     if bundle_problems:
         return None, bundle_problems, "bundle"
     return spec, [], ""
@@ -417,128 +332,6 @@ def _build_machine_agent_runner(
     return run_agent
 
 
-def _build_machine_notify_hook(
-    cfg: Config, machine_id: str, root: Path
-) -> Callable[[str, str, str, str], None] | None:
-    """The operator notify hook fired on `machine.notify`/`machine.end`, or None.
-
-    The argv comes from `[machine.notify].on_event`, operator-controlled and
-    never LLM output, so it runs on the host OUTSIDE the jail (mirror of
-    `[notify].on_complete`). Failures are logged and never change the exit code.
-    """
-    notify = cfg.machine.notify
-    if not notify.on_event:
-        return None
-
-    def fire(kind: str, state: str, message: str, level: str) -> None:
-        env = dict(os.environ)
-        env["AGENT6_MACHINE_ID"] = machine_id
-        env["AGENT6_MACHINE_DIR"] = str(root)
-        env["AGENT6_MACHINE_EVENT"] = kind
-        env["AGENT6_MACHINE_STATE"] = state
-        env["AGENT6_MACHINE_MESSAGE"] = message
-        env["AGENT6_MACHINE_LEVEL"] = level
-        try:
-            subprocess.run(list(notify.on_event), env=env, timeout=notify.timeout_s, check=False)
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            print(f"[agent6] machine.notify hook failed: {exc}", file=sys.stderr)
-
-    return fire
-
-
-def _machine_protect_paths(machine_path: Path, cwd: Path) -> tuple[Path, ...]:
-    """The machine's own ``.asm.toml`` + ``scripts/`` bundle, to mark read-only
-    in run jails. Only paths under the jail-mounted cwd are enforceable (a path
-    outside cwd isn't in the child's view, so it can't edit it anyway)."""
-    cwd_r = cwd.resolve()
-    out: list[Path] = []
-    for p in (machine_path, machine_path.parent / "scripts"):
-        rp = p.resolve()
-        if rp.exists() and _is_inside(rp, cwd_r):
-            out.append(rp)
-    return tuple(out)
-
-
-def _hard_usd_preflight_error(spec: MachineSpec, cfg: Config) -> str | None:
-    """Refusal message when a hard `max_usd` cannot be honored.
-
-    `max_usd` (machine-level or per agent state) promises a real dollar
-    ceiling, so every model it covers must have price data; without it the
-    cap only binds if the provider happens to report per-call cost.
-    `best_effort_usd_limit` never refuses. Called after _check_provider_keys
-    so the models cache (which carries pricing) has been refreshed.
-    """
-    worker = cfg.models.resolve("worker")
-    unpriced: list[str] = []
-    for name, state in spec.states.items():
-        if not isinstance(state, AgentState):
-            continue
-        hard = spec.budget.max_usd is not None or state.max_usd is not None
-        if not hard:
-            continue
-        model = worker.model if state.model == "inherit" and worker else state.model
-        if lookup_price(model) is None and f"{model!r} (state {name!r})" not in unpriced:
-            unpriced.append(f"{model!r} (state {name!r})")
-    if not unpriced:
-        return None
-    return (
-        "[budget] max_usd is a hard cap but there is no price data for "
-        + ", ".join(unpriced)
-        + ". Switch to best_effort_usd_limit, pin a priced model, or tighten"
-        " max_transitions and per-state token caps."
-    )
-
-
-def _machine_network_refusal(
-    cfg: Config, profile: SandboxProfile, tool_states: list[ToolState]
-) -> str | None:
-    """A refusal message if this machine's tool-network needs can't be honored.
-
-    Layers machine-specific rules on top of `check_network_profile` (which
-    handles agent_network=local / tool_network=only_explicit_states on
-    `hardened`). On `hardened` per-tool isolation is impossible, so we refuse,
-    rather than silently mis-confine, whenever isolation is *required*: by the
-    operator (`tool_network = "block"`) or by a state (`allow_network = "block"`).
-    A networked state under `tool_network = "block"` is a config conflict and is
-    refused on any profile. Returns None when fine.
-    """
-    net_err = check_network_profile(cfg, profile)
-    if net_err is not None:
-        return net_err
-    tn = cfg.sandbox.tool_network
-    has_allow = any(s.allow_network == "allow" for s in tool_states)
-    has_block = any(s.allow_network == "block" for s in tool_states)
-    if has_allow and tn == "block":
-        if profile == "hardened":
-            return (
-                'a tool state sets allow_network = "allow" but sandbox.tool_network ='
-                " 'block'. The hardened profile cannot single out one tool's"
-                " network namespace; let tools share the host network with"
-                " sandbox.tool_network = 'allow' and sandbox.agent_network = 'open',"
-                " or run on strict for explicit per-tool egress."
-            )
-        return (
-            'a tool state sets allow_network = "allow" but sandbox.tool_network ='
-            " 'block'. Set sandbox.tool_network = 'only_explicit_states' for"
-            " explicit per-tool egress."
-        )
-    if tool_states and tn == "block" and profile == "hardened":
-        return (
-            "isolating a machine's tool-state network requires the strict profile"
-            " (a per-tool network namespace); this host supports only 'hardened'."
-            " Run on strict, or let tools share the host network with"
-            " sandbox.tool_network = 'allow' (which also requires"
-            " sandbox.agent_network = 'open')."
-        )
-    if has_block and profile == "hardened":
-        return (
-            'a tool state sets allow_network = "block" (network must be denied),'
-            " but the hardened profile can't isolate one tool's network. Run on"
-            ' strict, or use allow_network = "auto" to tolerate the host network.'
-        )
-    return None
-
-
 def _safe_input(prompt: str) -> str | None:
     """``input`` that returns None on EOF / non-interactive stdin instead of raising."""
     try:
@@ -630,7 +423,7 @@ def _resolve_network_refusal(  # noqa: PLR0911
     except (ConfigError, ProfileUnavailableError) as exc:
         print(f"  Applied, but the config no longer validates: {exc}", file=sys.stderr)
         return 2
-    if _machine_network_refusal(new_cfg, new_profile, tool_states) is not None:
+    if machine_network_refusal(new_cfg, new_profile, tool_states) is not None:
         print("  Applied, but a conflict remains; review the per-repo config.", file=sys.stderr)
         return 2
     print(f"  Applied to {target}. Continuing the run.", file=sys.stderr)
@@ -658,7 +451,7 @@ def _cmd_machine_run(  # noqa: PLR0911, PLR0912, PLR0915
     # does not, and on a profile that can't RO-bind the bundle a `scripts/`
     # symlink escaping it (which `machine check` rejects) would otherwise be read
     # by a tool. Security boundary, so run enforces it too, not just check.
-    bundle_problems = _validate_bundle(spec, path)
+    bundle_problems = validate_bundle(spec, path)
     if bundle_problems:
         return _fail(path, bundle_problems, "bundle")
     cwd = Path.cwd()
@@ -672,7 +465,7 @@ def _cmd_machine_run(  # noqa: PLR0911, PLR0912, PLR0915
     profile: SandboxProfile = detect_env().detected_profile
     # The running machine's own file + scripts bundle are read-only in every
     # run jail, so a tool/agent can't rewrite its own logic or bundled scripts.
-    protect_paths = _machine_protect_paths(path, cwd)
+    protect_paths = machine_protect_paths(path, cwd)
     # Load the effective config (machine [config] overlay included) for EVERY
     # machine: a pure wait/branch machine still reads [machine] snapshot_keep from
     # it, and validating the overlay up front means a bad overlay or an ignored
@@ -708,7 +501,7 @@ def _cmd_machine_run(  # noqa: PLR0911, PLR0912, PLR0915
                 print(egress_err, file=sys.stderr)
                 return 2
         snapshot_keep = cfg.machine.snapshot_keep
-        refusal = _machine_network_refusal(cfg, profile, tool_states)
+        refusal = machine_network_refusal(cfg, profile, tool_states)
         if refusal is not None:
             outcome = _resolve_network_refusal(
                 path, refusal, cfg, profile, tool_states, cwd, spec.config
@@ -722,7 +515,7 @@ def _cmd_machine_run(  # noqa: PLR0911, PLR0912, PLR0915
                 print(missing, file=sys.stderr)
                 return 2
             # After _check_provider_keys so the price cache has been refreshed.
-            usd_err = _hard_usd_preflight_error(spec, cfg)
+            usd_err = hard_usd_preflight_error(spec, cfg)
             if usd_err is not None:
                 print(f"REFUSING: {usd_err}", file=sys.stderr)
                 return 2
@@ -780,7 +573,7 @@ def _cmd_machine_run(  # noqa: PLR0911, PLR0912, PLR0915
                 state_log_root=root / "states",
                 # Operator argv fired on machine.notify/machine.end, on the host
                 # outside the jail (None when [machine.notify].on_event is unset).
-                notify_hook=_build_machine_notify_hook(cfg, spec.machine, root),
+                notify_hook=build_machine_notify_hook(cfg, spec.machine, root),
                 memory_limit_mb=cfg.sandbox.memory_limit_mb,
             )
             result = drive(spec, journal, world, live=True, exit_on_wait=exit_on_wait)
@@ -1062,7 +855,7 @@ def _write_scripts(base_dir: Path, scripts: dict[str, str]) -> None:
 
     Defense-in-depth: unlink a pre-existing symlink at the target before writing
     so a planted `scripts/<name>` -> elsewhere link can't redirect the write out
-    of the bundle. `_validate_bundle` (run by check/run before any execution) is
+    of the bundle. `validate_bundle` (run by check/run before any execution) is
     the comprehensive backstop for symlinks anywhere in the tree."""
     for rel, content in scripts.items():
         p = base_dir / rel
@@ -1090,7 +883,7 @@ def _check_machine_text(
         spec = load_machine(candidate_path)
     except MachineError as exc:
         return None, list(exc.problems)
-    bundle_problems = _validate_bundle(spec, candidate_path)
+    bundle_problems = validate_bundle(spec, candidate_path)
     if bundle_problems:
         return None, bundle_problems
     return spec, []
@@ -1282,7 +1075,7 @@ def _cmd_machine_create(  # noqa: PLR0911, PLR0912, PLR0915
     # bundle check on the output dir, which can differ from scratch (e.g. a
     # pre-existing symlink under scripts/). Lint/types are NOT re-run: the
     # written files are byte-identical to the scratch copy that just passed.
-    out_problems = _validate_bundle(spec, target)
+    out_problems = validate_bundle(spec, target)
     if out_problems:
         print("WARNING: the written bundle has problems and won't run yet:", file=sys.stderr)
         for problem in out_problems:

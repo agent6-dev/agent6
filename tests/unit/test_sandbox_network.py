@@ -18,12 +18,12 @@ from agent6.app.egress import (
     check_network_profile,
     maybe_start_egress,
 )
+from agent6.app.machine import (
+    machine_network_refusal,
+)
 from agent6.config import Config, validate_config
 from agent6.machine.model import ToolState
 from agent6.types import SandboxProfile
-from agent6.ui.cli.machine_cmds import (
-    _machine_network_refusal,  # pyright: ignore[reportPrivateUsage]
-)
 
 
 def _cfg(agent_network: str = "providers", tool_network: str = "block") -> Config:
@@ -72,32 +72,32 @@ _BLOCK_TOOL = ToolState(
 
 
 def test_refusal_networked_tool_under_block() -> None:
-    msg = _machine_network_refusal(_cfg("providers", "block"), "strict", [_NET_TOOL])
+    msg = machine_network_refusal(_cfg("providers", "block"), "strict", [_NET_TOOL])
     assert msg is not None and "allow_network" in msg
 
 
 def test_refusal_providers_explicit_states_strict_ok() -> None:
     # The headline combo: confined agent + audited networked tool, on strict.
     assert (
-        _machine_network_refusal(_cfg("providers", "only_explicit_states"), "strict", [_NET_TOOL])
+        machine_network_refusal(_cfg("providers", "only_explicit_states"), "strict", [_NET_TOOL])
         is None
     )
 
 
 def test_refusal_block_tools_on_hardened() -> None:
-    msg = _machine_network_refusal(_cfg("providers", "block"), "hardened", [_TOOL])
+    msg = machine_network_refusal(_cfg("providers", "block"), "hardened", [_TOOL])
     assert msg is not None and "strict" in msg
 
 
 def test_refusal_explicit_block_state_on_hardened() -> None:
     # tool_network=allow runs auto/allow tools on hardened, but an explicit
     # allow_network="block" demand can't be honored there -> refuse.
-    msg = _machine_network_refusal(_cfg("open", "allow"), "hardened", [_BLOCK_TOOL])
+    msg = machine_network_refusal(_cfg("open", "allow"), "hardened", [_BLOCK_TOOL])
     assert msg is not None and "block" in msg
 
 
 def test_refusal_allow_auto_tools_on_hardened_ok() -> None:
-    assert _machine_network_refusal(_cfg("open", "allow"), "hardened", [_TOOL]) is None
+    assert machine_network_refusal(_cfg("open", "allow"), "hardened", [_TOOL]) is None
 
 
 # --- maybe_start_egress (local / open / non-strict short-circuits) --------

@@ -10,10 +10,10 @@ from pathlib import Path
 import pytest
 
 from agent6.app.finalize import fire_notify_hook
-from agent6.config import NotifyConfig, load_config
-from agent6.ui.cli.machine_cmds import (
-    _build_machine_notify_hook,  # pyright: ignore[reportPrivateUsage]
+from agent6.app.machine import (
+    build_machine_notify_hook,
 )
+from agent6.config import NotifyConfig, load_config
 
 
 def test_notify_noop_when_unconfigured(tmp_path: Path) -> None:
@@ -135,7 +135,7 @@ def test_machine_notify_hook_fires_with_env(tmp_path: Path) -> None:
     cfg_path = tmp_path / "agent6.toml"
     cfg_path.write_text(body, encoding="utf-8")
     cfg = load_config(cfg_path)
-    hook = _build_machine_notify_hook(cfg, "mymachine", tmp_path / "inst")
+    hook = build_machine_notify_hook(cfg, "mymachine", tmp_path / "inst")
     assert hook is not None
     hook("notify", "poll", "attention needed", "warn")
     payload = json.loads(out.read_text(encoding="utf-8"))
@@ -156,7 +156,7 @@ def test_machine_notify_hook_none_when_unconfigured(tmp_path: Path) -> None:
     cfg_path = tmp_path / "agent6.toml"
     cfg_path.write_text(body, encoding="utf-8")
     cfg = load_config(cfg_path)
-    assert _build_machine_notify_hook(cfg, "m", tmp_path) is None
+    assert build_machine_notify_hook(cfg, "m", tmp_path) is None
 
 
 def test_notify_in_config_loads(tmp_path: Path) -> None:

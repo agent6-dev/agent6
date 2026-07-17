@@ -11,16 +11,18 @@ from typing import Any
 
 import pytest
 
+from agent6.app.machine import (
+    machine_network_refusal,
+    machine_protect_paths,
+    validate_bundle,
+)
 from agent6.config import Config
 from agent6.machine import MachineJournal, ToolState, drive, load_machine
 from agent6.machine.engine import LiveWorld, ToolExecResult
 from agent6.types import CommandResult
 from agent6.ui.cli.machine_cmds import (
-    _machine_network_refusal,  # pyright: ignore[reportPrivateUsage]
-    _machine_protect_paths,  # pyright: ignore[reportPrivateUsage]
     _resolve_network_refusal,  # pyright: ignore[reportPrivateUsage]
     _suggested_network_fix,  # pyright: ignore[reportPrivateUsage]
-    _validate_bundle,  # pyright: ignore[reportPrivateUsage]
 )
 
 # A two-tool machine: the first tool opts into the network, the second does not.
@@ -249,14 +251,14 @@ def test_liveworld_passes_protect_paths_to_jail(
 def test_protect_paths_include_machine_file_and_scripts(tmp_path: Path) -> None:
     f = _write(tmp_path, NET_MACHINE)
     (tmp_path / "scripts").mkdir()
-    got = _machine_protect_paths(f, tmp_path)
+    got = machine_protect_paths(f, tmp_path)
     assert f.resolve() in got
     assert (tmp_path / "scripts").resolve() in got
 
 
 def test_protect_paths_skip_missing_scripts(tmp_path: Path) -> None:
     f = _write(tmp_path, NET_MACHINE)  # no scripts/ dir
-    got = _machine_protect_paths(f, tmp_path)
+    got = machine_protect_paths(f, tmp_path)
     assert got == (f.resolve(),)
 
 
@@ -267,7 +269,7 @@ def test_protect_paths_exclude_machine_outside_cwd(tmp_path: Path) -> None:
     outside.write_text(NET_MACHINE, encoding="utf-8")
     sub = tmp_path / "repo"
     sub.mkdir()
-    assert _machine_protect_paths(outside, sub) == ()
+    assert machine_protect_paths(outside, sub) == ()
 
 
 # --- bundle / script-path validation ---------------------------------------
@@ -278,13 +280,13 @@ def test_bundle_ok_when_script_exists(tmp_path: Path) -> None:
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "fetch.sh").write_text("#!/bin/sh\n", encoding="utf-8")
     spec = load_machine(f)
-    assert _validate_bundle(spec, f) == []
+    assert validate_bundle(spec, f) == []
 
 
 def test_bundle_flags_missing_script(tmp_path: Path) -> None:
     f = _write(tmp_path, NET_MACHINE)  # references scripts/fetch.sh, never created
     spec = load_machine(f)
-    problems = _validate_bundle(spec, f)
+    problems = validate_bundle(spec, f)
     assert any("not found in bundle" in p for p in problems)
 
 
@@ -294,7 +296,7 @@ def test_bundle_flags_escaping_command_ref(tmp_path: Path) -> None:
     )
     f = _write(tmp_path, text)
     spec = load_machine(f)
-    problems = _validate_bundle(spec, f)
+    problems = validate_bundle(spec, f)
     assert any("escapes the bundle" in p for p in problems)
 
 
@@ -305,7 +307,7 @@ def test_bundle_flags_symlink_escape(tmp_path: Path) -> None:
     outside.write_text("secret", encoding="utf-8")
     (tmp_path / "scripts" / "fetch.sh").symlink_to(outside)
     spec = load_machine(f)
-    problems = _validate_bundle(spec, f)
+    problems = validate_bundle(spec, f)
     assert any("outside the bundle" in p for p in problems)
 
 
@@ -316,7 +318,7 @@ def test_bundle_reports_circular_symlink_in_scripts(tmp_path: Path) -> None:
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "loop").symlink_to(tmp_path / "scripts" / "loop")
     spec = load_machine(f)
-    problems = _validate_bundle(spec, f)  # must not raise
+    problems = validate_bundle(spec, f)  # must not raise
     assert any("loop" in p for p in problems)
 
 
@@ -326,7 +328,7 @@ def test_bundle_reports_circular_symlink_command_ref(tmp_path: Path) -> None:
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "loop").symlink_to(tmp_path / "scripts" / "loop")
     spec = load_machine(f)
-    problems = _validate_bundle(spec, f)  # must not raise
+    problems = validate_bundle(spec, f)  # must not raise
     assert any("fetch" not in p and "loop" in p for p in problems)
 
 
@@ -444,7 +446,7 @@ def test_suggested_network_fix_hardened(tmp_path: Path) -> None:
 
 
 def test_network_refusal_hardened_allow_tool_names_runnable_fix(tmp_path: Path) -> None:
-    refusal = _machine_network_refusal(
+    refusal = machine_network_refusal(
         Config.model_validate({}), "hardened", [_allow_tool(tmp_path)]
     )
     assert refusal is not None

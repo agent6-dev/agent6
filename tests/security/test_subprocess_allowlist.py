@@ -21,6 +21,7 @@ _PATTERN = re.compile(r"subprocess\.(run|Popen)")
 # completer, which runs in the operator's shell, not in agent6).
 ALLOWED = {
     "app/finalize.py",
+    "app/machine/_preflight.py",
     "git_ops.py",
     "providers/token_command.py",
     "sandbox/detect.py",
