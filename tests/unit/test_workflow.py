@@ -2608,7 +2608,7 @@ def test_steer_noop_when_not_requested() -> None:
     """steer_requested() returns False -> _maybe_handle_steer is a no-op."""
     wf = _wf()  # default steer_requested = lambda: False
     messages: list[dict[str, Any]] = []
-    result = wf._maybe_handle_steer(messages, iteration=1)  # pyright: ignore[reportPrivateUsage]
+    result = wf._maybe_handle_steer(messages, iteration=1, state=_state())  # pyright: ignore[reportPrivateUsage]
     assert result is None
     assert messages == []
 
@@ -2622,7 +2622,7 @@ def test_steer_injects_instruction() -> None:
         steer_prompt=lambda: "focus on perf_takehome.py first",
     )
     messages: list[dict[str, Any]] = []
-    result = wf._maybe_handle_steer(messages, iteration=3)  # pyright: ignore[reportPrivateUsage]
+    result = wf._maybe_handle_steer(messages, iteration=3, state=_state())  # pyright: ignore[reportPrivateUsage]
     assert result is None
     assert cleared == [True], "steer_clear must be called even on success"
     assert len(messages) == 1
@@ -2643,7 +2643,7 @@ def test_steer_empty_text_continues_without_inject() -> None:
         steer_prompt=lambda: "   ",
     )
     messages: list[dict[str, Any]] = []
-    result = wf._maybe_handle_steer(messages, iteration=2)  # pyright: ignore[reportPrivateUsage]
+    result = wf._maybe_handle_steer(messages, iteration=2, state=_state())  # pyright: ignore[reportPrivateUsage]
     assert result is None
     assert cleared == [True]
     assert messages == []
@@ -2658,7 +2658,7 @@ def test_steer_none_text_continues_without_inject() -> None:
         steer_prompt=lambda: None,
     )
     messages: list[dict[str, Any]] = []
-    result = wf._maybe_handle_steer(messages, iteration=2)  # pyright: ignore[reportPrivateUsage]
+    result = wf._maybe_handle_steer(messages, iteration=2, state=_state())  # pyright: ignore[reportPrivateUsage]
     assert result is None
     assert cleared == [True]
     assert messages == []
@@ -2681,7 +2681,7 @@ def test_steer_abort_signal() -> None:
             steer_prompt=_typed,
         )
         messages: list[dict[str, Any]] = []
-        result = wf._maybe_handle_steer(messages, iteration=5)  # pyright: ignore[reportPrivateUsage]
+        result = wf._maybe_handle_steer(messages, iteration=5, state=_state())  # pyright: ignore[reportPrivateUsage]
         assert result == "abort", f"typed={typed!r}"
         assert cleared == [True]
         assert messages == [], "abort must not inject a message"
@@ -2696,7 +2696,7 @@ def test_steer_detach_signal() -> None:
         steer_prompt=lambda: "detach",
     )
     messages: list[dict[str, Any]] = []
-    result = wf._maybe_handle_steer(messages, iteration=4)  # pyright: ignore[reportPrivateUsage]
+    result = wf._maybe_handle_steer(messages, iteration=4, state=_state())  # pyright: ignore[reportPrivateUsage]
     assert result == "detach"
     assert cleared == [True]
     assert messages == [], "detach must not inject a message"
@@ -2716,7 +2716,7 @@ def test_steer_clear_called_even_when_prompt_raises() -> None:
     )
     messages: list[dict[str, Any]] = []
     with pytest.raises(RuntimeError, match="input EOF"):
-        wf._maybe_handle_steer(messages, iteration=1)  # pyright: ignore[reportPrivateUsage]
+        wf._maybe_handle_steer(messages, iteration=1, state=_state())  # pyright: ignore[reportPrivateUsage]
     assert cleared == [True], "finally must run steer_clear even on prompt failure"
 
 

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 runs diff/commits/merge/prune` commands (the run-branch lifecycle)."""
+"""`agent6 runs diff/commits/merge/prune/compare` commands (the run-branch
+lifecycle)."""
 
 from __future__ import annotations
 
@@ -36,10 +37,12 @@ from agent6.runs.id import RunIdError, resolve_run_id
 from agent6.runs.layout import RunLayout
 from agent6.ui.bridge.approval import request_stop, worker_is_alive
 from agent6.ui.cli._common import _runs_dir, _state_dir, all_run_dirs, resolve_run_layout, sgr
+from agent6.ui.cli._compare import manifest_task, print_ranked_candidates, rank, verify_ok
 from agent6.ui.cli._merge import execute_merge
 from agent6.ui.cli.plan_watch import _most_recent_run_id, _newest_dir
-from agent6.ui.viewmodel import is_run_husk, summarize_run_dir, task_snippet
-from agent6.ui.viewmodel.format import format_cost, status_label
+from agent6.ui.viewmodel import is_run_husk, is_winner, summarize_run_dir, task_snippet
+from agent6.ui.viewmodel.format import WINNER_GLYPH, format_cost, status_label
+from agent6.workflows.judge import CandidateBrief
 
 # ANSI styles for the shared status words (viewmodel.status_word), tty only:
 # a listing where a provider_error death reads as plain text is how dead runs
@@ -77,6 +80,7 @@ def _cmd_list() -> int:
     if not dirs:
         print('no runs yet. Start one with `agent6 run "<task>"`.')
         return 0
+    winners = {d.name for d in dirs if is_winner(d)}  # fan-out compare winners
     summaries = sorted((summarize_run_dir(d) for d in dirs), key=lambda s: s.mtime, reverse=True)
     color = sys.stdout.isatty()
     rows: list[tuple[str, str, str, str, str, str, str]] = []
@@ -84,7 +88,10 @@ def _cmd_list() -> int:
         when = time.strftime("%m-%d %H:%M", time.localtime(s.mtime))
         styled, plain = _styled_status(s.status, s.reason, color=color)
         cost = "" if s.cost_usd <= 0 else format_cost(s.cost_usd)
-        rows.append((when, styled, plain, s.mode, cost, s.run_id, task_snippet(s.task)[:60]))
+        # A winner lane gets a ★ suffix on its id (folded into the width math, so
+        # the columns stay aligned); a non-disruptive marker the hub/home mirror.
+        run_id = f"{s.run_id} {WINNER_GLYPH}" if s.run_id in winners else s.run_id
+        rows.append((when, styled, plain, s.mode, cost, run_id, task_snippet(s.task)[:60]))
     status_w = max(6, *(len(plain) for _, _, plain, *_ in rows))
     id_w = max(2, *(len(r[5]) for r in rows))
     print(
@@ -532,4 +539,85 @@ def _cmd_prune(*, delete_squashed: bool = False) -> int:
         f"\n[agent6] deleted {total_deleted}{squashed_note}; kept {kept} "
         f"({merged_kept} merged, {unmerged_kept} unmerged)",
     )
+    return 0
+
+
+def _candidate_diff(cwd: Path, base_sha: str, run_branch: str) -> str:
+    """The diff a run's branch introduced (base_sha..run_branch), read-only,
+    without checking out the branch (unlike `_cmd_diff`, several candidates are
+    compared in one call, and only one can be the current checkout). Same
+    hardening as `runs diff`: a poisoned `.git/config` (`diff.external`/
+    `diff.*.textconv`) must not run its payload on the host. "" if the branch
+    is gone or the diff fails -- never blocks the comparison."""
+    if not base_sha or not run_branch or not branch_exists(cwd, run_branch):
+        return ""
+    args = [
+        "git",
+        *git_hardening_flags(),
+        "diff",
+        *DIFF_SHOW_SAFETY_FLAGS,
+        f"{base_sha}..{run_branch}",
+    ]
+    proc = subprocess.run(args, cwd=cwd, capture_output=True, text=True, check=False)
+    return proc.stdout if proc.returncode == 0 else ""
+
+
+def _cmd_compare(*, run_ids: tuple[str, ...]) -> int:
+    """Advisory ranked comparison across >=2 already-run candidates: the same
+    ranked report `--parallel`'s auto-compare prints (judge via the reviewer
+    model when configured, else the mechanical verify+cost ranking) -- for
+    runs picked by hand, not necessarily from the same fan-out or even the
+    same task (each candidate's own manifest `user_task` is its task).
+    Read-only: no merges, no writes."""
+    if len(run_ids) < 2:
+        print(
+            f"ERROR: runs compare needs at least 2 run ids (got {len(run_ids)}).",
+            file=sys.stderr,
+        )
+        return 2
+    cwd = Path.cwd()
+    resolved: list[tuple[RunLayout, dict[str, Any]]] = []
+    seen: set[str] = set()
+    for query in run_ids:
+        res = _resolve_run_manifest(cwd, query)
+        if isinstance(res, int):
+            return res
+        layout, manifest = res
+        if layout.run_id in seen:
+            print(f"ERROR: run {layout.run_id!r} was given more than once.", file=sys.stderr)
+            return 2
+        seen.add(layout.run_id)
+        resolved.append((layout, manifest))
+    try:
+        cfg = load_effective(cwd, None).config
+    except ConfigError as exc:
+        print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
+        return 2
+
+    candidates: list[CandidateBrief] = []
+    for layout, manifest in resolved:
+        base_sha = str(manifest.get("base_sha") or "")
+        run_branch = str(manifest.get("run_branch") or "")
+        summary = summarize_run_dir(layout.run_dir)
+        candidates.append(
+            CandidateBrief(
+                run_id=layout.run_id,
+                task=manifest_task(layout.run_dir, fallback=layout.run_id),
+                diff=_candidate_diff(cwd, base_sha, run_branch),
+                verify_ok=verify_ok(summary.status),
+                cost_usd=summary.cost_usd,
+            )
+        )
+
+    reviewer = cfg.models.resolve("reviewer")
+    # `runs compare` is advisory and stateless: it ranks + prints but never stamps
+    # a manifest (only the fan-out's auto-compare does), so `ranked_by` is unused.
+    ranking, rationale, _by = rank(cfg, candidates, transcript_dir=_state_dir(cwd) / "compare")
+    print(f"[agent6] comparing {len(candidates)} runs:")
+    print_ranked_candidates(candidates, ranking, rationale)
+    if reviewer is None:
+        print(
+            "\n(no reviewer model configured; ranked mechanically: verify-pass first, then"
+            " lower cost)"
+        )
     return 0

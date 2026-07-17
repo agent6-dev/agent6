@@ -33,6 +33,33 @@ def format_cost(usd: float, *, partial: bool = False) -> str:
     return f"{prefix}${usd:.2f}" if usd >= 0.995 else f"{prefix}${usd:.4f}"
 
 
+# The fan-out winner marker, shown on listing rows (a lane the auto-compare
+# ranked first). Text glyph so every terminal font renders it; the web SPA
+# mirrors it in page.py.
+WINNER_GLYPH = "★"
+
+
+def format_compare(compare: object) -> tuple[str, str] | None:
+    """A lane's fan-out compare outcome as ``(headline, rationale)``, or None when
+    the manifest carries no (well-formed) ``compare`` block. The headline reads
+    e.g. ``rank 1/2 · winner · judge``; the rationale is the judge's text (empty
+    for a mechanical ranking). Shared by `runs show` and the TUI run header; the
+    web SPA mirrors the same shape in page.py."""
+    if not isinstance(compare, dict):
+        return None
+    rank, of = compare.get("rank"), compare.get("of")
+    if not isinstance(rank, int) or not isinstance(of, int):
+        return None
+    parts = [f"rank {rank}/{of}"]
+    if compare.get("winner"):
+        parts.append("winner")
+    ranked_by = compare.get("ranked_by")
+    if isinstance(ranked_by, str) and ranked_by:
+        parts.append(ranked_by)
+    rationale = compare.get("rationale")
+    return " · ".join(parts), rationale if isinstance(rationale, str) else ""
+
+
 def status_label(status: str, reason: str = "") -> str:
     """The one human label for a run outcome: the status word (from
     ``status_word``), plus the reason with underscores spaced when there is one

@@ -75,6 +75,34 @@ def test_conversation_payload_folds_the_event_log(tmp_path: Path) -> None:
     assert "Field required" in full  # the expanded rendering carries it
 
 
+def test_run_snapshot_embeds_the_compare_outcome(tmp_path: Path) -> None:
+    # A fan-out lane's manifest carries the compare block; the run snapshot
+    # embeds it so the page header can render rank/winner/rationale.
+    d = _run(tmp_path, "lane1", [{"type": "run.start", "user_task": "x"}])
+    (d / "manifest.json").write_text(
+        json.dumps(
+            {"compare": {"group": "fan", "rank": 1, "of": 2, "winner": True,
+                         "ranked_by": "judge", "rationale": "cleanest diff"}}
+        ),
+        encoding="utf-8",
+    )  # fmt: skip
+    snap = model.run_snapshot(d)
+    assert snap["compare"]["winner"] is True and snap["compare"]["rank"] == 1
+    assert snap["compare"]["rationale"] == "cleanest diff"
+    # A run with no compare block carries no `compare` key (non-lane runs).
+    plain = _run(tmp_path, "plain", [{"type": "run.start", "user_task": "y"}])
+    assert "compare" not in model.run_snapshot(plain)
+
+
+def test_hub_marks_the_fan_out_winner(tmp_path: Path) -> None:
+    d = _run(tmp_path, "lane-win", [{"type": "run.start", "mode": "run", "user_task": "t"}])
+    (d / "manifest.json").write_text(
+        json.dumps({"compare": {"rank": 1, "of": 2, "winner": True}}), encoding="utf-8"
+    )
+    (s,) = model.hub_payload(tmp_path)["runs"]
+    assert s["winner"] is True
+
+
 def test_conversation_payload_empty_without_log(tmp_path: Path) -> None:
     d = model.runs_root(tmp_path) / "r2b"
     d.mkdir(parents=True)
@@ -180,3 +208,46 @@ def test_config_suggestions_providers_and_models(
     # unknown keys / roles suggest nothing
     assert model.config_suggestions(tmp_path, "web.port") == []
     assert model.config_suggestions(tmp_path, "models.nosuch.model") == []
+
+
+def test_config_suggestions_parallel_models_pseudo_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The /parallel composer autocomplete: the worker's configured model plus the
+    # worker provider's cached listing, cache-only so it never blocks.
+    cfg_home = Path(os.environ["AGENT6_CONFIG_HOME"])
+    (cfg_home / "config.toml").write_text(
+        '[providers.openrouter]\napi_format = "openai"\n'
+        'base_url = "https://openrouter.ai/api/v1"\n'
+        '[models.worker]\nprovider = "openrouter"\nmodel = "role-only-model"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "cache"))
+    cache = tmp_path / "cache" / "models"
+    cache.mkdir(parents=True)
+    (cache / "openrouter.json").write_text(
+        json.dumps({"models": ["moonshotai/kimi-k2.6", "z-ai/glm-4.6"]}), encoding="utf-8"
+    )
+    out = model.config_suggestions(tmp_path, "parallel.models")
+    assert out == ["moonshotai/kimi-k2.6", "role-only-model", "z-ai/glm-4.6"]
+
+
+def test_parallel_models_suggestions_scoped_to_worker_provider(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Lanes inherit the WORKER provider (only the model is overridden per lane),
+    # so the suggestions offer only models the lanes can actually run: a sibling
+    # provider's cached catalog is excluded.
+    cfg_home = Path(os.environ["AGENT6_CONFIG_HOME"])
+    (cfg_home / "config.toml").write_text(
+        '[providers.w]\napi_format = "openai"\nbase_url = "https://w.example/v1"\n'
+        '[providers.s]\napi_format = "openai"\nbase_url = "https://s.example/v1"\n'
+        '[models.worker]\nprovider = "w"\nmodel = "w/base-model"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "cache"))
+    cache = tmp_path / "cache" / "models"
+    cache.mkdir(parents=True)
+    (cache / "w.json").write_text(json.dumps({"models": ["w/model-a"]}), encoding="utf-8")
+    (cache / "s.json").write_text(json.dumps({"models": ["s/only-model"]}), encoding="utf-8")
+    assert model.config_suggestions(tmp_path, "parallel.models") == ["w/base-model", "w/model-a"]

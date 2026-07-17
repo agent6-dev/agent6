@@ -84,7 +84,8 @@ from agent6.ui.tui.modals import (
 )
 from agent6.ui.tui.settings import get_copy_method
 from agent6.ui.tui.theme import PALETTE_CSS, MuxPointerShapes, open_theme_picker, setup_theme
-from agent6.ui.viewmodel.format import TASK_STATUS_GLYPH, format_cost
+from agent6.ui.viewmodel import run_compare
+from agent6.ui.viewmodel.format import TASK_STATUS_GLYPH, format_compare, format_cost
 from agent6.ui.viewmodel.state import (
     MAX_LOG_TAIL,
     STREAM_DELTA_EVENTS,
@@ -240,6 +241,21 @@ class DashboardScreen(Screen[None]):
         self._rendered_tree: tuple[object, object] | None = None
         self._rendered_tools: tuple[object, object] | None = None
         self._rendered_diff: tuple[object, object, object, object] | None = None
+        self._compare_line: str | None = None  # cached fan-out compare header (terminal state)
+
+    def _compare_top(self) -> str:
+        """The fan-out compare outcome for the header's task line (empty for a
+        non-lane run). Read from the manifest once it appears (a lane is stamped
+        post-import, by which point it is finished) and cached: it never changes."""
+        if self._compare_line is not None:
+            return self._compare_line
+        formatted = format_compare(run_compare(self._tui.run_dir))
+        if formatted is None:
+            return ""  # not stamped (yet); don't cache -- a live lane may get stamped later
+        headline, rationale = formatted
+        rat = f" — {rationale[:100]}" if rationale else ""
+        self._compare_line = f"\ncompare: {headline}{rat}"
+        return self._compare_line
 
     @property
     def _tui(self) -> Agent6TUI:
@@ -501,6 +517,7 @@ class DashboardScreen(Screen[None]):
             f"[b]agent6[/]  {step}   role: {escape(role_line)}   cost: {cost}{budget}{ctx}"
             f"   {finished}\n"
             f"task: {escape(s.user_task[:120])}"
+            f"{escape(self._compare_top())}"
         )
 
         # Live reasoning / response pane. Built as rich Text so model output is

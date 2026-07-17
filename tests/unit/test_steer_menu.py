@@ -101,6 +101,28 @@ def test_pause_menu_slash_commands(tmp_path: Path, capsys: pytest.CaptureFixture
     assert pause_menu(tmp_path, input_fn=_feed([])) is None
 
 
+def test_pause_menu_help_names_parallel(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """The mid-run steer help names `/parallel`, the directive the loop dispatches
+    sibling lanes for (see agent6.directive.parse_directive)."""
+    from agent6.ui.cli._steer_menu import pause_menu
+
+    (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+    assert pause_menu(tmp_path, input_fn=_feed(["/help", "go"])) == "go"
+    assert "/parallel" in capsys.readouterr().out
+
+
+def test_pause_menu_parallel_directive_passes_through_verbatim(tmp_path: Path) -> None:
+    """`/parallel <task>` has a space, so the pause menu sends it to the run
+    verbatim (the loop's _maybe_handle_steer parses it); it is never swallowed as
+    a menu command. This is why mid-run `/parallel` needs no composer change."""
+    from agent6.ui.cli._steer_menu import pause_menu
+
+    (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+    assert pause_menu(tmp_path, input_fn=_feed(["/parallel 2 add a greeting"])) == (
+        "/parallel 2 add a greeting"
+    )
+
+
 def test_pause_menu_prefixes_and_word_rule(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

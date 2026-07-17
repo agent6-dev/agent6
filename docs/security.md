@@ -335,6 +335,36 @@ profile. No silent downgrade: a request the host can't meet is refused, and
     - Per-repo state lives at `$XDG_STATE_HOME/agent6/<repo-id>/` (override with
       `[agent6].state_dir`), outside the cwd jailed commands run on.
 
+### 6b. Parallel lanes (fan-out / coordinator dispatch)
+
+`agent6 run --parallel`, `agent6 runs compare`, and a live run's `/parallel`
+steer directive (§ [architecture.md](architecture.md#parallel-runs-fan-out-and-coordinator-dispatch))
+each spawn subordinate work. Nothing here loosens the sandbox:
+
+- **Every lane is an ordinary run.** A lane is a plain detached `agent6 run` on
+  its own clone: its own jail per `sandbox.profile`, its own egress broker
+  (§1b), its own `run_commands` policy. Nothing shares a sandbox or a broker
+  socket across lanes or with the parent run.
+- **Recursion is blocked by an env guard, not policy.** Every spawned lane
+  carries `AGENT6_SUBRUN=1`; both the `--parallel` flag and the coordinator's
+  `lane_spawner` wiring refuse when it is set, so a lane can never itself fan
+  out or dispatch (depth 1 by construction).
+- **A lane's config carries key references, never secret values.** The
+  orchestrator writes each lane a `--config` file via `materialize()`, a dump
+  of the resolved `Config` model (provider `base_url`, `api_key_env` names,
+  etc.) -- `Config` never holds a raw API key. The lane's own process reads
+  the same `secrets.toml` / provider env var as any other run, same user, same
+  host.
+- **No new subprocess call site.** `workflows/subrun.py` and
+  `ui/cli/parallel.py` add no direct `subprocess` use; lane git plumbing
+  (clone/fetch/merge) goes through `git_ops.py` and lane spawning goes through
+  `ui/bridge/spawn.py`, both already on the §2b allowlist. The
+  `tests/security/test_subprocess_allowlist.py` pin needed no new entry.
+- **Dirty-tree refusal, not auto-stash.** A lane clones committed HEAD only,
+  so `--parallel` refuses a dirty origin under `git.require_clean_worktree`
+  (the same policy and message shape `agent6 run` uses) rather than carrying
+  uncommitted work into a lane it cannot see.
+
 ### 7. No agent-owned network surface (except opt-in `agent6 web`)
 
 - **The loop opens no accept-side socket.**

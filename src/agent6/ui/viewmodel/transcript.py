@@ -104,6 +104,51 @@ def salient_arg(args: Any) -> str:
     return _clip(f"{key}={value}")
 
 
+def _parallel_group_label(event: dict[str, Any]) -> str:
+    group = str(event.get("group", "")).strip()
+    return f"group {group}" if group else "parallel"
+
+
+def _parallel_dispatched_body(event: dict[str, Any]) -> str:
+    """The coordinator dispatched a `/parallel` group: name how many tasks and
+    which, truthfully (lane ids do not exist yet -- the spawner names them, and
+    each task may expand to several lanes, so this counts TASKS, not lanes)."""
+    tasks_raw = event.get("tasks")
+    tasks = [str(t).strip() for t in tasks_raw] if isinstance(tasks_raw, list) else []
+    n = len(tasks)
+    head = (
+        f"dispatched {n} parallel task{'' if n == 1 else 's'} "
+        f"({_parallel_group_label(event)}); lanes run detached and appear as runs in the hub"
+    )
+    return "\n".join([head, *(f"• {_clip(t, 80)}" for t in tasks if t)])
+
+
+def _parallel_joined_body(event: dict[str, Any]) -> str:
+    """The coordinator joined a group's lanes back: one line per lane naming its
+    id, branch, status, and (when it landed) short sha."""
+    lanes_raw = event.get("lanes")
+    lanes = [ln for ln in lanes_raw if isinstance(ln, dict)] if isinstance(lanes_raw, list) else []
+    head = f"joined {_parallel_group_label(event)}: {len(lanes)} lane(s)"
+    rows: list[str] = []
+    for ln in lanes:
+        status = str(ln.get("status", "?"))
+        parts = [str(ln.get("run_id", "?"))]
+        branch = str(ln.get("branch", "")).strip()
+        if branch:
+            parts.append(branch)
+        sha = str(ln.get("sha", "")).strip()
+        if sha:
+            parts.append(sha[:12])
+        rows.append(f"{status}  {'  '.join(parts)}")
+    return "\n".join([head, *rows])
+
+
+def _parallel_failed_body(event: dict[str, Any]) -> str:
+    """A `/parallel` dispatch failure (nothing was joined): name the group + error."""
+    error = str(event.get("error", "")).strip()
+    return f"{_parallel_group_label(event)} dispatch failed: {error}"
+
+
 class TranscriptFold:
     """Incremental event -> `TranscriptItem` fold. Feed events in order; each
     `feed` returns the items that event completed (usually zero or one)."""
@@ -120,7 +165,7 @@ class TranscriptFold:
         self._tools = 0
         self._commits = 0
 
-    def feed(self, event: dict[str, Any]) -> list[TranscriptItem]:  # noqa: PLR0911
+    def feed(self, event: dict[str, Any]) -> list[TranscriptItem]:  # noqa: PLR0911, PLR0912
         etype = event.get("type", "")
         if etype == "role.call":
             self._thinking.clear()
@@ -156,6 +201,24 @@ class TranscriptFold:
             self._commits += 1
             n = len(str(event.get("patch", "")).splitlines())
             return [TranscriptItem("commit", detail=f"{n} lines")]
+        if etype == "loop.parallel.dispatched":
+            out = self._flush_message()  # a turn's prose precedes the dispatch marker
+            out.append(TranscriptItem("marker", body=_parallel_dispatched_body(event)))
+            return out
+        if etype == "loop.parallel.joined":
+            out = self._flush_message()
+            out.append(TranscriptItem("marker", body=_parallel_joined_body(event)))
+            return out
+        if etype == "loop.parallel.failed":
+            # Two shapes: a dispatch failure carries `error` (no join happened, so
+            # render it); a post-join failure carries only `lanes` (a subset of the
+            # joined event, which already showed each lane's status -- skip it, no
+            # redundant marker).
+            if not str(event.get("error", "")).strip():
+                return []
+            out = self._flush_message()
+            out.append(TranscriptItem("marker", body=_parallel_failed_body(event)))
+            return out
         if etype == "loop.steer.injected":
             # The operator's typed instruction (a steer, or the follow-up a
             # resume was started with), shown in the conversation like any

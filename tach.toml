@@ -23,6 +23,7 @@ depends_on = [
   "agent6.skills",
   "agent6.models.cache",
   "agent6.models.registry",
+  "agent6.models.validate",
   "agent6.paths",
   "agent6.models.pricing",
   "agent6.secrets",
@@ -34,6 +35,7 @@ depends_on = [
   "agent6.tools.schema",
   "agent6.memory",
   "agent6.portable",
+  "agent6.directive",
   "agent6.budget",
   "agent6.events",
   "agent6.git_ops",
@@ -61,6 +63,7 @@ depends_on = [
   "agent6.git_ops",
   "agent6.types",
   "agent6.config",
+  "agent6.directive",
   "agent6.providers",
   "agent6.budget",  # loop workflow needs BudgetExceeded
   "agent6.portable",
@@ -86,7 +89,7 @@ depends_on = []
 
 [[modules]]
 path = "agent6.ui.tui"
-depends_on = ["agent6.config", "agent6.config.layer", "agent6.ui.bridge", "agent6.machine", "agent6.models.cache", "agent6.models.registry", "agent6.paths", "agent6.secrets", "agent6.ui.viewmodel"]
+depends_on = ["agent6.config", "agent6.config.layer", "agent6.directive", "agent6.ui.bridge", "agent6.machine", "agent6.models.cache", "agent6.models.registry", "agent6.models.validate", "agent6.paths", "agent6.secrets", "agent6.ui.viewmodel"]
 
 [[modules]]
 # The shared, textual-free write bridge: spawn the CLI detached, and the
@@ -104,6 +107,7 @@ depends_on = []
 path = "agent6.ui.web"
 depends_on = [
   "agent6",
+  "agent6.directive",
   "agent6.ui.viewmodel",
   "agent6.ui.bridge",
   "agent6.config",
@@ -112,6 +116,8 @@ depends_on = [
   # config-editor value suggestions: the same model-listing cache + key
   # resolution the TUI config page uses
   "agent6.models.cache",
+  # pre-spawn /parallel model validation on the new-work composer
+  "agent6.models.validate",
   "agent6.secrets",
 ]
 
@@ -202,6 +208,14 @@ path = "agent6.models.registry"
 depends_on = ["agent6.config", "agent6.models.cache"]
 
 [[modules]]
+# Pre-spawn `/parallel` model validation + did-you-mean, shared by the three
+# front-ends and the coordinator's group dispatcher (all in ui). Reads the
+# configured roles + the on-disk model cache; keeps workflows free of a models
+# edge (the ui-built dispatcher validates before cloning).
+path = "agent6.models.validate"
+depends_on = ["agent6.config", "agent6.models.cache"]
+
+[[modules]]
 path = "agent6.sandbox.detect"
 depends_on = ["agent6.types"]
 
@@ -211,6 +225,14 @@ depends_on = []
 
 [[modules]]
 path = "agent6.portable"
+depends_on = []
+
+[[modules]]
+# The shared `/parallel` grammar (parse + spec), imported by the coordinator
+# (workflows) and the composers/CLI (ui). A pure-stdlib leaf both layers sit
+# above, so neither side re-implements the syntax and the CLI --parallel value
+# grammar stays identical to the directive spec.
+path = "agent6.directive"
 depends_on = []
 
 [[modules]]

@@ -15,18 +15,21 @@ import json
 from pathlib import Path
 from typing import Any
 
-from agent6.config import ConfigError
+from agent6.config import Config, ConfigError
 from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.machine import JournalError, MachineError, MachineJournal, load_machine
 from agent6.models.cache import cached_models, list_models
+from agent6.models.validate import known_models
 from agent6.secrets import resolve_api_key
 from agent6.ui.viewmodel import (
     fold_machine,
     fold_run,
     fold_transcript,
     is_run_husk,
+    is_winner,
     machine_state_as_dict,
     newest_state_log,
+    run_compare,
     run_state_as_dict,
     summarize_run_dir,
     tail_events,
@@ -130,6 +133,7 @@ def _run_summary(run_dir: Path) -> dict[str, Any]:
         "reason": s.reason,
         "mtime": s.mtime,
         "usd": s.cost_usd,
+        "winner": is_winner(run_dir),  # fan-out compare winner: a ★ on the hub row
     }
 
 
@@ -234,17 +238,30 @@ def manifest_branches(run_dir: Path) -> dict[str, str]:
     return out
 
 
+def manifest_header(run_dir: Path) -> dict[str, Any]:
+    """Manifest-derived run-header fields the event fold doesn't carry: branch
+    facts (run/base/merged) and the fan-out compare outcome (rank/winner/
+    rationale). Merged into the RunState snapshot by BOTH the one-shot
+    `/api/run/<id>` and the SSE stream, so the header the page paints from can
+    never drift between them. Empty for a run with no (readable) manifest."""
+    header: dict[str, Any] = dict(manifest_branches(run_dir))
+    compare = run_compare(run_dir)
+    if compare is not None:
+        header["compare"] = compare
+    return header
+
+
 def run_snapshot(run_dir: Path) -> dict[str, Any]:
     """A run's folded RunState as the wire dict (the same fold as
     `agent6 attach <id> --json`), plus dir-derived metadata: the authoritative
-    run id and the manifest's branch facts."""
+    run id and the manifest's branch/compare facts."""
     logs = run_dir / "logs.jsonl"
     snap = run_state_as_dict(fold_run(tail_events(logs, follow=False)))
     # The dir we looked up under is the authoritative run id: stamp it so the
     # payload never carries an empty run_id (older logs predate run.start
     # carrying one) and matches sibling endpoints like /conversation.
     snap["run_id"] = snap.get("run_id") or run_dir.name
-    snap.update(manifest_branches(run_dir))
+    snap.update(manifest_header(run_dir))
     return snap
 
 
@@ -340,7 +357,15 @@ def config_suggestions(cwd: Path, key: str) -> list[str]:
     provider's model ids (cache-first, refreshed from the live listing; the
     fetch dials only that operator-configured provider's base_url). Enum leaves
     already carry their choices in the config payload; everything else (and any
-    error) suggests nothing -- suggestions are best-effort, never a failure."""
+    error) suggests nothing -- suggestions are best-effort, never a failure.
+
+    The pseudo-key ``parallel.models`` (the new-work composer's ``/parallel``
+    spec autocomplete) returns the worker's model plus the worker provider's
+    cached listing (lanes inherit the worker provider) -- exactly the set
+    `run --parallel` validation accepts -- cache-only so a keystroke never
+    blocks the server on the network."""
+    if key == "parallel.models":
+        return _parallel_model_suggestions(cwd)
     parts = key.split(".")
     if len(parts) != 3 or parts[0] != "models" or parts[2] not in ("provider", "model"):
         return []
@@ -348,10 +373,15 @@ def config_suggestions(cwd: Path, key: str) -> list[str]:
         cfg = load_effective(cwd).config
     except ConfigError:
         return []
-    if parts[2] == "provider":
+    return _role_value_suggestions(cfg, parts[1], parts[2])
+
+
+def _role_value_suggestions(cfg: Config, role: str, kind: str) -> list[str]:
+    """`models.<role>.provider` -> configured provider names; `.model` -> that
+    role's provider's model ids (cache-first, refreshed from the live listing)."""
+    if kind == "provider":
         return sorted(cfg.providers)
-    role_cfg = getattr(cfg.models, parts[1], None)
-    provider = getattr(role_cfg, "provider", None)
+    provider = getattr(getattr(cfg.models, role, None), "provider", None)
     if not provider:
         return []
     entry = cfg.providers.get(provider)
@@ -359,3 +389,14 @@ def config_suggestions(cwd: Path, key: str) -> list[str]:
         return cached_models(provider)
     api_key = resolve_api_key(provider, getattr(entry, "api_key_env", None))
     return list_models(provider, entry, api_key)
+
+
+def _parallel_model_suggestions(cwd: Path) -> list[str]:
+    """Model ids a `/parallel` lane can run (worker-scoped, via `known_models`),
+    for the spec autocomplete in the new-work composer. Cache-only; a broken
+    config suggests nothing."""
+    try:
+        cfg = load_effective(cwd).config
+    except ConfigError:
+        return []
+    return sorted(known_models(cfg))

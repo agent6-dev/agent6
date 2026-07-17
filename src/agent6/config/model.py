@@ -1044,6 +1044,26 @@ class MCPConfig(BaseModel):
     servers: tuple[MCPServerEntry, ...] = ()
 
 
+class ParallelConfig(BaseModel):
+    """``[parallel]`` section: fan-out defaults for `agent6 run --parallel`.
+
+    ``--parallel N`` (or a comma-separated model list) runs N isolated lanes,
+    each a disposable clone of the repo, and auto-compares the results. These
+    knobs bound and place that fan-out; nothing here mutates the origin repo.
+    """
+
+    model_config = _BASE_MODEL_CONFIG
+
+    # Hard cap on lanes per fan-out. `--parallel` over this refuses up front so a
+    # typo (or a long model list) can't spawn an unbounded pile of clones+runs.
+    max_lanes: int = Field(ge=1, default=4)
+    # Base directory for lane workspaces (each fan-out gets `<workdir>/<fanout-id>/
+    # lane-<i>`). "" resolves to `<cache_dir>/parallel`, a regenerable cache the
+    # orchestrator cleans up after importing each lane. Point it at a fast disk
+    # for large repos.
+    workdir: str = ""
+
+
 class Config(BaseModel):
     model_config = _BASE_MODEL_CONFIG
 
@@ -1062,6 +1082,7 @@ class Config(BaseModel):
     notify: NotifyConfig = Field(default_factory=NotifyConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     web: WebConfig = Field(default_factory=WebConfig)
+    parallel: ParallelConfig = Field(default_factory=ParallelConfig)
     # Named config PROFILE: a preset that fills in many settings at once (see
     # agent6.config BUILTIN_PROFILES + user [profiles.<name>] tables). Injected
     # just ABOVE the config layer that selected it, so the profile OVERRIDES that

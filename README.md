@@ -34,6 +34,13 @@ open-ended agent loop.
 - Small, fixed LLM tool surface; the only extension point is operator-configured MCP
   servers, off by default
 - Eight runtime dependencies, no telemetry, no auto-update
+- Parallel fan-out (`agent6 run --parallel N|model-a,model-b`): N isolated clone-based
+  lanes run independently, each an ordinary sandboxed run; results auto-compare
+  (reviewer-model judge, else verify+cost) into a ranked report. Nothing auto-merges;
+  `agent6 runs merge <id>` picks a winner. `agent6 runs compare <id> <id> ...` runs the
+  same ranked comparison over any past runs. The web/TUI composer and a live-run
+  steer share one grammar, `/parallel [N|models] <task>` (repeat the token to
+  queue more tasks), to dispatch and join a sibling group mid-conversation
 
 ## Install
 

@@ -444,6 +444,36 @@ there is no app-level auth; binding a non-loopback host exposes the write surfac
 | `web.port` | `7658` | Listen port. |
 | `web.allow_non_loopback` | `false` | Opt-in to bind a non-loopback host. Off by default so a typo or copied config can never silently expose the agent. Prefer `tailscale serve` in front of a `127.0.0.1` bind instead. |
 
+## `[parallel]`
+
+Fan-out defaults for `agent6 run --parallel N` (or `--parallel model-a,model-b`).
+Each lane is a disposable clone of the repo that runs independently and lands its
+own `agent6/<id>` branch; the orchestrator symlinks the live lanes into `agent6
+runs` for visibility, then imports each and prints a ranked auto-comparison.
+Nothing is merged for you. `--max-usd` is per lane: total spend is up to
+`--max-usd` x lane count, and the orchestrator prints the
+`$X/lane x N = $Y total` line before spawning. `--auto-approve` forwards the
+same way: every lane inherits it, so a lane never sits on a `run_commands=ask`
+approval nothing detached can answer.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `parallel.max_lanes` | `4` | Hard cap on lanes per fan-out; `--parallel` over this refuses up front. |
+| `parallel.workdir` | `""` | Base dir for lane clones (`<workdir>/<fanout-id>/lane-<i>`). `""` = `<cache_dir>/parallel`, cleaned up after import. |
+
+A live run can also dispatch subordinate lanes mid-run: steer it (Ctrl-C) with a
+message starting with `/parallel [spec] <task>` (repeat the token to queue more
+tasks in one message; a spec is a lane count or model list, omitted = one lane;
+a first token with a comma or slash reads as the spec, a bare model name reads
+as task text).
+The coordinator commits its worktree, clones committed HEAD into each expanded
+lane, runs them to completion, joins each branch back in order (a conflict is
+reported for you to merge, never aborts the run), and continues informed by a
+per-lane summary. Lanes reuse the `[parallel]` workdir/cache above.
+Dispatch is depth 1: a lane can never itself fan out or dispatch. When the
+front-end does not wire a dispatcher (headless, plan/ask), `/parallel` answers
+"not available" and the run continues.
+
 ## `[mcp]` + `[[mcp.servers]]` (optional)
 
 Spawn Model Context Protocol servers at run start; their tools appear to the LLM

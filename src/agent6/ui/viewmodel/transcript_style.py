@@ -131,7 +131,11 @@ def item_lines(item: TranscriptItem, *, detail: DetailLevel) -> list[Line]:
     elif item.kind == "commit":
         lines.append([(f"{COMMIT} commit  {item.detail}", "commit")])
     elif item.kind == "marker":
-        lines.append([(f"── {item.body} ──", "marker")])
+        # First line is the divider headline; any further lines (a parallel
+        # dispatch's tasks, a join's per-lane rows) sit under it, indented.
+        body_lines = item.body.split("\n")
+        lines.append([(f"── {body_lines[0]} ──", "marker")])
+        lines.extend([(f"   {ln}", "marker")] for ln in body_lines[1:])
     elif item.kind == "done":
         badge: Line = (
             [(f"{DONE} done", "done-ok")]

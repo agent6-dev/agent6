@@ -258,14 +258,129 @@ def test_spawn_argv_includes_profile_flag_only_when_chosen(
     a6 = tmp_path / ".agent6"
     a6.mkdir()
 
-    # Chosen profile -> --profile is present, after <mode>, before <task>.
+    # Chosen profile -> --profile is present, after <mode>, before the `--` task.
     home._spawn_and_locate(a6, tmp_path, "plan", "do it", profile="ultra")
-    assert captured[-1] == ["agent6", "plan", "--profile", "ultra", "do it"]
+    assert captured[-1] == ["agent6", "plan", "--profile", "ultra", "--", "do it"]
 
     # "(config default)" (profile="") -> NO --profile flag at all.
     home._spawn_and_locate(a6, tmp_path, "run", "do it", profile="")
-    assert captured[-1] == ["agent6", "run", "do it"]
+    assert captured[-1] == ["agent6", "run", "--", "do it"]
     assert "--profile" not in captured[-1]
+
+
+def test_spawn_argv_parallel_directive(tmp_path: Path, monkeypatch: object) -> None:
+    """`/parallel N <task>` (run only) fans out lanes: the hub spawns
+    `agent6 run <task> --parallel N`. A malformed directive is refused before any
+    spawn (same (None, message) surface a failed spawn uses)."""
+    import subprocess
+
+    from agent6.ui.tui import home
+
+    captured: list[list[str]] = []
+
+    class _FakeProc:
+        returncode = 0
+
+        def poll(self) -> int:
+            return 0
+
+    def _fake_popen(argv: list[str], **_kw: object) -> _FakeProc:
+        captured.append(list(argv))
+        return _FakeProc()
+
+    monkeypatch.setattr(subprocess, "Popen", _fake_popen)  # type: ignore[attr-defined]
+    monkeypatch.setattr(home, "agent6_exe", lambda: "agent6")  # type: ignore[attr-defined]
+    a6 = tmp_path / ".agent6"
+    a6.mkdir()
+
+    home._spawn_and_locate(a6, tmp_path, "run", "/parallel 2 add a greeting", profile="")
+    assert captured[-1] == ["agent6", "run", "--parallel", "2", "--", "add a greeting"]
+
+    home._spawn_and_locate(a6, tmp_path, "run", "/parallel gpt-5,opus refactor", profile="ultra")
+    assert captured[-1] == [
+        "agent6",
+        "run",
+        "--profile",
+        "ultra",
+        "--parallel",
+        "gpt-5,opus",
+        "--",
+        "refactor",
+    ]
+
+    # Omitted spec -> one isolated lane (--parallel 1).
+    home._spawn_and_locate(a6, tmp_path, "run", "/parallel refactor the parser", profile="")
+    assert captured[-1] == ["agent6", "run", "--parallel", "1", "--", "refactor the parser"]
+
+    # Multi-segment: one detached fan-out spawned per segment.
+    start = len(captured)
+    home._spawn_and_locate(a6, tmp_path, "run", "/parallel 2 task A /parallel 3 task B", profile="")
+    assert captured[start:] == [
+        ["agent6", "run", "--parallel", "2", "--", "task A"],
+        ["agent6", "run", "--parallel", "3", "--", "task B"],
+    ]
+
+    # Malformed: refused before any Popen (nothing new captured).
+    before = len(captured)
+    run_dir, err = home._spawn_and_locate(a6, tmp_path, "run", "/parallel", profile="")
+    assert run_dir is None and "/parallel" in err
+    assert len(captured) == before
+
+    # All-or-nothing: a later empty segment refuses the whole message.
+    before = len(captured)
+    run_dir, err = home._spawn_and_locate(
+        a6, tmp_path, "run", "/parallel 2 ok /parallel", profile=""
+    )
+    assert run_dir is None and "/parallel" in err
+    assert len(captured) == before
+
+
+def test_spawn_parallel_refuses_unknown_model_before_spawn(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    """A `/parallel` model the cache can't confirm is the modal's normal error
+    path: refused before any Popen (nothing spawned), with a did-you-mean."""
+    import json
+    import subprocess
+
+    from agent6.config import Config
+    from agent6.ui.tui import home
+
+    cache = tmp_path / "cache" / "models"
+    cache.mkdir(parents=True)
+    (cache / "o.json").write_text(
+        json.dumps({"models": ["moonshotai/kimi-k2.6"]}), encoding="utf-8"
+    )
+    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "cache"))  # type: ignore[attr-defined]
+
+    cfg = Config.model_validate(
+        {
+            "providers": {"o": {"api_format": "openai", "base_url": "https://x/v1"}},
+            "models": {"worker": {"provider": "o", "model": "moonshotai/kimi-k2.6"}},
+        }
+    )
+
+    class _Eff:
+        config = cfg
+
+    captured: list[list[str]] = []
+
+    def _fake_popen(argv: list[str], **_kw: object) -> object:
+        captured.append(list(argv))
+        raise AssertionError("no spawn on a model refusal")
+
+    monkeypatch.setattr(subprocess, "Popen", _fake_popen)  # type: ignore[attr-defined]
+    monkeypatch.setattr(home, "load_effective", lambda _cwd, _cp=None: _Eff())  # type: ignore[attr-defined]
+    a6 = tmp_path / ".agent6"
+    a6.mkdir()
+
+    run_dir, err = home._spawn_and_locate(
+        a6, tmp_path, "run", "/parallel moonshotai/kimi-k2.7 fix it", profile=""
+    )
+    assert run_dir is None
+    assert "unknown model 'moonshotai/kimi-k2.7'" in err
+    assert "closest: moonshotai/kimi-k2.6" in err
+    assert captured == []
 
 
 def test_spawn_sets_stream_to_log_env(tmp_path: Path, monkeypatch: object) -> None:

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import inspect
 import os
+import re
 import time
 from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
@@ -35,6 +36,10 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 
 # Safe at module top: the textual guard above runs first, so this (which also
 # needs textual) is only reached when textual is present.
+from agent6.config import ConfigError
+from agent6.config.layer import load_effective
+from agent6.directive import DirectiveError, Segment, parse_directive, parse_spec
+from agent6.models.validate import known_models, refusal_message, validate_spec_models
 from agent6.ui.bridge.spawn import agent6_exe, run_cli_capture, spawn_and_locate
 from agent6.ui.tui.config_page import ConfigScreen
 from agent6.ui.tui.copy_method import open_copy_method_picker
@@ -44,10 +49,10 @@ from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bind
 from agent6.ui.tui.modals import ConfirmModal
 from agent6.ui.tui.theme import PALETTE_CSS, MuxPointerShapes, open_theme_picker, setup_theme
 from agent6.ui.tui.widgets import FORM_CSS, ActionItem
-from agent6.ui.viewmodel import RunSummary, is_run_husk, summarize_run_dir
+from agent6.ui.viewmodel import RunSummary, is_run_husk, is_winner, summarize_run_dir
 from agent6.ui.viewmodel import run_mtime as _run_mtime
 from agent6.ui.viewmodel import task_snippet as _task_snippet
-from agent6.ui.viewmodel.format import format_cost, status_label
+from agent6.ui.viewmodel.format import WINNER_GLYPH, format_cost, status_label
 
 # Subdirs (relative to the agent6 dir) that hold watchable run directories.
 _RUN_SUBDIRS = ("runs", "asks")
@@ -64,6 +69,35 @@ def _available_profiles(repo_cwd: Path) -> list[str]:
     from agent6.config.layer import available_profile_names  # noqa: PLC0415
 
     return available_profile_names(repo_cwd, None)
+
+
+def _available_models(repo_cwd: Path) -> list[str]:
+    """Model ids for the new-work modal's `/parallel` autocomplete: the worker's
+    model plus the worker provider's cached listing (lanes inherit the worker
+    provider; cache-only, no network) -- exactly the set `run --parallel`
+    validation accepts. Empty on any config error; the affordance is best-effort."""
+    try:
+        cfg = load_effective(repo_cwd, None).config
+    except ConfigError:
+        return []
+    return sorted(known_models(cfg))
+
+
+# The spec token while it is still being typed: the whole message is
+# `/parallel <token>` with nothing after it yet (a following space = task text
+# has begun, so stop suggesting). Returns the comma-fragment under construction,
+# or None when the caret has left the spec / the token is a bare lane count.
+_SPEC_TAIL = re.compile(r"/parallel[^\S\n]+(\S*)\Z")
+
+
+def _spec_fragment(text: str) -> str | None:
+    m = _SPEC_TAIL.match(text)
+    if m is None:
+        return None
+    token = m.group(1)
+    if token.isdigit():  # a lane count, not a model id
+        return None
+    return token.rsplit(",", 1)[-1]
 
 
 # Colors for the shared status words, so a dead run cannot read as a neutral
@@ -124,18 +158,22 @@ class _NewWorkModal(ModalScreen[tuple[str, str, str] | None]):
     #new-profile-label { width: auto; padding: 1 1 0 0; color: $text-muted; }
     #new-profile { width: 1fr; }
     #new-actions { padding-top: 1; height: auto; }
+    #new-suggest { height: auto; color: $accent; }
     """
     )
 
     BINDINGS: ClassVar = [Binding("escape", "cancel", "Cancel", show=True)]
 
-    def __init__(self, profiles: list[str] | None = None) -> None:
+    def __init__(self, profiles: list[str] | None = None, models: list[str] | None = None) -> None:
         # Profile names for the dropdown (built-ins + user [profiles.*]); the
         # caller passes the repo-resolved list (built-ins + user [profiles.*]).
         # None (e.g. a bare test) => only the "(config default)" entry, so the
-        # modal stands alone as a pure widget without loading config.
+        # modal stands alone as a pure widget without loading config. `models` are
+        # the known model ids offered as `/parallel` spec autocomplete (empty = the
+        # affordance is inert, e.g. a bare test or a fresh machine with no cache).
         super().__init__()
         self._profiles = profiles if profiles is not None else []
+        self._models = models if models is not None else []
 
     def compose(self) -> ComposeResult:
         with Vertical(id="new-box"):
@@ -161,9 +199,40 @@ class _NewWorkModal(ModalScreen[tuple[str, str, str] | None]):
             # Split at the phrase boundary so a narrow terminal (the box is 80%
             # wide) never wraps mid-phrase.
             yield Static(
-                Text("Tab to run / plan / ask\nEnter = newline · Esc cancel", style="dim"),
+                Text(
+                    "Tab to run / plan / ask\n"
+                    "/parallel [N|models] <task> fans out lanes (repeat to queue more)\n"
+                    "Enter = newline · Esc cancel",
+                    style="dim",
+                ),
                 classes="edit-label",
             )
+            # Live `/parallel` model-id suggestions: matches update as you type the
+            # spec token, the TUI analogue of the web composer's autocomplete popup.
+            yield Static("", id="new-suggest")
+
+    @on(TextArea.Changed, "#new-task")
+    def _on_task_changed(self, _event: TextArea.Changed) -> None:
+        self._refresh_suggestions()
+
+    def _refresh_suggestions(self) -> None:
+        """Show model ids matching the `/parallel` spec fragment under the caret,
+        or clear the line when the caret isn't in a spec token."""
+        out = self.query_one("#new-suggest", Static)
+        frag = _spec_fragment(self.query_one("#new-task", TextArea).text)
+        if frag is None or not self._models:
+            out.update("")
+            return
+        q = frag.lower()
+        starts = [m for m in self._models if m.lower().startswith(q)]
+        rest = [m for m in self._models if q in m.lower() and not m.lower().startswith(q)]
+        shown = (starts + rest)[:8]
+        if not shown:
+            out.update(Text("no matching model ids", style="dim"))
+            return
+        total = sum(1 for m in self._models if q in m.lower())
+        more = f"  (+{total - len(shown)} more, keep typing)" if total > len(shown) else ""
+        out.update(Text("models: ", style="dim") + Text("  ".join(shown)) + Text(more, style="dim"))
 
     def on_mount(self) -> None:
         self.query_one("#new-task", TextArea).focus()
@@ -353,12 +422,13 @@ class HomeScreen(Screen[None]):
             # bump its "when" the way the run-dir mtime did.
             when = time.strftime("%m-%d %H:%M", time.localtime(_run_mtime(rd)))
             # Text cells: task is model/user input and may carry markup brackets.
+            run_id = f"{s.run_id} {WINNER_GLYPH}" if is_winner(rd) else s.run_id
             table.add_row(
                 when,
                 s.mode,
                 _status_cell(s),
                 _cost_cell(s.cost_usd),
-                Text(s.run_id),
+                Text(run_id),
                 Text(_task_snippet(s.task)[:60]),
             )
             survivors.append(rd)
@@ -396,7 +466,10 @@ class HomeScreen(Screen[None]):
         self.app.exit()
 
     def action_new_work(self) -> None:
-        self.app.push_screen(_NewWorkModal(_available_profiles(self.repo_cwd)), self._on_new_work)
+        self.app.push_screen(
+            _NewWorkModal(_available_profiles(self.repo_cwd), _available_models(self.repo_cwd)),
+            self._on_new_work,
+        )
 
     def action_merge_selected(self) -> None:
         """Merge the selected run's branch into its base, after a confirm. The TUI
@@ -533,13 +606,66 @@ def _spawn_and_locate(
     """Spawn `agent6 <mode> [--profile <name>] <task>` detached and return the new
     run dir (to be watched by the dashboard), or (None, diagnostic) on failure. A
     non-empty *profile* maps to the per-subcommand --profile flag (after the mode,
-    before the task); "" => no flag, so the config's [workflow].profile applies."""
+    before the task); "" => no flag, so the config's [workflow].profile applies.
+
+    A `/parallel [spec] <task> ...` message (run mode only) fans out one detached
+    `agent6 run --parallel <spec>` per segment (omitted spec = one isolated lane);
+    a malformed directive is refused before any spawn (all-or-nothing), and the
+    first segment's run dir is returned to watch."""
+    segments = None
+    if mode == "run":
+        try:
+            segments = parse_directive(task)
+        except DirectiveError as exc:
+            return None, str(exc)
+    if segments is None:
+        return _spawn_run(agent6_dir, repo_cwd, mode, task, profile=profile, spec="")
+    refusal = _model_refusal(repo_cwd, segments)
+    if refusal is not None:
+        return None, refusal
+    first: tuple[Path | None, str] = (None, "")
+    for seg in segments:
+        result = _spawn_run(
+            agent6_dir, repo_cwd, "run", seg.task, profile=profile, spec=seg.spec or "1"
+        )
+        if first[0] is None:
+            first = result
+    return first
+
+
+def _model_refusal(repo_cwd: Path, segments: list[Segment]) -> str | None:
+    """Refuse a `/parallel` directive that names a model the configured providers'
+    cache says doesn't exist, before any spawn (the modal's normal error path,
+    nothing spawned). None = every model checks out, or there is no cache to check
+    against (a fresh/offline machine proceeds; the detached lane's own preflight
+    warns). A malformed spec surfaces its grammar error."""
+    try:
+        models = [m for seg in segments for m in parse_spec(seg.spec)]
+    except DirectiveError as exc:
+        return str(exc)
+    try:
+        cfg = load_effective(repo_cwd).config
+    except ConfigError:
+        return None  # a broken config is its own separate error; don't mask it here
+    verdict = validate_spec_models(models, cfg)
+    return refusal_message(verdict, directive=True) if verdict.refused else None
+
+
+def _spawn_run(
+    agent6_dir: Path, repo_cwd: Path, mode: str, task: str, *, profile: str, spec: str
+) -> tuple[Path | None, str]:
+    """Spawn one detached `agent6 <mode>` (optionally `--parallel <spec>`) and
+    return its located run dir, or (None, diagnostic)."""
     # --profile is a per-subcommand flag, so it goes after <mode> and before the
     # positional <task> -> `agent6 <mode> --profile <name> <task>`.
     argv = [agent6_exe(), mode]
     if profile:
         argv += ["--profile", profile]
-    argv.append(task)
+    if spec:
+        argv += ["--parallel", spec]
+    # `--` before the task so a task that looks like a flag is never parsed as
+    # one; every flag precedes it. Matches the web actions spawn.
+    argv += ["--", task]
     return spawn_and_locate(
         argv,
         repo_cwd,

@@ -145,6 +145,9 @@ from agent6.ui.cli.egress import (
     _warn_if_unsandboxed,
     resolve_strict_egress_viability,
 )
+from agent6.ui.cli.parallel import (
+    build_coordinator_spawner as _build_coordinator_spawner,
+)
 from agent6.ui.cli.plan_watch import _most_recent_run_id
 from agent6.ui.cli.providers import (
     _build_critic_provider,
@@ -630,6 +633,21 @@ def _cmd_resume(  # noqa: PLR0911, PLR0912, PLR0915
                     stop_clear=lambda: clear_stop_request(layout.run_dir),
                     should_abort=steer_state.abort_pending,
                     should_interrupt=steer_state.interrupt,
+                    # `/parallel` steer dispatch: the coordinator's group spawner
+                    # (None in plan resume, and inside a lane -- depth 1).
+                    lane_spawner=_build_coordinator_spawner(
+                        cfg,
+                        cwd,
+                        state_dir,
+                        mode=mode,
+                        run_id=run_id,
+                        max_usd=budget_overrides.max_usd if budget_overrides is not None else None,
+                        auto_approve=(
+                            sandbox_overrides.auto_approve
+                            if sandbox_overrides is not None
+                            else False
+                        ),
+                    ),
                     budget=budget,
                     resume_state_path=snapshot_path,
                     mode=mode,

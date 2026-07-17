@@ -47,6 +47,29 @@ def _complete_models(
     return [m for m in _models_for(None, provider) if m.startswith(prefix)]
 
 
+def _all_parallel_model_names() -> list[str]:
+    """Model ids a `/parallel` lane can actually run: the WORKER provider's
+    catalog (lanes inherit the worker provider; only the model is overridden per
+    lane), from the same live + configured source `agent6 model` completes from."""
+    try:
+        eff = load_effective(Path.cwd(), None)
+    except ConfigError:
+        return []
+    worker = eff.config.models.worker
+    if worker is None:
+        return []
+    return sorted(set(_models_for(None, worker.provider)))
+
+
+def _complete_parallel_models(prefix: str, **_kw: object) -> list[str]:
+    """argcomplete for `run --parallel`: the worker provider's model ids,
+    completing the token after the last comma so a `m1,m2,...` list completes
+    member by member (an integer lane count is typed, not completed)."""
+    head, sep, frag = prefix.rpartition(",")
+    lead = head + sep  # "" for the first/only model, "m1," while extending a list
+    return sorted(lead + m for m in _all_parallel_model_names() if m.startswith(frag))
+
+
 # Dotted config leaves whose type is a Literal/enum, with their allowed values.
 # Used by the `config set/add/remove` value completer so TAB offers the exact
 # valid choices (e.g. `config set sandbox.agent_network <TAB>` -> providers/...).

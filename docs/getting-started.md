@@ -59,6 +59,7 @@ agent6 runs diff          # the git diff the run produced
 agent6 runs commits       # the per-step commits on the run branch
 agent6 runs merge         # merge the run branch into your branch (squash/merge/ff)
 agent6 runs prune         # delete safely-merged agent6/* run branches; report the rest
+agent6 runs compare <id> <id> ...  # advisory ranked comparison across >=2 runs
 agent6 runs transcript    # the full conversation, every tool call with its I/O
 agent6 runs graph         # the persisted task graph
 ```
@@ -88,7 +89,16 @@ reviewers whose findings are checked against the diff, so only real problems gat
 `ask` is read-only and works in any directory, git repository or not; `run` and
 `plan` require one (agent6 builds on git for run branches, diffs, and merges).
 `agent6 run --profile ultra` selects a strategy preset (`quick`, `standard`, `ultra`,
-`paranoid`).
+`paranoid`). `agent6 run "task" --parallel 3` fans out 3 isolated lanes and prints a
+ranked comparison; in the web hub or TUI home composer, start a new run with
+`/parallel [N|model-a,model-b] <task>` to spawn the same fan-out (no spec = one
+isolated lane). A first word with a comma or slash reads as the model spec
+(`/parallel moonshotai/kimi-k2.6 fix X`); a bare name like `opus` reads as task
+text, and a leading path would read as a spec, so start the task with a verb.
+Repeat the `/parallel` token in one message to queue several
+tasks at once, and use it mid-run as a steer to dispatch a sibling group. See
+[configuration](config.md#parallel) and [architecture](architecture.md) for how
+lanes clone, import, and join.
 
 ## Configuration
 

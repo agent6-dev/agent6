@@ -412,6 +412,18 @@ def init_repo(path: Path) -> None:
     _run(path, "init")
 
 
+def clone_repo(origin: Path, dest: Path) -> None:
+    """`git clone` *origin* into *dest*. Both are plain filesystem paths, so
+    git's local-clone optimization applies automatically: hardlinks on the same
+    filesystem, falling back to a copy across devices -- no flag needed.
+
+    cwd is "/" (always exists), not *origin*: both argv paths are absolutized
+    here so the anchor is irrelevant, and a missing *origin* must fail as a
+    GitError from git itself, not a raw FileNotFoundError from subprocess's
+    chdir before git ever runs."""
+    _run(Path("/"), "clone", str(origin.absolute()), str(dest.absolute()))
+
+
 def unignored(path: Path, candidates: tuple[str, ...]) -> tuple[str, ...]:
     """Return the subset of repo-relative *candidates* that git does NOT ignore.
 
@@ -535,6 +547,12 @@ def _conflicted_paths(path: Path) -> tuple[str, ...]:
 def _untracked_files(path: Path) -> frozenset[str]:
     res = _run(path, "ls-files", "--others", "--exclude-standard", "-z", check=False)
     return frozenset(p for p in res.stdout.split("\x00") if p)
+
+
+def fetch_branch(path: Path, remote_path: Path, refspec: str) -> None:
+    """`git fetch <remote_path> <refspec>` into *path*, e.g. `"b:b"` to land a
+    same-named local branch from another repo without adding a remote."""
+    _run(path, "fetch", str(remote_path), refspec)
 
 
 def merge_branch(

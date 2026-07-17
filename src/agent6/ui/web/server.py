@@ -616,13 +616,13 @@ class _Handler(BaseHTTPRequestHandler):
 
         threading.Thread(target=tail, daemon=True).start()
 
-        # Branch facts for the header, read once per connection: run_branch /
-        # base_branch are fixed at run start (merged_into lands after the run
-        # ends; a reopen/reconnect re-reads).
-        branches = model.manifest_branches(run_dir)
+        # Manifest-derived header fields (branch facts + the fan-out compare
+        # outcome), read once per connection: they are fixed for the run's life
+        # (merged_into lands after the run ends; a reopen/reconnect re-reads).
+        header = model.manifest_header(run_dir)
 
         def frame() -> dict[str, Any]:
-            return {**run_state_as_dict(state), **branches}
+            return {**run_state_as_dict(state), **header}
 
         try:
             state = initial_state()

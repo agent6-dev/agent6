@@ -13,6 +13,7 @@ from agent6.git_ops import (
     CommitIdentity,
     GitError,
     GitSafetyError,
+    clone_repo,
     commit_all,
     commit_diff,
     commit_paths,
@@ -21,6 +22,7 @@ from agent6.git_ops import (
     create_branch_at,
     diff_since,
     dirty_paths,
+    fetch_branch,
     init_repo,
     is_git_repo,
     list_run_commits,
@@ -562,6 +564,71 @@ def test_merge_branch_no_ff_credits_coauthor(tmp_path: Path) -> None:
         check=True,
     ).stdout
     assert "Co-authored-by: Op <op@x>" in head_msg  # the merge commit credits the operator
+
+
+def test_clone_repo_local_clone(tmp_path: Path) -> None:
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    _init_repo(origin)
+    dest = tmp_path / "clone"
+    clone_repo(origin, dest)
+    assert (dest / "README.md").read_text(encoding="utf-8") == "hi\n"
+    assert status(dest).head_sha == status(origin).head_sha
+
+
+def test_clone_repo_raises_on_existing_dest(tmp_path: Path) -> None:
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    _init_repo(origin)
+    dest = tmp_path / "clone"
+    dest.mkdir()
+    (dest / "occupied.txt").write_text("x\n", encoding="utf-8")
+    with pytest.raises(GitError):
+        clone_repo(origin, dest)
+
+
+def test_fetch_branch_lands_branch_from_path(tmp_path: Path) -> None:
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    _init_repo(origin)
+    clone = tmp_path / "clone"
+    clone_repo(origin, clone)
+    create_branch(clone, "agent6/r1")
+    _commit_file(clone, "feat.txt", "x\n", "add feat")
+    fetch_branch(origin, clone, "agent6/r1:agent6/r1")
+    sha = subprocess.run(
+        ["git", "-C", str(origin), "rev-parse", "refs/heads/agent6/r1"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert sha == status(clone).head_sha
+
+
+def test_fetch_branch_refuses_non_ff_update(tmp_path: Path) -> None:
+    # A plain (unforced) refspec must not clobber an existing diverged branch.
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    _init_repo(origin)
+    create_branch(origin, "agent6/r1")
+    _commit_file(origin, "ours.txt", "o\n", "origin r1")
+    origin_sha = status(origin).head_sha
+    create_branch(origin, "main")
+    clone = tmp_path / "clone"
+    clone_repo(origin, clone)
+    subprocess.run(
+        ["git", "-C", str(clone), "checkout", "-q", "-b", "agent6/r1", "main"], check=True
+    )
+    _commit_file(clone, "theirs.txt", "t\n", "clone r1")  # diverged from origin's r1
+    with pytest.raises(GitError):
+        fetch_branch(origin, clone, "agent6/r1:agent6/r1")
+    kept = subprocess.run(
+        ["git", "-C", str(origin), "rev-parse", "refs/heads/agent6/r1"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert kept == origin_sha  # origin's branch untouched
 
 
 def test_list_run_commits_oldest_first(tmp_path: Path) -> None:

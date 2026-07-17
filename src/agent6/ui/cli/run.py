@@ -171,6 +171,12 @@ from agent6.ui.cli.egress import (
     _warn_if_unsandboxed,
     resolve_strict_egress_viability,
 )
+from agent6.ui.cli.parallel import (
+    build_coordinator_spawner as _build_coordinator_spawner,
+)
+from agent6.ui.cli.parallel import (
+    dispatch_parallel as _dispatch_parallel,
+)
 from agent6.ui.cli.providers import (
     _build_critic_provider,
     _build_prompt_reviser_provider,
@@ -244,6 +250,7 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     budget_overrides: _BudgetOverrides | None = None,
     sandbox_overrides: _SandboxOverrides | None = None,
     profile: str = "",
+    parallel_spec: str = "",
 ) -> int:
     """Single-loop agent: one provider, one LLM driving via tool
     calls over the fixed tool surface, deterministic harness (jail +
@@ -296,6 +303,38 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
     # described in @notes.md" and have those files inlined verbatim.
     task = _expand_task_file_refs(task, Path.cwd())
 
+    # Provider key + models-cache preflight, shared by the single run and the
+    # --parallel fan-out: resolves each referenced provider's key AND refreshes
+    # its models cache, which carries the pricing _explicit_usd_flag_error reads.
+    # Runs before the --parallel route so dispatch_parallel's own --max-usd check
+    # sees the same refreshed cache a plain --max-usd run does.
+    missing = _check_provider_keys(cfg)
+    if missing is not None:
+        print(missing, file=sys.stderr)
+        return 2
+
+    # `--parallel`: fan out isolated lanes instead of a single run. Routed here,
+    # after config/skills/require_runnable and the key preflight, but BEFORE the
+    # single-run sandbox preflight (no branch cut, no run dir on the origin); the
+    # orchestrator clones each lane and runs its own `agent6 run`. run mode only.
+    if parallel_spec and mode == "run":
+        # Depth 1: a subordinate lane (AGENT6_SUBRUN) must never itself fan out.
+        if os.environ.get("AGENT6_SUBRUN"):
+            print(
+                "REFUSING: --parallel is unavailable inside a subordinate run"
+                " (parallel dispatch is depth 1).",
+                file=sys.stderr,
+            )
+            return 2
+        return _dispatch_parallel(
+            cfg,
+            task,
+            parallel_spec,
+            cwd=Path.cwd(),
+            max_usd=budget_overrides.max_usd if budget_overrides is not None else None,
+            auto_approve=sandbox_overrides.auto_approve if sandbox_overrides is not None else False,
+        )
+
     env = detect_env()
     try:
         selected_profile = select_profile(cfg.sandbox.profile, env)
@@ -319,13 +358,9 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
         print(egress_err, file=sys.stderr)
         return 2
 
-    missing = _check_provider_keys(cfg)
     usd_err = _explicit_usd_flag_error(budget_overrides.max_usd if budget_overrides else None, cfg)
     if usd_err is not None:
         print(f"REFUSING: {usd_err}", file=sys.stderr)
-        return 2
-    if missing is not None:
-        print(missing, file=sys.stderr)
         return 2
 
     # Git pre-flight (verify identity).
@@ -703,6 +738,21 @@ def _cmd_run(  # noqa: PLR0911, PLR0912, PLR0915
                     stop_clear=lambda: clear_stop_request(layout.run_dir),
                     should_abort=steer_state.abort_pending,
                     should_interrupt=steer_state.interrupt,
+                    # `/parallel` steer dispatch: the coordinator's group spawner
+                    # (None in plan/ask, and inside a lane -- depth 1).
+                    lane_spawner=_build_coordinator_spawner(
+                        cfg,
+                        cwd,
+                        state_dir,
+                        mode=mode,
+                        run_id=effective_run_id,
+                        max_usd=budget_overrides.max_usd if budget_overrides is not None else None,
+                        auto_approve=(
+                            sandbox_overrides.auto_approve
+                            if sandbox_overrides is not None
+                            else False
+                        ),
+                    ),
                     budget=budget,
                     state_dir=state_dir,
                     # `agent6 ask` (under asks/) is not resumable -- `agent6 resume`

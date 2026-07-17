@@ -552,6 +552,37 @@ def test_sse_run_streams_snapshot(server: tuple[WebServer, int], tmp_path: Path)
         conn.close()
 
 
+def test_sse_run_frame_carries_the_compare_outcome(
+    server: tuple[WebServer, int], tmp_path: Path
+) -> None:
+    """The run view paints from the SSE frame, not the one-shot snapshot; the
+    frame must carry the manifest's compare block (branch facts + compare share
+    one manifest_header helper so the two endpoints can never drift)."""
+    _srv, port = server
+    _make_run(tmp_path, "cmp-run", [{"type": "run.start", "user_task": "x"},
+                                    {"type": "run.end", "all_passed": True}])  # fmt: skip
+    run_dir = resolved_state_dir(tmp_path) / "runs" / "cmp-run"
+    (run_dir / "manifest.json").write_text(
+        json.dumps({"compare": {"rank": 1, "of": 2, "winner": True, "ranked_by": "judge"}}),
+        encoding="utf-8",
+    )
+    conn = HTTPConnection("127.0.0.1", port, timeout=10)
+    try:
+        conn.request("GET", "/api/run/cmp-run/events")
+        resp = conn.getresponse()
+        seen = b""
+        while True:
+            chunk = resp.read(256)
+            if not chunk:
+                break
+            seen += chunk
+        frames = [f for f in seen.split(b"\n\n") if f.startswith(b"data:")]
+        snap = json.loads(frames[-1][len(b"data:") :].strip())
+        assert snap["compare"]["winner"] is True and snap["compare"]["rank"] == 1
+    finally:
+        conn.close()
+
+
 # --- a corrupt journal degrades, never 500s / kills the stream ---------------
 
 

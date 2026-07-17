@@ -57,6 +57,145 @@ def test_spawn_new_work_argv_ends_options_before_task(
     assert captured[-1][1:] == ["run", "--profile", "quick", "--", "--allow-root pwn"]
 
 
+# --- the `/parallel` new-work directive: fan out lanes ------------------------
+
+
+def _capture_locate(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
+    captured: list[list[str]] = []
+
+    def _fake_locate(argv: list[str], cwd: Path, **_k: object) -> tuple[Path | None, str]:
+        captured.append(list(argv))
+        return None, "not started"
+
+    monkeypatch.setattr(actions, "spawn_and_locate", _fake_locate)
+    return captured
+
+
+def test_spawn_new_work_parallel_lane_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured = _capture_locate(monkeypatch)
+    actions.spawn_new_work(tmp_path, "run", "/parallel 2 add a greeting")
+    assert captured[-1][1:] == ["run", "--parallel", "2", "--", "add a greeting"]
+
+
+def test_spawn_new_work_parallel_model_list_with_profile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured = _capture_locate(monkeypatch)
+    actions.spawn_new_work(tmp_path, "run", "/parallel gpt-5,opus refactor", profile="quick")
+    assert captured[-1][1:] == [
+        "run", "--profile", "quick", "--parallel", "gpt-5,opus", "--", "refactor",
+    ]  # fmt: skip
+
+
+def test_spawn_new_work_malformed_parallel_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured = _capture_locate(monkeypatch)
+    run_id, err = actions.spawn_new_work(tmp_path, "run", "/parallel")
+    assert run_id is None
+    assert "/parallel" in err  # the directive error surfaces, no spawn happens
+    assert captured == []
+
+
+class _Eff:
+    def __init__(self, cfg: object) -> None:
+        self.config = cfg
+
+
+def _provider_cfg() -> object:
+    from agent6.config import Config
+
+    return Config.model_validate(
+        {
+            "providers": {"o": {"api_format": "openai", "base_url": "https://x/v1"}},
+            "models": {"worker": {"provider": "o", "model": "moonshotai/kimi-k2.6"}},
+        }
+    )
+
+
+def test_spawn_new_work_parallel_refuses_unknown_model_before_spawn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A cache exists to validate against -> a typo'd model is the composer's normal
+    # error path, nothing spawned.
+    import json
+
+    cache = tmp_path / "cache" / "models"
+    cache.mkdir(parents=True)
+    (cache / "o.json").write_text(
+        json.dumps({"models": ["moonshotai/kimi-k2.6"]}), encoding="utf-8"
+    )
+    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "cache"))
+
+    def _eff(_cwd: object) -> _Eff:
+        return _Eff(_provider_cfg())
+
+    monkeypatch.setattr(actions, "load_effective", _eff)
+    captured = _capture_locate(monkeypatch)
+    run_id, err = actions.spawn_new_work(tmp_path, "run", "/parallel moonshotai/kimi-k2.7 fix it")
+    assert run_id is None
+    assert "unknown model 'moonshotai/kimi-k2.7'" in err
+    assert "closest: moonshotai/kimi-k2.6" in err
+    assert captured == []  # nothing spawned
+
+
+def test_spawn_new_work_parallel_unknown_model_no_cache_proceeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # No cache to validate against -> never block; the detached lane's own
+    # preflight warns. The spawn happens.
+    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "empty-cache"))
+
+    def _eff(_cwd: object) -> _Eff:
+        return _Eff(_provider_cfg())
+
+    monkeypatch.setattr(actions, "load_effective", _eff)
+    captured = _capture_locate(monkeypatch)
+    actions.spawn_new_work(tmp_path, "run", "/parallel made-up/model fix it")
+    assert captured[-1][1:] == ["run", "--parallel", "made-up/model", "--", "fix it"]
+
+
+def test_spawn_new_work_parallel_only_for_run_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # plan/ask cannot fan out: the text is a literal task (rides behind `--`).
+    captured = _capture_locate(monkeypatch)
+    actions.spawn_new_work(tmp_path, "plan", "/parallel 2 add a greeting")
+    assert captured[-1][1:] == ["plan", "--", "/parallel 2 add a greeting"]
+
+
+def test_spawn_new_work_parallel_omitted_spec_is_one_lane(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # No spec -> one isolated lane: --parallel 1 (a clone lane, not an in-place run).
+    captured = _capture_locate(monkeypatch)
+    actions.spawn_new_work(tmp_path, "run", "/parallel refactor the parser")
+    assert captured[-1][1:] == ["run", "--parallel", "1", "--", "refactor the parser"]
+
+
+def test_spawn_new_work_parallel_multi_segment_spawns_one_fanout_per_segment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured = _capture_locate(monkeypatch)
+    actions.spawn_new_work(tmp_path, "run", "/parallel 2 task A /parallel gpt-5,opus task B")
+    assert [c[1:] for c in captured] == [
+        ["run", "--parallel", "2", "--", "task A"],
+        ["run", "--parallel", "gpt-5,opus", "--", "task B"],
+    ]
+
+
+def test_spawn_new_work_multi_segment_malformed_spawns_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # all-or-nothing: a later empty segment refuses the whole message, no spawn.
+    captured = _capture_locate(monkeypatch)
+    run_id, err = actions.spawn_new_work(tmp_path, "run", "/parallel 2 good task /parallel")
+    assert run_id is None and "/parallel" in err
+    assert captured == []
+
+
 def test_spawn_machine_create_argv_ends_options_before_task(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -91,6 +230,8 @@ def test_merge_and_config_argv_end_options_before_values(
     "argv",
     [
         ["run", "--profile", "quick", "--", "-dashy task"],
+        ["run", "--parallel", "2", "--", "-dashy task"],
+        ["run", "--profile", "quick", "--parallel", "gpt-5,opus", "--", "-dashy task"],
         ["plan", "--", "-dashy task"],
         ["ask", "--", "-dashy question"],
         ["machine", "create", "--", "-dashy task"],

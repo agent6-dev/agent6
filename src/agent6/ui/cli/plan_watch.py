@@ -29,7 +29,7 @@ from agent6.ui.cli._common import _runs_dir, _state_dir, all_run_dirs, resolve_r
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._interact import default_stdin_approver, default_stdin_questioner
 from agent6.ui.viewmodel import run_mtime, tail_events
-from agent6.ui.viewmodel.format import format_cost
+from agent6.ui.viewmodel.format import format_compare, format_cost
 
 
 def event_epoch(value: object) -> float | None:
@@ -270,6 +270,19 @@ def _print_fork_lineage(manifest: dict[str, object]) -> None:
     print(f"forked from: {parent}@turn {manifest.get('forked_from_turn')}{sha_note}")
 
 
+def _print_parallel_compare(manifest: dict[str, object]) -> None:
+    """Print the fan-out compare outcome for a lane (no-op for a non-lane run):
+    where it placed, whether it won, judged or mechanical, and the judge's
+    rationale when there is one."""
+    formatted = format_compare(manifest.get("compare"))
+    if formatted is None:
+        return
+    headline, rationale = formatted
+    print(f"compare:    {headline}")
+    if rationale:
+        print(f"  judge: {rationale}")
+
+
 def _cmd_status(run_id: str, *, as_json: bool = False) -> int:  # noqa: PLR0915
     """One-shot liveness + progress summary for a run, then exit (no follower).
 
@@ -348,6 +361,7 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:  # noqa: PLR0915
                     "parent_run_id": manifest.get("parent_run_id"),
                     "forked_from_turn": manifest.get("forked_from_turn"),
                     "forked_from_sha": manifest.get("forked_from_sha"),
+                    "compare": manifest.get("compare"),
                 }
             )
         )
@@ -360,6 +374,7 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:  # noqa: PLR0915
         pid_note = f"  (worker pid {pid} not running)"
     print(f"run:        {target.name}  (mode={manifest.get('mode', '?')})")
     _print_fork_lineage(manifest)
+    _print_parallel_compare(manifest)
     print(f"model:      {model}")
     print(f"state:      {state}{pid_note}")
     print(f"iteration:  {iteration if iteration is not None else '-'}")

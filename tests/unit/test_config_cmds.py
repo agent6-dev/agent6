@@ -38,6 +38,48 @@ def test_extra_body_value_completer_offers_routing_presets() -> None:
     ]
 
 
+def test_parallel_models_completer_completes_after_last_comma(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # TAB on `run --parallel` completes model ids for the WORKER provider only
+    # (lanes inherit it; only the model is overridden per lane), and completes
+    # only the token AFTER the last comma so a `m1,m2,...` list grows member by
+    # member (the head is preserved on each completion).
+    from agent6.config import Config
+    from agent6.ui.cli import completers
+
+    cfg = Config.model_validate(
+        {
+            "providers": {
+                "w": {"api_format": "openai", "base_url": "https://w.example/v1"},
+                "s": {"api_format": "openai", "base_url": "https://s.example/v1"},
+            },
+            "models": {"worker": {"provider": "w", "model": "gpt-5"}},
+        }
+    )
+
+    class _Eff:
+        config = cfg
+
+    def _eff(*_a: object, **_k: object) -> _Eff:
+        return _Eff()
+
+    def _models(_cp: object, provider: object) -> list[str]:
+        # Per-provider catalogs: the sibling's must never be offered.
+        return {"w": ["gpt-5", "gpt-5-mini", "opus"], "s": ["gpt-sibling-only"]}[str(provider)]
+
+    monkeypatch.setattr(completers, "load_effective", _eff)
+    monkeypatch.setattr(completers, "_models_for", _models)
+    assert completers._complete_parallel_models("gpt") == [  # pyright: ignore[reportPrivateUsage]
+        "gpt-5",
+        "gpt-5-mini",
+    ]
+    assert completers._complete_parallel_models("opus,gpt") == [  # pyright: ignore[reportPrivateUsage]
+        "opus,gpt-5",
+        "opus,gpt-5-mini",
+    ]
+
+
 _GOOD = (
     'machine = "m"\nversion = 1\ninitial = "s"\n'
     "[budget]\nmax_usd = 1.0\nmax_transitions = 10\n"

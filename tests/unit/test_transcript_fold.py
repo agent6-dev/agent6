@@ -86,6 +86,51 @@ def test_tool_output_ansi_is_stripped_from_the_fold() -> None:
     assert "\x1b" not in item.detail and item.detail == "ok"
 
 
+def test_parallel_dispatched_renders_a_truthful_marker() -> None:
+    # The dispatched event carries only group + per-segment tasks (lane ids do not
+    # exist yet); the fold renders a task count + the task summary, never raw json.
+    items = fold_transcript(
+        [{"type": "loop.parallel.dispatched", "group": "p1", "tasks": ["fix the bug", "add tests"]}]
+    )
+    (item,) = items
+    assert item.kind == "marker"
+    assert "dispatched 2 parallel tasks (group p1)" in item.body
+    assert "appear as runs in the hub" in item.body
+    assert "fix the bug" in item.body and "add tests" in item.body
+
+
+def test_parallel_joined_names_lane_ids_branches_shas() -> None:
+    items = fold_transcript(
+        [
+            {
+                "type": "loop.parallel.joined",
+                "group": "p1",
+                "lanes": [
+                    {"run_id": "co-p1-l1", "branch": "agent6/co-p1-l1", "status": "joined",
+                     "sha": "abcdef1234567890"},
+                    {"run_id": "co-p1-l2", "branch": "agent6/co-p1-l2", "status": "conflict",
+                     "sha": ""},
+                ],
+            }
+        ]
+    )  # fmt: skip
+    (item,) = items
+    assert item.kind == "marker"
+    assert "joined group p1: 2 lane(s)" in item.body
+    assert "joined  co-p1-l1  agent6/co-p1-l1  abcdef123456" in item.body  # sha clipped to 12
+    assert "conflict  co-p1-l2  agent6/co-p1-l2" in item.body
+
+
+def test_parallel_failed_renders_the_dispatch_error_but_not_the_join_subset() -> None:
+    # A dispatch failure (carries `error`) renders; a post-join failure (carries
+    # only `lanes`, already shown by the joined marker) is not double-rendered.
+    (item,) = fold_transcript(
+        [{"type": "loop.parallel.failed", "group": "p2", "error": "dirty tree"}]
+    )
+    assert item.kind == "marker" and "group p2 dispatch failed: dirty tree" in item.body
+    assert fold_transcript([{"type": "loop.parallel.failed", "group": "p2", "lanes": [{}]}]) == []
+
+
 def test_salient_arg_prefers_a_primary_key() -> None:
     assert salient_arg({"recursive": True, "path": "src/x.py"}) == "src/x.py"
     assert salient_arg({}) == ""

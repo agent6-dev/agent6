@@ -16,6 +16,7 @@ from agent6.ui.cli.completers import (
     _complete_machine_ids,
     _complete_model_provider,
     _complete_models,
+    _complete_parallel_models,
     _complete_plan_run_ids,
     _complete_profiles,
     _complete_providers,
@@ -212,6 +213,19 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Prepend an installed skill's instructions to the task (repeatable).",
     )
     run_skill.completer = _complete_skills  # type: ignore[attr-defined]
+    run_parallel_flag = run_p.add_argument(
+        "--parallel",
+        default="",
+        metavar="N|m1,m2,...",
+        help=(
+            "Fan out isolated lanes: an integer N runs N lanes on the worker model,"
+            " a comma-separated model list runs one lane per model. Each lane clones"
+            " the repo, runs independently, and lands its own branch; results are"
+            " auto-compared and ranked (nothing is merged). Capped by"
+            " [parallel].max_lanes; combine with --max-usd for a per-lane budget."
+        ),
+    )
+    run_parallel_flag.completer = _complete_parallel_models  # type: ignore[attr-defined]
     _add_budget_flags(run_p)
     _add_sandbox_flags(run_p)
 
@@ -399,8 +413,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "runs",
         help=(
             "List this repo's runs (`agent6 runs`, or `runs list`) or inspect one:"
-            " show (liveness/progress), diff, transcript, graph. The run id is a"
-            " positional everywhere (exact or unambiguous prefix; omit for the"
+            " show (liveness/progress), diff, compare, transcript, graph. The run id"
+            " is a positional everywhere (exact or unambiguous prefix; omit for the"
             " most recent). To follow a run live, use `agent6 attach`."
         ),
     )
@@ -485,6 +499,23 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         default=None,
         help="Commit message for squash or merge (default: a condensed run summary).",
     )
+
+    runs_compare = _sub(
+        runs_sub,
+        "compare",
+        help=(
+            "Advisory ranked comparison across >=2 runs (verify+cost, judged by the"
+            " reviewer model when configured): the report `--parallel`'s auto-compare"
+            " prints. Never merges."
+        ),
+    )
+    runs_compare_ids = runs_compare.add_argument(
+        "run_ids",
+        nargs="+",
+        metavar="RUN_ID",
+        help="2 or more run ids (or unique prefixes) to compare.",
+    )
+    runs_compare_ids.completer = _complete_run_ids  # type: ignore[attr-defined]
 
     runs_commits = _sub(
         runs_sub,

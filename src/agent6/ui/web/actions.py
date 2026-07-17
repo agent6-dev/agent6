@@ -17,7 +17,11 @@ import os
 from pathlib import Path
 from typing import Any
 
+from agent6.config import ConfigError
+from agent6.config.layer import load_effective
+from agent6.directive import DirectiveError, Segment, parse_directive, parse_spec
 from agent6.machine import JournalError, MachineError, MachineJournal, load_machine
+from agent6.models.validate import refusal_message, validate_spec_models
 from agent6.ui.bridge.approval import (
     read_worker_pid,
     request_compact,
@@ -46,14 +50,63 @@ NEW_WORK_MODES = frozenset({"run", "plan", "ask"})
 def spawn_new_work(cwd: Path, mode: str, task: str, profile: str = "") -> tuple[str | None, str]:
     """Spawn `agent6 <mode> [--profile P] <task>` detached and return the new run
     id (its dir name) to open, or (None, diagnostic). Mirrors the TUI hub: the
-    detached run is told to stream reasoning to its log so the dashboard is live."""
+    detached run is told to stream reasoning to its log so the dashboard is live.
+
+    A `/parallel [spec] <task> ...` message (run mode only) fans out one detached
+    `agent6 run --parallel <spec>` per segment (omitted spec = one isolated lane).
+    A malformed directive is refused before any spawn (all-or-nothing); on success
+    the first segment's run id is returned to open, the rest run in the hub."""
     if mode not in NEW_WORK_MODES:
         return None, f"unknown mode {mode!r}"
     if not task.strip():
         return None, "empty task"
+    segments = None
+    if mode == "run":
+        try:
+            segments = parse_directive(task)
+        except DirectiveError as exc:
+            return None, str(exc)
+    if segments is None:
+        return _spawn_run(cwd, mode, task, profile, spec="")
+    refusal = _model_refusal(cwd, segments)
+    if refusal is not None:
+        return None, refusal
+    first: tuple[str | None, str] = (None, "")
+    for seg in segments:
+        result = _spawn_run(cwd, "run", seg.task, profile, spec=seg.spec or "1")
+        if first[0] is None:
+            first = result
+    return first
+
+
+def _model_refusal(cwd: Path, segments: list[Segment]) -> str | None:
+    """Refuse a `/parallel` directive that names a model the configured providers'
+    cache says doesn't exist, before any spawn (the composer's normal error path,
+    nothing spawned). None = every model checks out, or there is no cache to check
+    against (a fresh/offline machine proceeds; the detached lane's own preflight
+    warns). A malformed spec surfaces its grammar error."""
+    try:
+        models = [m for seg in segments for m in parse_spec(seg.spec)]
+    except DirectiveError as exc:
+        return str(exc)
+    try:
+        cfg = load_effective(cwd).config
+    except ConfigError:
+        return None  # a broken config is its own separate error; don't mask it here
+    verdict = validate_spec_models(models, cfg)
+    return refusal_message(verdict, directive=True) if verdict.refused else None
+
+
+def _spawn_run(
+    cwd: Path, mode: str, task: str, profile: str, *, spec: str
+) -> tuple[str | None, str]:
+    """Spawn one detached `agent6 <mode>` (optionally `--parallel <spec>`) and
+    return its located run dir name, or (None, diagnostic)."""
     argv = [agent6_exe(), mode]
     if profile:
         argv += ["--profile", profile]
+    if spec:
+        argv += ["--parallel", spec]
     # `--` ends option parsing: the body-derived task can start with `-` without
     # being read as a flag.
     argv += ["--", task]

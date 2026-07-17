@@ -17,6 +17,17 @@ def test_failed_tool_detail_is_a_neutral_span_not_the_fail_colour() -> None:
     assert "err" in result[1][0]
 
 
+def test_multiline_marker_renders_a_headline_plus_indented_detail() -> None:
+    # A parallel dispatch/join marker carries detail lines under the divider
+    # headline; the renderer keeps the first line as the ── … ── divider and
+    # indents the rest (one place, so cli/tui/web all show it the same).
+    item = TranscriptItem("marker", body="joined group p1: 2 lane(s)\njoined  l1\nconflict  l2")
+    lines = item_lines(item, detail="collapsed")
+    assert lines[0] == [("── joined group p1: 2 lane(s) ──", "marker")]
+    assert lines[1] == [("   joined  l1", "marker")]
+    assert lines[2] == [("   conflict  l2", "marker")]
+
+
 def test_long_multiline_detail_clips_to_reason_plus_more_note_when_collapsed() -> None:
     detail = "old_string not found\n" + "\n".join(f"line {i}" for i in range(50))
     item = TranscriptItem("tool", name="apply_edit", ok=False, detail=detail)

@@ -189,6 +189,15 @@ table.tools .args { color: var(--muted); font-family: var(--mono); word-break: b
 .composer { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px; }
 .composer textarea { min-height: 46px; }
 .composer .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+/* /parallel model-id autocomplete popup (a textarea can't carry a native
+   datalist, so this is the composer analogue of the config editor's list). */
+.ac-pop { position: absolute; left: 12px; bottom: 100%; margin-bottom: 6px; z-index: 40;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.3); max-height: 240px; overflow-y: auto;
+  min-width: 260px; max-width: min(480px, 90vw); padding: 4px; }
+.ac-item { padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 13px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ac-item.on, .ac-item:hover { background: var(--surface2); color: var(--accent); }
 .more-note { color: var(--muted); font-style: italic; }
 .card-head-row { display: flex; align-items: baseline; gap: 8px; }
 .card-head-row h2 { flex: 1; }
@@ -540,6 +549,70 @@ async function route() {
 window.addEventListener('hashchange', route);
 
 // --- hub ---------------------------------------------------------------------
+// /parallel model-id autocomplete for the new-work composer. When the task text
+// starts with `/parallel ` and the caret sits in the spec token, offer the known
+// model ids (GET /api/config/suggest/parallel.models — exactly the set
+// run --parallel accepts) filtered by the comma-fragment under the caret; click,
+// Enter, or ↑/↓+Enter inserts it. The web analogue of the config editor's
+// datalist (a <textarea> can't carry a native datalist).
+function attachParallelSuggest(task, root) {
+  let models = null;           // null=unfetched, []=in-flight/empty, else the list
+  let box = null, items = [], active = -1;
+  const ensureModels = () => {
+    if (models !== null) return;
+    models = [];                // sentinel: fetch at most once per composer
+    getJSON('/api/config/suggest/parallel.models').then(d => { models = d.values || []; render(); }).catch(() => {});
+  };
+  const frag = () => {          // the comma-fragment under the caret, or null
+    const v = task.value, caret = task.selectionStart;
+    const m = /^\/parallel\s+/.exec(v);
+    if (!m) return null;
+    const start = m[0].length;
+    let end = start;
+    while (end < v.length && !/\s/.test(v[end])) end++;
+    if (caret < start || caret > end) return null;   // caret outside the spec token
+    const fragStart = start + v.slice(start, caret).lastIndexOf(',') + 1;
+    return { fragStart, fragEnd: caret, text: v.slice(fragStart, caret) };
+  };
+  const close = () => { if (box) { box.remove(); box = null; } items = []; active = -1; };
+  const insert = (model) => {
+    const f = frag(); if (!f) { close(); return; }
+    const v = task.value;
+    task.value = v.slice(0, f.fragStart) + model + v.slice(f.fragEnd);
+    const pos = f.fragStart + model.length;
+    task.setSelectionRange(pos, pos); close(); task.focus();
+  };
+  const render = () => {
+    const f = frag();
+    if (!f) { close(); return; }
+    ensureModels();
+    const q = f.text.toLowerCase();
+    const hit = m => m.toLowerCase();
+    items = models.filter(m => hit(m).startsWith(q)).concat(models.filter(m => hit(m).includes(q) && !hit(m).startsWith(q))).slice(0, 8);
+    if (!items.length) { close(); return; }
+    if (active >= items.length) active = -1;
+    if (!box) { box = el('div', 'ac-pop'); root.appendChild(box); }
+    box.textContent = '';
+    items.forEach((m, i) => {
+      const o = el('div', 'ac-item' + (i === active ? ' on' : ''), m);
+      o.onmousedown = (e) => { e.preventDefault(); insert(m); };
+      box.appendChild(o);
+    });
+  };
+  task.addEventListener('input', () => { active = -1; render(); });
+  task.addEventListener('click', render);
+  task.addEventListener('blur', () => setTimeout(close, 120));
+  // Returns true when the popup consumed the key (caller must not also act on it).
+  return { onKeyDown(e) {
+    if (!box || !items.length) return false;
+    if (e.key === 'ArrowDown') { e.preventDefault(); active = (active + 1) % items.length; render(); return true; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); active = (active - 1 + items.length) % items.length; render(); return true; }
+    if (e.key === 'Enter' && active >= 0) { e.preventDefault(); insert(items[active]); return true; }
+    if (e.key === 'Escape') { e.preventDefault(); close(); return true; }
+    return false;
+  } };
+}
+
 // The new-work composer, docked at the bottom of the Runs page: task text +
 // mode + Start (Enter starts, Shift+Enter newline).
 function newWorkDock() {
@@ -556,11 +629,16 @@ function newWorkDock() {
     catch (e) { toast(e.message, true); go.disabled = false; }
   };
   go.onclick = start;
-  task.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); start(); } };
+  const ac = attachParallelSuggest(task, root);
+  task.onkeydown = (e) => {
+    if (ac.onKeyDown(e)) return;   // the /parallel suggestion popup took the key
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); start(); }
+  };
   row.appendChild(task); row.appendChild(mode); row.appendChild(go);
   root.appendChild(growGrip(task));
   root.appendChild(row);
-  root.appendChild(el('div', 'hint', 'Enter starts the run / plan / ask · Shift+Enter newline'));
+  root.appendChild(el('div', 'hint', 'Enter starts the run / plan / ask · Shift+Enter newline · '
+    + '/parallel [N|models] <task> fans out lanes (repeat to queue more)'));
   return root;
 }
 
@@ -604,7 +682,7 @@ function listCard(title, entries, empty, paint) {
 function runsCard(runs) {
   const card = listCard('Runs', runs, 'no runs yet', (r, it, g) => {
     it.onclick = () => location.hash = '#/run/' + encodeURIComponent(r.id);
-    g.appendChild(el('div', 'title', r.task || '(no task)'));
+    g.appendChild(el('div', 'title', (r.winner ? '★ ' : '') + (r.task || '(no task)')));
     g.appendChild(el('div', 'sub', `${esc(r.mode)} · ${esc(r.id)} · ${when(r.mtime)} · ${fmtUsd(r.usd)}`));
     it.appendChild(pill(r.status, r.reason ? r.status + ' · ' + String(r.reason).replaceAll('_', ' ') : r.status));
   });
@@ -1124,7 +1202,19 @@ function paintRun(cards, s) {
       ? s.run_branch + ' (merged into ' + s.merged_into + ')'
       : s.run_branch + (s.base_branch ? ' → merges into ' + s.base_branch : ''));
   }
+  // Fan-out compare outcome (stamped into a lane's manifest by --parallel's
+  // auto-compare): where this lane placed and why. Absent for a non-lane run.
+  if (s.compare && typeof s.compare.rank === 'number') {
+    const c = s.compare;
+    const bits = [];
+    if (c.winner) bits.push('winner');
+    if (c.ranked_by) bits.push(c.ranked_by);
+    add('compare', 'rank ' + c.rank + '/' + c.of + (bits.length ? ' (' + bits.join(', ') + ')' : ''));
+  }
   cards.head.appendChild(kv);
+  if (s.compare && s.compare.rationale) {
+    cards.head.appendChild(el('div', 'sub muted', 'judge: ' + s.compare.rationale));
+  }
   if (s.last_role) {
     const r = s.last_role;
     cards.head.appendChild(el('div', 'sub muted', `${esc(r.role)} / ${esc(r.model)}${r.in_flight ? ' …' : ''}`));

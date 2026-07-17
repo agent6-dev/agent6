@@ -110,6 +110,29 @@ def test_status_no_such_run_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     assert _cmd_status("nope") == 2
 
 
+def test_status_shows_fan_out_compare_outcome(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`runs show` prints where a lane placed in its fan-out (+ the judge's
+    rationale), and the JSON carries the raw compare block."""
+    d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "run.start", "mode": "run"}])
+    manifest = json.loads((d / "manifest.json").read_text("utf-8"))
+    manifest["compare"] = {
+        "group": "fan", "rank": 1, "of": 2, "winner": True,
+        "ranked_by": "judge", "rationale": "cleanest diff, all tests pass",
+    }  # fmt: skip
+    (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    _cmd_status("winsome-dawn-YWH5ZS")
+    out = capsys.readouterr().out
+    assert "compare:    rank 1/2 · winner · judge" in out
+    assert "judge: cleanest diff, all tests pass" in out
+
+    _cmd_status("winsome-dawn-YWH5ZS", as_json=True)
+    obj = json.loads(capsys.readouterr().out)
+    assert obj["compare"]["winner"] is True and obj["compare"]["rank"] == 1
+
+
 def test_worker_pid_clear(tmp_path: Path) -> None:
     from agent6.ui.bridge.approval import clear_worker_pid, read_worker_pid
 

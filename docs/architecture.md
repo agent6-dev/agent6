@@ -169,6 +169,112 @@ stateDiagram-v2
     code_review --> [*]
 ```
 
+## Parallel runs: fan-out and coordinator dispatch
+
+Three consumers drive one primitive (a task run as a subordinate isolated run
+whose branch joins back): `run --parallel`, the web/TUI composer's `/parallel`
+new-work directive (it spawns `run --parallel`), and a live run's `/parallel`
+steer. All three share ONE grammar,
+[src/agent6/directive.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/directive.py)
+(a pure-stdlib leaf both `workflows` and `ui` import):
+`/parallel [spec] <task> [/parallel [spec] <task>]...`, where `spec` is an
+optional lane count or model list (omitted = one lane) and `parse_spec` maps a
+spec to one model per lane -- the same value grammar as `run --parallel <spec>`.
+A segment's first token counts as a spec when it contains a comma or a slash
+(model ids are provider/model shaped); a bare comma-less slash-less name
+(`opus`) stays task text, and a task whose first word is a path (`src/foo.py`)
+parses as a bogus model spec -- start the task with a verb. Before any clone, a
+spec's models are checked against the models a lane can actually run: lanes
+inherit the WORKER provider (only the model is overridden per lane), so the
+universe is the worker's configured model plus the worker provider's cached
+listing, in one helper,
+[src/agent6/models/validate.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/models/validate.py):
+an unknown model refuses early with a did-you-mean when the worker provider has
+a cache to check against, or proceeds with a warning when none does (a
+fresh/offline machine is never blocked on a regenerable cache). All three consumers validate through this
+one helper -- the `run --parallel` CLI preflight, the composer submit paths, and
+the coordinator's ui-built group dispatcher (so `workflows` needs no models
+dependency; a refused dispatch raises and the loop's group-failure feedback
+carries the message). `runs compare` is not one of them; it only reads
+already-finished runs to rank them, never cloning, importing, or joining. The
+primitive is pure git plumbing in
+[src/agent6/workflows/subrun.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/subrun.py)
+(no LLM, no UI, no process spawning), over `git_ops`:
+
+- `clone_workspace(origin, dest)`: plain `git clone` of a disposable lane workspace.
+- `import_run(origin, lane_repo, branch, lane_run_dir, origin_state)`: fetches the
+  lane's branch into *origin* and moves its run dir under `<origin_state>/runs/`;
+  refuses to overwrite an existing branch or run dir.
+- `join_branch(workspace, branch)`: merges a branch into the current branch;
+  returns the merged sha, or `None` after an aborted conflict.
+- `LaneSpawner` / `GroupLaneSpawner` Protocols: one lane, or a sibling group,
+  dispatched and awaited to completion.
+
+`ui/cli/parallel.py` is the composition-root orchestrator: it implements the
+spawner Protocols over the existing front-end bridge (`ui.bridge.spawn`, the
+same detached-spawn path `attach`/`resume` use) and is the only module that
+knows how to actually run a lane.
+
+- **`agent6 run --parallel N|model-a,model-b`** (`dispatch_parallel` /
+  `run_parallel`): plans one `LaneSpec` per lane, spawns each as an ordinary
+  detached `agent6 run` (its own jail, egress broker, `run_commands` policy --
+  see [security.md](security.md)), symlinks each lane's live run dir into
+  `<origin_state>/runs/` as soon as it is located, and polls until every lane
+  is terminal. Every hub (`agent6 runs`, the TUI, the web hub) resolves that
+  symlink like any other run dir, so a fan-out is visible live, not just at
+  the end. On completion each lane is imported (`import_run`) and the symlink
+  is replaced by the real directory; an un-imported lane (failed to start,
+  still running, import refused) keeps its clone and symlink rather than
+  losing the only copy of its work. Imported candidates are auto-compared
+  (`workflows/judge.py`'s structured judge call when a reviewer model is
+  configured, else a mechanical verify-then-cost ranking) into a ranked
+  report with `agent6 runs merge <id>` lines. The auto-compare also stamps a
+  `compare` block (`group`/`rank`/`of`/`winner`/`ranked_by`/`rationale`) into
+  each imported lane's manifest -- the ONE writer (`runs compare` stays
+  stateless, the coordinator never compares its lanes) -- so every run view
+  (`runs show`, TUI/web run headers) shows where a lane placed and why, and the
+  listings mark the winner with a `★`. Nothing merges automatically.
+  `--max-usd` is per lane (total spend up to `--max-usd` x lane count; the
+  orchestrator prints the `$X/lane x N = $Y total` line before spawning). The
+  web hub and TUI home new-run composers spawn the same fan-out from a
+  `/parallel [spec] <task>` directive (parsed by `agent6.directive`); a
+  multi-segment message spawns one detached `run --parallel <spec>` per segment
+  (omitted spec = `--parallel 1`, one isolated lane). A malformed directive is
+  refused before any spawn (all-or-nothing).
+- **`agent6 runs compare <id> <id> ...`** (`ui/cli/_compare.py`, shared by both
+  callers so the ranking/report logic exists once): the same ranked report
+  over any >=2 existing runs, including different-task runs; degrades to the
+  mechanical table without a reviewer model.
+- **Coordinator dispatch**: `Workflow.lane_spawner: GroupLaneSpawner | None`
+  on the agent loop ([workflows/loop.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/loop.py))
+  is the injection point that keeps `workflows` from importing `ui` (the
+  Protocol lives in `subrun.py`, workflows never imports `ui/cli/parallel.py`
+  directly; `tach` enforces it). `run.py`/`resume.py` build the real spawner
+  (`build_coordinator_spawner`) and wire it in for a `run`-mode workflow only.
+  A steer message starting with the exact `/parallel` token (Ctrl-C pause menu,
+  or any steer surface) dispatches a sibling group: the loop blocks (no provider
+  calls while lanes run), commits a dirty worktree first (lanes clone committed
+  HEAD only), expands each segment into its lanes (`spec` -> one model per lane),
+  then clones + spawns + awaits + imports every lane and joins each branch into
+  the run branch sequentially in dispatch order (`join_branch`). Like the
+  fan-out, each lane's run dir is symlinked into `<origin_state>/runs/` while it
+  runs, so coordinator lanes appear in the hubs like fan-out lanes and their
+  approvals/asks are answered there. Each SEGMENT (task) gets one DAG node
+  stamped `passed` (with the last joined sha; its note names every lane) or
+  `failed` (all lanes failed or conflicted); a conflict aborts that one merge
+  and tells the model to resolve it manually, and the run continues either way.
+  Events `loop.parallel.dispatched`/`joined`/`failed` record the fan-out; the
+  shared transcript fold (`ui/viewmodel/transcript.py`) renders them as
+  conversation markers on every surface (dispatched: the task count + tasks,
+  truthfully -- lane ids do not exist yet; joined: each lane's id/branch/sha/
+  status; a dispatch failure: the error), so the coordinator's blocked wait is
+  visible rather than silent. The injected `[parallel]` summary message is what
+  carries the user-facing outcome to the model and continues the conversation.
+
+**Depth 1.** Every spawned lane carries `AGENT6_SUBRUN=1`; both `--parallel`
+and `build_coordinator_spawner` refuse to wire a `lane_spawner` when it is
+set, so a lane's own run can never itself fan out or dispatch.
+
 ## Enforcement layering
 
 [security.md](security.md) details which guarantee each layer provides.
@@ -343,6 +449,9 @@ graph`).
 | Jail launcher (Python wrapper)   | [src/agent6/sandbox/jail.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail.py)              |
 | Jail launcher (Rust binary)      | [src/agent6/jail/src/main.rs](https://github.com/agent6-dev/agent6/blob/master/src/agent6/jail/src/main.rs)            |
 | Git policy                       | [src/agent6/git_ops.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/git_ops.py)                        |
+| Subordinate-run primitive (clone/import/join) | [src/agent6/workflows/subrun.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/subrun.py) |
+| Compare judge (structured ranking) | [src/agent6/workflows/judge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/judge.py) |
+| Fan-out orchestrator (`run --parallel`, coordinator spawner) | [src/agent6/ui/cli/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/cli/parallel.py) |
 | Provider clients                 | [src/agent6/providers/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/providers)                        |
 | Knowledge graph (curator)        | [src/agent6/graph/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/graph)                                |
 | Event log + view-model fold      | [src/agent6/events.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/events.py) (writer), [src/agent6/ui/viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/viewmodel) (RunState/MachineState fold), [src/agent6/ui/tui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/tui) (textual render) |

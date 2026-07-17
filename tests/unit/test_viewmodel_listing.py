@@ -4,10 +4,19 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
-from agent6.ui.viewmodel import is_run_husk, run_mtime, summarize_run_dir, task_snippet
+from agent6.ui.viewmodel import (
+    is_run_husk,
+    is_winner,
+    run_compare,
+    run_mtime,
+    summarize_run_dir,
+    task_snippet,
+)
+from agent6.ui.viewmodel.format import format_compare
 
 
 def test_run_mtime_prefers_log_over_dir(tmp_path: Path) -> None:
@@ -42,6 +51,39 @@ def test_task_snippet_plain_task() -> None:
 
 def test_task_snippet_falls_back_to_stripped_text() -> None:
     assert task_snippet("   ") == ""
+
+
+def _stamp(run_dir: Path, compare: object) -> None:
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "manifest.json").write_text(json.dumps({"compare": compare}), encoding="utf-8")
+
+
+def test_run_compare_and_is_winner_read_the_manifest_block(tmp_path: Path) -> None:
+    win = tmp_path / "win"
+    _stamp(win, {"group": "fan", "rank": 1, "of": 2, "winner": True, "ranked_by": "judge"})
+    assert is_winner(win) is True
+    assert isinstance(run_compare(win), dict)
+    loser = tmp_path / "loser"
+    _stamp(loser, {"group": "fan", "rank": 2, "of": 2, "winner": False, "ranked_by": "judge"})
+    assert is_winner(loser) is False
+    # A run outside any fan-out (no manifest / no compare block) reads as None.
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    assert run_compare(plain) is None and is_winner(plain) is False
+
+
+def test_format_compare_headline_and_rationale() -> None:
+    won = format_compare(
+        {"rank": 1, "of": 3, "winner": True, "ranked_by": "judge", "rationale": "cleanest diff"}
+    )
+    assert won == ("rank 1/3 · winner · judge", "cleanest diff")
+    # A loser, mechanical, no rationale.
+    lost = format_compare(
+        {"rank": 2, "of": 3, "winner": False, "ranked_by": "mechanical", "rationale": ""}
+    )
+    assert lost == ("rank 2/3 · mechanical", "")
+    # Absent / malformed -> None (no rank/of ints).
+    assert format_compare(None) is None and format_compare({"rank": "x"}) is None
 
 
 # --- summarize_run_dir / status_word (shared by TUI hub, web hub, runs list) --

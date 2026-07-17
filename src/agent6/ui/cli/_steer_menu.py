@@ -21,6 +21,13 @@ steering instruction, so no quoting is ever needed:
     /continue resume unchanged (same as Enter)
     /stop     stop the run now (resumable with `agent6 resume`)
     /detach   keep the run going in the background
+
+`/parallel [spec] <task>` is a steer directive, not a menu command: it is sent
+to the run verbatim and the loop fans out a sibling lane group for it. The spec
+is an optional lane count or model list (omitted = one lane; a first token with
+a comma or slash reads as the spec, a bare model name reads as task text);
+repeat the exact `/parallel` token to queue more tasks in one message. See
+`agent6.directive.parse_directive`.
 """
 
 from __future__ import annotations
@@ -159,6 +166,7 @@ def _print_help() -> None:
     for cmd, what in COMMANDS.items():
         print(f"  {cmd:<{width}}  {what}")
     print("  anything else is sent to the run as a steering instruction")
+    print("  /parallel [N|models] <task>  fan out lanes for <task> (repeat to queue more)")
 
 
 # Commands that end the menu, mapped to the canonical steer action.

@@ -82,6 +82,7 @@ from agent6.ui.cli.review_cmds import _cmd_review
 from agent6.ui.cli.run import _cmd_run
 from agent6.ui.cli.runs_cmds import (
     _cmd_commits,
+    _cmd_compare,
     _cmd_diff,
     _cmd_list,
     _cmd_merge,
@@ -175,6 +176,13 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             return _cmd_system_apparmor(args.action)
         parser.error("unknown system command")  # pragma: no cover
     if args.command == "run":
+        if getattr(args, "parallel", "") and (args.continue_run or args.interactive or args.tui):
+            print(
+                "ERROR: --parallel cannot combine with --continue, -i, or --tui"
+                " (each lane runs headless and detached).",
+                file=sys.stderr,
+            )
+            return 2
         if args.continue_run:
             if args.task:
                 print("ERROR: pass either a task OR --continue, not both.", file=sys.stderr)
@@ -263,6 +271,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
             budget_overrides=_BudgetOverrides.from_args(args),
             sandbox_overrides=_SandboxOverrides.from_args(args),
             profile=getattr(args, "profile", ""),
+            parallel_spec=getattr(args, "parallel", ""),
         )
     if args.command == "plan":
         if args.plan_command == "show":
@@ -335,6 +344,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912, PLR09
                 into=args.into,
                 message=args.message,
             )
+        if args.runs_command == "compare":
+            return _cmd_compare(run_ids=tuple(args.run_ids))
         if args.runs_command == "commits":
             return _cmd_commits(run_id=args.run_id)
         if args.runs_command == "stop":
