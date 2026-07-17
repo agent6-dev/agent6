@@ -13,6 +13,7 @@ to test directly.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -56,6 +57,41 @@ def _state(**kw: Any) -> Any:
     defaults: dict[str, Any] = {"original_task": "t", "tool_calls": 0}
     defaults.update(kw)
     return _LoopState(**defaults)
+
+
+_T0 = datetime(2026, 1, 1, tzinfo=UTC)
+
+
+def _tn(node_id: str, **fields: Any) -> Any:
+    """A TaskNode test fixture from a partial dict of node fields. Uses
+    model_construct so short readable ids ("a", "b") survive (id-sort =
+    creation order, which first_ready_subtask relies on)."""
+    from agent6.graph.models import TaskNode
+
+    base: dict[str, Any] = {
+        "id": node_id,
+        "parent_id": None,
+        "title": "t",
+        "rationale": "",
+        "acceptance": "",
+        "relevant_paths": (),
+        "depends_on": (),
+        "children": (),
+        "status": "pending",
+        "created_at": _T0,
+        "updated_at": _T0,
+        "created_by": "planner",
+        "commit_sha": "",
+        "notes": "",
+    }
+    base.update(fields)
+    return TaskNode.model_construct(**base)
+
+
+def _typed(nodes: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Convert the readable dict-of-dicts node literals the tests author into the
+    typed dict[str, TaskNode] the curator now hands consumers."""
+    return {nid: _tn(nid, **d) for nid, d in nodes.items()}
 
 
 def test_ask_silent_finish_ends_as_answered_not_silent_finish() -> None:
@@ -2021,8 +2057,8 @@ def test_summarise_and_restart_applies_dag_checkoff() -> None:
             self.passed: list[str] = []
             self.added: list[tuple[str | None, str]] = []
 
-        def get_state(self) -> dict[str, Any]:
-            return {"nodes": self._nodes}
+        def nodes(self) -> dict[str, Any]:
+            return _typed(self._nodes)
 
         def update_status(self, intent: Any) -> None:
             self.passed.append(intent.id)
@@ -2054,8 +2090,8 @@ class _FakeGraph:
     def __init__(self, nodes: dict[str, dict[str, Any]]) -> None:
         self._nodes = nodes
 
-    def get_state(self) -> dict[str, Any]:
-        return {"nodes": self._nodes}
+    def nodes(self) -> dict[str, Any]:
+        return _typed(self._nodes)
 
 
 def test_task_finish_gate_nudges_open_subtasks_then_caps() -> None:
@@ -2100,13 +2136,13 @@ def test_current_task_id_prefers_open_cursor() -> None:
         "a": {"parent_id": "root", "status": "pending", "title": "a"},
         "b": {"parent_id": "root", "status": "in_progress", "title": "b"},
     }
-    assert current_task_id(nodes, "b") == "b"  # cursor respected
-    assert current_task_id(nodes, None) == "a"  # no cursor -> first open subtask
+    assert current_task_id(_typed(nodes), "b") == "b"  # cursor respected
+    assert current_task_id(_typed(nodes), None) == "a"  # no cursor -> first open subtask
     # Stale cursor (points at a closed task) -> recompute the frontier.
     nodes["b"]["status"] = "passed"
-    assert current_task_id(nodes, "b") == "a"
+    assert current_task_id(_typed(nodes), "b") == "a"
     # Cursor on the auto-root is not a focus target -> first open subtask.
-    assert current_task_id(nodes, "root") == "a"
+    assert current_task_id(_typed(nodes), "root") == "a"
 
 
 def test_first_ready_subtask_respects_deps_and_order() -> None:
@@ -2121,13 +2157,13 @@ def test_first_ready_subtask_respects_deps_and_order() -> None:
         "c": {"parent_id": "root", "status": "pending", "title": "c"},
     }
     # b is blocked on c (pending) -> c is the first ready subtask.
-    assert _first_ready_subtask(nodes) == "c"
+    assert _first_ready_subtask(_typed(nodes)) == "c"
     # Once c is done, b unblocks.
     nodes["c"]["status"] = "obsolete"
-    assert _first_ready_subtask(nodes) == "b"
+    assert _first_ready_subtask(_typed(nodes)) == "b"
     # Everything done -> nothing ready (the finish-gate, not this, ends the run).
     nodes["b"]["status"] = "passed"
-    assert _first_ready_subtask(nodes) is None
+    assert _first_ready_subtask(_typed(nodes)) is None
 
 
 def test_first_ready_subtask_prefers_leaf_over_decomposed_parent() -> None:
@@ -2148,12 +2184,12 @@ def test_first_ready_subtask_prefers_leaf_over_decomposed_parent() -> None:
         "a2": {"parent_id": "a", "status": "pending", "title": "a2"},
         "b": {"parent_id": "root", "status": "pending", "title": "b"},
     }
-    assert _first_ready_subtask(nodes) == "a1"  # the parent 'a' is skipped as a container
-    assert _current_task_id(nodes, "a") == "a1"  # stale cursor on the parent falls through
+    assert _first_ready_subtask(_typed(nodes)) == "a1"  # the parent 'a' is skipped as a container
+    assert _current_task_id(_typed(nodes), "a") == "a1"  # stale cursor on the parent falls through
     # Once the children are done, the parent becomes a focusable leaf again.
     nodes["a1"]["status"] = "passed"
     nodes["a2"]["status"] = "passed"
-    assert _first_ready_subtask(nodes) == "a"
+    assert _first_ready_subtask(_typed(nodes)) == "a"
 
 
 def test_current_task_banner_carries_title_acceptance_paths() -> None:
@@ -2161,22 +2197,82 @@ def test_current_task_banner_carries_title_acceptance_paths() -> None:
 
     banner = current_task_banner(
         "01TASK",
-        {"title": "audit providers", "acceptance": "no bugs left", "relevant_paths": ["a.py"]},
+        _tn("01TASK", title="audit providers", acceptance="no bugs left", relevant_paths=("a.py",)),
     )
     assert "Current task (01TASK): audit providers" in banner
     assert "Acceptance: no bugs left" in banner
     assert "Relevant paths: a.py" in banner
     assert "ONE task to completion" in banner
     # Absent acceptance/paths are simply omitted, not rendered empty.
-    bare = current_task_banner("01X", {"title": "t"})
+    bare = current_task_banner("01X", _tn("01X", title="t"))
     assert "Acceptance:" not in bare and "Relevant paths:" not in bare
     # Decompose invites a finer plan for a large childless task (recursion);
     # off by default, and never once the task already has children.
     assert "child subtasks" not in bare
-    rec = current_task_banner("01X", {"title": "t"}, decompose=True)
+    rec = current_task_banner("01X", _tn("01X", title="t"), decompose=True)
     assert "child subtasks under it (parent_id=01X)" in rec
-    has_kids = current_task_banner("01X", {"title": "t", "children": ["01Y"]}, decompose=True)
+    has_kids = current_task_banner("01X", _tn("01X", title="t", children=("01Y",)), decompose=True)
     assert "child subtasks" not in has_kids
+
+
+def test_graph_update_snapshot_payload_is_wire_stable(tmp_path: Path) -> None:
+    """FROZEN wire surface: the graph.update event the loop emits (consumed by
+    the viewmodel fold, web and TUI, and on-disk in old run dirs) projects each
+    node to exactly {title, status, parent_id, children} plus a top-level
+    cursor, with children a JSON list. Interface-independent: drives a real
+    curator + real Workflow, so it pins the emitted bytes regardless of how the
+    curator hands state to the loop internally."""
+    from agent6.graph.curator import GraphCurator
+    from agent6.graph.models import (
+        AddSubtaskIntent,
+        SetCursorIntent,
+        TaskNodeDraft,
+        UpdateStatusIntent,
+    )
+    from agent6.runs.layout import RunLayout
+
+    cur = GraphCurator(RunLayout(state_dir=tmp_path / ".agent6", run_id="run1"))
+    root = cur.add_subtask(
+        AddSubtaskIntent(parent_id=None, draft=TaskNodeDraft(title="root", created_by="planner"))
+    )
+    child = cur.add_subtask(
+        AddSubtaskIntent(parent_id=root.id, draft=TaskNodeDraft(title="child", created_by="worker"))
+    )
+    cur.update_status(UpdateStatusIntent(id=child.id, new_status="in_progress"))
+    cur.set_cursor(SetCursorIntent(id=child.id))
+
+    captured: list[tuple[str, dict[str, Any]]] = []
+
+    class _Events:
+        def emit(self, event_type: str, /, **fields: Any) -> None:
+            captured.append((event_type, fields))
+
+    wf = _wf(curator=cur, events=_Events())
+    wf._emit_graph_snapshot()  # pyright: ignore[reportPrivateUsage]
+
+    assert len(captured) == 1
+    etype, fields = captured[0]
+    assert etype == "graph.update"
+    assert fields == {
+        "nodes": {
+            root.id: {
+                "title": "root",
+                "status": "pending",
+                "parent_id": None,
+                "children": [child.id],
+            },
+            child.id: {
+                "title": "child",
+                "status": "in_progress",
+                "parent_id": root.id,
+                "children": [],
+            },
+        },
+        "cursor": child.id,
+    }
+    # children must serialize as a JSON list (model_dump(mode="json") shape), not
+    # a tuple -- the frozen on-disk/wire contract old run dirs already hold.
+    assert isinstance(fields["nodes"][root.id]["children"], list)
 
 
 def test_decompose_prompt_describes_nested_phases() -> None:
@@ -2190,7 +2286,7 @@ def test_decompose_prompt_describes_nested_phases() -> None:
 
 
 class _FakeCurator:
-    """In-memory GraphCurator stand-in: get_state / set_cursor / update_status."""
+    """In-memory GraphCurator stand-in: nodes / cursor / set_cursor / update_status."""
 
     def __init__(self, nodes: dict[str, dict[str, Any]], cursor: str | None = None) -> None:
         self._nodes = nodes
@@ -2198,8 +2294,11 @@ class _FakeCurator:
         self.cursor_sets: list[str | None] = []
         self.status_sets: list[tuple[str, str]] = []
 
-    def get_state(self) -> dict[str, Any]:
-        return {"nodes": self._nodes, "cursor": self._cursor}
+    def nodes(self) -> dict[str, Any]:
+        return _typed(self._nodes)
+
+    def cursor(self) -> str | None:
+        return self._cursor
 
     def set_cursor(self, intent: Any) -> None:
         self._cursor = intent.id
@@ -3196,8 +3295,8 @@ def test_pass_pending_root_tasks_passes_only_pending_roots() -> None:
             self._nodes = nodes
             self.passed: list[str] = []
 
-        def get_state(self) -> dict[str, Any]:
-            return {"nodes": self._nodes}
+        def nodes(self) -> dict[str, Any]:
+            return _typed(self._nodes)
 
         def update_status(self, intent: Any) -> None:
             self.passed.append(intent.id)
@@ -3359,14 +3458,14 @@ def test_open_tasks_for_checkoff_excludes_auto_root() -> None:
     # The tier-2 compaction check-off must never offer the auto-root (parent_id
     # is None): a summariser listing it would mark the whole run passed mid-run.
     curator = MagicMock()
-    curator.get_state.return_value = {
-        "nodes": {
+    curator.nodes.return_value = _typed(
+        {
             "root": {"status": "in_progress", "title": "the whole run", "parent_id": None},
             "01A": {"status": "pending", "title": "subtask A", "parent_id": "root"},
             "01B": {"status": "in_progress", "title": "subtask B", "parent_id": "root"},
             "01C": {"status": "passed", "title": "done subtask", "parent_id": "root"},
         }
-    }
+    )
     wf = _wf(curator=curator)
     ids = {nid for nid, _ in wf._open_tasks_for_checkoff()}  # pyright: ignore[reportPrivateUsage]
     assert ids == {"01A", "01B"}  # root excluded; passed subtask excluded

@@ -89,8 +89,8 @@ class _OneShotSteer:
 
 
 class _FakeGraph:
-    """A minimal in-memory curator: records add/update/record_commit and answers
-    get_state, so the loop's DAG stamping is observable without a real curator."""
+    """A minimal in-memory curator: records add/update/record_commit, so the
+    loop's DAG stamping is observable without a real curator."""
 
     def __init__(self) -> None:
         self._seq = 0
@@ -119,9 +119,6 @@ class _FakeGraph:
         self.commit_calls.append((intent.id, intent.sha))
         self.nodes[intent.id]["commit_sha"] = intent.sha
         return SimpleNamespace(id=intent.id)
-
-    def get_state(self) -> dict[str, Any]:
-        return {"nodes": dict(self.nodes), "cursor": None, "graph_version": self._seq}
 
 
 class _FakeEvents:

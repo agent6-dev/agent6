@@ -16,7 +16,7 @@ work to surface.
 
 from __future__ import annotations
 
-from typing import Any
+from agent6.graph.models import TaskNode
 
 # Tool names that mutate the task DAG; after one runs the loop re-snapshots the
 # graph (graph.update event) so a live viewer can render the worker's task
@@ -40,31 +40,31 @@ STUCK_ON_TASK_AFTER = 20
 STUCK_NUDGE_MAX = 3
 
 
-def has_open_child(nodes: dict[str, Any], node: dict[str, Any]) -> bool:
+def has_open_child(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
     """True if any of ``node``'s children is still open. A subtask with open
     children is a container -- its children are the unit of work, not it -- so the
     frontier surfaces the children's leaves instead."""
-    for cid in node.get("children", ()) or ():
+    for cid in node.children:
         c = nodes.get(cid)
-        if c is not None and c.get("status") in OPEN_STATUSES:
+        if c is not None and c.status in OPEN_STATUSES:
             return True
     return False
 
 
-def is_focusable_subtask(nodes: dict[str, Any], node: dict[str, Any]) -> bool:
+def is_focusable_subtask(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
     """An open SUBTASK ready to work: not the auto-root, open, dependencies all
     satisfied, and no open child (a decomposed parent is not itself a unit of
     work)."""
-    if node.get("parent_id") is None or node.get("status") not in OPEN_STATUSES:
+    if node.parent_id is None or node.status not in OPEN_STATUSES:
         return False
-    for dep in node.get("depends_on", ()) or ():
+    for dep in node.depends_on:
         d = nodes.get(dep)
-        if d is None or d.get("status") not in DEPS_SATISFIED_STATUSES:
+        if d is None or d.status not in DEPS_SATISFIED_STATUSES:
             return False  # a missing or not-yet-done dependency blocks the subtask
     return not has_open_child(nodes, node)
 
 
-def first_ready_subtask(nodes: dict[str, Any]) -> str | None:
+def first_ready_subtask(nodes: dict[str, TaskNode]) -> str | None:
     """First focusable subtask (open, deps satisfied, no open child) in node
     creation order. Node ids are time-sortable ULIDs, so sorting by id restores
     creation order even on a resumed run, where the nodes dict is in filesystem
@@ -76,7 +76,7 @@ def first_ready_subtask(nodes: dict[str, Any]) -> str | None:
     return None
 
 
-def current_task_id(nodes: dict[str, Any], cursor: str | None) -> str | None:
+def current_task_id(nodes: dict[str, TaskNode], cursor: str | None) -> str | None:
     """The subtask to focus on now: the curator cursor when it still points at a
     focusable subtask (a decomposed parent does NOT qualify -- its leaves do, so
     a split moves focus forward), else the first ready subtask. None when no
@@ -88,16 +88,16 @@ def current_task_id(nodes: dict[str, Any], cursor: str | None) -> str | None:
     return first_ready_subtask(nodes)
 
 
-def current_task_banner(task_id: str, node: dict[str, Any], *, decompose: bool = False) -> str:
+def current_task_banner(task_id: str, node: TaskNode, *, decompose: bool = False) -> str:
     """The per-turn focus directive naming the current task and its acceptance."""
-    title = str(node.get("title", "")).strip() or "(untitled)"
+    title = node.title.strip() or "(untitled)"
     lines = [f"[harness focus] Current task ({task_id}): {title}"]
-    acceptance = str(node.get("acceptance", "")).strip()
+    acceptance = node.acceptance.strip()
     if acceptance:
         lines.append(f"Acceptance: {acceptance}")
-    paths = node.get("relevant_paths") or ()
+    paths = node.relevant_paths
     if paths:
-        lines.append("Relevant paths: " + ", ".join(str(p) for p in paths[:8]))
+        lines.append("Relevant paths: " + ", ".join(paths[:8]))
     lines.append(
         "Work this ONE task to completion before anything else. When its acceptance"
         " is met, mark it passed with update_task -- you will then be moved to the"
@@ -106,7 +106,7 @@ def current_task_banner(task_id: str, node: dict[str, Any], *, decompose: bool =
     )
     # Decompose runs plan recursively: invite a finer plan for a task that turns
     # out large, at the point the model has the most context to plan it.
-    if decompose and not node.get("children"):
+    if decompose and not node.children:
         lines.append(
             "If this task is itself large or multi-step, add child subtasks under"
             f" it (parent_id={task_id}) breaking it into finer steps, then do those."
@@ -114,10 +114,10 @@ def current_task_banner(task_id: str, node: dict[str, Any], *, decompose: bool =
     return "\n".join(lines)
 
 
-def stuck_on_task_nudge(task_id: str, node: dict[str, Any], turns: int) -> str:
+def stuck_on_task_nudge(task_id: str, node: TaskNode, turns: int) -> str:
     """The anti-grind directive: the model has spent ``turns`` turns on one task
     without concluding it; offer the three ways to record progress."""
-    title = str(node.get("title", "")).strip() or "(untitled)"
+    title = node.title.strip() or "(untitled)"
     return (
         f"[harness] You have spent {turns} turns on the current task"
         f" ({task_id}: {title}) without concluding it. Pick ONE now and record it:\n"

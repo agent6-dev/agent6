@@ -2145,14 +2145,11 @@ class Workflow:
         if self.mode != "run" or self.curator is None:
             return
         try:
-            gstate = self.curator.get_state()
+            cursor = self.curator.cursor()
         except Exception as exc:  # a curator read error must not break the loop
             self._log(f"LOOP: surface-current-task skipped: {exc}")
             return
-        nodes = gstate.get("nodes", {})
-        if not isinstance(nodes, dict):
-            return
-        cursor = gstate.get("cursor")
+        nodes = self.curator.nodes()
         current_id = current_task_id(nodes, cursor)
         if current_id is None:
             state.turns_on_task = 0  # frontier empty: nothing to grind on
@@ -2207,7 +2204,7 @@ class Workflow:
         if current_id == state.surfaced_task_id:
             return  # already surfaced; the banner survives tier-1 elision
         node = nodes[current_id]
-        if node.get("status") == "pending":
+        if node.status == "pending":
             # Reflect that this task is now being worked, keeping the DAG honest
             # for the TUI and the check-off / finish-gate "open" set. Best-effort.
             try:
@@ -2643,17 +2640,9 @@ class Workflow:
         Best-effort: a curator hiccup must never break completion."""
         if self.curator is None:
             return
-        try:
-            state = self.curator.get_state()
-        except Exception as exc:  # a curator read error must not break finish
-            self._log(f"LOOP: auto-pass root skipped: {exc}")
-            return
-        nodes = state.get("nodes", {})
-        if not isinstance(nodes, dict):
-            return
         changed = False
-        for nid, node in nodes.items():
-            if node.get("parent_id") is None and node.get("status") in ("pending", "in_progress"):
+        for nid, node in self.curator.nodes().items():
+            if node.parent_id is None and node.status in ("pending", "in_progress"):
                 try:
                     self.curator.update_status(UpdateStatusIntent(id=nid, new_status="passed"))
                     changed = True
@@ -2692,26 +2681,26 @@ class Workflow:
         if self.curator is None:
             return
         try:
-            state = self.curator.get_state()
+            cursor = self.curator.cursor()
         except Exception as exc:
-            # get_state reads cursor.json from disk; a hiccup (OSError, a
+            # cursor() reads cursor.json from disk; a hiccup (OSError, a
             # malformed cursor) must never break an otherwise-healthy run.
             self._log(f"LOOP: graph snapshot skipped: {exc}")
             return
-        raw = state.get("nodes", {})
-        if not isinstance(raw, dict):
-            return
+        # FROZEN wire surface: project each node to exactly these four fields,
+        # children as a JSON list -- the graph.update shape old run dirs, the
+        # viewmodel fold, web and TUI all already hold. Pinned by
+        # test_graph_update_snapshot_payload_is_wire_stable.
         nodes = {
             nid: {
-                "title": n.get("title", ""),
-                "status": n.get("status", "pending"),
-                "parent_id": n.get("parent_id"),
-                "children": n.get("children", ()),
+                "title": n.title,
+                "status": n.status,
+                "parent_id": n.parent_id,
+                "children": list(n.children),
             }
-            for nid, n in raw.items()
-            if isinstance(n, dict)
+            for nid, n in self.curator.nodes().items()
         }
-        self._emit("graph.update", nodes=nodes, cursor=state.get("cursor"))
+        self._emit("graph.update", nodes=nodes, cursor=cursor)
 
     def _load_repo_summary(self) -> RepoSummary:
         """Reuse the shared `load_repo_summary` and extend with structural priors
@@ -2855,11 +2844,7 @@ class Workflow:
         """Curator DAG version for the per-turn checkpoint; 0 if no curator."""
         if self.curator is None:
             return 0
-        try:
-            gv = self.curator.get_state().get("graph_version", 0)
-        except Exception:
-            return 0
-        return gv if isinstance(gv, int) else 0
+        return self.curator.graph_version
 
     def _record_metric_result(
         self,
@@ -3175,24 +3160,16 @@ class Workflow:
         yields an empty list, so compaction degrades to the plain summary."""
         if self.curator is None:
             return []
-        try:
-            state = self.curator.get_state()
-        except Exception as exc:  # a curator read error must not break compaction
-            self._log(f"LOOP: checkoff task list skipped: {exc}")
-            return []
-        nodes = state.get("nodes", {})
-        if not isinstance(nodes, dict):
-            return []
         out: list[tuple[str, str]] = []
-        for nid, node in nodes.items():
+        for nid, node in self.curator.nodes().items():
             # Subtasks only: never offer the auto-root (parent_id is None) for
             # check-off, mirroring the finish-gate and surface rules. The root is
             # the whole-run container, so a mid-run summary must not mark it
             # passed and end the run early.
-            if node.get("parent_id") is None:
+            if node.parent_id is None:
                 continue
-            if node.get("status") in ("pending", "in_progress"):
-                out.append((nid, str(node.get("title", ""))[:120]))
+            if node.status in ("pending", "in_progress"):
+                out.append((nid, node.title[:120]))
         return out
 
     def _apply_compaction_checkoff(self, summary_text: str, *, valid_ids: set[str]) -> None:
@@ -3234,15 +3211,9 @@ class Workflow:
         """The first root task id (parent_id is None), or None. Best-effort."""
         if self.curator is None:
             return None
-        try:
-            state = self.curator.get_state()
-        except Exception:
-            return None
-        nodes = state.get("nodes", {})
-        if isinstance(nodes, dict):
-            for nid, node in nodes.items():
-                if node.get("parent_id") is None:
-                    return nid
+        for nid, node in self.curator.nodes().items():
+            if node.parent_id is None:
+                return nid
         return None
 
     def _task_finish_gate_nudge(self, state: _LoopState) -> str | None:
@@ -3256,18 +3227,10 @@ class Workflow:
         must not bounce the loop forever). Best-effort: no curator -> no gate."""
         if self.curator is None:
             return None
-        try:
-            nodes = self.curator.get_state().get("nodes", {})
-        except Exception as exc:  # a curator read error must not block finishing
-            self._log(f"LOOP: task finish-gate skipped: {exc}")
-            return None
-        if not isinstance(nodes, dict):
-            return None
         open_subtasks = [
-            (nid, str(node.get("title", ""))[:120])
-            for nid, node in nodes.items()
-            if node.get("parent_id") is not None
-            and node.get("status") in ("pending", "in_progress")
+            (nid, node.title[:120])
+            for nid, node in self.curator.nodes().items()
+            if node.parent_id is not None and node.status in ("pending", "in_progress")
         ]
         if not open_subtasks:
             return None
@@ -3885,13 +3848,10 @@ class Workflow:
         if self.curator is None:
             return root_task_id
         try:
-            gstate = self.curator.get_state()
+            cursor = self.curator.cursor()
         except Exception:
             return root_task_id
-        nodes = gstate.get("nodes", {})
-        if not isinstance(nodes, dict):
-            return root_task_id
-        return current_task_id(nodes, gstate.get("cursor")) or root_task_id
+        return current_task_id(self.curator.nodes(), cursor) or root_task_id
 
     def _add_parallel_node(self, task: str, parent_id: str | None) -> str | None:
         """Add a steering-created DAG node for one dispatched task; None when no

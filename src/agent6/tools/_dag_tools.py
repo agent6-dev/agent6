@@ -86,23 +86,21 @@ def list_tasks(curator: GraphCurator | None, raw: dict[str, Any]) -> dict[str, A
     if curator is None:
         raise ToolError("list_tasks: DAG curator not available in this run")
     args = DagListTasksInput.model_validate(raw)
-    state = curator.get_state()
-    nodes = state.get("nodes", {})
+    # Wire surface: the returned dict is JSON'd to the model; the projected shape
+    # (and its list-valued relevant_paths/depends_on) is what tool callers hold.
     out: list[dict[str, Any]] = []
-    for node_id, raw_node in nodes.items():
-        if not isinstance(raw_node, dict):
-            continue
-        if args.status and raw_node.get("status") != args.status:
+    for node_id, node in curator.nodes().items():
+        if args.status and node.status != args.status:
             continue
         out.append(
             {
                 "id": node_id,
-                "parent_id": raw_node.get("parent_id"),
-                "title": raw_node.get("title", ""),
-                "status": raw_node.get("status", "pending"),
-                "acceptance": raw_node.get("acceptance", ""),
-                "relevant_paths": list(raw_node.get("relevant_paths", ())),
-                "depends_on": list(raw_node.get("depends_on", ())),
+                "parent_id": node.parent_id,
+                "title": node.title,
+                "status": node.status,
+                "acceptance": node.acceptance,
+                "relevant_paths": list(node.relevant_paths),
+                "depends_on": list(node.depends_on),
             }
         )
     return {"tasks": out, "count": len(out)}

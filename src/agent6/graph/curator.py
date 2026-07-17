@@ -40,7 +40,6 @@ import sys
 from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
-from typing import Any
 
 from agent6.graph.models import (
     AddDependencyIntent,
@@ -112,15 +111,6 @@ class GraphCurator:
 
     def cursor(self) -> str | None:
         return read_cursor(self._layout)
-
-    def get_state(self) -> dict[str, Any]:
-        """Snapshot for read consumers (DAG list_tasks, loop graph snapshots):
-        nodes as JSON-ready dicts, plus cursor and graph_version."""
-        return {
-            "nodes": {nid: n.model_dump(mode="json") for nid, n in self._nodes.items()},
-            "cursor": self.cursor(),
-            "graph_version": self._graph_version,
-        }
 
     # ---- mutations --------------------------------------------------------
 

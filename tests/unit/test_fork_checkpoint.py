@@ -78,7 +78,7 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: Path) -> None:
     snap = run_dir / "loop_state.json"
 
     curator = MagicMock()
-    curator.get_state.return_value = {"nodes": {}, "cursor": None, "graph_version": 7}
+    curator.graph_version = 7
     config = SimpleNamespace(
         workflow=SimpleNamespace(
             require_verify_to_finish=False, verify_command=(), metric=SimpleNamespace(goal=None)
