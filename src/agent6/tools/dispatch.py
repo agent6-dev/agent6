@@ -23,13 +23,6 @@ from pydantic import ValidationError
 from agent6.config import Config
 from agent6.events import EventSink
 from agent6.graph.client import GraphClient
-from agent6.graph.models import (
-    AddDependencyIntent,
-    AddSubtaskIntent,
-    SetCursorIntent,
-    TaskNodeDraft,
-    UpdateStatusIntent,
-)
 from agent6.memory import MemoryStoreError
 from agent6.memory import add as memory_add
 from agent6.memory import invalidate as memory_invalidate
@@ -41,6 +34,11 @@ from agent6.skills import (
     resolve_states,
     skill_search_dirs,
 )
+from agent6.tools._dag_tools import add_dependency as _add_dependency
+from agent6.tools._dag_tools import add_task as _add_task
+from agent6.tools._dag_tools import list_tasks as _list_tasks
+from agent6.tools._dag_tools import set_cursor as _set_cursor
+from agent6.tools._dag_tools import update_task as _update_task
 from agent6.tools._fs_tools import agent6_docs as _fs_agent6_docs
 from agent6.tools._fs_tools import apply_edit as _fs_apply_edit
 from agent6.tools._fs_tools import apply_patch as _fs_apply_patch
@@ -718,79 +716,19 @@ class ToolDispatcher:
     # was wired so standalone test instantiation works unchanged.
 
     def _dag_add_task(self, raw: dict[str, Any]) -> dict[str, Any]:
-        if self._graph_client is None:
-            raise ToolError("add_task: DAG curator not available in this run")
-        args = DagAddTaskInput.model_validate(raw)
-        parent_id = args.parent_id or self._run_root_node_id
-        draft = TaskNodeDraft(
-            title=args.title,
-            rationale=args.rationale,
-            acceptance=args.acceptance,
-            relevant_paths=args.relevant_paths,
-            created_by="worker",
-        )
-        intent = AddSubtaskIntent(parent_id=parent_id, draft=draft)
-        node = self._graph_client.add_subtask(intent)
-        return {
-            "id": node.id,
-            "parent_id": node.parent_id,
-            "title": node.title,
-            "status": node.status,
-        }
+        return _add_task(self._graph_client, self._run_root_node_id, raw)
 
     def _dag_update_task(self, raw: dict[str, Any]) -> dict[str, Any]:
-        if self._graph_client is None:
-            raise ToolError("update_task: DAG curator not available in this run")
-        args = DagUpdateTaskInput.model_validate(raw)
-        intent = UpdateStatusIntent(
-            id=args.id,
-            new_status=args.status,  # type: ignore[arg-type]  # pydantic validates the literal
-            note=args.note,
-        )
-        node = self._graph_client.update_status(intent)
-        return {"id": node.id, "status": node.status, "title": node.title}
+        return _update_task(self._graph_client, raw)
 
     def _dag_set_cursor(self, raw: dict[str, Any]) -> dict[str, Any]:
-        if self._graph_client is None:
-            raise ToolError("set_cursor: DAG curator not available in this run")
-        args = DagSetCursorInput.model_validate(raw)
-        self._graph_client.set_cursor(SetCursorIntent(id=args.id))
-        return {"acknowledged": True, "cursor": args.id}
+        return _set_cursor(self._graph_client, raw)
 
     def _dag_add_dependency(self, raw: dict[str, Any]) -> dict[str, Any]:
-        if self._graph_client is None:
-            raise ToolError("add_dependency: DAG curator not available in this run")
-        args = DagAddDependencyInput.model_validate(raw)
-        intent = AddDependencyIntent(id=args.id, depends_on=args.depends_on)
-        # Unknown ids and cycles are rejected by the curator; dispatch()'s
-        # generic wrapper surfaces that rejection to the model as a ToolError.
-        node = self._graph_client.add_dependency(intent)
-        return {"id": node.id, "title": node.title, "depends_on": list(node.depends_on)}
+        return _add_dependency(self._graph_client, raw)
 
     def _dag_list_tasks(self, raw: dict[str, Any]) -> dict[str, Any]:
-        if self._graph_client is None:
-            raise ToolError("list_tasks: DAG curator not available in this run")
-        args = DagListTasksInput.model_validate(raw)
-        state = self._graph_client.get_state()
-        nodes = state.get("nodes", {})
-        out: list[dict[str, Any]] = []
-        for node_id, raw_node in nodes.items():
-            if not isinstance(raw_node, dict):
-                continue
-            if args.status and raw_node.get("status") != args.status:
-                continue
-            out.append(
-                {
-                    "id": node_id,
-                    "parent_id": raw_node.get("parent_id"),
-                    "title": raw_node.get("title", ""),
-                    "status": raw_node.get("status", "pending"),
-                    "acceptance": raw_node.get("acceptance", ""),
-                    "relevant_paths": list(raw_node.get("relevant_paths", ())),
-                    "depends_on": list(raw_node.get("depends_on", ())),
-                }
-            )
-        return {"tasks": out, "count": len(out)}
+        return _list_tasks(self._graph_client, raw)
 
     # Cross-run memory handlers. Writes go through trusted code
     # (agent6.memory) to fixed markdown files under <state_dir>/memories/,
