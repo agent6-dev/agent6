@@ -296,6 +296,18 @@ from agent6.workflows._prompt_revision import (
 from agent6.workflows._prompt_revision import (
     parse_prompt_revision as _parse_prompt_revision,
 )
+from agent6.workflows._provider_call import (
+    NON_RETRYABLE_HTTP_STATUSES as _NON_RETRYABLE_HTTP_STATUSES,
+)
+from agent6.workflows._provider_call import (
+    RETRY_AFTER_CEILING_S as _RETRY_AFTER_CEILING_S,
+)
+from agent6.workflows._provider_call import (
+    is_empty_tool_call_response as _is_empty_tool_call_response,
+)
+from agent6.workflows._provider_call import (
+    provider_error_hint as _provider_error_hint,
+)
 from agent6.workflows._review import ReviewDispatch, run_panel
 from agent6.workflows._review import Seat as ReviewSeat
 from agent6.workflows._run_state import (
@@ -330,42 +342,6 @@ _DEDUPE_MIN_CHARS = 500
 if TYPE_CHECKING:
     from agent6.events import EventSink
 
-
-# HTTP statuses that will never succeed on a blind retry of the same request.
-# 400 bad request, 401/403 auth, 402 insufficient credits, 404 bad
-# model/endpoint, 422 malformed body. Retrying these only burns wall-time
-# (observed live: a 402 "Insufficient credits" was retried on every turn for the
-# rest of the run). 408/409/429 and all 5xx remain retryable and fall through to
-# the normal backoff.
-_NON_RETRYABLE_HTTP_STATUSES = frozenset({400, 401, 402, 403, 404, 422})
-
-# Upper bound on how long we honor an upstream Retry-After hint. A 429/503 often
-# carries Retry-After: <seconds>; we wait at least that long (the provider's own
-# backoff is usually shorter and just exhausts the retries before the window
-# clears), but never longer than this so a buggy/hostile header can't hang a run.
-_RETRY_AFTER_CEILING_S = 120.0
-
-
-def _provider_error_hint(status_code: int | None) -> str:
-    """A short, actionable suffix for a fatal provider error, or "".
-
-    The raw upstream body (e.g. a 401 JSON blob) tells a user nothing about how
-    to fix it. Map the common credential/quota statuses to a next step.
-    """
-    if status_code in (401, 403):
-        return (
-            " Authentication failed: verify the provider key with `agent6 connect`"
-            " or check [providers.<name>].api_key_env."
-        )
-    if status_code == 402:
-        return " Insufficient credits/quota at the provider; top up or switch providers."
-    return ""
-
-
-# Finish/stop reasons that promise a tool call. A response carrying one of these
-# but with NO tool_use and NO text is self-contradictory and gets retried (see
-# _is_empty_tool_call_response).
-_TOOL_CALL_STOP_REASONS = frozenset({"tool_calls", "tool_use"})
 
 # Consecutive went-quiet turns after which a metric run drops the worker's
 # per-call output cap from metric_task_max_tokens back to per_call_max_tokens
@@ -419,23 +395,6 @@ def _plan_is_title_only(plan_md: str) -> bool:
     and put the plan in `summary`; the caller salvages that case."""
     return not any(
         line.strip() and not line.lstrip().startswith("#") for line in plan_md.splitlines()
-    )
-
-
-def _is_empty_tool_call_response(resp: Any) -> bool:
-    """A self-contradictory provider response: the finish/stop reason says the
-    model stopped to make a tool call, but no tool_use and no text came back.
-
-    Observed live with GLM via OpenRouter after a tier-2 context restart (~50% of
-    turns): finish_reason=tool_calls with an empty payload (~20 reasoning tokens,
-    no content, no tool_calls). A blind retry of the identical request recovers it
-    about half the time; without one the loop counts it as went_quiet and the run
-    dies at the first compaction. Excludes stop_reason=="length" (deterministic
-    reasoning starvation, handled separately with its own nudge)."""
-    return (
-        str(getattr(resp, "stop_reason", "")) in _TOOL_CALL_STOP_REASONS
-        and not resp.tool_uses
-        and not (resp.text or "").strip()
     )
 
 
