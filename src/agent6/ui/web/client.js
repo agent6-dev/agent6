@@ -335,12 +335,18 @@ function makeConv(url, box, body) {
     items: [], open: new Set(),
     detail: localStorage.getItem('a6-detail') || 'collapsed',
     timer: null,
+    finished: false, // set by setLive: an ended run/machine gets past-tense empty text
   };
   const itemsHost = el('div', 'conv');
   const liveHost = el('div', 'conv conv-live');
   liveHost.style.display = 'none';
   body.appendChild(itemsHost); body.appendChild(liveHost);
   const following = () => box.scrollTop + box.clientHeight >= box.scrollHeight - 40;
+  // A run/machine that produced no conversation: "yet ... as it streams" while it
+  // can still stream, past tense once it has ended (a terminal tool-only machine).
+  const emptyNote = () => conv.finished
+    ? 'this run made no conversation'
+    : 'no conversation yet; it appears as the run streams';
 
   const paintItems = () => {
     const follow = following();
@@ -366,7 +372,7 @@ function makeConv(url, box, body) {
     // The empty note yields to the live pane: streamed text under a
     // "no conversation yet" banner reads as a contradiction.
     if (!shown && liveHost.style.display === 'none') {
-      itemsHost.appendChild(el('div', 'muted conv-empty', 'no conversation yet; it appears as the run streams'));
+      itemsHost.appendChild(el('div', 'muted conv-empty', emptyNote()));
     }
     if (follow) box.scrollTop = box.scrollHeight;
   };
@@ -387,11 +393,16 @@ function makeConv(url, box, body) {
   // live "thinking…" marker always shows; the reasoning text itself streams
   // only at the expanded detail level (same rule as the TUI).
   conv.setLive = (s) => {
+    conv.finished = !!s.finished; // steers emptyNote()'s tense (may run before paintItems)
     const r = s.last_role;
     const follow = following();
     liveHost.innerHTML = '';
     const note = itemsHost.querySelector('.conv-empty');
-    if (s.finished || !r) { liveHost.style.display = 'none'; if (note) note.style.display = ''; return; }
+    if (s.finished || !r) {
+      liveHost.style.display = 'none';
+      if (note) { note.textContent = emptyNote(); note.style.display = ''; } // re-tense if already painted
+      return;
+    }
     const think = r.streamed_thinking, text = r.streamed_text;
     liveHost.style.display = '';
     if (note) note.style.display = 'none'; // the live pane replaces the empty note
