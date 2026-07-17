@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from agent6.ui.bridge import notify
+from agent6.ui import notify
 
 
 def _which_none(_name: str) -> str | None:

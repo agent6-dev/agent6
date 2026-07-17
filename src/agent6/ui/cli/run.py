@@ -35,7 +35,6 @@ from agent6.events import EventSink
 from agent6.git_ops import set_repo_hook_policy
 from agent6.paths import data_dir
 from agent6.skills import discover_skills, resolve_states, skill_search_dirs
-from agent6.ui.bridge.spawn import agent6_exe, spawn_detached_resume
 from agent6.ui.cli._ask import (
     run_ask_repl as _run_ask_repl,
 )
@@ -89,6 +88,7 @@ from agent6.ui.cli.parallel import (
 from agent6.ui.cli.parallel import (
     dispatch_parallel as _dispatch_parallel,
 )
+from agent6.ui.spawn import agent6_exe, spawn_detached_resume
 
 
 def _skills_task_prefix(cfg: Config, names: tuple[str, ...]) -> tuple[str, str]:
@@ -116,7 +116,7 @@ def run_frontend() -> RunFrontend:
     view is created lazily on ``attach_console_view``; the builders that need it
     close over its cell, so the lifecycle never holds a UI type. The lifecycle
     owns egress (`app.egress`) itself; only the two exe-spawn primitives it
-    can't reach (`ui.bridge.spawn`) are injected."""
+    can't reach (`ui.spawn`) are injected."""
     console_cell: list[ConsoleView | None] = [None]
 
     def attach_console_view(events: EventSink) -> None:

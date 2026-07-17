@@ -73,7 +73,7 @@ class ParallelError(Exception):
 class SpawnRun(Protocol):
     """Spawn a detached `agent6 <argv>` in *cwd* and return its located run dir.
 
-    The front-end's process-spawn primitive (ui.bridge.spawn's
+    The front-end's process-spawn primitive (ui.spawn's
     `spawn_and_locate` with `agent6_exe` prepended); *argv* is the agent6
     subcommand + flags, WITHOUT the executable. Returns `(run_dir, "")` once the
     new run dir with a logs.jsonl appears, else `(None, error)`."""

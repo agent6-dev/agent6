@@ -31,8 +31,6 @@ ALLOWED = {
     "sandbox/jail.py",
     "tools/lsp.py",
     "tools/mcp_client.py",
-    "ui/bridge/notify.py",
-    "ui/bridge/spawn.py",
     "ui/cli/_ask.py",
     "ui/cli/_live.py",
     "ui/cli/_steer.py",
@@ -45,6 +43,8 @@ ALLOWED = {
     "ui/cli/scriptcheck.py",
     "ui/cli/skills_cmds.py",
     "ui/cli/system_cmds.py",
+    "ui/notify.py",
+    "ui/spawn.py",
     "ui/tui/clipboard.py",
     "ui/tui/conversation.py",
 }

@@ -210,7 +210,7 @@ def maybe_start_egress(
     spawner on that exe so a later detach can launch the background resume
     OUTSIDE the network namespace; a resume spawned from inside it inherits the
     empty namespace and every provider call dies locally. The front-end supplies
-    the exe (``ui.bridge.spawn.agent6_exe``); None skips the pre-fork (machines).
+    the exe (``ui.spawn.agent6_exe``); None skips the pre-fork (machines).
 
     Must run before any network object is built and while single-threaded
     (``unshare(CLONE_NEWUSER)``). On success the process is left inside an empty
@@ -289,7 +289,7 @@ def spawn_detached(
     Under network isolation a direct spawn inherits the empty namespace and the
     resume's provider egress is dead on arrival, so it goes through the
     pre-forked host spawner; without isolation the front-end's *fallback*
-    (``ui.bridge.spawn.spawn_detached_resume``) does the plain detached spawn."""
+    (``ui.spawn.spawn_detached_resume``) does the plain detached spawn."""
     if guard.detach_spawner is not None:
         return guard.detach_spawner.spawn_resume(cwd, run_id)
     return fallback(cwd, run_id)

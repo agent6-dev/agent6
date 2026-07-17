@@ -55,8 +55,8 @@ from agent6.runs.ipc import (
     write_question_answers,
     write_steer_answer,
 )
-from agent6.ui.bridge.notify import desktop_notify
-from agent6.ui.bridge.spawn import agent6_exe, spawn_and_confirm, spawn_and_locate
+from agent6.ui.notify import desktop_notify
+from agent6.ui.spawn import agent6_exe, spawn_and_confirm, spawn_and_locate
 from agent6.ui.tui.copy_method import open_copy_method_picker
 from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.modals import (

@@ -4,7 +4,7 @@
 
 Every mutation the browser can make goes through here, and every one is either
 the typed answer-file contract (`agent6.runs.ipc`) or spawning / running
-the same `agent6` CLI a user would (`agent6.ui.bridge.spawn`). Nothing here
+the same `agent6` CLI a user would (`agent6.ui.spawn`). Nothing here
 executes arbitrary input: new-work spawns fixed argv with the task as a single
 argv element, answers are written to the run's own answer files, and the quick
 ops (merge / prune / config set) shell the fixed agent6 subcommands. The browser
@@ -33,7 +33,7 @@ from agent6.runs.ipc import (
     write_question_answers,
     write_steer_answer,
 )
-from agent6.ui.bridge.spawn import (
+from agent6.ui.spawn import (
     agent6_exe,
     run_cli_capture,
     spawn_and_confirm,

@@ -217,7 +217,7 @@ class RunFrontend:
     build_coordinator_spawner: Callable[
         [Config, Path, Path, str, str, float | None, bool], GroupLaneSpawner | None
     ]
-    # process-spawn primitives the front-end owns (`ui.bridge.spawn`, mirroring
+    # process-spawn primitives the front-end owns (`ui.spawn`, mirroring
     # LaneRuntime's injected spawner): the agent6 exe path the egress detach host
     # spawner pre-forks, and the plain detached-resume launch used off isolation.
     agent6_exe: Callable[[], str]

@@ -10,7 +10,7 @@ Serves web.page to a browser, fed by:
 Uses the stdlib `http.server.ThreadingHTTPServer`. Binds loopback by default; a
 non-loopback bind is opt-in (see the `[web]` config section) and widens the
 inbound network surface. The server only ever renders folded read-state and (in
-the write phase) drives the typed `agent6.ui.bridge` contracts; it never serves
+the write phase) drives the typed `agent6.runs.ipc` contracts; it never serves
 secrets and never executes arbitrary input.
 """
 

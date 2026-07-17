@@ -190,10 +190,10 @@ fixed argv depending only on operator input, never LLM output.
 - `tools/mcp_client.py`: operator-configured `[mcp.servers.*]` server commands.
 - `providers/token_command.py`: the operator-configured
   `[providers.*].token_command` that mints a provider bearer; argv from config.
-- `ui/bridge/spawn.py`: the shared front-end bridge; spawns the agent6 CLI
+- `ui/spawn.py`: the shared front-end spawn helper; spawns the agent6 CLI
   detached for run/machine launches and captures `runs merge`/`prune`/
   `config set`; argv is the agent6 exe plus operator-chosen args.
-- `ui/bridge/notify.py`: fires `notify-send` with fixed argv (exe, `--`
+- `ui/notify.py`: fires `notify-send` with fixed argv (exe, `--`
   end-of-options, two positional data args, no shell) for the device-present
   machine notification; the message is inert data, never a command or an
   option.
@@ -361,7 +361,7 @@ each spawn subordinate work. Nothing here loosens the sandbox:
 - **No new subprocess call site.** `workflows/subrun.py`, `app/parallel.py`,
   and `ui/cli/parallel.py` add no direct `subprocess` use; lane git plumbing
   (clone/fetch/merge) goes through `git_ops.py` and lane spawning goes through
-  `ui/bridge/spawn.py`, both already on the §2b allowlist. The
+  `ui/spawn.py`, both already on the §2b allowlist. The
   `tests/security/test_subprocess_allowlist.py` pin needed no new entry.
 - **Dirty-tree refusal, not auto-stash.** A lane clones committed HEAD only,
   so `--parallel` refuses a dirty origin under `git.require_clean_worktree`

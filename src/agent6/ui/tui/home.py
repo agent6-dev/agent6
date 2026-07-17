@@ -40,7 +40,7 @@ from agent6.config import ConfigError
 from agent6.config.layer import load_effective
 from agent6.directive import DirectiveError, Segment, parse_directive, parse_spec
 from agent6.models.validate import known_models, refusal_message, validate_spec_models
-from agent6.ui.bridge.spawn import agent6_exe, run_cli_capture, spawn_and_locate
+from agent6.ui.spawn import agent6_exe, run_cli_capture, spawn_and_locate
 from agent6.ui.tui.config_page import ConfigScreen
 from agent6.ui.tui.copy_method import open_copy_method_picker
 from agent6.ui.tui.logview import LogScreen

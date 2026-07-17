@@ -70,10 +70,10 @@ from agent6.runs.id import new_friendly_id
 from agent6.runs.ipc import read_worker_pid, worker_is_alive, write_worker_pid
 from agent6.sandbox.detect import ProfileUnavailableError, select_profile
 from agent6.types import SandboxProfile
-from agent6.ui.bridge.notify import desktop_notify
 from agent6.ui.cli._common import _machines_dir, _state_dir
 from agent6.ui.cli.plan_watch import event_epoch, format_plain_event
 from agent6.ui.cli.scriptcheck import lint_and_typecheck, run_offline_tests
+from agent6.ui.notify import desktop_notify
 from agent6.viewmodel import (
     MachineState,
     MachineWatchCursor,

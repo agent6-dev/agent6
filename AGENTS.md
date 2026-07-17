@@ -115,8 +115,8 @@ and the principles the Zen doesn't cover:
   run-dir bridge callables the front-end injects (`RunFrontend`, `LaneRuntime`),
   and printing only through the injected two-channel `Reporter`.
   `ui/` is the presentation layer and the composition root: the three
-  front-ends (`ui/cli`, `ui/tui`, `ui/web`) and the front-end bridge
-  (`ui/bridge`: spawn / notify), over the shared headless read-model fold
+  front-ends (`ui/cli`, `ui/tui`, `ui/web`) plus `ui/spawn.py` and
+  `ui/notify.py`, over the shared headless read-model fold
   (`viewmodel`). `ui/cli` is the entry point that wires a run.
   [tach](https://docs.gauge.sh/) (`tach.toml`) checks it.
 - **`tach.toml` mirrors the design.** Write the right design, then update

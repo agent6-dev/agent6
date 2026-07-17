@@ -70,7 +70,7 @@ from agent6.runs.ipc import (
     write_question_answers,
     write_steer_answer,
 )
-from agent6.ui.bridge.spawn import agent6_exe, spawn_and_locate, spawn_detached_resume
+from agent6.ui.spawn import agent6_exe, spawn_and_locate, spawn_detached_resume
 from agent6.ui.tui import clipboard
 from agent6.ui.tui.conversation import RUN_MENU, ConversationScreen, SteerInput
 from agent6.ui.tui.copy_method import open_copy_method_picker

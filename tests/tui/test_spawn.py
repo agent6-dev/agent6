@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.ui.bridge import spawn
+from agent6.ui import spawn
 
 
 def test_spawn_and_locate_finds_new_log_dir(

@@ -81,7 +81,8 @@ depends_on = [
   "agent6.init",
   "agent6.ui.tui",
   "agent6.ui.web",
-  "agent6.ui.bridge",
+  "agent6.ui.spawn",
+  "agent6.ui.notify",
   "agent6.viewmodel",
   "agent6.graph.models",
   "agent6.graph.storage",
@@ -121,13 +122,18 @@ depends_on = []
 
 [[modules]]
 path = "agent6.ui.tui"
-depends_on = ["agent6.config", "agent6.config.layer", "agent6.directive", "agent6.ui.bridge", "agent6.runs.ipc", "agent6.machine", "agent6.models.cache", "agent6.models.registry", "agent6.models.validate", "agent6.paths", "agent6.secrets", "agent6.viewmodel"]
+depends_on = ["agent6.config", "agent6.config.layer", "agent6.directive", "agent6.ui.spawn", "agent6.ui.notify", "agent6.runs.ipc", "agent6.machine", "agent6.models.cache", "agent6.models.registry", "agent6.models.validate", "agent6.paths", "agent6.secrets", "agent6.viewmodel"]
 
 [[modules]]
-# The shared, textual-free write bridge: spawn the CLI detached, and the
-# approval / question / steer answer-file contract the workflow process polls.
-# Consumed by the CLI, the TUI, and the web server. Pure stdlib, no UI toolkit.
-path = "agent6.ui.bridge"
+# Find the agent6 exe and spawn it detached (new work / machines / background
+# resume). Consumed by the CLI, the TUI, and the web server. Pure stdlib leaf.
+path = "agent6.ui.spawn"
+depends_on = []
+
+[[modules]]
+# Best-effort desktop notification via notify-send (fixed argv). Consumed by the
+# CLI and the TUI. Pure stdlib leaf.
+path = "agent6.ui.notify"
 depends_on = []
 
 [[modules]]
@@ -141,7 +147,7 @@ depends_on = [
   "agent6",
   "agent6.directive",
   "agent6.viewmodel",
-  "agent6.ui.bridge",
+  "agent6.ui.spawn",
   "agent6.runs.ipc",
   "agent6.config",
   "agent6.config.layer",
