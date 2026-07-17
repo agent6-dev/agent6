@@ -49,6 +49,21 @@ from agent6.app.finalize import (
 from agent6.app.manifest import (
     write_run_manifest as _write_run_manifest,
 )
+from agent6.app.preflight import (
+    infer_verify_if_unset as _infer_verify_if_unset,
+)
+from agent6.app.preflight import (
+    require_git_repo as _require_git_repo,
+)
+from agent6.app.preflight import (
+    warn_if_headless_ask as _warn_if_headless_ask,
+)
+from agent6.app.preflight import (
+    warn_if_prompt_override_incomplete as _warn_if_prompt_override_incomplete,
+)
+from agent6.app.preflight import (
+    warn_if_usd_unenforceable as _warn_if_usd_unenforceable,
+)
 from agent6.app.providers import (
     InstrumentedProvider as _InstrumentedProvider,
 )
@@ -172,21 +187,6 @@ from agent6.ui.cli._preflight import (
 )
 from agent6.ui.cli._preflight import (
     confirm_unconfined_autorun as _confirm_unconfined_autorun,
-)
-from agent6.ui.cli._preflight import (
-    infer_verify_if_unset as _infer_verify_if_unset,
-)
-from agent6.ui.cli._preflight import (
-    require_git_repo as _require_git_repo,
-)
-from agent6.ui.cli._preflight import (
-    warn_if_headless_ask as _warn_if_headless_ask,
-)
-from agent6.ui.cli._preflight import (
-    warn_if_prompt_override_incomplete as _warn_if_prompt_override_incomplete,
-)
-from agent6.ui.cli._preflight import (
-    warn_if_usd_unenforceable as _warn_if_usd_unenforceable,
 )
 from agent6.ui.cli._repl import build_repl_hook as _build_repl_hook
 from agent6.ui.cli._steer import (

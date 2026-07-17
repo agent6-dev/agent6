@@ -138,8 +138,8 @@ def testwarn_if_usd_unenforceable(price_cache: Path, capsys: pytest.CaptureFixtu
     publishes no pricing), so run startup must warn instead of silently no-op'ing.
     The --max-usd *flag* is already guarded by _explicit_usd_flag_error; this is
     the config-path complement."""
+    from agent6.app.preflight import warn_if_usd_unenforceable
     from agent6.config import Config
-    from agent6.ui.cli._preflight import warn_if_usd_unenforceable
 
     def _cfg(usd: float, worker: str, reviewer: str | None = None) -> Config:
         models: dict[str, Any] = {"worker": {"provider": "p", "model": worker}}

@@ -10,12 +10,10 @@ from pathlib import Path
 
 import pytest
 
+from agent6.app.preflight import resolve_base_branch
 from agent6.config import Config
 from agent6.runs.layout import RunLayout
-from agent6.ui.cli._preflight import (
-    choose_branch_start_point,
-    resolve_base_branch,
-)
+from agent6.ui.cli._preflight import choose_branch_start_point
 
 
 def _cfg(branch_from: str) -> Config:

@@ -11,10 +11,10 @@ from typing import cast
 
 import pytest
 
+from agent6.app.preflight import require_git_repo, warn_if_headless_ask
 from agent6.config import Config
 from agent6.git_ops import init_repo, is_git_repo
 from agent6.ui.cli import main
-from agent6.ui.cli._preflight import require_git_repo, warn_if_headless_ask
 from agent6.ui.cli.init_cmds import _offer_git_setup  # pyright: ignore[reportPrivateUsage]
 
 

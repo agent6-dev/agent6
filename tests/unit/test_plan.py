@@ -242,7 +242,7 @@ def test_system_prompt_file_validator_rejects_missing(tmp_path: Path) -> None:
 def testwarn_if_prompt_override_incomplete(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.ui.cli._preflight import warn_if_prompt_override_incomplete
+    from agent6.app.preflight import warn_if_prompt_override_incomplete
 
     good = tmp_path / "good.txt"
     good.write_text("use apply_edit and call finish_run when done", encoding="utf-8")

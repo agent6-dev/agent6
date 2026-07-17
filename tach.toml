@@ -40,6 +40,7 @@ depends_on = [
   "agent6.sandbox.detect",
   "agent6.secrets",
   "agent6.tools",
+  "agent6.verify_infer",
   "agent6.viewmodel",
   "agent6.workflows",
 ]
@@ -83,7 +84,6 @@ depends_on = [
   "agent6.runs.lock",
   "agent6.ui.mcp_server",
   "agent6.machine",
-  "agent6.verify_infer",
 ]
 
 [[modules]]
