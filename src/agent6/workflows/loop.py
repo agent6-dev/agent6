@@ -831,7 +831,7 @@ class Workflow:
             resume_from=snapshot,
         )
 
-    def _drive_loop(  # noqa: PLR0911
+    def _drive_loop(  # noqa: PLR0911, PLR0912
         self,
         *,
         system: str,
@@ -861,6 +861,20 @@ class Workflow:
             _restore_completion_state(state, resume_from)
         for iteration in range(start_iteration, self.max_iterations + 1):
             self.iterations_reached = iteration
+            # A resume seeded with `--steer` queues the operator's follow-up
+            # BEFORE the loop starts (resume.py write_steer_answer). Consume it
+            # up front so it enters the conversation ahead of the first provider
+            # call and drives this turn -- otherwise a resumed already-finished
+            # conversation silent-finishes on iteration 1 and returns before the
+            # end-of-iteration poll ever runs, dropping the follow-up. Only the
+            # first resumed iteration: mid-run Ctrl-C steering stays on the
+            # completed-iteration poll below (a Ctrl-C cannot precede this point).
+            if resume_from is not None and iteration == start_iteration:
+                outcome = self._steer_outcome(
+                    self._maybe_handle_steer(conversation, iteration, state), iteration, state
+                )
+                if outcome is not None:
+                    return outcome
             wire = self._turn_pre_call(
                 system=system,
                 conversation=conversation,

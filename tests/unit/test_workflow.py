@@ -684,6 +684,155 @@ def test_drive_loop_tracks_iterations_reached(tmp_path: Path) -> None:
     assert wf.iterations_reached == 8
 
 
+class _OneShotSteer:
+    """A file-bridge steer stand-in that fires once, returning *text*."""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self._fired = False
+
+    def requested(self) -> bool:
+        return not self._fired
+
+    def prompt(self) -> str:
+        return self.text
+
+    def clear(self) -> None:
+        self._fired = True
+
+
+def _resume_snapshot(**kw: Any) -> Any:
+    from agent6.workflows._run_state import RunSnapshot
+
+    defaults: dict[str, Any] = {
+        "system": "system",
+        "messages": [{"role": "user", "content": [{"type": "text", "text": "TASK:\nmean"}]}],
+        "tool_calls": 4,
+        "next_iteration": 5,
+        "root_task_id": None,
+        "original_task": "add a mean() function",
+        "verify_command": (),
+    }
+    defaults.update(kw)
+    return RunSnapshot(**defaults)
+
+
+def test_resume_seeded_steer_drives_a_finished_run(tmp_path: Path) -> None:
+    """`resume --steer` on an already-FINISHED run: the seeded follow-up is
+    injected BEFORE the first provider call and drives at least one more
+    iteration. Without the fix the resumed conversation silent-finishes on
+    iteration 1 (before the end-of-iteration steer poll), dropping the follow-up
+    and reporting the original task as done."""
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            rendered = str(kwargs["messages"])
+            self.calls.append(rendered)
+            if "median" not in rendered:
+                # The buggy path: the follow-up never reached the model, so it
+                # re-confirms the finished task in prose (a silent finish).
+                return _resp("The mean() function is already done.")
+            # The follow-up is present: act on it, then finish.
+            if len(self.calls) == 1:
+                return _tool_resp("run_command", {"command": "add median"}, tool_id="m1")
+            return _tool_resp("finish_run", {"summary": "added median()"}, tool_id="m2")
+
+    class DispatcherStub:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+            if name == "finish_run":
+                return RawResult({"acknowledged": True, "summary": raw_input["summary"]})
+            return RawResult({"content": "ok"})
+
+    steer = _OneShotSteer("add a median() function too")
+    provider = ProviderStub()
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=(),
+            metric=SimpleNamespace(goal=None),
+        ),
+    )
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        provider=provider,
+        dispatcher=DispatcherStub(),
+        max_iterations=10,
+        steer_requested=steer.requested,
+        steer_prompt=steer.prompt,
+        steer_clear=steer.clear,
+    )
+    snapshot = _resume_snapshot()
+
+    with patch("agent6.workflows.loop.commit_all", return_value="abc1234567890"):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system=snapshot.system,
+            conversation=Conversation.from_wire(snapshot.messages),
+            tools=[],
+            tool_calls=snapshot.tool_calls,
+            start_iteration=snapshot.next_iteration,
+            root_task_id=snapshot.root_task_id,
+            original_task=snapshot.original_task,
+            resume_from=snapshot,
+        )
+
+    # The seeded steer entered the conversation BEFORE the first provider call.
+    assert "median" in provider.calls[0]
+    # It drove the run to a real finish, not a dropped-steer silent finish.
+    assert result.reason == "finish_run"
+    assert result.completed is True
+    assert len(provider.calls) >= 2  # at least one more iteration than the silent finish
+
+
+def test_resume_without_steer_does_not_poll_up_front(tmp_path: Path) -> None:
+    """The up-front resume steer check is inert when no steer is seeded: a resume
+    with no `--steer` behaves exactly as before (no phantom injection)."""
+
+    class ProviderStub:
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            del kwargs
+            return _resp("done")
+
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=(),
+            metric=SimpleNamespace(goal=None),
+        ),
+    )
+    # No steer callables: the Workflow's default steer_requested() is False, so the
+    # up-front resume check is a no-op -- exactly a resume with no `--steer`.
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        provider=ProviderStub(),
+        dispatcher=MagicMock(),
+        max_iterations=5,
+    )
+    snapshot = _resume_snapshot(
+        messages=[{"role": "user", "content": [{"type": "text", "text": "TASK:\nengaged"}]}],
+        verify_ever_passed=True,
+    )
+
+    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        system=snapshot.system,
+        conversation=Conversation.from_wire(snapshot.messages),
+        tools=[],
+        tool_calls=snapshot.tool_calls,
+        start_iteration=snapshot.next_iteration,
+        root_task_id=snapshot.root_task_id,
+        original_task=snapshot.original_task,
+        resume_from=snapshot,
+    )
+
+    assert result.reason == "silent_finish"  # unchanged behaviour without a seeded steer
+
+
 def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: Path) -> None:
     """An unexecutable metric command must abort the run the SAME graceful way
     whether the model called run_metric_command or the auto-after-verify path
