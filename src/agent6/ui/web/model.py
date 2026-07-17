@@ -20,6 +20,7 @@ from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.machine import JournalError, MachineError, MachineJournal, load_machine
 from agent6.models.cache import cached_models, list_models
 from agent6.models.validate import known_models
+from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.secrets import resolve_api_key
 from agent6.viewmodel import (
     fold_machine,
@@ -227,8 +228,8 @@ def manifest_branches(run_dir: Path) -> dict[str, str]:
     consecutive spawns chain branches invisibly otherwise. Empty for a run with
     no manifest (or branch_per_run off)."""
     try:
-        manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        manifest = read_manifest(run_dir)
+    except ManifestError:
         return {}
     out: dict[str, str] = {}
     for key in ("run_branch", "base_branch", "merged_into"):

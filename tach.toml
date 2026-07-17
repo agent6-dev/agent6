@@ -151,6 +151,7 @@ depends_on = [
   "agent6.viewmodel",
   "agent6.ui.spawn",
   "agent6.runs.ipc",
+  "agent6.runs.manifest",
   "agent6.config",
   "agent6.config.layer",
   "agent6.machine",
@@ -321,6 +322,7 @@ depends_on = [
   "agent6.tools",
   "agent6.graph.storage",
   "agent6.runs.layout",
+  "agent6.runs.manifest",
   "agent6.viewmodel",
 ]
 

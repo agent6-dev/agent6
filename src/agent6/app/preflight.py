@@ -7,7 +7,6 @@ terminal) and are injected by the front-end."""
 
 from __future__ import annotations
 
-import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,6 +22,7 @@ from agent6.git_ops import is_git_repo
 from agent6.models.pricing import lookup_price
 from agent6.providers import TranscriptSink
 from agent6.runs.layout import RunLayout
+from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.verify_infer import VERIFY_INFER_SYSTEM_PROMPT, infer_verify_command
 
 
@@ -143,8 +143,8 @@ def _manifest_base_branch(state_dir: Path, run_id: str) -> str | None:
     """The base branch a run recorded it was cut from (manifest.base_branch)."""
     layout = RunLayout(state_dir=state_dir, run_id=run_id)
     try:
-        manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        manifest = read_manifest(layout.run_dir)
+    except ManifestError:
         return None
     base = manifest.get("base_branch")
     return str(base) if base else None

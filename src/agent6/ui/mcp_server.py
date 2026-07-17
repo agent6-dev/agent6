@@ -26,6 +26,7 @@ Tool surface:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sys
 from collections.abc import Callable
@@ -38,6 +39,7 @@ from agent6.config import Config
 from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.graph.storage import load_graph
 from agent6.runs.layout import RunLayout
+from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 from agent6.viewmodel import run_mtime
 
@@ -372,14 +374,9 @@ class MCPServer:
         entries: list[dict[str, Any]] = []
         for d in _run_dirs_newest_first(runs):
             summary: dict[str, Any] = {"run_id": d.name}
-            manifest = d / "manifest.json"
-            if manifest.is_file():
-                try:
-                    parsed = json.loads(manifest.read_text(encoding="utf-8"))
-                except (OSError, json.JSONDecodeError):
-                    parsed = None
-                if isinstance(parsed, dict):
-                    summary["manifest"] = parsed
+            # A missing/corrupt manifest lists the run without one.
+            with contextlib.suppress(ManifestError):
+                summary["manifest"] = read_manifest(d)
             entries.append(summary)
         return {"runs": entries}
 

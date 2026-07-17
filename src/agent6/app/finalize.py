@@ -28,6 +28,7 @@ from agent6.git_ops import (
     status as git_status,
 )
 from agent6.runs.layout import RunLayout
+from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.viewmodel import summarize_run_dir
 from agent6.workflows.loop import RunResult
 
@@ -106,8 +107,8 @@ def print_run_end(
     print(budget.format_summary())
     run_branch = ""
     base_branch = ""
-    with contextlib.suppress(OSError, ValueError):
-        manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+    with contextlib.suppress(ManifestError):
+        manifest = read_manifest(layout.run_dir)
         run_branch = manifest.get("run_branch", "")
         base_branch = manifest.get("base_branch", "")
     if result.completed and run_branch:
@@ -134,8 +135,8 @@ def finalize_auto_merge(cwd: Path, *, layout: RunLayout, cfg: Config) -> None:
     intact and the message says how to merge by hand. No-op when branch_per_run was
     off."""
     try:
-        manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        manifest = read_manifest(layout.run_dir)
+    except ManifestError:
         return
     run_branch = manifest.get("run_branch")
     base_branch = manifest.get("base_branch")

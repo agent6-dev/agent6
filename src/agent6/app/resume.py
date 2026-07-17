@@ -141,6 +141,7 @@ from agent6.runs.lock import (
 from agent6.runs.lock import (
     release_single_writer as _release_single_writer,
 )
+from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.sandbox.detect import ProfileUnavailableError, select_profile
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.viewmodel import newest_run_dir as _newest_dir
@@ -164,8 +165,8 @@ def ensure_on_run_branch(cwd: Path, layout: RunLayout) -> str | None:
     an error string when a switch is needed but the working tree is dirty.
     """
     try:
-        manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        manifest = read_manifest(layout.run_dir)
+    except ManifestError:
         return None
     run_branch = manifest.get("run_branch")
     try:
