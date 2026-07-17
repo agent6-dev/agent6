@@ -449,6 +449,21 @@ def test_tool_nonzero_routes_to_failure(tmp_path: Path) -> None:
     assert result.state == "stop_fail"
 
 
+def test_tool_stderr_is_journaled_on_the_fact(tmp_path: Path) -> None:
+    # A failing tool's stderr flows ToolExecResult -> ToolFact -> journal, so the
+    # failure is debuggable from the journal. Routing still keys off exit_code.
+    journal, f = _load(tmp_path, COUNTER)
+    spec = load_machine(f)
+    world = FakeWorld(
+        {"scan": ToolExecResult(exit_code=2, stdout="", timed_out=False, stderr="boom: bad flag\n")}
+    )
+    assert drive(spec, journal, world, live=True).state == "stop_fail"
+    tool_steps = [
+        e for e in journal.read() if isinstance(e, StepEvent) and isinstance(e.fact, ToolFact)
+    ]
+    assert tool_steps and tool_steps[0].fact.stderr == "boom: bad flag\n"
+
+
 def test_tool_timeout_routes_to_failure(tmp_path: Path) -> None:
     journal, f = _load(tmp_path, COUNTER)
     spec = load_machine(f)

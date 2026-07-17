@@ -91,6 +91,12 @@ class ToolFact(BaseModel):
     exit_code: int
     stdout: str
     timed_out: bool
+    # The tool's captured stderr, so a failing machine tool is debuggable from
+    # the journal (routing keys off exit_code/stdout only, so this never affects
+    # the reducer). Additive with a default: journal lines written before this
+    # field still parse (extra="forbid" only rejects UNKNOWN keys, not a missing
+    # defaulted one), keeping old instances replayable.
+    stderr: str = ""
 
 
 class WaitFact(BaseModel):

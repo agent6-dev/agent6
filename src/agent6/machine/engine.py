@@ -117,6 +117,7 @@ class ToolExecResult:
     exit_code: int
     stdout: str
     timed_out: bool
+    stderr: str = ""
 
 
 class AgentRequest(BaseModel):
@@ -342,7 +343,12 @@ class LiveWorld:
             return ToolExecResult(exit_code=124, stdout="", timed_out=True)
         except JailUnavailableError as exc:
             raise EngineError(f"jail unavailable: {exc}") from exc
-        return ToolExecResult(exit_code=result.returncode, stdout=result.stdout, timed_out=False)
+        return ToolExecResult(
+            exit_code=result.returncode,
+            stdout=result.stdout,
+            timed_out=False,
+            stderr=result.stderr,
+        )
 
     def run_agent(self, request: AgentRequest) -> AgentExecResult:
         if self.agent_runner is None:
@@ -607,7 +613,10 @@ def _execute(
         else:
             label = "ok"
         fact: Fact = ToolFact(
-            exit_code=result.exit_code, stdout=result.stdout, timed_out=result.timed_out
+            exit_code=result.exit_code,
+            stdout=result.stdout,
+            timed_out=result.timed_out,
+            stderr=result.stderr,
         )
         return label, state.on[label], fact
     if isinstance(state, WaitState):

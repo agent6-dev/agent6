@@ -46,7 +46,9 @@ def _golden_events() -> list[object]:
             state="scan",
             label="ok",
             goto="branch",
-            fact=ToolFact(exit_code=0, stdout='{"note": "ok"}', timed_out=False),
+            fact=ToolFact(
+                exit_code=0, stdout='{"note": "ok"}', timed_out=False, stderr="warn: slow\n"
+            ),
         ),
         StepEvent(
             ts="2026-07-16T00:00:02.000000+00:00",
@@ -128,6 +130,9 @@ def test_replay_of_golden_journal_bytes_reproduces_state(tmp_path: Path) -> None
         WaitFact,
         AgentFact,
     ]
+    tool = events[1]
+    assert isinstance(tool, StepEvent) and isinstance(tool.fact, ToolFact)
+    assert tool.fact.stderr == "warn: slow\n"  # stderr round-trips through the wire
     wait = events[3]
     assert isinstance(wait, StepEvent) and isinstance(wait.fact, WaitFact)
     assert wait.fact.wake_epoch is None and wait.fact.payload == {"from": "operator"}
@@ -136,6 +141,23 @@ def test_replay_of_golden_journal_bytes_reproduces_state(tmp_path: Path) -> None
     assert agent.fact.usd == 0.25 and agent.fact.output_tokens == 200
     end = events[6]
     assert isinstance(end, MachineEnd) and end.transitions == 4
+
+
+def test_old_tool_fact_without_stderr_still_parses(tmp_path: Path) -> None:
+    # stderr is additive: a journal line written before the field existed (no
+    # `stderr` key) must still replay, with stderr defaulting to "". extra="forbid"
+    # rejects UNKNOWN keys, never a missing defaulted one.
+    j = _journal(tmp_path)
+    old_line = (
+        '{"type":"step","ts":"t","seq":0,"state":"scan","label":"ok","goto":"done",'
+        '"fact":{"kind":"tool","exit_code":1,"stdout":"","timed_out":false}}\n'
+    )
+    j.journal_path.write_text(old_line, encoding="utf-8")
+    events = j.read()
+    assert len(events) == 1
+    step = events[0]
+    assert isinstance(step, StepEvent) and isinstance(step.fact, ToolFact)
+    assert step.fact.stderr == ""
 
 
 def test_read_survives_unicode_line_separators(tmp_path: Path) -> None:
