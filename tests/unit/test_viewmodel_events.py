@@ -61,3 +61,18 @@ def test_question_prompt_filters_non_dict_entries_and_coerces_options() -> None:
         ev.EventQuestion(question="Which?", options=("a", "b")),
         ev.EventQuestion(question="", options=()),
     )
+
+
+def test_malformed_numeric_fields_degrade_to_raw_event() -> None:
+    # A torn numeric in a KNOWN family must not raise: the fold runs unwrapped
+    # inside live tails (web SSE, TUI reader), so a line an interrupted writer
+    # left behind degrades like an unknown type instead of crashing the tail.
+    for raw in (
+        {"type": "budget.update", "usd_total": "garbage"},
+        {"type": "budget.update", "input_total": []},
+        {"type": "verify.end", "exit_code": "x"},
+        {"type": "verify.end", "duration_s": {}},
+    ):
+        parsed = ev.parse_event(raw)
+        assert isinstance(parsed, ev.RawEvent)
+        assert parsed.raw == raw

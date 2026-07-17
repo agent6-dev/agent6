@@ -198,13 +198,23 @@ Event = (
 )
 
 
-def parse_event(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
+def parse_event(raw: dict[str, Any]) -> Event:
     """One raw logs.jsonl event dict -> one typed family, or RawEvent for the rest.
 
-    Each arm reproduces, field-for-field, the coercion the RunState fold applied
-    inline before this module existed, so the fold output is byte-identical for
-    every historical event -- including malformed fields (defaulted/coerced the
-    same way) and unknown types (RawEvent, dropped by the fold)."""
+    A malformed field inside a KNOWN family (a torn numeric in ``verify.end`` or
+    ``budget.update``) degrades to RawEvent exactly like an unknown type: the
+    fold runs unwrapped inside live tails (web SSE, TUI reader), so it must
+    never raise on a line an interrupted writer left behind."""
+    try:
+        return _parse_known(raw)
+    except (ValueError, TypeError):
+        return RawEvent(type=str(raw.get("type", "")), raw=raw)
+
+
+def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
+    """The per-family arms. Each reproduces, field-for-field, the coercion the
+    RunState fold applied inline before this module existed, so the fold output
+    is byte-identical for every historical event."""
     match raw.get("type", ""):
         case "run.start":
             return RunStart(user_task=str(raw.get("user_task", "")))
