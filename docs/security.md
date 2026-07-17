@@ -85,6 +85,10 @@ process irrevocably, inherited by every child:
     - Per connection the broker dials that socket's fixed `host:port` (resolved
       per-connect, robust to CDN IP churn). TLS is end-to-end, so it sees only
       ciphertext.
+    - The allowed set derives uniformly from each provider's effective
+      `base_url` host (every `api_format` and `deployment` carries the dialled
+      host there; the deployment profile only appends path/model), unioned with
+      `sandbox.allow_urls` (`ui/cli/egress.py`).
 - **Fail-closed: the netns is the boundary, not a filter.**
     - A missing route is no connectivity, never a silent leak; the allow-list is
       fixed at bind time, so the agent can't widen it.
@@ -165,6 +169,58 @@ can't expand it.
     - Still no writes outside the workspace and no egress beyond providers, but
       the allowed *reads* now include root-only files (`/etc/shadow` under
       `hardened`; `strict`'s rootfs hides them). Run as your normal user.
+
+### 2b. Host-side subprocess allowlist
+
+Everything the model can influence runs through `run_in_jail` (§2). A fixed set
+of modules also shells out directly with `subprocess.run`/`Popen`; each has
+fixed argv depending only on operator input, never LLM output.
+`tests/security/test_subprocess_allowlist.py` pins the file list; audit with
+`rg 'subprocess\.(run|Popen)' src/agent6/`.
+
+- `git_ops.py`: agent6's own git operations (§5).
+- `sandbox/detect.py`: probes the host's sandboxing capabilities.
+- `sandbox/jail.py`: the jail launcher itself.
+- `sandbox/host_spawn.py`: the pre-forked detach helper; spawns
+  `agent6 resume <run_id>` in the host namespaces, argv built from the agent6
+  exe captured at fork time, requests only from the trusted parent over a
+  close-on-exec pipe.
+- `graph/client.py`: spawns the curator subprocess (§6).
+- `tools/lsp.py`: the `ty` language server, exe resolved from PATH.
+- `tools/mcp_client.py`: operator-configured `[mcp.servers.*]` server commands.
+- `providers/token_command.py`: the operator-configured
+  `[providers.*].token_command` that mints a provider bearer; argv from config.
+- `ui/bridge/spawn.py`: the shared front-end bridge; spawns the agent6 CLI
+  detached for run/machine launches and captures `runs merge`/`prune`/
+  `config set`; argv is the agent6 exe plus operator-chosen args.
+- `ui/bridge/notify.py`: fires `notify-send` with fixed argv (exe, `--`
+  end-of-options, two positional data args, no shell) for the device-present
+  machine notification; the message is inert data, never a command or an
+  option.
+- `ui/cli/` helpers:
+    - `$EDITOR` for plan and steer editing.
+    - `git diff/log` for the review subcommand and the `runs`/`ask` diff views;
+      argv from the run manifest the CLI wrote outside the jail.
+    - `rg` for history search.
+    - The fixed-argv `python -m agent6.ui.tui` co-process behind `run --tui`.
+    - `ui/cli/_finalize.py`: the operator `[notify].on_complete` hook fired at
+      run end; argv from config.
+    - `ui/cli/scriptcheck.py`: ruff/ty with fixed argv to statically read
+      generated scripts, which only ever execute via `run_in_jail`.
+    - `ui/cli/system_cmds.py`: `cp`/`rm`/`apparmor_parser` via sudo with fixed
+      argv for `agent6 system apparmor` (operator host setup).
+    - The `machine run` supervisor: spawns each agent state as a fixed-argv
+      `python -m agent6.ui.cli.machine_agent` subprocess whose request travels
+      in a temp file, never on argv; its operator `[machine.notify].on_event`
+      hook (argv from config) runs on the host with `AGENT6_MACHINE_*` env,
+      mirroring `[notify].on_complete`.
+    - `ui/cli/skills_cmds.py`: `git clone --depth 1 -- <url>` with fixed argv
+      for `agent6 skills install`; the URL is operator-supplied on the CLI and
+      nothing fetched is ever executed.
+- `ui/tui/clipboard.py`: fixed-argv `tmux set-buffer -w` with the copied
+  transcript text as one inert data argument.
+- `ui/tui/conversation.py`: the operator's `$PAGER`, argv from the environment,
+  transcript text on stdin.
 
 ### 3. Profile selection
 
