@@ -151,11 +151,13 @@ def scroll_to(page: Page, y: int, *, wait: int = 1500) -> None:
 
 
 def scroll_card(page: Page, selector: str, y: int, *, wait: int = 1500) -> None:
-    """Smooth-scroll INSIDE a scroll-capped card (the conversation card scrolls
-    internally; window scrolling would not move it)."""
+    """Smooth-scroll INSIDE a scroll-capped card (the desktop conversation
+    scrolls internally). On a phone the boxes flow at natural height and the
+    PAGE is the one scroller, so fall back to scrolling the window."""
     page.evaluate(
         "([sel, y]) => { const c = document.querySelector(sel);"
-        " if (c) c.scrollTo({ top: y, behavior: 'smooth' }); }",
+        " if (c && c.scrollHeight > c.clientHeight + 4) c.scrollTo({ top: y, behavior: 'smooth' });"
+        " else window.scrollTo({ top: y, behavior: 'smooth' }); }",
         [selector, y],
     )
     page.wait_for_timeout(wait)

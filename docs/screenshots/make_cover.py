@@ -115,7 +115,11 @@ def main() -> None:
 
     cli = _cover_fit(_cli_frame(cli_webm), top_crop=48, x_shift=36)
     tui = _cover_fit(Image.open(tui_png).convert("RGB"), top_crop=0, x_shift=430)
-    web = _cover_fit(Image.open(web_png).convert("RGB"), top_crop=285)
+    # x_shift lands the WEB slice on the run view's details drawer (task graph /
+    # budget / tool calls, logical x ~216-513 of the 1280-wide shot): the
+    # conversation-primary layout keeps the widgets there, and the slice right
+    # of CUTB would otherwise show the conversation's quiet right margin.
+    web = _cover_fit(Image.open(web_png).convert("RGB"), top_crop=285, x_shift=988)
 
     canvas = Image.new("RGB", (W, H), BG)
     for img, left, right in ((cli, None, CUTA), (tui, CUTA, CUTB), (web, CUTB, None)):
