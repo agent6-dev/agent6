@@ -20,6 +20,7 @@ from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.machine import JournalError, MachineError, MachineJournal, load_machine
 from agent6.models.cache import cached_models, list_models
 from agent6.models.validate import known_models
+from agent6.runs.ipc import worker_is_alive
 from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.secrets import resolve_api_key
 from agent6.viewmodel import (
@@ -29,6 +30,7 @@ from agent6.viewmodel import (
     is_run_husk,
     is_winner,
     machine_state_as_dict,
+    machine_status_word,
     newest_state_log,
     run_compare,
     run_state_as_dict,
@@ -173,7 +175,11 @@ def _list_machines(cwd: Path) -> list[dict[str, Any]]:
         else:
             entry["machine"] = ms.machine
             entry["current"] = ms.current
-            entry["status"] = ms.ended.status if ms.ended is not None else "running"
+            # Distinguish waiting (a parked --exit-on-wait instance, no live
+            # worker) from running, so a paused machine never renders as busy.
+            entry["status"] = machine_status_word(
+                ms, parked=machine_is_parked(d), alive=worker_is_alive(d)
+            )
         out.append(entry)
     out.sort(key=lambda e: e["mtime"], reverse=True)
     return out

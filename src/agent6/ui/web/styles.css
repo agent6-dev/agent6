@@ -94,6 +94,7 @@ main { padding: 0; }
 .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); }
 .pill.ok, .pill.passed { color: var(--ok); border-color: var(--ok); }
 .pill.running { color: var(--accent); border-color: var(--accent); }
+.pill.waiting { color: var(--warn); border-color: var(--warn); }
 .pill.stopped { color: var(--warn); border-color: var(--warn); }
 .pill.stale, .pill.failed { color: var(--err); border-color: var(--err); }
 

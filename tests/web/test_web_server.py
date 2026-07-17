@@ -606,6 +606,20 @@ def test_corrupt_journal_hub_shows_unreadable(
     assert entry["status"] == "unreadable"
 
 
+def test_hub_parked_instance_reads_waiting(server: tuple[WebServer, int], tmp_path: Path) -> None:
+    # A parked --exit-on-wait instance (an armed wait, no live worker) must read
+    # "waiting" on the hub, not "running": a paused machine never looks busy.
+    from agent6.machine.journal import MachineJournal, PendingWait
+
+    _srv, port = server
+    inst, _ = _make_machine_with_state(tmp_path, "parked", "0000-poll")
+    MachineJournal(inst).write_pending_wait(PendingWait(state="poll", wake_epoch=None))
+    status, body, _ = _get(port, "/api/hub")
+    assert status == 200
+    (entry,) = [m for m in json.loads(body)["machines"] if m["name"] == "parked"]
+    assert entry["status"] == "waiting"
+
+
 def test_corrupt_journal_machine_snapshot_is_422(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:

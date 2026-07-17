@@ -12,6 +12,7 @@ from agent6.viewmodel.machine_state import (
     _NOTIFY_KEEP,  # pyright: ignore[reportPrivateUsage]
     NotificationView,
     fold_machine,
+    machine_status_word,
     newest_state_log,
     notification_key,
 )
@@ -82,6 +83,24 @@ def test_fold_tracks_position_transitions_and_end(tmp_path: Path) -> None:
         "done",
         1,
     )
+
+
+def test_machine_status_word_distinguishes_waiting_from_running(tmp_path: Path) -> None:
+    spec = _spec(tmp_path)
+    ended = fold_machine(
+        spec, [MachineEnd(ts="t", status="failed", reason="boom", state="done", transitions=1)]
+    )
+    # A terminal instance reports its end status regardless of liveness probes.
+    assert machine_status_word(ended, parked=True, alive=True) == "failed"
+
+    live = fold_machine(spec, [])  # not ended
+    # Parked (an armed --exit-on-wait wait) reads waiting, even if a stale pid
+    # probe were to lie alive; running only when live and not parked; a dead pid
+    # that is neither parked nor ended is stopped.
+    assert machine_status_word(live, parked=True, alive=False) == "waiting"
+    assert machine_status_word(live, parked=True, alive=True) == "waiting"
+    assert machine_status_word(live, parked=False, alive=True) == "running"
+    assert machine_status_word(live, parked=False, alive=False) == "stopped"
 
 
 def test_newest_state_log_picks_highest_seq(tmp_path: Path) -> None:

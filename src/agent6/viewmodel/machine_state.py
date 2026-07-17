@@ -129,6 +129,25 @@ def fold_machine(spec: MachineSpec, events: Sequence[object]) -> MachineState:
     )
 
 
+def machine_status_word(ms: MachineState, *, parked: bool, alive: bool) -> str:
+    """The instance's truthful liveness word for a status pill. A terminal
+    instance reports its ok/failed end; a parked one (an armed `--exit-on-wait`
+    wait with no live worker) is "waiting"; a live worker is "running"; anything
+    else (a dead pid that is neither parked nor ended) is "stopped".
+
+    The one owner of the running-vs-waiting distinction that front-ends read, so
+    a parked machine never renders as busy. The journal fold is pure, so liveness
+    (a live worker.pid) and parked (a persisted PendingWait) are probed by the
+    caller and passed in."""
+    if ms.ended is not None:
+        return ms.ended.status
+    if parked:
+        return "waiting"
+    if alive:
+        return "running"
+    return "stopped"
+
+
 def notification_key(n: NotificationView) -> tuple[str, str, str]:
     """A stable identity for a notification, for dedup across the sliding window
     (front-ends track which they have surfaced by this key, not by a count into

@@ -12,6 +12,7 @@ validation, and graph -- which is why ui depends on agent6.machine for this page
 
 from __future__ import annotations
 
+import contextlib
 import inspect
 import json
 import os
@@ -50,6 +51,7 @@ from agent6.runs.ipc import (
     read_worker_pid,
     request_steer,
     set_session_allow,
+    worker_is_alive,
     write_answer,
     write_frontend_pid,
     write_question_answers,
@@ -72,6 +74,7 @@ from agent6.viewmodel import (
     MachineWatchCursor,
     fold_machine,
     fold_run,
+    machine_status_word,
     newest_state_log,
     tail_events,
 )
@@ -280,12 +283,16 @@ class MachineWatchScreen(Screen[None]):
             self.query_one("#mw-head", Static).update(Text(f"journal unreadable: {exc}"))
             return
 
-        # Header + state-table markers.
-        status = (
-            f"ended: {ms.ended.status} ({ms.ended.reason})"
-            if ms.ended is not None
-            else f"running · {ms.current}"
-        )
+        # Header + state-table markers. A parked (--exit-on-wait) instance reads
+        # "waiting", not "running", so a paused machine never looks busy.
+        if ms.ended is not None:
+            status = f"ended: {ms.ended.status} ({ms.ended.reason})"
+        else:
+            parked = False
+            with contextlib.suppress(JournalError):
+                parked = self._journal.read_pending_wait() is not None
+            word = machine_status_word(ms, parked=parked, alive=worker_is_alive(self._root))
+            status = f"{word} · {ms.current}"
         self.query_one("#mw-head", Static).update(
             Text(f"machine: {ms.machine}   {status}   transitions: {len(ms.transitions)}")
         )
