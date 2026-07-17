@@ -30,10 +30,12 @@ from agent6.app.machine import (
     Spend,
     build_machine_notify_hook,
     hard_usd_preflight_error,
+    lint_and_typecheck,
     machine_network_refusal,
     machine_protect_paths,
     machine_spend,
     read_budget_totals,
+    run_offline_tests,
     validate_bundle,
 )
 from agent6.config import (
@@ -81,7 +83,6 @@ from agent6.sandbox.detect import ProfileUnavailableError, select_profile
 from agent6.types import SandboxProfile
 from agent6.ui.cli._common import _machines_dir, _state_dir
 from agent6.ui.cli.plan_watch import event_epoch, format_plain_event
-from agent6.ui.cli.scriptcheck import lint_and_typecheck, run_offline_tests
 from agent6.ui.notify import desktop_notify
 from agent6.viewmodel import (
     MachineState,

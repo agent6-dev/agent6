@@ -20,16 +20,24 @@ from agent6.app.machine._preflight import (
     machine_network_refusal,
     machine_protect_paths,
 )
+from agent6.app.machine._scriptcheck import (
+    available_tools,
+    lint_and_typecheck,
+    run_offline_tests,
+)
 from agent6.app.machine._spend import Spend, machine_spend, read_budget_totals
 
 __all__ = [
     "Spend",
+    "available_tools",
     "build_machine_notify_hook",
     "hard_usd_preflight_error",
     "is_inside",
+    "lint_and_typecheck",
     "machine_network_refusal",
     "machine_protect_paths",
     "machine_spend",
     "read_budget_totals",
+    "run_offline_tests",
     "validate_bundle",
 ]

@@ -411,7 +411,7 @@ def test_create_retry_prompt_carries_prior_scripts(
 ) -> None:
     # When a draft fails the script gate, the NEXT attempt's prompt must show
     # the prior script source so the model patches instead of regenerating.
-    from agent6.ui.cli import scriptcheck
+    from agent6.app.machine import _scriptcheck as scriptcheck
 
     if "ruff" not in scriptcheck.available_tools():
         pytest.skip("ruff not installed")
@@ -575,7 +575,7 @@ def test_create_rejects_lint_bad_script(
 ) -> None:
     """A structurally-valid machine whose script has a lint error must NOT be
     written — ruff/ty run in the create loop and the failure is a diagnostic."""
-    from agent6.ui.cli import scriptcheck
+    from agent6.app.machine import _scriptcheck as scriptcheck
 
     if "ruff" not in scriptcheck.available_tools():
         pytest.skip("ruff not installed")

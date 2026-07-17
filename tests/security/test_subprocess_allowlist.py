@@ -38,7 +38,7 @@ ALLOWED = {
     "ui/cli/plan_watch.py",
     "ui/cli/review_cmds.py",
     "ui/cli/runs_cmds.py",
-    "ui/cli/scriptcheck.py",
+    "app/machine/_scriptcheck.py",
     "ui/cli/skills_cmds.py",
     "ui/cli/system_cmds.py",
     "ui/notify.py",
