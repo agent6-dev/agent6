@@ -318,19 +318,20 @@ def maybe_apply_agent_landlock(
     if selected_profile != "hardened" or not env.kernel.supports_landlock_fs:
         return None
     cwd = Path.cwd().resolve()
-    # The agent (and the curator subprocess) persist run state OUT of the
-    # workspace, under the per-repo state dir; grant it read+write so they can
-    # write transcripts, snapshots, and the graph. Created here so the Landlock
-    # O_PATH open below finds it. Because state lives OUT of cwd by default,
-    # jailed children (whose hardened ruleset grants RW only recursively under
-    # cwd) do not get this path, so the agent's grant does not leak to them
-    # (Landlock rulesets intersect). Caveat: an operator who points
-    # [agent6].state_dir at an absolute path nested under the repo would bring it
-    # inside the child's cwd grant; the validator enforces absoluteness only.
+    # The agent persists run state (including the in-process curator's graph)
+    # OUT of the workspace, under the per-repo state dir; grant it read+write
+    # so it can write transcripts, snapshots, and the graph. Created here so
+    # the Landlock O_PATH open below finds it. Because state lives OUT of cwd
+    # by default, jailed children (whose hardened ruleset grants RW only
+    # recursively under cwd) do not get this path, so the agent's grant does
+    # not leak to them (Landlock rulesets intersect). Caveat: an operator who
+    # points [agent6].state_dir at an absolute path nested under the repo
+    # would bring it inside the child's cwd grant; the validator enforces
+    # absoluteness only.
     state = resolved_state_dir(cwd)
     state.mkdir(parents=True, exist_ok=True)
     # Landlock allow-root, not a temp file we create: children (git, the jail
-    # launcher, the curator socket dir) legitimately read and write under /tmp.
+    # launcher) legitimately read and write under /tmp.
     tmp = Path("/tmp")  # noqa: S108
     dev_files = tuple(
         p

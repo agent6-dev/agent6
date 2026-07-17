@@ -2294,7 +2294,7 @@ class Workflow:
             return
         try:
             gstate = self.curator.get_state()
-        except Exception as exc:  # dead socket / IPC error must not break the loop
+        except Exception as exc:  # a curator read error must not break the loop
             self._log(f"LOOP: surface-current-task skipped: {exc}")
             return
         nodes = gstate.get("nodes", {})
@@ -2795,7 +2795,7 @@ class Workflow:
             return
         try:
             state = self.curator.get_state()
-        except Exception as exc:  # dead socket / IPC error must not break finish
+        except Exception as exc:  # a curator read error must not break finish
             self._log(f"LOOP: auto-pass root skipped: {exc}")
             return
         nodes = state.get("nodes", {})
@@ -2807,9 +2807,9 @@ class Workflow:
                 try:
                     self.curator.update_status(UpdateStatusIntent(id=nid, new_status="passed"))
                     changed = True
-                except Exception as exc:  # IPC/validation glitch must not break finish
+                except Exception as exc:  # a curator write error must not break finish
                     self._log(f"LOOP: auto-pass root {nid} failed: {exc}")
-                    break  # a dead socket fails for every remaining node too
+                    break  # a curator write failure fails for every remaining node too
         if changed:
             self._emit_graph_snapshot()
 
@@ -3321,13 +3321,13 @@ class Workflow:
 
     def _open_tasks_for_checkoff(self) -> list[tuple[str, str]]:
         """(id, title) of every pending/in_progress task in the DAG, for the
-        tier-2 compaction check-off. Best-effort: no curator or an IPC hiccup
+        tier-2 compaction check-off. Best-effort: no curator or a curator error
         yields an empty list, so compaction degrades to the plain summary."""
         if self.curator is None:
             return []
         try:
             state = self.curator.get_state()
-        except Exception as exc:  # dead socket / IPC error must not break compaction
+        except Exception as exc:  # a curator read error must not break compaction
             self._log(f"LOOP: checkoff task list skipped: {exc}")
             return []
         nodes = state.get("nodes", {})
@@ -3372,7 +3372,7 @@ class Workflow:
                         )
                     )
                     changed = True
-        except Exception as exc:  # IPC/validation glitch must not break the run
+        except Exception as exc:  # a curator write error must not break the run
             self._log(f"LOOP: compaction check-off partial ({exc})")
         if changed:
             self._log(
@@ -3408,7 +3408,7 @@ class Workflow:
             return None
         try:
             nodes = self.curator.get_state().get("nodes", {})
-        except Exception as exc:  # dead socket / IPC error must not block finishing
+        except Exception as exc:  # a curator read error must not block finishing
             self._log(f"LOOP: task finish-gate skipped: {exc}")
             return None
         if not isinstance(nodes, dict):

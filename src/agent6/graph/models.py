@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Pydantic models for the persistent task graph and curator IPC.
+"""Pydantic models for the persistent task graph.
 
-These cross trust boundaries (LLM-emitted intents, disk reload, IPC), so they
+These cross trust boundaries (LLM-emitted intents, disk reload), so they
 are pydantic per project convention. Internal-only value types remain frozen
 dataclasses in `agent6.types`.
 """
