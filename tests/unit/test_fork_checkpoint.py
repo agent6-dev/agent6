@@ -464,7 +464,7 @@ def _layout_with_run_branch(state_dir: Path, run_id: str, run_branch: str | None
 def test_ensure_on_run_branch_checks_out_the_fork_branch(tmp_path: Path) -> None:
     # Reproduces the fork bug: the branch exists (cut additively) but HEAD is on
     # the operator's branch, so resume must switch onto it before committing.
-    from agent6.ui.cli.resume import _ensure_on_run_branch  # pyright: ignore[reportPrivateUsage]
+    from agent6.app.resume import ensure_on_run_branch
 
     repo = tmp_path / "repo"
     head = _git_repo(repo)
@@ -472,12 +472,12 @@ def test_ensure_on_run_branch_checks_out_the_fork_branch(tmp_path: Path) -> None
     assert _current_branch(repo) == "main"
 
     layout = _layout_with_run_branch(tmp_path / "state", "child", "agent6/child")
-    assert _ensure_on_run_branch(repo, layout) is None
+    assert ensure_on_run_branch(repo, layout) is None
     assert _current_branch(repo) == "agent6/child"
 
 
 def test_ensure_on_run_branch_refuses_dirty_tree(tmp_path: Path) -> None:
-    from agent6.ui.cli.resume import _ensure_on_run_branch  # pyright: ignore[reportPrivateUsage]
+    from agent6.app.resume import ensure_on_run_branch
 
     repo = tmp_path / "repo"
     head = _git_repo(repo)
@@ -485,7 +485,7 @@ def test_ensure_on_run_branch_refuses_dirty_tree(tmp_path: Path) -> None:
     (repo / "seed.txt").write_text("dirty\n")  # uncommitted change
 
     layout = _layout_with_run_branch(tmp_path / "state", "child", "agent6/child")
-    err = _ensure_on_run_branch(repo, layout)
+    err = ensure_on_run_branch(repo, layout)
     assert err is not None and "uncommitted changes" in err
     assert _current_branch(repo) == "main", "must not switch with modified tracked files"
 
@@ -493,7 +493,7 @@ def test_ensure_on_run_branch_refuses_dirty_tree(tmp_path: Path) -> None:
 def test_ensure_on_run_branch_allows_untracked_files(tmp_path: Path) -> None:
     # Untracked files are carried across a checkout, so they must NOT block the
     # switch (only modified tracked files do).
-    from agent6.ui.cli.resume import _ensure_on_run_branch  # pyright: ignore[reportPrivateUsage]
+    from agent6.app.resume import ensure_on_run_branch
 
     repo = tmp_path / "repo"
     head = _git_repo(repo)
@@ -501,7 +501,7 @@ def test_ensure_on_run_branch_allows_untracked_files(tmp_path: Path) -> None:
     (repo / "scratch.txt").write_text("untracked\n")  # untracked only
 
     layout = _layout_with_run_branch(tmp_path / "state", "child", "agent6/child")
-    assert _ensure_on_run_branch(repo, layout) is None
+    assert ensure_on_run_branch(repo, layout) is None
     assert _current_branch(repo) == "agent6/child"
     assert (repo / "scratch.txt").exists()  # untracked file preserved
 
@@ -574,12 +574,12 @@ def test_resume_without_id_and_no_runs_errors_cleanly(
 
 def test_ensure_on_run_branch_noop_without_run_branch(tmp_path: Path) -> None:
     # branch_per_run was off: no run_branch recorded, so HEAD is left alone.
-    from agent6.ui.cli.resume import _ensure_on_run_branch  # pyright: ignore[reportPrivateUsage]
+    from agent6.app.resume import ensure_on_run_branch
 
     repo = tmp_path / "repo"
     _git_repo(repo)
     layout = _layout_with_run_branch(tmp_path / "state", "child", None)
-    assert _ensure_on_run_branch(repo, layout) is None
+    assert ensure_on_run_branch(repo, layout) is None
     assert _current_branch(repo) == "main"
 
 
