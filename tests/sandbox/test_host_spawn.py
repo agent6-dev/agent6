@@ -150,6 +150,36 @@ def test_concurrent_spawn_lane_gives_each_caller_its_own_ack(tmp_path: Path) -> 
     assert sorted(received) == sorted(ids)
 
 
+def test_stale_ack_from_a_prior_timeout_is_drained(tmp_path: Path) -> None:
+    """A late ack a PRIOR (timed-out) request left in the pipe is discarded before
+    the next request, so the next caller reads ITS OWN ack, not the stale one.
+    Without the drain the leftover 'ok' would be read as this request's success."""
+    req_r, req_w = os.pipe()
+    ack_r, ack_w = os.pipe()
+    spawner = HostSpawner(pid=-1, req_wfd=req_w, ack_rfd=ack_r, lock=threading.Lock())
+    os.write(ack_w, b"ok\n")  # the stale ack a timed-out request left behind
+
+    def fake_helper() -> None:
+        # Blocks reading the request (written only AFTER the drain), then echoes
+        # the run id back, so no ack can race ahead of the drain.
+        try:
+            with os.fdopen(req_r, "r", encoding="utf-8", errors="replace") as reqs:
+                for line in reqs:
+                    rid = str(json.loads(line)["run_id"])
+                    os.write(ack_w, f"err {rid}\n".encode())
+        finally:
+            os.close(ack_w)
+
+    helper = threading.Thread(target=fake_helper, daemon=True)
+    helper.start()
+    err = spawner.spawn_resume(tmp_path, "RID-STALE")
+    os.close(req_w)
+    helper.join(timeout=5)
+    os.close(ack_r)
+    # Got its OWN ack (the echoed id), not the drained "ok" (which would be "").
+    assert "RID-STALE" in err
+
+
 def test_spawn_error_is_reported(tmp_path: Path) -> None:
     spawner = fork_host_spawner(["/nonexistent/agent6"])
     try:

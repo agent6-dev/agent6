@@ -101,6 +101,12 @@ class HostSpawner:
         requests or cross acks on the shared pipe (see the class docstring)."""
         req = (json.dumps(payload) + "\n").encode("utf-8")
         with self.lock:
+            # Discard any ack a PRIOR request left behind after timing out: it
+            # arrives after the _ACK_TIMEOUT_S window, and without draining it
+            # here it would be read as THIS request's ack, desyncing every
+            # subsequent ack off-by-one. Under the lock, any bytes waiting now are
+            # necessarily stale (a completed request always reads its own ack).
+            self._drain_stale_acks()
             try:
                 _write_all(self.req_wfd, req)
             except OSError as exc:
@@ -115,6 +121,19 @@ class HostSpawner:
         if ack == "ok":
             return ""
         return f"background {noun} failed to start: {ack.removeprefix('err ')}"
+
+    def _drain_stale_acks(self) -> None:
+        """Non-blocking: discard any bytes already waiting on the ack pipe (a late
+        ack from a prior timed-out request). Called under ``lock`` at the start of
+        a request, where any pending bytes are guaranteed stale. A closed pipe (a
+        post-close request) raises here; swallow it -- the real write/read below
+        reports the 'helper is gone' error."""
+        try:
+            while select.select([self.ack_rfd], [], [], 0)[0]:
+                if not os.read(self.ack_rfd, 4096):
+                    return  # EOF: helper gone; the real read below reports it
+        except OSError:
+            return
 
     def close(self) -> None:
         """EOF the request pipe so the helper exits, and reap it. Idempotent."""
