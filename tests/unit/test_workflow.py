@@ -684,6 +684,50 @@ def test_drive_loop_tracks_iterations_reached(tmp_path: Path) -> None:
     assert wf.iterations_reached == 8
 
 
+def test_provider_error_summary_is_concise_not_the_raw_body(tmp_path: Path) -> None:
+    """A permanent provider error's raw upstream body (which can carry a noisy
+    account user_id) belongs in the ONE diagnostic log line, not echoed again in
+    the end-block summary. The summary stays concise (failure + HTTP status)."""
+    raw_body = 'OpenRouter API error 400: {"error":"bad model","user_id":"user_SECRET"}'
+
+    class ProviderStub:
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            del kwargs
+            raise ProviderError(raw_body, status_code=400)
+
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=("true",),
+            metric=SimpleNamespace(goal=None),
+        ),
+    )
+    logs: list[str] = []
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        provider=ProviderStub(),
+        dispatcher=MagicMock(),
+        logger=logs.append,
+        max_iterations=3,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nx"}]}]
+    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        system="system",
+        conversation=Conversation.from_wire(messages),
+        tools=[],
+        tool_calls=0,
+        start_iteration=1,
+        root_task_id=None,
+        original_task="t",
+    )
+    assert result.reason == "provider_error"
+    assert "provider error" in result.summary and "HTTP 400" in result.summary
+    assert "user_SECRET" not in result.summary  # the raw blob is NOT re-echoed here
+    assert any("user_SECRET" in line for line in logs)  # kept once, in the log line
+
+
 class _OneShotSteer:
     """A file-bridge steer stand-in that fires once, returning *text*."""
 
