@@ -85,7 +85,7 @@ and the principles the Zen doesn't cover:
   stays small. A field that can never be half-set belongs in one frozen type,
   not two parallel dicts; when code keeps converting between shapes, fix the
   shape.
-- **Decompose proactively.** When a module grows past ~1000 lines or a method
+- **Decompose proactively.** When a module grows past ~600 lines or a method
   past a few hundred, split it before it ossifies (exemplars:
   `workflows/loop.py` with its `_prompts` / `_metric` / `_compaction`
   siblings, the `ui/cli` split of `run.py`). The rules:
@@ -107,12 +107,16 @@ and the principles the Zen doesn't cover:
 
 ### Architecture
 
-- **Layering** is `ui -> workflows -> agents -> tools -> sandbox`; workflows
-  never import each other, and the engine (workflows and below) never imports
-  the UI. `ui/` is the presentation layer and the composition root: the three
+- **Layering** is `ui -> app -> workflows -> agents -> tools -> sandbox`;
+  workflows never import each other, and the engine (`app` and below) never
+  imports the UI. `app/` holds the application pipelines that compose the engine
+  but are not a front-end -- the run/resume/fork/machine-agent lifecycles and
+  the `--parallel` fan-out -- taking the presentation, process-spawn, and
+  run-dir bridge callables the front-end injects (`RunFrontend`, `LaneRuntime`).
+  `ui/` is the presentation layer and the composition root: the three
   front-ends (`ui/cli`, `ui/tui`, `ui/web`) and the front-end bridge
-  (`ui/bridge`: spawn / approval / notify), over the shared headless read-model
-  fold (`viewmodel`). `ui/cli` is the entry point that wires a run.
+  (`ui/bridge`: spawn / notify), over the shared headless read-model fold
+  (`viewmodel`). `ui/cli` is the entry point that wires a run.
   [tach](https://docs.gauge.sh/) (`tach.toml`) checks it.
 - **`tach.toml` mirrors the design.** Write the right design, then update
   `tach.toml` to match; never contort code (or add an indirection) to satisfy

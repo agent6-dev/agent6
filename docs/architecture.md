@@ -9,17 +9,19 @@ see [security.md](security.md).
 ## Layering
 
 ```
-ui  ──▶  workflows  ──▶  agents  ──▶  tools  ──▶  sandbox
-                             │
-                             └─▶ providers (anthropic | openai)
+ui  ──▶  app  ──▶  workflows  ──▶  agents  ──▶  tools  ──▶  sandbox
+                                      │
+                                      └─▶ providers (anthropic | openai)
 ```
 
 `ui/` is the presentation layer and composition root: `ui/cli`, `ui/tui`,
-`ui/web` (the three front-ends) and `ui/bridge` (spawn / approval / notify),
-over the shared headless read-model fold (`viewmodel`). Boundaries are enforced by
-[tach](https://docs.gauge.sh/) (see
+`ui/web` (the three front-ends) and `ui/bridge` (spawn / notify), over the
+shared headless read-model fold (`viewmodel`). `app/` sits between: the
+application pipelines that compose the engine but are not a front-end, taking
+the presentation, process-spawn, and run-dir bridge callables the front-end
+injects. Boundaries are enforced by [tach](https://docs.gauge.sh/) (see
 [tach.toml](https://github.com/agent6-dev/agent6/blob/master/tach.toml)). Workflows never import each other; the engine
-(workflows and everything below) never imports the UI. Crossing a boundary is
+(`app` and everything below) never imports the UI. Crossing a boundary is
 almost always a sign of the wrong design.
 
 - **cli** ([src/agent6/ui/cli/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/cli)): argument parsing,
@@ -35,6 +37,15 @@ almost always a sign of the wrong design.
   Roles: `worker` drives
   `run`/`resume`, `planner` drives `plan` (falls back to `worker`),
   `reviewer` drives `review` + the in-loop critic.
+- **app** ([src/agent6/app/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app)): the application
+  pipelines composed over the engine but never a front-end -- the
+  run/resume/fork/machine-agent lifecycles, the run-branch merge + finalize,
+  provider construction, agent-process egress confinement (`app.egress`), and
+  the `--parallel` fan-out + coordinator dispatch. Never imports `agent6.ui`:
+  what it can't do itself (own a terminal, render a live view, spawn a detached
+  `agent6`) the front-end injects as frozen callables (`RunFrontend`,
+  `LaneRuntime`), and its output goes through an injected two-channel
+  `Reporter`. That keeps `ui/` presentation-only.
 - **workflows** ([src/agent6/workflows/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/workflows)): two
   exist, `loop` (the agent loop driving `agent6 run` / `agent6 resume`)
   and `review` (the read-only review pass driving `agent6 review`).

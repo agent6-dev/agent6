@@ -3,9 +3,9 @@
 """The run-branch merge engine shared by `runs merge` and `git.auto_merge`.
 
 `cli.runs_cmds` validates + resolves a run, then calls `execute_merge`; the run
-finalizer (`cli.run`) calls it directly with the run context it already holds.
-One place to mutate means both honor the same strategy dispatch, clean tree on
-failure, checkout restore, and manifest record."""
+finalizer (`app.finalize.finalize_auto_merge`) calls it directly with the run
+context it already holds. One place to mutate means both honor the same strategy
+dispatch, clean tree on failure, checkout restore, and manifest record."""
 
 from __future__ import annotations
 
