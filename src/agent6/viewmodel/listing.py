@@ -125,7 +125,7 @@ class RunSummary:
     run_id: str
     mode: str  # run | plan | ask | ?
     task: str  # raw task text; callers snippet/truncate for their layout
-    status: str  # running | stale | passed | finished | stopped | failed | ?
+    status: str  # running | stale | passed | planned | finished | stopped | failed | ?
     reason: str  # end reason detail when status is "failed", else ""
     cost_usd: float
     mtime: float
@@ -137,14 +137,19 @@ def status_word(*, finished: bool, all_passed: bool, end_reason: str) -> tuple[s
     The single place that decides how a run's outcome reads -- shared by
     ``run_status_label`` (headers) and ``summarize_run_dir`` (listings) so the
     surfaces can never disagree. "stopped" is the operator's own act (not a
-    failure), "passed" means all verify gates green, "finished" is a deliberate
-    finish without all-passed, and anything else is "failed" with the reason
-    (provider_error, went_quiet, ...).
+    failure), "planned" is a completed plan pass (which verifies nothing, so
+    "passed" would mislead), "passed" means all verify gates green, "finished"
+    is a deliberate finish without all-passed, and anything else is "failed"
+    with the reason (provider_error, went_quiet, ...).
     """
     if not finished:
         return "running", ""
     if end_reason in ("steer_abort", "interrupted"):
         return "stopped", ""  # both are the operator's own act, not a failure
+    if end_reason == "finish_planning":
+        # A plan pass completes via finish_planning (plan mode's only clean
+        # exit); it gates nothing, so give it its own word, not "passed".
+        return "planned", ""
     if all_passed:
         return "passed", ""
     if end_reason and end_reason != "finish_run":
@@ -171,12 +176,22 @@ def summarize_run_dir(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) ->
     logs = run_dir / "logs.jsonl"
     mode, task = "?", ""
     finished, all_passed, end_reason = False, False, ""
-    cost = 0.0
+    cost = 0.0  # latest leg's running total
+    cost_prior_legs = 0.0  # summed totals of completed (resumed-past) legs
     if not logs.is_file():
+        # A manifest-only run (a `fork --no-run` fork, not yet started) has no
+        # logs yet, but the manifest already carries its mode + task -- show them
+        # instead of a blank "? ? (no logs)". Best-effort: a truly empty husk
+        # (no manifest either) keeps the "?" / "(no logs)" placeholder.
+        m_mode, m_task = "?", "(no logs)"
+        with contextlib.suppress(ManifestError):
+            manifest = read_manifest(run_dir)
+            m_mode = manifest.mode
+            m_task = manifest.user_task or "(no logs)"
         return RunSummary(
             run_id=run_dir.name,
-            mode=mode,
-            task="(no logs)",
+            mode=m_mode,
+            task=m_task,
             status="?",
             reason="",
             cost_usd=0.0,
@@ -204,10 +219,18 @@ def summarize_run_dir(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) ->
                     end_reason = str(ev.get("reason", ""))
                 elif etype == "loop.resume.start":
                     finished = False  # a resume un-finishes the run
+                    # Each resume leg starts a FRESH budget (usd_total resets to
+                    # 0), so bank the finished leg's total before it does -- the
+                    # displayed cost is then the true cumulative spend across all
+                    # legs, not just the latest leg's (per-leg budgets stay the
+                    # enforcement mechanism; only the shown total changes).
+                    cost_prior_legs += cost
+                    cost = 0.0
                 elif etype == "budget.update":
                     cost = float(ev.get("usd_total", cost) or 0.0)
     except OSError:
         pass
+    cost += cost_prior_legs
     word, reason = status_word(finished=finished, all_passed=all_passed, end_reason=end_reason)
     if word == "running" and _running_is_stale(run_dir, stale_after_s):
         word = "stale"

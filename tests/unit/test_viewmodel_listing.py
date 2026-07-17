@@ -226,6 +226,67 @@ def test_summary_no_logs(tmp_path: Path) -> None:
     assert (s.status, s.task) == ("?", "(no logs)")
 
 
+def test_summary_plan_reads_planned_not_passed(tmp_path: Path) -> None:
+    # A plan pass ends via finish_planning (its only clean exit) with
+    # all_passed=True; it gates nothing, so it must read "planned", not "passed".
+    rd = _write_run(
+        tmp_path,
+        "runs",
+        "p1",
+        [
+            {"type": "run.start", "mode": "plan", "user_task": "plan the refactor"},
+            {"type": "run.end", "all_passed": True, "reason": "finish_planning"},
+        ],
+    )
+    s = summarize_run_dir(rd)
+    assert (s.mode, s.status, s.reason) == ("plan", "planned", "")
+    # A real run still reads "passed" (finish_run + all_passed) -- unchanged.
+    rd2 = _write_run(
+        tmp_path,
+        "runs",
+        "r1",
+        [
+            {"type": "run.start", "mode": "run", "user_task": "t"},
+            {"type": "run.end", "all_passed": True, "reason": "finish_run"},
+        ],
+    )
+    assert summarize_run_dir(rd2).status == "passed"
+
+
+def test_summary_manifest_only_fork_shows_mode_and_task(tmp_path: Path) -> None:
+    # A `fork --no-run` fork has a manifest (mode + task) but no logs yet; the
+    # listing must show them, not a blank "? ? (no logs)".
+    rd = tmp_path / "runs" / "child"
+    rd.mkdir(parents=True)
+    (rd / "manifest.json").write_text(
+        json.dumps({"mode": "plan", "user_task": "carry this forward"}), encoding="utf-8"
+    )
+    s = summarize_run_dir(rd)
+    assert (s.mode, s.task, s.status) == ("plan", "carry this forward", "?")
+
+
+def test_summary_cost_sums_across_resume_legs(tmp_path: Path) -> None:
+    # Each resume leg starts a fresh budget (usd_total resets to 0). The listing
+    # total must be the cumulative spend across legs, not just the latest leg's.
+    rd = _write_run(
+        tmp_path,
+        "runs",
+        "r1",
+        [
+            {"type": "run.start", "mode": "run", "user_task": "t"},
+            {"type": "budget.update", "usd_total": 0.01},
+            {"type": "budget.update", "usd_total": 0.02},  # leg 1 ends at $0.02
+            {"type": "run.end", "all_passed": False, "reason": "budget_exhausted"},
+            {"type": "loop.resume.start", "iteration": 3},
+            {"type": "budget.update", "usd_total": 0.003},
+            {"type": "budget.update", "usd_total": 0.007},  # leg 2 ends at $0.007
+            {"type": "run.end", "all_passed": True, "reason": "finish_run"},
+        ],
+    )
+    s = summarize_run_dir(rd)
+    assert abs(s.cost_usd - 0.027) < 1e-9  # 0.02 (leg 1) + 0.007 (leg 2), not 0.007
+
+
 def test_is_run_husk(tmp_path: Path) -> None:
     # Neither manifest nor logs: never started, a husk.
     husk = tmp_path / "husk"

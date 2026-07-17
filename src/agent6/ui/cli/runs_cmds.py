@@ -56,6 +56,7 @@ _STATUS_SGR = {
     "running": "1;36",
     "stale": "2",
     "passed": "32",
+    "planned": "36",
     "stopped": "33",
     "failed": "1;31",
 }
