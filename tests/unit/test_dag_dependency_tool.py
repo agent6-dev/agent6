@@ -90,9 +90,7 @@ def test_add_dependency_in_run_and_plan_tool_lists(tmp_path: Path) -> None:
 
 def test_dispatch_add_dependency_roundtrip(tmp_path: Path) -> None:
     stub = _StubGraph()
-    d = ToolDispatcher(
-        root=tmp_path, config=_config(tmp_path), graph_client=cast(GraphCurator, stub)
-    )
+    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path), curator=cast(GraphCurator, stub))
     out = d.dispatch("add_dependency", {"id": _A, "depends_on": _B})
     assert out == {"id": _A, "title": "t", "depends_on": [_B]}
     assert stub.seen[0].id == _A and stub.seen[0].depends_on == _B
@@ -106,18 +104,14 @@ def test_dispatch_add_dependency_requires_curator(tmp_path: Path) -> None:
 
 def test_dispatch_add_dependency_surfaces_curator_rejection(tmp_path: Path) -> None:
     stub = _StubGraph(fail="would introduce cycle")
-    d = ToolDispatcher(
-        root=tmp_path, config=_config(tmp_path), graph_client=cast(GraphCurator, stub)
-    )
+    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path), curator=cast(GraphCurator, stub))
     with pytest.raises(ToolError, match="cycle"):
         d.dispatch("add_dependency", {"id": _A, "depends_on": _B})
 
 
 def test_dispatch_add_dependency_validates_ids(tmp_path: Path) -> None:
     stub = _StubGraph()
-    d = ToolDispatcher(
-        root=tmp_path, config=_config(tmp_path), graph_client=cast(GraphCurator, stub)
-    )
+    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path), curator=cast(GraphCurator, stub))
     with pytest.raises(ToolError):
         d.dispatch("add_dependency", {"id": "short", "depends_on": _B})
     assert not stub.seen  # rejected at the schema, never reached the curator

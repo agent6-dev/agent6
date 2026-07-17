@@ -623,7 +623,7 @@ class Workflow:
     # persistence (still usable for bench / one-off tasks). When wired,
     # Workflow.run() seeds a root task and the agent can add subtasks
     # and update statuses; survives crashes via <run-dir>/graph.jsonl.
-    graph_client: GraphCurator | None = None
+    curator: GraphCurator | None = None
     # Per-invocation token budget tracker (the same instance wired into
     # the provider). When present the loop can read how much budget
     # remains and use it to decide whether a metric plateau is worth
@@ -863,7 +863,7 @@ class Workflow:
 
         # Seed the run's root task and wire its id into the
         # dispatcher so add_task with parent_id=None has a parent. Skipped
-        # gracefully if no graph_client is configured (DAG tools then
+        # gracefully if no curator is configured (DAG tools then
         # raise ToolError if called).
         root_id = self._seed_root_task(effective_task)
         if root_id is not None:
@@ -2290,10 +2290,10 @@ class Workflow:
         covers the empty-frontier finish). Best-effort throughout: a curator
         hiccup logs and returns rather than breaking the loop.
         """
-        if self.mode != "run" or self.graph_client is None:
+        if self.mode != "run" or self.curator is None:
             return
         try:
-            gstate = self.graph_client.get_state()
+            gstate = self.curator.get_state()
         except Exception as exc:  # dead socket / IPC error must not break the loop
             self._log(f"LOOP: surface-current-task skipped: {exc}")
             return
@@ -2310,7 +2310,7 @@ class Workflow:
             # Advance the cursor onto the frontier task (auto-advance: a passed
             # cursor task drops out of the frontier, so this moves forward).
             try:
-                self.graph_client.set_cursor(SetCursorIntent(id=current_id))
+                self.curator.set_cursor(SetCursorIntent(id=current_id))
             except Exception as exc:  # cursor advance is advisory; never fatal
                 self._log(f"LOOP: cursor advance skipped: {exc}")
         # Anti-grind: count consecutive turns on the same focus task. Any forward
@@ -2359,7 +2359,7 @@ class Workflow:
             # Reflect that this task is now being worked, keeping the DAG honest
             # for the TUI and the check-off / finish-gate "open" set. Best-effort.
             try:
-                self.graph_client.update_status(
+                self.curator.update_status(
                     UpdateStatusIntent(id=current_id, new_status="in_progress")
                 )
             except Exception as exc:
@@ -2706,11 +2706,11 @@ class Workflow:
 
     def _seed_root_task(self, user_task: str) -> str | None:
         """Create the run's root task in the DAG when the curator
-        is wired. Returns the new node id, or None if no graph_client.
+        is wired. Returns the new node id, or None if no curator.
 
         The root is the user's task itself. Subsequent agent ``add_task``
         calls with ``parent_id=None`` attach under this root."""
-        if self.graph_client is None:
+        if self.curator is None:
             return None
         # audit: TaskNodeDraft.title has min_length=1. The previous
         # `user_task.splitlines()[0]` crashed when user_task started with `\n`
@@ -2730,7 +2730,7 @@ class Workflow:
                 relevant_paths=(),
                 created_by="user",
             )
-            node = self.graph_client.add_subtask(AddSubtaskIntent(parent_id=None, draft=draft))
+            node = self.curator.add_subtask(AddSubtaskIntent(parent_id=None, draft=draft))
             return node.id
         except Exception as exc:
             self._log(f"LOOP: failed to seed root task: {exc}")
@@ -2791,10 +2791,10 @@ class Workflow:
         and every viewer + resume -- agrees the run completed. Subtasks the
         worker deliberately left unfinished are untouched (kept honest).
         Best-effort: a curator hiccup must never break completion."""
-        if self.graph_client is None:
+        if self.curator is None:
             return
         try:
-            state = self.graph_client.get_state()
+            state = self.curator.get_state()
         except Exception as exc:  # dead socket / IPC error must not break finish
             self._log(f"LOOP: auto-pass root skipped: {exc}")
             return
@@ -2805,7 +2805,7 @@ class Workflow:
         for nid, node in nodes.items():
             if node.get("parent_id") is None and node.get("status") in ("pending", "in_progress"):
                 try:
-                    self.graph_client.update_status(UpdateStatusIntent(id=nid, new_status="passed"))
+                    self.curator.update_status(UpdateStatusIntent(id=nid, new_status="passed"))
                     changed = True
                 except Exception as exc:  # IPC/validation glitch must not break finish
                     self._log(f"LOOP: auto-pass root {nid} failed: {exc}")
@@ -2839,10 +2839,10 @@ class Workflow:
         unbounded model-authored text (rationale/acceptance/notes/paths) that
         bloats the fsync'd event log for no benefit. Best-effort: a curator
         hiccup must never break the run."""
-        if self.graph_client is None:
+        if self.curator is None:
             return
         try:
-            state = self.graph_client.get_state()
+            state = self.curator.get_state()
         except Exception as exc:
             # get_state reads cursor.json from disk; a hiccup (OSError, a
             # malformed cursor) must never break an otherwise-healthy run.
@@ -3003,10 +3003,10 @@ class Workflow:
 
     def _checkpoint_graph_version(self) -> int:
         """Curator DAG version for the per-turn checkpoint; 0 if no curator."""
-        if self.graph_client is None:
+        if self.curator is None:
             return 0
         try:
-            gv = self.graph_client.get_state().get("graph_version", 0)
+            gv = self.curator.get_state().get("graph_version", 0)
         except Exception:
             return 0
         return gv if isinstance(gv, int) else 0
@@ -3323,10 +3323,10 @@ class Workflow:
         """(id, title) of every pending/in_progress task in the DAG, for the
         tier-2 compaction check-off. Best-effort: no curator or an IPC hiccup
         yields an empty list, so compaction degrades to the plain summary."""
-        if self.graph_client is None:
+        if self.curator is None:
             return []
         try:
-            state = self.graph_client.get_state()
+            state = self.curator.get_state()
         except Exception as exc:  # dead socket / IPC error must not break compaction
             self._log(f"LOOP: checkoff task list skipped: {exc}")
             return []
@@ -3349,7 +3349,7 @@ class Workflow:
         """Parse the summariser's ```checkoff block and apply it to the curator:
         mark completed tasks passed, queue newly-discovered ones as children of
         the first root. Best-effort: a curator hiccup must never break the run."""
-        if self.graph_client is None:
+        if self.curator is None:
             return
         completed, new_tasks = _parse_checkoff(summary_text)
         completed = [cid for cid in completed if cid in valid_ids]  # ignore hallucinated ids
@@ -3358,14 +3358,14 @@ class Workflow:
         changed = False
         try:
             for cid in completed:
-                self.graph_client.update_status(
+                self.curator.update_status(
                     UpdateStatusIntent(id=cid, new_status="passed", note="compaction check-off")
                 )
                 changed = True
             if new_tasks:
                 root_id = self._first_root_id()
                 for title in new_tasks[:8]:  # cap: a runaway summary can't flood the DAG
-                    self.graph_client.add_subtask(
+                    self.curator.add_subtask(
                         AddSubtaskIntent(
                             parent_id=root_id,
                             draft=TaskNodeDraft(title=title, created_by="planner"),
@@ -3382,10 +3382,10 @@ class Workflow:
 
     def _first_root_id(self) -> str | None:
         """The first root task id (parent_id is None), or None. Best-effort."""
-        if self.graph_client is None:
+        if self.curator is None:
             return None
         try:
-            state = self.graph_client.get_state()
+            state = self.curator.get_state()
         except Exception:
             return None
         nodes = state.get("nodes", {})
@@ -3404,10 +3404,10 @@ class Workflow:
         ``_TASK_FINISH_PATIENCE``: after that many blocked finishes the finish is
         honoured (a task the worker can't close, and won't mark obsolete/skipped,
         must not bounce the loop forever). Best-effort: no curator -> no gate."""
-        if self.graph_client is None:
+        if self.curator is None:
             return None
         try:
-            nodes = self.graph_client.get_state().get("nodes", {})
+            nodes = self.curator.get_state().get("nodes", {})
         except Exception as exc:  # dead socket / IPC error must not block finishing
             self._log(f"LOOP: task finish-gate skipped: {exc}")
             return None
@@ -4032,10 +4032,10 @@ class Workflow:
         """Parent for a dispatched subtask: the curator cursor when it points at
         an open node, else the run root. Best-effort -- a curator hiccup falls
         back to the root."""
-        if self.graph_client is None:
+        if self.curator is None:
             return root_task_id
         try:
-            gstate = self.graph_client.get_state()
+            gstate = self.curator.get_state()
         except Exception:
             return root_task_id
         nodes = gstate.get("nodes", {})
@@ -4046,11 +4046,11 @@ class Workflow:
     def _add_parallel_node(self, task: str, parent_id: str | None) -> str | None:
         """Add a steering-created DAG node for one dispatched task; None when no
         curator is wired or the add fails (the dispatch still proceeds)."""
-        if self.graph_client is None:
+        if self.curator is None:
             return None
         title = next((ln.strip() for ln in task.splitlines() if ln.strip()), "")[:200]
         try:
-            node = self.graph_client.add_subtask(
+            node = self.curator.add_subtask(
                 AddSubtaskIntent(
                     parent_id=parent_id,
                     draft=TaskNodeDraft(
@@ -4070,14 +4070,12 @@ class Workflow:
     ) -> None:
         """Record a dispatched node's outcome: its join sha (when given) then its
         final status. Best-effort -- a curator hiccup must not break the run."""
-        if self.graph_client is None or node_id is None:
+        if self.curator is None or node_id is None:
             return
         try:
             if sha:
-                self.graph_client.record_commit(RecordCommitIntent(id=node_id, sha=sha))
-            self.graph_client.update_status(
-                UpdateStatusIntent(id=node_id, new_status=status, note=note)
-            )
+                self.curator.record_commit(RecordCommitIntent(id=node_id, sha=sha))
+            self.curator.update_status(UpdateStatusIntent(id=node_id, new_status=status, note=note))
         except Exception as exc:
             self._log(f"PARALLEL: DAG node stamp failed for {node_id}: {exc}")
 

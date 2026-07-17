@@ -230,7 +230,7 @@ def _build_wf(
         dispatcher=disp,
         logger=_silent,
         events=events,
-        graph_client=graph,
+        curator=graph,
         lane_spawner=lane_spawner,
         provider_retry_count=0,
         provider_retry_delay_s=0.0,

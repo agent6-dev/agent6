@@ -607,7 +607,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
 
             # The DAG curator runs in-process: the run's worker.lock already
             # makes this the sole writer, so no subprocess or socket is needed.
-            graph_client = GraphCurator(layout)
+            curator = GraphCurator(layout)
             dispatcher = ToolDispatcher(
                 root=cwd,
                 config=cfg,
@@ -615,7 +615,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 approver=frontend.build_approver(layout.run_dir, events),
                 questioner=frontend.build_questioner(layout.run_dir, events),
                 events=events,
-                graph_client=graph_client,
+                curator=curator,
                 run_root_node_id=None,  # Workflow seeds the root + calls set_run_root_node_id
                 mcp_manager=mcp_manager,
                 mode=mode,
@@ -638,7 +638,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 dispatcher=dispatcher,
                 logger=loop_log,
                 events=events,
-                graph_client=graph_client,
+                curator=curator,
                 steer_requested=steer_state.requested,
                 steer_clear=steer_state.clear,
                 steer_prompt=steer_state.prompt,

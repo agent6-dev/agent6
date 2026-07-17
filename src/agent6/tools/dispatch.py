@@ -279,7 +279,7 @@ class ToolDispatcher:
         approver: _Approver | None = None,
         questioner: _Questioner | None = None,
         events: EventSink | None = None,
-        graph_client: GraphCurator | None = None,
+        curator: GraphCurator | None = None,
         run_root_node_id: str | None = None,
         mcp_manager: MCPManager | None = None,
         extra_protect_paths: tuple[Path, ...] = (),
@@ -304,7 +304,7 @@ class ToolDispatcher:
         # Optional in-process GraphCurator + root-task id for the DAG-as-tool
         # surface. When wired, the dispatcher exposes add_task /
         # update_task / set_cursor / list_tasks.
-        self._graph_client = graph_client
+        self._curator = curator
         self._run_root_node_id = run_root_node_id
         # Optional MCP (Model Context Protocol) manager. When
         # set, ``dispatch`` routes any tool name starting with the MCP
@@ -340,7 +340,7 @@ class ToolDispatcher:
             FinishRunInput.TOOL_NAME: self._finish_run,
             FinishPlanningInput.TOOL_NAME: self._finish_planning,
             AskUserInput.TOOL_NAME: self._ask_user,
-            # DAG-as-tool. Handlers raise ToolError if no graph_client was
+            # DAG-as-tool. Handlers raise ToolError if no curator was
             # wired (so standalone tests can omit it).
             DagAddTaskInput.TOOL_NAME: self._dag_add_task,
             DagUpdateTaskInput.TOOL_NAME: self._dag_update_task,
@@ -696,23 +696,23 @@ class ToolDispatcher:
     def _finish_planning(self, raw: dict[str, Any]) -> dict[str, Any]:
         return _finish_planning_impl(raw)
 
-    # DAG-as-tool handlers. All raise ToolError if no graph_client
+    # DAG-as-tool handlers. All raise ToolError if no curator
     # was wired so standalone test instantiation works unchanged.
 
     def _dag_add_task(self, raw: dict[str, Any]) -> dict[str, Any]:
-        return _add_task(self._graph_client, self._run_root_node_id, raw)
+        return _add_task(self._curator, self._run_root_node_id, raw)
 
     def _dag_update_task(self, raw: dict[str, Any]) -> dict[str, Any]:
-        return _update_task(self._graph_client, raw)
+        return _update_task(self._curator, raw)
 
     def _dag_set_cursor(self, raw: dict[str, Any]) -> dict[str, Any]:
-        return _set_cursor(self._graph_client, raw)
+        return _set_cursor(self._curator, raw)
 
     def _dag_add_dependency(self, raw: dict[str, Any]) -> dict[str, Any]:
-        return _add_dependency(self._graph_client, raw)
+        return _add_dependency(self._curator, raw)
 
     def _dag_list_tasks(self, raw: dict[str, Any]) -> dict[str, Any]:
-        return _list_tasks(self._graph_client, raw)
+        return _list_tasks(self._curator, raw)
 
     # Cross-run memory handlers. Writes go through trusted code
     # (agent6.memory) to fixed markdown files under <state_dir>/memories/,

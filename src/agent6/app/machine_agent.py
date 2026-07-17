@@ -309,7 +309,7 @@ def run_one(
             approver=bridges.approve if bridges is not None else None,
             questioner=bridges.ask if bridges is not None else None,
             events=events_sink,
-            graph_client=None,
+            curator=None,
             run_root_node_id=None,
             mcp_manager=None,
             extra_protect_paths=protect,

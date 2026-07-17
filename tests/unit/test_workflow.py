@@ -1980,7 +1980,7 @@ def test_summarise_and_restart_applies_dag_checkoff() -> None:
         '```checkoff\n{"completed_ids": ["01DONE", "01HALLUCINATED"], '
         '"new_tasks": ["fix the budget rounding bug"]}\n```'
     )
-    wf = _wf(summariser_provider=summariser, graph_client=fake)
+    wf = _wf(summariser_provider=summariser, curator=fake)
     messages = _long_history(6)
     wf._summarise_and_restart(messages)  # pyright: ignore[reportPrivateUsage]
 
@@ -2009,7 +2009,7 @@ def test_task_finish_gate_nudges_open_subtasks_then_caps() -> None:
         "sub1": {"parent_id": "root", "status": "pending", "title": "audit providers"},
         "sub2": {"parent_id": "root", "status": "passed", "title": "audit sandbox"},  # done
     }
-    wf = _wf(graph_client=_FakeGraph(nodes))
+    wf = _wf(curator=_FakeGraph(nodes))
     st = _state()
     for i in range(1, _TASK_FINISH_PATIENCE + 1):
         nudge = wf._task_finish_gate_nudge(st)  # pyright: ignore[reportPrivateUsage]
@@ -2024,8 +2024,8 @@ def test_task_finish_gate_allows_finish_without_open_subtasks() -> None:
     """Only SUBTASKS gate. The always-pending auto-root alone must NOT block a
     finish (else every run deadlocks); no curator -> no gate either."""
     root_only = _FakeGraph({"root": {"parent_id": None, "status": "pending", "title": "t"}})
-    assert _wf(graph_client=root_only)._task_finish_gate_nudge(_state()) is None  # pyright: ignore[reportPrivateUsage]
-    assert _wf(graph_client=None)._task_finish_gate_nudge(_state()) is None  # pyright: ignore[reportPrivateUsage]
+    assert _wf(curator=root_only)._task_finish_gate_nudge(_state()) is None  # pyright: ignore[reportPrivateUsage]
+    assert _wf(curator=None)._task_finish_gate_nudge(_state()) is None  # pyright: ignore[reportPrivateUsage]
 
 
 # --- surface-current-task -------------------------------------------------
@@ -2165,7 +2165,7 @@ def test_surface_current_task_surfaces_advances_then_quiets() -> None:
         "b": {"parent_id": "root", "status": "pending", "title": "audit sandbox"},
     }
     cur = _FakeCurator(nodes)
-    wf = _wf(graph_client=cur)
+    wf = _wf(curator=cur)
     st = _state()
     messages: list[dict[str, Any]] = []
 
@@ -2203,7 +2203,7 @@ def test_surface_current_task_skips_status_write_when_already_in_progress() -> N
         },
         cursor="a",
     )
-    wf = _wf(graph_client=cur)
+    wf = _wf(curator=cur)
     messages: list[dict[str, Any]] = []
     _surface(wf, _state(), messages)
     assert len(messages) == 1  # banner still surfaced
@@ -2218,7 +2218,7 @@ def test_surface_current_task_resurfaces_after_compaction_reset() -> None:
         "root": {"parent_id": None, "status": "in_progress", "title": "r"},
         "a": {"parent_id": "root", "status": "pending", "title": "audit providers"},
     }
-    wf = _wf(graph_client=_FakeCurator(nodes))
+    wf = _wf(curator=_FakeCurator(nodes))
     st = _state()
     messages: list[dict[str, Any]] = []
     _surface(wf, st, messages)
@@ -2233,10 +2233,10 @@ def test_surface_current_task_noop_cases() -> None:
     mode -- nothing is appended and no cursor/status write happens."""
     root_only = _FakeCurator({"root": {"parent_id": None, "status": "pending", "title": "t"}})
     msgs: list[dict[str, Any]] = []
-    _surface(_wf(graph_client=root_only), _state(), msgs)
+    _surface(_wf(curator=root_only), _state(), msgs)
     assert msgs == [] and root_only.cursor_sets == []
 
-    _surface(_wf(graph_client=None), _state(), msgs)
+    _surface(_wf(curator=None), _state(), msgs)
     assert msgs == []
 
     open_sub = _FakeCurator(
@@ -2245,7 +2245,7 @@ def test_surface_current_task_noop_cases() -> None:
             "a": {"parent_id": "root", "status": "pending", "title": "a"},
         }
     )
-    _surface(_wf(graph_client=open_sub, mode="plan"), _state(), msgs)
+    _surface(_wf(curator=open_sub, mode="plan"), _state(), msgs)
     assert msgs == [] and open_sub.cursor_sets == []  # plan mode does not surface
 
 
@@ -2268,7 +2268,7 @@ def test_surface_current_task_stuck_nudge_fires_periodically_then_caps() -> None
             "a": {"parent_id": "root", "status": "pending", "title": "audit providers"},
         }
     )
-    wf = _wf(graph_client=cur)
+    wf = _wf(curator=cur)
     st = _state()
     messages: list[dict[str, Any]] = []
     # One nudge after the first period, but not before it.
@@ -2294,7 +2294,7 @@ def test_surface_current_task_stuck_nudge_resets_on_progress() -> None:
         "a": {"parent_id": "root", "status": "pending", "title": "a"},
         "b": {"parent_id": "root", "status": "pending", "title": "b"},
     }
-    wf = _wf(graph_client=_FakeCurator(nodes))
+    wf = _wf(curator=_FakeCurator(nodes))
     st = _state()
     messages: list[dict[str, Any]] = []
     for _ in range(_STUCK_ON_TASK_AFTER - 1):  # grind almost to the threshold on a
@@ -2311,7 +2311,7 @@ def test_surface_current_task_stuck_counter_survives_compaction() -> None:
     """A tier-2 restart resets the banner (surfaced_task_id) but NOT the grind
     counter -- compaction is not progress on the task."""
     wf = _wf(
-        graph_client=_FakeCurator(
+        curator=_FakeCurator(
             {
                 "root": {"parent_id": None, "status": "in_progress", "title": "r"},
                 "a": {"parent_id": "root", "status": "pending", "title": "a"},
@@ -2337,7 +2337,7 @@ def test_surface_decompose_resets_grind_counter() -> None:
         "root": {"parent_id": None, "status": "in_progress", "title": "r", "children": ["a"]},
         "a": {"parent_id": "root", "status": "pending", "title": "a", "children": []},
     }
-    wf = _wf(graph_client=_FakeCurator(nodes))
+    wf = _wf(curator=_FakeCurator(nodes))
     st = _state()
     messages: list[dict[str, Any]] = []
     for _ in range(5):
@@ -2533,7 +2533,7 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: Path) -> 
         dispatcher=DispatcherStub(),
         summariser_provider=SummariserStub(),
         events=events,
-        graph_client=cur,
+        curator=cur,
         compact_drop_at_chars=256_000,
         compact_summarise_at_chars=5_000,  # low so tier-2 fires mid-run
         budget=None,
@@ -3152,14 +3152,14 @@ def test_pass_pending_root_tasks_passes_only_pending_roots() -> None:
         "root4": {"parent_id": None, "status": "failed"},  # failed -> leave honest
     }
     fake = _FakeClient(nodes)
-    wf = _wf(graph_client=fake)
+    wf = _wf(curator=fake)
     wf._pass_pending_root_tasks()  # pyright: ignore[reportPrivateUsage]
     assert set(fake.passed) == {"root1", "root3"}
 
 
-def test_pass_pending_root_tasks_noop_without_graph_client() -> None:
+def test_pass_pending_root_tasks_noop_without_curator() -> None:
     """No curator wired (e.g. ask without a DAG) -> the auto-pass is a no-op."""
-    wf = _wf(graph_client=None)
+    wf = _wf(curator=None)
     wf._pass_pending_root_tasks()  # pyright: ignore[reportPrivateUsage]  (must not raise)
 
 
@@ -3299,8 +3299,8 @@ def test_save_resume_snapshot_degrades_on_unwritable_state_dir(tmp_path: Path) -
 def test_open_tasks_for_checkoff_excludes_auto_root() -> None:
     # The tier-2 compaction check-off must never offer the auto-root (parent_id
     # is None): a summariser listing it would mark the whole run passed mid-run.
-    graph_client = MagicMock()
-    graph_client.get_state.return_value = {
+    curator = MagicMock()
+    curator.get_state.return_value = {
         "nodes": {
             "root": {"status": "in_progress", "title": "the whole run", "parent_id": None},
             "01A": {"status": "pending", "title": "subtask A", "parent_id": "root"},
@@ -3308,7 +3308,7 @@ def test_open_tasks_for_checkoff_excludes_auto_root() -> None:
             "01C": {"status": "passed", "title": "done subtask", "parent_id": "root"},
         }
     }
-    wf = _wf(graph_client=graph_client)
+    wf = _wf(curator=curator)
     ids = {nid for nid, _ in wf._open_tasks_for_checkoff()}  # pyright: ignore[reportPrivateUsage]
     assert ids == {"01A", "01B"}  # root excluded; passed subtask excluded
 

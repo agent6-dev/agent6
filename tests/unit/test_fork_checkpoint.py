@@ -77,14 +77,14 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: Path) -> None:
     run_dir.mkdir()
     snap = run_dir / "loop_state.json"
 
-    graph_client = MagicMock()
-    graph_client.get_state.return_value = {"nodes": {}, "cursor": None, "graph_version": 7}
+    curator = MagicMock()
+    curator.get_state.return_value = {"nodes": {}, "cursor": None, "graph_version": 7}
     config = SimpleNamespace(
         workflow=SimpleNamespace(
             require_verify_to_finish=False, verify_command=(), metric=SimpleNamespace(goal=None)
         )
     )
-    wf = _wf(root=repo, config=config, resume_state_path=snap, graph_client=graph_client)
+    wf = _wf(root=repo, config=config, resume_state_path=snap, curator=curator)
     state = _LoopState(original_task="t", tool_calls=0)
 
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
