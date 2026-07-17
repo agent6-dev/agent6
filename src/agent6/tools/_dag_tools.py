@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent6.graph.client import GraphClient
+from agent6.graph.curator import GraphCurator
 from agent6.graph.models import (
     AddDependencyIntent,
     AddSubtaskIntent,
@@ -27,7 +27,7 @@ from agent6.tools.schema import (
 
 
 def add_task(
-    graph_client: GraphClient | None, run_root_node_id: str | None, raw: dict[str, Any]
+    graph_client: GraphCurator | None, run_root_node_id: str | None, raw: dict[str, Any]
 ) -> dict[str, Any]:
     if graph_client is None:
         raise ToolError("add_task: DAG curator not available in this run")
@@ -50,7 +50,7 @@ def add_task(
     }
 
 
-def update_task(graph_client: GraphClient | None, raw: dict[str, Any]) -> dict[str, Any]:
+def update_task(graph_client: GraphCurator | None, raw: dict[str, Any]) -> dict[str, Any]:
     if graph_client is None:
         raise ToolError("update_task: DAG curator not available in this run")
     args = DagUpdateTaskInput.model_validate(raw)
@@ -63,7 +63,7 @@ def update_task(graph_client: GraphClient | None, raw: dict[str, Any]) -> dict[s
     return {"id": node.id, "status": node.status, "title": node.title}
 
 
-def set_cursor(graph_client: GraphClient | None, raw: dict[str, Any]) -> dict[str, Any]:
+def set_cursor(graph_client: GraphCurator | None, raw: dict[str, Any]) -> dict[str, Any]:
     if graph_client is None:
         raise ToolError("set_cursor: DAG curator not available in this run")
     args = DagSetCursorInput.model_validate(raw)
@@ -71,7 +71,7 @@ def set_cursor(graph_client: GraphClient | None, raw: dict[str, Any]) -> dict[st
     return {"acknowledged": True, "cursor": args.id}
 
 
-def add_dependency(graph_client: GraphClient | None, raw: dict[str, Any]) -> dict[str, Any]:
+def add_dependency(graph_client: GraphCurator | None, raw: dict[str, Any]) -> dict[str, Any]:
     if graph_client is None:
         raise ToolError("add_dependency: DAG curator not available in this run")
     args = DagAddDependencyInput.model_validate(raw)
@@ -82,7 +82,7 @@ def add_dependency(graph_client: GraphClient | None, raw: dict[str, Any]) -> dic
     return {"id": node.id, "title": node.title, "depends_on": list(node.depends_on)}
 
 
-def list_tasks(graph_client: GraphClient | None, raw: dict[str, Any]) -> dict[str, Any]:
+def list_tasks(graph_client: GraphCurator | None, raw: dict[str, Any]) -> dict[str, Any]:
     if graph_client is None:
         raise ToolError("list_tasks: DAG curator not available in this run")
     args = DagListTasksInput.model_validate(raw)

@@ -32,7 +32,7 @@ from agent6.config import Config
 from agent6.directive import DirectiveError, Segment, parse_directive, parse_spec
 from agent6.git_ops import GitError, commit_all, commit_diff, diff_since
 from agent6.git_ops import status as git_status
-from agent6.graph.client import CuratorClientError, GraphClient
+from agent6.graph.curator import GraphCurator
 from agent6.graph.models import (
     AddSubtaskIntent,
     NodeStatus,
@@ -618,12 +618,12 @@ class Workflow:
     dispatcher: ToolDispatcher
     logger: Callable[[str], None] = field(default=print)
     events: EventSink | None = None
-    # GraphClient (connected to a running curator). When None,
+    # In-process GraphCurator. When None,
     # DAG-as-tool handlers raise ToolError and the loop runs without DAG
     # persistence (still usable for bench / one-off tasks). When wired,
     # Workflow.run() seeds a root task and the agent can add subtasks
     # and update statuses; survives crashes via <run-dir>/graph.jsonl.
-    graph_client: GraphClient | None = None
+    graph_client: GraphCurator | None = None
     # Per-invocation token budget tracker (the same instance wired into
     # the provider). When present the loop can read how much budget
     # remains and use it to decide whether a metric plateau is worth
@@ -2732,7 +2732,7 @@ class Workflow:
             )
             node = self.graph_client.add_subtask(AddSubtaskIntent(parent_id=None, draft=draft))
             return node.id
-        except CuratorClientError as exc:
+        except Exception as exc:
             self._log(f"LOOP: failed to seed root task: {exc}")
             return None
 
@@ -2844,9 +2844,8 @@ class Workflow:
         try:
             state = self.graph_client.get_state()
         except Exception as exc:
-            # (CuratorClientError, IpcError, OSError/BrokenPipeError on a dead
-            # socket) must never break an otherwise-healthy run. Matches the
-            # convention at tools/dispatch.py's get_state() call site.
+            # get_state reads cursor.json from disk; a hiccup (OSError, a
+            # malformed cursor) must never break an otherwise-healthy run.
             self._log(f"LOOP: graph snapshot skipped: {exc}")
             return
         raw = state.get("nodes", {})
@@ -3008,7 +3007,7 @@ class Workflow:
             return 0
         try:
             gv = self.graph_client.get_state().get("graph_version", 0)
-        except (CuratorClientError, OSError):
+        except Exception:
             return 0
         return gv if isinstance(gv, int) else 0
 
@@ -4037,7 +4036,7 @@ class Workflow:
             return root_task_id
         try:
             gstate = self.graph_client.get_state()
-        except (CuratorClientError, OSError):
+        except Exception:
             return root_task_id
         nodes = gstate.get("nodes", {})
         if not isinstance(nodes, dict):
@@ -4062,7 +4061,7 @@ class Workflow:
                 )
             )
             return node.id
-        except CuratorClientError as exc:
+        except Exception as exc:
             self._log(f"PARALLEL: DAG node add failed: {exc}")
             return None
 
@@ -4079,7 +4078,7 @@ class Workflow:
             self.graph_client.update_status(
                 UpdateStatusIntent(id=node_id, new_status=status, note=note)
             )
-        except CuratorClientError as exc:
+        except Exception as exc:
             self._log(f"PARALLEL: DAG node stamp failed for {node_id}: {exc}")
 
     def _join_lane_result(self, res: LaneResult) -> _LaneJoin:

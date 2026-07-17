@@ -22,7 +22,7 @@ from pydantic import ValidationError
 
 from agent6.config import Config
 from agent6.events import EventSink
-from agent6.graph.client import GraphClient
+from agent6.graph.curator import GraphCurator
 from agent6.paths import data_dir
 from agent6.sandbox.jail import JailUnavailableError, run_in_jail
 from agent6.skills import (
@@ -279,7 +279,7 @@ class ToolDispatcher:
         approver: _Approver | None = None,
         questioner: _Questioner | None = None,
         events: EventSink | None = None,
-        graph_client: GraphClient | None = None,
+        graph_client: GraphCurator | None = None,
         run_root_node_id: str | None = None,
         mcp_manager: MCPManager | None = None,
         extra_protect_paths: tuple[Path, ...] = (),
@@ -301,7 +301,7 @@ class ToolDispatcher:
         self._approver: _Approver = approver or _default_approver
         self._questioner: _Questioner = questioner or _default_questioner
         self._events = events
-        # Optional GraphClient + root-task id for the DAG-as-tool
+        # Optional in-process GraphCurator + root-task id for the DAG-as-tool
         # surface. When wired, the dispatcher exposes add_task /
         # update_task / set_cursor / list_tasks.
         self._graph_client = graph_client

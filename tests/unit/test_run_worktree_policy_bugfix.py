@@ -92,11 +92,11 @@ def test_dirty_tree_refused_with_default_config(
     cfg = _runnable_cfg(GitConfig())  # defaults: require_clean_worktree=True
     _patch_common(monkeypatch, cfg)
 
-    # Guard must fire BEFORE any curator spawn; make a spawn loud just in case.
-    def _loud_spawn(*a: object, **k: object) -> object:
-        return pytest.fail("spawned past the guard")
+    # Guard must fire BEFORE the in-process curator is built; make it loud.
+    def _loud_curator(*a: object, **k: object) -> object:
+        return pytest.fail("built the curator past the guard")
 
-    monkeypatch.setattr(app_run_mod, "spawn_curator", _loud_spawn)
+    monkeypatch.setattr(app_run_mod, "GraphCurator", _loud_curator)
 
     rc = run_mod._cmd_run(None, "do a thing")  # pyright: ignore[reportPrivateUsage]
 

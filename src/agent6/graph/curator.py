@@ -2,12 +2,10 @@
 # Copyright 2026 Eric Lesiuta
 """Authoritative in-process graph mutator.
 
-`GraphCurator` is the single source of truth for one run's task graph. The
-production deployment runs it inside the `graph-curator` subprocess, which is a
-plain subprocess (no jail of its own) that inherits the agent process's
-confinement and writes the run's graph under the out-of-tree per-repo state dir.
-The class itself is process-agnostic: unit tests instantiate it directly to
-exercise the mutation logic without spinning up a UDS server.
+`GraphCurator` is the single source of truth for one run's task graph. It runs
+in-process in the agent (`app/run.py`/`app/resume.py` construct it directly),
+inheriting that process's confinement and writing the run's graph under the
+out-of-tree per-repo state dir. Unit tests instantiate it the same way.
 
 Mutations are validated structurally, then applied as:
 
@@ -25,14 +23,24 @@ per run is the invariant; the lock only bounds the damage if it is broken. The
 CLI upholds the invariant with a run-level single-writer flock
 (``runs.lock.acquire_single_writer`` on ``<run-dir>/worker.lock``, the analogue
 of ``machine_lock``): a second ``agent6 run``/``resume``/``fork`` on the same
-run dir refuses rather than spawning a second curator.
+run dir refuses rather than constructing a second curator.
+
+Fail-safe: a mutation updates ``self._nodes`` in memory BEFORE writing to disk,
+so a write-path fault (ENOSPC, a serialization error, a cycle surfacing from
+``write_node``) can leave in-memory state ahead of disk. ``_mutating`` reloads
+from disk (the source of truth) before surfacing such a fault, so a later read
+never observes a node that was never persisted. This replaces the old
+subprocess die->reload fail-safe with an in-process reload.
 """
 
 from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Generator
+from contextlib import contextmanager
 from datetime import UTC, datetime
+from typing import Any
 
 from agent6.graph.models import (
     AddDependencyIntent,
@@ -72,7 +80,10 @@ class GraphCurator:
         self._layout = layout
         layout.ensure()
         self._nodes: dict[str, TaskNode] = load_graph(layout)
-        self._graph_version = max(
+        self._graph_version = self._compute_graph_version()
+
+    def _compute_graph_version(self) -> int:
+        return max(
             (
                 int(gv)
                 for entry in self._iter_recent_journal()
@@ -102,10 +113,39 @@ class GraphCurator:
     def cursor(self) -> str | None:
         return read_cursor(self._layout)
 
+    def get_state(self) -> dict[str, Any]:
+        """Snapshot for read consumers (DAG list_tasks, loop graph snapshots):
+        nodes as JSON-ready dicts, plus cursor and graph_version."""
+        return {
+            "nodes": {nid: n.model_dump(mode="json") for nid, n in self._nodes.items()},
+            "cursor": self.cursor(),
+            "graph_version": self._graph_version,
+        }
+
     # ---- mutations --------------------------------------------------------
 
-    def add_subtask(self, intent: AddSubtaskIntent) -> TaskNode:
+    @contextmanager
+    def _mutating(self) -> Generator[None]:
+        """Flock the run dir for one mutation, with the disk-fault fail-safe.
+
+        A ``CuratorError`` is a pre-mutation validation reject (nothing was
+        applied), so it propagates untouched. Any other fault escapes AFTER the
+        in-memory graph was already updated, so reload from disk (the source of
+        truth) before re-raising: a later read then never sees a node the write
+        path failed to persist. The reload runs under the same flock so a
+        concurrent operator read can't observe the skewed state."""
         with flock(self._layout.lock_path):
+            try:
+                yield
+            except CuratorError:
+                raise
+            except Exception:
+                self._nodes = load_graph(self._layout)
+                self._graph_version = self._compute_graph_version()
+                raise
+
+    def add_subtask(self, intent: AddSubtaskIntent) -> TaskNode:
+        with self._mutating():
             parent = self._nodes.get(intent.parent_id) if intent.parent_id else None
             if intent.parent_id is not None and parent is None:
                 raise CuratorError(f"add_subtask: unknown parent {intent.parent_id!r}")
@@ -153,7 +193,7 @@ class GraphCurator:
             return node
 
     def update_status(self, intent: UpdateStatusIntent) -> TaskNode:
-        with flock(self._layout.lock_path):
+        with self._mutating():
             node = self.get(intent.id)
             if node.status == "passed" and intent.new_status not in ("obsolete",):
                 raise CuratorError(
@@ -180,7 +220,7 @@ class GraphCurator:
             return updated
 
     def add_dependency(self, intent: AddDependencyIntent) -> TaskNode:
-        with flock(self._layout.lock_path):
+        with self._mutating():
             node = self.get(intent.id)
             if intent.depends_on not in self._nodes:
                 raise CuratorError(f"unknown dep {intent.depends_on!r}")
@@ -208,7 +248,7 @@ class GraphCurator:
             return updated
 
     def obsolete(self, intent: ObsoleteIntent) -> TaskNode:
-        with flock(self._layout.lock_path):
+        with self._mutating():
             node = self.get(intent.id)
             updated = node.model_copy(
                 update={
@@ -227,7 +267,7 @@ class GraphCurator:
             return updated
 
     def reorder_children(self, intent: ReorderChildrenIntent) -> TaskNode:
-        with flock(self._layout.lock_path):
+        with self._mutating():
             parent = self.get(intent.parent_id)
             # Multiset comparison: a set check would accept a new_order with a
             # duplicated child id (set drops the dup), silently corrupting
@@ -249,7 +289,7 @@ class GraphCurator:
             return updated
 
     def record_commit(self, intent: RecordCommitIntent) -> TaskNode:
-        with flock(self._layout.lock_path):
+        with self._mutating():
             node = self.get(intent.id)
             updated = node.model_copy(update={"commit_sha": intent.sha, "updated_at": _now()})
             self._nodes[updated.id] = updated
@@ -258,7 +298,7 @@ class GraphCurator:
             return updated
 
     def set_cursor(self, intent: SetCursorIntent) -> None:
-        with flock(self._layout.lock_path):
+        with self._mutating():
             if intent.id is not None and intent.id not in self._nodes:
                 raise CuratorError(f"set_cursor: unknown node {intent.id!r}")
             write_cursor(self._layout, intent.id)
@@ -291,9 +331,7 @@ class GraphCurator:
                 # and graph_version is a self-healing monotonic counter, so skip
                 # the corrupt line rather than crashing curator startup -- which
                 # would otherwise make the whole run unresumable.
-                sys.stderr.write(
-                    f"graph-curator: skipping malformed journal line: {stripped[:80]!r}\n"
-                )
+                sys.stderr.write(f"agent6: skipping malformed journal line: {stripped[:80]!r}\n")
         return entries
 
     def _would_introduce_cycle(self, src: str, new_dep: str) -> bool:

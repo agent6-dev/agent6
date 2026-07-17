@@ -330,33 +330,36 @@ flowchart TD
   workspace (`<state-dir>/<repo-id>/`), unreachable from the repo cwd
   that jailed commands run on.
 
-## Curator subprocess
+## Curator
 
-The task graph is owned by a separate `graph-curator` subprocess
-(`python -m agent6.graph.server`). The
-main agent process writes the rest of the run state (resume snapshot,
-event log, transcripts) in-process.
+The task graph is owned by an in-process `GraphCurator` (`graph/curator.py`).
+The agent constructs one per run; the worker / planner / critic /
+alignment-guard roles are in-process in the one loop and mutate through it. The
+same process writes the rest of the run state (resume snapshot, event log,
+transcripts).
 
 ```mermaid
 flowchart LR
-    Agent[agent6 run<br/>main process] -->|UDS JSON IPC| Curator[graph-curator<br/>subprocess]
-    Curator -->|task graph| Graph[(graph.jsonl, graph/*.md, cursor.json)]
+    Agent[agent6 run<br/>main process] -->|in-process GraphCurator| Graph[(graph.jsonl, graph/*.md, cursor.json)]
     Agent -->|in-process| Rest[(loop_state.json, logs.jsonl, transcripts)]
 ```
 
-The agent talks to the curator over a Unix domain socket. The curator
-validates every IPC frame against a pydantic schema before applying it,
-so the on-disk graph stays consistent. What keeps the whole run
-directory safe from jailed commands is its location: it lives out of the
-workspace (`<state-dir>/<repo-id>/`), unreachable from the repo cwd that
-jailed commands run on.
+Every mutation is validated against a pydantic schema before it applies, so the
+on-disk graph stays consistent. What keeps the whole run directory safe from
+jailed commands is its location: it lives out of the workspace
+(`<state-dir>/<repo-id>/`), unreachable from the repo cwd that jailed commands
+run on.
 
 One curator per run is an invariant: two live curators on one run dir cache the
 graph independently, so a second one's write silently drops the first's
 parent→child links. `agent6 run`/`resume`/`fork` therefore take a run-level
-single-writer flock on `<run-dir>/worker.lock` (the analogue of `machine.lock`)
-before spawning the curator; a second process on the same run refuses. A crashed
-writer releases the lock on death, so resume-after-crash is never blocked.
+single-writer flock on `<run-dir>/worker.lock` (the analogue of `machine.lock`);
+a second process on the same run refuses. A crashed writer releases the lock on
+death, so resume-after-crash is never blocked. The curator additionally holds a
+per-mutation flock on the run dir, guarding the files against a concurrent
+operator-CLI read/write. A write-path fault (ENOSPC, a serialization error)
+after the in-memory update reloads the graph from disk before surfacing, so a
+later read never observes a node that was never persisted.
 
 ## Run state on disk
 
@@ -467,7 +470,7 @@ graph`).
 | Jail launcher (Rust binary)      | [src/agent6/jail/src/main.rs](https://github.com/agent6-dev/agent6/blob/master/src/agent6/jail/src/main.rs)            |
 | Git policy                       | [src/agent6/git_ops.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/git_ops.py)                        |
 | Subordinate-run primitive (clone/import/join) | [src/agent6/workflows/subrun.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/subrun.py) |
-| Run-dir single-writer lock       | [src/agent6/runs/lock.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/runs/lock.py) (the `worker.lock` flock; see "Curator subprocess") |
+| Run-dir single-writer lock       | [src/agent6/runs/lock.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/runs/lock.py) (the `worker.lock` flock; see "Curator") |
 | Compare judge (structured ranking) | [src/agent6/workflows/judge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/judge.py) |
 | Fan-out orchestrator (`run --parallel`, coordinator spawner) | [src/agent6/app/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel.py) (pipeline), [src/agent6/ui/cli/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/cli/parallel.py) (CLI adapter) |
 | Provider clients                 | [src/agent6/providers/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/providers)                        |

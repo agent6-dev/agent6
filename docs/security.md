@@ -109,7 +109,7 @@ process irrevocably, inherited by every child:
       `providers`, agent path only. Last-overlay-wins, so `config show` is
       authoritative.
 - **MCP servers get no outbound network under `providers`** (a deliberate limit;
-  curator and other `AF_UNIX` helpers are unaffected).
+  local `AF_UNIX` helpers are unaffected).
 
 ### 2. `agent6-jail` (Rust), for every child command
 
@@ -185,7 +185,6 @@ fixed argv depending only on operator input, never LLM output.
   `agent6 resume <run_id>` in the host namespaces, argv built from the agent6
   exe captured at fork time, requests only from the trusted parent over a
   close-on-exec pipe.
-- `graph/client.py`: spawns the curator subprocess (§6).
 - `tools/lsp.py`: the `ty` language server, exe resolved from PATH.
 - `tools/mcp_client.py`: operator-configured `[mcp.servers.*]` server commands.
 - `providers/token_command.py`: the operator-configured
@@ -205,9 +204,6 @@ fixed argv depending only on operator input, never LLM output.
     - The fixed-argv `python -m agent6.ui.tui` co-process behind `run --tui`.
     - `app/finalize.py`: the operator `[notify].on_complete` hook fired at
       run end; argv from config.
-    - `app/run.py`, `app/resume.py`: hold the curator co-process handle
-      (spawned by `graph/client.py`) to terminate and reap it at run end;
-      spawn nothing themselves.
     - `ui/cli/scriptcheck.py`: ruff/ty with fixed argv to statically read
       generated scripts, which only ever execute via `run_in_jail`.
     - `ui/cli/system_cmds.py`: `cp`/`rm`/`apparmor_parser` via sudo with fixed
@@ -328,12 +324,13 @@ profile. No silent downgrade: a request the host can't meet is refused, and
       root's, and chowns state-dir writes back. It doesn't drop privileges
       in-process: the jail, not the uid, is the boundary.
 
-### 6. Curator subprocess + state location
+### 6. Curator + state location
 
-- **A separate `graph-curator` subprocess owns the task graph.**
-    - The main process talks to it over a unix socket and never writes graph data,
-      so a worker/planner bug can't corrupt the append-only `graph.jsonl` (the
-      source of truth).
+- **An in-process `GraphCurator` owns the task graph.**
+    - It validates every mutation against a pydantic schema before writing, and
+      holds a per-mutation flock on the run dir. A write-path fault after the
+      in-memory update reloads from disk before surfacing, so a later read never
+      observes a node that was never persisted.
 - **The run directory is safe because of its location, not any single writer.**
     - Per-repo state lives at `$XDG_STATE_HOME/agent6/<repo-id>/` (override with
       `[agent6].state_dir`), outside the cwd jailed commands run on.
@@ -371,8 +368,8 @@ each spawn subordinate work. Nothing here loosens the sandbox:
 ### 7. No agent-owned network surface (except opt-in `agent6 web`)
 
 - **The loop opens no accept-side socket.**
-    - Only outbound HTTPS to the provider and a per-run `0600` unix socket to its
-      curator.
+    - Only outbound HTTPS to the provider; the task graph is an in-process
+      curator, no socket.
 - **`agent6 web` is the one accept-side socket, and only when you start it.**
     - Loopback (`127.0.0.1`) by default, no app auth (run behind `tailscale
       serve`; the tailnet identity is the access control, see [the web UI](web.md)).

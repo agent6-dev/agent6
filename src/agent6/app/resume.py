@@ -9,10 +9,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
-import shutil
-import subprocess
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any, Literal
 
@@ -112,7 +109,7 @@ from agent6.git_ops import (
 from agent6.git_ops import (
     status as git_status,
 )
-from agent6.graph.client import CuratorClientError, GraphClient, spawn_curator
+from agent6.graph.curator import GraphCurator
 from agent6.paths import (
     chown_to_real_user,
 )
@@ -544,130 +541,107 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 cfg = cfg.with_inferred_verify(snap_verify)
                 reporter.err(f"[agent6] reusing this run's verify command: {' '.join(snap_verify)}")
 
-        sock_path = layout.run_dir / "curator.sock"  # rebound to the /tmp socket inside the try
-
         steer_state = frontend.make_steer_state(events, layout.run_dir)
 
         result = None
         interrupted = False
         dispatcher: ToolDispatcher | None = None
-        # Spawned inside the try so the finally below always tears them down even
-        # if a spawn itself fails (otherwise curator/MCP procs + the /tmp socket
-        # dir leak past the only cleanup path).
-        curator_proc: subprocess.Popen[bytes] | None = None
-        sock_tmpdir: Path | None = None
+        # Spawned inside the try so the finally below tears it down even if a
+        # spawn (MCP) fails.
         mcp_manager = None
         try:
-            sock_tmpdir = Path(tempfile.mkdtemp(prefix="agent6-sock-"))
-            sock_path = sock_tmpdir / "curator.sock"
-            sock_link = layout.run_dir / "curator.sock"
-            with contextlib.suppress(FileNotFoundError):
-                sock_link.unlink()
-            sock_link.symlink_to(sock_path)
-            curator_proc = spawn_curator(state_dir, run_id, sock_path, subdir=layout.subdir)
             reporter.err(f"[agent6] resume run id: {run_id}")
 
             mcp_manager = _start_mcp_manager_if_enabled(cfg, reporter=reporter)
 
-            with GraphClient(sock_path, alive=lambda: curator_proc.poll() is None) as graph_client:
-                dispatcher = ToolDispatcher(
-                    root=cwd,
-                    config=cfg,
-                    sandbox_profile=selected_profile,
-                    approver=frontend.build_approver(layout.run_dir, events),
-                    questioner=frontend.build_questioner(layout.run_dir, events),
-                    events=events,
-                    graph_client=graph_client,
-                    run_root_node_id=None,
-                    mcp_manager=mcp_manager,
-                    mode=mode,
-                    state_dir=state_dir,
-                )
-                loop_log = frontend.loop_logger(mode)
-                compact_drop, compact_summarise = resolve_compaction_thresholds(
-                    cfg, rm_worker, log=loop_log
-                )
-                # Same pin the original run applied: the frozen system prompt
-                # already carries its decompose block; this keeps the loop's
-                # banner/hint reads consistent with it.
-                cfg = resolve_decompose(cfg, rm_worker, log=loop_log)
-                wf = Workflow(
-                    root=cwd,
-                    config=cfg,
-                    provider=provider,
-                    dispatcher=dispatcher,
-                    logger=loop_log,
-                    events=events,
-                    graph_client=graph_client,
-                    steer_requested=steer_state.requested,
-                    steer_clear=steer_state.clear,
-                    steer_prompt=steer_state.prompt,
-                    # "Compact now" from a front-end: the same file-bridge
-                    # pattern as steer, honored at the next pre-call boundary.
-                    compact_requested=lambda: compact_request_pending(layout.run_dir),
-                    compact_clear=lambda: clear_compact_request(layout.run_dir),
-                    stop_requested=lambda: stop_request_pending(layout.run_dir),
-                    stop_clear=lambda: clear_stop_request(layout.run_dir),
-                    should_abort=steer_state.abort_pending,
-                    should_interrupt=steer_state.interrupt,
-                    # `/parallel` steer dispatch: the coordinator's group spawner
-                    # (None in plan resume, and inside a lane -- depth 1).
-                    lane_spawner=frontend.build_coordinator_spawner(
-                        cfg,
-                        cwd,
-                        state_dir,
-                        mode,
-                        run_id,
-                        budget_overrides.max_usd if budget_overrides is not None else None,
-                        sandbox_overrides.auto_approve if sandbox_overrides is not None else False,
-                    ),
-                    budget=budget,
-                    resume_state_path=snapshot_path,
-                    mode=mode,
-                    plan_output_path=(layout.run_dir / "plan.md" if mode == "plan" else None),
-                    critic_provider=critic_provider,
-                    critic_mode=cfg.review.trigger,
-                    critic_period=cfg.review.period,
-                    review_seats=review_seats,
-                    review_decision=cfg.review.decision,
-                    review_quorum=cfg.review.quorum,
-                    review_max_total_rejections=cfg.review.max_total_rejections,
-                    review_budget_fraction=cfg.review.budget_fraction,
-                    review_concurrency=cfg.review.concurrency,
-                    base_sha=resume_base_sha,
-                    temperature=_role_temperature(cfg, "worker"),
-                    critic_temperature=_role_temperature(cfg, "reviewer"),
-                    summariser_provider=summariser_provider,
-                    compact_drop_at_chars=compact_drop,
-                    compact_summarise_at_chars=compact_summarise,
-                    context_summary_max_tokens=cfg.context.summary_max_tokens,
-                    compact_elision_gists=cfg.context.elision_gists,
-                )
-                try:
-                    with frontend.tui_session(layout.run_dir, tui_enabled):
-                        result = wf.resume()
-                except ResumeError as exc:
-                    reporter.err(f"ERROR: {exc}")
-                    return 1
-                except KeyboardInterrupt:
-                    interrupted = True
-                    reporter.err("\n[agent6] resume interrupted")
-                    events.emit("run.end", reason="interrupted", all_passed=False)
-        except CuratorClientError as exc:
-            reporter.err(f"ERROR: curator failed to start: {exc}")
-            return 1
+            # The DAG curator runs in-process: the run's worker.lock already
+            # makes this the sole writer, so no subprocess or socket is needed.
+            graph_client = GraphCurator(layout)
+            dispatcher = ToolDispatcher(
+                root=cwd,
+                config=cfg,
+                sandbox_profile=selected_profile,
+                approver=frontend.build_approver(layout.run_dir, events),
+                questioner=frontend.build_questioner(layout.run_dir, events),
+                events=events,
+                graph_client=graph_client,
+                run_root_node_id=None,
+                mcp_manager=mcp_manager,
+                mode=mode,
+                state_dir=state_dir,
+            )
+            loop_log = frontend.loop_logger(mode)
+            compact_drop, compact_summarise = resolve_compaction_thresholds(
+                cfg, rm_worker, log=loop_log
+            )
+            # Same pin the original run applied: the frozen system prompt
+            # already carries its decompose block; this keeps the loop's
+            # banner/hint reads consistent with it.
+            cfg = resolve_decompose(cfg, rm_worker, log=loop_log)
+            wf = Workflow(
+                root=cwd,
+                config=cfg,
+                provider=provider,
+                dispatcher=dispatcher,
+                logger=loop_log,
+                events=events,
+                graph_client=graph_client,
+                steer_requested=steer_state.requested,
+                steer_clear=steer_state.clear,
+                steer_prompt=steer_state.prompt,
+                # "Compact now" from a front-end: the same file-bridge
+                # pattern as steer, honored at the next pre-call boundary.
+                compact_requested=lambda: compact_request_pending(layout.run_dir),
+                compact_clear=lambda: clear_compact_request(layout.run_dir),
+                stop_requested=lambda: stop_request_pending(layout.run_dir),
+                stop_clear=lambda: clear_stop_request(layout.run_dir),
+                should_abort=steer_state.abort_pending,
+                should_interrupt=steer_state.interrupt,
+                # `/parallel` steer dispatch: the coordinator's group spawner
+                # (None in plan resume, and inside a lane -- depth 1).
+                lane_spawner=frontend.build_coordinator_spawner(
+                    cfg,
+                    cwd,
+                    state_dir,
+                    mode,
+                    run_id,
+                    budget_overrides.max_usd if budget_overrides is not None else None,
+                    sandbox_overrides.auto_approve if sandbox_overrides is not None else False,
+                ),
+                budget=budget,
+                resume_state_path=snapshot_path,
+                mode=mode,
+                plan_output_path=(layout.run_dir / "plan.md" if mode == "plan" else None),
+                critic_provider=critic_provider,
+                critic_mode=cfg.review.trigger,
+                critic_period=cfg.review.period,
+                review_seats=review_seats,
+                review_decision=cfg.review.decision,
+                review_quorum=cfg.review.quorum,
+                review_max_total_rejections=cfg.review.max_total_rejections,
+                review_budget_fraction=cfg.review.budget_fraction,
+                review_concurrency=cfg.review.concurrency,
+                base_sha=resume_base_sha,
+                temperature=_role_temperature(cfg, "worker"),
+                critic_temperature=_role_temperature(cfg, "reviewer"),
+                summariser_provider=summariser_provider,
+                compact_drop_at_chars=compact_drop,
+                compact_summarise_at_chars=compact_summarise,
+                context_summary_max_tokens=cfg.context.summary_max_tokens,
+                compact_elision_gists=cfg.context.elision_gists,
+            )
+            try:
+                with frontend.tui_session(layout.run_dir, tui_enabled):
+                    result = wf.resume()
+            except ResumeError as exc:
+                reporter.err(f"ERROR: {exc}")
+                return 1
+            except KeyboardInterrupt:
+                interrupted = True
+                reporter.err("\n[agent6] resume interrupted")
+                events.emit("run.end", reason="interrupted", all_passed=False)
         finally:
-            if curator_proc is not None:
-                curator_proc.terminate()
-                try:
-                    curator_proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    curator_proc.kill()
             steer_state.restore()
-            with contextlib.suppress(FileNotFoundError):
-                (layout.run_dir / "curator.sock").unlink()
-            if sock_tmpdir is not None:
-                shutil.rmtree(sock_tmpdir, ignore_errors=True)
             if dispatcher is not None:
                 dispatcher.close()
             if mcp_manager is not None:

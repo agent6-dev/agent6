@@ -2131,7 +2131,7 @@ def test_decompose_prompt_describes_nested_phases() -> None:
 
 
 class _FakeCurator:
-    """In-memory GraphClient stand-in: get_state / set_cursor / update_status."""
+    """In-memory GraphCurator stand-in: get_state / set_cursor / update_status."""
 
     def __init__(self, nodes: dict[str, dict[str, Any]], cursor: str | None = None) -> None:
         self._nodes = nodes

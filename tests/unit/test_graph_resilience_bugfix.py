@@ -3,16 +3,16 @@
 """Regression tests for graph curator resilience bugfixes.
 
 Covers:
-  #6  a non-CuratorError exception in a READ op must NOT crash the curator
-      subprocess -- _serve_connection degrades it to a rejected request.
   #16 load_graph must skip-with-warning on a single corrupt node file instead
       of aborting the whole graph.
   #17 add_subtask must write the child node before the parent->child link so a
       crash in between can't leave a dangling child reference.
 
-  graph-resilience #1: a non-OSError write-path fault in a MUTATING op (which
-      runs AFTER self._nodes is updated in memory) must fail-safe (die) like the
-      OSError case, not stay alive with in-memory state ahead of disk.
+  in-process fail-safe: a write-path fault in a MUTATING op (which runs AFTER
+      self._nodes is updated in memory) must re-raise AND reload from disk (the
+      source of truth), so a later read never observes a node that was never
+      persisted. This replaced the old subprocess die->reload fail-safe; a clean
+      CuratorError validation reject propagates without a reload.
   graph-resilience #2: re-rooting an orphan node changes its canonical .md path;
       the stale nested file must be removed so load_graph never sees two .md
       files for one id.
@@ -20,18 +20,13 @@ Covers:
 
 from __future__ import annotations
 
-import contextlib
-import socket
-import threading
 from pathlib import Path
 
 import pytest
 
 from agent6.graph import storage
-from agent6.graph.curator import GraphCurator
-from agent6.graph.ipc import recv_message, send_message
-from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft
-from agent6.graph.server import _serve_connection  # pyright: ignore[reportPrivateUsage]
+from agent6.graph.curator import CuratorError, GraphCurator
+from agent6.graph.models import AddSubtaskIntent, TaskNode, TaskNodeDraft, UpdateStatusIntent
 from agent6.graph.storage import load_graph, node_md_path
 from agent6.runs.layout import RunLayout
 
@@ -44,89 +39,72 @@ def _draft(title: str = "do thing") -> TaskNodeDraft:
     return TaskNodeDraft(title=title, depends_on=(), created_by="planner")
 
 
-# ---- #6: internal fault must not kill the connection ----------------------
+# ---- in-process disk-fault fail-safe (replaces the subprocess die->reload) ---
 
 
-def test_serve_connection_survives_non_curator_error(
+def test_mutation_write_fault_reraises_and_reloads(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A non-CuratorError/ValidationError fault on a READ op (which cannot leave
-    # in-memory state ahead of disk) must be caught and reported in-band, leaving
-    # the connection alive for the next request -- not propagate out and kill the
-    # subprocess. (A fault on a MUTATING op instead re-raises to fail-safe-reload;
-    # see test_mutating_op_write_fault_reraises.)
-    import agent6.graph.server as server_mod
+    # A mutation updates self._nodes IN MEMORY before write_node(). An OSError on
+    # the write path (ENOSPC/EROFS) leaves in-memory state ahead of disk. The
+    # curator must re-raise the fault AND reload from disk, so the phantom status
+    # change is gone from a later read -- not surfaced as if it had persisted.
+    layout = _layout(tmp_path)
+    c = GraphCurator(layout)
+    node = c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft("task")))
+    assert c.get(node.id).status == "pending"
 
-    curator = GraphCurator(_layout(tmp_path))
+    def boom(*_a: object, **_k: object) -> None:
+        raise OSError("ENOSPC during status write")
 
+    monkeypatch.setattr("agent6.graph.curator.write_node", boom)
+    with pytest.raises(OSError, match="ENOSPC"):
+        c.update_status(UpdateStatusIntent(id=node.id, new_status="in_progress"))
+    monkeypatch.undo()
+
+    # Reloaded from disk: the phantom "in_progress" never persisted, so both the
+    # in-memory graph and a fresh load see the pre-mutation "pending".
+    assert c.get(node.id).status == "pending"
+    assert load_graph(layout)[node.id].status == "pending"
+
+
+def test_mutation_non_oserror_fault_also_reloads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Not just OSError: any non-CuratorError write-path fault (e.g. a
+    # serialization error surfacing from write_node) fails-safe the same way.
+    layout = _layout(tmp_path)
+    c = GraphCurator(layout)
+    node = c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft("task")))
+
+    def boom(*_a: object, **_k: object) -> None:
+        raise ValueError("serialization glitch")
+
+    monkeypatch.setattr("agent6.graph.curator.write_node", boom)
+    with pytest.raises(ValueError, match="serialization glitch"):
+        c.update_status(UpdateStatusIntent(id=node.id, new_status="passed"))
+    monkeypatch.undo()
+    assert c.get(node.id).status == "pending"
+
+
+def test_curator_error_reject_does_not_reload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A CuratorError is a pre-mutation validation reject (nothing applied): it
+    # propagates untouched, WITHOUT the disk reload the fault path does.
+    layout = _layout(tmp_path)
+    c = GraphCurator(layout)
     calls = {"n": 0}
+    real = storage.load_graph
 
-    def boom(_curator: object, _intent: dict[str, object]) -> object:
+    def counting_load(lyt: RunLayout) -> dict[str, TaskNode]:
         calls["n"] += 1
-        if calls["n"] == 1:
-            raise KeyError("transient-read-glitch")  # not a CuratorError
-        return {"ok": "second-request-handled"}
+        return real(lyt)
 
-    monkeypatch.setattr(server_mod, "_handle_one", boom)
-
-    cli, srv = socket.socketpair()
-    try:
-        t = threading.Thread(target=_serve_connection, args=(curator, srv))
-        t.start()
-
-        # First request (a read) triggers the internal fault.
-        send_message(cli, {"id": 1, "intent": {"op": "get_state"}})
-        resp1 = recv_message(cli)
-        assert resp1 is not None
-        assert resp1["id"] == 1
-        assert resp1["ok"] is False
-        assert "curator internal error" in resp1["error"]
-        assert "transient-read-glitch" in resp1["error"]
-
-        # The connection must still be alive: a second request gets served.
-        send_message(cli, {"id": 2, "intent": {"op": "get_state"}})
-        resp2 = recv_message(cli)
-        assert resp2 is not None
-        assert resp2["id"] == 2
-        assert resp2["ok"] is True
-
-        cli.close()
-        t.join(timeout=5)
-        assert not t.is_alive()
-    finally:
-        srv.close()
-        with contextlib.suppress(OSError):
-            cli.close()
-
-
-def test_mutating_op_write_fault_reraises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    # graph-resilience #1. A mutating handler updates self._nodes IN MEMORY
-    # before write_node(). If write_node raises a NON-OSError (e.g. a
-    # serialization TypeError, or an _ancestor_chain cycle ValueError) AFTER the
-    # in-memory write, the in-memory graph is ahead of disk. The broad except
-    # used to keep the subprocess alive in that skewed state -- the client could
-    # then observe a node that was never persisted (a phantom that vanishes on
-    # restart). With the fix a mutating-op fault re-raises (the subprocess dies
-    # so the next spawn reloads consistent on-disk state), matching the OSError
-    # fail-safe -- it must NOT silently stay alive and reply ok=False.
-    import agent6.graph.server as server_mod
-
-    curator = GraphCurator(_layout(tmp_path))
-
-    def boom(_curator: object, _intent: dict[str, object]) -> object:
-        # Models a non-OSError surfacing from the write path after the in-memory
-        # self._nodes mutation already happened.
-        raise ValueError("cycle in parent chain at <id>")
-
-    monkeypatch.setattr(server_mod, "_handle_one", boom)
-
-    cli, srv = socket.socketpair()
-    with cli, srv:
-        # A real mutating op (add_subtask): the fault must propagate (die), not
-        # be swallowed as an in-band "curator internal error" reply.
-        send_message(cli, {"id": 1, "intent": {"op": "add_subtask"}})
-        with pytest.raises(ValueError, match="cycle in parent chain"):
-            _serve_connection(curator, srv)
+    monkeypatch.setattr("agent6.graph.curator.load_graph", counting_load)
+    with pytest.raises(CuratorError, match="unknown node"):
+        c.update_status(UpdateStatusIntent(id="01" + "Z" * 24, new_status="passed"))
+    assert calls["n"] == 0  # no reload on a clean validation reject
 
 
 # ---- #16: corrupt node file must not brick the whole graph ----------------
@@ -278,29 +256,6 @@ def test_ancestor_chain_terminates_on_missing_parent(tmp_path: Path) -> None:
     nodes = dict(c.nodes())
     del nodes[parent.id]  # simulate the parent gone
     assert _ancestor_chain(nodes, child.id) == [child.id]  # terminates, no KeyError
-
-
-# ---- fix-review MEDIUM: a disk fault mid-mutation must NOT be masked ---------
-
-
-def test_disk_fault_during_mutation_reraises(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # A disk OSError inside a mutation, surfaced through _serve_connection, must
-    # propagate (crash -> respawn reloads consistent on-disk state) rather than
-    # be swallowed as "curator internal error" with in-memory state ahead of disk.
-    curator = GraphCurator(_layout(tmp_path))
-
-    def disk_full(_curator: object, _intent: dict[str, object]) -> object:
-        raise OSError("ENOSPC: simulated disk fault during mutation")
-
-    monkeypatch.setattr("agent6.graph.server._handle_one", disk_full)
-
-    a, b = socket.socketpair()
-    with a, b:
-        send_message(a, {"id": 1, "intent": {"kind": "get_state"}})
-        with pytest.raises(OSError, match="ENOSPC"):
-            _serve_connection(curator, b)
 
 
 # ---- graph-resilience #2: re-rooted node must not leave a stale duplicate ----

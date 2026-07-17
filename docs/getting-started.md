@@ -81,7 +81,7 @@ copy back to a turn and continues it as a new run; the original is never changed
 ```sh
 agent6 plan "refactor the config loader"      # read-only plan; run with --from-plan
 agent6 review --base origin/main --head HEAD  # read-only diff review
-agent6 ask "how does the curator subprocess work?"
+agent6 ask "how does the task-graph curator work?"
 ```
 
 `agent6 review --reviewers 3 --personas security,correctness,tests` runs a panel of

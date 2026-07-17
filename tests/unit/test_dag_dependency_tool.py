@@ -16,7 +16,7 @@ from typing import cast
 import pytest
 
 from agent6.config import Config, load_config
-from agent6.graph.client import CuratorClientError, GraphClient
+from agent6.graph.curator import CuratorError, GraphCurator
 from agent6.graph.models import AddDependencyIntent, TaskNode
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 from agent6.tools.schema import LOOP_EXTRA_TOOLS, PLAN_EXTRA_TOOLS, DagAddDependencyInput
@@ -62,7 +62,7 @@ def _node(node_id: str, depends_on: tuple[str, ...]) -> TaskNode:
 
 
 class _StubGraph:
-    """Duck-typed GraphClient standing in for the curator connection."""
+    """Duck-typed GraphCurator standing in for the in-process curator."""
 
     def __init__(self, *, fail: str = "") -> None:
         self.fail = fail
@@ -71,7 +71,7 @@ class _StubGraph:
     def add_dependency(self, intent: AddDependencyIntent) -> TaskNode:
         self.seen.append(intent)
         if self.fail:
-            raise CuratorClientError(self.fail)
+            raise CuratorError(self.fail)
         return _node(intent.id, (intent.depends_on,))
 
 
@@ -91,7 +91,7 @@ def test_add_dependency_in_run_and_plan_tool_lists(tmp_path: Path) -> None:
 def test_dispatch_add_dependency_roundtrip(tmp_path: Path) -> None:
     stub = _StubGraph()
     d = ToolDispatcher(
-        root=tmp_path, config=_config(tmp_path), graph_client=cast(GraphClient, stub)
+        root=tmp_path, config=_config(tmp_path), graph_client=cast(GraphCurator, stub)
     )
     out = d.dispatch("add_dependency", {"id": _A, "depends_on": _B})
     assert out == {"id": _A, "title": "t", "depends_on": [_B]}
@@ -107,7 +107,7 @@ def test_dispatch_add_dependency_requires_curator(tmp_path: Path) -> None:
 def test_dispatch_add_dependency_surfaces_curator_rejection(tmp_path: Path) -> None:
     stub = _StubGraph(fail="would introduce cycle")
     d = ToolDispatcher(
-        root=tmp_path, config=_config(tmp_path), graph_client=cast(GraphClient, stub)
+        root=tmp_path, config=_config(tmp_path), graph_client=cast(GraphCurator, stub)
     )
     with pytest.raises(ToolError, match="cycle"):
         d.dispatch("add_dependency", {"id": _A, "depends_on": _B})
@@ -116,7 +116,7 @@ def test_dispatch_add_dependency_surfaces_curator_rejection(tmp_path: Path) -> N
 def test_dispatch_add_dependency_validates_ids(tmp_path: Path) -> None:
     stub = _StubGraph()
     d = ToolDispatcher(
-        root=tmp_path, config=_config(tmp_path), graph_client=cast(GraphClient, stub)
+        root=tmp_path, config=_config(tmp_path), graph_client=cast(GraphCurator, stub)
     )
     with pytest.raises(ToolError):
         d.dispatch("add_dependency", {"id": "short", "depends_on": _B})

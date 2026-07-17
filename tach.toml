@@ -29,7 +29,7 @@ depends_on = [
   "agent6.directive",
   "agent6.events",
   "agent6.git_ops",
-  "agent6.graph.client",
+  "agent6.graph.curator",
   "agent6.graph.storage",
   "agent6.models.cache",
   "agent6.models.pricing",
@@ -106,7 +106,7 @@ depends_on = [
   "agent6.providers",
   "agent6.budget",  # loop workflow needs BudgetExceeded
   "agent6.portable",
-  "agent6.graph.client",
+  "agent6.graph.curator",
   "agent6.graph.models",
   "agent6.memory",  # cross-run memories injected into the system prompt
   "agent6.skills",  # operator-installed skills indexed in the system prompt
@@ -196,11 +196,11 @@ depends_on = [ "agent6.types"]
 
 [[modules]]
 path = "agent6.tools"
-# Dispatch.py drives the curator over a GraphClient (graph.client) using the
+# Dispatch.py drives the in-process GraphCurator (graph.curator) using the
 # graph.models intent types, for the DAG-as-tool handlers (add_task /
 # update_task / set_cursor / list_tasks), and the memory store for the
 # cross-run memory handlers (add_memory / invalidate_memory).
-depends_on = ["agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.config", "agent6.events", "agent6.graph.client", "agent6.graph.models", "agent6.memory", "agent6.skills", "agent6.paths"]
+depends_on = ["agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.config", "agent6.events", "agent6.graph.curator", "agent6.graph.models", "agent6.memory", "agent6.skills", "agent6.paths"]
 
 [[modules]]
 path = "agent6.tools.schema"
@@ -347,18 +347,6 @@ depends_on = ["agent6.graph.models", "agent6.portable", "agent6.runs.layout"]
 [[modules]]
 path = "agent6.graph.curator"
 depends_on = ["agent6.graph.models", "agent6.graph.storage", "agent6.graph.ulid"]
-
-[[modules]]
-path = "agent6.graph.ipc"
-depends_on = []
-
-[[modules]]
-path = "agent6.graph.client"
-depends_on = ["agent6.graph.ipc", "agent6.graph.models"]
-
-[[modules]]
-path = "agent6.graph.server"
-depends_on = ["agent6.graph.curator", "agent6.graph.ipc", "agent6.graph.models", "agent6.runs.layout"]
 
 [[modules]]
 path = "agent6.machine"

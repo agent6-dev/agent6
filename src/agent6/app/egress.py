@@ -367,8 +367,8 @@ def maybe_apply_agent_landlock(
         )
         if p.exists()
     )
-    # The agent process (and the curator subprocess it re-execs) must be able to
-    # READ its own Python install for lazy imports. A `uv tool` install lives
+    # The agent process must be able to READ its own Python install for lazy
+    # imports. A `uv tool` install lives
     # under $HOME (already covered), but a venv outside $HOME, a dev checkout,
     # /opt, a system venv, would otherwise fail when agent6 is run from an
     # unrelated cwd (PermissionError importing e.g. a pydantic submodule).
@@ -381,7 +381,7 @@ def maybe_apply_agent_landlock(
             # The directory that CONTAINS the agent6 package (the sys.path entry
             # the import finder scandir()s). For an editable/dev install this is
             # the source root (e.g. <repo>/src), outside the venv, which the
-            # curator subprocess (-m agent6.graph.server) must read to import.
+            # agent process must be able to read for its lazy imports.
             Path(__file__).resolve().parents[2],
         }
         if p.exists()
