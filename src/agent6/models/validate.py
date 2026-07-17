@@ -74,17 +74,34 @@ class ModelValidation:
         return bool(self.unknown) and not self.can_validate
 
 
+def _close_ids(typo: str, pool: list[str], bare_to_full: dict[str, list[str]]) -> tuple[str, ...]:
+    """Closest known ids to *typo*: matched against the full provider-prefixed ids
+    AND against the un-prefixed model segment (the part after the last `/`). The
+    bare match catches a short nickname near-miss (`glm`, `kimi-typo`) that scores
+    below difflib's cutoff against a full id, because the provider prefix dominates
+    the ratio (`glm` vs `z-ai/glm-4.6`). Bare hits map back to full ids (what the
+    operator must actually pass); full-id hits keep priority, capped overall."""
+    close = list(difflib.get_close_matches(typo, pool, n=_MAX_SUGGESTIONS))
+    bare_typo = typo.rsplit("/", 1)[-1]
+    for bare in difflib.get_close_matches(bare_typo, sorted(bare_to_full), n=_MAX_SUGGESTIONS):
+        close.extend(full for full in bare_to_full[bare] if full not in close)
+    return tuple(close[:_MAX_SUGGESTIONS])
+
+
 def validate_spec_models(models: list[str | None], cfg: Config) -> ModelValidation:
     """Check per-lane *models* (a `parse_spec` result; `None` = the worker model,
     skipped) against `known_models`. Cache-only, never raises."""
     known = known_models(cfg)
     pool = sorted(known)
+    bare_to_full: dict[str, list[str]] = {}
+    for full in pool:
+        bare_to_full.setdefault(full.rsplit("/", 1)[-1], []).append(full)
     unknown: list[str] = []
     suggestions: dict[str, tuple[str, ...]] = {}
     for model in models:
         if model is None or model in known or model in suggestions:
             continue
-        suggestions[model] = tuple(difflib.get_close_matches(model, pool, n=_MAX_SUGGESTIONS))
+        suggestions[model] = _close_ids(model, pool, bare_to_full)
         unknown.append(model)
     worker = cfg.models.worker
     can_validate = worker is not None and bool(cached_models(worker.provider))

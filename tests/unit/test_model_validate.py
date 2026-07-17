@@ -60,6 +60,33 @@ def test_unknown_with_cache_refuses_with_suggestions(cache_home: Path) -> None:
     assert "backtick" in msg
 
 
+def test_bare_nickname_typo_suggests_closest_bare_model(cache_home: Path) -> None:
+    # The natural typo shape is a short nickname (`glm`, `kimi`), not a full
+    # provider-prefixed id. Matching only the full ids scored these below difflib's
+    # cutoff (the `z-ai/` prefix dominates the ratio), so the did-you-mean was dead.
+    # Now the un-prefixed segment is matched too, and the suggestion maps back to
+    # the full, runnable id.
+    _write_cache(cache_home, "o", ["moonshotai/kimi-k2.6", "z-ai/glm-4.6", "z-ai/glm-4.7"])
+    v = validate.validate_spec_models(["kimi", "glm"], _cfg("moonshotai/kimi-k2.6"))
+    assert v.refused
+    assert v.unknown == ("kimi", "glm")
+    assert "moonshotai/kimi-k2.6" in v.suggestions["kimi"]
+    assert "z-ai/glm-4.6" in v.suggestions["glm"]
+    msg = validate.refusal_message(v, directive=True)
+    assert "closest: moonshotai/kimi-k2.6" in msg
+    assert "z-ai/glm-4.6" in msg
+
+
+def test_bare_nickname_match_stays_worker_scoped(cache_home: Path) -> None:
+    # A bare-nickname hit must still map only to WORKER-provider ids: a sibling
+    # provider's model is unrunnable in a lane, so it can never be suggested.
+    _write_cache(cache_home, "w", ["w/glm-4.6"])
+    _write_cache(cache_home, "s", ["s/glm-4.7"])
+    v = validate.validate_spec_models(["glm"], _two_provider_cfg())
+    assert v.refused
+    assert all(m.startswith("w/") for m in v.suggestions["glm"])
+
+
 def test_unknown_no_cache_warns_and_proceeds(cache_home: Path) -> None:
     # A role model exists but no on-disk cache: cannot validate, so warn.
     v = validate.validate_spec_models(["totally-made-up"], _cfg())
