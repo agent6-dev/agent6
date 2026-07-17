@@ -24,9 +24,8 @@ open-ended agent loop.
   browser UI (`agent6 web`, phone-friendly); persistent transcripts and a searchable
   run history
 - State machines (`agent6 machine`) for long-running automated tasks: LLM-drafted,
-  operator-reviewed, journaled, and replayable; a machine can wait indefinitely
-  for a human, be poked with a payload, steer/answer its agent states from any
-  front-end, and notify you when it needs attention
+  operator-reviewed, journaled, and replayable; they can pause for operator input,
+  accept events, be steered from any front-end, and notify you when they need attention
 - Skills: install standard SKILL.md packs (superpowers, caveman, any
   agentskills.io repo) with `agent6 skills install <url>`; they index into the
   system prompt, load on demand via a read-only tool, and fire as `/name`
