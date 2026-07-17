@@ -7,8 +7,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from agent6.app.machine import machine_spend
 from agent6.machine import AgentFact, StepEvent
-from agent6.ui.cli.machine_cmds import _machine_spend  # pyright: ignore[reportPrivateUsage]
 
 
 def _agent_step(seq: int, usd: float) -> StepEvent:
@@ -46,18 +46,18 @@ def test_spend_folds_the_running_state_when_alive(tmp_path: Path) -> None:
     # StepEvent is not written yet -- its live spend must be added.
     events = [_agent_step(0, 0.10)]
     _state_log(tmp_path, 1, "hunt", 0.059)  # in-flight, unbooked
-    usd, tin, tout, inflight = _machine_spend(events, tmp_path, alive=True)
-    assert abs(usd - 0.159) < 1e-9  # 0.10 booked + 0.059 live
+    spend, inflight = machine_spend(events, tmp_path, alive=True)
+    assert abs(spend.usd - 0.159) < 1e-9  # 0.10 booked + 0.059 live
     assert inflight == "hunt"
-    assert tin == 170 and tout == 80
+    assert spend.input_tokens == 170 and spend.output_tokens == 80
 
 
 def test_spend_ignores_the_state_log_when_not_alive(tmp_path: Path) -> None:
     # A dead/parked machine: do not fold a stale in-flight log (only booked steps).
     events = [_agent_step(0, 0.10)]
     _state_log(tmp_path, 1, "hunt", 0.059)
-    usd, _, _, inflight = _machine_spend(events, tmp_path, alive=False)
-    assert abs(usd - 0.10) < 1e-9 and inflight == ""
+    spend, inflight = machine_spend(events, tmp_path, alive=False)
+    assert abs(spend.usd - 0.10) < 1e-9 and inflight == ""
 
 
 def test_spend_does_not_double_count_a_booked_state(tmp_path: Path) -> None:
@@ -65,5 +65,5 @@ def test_spend_does_not_double_count_a_booked_state(tmp_path: Path) -> None:
     # its cost is already in the AgentFact, so it must NOT be added again.
     events = [_agent_step(0, 0.10)]
     _state_log(tmp_path, 0, "s0", 0.10)  # same seq as the booked step
-    usd, _, _, inflight = _machine_spend(events, tmp_path, alive=True)
-    assert abs(usd - 0.10) < 1e-9 and inflight == ""
+    spend, inflight = machine_spend(events, tmp_path, alive=True)
+    assert abs(spend.usd - 0.10) < 1e-9 and inflight == ""

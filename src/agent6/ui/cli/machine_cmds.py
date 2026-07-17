@@ -15,7 +15,7 @@ import sys
 import tempfile
 import time
 import tomllib
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
@@ -27,10 +27,13 @@ from agent6.app.egress import (
     warn_if_unsandboxed,
 )
 from agent6.app.machine import (
+    Spend,
     build_machine_notify_hook,
     hard_usd_preflight_error,
     machine_network_refusal,
     machine_protect_paths,
+    machine_spend,
+    read_budget_totals,
     validate_bundle,
 )
 from agent6.config import (
@@ -49,7 +52,6 @@ from agent6.machine import (
     SCRIPTS_PAYLOAD_KEY,
     TOML_PAYLOAD_KEY,
     AgentExecResult,
-    AgentFact,
     AgentRequest,
     AgentState,
     DryRunReport,
@@ -86,7 +88,6 @@ from agent6.viewmodel import (
     MachineWatchCursor,
     fold_machine,
 )
-from agent6.viewmodel.machine_state import newest_state_log
 
 
 def _fail(path: Path, problems: list[str], label: str = "") -> int:
@@ -216,29 +217,20 @@ def _build_machine_agent_runner(
     passes the draft log, so the subprocess writes a watchable event stream there.
     """
 
-    def salvage_spend(events_log: Path | None) -> tuple[float, int, int]:
-        """Best-effort spend recovery for a killed/timed-out agent subprocess:
-        its result.json never landed, but the state's own event log carries the
-        loop's running ``budget.update`` totals. Without this every timed-out
-        state books usd=0, so a 24/7 machine whose weak model times out often
-        burns real money against a $0 ledger and its budget guard never trips
-        (observed live: a 600s hunt state spent $0.059, journaled as $0)."""
-        if events_log is None or not events_log.is_file():
-            return 0.0, 0, 0
-        usd, tokens_in, tokens_out = 0.0, 0, 0
-        with contextlib.suppress(OSError):
-            for line in events_log.read_text(encoding="utf-8", errors="replace").splitlines():
-                try:
-                    e = json.loads(line)
-                except ValueError:
-                    continue
-                if e.get("type") == "budget.update":
-                    usd = float(e.get("usd_total", usd) or 0.0)
-                    tokens_in = int(e.get("input_total", tokens_in) or 0)
-                    tokens_out = int(e.get("output_total", tokens_out) or 0)
-        return usd, tokens_in, tokens_out
-
     def run_agent(request: AgentRequest, events_log: Path | None = None) -> AgentExecResult:
+        def salvaged(reason: str) -> AgentExecResult:
+            # No result.json (killed/timed-out/crashed): recover the loop's
+            # running budget.update totals from the state's own event log, else a
+            # timed-out state books $0 and the budget guard never trips.
+            spend = read_budget_totals(events_log) if events_log is not None else Spend()
+            return AgentExecResult(
+                reason=reason,
+                payload=None,
+                usd=spend.usd,
+                input_tokens=spend.input_tokens,
+                output_tokens=spend.output_tokens,
+            )
+
         payload = {
             "cwd": str(cwd),
             "root": str(cwd),
@@ -292,34 +284,13 @@ def _build_machine_agent_runner(
                 with contextlib.suppress(ProcessLookupError):
                     os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
                 proc.wait()
-                usd, tokens_in, tokens_out = salvage_spend(events_log)
-                return AgentExecResult(
-                    reason="timeout",
-                    payload=None,
-                    usd=usd,
-                    input_tokens=tokens_in,
-                    output_tokens=tokens_out,
-                )
+                return salvaged("timeout")
             if proc.returncode != 0 or not out_file.is_file():
-                usd, tokens_in, tokens_out = salvage_spend(events_log)
-                return AgentExecResult(
-                    reason="error",
-                    payload=None,
-                    usd=usd,
-                    input_tokens=tokens_in,
-                    output_tokens=tokens_out,
-                )
+                return salvaged("error")
             try:
                 out = json.loads(out_file.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
-                usd, tokens_in, tokens_out = salvage_spend(events_log)
-                return AgentExecResult(
-                    reason="error",
-                    payload=None,
-                    usd=usd,
-                    input_tokens=tokens_in,
-                    output_tokens=tokens_out,
-                )
+                return salvaged("error")
             result_payload = out.get("payload")
             return AgentExecResult(
                 reason=str(out.get("reason", "error")),
@@ -586,11 +557,11 @@ def _cmd_machine_run(  # noqa: PLR0911, PLR0912, PLR0915
             f" after {_plural(result.transitions, 'transition')} ({result.reason})"
         )
         return 0
-    usd, _, _, _ = _machine_spend(journal.read(), root, alive=False)
+    spend, _ = machine_spend(journal.read(), root, alive=False)
     print(
         f"{result.status.upper()}: {spec.machine} ended in {result.state!r}"
         f" after {_plural(result.transitions, 'transition')} ({result.reason})"
-        f" -- spent ${usd:.4f}"
+        f" -- spent ${spend.usd:.4f}"
     )
     return 0 if result.status == "ok" else 1
 
@@ -627,63 +598,6 @@ def _plural(n: int, singular: str, plural: str | None = None) -> str:
     return f"{n} {word}"
 
 
-def _state_dir_seq(dir_name: str) -> int | None:
-    """The transition seq encoded in a ``<seq>-<state>`` per-state log dir name."""
-    head = dir_name.split("-", 1)[0]
-    return int(head) if head.isdigit() else None
-
-
-def _read_state_log_totals(log_path: Path) -> tuple[float, int, int]:
-    """The latest running budget totals (usd, in-tok, out-tok) from an agent
-    state's per-state log; (0,0,0) if none. Mirrors salvage_spend, but for the
-    LIVE status of an in-flight state whose StepEvent is not written yet."""
-    usd, tin, tout = 0.0, 0, 0
-    with contextlib.suppress(OSError):
-        for line in log_path.read_text(encoding="utf-8", errors="replace").splitlines():
-            try:
-                e = json.loads(line)
-            except ValueError:
-                continue
-            if e.get("type") == "budget.update":
-                usd = float(e.get("usd_total", usd) or 0.0)
-                tin = int(e.get("input_total", tin) or 0)
-                tout = int(e.get("output_total", tout) or 0)
-    return usd, tin, tout
-
-
-def _machine_spend(
-    events: Sequence[object], root: Path, *, alive: bool
-) -> tuple[float, int, int, str]:
-    """Total (usd, in-tok, out-tok, in-flight-state) for a machine instance:
-    the sum of completed states' booked AgentFacts, PLUS the live spend of the
-    currently-running state. A state books its StepEvent only when it completes,
-    so a machine mid-agent-state otherwise reads $0/dead while burning money. The
-    running state's per-state log dir is numbered with the current transition
-    seq, which has no StepEvent yet, so a newest-log seq absent from the booked
-    seqs is unambiguously the in-flight state (no double-count); we fold it only
-    when the worker is alive so a crashed in-flight log is ignored."""
-    usd, tin, tout = 0.0, 0, 0
-    step_seqs: set[int] = set()
-    for event in events:
-        if isinstance(event, StepEvent):
-            step_seqs.add(event.seq)
-            if isinstance(event.fact, AgentFact):
-                usd += event.fact.usd
-                tin += event.fact.input_tokens
-                tout += event.fact.output_tokens
-    inflight_state = ""
-    newest = newest_state_log(root) if alive else None
-    if newest is not None:
-        seq = _state_dir_seq(newest.parent.name)
-        if seq is not None and seq not in step_seqs:
-            live_usd, live_in, live_out = _read_state_log_totals(newest)
-            usd += live_usd
-            tin += live_in
-            tout += live_out
-            inflight_state = newest.parent.name.split("-", 1)[-1]
-    return usd, tin, tout, inflight_state
-
-
 def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
     root = _machines_dir(Path.cwd()) / machine_id
     if not root.is_dir():
@@ -708,7 +622,7 @@ def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
         return 1
 
     alive = worker_is_alive(root)
-    usd_total, input_total, output_total, inflight_state = _machine_spend(events, root, alive=alive)
+    spend, inflight_state = machine_spend(events, root, alive=alive)
 
     print(f"machine: {spec.machine} (v{spec.version})")
     if alive:
@@ -719,7 +633,7 @@ def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
         print(f"  status: {result.status}")
     print(f"  state: {result.state!r}")
     print(f"  transitions: {result.transitions}")
-    print(f"  spend: ${usd_total:.4f} (in={input_total} tok, out={output_total} tok)")
+    print(f"  spend: ${spend.usd:.4f} (in={spend.input_tokens} tok, out={spend.output_tokens} tok)")
     if pending is not None:
         if pending.wake_epoch is not None:
             wake = _dt.datetime.fromtimestamp(pending.wake_epoch, tz=_dt.UTC).isoformat()
