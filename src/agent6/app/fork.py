@@ -45,6 +45,7 @@ from agent6.graph.storage import append_jsonl, list_checkpoint_turns
 from agent6.portable import atomic_write
 from agent6.runs.id import RunIdError, new_friendly_id, resolve_run_id, validate_explicit_run_id
 from agent6.runs.layout import RunLayout
+from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.viewmodel import newest_run_dir as _newest_dir
 from agent6.workflows._run_state import load_checkpoint
 
@@ -192,18 +193,21 @@ def create_fork(  # noqa: PLR0911
         reporter.err(f"ERROR: failed to load checkpoint {checkpoint_path}: {exc}")
         return "", 1
 
-    # Read the source manifest to carry base_sha / base_branch forward.
-    src_base_sha = ""
-    src_base_branch = ""
-    src_mode = "run"
+    # Read the source manifest to carry base_sha / base_branch / mode forward.
+    # `mode` is security-relevant: a missing/corrupt source manifest must NOT
+    # fall open to the more-privileged "run" (write) mode -- forking a plan run
+    # as a write run would hand it the mutating tools. A valid run always wrote
+    # a manifest, so anything else here is a damaged run dir; fail loud rather
+    # than silently escalating (same contract as resume).
     try:
-        sm = json.loads(src.manifest_path.read_text(encoding="utf-8"))
-        src_base_sha = str(sm.get("base_sha", "")) or ""
-        src_base_branch = str(sm.get("base_branch", "")) or ""
-        src_user_task = str(sm.get("user_task", "")) or ""
-        src_mode = str(sm.get("mode", "run")) or "run"
-    except (OSError, ValueError):
-        src_user_task = ""
+        sm = read_manifest(src.run_dir)
+    except ManifestError as exc:
+        reporter.err(f"ERROR: cannot read source run manifest {src.manifest_path}: {exc}")
+        return "", 2
+    src_base_sha = str(sm.get("base_sha", "")) or ""
+    src_base_branch = str(sm.get("base_branch", "")) or ""
+    src_user_task = str(sm.get("user_task", "")) or ""
+    src_mode = str(sm.get("mode", "run")) or "run"
 
     forked_from_sha = checkpoint.head_sha
     if not forked_from_sha:

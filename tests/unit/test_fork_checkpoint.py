@@ -217,6 +217,37 @@ def test_fork_preserves_source_run_mode(tmp_path: Path, monkeypatch: pytest.Monk
     assert json.loads(dst.manifest_path.read_text(encoding="utf-8"))["mode"] == "plan"
 
 
+def test_fork_fails_loud_on_a_bad_source_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A missing, corrupt-JSON, or non-object source manifest must refuse the
+    # fork (exit 2, no run dir, no branch), never fall open to the privileged
+    # default mode="run" -- `mode` gates write-tool access (same contract as
+    # resume's fail-loud manifest read).
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state_dir = _state_dir(repo)
+    src = _seed_source_run(state_dir, "src-AAAA11", head_sha=head, turns=(1,), mode="plan")
+
+    for bad in (None, "{not json", "[]"):  # missing / corrupt JSON / non-object
+        if bad is None:
+            src.manifest_path.unlink()
+        else:
+            src.manifest_path.write_text(bad, encoding="utf-8")
+        rc = _cmd_fork(None, "src", new_run_id="child-BBBB22", no_run=True)
+        assert rc == 2, f"manifest shape {bad!r} must refuse the fork"
+        assert not RunLayout(state_dir=state_dir, run_id="child-BBBB22").run_dir.exists()
+        branches = sp.run(
+            ["git", "branch", "--list", "agent6/child-BBBB22"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        assert branches == "", f"manifest shape {bad!r} must not cut a fork branch"
+
+
 def test_fork_cleans_up_run_dir_when_branch_cut_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
