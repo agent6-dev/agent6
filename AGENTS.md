@@ -218,9 +218,10 @@ version that still carries the point wins.
 - Stage named files only, never `git add -A`; never commit scratch notes,
   session artifacts, or generated output.
 - A release squashes only that churn, keeps clean commits as-is, and verifies
-  zero diff after; master only advances (fast-forward, never rewritten). A
-  squashed body preserves the decisions and what was tried and rejected;
-  durable design reasoning goes to docs.
+  zero diff after. Unpushed history, master included, may be reorganized; the
+  pushed-history rule above is the only hard line. A squashed body preserves
+  the decisions and what was tried and rejected; durable design reasoning
+  goes to docs.
 
 ### Verify command
 
