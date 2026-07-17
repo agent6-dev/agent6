@@ -89,7 +89,7 @@ Append-only journal, blackboard snapshots, and the single-writer lock for one ma
 
 - **Written by:** machine/{engine, journal}
 - **Read by:** machine/{__init__, dryrun}, viewmodel/{machine_state}
-- **Guarded by:** golden_journal.jsonl (3 test files exercise it)
+- **Guarded by:** golden_journal.jsonl (4 test files exercise it)
 
 ## TaskNode
 
