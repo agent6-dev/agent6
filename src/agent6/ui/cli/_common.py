@@ -20,6 +20,17 @@ from agent6.runs.id import RunIdError, list_run_ids
 from agent6.runs.layout import RunLayout
 
 
+def _sub(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+    name: str,
+    *,
+    help: str,
+) -> argparse.ArgumentParser:
+    """``add_parser`` with *help* mirrored as the description, so a leaf
+    ``--help`` opens with the same summary the parent's command list shows."""
+    return subparsers.add_parser(name, help=help, description=help)
+
+
 def _add_budget_flags(parser: argparse.ArgumentParser) -> None:
     """Add per-run budget override flags (override ``[budget]`` config)."""
     parser.add_argument(
