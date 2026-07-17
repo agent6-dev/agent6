@@ -49,3 +49,18 @@ def test_run_decompose_flag_defaults_off_and_parses() -> None:
     p = build_parser()
     assert p.parse_args(["run", "fix it"]).decompose is False
     assert p.parse_args(["run", "--decompose", "fix it"]).decompose is True
+
+
+def test_history_bare_query_defaults_to_search() -> None:
+    # `history "divide"` == `history search "divide"` (search is history's one
+    # obvious action), like `runs`->list and bare `ask`.
+    args = build_parser().parse_args(_inject_default_verb(["history", "divide"]))
+    assert args.history_command == "search" and args.query == "divide"
+
+
+def test_history_explicit_search_still_works() -> None:
+    args = build_parser().parse_args(_inject_default_verb(["history", "search", "divide"]))
+    assert args.history_command == "search" and args.query == "divide"
+    # A flag after the bare query is carried onto the injected verb too.
+    a2 = build_parser().parse_args(_inject_default_verb(["history", "--regex", "d.v"]))
+    assert a2.history_command == "search" and a2.query == "d.v" and a2.regex is True

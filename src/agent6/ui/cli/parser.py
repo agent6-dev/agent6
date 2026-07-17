@@ -22,10 +22,12 @@ from agent6.ui.cli.completers import _complete_run_ids
 # Commands with a default verb: `plan <task>` == `plan run <task>`, and
 # `ask <q>` == `ask query <q>`. _inject_default_verb rewrites argv so a bare
 # task isn't mistaken for a subcommand name. The explicit forms (`plan run`,
-# `ask query`) cover the rare task whose first word is a verb name.
+# `ask query`, `history search`) cover the rare query whose first word is a verb
+# name. Only commands with ONE obvious primary action get a default verb.
 _DEFAULT_VERBS: dict[str, tuple[str, frozenset[str]]] = {
     "plan": ("run", frozenset({"run", "show", "edit"})),
     "ask": ("query", frozenset({"query", "list"})),
+    "history": ("search", frozenset({"search"})),
 }
 
 
