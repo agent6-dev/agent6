@@ -18,6 +18,7 @@ site_dir: ../site
 exclude_docs: |
   mkdocs.yml
   .gitignore
+  gen_contracts.py
   screenshots/*.tape
   screenshots/*.sh
   screenshots/*.py
@@ -132,4 +133,5 @@ nav:
   - Configuration: config.md
   - Security: security.md
   - Architecture: architecture.md
+  - Data contracts: data-contracts.md
   - State machines: state-machines.md

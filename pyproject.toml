@@ -121,6 +121,8 @@ ignore = [
 "docs/screenshots/keystroke_overlay.py" = ["PLR0912", "PLR1730"]
 # web_demo.py embeds a block of cursor/animation JS as a string; line length is moot there.
 "docs/screenshots/web_demo.py" = ["E501"]
+# gen_contracts.py embeds the artifact's CSS/SVG/HTML as strings; line length is moot there.
+"docs/gen_contracts.py" = ["E501"]
 
 [tool.pyright]
 include = ["src", "tests"]

@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Typed tool-handler results.
-
-Every handler returns one of these frozen values instead of a bare dict. Each
-result OWNS its two representations:
+"""Typed tool-handler results: every handler returns one of these frozen values
+instead of a bare dict, each owning its two representations -- the exact
+model-facing ``to_wire()`` dict and the one-line human ``summary()``.
 
 - ``to_wire()`` -- the exact dict the loop JSON-dumps into the model's
   tool_result. This is frozen LLM I/O: keys, key ORDER (dicts preserve
@@ -26,6 +25,9 @@ from typing import Any
 
 
 class ToolResult(abc.ABC):
+    """One tool handler's typed result: it owns the model-facing ``to_wire()``
+    dict and its one-line ``summary()``."""
+
     __slots__ = ()
 
     @abc.abstractmethod

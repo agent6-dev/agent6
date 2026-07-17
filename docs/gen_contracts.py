@@ -1,0 +1,506 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Eric Lesiuta
+"""Derive the data-contract reference from the source tree (dev tool, not CI).
+
+The five typed contracts that own facts which used to travel as ``dict[str,
+Any]`` each get a card: name, home module, kind, invariant, who writes it, who
+reads it, what pins guard it. The cards are DERIVED, not hand-curated -- the
+invariant prose is lifted from the module and class docstrings, the kind and
+type counts from the AST, the reader set from an import scan of ``src/agent6``,
+and the guarding tests from an import/golden scan of ``tests/``. Only two things
+are declared per contract (the ``CONTRACTS`` registry below): the module and the
+pins/writers, which are judgement calls a scan cannot make honestly.
+
+The gentle-pressure lever: a card that reads badly has a bad docstring. Fix the
+docstring (or the registry), never this script's output.
+
+Two outputs:
+
+- ``docs/data-contracts.md`` -- the mkdocs page, pinned byte-for-byte by
+  ``tests/unit/test_data_contracts_doc.py``. Regenerate with:
+      uv run python docs/gen_contracts.py
+- a self-contained HTML artifact (cards + a derived writer/reader graph) under
+  the gitignored ``docs/screenshots/out/``, which the operator publishes by hand.
+"""
+
+from __future__ import annotations
+
+import argparse
+import ast
+import html
+import re
+from collections import defaultdict
+from dataclasses import dataclass
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parent.parent
+_SRC = _ROOT / "src" / "agent6"
+_TESTS = _ROOT / "tests"
+_MD_OUT = _ROOT / "docs" / "data-contracts.md"
+_HTML_OUT = _ROOT / "docs" / "screenshots" / "out" / "data-contracts.html"
+REGEN_CMD = "uv run python docs/gen_contracts.py"
+
+
+# --- the registry: the only declared inputs (everything else is derived) -----
+
+
+@dataclass(frozen=True)
+class Contract:
+    """One data contract. ``module`` and ``pins``/``writers`` are the judgement
+    inputs a scan cannot honestly derive; ``title`` and ``primary`` name the card
+    and which classes' docstrings drive the invariant. Adding a sixth contract is
+    one more entry."""
+
+    title: str
+    module: str  # dotted, e.g. "agent6.runs.manifest"
+    primary: tuple[str, ...]  # contract class/alias name(s) whose docstrings are lifted
+    writers: tuple[str, ...]  # who CONSTRUCTS it (not import-derivable), src-relative posix
+    pins: tuple[
+        str, ...
+    ]  # byte/behaviour guards (test files and/or golden fixtures), repo-relative
+
+
+CONTRACTS: tuple[Contract, ...] = (
+    Contract(
+        title="Conversation",
+        module="agent6.workflows._conversation",
+        primary=("Conversation",),
+        writers=("workflows/loop.py",),
+        pins=("tests/unit/data/golden_loop_wire.json",),
+    ),
+    Contract(
+        title="RunManifest",
+        module="agent6.runs.manifest",
+        primary=("RunManifest",),
+        writers=("app/manifest.py",),
+        pins=("tests/unit/test_runs_manifest.py",),
+    ),
+    Contract(
+        title="RunSnapshot",
+        module="agent6.workflows._run_state",
+        primary=("RunSnapshot",),
+        writers=("workflows/loop.py",),
+        pins=("tests/unit/data/golden_loop_wire.json",),
+    ),
+    Contract(
+        title="ToolResult family",
+        module="agent6.tools.results",
+        primary=("ToolResult",),
+        writers=(
+            "tools/_control_tools.py",
+            "tools/_dag_tools.py",
+            "tools/_edit_diag.py",
+            "tools/_fs_tools.py",
+            "tools/_memory_tools.py",
+            "tools/_nav_tools.py",
+        ),
+        pins=("tests/unit/test_tool_result_wire.py", "tests/unit/test_tool_result_summaries.py"),
+    ),
+    Contract(
+        title="Event union",
+        module="agent6.viewmodel.events",
+        primary=("Event",),
+        writers=(
+            "events.py",
+        ),  # the raw EventSink writes dicts; viewmodel.events types the read side
+        pins=("tests/unit/data/golden_run_logs.jsonl",),
+    ),
+)
+
+
+# --- AST + prose helpers -----------------------------------------------------
+
+_ROLE = re.compile(r":[a-z]+:`([^`]+)`")  # RST role, e.g. :class:`RunManifest` -> RunManifest
+
+
+def _norm(text: str) -> str:
+    """A docstring fragment as one line of markdown-inline prose: collapse
+    whitespace, strip RST roles, fold ``code`` to `code`."""
+    return _ROLE.sub(r"\1", " ".join(text.split())).replace("``", "`")
+
+
+def _first_para(doc: str | None) -> str:
+    return _norm(doc.strip().split("\n\n", 1)[0]) if doc else ""
+
+
+def _first_sentence(doc: str | None) -> str:
+    para = _first_para(doc)
+    cut = para.find(". ")
+    return para[: cut + 1] if cut != -1 else para
+
+
+def _base_name(node: ast.expr) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return ""
+
+
+def _is_frozen_dataclass(node: ast.ClassDef) -> bool:
+    for dec in node.decorator_list:
+        if not (isinstance(dec, ast.Call) and _base_name(dec.func) == "dataclass"):
+            continue
+        return any(
+            kw.arg == "frozen" and isinstance(kw.value, ast.Constant) and kw.value.value is True
+            for kw in dec.keywords
+        )
+    return False
+
+
+def _flatten_bitor(node: ast.expr) -> list[str]:
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _flatten_bitor(node.left) + _flatten_bitor(node.right)
+    return [node.id] if isinstance(node, ast.Name) else []
+
+
+@dataclass(frozen=True)
+class ModuleFacts:
+    module_doc: str
+    class_docs: dict[str, str | None]
+    frozen: tuple[str, ...]
+    pydantic: tuple[str, ...]
+    subclasses: dict[str, tuple[str, ...]]  # base name -> its subclasses in this module
+    unions: dict[str, tuple[str, ...]]  # alias name -> union member names
+
+
+def _module_facts(dotted: str) -> ModuleFacts:
+    path = _SRC.joinpath(*dotted.split(".")[1:]).with_suffix(".py")
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    class_docs: dict[str, str | None] = {}
+    frozen: list[str] = []
+    pydantic: list[str] = []
+    subclasses: dict[str, list[str]] = defaultdict(list)
+    unions: dict[str, tuple[str, ...]] = {}
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef):
+            class_docs[node.name] = ast.get_docstring(node)
+            bases = [_base_name(b) for b in node.bases]
+            if _is_frozen_dataclass(node):
+                frozen.append(node.name)
+            if "BaseModel" in bases:
+                pydantic.append(node.name)
+            for base in bases:
+                subclasses[base].append(node.name)
+        elif isinstance(node, ast.Assign):
+            members = _flatten_bitor(node.value)
+            for tgt in node.targets:
+                if isinstance(tgt, ast.Name) and len(members) > 1:
+                    unions[tgt.id] = tuple(members)
+    return ModuleFacts(
+        module_doc=ast.get_docstring(tree) or "",
+        class_docs=class_docs,
+        frozen=tuple(frozen),
+        pydantic=tuple(pydantic),
+        subclasses={k: tuple(v) for k, v in subclasses.items()},
+        unions=unions,
+    )
+
+
+def _kind(facts: ModuleFacts, primary: str) -> str:
+    """A one-line, AST-derived description of the contract's shape and size."""
+    subs = facts.subclasses.get(primary, ())
+    if subs:
+        return f"abstract base + {len(subs)} frozen result types"
+    if primary in facts.unions:
+        return f"tagged union of {len(facts.unions[primary])} frozen families"
+    if primary in facts.pydantic:
+        nested = len(facts.pydantic) - 1
+        return "pydantic model" + (f" + {nested} nested models" if nested else "")
+    if primary in facts.frozen:
+        return "frozen dataclass"
+    if facts.frozen:  # a plain container over frozen parts, e.g. Conversation over its turns
+        return f"mutable container + {len(facts.frozen)} frozen turn types"
+    return "plain class"
+
+
+# --- import / test scans -----------------------------------------------------
+
+
+def _imported_dotted(tree: ast.Module) -> set[str]:
+    """Every dotted module a file imports, including the ``from PKG import NAME``
+    form as ``PKG.NAME`` (how viewmodel.events is pulled in)."""
+    out: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+            out.add(node.module)
+            out.update(f"{node.module}.{a.name}" for a in node.names)
+        elif isinstance(node, ast.Import):
+            out.update(a.name for a in node.names)
+    return out
+
+
+def _scan(root: Path) -> dict[str, set[str]]:
+    return {
+        p.relative_to(root).as_posix(): _imported_dotted(ast.parse(p.read_text(encoding="utf-8")))
+        for p in sorted(root.rglob("*.py"))
+    }
+
+
+_SRC_IMPORTS = _scan(_SRC)
+_TEST_IMPORTS = _scan(_TESTS)
+
+
+def _importers(dotted: str, imports: dict[str, set[str]]) -> list[str]:
+    return sorted(rel for rel, mods in imports.items() if dotted in mods)
+
+
+def _guard_tests(contract: Contract) -> list[str]:
+    """Tests that import the contract module, reference a declared golden fixture,
+    or are a declared pin test -- the full guarding set, byte pins included."""
+    guards = {Path(p).name for p in contract.pins if p.endswith(".py")}
+    goldens = [Path(p).name for p in contract.pins if not p.endswith(".py")]
+    for rel, mods in _TEST_IMPORTS.items():
+        if contract.module in mods or (
+            goldens and any(g in (_TESTS / rel).read_text(encoding="utf-8") for g in goldens)
+        ):
+            guards.add(Path(rel).name)
+    return sorted(guards)
+
+
+# --- derived model per contract ----------------------------------------------
+
+
+@dataclass(frozen=True)
+class Card:
+    title: str
+    module: str
+    kind: str
+    invariant: str
+    shapes: tuple[
+        tuple[str, str], ...
+    ]  # (primary name, first-sentence) pairs that have a docstring
+    writers: tuple[str, ...]  # src-relative posix
+    readers: tuple[str, ...]  # src-relative posix
+    pins: tuple[str, ...]  # display basenames
+    guard_count: int
+
+
+def _derive(contract: Contract) -> Card:
+    facts = _module_facts(contract.module)
+    importers = _importers(contract.module, _SRC_IMPORTS)
+    readers = tuple(r for r in importers if r not in contract.writers)
+    shapes = tuple(
+        (name, _first_sentence(facts.class_docs.get(name)))
+        for name in contract.primary
+        if facts.class_docs.get(name)
+    )
+    return Card(
+        title=contract.title,
+        module=contract.module,
+        kind=_kind(facts, contract.primary[0]),
+        invariant=_first_para(facts.module_doc),
+        shapes=shapes,
+        writers=contract.writers,
+        readers=readers,
+        pins=tuple(Path(p).name for p in contract.pins),
+        guard_count=len(_guard_tests(contract)),
+    )
+
+
+def _group(paths: tuple[str, ...]) -> str:
+    """`workflows/loop.py`, `app/merge.py` -> `app/{merge}, workflows/{loop}` --
+    the prototype's grouped-by-package style."""
+    by_dir: dict[str, list[str]] = defaultdict(list)
+    for p in paths:
+        parent = str(Path(p).parent)
+        by_dir[parent].append(Path(p).stem)
+    parts = []
+    for parent in sorted(by_dir):
+        stems = ", ".join(sorted(by_dir[parent]))
+        parts.append(f"{stems}" if parent == "." else f"{parent}/{{{stems}}}")
+    return ", ".join(parts)
+
+
+def _guard_line(card: Card) -> str:
+    return f"{', '.join(card.pins)} ({card.guard_count} test files exercise it)"
+
+
+# --- markdown output ---------------------------------------------------------
+
+_MD_HEADER = f"""<!-- GENERATED by docs/gen_contracts.py -- do not edit by hand.
+Edit the contract modules' docstrings or the CONTRACTS registry, then run:
+    {REGEN_CMD}
+tests/unit/test_data_contracts_doc.py fails if this file drifts. -->
+
+# Data contracts
+
+Five typed contracts own facts that used to travel as `dict[str, Any]`, each with
+one writer set, a known reader set, and byte-level pins guarding its frozen
+surface. This page is **generated** by `docs/gen_contracts.py` from those
+modules' docstrings and the source tree; edit the docstrings, not this file
+(regenerate with `{REGEN_CMD}`).
+"""
+
+
+def _md_card(card: Card) -> str:
+    lines = [f"## {card.title}", "", f"`{card.module}` &middot; {card.kind}", "", card.invariant]
+    for name, sentence in card.shapes:
+        lines += ["", f"**{name}** &mdash; {sentence}"]
+    lines += [
+        "",
+        f"- **Written by:** {_group(card.writers)}",
+        f"- **Read by:** {_group(card.readers)}",
+        f"- **Guarded by:** {_guard_line(card)}",
+    ]
+    return "\n".join(lines)
+
+
+def build_markdown() -> str:
+    body = "\n\n".join(_md_card(_derive(c)) for c in CONTRACTS)
+    return f"{_MD_HEADER}\n{body}\n"
+
+
+# --- HTML artifact -----------------------------------------------------------
+
+_HTML_STYLE = """
+:root{--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#8a8984;--node:#eef1f5;--nodeline:#c9cdd4;--edge:#b9bcc4;--hi:#2a78d6;--wr:#1baf7a}
+@media(prefers-color-scheme:dark){:root{--surface:#1a1a19;--ink:#fff;--ink2:#c3c2b7;--muted:#87867e;--node:#26262a;--nodeline:#43434a;--edge:#4a4a52;--hi:#3987e5;--wr:#199e70}}
+:root[data-theme=dark]{--surface:#1a1a19;--ink:#fff;--ink2:#c3c2b7;--muted:#87867e;--node:#26262a;--nodeline:#43434a;--edge:#4a4a52;--hi:#3987e5;--wr:#199e70}
+:root[data-theme=light]{--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#8a8984;--node:#eef1f5;--nodeline:#c9cdd4;--edge:#b9bcc4;--hi:#2a78d6;--wr:#1baf7a}
+body{background:var(--surface);color:var(--ink);margin:0;font:14px/1.45 system-ui,sans-serif}
+header{padding:18px 24px 6px}
+h1{font-size:16px;margin:0;font-weight:600}
+h2{font-size:14px;margin:22px 24px 4px;font-weight:600}
+.sub{color:var(--ink2);font-size:12.5px}
+.note{color:var(--ink2);font-size:12.5px;margin:6px 24px 10px;max-width:74ch}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--ink2);align-items:center;margin:4px 24px}
+.k{display:inline-block;width:18px;height:3px;border-radius:2px;background:var(--edge);vertical-align:middle;margin-right:5px}.k.wr{background:var(--wr)}.k.rd{background:var(--hi)}
+.wrap{overflow:auto;padding:0 12px 8px}svg{display:block;margin:0 auto}
+.colhead{font:600 12px system-ui,sans-serif;fill:var(--ink2);letter-spacing:.06em;text-transform:uppercase}
+.edge{fill:none;stroke-width:1.2;opacity:.5}.edge.wr{stroke:var(--wr)}.edge.rd{stroke:var(--hi)}
+.node rect{fill:var(--node);stroke:var(--nodeline);stroke-width:1}.node.contract rect{stroke:var(--hi);stroke-width:1.6}
+.node text{font-size:12px;fill:var(--ink)}.node .sm{fill:var(--muted);font-size:10px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px;padding:4px 24px 26px}
+.card{border:1px solid var(--nodeline);border-radius:8px;padding:12px 14px;background:var(--node)}
+.cname{font-weight:600;font-size:13.5px}
+.chome{font:12px ui-monospace,Menlo,monospace;color:var(--ink2);margin:2px 0 6px}
+.cinv{font-size:12.5px;margin-bottom:6px}
+.cshape{font-size:12px;color:var(--ink2);margin-bottom:6px}.cshape b{color:var(--ink)}
+code{font:11.5px ui-monospace,Menlo,monospace;background:rgba(128,128,128,.14);padding:0 3px;border-radius:3px}
+dl{margin:0;font-size:12px;display:grid;grid-template-columns:max-content 1fr;gap:2px 10px}
+dt{color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-size:10.5px;padding-top:1px}
+dd{margin:0;color:var(--ink2)}
+"""
+
+
+def _inline(text: str) -> str:
+    """Markdown-inline prose -> safe HTML: escape, then `code` -> <code>."""
+    return re.sub(r"`([^`]+)`", r"<code>\1</code>", html.escape(text))
+
+
+def _svg(cards: tuple[Card, ...]) -> str:
+    """A derived bipartite graph: writer packages -> contract -> reader packages,
+    grouped by top-level package (the same data the cards carry)."""
+    contracts = [c.title for c in cards]
+    writers: dict[str, set[str]] = defaultdict(set)  # pkg -> {contract titles}
+    readers: dict[str, set[str]] = defaultdict(set)
+    for card in cards:
+        for path in card.writers:
+            writers[Path(path).parts[0]].add(card.title)
+        for path in card.readers:
+            readers[Path(path).parts[0]].add(card.title)
+    left = sorted(writers)
+    right = sorted(readers)
+    rows = max(len(left), len(contracts), len(right))
+    row_h, top, node_w = 46, 60, 150
+    height = top + rows * row_h + 20
+    cols = {"w": 40, "c": 340, "r": 640}
+
+    def ys(count: int) -> list[float]:
+        span = rows * row_h
+        gap = span / count
+        return [top + gap * (i + 0.5) - 13 for i in range(count)]
+
+    ly, cy, ry = ys(len(left)), ys(len(contracts)), ys(len(right))
+    cpos = {t: cy[i] for i, t in enumerate(contracts)}
+    lpos = {p: ly[i] for i, p in enumerate(left)}
+    rpos = {p: ry[i] for i, p in enumerate(right)}
+
+    def node(x: float, y: float, label: str, klass: str = "") -> str:
+        return (
+            f'<g class="node {klass}"><rect x="{x}" y="{y}" rx="5" width="{node_w}" '
+            f'height="26"/><text x="{x + 10}" y="{y + 17}">{html.escape(label)}</text></g>'
+        )
+
+    def edge(x1: float, y1: float, x2: float, y2: float, klass: str) -> str:
+        mx = (x1 + node_w + x2) / 2
+        return f'<path class="edge {klass}" d="M {x1 + node_w} {y1} C {mx} {y1}, {mx} {y2}, {x2} {y2}"/>'
+
+    parts = [
+        f'<svg viewBox="0 0 {cols["r"] + node_w + 40} {height}" width="{cols["r"] + node_w + 40}" '
+        f'height="{height}" xmlns="http://www.w3.org/2000/svg">',
+        f'<text x="{cols["w"] + node_w / 2}" y="40" text-anchor="middle" class="colhead">writers</text>',
+        f'<text x="{cols["c"] + node_w / 2}" y="40" text-anchor="middle" class="colhead">contracts</text>',
+        f'<text x="{cols["r"] + node_w / 2}" y="40" text-anchor="middle" class="colhead">readers</text>',
+    ]
+    for pkg, y in lpos.items():
+        for title in writers[pkg]:
+            parts.append(edge(cols["w"], y + 13, cols["c"], cpos[title] + 13, "wr"))
+    for pkg, y in rpos.items():
+        for title in readers[pkg]:
+            parts.append(edge(cols["c"], cpos[title] + 13, cols["r"], y + 13, "rd"))
+    parts += [node(cols["w"], y, pkg) for pkg, y in lpos.items()]
+    parts += [node(cols["c"], y, t, "contract") for t, y in cpos.items()]
+    parts += [node(cols["r"], y, pkg) for pkg, y in rpos.items()]
+    parts.append("</svg>")
+    return "\n".join(parts)
+
+
+def _html_card(card: Card) -> str:
+    shapes = "".join(
+        f'<div class="cshape"><b>{html.escape(name)}</b> &mdash; {_inline(sentence)}</div>'
+        for name, sentence in card.shapes
+    )
+    return (
+        '<div class="card">'
+        f'<div class="cname">{html.escape(card.title)}</div>'
+        f'<div class="chome">{html.escape(card.module)} &middot; {html.escape(card.kind)}</div>'
+        f'<div class="cinv">{_inline(card.invariant)}</div>'
+        f"{shapes}"
+        "<dl>"
+        f"<dt>written by</dt><dd>{_inline(_group(card.writers))}</dd>"
+        f"<dt>read by</dt><dd>{_inline(_group(card.readers))}</dd>"
+        f"<dt>guarded by</dt><dd>{_inline(_guard_line(card))}</dd>"
+        "</dl></div>"
+    )
+
+
+def build_html() -> str:
+    cards = tuple(_derive(c) for c in CONTRACTS)
+    body = "".join(_html_card(c) for c in cards)
+    return (
+        "<!doctype html><html><head><meta charset=utf-8>"
+        '<meta name=viewport content="width=device-width,initial-scale=1">'
+        "<title>agent6 data contracts</title>"
+        f"<style>{_HTML_STYLE}</style></head><body>"
+        "<header><h1>agent6 data contracts</h1>"
+        '<div class="sub">five typed contracts, derived from the source tree</div></header>'
+        '<p class="note">Every card below is generated from the module and class '
+        "docstrings, the AST, and an import scan &mdash; a card that reads badly means a "
+        "docstring worth fixing.</p>"
+        "<h2>Who writes and reads each contract</h2>"
+        '<div class="legend"><span><span class="k wr"></span>writes</span>'
+        '<span><span class="k rd"></span>reads</span>'
+        "<span>packages grouped by top-level name</span></div>"
+        f'<div class="wrap">{_svg(cards)}</div>'
+        "<h2>The contracts</h2>"
+        f'<div class="cards">{body}</div>'
+        "</body></html>"
+    )
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--md", type=Path, default=_MD_OUT)
+    ap.add_argument("--html", type=Path, default=_HTML_OUT)
+    args = ap.parse_args()
+    args.md.write_text(build_markdown(), encoding="utf-8")
+    args.html.parent.mkdir(parents=True, exist_ok=True)
+    args.html.write_text(build_html(), encoding="utf-8")
+    print(f"gen_contracts: wrote {args.md} and {args.html}")
+
+
+if __name__ == "__main__":
+    main()
