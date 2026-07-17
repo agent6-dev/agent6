@@ -11,11 +11,9 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import shlex
 import sys
 import threading
-import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal, Protocol
@@ -43,24 +41,13 @@ from agent6.skills import (
     resolve_states,
     skill_search_dirs,
 )
-from agent6.tools._agent6_docs import (
-    list_agent6_docs as _list_agent6_docs,
-)
-from agent6.tools._agent6_docs import (
-    read_agent6_doc as _read_agent6_doc,
-)
-from agent6.tools._edit_diag import (
-    edit_mismatch_error as _edit_mismatch_error,
-)
-from agent6.tools._edit_diag import (
-    indent_tolerant_replacement as _indent_tolerant_replacement,
-)
-from agent6.tools._edit_diag import (
-    preview_result as _preview_result,
-)
+from agent6.tools._fs_tools import agent6_docs as _fs_agent6_docs
+from agent6.tools._fs_tools import apply_edit as _fs_apply_edit
+from agent6.tools._fs_tools import apply_patch as _fs_apply_patch
+from agent6.tools._fs_tools import grep as _fs_grep
+from agent6.tools._fs_tools import list_dir as _fs_list_dir
+from agent6.tools._fs_tools import read_file as _fs_read_file
 from agent6.tools._git_guard import refuse_mutating_git_command
-from agent6.tools._grep_safety import reject_pathological_regex
-from agent6.tools._path_safety import SafePath as _SafePath
 from agent6.tools._path_safety import resolve_in_root as _resolve_in_root
 from agent6.tools._result_format import (
     parse_metric_score as _parse_metric_score,
@@ -78,13 +65,6 @@ from agent6.tools.errors import OperatorCommandUnexecutable, ToolError
 from agent6.tools.index import Symbol, SymbolIndex
 from agent6.tools.lsp import LspClient, LspError, lsp_tools_useful
 from agent6.tools.mcp_client import MCP_TOOL_PREFIX, MCPError, MCPManager
-from agent6.tools.patch_apply import (
-    PatchError,
-    apply_patch_text,
-    apply_v4a_text,
-    is_v4a_patch,
-    patch_target_path,
-)
 from agent6.tools.schema import (
     ALL_TOOLS,
     AddMemoryInput,
@@ -227,11 +207,6 @@ def _operator_tool_paths() -> tuple[str, tuple[Path, ...]]:
     return ":".join(path_dirs), tuple(sorted(mounts))
 
 
-# Wall-clock budget for a single grep over the tree; the regex-shape screening
-# (tools/_grep_safety.py) closes the catastrophic-backtracking cases, and this
-# bounds the rest.
-_MAX_GREP_WALL_S = 10.0
-
 # Execution tools whose stdout/stderr IS the diagnostic signal. Their tool.result
 # event carries a capped output tail (like verify.end) so logs.jsonl shows
 # the command's output for quick observability -- not just a one-line summary --
@@ -285,72 +260,6 @@ def _default_questioner(  # pragma: no cover — interactive
             ans = q.options[int(ans) - 1]
         answers.append(ans)
     return tuple(answers)
-
-
-def _refuse_protected_write(
-    candidate: str, dir_name: str, *, why: str, resolved: _SafePath | None = None
-) -> None:
-    """Refuse an in-process ``apply_edit`` / ``apply_patch`` into a protected
-    top-level directory.
-
-    ``.git`` (when ``protect_git``): the edit tools write **in-process, outside
-    the jail**, so without this an LLM could create or rewrite ``.git/hooks/*``
-    or ``.git/config`` (e.g. ``core.fsmonitor``) and get code executed outside
-    the sandbox on the next ``git`` invocation, or corrupt git history --
-    defeating ``protect_git`` entirely (the strict jail's RO bind of ``.git``
-    never covers these in-process writes). Reads stay allowed. (Run state lives
-    out of the workspace, so it is unreachable by edits and needs no guard.)
-
-    Checks both the raw candidate string AND the post-symlink-resolution relative
-    path, so a symlink ``./decoy -> .git`` can't launder a write past the prefix
-    check.
-    """
-    parts = Path(candidate).parts
-    if parts and parts[0] == dir_name:
-        raise ToolError(f"Refusing to write under {dir_name}/ ({why}): {candidate!r}")
-    if resolved is not None:
-        rel_parts = resolved.rel_path.parts
-        if rel_parts and rel_parts[0] == dir_name:
-            raise ToolError(
-                f"Refusing to write under {dir_name}/ ({why}) via symlink: {candidate!r} "
-                f"resolves to {resolved.rel_path!s}"
-            )
-
-
-def _refuse_env_write(candidate: str, resolved: _SafePath) -> None:
-    """Refuse an in-process edit into an in-repo virtualenv or installed-package
-    tree. These are the operator's ENVIRONMENT, not source: a run editing them
-    (e.g. rewriting an editable-install ``.pth`` to make an in-jail verify pass)
-    silently corrupts the operator's venv, and since venvs are gitignored the
-    damage never shows in ``runs diff`` / merge. Observed live: a run rewrote
-    ``.venv/.../_editable_impl_*.pth`` from the host path to the jail's
-    ``/workspace`` and broke ``import`` on the host afterward.
-
-    A directory holding ``pyvenv.cfg`` is a virtualenv root (the canonical
-    marker, name-agnostic: ``.venv`` / ``venv`` / ``env``); a ``site-packages``
-    ancestor is an installed tree. Reads stay allowed; only writes are refused.
-    The check walks the post-symlink-resolution path so a decoy symlink can't
-    launder the write."""
-    ancestors = [resolved.abs_path, *resolved.abs_path.parents]
-    for anc in ancestors:
-        if anc.name == "site-packages":
-            raise ToolError(
-                f"Refusing to write into an installed-package tree (site-packages): "
-                f"{candidate!r}. Installed packages are environment, not source; "
-                f"editing them corrupts the operator's virtualenv."
-            )
-    # A venv root is an ancestor DIRECTORY containing pyvenv.cfg. Check ancestors
-    # of the target (not the target itself, which is the file being written).
-    for anc in resolved.abs_path.parents:
-        try:
-            if (anc / "pyvenv.cfg").is_file():
-                raise ToolError(
-                    f"Refusing to write inside a virtualenv ({anc.name}/): {candidate!r}. "
-                    f"A venv is environment, not source; editing it corrupts the "
-                    f"operator's setup and never shows in the run's diff."
-                )
-        except OSError:
-            continue
 
 
 class ToolDispatcher:
@@ -641,236 +550,24 @@ class ToolDispatcher:
     # ----- handlers -----
 
     def _agent6_docs(self, raw: dict[str, Any]) -> dict[str, Any]:
-        args = Agent6DocsInput.model_validate(raw)
-        available = _list_agent6_docs()
-        if not args.name:
-            return {"available": available}
-        content = _read_agent6_doc(args.name)
-        if content is None:
-            raise ToolError(
-                f"unknown agent6 doc {args.name!r}; available: {', '.join(available) or '(none)'}"
-            )
-        cap = 60_000
-        return {
-            "name": args.name,
-            "content": content[:cap],
-            "truncated": len(content) > cap,
-        }
+        return _fs_agent6_docs(raw)
 
     def _read_file(self, raw: dict[str, Any]) -> dict[str, Any]:
-        args = ReadFileInput.model_validate(raw)
-        sp = _resolve_in_root(self._root, args.path)
-        if not sp.abs_path.is_file():
-            raise ToolError(f"Not a file: {args.path}")
-        try:
-            full = sp.abs_path.read_text(encoding="utf-8")
-        except UnicodeDecodeError as exc:
-            raise ToolError(f"File is not UTF-8 text: {args.path}") from exc
-        if args.offset == 0 and args.limit is None:
-            return {"content": full, "size": len(full), "lines_total": full.count("\n") + 1}
-        lines = full.splitlines(keepends=True)
-        end = len(lines) if args.limit is None else min(len(lines), args.offset + args.limit)
-        slice_text = "".join(lines[args.offset : end])
-        return {
-            "content": slice_text,
-            "size": len(slice_text),
-            "lines_total": len(lines),
-            "offset": args.offset,
-            "lines_returned": end - args.offset,
-        }
+        return _fs_read_file(self._root, raw)
 
     def _list_dir(self, raw: dict[str, Any]) -> dict[str, Any]:
-        args = ListDirInput.model_validate(raw)
-        sp = _resolve_in_root(self._root, args.path)
-        if not sp.abs_path.is_dir():
-            raise ToolError(f"Not a directory: {args.path}")
-        entries: list[str] = []
-        for entry in sorted(sp.abs_path.iterdir()):
-            suffix = "/" if entry.is_dir() else ""
-            entries.append(entry.name + suffix)
-        return {"entries": entries}
+        return _fs_list_dir(self._root, raw)
 
     def _grep(self, raw: dict[str, Any]) -> dict[str, Any]:
-        args = GrepInput.model_validate(raw)
-        sp = _resolve_in_root(self._root, args.path)
-        reject_pathological_regex(args.pattern)
-        try:
-            pat = re.compile(args.pattern, re.IGNORECASE if args.case_insensitive else 0)
-        except re.error as exc:
-            raise ToolError(f"Invalid regex: {exc}") from exc
-        deadline = time.monotonic() + _MAX_GREP_WALL_S
-        hits: list[dict[str, Any]] = []
-        targets: list[Path]
-        # Skip hidden files/dirs (.git, ...) only when they are BELOW
-        # the requested path, so an explicit `grep <pat> .github/` (or a hidden
-        # file named directly) is still searched. `skip_base` is the requested
-        # directory; for an explicitly-named file there is nothing to skip.
-        skip_base: Path | None
-        if sp.abs_path.is_file():
-            targets = [sp.abs_path]
-            skip_base = None
-        else:
-            targets = [p for p in sp.abs_path.rglob("*") if p.is_file()]
-            skip_base = sp.abs_path
-        root_resolved = self._root.resolve()
-        for path in targets:
-            if skip_base is not None and any(
-                part.startswith(".") for part in path.relative_to(skip_base).parts
-            ):
-                continue
-            # Contain each target like read_file contains its leaf: rglob yields
-            # in-repo symlinks whose destination can be anywhere on the host, and
-            # this read runs in-process (outside the jail). Resolve and require
-            # the real file to still be under root; skip escapees.
-            try:
-                path.resolve().relative_to(root_resolved)
-            except (OSError, ValueError):
-                continue
-            if time.monotonic() > deadline:
-                # Bound total wall-clock: a pathological pattern/large tree can't
-                # hang the run. Report partial hits rather than stalling.
-                return {"hits": hits, "truncated": True, "timeout": True}
-            try:
-                for lineno, line in enumerate(
-                    path.read_text(encoding="utf-8", errors="ignore").splitlines(),
-                    start=1,
-                ):
-                    # Re-check the wall-clock inside the line loop too: the
-                    # between-files check alone can't bound a large single file.
-                    # (It still can't interrupt one in-progress C-level match —
-                    # the static screen above is the defence for that.)
-                    if time.monotonic() > deadline:
-                        return {"hits": hits, "truncated": True, "timeout": True}
-                    if pat.search(line):
-                        hits.append(
-                            {
-                                "path": str(path.relative_to(self._root)),
-                                "line": lineno,
-                                "text": line[:500],
-                            }
-                        )
-                        if len(hits) >= 500:
-                            return {"hits": hits, "truncated": True}
-            except OSError:
-                continue
-        return {"hits": hits, "truncated": False}
-
-    def _refuse_protected_writes(self, path: str, resolved: _SafePath | None = None) -> None:
-        """Refuse an in-process edit into a protected location (it bypasses the
-        jail entirely). ``.git`` under ``protect_git``, a virtualenv / installed
-        package tree (see ``_refuse_env_write``), plus any operator/machine
-        protect paths (a machine bundle's ``.asm.toml`` + ``scripts/``), which the
-        jail marks read-only for ``run_command`` but the in-process edit tools
-        would otherwise let a ``mode="run"`` state rewrite -- persisting a payload
-        for the next run. Applies on both sandbox profiles."""
-        if self._config.sandbox.protect_git:
-            _refuse_protected_write(path, ".git", why="git history/metadata", resolved=resolved)
-        if resolved is not None:
-            _refuse_env_write(path, resolved)
-        if resolved is not None and self._extra_protect_paths:
-            target = resolved.abs_path
-            for prot in self._extra_protect_paths:
-                if target == prot or prot in target.parents:
-                    raise ToolError(
-                        f"Refusing to write to a protected path (machine bundle): {path!r} "
-                        f"resolves under {prot}"
-                    )
+        return _fs_grep(self._root, raw)
 
     def _apply_edit(self, raw: dict[str, Any]) -> dict[str, Any]:
-        args = ApplyEditInput.model_validate(raw)
-        self._refuse_protected_writes(args.path)
-        sp = _resolve_in_root(self._root, args.path)
-        self._refuse_protected_writes(args.path, sp)
-        # Write-outside-cwd is enforced by _resolve_in_root already (root == cwd).
-        applied: list[str] = []
-        existing = sp.abs_path.read_text(encoding="utf-8") if sp.abs_path.exists() else None
-        new_content = existing
-        for i, edit in enumerate(args.edits):
-            if edit.kind == "create":
-                if existing is not None and i == 0:
-                    raise ToolError(f"create requested but file already exists: {args.path}")
-                new_content = edit.new_string
-                applied.append("create")
-            else:
-                if new_content is None:
-                    raise ToolError(f"replace requested but file does not exist: {args.path}")
-                occurrences = new_content.count(edit.old_string)
-                if occurrences == 0:
-                    # Weak models most often miss by indentation depth alone
-                    # (right lines, wrong leading whitespace). If old_string
-                    # matches EXACTLY ONE region up to a uniform indent shift,
-                    # apply it (the shift is verified to reproduce that region
-                    # byte-for-byte first, so a wrong region can't be edited) --
-                    # saving a full round-trip. Otherwise hand the model the exact
-                    # closest on-disk text so it retries directly; re-reading the
-                    # whole file is the dominant small-model time sink on a botched
-                    # edit.
-                    fuzzy = _indent_tolerant_replacement(
-                        new_content, edit.old_string, edit.new_string
-                    )
-                    if fuzzy is not None:
-                        new_content = fuzzy
-                        applied.append("replace~indent")
-                        continue
-                    raise ToolError(
-                        _edit_mismatch_error(args.path, i, new_content, edit.old_string)
-                    )
-                if occurrences > 1:
-                    raise ToolError(
-                        f"old_string is not unique in {args.path} "
-                        f"(edit #{i}, {occurrences} matches); add more surrounding "
-                        f"context to make it unique"
-                    )
-                new_content = new_content.replace(edit.old_string, edit.new_string, 1)
-                applied.append("replace")
-        if new_content is None:
-            raise ToolError("No content to write")
-        if args.preview:
-            return _preview_result(args.path, existing, new_content, applied=applied)
-        sp.abs_path.parent.mkdir(parents=True, exist_ok=True)
-        sp.abs_path.write_text(new_content, encoding="utf-8")
-        if self._index is not None:
-            self._index.mark_changed(sp.abs_path)
-        return {"applied": applied, "path": str(sp.rel_path)}
+        return _fs_apply_edit(self._root, self._config, self._extra_protect_paths, self._index, raw)
 
     def _apply_patch(self, raw: dict[str, Any]) -> dict[str, Any]:
-        args = ApplyPatchInput.model_validate(raw)
-        v4a = is_v4a_patch(args.patch)
-        # The write location: the explicit `path` arg if given, else derived from
-        # the patch headers (V4A always embeds it; GPT-family models omit `path`).
-        # Either way it is resolved + protected-path-checked below, so deriving it
-        # from the patch never widens where a write can land.
-        try:
-            derived_path = patch_target_path(args.patch)
-        except PatchError as exc:
-            raise ToolError(f"apply_patch failed for {args.path or '<unknown>'}: {exc}") from exc
-        target = args.path or derived_path
-        # Security checks on the write location come first (absolute path, repo
-        # escape, protected dirs), before the lower-priority model-confusion
-        # check that an explicit `path` matches the patch header.
-        self._refuse_protected_writes(target)
-        sp = _resolve_in_root(self._root, target)
-        self._refuse_protected_writes(target, sp)
-        if args.path and args.path != derived_path:
-            raise ToolError(
-                f"apply_patch: `path` argument {args.path!r} disagrees with the patch "
-                f"header path {derived_path!r}; emit them consistently or omit `path`"
-            )
-        existing = sp.abs_path.read_text(encoding="utf-8") if sp.abs_path.exists() else None
-        try:
-            if v4a:
-                _, new_content = apply_v4a_text(args.patch, existing)
-            else:
-                _, new_content = apply_patch_text(args.patch, existing)
-        except PatchError as exc:
-            raise ToolError(f"apply_patch failed for {target}: {exc}") from exc
-        if args.preview:
-            return _preview_result(target, existing, new_content)
-        sp.abs_path.parent.mkdir(parents=True, exist_ok=True)
-        sp.abs_path.write_text(new_content, encoding="utf-8")
-        if self._index is not None:
-            self._index.mark_changed(sp.abs_path)
-        return {"path": str(sp.rel_path), "bytes_written": len(new_content)}
+        return _fs_apply_patch(
+            self._root, self._config, self._extra_protect_paths, self._index, raw
+        )
 
     # ----- tree-sitter index handlers -----
 
