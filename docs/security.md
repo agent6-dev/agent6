@@ -202,17 +202,19 @@ fixed argv depending only on operator input, never LLM output.
       argv from the run manifest the CLI wrote outside the jail.
     - `rg` for history search.
     - The fixed-argv `python -m agent6.ui.tui` co-process behind `run --tui`.
-    - `app/finalize.py`: the operator `[notify].on_complete` hook fired at
-      run end; argv from config.
-    - `ui/cli/scriptcheck.py`: ruff/ty with fixed argv to statically read
-      generated scripts, which only ever execute via `run_in_jail`.
     - `ui/cli/system_cmds.py`: `cp`/`rm`/`apparmor_parser` via sudo with fixed
       argv for `agent6 system apparmor` (operator host setup).
-    - The `machine run` supervisor: spawns each agent state as a fixed-argv
-      `python -m agent6.ui.cli.machine_agent` subprocess whose request travels
-      in a temp file, never on argv; its operator `[machine.notify].on_event`
-      hook (argv from config) runs on the host with `AGENT6_MACHINE_*` env,
-      mirroring `[notify].on_complete`.
+- `app/` helpers:
+    - `app/finalize.py`: the operator `[notify].on_complete` hook fired at
+      run end; argv from config.
+    - `app/machine/_scriptcheck.py`: ruff/ty with fixed argv to statically read
+      generated scripts, which only ever execute via `run_in_jail`.
+    - The `machine run` supervisor (`app/machine_agent.py`): spawns each agent
+      state as a fixed-argv `python -m agent6.ui.cli.machine_agent` subprocess
+      whose request travels in a temp file, never on argv; its operator
+      `[machine.notify].on_event` hook (argv from config, fired from
+      `app/machine/_preflight.py`) runs on the host with `AGENT6_MACHINE_*`
+      env, mirroring `[notify].on_complete`.
     - `ui/cli/skills_cmds.py`: `git clone --depth 1 -- <url>` with fixed argv
       for `agent6 skills install`; the URL is operator-supplied on the CLI and
       nothing fetched is ever executed.

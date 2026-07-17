@@ -419,10 +419,8 @@ def test_machine_run_keeps_tool_jail_strict_when_agent_egress_would_downgrade(
         return "strict"
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("agent6.ui.cli.machine_cmds.select_profile", select_strict)
-    monkeypatch.setattr(
-        "agent6.ui.cli.machine_cmds.resolve_strict_egress_viability", fail_egress_probe
-    )
+    monkeypatch.setattr("agent6.app.machine.run.select_profile", select_strict)
+    monkeypatch.setattr("agent6.app.machine.run.resolve_strict_egress_viability", fail_egress_probe)
     monkeypatch.setattr("agent6.machine.engine.run_in_jail", fake_run_in_jail)
 
     assert main(["machine", "run", str(f)]) == 0

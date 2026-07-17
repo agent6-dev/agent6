@@ -12,33 +12,23 @@ from __future__ import annotations
 import contextlib
 import datetime as _dt
 import json
-import os
 import sys
 import time
 import tomllib
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
-from agent6.app._setup import check_provider_keys as _check_provider_keys
 from agent6.app._setup import detect_env
-from agent6.app.egress import (
-    resolve_strict_egress_viability,
-    warn_if_unsandboxed,
-)
 from agent6.app.machine import (
     MachineFrontend,
-    build_machine_notify_hook,
-    hard_usd_preflight_error,
     lint_and_typecheck,
     machine_network_refusal,
-    machine_protect_paths,
     machine_spend,
     run_offline_tests,
     validate_bundle,
 )
 from agent6.app.machine.create import create_machine
-from agent6.app.machine_agent import build_machine_agent_runner
+from agent6.app.machine.run import run_machine
 from agent6.app.reporter import STDIO_REPORTER
 from agent6.config import (
     Config,
@@ -49,15 +39,10 @@ from agent6.config.layer import (
     load_effective_with_overlay,
     repo_config_path_for,
 )
-from agent6.git_ops import CommitIdentity, GitError, verify_git_identity
 from agent6.machine import (
-    AgentExecResult,
-    AgentRequest,
-    AgentState,
     DryRunReport,
     EngineError,
     JournalError,
-    LiveWorld,
     MachineError,
     MachineJournal,
     MachineSpec,
@@ -66,12 +51,10 @@ from agent6.machine import (
     drive,
     dry_run,
     load_machine,
-    machine_lock,
     render,
-    write_source,
 )
 from agent6.paths import chown_to_real_user
-from agent6.runs.ipc import read_worker_pid, worker_is_alive, write_worker_pid
+from agent6.runs.ipc import read_worker_pid, worker_is_alive
 from agent6.sandbox.detect import ProfileUnavailableError, select_profile
 from agent6.types import SandboxProfile
 from agent6.ui.cli._common import _machines_dir
@@ -285,169 +268,12 @@ def _resolve_network_refusal(  # noqa: PLR0911
     return new_cfg, new_profile
 
 
-def _cmd_machine_run(  # noqa: PLR0911, PLR0912, PLR0915
+def _cmd_machine_run(
     path: Path, *, exit_on_wait: bool = False, disable_sandbox: bool = False
 ) -> int:
-    if disable_sandbox:
-        # Set the env setter so this supervisor's select_profile resolves to
-        # none; it then passes that profile to each agent subprocess in its
-        # request (the subprocess trusts req["profile"], it does not re-resolve).
-        # Using the env (vs mutating cfg) is the simplest single knob; the env
-        # is operator-controlled and the LLM cannot reach it.
-        os.environ["AGENT6_DANGEROUSLY_DISABLE_SANDBOX"] = "1"
-    try:
-        spec = load_machine(path)
-    except MachineError as exc:
-        print(f"FAIL: {path}", file=sys.stderr)
-        for problem in exc.problems:
-            print(f"  - {problem}", file=sys.stderr)
-        return 1
-    # Re-validate the script bundle before executing anything: `load_machine`
-    # does not, and on a profile that can't RO-bind the bundle a `scripts/`
-    # symlink escaping it (which `machine check` rejects) would otherwise be read
-    # by a tool. Security boundary, so run enforces it too, not just check.
-    bundle_problems = validate_bundle(spec, path)
-    if bundle_problems:
-        return _fail(path, bundle_problems, "bundle")
-    cwd = Path.cwd()
-    states = list(spec.states.values())
-    has_agent_state = any(getattr(s, "kind", None) == "agent" for s in states)
-    # mode="run" agent states edit + commit; they need a resolved git identity.
-    has_run_agent = any(isinstance(s, AgentState) and s.mode == "run" for s in states)
-    tool_states = [s for s in states if isinstance(s, ToolState)]
-    agent_runner: Callable[[AgentRequest, Path | None], AgentExecResult] | None = None
-    # Default profile for confinement-free machines: resolve from the host.
-    profile: SandboxProfile = detect_env().detected_profile
-    # The running machine's own file + scripts bundle are read-only in every
-    # run jail, so a tool/agent can't rewrite its own logic or bundled scripts.
-    protect_paths = machine_protect_paths(path, cwd)
-    # Load the effective config (machine [config] overlay included) for EVERY
-    # machine: a pure wait/branch machine still reads [machine] snapshot_keep from
-    # it, and validating the overlay up front means a bad overlay or an ignored
-    # snapshot_keep never slips through to a pure machine. The agent/tool block
-    # below adds the provider/sandbox checks only those state kinds need.
-    try:
-        cfg = load_effective_with_overlay(cwd, spec.config).config
-    except ConfigError as exc:
-        print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
-        return 2
-    snapshot_keep = cfg.machine.snapshot_keep
-    if has_agent_state or tool_states:
-        try:
-            if has_agent_state:
-                cfg.require_runnable("worker")
-        except ConfigError as exc:
-            print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
-            return 2
-        try:
-            profile = select_profile(cfg.sandbox.profile, detect_env())
-        except ProfileUnavailableError as exc:
-            print(f"REFUSING: {exc}", file=sys.stderr)
-            return 2
-        agent_profile = profile
-        if has_agent_state:
-            # Same as run/resume: a strict that can't run the egress broker on
-            # this process (surgical AppArmor profile) downgrades to hardened or
-            # refuses, so the per-state agent subprocess gets a profile it can
-            # actually use. Tool states keep `profile`: the jail launcher itself
-            # can still run strict and give each tool its own namespace.
-            agent_profile, egress_err = resolve_strict_egress_viability(cfg, profile)
-            if egress_err is not None:
-                print(egress_err, file=sys.stderr)
-                return 2
-        snapshot_keep = cfg.machine.snapshot_keep
-        refusal = machine_network_refusal(cfg, profile, tool_states)
-        if refusal is not None:
-            outcome = _resolve_network_refusal(
-                path, refusal, cfg, profile, tool_states, cwd, spec.config
-            )
-            if isinstance(outcome, int):
-                return outcome
-            cfg, profile = outcome  # fix applied + re-validated clear; continue
-        if has_agent_state:
-            missing = _check_provider_keys(cfg)
-            if missing is not None:
-                print(missing, file=sys.stderr)
-                return 2
-            # After _check_provider_keys so the price cache has been refreshed.
-            usd_err = hard_usd_preflight_error(spec, cfg)
-            if usd_err is not None:
-                print(f"REFUSING: {usd_err}", file=sys.stderr)
-                return 2
-            # Resolve the commit identity HERE on the host, where global git
-            # config is visible, so a mode="run" state's confined agent (which
-            # can't read ~/.gitconfig under Landlock) still commits cleanly. A
-            # missing identity fails loudly up front, not as mid-loop noise.
-            commit_identity: CommitIdentity | None = None
-            if has_run_agent:
-                base = CommitIdentity(
-                    name=cfg.git.commit.name,
-                    email=cfg.git.commit.email,
-                    coauthor=cfg.git.commit.coauthor,
-                )
-                try:
-                    name, email = verify_git_identity(cwd, base)
-                except GitError as exc:
-                    print(f"ERROR: {exc}", file=sys.stderr)
-                    return 2
-                commit_identity = CommitIdentity(name=name, email=email)
-            root = _machines_dir(cwd) / spec.machine
-            # The engine is a host-netns supervisor; each agent state confines
-            # itself in its own subprocess per sandbox.agent_network.
-            agent_runner = build_machine_agent_runner(
-                spec.config,
-                cwd,
-                agent_profile,
-                root / "agent_transcripts",
-                protect_paths,
-                commit_identity,
-            )
-    warn_if_unsandboxed(profile)
-    root = _machines_dir(cwd) / spec.machine
-    journal = MachineJournal(root, snapshot_keep=snapshot_keep)
-    # Persistent, writable scratch for tool scripts (see LiveWorld.data_dir).
-    data_dir = root / "data"
-    try:
-        with machine_lock(root):
-            journal.ensure_dirs()
-            data_dir.mkdir(parents=True, exist_ok=True)
-            # Liveness marker for watchers (the web SSE stream probes it to
-            # tell a crashed machine from a parked one), mirroring cli/run.py.
-            write_worker_pid(root, os.getpid())
-            if not journal.exists():
-                write_source(root, path.read_text(encoding="utf-8"))
-            world = LiveWorld(
-                cwd=cwd,
-                journal=journal,
-                agent_runner=agent_runner,
-                profile=profile,
-                protect_paths=protect_paths,
-                data_dir=data_dir,
-                # Each agent state writes its own watchable logs.jsonl here, so a
-                # running machine is followable like a run (pruned to keep recent).
-                state_log_root=root / "states",
-                # Operator argv fired on machine.notify/machine.end, on the host
-                # outside the jail (None when [machine.notify].on_event is unset).
-                notify_hook=build_machine_notify_hook(cfg, spec.machine, root),
-                memory_limit_mb=cfg.sandbox.memory_limit_mb,
-            )
-            result = drive(spec, journal, world, live=True, exit_on_wait=exit_on_wait)
-    except (JournalError, EngineError) as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
-    if result.status == "waiting":
-        print(
-            f"WAITING: {spec.machine} paused in {result.state!r}"
-            f" after {_plural(result.transitions, 'transition')} ({result.reason})"
-        )
-        return 0
-    spend, _ = machine_spend(journal.read(), root, alive=False)
-    print(
-        f"{result.status.upper()}: {spec.machine} ended in {result.state!r}"
-        f" after {_plural(result.transitions, 'transition')} ({result.reason})"
-        f" -- spent ${spend.usd:.4f}"
+    return run_machine(
+        path, _machine_frontend(), exit_on_wait=exit_on_wait, disable_sandbox=disable_sandbox
     )
-    return 0 if result.status == "ok" else 1
 
 
 def _cmd_machine_replay(machine_id: str) -> int:
