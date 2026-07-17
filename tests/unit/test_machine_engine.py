@@ -678,6 +678,39 @@ def test_live_world_materializes_poke_atomically(tmp_path: Path) -> None:
     LiveWorld(cwd=tmp_path, journal=MachineJournal(tmp_path / "i")).materialize_poke("x")
 
 
+def test_data_dir_env_matches_jail_mount(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The data dir lives OUTSIDE cwd by design, and `strict` bind-mounts each
+    # extra_rw_path at /rw<host-abspath>, so `$AGENT6_MACHINE_DATA_DIR` must
+    # point there (a relative-to-cwd or bare-abspath value never resolves).
+    from agent6.machine import engine
+    from agent6.machine.engine import LiveWorld
+    from agent6.types import CommandResult, JailPolicy
+
+    data_dir = tmp_path / "state" / "machines" / "m" / "data"
+    captured: dict[str, JailPolicy] = {}
+
+    def fake_run_in_jail(policy: JailPolicy) -> CommandResult:
+        captured["policy"] = policy
+        return CommandResult(argv=policy.argv, returncode=0, stdout="{}", stderr="", duration_s=0.0)
+
+    monkeypatch.setattr(engine, "run_in_jail", fake_run_in_jail)
+
+    strict = LiveWorld(
+        cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), data_dir=data_dir, profile="strict"
+    )
+    strict.run_tool(("python3", "x.py"), 5.0)
+    strict_policy = captured["policy"]
+    assert dict(strict_policy.env)["AGENT6_MACHINE_DATA_DIR"] == f"/rw{data_dir}"
+    assert data_dir in strict_policy.extra_rw_paths
+
+    # hardened / none run in the real filesystem, so the host abspath is correct.
+    hardened = LiveWorld(
+        cwd=tmp_path, journal=MachineJournal(tmp_path / "i"), data_dir=data_dir, profile="hardened"
+    )
+    hardened.run_tool(("python3", "x.py"), 5.0)
+    assert dict(captured["policy"].env)["AGENT6_MACHINE_DATA_DIR"] == str(data_dir)
+
+
 def test_notify_does_not_change_replay_path(tmp_path: Path) -> None:
     # machine.notify is presentation only: replay ignores it and reproduces.
     journal, f = _load(tmp_path, NOTIFIER)

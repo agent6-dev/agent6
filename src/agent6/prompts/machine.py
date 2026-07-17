@@ -156,8 +156,8 @@ Two durable stores, both available on every sandbox profile:
     IS a replayable audit log of everything that happened — for free.
   - `$AGENT6_MACHINE_DATA_DIR` is a persistent, WRITABLE directory every `tool`
     script may write to (the one writable spot under `hardened`, where new
-    top-level files in the workspace are read-only). It's a path relative to the
-    workspace, so just open it from the script's cwd — works on every profile:
+    top-level files in the workspace are read-only). It's an absolute path valid
+    inside the tool jail, so just open it — works on every profile:
     `open(os.environ["AGENT6_MACHINE_DATA_DIR"] + "/trades.jsonl", "a")`.
 
 For values you branch on or template later, capture them into the blackboard:

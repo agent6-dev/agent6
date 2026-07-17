@@ -206,9 +206,11 @@ def test_liveworld_grants_data_dir_rw_and_env(
     world.run_tool(("true",), 5.0, allow_network=False)
     policy = seen[-1]
     assert data in policy.extra_rw_paths
-    # Exported RELATIVE to cwd so it resolves inside a strict jail (cwd pivots to
-    # /workspace there); the host abspath wouldn't exist in that jail.
-    assert ("AGENT6_MACHINE_DATA_DIR", "i/data") in policy.env
+    # Exported to match where the jail mounts the dir: the real host abspath on
+    # hardened (real filesystem). The data dir lives OUTSIDE cwd by design, so a
+    # relative-to-cwd path can never reach it. (strict maps it to /rw<abspath>;
+    # see test_data_dir_env_matches_jail_mount.)
+    assert ("AGENT6_MACHINE_DATA_DIR", str(data)) in policy.env
 
 
 def test_liveworld_no_data_dir_grants_no_extra_rw(
