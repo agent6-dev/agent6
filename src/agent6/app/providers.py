@@ -58,7 +58,9 @@ def resolve_compaction_thresholds(
             if ctx
             else "fixed default (context window unknown)"
         )
-        log(f"compaction: drop={drop:,} summarise={summarise:,} chars [{src}]")
+        # These are the thresholds compaction WILL fire at, not a compaction
+        # that happened; say "at" or a fresh run reads as a 1.3M-char event.
+        log(f"compaction thresholds: drop at {drop:,} chars, summarise at {summarise:,} [{src}]")
     return drop, summarise
 
 
