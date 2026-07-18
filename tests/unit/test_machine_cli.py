@@ -72,6 +72,27 @@ def test_run_exit_on_wait_yields_waiting(
     assert pending.state == "poll"
 
 
+def test_run_prints_a_notify_on_the_foreground_terminal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A notify was journal-only: the foreground run is its own watcher, so the
+    # message must land on the terminal too (attach and the web already showed
+    # it). The operator [machine.notify].on_event hook is unset here.
+    monkeypatch.chdir(tmp_path)
+    f = tmp_path / "waiter.asm.toml"
+    f.write_text(
+        WAITER_DELAYED.replace(
+            'kind = "wait"',
+            'kind = "wait"\nnotify = { message = "parked, awaiting a poke", level = "warn" }',
+        ),
+        encoding="utf-8",
+    )
+    code = main(["machine", "run", str(f), "--exit-on-wait"])
+    assert code == 0
+    err = capsys.readouterr().err
+    assert "[agent6] notify [warn] 'poll': parked, awaiting a poke" in err
+
+
 def test_status_reports_waiting_state_and_spend(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -12,6 +12,7 @@ interactive step, held cli-side). The machine ENGINE is unchanged.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
 from collections.abc import Callable
@@ -255,6 +256,22 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             write_worker_pid(root, os.getpid())
             if not journal.exists():
                 write_source(root, path.read_text(encoding="utf-8"))
+            # Operator argv fired on machine.notify/machine.end, on the host
+            # outside the jail (None when [machine.notify].on_event is unset).
+            operator_hook = build_machine_notify_hook(cfg, spec.machine, root)
+
+            def surface_notify(kind: str, state: str, message: str, level: str) -> None:
+                # The foreground run is its own watcher: a notify message that
+                # is journal-only never reaches the operator sitting right here.
+                # Presentation must never affect control flow (engine contract),
+                # so a dead stderr (EPIPE, full disk on a detached spawn's log)
+                # is swallowed rather than killing the machine un-journaled.
+                if kind == "notify":
+                    with contextlib.suppress(OSError):
+                        reporter.err(f"[agent6] notify [{level}] {state!r}: {message}")
+                if operator_hook is not None:
+                    operator_hook(kind, state, message, level)
+
             world = LiveWorld(
                 cwd=cwd,
                 journal=journal,
@@ -265,9 +282,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 # Each agent state writes its own watchable logs.jsonl here, so a
                 # running machine is followable like a run (pruned to keep recent).
                 state_log_root=root / "states",
-                # Operator argv fired on machine.notify/machine.end, on the host
-                # outside the jail (None when [machine.notify].on_event is unset).
-                notify_hook=build_machine_notify_hook(cfg, spec.machine, root),
+                notify_hook=surface_notify,
                 memory_limit_mb=cfg.sandbox.memory_limit_mb,
             )
             result = drive(spec, journal, world, live=True, exit_on_wait=exit_on_wait)
