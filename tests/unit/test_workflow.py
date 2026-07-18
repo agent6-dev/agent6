@@ -16,7 +16,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Literal
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -4955,3 +4955,67 @@ def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: Path) -
     assert "verify passed" not in result.summary
     ends = [e for e in events if e["type"] == "run.end"]
     assert ends and ends[-1]["reason"] == "settled" and ends[-1]["all_passed"] is False
+
+
+def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: Path) -> None:
+    """The REPL hook's "stop" ends the run deliberately, not as verified
+    success: reason='interactive_stop' with all_passed=False on the run.end
+    event (it used to route through the passed emitter with zero verifies)."""
+
+    class ProviderStub:
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            return _tool_resp(
+                "apply_edit",
+                {"path": "a.py", "edits": [{"kind": "create", "new_string": "x = 1\n"}]},
+                tool_id="e1",
+            )
+
+    class DispatcherStub:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+            return ExecResult(
+                returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
+            )
+
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=(),
+            metric=SimpleNamespace(goal=None),
+        )
+    )
+    events: list[dict[str, Any]] = []
+
+    class _Events:
+        def emit(self, event_type: str, /, **fields: Any) -> None:
+            events.append({"type": event_type, **fields})
+
+    def _stop_hook(_i: int, _sha: str) -> Literal["continue", "stop"]:
+        return "stop"
+
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        mode="run",
+        provider=ProviderStub(),
+        dispatcher=DispatcherStub(),
+        max_iterations=10,
+        events=_Events(),
+        after_auto_commit=_stop_hook,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
+    with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            conversation=Conversation.from_wire(messages),
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+            original_task="t",
+        )
+    assert result.completed is True
+    assert result.reason == "interactive_stop"
+    ends = [e for e in events if e["type"] == "run.end"]
+    assert ends and ends[-1]["reason"] == "interactive_stop"
+    assert ends[-1]["all_passed"] is False  # a stop is deliberate, never "passed"

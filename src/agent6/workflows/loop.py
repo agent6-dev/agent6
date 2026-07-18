@@ -1375,7 +1375,15 @@ class Workflow:
             directive = self.after_auto_commit(turn.iteration, sha)
             if directive == "stop":
                 self._log(f"LOOP: interactive stop at iter {turn.iteration}")
-                self._emit_run_end_passed(reason="interactive_stop", iterations=turn.iteration)
+                # An operator stop is deliberate, not verified success: the
+                # same truth rule as steer_abort ("stopped", never "passed").
+                self._pass_pending_root_tasks()
+                self._emit(
+                    "run.end",
+                    reason="interactive_stop",
+                    iterations=turn.iteration,
+                    all_passed=False,
+                )
                 return RunResult(
                     completed=True,
                     reason="interactive_stop",

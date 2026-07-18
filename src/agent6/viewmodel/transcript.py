@@ -56,6 +56,7 @@ _END_REASON_LABEL = {
     "went_quiet": "went quiet",
     "verify_settled": "verify settled",
     "settled": "settled (no verify)",
+    "interactive_stop": "stopped interactively",
     "max_iterations": "hit iteration cap",
 }
 
