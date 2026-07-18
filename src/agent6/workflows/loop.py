@@ -2082,7 +2082,11 @@ class Workflow:
                 f"LOOP: verify_settled at iter {turn.iteration} (idle {state.verify_settled_idle})"
             )
             self._final_checkpoint(turn.iteration)
-            if state.verify_ever_passed:
+            # Ground on the TREE, not on verify_ever_passed: a green verify
+            # followed by un-reverified edits must not settle as "passed"
+            # (finish_run grounds on the same probe, so the two clean ends
+            # cannot disagree).
+            if state.verify_ever_passed and self._tree_is_verify_green(state) is not False:
                 self._emit_run_end_passed(reason="verify_settled", iterations=turn.iteration)
                 return RunResult(
                     completed=True,
@@ -2091,23 +2095,31 @@ class Workflow:
                     iterations=turn.iteration,
                     tool_calls=state.tool_calls,
                 )
-            # Gateless seed: the work is committed and the worker went quiet,
-            # but NOTHING verified it; ending "passed" here put a lie on every
+            # The work is committed and the worker went quiet, but nothing
+            # verified the FINAL tree; ending "passed" here put a lie on every
             # surface (observed: an empty repo inferred no verify, the run
             # built a whole project, and the banner read "verify passed").
             self._pass_pending_root_tasks()
             self._emit("run.end", reason="settled", iterations=turn.iteration, all_passed=False)
+            if state.verify_ever_passed:
+                summary = (
+                    "the worker settled, but edits after the last green verify were"
+                    " never re-verified"
+                )
+            elif self.config.workflow.verify_command:
+                # A command can exist here only via mid-run adoption (an
+                # operator-set one is never gateless).
+                summary = (
+                    "the worker settled after committing work; the adopted verify never passed"
+                )
+            else:
+                summary = (
+                    "the worker settled after committing work; no verify command existed to gate it"
+                )
             return RunResult(
                 completed=True,
                 reason="settled",
-                # A command can exist here only via mid-run adoption (an
-                # operator-set one is never gateless); say which truth applies.
-                summary=(
-                    "the worker settled after committing work; the adopted verify never passed"
-                    if self.config.workflow.verify_command
-                    else "the worker settled after committing work; no verify command existed"
-                    " to gate it"
-                ),
+                summary=summary,
                 iterations=turn.iteration,
                 tool_calls=state.tool_calls,
             )

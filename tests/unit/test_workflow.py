@@ -1606,6 +1606,74 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: Path) -> None:
     assert result.completed is True
 
 
+def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: Path) -> None:
+    """A green verify followed by edits that never re-verify must not settle as
+    'verify passed': the settle end grounds on the same tree probe as
+    finish_run, so it downgrades to reason='settled' with the stale-green
+    summary (all_passed=False)."""
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            if self.calls == 1:
+                return _tool_resp("run_verify_command", tool_id="v1")  # green
+            if self.calls == 2:  # then an edit nothing re-verifies
+                return _tool_resp(
+                    "apply_edit",
+                    {"path": "a.py", "edits": [{"kind": "create", "new_string": "x = 2\n"}]},
+                    tool_id="e1",
+                )
+            return _tool_resp("run_command", {"cmd": f"ls {self.calls}"}, tool_id=f"c{self.calls}")
+
+    class DispatcherStub:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+            return ExecResult(
+                returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
+            )
+
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=("true",),
+            metric=SimpleNamespace(goal=None),
+        )
+    )
+    events: list[dict[str, Any]] = []
+
+    class _Events:
+        def emit(self, event_type: str, /, **fields: Any) -> None:
+            events.append({"type": event_type, **fields})
+
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        mode="run",
+        provider=ProviderStub(),
+        dispatcher=DispatcherStub(),
+        max_iterations=30,
+        events=_Events(),
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ndo it"}]}]
+    with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            conversation=Conversation.from_wire(messages),
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+            original_task="t",
+        )
+    assert result.reason == "settled"
+    assert "never re-verified" in result.summary
+    ends = [e for e in events if e["type"] == "run.end"]
+    assert ends and ends[-1]["all_passed"] is False
+
+
 def test_drive_loop_verify_settled_does_not_fire_before_first_verify(tmp_path: Path) -> None:
     """The settled detector must stay dormant until verify has passed at least
     once — a worker still reading toward its first green build must not be
