@@ -533,3 +533,60 @@ def test_apply_operator_env_grants_upgrades_ask_never_no(
     assert _apply_operator_env_grants(no).sandbox.run_commands == "no"  # never resurrected
     monkeypatch.delenv("AGENT6_AUTO_APPROVE")
     assert _apply_operator_env_grants(ask).sandbox.run_commands == "ask"  # no grant, no change
+
+
+TOOL_PROBE_MACHINE = """
+machine = "probe-check"
+version = 1
+initial = "lint"
+
+[budget]
+max_usd = 1.0
+max_transitions = 10
+
+[states.lint]
+kind = "tool"
+command = ["definitely-not-a-binary-xyz", "check"]
+timeout_secs = 5
+on = { ok = "done", nonzero = "fail", timeout = "fail" }
+
+[states.done]
+kind = "terminal"
+status = "ok"
+reason = "clean"
+
+[states.fail]
+kind = "terminal"
+status = "failed"
+reason = "lint"
+"""
+
+
+def test_check_warns_on_binaries_unreachable_in_the_jail(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Offline validation mocks subprocess, so a machine whose tool calls a
+    # binary absent from the jail PATH passed check/test and died on its first
+    # real transition. The probe covers tool-state command[0] AND literal
+    # subprocess argv inside bundle scripts; reachable binaries stay quiet and
+    # the warnings are advisory (check still exits 0).
+    monkeypatch.chdir(tmp_path)
+    f = tmp_path / "probe.asm.toml"
+    f.write_text(TOOL_PROBE_MACHINE, encoding="utf-8")
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "helper.py").write_text(
+        '"""Bundle helper."""\n\nimport subprocess\n\n\n'
+        "def main() -> int:\n"
+        '    subprocess.run(["also-missing-tool-abc", "x"], check=False)\n'
+        '    subprocess.run(["python3", "-c", "pass"], check=False)\n'
+        "    return 0\n",
+        encoding="utf-8",
+    )
+    code = main(["machine", "check", str(f)])
+    out = capsys.readouterr()
+    assert code == 0  # advisory: the operator may install the tool later
+    assert "OK:" in out.out
+    assert "`definitely-not-a-binary-xyz` ([states.lint] command)" in out.err
+    assert "`also-missing-tool-abc` (scripts/helper.py)" in out.err
+    assert "python3" not in out.err  # reachable binaries stay quiet

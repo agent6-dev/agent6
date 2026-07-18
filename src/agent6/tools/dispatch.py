@@ -195,6 +195,13 @@ def _operator_tool_paths() -> tuple[str, tuple[Path, ...]]:
     return ":".join(path_dirs), tuple(sorted(mounts))
 
 
+def jail_search_path() -> str:
+    """The PATH a jailed command resolves against, for host-side reachability
+    probes (`machine check`): the jail baseline plus the standard bin dirs that
+    exist right now. Advisory only; the jail recomputes its own per call."""
+    return _operator_tool_paths()[0]
+
+
 # Execution tools whose stdout/stderr IS the diagnostic signal. Their tool.result
 # event carries a capped output tail (like verify.end) so logs.jsonl shows
 # the command's output for quick observability -- not just a one-line summary --

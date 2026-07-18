@@ -9,10 +9,12 @@ the `MachineFrontend` seam. The interactive network-refusal resolver stays here
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import datetime as _dt
 import difflib
 import json
+import shutil
 import sys
 import time
 import tomllib
@@ -58,6 +60,7 @@ from agent6.machine import (
 from agent6.paths import chown_to_real_user
 from agent6.runs.ipc import read_worker_pid, worker_is_alive
 from agent6.sandbox.detect import ProfileUnavailableError, select_profile
+from agent6.tools.dispatch import jail_search_path
 from agent6.types import SandboxProfile
 from agent6.ui.cli._common import _machines_dir
 from agent6.ui.cli.plan_watch import format_plain_event
@@ -95,6 +98,57 @@ def _load_validated(path: Path) -> tuple[MachineSpec | None, list[str], str]:
     return spec, [], ""
 
 
+_SUBPROCESS_CALLS = frozenset({"run", "Popen", "call", "check_call", "check_output"})
+
+
+def _script_binaries(scripts_dir: Path) -> dict[str, str]:
+    """Best effort: the literal first-argv string of each subprocess call in the
+    bundle's scripts, mapped to one script that makes it. Dynamic argv is
+    invisible to this scan, so absence proves nothing; only a HIT feeds the
+    reachability warning."""
+    out: dict[str, str] = {}
+    for py in sorted(scripts_dir.glob("*.py")) if scripts_dir.is_dir() else []:
+        try:
+            tree = ast.parse(py.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError):
+            continue  # the script linter owns reporting unparseable scripts
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+            if name not in _SUBPROCESS_CALLS or not node.args:
+                continue
+            first_arg = node.args[0]
+            if isinstance(first_arg, ast.List) and first_arg.elts:
+                head = first_arg.elts[0]
+                if isinstance(head, ast.Constant) and isinstance(head.value, str):
+                    out.setdefault(head.value, py.name)
+    return out
+
+
+def _tool_reachability_warnings(spec: MachineSpec, path: Path) -> list[str]:
+    """Binaries this machine will exec that do not resolve on the jail PATH:
+    tool-state `command[0]` plus literal subprocess argv in bundle scripts.
+    Offline validation mocks subprocess, so without this probe a machine passes
+    check/test and dies on its first real state (observed: ruff, exit at
+    transition 1). Advisory: the operator may install the tool later."""
+    search = jail_search_path()
+    sources: dict[str, str] = {}
+    for name, state in spec.states.items():
+        if isinstance(state, ToolState):
+            sources.setdefault(state.command[0], f"[states.{name}] command")
+    for binary, script in _script_binaries(path.parent / "scripts").items():
+        sources.setdefault(binary, f"scripts/{script}")
+    return [
+        f"WARNING: `{binary}` ({src}) does not resolve on the jail PATH; that state"
+        " will fail at run time. Install it into a standard bin dir, or grant its"
+        " real path via sandbox.extra_read_paths."
+        for binary, src in sorted(sources.items())
+        if "/" not in binary and shutil.which(binary, path=search) is None
+    ]
+
+
 def _cmd_machine_check(path: Path) -> int:
     spec, problems, label = _load_validated(path)
     if spec is None:
@@ -102,6 +156,8 @@ def _cmd_machine_check(path: Path) -> int:
     script_problems = lint_and_typecheck(path.parent / "scripts")
     if script_problems:
         return _fail(path, script_problems, "scripts")
+    for warning in _tool_reachability_warnings(spec, path):
+        print(warning, file=sys.stderr)
     print(f"OK: {path} ({spec.machine}, {len(spec.states)} states)")
     return 0
 
