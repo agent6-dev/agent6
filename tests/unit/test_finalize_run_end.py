@@ -157,3 +157,53 @@ def test_provider_error_is_headlined_failed(tmp_path: Path, capsys: object) -> N
     )
     out = capsys.readouterr().out  # type: ignore[attr-defined]
     assert "failed" in out and "provider error" in out
+
+
+def test_end_banner_adds_the_run_total_across_resume_legs(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The tracker's "TOTAL" line is per-leg (each resume starts a fresh budget);
+    # a resumed run's banner must also state the true cumulative spend.
+    layout = _layout(
+        tmp_path,
+        "r7",
+        [
+            {"type": "run.start", "run_id": "r7", "user_task": "t"},
+            {"type": "budget.update", "usd_total": 0.019},
+            {"type": "run.end", "reason": "finish_run", "all_passed": True},
+            {"type": "loop.resume.start", "iteration": 4},
+            {"type": "budget.update", "usd_total": 0.0126},
+            {"type": "run.end", "reason": "finish_run", "all_passed": True},
+        ],
+    )
+    result = RunResult(completed=True, reason="finish_run", summary="", iterations=5, tool_calls=2)
+    print_run_end(
+        result,
+        layout=layout,
+        budget=BudgetTracker(max_input_tokens=1000, max_output_tokens=1000),
+        console_stream=False,
+    )
+    out = capsys.readouterr().out
+    assert "RUN TOTAL (all 2 legs): $0.0316" in out
+
+
+def test_end_banner_stays_quiet_on_a_single_leg_run(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    layout = _layout(
+        tmp_path,
+        "r8",
+        [
+            {"type": "run.start", "run_id": "r8", "user_task": "t"},
+            {"type": "budget.update", "usd_total": 0.01},
+            {"type": "run.end", "reason": "finish_run", "all_passed": True},
+        ],
+    )
+    result = RunResult(completed=True, reason="finish_run", summary="", iterations=2, tool_calls=1)
+    print_run_end(
+        result,
+        layout=layout,
+        budget=BudgetTracker(max_input_tokens=1000, max_output_tokens=1000),
+        console_stream=False,
+    )
+    assert "RUN TOTAL" not in capsys.readouterr().out

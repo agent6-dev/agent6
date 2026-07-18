@@ -29,7 +29,8 @@ from agent6.git_ops import (
 )
 from agent6.runs.layout import RunLayout
 from agent6.runs.manifest import ManifestError, read_manifest
-from agent6.viewmodel import summarize_run_dir
+from agent6.viewmodel import scan_run_log, summarize_run_dir
+from agent6.viewmodel.format import format_cost
 from agent6.workflows.loop import RunResult
 
 # Distinct exit code for a budget-exhausted run so automation can tell "raise
@@ -105,6 +106,7 @@ def print_run_end(
         print("    - run with --dangerously-disable-sandbox")
         print("    - add its real directory to [sandbox].extra_read_paths")
     print(budget.format_summary())
+    _print_run_total_across_legs(layout)
     run_branch = ""
     base_branch = ""
     with contextlib.suppress(ManifestError):
@@ -127,6 +129,16 @@ def print_run_end(
         print(f"\nresume with:  agent6 resume {layout.run_id}")
 
 
+def _print_run_total_across_legs(layout: RunLayout) -> None:
+    """After the leg's token+cost banner: the run's true cumulative spend when
+    resume legs precede this one. The tracker is per-leg (each resume starts a
+    fresh budget), so its "TOTAL" line undersells a resumed run without this."""
+    scan = scan_run_log(layout.run_dir / "logs.jsonl")
+    if scan.legs > 1 and scan.cost_usd is not None:
+        cost = format_cost(scan.cost_usd, partial=scan.usd_partial)
+        print(f"  RUN TOTAL (all {scan.legs} legs): {cost}")
+
+
 def print_interrupt_end(*, layout: RunLayout, budget: BudgetTracker) -> None:
     """After a Ctrl-C interrupt: the cost so far, the resume hint, and the
     branch-return hint. The interrupt cuts the run before ``print_run_end``, so
@@ -135,6 +147,7 @@ def print_interrupt_end(*, layout: RunLayout, budget: BudgetTracker) -> None:
     the run branch. Mirrors the not-completed footer of ``print_run_end``."""
     print()
     print(budget.format_summary())
+    _print_run_total_across_legs(layout)
     print(f"\nresume with:  agent6 resume {layout.run_id}")
     run_branch = ""
     base_branch = ""

@@ -305,12 +305,17 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:
     )
     print(f"elapsed:    {_fmt_dur(elapsed)}")
     if scan.input_tokens is not None or scan.cost_usd is not None:
+        # Token counters are per-leg, cost is banked across legs; on a resumed
+        # run say so, or $0.03 next to the last leg's 10k tokens reads wrong.
+        leg_s = " (latest leg)" if scan.legs > 1 else ""
         cost_s = (
             f"  cost {format_cost(scan.cost_usd, partial=scan.usd_partial)}"
+            + (f" (all {scan.legs} legs)" if scan.legs > 1 else "")
             if scan.cost_usd is not None
             else ""
         )
-        print(f"usage:      in={scan.input_tokens or 0} out={scan.output_tokens or 0}{cost_s}")
+        tokens = f"in={scan.input_tokens or 0} out={scan.output_tokens or 0}"
+        print(f"usage:      {tokens}{leg_s}{cost_s}")
     _print_task_tree(target)
     return 0
 

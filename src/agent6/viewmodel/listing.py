@@ -184,7 +184,8 @@ class LogScan:
 
     Token counters are the CURRENT leg's; ``cost_usd`` is cumulative across
     resume legs (None = no budget.update ever), matching the typed fold's
-    BudgetView so no two surfaces can disagree on what a run cost.
+    BudgetView so no two surfaces can disagree on what a run cost. ``legs``
+    lets a renderer say which scope a figure describes when they differ.
     """
 
     saw_start: bool = False  # run.start seen (a run without it is still launching)
@@ -195,6 +196,7 @@ class LogScan:
     end_reason: str = ""
     cost_usd: float | None = None
     usd_partial: bool = False  # sticky: unpriced spend in any leg -> under-estimate
+    legs: int = 1  # 1 + completed resume legs
     input_tokens: int | None = None
     output_tokens: int | None = None
     iteration: int | None = None  # last event carrying an int iteration
@@ -233,6 +235,7 @@ def scan_run_log(logs: Path) -> LogScan:  # noqa: PLR0915 (linear fold, like bui
     usd_prior_legs = 0.0  # summed totals of completed (resumed-past) legs
     saw_budget = False
     usd_partial = False
+    legs = 1
     input_tokens: int | None = None
     output_tokens: int | None = None
     iteration: int | None = None
@@ -274,9 +277,14 @@ def scan_run_log(logs: Path) -> LogScan:  # noqa: PLR0915 (linear fold, like bui
                     # legs, not just the latest leg's (per-leg budgets stay the
                     # enforcement mechanism; only the shown total changes). The
                     # typed fold applies the same rule (state.BudgetView), so the
-                    # hub row and the run view can never disagree.
+                    # hub row and the run view can never disagree. Token counters
+                    # reset too: they are documented as the current leg's, and
+                    # leftovers would wear the "(latest leg)" label falsely until
+                    # the resumed leg's first provider call lands.
                     usd_prior_legs += usd_leg
                     usd_leg = 0.0
+                    input_tokens = output_tokens = None
+                    legs += 1
                 elif etype == "budget.update":
                     saw_budget = True
                     usd_leg = _tolerant_usd(ev.get("usd_total"), usd_leg)
@@ -295,6 +303,7 @@ def scan_run_log(logs: Path) -> LogScan:  # noqa: PLR0915 (linear fold, like bui
         end_reason=end_reason,
         cost_usd=(usd_prior_legs + usd_leg) if saw_budget else None,
         usd_partial=usd_partial,
+        legs=legs,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         iteration=iteration,

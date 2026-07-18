@@ -282,3 +282,39 @@ def test_status_missing_id_and_empty_state_speak_human(
     assert "no run matches 'zzz'" in err and "machine-drafts" not in err
     assert _cmd_status("", as_json=False) == 2
     assert 'no runs yet. Start one with `agent6 run "<task>"`.' in capsys.readouterr().err
+
+
+def test_status_text_labels_leg_scoped_figures_on_a_resumed_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Cost is banked across legs, token counters are the latest leg's; the
+    # usage line must say which scope each figure describes once they differ.
+    d = _make_run(
+        tmp_path,
+        monkeypatch,
+        [
+            {"ts": _ts(90), "type": "run.start", "mode": "run", "user_task": "t"},
+            {
+                "ts": _ts(80),
+                "type": "budget.update",
+                "input_total": 9000,
+                "output_total": 500,
+                "usd_total": 0.02,
+            },
+            {"ts": _ts(70), "type": "run.end", "reason": "finish_run", "all_passed": True},
+            {"ts": _ts(60), "type": "loop.resume.start", "iteration": 4},
+            {
+                "ts": _ts(10),
+                "type": "budget.update",
+                "input_total": 300,
+                "output_total": 50,
+                "usd_total": 0.005,
+            },
+            {"ts": _ts(5), "type": "run.end", "reason": "finish_run", "all_passed": True},
+        ],
+    )
+    write_worker_pid(d, 999999999)
+    _cmd_status("winsome-dawn-YWH5ZS")
+    out = capsys.readouterr().out
+    assert "in=300 out=50 (latest leg)" in out
+    assert "cost $0.0250 (all 2 legs)" in out
