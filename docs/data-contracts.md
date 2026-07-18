@@ -41,16 +41,16 @@ Read a run's manifest.json into the typed RunManifest. The single reader + the o
 | `user_task` | `str` | `''` |
 | `base_sha` | `str` | `''` |
 | `base_branch` | `str` | `''` |
-| `run_branch` | `str \| None` | `None` |
+| `run_branch` | `str | None` | `None` |
 | `models` | `ModelsBrief` | `ModelsBrief()` |
 | `workflow` | `WorkflowStamp` | `WorkflowStamp()` |
-| `parent_run_id` | `str \| None` | `None` |
-| `forked_from_turn` | `int \| None` | `None` |
-| `forked_from_sha` | `str \| None` | `None` |
-| `merged` | `MergeStamp \| None` | `None` |
-| `parallel_id` | `str \| None` | `None` |
-| `lane` | `int \| None` | `None` |
-| `compare` | `CompareStamp \| None` | `None` |
+| `parent_run_id` | `str | None` | `None` |
+| `forked_from_turn` | `int | None` | `None` |
+| `forked_from_sha` | `str | None` | `None` |
+| `merged` | `MergeStamp | None` | `None` |
+| `parallel_id` | `str | None` | `None` |
+| `lane` | `int | None` | `None` |
+| `compare` | `CompareStamp | None` | `None` |
 
 - **Written by:** app/{manifest}
 - **Read by:** app/{compare, finalize, fork, merge, parallel, preflight, resume}, ui/{mcp_server}, ui/cli/{_ask, _steer_menu, plan_watch, runs_cmds}, ui/web/{model}, viewmodel/{format, listing}
@@ -71,13 +71,13 @@ How a run ends and how it resumes: the RunResult the workflow returns, the Resum
 | `messages` | `list[dict[str, Any]]` | required |
 | `tool_calls` | `int` | required |
 | `next_iteration` | `int` | required |
-| `root_task_id` | `str \| None` | required |
+| `root_task_id` | `str | None` | required |
 | `original_task` | `str` | required |
 | `verify_command` | `tuple[str, ...]` | required |
 | `review_rejections_total` | `int` | `0` |
 | `verify_ever_passed` | `bool` | `False` |
 | `gateless_ever_committed` | `bool` | `False` |
-| `metric_best_score` | `float \| None` | `None` |
+| `metric_best_score` | `float | None` | `None` |
 | `metric_at_ceiling` | `bool` | `False` |
 | `head_sha` | `str` | `''` |
 | `graph_version` | `int` | `0` |
@@ -158,7 +158,7 @@ The persistent task-graph models: nodes plus the LLM-emitted curator intents tha
 | field | type | default |
 | --- | --- | --- |
 | `id` | `str` | required |
-| `parent_id` | `str \| None` | required |
+| `parent_id` | `str | None` | required |
 | `title` | `str` | required |
 | `rationale` | `str` | `''` |
 | `acceptance` | `str` | `''` |

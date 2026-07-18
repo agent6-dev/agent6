@@ -460,8 +460,7 @@ def _md_fields(card: Card) -> list[str]:
         return []
 
     def cell(text: str) -> str:
-        # A raw | inside a table cell splits the column even in a code span.
-        return f"`{text.replace('|', '\\|')}`"
+        return f"`{text}`"
 
     rows = [
         "",
