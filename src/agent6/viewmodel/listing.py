@@ -132,7 +132,7 @@ class RunSummary:
     run_id: str
     mode: str  # run | plan | ask | ?
     task: str  # raw task text; callers snippet/truncate for their layout
-    status: str  # starting | running | stale | passed | planned | finished | stopped | failed | ?
+    status: str  # created|starting|running|stale|passed|answered|planned|finished|stopped|failed
     reason: str  # end reason detail when status is "failed", else ""
     cost_usd: float
     mtime: float
@@ -144,10 +144,10 @@ def status_word(*, finished: bool, all_passed: bool, end_reason: str) -> tuple[s
     The single place that decides how a run's outcome reads -- shared by
     ``run_status_label`` (headers) and ``summarize_run_dir`` (listings) so the
     surfaces can never disagree. "stopped" is the operator's own act (not a
-    failure), "planned" is a completed plan pass (which verifies nothing, so
-    "passed" would mislead), "passed" means all verify gates green, "finished"
-    is a deliberate finish without all-passed, and anything else is "failed"
-    with the reason (provider_error, went_quiet, ...).
+    failure); "planned" and "answered" are the no-verify clean exits (a plan
+    pass / an ask, where "passed" would mislead); "passed" means all verify
+    gates green, "finished" is a deliberate finish without all-passed, and
+    anything else is "failed" with the reason (provider_error, went_quiet, ...).
     """
     if not finished:
         return "running", ""
@@ -331,8 +331,9 @@ def summarize_run_dir(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) ->
             # No run.start yet. A live worker means the run is still launching
             # (egress + verify inference); show "starting", not a bare "running"
             # on an empty row. No live worker (a `fork --no-run`, or a run that
-            # died before starting) stays the neutral "?", never a false "stale".
-            word, reason = ("starting" if worker_is_alive(run_dir) else "?"), ""
+            # died before starting) reads "created": it never started work, so
+            # neither a cryptic "?" nor a false "stale".
+            word, reason = ("starting" if worker_is_alive(run_dir) else "created"), ""
         elif _running_is_stale(run_dir, stale_after_s):
             word = "stale"
     if mode == "ask":

@@ -239,7 +239,7 @@ def test_summary_no_logs(tmp_path: Path) -> None:
     rd = tmp_path / "runs" / "empty"
     rd.mkdir(parents=True)
     s = summarize_run_dir(rd)
-    assert (s.status, s.task) == ("?", "(no logs)")
+    assert (s.status, s.task) == ("created", "(no logs)")
 
 
 def test_summary_plan_reads_planned_not_passed(tmp_path: Path) -> None:
@@ -278,7 +278,7 @@ def test_summary_manifest_only_fork_shows_mode_and_task(tmp_path: Path) -> None:
         json.dumps({"mode": "plan", "user_task": "carry this forward"}), encoding="utf-8"
     )
     s = summarize_run_dir(rd)
-    assert (s.mode, s.task, s.status) == ("plan", "carry this forward", "?")
+    assert (s.mode, s.task, s.status) == ("plan", "carry this forward", "created")
 
 
 def test_summary_launching_run_reads_starting(tmp_path: Path) -> None:
@@ -298,13 +298,13 @@ def test_summary_launching_run_reads_starting(tmp_path: Path) -> None:
 def test_summary_pre_start_dead_worker_is_neutral_not_stale(tmp_path: Path) -> None:
     # The converse: no run.start and no LIVE worker (a `fork --no-run`, or a run
     # that died in preflight) must NOT read a false "stale" -- it never claimed to
-    # be running. It stays the neutral "?".
+    # be running. It reads "created", never a false "stale".
     rd = _write_run(tmp_path, "runs", "dead", [{"type": "role.call", "role": "verify_inferer"}])
     (rd / "manifest.json").write_text(
         json.dumps({"mode": "run", "user_task": "t"}), encoding="utf-8"
     )
     (rd / "worker.pid").write_text("999999999", encoding="utf-8")  # never alive
-    assert summarize_run_dir(rd, stale_after_s=0.0).status == "?"
+    assert summarize_run_dir(rd, stale_after_s=0.0).status == "created"
 
 
 def test_summary_cost_sums_across_resume_legs(tmp_path: Path) -> None:
