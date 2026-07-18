@@ -243,7 +243,11 @@ fn carried_mount_flags(dst: &Path) -> MsFlags {
         if f.contains(FsFlags::ST_NODIRATIME) {
             flags |= MsFlags::MS_NODIRATIME;
         }
-        if f.contains(FsFlags::ST_RELATIME) {
+        // ST_RELATIME by raw bit (0x1000, kernel ABI): the kernel sets it in
+        // f_flag on every libc, but neither nix's FsFlags nor the libc crate
+        // defines the constant on musl, and the release wheel builds musl.
+        const ST_RELATIME_BIT: libc::c_ulong = 0x1000;
+        if f.bits() & ST_RELATIME_BIT != 0 {
             flags |= MsFlags::MS_RELATIME;
         }
     }
