@@ -304,3 +304,56 @@ def test_runs_diff_neutralizes_poisoned_diff_external(
     assert rc == 0
     assert not marker.exists()  # the payload never ran
     assert "+a" in capfd.readouterr().out  # builtin diff still printed the patch
+
+
+def test_ff_merge_of_a_diverged_base_refuses_with_a_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `git merge --ff-only` would spew `fatal: Not possible to fast-forward`
+    # plus rebase hints with no agent6 framing; the pre-check refuses with the
+    # reason and the way out instead.
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-FFDIV1", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    # main moves after the branch was cut: ff is now impossible.
+    (tmp_path / "moved.txt").write_text("m\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "main moves on")
+    rc = main(["runs", "merge", "run-FFDIV1", "--strategy", "ff"])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "fast-forward is impossible" in err
+    assert "--strategy merge or squash" in err
+    assert "Not possible to fast-forward" not in err  # no raw git spew
+
+
+def test_ff_merge_lands_when_the_base_has_not_moved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Pins the pre-check's is_ancestor argument order: an unmoved base IS an
+    # ancestor of the run branch, so the ff must not be falsely refused.
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-FFOK1", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    rc = main(["runs", "merge", "run-FFOK1", "--strategy", "ff"])
+    assert rc == 0
+    assert "fast-forward is impossible" not in capsys.readouterr().err
+    # main now points at the run branch tip: a true fast-forward.
+    assert _git(tmp_path, "rev-parse", "main") == _git(tmp_path, "rev-parse", "agent6/run-FFOK1")
+
+
+def test_ff_merge_of_an_already_contained_branch_is_a_clean_no_op(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The run branch's commits are already in main (merged earlier) and main
+    # has moved on: `git merge --ff-only` says "Already up to date" (rc 0), so
+    # the moved-base pre-check must not refuse it.
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-FFIN1", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    _git(tmp_path, "merge", "-q", "--ff-only", "agent6/run-FFIN1")  # contain it
+    (tmp_path / "moved.txt").write_text("m\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "main moves on")
+    before = _git(tmp_path, "rev-parse", "main")
+    rc = main(["runs", "merge", "run-FFIN1", "--strategy", "ff"])
+    assert rc == 0
+    assert "fast-forward is impossible" not in capsys.readouterr().err
+    assert _git(tmp_path, "rev-parse", "main") == before  # no-op, nothing rewound

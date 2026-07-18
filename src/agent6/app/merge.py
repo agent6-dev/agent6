@@ -24,6 +24,7 @@ from agent6.git_ops import (
     branch_exists,
     condense_commit_message,
     create_branch,
+    is_ancestor,
     list_run_commits,
     merge_branch,
     set_repo_hook_policy,
@@ -130,6 +131,25 @@ def execute_merge(
         # would otherwise make it at HEAD). runs merge pre-checks this for a nicer
         # message; auto_merge relies on this guard if the base was deleted mid-run.
         return MergeOutcome("error", error=f"target branch {target!r} does not exist")
+    if (
+        strategy == "ff"
+        and not is_ancestor(cwd, target, run_branch)
+        and not is_ancestor(cwd, run_branch, target)
+    ):
+        # Pre-check what `git merge --ff-only` would refuse: without it the
+        # raw `fatal: Not possible to fast-forward` plus git's rebase hints
+        # spew at the operator with no agent6 reason (auto_merge with an ff
+        # config would spew the same on a moved base). A run branch the target
+        # already CONTAINS is not refused: --ff-only is a clean no-op there
+        # ("Already up to date"), even when the target has moved past it.
+        return MergeOutcome(
+            "error",
+            error=(
+                f"{target!r} has moved since the run branch was cut, so a"
+                " fast-forward is impossible; merge with --strategy merge or"
+                " squash instead"
+            ),
+        )
     try:
         create_branch(cwd, target)  # checkout the (now-verified) target
     except GitError as exc:
