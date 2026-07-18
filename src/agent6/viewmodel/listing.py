@@ -202,6 +202,20 @@ class LogScan:
     last_type: str | None = None  # last event's type
 
 
+def _tolerant_usd(raw: object, last_good: float) -> float:
+    """*raw* as a float when it is a real number or numeric string; else the
+    last good figure. A torn/adversarial usd_total degrades like a torn line,
+    never aborts the scan (the typed fold makes the same call in parse_event),
+    and falsy junk (``""``, ``False``) must KEEP the figure; an ``or 0.0``
+    fallback silently reset it."""
+    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+        return float(raw)
+    if isinstance(raw, str):
+        with contextlib.suppress(ValueError):
+            return float(raw)
+    return last_good
+
+
 def scan_run_log(logs: Path) -> LogScan:  # noqa: PLR0915 (linear fold, like build_parser)
     """Fold ``logs.jsonl`` into a :class:`LogScan`: run.start (mode/task), the
     last run.end (un-finished again by a later resume), the running per-leg
@@ -264,7 +278,7 @@ def scan_run_log(logs: Path) -> LogScan:  # noqa: PLR0915 (linear fold, like bui
                     usd_leg = 0.0
                 elif etype == "budget.update":
                     saw_budget = True
-                    usd_leg = float(ev.get("usd_total", usd_leg) or 0.0)
+                    usd_leg = _tolerant_usd(ev.get("usd_total"), usd_leg)
                     usd_partial = bool(ev.get("usd_partial")) or usd_partial
                     ti, to = ev.get("input_total"), ev.get("output_total")
                     input_tokens = ti if isinstance(ti, int) else input_tokens

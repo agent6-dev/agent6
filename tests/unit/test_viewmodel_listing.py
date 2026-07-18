@@ -358,3 +358,32 @@ def test_summary_survives_a_valid_json_non_object_line(tmp_path: Path) -> None:
     s = summarize_run_dir(rd)  # must not raise
     assert s.task == "do a thing"
     assert s.status == "passed"
+
+
+def test_summary_survives_a_malformed_usd_total(tmp_path: Path) -> None:
+    # budget.update is agent6-written, but a torn write or hand-edited log can
+    # leave usd_total non-numeric; the scan keeps the last good figure instead
+    # of aborting the whole listing (same degradation the typed fold applies).
+    # Falsy junk ('', False) counts: an `or 0.0` fallback silently reset it.
+    rd = tmp_path / "runs" / "torn-usd"
+    rd.mkdir(parents=True)
+    (rd / "logs.jsonl").write_text(
+        json.dumps({"type": "run.start", "user_task": "t"})
+        + "\n"
+        + json.dumps({"type": "budget.update", "usd_total": 0.25})
+        + "\n"
+        + json.dumps({"type": "budget.update", "usd_total": "garbage"})
+        + "\n"
+        + json.dumps({"type": "budget.update", "usd_total": [1, 2]})
+        + "\n"
+        + json.dumps({"type": "budget.update", "usd_total": ""})
+        + "\n"
+        + json.dumps({"type": "budget.update", "usd_total": False})
+        + "\n"
+        + json.dumps({"type": "run.end", "all_passed": True, "reason": "finish_run"})
+        + "\n",
+        encoding="utf-8",
+    )
+    s = summarize_run_dir(rd)  # must not raise
+    assert s.status == "passed"
+    assert s.cost_usd == 0.25  # the last good figure, not 0 and not a crash
