@@ -137,8 +137,10 @@ class RunSummary:
     run_id: str
     mode: str  # run | plan | ask | ?
     task: str  # raw task text; callers snippet/truncate for their layout
-    status: str  # created|starting|running|stale|passed|answered|planned|finished|stopped|failed
-    reason: str  # end reason detail when status is "failed", else ""
+    # created|starting|running|waiting|stale|passed|answered|planned|finished|
+    # stopped|failed
+    status: str
+    reason: str  # detail: the end reason when "failed", "needs answer" when "waiting", else ""
     cost_usd: float
     mtime: float
 
@@ -356,6 +358,11 @@ def summarize_run_dir(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) ->
             word, reason = ("starting" if worker_is_alive(run_dir) else "created"), ""
         elif _running_is_stale(run_dir, stale_after_s):
             word = "stale"
+        elif scan.last_type in ("approval.prompt", "question.prompt"):
+            # Alive but blocked on the OPERATOR: an unanswered command approval
+            # or ask_user question. A bare "running" read as busy, so a lane
+            # parked on an approval sat invisible in every hub for hours.
+            word, reason = "waiting", "needs answer"
     if mode == "ask":
         with contextlib.suppress(OSError):
             task = (run_dir / "transcript.md").read_text(encoding="utf-8", errors="replace")

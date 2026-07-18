@@ -111,6 +111,7 @@ def _spec_fragment(text: str) -> str | None:
 _STATUS_STYLE = {
     "starting": "cyan",  # launching (pre-loop): in progress, lighter than running
     "running": "bold cyan",
+    "waiting": "yellow",  # blocked on the operator (approval / question)
     "stale": "dim",
     "passed": "green",
     "answered": "green",  # an ask that answered is terminal success

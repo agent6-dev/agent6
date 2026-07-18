@@ -200,6 +200,27 @@ def test_summary_running_and_stale(tmp_path: Path) -> None:
     assert summarize_run_dir(rd, stale_after_s=0.0).status == "stale"
 
 
+def test_summary_unanswered_approval_reads_waiting(tmp_path: Path) -> None:
+    # A live run whose LAST event is an unanswered approval (or ask_user
+    # question) is blocked on the operator; "running" read as busy, and an
+    # approval-parked lane sat invisible in every hub for hours.
+    rd = _write_run(
+        tmp_path,
+        "runs",
+        "r5",
+        [
+            {"type": "run.start", "mode": "run", "user_task": "t"},
+            {"type": "approval.prompt", "id": "a1", "prompt": "Allow run_command: pytest"},
+        ],
+    )
+    s = summarize_run_dir(rd, stale_after_s=10_000_000)
+    assert (s.status, s.reason) == ("waiting", "needs answer")
+    # Once answered, the run is running again (the approver appends the answer).
+    with (rd / "logs.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write('{"type": "approval.answer", "id": "a1", "approved": true}\n')
+    assert summarize_run_dir(rd, stale_after_s=10_000_000).status == "running"
+
+
 def test_summary_dead_worker_reads_stale_at_once(tmp_path: Path) -> None:
     # A killed run (worker.pid points at a dead process, no run.end) must not
     # read "running" for the whole silence window; the pid probe settles it now.

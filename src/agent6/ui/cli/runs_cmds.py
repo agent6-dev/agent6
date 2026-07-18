@@ -55,6 +55,7 @@ from agent6.workflows.judge import CandidateBrief
 _STATUS_SGR = {
     "starting": "36",  # launching (pre-loop): in progress, lighter than running
     "running": "1;36",
+    "waiting": "33",  # blocked on the operator (approval / question)
     "stale": "2",
     "passed": "32",
     "answered": "32",  # an ask that answered is terminal success
