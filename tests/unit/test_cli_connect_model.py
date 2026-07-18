@@ -254,6 +254,83 @@ def test_model_rejects_unknown_role(iso: Path) -> None:
     assert exc.value.code == 2
 
 
+def test_model_piped_without_model_lists_the_catalog(
+    iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # No tty and no model named: the invocation is a listing (one id per line,
+    # exit 0), not a 344-line prompt dump that ends in an EOF error. The set
+    # hint goes to stderr so stdout stays pipe-clean.
+    (tmp_path / "g").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "g" / "config.toml").write_text(
+        '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
+    )
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    monkeypatch.setattr(
+        "agent6.ui.cli.model.list_models", lambda *a, **k: ["claude-a", "claude-b"]
+    )
+    rc = main(["model", "worker", "anthropic"])
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert captured.out == "claude-a\nclaude-b\n"
+    assert "set one with: agent6 model worker anthropic <model>" in captured.err
+    # Nothing was written: the listing never touches config.
+    assert "[models.worker]" not in (tmp_path / "g" / "config.toml").read_text(encoding="utf-8")
+
+
+def test_model_piped_unknown_provider_errors(
+    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    monkeypatch.setattr("agent6.ui.cli.model.list_models", lambda *a, **k: [])
+    rc = main(["model", "worker", "nosuch"])
+    assert rc == 2
+    assert "no known models for nosuch" in capsys.readouterr().err
+
+
+def test_model_stdout_piped_lists_even_with_a_tty_stdin(
+    iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `agent6 model worker anthropic | grep x` keeps stdin a tty; the listing
+    # must trigger on the piped stdout, not park the pipe on an invisible
+    # numbered prompt. (iso leaves stdin.isatty True; captured stdout is not
+    # a tty, exactly the pipe shape.)
+    (tmp_path / "g").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "g" / "config.toml").write_text(
+        '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
+    )
+    monkeypatch.setattr("agent6.ui.cli.model.list_models", lambda *a, **k: ["claude-a"])
+    rc = main(["model", "worker", "anthropic"])
+    assert rc == 0
+    assert capsys.readouterr().out == "claude-a\n"
+
+
+def test_model_piped_without_provider_errors_without_prompt_dump(
+    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The provider prompt is interactive-only; piped it dumped "Connected
+    # providers: ..." plus a prompt, then died on EOF.
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    rc = main(["model", "worker"])
+    assert rc == 2
+    captured = capsys.readouterr()
+    assert "no provider given" in captured.err
+    assert "Connected providers" not in captured.out
+
+
+def test_model_piped_listing_notes_an_ignored_thinking_flag(
+    iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "g").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "g" / "config.toml").write_text(
+        '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
+    )
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    monkeypatch.setattr("agent6.ui.cli.model.list_models", lambda *a, **k: ["claude-a"])
+    rc = main(["model", "worker", "anthropic", "--thinking", "high"])
+    assert rc == 0
+    assert "--thinking ignored" in capsys.readouterr().err
+
+
 def test_model_aborts_without_provider(iso: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Role given but provider omitted and none connected: the prompt gets an
     # empty answer and the command refuses rather than writing a bad config.
@@ -275,6 +352,7 @@ def test_model_interactive_prefill(
         return ["claude-a", "claude-b"]
 
     monkeypatch.setattr("agent6.ui.cli.model.list_models", fake_list_models)
+    monkeypatch.setattr("sys.stdout.isatty", lambda: True)  # interactive = both ttys
     answers = iter(["", "2"])  # provider default, then model #2
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
     rc = main(["model", "worker"])
@@ -297,6 +375,7 @@ def test_model_all_interactive_prompts_once(
         return ["claude-a", "claude-b"]
 
     monkeypatch.setattr("agent6.ui.cli.model.list_models", _models)
+    monkeypatch.setattr("sys.stdout.isatty", lambda: True)  # interactive = both ttys
     calls = {"n": 0}
     answers = iter(["", "2"])  # provider default, model #2 — once, not 3x
 

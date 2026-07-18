@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 model`, show/set role models, with interactive prefill."""
+"""`agent6 model`, show/set role models, with interactive prefill; a piped
+no-model invocation lists the provider's catalog instead (pipe-friendly, one
+id per line)."""
 
 from __future__ import annotations
 
@@ -99,6 +101,46 @@ def _prompt_for_model(config_path: Path | None, provider: str) -> str:
     return _safe_input("Model: ") or ""
 
 
+def _show_assignments(config_path: Path | None) -> int:
+    """Print the three role assignments with their config origin."""
+    eff = load_config_or_exit(Path.cwd(), config_path)
+    if isinstance(eff, int):
+        return eff
+    print("Role assignments (planner/reviewer fall back to worker when unset):\n")
+    show_roles: tuple[RoleName, ...] = ("planner", "worker", "reviewer")
+    for r in show_roles:
+        rm = eff.config.models.resolve(r)
+        src = eff.sources.get(f"models.{r}.model", "default")
+        if rm is None:
+            print(f"  {r:<9} (unset)")
+        else:
+            think = rm.thinking or "-"
+            print(f"  {r:<9} {rm.provider}/{rm.model}  thinking={think}  [{src}]")
+    print(
+        "\nSet one with: agent6 model worker <provider> <model>"
+        " [--thinking low|medium|high]  (provider/model are prompted if omitted)"
+    )
+    return 0
+
+
+def _print_catalog(config_path: Path | None, role: str, provider: str) -> int:
+    """Piped, no model named: the interactive picker cannot run, and dumping the
+    numbered catalog into an EOF error helped nobody. This invocation IS the
+    listing (the one non-interactive way to discover model ids, e.g. for a
+    --parallel spec): one id per line on stdout, the set-hint on stderr."""
+    options = _models_for(config_path, provider)
+    if not options:
+        print(
+            f"ERROR: no known models for {provider} (couldn't reach its API or none configured).",
+            file=sys.stderr,
+        )
+        return 2
+    for m in options:
+        print(m)
+    print(f"set one with: agent6 model {role} {provider} <model>", file=sys.stderr)
+    return 0
+
+
 def _cmd_model(
     config_path: Path | None,
     *,
@@ -110,34 +152,26 @@ def _cmd_model(
 ) -> int:
     """Show or set the model + thinking level for a role."""
     if not role:
-        eff = load_config_or_exit(Path.cwd(), config_path)
-        if isinstance(eff, int):
-            return eff
-        print("Role assignments (planner/reviewer fall back to worker when unset):\n")
-        show_roles: tuple[RoleName, ...] = ("planner", "worker", "reviewer")
-        for r in show_roles:
-            rm = eff.config.models.resolve(r)
-            src = eff.sources.get(f"models.{r}.model", "default")
-            if rm is None:
-                print(f"  {r:<9} (unset)")
-            else:
-                think = rm.thinking or "-"
-                print(f"  {r:<9} {rm.provider}/{rm.model}  thinking={think}  [{src}]")
-        print(
-            "\nSet one with: agent6 model worker <provider> <model>"
-            " [--thinking low|medium|high]  (provider/model are prompted if omitted)"
-        )
-        return 0
+        return _show_assignments(config_path)
     # `role` is validated by argparse `choices`: planner/worker/reviewer or the
     # pseudo-role "all" (no config field of that name, it expands to all three).
     # Positional provider/model are optional: prompt interactively when blank,
     # prefilling the provider list from connected providers and the model list
-    # from that provider's live/configured catalog.
-    if not provider:
+    # from that provider's live/configured catalog. Interactive means BOTH
+    # channels are a tty: `agent6 model worker openrouter | grep kimi` keeps
+    # stdin a tty but must get the listing, not a prompt buried in the pipe.
+    interactive = sys.stdin.isatty() and sys.stdout.isatty()
+    if not provider and interactive:
         provider = _prompt_for_provider(config_path)
     if not provider:
         print("ERROR: no provider given.", file=sys.stderr)
         return 2
+    if not model and not interactive:
+        if thinking:
+            # The flag only means something for a set; a silent drop would read
+            # as applied.
+            print("note: --thinking ignored (no model named; this is a listing).", file=sys.stderr)
+        return _print_catalog(config_path, role, provider)
     if not model:
         model = _prompt_for_model(config_path, provider)
     if not model:
