@@ -57,6 +57,7 @@ _STATUS_SGR = {
     "running": "1;36",
     "stale": "2",
     "passed": "32",
+    "answered": "32",  # an ask that answered is terminal success
     "planned": "35",  # informational magenta (mauve on the TUI/web); not green, not red
     "stopped": "33",
     "failed": "1;31",

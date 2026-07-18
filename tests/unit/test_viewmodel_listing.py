@@ -118,6 +118,22 @@ def test_summary_reads_mode_task_and_passed(tmp_path: Path) -> None:
     assert s.cost_usd == 0.12
 
 
+def test_summary_ask_reads_answered_not_passed(tmp_path: Path) -> None:
+    # An ask verifies nothing; "passed" for a Q&A is a category error. The ask
+    # flow's own banner already says "answered", so listings must agree.
+    rd = _write_run(
+        tmp_path,
+        "asks",
+        "a1",
+        [
+            {"type": "run.start", "mode": "ask", "user_task": "what does x do?"},
+            {"type": "run.end", "all_passed": True, "reason": "answered"},
+        ],
+    )
+    s = summarize_run_dir(rd)
+    assert (s.mode, s.status, s.reason) == ("ask", "answered", "")
+
+
 def test_summary_failure_carries_its_reason(tmp_path: Path) -> None:
     """The core truth fix: a provider_error death reads 'failed · provider_error',
     never a neutral 'done' the operator scrolls past."""

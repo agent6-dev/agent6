@@ -112,6 +112,7 @@ _STATUS_STYLE = {
     "running": "bold cyan",
     "stale": "dim",
     "passed": "green",
+    "answered": "green",  # an ask that answered is terminal success
     "planned": "#b48ead",  # informational mauve (matches the web pill); not green, not red
     "stopped": "yellow",
     "failed": "bold red",

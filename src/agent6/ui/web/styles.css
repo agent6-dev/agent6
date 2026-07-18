@@ -92,7 +92,8 @@ main { padding: 0; }
 .wrap { flex-wrap: wrap; }
 .muted { color: var(--muted); }
 .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); }
-.pill.ok, .pill.passed { color: var(--ok); border-color: var(--ok); }
+/* An ask that answered is terminal success, same green as passed. */
+.pill.ok, .pill.passed, .pill.answered { color: var(--ok); border-color: var(--ok); }
 /* A completed plan verifies nothing, so it is informational (mauve), not the
    green "passed". */
 .pill.planned { color: var(--accent2); border-color: var(--accent2); }

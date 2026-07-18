@@ -153,10 +153,11 @@ def status_word(*, finished: bool, all_passed: bool, end_reason: str) -> tuple[s
         return "running", ""
     if end_reason in ("steer_abort", "interrupted"):
         return "stopped", ""  # both are the operator's own act, not a failure
-    if end_reason == "finish_planning":
-        # A plan pass completes via finish_planning (plan mode's only clean
-        # exit); it gates nothing, so give it its own word, not "passed".
-        return "planned", ""
+    # A clean exit that verified nothing gets its own word, not "passed": a
+    # plan pass ends via finish_planning, an ask by answering the question.
+    no_verify_word = {"finish_planning": "planned", "answered": "answered"}
+    if end_reason in no_verify_word:
+        return no_verify_word[end_reason], ""
     if all_passed:
         return "passed", ""
     if end_reason and end_reason != "finish_run":
