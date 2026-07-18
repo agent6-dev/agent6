@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import stat
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -254,6 +255,24 @@ def test_model_rejects_unknown_role(iso: Path) -> None:
     assert exc.value.code == 2
 
 
+def _models_stub(models: list[str]) -> Callable[..., list[str]]:
+    """A typed list_models stand-in (strict pyright rejects bare lambdas here)."""
+
+    def _list(*_a: object, **_k: object) -> list[str]:
+        return models
+
+    return _list
+
+
+def _key_stub(key: str | None) -> Callable[..., str | None]:
+    """A typed resolve_api_key stand-in returning a fixed key (or None)."""
+
+    def _resolve(*_a: object, **_k: object) -> str | None:
+        return key
+
+    return _resolve
+
+
 def test_model_piped_without_model_lists_the_catalog(
     iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -265,7 +284,7 @@ def test_model_piped_without_model_lists_the_catalog(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    monkeypatch.setattr("agent6.ui.cli.model.list_models", lambda *a, **k: ["claude-a", "claude-b"])
+    monkeypatch.setattr("agent6.ui.cli.model.list_models", _models_stub(["claude-a", "claude-b"]))
     rc = main(["model", "worker", "anthropic"])
     assert rc == 0
     captured = capsys.readouterr()
@@ -285,7 +304,7 @@ def test_model_set_warns_when_the_provider_has_no_key(
     (tmp_path / "g" / "config.toml").write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
-    monkeypatch.setattr("agent6.ui.cli.model.resolve_api_key", lambda *a, **k: None)
+    monkeypatch.setattr("agent6.ui.cli.model.resolve_api_key", _key_stub(None))
     rc = main(["model", "worker", "anthropic", "claude-x"])
     assert rc == 0
     err = capsys.readouterr().err
@@ -300,7 +319,7 @@ def test_model_set_stays_quiet_when_the_key_resolves(
     (tmp_path / "g" / "config.toml").write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
-    monkeypatch.setattr("agent6.ui.cli.model.resolve_api_key", lambda *a, **k: "sk-x")
+    monkeypatch.setattr("agent6.ui.cli.model.resolve_api_key", _key_stub("sk-x"))
     rc = main(["model", "worker", "anthropic", "claude-x"])
     assert rc == 0
     assert "note:" not in capsys.readouterr().err
@@ -310,7 +329,7 @@ def test_model_piped_unknown_provider_errors(
     iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    monkeypatch.setattr("agent6.ui.cli.model.list_models", lambda *a, **k: [])
+    monkeypatch.setattr("agent6.ui.cli.model.list_models", _models_stub([]))
     rc = main(["model", "worker", "nosuch"])
     assert rc == 2
     assert "no known models for nosuch" in capsys.readouterr().err
@@ -327,7 +346,7 @@ def test_model_stdout_piped_lists_even_with_a_tty_stdin(
     (tmp_path / "g" / "config.toml").write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
-    monkeypatch.setattr("agent6.ui.cli.model.list_models", lambda *a, **k: ["claude-a"])
+    monkeypatch.setattr("agent6.ui.cli.model.list_models", _models_stub(["claude-a"]))
     rc = main(["model", "worker", "anthropic"])
     assert rc == 0
     assert capsys.readouterr().out == "claude-a\n"
@@ -354,7 +373,7 @@ def test_model_piped_listing_notes_an_ignored_thinking_flag(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    monkeypatch.setattr("agent6.ui.cli.model.list_models", lambda *a, **k: ["claude-a"])
+    monkeypatch.setattr("agent6.ui.cli.model.list_models", _models_stub(["claude-a"]))
     rc = main(["model", "worker", "anthropic", "--thinking", "high"])
     assert rc == 0
     assert "--thinking ignored" in capsys.readouterr().err
