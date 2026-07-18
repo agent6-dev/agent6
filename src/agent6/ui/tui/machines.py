@@ -412,8 +412,8 @@ class MachineWatchScreen(Screen[None]):
 def _machine_row(path: Path) -> tuple[str, str, str]:
     """(name, state count, spec validity) for the list -- parsed if it loads,
     else flagged. The column says whether the FILE checks out ("valid", never
-    "ok": that word is a machine-run terminal status and read like one here);
-    a run's live status shows on the watch screen, not this list."""
+    "ok": that word is a machine-run terminal status); a run's live status
+    shows on the watch screen, not this list."""
     try:
         spec = load_machine(path)
     except (MachineError, OSError):

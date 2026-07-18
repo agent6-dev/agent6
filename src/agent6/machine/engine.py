@@ -305,9 +305,7 @@ class LiveWorld:
         env_list = [(key, os.environ[key]) for key in _SAFE_ENV_KEYS if key in os.environ]
         # The jail-correct PATH plus the RO+exec mounts that make it true: ONE
         # computation shared with run_command/verify's jail and the `machine
-        # check` probe (sandbox.jail.operator_tool_paths). Copying the host
-        # PATH here named dirs the jail never mounts, so a tool that check
-        # proved reachable still died 127 in a tool state.
+        # check` probe (sandbox.jail.operator_tool_paths).
         tool_path, tool_mounts = operator_tool_paths()
         env_list.append(("PATH", tool_path))
         # Writable HOME for toolchain caches (go/cargo/pip); the jail's /tmp is

@@ -654,7 +654,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         return run_exit_code(result)
     finally:
         # Single owner of worker.pid + egress teardown for every resume exit
-        # path; refusals and Ctrl-C during verify inference used to leak both.
+        # path, refusals and Ctrl-C during verify inference included.
         frontend.close_console_view()  # stop the heartbeat thread, clear any spinner line
         clear_worker_pid(layout.run_dir)
         stop_egress(guard)

@@ -88,10 +88,10 @@ CONFIG_ACTIONS: tuple[Action, ...] = (
     ),
     Action("edit", "Edit", "Edit the selected setting (dropdown for choices)", key="e"),
     Action("add_provider", "Add provider…", "Add a [providers.<name>] entry via a form", key="a"),
-    # `r` is a harmless Refresh here (re-read config), matching `r`=Refresh on the
-    # home hub (it used to be Reset, which UNSETS a setting -- a footgun for the
-    # same keystroke). Reset moved to `d` (default). Label is "Refresh" (not
-    # "Reload") + "Help" (not "Help / keys") to match the home/run footers.
+    # `r` is a harmless Refresh here (re-read config), matching `r`=Refresh on
+    # the home hub; Reset (which UNSETS a setting) stays off `r` and lives on
+    # `d` (default). Label is "Refresh" (not "Reload") + "Help" (not
+    # "Help / keys") to match the home/run footers.
     Action("reset", "Reset", "Reset the selected setting to its default (unset)", key="d"),
     Action("reload", "Refresh", "Re-read config from disk", key="r"),
     # No key (View-menu / palette only, like the home hub): key=None is skipped by

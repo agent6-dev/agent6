@@ -167,7 +167,10 @@ version that still carries the point wins.
 - One idea per sentence, one topic per paragraph. Prefer short bullets to
   prose when listing facts.
 - Comments state what the code cannot: a constraint, an invariant, a measured
-  number, a link to a decision. Never narrate the next line.
+  number, a link to a decision. Never narrate the next line, never keep the
+  incident a change fixed (commit messages own that), and never explain
+  expected behavior; over-explaining reads as a warning about nothing. Test
+  docstrings are the exception: the regression they pin is their spec.
 - Commit messages: imperative subject; a body only for a non-obvious why, in
   point form.
 - Keep documents flat: a heading plus short paragraphs or bullets. Bold is for

@@ -734,9 +734,8 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         return run_exit_code(result)
     finally:
         # Single owner of worker.pid, egress-broker, and auto-stash
-        # finalization. Refusal returns, Ctrl-C during verify inference, and
-        # setup-window crashes used to skip these, leaving a stale pid, a
-        # leaked broker process, and the user's stashed work silently hidden.
+        # finalization, for EVERY exit path: refusal returns, Ctrl-C during
+        # verify inference, and setup-window crashes included.
         frontend.close_console_view()  # stop the heartbeat thread, clear any spinner line
         clear_worker_pid(layout.run_dir)
         stop_egress(guard)

@@ -327,8 +327,7 @@ class _LoopState:
     # Sandbox-reachability signal: argv[0] of a run_command the JAIL failed to
     # exec (exec_failed, not a nonzero exit) and its consecutive-failure count.
     # Only executed commands feed it; validation errors and denials never
-    # entered the jail, so they say nothing about reachability (seeding off
-    # them once misdiagnosed a malformed call as a sandbox problem).
+    # entered the jail, so they say nothing about reachability.
     jail_exec_failed_binary: str = ""
     jail_exec_failed_streak: int = 0
     last_error_was_denial: bool = False
@@ -529,13 +528,11 @@ class Workflow:
     # ~30% of turns were pure waste and the run made no progress. The bigger
     # ceiling lets a reason-heavy turn finish and actually apply its edit.
     metric_task_max_tokens: int = 65536
-    # Sampling temperature pinned for every provider
-    # call (worker and critic). agent6 was previously passing
-    # `temperature: None` through every call, meaning each provider
-    # routed to its own default. OpenRouter's per-model defaults are
-    # high enough that we observed Kimi K2.6 emitting 15997 literal
-    # `\n` escapes inside a single `old_string` argument before hitting
-    # the completion-tokens cap. Pinning 0.0 by default makes the
+    # Sampling temperature pinned for every provider call (worker and
+    # critic); unset, each provider routes to its own default, and
+    # OpenRouter's per-model defaults are high enough that Kimi K2.6
+    # emitted 15997 literal `\n` escapes inside a single `old_string`
+    # argument before hitting the completion-tokens cap. Pinning 0.0 makes the
     # tool-use loop reproducible and removes one large degenerate-output
     # surface. CLI wires these from `cfg.models.<role>.temperature`.
     temperature: float | None = 0.0
@@ -1964,8 +1961,7 @@ class Workflow:
         binary ``shutil.which`` finds on the host. The second consecutive
         exec failure of the same binary tells the model once and emits the
         event finalize's operator warning reads. Tool errors never feed this:
-        a validation error or denial never entered the jail, and seeding off
-        those once misdiagnosed a malformed call as a sandbox problem."""
+        a validation error or denial never entered the jail."""
         if name != "run_command" or not isinstance(result, ExecResult):
             return
         argv = tool_input.get("argv") or []
@@ -2096,9 +2092,7 @@ class Workflow:
                     tool_calls=state.tool_calls,
                 )
             # The work is committed and the worker went quiet, but nothing
-            # verified the FINAL tree; ending "passed" here put a lie on every
-            # surface (observed: an empty repo inferred no verify, the run
-            # built a whole project, and the banner read "verify passed").
+            # verified the FINAL tree, so this end never claims "passed".
             self._pass_pending_root_tasks()
             self._emit("run.end", reason="settled", iterations=turn.iteration, all_passed=False)
             if state.verify_ever_passed:
@@ -2442,7 +2436,7 @@ class Workflow:
         # Task finish-gate (silent path): a worker that stops emitting tool
         # calls with its own subtasks still open is steered back to the list
         # rather than silently finished (shares the cap with the finish_run
-        # path). This is the premature-stop case observed live.
+        # path).
         task_nudge = self._task_finish_gate_nudge(state)
         if task_nudge is not None:
             self._log(

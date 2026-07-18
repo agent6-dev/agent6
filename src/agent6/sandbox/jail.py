@@ -33,9 +33,7 @@ from agent6.types import CommandResult, JailPolicy
 # only; the jail still confines writes and network, so containment is
 # unchanged. Owned here so run_command and verify (tools.dispatch), machine
 # tool states (machine.engine), and the host-side probe (`machine check`)
-# resolve tools identically; they had drifted, and a machine passed check then
-# died 127 on its first tool. (machine test's offline mock jail keeps the bare
-# baseline on purpose: mocks must not depend on host tools.)
+# resolve tools identically.
 _JAIL_BASE_PATH_DIRS = ("/usr/bin", "/bin")
 _SYSTEM_ROOTS = (
     Path("/usr"),
@@ -91,8 +89,7 @@ def operator_tool_paths() -> tuple[str, tuple[Path, ...]]:
     # Interpreter toolchains a repo venv's python may symlink to: uv-managed
     # CPython lives under XDG data, not any bin dir. Without this mount the
     # jail sees such a venv "linked to a non-existent interpreter" and an
-    # in-jail `uv run` DELETES and recreates the operator's .venv (observed
-    # live: the verify tail read "Removed virtual environment at: .venv").
+    # in-jail `uv run` deletes and recreates the operator's .venv.
     # Mount-only, never a PATH entry.
     data_home = Path(os.environ.get("XDG_DATA_HOME") or home / ".local/share")
     uv_pythons = data_home / "uv" / "python"

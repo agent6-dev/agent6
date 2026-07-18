@@ -359,9 +359,8 @@ def summarize_run_dir(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) ->
         elif _running_is_stale(run_dir, stale_after_s):
             word = "stale"
         elif scan.last_type in ("approval.prompt", "question.prompt"):
-            # Alive but blocked on the OPERATOR: an unanswered command approval
-            # or ask_user question. A bare "running" read as busy, so a lane
-            # parked on an approval sat invisible in every hub for hours.
+            # Alive but blocked on the OPERATOR: an unanswered command
+            # approval or ask_user question.
             word, reason = "waiting", "needs answer"
     if mode == "ask":
         with contextlib.suppress(OSError):
