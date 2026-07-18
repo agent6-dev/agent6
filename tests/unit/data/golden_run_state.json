@@ -109,7 +109,7 @@
     "10:00:00.000  run.start          # Fix the bug\n\nRestore the thing.",
     "10:00:00.100  graph.update       2 tasks",
     "10:00:01.000  role.call          worker/kimi-k2",
-    "10:00:02.000  budget.update      in=5850 out=82 $0.004841036",
+    "10:00:02.000  budget.update      in=5850 out=82 $0.0048",
     "10:00:02.500  role.result        worker in=5850 out=82",
     "10:00:03.100  tool.call          read_file(path=src/x.py)",
     "10:00:03.200  tool.result        read_file ok=True 4773 bytes",

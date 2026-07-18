@@ -512,10 +512,11 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
         case "loop.resume.start":
             salient = f"iteration={event.get('iteration')} messages={event.get('messages')}"
         case "budget.update":
-            salient = (
-                f"in={event.get('input_total')} out={event.get('output_total')}"
-                f" ${event.get('usd_total')}"
-            )
+            usd = event.get("usd_total")
+            # Not format_cost: this is the raw log view, but a float-repr tail
+            # ($0.015091189999999999) is noise, not truth.
+            usd_s = f"${usd:.4f}" if isinstance(usd, (int, float)) else f"${usd}"
+            salient = f"in={event.get('input_total')} out={event.get('output_total')} {usd_s}"
         case "run.start":
             salient = str(event.get("user_task", ""))[:80]
         case "verify.end":
