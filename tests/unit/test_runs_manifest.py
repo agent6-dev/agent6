@@ -196,7 +196,13 @@ def test_write_manifest_bytes_stamped_lane(tmp_path: Path) -> None:
         parallel_id="p-abc",
         lane=1,
         compare=CompareStamp(
-            rank=1, of=3, winner=True, ranked_by="judge", rationale="cleanest diff"
+            rank=1,
+            of=3,
+            winner=True,
+            ranked_by="judge",
+            rationale="cleanest diff",
+            judge_cost_usd=0.0102,
+            judge_cost_partial=True,
         ),
     )
     path = tmp_path / "manifest.json"

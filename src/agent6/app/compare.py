@@ -25,6 +25,7 @@ from agent6.budget import BudgetTracker
 from agent6.config import Config
 from agent6.providers import Provider, ProviderError, TranscriptSink
 from agent6.runs.manifest import ManifestError, read_manifest
+from agent6.viewmodel.format import format_cost
 from agent6.workflows.judge import CandidateBrief, JudgeError, compare, mechanical_ranking
 
 # The reviewer provider the judge call uses, built by the caller from the
@@ -43,11 +44,18 @@ class RankOutcome:
     the order, else ``"mechanical"`` -- the honest signal the compare stamp
     records (``CompareStamp.ranked_by``, which stays a lenient ``str`` for
     reads of history). ``rationale`` is empty on the mechanical path.
+    ``judge_cost_usd`` is the judge call's estimated spend, real money even
+    when a failed judge fell back to the mechanical ranking; it is 0.0 only
+    when no judge call was made. ``judge_cost_partial`` marks it a lower bound (the
+    reviewer model is unpriced and reported no cost), the same flag
+    ``format_cost`` renders as ``~``.
     """
 
     ranking: tuple[str, ...]
     rationale: str
     ranked_by: Literal["judge", "mechanical"]
+    judge_cost_usd: float = 0.0
+    judge_cost_partial: bool = False
 
 
 def verify_ok(status: str) -> bool | None:
@@ -83,44 +91,64 @@ def rank(
     fails (see ``RankOutcome.ranked_by``)."""
     reviewer = cfg.models.resolve("reviewer")
     if len(candidates) > 1 and reviewer is not None:
+        sink = TranscriptSink(transcript_dir)
+        budget = BudgetTracker(
+            max_input_tokens=cfg.budget.max_input_tokens,
+            max_output_tokens=cfg.budget.max_output_tokens,
+            max_usd=cfg.budget.best_effort_usd_limit,
+        )
         try:
-            sink = TranscriptSink(transcript_dir)
-            budget = BudgetTracker(
-                max_input_tokens=cfg.budget.max_input_tokens,
-                max_output_tokens=cfg.budget.max_output_tokens,
-                max_usd=cfg.budget.best_effort_usd_limit,
-            )
             provider: Provider = build_provider(cfg, sink, budget)
             with judging_status():
                 verdict = compare(provider, reviewer.model, candidates)
-            return RankOutcome(verdict.ranking, verdict.rationale, "judge")
+            spent, unknown = budget.estimate_usd()
+            return RankOutcome(verdict.ranking, verdict.rationale, "judge", spent, unknown)
         except (ProviderError, JudgeError) as exc:
             # A configured reviewer that fails must not degrade to the mechanical
             # table silently: say so, so the report isn't mistaken for a judged one.
+            # Failed judge attempts still bill; carry and report what they spent.
             detail = str(exc).splitlines()[0] if str(exc).strip() else exc.__class__.__name__
-            reporter.err(f"judge failed ({detail}); ranked mechanically")
+            spent, unknown = budget.estimate_usd()
+            spent_s = (
+                f"; judge spend {format_cost(spent, partial=unknown)}"
+                if spent > 0 or unknown
+                else ""
+            )
+            reporter.err(f"judge failed ({detail}); ranked mechanically{spent_s}")
+            return RankOutcome(mechanical_ranking(candidates), "", "mechanical", spent, unknown)
     return RankOutcome(mechanical_ranking(candidates), "", "mechanical")
 
 
 def print_ranked_candidates(
     candidates: list[CandidateBrief],
-    ranking: tuple[str, ...],
-    rationale: str,
+    outcome: RankOutcome,
     *,
     reporter: Reporter = STDIO_REPORTER,
 ) -> None:
-    """Print the ranked table (best first) + a `runs merge` line per
-    candidate, then the judge's rationale if there is one. Prints nothing when
-    *ranking* is empty."""
-    if not ranking:
+    """Print the ranked table (best first) + a `runs merge` line per candidate,
+    a total-spend line (candidate costs plus any judge cost), then the judge's
+    rationale if there is one. Prints nothing when the ranking is empty."""
+    if not outcome.ranking:
         return
     by_id = {c.run_id: c for c in candidates}
     reporter.out("ranked candidates (best first):")
-    for rnk, rid in enumerate(ranking, start=1):
+    for rnk, rid in enumerate(outcome.ranking, start=1):
         c = by_id[rid]
         verify = "passed" if c.verify_ok else "failed" if c.verify_ok is False else "no-verify"
         reporter.out(
             f"  {rnk}. {rid}  {verify:<9} ${c.cost_usd:.4f}   merge with: agent6 runs merge {rid}"
         )
-    if rationale:
-        reporter.out(f"\njudge: {rationale}")
+    if len(candidates) > 1:
+        cand_total = sum(c.cost_usd for c in candidates)
+        judge = outcome.judge_cost_usd
+        partial = outcome.judge_cost_partial
+        if judge > 0 or partial:
+            reporter.out(
+                f"total: candidates {format_cost(cand_total)}"
+                f" + judge {format_cost(judge, partial=partial)}"
+                f" = {format_cost(cand_total + judge, partial=partial)}"
+            )
+        else:
+            reporter.out(f"total: candidates {format_cost(cand_total)}")
+    if outcome.rationale:
+        reporter.out(f"\njudge: {outcome.rationale}")

@@ -610,7 +610,7 @@ def _cmd_compare(*, run_ids: tuple[str, ...]) -> int:
     # a manifest (only the fan-out's auto-compare does), so `ranked_by` is unused.
     outcome = rank(cfg, candidates, transcript_dir=_state_dir(cwd) / "compare")
     print(f"[agent6] comparing {len(candidates)} runs:")
-    print_ranked_candidates(candidates, outcome.ranking, outcome.rationale)
+    print_ranked_candidates(candidates, outcome)
     if reviewer is None:
         print(
             "\n(no reviewer model configured; ranked mechanically: verify-pass first, then"

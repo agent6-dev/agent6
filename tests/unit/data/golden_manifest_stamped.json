@@ -35,6 +35,8 @@
     "of": 3,
     "winner": true,
     "ranked_by": "judge",
-    "rationale": "cleanest diff"
+    "rationale": "cleanest diff",
+    "judge_cost_usd": 0.0102,
+    "judge_cost_partial": true
   }
 }

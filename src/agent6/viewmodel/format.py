@@ -44,16 +44,22 @@ WINNER_GLYPH = "★"
 def format_compare(compare: CompareStamp | None) -> tuple[str, str] | None:
     """A lane's fan-out compare outcome as ``(headline, rationale)``, or None when
     the run carries no ``compare`` stamp. The headline reads e.g.
-    ``rank 1/2 · winner · judge``; the rationale is the judge's text (empty for a
-    mechanical ranking). Shared by `runs show` and the TUI run header; the web SPA
-    mirrors the same shape in page.py."""
+    ``rank 1/2 · winner · judge ($0.0102)``; the parenthesised figure is the
+    judge call's cost for the whole group, present whenever a judge call was
+    made (a ``~`` marks an unpriced lower bound). The rationale is the judge's
+    text, empty for a mechanical ranking. Shared by `runs show` and the TUI run
+    header; the web SPA renders the same stamp fields from the snapshot JSON."""
     if compare is None:
         return None
     parts = [f"rank {compare.rank}/{compare.of}"]
     if compare.winner:
         parts.append("winner")
     if compare.ranked_by:
-        parts.append(compare.ranked_by)
+        by = compare.ranked_by
+        if compare.judge_cost_usd > 0 or compare.judge_cost_partial:
+            cost = format_cost(compare.judge_cost_usd, partial=compare.judge_cost_partial)
+            by += f" ({cost})"
+        parts.append(by)
     return " · ".join(parts), compare.rationale
 
 

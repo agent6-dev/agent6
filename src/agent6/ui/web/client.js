@@ -797,7 +797,11 @@ function paintRun(cards, s) {
     const c = s.compare;
     const bits = [];
     if (c.winner) bits.push('winner');
-    if (c.ranked_by) bits.push(c.ranked_by);
+    if (c.ranked_by) {
+      // Same spelling as the CLI/TUI headline: judge ($0.0102), ~ = lower bound.
+      const judged = c.judge_cost_usd > 0 || c.judge_cost_partial;
+      bits.push(c.ranked_by + (judged ? ' (' + (c.judge_cost_partial ? '~' : '') + fmtUsd(c.judge_cost_usd) + ')' : ''));
+    }
     add('compare', 'rank ' + c.rank + '/' + c.of + (bits.length ? ' (' + bits.join(', ') + ')' : ''));
   }
   cards.head.appendChild(kv);

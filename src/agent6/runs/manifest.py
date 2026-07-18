@@ -84,6 +84,12 @@ class CompareStamp(BaseModel):
     winner: bool = False
     ranked_by: str = ""
     rationale: str = ""
+    # The judge call's cost for the WHOLE group, recorded on every lane like
+    # the rationale; summing it across lanes would double-count. 0.0 only when
+    # no judge call was made (a failed judge that fell back mechanically still
+    # spent); partial marks a lower bound (unpriced reviewer, no reported cost).
+    judge_cost_usd: float = 0.0
+    judge_cost_partial: bool = False
 
 
 # The shape this binary writes. Stamp-rewrites re-stamp it (see write_manifest)

@@ -701,11 +701,13 @@ def test_compare_outcome_stamped_into_each_lane_manifest(
     m2 = json.loads((origin_state / "runs" / "fan-l2" / "manifest.json").read_text("utf-8"))
     assert m2["compare"] == {
         "rank": 1, "of": 2, "winner": True,
-        "ranked_by": "mechanical", "rationale": "",
+        "ranked_by": "mechanical", "rationale": "", "judge_cost_usd": 0.0,
+        "judge_cost_partial": False,
     }  # fmt: skip
     assert m1["compare"] == {
         "rank": 2, "of": 2, "winner": False,
-        "ranked_by": "mechanical", "rationale": "",
+        "ranked_by": "mechanical", "rationale": "", "judge_cost_usd": 0.0,
+        "judge_cost_partial": False,
     }  # fmt: skip
     # The lineage stamp is untouched by the compare stamp (shared rewrite merges).
     assert m1["parallel_id"] == "fan" and m1["lane"] == 1
@@ -715,7 +717,8 @@ def test_compare_stamp_records_judge_rationale_truncated(
     origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runtime: LaneRuntime
 ) -> None:
     """When the judge ranks (not the mechanical fallback), every lane records
-    ranked_by="judge" and the SAME rationale, truncated to bound the manifest."""
+    ranked_by="judge", the SAME rationale, truncated to bound the manifest, and
+    the SAME group judge cost."""
     from agent6.config.layer import resolved_state_dir
 
     origin_state = resolved_state_dir(origin)
@@ -725,7 +728,7 @@ def test_compare_stamp_records_judge_rationale_truncated(
     long_rationale = "x" * 3000
 
     def fake_rank(*_a: object, **_k: object) -> RankOutcome:
-        return RankOutcome(("fan-l1", "fan-l2"), long_rationale, "judge")
+        return RankOutcome(("fan-l1", "fan-l2"), long_rationale, "judge", judge_cost_usd=0.0123)
 
     monkeypatch.setattr(parallel, "rank", fake_rank)
 
@@ -740,6 +743,8 @@ def test_compare_stamp_records_judge_rationale_truncated(
     assert m1["compare"]["rank"] == 1 and m2["compare"]["rank"] == 2
     assert len(m1["compare"]["rationale"]) == 2000  # truncated ~2000
     assert m2["compare"]["rationale"] == m1["compare"]["rationale"]  # same group rationale
+    # The judge call's group cost lands on every lane, same figure (never summed).
+    assert m1["compare"]["judge_cost_usd"] == m2["compare"]["judge_cost_usd"] == 0.0123
 
 
 def test_run_parallel_symlink_appears_before_import(

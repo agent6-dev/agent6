@@ -35,6 +35,7 @@ from typing import Protocol
 from agent6.app.compare import (
     BuildProvider,
     JudgingStatus,
+    RankOutcome,
     manifest_task,
     print_ranked_candidates,
     rank,
@@ -646,30 +647,30 @@ def _stamp_lineage(run_dir: Path, fanout_id: str, lane: int) -> str | None:
 
 def _stamp_compare_outcomes(
     candidates: list[CandidateBrief],
-    ranking: tuple[str, ...],
+    outcome: RankOutcome,
     *,
     origin_state: Path,
-    ranked_by: str,
-    rationale: str,
     reporter: Reporter = STDIO_REPORTER,
 ) -> None:
     """Stamp the auto-compare outcome into EACH ranked lane's manifest, so every
     run view can show where a lane placed and why. ONE writer: only the fan-out's
     auto-compare stamps this (`runs compare` stays stateless; the coordinator
     never compares its lanes). The imported lanes sit at `<origin_state>/runs/<id>`
-    (import_run's contract); the same rationale is recorded on every lane (it is
-    the judge's ranking of the whole group), truncated to bound the manifest, and
-    empty for a mechanical ranking. A per-lane stamp failure degrades loudly and
-    never blocks the others."""
+    (import_run's contract); the same rationale and judge cost are recorded on
+    every lane (both describe the judge's ranking of the whole group), the
+    rationale truncated to bound the manifest and empty for a mechanical ranking.
+    A per-lane stamp failure degrades loudly and never blocks the others."""
     of = len(candidates)
-    text = rationale[:2000] if ranked_by == "judge" else ""
-    for rank_pos, run_id in enumerate(ranking, start=1):
+    text = outcome.rationale[:2000] if outcome.ranked_by == "judge" else ""
+    for rank_pos, run_id in enumerate(outcome.ranking, start=1):
         compare = CompareStamp(
             rank=rank_pos,
             of=of,
             winner=rank_pos == 1,
-            ranked_by=ranked_by,
+            ranked_by=outcome.ranked_by,
             rationale=text,
+            judge_cost_usd=outcome.judge_cost_usd,
+            judge_cost_partial=outcome.judge_cost_partial,
         )
         err = _stamp(_lane_link(origin_state, run_id), compare=compare)
         if err is not None:
@@ -759,11 +760,10 @@ def _cleanup(imported: list[LaneSpec], *, workdir_root: Path, cfg: Config) -> No
 
 def _print_report(
     candidates: list[CandidateBrief],
-    ranking: tuple[str, ...],
+    outcome: RankOutcome,
     failed: list[tuple[LaneResult, str]],
     *,
     fanout_id: str,
-    rationale: str,
     reporter: Reporter = STDIO_REPORTER,
 ) -> None:
     """Print the ranked candidate table + a `runs merge` line per candidate, and
@@ -771,7 +771,7 @@ def _print_report(
     reporter.out(
         f"\n[agent6] parallel fan-out {fanout_id} complete: {len(candidates)} candidate(s)"
     )
-    print_ranked_candidates(candidates, ranking, rationale, reporter=reporter)
+    print_ranked_candidates(candidates, outcome, reporter=reporter)
     if failed:
         reporter.out("\nfailed lanes (nothing of theirs was deleted):")
         for res, err in failed:
@@ -878,18 +878,15 @@ def run_parallel(
     )
     _stamp_compare_outcomes(
         candidates,
-        outcome.ranking,
+        outcome,
         origin_state=origin_state,
-        ranked_by=outcome.ranked_by,
-        rationale=outcome.rationale,
         reporter=reporter,
     )
     _print_report(
         candidates,
-        outcome.ranking,
+        outcome,
         failed,
         fanout_id=fanout_id,
-        rationale=outcome.rationale,
         reporter=reporter,
     )
 

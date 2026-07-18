@@ -18,6 +18,7 @@ from typing import Any, cast
 
 import pytest
 
+from agent6.budget import BudgetTracker
 from agent6.config import Config
 from agent6.config.layer import repo_config_path_for, resolved_state_dir
 from agent6.providers import Provider, ProviderError
@@ -178,6 +179,8 @@ def test_compare_prefix_resolution_and_mechanical_ranking(
     assert out.index("run-BBBB22") < out.index("run-AAAA11")
     assert "agent6 runs merge run-BBBB22" in out
     assert "no reviewer model configured" in out
+    # Candidate spend is totaled; no judge ran, so no judge figure.
+    assert "total: candidates $0.1000" in out and "+ judge" not in out
 
 
 def test_compare_is_read_only(repo: Path) -> None:
@@ -239,6 +242,35 @@ def _stub_builder(provider: object) -> Any:
     return _build
 
 
+class _CostingFakeProvider(_FakeProvider):
+    """A fake provider that also bills each call into the BudgetTracker its
+    builder received, the way a real provider records usage."""
+
+    budget: BudgetTracker | None = None
+
+    def call(self, **kw: Any) -> Any:
+        assert self.budget is not None
+        self.budget.record(
+            model="reviewer-default",
+            input_tokens=1000,
+            output_tokens=100,
+            cache_read_tokens=0,
+            cache_creation_tokens=0,
+            cost_usd=0.0102,
+        )
+        return super().call(**kw)
+
+
+def _costing_stub_builder(provider: _CostingFakeProvider) -> Any:
+    """`_stub_builder`, but hands the provider the budget it must bill into."""
+
+    def _build(*_a: Any, **kw: Any) -> Provider:
+        provider.budget = kw["budget"]
+        return cast(Provider, provider)
+
+    return _build
+
+
 def test_compare_uses_judge_when_reviewer_configured(
     repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -258,6 +290,92 @@ def test_compare_uses_judge_when_reviewer_configured(
     assert "judge: b is cleaner" in out
     assert "no reviewer model configured" not in out
     assert provider.calls == 1
+
+
+def test_compare_total_line_accounts_the_judge_calls_own_spend(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The judge call is real money: the ranked report's total line carries it
+    (candidates + judge = grand total), so judging spend is never invisible."""
+    base = _init_repo(repo)
+    _setup_run(repo, "run-AAAA11", base_sha=base, commits=[("a.txt", "a\n", "add a")], cost=0.10)
+    _setup_run(repo, "run-BBBB22", base_sha=base, commits=[("b.txt", "b\n", "add b")], cost=0.02)
+    _write_reviewer_config(repo)
+    verdict = '{"ranking": ["run-BBBB22", "run-AAAA11"], "rationale": "b is cleaner"}'
+    provider = _CostingFakeProvider([verdict])
+    monkeypatch.setattr(compare_mod, "build_role_provider", _costing_stub_builder(provider))
+
+    rc = main(["runs", "compare", "run-AAAA11", "run-BBBB22"])
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "total: candidates $0.1200 + judge $0.0102 = $0.1302" in out
+
+
+def test_failed_judge_announces_what_its_attempts_still_spent(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Two malformed replies fall back to the mechanical ranking, but both
+    attempts billed; the degradation line must carry that spend and the
+    mechanical outcome must stamp it (never-invisible is the whole point)."""
+    base = _init_repo(repo)
+    _setup_run(repo, "run-AAAA11", base_sha=base, commits=[("a.txt", "a\n", "add a")], cost=0.10)
+    _setup_run(repo, "run-BBBB22", base_sha=base, commits=[("b.txt", "b\n", "add b")], cost=0.02)
+    _write_reviewer_config(repo)
+    provider = _CostingFakeProvider(["not json at all", "still not json"])
+    monkeypatch.setattr(compare_mod, "build_role_provider", _costing_stub_builder(provider))
+
+    rc = main(["runs", "compare", "run-AAAA11", "run-BBBB22"])
+
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert "judge failed" in captured.err
+    assert "judge spend $0.0204" in captured.err  # two attempts billed 0.0102 each
+    assert "total: candidates $0.1200 + judge $0.0204 = $0.1404" in captured.out
+
+
+class _UnpricedFakeProvider(_FakeProvider):
+    """Bills usage with NO reported cost under an unpriced model name, the
+    shape that makes estimate_usd return (0.0, unknown=True)."""
+
+    budget: BudgetTracker | None = None
+
+    def call(self, **kw: Any) -> Any:
+        assert self.budget is not None
+        self.budget.record(
+            model="unpriced-mystery-model",
+            input_tokens=1000,
+            output_tokens=100,
+            cache_read_tokens=0,
+            cache_creation_tokens=0,
+        )
+        return super().call(**kw)
+
+
+def test_unpriced_judge_spend_reads_as_a_lower_bound_not_nothing(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unpriced reviewer with no reported cost estimates $0.0000 with the
+    unknown flag; suppressing the judge figure entirely would make judging
+    spend invisible again, so it renders as the ~ lower bound instead."""
+    base = _init_repo(repo)
+    _setup_run(repo, "run-AAAA11", base_sha=base, commits=[("a.txt", "a\n", "add a")], cost=0.10)
+    _setup_run(repo, "run-BBBB22", base_sha=base, commits=[("b.txt", "b\n", "add b")], cost=0.02)
+    _write_reviewer_config(repo)
+    verdict = '{"ranking": ["run-BBBB22", "run-AAAA11"], "rationale": "b is cleaner"}'
+    provider = _UnpricedFakeProvider([verdict])
+
+    def _build(*_a: Any, **kw: Any) -> Provider:
+        provider.budget = kw["budget"]
+        return cast(Provider, provider)
+
+    monkeypatch.setattr(compare_mod, "build_role_provider", _build)
+
+    rc = main(["runs", "compare", "run-AAAA11", "run-BBBB22"])
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "+ judge ~$0.0000 = ~$0.1200" in out  # marked lower bound, not hidden
 
 
 def test_compare_falls_back_to_mechanical_on_judge_error(
