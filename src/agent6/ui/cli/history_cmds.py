@@ -8,6 +8,7 @@ import json
 import shutil
 import subprocess
 import sys
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -75,16 +76,79 @@ class _SearchHit:
     when: str  # short clock time, or "" if the line is not a timestamped event
     kind: str  # event type, or the file's basename for non-event files
     snippet: str
+    # Content identity for collapsing the same text across storage encodings:
+    # the matched text + following context (normalized), or the snippet when
+    # the context adds nothing (a match at end-of-string would otherwise merge
+    # DIFFERENT sentences that merely end with the query word).
+    key: str
 
 
 _SNIPPET_HALF = 70  # chars kept either side of the match in a hit's snippet
+_CORE_TAIL = 25  # chars of following context in a hit's content-identity key
+
+
+def _normalize(text: str) -> str:
+    """Decoded, lowercased, alphanumerics+spaces only: the normal form both
+    sides of an identity comparison reduce to."""
+    decoded = _collapse_escapes(text).lower()
+    return "".join(ch for ch in decoded if ch.isalnum() or ch == " ").strip()
+
+
+def _match_core(text: str, start: int, end: int) -> str:
+    """A hit's content identity: the matched text plus a little FOLLOWING
+    context, decoded and reduced to lowercase alphanumerics. One task string is
+    stored in many encodings (the run.start event, manifest.json, the graph's
+    dot labels, per-call transcripts); they differ in the syntax BEFORE the
+    match ('"user_task": "' vs 'label="'), while the text after it is the same
+    content everywhere, so a suffix-only key sees through the encodings.
+    Empty when the following context adds nothing beyond the match itself --
+    the caller must then key on the snippet instead of merging."""
+    hi = min(len(text), end + _CORE_TAIL)
+    core = _normalize(text[start:hi])
+    return core if len(core) > len(_normalize(text[start:end])) else ""
+
+
+def _strings_in(obj: object) -> Iterator[str]:
+    """Every string value nested anywhere in a decoded JSON object."""
+    if isinstance(obj, str):
+        yield obj
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            yield from _strings_in(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            yield from _strings_in(v)
+
+
+def _field_snippet(raw: str, start: int, end: int) -> str | None:
+    """When the matched line is a JSON object (a logs.jsonl event, a per-call
+    transcript line), window inside the STRING FIELD holding the match: the
+    snippet then reads as prose instead of a raw
+    ``"type": "role.thinking_delta", "text": " ...`` fragment. None when the
+    line is not a JSON object or the match sits on syntax/keys (the caller
+    falls back to the raw-line window)."""
+    try:
+        event = json.loads(raw)
+    except (ValueError, RecursionError):  # deep nesting raises RecursionError
+        return None
+    if not isinstance(event, dict):
+        return None
+    matched = _collapse_escapes(raw[start:end])
+    if not matched.strip():
+        return None
+    for value in _strings_in(event):
+        idx = value.find(matched)
+        if idx >= 0:
+            return _window(value, idx)
+    return None
 
 
 def _parse_rg_matches(rg_json: str) -> list[_SearchHit]:
     """Turn `rg --json` output into readable hits. Each match line is parsed as a
     logs.jsonl event when it is one (for its type + timestamp), and the snippet is
-    a whitespace-collapsed window around the first match, so a match buried in a
-    huge tool/diff blob prints a short excerpt, not the entire line."""
+    a whitespace-collapsed window around the first match (inside the matched
+    string field when the line is JSON), so a match buried in a huge tool/diff
+    blob prints a short prose excerpt, not the entire line."""
     hits: list[_SearchHit] = []
     for line in rg_json.splitlines():
         try:
@@ -97,11 +161,41 @@ def _parse_rg_matches(rg_json: str) -> list[_SearchHit]:
         path = Path(_rg_text(data.get("path")))
         raw = _rg_text(data.get("lines")).rstrip("\n")
         subs = data.get("submatches") or []
-        start = subs[0].get("start", 0) if subs else 0
+        b_start = subs[0].get("start", 0) if subs else 0
+        b_end = subs[0].get("end", b_start) if subs else b_start
+        # rg reports BYTE offsets into the UTF-8 line; Python slices characters.
+        # Convert them: non-ASCII earlier in the line (curly quotes, ellipses,
+        # routine LLM prose) otherwise shifts the window off the match and
+        # breaks the identity key.
+        encoded = raw.encode("utf-8")
+        start = len(encoded[:b_start].decode("utf-8", "ignore"))
+        end = len(encoded[:b_end].decode("utf-8", "ignore"))
         run_id = _run_id_from_path(path)
         when, kind = _event_when_kind(path, raw)
-        hits.append(_SearchHit(run_id=run_id, when=when, kind=kind, snippet=_window(raw, start)))
+        snippet = _field_snippet(raw, start, end) or _window(raw, start)
+        hits.append(
+            _SearchHit(
+                run_id=run_id,
+                when=when,
+                kind=kind,
+                snippet=snippet,
+                key=_match_core(raw, start, end) or snippet,
+            )
+        )
     return hits
+
+
+def _kind_rank(hit: _SearchHit) -> int:
+    """Readability order when the same content collapses across encodings: a
+    timestamped event line beats the transcript record, which beats a rendered
+    .md, which beats raw internals (manifest.json, graph.dot, per-call JSON)."""
+    if hit.when:
+        return 0
+    if hit.kind == "transcript":
+        return 1
+    if hit.kind.endswith(".md"):
+        return 2
+    return 3
 
 
 def _rg_text(field: object) -> str:
@@ -131,7 +225,7 @@ def _event_when_kind(path: Path, raw: str) -> tuple[str, str]:
     if path.name == "logs.jsonl":
         try:
             event = json.loads(raw)
-        except ValueError:
+        except (ValueError, RecursionError):
             return "", path.name
         ts = str(event.get("ts", ""))
         return ts[11:19] if len(ts) >= 19 else "", str(event.get("type", "event"))
@@ -147,9 +241,13 @@ def _collapse_escapes(s: str) -> str:
     The old naive ``str.replace("\\n", " ")`` matched the ``n`` of a
     double-encoded newline (``\\\\n`` in a transcript that embeds a JSON body),
     splitting the ``\\\\`` and leaving the ugly ``\\ `` the operator saw. Here
-    the whitespace escapes (``\\n`` ``\\t`` ``\\r``) become spaces and
-    ``\\\\`` / ``\\"`` / ``\\/`` decode to their literal char; an unknown or
-    window-clipped dangling escape keeps its backslash."""
+    the whitespace escapes (``\\n`` ``\\t`` ``\\r``) become spaces,
+    ``\\\\`` / ``\\"`` / ``\\/`` decode to their literal char, and ``\\uXXXX``
+    decodes to its character (surrogate pairs combined): transcripts are
+    written ascii-escaped while logs.jsonl is raw UTF-8, and the identity key
+    must see one form or the same content never collapses. An unknown,
+    window-clipped, or lone-surrogate escape keeps its literal backslash text
+    (printing a lone surrogate would raise on encode)."""
     out: list[str] = []
     i, n = 0, len(s)
     while i < n:
@@ -164,9 +262,41 @@ def _collapse_escapes(s: str) -> str:
                 out.append(nxt)
                 i += 2
                 continue
+            if nxt == "u":
+                decoded = _decode_u_escape(s, i)
+                if decoded is not None:
+                    ch, consumed = decoded
+                    out.append(ch)
+                    i += consumed
+                    continue
         out.append(c)
         i += 1
     return "".join(out)
+
+
+def _hex4(s: str, i: int) -> int | None:
+    """``int(s[i:i+4], 16)``, or None when truncated or not hex."""
+    if i + 4 > len(s):
+        return None
+    try:
+        return int(s[i : i + 4], 16)
+    except ValueError:
+        return None
+
+
+def _decode_u_escape(s: str, i: int) -> tuple[str, int] | None:
+    """Decode the ``\\uXXXX`` escape at ``s[i]``, combining a surrogate PAIR
+    into its real character; None keeps the literal text (malformed hex,
+    truncated, or a lone surrogate)."""
+    cp = _hex4(s, i + 2)
+    if cp is None or 0xDC00 <= cp <= 0xDFFF:
+        return None  # malformed/truncated, or a lone low surrogate
+    if 0xD800 <= cp <= 0xDBFF:
+        lo = _hex4(s, i + 8) if s[i + 6 : i + 8] == "\\u" else None
+        if lo is None or not 0xDC00 <= lo <= 0xDFFF:
+            return None  # a high surrogate without its pair
+        return chr(0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00)), 12
+    return chr(cp), 6
 
 
 def _window(text: str, start: int) -> str:
@@ -194,20 +324,25 @@ def _render_history_hits(hits: list[_SearchHit], target: Path) -> None:
     for i, (run_id, run_hits) in enumerate(grouped.items()):
         print("" if i == 0 else "\n", end="")
         print(sgr(run_id, "1"))
-        # Dedup by snippet text (not by kind): the same boilerplate repeated
-        # across cumulative transcript snapshots collapses to one line with a count.
+        # Dedup by content identity, not by file kind: one task string lives in
+        # many storage encodings (run.start event, manifest, graph labels,
+        # per-call transcripts) and cumulative transcript snapshots repeat the
+        # same text; each collapses to ONE line, the most readable encoding
+        # (see _kind_rank), with an (xN) count.
         counts: dict[str, int] = {}
-        first: dict[str, _SearchHit] = {}
+        best: dict[str, _SearchHit] = {}
         for hit in run_hits:
-            counts[hit.snippet] = counts.get(hit.snippet, 0) + 1
-            first.setdefault(hit.snippet, hit)
-        for snippet, hit in first.items():
-            n = counts[snippet]
+            counts[hit.key] = counts.get(hit.key, 0) + 1
+            cur = best.get(hit.key)
+            if cur is None or _kind_rank(hit) < _kind_rank(cur):
+                best[hit.key] = hit
+        for key, hit in best.items():
+            n = counts[key]
             # Show the timestamp only for a unique hit; a collapsed group spans
             # several times, so a count is clearer than any one of them.
             meta = "  ".join(p for p in (hit.when, hit.kind) if p) if n == 1 else hit.kind
             tag = f" {sgr(f'(x{n})', '2')}" if n > 1 else ""
-            print(f"  {sgr(meta, '2')}  {snippet}{tag}")
+            print(f"  {sgr(meta, '2')}  {hit.snippet}{tag}")
         total += len(run_hits)
     print(sgr(f"\n{total} match{'es' if total != 1 else ''} in {len(grouped)} run(s)", "2"))
 
