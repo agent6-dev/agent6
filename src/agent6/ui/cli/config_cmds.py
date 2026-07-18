@@ -9,11 +9,13 @@ import sys
 import tempfile
 from pathlib import Path
 
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from agent6.config import (
+    AnthropicProviderEntry,
     Config,
     ConfigError,
+    OpenAIProviderEntry,
 )
 from agent6.config.io import (
     parse_cli_value,
@@ -170,6 +172,38 @@ def _merged_config_error() -> str | None:
         return str(exc)
 
 
+_PROVIDER_MEMBERS = (AnthropicProviderEntry, OpenAIProviderEntry)
+
+
+def _provider_field_error(key: str, leaf: str, value: object) -> str | None:
+    """Validate a ``providers.<name>.<leaf>`` write against the union members
+    directly. The standalone minimal dict cannot carry the entry's
+    discriminator, so union validation lands every error at the PARENT with
+    pydantic-speak; the member models themselves give exact answers: a leaf on
+    no member is an unknown key (with the members' own field pool as the
+    did-you-mean universe), and a value every owning member rejects is invalid.
+    None when some member accepts it (partial entries stay writable)."""
+    fields = sorted({f for m in _PROVIDER_MEMBERS for f in m.model_fields})
+    if leaf not in fields:
+        close = difflib.get_close_matches(leaf, fields, n=2)
+        hint = f". Did you mean {' or '.join(repr(c) for c in close)}?" if close else ""
+        return f"unknown provider key {key!r}{hint} (see `agent6 config show`)"
+    errors: list[str] = []
+    for member in _PROVIDER_MEMBERS:
+        info = member.model_fields.get(leaf)
+        if info is None:
+            continue
+        try:
+            # rebuild_annotation carries the Field constraints (gt, pattern,
+            # ...); the model's @field_validators do not travel with it, so
+            # validator-only rejections still fall to the merged-dump path.
+            TypeAdapter(info.rebuild_annotation()).validate_python(value)
+            return None  # a member accepts it: the write stands
+        except ValidationError as exc:
+            errors.append(exc.errors()[0]["msg"])
+    return f"{key}: {errors[0]}" if errors else None
+
+
 def _unknown_key_error(key: str) -> str:
     """A human message for a key the schema forbids, with a did-you-mean.
 
@@ -203,6 +237,8 @@ def _written_value_error(key: str, value: object) -> str | None:
         # The merged re-validation still catches a profile body that breaks.
         return None
     parts = key.split(".")
+    if parts[0] == "providers" and len(parts) == 3:
+        return _provider_field_error(key, parts[2], value)
     nested: dict[str, object] = {}
     cur = nested
     for part in parts[:-1]:

@@ -597,3 +597,49 @@ def test_config_fix_drops_an_unknown_top_level_table(
     assert "[cli]" not in text  # the whole table is gone, not just a leaf line
     assert "best_effort_usd_limit" in text  # the valid section stays
     assert main(["config", "show"]) == 0  # config is valid now
+
+
+def test_config_set_unknown_provider_key_speaks_human(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A provider entry is a discriminated union; the standalone minimal dict
+    # cannot resolve a member, so every provider-key error used to fall through
+    # to the merged-layer pydantic dump (with the member tag leaking into the
+    # displayed loc). The member models answer directly now.
+    from agent6.ui.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    assert main(["config", "set", "providers.p.api_format", "anthropic"]) == 0
+    capsys.readouterr()
+    rc = main(["config", "set", "providers.p.bogus_key", "x"])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "unknown provider key 'providers.p.bogus_key'" in err
+    assert "Extra inputs" not in err and "anthropic.bogus" not in err
+    rc = main(["config", "set", "providers.p.api_key_enw", "MY_KEY"])  # typo
+    assert rc == 2
+    assert "'api_key_env'" in capsys.readouterr().err  # the did-you-mean
+
+
+def test_config_set_invalid_provider_value_names_the_field(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from agent6.ui.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    assert main(["config", "set", "providers.p.api_format", "anthropic"]) == 0
+    capsys.readouterr()
+    rc = main(["config", "set", "providers.p.http_timeout_s", "not-a-number"])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "providers.p.http_timeout_s" in err
+    assert "merged config layers" not in err
+    # A Field-constraint violation (gt=0) gets the same member answer, not the
+    # merged dump with the discriminator tag leaking into the loc.
+    rc = main(["config", "set", "providers.p.http_timeout_s", "-5"])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "greater than 0" in err
+    assert "merged config layers" not in err and ".anthropic." not in err
+    # A partial-entry write some member accepts still lands (never reverted).
+    assert main(["config", "set", "providers.p.base_url", "https://x.example/v1"]) == 0
