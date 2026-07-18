@@ -314,6 +314,14 @@ compliance (byte-verified delivery, MOOSE positive control). `always`, `/name`,
 and `--skill` are the reliable delivery paths for such models; an irrelevant
 index measurably distracted mistral-small. Prefer a small index on weak models.
 
+Re-measured on frontier open models (2026-07-18, task tailor-made for one
+installed skill, wire delivery verified): kimi-k2.6, kimi-k3, and glm-5.2 all
+0/3 organic invocations under the shipped index. An assertive header
+("your FIRST action is use_skill"), fronting the tool in the list, and both
+combined moved kimi to 1/12 total; glm-5.2 reached 4/9 only with both levers
+(neither alone: 0/9). No lever made invocation reliable, so none shipped; the
+delivery paths above remain the answer when a skill must apply.
+
 ### Config profiles
 
 A profile presets many settings at once so a task picks a strategy with one knob.
