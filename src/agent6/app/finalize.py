@@ -104,6 +104,7 @@ def print_run_end(
         )
         print(f"    - make `{binary}` run from a clean shell (a system-wide install)")
         print("    - install it into a standard bin dir (~/.local/bin, /usr/local/bin)")
+        print("    - grant its real directory via [sandbox].extra_read_paths")
         print("    - run with --dangerously-disable-sandbox")
     print(budget.format_summary())
     _print_run_total_across_legs(layout)

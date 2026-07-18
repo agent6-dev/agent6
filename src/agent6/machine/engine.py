@@ -226,16 +226,6 @@ class World(Protocol):
 _SAFE_ENV_KEYS = ("LANG", "LC_ALL", "TERM")
 
 
-def _data_dir_env_value(data_dir: Path, profile: SandboxProfile) -> str:
-    """The tool-visible path of the machine data dir, matching where the jail
-    mounts it. ``strict`` bind-mounts each extra_rw_path at ``/rw<host-abspath>``
-    OUTSIDE the pivoted ``/workspace`` (jail/src/main.rs), so the host abspath
-    alone does not exist inside it; ``hardened``/``none`` keep the real host
-    abspath. The data dir lives outside cwd by design, so a relative-to-cwd path
-    can never reach it."""
-    return f"/rw{data_dir}" if profile == "strict" else str(data_dir)
-
-
 def _state_log_seq(p: Path) -> int:
     """The numeric transition seq from a ``<seq>-<state>`` per-state log dir name
     (so the sort is by seq, not lexical -- correct past 9999)."""
@@ -329,10 +319,9 @@ class LiveWorld:
             # Grant RW on the data dir + tell the script where it is. This is the
             # portable way to persist across iterations (hardened tool jails are
             # otherwise read-only); the journal still records every transition.
-            # The exported path matches where the jail mounts the dir (see
-            # `_data_dir_env_value`), so `$AGENT6_MACHINE_DATA_DIR` resolves.
-            data_value = _data_dir_env_value(self.data_dir, self.profile)
-            env_list.append(("AGENT6_MACHINE_DATA_DIR", data_value))
+            # The jail mounts extra_rw_paths at their real locations in every
+            # profile, so the host abspath resolves inside as-is.
+            env_list.append(("AGENT6_MACHINE_DATA_DIR", str(self.data_dir)))
             extra_rw = (self.data_dir,)
         policy = JailPolicy(
             cwd=self.cwd,

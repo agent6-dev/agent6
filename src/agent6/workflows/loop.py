@@ -1994,9 +1994,10 @@ class Workflow:
                 " cannot execute it: a reachability problem (a per-user or"
                 " version-manager install the jail does not mount), not a problem"
                 " with your code. Tell the operator to install it into a standard"
-                " bin dir (~/.local/bin, /usr/local/bin) or run agent6 with"
-                " --dangerously-disable-sandbox; if the tool exists inside the"
-                " workspace, call it by that path. Do not keep probing for it."
+                " bin dir (~/.local/bin, /usr/local/bin) or grant its real"
+                " directory via sandbox.extra_read_paths; if the tool exists"
+                " inside the workspace, call it by that path. Do not keep probing"
+                " for it."
             )
         )
 

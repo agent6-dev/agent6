@@ -604,8 +604,9 @@ class ToolDispatcher:
                 f"{res.stderr}. The jail PATH is /usr/bin:/bin plus the standard bin "
                 "dirs that exist (/usr/local/bin, ~/.local/bin, ~/.cargo/bin, "
                 "/opt/homebrew/bin, /snap/bin), each mounted read-only; the command is on "
-                "none of them. Install the tool into one of those on the host, or grant "
-                "its real path via sandbox.extra_read_paths."
+                "none of them. Install the tool into one of those on the host, use a "
+                "path inside the workspace (e.g. .venv/bin/pytest), or grant its real "
+                "directory via sandbox.extra_read_paths."
             )
         return res
 
@@ -717,7 +718,8 @@ class ToolDispatcher:
                 f"metric_command {list(argv)} could not be executed in the sandbox: "
                 f"{res.stderr}. See run_verify_command's note: PATH is /usr/bin:/bin "
                 "plus the standard bin dirs; install the tool into one of those on the "
-                "host, or grant its real path via sandbox.extra_read_paths."
+                "host, use a path inside the workspace, or grant its real directory "
+                "via sandbox.extra_read_paths."
             )
         score = parse_metric_score(res.stdout, res.stderr, pattern=metric_cfg.pattern)
         self._emit(

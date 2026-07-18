@@ -118,7 +118,8 @@ process irrevocably, inherited by every child:
 
 - Forks a new user/mount/PID/IPC/UTS/net namespace.
 - `pivot_root`s into a minimal bind-mount rootfs on a fresh tmpfs: cwd + private
-  `/tmp` writable, system paths (+ `extra_read_paths`) read-only. Operator-tool
+  `/tmp` writable, system paths read-only, `extra_read_paths` grants read+exec
+  at their real paths (`extra_rw` grants writable at theirs). Operator-tool
   dirs join as read+exec `tool_paths` mounts (standard bin dirs that exist, the
   real dirs their symlinks resolve to, uv-managed CPythons), derived by
   `sandbox.jail.operator_tool_paths`; run_command/verify jails and machine tool

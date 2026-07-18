@@ -27,11 +27,10 @@ use landlock::{
 };
 use nix::mount::{mount, umount2, MntFlags, MsFlags};
 use nix::sched::{unshare, CloneFlags};
+use nix::sys::statvfs::{statvfs, FsFlags};
 use nix::sys::wait::{waitpid, WaitStatus};
 use nix::unistd::{chdir, fork, getgid, getuid, pivot_root, ForkResult};
-use seccompiler::{
-    BpfProgram, SeccompAction, SeccompFilter, TargetArch,
-};
+use seccompiler::{BpfProgram, SeccompAction, SeccompFilter, TargetArch};
 use serde::Deserialize;
 
 // deny_unknown_fields: a policy field this binary does not know (version skew
@@ -48,15 +47,20 @@ struct Policy {
     env: Vec<(String, String)>,
     #[serde(default)]
     allow_network: bool,
+    /// Operator-granted extra paths, bind-mounted at their REAL locations in
+    /// strict (like tool_paths and the hardened profile), so a granted
+    /// toolchain works via its own absolute paths and shebangs. ro is
+    /// read+execute, rw is read+write. A ro grant under a system mount is
+    /// redundant (already visible read+exec) and skipped; an rw grant under
+    /// one cannot be honored and fails the run loudly.
     #[serde(default)]
     extra_ro_paths: Vec<PathBuf>,
     #[serde(default)]
     extra_rw_paths: Vec<PathBuf>,
     /// Real-location RO+exec bind mounts for operator-installed tools (uv, node,
     /// ...) that live outside the system dirs -- ~/.local/bin, ~/.cargo/bin, or the
-    /// /opt target a /usr/local/bin symlink resolves to. Unlike extra_ro_paths
-    /// (remapped under /ro) these keep their real paths so PATH lookups and
-    /// symlinks resolve. Read+execute only, never writable.
+    /// /opt target a /usr/local/bin symlink resolves to. Real paths mean PATH
+    /// lookups and symlinks resolve. Read+execute only, never writable.
     #[serde(default)]
     tool_paths: Vec<PathBuf>,
     /// Paths inside `cwd` to make READ-ONLY from the child's view. In
@@ -200,6 +204,52 @@ fn setup_namespaces(allow_network: bool) -> io::Result<()> {
     Ok(())
 }
 
+/// The host dirs strict bind-mounts read-only into the rootfs. Extra-path
+/// grants check against this: a ro grant under one is already visible, and an
+/// rw grant under one cannot be honored (the covering bind is read-only).
+const SYSTEM_BINDS: [&str; 6] = [
+    "/usr",
+    "/bin",
+    "/sbin",
+    "/lib",
+    "/lib64",
+    "/etc/alternatives",
+];
+
+fn under_system_bind(p: &Path) -> bool {
+    SYSTEM_BINDS.iter().any(|s| p.starts_with(s))
+}
+
+/// Mount flags a bind remount must repeat: the kernel refuses (EPERM) a
+/// remount that would CLEAR nosuid/nodev/noexec/atime flags the bind
+/// inherited from its source filesystem (e.g. a host /tmp mounted
+/// nosuid,nodev), so read them off the mounted dst and carry them over.
+fn carried_mount_flags(dst: &Path) -> MsFlags {
+    let mut flags = MsFlags::empty();
+    if let Ok(st) = statvfs(dst) {
+        let f = st.flags();
+        if f.contains(FsFlags::ST_NOSUID) {
+            flags |= MsFlags::MS_NOSUID;
+        }
+        if f.contains(FsFlags::ST_NODEV) {
+            flags |= MsFlags::MS_NODEV;
+        }
+        if f.contains(FsFlags::ST_NOEXEC) {
+            flags |= MsFlags::MS_NOEXEC;
+        }
+        if f.contains(FsFlags::ST_NOATIME) {
+            flags |= MsFlags::MS_NOATIME;
+        }
+        if f.contains(FsFlags::ST_NODIRATIME) {
+            flags |= MsFlags::MS_NODIRATIME;
+        }
+        if f.contains(FsFlags::ST_RELATIME) {
+            flags |= MsFlags::MS_RELATIME;
+        }
+    }
+    flags
+}
+
 fn setup_rootfs(policy: &Policy) -> io::Result<()> {
     let new_root = PathBuf::from("/tmp/agent6-jail-root");
     // Make sure parent dir is on tmpfs we can write to (it's in our own NS now).
@@ -219,7 +269,7 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
         fs::create_dir_all(new_root.join(dir))?;
     }
     // Read-only bind mounts for system dirs.
-    for src in ["/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc/alternatives"] {
+    for src in SYSTEM_BINDS {
         if Path::new(src).exists() {
             let dst = new_root.join(src.trim_start_matches('/'));
             fs::create_dir_all(&dst)?;
@@ -267,8 +317,14 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
         if fs::create_dir_all(&dst).is_err() {
             continue;
         }
-        if mount(Some(src.as_path()), &dst, Some(""), MsFlags::MS_BIND | MsFlags::MS_REC, Some(""))
-            .is_err()
+        if mount(
+            Some(src.as_path()),
+            &dst,
+            Some(""),
+            MsFlags::MS_BIND | MsFlags::MS_REC,
+            Some(""),
+        )
+        .is_err()
         {
             continue;
         }
@@ -276,7 +332,11 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
             Some(""),
             &dst,
             Some(""),
-            MsFlags::MS_BIND | MsFlags::MS_REMOUNT | MsFlags::MS_RDONLY | MsFlags::MS_REC,
+            MsFlags::MS_BIND
+                | MsFlags::MS_REMOUNT
+                | MsFlags::MS_RDONLY
+                | MsFlags::MS_REC
+                | carried_mount_flags(&dst),
             Some(""),
         );
     }
@@ -327,7 +387,10 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
             Ok(p) => p,
             Err(_) => continue,
         };
-        let canon_cwd = policy.cwd.canonicalize().unwrap_or_else(|_| policy.cwd.clone());
+        let canon_cwd = policy
+            .cwd
+            .canonicalize()
+            .unwrap_or_else(|_| policy.cwd.clone());
         // Reject paths outside cwd defensively (Python side filters them too,
         // but the launcher is its own trust boundary).
         let rel = match canon_src.strip_prefix(&canon_cwd) {
@@ -368,7 +431,11 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
         .map_err(|e| {
             io::Error::new(
                 io::ErrorKind::Other,
-                format!("protect bind {} -> {}: {e}", canon_src.display(), target.display()),
+                format!(
+                    "protect bind {} -> {}: {e}",
+                    canon_src.display(),
+                    target.display()
+                ),
             )
         })?;
         mount(
@@ -392,12 +459,16 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
             )
         })?;
     }
-    // Extra RO paths.
+    // Extra RO paths, at their REAL locations (matching tool_paths and the
+    // hardened profile, and the documented contract: a granted toolchain works
+    // via its own absolute paths and shebangs). A grant under a system bind is
+    // redundant (already visible read+exec) and skipped. Failures are LOUD:
+    // the operator listed the path, so a broken grant must not pass silently.
     for src in &policy.extra_ro_paths {
-        if !src.exists() {
+        if !src.exists() || under_system_bind(src) {
             continue;
         }
-        let dst = new_root.join(format!("ro{}", src.display()));
+        let dst = new_root.join(src.strip_prefix("/").unwrap_or(src));
         fs::create_dir_all(dst.parent().unwrap_or(Path::new("/")))?;
         if src.is_dir() {
             fs::create_dir_all(&dst)?;
@@ -416,17 +487,32 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
             Some(""),
             &dst,
             Some(""),
-            MsFlags::MS_BIND | MsFlags::MS_REMOUNT | MsFlags::MS_RDONLY | MsFlags::MS_REC,
+            MsFlags::MS_BIND
+                | MsFlags::MS_REMOUNT
+                | MsFlags::MS_RDONLY
+                | MsFlags::MS_REC
+                | carried_mount_flags(&dst),
             Some(""),
         )
         .map_err(io_err)?;
     }
-    // Extra RW paths.
+    // Extra RW paths, at their REAL locations. Under a system bind the write
+    // grant cannot be honored (the covering mount is read-only): refuse loudly
+    // rather than mount a dead path.
     for src in &policy.extra_rw_paths {
         if !src.exists() {
             continue;
         }
-        let dst = new_root.join(format!("rw{}", src.display()));
+        if under_system_bind(src) {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!(
+                    "extra_rw path {} sits under a read-only system mount",
+                    src.display()
+                ),
+            ));
+        }
+        let dst = new_root.join(src.strip_prefix("/").unwrap_or(src));
         fs::create_dir_all(dst.parent().unwrap_or(Path::new("/")))?;
         if src.is_dir() {
             fs::create_dir_all(&dst)?;
@@ -559,25 +645,35 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("rule {p}: {e}")))?;
         }
     }
-    // Extra paths are bind-mounted by setup_rootfs at /ro<src> (read-only) and
-    // /rw<src> (read-write), OUTSIDE /workspace. Without a matching Landlock
-    // rule the child would get EACCES on them despite the mount, so grant the
-    // access here too. Paths that didn't exist on the host were skipped at
-    // mount time, so PathFd::new simply fails and is ignored.
+    // Extra paths are bind-mounted by setup_rootfs at their REAL locations.
+    // Without a matching Landlock rule the child would get EACCES on them
+    // despite the mount, so grant the access here too. Paths that didn't
+    // exist on the host were skipped at mount time, so PathFd::new simply
+    // fails and is ignored; a ro grant under a system bind got no mount of
+    // its own, but the rule on the real path applies to the covering bind's
+    // content just the same.
     for ro in &policy.extra_ro_paths {
-        let p = format!("/ro{}", ro.display());
-        if let Ok(fd) = PathFd::new(&p) {
+        if let Ok(fd) = PathFd::new(ro) {
             ruleset = ruleset
                 .add_rule(PathBeneath::new(fd, access_read_exec))
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("rule {p}: {e}")))?;
+                .map_err(|e| {
+                    io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("rule ro {}: {e}", ro.display()),
+                    )
+                })?;
         }
     }
     for rw in &policy.extra_rw_paths {
-        let p = format!("/rw{}", rw.display());
-        if let Ok(fd) = PathFd::new(&p) {
+        if let Ok(fd) = PathFd::new(rw) {
             ruleset = ruleset
                 .add_rule(PathBeneath::new(fd, access_all))
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("rule {p}: {e}")))?;
+                .map_err(|e| {
+                    io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("rule rw {}: {e}", rw.display()),
+                    )
+                })?;
         }
     }
     ruleset
@@ -623,15 +719,20 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
     if has_protect {
         // R on cwd recursively, so protected paths remain readable.
         if let Ok(fd) = PathFd::new(&policy.cwd) {
-            ruleset = ruleset.add_rule(PathBeneath::new(fd, access_read)).map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("rule r cwd {}: {e}", policy.cwd.display()),
-                )
-            })?;
+            ruleset = ruleset
+                .add_rule(PathBeneath::new(fd, access_read))
+                .map_err(|e| {
+                    io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("rule r cwd {}: {e}", policy.cwd.display()),
+                    )
+                })?;
         }
         // RW only on non-protected top-level entries.
-        let canon_cwd = policy.cwd.canonicalize().unwrap_or_else(|_| policy.cwd.clone());
+        let canon_cwd = policy
+            .cwd
+            .canonicalize()
+            .unwrap_or_else(|_| policy.cwd.clone());
         let entries = match fs::read_dir(&policy.cwd) {
             Ok(it) => it,
             Err(e) => {
@@ -662,23 +763,27 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
                 continue;
             }
             if let Ok(fd) = PathFd::new(&p) {
-                ruleset = ruleset.add_rule(PathBeneath::new(fd, access_all)).map_err(|e| {
-                    io::Error::new(
-                        io::ErrorKind::Other,
-                        format!("rule rw {}: {e}", p.display()),
-                    )
-                })?;
+                ruleset = ruleset
+                    .add_rule(PathBeneath::new(fd, access_all))
+                    .map_err(|e| {
+                        io::Error::new(
+                            io::ErrorKind::Other,
+                            format!("rule rw {}: {e}", p.display()),
+                        )
+                    })?;
             }
         }
     } else {
         // No protect set: original behavior, RW on cwd as a whole.
         if let Ok(fd) = PathFd::new(&policy.cwd) {
-            ruleset = ruleset.add_rule(PathBeneath::new(fd, access_all)).map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("rule rw cwd {}: {e}", policy.cwd.display()),
-                )
-            })?;
+            ruleset = ruleset
+                .add_rule(PathBeneath::new(fd, access_all))
+                .map_err(|e| {
+                    io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("rule rw cwd {}: {e}", policy.cwd.display()),
+                    )
+                })?;
         }
     }
 
@@ -700,9 +805,14 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
             continue;
         }
         if let Ok(fd) = PathFd::new(p) {
-            ruleset = ruleset.add_rule(PathBeneath::new(fd, access_all)).map_err(|e| {
-                io::Error::new(io::ErrorKind::Other, format!("rule rw {}: {e}", p.display()))
-            })?;
+            ruleset = ruleset
+                .add_rule(PathBeneath::new(fd, access_all))
+                .map_err(|e| {
+                    io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("rule rw {}: {e}", p.display()),
+                    )
+                })?;
         }
     }
 
@@ -726,9 +836,14 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
     }
     for p in &ro_paths {
         if let Ok(fd) = PathFd::new(p) {
-            ruleset = ruleset.add_rule(PathBeneath::new(fd, access_read_exec)).map_err(|e| {
-                io::Error::new(io::ErrorKind::Other, format!("rule ro {}: {e}", p.display()))
-            })?;
+            ruleset = ruleset
+                .add_rule(PathBeneath::new(fd, access_read_exec))
+                .map_err(|e| {
+                    io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("rule ro {}: {e}", p.display()),
+                    )
+                })?;
         }
     }
     // Same sink-device carve-out as the strict profile; see comment there.
@@ -802,8 +917,8 @@ fn apply_seccomp() -> io::Result<()> {
         denied.iter().map(|s| (*s, vec![])).collect();
     let filter = SeccompFilter::new(
         rules,
-        SeccompAction::Allow,                       // default
-        SeccompAction::Errno(libc::EPERM as u32),    // matched (denied)
+        SeccompAction::Allow,                     // default
+        SeccompAction::Errno(libc::EPERM as u32), // matched (denied)
         arch,
     )
     .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("seccomp build: {e}")))?;
@@ -867,12 +982,18 @@ fn run_child(policy: &Policy, cwd: &Path) -> io::Result<()> {
                 // Clamp to the inherited hard limit: lowering is always
                 // permitted, and if the operator's shell already set a
                 // stricter hard cap the stricter value wins (never EPERM).
-                let mut cur = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+                let mut cur = libc::rlimit {
+                    rlim_cur: 0,
+                    rlim_max: 0,
+                };
                 if libc::getrlimit(libc::RLIMIT_DATA, &mut cur) != 0 {
                     return Err(io::Error::last_os_error());
                 }
                 let cap = bytes.min(cur.rlim_max);
-                let lim = libc::rlimit { rlim_cur: cap, rlim_max: cap };
+                let lim = libc::rlimit {
+                    rlim_cur: cap,
+                    rlim_max: cap,
+                };
                 if libc::setrlimit(libc::RLIMIT_DATA, &lim) != 0 {
                     return Err(io::Error::last_os_error());
                 }
@@ -917,9 +1038,9 @@ fn run_child(policy: &Policy, cwd: &Path) -> io::Result<()> {
     loop {
         match child.try_wait()? {
             Some(status) => {
-                returncode = status.code().unwrap_or_else(|| {
-                    status.signal().map(|s| 128 + s).unwrap_or(-1)
-                });
+                returncode = status
+                    .code()
+                    .unwrap_or_else(|| status.signal().map(|s| 128 + s).unwrap_or(-1));
                 reaped = true;
                 break;
             }

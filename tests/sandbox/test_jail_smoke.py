@@ -315,3 +315,57 @@ def test_jail_tool_paths_make_a_nonworkspace_binary_reachable(
         JailPolicy(cwd=work, argv=("/bin/sh", "-c", "mytool"), env=env, timeout_s=10.0)
     )
     assert without_mount.returncode != 0
+
+
+def test_jail_extra_ro_paths_mount_at_their_real_location(jail_bin: Path, tmp_path: Path) -> None:
+    # The documented contract: a granted toolchain (a conda env, a shared data
+    # dir) is usable via its own absolute paths and shebangs. The grant used to
+    # remap under an undocumented /ro<src>, where nothing could find it.
+    work = tmp_path / "work"
+    work.mkdir()
+    toolchain = tmp_path / "toolchain"  # outside the workspace mount
+    toolchain.mkdir()
+    script = toolchain / "hello.sh"
+    script.write_text("#!/bin/sh\necho reached-real-path\n")
+    script.chmod(0o755)
+
+    granted = run_in_jail(
+        JailPolicy(cwd=work, argv=(str(script),), extra_ro_paths=(toolchain,), timeout_s=10.0)
+    )
+    assert granted.returncode == 0, granted.stderr
+    assert "reached-real-path" in granted.stdout
+
+    # Read-only: a write inside the grant is refused.
+    ro = run_in_jail(
+        JailPolicy(
+            cwd=work,
+            argv=("/bin/sh", "-c", f"echo x > {toolchain}/marker"),
+            extra_ro_paths=(toolchain,),
+            timeout_s=10.0,
+        )
+    )
+    assert ro.returncode != 0
+    assert not (toolchain / "marker").exists()
+
+    # Without the grant the path does not exist inside the jail at all.
+    ungranted = run_in_jail(JailPolicy(cwd=work, argv=(str(script),), timeout_s=10.0))
+    assert ungranted.returncode != 0
+
+
+def test_jail_extra_rw_paths_mount_at_their_real_location(jail_bin: Path, tmp_path: Path) -> None:
+    # extra_rw (the machine data dir) is writable AT the host abspath, so
+    # $AGENT6_MACHINE_DATA_DIR is the same string in every profile.
+    work = tmp_path / "work"
+    work.mkdir()
+    data = tmp_path / "data"  # outside the workspace mount
+    data.mkdir()
+    res = run_in_jail(
+        JailPolicy(
+            cwd=work,
+            argv=("/bin/sh", "-c", f"echo persisted > {data}/out"),
+            extra_rw_paths=(data,),
+            timeout_s=10.0,
+        )
+    )
+    assert res.returncode == 0, res.stderr
+    assert (data / "out").read_text().strip() == "persisted"
