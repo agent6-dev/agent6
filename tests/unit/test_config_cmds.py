@@ -292,6 +292,69 @@ def test_config_set_keeps_a_write_on_an_already_invalid_config(
     assert "WARNING" not in capsys.readouterr().err
 
 
+def test_config_set_unknown_leaf_gets_a_did_you_mean(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # An unknown key under a known section spoke pydantic ("Extra inputs are
+    # not permitted"); a typo deserves the near-miss and the show pointer.
+    from agent6.ui.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    rc = main(["config", "set", "sandbox.run_command", "yes"])  # missing 's'
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "unknown config key 'sandbox.run_command'" in err
+    assert "'sandbox.run_commands'" in err  # the did-you-mean
+    assert "Extra inputs" not in err
+
+
+def test_config_set_unknown_section_gets_the_same_friendly_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # An unknown TOP-LEVEL section errors at the section loc (a parent of the
+    # written key); it used to fall through to the merged-layer dump with
+    # "(merged config layers)" and a raw type=extra_forbidden.
+    from agent6.paths import global_config_path
+    from agent6.ui.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    rc = main(["config", "set", "bogus.key", "foo"])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "unknown config key 'bogus.key'" in err
+    assert "merged config layers" not in err and "extra_forbidden" not in err
+    gpath = global_config_path()
+    assert not gpath.is_file() or "bogus" not in gpath.read_text(encoding="utf-8")
+
+
+def test_config_set_accepts_a_profiles_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # [profiles.*] is meta-config stripped before validation (_apply_profile),
+    # so the schema forbids it by design; the unknown-key reroute must not
+    # reject a legitimate, documented profile write (it did: rc 2 + revert).
+    from agent6.paths import global_config_path
+    from agent6.ui.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    rc = main(["config", "set", "profiles.mine.review.trigger", "before_finish"])
+    assert rc == 0
+    text = global_config_path().read_text(encoding="utf-8")
+    assert "[profiles.mine.review]" in text
+    assert "unknown config key" not in capsys.readouterr().err
+
+
+def test_config_set_bool_error_speaks_human(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from agent6.ui.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    rc = main(["config", "set", "sandbox.protect_git", "notabool"])
+    assert rc == 2
+    assert "sandbox.protect_git: expected true or false, got 'notabool'" in capsys.readouterr().err
+
+
 def test_config_set_global_keeps_a_valid_write_shadowed_by_a_stale_repo_layer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

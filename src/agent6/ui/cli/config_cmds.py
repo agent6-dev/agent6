@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import difflib
 import sys
 import tempfile
 from pathlib import Path
@@ -26,6 +27,8 @@ from agent6.config.layer import (
     InvalidEntry,
     effective_leaf,
     find_invalid_entries,
+    flatten_leaves,
+    leaf_keys,
     load_effective,
     load_effective_with_overlay,
     materialize,
@@ -167,6 +170,22 @@ def _merged_config_error() -> str | None:
         return str(exc)
 
 
+def _unknown_key_error(key: str) -> str:
+    """A human message for a key the schema forbids, with a did-you-mean.
+
+    The pool is usually the SCHEMA defaults: this runs after the unknown key
+    was already written, so the merged config no longer loads and the live
+    branch (which would add real provider tables) only survives when a higher
+    layer masks the write."""
+    try:
+        pool = leaf_keys(load_effective(Path.cwd(), None))
+    except ConfigError:
+        pool = sorted(flatten_leaves(Config().model_dump(mode="python")))
+    close = difflib.get_close_matches(key, pool, n=2)
+    hint = f". Did you mean {' or '.join(repr(c) for c in close)}?" if close else ""
+    return f"unknown config key {key!r}{hint} (see `agent6 config show`)"
+
+
 def _written_value_error(key: str, value: object) -> str | None:
     """Validate the just-written ``key = value`` against the Config model on its
     own (a minimal dict, defaults for the rest), independent of the layer merge.
@@ -174,8 +193,15 @@ def _written_value_error(key: str, value: object) -> str | None:
     masks (e.g. a global set the repo overlay shadows) would otherwise validate
     the merged config -- where the value is hidden -- and land the bad value in
     the file, only to explode later where the mask is absent. Rejects only when
-    the error is exactly at *key* (not a parent), so a partial dynamic entry
+    the error sits exactly at *key*, or at a parent of it for the schema's
+    extra_forbidden (an unknown key or section), so a partial dynamic entry
     (a provider being filled in over several sets) is not falsely reverted."""
+    if key == "profiles" or key.startswith("profiles."):
+        # [profiles.*] is meta-config the loader strips BEFORE validation
+        # (_apply_profile), so the Config schema forbids it by design; the
+        # standalone check would falsely reject every legitimate profile write.
+        # The merged re-validation still catches a profile body that breaks.
+        return None
     parts = key.split(".")
     nested: dict[str, object] = {}
     cur = nested
@@ -188,8 +214,17 @@ def _written_value_error(key: str, value: object) -> str | None:
         Config.model_validate(nested)
     except ValidationError as exc:
         for err in exc.errors():
-            if ".".join(str(x) for x in err["loc"]) == key:
-                return f"{key}: {err['msg']}"
+            loc = ".".join(str(x) for x in err["loc"])
+            if err["type"] == "extra_forbidden" and (loc == key or key.startswith(loc + ".")):
+                # An unknown top-level section errors at the SECTION (a parent
+                # loc), not the leaf; both deserve the same friendly message,
+                # not pydantic-speak or the merged-layer dump.
+                return _unknown_key_error(key)
+            if loc == key:
+                msg = err["msg"]
+                if err["type"] == "bool_parsing":
+                    msg = f"expected true or false, got {value!r}"
+                return f"{key}: {msg}"
     except ConfigError as exc:
         return str(exc)
     return None
