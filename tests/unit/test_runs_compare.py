@@ -53,10 +53,12 @@ def _setup_run(
     task: str = "implement the thing",
     status: str = "passed",
     cost: float = 0.05,
+    manifest_extra: dict[str, Any] | None = None,
 ) -> None:
     """Cut agent6/<run_id> off base_sha with *commits*, write manifest.json +
     logs.jsonl (the run-branch + run-state fixture `runs compare` reads), and
-    return the checkout to where it was."""
+    return the checkout to where it was. *manifest_extra* merges extra manifest
+    fields (e.g. a fan-out lane's parallel_id + compare stamp)."""
     branch = f"agent6/{run_id}"
     current = _git(repo, "rev-parse", "--abbrev-ref", "HEAD")
     _git(repo, "checkout", "-q", base_sha)
@@ -78,6 +80,7 @@ def _setup_run(
                 "base_branch": "main",
                 "run_branch": branch,
                 "user_task": task,
+                **(manifest_extra or {}),
             }
         )
         + "\n",
@@ -310,6 +313,76 @@ def test_compare_total_line_accounts_the_judge_calls_own_spend(
     assert rc == 0
     out = capsys.readouterr().out
     assert "total: candidates $0.1200 + judge $0.0102 = $0.1302" in out
+
+
+def _lane_extra(*, winner: bool, rank: int) -> dict[str, Any]:
+    return {
+        "parallel_id": "fan",
+        "lane": rank,
+        "compare": {"rank": rank, "of": 2, "winner": winner, "ranked_by": "judge"},
+    }
+
+
+def test_compare_discloses_a_fresh_verdict_that_contradicts_the_stamp(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Re-judging one fan-out's own lanes can flip the winner; the recorded
+    stamp (the listings' star) is never rewritten, so the clash must be said
+    out loud, not left for the operator to trip over in `runs list`."""
+    base = _init_repo(repo)
+    _setup_run(
+        repo,
+        "run-AAAA11",
+        base_sha=base,
+        commits=[("a.txt", "a\n", "add a")],
+        manifest_extra=_lane_extra(winner=False, rank=2),
+    )
+    _setup_run(
+        repo,
+        "run-BBBB22",
+        base_sha=base,
+        commits=[("b.txt", "b\n", "add b")],
+        manifest_extra=_lane_extra(winner=True, rank=1),
+    )
+    _write_reviewer_config(repo)
+    # The fresh judge flips the order: stamped winner run-BBBB22 now ranks last.
+    verdict = '{"ranking": ["run-AAAA11", "run-BBBB22"], "rationale": "a is cleaner"}'
+    monkeypatch.setattr(compare_mod, "build_role_provider", _stub_builder(_FakeProvider([verdict])))
+
+    rc = main(["runs", "compare", "run-AAAA11", "run-BBBB22"])
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "note: the recorded fan-out verdict picked run-BBBB22" in out
+    assert "nothing was re-stamped" in out
+
+
+def test_compare_stays_quiet_when_the_fresh_verdict_agrees_with_the_stamp(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    base = _init_repo(repo)
+    _setup_run(
+        repo,
+        "run-AAAA11",
+        base_sha=base,
+        commits=[("a.txt", "a\n", "add a")],
+        manifest_extra=_lane_extra(winner=False, rank=2),
+    )
+    _setup_run(
+        repo,
+        "run-BBBB22",
+        base_sha=base,
+        commits=[("b.txt", "b\n", "add b")],
+        manifest_extra=_lane_extra(winner=True, rank=1),
+    )
+    _write_reviewer_config(repo)
+    verdict = '{"ranking": ["run-BBBB22", "run-AAAA11"], "rationale": "b still wins"}'
+    monkeypatch.setattr(compare_mod, "build_role_provider", _stub_builder(_FakeProvider([verdict])))
+
+    rc = main(["runs", "compare", "run-AAAA11", "run-BBBB22"])
+
+    assert rc == 0
+    assert "note:" not in capsys.readouterr().out
 
 
 def test_failed_judge_announces_what_its_attempts_still_spent(

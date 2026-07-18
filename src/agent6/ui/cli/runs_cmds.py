@@ -611,6 +611,26 @@ def _cmd_compare(*, run_ids: tuple[str, ...]) -> int:
     outcome = rank(cfg, candidates, transcript_dir=_state_dir(cwd) / "compare")
     print(f"[agent6] comparing {len(candidates)} runs:")
     print_ranked_candidates(candidates, outcome)
+    # A fresh judgment can contradict the fan-out's recorded verdict (the star in
+    # listings comes from the auto-compare stamp, which this command never
+    # rewrites); when re-judging one fan-out's own lanes, disclose the clash
+    # rather than let the two surfaces silently disagree.
+    groups = {manifest.parallel_id for _, manifest in resolved}
+    if outcome.ranking and len(groups) == 1 and None not in groups:
+        stamped = next(
+            (
+                layout.run_id
+                for layout, manifest in resolved
+                if manifest.compare is not None and manifest.compare.winner
+            ),
+            None,
+        )
+        if stamped is not None and stamped != outcome.ranking[0]:
+            print(
+                f"\nnote: the recorded fan-out verdict picked {stamped}"
+                f" (the {WINNER_GLYPH} in listings); this fresh ranking is advisory"
+                " and nothing was re-stamped."
+            )
     if reviewer is None:
         print(
             "\n(no reviewer model configured; ranked mechanically: verify-pass first, then"
