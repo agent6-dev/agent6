@@ -410,7 +410,10 @@ class MachineWatchScreen(Screen[None]):
 
 
 def _machine_row(path: Path) -> tuple[str, str, str]:
-    """(name, state count, status) for the list -- parsed if it loads, else flagged."""
+    """(name, state count, spec validity) for the list -- parsed if it loads,
+    else flagged. The column says whether the FILE checks out ("valid", never
+    "ok": that word is a machine-run terminal status and read like one here);
+    a run's live status shows on the watch screen, not this list."""
     try:
         spec = load_machine(path)
     except (MachineError, OSError):
@@ -419,7 +422,7 @@ def _machine_row(path: Path) -> tuple[str, str, str]:
     return (
         spec.machine,
         str(len(spec.states)),
-        "ok" if not problems else f"{len(problems)} issue(s)",
+        "valid" if not problems else f"{len(problems)} issue(s)",
     )
 
 
@@ -646,7 +649,7 @@ class MachinesScreen(Screen[None]):
     def on_mount(self) -> None:
         table = self.query_one("#machines", DataTable)
         table.cursor_type = "row"
-        table.add_columns("machine", "states", "status", "file")
+        table.add_columns("machine", "states", "spec", "file")
         self.app.sub_title = f"machines · {self.repo_cwd}"
         self._reload()
 
