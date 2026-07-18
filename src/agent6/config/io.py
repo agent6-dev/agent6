@@ -163,7 +163,10 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
 
 
 def remove_toml_leaf(path: Path, dotted_key: str) -> bool:
-    """Delete a single ``table.leaf`` line from *path*. Returns True if removed."""
+    """Delete a single ``table.leaf`` line from *path*. Returns True if removed.
+    Removing the section's last leaf drops the now-empty ``[table]`` header too
+    (a dangling header otherwise accretes across unsets); a section that still
+    holds comments is kept, they are the operator's."""
     table, leaf = _split_dotted_key(dotted_key)
     if not path.is_file():
         return False
@@ -180,6 +183,8 @@ def remove_toml_leaf(path: Path, dotted_key: str) -> bool:
     for j in range(start + 1, end):
         if leaf_re.match(lines[j]):
             del lines[j]
+            if all(not rest.strip() for rest in lines[start + 1 : end - 1]):
+                del lines[start : end - 1]
             out = "\n".join(lines).rstrip("\n") + "\n" if lines else ""
             _write(path, out)
             return True

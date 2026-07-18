@@ -105,6 +105,24 @@ def test_unset_missing_key_is_noop(iso: Path) -> None:
     assert _run(["config", "unset", "sandbox.protect_git"]) == 0
 
 
+def test_unset_last_leaf_drops_the_empty_table(iso: Path) -> None:
+    # Unsetting a section's only key must not leave a dangling [sandbox]
+    # header accreting in the file; a sibling key keeps the section.
+    from agent6.paths import global_config_path
+
+    _run(["config", "set", "git.auto_stash", "true"])
+    _run(["config", "set", "sandbox.run_commands", "yes"])
+    assert _run(["config", "unset", "sandbox.run_commands"]) == 0
+    text = global_config_path().read_text(encoding="utf-8")
+    assert "[sandbox]" not in text
+    assert "[git]" in text  # untouched sibling section survives
+    _run(["config", "set", "git.auto_stash_pop", "true"])
+    assert _run(["config", "unset", "git.auto_stash"]) == 0
+    text = global_config_path().read_text(encoding="utf-8")
+    assert "[git]" in text  # still holds auto_stash_pop
+    assert "auto_stash_pop" in text and "auto_stash =" not in text
+
+
 def test_set_preserves_sibling_keys(iso: Path) -> None:
     _run(["config", "set", "sandbox.agent_network", "open"])
     _run(["config", "set", "sandbox.run_commands", "yes"])
