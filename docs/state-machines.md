@@ -264,10 +264,16 @@ commit tools), exactly like `agent6 run`. A `mode = "run"` state still
 returns only its outcome label and `finish_run` payload as control-flow
 signals; `machine run` resolves a git commit identity up front (from
 `[git.commit]` or the repo's git config) so the confined agent's commits
-succeed. A read-only `mode = "agent"` state's `run_command` is gated by
-`sandbox.run_commands`, which auto-denies on a headless (non-TTY) host, so
-keep verification in a `tool` state rather than the agent for an
-unattended machine.
+succeed. In any agent state `run_command` is gated by
+`sandbox.run_commands`: under the default `ask` an unattended machine
+auto-denies every call (`machine run` warns up front when a `mode = "run"`
+state would hit this). Grant it per invocation with
+`agent6 machine run <file> --auto-approve` (the same operator flag `run`
+carries; ask upgrades to yes, a withheld `no` stays no), or set
+`sandbox.run_commands = "yes"` in the repo config. A machine `[config]`
+overlay cannot grant it (sandbox policy is operator-only). Edits, verify,
+and the auto-commit need no approval, so prefer `tool` states or the
+verify slot over shelling out where you can.
 
 The optional per-state knobs above tune *how* that loop runs: `provider`
 / `thinking` / `temperature` select and tune the model, and the

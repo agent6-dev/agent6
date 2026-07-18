@@ -296,10 +296,18 @@ def _no_instance_hint(machine_id: str, cwd: Path) -> str:
 
 
 def _cmd_machine_run(
-    path: Path, *, exit_on_wait: bool = False, disable_sandbox: bool = False
+    path: Path,
+    *,
+    exit_on_wait: bool = False,
+    disable_sandbox: bool = False,
+    auto_approve: bool = False,
 ) -> int:
     return run_machine(
-        path, _machine_frontend(), exit_on_wait=exit_on_wait, disable_sandbox=disable_sandbox
+        path,
+        _machine_frontend(),
+        exit_on_wait=exit_on_wait,
+        disable_sandbox=disable_sandbox,
+        auto_approve=auto_approve,
     )
 
 

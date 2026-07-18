@@ -75,9 +75,11 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
             " not-ready wait instead of blocking, for an external scheduler to resume."
         ),
     )
-    # Sandbox only; a machine's approvals are config-driven (its states set
-    # run_commands), so --auto-approve is not offered here.
-    _add_sandbox_flags(machine_run, auto_approve=False)
+    # --auto-approve is the operator's per-invocation run_command grant, the
+    # same flag `run` carries: an unattended machine otherwise auto-denies
+    # (machine [config] overlays must not set sandbox.*, so the grant can only
+    # come from the operator at the keyboard or the repo config).
+    _add_sandbox_flags(machine_run)
     machine_status = _sub(
         machine_sub,
         "status",

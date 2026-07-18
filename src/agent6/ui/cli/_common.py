@@ -64,15 +64,16 @@ def _add_budget_flags(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _add_sandbox_flags(parser: argparse.ArgumentParser, *, auto_approve: bool = True) -> None:
-    """Add the per-invocation sandbox/approval override flags.
+def _add_sandbox_flags(parser: argparse.ArgumentParser) -> None:
+    """Add the per-invocation sandbox/approval override flags (every paid
+    command carries both: run/plan/ask/resume and machine run).
 
     ``--dangerously-disable-sandbox`` runs the agent's commands UNCONFINED on
     the host (equivalent to a one-off ``sandbox.profile = "none"``); the env
     ``AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`` does the same. ``--auto-approve``
-    auto-approves ``run_command`` for this run (``sandbox.run_commands = yes``),
-    which stays safe because the command is still jailed; pass ``auto_approve``
-    False on commands (like ``machine run``) where approvals are config-driven.
+    auto-approves ``run_command`` for this invocation: it upgrades
+    ``sandbox.run_commands`` from ask to yes and never resurrects a withheld
+    no. Approval is skipped; confinement still depends on ``sandbox.profile``.
     """
     parser.add_argument(
         "--dangerously-disable-sandbox",
@@ -83,17 +84,16 @@ def _add_sandbox_flags(parser: argparse.ArgumentParser, *, auto_approve: bool = 
             " machine; the host becomes the only boundary."
         ),
     )
-    if auto_approve:
-        parser.add_argument(
-            "--auto-approve",
-            action="store_true",
-            help=(
-                "Auto-approve run_command for this run instead of prompting"
-                " (same as sandbox.run_commands = yes). Safe while sandboxed;"
-                " combined with --dangerously-disable-sandbox it hands the agent"
-                " unprompted host access."
-            ),
-        )
+    parser.add_argument(
+        "--auto-approve",
+        action="store_true",
+        help=(
+            "Auto-approve run_command for this run instead of prompting"
+            " (same as sandbox.run_commands = yes). Confinement still depends"
+            " on sandbox.profile; combined with --dangerously-disable-sandbox"
+            " it hands the agent unprompted host access."
+        ),
+    )
 
 
 def sgr(text: str, code: str) -> str:

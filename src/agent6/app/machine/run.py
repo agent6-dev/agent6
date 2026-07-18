@@ -106,6 +106,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
     *,
     exit_on_wait: bool = False,
     disable_sandbox: bool = False,
+    auto_approve: bool = False,
 ) -> int:
     reporter = frontend.reporter
     if disable_sandbox:
@@ -115,6 +116,13 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
         # Using the env (vs mutating cfg) is the simplest single knob; the env
         # is operator-controlled and the LLM cannot reach it.
         os.environ["AGENT6_DANGEROUSLY_DISABLE_SANDBOX"] = "1"
+    if auto_approve:
+        # The operator's per-invocation run_command grant, reaching each agent
+        # subprocess the same way the sandbox setter does (env, operator-only,
+        # structurally LLM-unreachable). The subprocess applies it through
+        # `with_sandbox_overrides`, which upgrades ask -> yes but never
+        # resurrects a withheld "no".
+        os.environ["AGENT6_AUTO_APPROVE"] = "1"
     try:
         spec = load_machine(path)
     except MachineError as exc:
@@ -154,6 +162,19 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
     except ConfigError as exc:
         reporter.err(f"CONFIG ERROR:\n{exc}")
         return 2
+    cfg = cfg.with_sandbox_overrides(auto_approve=auto_approve)
+    if has_run_agent and cfg.sandbox.run_commands == "ask":
+        # Say the dead-end up front: an unattended machine auto-denies every
+        # run_command under 'ask' (machine bridges deny when no front-end is
+        # attached), so a mode='run' state that shells out burns its budget
+        # against denials.
+        reporter.err(
+            "[agent6] NOTE: this machine has mode='run' agent state(s) and"
+            " sandbox.run_commands='ask'; an unattended machine auto-denies"
+            " run_command. Approve for this invocation with --auto-approve, or"
+            " set `agent6 config set --repo sandbox.run_commands yes` to always"
+            " allow. Edits, verify, and the auto-commit need no approval."
+        )
     snapshot_keep = cfg.machine.snapshot_keep
     if has_agent_state or tool_states:
         try:

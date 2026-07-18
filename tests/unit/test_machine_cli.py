@@ -475,3 +475,61 @@ def test_hard_usd_preflight_checks_per_state_cap(
     spec = _load_spec(tmp_path, body)
     err = hard_usd_preflight_error(spec, _hard_usd_cfg("priced/m"))
     assert err is not None and "pinned/unpriced" in err
+
+
+AGENT_RUN_MACHINE = AGENT_MACHINE_HARD.replace(
+    'machine = "hard-usd"', 'machine = "run-warn"'
+).replace('kind = "agent"', 'kind = "agent"\nmode = "run"', 1)
+
+
+def test_run_warns_on_mode_run_states_under_ask_policy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # An unattended machine auto-denies run_command under 'ask'; a mode='run'
+    # state burns its budget against denials, so machine run says so up front
+    # and names both remedies. No provider is configured here, so the run then
+    # refuses at require_runnable, which keeps this test spend-free; the note
+    # must already have printed.
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.chdir(tmp_path)
+    f = tmp_path / "runwarn.asm.toml"
+    f.write_text(AGENT_RUN_MACHINE, encoding="utf-8")
+    code = main(["machine", "run", str(f)])
+    err = capsys.readouterr().err
+    assert code == 2  # no worker configured: refused right after the note
+    assert "auto-denies" in err and "--auto-approve" in err
+
+
+def test_run_auto_approve_suppresses_the_warning_and_sets_the_env_grant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import os
+
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.delenv("AGENT6_AUTO_APPROVE", raising=False)  # snapshot: restored at teardown
+    monkeypatch.chdir(tmp_path)
+    f = tmp_path / "runwarn.asm.toml"
+    f.write_text(AGENT_RUN_MACHINE, encoding="utf-8")
+    code = main(["machine", "run", str(f), "--auto-approve"])
+    err = capsys.readouterr().err
+    assert code == 2  # still refused on the missing worker; that is fine
+    assert "auto-denies" not in err  # the grant removed the dead-end
+    # The grant reaches each agent subprocess the way the sandbox setter does.
+    assert os.environ.get("AGENT6_AUTO_APPROVE") == "1"
+
+
+def test_apply_operator_env_grants_upgrades_ask_never_no(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agent6.app.machine_agent import (
+        _apply_operator_env_grants,  # pyright: ignore[reportPrivateUsage]
+    )
+    from agent6.config import Config
+
+    monkeypatch.setenv("AGENT6_AUTO_APPROVE", "1")
+    ask = Config.model_validate({"sandbox": {"run_commands": "ask"}})
+    assert _apply_operator_env_grants(ask).sandbox.run_commands == "yes"
+    no = Config.model_validate({"sandbox": {"run_commands": "no"}})
+    assert _apply_operator_env_grants(no).sandbox.run_commands == "no"  # never resurrected
+    monkeypatch.delenv("AGENT6_AUTO_APPROVE")
+    assert _apply_operator_env_grants(ask).sandbox.run_commands == "ask"  # no grant, no change

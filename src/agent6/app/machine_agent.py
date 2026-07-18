@@ -54,7 +54,7 @@ from agent6.app.providers import (
 )
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
-from agent6.config import ConfigError
+from agent6.config import Config, ConfigError
 from agent6.config.layer import load_effective_with_overlay, resolved_state_dir
 from agent6.events import EventSink
 from agent6.git_ops import CommitIdentity, set_repo_hook_policy
@@ -129,6 +129,14 @@ def _result(
     return AgentExecResult(
         reason=reason, payload=payload, usd=usd, input_tokens=inp, output_tokens=out
     )
+
+
+def _apply_operator_env_grants(cfg: Config) -> Config:
+    """The supervisor's `machine run --auto-approve` grant, carried by env like
+    the sandbox setter (operator-only, structurally LLM-unreachable; a machine
+    [config] overlay must not and cannot set sandbox.*). Upgrades run_commands
+    ask -> yes, never a withheld no (`with_sandbox_overrides`)."""
+    return cfg.with_sandbox_overrides(auto_approve=os.environ.get("AGENT6_AUTO_APPROVE") == "1")
 
 
 @dataclass(frozen=True, slots=True)
@@ -247,6 +255,7 @@ def run_one(
             max_input_tokens=r.max_input_tokens,
             max_output_tokens=r.max_output_tokens,
         )
+        cfg = _apply_operator_env_grants(cfg)
     except (ConfigError, ValidationError) as exc:
         reporter.err(f"REFUSING: machine agent config error: {exc}")
         return _result("error", None, None)
