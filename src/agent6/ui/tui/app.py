@@ -105,6 +105,26 @@ _TASK_ICONS = TASK_STATUS_GLYPH
 # a visual row back through the same window, so both must use this one value.
 _TOOL_TABLE_ROWS = 20
 
+# A DELIBERATE end that simply lacks a green verify (an operator stop, a plan,
+# an answered ask, a gateless settle, a finish over red) is not a failure;
+# painting it red called correct outcomes broken. Involuntary ends
+# (provider_error, went_quiet, budget_exhausted, stuck) stay red.
+_DELIBERATE_END_REASONS = frozenset(
+    {
+        "steer_abort",
+        "interrupted",
+        "interactive_stop",
+        "settled",
+        "answered",
+        "finish_planning",
+        "finish_run",
+    }
+)
+
+
+def _end_color(all_passed: bool | None, end_reason: str) -> str:
+    return "green" if all_passed else "yellow" if end_reason in _DELIBERATE_END_REASONS else "red"
+
 
 class _DashboardCommands(Provider):
     """The dashboard's menu actions in the Ctrl+P palette, from the same MENUS
@@ -499,10 +519,8 @@ class DashboardScreen(Screen[None]):
         step = f"tasks: {done_n}/{len(s.tasks)}" if s.tasks else "tasks: —"
         if not s.finished:
             finished = ""
-        else:  # colour the shared status label: green passed, yellow stopped, red else
-            color = (
-                "green" if s.all_passed else "yellow" if s.end_reason == "steer_abort" else "red"
-            )
+        else:  # colour the shared label: green passed, yellow deliberate end, red involuntary
+            color = _end_color(s.all_passed, s.end_reason)
             finished = f"[b {color}]{escape(run_status_label(s))}[/]"
         cost = f"[b]{format_cost(s.budget.usd_total, partial=s.budget.usd_partial)}[/]"
         # The token-budget consumption, up here as a readout (the bottom bar it
@@ -529,9 +547,7 @@ class DashboardScreen(Screen[None]):
         )
         if s.finished:
             # The end story, not a stale "idle": how it ended + the closing summary.
-            color = (
-                "green" if s.all_passed else "yellow" if s.end_reason == "steer_abort" else "red"
-            )
+            color = _end_color(s.all_passed, s.end_reason)
             st.append(run_status_label(s) + "\n", style=f"bold {color}")
             if s.finish_summary:
                 st.append(s.finish_summary, style="dim")
