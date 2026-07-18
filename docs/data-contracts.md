@@ -139,7 +139,7 @@ Parse and validate a `.asm.toml` machine file into a `MachineSpec`.
 
 [`agent6.machine.journal`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/machine/journal.py) &middot; tagged union of 4 frozen families
 
-Append-only journal, blackboard snapshots, and the single-writer lock for one machine instance. The journal is the source of truth: every impure observation a state makes is appended as a JournalEvent *before* the blackboard is reduced, so replaying the events reproduces the exact path from the pure reducer.
+Append-only journal, blackboard snapshots, and the single-writer lock for one machine instance. The journal is the source of truth: the pure reducer validates each impure observation, the validated fact is appended as a JournalEvent, and only then does the returned blackboard replace the current one, so replaying the events reproduces the exact path from the pure reducer.
 
 Members: `MachineBegin`, `StepEvent`, `MachineNotify`, `MachineEnd`
 

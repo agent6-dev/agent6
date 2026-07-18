@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """Append-only journal, blackboard snapshots, and the single-writer lock for one
-machine instance. The journal is the source of truth: every impure observation a
-state makes is appended as a JournalEvent *before* the blackboard is reduced, so
-replaying the events reproduces the exact path from the pure reducer.
+machine instance. The journal is the source of truth: the pure reducer validates
+each impure observation, the validated fact is appended as a JournalEvent, and
+only then does the returned blackboard replace the current one, so replaying the
+events reproduces the exact path from the pure reducer.
 
 The recorded observations are a tool's exit code and stdout, a wait's resolved
 wake instant, and a branch's chosen clause (§5.1); the reducer reads them back
