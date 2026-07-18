@@ -125,6 +125,16 @@ def _runs_dir(repo_root: Path) -> Path:
 RUN_BUCKETS: tuple[str, ...] = ("runs", "asks", "machine-drafts")
 
 
+def print_no_run_match(query: str, state: Path) -> None:
+    """The one missing-run error, shared by every command that resolves a run:
+    name the query and where it looked (never the bucket-layout internals), or
+    the same first-contact copy as `runs` when there is nothing to show at all."""
+    if query:
+        print(f"ERROR: no run matches {query!r} (looked under {state})", file=sys.stderr)
+    else:
+        print('no runs yet. Start one with `agent6 run "<task>"`.', file=sys.stderr)
+
+
 def run_bucket_dirs(repo_root: Path) -> list[Path]:
     """The run-style bucket dirs (runs/, asks/, machine-drafts/) under the state
     dir, the cross-bucket scope for latest-run resolution and history. A missing
@@ -192,7 +202,7 @@ def resolve_run_layout(repo_root: Path, query: str) -> RunLayout:
             f"run id {query!r} is ambiguous ({len(prefix)} matches): {preview}",
             ambiguous=True,
         )
-    raise RunIdError(f"no run matches {query!r} under {state}/(runs|asks|machine-drafts)")
+    raise RunIdError(f"no run matches {query!r} (looked under {state})")
 
 
 def resolve_or_newest_layout(repo_root: Path, run_id: str) -> RunLayout | None:

@@ -265,3 +265,20 @@ def test_status_cost_cumulative_and_unfinished_across_resume(
     assert obj["usd_partial"] is True  # sticky: leg 1's unpriced spend
     assert obj["state"] == "running"  # not leg 1's "passed (finish_run)"
     assert obj["input_tokens"] == 300  # token gauges stay per-leg
+
+
+def test_status_missing_id_and_empty_state_speak_human(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A bad id names itself and where it looked, without leaking the
+    # (runs|asks|machine-drafts) layout alternation; an empty state dir gets
+    # the same first-contact copy as `runs`.
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    assert _cmd_status("zzz", as_json=False) == 2
+    err = capsys.readouterr().err
+    assert "no run matches 'zzz'" in err and "machine-drafts" not in err
+    assert _cmd_status("", as_json=False) == 2
+    assert 'no runs yet. Start one with `agent6 run "<task>"`.' in capsys.readouterr().err

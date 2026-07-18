@@ -24,7 +24,12 @@ from agent6.runs.ipc import (
 )
 from agent6.runs.manifest import ManifestError, RunManifest, read_manifest
 from agent6.tools.schema import UserQuestion
-from agent6.ui.cli._common import _runs_dir, _state_dir, resolve_or_newest_layout
+from agent6.ui.cli._common import (
+    _runs_dir,
+    _state_dir,
+    print_no_run_match,
+    resolve_or_newest_layout,
+)
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._interact import default_stdin_approver, default_stdin_questioner
 from agent6.viewmodel import (
@@ -210,11 +215,7 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:
     """
     target = _resolve_run_dir(Path.cwd(), run_id)
     if target is None or not target.is_dir():
-        state = _state_dir(Path.cwd())
-        print(
-            f"ERROR: no run found ({run_id or 'latest'}) under {state}/(runs|asks|machine-drafts)",
-            file=sys.stderr,
-        )
+        print_no_run_match(run_id, _state_dir(Path.cwd()))
         return 2
 
     loaded: RunManifest | None = None

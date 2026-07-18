@@ -19,7 +19,12 @@ from pathlib import Path
 
 from agent6.machine import MachineError, MachineJournal, load_machine
 from agent6.runs.id import RunIdError
-from agent6.ui.cli._common import _machines_dir, _runs_dir, resolve_run_layout
+from agent6.ui.cli._common import (
+    _machines_dir,
+    _runs_dir,
+    print_no_run_match,
+    resolve_run_layout,
+)
 from agent6.ui.cli.machine_cmds import _cmd_machine_watch
 from agent6.ui.cli.plan_watch import _cmd_watch, _resolve_run_dir
 from agent6.viewmodel import (
@@ -107,7 +112,7 @@ def _cmd_watch_target(  # noqa: PLR0911
             return _cmd_watch(target, tui=tui, since=since, raw=raw)
         run_dir = _resolve_run_dir(cwd, target)
         if run_dir is None or not run_dir.is_dir():
-            print(f"ERROR: no run found ({target or 'latest'}) under {runs_dir}", file=sys.stderr)
+            print_no_run_match(target, runs_dir.parent)
             return 2
         return _run_json_snapshot(run_dir)
 
