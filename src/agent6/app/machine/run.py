@@ -319,7 +319,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
     spend, _ = machine_spend(journal.read(), root, alive=False)
     reporter.out(
         f"{result.status.upper()}: {spec.machine} ended in {result.state!r}"
-        f" after {_transitions(result.transitions)} ({result.reason})"
-        f" -- spent ${spend.usd:.4f}"
+        f" after {_transitions(result.transitions)} ({result.reason});"
+        f" spent ${spend.usd:.4f}"
     )
     return 0 if result.status == "ok" else 1
