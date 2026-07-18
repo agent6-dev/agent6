@@ -10,7 +10,8 @@ agent6 connect                       # pick a provider, paste an API key
 
 The key is written to `~/.config/agent6/secrets.toml` (mode `0600`) and is shared across
 every repository. `agent6 connect` only stores what you paste or an OAuth token; it never
-runs anything a remote returns.
+runs anything a remote returns. Already connected on this machine? Skip this step;
+`agent6 check` verifies the stored key and `agent6 model` shows the role assignments.
 
 agent6 routes three model roles independently:
 

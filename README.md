@@ -60,6 +60,7 @@ building from source.
 
 ```bash
 # Connect a provider once (stored in ~/.config/agent6/, key in a 0600 secrets file).
+# Already connected on this machine? Skip both; `agent6 check` verifies it.
 agent6 connect                # interactive: pick provider, paste API key
 agent6 model worker anthropic claude-sonnet-4-6
 
