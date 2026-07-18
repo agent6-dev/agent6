@@ -94,9 +94,20 @@ def _check_machine_text(
 
 def _attempt_reason(problems: list[str]) -> str:
     """A one-line summary of why an attempt failed: the first problem's first
-    line, trimmed, plus a count of the rest. Keeps the per-attempt log to a line
-    while the full diagnostics still feed back into the next prompt."""
-    head = problems[0].splitlines()[0].strip() if problems and problems[0].strip() else "unknown"
+    line plus, when that line only introduces a block (ends with ':'), the
+    block's last line (a test dump or traceback ends with the actual error;
+    'offline test x failed (exit 1):' alone explains nothing). A count of
+    the rest follows. Keeps the per-attempt log to a line while the full
+    diagnostics still feed back into the next prompt."""
+    first = problems[0] if problems and problems[0].strip() else ""
+    lines = [ln.strip() for ln in first.splitlines() if ln.strip()]
+    head = lines[0] if lines else "unknown"
+    if head.endswith(":") and len(lines) > 1:
+        # Clip the intro first: a long one truncates away the appended
+        # error, the one part this line exists to surface.
+        if len(head) > 100:
+            head = head[:97] + "..."
+        head = f"{head} {lines[-1]}"
     if len(head) > 160:
         head = head[:157] + "..."
     extra = f" (+{len(problems) - 1} more)" if len(problems) > 1 else ""

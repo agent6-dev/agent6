@@ -426,6 +426,16 @@ def test_create_surfaces_a_reason_per_failed_attempt(
     assert "attempt 2 failed:" in err  # a concrete reason, not silence
 
 
+def test_attempt_reason_pulls_the_error_from_an_introducing_block() -> None:
+    # 'offline test x failed (exit 1):' alone explains nothing; the block's
+    # last line carries the actual error (a traceback or test dump ends on it).
+    from agent6.app.machine.create import _attempt_reason  # pyright: ignore[reportPrivateUsage]
+
+    block = "offline test scripts/t.py failed (exit 1):\nusage: run.py <pkg>\nAssertionError"
+    assert _attempt_reason([block]) == "offline test scripts/t.py failed (exit 1): AssertionError"
+    assert _attempt_reason(["plain reason", "extra"]) == "plain reason (+1 more)"
+
+
 def test_create_no_payload_gives_diagnostic_and_retries(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
