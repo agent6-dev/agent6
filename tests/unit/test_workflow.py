@@ -3634,8 +3634,10 @@ def test_pass_pending_root_tasks_noop_without_curator() -> None:
 def test_drive_loop_gateless_settles_after_commit(tmp_path: Path) -> None:
     """A GATELESS run (no verify_command) has no green verify to seed the
     idle-stop net. Once an edit is committed it must still settle: spinning on
-    read-only commands after the commit stops the run (reason='verify_settled'),
-    so a gateless run can't burn budget to exhaustion when the worker is done."""
+    read-only commands after the commit stops the run, so a gateless run can't
+    burn budget to exhaustion when the worker is done. The reason is 'settled'
+    (never 'verify_settled': nothing was verified, and the old label put
+    'passed / verify passed' on every surface)."""
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -3683,7 +3685,7 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: Path) -> None:
             root_task_id=None,
             original_task="t",
         )
-    assert result.reason == "verify_settled"
+    assert result.reason == "settled"
     assert result.completed is True
     assert provider.calls < 30  # stopped well before max_iterations, not burned to the cap
 
@@ -4883,3 +4885,73 @@ def test_tool_error_spiral_silent_for_nonexistent_binary(tmp_path: Path) -> None
             original_task="t",
         )
     assert provider.reach_hits == 0
+
+
+def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: Path) -> None:
+    """A gateless run (no verify command configured or inferable) that commits
+    work and goes idle settles as reason='settled' with all_passed=False and an
+    honest summary. It ended 'passed / verify passed' before, with zero verify
+    executions in the whole run (observed live on an empty-repo build)."""
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            if self.calls == 1:
+                return _tool_resp(
+                    "apply_edit",
+                    {"path": "a.py", "edits": [{"kind": "create", "new_string": "x = 1\n"}]},
+                    tool_id="e1",
+                )
+            # Then the worker goes idle: read-only calls, no edits, no finish.
+            return _tool_resp("read_file", {"path": "a.py"}, tool_id=f"r{self.calls}")
+
+    class DispatcherStub:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+            return ExecResult(
+                returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
+            )
+
+    provider = ProviderStub()
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=(),  # GATELESS
+            metric=SimpleNamespace(goal=None),
+        )
+    )
+    events: list[dict[str, Any]] = []
+
+    class _Events:
+        def emit(self, event_type: str, /, **fields: Any) -> None:
+            events.append({"type": event_type, **fields})
+
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        mode="run",
+        provider=provider,
+        dispatcher=DispatcherStub(),
+        max_iterations=40,
+        events=_Events(),
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nbuild"}]}]
+    with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            conversation=Conversation.from_wire(messages),
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+            original_task="t",
+        )
+    assert result.completed is True
+    assert result.reason == "settled"
+    assert "no verify" in result.summary
+    assert "verify passed" not in result.summary
+    ends = [e for e in events if e["type"] == "run.end"]
+    assert ends and ends[-1]["reason"] == "settled" and ends[-1]["all_passed"] is False

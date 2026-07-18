@@ -2008,11 +2008,27 @@ class Workflow:
                 f"LOOP: verify_settled at iter {turn.iteration} (idle {state.verify_settled_idle})"
             )
             self._final_checkpoint(turn.iteration)
-            self._emit_run_end_passed(reason="verify_settled", iterations=turn.iteration)
+            if state.verify_ever_passed:
+                self._emit_run_end_passed(reason="verify_settled", iterations=turn.iteration)
+                return RunResult(
+                    completed=True,
+                    reason="verify_settled",
+                    summary="verify passed and the worker stopped making changes",
+                    iterations=turn.iteration,
+                    tool_calls=state.tool_calls,
+                )
+            # Gateless seed: the work is committed and the worker went quiet,
+            # but NOTHING verified it; ending "passed" here put a lie on every
+            # surface (observed: an empty repo inferred no verify, the run
+            # built a whole project, and the banner read "verify passed").
+            self._pass_pending_root_tasks()
+            self._emit("run.end", reason="settled", iterations=turn.iteration, all_passed=False)
             return RunResult(
                 completed=True,
-                reason="verify_settled",
-                summary="verify passed and the worker stopped making changes",
+                reason="settled",
+                summary=(
+                    "the worker settled after committing work; no verify command existed to gate it"
+                ),
                 iterations=turn.iteration,
                 tool_calls=state.tool_calls,
             )
