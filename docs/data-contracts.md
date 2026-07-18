@@ -13,7 +13,7 @@ modules' docstrings and the source tree; edit the docstrings, not this file
 
 ## Conversation
 
-`agent6.workflows._conversation` &middot; mutable container + 5 frozen turn types
+[`agent6.workflows._conversation`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/_conversation.py) &middot; mutable container + 5 frozen turn types
 
 The loop-owned conversation: typed turns over the provider wire.
 
@@ -21,84 +21,157 @@ The loop-owned conversation: typed turns over the provider wire.
 
 - **Written by:** workflows/{loop}
 - **Read by:** workflows/{_compaction, _critic}
-- **Guarded by:** golden_loop_wire.json (12 test files exercise it)
+- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (12 test files exercise it)
 
 ## RunManifest
 
-`agent6.runs.manifest` &middot; pydantic model + 5 nested models
+[`agent6.runs.manifest`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/runs/manifest.py) &middot; pydantic model + 5 nested models
 
 Read a run's manifest.json into the typed RunManifest. The single reader + the on-disk shape; the writer is `app.manifest`.
 
 **RunManifest** &mdash; The typed manifest.json a run starts with (and later stamps).
 
+| field | type | default |
+| --- | --- | --- |
+| `version` | `int` | `MANIFEST_VERSION` |
+| `agent6_version` | `str` | `''` |
+| `run_id` | `str` | `''` |
+| `mode` | `str` | `'run'` |
+| `start_ts` | `str` | `''` |
+| `user_task` | `str` | `''` |
+| `base_sha` | `str` | `''` |
+| `base_branch` | `str` | `''` |
+| `run_branch` | `str \| None` | `None` |
+| `models` | `ModelsBrief` | `ModelsBrief()` |
+| `workflow` | `WorkflowStamp` | `WorkflowStamp()` |
+| `parent_run_id` | `str \| None` | `None` |
+| `forked_from_turn` | `int \| None` | `None` |
+| `forked_from_sha` | `str \| None` | `None` |
+| `merged` | `MergeStamp \| None` | `None` |
+| `parallel_id` | `str \| None` | `None` |
+| `lane` | `int \| None` | `None` |
+| `compare` | `CompareStamp \| None` | `None` |
+
 - **Written by:** app/{manifest}
 - **Read by:** app/{compare, finalize, fork, merge, parallel, preflight, resume}, ui/{mcp_server}, ui/cli/{_ask, _steer_menu, plan_watch, runs_cmds}, ui/web/{model}, viewmodel/{format, listing}
-- **Guarded by:** test_runs_manifest.py (2 test files exercise it)
+- **Guarded by:** [test_runs_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_runs_manifest.py) (2 test files exercise it)
 
 ## RunSnapshot
 
-`agent6.workflows._run_state` &middot; pydantic model
+[`agent6.workflows._run_state`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/_run_state.py) &middot; pydantic model
 
 How a run ends and how it resumes: the RunResult the workflow returns, the ResumeError it raises, and the provider-agnostic resume snapshot written before each LLM call (load here; the loop owns saving it).
 
 **RunSnapshot** &mdash; The persisted state of an in-flight run: what `resume` re-enters and what `fork` clones.
 
+| field | type | default |
+| --- | --- | --- |
+| `version` | `int` | `SNAPSHOT_VERSION` |
+| `system` | `str` | required |
+| `messages` | `list[dict[str, Any]]` | required |
+| `tool_calls` | `int` | required |
+| `next_iteration` | `int` | required |
+| `root_task_id` | `str \| None` | required |
+| `original_task` | `str` | required |
+| `verify_command` | `tuple[str, ...]` | required |
+| `review_rejections_total` | `int` | `0` |
+| `verify_ever_passed` | `bool` | `False` |
+| `gateless_ever_committed` | `bool` | `False` |
+| `metric_best_score` | `float \| None` | `None` |
+| `metric_at_ceiling` | `bool` | `False` |
+| `head_sha` | `str` | `''` |
+| `graph_version` | `int` | `0` |
+
 - **Written by:** workflows/{loop}
 - **Read by:** app/{fork, resume}
-- **Guarded by:** golden_loop_wire.json (6 test files exercise it)
+- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (6 test files exercise it)
 
 ## ToolResult family
 
-`agent6.tools.results` &middot; abstract base + 25 frozen result types
+[`agent6.tools.results`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/results.py) &middot; abstract base + 25 frozen result types
 
 Typed tool-handler results: every handler returns one of these frozen values instead of a bare dict, each owning its two representations -- the exact model-facing `to_wire()` dict and the one-line human `summary()`.
 
 **ToolResult** &mdash; One tool handler's typed result: it owns the model-facing `to_wire()` dict and its one-line `summary()`.
 
+Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ListDirResult`, `GrepResult`, `OutlineResult`, `DefinitionsResult`, `ReferencesResult`, `EditResult`, `PatchResult`, `PreviewResult`, `ExecResult`, `MetricResult`, `FinishRunResult`, `FinishPlanningResult`, `AnswersResult`, `AddTaskResult`, `UpdateTaskResult`, `SetCursorResult`, `AddDependencyResult`, `ListTasksResult`, `AddMemoryResult`, `InvalidateMemoryResult`, `SkillResult`, `RawResult`
+
 - **Written by:** tools/{_control_tools, _dag_tools, _edit_diag, _fs_tools, _memory_tools, _nav_tools}
 - **Read by:** tools/{dispatch}, workflows/{_review, _toolset, loop}
-- **Guarded by:** test_tool_result_wire.py, test_tool_result_summaries.py (16 test files exercise it)
+- **Guarded by:** [test_tool_result_wire.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_wire.py), [test_tool_result_summaries.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_summaries.py) (16 test files exercise it)
 
 ## Event union
 
-`agent6.viewmodel.events` &middot; tagged union of 20 frozen families
+[`agent6.viewmodel.events`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/events.py) &middot; tagged union of 20 frozen families
 
 Typed read model for the ~19 logs.jsonl event families the RunState fold consumes.
 
+Members: `RunStart`, `ResumeStart`, `GraphUpdate`, `DiffUpdated`, `RoleCall`, `RoleResult`, `RoleTextDelta`, `RoleThinkingDelta`, `ToolCall`, `ToolResult`, `VerifyStart`, `VerifyEnd`, `BudgetUpdate`, `ApprovalPrompt`, `ApprovalAnswer`, `QuestionPrompt`, `QuestionAnswer`, `SteerRequested`, `RunEnd`, `RawEvent`
+
 - **Written by:** viewmodel/{events}
 - **Read by:** viewmodel/{__init__, listing, state}
-- **Guarded by:** golden_run_logs.jsonl (2 test files exercise it)
+- **Guarded by:** [golden_run_logs.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_run_logs.jsonl) (2 test files exercise it)
 
 ## MachineSpec
 
-`agent6.machine.model` &middot; pydantic model + 13 nested models
+[`agent6.machine.model`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/machine/model.py) &middot; pydantic model + 13 nested models
 
 Parse and validate a `.asm.toml` machine file into a `MachineSpec`.
 
 **MachineSpec** &mdash; A validated `.asm.toml` machine definition: budget, typed `schemas`, the named `states` graph, and an optional agent6 `[config]` overlay whose operator-only security tables (providers/sandbox/profiles) are refused so an untrusted machine file cannot weaken the sandbox.
 
+| field | type | default |
+| --- | --- | --- |
+| `machine` | `str` | required |
+| `version` | `Literal[1]` | required |
+| `initial` | `str` | required |
+| `budget` | `BudgetSpec` | required |
+| `vars` | `VarsSection` | `factory` |
+| `schemas` | `dict[str, dict[str, _FieldSpecT]]` | `factory` |
+| `states` | `dict[str, StateSpec]` | required |
+| `config` | `dict[str, Any]` | `factory` |
+
 - **Written by:** machine/{_semantics}
 - **Read by:** machine/{__init__, dryrun, engine, graph, journal}, viewmodel/{machine_state}
-- **Guarded by:** test_machine_model.py (3 test files exercise it)
+- **Guarded by:** [test_machine_model.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_machine_model.py) (3 test files exercise it)
 
 ## JournalEvent
 
-`agent6.machine.journal` &middot; tagged union of 4 frozen families
+[`agent6.machine.journal`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/machine/journal.py) &middot; tagged union of 4 frozen families
 
 Append-only journal, blackboard snapshots, and the single-writer lock for one machine instance. The journal is the source of truth: every impure observation a state makes is appended as a JournalEvent *before* the blackboard is reduced, so replaying the events reproduces the exact path from the pure reducer.
 
+Members: `MachineBegin`, `StepEvent`, `MachineNotify`, `MachineEnd`
+
 - **Written by:** machine/{engine, journal}
 - **Read by:** machine/{__init__, dryrun}, viewmodel/{machine_state}
-- **Guarded by:** golden_journal.jsonl (4 test files exercise it)
+- **Guarded by:** [golden_journal.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_journal.jsonl) (4 test files exercise it)
 
 ## TaskNode
 
-`agent6.graph.models` &middot; pydantic model + 8 nested models
+[`agent6.graph.models`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/graph/models.py) &middot; pydantic model + 8 nested models
 
 The persistent task-graph models: nodes plus the LLM-emitted curator intents that mutate them, a doubly-linked tree keyed by time-sortable ULID ids.
 
 **TaskNode** &mdash; A persisted task-graph node: a time-sortable 26-char ULID `id`, a `parent_id`/`children` pair the curator keeps mutually consistent, and a `status` drawn from the fixed NodeStatus vocabulary.
 
+| field | type | default |
+| --- | --- | --- |
+| `id` | `str` | required |
+| `parent_id` | `str \| None` | required |
+| `title` | `str` | required |
+| `rationale` | `str` | `''` |
+| `acceptance` | `str` | `''` |
+| `relevant_paths` | `tuple[str, ...]` | `()` |
+| `depends_on` | `tuple[str, ...]` | `()` |
+| `children` | `tuple[str, ...]` | `()` |
+| `status` | `NodeStatus` | `'pending'` |
+| `created_at` | `datetime` | required |
+| `updated_at` | `datetime` | required |
+| `created_by` | `NodeActor` | required |
+| `commit_sha` | `str` | `''` |
+| `notes` | `str` | `''` |
+
 - **Written by:** graph/{curator, storage}
 - **Read by:** tools/{_dag_tools, schema}, ui/cli/{_task_tree}, workflows/{_dag_focus, loop}
-- **Guarded by:** test_graph_storage.py (8 test files exercise it)
+- **Guarded by:** [test_graph_storage.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_graph_storage.py) (8 test files exercise it)

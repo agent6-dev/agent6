@@ -42,6 +42,22 @@ _MD_OUT = _ROOT / "docs" / "data-contracts.md"
 _HTML_OUT = _ROOT / "docs" / "screenshots" / "out" / "data-contracts.html"
 REGEN_CMD = "uv run python docs/gen_contracts.py"
 
+# Source links point at the repo the docs site names (mkdocs repo_url), so the
+# cards never drift from where the site says the code lives.
+_REPO_URL = re.search(
+    r"^repo_url:\s*(\S+)", (_ROOT / "docs" / "mkdocs.yml").read_text(encoding="utf-8"), re.M
+)
+_BLOB = (_REPO_URL.group(1).rstrip("/") if _REPO_URL else "") + "/blob/master"
+
+
+def _module_href(dotted: str) -> str:
+    return f"{_BLOB}/src/{dotted.replace('.', '/')}.py"
+
+
+# Inline the primary shape's own field table when it fits a glance; a bigger
+# shape gets only the source link (the module IS the reference).
+_MAX_INLINE_FIELDS = 24
+
 
 # --- the registry: the only declared inputs (everything else is derived) -----
 
@@ -218,6 +234,38 @@ class ModuleFacts:
     pydantic: tuple[str, ...]
     subclasses: dict[str, tuple[str, ...]]  # base name -> its subclasses in this module
     unions: dict[str, tuple[str, ...]]  # alias name -> union member names
+    class_fields: dict[str, tuple[tuple[str, str, str], ...]]  # name -> (field, type, default)
+
+
+def _field_default(node: ast.AnnAssign) -> str:
+    """The field's default as short source text: a pydantic ``Field(...)``
+    unwraps to its ``default=`` (or ``factory``); no value means required."""
+    value = node.value
+    if value is None:
+        return "required"
+    if isinstance(value, ast.Call) and _base_name(value.func) == "Field":
+        for kw in value.keywords:
+            if kw.arg == "default":
+                return ast.unparse(kw.value)
+            if kw.arg == "default_factory":
+                return "factory"
+        return "required"
+    return ast.unparse(value)
+
+
+def _class_fields(node: ast.ClassDef) -> tuple[tuple[str, str, str], ...]:
+    """The class's own ``(name, type, default)`` rows: annotated assignments,
+    minus config/private/ClassVar machinery."""
+    rows: list[tuple[str, str, str]] = []
+    for stmt in node.body:
+        if not isinstance(stmt, ast.AnnAssign) or not isinstance(stmt.target, ast.Name):
+            continue
+        name = stmt.target.id
+        anno = ast.unparse(stmt.annotation)
+        if name == "model_config" or name.startswith("_") or anno.startswith("ClassVar"):
+            continue
+        rows.append((name, anno, _field_default(stmt)))
+    return tuple(rows)
 
 
 def _module_facts(dotted: str) -> ModuleFacts:
@@ -228,9 +276,11 @@ def _module_facts(dotted: str) -> ModuleFacts:
     pydantic: list[str] = []
     subclasses: dict[str, list[str]] = defaultdict(list)
     unions: dict[str, tuple[str, ...]] = {}
+    class_fields: dict[str, tuple[tuple[str, str, str], ...]] = {}
     for node in tree.body:
         if isinstance(node, ast.ClassDef):
             class_docs[node.name] = ast.get_docstring(node)
+            class_fields[node.name] = _class_fields(node)
             bases = [_base_name(b) for b in node.bases]
             if _is_frozen_dataclass(node):
                 frozen.append(node.name)
@@ -250,6 +300,7 @@ def _module_facts(dotted: str) -> ModuleFacts:
         pydantic=tuple(pydantic),
         subclasses={k: tuple(v) for k, v in subclasses.items()},
         unions=unions,
+        class_fields=class_fields,
     )
 
 
@@ -326,9 +377,11 @@ class Card:
     shapes: tuple[
         tuple[str, str], ...
     ]  # (primary name, first-sentence) pairs that have a docstring
+    fields: tuple[tuple[str, str, str], ...]  # the primary's own (name, type, default) rows
+    members: tuple[str, ...]  # union members / result subclasses, when the primary is a family
     writers: tuple[str, ...]  # src-relative posix
     readers: tuple[str, ...]  # src-relative posix
-    pins: tuple[str, ...]  # display basenames
+    pins: tuple[tuple[str, str], ...]  # (display basename, repo-relative path)
     guard_count: int
 
 
@@ -341,15 +394,22 @@ def _derive(contract: Contract) -> Card:
         for name in contract.primary
         if facts.class_docs.get(name)
     )
+    primary = contract.primary[0]
+    fields = facts.class_fields.get(primary, ())
+    members = facts.unions.get(primary, ()) or facts.subclasses.get(primary, ())
+    if len(fields) > _MAX_INLINE_FIELDS or members:
+        fields = ()  # a family's shape is its member list, not one field table
     return Card(
         title=contract.title,
         module=contract.module,
-        kind=_kind(facts, contract.primary[0]),
+        kind=_kind(facts, primary),
         invariant=_first_para(facts.module_doc),
         shapes=shapes,
+        fields=fields,
+        members=members,
         writers=contract.writers,
         readers=readers,
-        pins=tuple(Path(p).name for p in contract.pins),
+        pins=tuple((Path(p).name, p) for p in contract.pins),
         guard_count=len(_guard_tests(contract)),
     )
 
@@ -368,11 +428,17 @@ def _group(paths: tuple[str, ...]) -> str:
     return ", ".join(parts)
 
 
-def _guard_line(card: Card) -> str:
-    return f"{', '.join(card.pins)} ({card.guard_count} test files exercise it)"
+def _guard_line_md(card: Card) -> str:
+    links = ", ".join(f"[{name}]({_BLOB}/{rel})" for name, rel in card.pins)
+    return f"{links} ({card.guard_count} test files exercise it)"
+
+
+def _guard_line_text(card: Card) -> str:
+    return f"{', '.join(name for name, _ in card.pins)} ({card.guard_count} test files exercise it)"
 
 
 # --- markdown output ---------------------------------------------------------
+
 
 _MD_HEADER = f"""<!-- GENERATED by docs/gen_contracts.py -- do not edit by hand.
 Edit the contract modules' docstrings or the CONTRACTS registry, then run:
@@ -389,15 +455,45 @@ modules' docstrings and the source tree; edit the docstrings, not this file
 """
 
 
+def _md_fields(card: Card) -> list[str]:
+    if not card.fields:
+        return []
+
+    def cell(text: str) -> str:
+        # A raw | inside a table cell splits the column even in a code span.
+        return f"`{text.replace('|', '\\|')}`"
+
+    rows = [
+        "",
+        "| field | type | default |",
+        "| --- | --- | --- |",
+    ]
+    rows += [
+        f"| {cell(name)} | {cell(ftype)} |"
+        f" {'required' if default == 'required' else cell(default)} |"
+        for name, ftype, default in card.fields
+    ]
+    return rows
+
+
 def _md_card(card: Card) -> str:
-    lines = [f"## {card.title}", "", f"`{card.module}` &middot; {card.kind}", "", card.invariant]
+    lines = [
+        f"## {card.title}",
+        "",
+        f"[`{card.module}`]({_module_href(card.module)}) &middot; {card.kind}",
+        "",
+        card.invariant,
+    ]
     for name, sentence in card.shapes:
         lines += ["", f"**{name}** &mdash; {sentence}"]
+    if card.members:
+        lines += ["", "Members: " + ", ".join(f"`{m}`" for m in card.members)]
+    lines += _md_fields(card)
     lines += [
         "",
         f"- **Written by:** {_group(card.writers)}",
         f"- **Read by:** {_group(card.readers)}",
-        f"- **Guarded by:** {_guard_line(card)}",
+        f"- **Guarded by:** {_guard_line_md(card)}",
     ]
     return "\n".join(lines)
 
@@ -530,6 +626,10 @@ code{font:11.5px ui-monospace,Menlo,monospace;background:rgba(128,128,128,.14);p
 dl{margin:0;font-size:12px;display:grid;grid-template-columns:max-content 1fr;gap:2px 10px}
 dt{color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-size:10.5px;padding-top:1px}
 dd{margin:0;color:var(--ink2)}
+.chome a{color:inherit}
+.cfields{border-collapse:collapse;font-size:11.5px;margin:2px 0 8px;width:100%}
+.cfields th{text-align:left;color:var(--muted);font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.05em;padding:1px 8px 1px 0}
+.cfields td{padding:1px 8px 1px 0;color:var(--ink2);vertical-align:top}
 """
 
 
@@ -582,16 +682,35 @@ def _html_card(card: Card) -> str:
         f'<div class="cshape"><b>{html.escape(name)}</b> &mdash; {_inline(sentence)}</div>'
         for name, sentence in card.shapes
     )
+    members = (
+        '<div class="cshape">members: '
+        + ", ".join(f"<code>{html.escape(m)}</code>" for m in card.members)
+        + "</div>"
+        if card.members
+        else ""
+    )
+    fields = ""
+    if card.fields:
+        rows = "".join(
+            f"<tr><td><code>{html.escape(n)}</code></td><td><code>{html.escape(t)}</code></td>"
+            f"<td>{'required' if d == 'required' else f'<code>{html.escape(d)}</code>'}</td></tr>"
+            for n, t, d in card.fields
+        )
+        fields = (
+            '<table class="cfields"><thead><tr><th>field</th><th>type</th><th>default</th>'
+            f"</tr></thead><tbody>{rows}</tbody></table>"
+        )
     return (
         '<div class="card">'
         f'<div class="cname">{html.escape(card.title)}</div>'
-        f'<div class="chome">{html.escape(card.module)} &middot; {html.escape(card.kind)}</div>'
+        f'<div class="chome"><a href="{html.escape(_module_href(card.module))}">'
+        f"{html.escape(card.module)}</a> &middot; {html.escape(card.kind)}</div>"
         f'<div class="cinv">{_inline(card.invariant)}</div>'
-        f"{shapes}"
+        f"{shapes}{members}{fields}"
         "<dl>"
         f"<dt>written by</dt><dd>{_inline(_group(card.writers))}</dd>"
         f"<dt>read by</dt><dd>{_inline(_group(card.readers))}</dd>"
-        f"<dt>guarded by</dt><dd>{_inline(_guard_line(card))}</dd>"
+        f"<dt>guarded by</dt><dd>{_inline(_guard_line_text(card))}</dd>"
         "</dl></div>"
     )
 
