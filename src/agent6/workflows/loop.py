@@ -324,11 +324,13 @@ class _LoopState:
     last_tool_error_sig: str | None = None
     tool_error_streak: int = 0
     tool_error_nudges_used: int = 0
-    # argv[0] of the last erroring run_command, so a repeated-tool-error spiral
-    # can tell whether the failing tool exists on the host (a sandbox-
-    # reachability problem) vs a real error. Cleared on any tool success and on
-    # a ToolDenied (a refusal never executed, so it says nothing about the jail).
-    last_error_command_binary: str = ""
+    # Sandbox-reachability signal: argv[0] of a run_command the JAIL failed to
+    # exec (exec_failed, not a nonzero exit) and its consecutive-failure count.
+    # Only executed commands feed it; validation errors and denials never
+    # entered the jail, so they say nothing about reachability (seeding off
+    # them once misdiagnosed a malformed call as a sandbox problem).
+    jail_exec_failed_binary: str = ""
+    jail_exec_failed_streak: int = 0
     last_error_was_denial: bool = False
     sandbox_reachability_warned: bool = False
     repeat_warning_emitted_at: int = 0
@@ -1163,8 +1165,8 @@ class Workflow:
                 state.tool_error_streak = 0
                 state.last_tool_error_sig = None
                 state.tool_error_nudges_used = 0
-                state.last_error_command_binary = ""
                 state.last_error_was_denial = False
+                self._note_jail_exec_failure(state, turn, name, tool_input, result)
             except ToolError as exc:
                 content = self._note_tool_error(state, name, tool_input, exc)
                 self._maybe_tool_error_ladder(state, turn)
@@ -1913,15 +1915,6 @@ class Workflow:
         state.last_tool_result_content = content
         self._log(f"  tool_error: {name}: {exc}")
         state.last_error_was_denial = isinstance(exc, ToolDenied)
-        if name == "run_command":
-            if state.last_error_was_denial:
-                # A refused command never executed; a STALE binary from an
-                # earlier real failure must not let the reachability note
-                # misdiagnose policy refusals as a jail failure.
-                state.last_error_command_binary = ""
-            else:
-                argv = tool_input.get("argv") or []
-                state.last_error_command_binary = str(argv[0]) if argv else ""
         sig = tool_error_signature(name, str(exc))
         if sig == state.last_tool_error_sig:
             state.tool_error_streak += 1
@@ -1946,39 +1939,65 @@ class Workflow:
         # A denial streak is a POLICY outcome: "your call is malformed" would
         # be false, and a refusal says nothing about jail reachability.
         denial = state.last_error_was_denial
-        reach = "" if denial else self._sandbox_unreachable_note(state)
         nudge = TOOL_DENIED_NUDGE if denial else TOOL_ERROR_NUDGE
         escalation = TOOL_DENIED_NUDGE if denial else TOOL_ERROR_ESCALATION
         if streak >= TOOL_ERROR_ESCALATE_AFTER and state.tool_error_nudges_used == 1:
             state.tool_error_nudges_used = 2
-            turn.tool_results.append(Notice(escalation + reach))
+            turn.tool_results.append(Notice(escalation))
             self._emit("loop.tool_error.nudge", iteration=turn.iteration, streak=streak, level=2)
         elif streak >= TOOL_ERROR_NUDGE_AFTER and state.tool_error_nudges_used == 0:
             state.tool_error_nudges_used = 1
-            turn.tool_results.append(Notice(nudge + reach))
+            turn.tool_results.append(Notice(nudge))
             self._emit("loop.tool_error.nudge", iteration=turn.iteration, streak=streak, level=1)
 
-    def _sandbox_unreachable_note(self, state: _LoopState) -> str:
-        """When the spiraling command is a tool that exists on the host but keeps
-        failing in the jail, name it as a sandbox-reachability problem and how to
-        fix it (the model relays this to the operator). Empty when it does not
-        apply. No tool list: the sole signal is host-existence of this binary."""
-        binary = state.last_error_command_binary
-        if not binary or shutil.which(binary) is None:
-            return ""
-        if not state.sandbox_reachability_warned:
-            state.sandbox_reachability_warned = True
-            self._emit("loop.sandbox_tool_unreachable", binary=binary)
-            self._log(f"LOOP: sandbox tool unreachable: {binary} exists on host, fails in jail")
-        return (
-            f"\n\nNOTE: `{binary}` is installed on this machine but keeps failing"
-            " INSIDE agent6's sandbox -- this is almost certainly a sandbox-"
-            " reachability problem (a per-user or version-manager install whose"
-            " config/toolchain the sandbox does not expose), NOT a problem with"
-            " agent6 or your code. Tell the operator to either fix the install so"
-            f" `{binary}` runs from a clean environment, run agent6 with"
-            " --dangerously-disable-sandbox, or add the tool's real directory to"
-            " sandbox.extra_read_paths. Do not keep probing for it."
+    def _note_jail_exec_failure(
+        self,
+        state: _LoopState,
+        turn: _TurnState,
+        name: str,
+        tool_input: dict[str, Any],
+        result: ToolResult,
+    ) -> None:
+        """Sandbox-reachability tracking. The one true "host-present but
+        jail-broken" signal is a run_command the jail failed to EXEC
+        (``exec_failed``; a nonzero exit is the command's own result) for a
+        binary ``shutil.which`` finds on the host. The second consecutive
+        exec failure of the same binary tells the model once and emits the
+        event finalize's operator warning reads. Tool errors never feed this:
+        a validation error or denial never entered the jail, and seeding off
+        those once misdiagnosed a malformed call as a sandbox problem."""
+        if name != "run_command" or not isinstance(result, ExecResult):
+            return
+        argv = tool_input.get("argv") or []
+        binary = str(argv[0]) if isinstance(argv, list) and argv else ""
+        if not result.exec_failed or not binary:
+            state.jail_exec_failed_binary = ""
+            state.jail_exec_failed_streak = 0
+            return
+        if binary == state.jail_exec_failed_binary:
+            state.jail_exec_failed_streak += 1
+        else:
+            state.jail_exec_failed_binary = binary
+            state.jail_exec_failed_streak = 1
+        if (
+            state.jail_exec_failed_streak < 2
+            or state.sandbox_reachability_warned
+            or shutil.which(binary) is None
+        ):
+            return
+        state.sandbox_reachability_warned = True
+        self._emit("loop.sandbox_tool_unreachable", binary=binary)
+        self._log(f"LOOP: sandbox tool unreachable: {binary} exists on host, fails in jail")
+        turn.tool_results.append(
+            Notice(
+                f"NOTE: `{binary}` is installed on this machine but the sandbox"
+                " cannot execute it: a reachability problem (a per-user or"
+                " version-manager install the jail does not mount), not a problem"
+                " with your code. Tell the operator to install it into a standard"
+                " bin dir (~/.local/bin, /usr/local/bin) or run agent6 with"
+                " --dangerously-disable-sandbox; if the tool exists inside the"
+                " workspace, call it by that path. Do not keep probing for it."
+            )
         )
 
     def _turn_no_progress(self, state: _LoopState, turn: _TurnState) -> None:

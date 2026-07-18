@@ -103,8 +103,8 @@ def print_run_end(
             " bug. Fix options:"
         )
         print(f"    - make `{binary}` run from a clean shell (a system-wide install)")
+        print("    - install it into a standard bin dir (~/.local/bin, /usr/local/bin)")
         print("    - run with --dangerously-disable-sandbox")
-        print("    - add its real directory to [sandbox].extra_read_paths")
     print(budget.format_summary())
     _print_run_total_across_legs(layout)
     run_branch = ""

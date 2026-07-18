@@ -4772,11 +4772,11 @@ def test_note_verify_result_does_not_flag_real_failure(tmp_path: Path) -> None:
     assert st.verify_broken_warned is False
 
 
-def test_tool_error_spiral_names_a_host_present_tool(tmp_path: Path) -> None:
-    """When a run_command keeps failing with the same error and its binary
-    exists on the host, the spiral nudge names it as a sandbox-reachability
-    problem with the fix (the model relays this to the operator). Uses a real
-    host binary (python3) so shutil.which finds it."""
+def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: Path) -> None:
+    """A run_command ToolError spiral climbs the nudge ladder and stops, but
+    never gets the sandbox-reachability note even for a host-present binary: a
+    ToolError never entered the jail, so it says nothing about reachability
+    (only repeated exec_failed results do; see the reachability tests)."""
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -4827,7 +4827,7 @@ def test_tool_error_spiral_names_a_host_present_tool(tmp_path: Path) -> None:
             root_task_id=None,
             original_task="t",
         )
-    assert provider.reach_hits >= 1
+    assert provider.reach_hits == 0  # no sandbox blame for a non-jail failure
     assert result.reason == "tool_error_stuck"
 
 
@@ -5156,3 +5156,137 @@ def test_drive_loop_gateless_adoption_declines_an_unexecutable_verify(
     assert provider.adoption_notices == 0  # no false gate-flip message
     assert result.reason == "settled"
     assert "no verify command existed" in result.summary
+
+
+def _run_command_provider(calls_before_idle: int) -> Any:
+    """A provider that issues `calls_before_idle` run_command calls, then goes
+    read-only, counting reachability NOTEs it is served along the way."""
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.reachability_notes = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            if "the sandbox cannot execute it" in str(kwargs["messages"][-1]):
+                self.reachability_notes += 1
+            if self.calls <= calls_before_idle:
+                return _tool_resp(
+                    "run_command", {"argv": ["sh", "-c", "true"]}, tool_id=f"c{self.calls}"
+                )
+            return _tool_resp("read_file", {"path": "a"}, tool_id=f"r{self.calls}")
+
+    return ProviderStub()
+
+
+def test_reachability_note_fires_on_repeated_jail_exec_failure(tmp_path: Path) -> None:
+    """Two consecutive jail exec failures (exec_failed, not a nonzero exit) of
+    the same host-present binary emit loop.sandbox_tool_unreachable ONCE and
+    tell the model once; finalize's operator warning reads that event."""
+
+    class DispatcherStub:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+            if name == "run_command":
+                return ExecResult(
+                    returncode=127,
+                    stdout="",
+                    stderr="sh: command not found or not executable",
+                    duration_s=0.0,
+                    exec_failed=True,
+                )
+            return ExecResult(
+                returncode=0, stdout="ok", stderr="", duration_s=0.0, exec_failed=False
+            )
+
+    provider = _run_command_provider(calls_before_idle=4)
+    events: list[dict[str, Any]] = []
+
+    class _Events:
+        def emit(self, event_type: str, /, **fields: Any) -> None:
+            events.append({"type": event_type, **fields})
+
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=(),
+            metric=SimpleNamespace(goal=None),
+        )
+    )
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        mode="run",
+        provider=provider,
+        dispatcher=DispatcherStub(),
+        max_iterations=8,
+        events=_Events(),
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
+    wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        system="s",
+        conversation=Conversation.from_wire(messages),
+        tools=[],
+        tool_calls=0,
+        start_iteration=1,
+        root_task_id=None,
+        original_task="t",
+    )
+    unreachable = [e for e in events if e["type"] == "loop.sandbox_tool_unreachable"]
+    assert [e["binary"] for e in unreachable] == ["sh"]  # once, at the 2nd failure
+    assert provider.reachability_notes >= 1  # the model was told
+
+
+def test_reachability_note_never_fires_on_a_validation_error(tmp_path: Path) -> None:
+    """A run_command rejected at input validation never entered the jail;
+    it must not seed the reachability diagnosis (observed live: an `env`
+    extra-input rejection produced a finalize warning blaming the sandbox
+    for a binary that later ran fine)."""
+
+    from agent6.tools.errors import ToolError as _TE
+
+    class DispatcherStub:
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+            if name == "run_command":
+                raise _TE("1 validation error for RunCommandInput: env extra_forbidden")
+            return ExecResult(
+                returncode=0, stdout="ok", stderr="", duration_s=0.0, exec_failed=False
+            )
+
+    provider = _run_command_provider(calls_before_idle=4)
+    events: list[dict[str, Any]] = []
+
+    class _Events:
+        def emit(self, event_type: str, /, **fields: Any) -> None:
+            events.append({"type": event_type, **fields})
+
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=(),
+            metric=SimpleNamespace(goal=None),
+        )
+    )
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        mode="run",
+        provider=provider,
+        dispatcher=DispatcherStub(),
+        max_iterations=8,
+        events=_Events(),
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
+    wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        system="s",
+        conversation=Conversation.from_wire(messages),
+        tools=[],
+        tool_calls=0,
+        start_iteration=1,
+        root_task_id=None,
+        original_task="t",
+    )
+    assert not any(e["type"] == "loop.sandbox_tool_unreachable" for e in events)
+    assert provider.reachability_notes == 0
