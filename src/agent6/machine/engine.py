@@ -314,6 +314,11 @@ class LiveWorld:
         # writable on both profiles. Mirrors the run_command jail env.
         env_list.append(("HOME", "/tmp/agent6-home"))  # noqa: S108 - resolved inside the jail
         env_list.append(("PYTHONDONTWRITEBYTECODE", "1"))
+        # Same reason as the run_command jail: a machine tool's `uv run` must
+        # use the venv the operator already synced; the jail is offline and
+        # HOME is a fresh tmpfs, so a sync would re-resolve against an empty
+        # cache and fail.
+        env_list.append(("UV_NO_SYNC", "1"))
         extra_rw: tuple[Path, ...] = ()
         if self.data_dir is not None:
             # Grant RW on the data dir + tell the script where it is. This is the

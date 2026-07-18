@@ -1276,3 +1276,4 @@ def test_live_world_run_tool_uses_the_shared_jail_tool_paths(
     assert env["PATH"] == "/usr/bin:/bin:/fake/bin"  # the jail-correct PATH
     assert policy.tool_paths == (Path("/fake/real-tools"),)  # with its mounts
     assert "/host/only/path" not in env.values()
+    assert env["UV_NO_SYNC"] == "1"  # same offline-jail rule as run_command
