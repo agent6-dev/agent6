@@ -265,9 +265,7 @@ def test_model_piped_without_model_lists_the_catalog(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    monkeypatch.setattr(
-        "agent6.ui.cli.model.list_models", lambda *a, **k: ["claude-a", "claude-b"]
-    )
+    monkeypatch.setattr("agent6.ui.cli.model.list_models", lambda *a, **k: ["claude-a", "claude-b"])
     rc = main(["model", "worker", "anthropic"])
     assert rc == 0
     captured = capsys.readouterr()
@@ -275,6 +273,37 @@ def test_model_piped_without_model_lists_the_catalog(
     assert "set one with: agent6 model worker anthropic <model>" in captured.err
     # Nothing was written: the listing never touches config.
     assert "[models.worker]" not in (tmp_path / "g" / "config.toml").read_text(encoding="utf-8")
+
+
+def test_model_set_warns_when_the_provider_has_no_key(
+    iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Setting a role to a configured-but-keyless provider succeeds (config is
+    # just config) but the first run would refuse; the note closes that loop at
+    # set time. README's own quickstart line hits this on a keyless machine.
+    (tmp_path / "g").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "g" / "config.toml").write_text(
+        '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
+    )
+    monkeypatch.setattr("agent6.ui.cli.model.resolve_api_key", lambda *a, **k: None)
+    rc = main(["model", "worker", "anthropic", "claude-x"])
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "provider 'anthropic' has no stored API key" in err
+    assert "agent6 connect" in err
+
+
+def test_model_set_stays_quiet_when_the_key_resolves(
+    iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "g").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "g" / "config.toml").write_text(
+        '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
+    )
+    monkeypatch.setattr("agent6.ui.cli.model.resolve_api_key", lambda *a, **k: "sk-x")
+    rc = main(["model", "worker", "anthropic", "claude-x"])
+    assert rc == 0
+    assert "note:" not in capsys.readouterr().err
 
 
 def test_model_piped_unknown_provider_errors(

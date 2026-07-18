@@ -141,6 +141,34 @@ def _print_catalog(config_path: Path | None, role: str, provider: str) -> int:
     return 0
 
 
+def _warn_unusable_provider(config_path: Path | None, provider: str) -> None:
+    """A set naming a keyless provider succeeds (config is just config) but the
+    first run would refuse; say so now, when the fix is one command away."""
+    try:
+        eff = load_effective(Path.cwd(), config_path)
+    except ConfigError:
+        return
+    entry = eff.config.providers.get(provider)
+    if entry is None:
+        print(
+            f"note: provider {provider!r} is not configured; run `agent6 connect` first.",
+            file=sys.stderr,
+        )
+        return
+    if entry.auth_style == "none" or entry.token_command:
+        return
+    if resolve_api_key(provider, entry.api_key_env) is None:
+        remedy = (
+            f"export {entry.api_key_env} or run `agent6 connect`"
+            if entry.api_key_env
+            else "run `agent6 connect`"
+        )
+        print(
+            f"note: provider {provider!r} has no stored API key; {remedy} before using it.",
+            file=sys.stderr,
+        )
+
+
 def _cmd_model(
     config_path: Path | None,
     *,
@@ -202,4 +230,5 @@ def _cmd_model(
         f"Set {where} = {provider}/{model}"
         f"{f' (thinking={thinking})' if thinking else ''} in {target}."
     )
+    _warn_unusable_provider(config_path, provider)
     return 0
