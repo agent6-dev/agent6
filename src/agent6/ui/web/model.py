@@ -131,7 +131,7 @@ def _run_summary(run_dir: Path) -> dict[str, Any]:
     return {
         "id": s.run_id,
         "mode": s.mode,
-        "task": task_snippet(s.task)[:100],
+        "task": task_snippet(s.task, max_chars=100),
         "status": s.status,
         "reason": s.reason,
         "mtime": s.mtime,

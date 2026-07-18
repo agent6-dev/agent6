@@ -99,7 +99,7 @@ def _cmd_list() -> int:
         # A winner lane gets a ★ suffix on its id (folded into the width math, so
         # the columns stay aligned); a non-disruptive marker the hub/home mirror.
         run_id = f"{s.run_id} {WINNER_GLYPH}" if s.run_id in winners else s.run_id
-        rows.append((when, styled, plain, s.mode, cost, run_id, task_snippet(s.task)[:60]))
+        rows.append((when, styled, plain, s.mode, cost, run_id, task_snippet(s.task, max_chars=60)))
     status_w = max(6, *(len(plain) for _, _, plain, *_ in rows))
     id_w = max(2, *(len(r[5]) for r in rows))
     print(

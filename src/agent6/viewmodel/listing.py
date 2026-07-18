@@ -85,10 +85,15 @@ def first_task_line(lines: Iterable[str]) -> str | None:
     return None
 
 
-def task_snippet(text: str) -> str:
+def task_snippet(text: str, max_chars: int | None = None) -> str:
     """One-line summary of a task or ask transcript for a listing: the first
-    user-authored line (block bodies skipped), else the stripped text."""
-    return first_task_line(text.splitlines()) or text.strip()
+    user-authored line (block bodies skipped), else the stripped text; clipped
+    to *max_chars* with an ellipsis (the bare slices each surface carried
+    clipped mid-word and read as the whole task)."""
+    snip = first_task_line(text.splitlines()) or text.strip()
+    if max_chars is not None and len(snip) > max_chars:
+        snip = snip[: max_chars - 1] + "…"
+    return snip
 
 
 def is_run_husk(run_dir: Path) -> bool:

@@ -438,7 +438,7 @@ class HomeScreen(Screen[None]):
                 _status_cell(s),
                 _cost_cell(s.cost_usd),
                 Text(run_id),
-                Text(task_snippet(s.task)[:60]),
+                Text(task_snippet(s.task, max_chars=60)),
             )
             survivors.append(rd)
         self._runs = survivors
