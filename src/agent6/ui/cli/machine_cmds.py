@@ -60,7 +60,7 @@ from agent6.machine import (
 from agent6.paths import chown_to_real_user
 from agent6.runs.ipc import read_worker_pid, worker_is_alive
 from agent6.sandbox.detect import ProfileUnavailableError, select_profile
-from agent6.tools.dispatch import jail_search_path
+from agent6.sandbox.jail import jail_search_path
 from agent6.types import SandboxProfile
 from agent6.ui.cli._common import _machines_dir
 from agent6.ui.cli.plan_watch import format_plain_event

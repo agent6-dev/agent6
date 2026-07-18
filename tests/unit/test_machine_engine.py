@@ -1246,3 +1246,38 @@ def test_machine_is_parked_reflects_pending_wait(tmp_path: Path) -> None:
     result = drive(spec, journal, FakeWorld({}), live=True, exit_on_wait=True)
     assert result.status == "waiting"
     assert machine_is_parked(journal.root) is True
+
+
+def test_live_world_run_tool_uses_the_shared_jail_tool_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A tool-state jail resolves operator tools EXACTLY like run_command's jail
+    # and the machine-check probe: the computed PATH string plus the RO+exec
+    # mounts that make it true (sandbox.jail.operator_tool_paths). Copying the
+    # host PATH named dirs the jail never mounts, so a tool `machine check`
+    # proved reachable still died 127 on the machine's first real transition.
+    from agent6.machine import engine as engine_mod
+    from agent6.machine.engine import LiveWorld
+    from agent6.machine.journal import MachineJournal
+    from agent6.types import CommandResult, JailPolicy
+
+    captured: dict[str, JailPolicy] = {}
+
+    def fake_run_in_jail(policy: JailPolicy) -> CommandResult:
+        captured["policy"] = policy
+        return CommandResult(argv=policy.argv, returncode=0, stdout="{}", stderr="", duration_s=0.0)
+
+    def fake_tool_paths() -> tuple[str, tuple[Path, ...]]:
+        return "/usr/bin:/bin:/fake/bin", (Path("/fake/real-tools"),)
+
+    monkeypatch.setattr(engine_mod, "run_in_jail", fake_run_in_jail)
+    monkeypatch.setattr(engine_mod, "operator_tool_paths", fake_tool_paths)
+    monkeypatch.setenv("PATH", "/host/only/path")  # must NOT leak into the jail
+    world = LiveWorld(cwd=tmp_path, journal=MachineJournal(tmp_path))
+    world.run_tool(("sometool", "arg"), timeout_s=5.0)
+
+    policy = captured["policy"]
+    env = dict(policy.env)
+    assert env["PATH"] == "/usr/bin:/bin:/fake/bin"  # the jail-correct PATH
+    assert policy.tool_paths == (Path("/fake/real-tools"),)  # with its mounts
+    assert "/host/only/path" not in env.values()

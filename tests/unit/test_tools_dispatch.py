@@ -1497,7 +1497,7 @@ def test_non_json_string_still_fails_validation(tmp_path: Path) -> None:
 
 
 def test_under_system_root_classifies_bin_dirs() -> None:
-    from agent6.tools.dispatch import _under_system_root  # pyright: ignore[reportPrivateUsage]
+    from agent6.sandbox.jail import _under_system_root  # pyright: ignore[reportPrivateUsage]
 
     assert _under_system_root(Path("/usr/local/bin"))  # under a mounted system root
     assert _under_system_root(Path("/usr/bin"))
@@ -1506,12 +1506,12 @@ def test_under_system_root_classifies_bin_dirs() -> None:
 
 
 def test_operator_tool_paths_extends_path_and_mounts_are_nonsystem() -> None:
-    from agent6.tools.dispatch import (
-        _operator_tool_paths,  # pyright: ignore[reportPrivateUsage]
+    from agent6.sandbox.jail import (
         _under_system_root,  # pyright: ignore[reportPrivateUsage]
+        operator_tool_paths,
     )
 
-    path, mounts = _operator_tool_paths()
+    path, mounts = operator_tool_paths()
     # PATH always starts with the jail baseline, then any standard bin dirs.
     assert path.startswith("/usr/bin:/bin")
     # Mounts are only dirs OUTSIDE the system roots (those are already mounted via
@@ -1527,17 +1527,17 @@ def test_operator_tool_paths_mounts_uv_managed_pythons(
     # A repo venv made by uv can symlink python to a uv-managed CPython under
     # XDG data; without the RO mount an in-jail `uv run` sees a "non-existent
     # interpreter" and deletes + recreates the operator's .venv.
-    from agent6.tools.dispatch import _operator_tool_paths  # pyright: ignore[reportPrivateUsage]
+    from agent6.sandbox.jail import operator_tool_paths
 
     pythons = tmp_path / "uv" / "python"
     pythons.mkdir(parents=True)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-    path, mounts = _operator_tool_paths()
+    path, mounts = operator_tool_paths()
     assert pythons in mounts
     assert str(pythons) not in path  # mount-only: interpreters are not PATH dirs
 
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "elsewhere"))
-    _, mounts = _operator_tool_paths()
+    _, mounts = operator_tool_paths()
     assert pythons not in mounts  # absent dir -> no mount
 
 

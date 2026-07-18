@@ -24,7 +24,7 @@ from agent6.config import Config
 from agent6.events import EventSink
 from agent6.graph.curator import GraphCurator
 from agent6.paths import data_dir
-from agent6.sandbox.jail import JailUnavailableError, run_in_jail
+from agent6.sandbox.jail import JailUnavailableError, operator_tool_paths, run_in_jail
 from agent6.skills import (
     ResolvedSkills,
     discover_skills,
@@ -121,85 +121,6 @@ def _coerce_stringified_args(
             coerced = dict(raw_input)
         coerced[key] = parsed
     return coerced
-
-
-# --- operator tool reachability ----------------------------------------------
-# The jail's baseline PATH is /usr/bin:/bin and it bind-mounts only the system
-# roots below. Operator tools (uv, node, ...) installed elsewhere are otherwise
-# unreachable, so a verify/run command dies 127. We add the standard bin dirs that
-# exist to PATH, and for those outside the system roots -- or whose symlinks
-# resolve out to one (a pipx `uv` at /usr/local/bin -> /opt/pipx/...) -- pass the
-# real dirs as tool_paths for a real-location RO+exec mount. Read+exec only; the
-# jail still confines writes and network, so containment is unchanged.
-_JAIL_BASE_PATH_DIRS = ("/usr/bin", "/bin")
-_SYSTEM_ROOTS = (
-    Path("/usr"),
-    Path("/bin"),
-    Path("/sbin"),
-    Path("/lib"),
-    Path("/lib64"),
-    Path("/etc"),
-    Path("/dev"),
-)
-
-
-def _under_system_root(p: Path) -> bool:
-    return any(p.is_relative_to(r) for r in _SYSTEM_ROOTS)
-
-
-def _operator_tool_paths() -> tuple[str, tuple[Path, ...]]:
-    """Return (PATH string, real-location mount dirs) so operator-installed tools
-    resolve in the jail. Recomputed per call so a tool the model just installed is
-    picked up (dirs under a mounted system root only join PATH; dirs outside it, and
-    the real dirs symlinks resolve out to, also need the RO+exec mount)."""
-    home = Path.home()
-    candidates = (
-        Path("/usr/local/bin"),
-        Path("/usr/local/sbin"),
-        home / ".local/bin",
-        home / ".cargo/bin",
-        Path("/opt/homebrew/bin"),
-        Path("/snap/bin"),
-    )
-    path_dirs: list[str] = list(_JAIL_BASE_PATH_DIRS)
-    mounts: set[Path] = set()
-    for d in candidates:
-        if not d.is_dir():
-            continue
-        path_dirs.append(str(d))
-        if not _under_system_root(d):
-            mounts.add(d)  # real binaries in a non-system dir need the dir itself
-        try:
-            entries = list(d.iterdir())
-        except OSError:
-            continue
-        for entry in entries:
-            if not entry.is_symlink():
-                continue  # real files are covered by the dir / the /usr mount
-            try:
-                real = entry.resolve()
-            except OSError:
-                continue
-            if real.is_file() and not _under_system_root(real):
-                mounts.add(real.parent)  # e.g. /opt/pipx/venvs/uv/bin
-    # Interpreter toolchains a repo venv's python may symlink to: uv-managed
-    # CPython lives under XDG data, not any bin dir. Without this mount the
-    # jail sees such a venv "linked to a non-existent interpreter" and an
-    # in-jail `uv run` DELETES and recreates the operator's .venv (observed
-    # live: the verify tail read "Removed virtual environment at: .venv").
-    # Mount-only, never a PATH entry.
-    data_home = Path(os.environ.get("XDG_DATA_HOME") or home / ".local/share")
-    uv_pythons = data_home / "uv" / "python"
-    if uv_pythons.is_dir():
-        mounts.add(uv_pythons)
-    return ":".join(path_dirs), tuple(sorted(mounts))
-
-
-def jail_search_path() -> str:
-    """The PATH a jailed command resolves against, for host-side reachability
-    probes (`machine check`): the jail baseline plus the standard bin dirs that
-    exist right now. Advisory only; the jail recomputes its own per call."""
-    return _operator_tool_paths()[0]
 
 
 # Execution tools whose stdout/stderr IS the diagnostic signal. Their tool.result
@@ -833,7 +754,7 @@ class ToolDispatcher:
         # Make operator-installed tools (uv, ...) reachable: a controlled PATH that
         # extends /usr/bin:/bin with the standard bin dirs, plus their real dirs as
         # RO+exec mounts. Without this a `uv run` verify dies 127.
-        tool_path, tool_mounts = _operator_tool_paths()
+        tool_path, tool_mounts = operator_tool_paths()
         env["PATH"] = tool_path
         policy = JailPolicy(
             cwd=self._root,

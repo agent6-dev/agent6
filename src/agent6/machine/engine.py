@@ -70,7 +70,7 @@ from agent6.machine.template import (
     render_value,
 )
 from agent6.portable import atomic_write
-from agent6.sandbox.jail import JailUnavailableError, run_in_jail
+from agent6.sandbox.jail import JailUnavailableError, operator_tool_paths, run_in_jail
 from agent6.types import JailPolicy, SandboxProfile
 
 __all__ = [
@@ -223,7 +223,7 @@ class World(Protocol):
     def notify(self, kind: str, state: str, message: str, level: str) -> None: ...
 
 
-_SAFE_ENV_KEYS = ("PATH", "LANG", "LC_ALL", "TERM")
+_SAFE_ENV_KEYS = ("LANG", "LC_ALL", "TERM")
 
 
 def _data_dir_env_value(data_dir: Path, profile: SandboxProfile) -> str:
@@ -313,6 +313,13 @@ class LiveWorld:
         # gated by the CLI at startup (sandbox.tool_network), so by the time we
         # run, `allow_network` is authoritative.
         env_list = [(key, os.environ[key]) for key in _SAFE_ENV_KEYS if key in os.environ]
+        # The jail-correct PATH plus the RO+exec mounts that make it true: ONE
+        # computation shared with run_command/verify's jail and the `machine
+        # check` probe (sandbox.jail.operator_tool_paths). Copying the host
+        # PATH here named dirs the jail never mounts, so a tool that check
+        # proved reachable still died 127 in a tool state.
+        tool_path, tool_mounts = operator_tool_paths()
+        env_list.append(("PATH", tool_path))
         # Writable HOME for toolchain caches (go/cargo/pip); the jail's /tmp is
         # writable on both profiles. Mirrors the run_command jail env.
         env_list.append(("HOME", "/tmp/agent6-home"))  # noqa: S108 - resolved inside the jail
@@ -335,6 +342,7 @@ class LiveWorld:
             allow_network=allow_network,
             extra_protect_paths=self.protect_paths,
             extra_rw_paths=extra_rw,
+            tool_paths=tool_mounts,
             timeout_s=float(timeout_s),
             memory_limit_mb=self.memory_limit_mb,
         )

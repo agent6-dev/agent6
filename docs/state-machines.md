@@ -347,7 +347,10 @@ scripts (the kind `machine create` may draft). A `tool` references one by a
 relative path whose first segment is `scripts/`, e.g.
 `command = ["bash", "scripts/fetch.sh"]`; it resolves against the jail's
 mounted cwd at run time, so keep the bundle at (or under) the directory you
-run `agent6` from. `machine check` validates the bundle: every entry under
+run `agent6` from. A bare binary in `command[0]` resolves against the jail
+PATH (the baseline plus standard bin dirs, the same set `machine check`
+probes and `run_command` uses), never the host `PATH`; use an absolute path
+for anything installed elsewhere. `machine check` validates the bundle: every entry under
 `scripts/` must resolve *inside* the bundle (symlinks that escape via
 `..`/absolute are rejected) and every static `scripts/...` command
 reference must exist and stay inside the bundle. On the strict profile the
