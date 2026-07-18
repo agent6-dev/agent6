@@ -48,7 +48,7 @@ from agent6.tools._result_format import (
     passthrough_env,
     truncate_args,
 )
-from agent6.tools.errors import OperatorCommandUnexecutable, ToolError
+from agent6.tools.errors import OperatorCommandUnexecutable, ToolDenied, ToolError
 from agent6.tools.index import Symbol, SymbolIndex
 from agent6.tools.lsp import LspClient, LspError, lsp_tools_useful
 from agent6.tools.mcp_client import MCP_TOOL_PREFIX, MCPError, MCPManager
@@ -667,7 +667,10 @@ class ToolDispatcher:
             # is approving a command, so show it the way they would type it.
             ok = self._approver(f"Allow run_command: {shlex.join(args.argv)}")
             if not ok:
-                raise ToolError("run_command denied by user")
+                # The gate can't tell a human "no" from the policy auto-deny of
+                # an unattended run, so the message blames neither and names
+                # the knob.
+                raise ToolDenied("run_command not approved (sandbox.run_commands='ask')")
         return self._run_argv_in_jail(args.argv, label="run_command")
 
     def _ask_user(self, raw: dict[str, Any]) -> ToolResult:

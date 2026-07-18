@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent6.tools.errors import ToolError
+from agent6.tools.errors import ToolDenied
 
 _GIT_MUTATING_SUBCOMMANDS = frozenset(
     {
@@ -120,7 +120,7 @@ def _refuse_git_config_injection(argv: tuple[str, ...]) -> None:
     wrapper = argv[: len(argv) - len(git_argv)]
     for arg in wrapper:
         if "=" in arg and arg.split("=", 1)[0].startswith("GIT_CONFIG"):
-            raise ToolError(_GIT_CONFIG_INJECTION_MSG)
+            raise ToolDenied(_GIT_CONFIG_INJECTION_MSG)
     # `-c` / `--config-env` only inject config when they appear as a GLOBAL
     # option (BEFORE the subcommand): `git -c k=v <sub>`. AFTER the subcommand,
     # `-c` is an ordinary read-only option (combined-diff for `git log/show/diff
@@ -132,7 +132,7 @@ def _refuse_git_config_injection(argv: tuple[str, ...]) -> None:
         if arg == "--":
             return
         if arg in {"-c", "--config-env"} or arg.startswith("--config-env="):
-            raise ToolError(_GIT_CONFIG_INJECTION_MSG)
+            raise ToolDenied(_GIT_CONFIG_INJECTION_MSG)
         if arg in _GIT_GLOBAL_OPTIONS_WITH_VALUE:
             idx += 2
             continue
@@ -147,7 +147,7 @@ def refuse_mutating_git_command(argv: tuple[str, ...]) -> None:
     subcommand = _git_subcommand(argv)
     if subcommand not in _GIT_MUTATING_SUBCOMMANDS:
         return
-    raise ToolError(
+    raise ToolDenied(
         f"run_command refuses mutating git subcommand `git {subcommand}` because "
         ".git/ is protected inside the jail. For revert/recovery, inspect prior "
         "content with `git show HEAD:path/to/file`, then restore it with "

@@ -60,7 +60,12 @@ from agent6.providers import (
     ToolDefinition,
 )
 from agent6.skills import ResolvedSkills
-from agent6.tools.dispatch import OperatorCommandUnexecutable, ToolDispatcher, ToolError
+from agent6.tools.dispatch import (
+    OperatorCommandUnexecutable,
+    ToolDenied,
+    ToolDispatcher,
+    ToolError,
+)
 from agent6.tools.results import ExecResult, MetricResult, ToolResult
 from agent6.tools.schema import (
     FinishPlanningInput,
@@ -134,6 +139,7 @@ from agent6.workflows._nudges import (
     SILENT_NO_WORK_PATIENCE,
     SPEC_RECHECK_NUDGE,
     TASK_FINISH_PATIENCE,
+    TOOL_DENIED_NUDGE,
     TOOL_ERROR_ESCALATE_AFTER,
     TOOL_ERROR_ESCALATION,
     TOOL_ERROR_NUDGE,
@@ -319,8 +325,10 @@ class _LoopState:
     tool_error_nudges_used: int = 0
     # argv[0] of the last erroring run_command, so a repeated-tool-error spiral
     # can tell whether the failing tool exists on the host (a sandbox-
-    # reachability problem) vs a real error.
+    # reachability problem) vs a real error. Cleared on any tool success and on
+    # a ToolDenied (a refusal never executed, so it says nothing about the jail).
     last_error_command_binary: str = ""
+    last_error_was_denial: bool = False
     sandbox_reachability_warned: bool = False
     repeat_warning_emitted_at: int = 0
     # Intervention nudge counters (each capped by a module-level patience const).
@@ -1154,20 +1162,10 @@ class Workflow:
                 state.tool_error_streak = 0
                 state.last_tool_error_sig = None
                 state.tool_error_nudges_used = 0
+                state.last_error_command_binary = ""
+                state.last_error_was_denial = False
             except ToolError as exc:
-                content = json.dumps({"error": str(exc)})
-                state.last_tool_result_content = content
-                self._log(f"  tool_error: {name}: {exc}")
-                if name == "run_command":
-                    argv = tool_input.get("argv") or []
-                    state.last_error_command_binary = str(argv[0]) if argv else ""
-                sig = tool_error_signature(name, str(exc))
-                if sig == state.last_tool_error_sig:
-                    state.tool_error_streak += 1
-                else:
-                    state.last_tool_error_sig = sig
-                    state.tool_error_streak = 1
-                    state.tool_error_nudges_used = 0
+                content = self._note_tool_error(state, name, tool_input, exc)
                 self._maybe_tool_error_ladder(state, turn)
             except OperatorCommandUnexecutable as exc:
                 return self._unexecutable_abort(
@@ -1851,6 +1849,34 @@ class Workflow:
                 idle=state.verify_settled_idle,
             )
 
+    def _note_tool_error(
+        self, state: _LoopState, name: str, tool_input: dict[str, Any], exc: ToolError
+    ) -> str:
+        """Bookkeeping for one failed dispatch: the served error content, the
+        denial/binary records the reachability note reads, and the
+        same-signature streak the nudge ladder climbs."""
+        content = json.dumps({"error": str(exc)})
+        state.last_tool_result_content = content
+        self._log(f"  tool_error: {name}: {exc}")
+        state.last_error_was_denial = isinstance(exc, ToolDenied)
+        if name == "run_command":
+            if state.last_error_was_denial:
+                # A refused command never executed; a STALE binary from an
+                # earlier real failure must not let the reachability note
+                # misdiagnose policy refusals as a jail failure.
+                state.last_error_command_binary = ""
+            else:
+                argv = tool_input.get("argv") or []
+                state.last_error_command_binary = str(argv[0]) if argv else ""
+        sig = tool_error_signature(name, str(exc))
+        if sig == state.last_tool_error_sig:
+            state.tool_error_streak += 1
+        else:
+            state.last_tool_error_sig = sig
+            state.tool_error_streak = 1
+            state.tool_error_nudges_used = 0
+        return content
+
     def _maybe_tool_error_ladder(self, state: _LoopState, turn: _TurnState) -> None:
         """Nudge/escalate/stop on a streak of identical tool errors (a call
         that keeps failing the same way -- malformed args, bad path). Fires
@@ -1863,14 +1889,19 @@ class Workflow:
         if streak >= TOOL_ERROR_STOP_AFTER and state.tool_error_nudges_used >= 2:
             turn.tool_error_stop = True
             return
-        reach = self._sandbox_unreachable_note(state)
+        # A denial streak is a POLICY outcome: "your call is malformed" would
+        # be false, and a refusal says nothing about jail reachability.
+        denial = state.last_error_was_denial
+        reach = "" if denial else self._sandbox_unreachable_note(state)
+        nudge = TOOL_DENIED_NUDGE if denial else TOOL_ERROR_NUDGE
+        escalation = TOOL_DENIED_NUDGE if denial else TOOL_ERROR_ESCALATION
         if streak >= TOOL_ERROR_ESCALATE_AFTER and state.tool_error_nudges_used == 1:
             state.tool_error_nudges_used = 2
-            turn.tool_results.append(Notice(TOOL_ERROR_ESCALATION + reach))
+            turn.tool_results.append(Notice(escalation + reach))
             self._emit("loop.tool_error.nudge", iteration=turn.iteration, streak=streak, level=2)
         elif streak >= TOOL_ERROR_NUDGE_AFTER and state.tool_error_nudges_used == 0:
             state.tool_error_nudges_used = 1
-            turn.tool_results.append(Notice(TOOL_ERROR_NUDGE + reach))
+            turn.tool_results.append(Notice(nudge + reach))
             self._emit("loop.tool_error.nudge", iteration=turn.iteration, streak=streak, level=1)
 
     def _sandbox_unreachable_note(self, state: _LoopState) -> str:

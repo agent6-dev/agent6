@@ -768,6 +768,20 @@ def test_run_command_refuses_mutating_git_commands(tmp_path: Path, argv: list[st
     assert "apply_patch" in msg
 
 
+def test_run_command_denial_is_typed_and_names_the_knob(tmp_path: Path) -> None:
+    # The gate can't tell a human "no" from the ask-policy auto-deny of an
+    # unattended run: the message blames neither ("denied by user" was a lie in
+    # a machine subprocess) and names the config knob. ToolDenied (not a bare
+    # ToolError) so the loop's sandbox-reachability heuristic can skip it: the
+    # command never executed, it did not "fail in the jail".
+    from agent6.tools.errors import ToolDenied
+
+    cfg = _config_with_run_commands(tmp_path, "ask")
+    d = ToolDispatcher(root=tmp_path, config=cfg, approver=lambda _prompt: False)
+    with pytest.raises(ToolDenied, match=r"not approved \(sandbox.run_commands='ask'\)"):
+        d.dispatch("run_command", {"argv": ["echo", "hi"]})
+
+
 def test_run_command_refuses_mutating_git_before_approval(tmp_path: Path) -> None:
     cfg = _config_with_run_commands(tmp_path, "ask")
 

@@ -10,6 +10,15 @@ class ToolError(Exception):
     """The LLM tried something the tool layer refused."""
 
 
+class ToolDenied(ToolError):
+    """A run_command refused by POLICY before execution: the approval gate did
+    not approve (a human said no, or the ask-policy auto-denied an unattended
+    run), or the git guard refused a mutating command. The command never
+    executed, so the loop's sandbox-reachability heuristic must not count it as
+    a tool that "fails in the jail", and the repeat-error nudge says "refused,
+    stop retrying" instead of "your call is malformed"."""
+
+
 class OperatorCommandUnexecutable(Exception):
     """An operator-configured verify/metric command could not be executed in the
     jail (not found on PATH /usr/bin:/bin, or a path that escapes the sandbox).

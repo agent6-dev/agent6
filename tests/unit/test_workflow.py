@@ -4563,6 +4563,85 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: Path) -> None:
     assert result.iterations < 20
 
 
+def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: Path) -> None:
+    """A streak of policy refusals (ToolDenied) is nudged as 'refused, stop
+    retrying', never 'your call is malformed', and a stale binary recorded by
+    an earlier REAL run_command failure (git, present on every host) must not
+    resurface the sandbox-reachability note for what is pure policy."""
+    from agent6.tools.errors import ToolDenied as _TD
+    from agent6.tools.errors import ToolError as _TE
+    from agent6.workflows.loop import (
+        TOOL_DENIED_NUDGE,  # pyright: ignore[reportPrivateUsage]
+        TOOL_ERROR_NUDGE,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.denial_nudges = 0
+            self.malformed_nudges = 0
+            self.reach_notes = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            last = str(kwargs["messages"][-1])
+            if TOOL_DENIED_NUDGE[:30] in last:
+                self.denial_nudges += 1
+            if TOOL_ERROR_NUDGE[:26] in last:
+                self.malformed_nudges += 1
+            if "installed on this machine" in last:
+                self.reach_notes += 1
+            return _tool_resp(
+                "run_command",
+                {"argv": ["git", "status", f"-{self.calls}"]},
+                tool_id=f"c{self.calls}",
+            )
+
+    class DispatcherStub:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+            self.calls += 1
+            if self.calls == 1:
+                # A real execution failure first: records argv[0]="git".
+                raise _TE("run_command: git exploded for real")
+            raise _TD("run_command not approved (sandbox.run_commands='ask')")
+
+    provider = ProviderStub()
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=("true",),
+            metric=SimpleNamespace(goal=None),
+        )
+    )
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        mode="run",
+        provider=provider,
+        dispatcher=DispatcherStub(),
+        max_iterations=40,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nship"}]}]
+    with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            conversation=Conversation.from_wire(messages),
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+            original_task="t",
+        )
+    assert provider.denial_nudges >= 1  # the policy wording reached the model
+    assert provider.malformed_nudges == 0  # never told its call shape is wrong
+    assert provider.reach_notes == 0  # no stale-binary jail misdiagnosis
+    assert result.reason == "tool_error_stuck"
+
+
 def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: Path) -> None:
     """A successful tool call between errors clears the streak, so intermittent
     errors never trip the ladder."""

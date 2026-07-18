@@ -52,6 +52,17 @@ TOOL_ERROR_ESCALATION = (
     " different tool, or proceed with what you already have."
 )
 
+# A streak of ToolDenied refusals (approval policy, the git guard): the call
+# was REFUSED, not malformed, so the generic "fix the call shape" text would
+# be false and invite pointless reshuffling of the same command.
+TOOL_DENIED_NUDGE = (
+    "[harness tool-error] That command was refused by policy, not by a"
+    " failure; repeating or reshaping it cannot change the outcome. Follow"
+    " the guidance in the refusal, use tools that need no approval"
+    " (read/grep/edit tools, run_verify_command, the auto-commit), or finish"
+    " and report what remains."
+)
+
 
 # A verify command that exited nonzero almost instantly with one of these
 # signatures did not RUN the tests -- the runner itself is absent/broken.
