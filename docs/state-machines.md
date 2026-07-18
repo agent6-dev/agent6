@@ -54,10 +54,10 @@ what state machines make first-class.
 3. **Deterministic execution / replayable.** Given the same journal of
    inputs (including captured wall-clock and external reads), re-running
    reproduces the identical path. You can backtest a run offline.
-4. **Reliable / crash-safe.** Kill the process at any point; on restart
-   it rehydrates from an append-only journal at the last completed
-   state and the next scheduled wake. Idempotent: completed
-   side-effecting steps are not re-run.
+4. **Crash recovery.** On restart the machine rehydrates from the last
+   journaled state and any persisted wake. A crash between a side effect
+   and its `StepEvent` re-runs the state, so side-effecting tools must be
+   idempotent.
 5. **Composable.** A state can *be* an agent6 run. Mini-agents are built
    by wiring states, not by writing Python.
 6. **Confined.** The LLM never authors control flow and never gains new
@@ -72,7 +72,8 @@ what state machines make first-class.
   cron-friendly), restartable. No clustering in v1.
 - Not a new network surface. Anything that talks to the outside world
   is a *tool*, gated by the existing audit rules.
-- Not LLM-authored. Machines are operator artifacts checked into a repo.
+- Not LLM-authorized. `machine create` may draft a machine, but in a repository
+  `machine run` refuses the draft until the operator commits it.
 
 ---
 

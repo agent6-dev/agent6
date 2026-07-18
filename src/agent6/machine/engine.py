@@ -4,7 +4,8 @@
 
 The engine executes one state at a time. The *only* impure step is
 :meth:`World.run_tool` / :meth:`World.sleep_until` / :meth:`World.now`; its
-result is written to the journal as a fact before the blackboard is reduced.
+result is passed through ``reduce`` for validation, then journaled before the
+returned blackboard replaces the current one.
 ``reduce`` and ``next_state`` are pure, so:
 
 * **Crash recovery**, on restart, recorded facts are replayed through the

@@ -162,12 +162,11 @@ def run_in_jail(policy: JailPolicy) -> CommandResult:
 
     Raises JailUnavailableError if the launcher binary is missing or setup fails.
 
-    The `none` profile is the unsandboxed path used on non-Linux hosts (see
-    `agent6.sandbox.detect.select_profile`): the command runs as a plain subprocess
-    with no kernel confinement. This is never reached on Linux and never from
-    config, `select_profile` only returns `none` when `profile = "auto"` on a
-    platform without the Linux sandbox, and the CLI prints a prominent warning
-    before any such run.
+    The `none` profile is the unsandboxed path: the command runs as a plain
+    subprocess with no kernel confinement. `auto` selects it only on non-Linux
+    hosts; an explicit `profile = "none"`, `--dangerously-disable-sandbox`, or
+    `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1` selects it on any host. The CLI prints a
+    prominent warning before any such run.
 
     Security review note: this is the single place where an
     LLM-influenced argv runs without the jail. It exists solely so agent6 is

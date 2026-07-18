@@ -516,6 +516,6 @@ regressions.
 - **Side channels:** no claim about timing/cache/speculative side channels; don't
   co-locate agent6 with secrets if Spectre-class attacks are in your model.
 - **Supply chain:** pin your install. Runtime deps `pydantic`, `httpx2`,
-  `argcomplete`, the `tree-sitter` pair, `textual`; build-dep `hatchling`; the
-  jail's Rust crates `nix`, `libc`, `landlock`, `seccompiler`, `serde`,
-  `serde_json`.
+  `argcomplete`, the `tree-sitter` pair, `textual`, `ruff`, `ty`; build-dep
+  `hatchling`; the jail's Rust crates `nix`, `libc`, `landlock`, `seccompiler`,
+  `serde`, `serde_json`.
