@@ -142,8 +142,9 @@ def _tool_reachability_warnings(spec: MachineSpec, path: Path) -> list[str]:
         sources.setdefault(binary, f"scripts/{script}")
     return [
         f"WARNING: `{binary}` ({src}) does not resolve on the jail PATH; that state"
-        " will fail at run time. Install it into a standard bin dir, or grant its"
-        " real path via sandbox.extra_read_paths."
+        " will fail at run time. Install it into a standard bin dir"
+        " (~/.local/bin, /usr/local/bin), or use an absolute path in the"
+        " state's command."
         for binary, src in sorted(sources.items())
         if "/" not in binary and shutil.which(binary, path=search) is None
     ]
