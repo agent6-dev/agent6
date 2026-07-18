@@ -68,6 +68,11 @@ _STYLE_ANSI: dict[StyleName, str] = {
 _FLUSH_EVERY_S = 0.03  # coalesce streaming-delta flushes; see ConsoleView._raw
 _HEARTBEAT_TICK_S = 0.5  # how often the spinner refreshes
 _STALL_AFTER_S = 1.5  # show the heartbeat once output has been silent this long
+# A mid-block gap gets much longer before the spinner interrupts: drawing it
+# closes the open prose block and the next delta reopens a new bullet, visibly
+# splitting a streamed word (e.g. a file path) in two. Slow token cadence
+# routinely pauses a few seconds; only a real stall is worth that cost.
+_MID_BLOCK_STALL_S = 10.0
 _SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
 
@@ -240,7 +245,8 @@ class ConsoleView:
                 if self._paused:
                     continue  # an interactive prompt owns the terminal: draw nothing
                 idle = time.monotonic() - self._last_output_at
-                if not self._active or idle < _STALL_AFTER_S:
+                stall_after = _MID_BLOCK_STALL_S if self._phase is not None else _STALL_AFTER_S
+                if not self._active or idle < stall_after:
                     self._clear_status()  # output flowing or turn done: no spinner
                     if self._status_active is False:
                         self._out.flush()

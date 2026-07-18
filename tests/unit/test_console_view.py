@@ -7,6 +7,8 @@ from __future__ import annotations
 from io import StringIO
 from typing import Any
 
+import pytest
+
 from agent6.ui.cli._console_view import ConsoleView
 
 
@@ -154,11 +156,16 @@ class _FakeTTY:
 _STALL_WAIT_S = 3.0
 
 
-def test_cli_heartbeat_shows_working_when_the_stream_stalls() -> None:
+def test_cli_heartbeat_shows_working_when_the_stream_stalls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """A turn that goes silent mid-flight (a stalled SSE stream) shows a ticking
-    'working… Ns' line so the CLI never looks hung -- the user's exact symptom."""
+    'working… Ns' line so the CLI never looks hung (the user's exact symptom).
+    Mid-block the real threshold is 10s (see the no-split test below); shrink it
+    so the genuine-stall path stays testable without a 10s sleep."""
     import time
 
+    monkeypatch.setattr("agent6.ui.cli._console_view._MID_BLOCK_STALL_S", 1.5)
     out = _FakeTTY()
     view = ConsoleView(out, color=False)  # type: ignore[arg-type]
     try:
@@ -170,6 +177,26 @@ def test_cli_heartbeat_shows_working_when_the_stream_stalls() -> None:
         view.feed({"type": "role.text_delta", "text": " the theme system"})
         assert "the theme system" in out.getvalue()
         assert "\x1b[2K" in out.getvalue()  # the spinner line was erased
+    finally:
+        view.close()
+
+
+def test_cli_heartbeat_does_not_split_a_streaming_block_at_short_gaps() -> None:
+    """A few-seconds gap in a flowing prose block must NOT draw the spinner:
+    doing so closes the block and the next delta opens a new bullet, visibly
+    splitting a streamed word (a file path, mid-token) in two."""
+    import time
+
+    out = _FakeTTY()
+    view = ConsoleView(out, color=False)  # type: ignore[arg-type]
+    try:
+        view.feed({"type": "role.call", "role": "worker", "model": "m"})
+        view.feed({"type": "role.text_delta", "text": "writing to tests/test"})
+        time.sleep(_STALL_WAIT_S)  # over the between-blocks threshold, under 10s
+        view.feed({"type": "role.text_delta", "text": "_calc.py now"})
+        got = out.getvalue()
+        assert "working…" not in got  # no spinner mid-block at a short gap
+        assert "tests/test_calc.py" in got  # the streamed path stayed whole
     finally:
         view.close()
 
