@@ -405,9 +405,11 @@ def test_summary_survives_a_malformed_usd_total(tmp_path: Path) -> None:
     assert s.cost_usd == 0.25  # the last good figure, not 0 and not a crash
 
 
-def test_summary_gateless_settle_reads_finished_no_verify(tmp_path: Path) -> None:
+def test_summary_gateless_settle_reads_finished_unverified(tmp_path: Path) -> None:
     # A gateless run's quiet finish committed real work but nothing verified
-    # it: "finished · no verify", deliberately neither green nor "failed".
+    # it: "finished · unverified", deliberately neither green nor "failed".
+    # ("unverified", not "no verify": a command may exist via mid-run adoption
+    # and simply never have passed.)
     rd = _write_run(
         tmp_path,
         "runs",
@@ -418,4 +420,4 @@ def test_summary_gateless_settle_reads_finished_no_verify(tmp_path: Path) -> Non
         ],
     )
     s = summarize_run_dir(rd)
-    assert (s.status, s.reason) == ("finished", "no verify")
+    assert (s.status, s.reason) == ("finished", "unverified")

@@ -37,6 +37,20 @@ def test_verify_tool_hidden_when_command_unset(tmp_path: Path) -> None:
     assert "run_verify_command" not in gateless.available_tool_names()
 
 
+def test_adopt_verify_command_probes_the_jail_path(tmp_path: Path) -> None:
+    """Mid-run adoption refuses a bare runner the jail PATH cannot resolve
+    (adopting it would turn an honest settle into an unexecutable-verify
+    abort) and accepts a resolvable one, which also unhides the verify tool.
+    Path-form commands pass through: they resolve against the mounted cwd."""
+    d = ToolDispatcher(root=tmp_path, config=_cfg(verify=False))
+    assert d.adopt_verify_command(("no-such-binary-zq9", "test")) is False
+    assert "run_verify_command" not in d.available_tool_names()
+    assert d.adopt_verify_command(("sh", "-c", "true")) is True
+    assert "run_verify_command" in d.available_tool_names()
+    d2 = ToolDispatcher(root=tmp_path, config=_cfg(verify=False))
+    assert d2.adopt_verify_command(("./scripts/check.sh",)) is True
+
+
 def test_system_prompt_switches_verify_block(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     with_verify = build_system_prompt(config=_cfg(verify=True), repo=repo, mode="run")

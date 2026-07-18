@@ -165,7 +165,7 @@ def status_word(*, finished: bool, all_passed: bool, end_reason: str) -> tuple[s
     no_verify = {
         "finish_planning": ("planned", ""),
         "answered": ("answered", ""),
-        "settled": ("finished", "no verify"),
+        "settled": ("finished", "unverified"),
     }
     if end_reason in no_verify:
         return no_verify[end_reason]

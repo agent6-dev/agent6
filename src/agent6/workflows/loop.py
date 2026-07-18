@@ -72,6 +72,7 @@ from agent6.tools.schema import (
     FinishRunInput,
 )
 from agent6.types import RepoSummary
+from agent6.verify_infer import infer_verify_command
 from agent6.workflows._compaction import (
     DROP_BLOCKS_AT_CHARS,
     SUMMARISE_AT_CHARS,
@@ -1324,6 +1325,50 @@ class Workflow:
                         error=str(exc),
                     )
 
+    def _maybe_adopt_verify(self, turn: _TurnState) -> None:
+        """A gateless run that commits has just materialized project files the
+        preflight inference never saw (an empty repo infers nothing, then the
+        run creates a pyproject two minutes later and finishes ungated). Re-run
+        the DETERMINISTIC inference tiers (an AGENTS.md fence, repo signals;
+        never the LLM tier) at each gateless commit until one lands, then adopt
+        it for the rest of the run: the loop's gates, the dispatcher's
+        run_verify_command, and the resume snapshot all read the adopted
+        command. The model is told, so the gate flip is never silent; first
+        adoption wins (the config gaining a command ends the gateless branch)."""
+        agents_md = ""
+        agents_path = self.root / "AGENTS.md"
+        if agents_path.is_file():
+            try:
+                agents_md = agents_path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                agents_md = ""
+        inferred = infer_verify_command(self.root, agents_md, llm_call=None)
+        if inferred is None:
+            return
+        if not self.dispatcher.adopt_verify_command(inferred.argv):
+            # An inferred runner the jail cannot execute: adopting it would
+            # turn the honest settle into an unexecutable-verify abort. Stay
+            # gateless; re-inferred (and re-declined) at the next commit.
+            self._log(f"LOOP: verify inference declined; {inferred.argv[0]} not on the jail PATH")
+            return
+        self.config = self.config.with_inferred_verify(inferred.argv)
+        cmd = " ".join(inferred.argv)
+        self._log(f"LOOP: verify adopted from {inferred.source}: {cmd}")
+        self._emit(
+            "loop.verify_inferred",
+            command=list(inferred.argv),
+            source=inferred.source,
+            adopted_at=turn.iteration,
+        )
+        turn.tool_results.append(
+            Notice(
+                "[harness] The repo now has a recognizable project, so a verify"
+                f" command was adopted and gates the rest of this run: `{cmd}`."
+                " Run run_verify_command to check your work; auto-commits now"
+                " require a green verify."
+            )
+        )
+
     def _turn_auto_commit_and_metric(self, state: _LoopState, turn: _TurnState) -> RunResult | None:
         """Auto-commit the turn's work, then take the automatic metric sample.
 
@@ -1360,6 +1405,7 @@ class Workflow:
                 # Seed the idle-stop net for gateless runs (no green verify
                 # ever fires); see the verify-settled bookkeeping.
                 state.gateless_ever_committed = True
+                self._maybe_adopt_verify(turn)
             if sha:
                 # Surface "what the worker just changed" to a live viewer
                 # (the TUI diff panel). Capped; best-effort.
@@ -2034,8 +2080,13 @@ class Workflow:
             return RunResult(
                 completed=True,
                 reason="settled",
+                # A command can exist here only via mid-run adoption (an
+                # operator-set one is never gateless); say which truth applies.
                 summary=(
-                    "the worker settled after committing work; no verify command existed to gate it"
+                    "the worker settled after committing work; the adopted verify never passed"
+                    if self.config.workflow.verify_command
+                    else "the worker settled after committing work; no verify command existed"
+                    " to gate it"
                 ),
                 iterations=turn.iteration,
                 tool_calls=state.tool_calls,

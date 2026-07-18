@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import shutil
 import sys
 import threading
 from collections.abc import Callable
@@ -24,7 +25,12 @@ from agent6.config import Config
 from agent6.events import EventSink
 from agent6.graph.curator import GraphCurator
 from agent6.paths import data_dir
-from agent6.sandbox.jail import JailUnavailableError, operator_tool_paths, run_in_jail
+from agent6.sandbox.jail import (
+    JailUnavailableError,
+    jail_search_path,
+    operator_tool_paths,
+    run_in_jail,
+)
 from agent6.skills import (
     ResolvedSkills,
     discover_skills,
@@ -558,6 +564,22 @@ class ToolDispatcher:
         if self._lsp is not None:
             self._lsp.close()
             self._lsp = None
+
+    def adopt_verify_command(self, argv: tuple[str, ...]) -> bool:
+        """Adopt a verify command mid-run: the loop's gateless adoption after
+        the tree materializes (see Workflow._maybe_adopt_verify). Same trust
+        as preflight's in-memory injection: derived from the repo's own
+        AGENTS.md fence or project signals, operator-origin, never persisted.
+
+        False (nothing adopted) when a bare argv[0] does not resolve on the
+        jail PATH: adopting a gate the sandbox cannot execute would turn a
+        would-be honest settle into an unexecutable-verify abort. Path-form
+        commands are accepted as-is (they resolve against the mounted cwd)."""
+        exe = argv[0]
+        if "/" not in exe and shutil.which(exe, path=jail_search_path()) is None:
+            return False
+        self._config = self._config.with_inferred_verify(argv)
+        return True
 
     def _run_verify(self, _raw: dict[str, Any]) -> ExecResult:
         argv = tuple(self._config.workflow.verify_command)

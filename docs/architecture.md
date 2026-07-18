@@ -431,7 +431,7 @@ any external viewer (the fold to render-ready state lives in
 | `run.start`                 | `user_task`                                 |
 | `tool.call` / `.result`     | `name`, `args` (preview), `ok`, `summary`; emitted as a pair for every dispatched tool, including ones a guard rejects (`ok=false`, trusted reason), so no call is unaccounted for. Execution tools (`run_command`/`run_metric_command`) also carry capped `stdout_tail`/`stderr_tail` like `verify.end` |
 | `verify.start` / `.end`     | `cmd`, `exit_code`, `duration_s`, `*_tail`  |
-| `loop.verify_inferred`      | `command` (argv, `[]` if none), `source` (`agents_md`/manifest/`llm`/`none`) |
+| `loop.verify_inferred`      | `command` (argv, `[]` if none), `source` (`agents_md`/manifest/`llm`/`none`); `adopted_at` (iteration) when a gateless run adopts one mid-run |
 | `role.call` / `.result`     | `role`, `model`, `tokens_in`, `tokens_out`  |
 | `role.text_delta`           | streamed assistant text chunk               |
 | `role.thinking_delta`       | streamed reasoning chunk (TUI "thinking" pane) |

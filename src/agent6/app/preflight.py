@@ -221,8 +221,9 @@ def infer_verify_if_unset(
         if mode == "run":
             print(
                 "[agent6] no verify_command set and none could be inferred; running"
-                " gateless\n         (per-step commits, no green gate). Set"
-                " workflow.verify_command to gate commits on a passing verify.",
+                " gateless\n         (per-step commits, no green gate). If the run"
+                " creates a recognizable project, a verify\n         command is"
+                " adopted mid-run; pin one with workflow.verify_command.",
                 file=sys.stderr,
             )
         return cfg

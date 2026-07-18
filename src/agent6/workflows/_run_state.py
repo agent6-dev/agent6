@@ -55,8 +55,9 @@ class RunResult:
       metric_plateau    - metric run tied prior best after enough samples.
       verify_settled    - verify passed and the worker stopped making changes.
       settled           - a GATELESS run's quiet finish: work committed, the
-                          worker went idle, and no verify command existed to
-                          gate any of it (all_passed stays False).
+                          worker went idle, and no verify ever gated it (none
+                          existed, or a mid-run adopted one never passed;
+                          all_passed stays False).
       no_progress       - the same verify failure survived ten consecutive
                           runs and two harness interventions; stopped to save
                           the remaining budget (resumable).

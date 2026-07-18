@@ -55,7 +55,7 @@ _END_REASON_LABEL = {
     "budget_exhausted": "budget exhausted",
     "went_quiet": "went quiet",
     "verify_settled": "verify settled",
-    "settled": "settled (no verify)",
+    "settled": "settled (unverified)",
     "interactive_stop": "stopped interactively",
     "max_iterations": "hit iteration cap",
 }

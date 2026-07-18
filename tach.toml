@@ -112,6 +112,7 @@ depends_on = [
   "agent6.graph.models",
   "agent6.memory",  # cross-run memories injected into the system prompt
   "agent6.skills",  # operator-installed skills indexed in the system prompt
+  "agent6.verify_infer",  # gateless runs adopt a verify mid-run (deterministic tiers)
 ]
 
 [[modules]]

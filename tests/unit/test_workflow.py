@@ -5019,3 +5019,140 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: Path) -> None:
     ends = [e for e in events if e["type"] == "run.end"]
     assert ends and ends[-1]["reason"] == "interactive_stop"
     assert ends[-1]["all_passed"] is False  # a stop is deliberate, never "passed"
+
+
+def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(
+    tmp_path: Path,
+) -> None:
+    """Preflight inference on an empty repo finds nothing; the run then creates
+    a recognizable project. At the next gateless auto-commit the deterministic
+    tiers re-run and the verify is ADOPTED: config and dispatcher pick it up
+    and the model is told, so the rest of the run is gated instead of
+    finishing a whole build unverified."""
+    from agent6.config import Config
+
+    # What the run "just created" before its first commit.
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n', encoding="utf-8")
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.adoption_notices = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            if "verify command was adopted" in str(kwargs["messages"][-1]):
+                self.adoption_notices += 1
+            if self.calls == 1:
+                return _tool_resp(
+                    "apply_edit",
+                    {"path": "pyproject.toml", "edits": [{"kind": "create", "new_string": "x"}]},
+                    tool_id="e1",
+                )
+            return _tool_resp("read_file", {"path": "pyproject.toml"}, tool_id=f"r{self.calls}")
+
+    class DispatcherStub:
+        def __init__(self) -> None:
+            self.adopted: tuple[str, ...] | None = None
+
+        def adopt_verify_command(self, argv: tuple[str, ...]) -> bool:
+            self.adopted = argv
+            return True
+
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+            return ExecResult(
+                returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
+            )
+
+    provider = ProviderStub()
+    dispatcher = DispatcherStub()
+    wf = _wf(
+        root=tmp_path,
+        config=Config(),  # real config: verify_command defaults empty (gateless)
+        mode="run",
+        provider=provider,
+        dispatcher=dispatcher,
+        max_iterations=40,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nbuild"}]}]
+    with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            conversation=Conversation.from_wire(messages),
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+            original_task="t",
+        )
+    assert dispatcher.adopted is not None  # the dispatcher gates run_verify now
+    assert tuple(wf.config.workflow.verify_command) == dispatcher.adopted
+    assert provider.adoption_notices >= 1  # the gate flip was said to the model
+    assert result.completed is True
+    # The worker then idled without ever running the adopted verify; the
+    # settle summary must not claim no command existed (one demonstrably did).
+    assert result.reason == "settled"
+    assert "adopted verify never passed" in result.summary
+    assert "no verify command existed" not in result.summary
+
+
+def test_drive_loop_gateless_adoption_declines_an_unexecutable_verify(
+    tmp_path: Path,
+) -> None:
+    """When the dispatcher refuses the inferred command (its binary is not on
+    the jail PATH), the run stays gateless: adopting a gate the sandbox cannot
+    execute would turn the honest settle into an unexecutable-verify abort."""
+    from agent6.config import Config
+
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n', encoding="utf-8")
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.adoption_notices = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            self.calls += 1
+            if "verify command was adopted" in str(kwargs["messages"][-1]):
+                self.adoption_notices += 1
+            if self.calls == 1:
+                return _tool_resp(
+                    "apply_edit",
+                    {"path": "pyproject.toml", "edits": [{"kind": "create", "new_string": "x"}]},
+                    tool_id="e1",
+                )
+            return _tool_resp("read_file", {"path": "pyproject.toml"}, tool_id=f"r{self.calls}")
+
+    class DispatcherStub:
+        def adopt_verify_command(self, argv: tuple[str, ...]) -> bool:
+            return False  # the jail cannot execute the inferred runner
+
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+            return ExecResult(
+                returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
+            )
+
+    provider = ProviderStub()
+    wf = _wf(
+        root=tmp_path,
+        config=Config(),
+        mode="run",
+        provider=provider,
+        dispatcher=DispatcherStub(),
+        max_iterations=40,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nbuild"}]}]
+    with patch("agent6.workflows.loop.commit_all", return_value="sha1"):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            conversation=Conversation.from_wire(messages),
+            tools=[],
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+            original_task="t",
+        )
+    assert tuple(wf.config.workflow.verify_command) == ()  # still gateless
+    assert provider.adoption_notices == 0  # no false gate-flip message
+    assert result.reason == "settled"
+    assert "no verify command existed" in result.summary
