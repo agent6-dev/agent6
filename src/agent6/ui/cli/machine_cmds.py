@@ -383,6 +383,11 @@ def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
     print(f"  state: {result.state!r}")
     print(f"  transitions: {result.transitions}")
     print(f"  spend: ${spend.usd:.4f} (in={spend.input_tokens} tok, out={spend.output_tokens} tok)")
+    state_spec = spec.states.get(result.state)
+    if alive and pending is None and state_spec is not None and state_spec.kind == "wait":
+        # A foreground run blocked in a wait writes no pending-wait record (that
+        # is --exit-on-wait's parked form), but it is just as pokeable; say so.
+        print(f"  waiting in {result.state!r}: agent6 machine poke {machine_id} [--message TEXT]")
     if pending is not None:
         if pending.wake_epoch is not None:
             wake = _dt.datetime.fromtimestamp(pending.wake_epoch, tz=_dt.UTC).isoformat()

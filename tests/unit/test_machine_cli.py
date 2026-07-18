@@ -94,6 +94,26 @@ def test_status_reports_waiting_state_and_spend(
     assert "spend: $0.0000" in out
 
 
+def test_status_hints_poke_for_a_live_foreground_wait(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A foreground `machine run` blocked in a wait writes no pending-wait record
+    # (that is --exit-on-wait's parked form); status must still say the machine
+    # is waiting and how to poke it, not a bare "running" (attach already knew).
+    monkeypatch.chdir(tmp_path)
+    f = _write_machine(tmp_path)
+    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    capsys.readouterr()  # drop run output
+    root = resolved_state_dir(tmp_path) / "machines" / "waiter_delayed"
+    # Model the foreground shape: live worker (this pytest pid), no pending record.
+    MachineJournal(root).clear_pending_wait()
+    code = main(["machine", "status", "waiter_delayed"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "status: running" in out
+    assert "waiting in 'poll': agent6 machine poke waiter_delayed" in out
+
+
 def test_status_missing_instance_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
