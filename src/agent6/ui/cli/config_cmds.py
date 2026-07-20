@@ -507,31 +507,40 @@ def _cmd_config_remove(key: str, value: str, *, repo: bool, machine: Path | None
     return _config_list_edit(key, value, repo=repo, machine=machine, add=False)
 
 
-_MAX_FIX_PASSES = 25  # backstop; each pass drops >=1 leaf, so this is never reached
-
-
 def _cmd_config_fix(*, machine: Path | None) -> int:
     """Drop every invalid entry from the config, printing what it was and where it
     lived (global / repo, or a machine's [config] overlay with --machine-file).
 
     Removing one entry can reveal another it shadowed, so it re-diagnoses until the
-    config is clean or nothing droppable remains. An entry it cannot drop as a plain
-    leaf (a non-absolute state_dir, a bad built-in default) is reported, not hidden.
+    config is clean or nothing droppable remains. An entry it cannot drop -- not a
+    plain leaf (non-absolute state_dir, bad built-in default), or a TOML shape the
+    line surgery cannot match (a dotted top-level key has no [table] header) -- is
+    reported, never counted as removed.
     """
     repo_root = Path.cwd()
     removed: list[InvalidEntry] = []
+    stuck: list[InvalidEntry] = []
     touched: set[Path] = set()
     diag = find_invalid_entries(repo_root, machine=machine)
-    passes = 0
-    while diag.removable and passes < _MAX_FIX_PASSES:
+    while diag.removable:
+        progressed = False
         for entry in diag.removable:
-            if entry.is_table:
+            ok = (
                 remove_toml_table(entry.path, entry.file_key)
-            else:
-                remove_toml_leaf(entry.path, entry.file_key)
+                if entry.is_table
+                else remove_toml_leaf(entry.path, entry.file_key)
+            )
+            if not ok:
+                stuck.append(entry)
+                continue
+            progressed = True
             touched.add(entry.path)
             removed.append(entry)
-        passes += 1
+        if not progressed:
+            # Nothing this pass could actually delete: halt honestly instead of
+            # re-diagnosing the identical set forever (and lying "fixed").
+            break
+        stuck = []
         diag = find_invalid_entries(repo_root, machine=machine)
     for path in touched:
         chown_to_real_user(path)
@@ -546,6 +555,16 @@ def _cmd_config_fix(*, machine: Path | None) -> int:
         print(
             "ERROR: config still invalid (not an auto-removable entry); fix it by hand:\n"
             f"{diag.blocked}",
+            file=sys.stderr,
+        )
+        return 2
+    if stuck:
+        names = "\n".join(
+            f"  {e.leaf} = {format_value(e.value)}  [{e.layer}: {e.path}]" for e in stuck
+        )
+        print(
+            "ERROR: config still invalid (flagged entries could not be auto-removed);"
+            f" fix by hand:\n{names}",
             file=sys.stderr,
         )
         return 2

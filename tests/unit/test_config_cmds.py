@@ -645,6 +645,29 @@ def test_config_set_invalid_provider_value_names_the_field(
     assert main(["config", "set", "providers.p.base_url", "https://x.example/v1"]) == 0
 
 
+def test_config_fix_halts_honestly_when_line_surgery_cannot_remove(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A dotted top-level key parses as removable but the line surgery (which
+    needs a [table] header) cannot match it: fix must halt and say so, not spin
+    25 passes and report "Fixed the config: dropped 25 invalid entries" over an
+    unchanged, still-broken file."""
+    from agent6.paths import global_config_path
+    from agent6.ui.cli import main
+
+    gpath = global_config_path()
+    gpath.parent.mkdir(parents=True, exist_ok=True)
+    gpath.write_text('sandbox.agent_network = "bogus"\n', encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    rc = main(["config", "fix"])
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert "agent_network" in captured.err
+    assert "Fixed the config" not in captured.out
+    assert "agent_network" in gpath.read_text(encoding="utf-8")  # left for the operator
+
+
 def test_config_show_key_with_json_filters_to_the_key(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
