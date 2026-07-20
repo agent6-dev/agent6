@@ -41,7 +41,7 @@ from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config, ConfigError
 from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.git_ops import GitError, create_branch_at
-from agent6.graph.storage import append_jsonl, list_checkpoint_turns
+from agent6.graph.storage import append_jsonl, flock, list_checkpoint_turns
 from agent6.portable import atomic_write
 from agent6.runs.id import RunIdError, new_friendly_id, resolve_run_id, validate_explicit_run_id
 from agent6.runs.layout import RunLayout
@@ -60,16 +60,25 @@ def _lineage_entry(*, child: str, parent: str, turn: int, sha: str, ts: str) -> 
 
 
 def _copy_dag(src: RunLayout, dst: RunLayout) -> None:
-    """Copy the curator DAG artifacts from *src* into *dst*, verbatim."""
-    for name in _DAG_ARTIFACTS:
-        src_path = src.run_dir / name
-        if not src_path.exists():
-            continue
-        dst_path = dst.run_dir / name
-        if src_path.is_dir():
-            shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
-        else:
-            shutil.copy2(src_path, dst_path)
+    """Copy the curator DAG artifacts from *src* into *dst*, verbatim.
+
+    Snapshots under the SOURCE curator's per-mutation flock: a live source
+    run's curator atomic-renames node files and prunes stale ones mid-copy,
+    so an unlocked copytree could hit a vanishing file (shutil.Error) or
+    produce a torn, mixed-instant DAG. Holding the same lock the curator
+    takes for every mutation (graph.storage.flock on <run>/.lock) makes the
+    four artifacts one consistent point-in-time snapshot; a crashed source
+    driver's fcntl lock releases on process death, so no stale-lock hang."""
+    with flock(src.lock_path):
+        for name in _DAG_ARTIFACTS:
+            src_path = src.run_dir / name
+            if not src_path.exists():
+                continue
+            dst_path = dst.run_dir / name
+            if src_path.is_dir():
+                shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
+            else:
+                shutil.copy2(src_path, dst_path)
 
 
 def _select_checkpoint_path(

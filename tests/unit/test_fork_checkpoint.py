@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import json
 import subprocess as sp
+from collections.abc import Generator
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -243,6 +245,36 @@ def test_fork_preserves_source_run_profile(tmp_path: Path, monkeypatch: pytest.M
     dst = RunLayout(state_dir=state_dir, run_id="child-BBBB22")
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
     assert manifest["workflow"]["profile"] == "paranoid"
+
+
+def test_fork_snapshots_the_dag_under_the_source_curator_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A live source's curator atomic-renames and prunes node files; an
+    unlocked copy could hit a vanishing file mid-copytree or produce a torn,
+    mixed-instant DAG. The copy must run under the source's per-mutation
+    curator flock (the same <run>/.lock every write_node holds)."""
+    from agent6.app import fork as fork_mod
+
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state_dir = _state_dir(repo)
+    src = _seed_source_run(state_dir, "src-LOCK11", head_sha=head, turns=(1,))
+
+    locked: list[Path] = []
+    real_flock = fork_mod.flock
+
+    @contextmanager
+    def recording_flock(path: Path) -> Generator[None]:
+        locked.append(path)
+        with real_flock(path):
+            yield
+
+    monkeypatch.setattr(fork_mod, "flock", recording_flock)
+    rc = _cmd_fork(None, "src-LOCK11", new_run_id="child-LOCK22", no_run=True)
+    assert rc == 0
+    assert locked == [src.lock_path]  # the copy held the source curator lock
 
 
 def test_fork_fails_loud_on_a_bad_source_manifest(
