@@ -26,7 +26,6 @@ import contextlib
 import json
 import os
 import shutil
-import subprocess
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -340,14 +339,17 @@ class LiveWorld:
         )
         try:
             result = run_in_jail(policy)
-        except subprocess.TimeoutExpired:
-            return ToolExecResult(exit_code=124, stdout="", timed_out=True)
         except JailUnavailableError as exc:
             raise EngineError(f"jail unavailable: {exc}") from exc
+        # run_in_jail's contract is to RETURN a rc=124 result on timeout, never
+        # raise TimeoutExpired (the Rust launcher and jail.py both collapse a
+        # timeout to rc 124). Deriving timed_out from that is what makes a tool
+        # state's on.timeout transition reachable; an `except TimeoutExpired`
+        # here was dead code that left every real timeout labelled not-timed-out.
         return ToolExecResult(
             exit_code=result.returncode,
             stdout=result.stdout,
-            timed_out=False,
+            timed_out=result.returncode == 124,
             stderr=result.stderr,
         )
 

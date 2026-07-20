@@ -723,6 +723,38 @@ def test_data_dir_env_matches_jail_mount(tmp_path: Path, monkeypatch: pytest.Mon
         assert data_dir in policy.extra_rw_paths
 
 
+def test_live_world_run_tool_maps_rc124_to_timed_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """run_in_jail's contract is 'a timeout is returncode 124, never a raised
+    TimeoutExpired'. LiveWorld.run_tool must derive timed_out from that so a
+    tool state's on.timeout transition is reachable; the old `except
+    TimeoutExpired` was dead code and every real timeout returned
+    timed_out=False (routing to on.nonzero and journaling not-timed-out)."""
+    from agent6.machine import engine
+    from agent6.machine.engine import LiveWorld
+    from agent6.types import CommandResult, JailPolicy
+
+    def fake_run_in_jail(policy: JailPolicy) -> CommandResult:
+        # The launcher SIGKILLed the child at the deadline and reported rc=124.
+        return CommandResult(argv=policy.argv, returncode=124, stdout="", stderr="", duration_s=0.0)
+
+    monkeypatch.setattr(engine, "run_in_jail", fake_run_in_jail)
+    world = LiveWorld(cwd=tmp_path, journal=MachineJournal(tmp_path / "i"))
+    res = world.run_tool(("sleep", "99"), 1.0)
+    assert res.timed_out is True
+    assert res.exit_code == 124
+    # A normal nonzero exit stays not-timed-out.
+    monkeypatch.setattr(
+        engine,
+        "run_in_jail",
+        lambda p: CommandResult(argv=p.argv, returncode=2, stdout="", stderr="", duration_s=0.0),
+    )
+    res2 = world.run_tool(("false",), 1.0)
+    assert res2.timed_out is False
+    assert res2.exit_code == 2
+
+
 def test_notify_does_not_change_replay_path(tmp_path: Path) -> None:
     # machine.notify is presentation only: replay ignores it and reproduces.
     journal, f = _load(tmp_path, NOTIFIER)
