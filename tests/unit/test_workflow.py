@@ -5413,3 +5413,16 @@ def test_reachability_note_never_fires_on_a_validation_error(tmp_path: Path) -> 
     )
     assert not any(e["type"] == "loop.sandbox_tool_unreachable" for e in events)
     assert provider.reachability_notes == 0
+
+
+def test_load_repo_summary_tolerates_a_broken_agents_md(tmp_path: Path) -> None:
+    """A non-UTF-8 (Windows-1252 curly quote) or unreadable AGENTS.md degrades
+    to a replaced/empty read; unguarded, it raised AFTER run.start with no
+    run.end -- a dead run listed "running" then "stale". The tolerant pattern
+    already existed for the loop's own reads; the startup summary was the
+    outlier."""
+    from agent6.workflows._context import load_repo_summary
+
+    (tmp_path / "AGENTS.md").write_bytes(b"Style: use \x93smart quotes\x94\n")
+    summary = load_repo_summary(tmp_path)
+    assert "smart quotes" in summary.agents_md  # lossy, present, no crash

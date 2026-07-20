@@ -90,7 +90,15 @@ def load_repo_summary(root: Path, *, dispatcher: ToolDispatcher | None = None) -
     tracked = tracked_files(root) if in_git else ()
     file_count = len(tracked)
     agents_md_path = root / "AGENTS.md"
-    agents_md = agents_md_path.read_text(encoding="utf-8") if agents_md_path.is_file() else ""
+    # Tolerant read (mirrors the loop's own AGENTS.md reads): a Windows-1252
+    # byte or a permission-denied file must degrade, not crash the run AFTER
+    # run.start with no run.end -- a dead run that listed as "running"/"stale".
+    agents_md = ""
+    if agents_md_path.is_file():
+        try:
+            agents_md = agents_md_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            agents_md = ""
     if len(agents_md) > _AGENTS_MD_MAX_CHARS:
         agents_md = (
             agents_md[:_AGENTS_MD_MAX_CHARS]

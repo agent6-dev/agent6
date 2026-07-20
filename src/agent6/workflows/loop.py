@@ -3551,7 +3551,9 @@ class Workflow:
     def _read_agents_md(self) -> str:
         path = self.root / "AGENTS.md"
         try:
-            return path.read_text(encoding="utf-8") if path.is_file() else ""
+            # errors="replace": a non-UTF-8 byte is a degraded read, not a
+            # UnicodeDecodeError the OSError guard would miss.
+            return path.read_text(encoding="utf-8", errors="replace") if path.is_file() else ""
         except OSError:
             return ""
 
