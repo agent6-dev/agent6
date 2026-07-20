@@ -54,7 +54,9 @@ _PARAMETER_RE = re.compile(
     re.DOTALL,
 )
 # Leftover scaffolding to scrub from the visible text once calls are mined.
-_TOOL_SCAFFOLD_RE = re.compile(r"</?tool_call>|</?function[^>]*>|</?parameter[^>]*>")
+# Orphan closers Qwen's template leaves right after a </function> block (a
+# stray </tool_call> most commonly); swallowed into the recovered call's span.
+_TRAILING_SCAFFOLD_RE = re.compile(r"(?:\s*(?:</tool_call>|</function>|</parameter>))+")
 
 # Gemini / Gemma ``tool_code`` form: a fenced block of Python-call syntax, e.g.
 #   ```tool_code
@@ -200,11 +202,14 @@ def _extract_function_xml_calls(
     text: str,
     tool_names: frozenset[str],
     tool_schemas: dict[str, dict[str, Any]] | None,
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], list[tuple[int, int]]]:
     """Mine Qwen-Coder ``<function=NAME><parameter=KEY>VALUE</parameter>``
-    calls from leaked content text. Returns ``[{"name", "input"}, ...]`` for
-    every block whose name matches an offered tool; empty if none match."""
+    calls from leaked content text. Returns ``([{"name", "input"}, ...],
+    spans)`` for every block whose name matches an offered tool (spans cover
+    each recovered block plus its trailing orphan scaffold closers); empty
+    if none match."""
     out: list[dict[str, Any]] = []
+    spans: list[tuple[int, int]] = []
     for fmatch in _FUNCTION_CALL_RE.finditer(text):
         name = fmatch.group(1).strip()
         if name not in tool_names:
@@ -219,7 +224,15 @@ def _extract_function_xml_calls(
             decl_type = decl.get("type") if isinstance(decl, dict) else None
             args[key] = _coerce_param_value(pmatch.group(2), decl_type)
         out.append({"name": name, "input": args})
-    return out
+        # Extend the span over immediately-trailing orphan scaffold closers
+        # (the template's stray </tool_call> etc.), so removing the recovered
+        # call leaves no dangling tag behind.
+        end = fmatch.end()
+        trail = _TRAILING_SCAFFOLD_RE.match(text, end)
+        if trail is not None:
+            end = trail.end()
+        spans.append((fmatch.start(), end))
+    return out, spans
 
 
 def _extract_tool_call_obj(  # noqa: PLR0911
@@ -289,10 +302,13 @@ def coerce_text_tool_calls(  # noqa: PLR0911
     # XML. Checked first: it is self-delimiting and unambiguous, and the
     # inner body is NOT JSON so the JSON-shaped branches below cannot parse it.
     if "<function=" in text:
-        xml_calls = _extract_function_xml_calls(text, tool_names, tool_schemas)
+        xml_calls, xml_spans = _extract_function_xml_calls(text, tool_names, tool_schemas)
         if xml_calls:
-            remaining = _TOOL_SCAFFOLD_RE.sub("", _FUNCTION_CALL_RE.sub("", text)).strip()
-            return xml_calls, remaining
+            # Remove ONLY the calls that were recovered (same rule as the
+            # <tool_call> branch below): a block whose name matched no offered
+            # tool stays visible, so the model can see its failed call instead
+            # of assuming it happened.
+            return xml_calls, _remove_spans(text, xml_spans)
     # 0.5) Gemini / Gemma ```tool_code Python-call block. Self-delimiting like the
     # XML form, and parsed with ast (not JSON), so check it before the JSON
     # branches below.

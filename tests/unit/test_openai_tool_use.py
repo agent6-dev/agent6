@@ -1049,3 +1049,18 @@ def test_streaming_indexless_parallel_tool_calls_get_separate_slots(
     assert {tu["id"] for tu in resp.tool_uses} == {"a", "b"}
     assert resp.tool_uses[0]["input"] == {"path": "a.py"}
     assert resp.tool_uses[1]["input"] == {"path": "b.py"}
+
+
+def test_qwen_function_xml_keeps_unmatched_call_visible() -> None:
+    """Same load-bearing rule as the <tool_call> branch (which pins it in
+    test_tool_call_tag_recovery_keeps_malformed_tag_visible): remove ONLY the
+    calls that were recovered. Branch 0's blanket scrub deleted EVERY
+    <function=...> block, so a hallucinated/misspelled second call vanished
+    without a trace and the model assumed it happened."""
+    text = (
+        "<function=read_file><parameter=path>a.py</parameter></function>\n"
+        "<function=write_notes><parameter=text>x</parameter></function>"
+    )
+    calls, remaining = _coerce_text_tool_calls(text, frozenset({"read_file"}))
+    assert [c["name"] for c in calls] == ["read_file"]
+    assert "<function=write_notes>" in remaining  # the unrecovered call stays visible
