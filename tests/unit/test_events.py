@@ -91,3 +91,23 @@ def test_delta_events_flush_but_do_not_fsync(
         json.loads(line)["type"] for line in (tmp_path / "logs.jsonl").read_text().splitlines()
     ]
     assert types == ["role.thinking_delta", "role.text_delta", "tool.call"]
+
+
+def test_emit_survives_lone_surrogate(tmp_path: Path) -> None:
+    """json.dumps(ensure_ascii=False) passes a lone surrogate through; the old
+    text-mode write then raised UnicodeEncodeError (a ValueError the OSError
+    guard never caught), crashing the run from inside "telemetry must never
+    break the run". The event must be recorded (lossily) and the file must
+    stay strictly valid UTF-8 for every reader."""
+    import json
+
+    sink = EventSink(tmp_path / "logs.jsonl")
+    sink.emit("run.start", user_task="caf\udce9")
+    sink.emit("tool.call", args={"summary": "done \ud83d"})
+    lines = [
+        json.loads(line)
+        for line in (tmp_path / "logs.jsonl").read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+    assert [e["type"] for e in lines] == ["run.start", "tool.call"]
+    assert "?" in lines[0]["user_task"]  # the surrogate was replaced, not dropped

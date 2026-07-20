@@ -70,10 +70,19 @@ class EventSink:
         except (TypeError, ValueError):
             # If a field can't be serialized, drop the event rather than crash.
             return
+        # Encode HERE, lossily: json.dumps(ensure_ascii=False) passes a lone
+        # surrogate (a split emoji escape in model-emitted tool args, a
+        # surrogateescape-decoded argv) through as a str, and a text-mode write
+        # would then raise UnicodeEncodeError -- a ValueError the OSError guard
+        # below never caught, breaking the "telemetry must never break the run"
+        # contract. Replacing keeps the event recorded (a dropped run.start
+        # makes a run invisible to watch/web) and the file strictly valid UTF-8
+        # for every reader.
+        data = (line + "\n").encode("utf-8", "replace")
         with self._lock, contextlib.suppress(OSError):  # telemetry must never break the run
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            with self.path.open("a", encoding="utf-8") as fh:
-                fh.write(line + "\n")
+            with self.path.open("ab") as fh:
+                fh.write(data)
                 fh.flush()
                 if event_type not in _EPHEMERAL_EVENTS:
                     os.fsync(fh.fileno())
@@ -134,11 +143,14 @@ class UserInputSink:
             line = json.dumps(payload, default=_json_default, ensure_ascii=False)
         except (TypeError, ValueError):
             return
+        # Same lossy-encode-then-binary-write as EventSink.emit: a lone
+        # surrogate in a prompt/answer must not crash the audit trail.
+        data = (line + "\n").encode("utf-8", "replace")
         with self._lock:
             try:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
-                with self.path.open("a", encoding="utf-8") as fh:
-                    fh.write(line + "\n")
+                with self.path.open("ab") as fh:
+                    fh.write(data)
                     fh.flush()
                     os.fsync(fh.fileno())
             except OSError:

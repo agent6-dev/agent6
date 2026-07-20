@@ -69,3 +69,19 @@ def test_user_input_sink_creates_parent_dir(tmp_path: Path) -> None:
     sink = UserInputSink(target)
     sink.record(kind="x", prompt="p", answer="a")
     assert target.exists()
+
+
+def test_record_survives_lone_surrogate(tmp_path: Path) -> None:
+    """Same lossy-encode contract as EventSink.emit: a lone surrogate in a
+    prompt/answer must not crash the audit trail, and the file stays strict
+    UTF-8."""
+    import json
+
+    sink = UserInputSink(tmp_path / "user_inputs.jsonl")
+    sink.record(kind="k", prompt="caf\udce9", answer="ok")
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / "user_inputs.jsonl").read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+    assert rows and rows[0]["answer"] == "ok"
