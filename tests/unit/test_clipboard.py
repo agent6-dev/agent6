@@ -59,3 +59,21 @@ def test_write_transcript_file_roundtrips() -> None:
         assert path.read_text(encoding="utf-8") == "hello world"
     finally:
         path.unlink()
+
+
+def test_resolve_auto_uses_screen_wrap_inside_screen(monkeypatch: pytest.MonkeyPatch) -> None:
+    """GNU screen cannot decode tmux's `tmux;`-prefixed doubled-ESC DCS; auto
+    must route to the screen passthrough or every copy silently fails while
+    the toast says copied."""
+    monkeypatch.setenv("STY", "1234.pts-0.host")
+    monkeypatch.delenv("TMUX", raising=False)
+    assert cb.resolve_method("auto") == "osc52-screen"
+
+
+def test_emit_osc52_screen_wraps_in_plain_dcs() -> None:
+    written: list[str] = []
+    status = cb.emit_clipboard("hi", "osc52-screen", written.append)
+    assert written[0].startswith("\x1bP") and not written[0].startswith("\x1bPtmux;")
+    assert written[0].endswith("\x1b\\")
+    assert "screen" in status.lower() and "tmux" not in status.lower()
+    assert "osc52-screen" in cb.COPY_METHODS

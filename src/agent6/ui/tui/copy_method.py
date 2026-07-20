@@ -3,7 +3,8 @@
 """The copy-method picker: a small View-menu chooser for how the TUI copies to the
 clipboard, mirroring the theme picker.
 
-The choice (``auto`` | ``osc52`` | ``osc52-tmux`` | ``tmux-buffer``) is a viewer
+The choice (``auto`` | ``osc52`` | ``osc52-tmux`` | ``osc52-screen`` |
+``tmux-buffer``) is a viewer
 preference in ``ui.toml`` (never the agent config). ``auto`` resolves per
 environment; the hint shows what it resolves to right now. Selecting persists
 immediately, matching the theme picker.

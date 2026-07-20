@@ -24,8 +24,14 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
-CopyMethod = Literal["auto", "osc52", "osc52-tmux", "tmux-buffer"]
-COPY_METHODS: tuple[CopyMethod, ...] = ("auto", "osc52", "osc52-tmux", "tmux-buffer")
+CopyMethod = Literal["auto", "osc52", "osc52-tmux", "osc52-screen", "tmux-buffer"]
+COPY_METHODS: tuple[CopyMethod, ...] = (
+    "auto",
+    "osc52",
+    "osc52-tmux",
+    "osc52-screen",
+    "tmux-buffer",
+)
 
 
 def osc52_sequence(text: str, *, wrap: str) -> str:
@@ -61,7 +67,7 @@ def resolve_method(pref: str) -> str:
     if os.environ.get("TMUX"):
         return "tmux-buffer"  # tmux emits the OSC 52 itself, the most reliable path
     if os.environ.get("STY"):
-        return "osc52-tmux"  # screen: wrapped OSC 52 (set-buffer is tmux-only)
+        return "osc52-screen"  # screen: its own DCS wrap (set-buffer is tmux-only)
     return "osc52"
 
 
@@ -74,7 +80,7 @@ def emit_clipboard(text: str, method: str, write: Callable[[str], None]) -> str:
         return "via tmux set-buffer -w"
     wrap = "tmux" if method == "osc52-tmux" else ("screen" if method == "osc52-screen" else "")
     write(osc52_sequence(text, wrap=wrap))
-    return "via OSC 52 (tmux-wrapped)" if wrap else "via OSC 52"
+    return f"via OSC 52 ({wrap}-wrapped)" if wrap else "via OSC 52"
 
 
 def write_transcript_file(text: str) -> Path:
