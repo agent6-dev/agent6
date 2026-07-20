@@ -10,6 +10,7 @@ to overridden settings, and Help opens — all over the shared config view-model
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 
 import pytest
@@ -342,6 +343,49 @@ def test_model_field_is_a_typeahead_picker(repo: Path, monkeypatch: pytest.Monke
             await pilot.press("down")
             await pilot.pause()
             assert field.value == "claude-haiku-4-5"
+
+    asyncio.run(scenario())
+
+
+def test_editing_a_model_survives_a_broken_secrets_file(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """secrets.toml with unsafe perms (0644, e.g. restored from a backup) must
+    not crash the WHOLE TUI when the edit modal's background model-list fetch
+    runs: the thread worker's SecretsError hit textual's default exit_on_error
+    and tore the app down. The fetch degrades to a keyless attempt instead
+    (the sanctioned models/validate.py pattern)."""
+    import agent6.ui.tui.config_page as cp
+
+    gdir = Path(os.environ["AGENT6_CONFIG_HOME"])
+    secrets = gdir / "secrets.toml"
+    secrets.write_text('[anthropic]\napi_key = "sk-x"\n', encoding="utf-8")
+    secrets.chmod(0o644)  # group/other-readable -> load_secrets raises
+
+    models = ["claude-sonnet-4-5"]
+    monkeypatch.setattr(cp, "cached_models", lambda *_a, **_k: models)
+    monkeypatch.setattr(cp, "list_models", lambda *_a, **_k: models)
+
+    async def scenario() -> None:
+        app = _Host(repo)
+        async with app.run_test(size=(100, 44)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, ConfigScreen)
+            tbl = screen.query_one("#tbl-models", DataTable)
+            tbl.focus()
+            ridx = next(
+                r
+                for r in range(tbl.row_count)
+                if str(tbl.get_row_at(r)[0]).strip() == "worker.model"
+            )
+            tbl.move_cursor(row=ridx)
+            await pilot.pause()
+            screen.action_edit()
+            # Let the thread worker run; the app must survive it.
+            for _ in range(6):
+                await pilot.pause(0.05)
+            assert isinstance(app.screen, EditModal)  # still open, app alive
 
     asyncio.run(scenario())
 

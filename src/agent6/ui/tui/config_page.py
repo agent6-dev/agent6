@@ -50,7 +50,7 @@ from agent6.config.layer import (
 )
 from agent6.models.cache import cached_models, list_models
 from agent6.models.registry import resolved_adaptive_values
-from agent6.secrets import resolve_api_key
+from agent6.secrets import SecretsError, load_secrets, resolve_api_key
 from agent6.ui.tui.menubar import HelpScreen, Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.theme import open_theme_picker
 from agent6.ui.tui.widgets import (
@@ -959,7 +959,19 @@ class ConfigScreen(Screen[None]):
             entry = load_effective(repo, None).config.providers.get(provider_name)
             if entry is None:
                 return cached_models(provider_name)
-            api_key = resolve_api_key(provider_name, getattr(entry, "api_key_env", None))
+            # Best-effort listing: a broken secrets.toml (unsafe perms, invalid
+            # TOML) degrades to a keyless attempt -- the sanctioned pattern from
+            # models/validate.py -- instead of raising in the thread worker,
+            # where textual's default exit_on_error tears down the WHOLE TUI
+            # over a convenience fetch. The authoritative SecretsError still
+            # fires loudly at run setup.
+            try:
+                secrets = load_secrets()
+            except SecretsError:
+                secrets = {}
+            api_key = resolve_api_key(
+                provider_name, getattr(entry, "api_key_env", None), secrets=secrets
+            )
             return list_models(provider_name, entry, api_key)
 
         return fetch
