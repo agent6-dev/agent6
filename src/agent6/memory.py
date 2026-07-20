@@ -152,6 +152,13 @@ def add(state_dir: Path, scope: MemoryScope, body: str) -> MemoryEntry:
     body = body.strip()
     if not body:
         raise MemoryStoreError("memory body must be non-empty")
+    # A body line shaped like the entry delimiter (`### <ULID>`) would split this
+    # entry on the next parse+rewrite -- truncating it and forging a phantom entry
+    # under the embedded id. Refuse it loudly rather than corrupt the store.
+    if any(_ID_RE.match(line) for line in body.splitlines()):
+        raise MemoryStoreError(
+            "memory body has a line shaped like an entry delimiter (`### <26-char id>`); reword it"
+        )
     path = _scope_path(state_dir, scope)
     entries = _parse_file(path, scope)
     entry = MemoryEntry(id=new_ulid(), scope=scope, created_at=_now(), body=body)
@@ -170,7 +177,9 @@ def list_entries(state_dir: Path, scope: MemoryScope | None = None) -> tuple[Mem
 
 def invalidate(state_dir: Path, memory_id: str, reason: str) -> MemoryEntry:
     """Mark `memory_id` invalidated. Body is preserved."""
-    reason = reason.strip()
+    # The reason is a single-line `key: value` meta field; a newline in it would
+    # leak the tail into the entry body on the next parse. Flatten to one line.
+    reason = " ".join(reason.split())
     if not reason:
         raise MemoryStoreError("invalidation reason must be non-empty")
     for scope in _SCOPES:

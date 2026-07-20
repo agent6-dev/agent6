@@ -74,3 +74,33 @@ def test_multiline_body_roundtrips(tmp_path: Path) -> None:
     assert len(again) == 1
     assert again[0].id == e.id
     assert again[0].body == body
+
+
+def test_invalidate_reason_with_newline_stays_single_line(tmp_path: Path) -> None:
+    """A multi-line reason is a single-line `key: value` meta field; a newline
+    leaked its tail into the entry body on the next parse (truncating the reason,
+    corrupting the body). It must be flattened to one line."""
+    e = add(tmp_path, "facts", "stable body")
+    invalidate(tmp_path, e.id, "first sentence.\nsecond detail with the tail.")
+    again = list_entries(tmp_path, "facts")
+    assert len(again) == 1  # no phantom split entry
+    assert again[0].body == "stable body"  # body untouched
+    assert "\n" not in again[0].invalidation_reason
+    assert "second detail with the tail." in again[0].invalidation_reason
+
+
+def test_add_body_shaped_like_delimiter_rejected(tmp_path: Path) -> None:
+    """A body line shaped like the entry delimiter (`### <ULID>`) split the entry
+    on the next parse — truncating it and forging a phantom entry under the
+    embedded id. It must be refused loudly, not silently corrupt the store."""
+    with pytest.raises(MemoryStoreError, match="delimiter"):
+        add(tmp_path, "facts", "text\n### 01ARZ3NDEKTSV4RRFFQ69G5FAV\nmore")
+
+
+def test_add_normal_markdown_heading_still_allowed(tmp_path: Path) -> None:
+    """A normal `### Heading` is not a ULID, so it must not be refused."""
+    e = add(tmp_path, "facts", "### My Section\nbody content")
+    again = list_entries(tmp_path, "facts")
+    assert len(again) == 1
+    assert again[0].id == e.id
+    assert again[0].body == "### My Section\nbody content"
