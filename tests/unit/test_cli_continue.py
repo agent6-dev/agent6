@@ -125,3 +125,23 @@ def test_run_no_task_points_at_most_recent_plan(
     err = capsys.readouterr().err
     assert "tidy-otter-AB12CD" in err
     assert "--from-plan" in err
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [["--from-plan", "0718-abcd"], ["-i"], ["--skill", "x"], ["--decompose"], ["--profile", "p"]],
+)
+def test_continue_rejects_run_start_only_flags(
+    flags: list[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Resume cannot honor run-start flags (no --from-plan/-i/--skill/
+    --decompose/--profile in _cmd_resume; the manifest drives mode/profile);
+    they were silently dropped while an unrelated newest run resumed."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "agent6.toml").write_text("# placeholder\n", encoding="utf-8")
+    rc = main(["run", "--continue", *flags])
+    assert rc == 2
+    assert "--continue resumes an existing run" in capsys.readouterr().err

@@ -173,6 +173,23 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
                 file=sys.stderr,
             )
             return 2
+        if (
+            args.from_plan
+            or args.interactive
+            or args.skill
+            or args.decompose
+            or getattr(args, "profile", "")
+        ):
+            # Resume cannot honor run-start flags (the manifest drives
+            # mode/profile); refuse loudly like the task/--run-id conflicts
+            # instead of silently dropping them.
+            print(
+                "ERROR: --continue resumes an existing run; it cannot combine with"
+                " --from-plan, -i, --skill, --decompose, or --profile"
+                " (those apply only when starting a new run).",
+                file=sys.stderr,
+            )
+            return 2
         newest = newest_run_dir([_runs_dir(Path.cwd())])
         if newest is None:
             print(
