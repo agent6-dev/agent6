@@ -812,7 +812,15 @@ class Agent6TUI(MuxPointerShapes, App[int]):
     # --- reader thread -----------------------------------------------
 
     def _reader_loop(self) -> None:
-        for event in tail_events(self.logs_path, follow=True, stop_when_finished=self.exit_on_end):
+        for event in tail_events(
+            self.logs_path,
+            follow=True,
+            stop_when_finished=self.exit_on_end,
+            # Without this, closing the dashboard on a run that never ends
+            # (finished + exit_on_end=False, or crashed) leaks this thread in
+            # the idle poll forever -- one per run the hub session opens.
+            should_stop=self._stop.is_set,
+        ):
             if self._stop.is_set():
                 return
             self.call_from_thread(self._handle_event, event)

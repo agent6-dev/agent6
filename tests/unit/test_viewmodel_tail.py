@@ -122,6 +122,29 @@ def test_tail_completes_torn_utf8_line_across_polls(tmp_path: Path) -> None:
     assert out[1]["text"] == "café"
 
 
+def test_follow_cancels_via_should_stop(tmp_path: Path) -> None:
+    """should_stop is the only way out of a follow on a run that never ends
+    (crashed, or exit_on_end=False): the consumer thread must join promptly
+    once the flag flips, else every closed dashboard leaks a polling thread."""
+    p = tmp_path / "logs.jsonl"
+    p.write_text(json.dumps({"type": "first"}) + "\n", encoding="utf-8")
+    flag = threading.Event()
+    seen: list[str] = []
+
+    def consume() -> None:
+        for e in tail_events(p, follow=True, poll_s=0.05, should_stop=flag.is_set):
+            seen.append(str(e["type"]))
+
+    t = threading.Thread(target=consume, daemon=True)
+    t.start()
+    time.sleep(0.3)
+    assert t.is_alive()  # idle-following, not terminated
+    flag.set()
+    t.join(timeout=2)
+    assert not t.is_alive()
+    assert seen == ["first"]
+
+
 def test_tail_follows_appended_lines(tmp_path: Path) -> None:
     p = tmp_path / "logs.jsonl"
     p.write_text(json.dumps({"type": "first"}) + "\n", encoding="utf-8")
