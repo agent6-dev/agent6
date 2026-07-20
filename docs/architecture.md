@@ -363,6 +363,17 @@ operator-CLI read/write. A write-path fault (ENOSPC, a serialization error)
 after the in-memory update reloads the graph from disk before surfacing, so a
 later read never observes a node that was never persisted.
 
+One live run-mode worker per CHECKOUT is the level above (`runs/lock.py`, a
+repo-wide flock on `<state-dir>/repo.lock`): run-mode workers share one working
+tree, so a second one would interleave auto-commits onto whatever HEAD points
+at. A second `agent6 run` refuses loudly and PARKS the submitted task verbatim
+in a new run's manifest (`parked_task`; listings show "parked"); the refusal
+prints the two follow-ups -- `agent6 resume <id>` once the checkout is free
+(resume runs the parked task as written), or a `/parallel 1 <task>` steer that
+hands it to the live run as an isolated lane. Plan/ask are read-only and spawn
+freely; `--parallel` lanes work in isolated workdirs under the coordinator's
+one lock.
+
 ## Run state on disk
 
 Each run's directory `<state-dir>/<repo-id>/runs/<run-id>/` holds:
