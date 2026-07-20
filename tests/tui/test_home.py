@@ -335,6 +335,44 @@ def test_spawn_argv_parallel_directive(tmp_path: Path, monkeypatch: object) -> N
     assert len(captured) == before
 
 
+def test_parallel_partial_spawn_failure_surfaces(tmp_path: Path, monkeypatch: object) -> None:
+    """A later lane's spawn failure must fail the whole message (and an earlier
+    lane's failure must not be masked by a later success): the caller's only
+    surfaces are open-the-run XOR show-the-error, so a partial failure returns
+    the diagnostic and stays on the hub, lanes already launched keep running."""
+    from agent6.ui.tui import home
+
+    def fake_spawn(
+        agent6_dir: Path, repo_cwd: Path, mode: str, task: str, *, profile: str, spec: str
+    ) -> tuple[Path | None, str]:
+        if "task B" in task:
+            return None, "boom"
+        return tmp_path / "r1", ""
+
+    monkeypatch.setattr(home, "_spawn_run", fake_spawn)  # type: ignore[attr-defined]
+    monkeypatch.setattr(home, "_model_refusal", lambda repo_cwd, segments: None)  # type: ignore[attr-defined]
+    run_dir, err = home._spawn_and_locate(  # pyright: ignore[reportPrivateUsage]
+        tmp_path, tmp_path, "run", "/parallel 2 task A /parallel 3 task B", profile=""
+    )
+    assert run_dir is None
+    assert "boom" in err and "task B" in err
+
+    # reversed: first lane fails, second succeeds -- lane 1's diagnostic survives
+    def fake_spawn_rev(
+        agent6_dir: Path, repo_cwd: Path, mode: str, task: str, *, profile: str, spec: str
+    ) -> tuple[Path | None, str]:
+        if "task A" in task:
+            return None, "boom"
+        return tmp_path / "r2", ""
+
+    monkeypatch.setattr(home, "_spawn_run", fake_spawn_rev)  # type: ignore[attr-defined]
+    run_dir, err = home._spawn_and_locate(  # pyright: ignore[reportPrivateUsage]
+        tmp_path, tmp_path, "run", "/parallel 2 task A /parallel 3 task B", profile=""
+    )
+    assert run_dir is None
+    assert "boom" in err and "task A" in err
+
+
 def test_spawn_parallel_refuses_unknown_model_before_spawn(
     tmp_path: Path, monkeypatch: object
 ) -> None:

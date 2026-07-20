@@ -57,8 +57,10 @@ def spawn_new_work(  # noqa: PLR0911
 
     A `/parallel [spec] <task> ...` message (run mode only) fans out one detached
     `agent6 run --parallel <spec>` per segment (omitted spec = one isolated lane).
-    A malformed directive is refused before any spawn (all-or-nothing); on success
-    the first segment's run id is returned to open, the rest run in the hub."""
+    A malformed directive is refused before any spawn (all-or-nothing) and any
+    segment's launch failure fails the whole message (already-launched lanes
+    keep running in the hub); on success the first segment's run id is returned
+    to open, the rest run in the hub."""
     if mode not in NEW_WORK_MODES:
         return None, f"unknown mode {mode!r}"
     if not task.strip():
@@ -87,12 +89,20 @@ def spawn_new_work(  # noqa: PLR0911
     refusal = _model_refusal(cwd, segments)
     if refusal is not None:
         return None, refusal
-    first: tuple[str | None, str] = (None, "")
-    for seg in segments:
-        result = _spawn_run(cwd, "run", seg.task, profile, spec=seg.spec or "1")
-        if first[0] is None:
-            first = result
-    return first
+    first: str | None = None
+    failures: list[str] = []
+    for i, seg in enumerate(segments, 1):
+        run_id, err = _spawn_run(cwd, "run", seg.task, profile, spec=seg.spec or "1")
+        if run_id is None:
+            failures.append(f"lane {i} ({seg.task}): {err}")
+        elif first is None:
+            first = run_id
+    if failures:
+        # Binary contract (navigate XOR toast): a partial failure surfaces the
+        # diagnostic instead of navigating away from it.
+        return None, "; ".join(failures)
+    assert first is not None  # no failures => every segment produced an id
+    return first, ""
 
 
 def _model_refusal(cwd: Path, segments: list[Segment]) -> str | None:

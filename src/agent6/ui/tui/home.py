@@ -620,8 +620,10 @@ def _spawn_and_locate(
 
     A `/parallel [spec] <task> ...` message (run mode only) fans out one detached
     `agent6 run --parallel <spec>` per segment (omitted spec = one isolated lane);
-    a malformed directive is refused before any spawn (all-or-nothing), and the
-    first segment's run dir is returned to watch."""
+    a malformed directive is refused before any spawn (all-or-nothing), any
+    segment's launch failure fails the whole message (already-launched lanes
+    keep running in the hub), and the first segment's run dir is returned to
+    watch."""
     segments = None
     if mode == "run":
         try:
@@ -633,14 +635,22 @@ def _spawn_and_locate(
     refusal = _model_refusal(repo_cwd, segments)
     if refusal is not None:
         return None, refusal
-    first: tuple[Path | None, str] = (None, "")
-    for seg in segments:
-        result = _spawn_run(
+    first: Path | None = None
+    failures: list[str] = []
+    for i, seg in enumerate(segments, 1):
+        run_dir, err = _spawn_run(
             agent6_dir, repo_cwd, "run", seg.task, profile=profile, spec=seg.spec or "1"
         )
-        if first[0] is None:
-            first = result
-    return first
+        if run_dir is None:
+            failures.append(f"lane {i} ({seg.task}): {err}")
+        elif first is None:
+            first = run_dir
+    if failures:
+        # The caller's surfaces are open-the-run XOR show-the-error; a partial
+        # failure must not vanish behind a surviving lane, so stay on the hub.
+        return None, "\n".join(failures)
+    assert first is not None  # no failures => every segment produced a dir
+    return first, ""
 
 
 def _model_refusal(repo_cwd: Path, segments: list[Segment]) -> str | None:

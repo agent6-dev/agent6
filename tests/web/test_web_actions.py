@@ -195,6 +195,30 @@ def test_spawn_new_work_parallel_multi_segment_spawns_one_fanout_per_segment(
     ]
 
 
+def test_parallel_partial_spawn_failure_surfaces(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One lane failing to spawn fails the whole message: the binary contract
+    (navigate XOR toast) must not navigate away from a swallowed failure."""
+
+    def fake_spawn(
+        cwd: Path, mode: str, task: str, profile: str, spec: str
+    ) -> tuple[str | None, str]:
+        if "task B" in task:
+            return None, "boom"
+        return "run-A", ""
+
+    monkeypatch.setattr(actions, "_spawn_run", fake_spawn)
+
+    def no_refusal(cwd: Path, segments: object) -> None:
+        return None
+
+    monkeypatch.setattr(actions, "_model_refusal", no_refusal)
+    run_id, err = actions.spawn_new_work(tmp_path, "run", "/parallel 2 task A /parallel 3 task B")
+    assert run_id is None
+    assert "boom" in err and "task B" in err
+
+
 def test_spawn_new_work_multi_segment_malformed_spawns_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
