@@ -117,3 +117,21 @@ def test_redact_headers_unit() -> None:
     assert out["x-api-key"] == "<REDACTED>"
     assert out["Authorization"] == "<REDACTED>"
     assert out["Other"] == "keep"
+
+
+def test_seq_continues_across_resume_legs(tmp_path: Path) -> None:
+    """seq is per-RUN, not per-sink: a resume builds a fresh TranscriptSink over
+    the same <run>/transcripts/ dir, and restarting at 1 produced duplicate seqs
+    whose seq-primary sort interleaved the legs -- `runs transcript` rendered a
+    scrambled conversation with a false 'context summarised' marker and ended on
+    stale leg-1 content. A new sink must continue from the highest seq present."""
+    d = tmp_path / "transcripts"
+    leg1 = TranscriptSink(d)
+    for _ in range(2):
+        leg1.record(request_headers={}, request_body={}, response_status=200, response_body={})
+    leg2 = TranscriptSink(d)  # the resume's fresh sink over the same dir
+    p = leg2.record(request_headers={}, request_body={}, response_status=200, response_body={})
+    assert json.loads(p.read_text(encoding="utf-8"))["seq"] == 3
+    from agent6.viewmodel.transcript_render import load_transcripts
+
+    assert [t["seq"] for t in load_transcripts(d)] == [1, 2, 3]

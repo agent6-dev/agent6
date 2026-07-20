@@ -95,11 +95,29 @@ def _redact_headers(headers: dict[str, str]) -> dict[str, str]:
     return {k: (_REDACTED if k.lower() in _REDACT_HEADER_NAMES else v) for k, v in headers.items()}
 
 
+def _max_seq_in_dir(transcripts_dir: Path) -> int:
+    """The highest seq already recorded in *transcripts_dir*, or 0 if empty.
+
+    The seq is the 6-digit suffix of each committed `<ts>-<seq>.json` file
+    (in-flight `.json.tmp` files don't match the glob). A non-conforming stray
+    `.json` is skipped, not fatal."""
+    seqs = [
+        int(tail)
+        for p in transcripts_dir.glob("*.json")
+        if (tail := p.stem.rsplit("-", 1)[-1]).isdigit()
+    ]
+    return max(seqs, default=0)
+
+
 class TranscriptSink:
     """Append-only writer of one JSON file per LLM round-trip.
 
-    Files live under `transcripts_dir/<utc-iso>-<seq>.json`. The seq counter
-    is per-sink, monotonically increasing, and thread-safe. Secrets in
+    Files live under `transcripts_dir/<utc-iso>-<seq>.json`. The seq counter is
+    per-RUN (not per-sink): a sink opened over a dir that already holds a prior
+    leg's transcripts continues the counter from the highest present, so seq
+    stays globally unique and monotonic across resume legs -- every consumer
+    (the load_transcripts sort, the `(seq N)` label, the `--seq` window) treats
+    it as a run-global key. Monotonically increasing and thread-safe. Secrets in
     request headers are redacted before any bytes hit disk.
     """
 
@@ -109,7 +127,7 @@ class TranscriptSink:
         transcripts_dir.mkdir(parents=True, exist_ok=True)
         self._dir = transcripts_dir
         self._lock = threading.Lock()
-        self._seq = 0
+        self._seq = _max_seq_in_dir(transcripts_dir)
 
     def record(
         self,
