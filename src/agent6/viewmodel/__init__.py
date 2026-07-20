@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from agent6.viewmodel.events import event_epoch
 from agent6.viewmodel.listing import (
+    OPERATOR_PROMPT_EVENTS,
     LogScan,
     RunSummary,
     first_task_line,
@@ -80,6 +81,7 @@ from agent6.viewmodel.transcript import (
 
 __all__ = [
     "MAX_LOG_TAIL",
+    "OPERATOR_PROMPT_EVENTS",
     "ApprovalPrompt",
     "BudgetView",
     "LogScan",

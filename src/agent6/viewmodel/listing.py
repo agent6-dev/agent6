@@ -178,6 +178,12 @@ def status_word(*, finished: bool, all_passed: bool, end_reason: str) -> tuple[s
     return "finished", ""
 
 
+# The two prompt events that mean "alive but blocked on the OPERATOR". One
+# definition: the hub listing and `runs show` both key their "waiting (needs
+# answer)" status on it, so the two surfaces can't disagree.
+OPERATOR_PROMPT_EVENTS = frozenset({"approval.prompt", "question.prompt"})
+
+
 def _running_is_stale(run_dir: Path, stale_after_s: float) -> bool:
     """Probe the worker pid when the run recorded one: a killed run reads
     "stale" at once (not after the silence window), and a live worker blocked
@@ -364,7 +370,7 @@ def summarize_run_dir(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) ->
                 word, reason = "parked", "resume to start"
         elif _running_is_stale(run_dir, stale_after_s):
             word = "stale"
-        elif scan.last_type in ("approval.prompt", "question.prompt"):
+        elif scan.last_type in OPERATOR_PROMPT_EVENTS:
             # Alive but blocked on the OPERATOR: an unanswered command
             # approval or ask_user question.
             word, reason = "waiting", "needs answer"

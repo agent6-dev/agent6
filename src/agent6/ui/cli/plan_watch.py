@@ -33,6 +33,7 @@ from agent6.ui.cli._common import (
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._interact import default_stdin_approver, default_stdin_questioner
 from agent6.viewmodel import (
+    OPERATOR_PROMPT_EVENTS,
     LogScan,
     event_epoch,
     run_mtime,
@@ -204,6 +205,28 @@ def _print_parallel_compare(manifest: RunManifest) -> None:
         print(f"  judge: {rationale}")
 
 
+def _status_state(scan: LogScan, *, alive: bool, last_age: float | None) -> str:
+    """The one-line state `runs show` prints (and emits as --json "state").
+
+    Leads with the SAME words the listing uses where they overlap (status_word
+    for the finished outcome, "waiting (needs answer)" for a run blocked on an
+    unanswered approval/question via OPERATOR_PROMPT_EVENTS), so the two
+    surfaces can't disagree -- an operator told "likely a provider call" while
+    the run sat blocked on THEM waited on the wrong party."""
+    if scan.finished:
+        word, _ = status_word(finished=True, all_passed=scan.all_passed, end_reason=scan.end_reason)
+        return f"{word} ({scan.end_reason})"
+    if alive and scan.last_type in OPERATOR_PROMPT_EVENTS:
+        return "waiting (needs answer -- attach to respond)"
+    if alive and last_age is not None and last_age > 120:
+        return "running (long step, likely a provider call)"
+    if alive:
+        return "running"
+    if scan.last_ep is None:
+        return "unknown (no events yet)"
+    return "stopped (no worker, no run.end: likely crashed or killed)"
+
+
 def _cmd_status(run_id: str, *, as_json: bool = False) -> int:
     """One-shot liveness + progress summary for a run, then exit (no follower).
 
@@ -238,21 +261,7 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:
         else None
     )
 
-    if scan.finished:
-        # Lead with the SAME outcome word `runs list` uses (status_word owns it, so
-        # the two surfaces can't disagree -- a finish_run+all_passed run reads
-        # "passed" here, not the listing's opposite "finished"), then keep the raw
-        # reason (steer_abort, provider_error, ...) in parens as the diagnostic.
-        word, _ = status_word(finished=True, all_passed=scan.all_passed, end_reason=scan.end_reason)
-        state = f"{word} ({scan.end_reason})"
-    elif alive and last_age is not None and last_age > 120:
-        state = "running (long step, likely a provider call)"
-    elif alive:
-        state = "running"
-    elif scan.last_ep is None:
-        state = "unknown (no events yet)"
-    else:
-        state = "stopped (no worker, no run.end: likely crashed or killed)"
+    state = _status_state(scan, alive=alive, last_age=last_age)
 
     worker = manifest.models.worker
     model = (worker.model if worker else "") or "?"

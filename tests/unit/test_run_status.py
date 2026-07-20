@@ -70,6 +70,31 @@ def test_status_json_is_machine_readable(
     assert obj["state"] == "running"
 
 
+def test_status_waiting_when_blocked_on_an_operator_answer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A live run blocked on an unanswered approval/question must read
+    "waiting (needs answer)" -- the same first-class status `agent6 runs`
+    gives it -- not "running (long step, likely a provider call)", which sent
+    the operator off to wait on a provider while the run sat blocked on THEM."""
+    d = _make_run(
+        tmp_path,
+        monkeypatch,
+        [
+            {"ts": _ts(400), "type": "run.start", "mode": "run"},
+            {"ts": _ts(300), "type": "approval.prompt", "id": "approval-1", "prompt": "rm -rf?"},
+        ],
+    )
+    write_worker_pid(d, os.getpid())
+    assert _cmd_status("winsome-dawn-YWH5ZS") == 0
+    out = capsys.readouterr().out
+    assert "waiting" in out and "needs answer" in out
+    assert "provider call" not in out
+    assert _cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
+    obj = json.loads(capsys.readouterr().out)
+    assert obj["state"].startswith("waiting")
+
+
 def test_status_crashed_when_pid_dead_and_no_run_end(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
