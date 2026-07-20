@@ -326,7 +326,9 @@ delivery paths above remain the answer when a skill must apply.
 
 A profile presets many settings at once so a task picks a strategy with one knob.
 Select with `--profile <name>` (on `run`/`plan`/`ask`), the top-level `profile =
-"<name>"` key, or the TUI new-work chooser. A profile **overrides** config rather than
+"<name>"` key in the **global or repo** config (a `--config FILE` or a machine
+`[config]` overlay cannot select one and rejects the key loudly), or the TUI
+new-work chooser. A profile **overrides** config rather than
 being a baseline: its preset is injected just above the config layer that selected
 it, so precedence (low → high) is
 

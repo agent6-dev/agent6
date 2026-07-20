@@ -115,6 +115,26 @@ def _global_state_dir() -> str | None:
     return None
 
 
+def _forbid_layer_profile(layer_name: str, data: dict[str, Any]) -> None:
+    """Reject a top-level ``profile`` key in a layer that cannot SELECT one.
+
+    Only the global/repo configs and the --profile flag select a profile
+    (_select_profile); the key still deep-merged from a --config FILE or a
+    machine [config] overlay, so `config show` displayed profile=<name> as
+    effective while the preset was silently never applied -- and resume then
+    replayed the manifest-stamped name as a real selection, so the resumed
+    run behaved differently from the original. Honoring it instead is not an
+    option: a machine overlay selecting an operator [profiles.*] could pick
+    one that loosens the sandbox (a security widening).
+    """
+    if "profile" in data:
+        raise ConfigError(
+            f"top-level `profile` selects a config profile only from the global/repo"
+            f" config or the --profile flag, not the {layer_name} config; use"
+            f" --profile <name> or set it in your repo/global config."
+        )
+
+
 def _forbid_repo_state_dir(layer_name: str, data: dict[str, Any]) -> None:
     """Refuse ``state_dir`` in a repo/flag/overlay layer (global-only setting)."""
     section = data.get("agent6")
@@ -157,6 +177,7 @@ def discover_layers(repo_root: Path, explicit_path: Path | None) -> list[Layer]:
             raise ConfigError(f"--config file not found: {explicit_path}")
         data = _read_toml(explicit_path)
         _forbid_repo_state_dir("--config", data)
+        _forbid_layer_profile("--config", data)
         layers.append(Layer("flag", explicit_path, data))
     return layers
 
@@ -455,6 +476,7 @@ def load_effective_with_overlay(repo_root: Path, overlay: dict[str, Any]) -> Eff
     layers = discover_layers(repo_root, None)
     if overlay:
         _forbid_repo_state_dir("machine overlay", overlay)
+        _forbid_layer_profile("machine overlay", overlay)
         layers = [*layers, Layer("machine", None, overlay)]
     # Apply the selected profile (and strip [profiles] tables) just like
     # load_effective, so a user's [profiles.<name>] + [workflow].profile work
@@ -496,6 +518,7 @@ def _fix_scope_layers(repo_root: Path, machine: Path | None) -> list[Layer]:
         overlay = read_toml_file(machine).get("config", {})
         if isinstance(overlay, dict) and overlay:
             _forbid_repo_state_dir("machine overlay", overlay)
+            _forbid_layer_profile("machine overlay", overlay)
             layers = [*layers, Layer("machine", machine, overlay)]
     return _apply_profile(layers, "")
 
