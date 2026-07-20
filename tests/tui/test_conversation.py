@@ -147,6 +147,39 @@ def test_steer_bar_shows_for_a_live_run_and_submits_over_the_bridge(tmp_path: Pa
     assert (tmp_path / STEER_ANSWER_FILE).read_text(encoding="utf-8") == "go left"
 
 
+def test_resumed_leg_is_live_and_steers_over_the_bridge(tmp_path: Path) -> None:
+    """A resumed leg emits ONLY loop.resume.start (never a second run.start).
+    The conversation screen must treat it as live -- matching the dashboard's
+    fold, which un-finishes on ResumeStart -- so a submit routes to the steer
+    bridge. Keying _live on run.start alone mislabeled the live leg as
+    finished, and Enter spawned a second resume that died on the run lock
+    while the toast claimed the instruction was delivered."""
+    from agent6.runs.ipc import STEER_ANSWER_FILE, steer_request_pending
+
+    logs = tmp_path / "logs.jsonl"
+    _write(logs, _EVENTS)  # ends with run.end -> finished
+
+    async def scenario() -> None:
+        app = _Host(logs)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, ConversationScreen)
+            assert screen._live is False  # finished leg
+            with logs.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps({"type": "loop.resume.start", "iteration": 1}) + "\n")
+                fh.write(json.dumps({"type": "role.call", "role": "worker"}) + "\n")
+            await _wait_for(pilot, lambda: screen._live, "the resumed leg to read live")
+            bar = screen.query_one("#conv-input", SteerInput)
+            bar.post_message(SteerInput.Submitted("also update docs"))
+            await pilot.pause()
+
+    asyncio.run(scenario())
+    # Routed over the steer bridge, not a second doomed `agent6 resume`.
+    assert steer_request_pending(tmp_path)
+    assert (tmp_path / STEER_ANSWER_FILE).read_text(encoding="utf-8") == "also update docs"
+
+
 def test_live_run_auto_focuses_the_steer_bar(tmp_path: Path) -> None:
     logs = tmp_path / "logs.jsonl"
     _write(logs, _EVENTS[:-1])  # live -> bar ready to type

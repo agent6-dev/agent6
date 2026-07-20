@@ -88,6 +88,7 @@ from agent6.viewmodel import run_compare
 from agent6.viewmodel.format import TASK_STATUS_GLYPH, format_compare, format_cost
 from agent6.viewmodel.state import (
     MAX_LOG_TAIL,
+    SESSION_START_EVENTS,
     STREAM_DELTA_EVENTS,
     ApprovalPrompt,
     QuestionPrompt,
@@ -803,10 +804,12 @@ class Agent6TUI(MuxPointerShapes, App[int]):
     def _handle_event(self, event: dict[str, object]) -> None:
         self.state = apply_event(self.state, event)
         self.last_event_at = time.monotonic()  # feeds the live "working… Ns" heartbeat
-        if event.get("type") == "run.start":
-            # A resume appends a new session to the same log and its prompt id
-            # counters restart at approval-1/question-1; a stale seen-set would
-            # swallow the new session's first prompts.
+        if event.get("type") in SESSION_START_EVENTS:
+            # A session boundary (fresh run OR a resumed leg -- a resume emits
+            # only loop.resume.start, never a second run.start) restarts the
+            # prompt id counters at approval-1/question-1; a stale seen-set
+            # would swallow the new session's first prompts and the run would
+            # block forever on a modal that never opens.
             self._seen_approval_ids.clear()
             self._seen_question_ids.clear()
         if self.exit_on_end and event.get("type") == "run.end":

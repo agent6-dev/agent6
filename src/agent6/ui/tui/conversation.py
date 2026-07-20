@@ -65,6 +65,7 @@ from agent6.ui.tui.menubar import (
 )
 from agent6.ui.tui.settings import get_copy_method
 from agent6.ui.tui.theme import open_theme_picker
+from agent6.viewmodel.state import SESSION_START_EVENTS
 from agent6.viewmodel.tail import LogTail
 from agent6.viewmodel.transcript import (
     THINK,
@@ -378,7 +379,9 @@ class ConversationScreen(Screen[None]):
         self._tail_lines = 0
         self._live_think: list[str] = []
         self._live_text: list[str] = []
-        self._live = False  # run.start seen and no run.end yet -> the steer bar shows
+        # A session-start event (run.start OR loop.resume.start) seen and no
+        # run.end since -> the steer bar shows.
+        self._live = False
         self._prev_subtitle = ""  # app sub_title to restore when the view closes
         self._timer: Timer | None = None  # the 0.3s poll; paused while covered
 
@@ -498,7 +501,12 @@ class ConversationScreen(Screen[None]):
 
     def _track_live(self, event: dict[str, object]) -> None:
         etype = event.get("type")
-        if etype == "run.start":
+        if etype in SESSION_START_EVENTS:
+            # run.start OR loop.resume.start: a resumed leg is live too (the
+            # dashboard's fold un-finishes on ResumeStart; this screen must
+            # agree, or its composer mislabels the live leg "resume" and a
+            # submit spawns a second resume that dies on the run lock while
+            # the toast claims success).
             self._live = True
         elif etype == "run.end":
             self._live = False

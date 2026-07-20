@@ -181,6 +181,13 @@ _STREAM_TAIL = 6000
 # log_tail and the full LogScreen skip them; otherwise a reasoning model floods the
 # log with thousands of contentless "role.thinking_delta" lines.
 STREAM_DELTA_EVENTS = frozenset({"role.thinking_delta", "role.text_delta"})
+# A run SESSION begins: a fresh run() emits run.start; a resumed leg emits only
+# loop.resume.start (never a second run.start). Per-process state that restarts
+# at a session boundary -- the prompt-id counters (approval-1/question-1 again),
+# a screen's live/finished tracking -- must key on BOTH; keying on run.start
+# alone made every resumed leg invisible to that state (swallowed modals, a
+# steer bar that mislabeled a live leg). One definition so the folds can't drift.
+SESSION_START_EVENTS = frozenset({"run.start", "loop.resume.start"})
 # Loop-side mirrors of events already rendered (tool.call carries the args,
 # budget.update the totals); they doubled every tool call and budget tick in
 # the log view without adding a field worth reading.
