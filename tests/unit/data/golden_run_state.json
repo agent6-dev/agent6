@@ -27,7 +27,8 @@
       "args_full": "path=src/x.py",
       "result_summary": "4773 bytes",
       "ok": true,
-      "task_id": "n1"
+      "task_id": "n1",
+      "call_id": null
     },
     {
       "name": "run_command",
@@ -35,7 +36,8 @@
       "args_full": "argv=ls /nope",
       "result_summary": "exit=2",
       "ok": false,
-      "task_id": "n1"
+      "task_id": "n1",
+      "call_id": null
     },
     {
       "name": "apply_patch",
@@ -43,7 +45,8 @@
       "args_full": "path=src/x.py",
       "result_summary": "applied=1",
       "ok": true,
-      "task_id": "n1"
+      "task_id": "n1",
+      "call_id": null
     },
     {
       "name": "finish_run",
@@ -51,7 +54,8 @@
       "args_full": "summary=all green",
       "result_summary": "finish_run",
       "ok": true,
-      "task_id": null
+      "task_id": null,
+      "call_id": null
     }
   ],
   "last_verify": {

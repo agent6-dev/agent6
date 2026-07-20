@@ -166,6 +166,35 @@ def test_interleaved_tool_calls_pair_by_name() -> None:
     assert tools["read_file"].ok is True and tools["read_file"].detail == "12 bytes"
 
 
+def test_same_name_concurrent_calls_pair_by_call_id() -> None:
+    # Two review seats reading different files concurrently: name-keyed pairing
+    # rendered one item with crossed arg/summary and dropped the other result.
+    # call_id (stamped per dispatch) pairs each result with its own call, even
+    # out of call order.
+    events = [
+        {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}, "call_id": 1},
+        {"type": "tool.call", "name": "read_file", "args": {"path": "b.py"}, "call_id": 2},
+        {
+            "type": "tool.result",
+            "name": "read_file",
+            "ok": True,
+            "summary": "b bytes",
+            "call_id": 2,
+        },
+        {
+            "type": "tool.result",
+            "name": "read_file",
+            "ok": False,
+            "summary": "a boom",
+            "call_id": 1,
+        },
+    ]
+    tools = {i.arg: i for i in fold_transcript(events) if i.kind == "tool"}
+    assert set(tools) == {"a.py", "b.py"}  # both rendered; neither dropped
+    assert tools["b.py"].ok is True and tools["b.py"].detail == "b bytes"
+    assert tools["a.py"].ok is False and "a boom" in tools["a.py"].detail
+
+
 def test_unmatched_tool_result_is_dropped() -> None:
     # A result with no matching pending call must not crash or emit a bogus item.
     assert fold_transcript([{"type": "tool.result", "name": "ghost", "ok": True}]) == []

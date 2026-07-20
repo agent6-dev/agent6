@@ -9,6 +9,7 @@ execution goes through agent6.sandbox.jail.run_in_jail. Capability gating
 
 from __future__ import annotations
 
+import itertools
 import json
 import os
 import shlex
@@ -211,6 +212,9 @@ class ToolDispatcher:
         # this is the defense-in-depth backstop so the dispatcher itself refuses
         # a source mutation even if something dispatched one directly.
         self._mode: Literal["run", "plan", "ask", "machine"] = mode
+        # next() is atomic under the GIL; seats on the shared dispatcher get
+        # distinct ids without a lock.
+        self._call_seq = itertools.count(1)
         # Extra read-only paths layered into every run_command jail on top of
         # the strict-profile protect_git bind (e.g. a running machine's own
         # .asm.toml + scripts bundle, so an agent state can't rewrite them
@@ -351,27 +355,32 @@ class ToolDispatcher:
         # the done line + in `watch`); keep it whole. Generic args stay clipped.
         max_chars = 2000 if name in ("finish_run", "finish_planning") else 200
         preview = truncate_args(raw_input, max_value_chars=max_chars)
-        self._emit("tool.call", name=name, args=preview)
+        # Correlation id shared by this dispatch's call/result pair: concurrent
+        # review seats interleave events through the one shared sink, and
+        # name-based pairing cross-stamps same-name calls.
+        cid = next(self._call_seq)
+        self._emit("tool.call", name=name, args=preview, call_id=cid)
         try:
             result = self._dispatch_inner(name, raw_input)
         except ToolError as exc:
-            self._emit("tool.result", name=name, ok=False, summary=str(exc))
+            self._emit("tool.result", name=name, ok=False, summary=str(exc), call_id=cid)
             raise
         except OperatorCommandUnexecutable as exc:
             # Not a model-fixable tool error: an operator verify/metric command
             # that cannot execute in the jail. Record the failed result for the
             # audit trail, then propagate (NOT wrapped as ToolError) so the loop
             # aborts the run loudly instead of surfacing it as a normal failure.
-            self._emit("tool.result", name=name, ok=False, summary=str(exc))
+            self._emit("tool.result", name=name, ok=False, summary=str(exc), call_id=cid)
             raise
         except Exception as exc:
-            self._emit("tool.result", name=name, ok=False, summary=str(exc))
+            self._emit("tool.result", name=name, ok=False, summary=str(exc), call_id=cid)
             raise ToolError(f"{name} failed: {exc}") from exc
         self._emit(
             "tool.result",
             name=name,
             ok=True,
             summary=result.summary(),
+            call_id=cid,
             **_output_tails(name, result),
         )
         return result

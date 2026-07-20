@@ -481,3 +481,43 @@ def test_resume_resets_the_leg_token_counters() -> None:
     assert s.budget.output_cap == 0
     assert s.budget.usd_total == pytest.approx(0.2)
     assert s.budget.usd_prior_legs == pytest.approx(0.2)
+
+
+def test_concurrent_same_name_results_pair_by_call_id() -> None:
+    """Two review seats call read_file concurrently through the shared
+    dispatcher; last-entry name pairing cross-stamped the summaries and left
+    one row in-flight forever. Results pair on the stamped call_id."""
+    s = initial_state()
+    s = apply_event(
+        s, {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}, "call_id": 1}
+    )
+    s = apply_event(
+        s, {"type": "tool.call", "name": "read_file", "args": {"path": "b.py"}, "call_id": 2}
+    )
+    s = apply_event(
+        s, {"type": "tool.result", "name": "read_file", "ok": True, "summary": "sa", "call_id": 1}
+    )
+    s = apply_event(
+        s, {"type": "tool.result", "name": "read_file", "ok": True, "summary": "sb", "call_id": 2}
+    )
+    a, b = s.tool_calls
+    assert (a.result_summary, a.ok) == ("sa", True)
+    assert (b.result_summary, b.ok) == ("sb", True)
+
+
+def test_interleaved_result_for_an_earlier_call_pairs_by_call_id() -> None:
+    """call A, call B, result A: name-vs-last matching dropped A's result and
+    left A in-flight forever; with call_id it lands on A while B stays open."""
+    s = initial_state()
+    s = apply_event(
+        s, {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}, "call_id": 1}
+    )
+    s = apply_event(
+        s, {"type": "tool.call", "name": "grep", "args": {"pattern": "x"}, "call_id": 2}
+    )
+    s = apply_event(
+        s, {"type": "tool.result", "name": "read_file", "ok": True, "summary": "sa", "call_id": 1}
+    )
+    a, b = s.tool_calls
+    assert (a.result_summary, a.ok) == ("sa", True)
+    assert b.ok is None  # still in flight

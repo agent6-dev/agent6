@@ -124,6 +124,8 @@ class ToolCall:
     # Raw args: rendered per-value and isinstance-checked for the finish summary,
     # so a non-dict value degrades exactly as the fold did inline.
     args: Any
+    # Correlation id stamped per dispatch; None on historical id-less logs.
+    call_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +133,7 @@ class ToolResult:
     name: str
     ok: bool
     summary: str
+    call_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,6 +235,11 @@ Event = (
 )
 
 
+def _call_id(raw: dict[str, Any]) -> int | None:
+    cid = raw.get("call_id")
+    return cid if isinstance(cid, int) else None
+
+
 def parse_event(raw: dict[str, Any]) -> Event:
     """One raw logs.jsonl event dict -> one typed family, or RawEvent for the rest.
 
@@ -279,12 +287,17 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
         case "role.thinking_delta":
             return RoleThinkingDelta(text=str(raw.get("text", "")))
         case "tool.call":
-            return ToolCall(name=str(raw.get("name", "")), args=raw.get("args", {}) or {})
+            return ToolCall(
+                name=str(raw.get("name", "")),
+                args=raw.get("args", {}) or {},
+                call_id=_call_id(raw),
+            )
         case "tool.result":
             return ToolResult(
                 name=str(raw.get("name", "")),
                 ok=bool(raw.get("ok", False)),
                 summary=readable_summary(raw.get("summary", "")),
+                call_id=_call_id(raw),
             )
         case "verify.start":
             return VerifyStart(cmd=tuple(str(x) for x in raw.get("cmd", []) or []))

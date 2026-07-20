@@ -152,6 +152,13 @@ def _parallel_failed_body(event: dict[str, Any]) -> str:
     return f"{_parallel_group_label(event)} dispatch failed: {error}"
 
 
+def _pending_key(event: dict[str, Any], name: str) -> int | str:
+    """The pairing key for a tool.call/tool.result: the stamped call_id, or the
+    name for id-less historical events."""
+    cid = event.get("call_id")
+    return cid if isinstance(cid, int) else name
+
+
 class TranscriptFold:
     """Incremental event -> `TranscriptItem` fold. Feed events in order; each
     `feed` returns the items that event completed (usually zero or one)."""
@@ -159,10 +166,11 @@ class TranscriptFold:
     def __init__(self) -> None:
         self._thinking: list[str] = []
         self._text: list[str] = []
-        # name -> salient arg for calls awaiting their result. A dict (not one
-        # slot) so interleaved calls -- a concurrent explore-tier review panel
-        # shares one dispatcher across threads -- pair by name, not by position.
-        self._pending: dict[str, str] = {}
+        # Calls awaiting their result, keyed by the per-dispatch call_id (a
+        # concurrent explore-tier review panel shares one dispatcher across
+        # threads, so same-name calls interleave); an id-less historical event
+        # falls back to its name key, the old sequential behavior.
+        self._pending: dict[int | str, str] = {}
         self._verify: tuple[bool, str] | None = None  # (ok, badge) for run_verify_command
         self._finish = ""  # summary from the terminal finish tool
         self._tools = 0
@@ -189,7 +197,7 @@ class TranscriptFold:
                 self._finish = str((event.get("args") or {}).get("summary", "")).strip()
                 return out
             self._tools += 1
-            self._pending[name] = salient_arg(event.get("args") or {})
+            self._pending[_pending_key(event, name)] = salient_arg(event.get("args") or {})
             self._verify = None
             return out
         if etype == "verify.end":
@@ -267,9 +275,10 @@ class TranscriptFold:
 
     def _complete_tool(self, event: dict[str, Any]) -> list[TranscriptItem]:
         name = str(event.get("name", ""))
-        if name not in self._pending:  # a finish tool's result, or an unmatched one
+        key = _pending_key(event, name)
+        if key not in self._pending:  # a finish tool's result, or an unmatched one
             return []
-        arg = self._pending.pop(name)
+        arg = self._pending.pop(key)
         if name == "run_verify_command" and self._verify is not None:
             ok, detail = self._verify
             self._verify = None

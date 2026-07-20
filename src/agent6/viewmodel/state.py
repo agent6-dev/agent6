@@ -46,6 +46,7 @@ class ToolCallView:
     result_summary: str = ""
     ok: bool | None = None  # None = in-flight
     task_id: str | None = None  # DAG task in focus when the call ran (for filtering)
+    call_id: int | None = None  # per-dispatch correlation id; None on id-less logs
 
 
 @dataclass(frozen=True, slots=True)
@@ -312,13 +313,14 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
                 ),
             )
 
-        case events.ToolCall(name=name, args=raw_args):
+        case events.ToolCall(name=name, args=raw_args, call_id=cid):
             tc = ToolCallView(
                 name=name,
                 args_preview=_render_args(raw_args),
                 args_full=_render_args(raw_args, max_value=4000),
                 ok=None,
                 task_id=state.cursor_task_id,
+                call_id=cid,
             )
             # The finish tools' summary is the agent's closing statement; keep it
             # so an ended run's panes can render the end story, not a dead one.
@@ -331,9 +333,25 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
                 finish_summary=finish_summary,
             )
 
-        case events.ToolResult(name=name, ok=ok, summary=summary):
+        case events.ToolResult(name=name, ok=ok, summary=summary, call_id=cid):
             if not state.tool_calls:
                 return state
+            if cid is not None:
+                # Pair on the stamped id: concurrent seats interleave events, so
+                # the matching call is not necessarily the last entry.
+                for i in range(len(state.tool_calls) - 1, -1, -1):
+                    if state.tool_calls[i].call_id == cid:
+                        updated = replace(state.tool_calls[i], ok=ok, result_summary=summary)
+                        return replace(
+                            state,
+                            tool_calls=(
+                                *state.tool_calls[:i],
+                                updated,
+                                *state.tool_calls[i + 1 :],
+                            ),
+                        )
+                return state
+            # Id-less (historical) event: the sequential last-entry pairing.
             last = state.tool_calls[-1]
             if last.name != name:
                 return state
