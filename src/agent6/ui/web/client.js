@@ -84,7 +84,16 @@ function setTab(name) {
 
 // --- router ------------------------------------------------------------------
 let booted = false; // the one-shot deep-link to `agent6 web <target>` ran
+// Navigation generation: route() is an async, directly re-entrant hashchange
+// handler, and every render helper awaits a fetch BEFORE its first DOM write /
+// EventSource assignment. A superseded render's continuation must bail at each
+// await boundary or it paints the WRONG view over the current one, appends a
+// duplicate wmenu button, and overwrites `live` -- orphaning the current
+// view's stream (whose stale onmessage could later closeLive() the visible
+// view when the old run finishes).
+let routeGen = 0;
 async function route() {
+  const gen = ++routeGen;
   closeLive();
   closeOverlay();
   document.querySelectorAll('.wmenu-btn').forEach(b => b.remove()); // header-mounted by the run view
@@ -96,6 +105,7 @@ async function route() {
     if (h === '/') {
       try {
         const meta = await getJSON('/api/meta');
+        if (gen !== routeGen) return; // superseded while fetching
         if (meta.target && meta.target_kind) {
           location.hash = '#/' + meta.target_kind + '/' + encodeURIComponent(meta.target);
           return; // the hashchange re-enters route()
@@ -105,15 +115,16 @@ async function route() {
   }
   const parts = h.split('/').filter(Boolean); // e.g. ['run','abc']
   try {
-    if (parts.length === 0) { setTab('hub'); await renderHub(); }
-    else if (parts[0] === 'machines') { setTab('machines'); await renderHub('machines'); }
-    else if (parts[0] === 'config') { setTab('config'); await renderConfig(); }
-    else if (parts[0] === 'run' && parts[1]) { setTab('hub'); await renderRun(decodeURIComponent(parts[1])); }
-    else if (parts[0] === 'conversation' && parts[1]) { setTab('hub'); await renderConversation(decodeURIComponent(parts[1])); }
-    else if (parts[0] === 'machine' && parts[1]) { setTab('machines'); await renderMachine(decodeURIComponent(parts[1])); }
-    else if (parts[0] === 'draft' && parts[1]) { const n = decodeURIComponent(parts[1]); setTab('machines'); await renderRun(n, { base: '/api/draft/' + encodeURIComponent(n), readOnly: true, title: 'Machine draft', crumb: 'draft ' + n }); }
+    if (parts.length === 0) { setTab('hub'); await renderHub(undefined, gen); }
+    else if (parts[0] === 'machines') { setTab('machines'); await renderHub('machines', gen); }
+    else if (parts[0] === 'config') { setTab('config'); await renderConfig(gen); }
+    else if (parts[0] === 'run' && parts[1]) { setTab('hub'); await renderRun(decodeURIComponent(parts[1]), undefined, gen); }
+    else if (parts[0] === 'conversation' && parts[1]) { setTab('hub'); await renderConversation(decodeURIComponent(parts[1]), gen); }
+    else if (parts[0] === 'machine' && parts[1]) { setTab('machines'); await renderMachine(decodeURIComponent(parts[1]), gen); }
+    else if (parts[0] === 'draft' && parts[1]) { const n = decodeURIComponent(parts[1]); setTab('machines'); await renderRun(n, { base: '/api/draft/' + encodeURIComponent(n), readOnly: true, title: 'Machine draft', crumb: 'draft ' + n }, gen); }
     else { view.innerHTML = ''; view.appendChild(el('div', 'empty', 'not found')); }
   } catch (e) {
+    if (gen !== routeGen) return; // a superseded render's late error must not paint
     view.innerHTML = '';
     view.appendChild(el('div', 'empty err', 'error: ' + e.message));
   }
@@ -301,9 +312,10 @@ function machineFilesCard(files) {
   return card;
 }
 
-async function renderHub(focus) {
+async function renderHub(focus, gen) {
   setCrumb('');
   const data = await getJSON('/api/hub');
+  if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint
   view.innerHTML = '';
   const machinesTab = focus === 'machines';
   // Full-width listing stack; the tab's composer docks at the bottom of the
@@ -575,10 +587,11 @@ function drawerHandle(drawer) {
 }
 { const w = localStorage.getItem('a6-drawer-w'); if (w) document.documentElement.style.setProperty('--drawer-w', w); }
 
-async function renderRun(id, opts) {
+async function renderRun(id, opts, gen) {
   opts = opts || {};
   const base = opts.base || ('/api/run/' + encodeURIComponent(id));
   const snap = await getJSON(base); // throws -> route() shows the error
+  if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint or open a stream
   const readOnly = !!opts.readOnly;
   setCrumb(opts.crumb || id);
   view.innerHTML = '';
@@ -902,9 +915,10 @@ function renderDiff(text) {
 // The run's conversation full-height (the same component the run view embeds),
 // live-following: the RunState /events stream is the change signal; the fold
 // re-fetches on it (debounced) and the stream closes once the run finishes.
-async function renderConversation(id) {
+async function renderConversation(id, gen) {
   const base = '/api/run/' + encodeURIComponent(id);
   await getJSON(base); // existence probe: throws -> route() shows the error
+  if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint
   setCrumb('conversation ' + id);
   view.innerHTML = '';
   // The same app shell as the run view, minus the drawer: the conversation
@@ -919,6 +933,7 @@ async function renderConversation(id) {
   app.appendChild(composer);
   view.appendChild(app);
   await cc.conv.refresh();
+  if (gen !== undefined && gen !== routeGen) return; // the refresh reopened the window
   cc.box.scrollTop = cc.box.scrollHeight; // open at the tail, like the TUI
   if (window.innerWidth < 781) window.scrollTo(0, document.body.scrollHeight); // phone: the page scrolls
 
@@ -941,11 +956,12 @@ async function renderConversation(id) {
 }
 
 // --- machine watch -----------------------------------------------------------
-async function renderMachine(name) {
+async function renderMachine(name, gen) {
   const base = '/api/machine/' + encodeURIComponent(name);
   // Existence + readability probe: a bad name or a corrupt machine throws here
   // and route() shows the error (the SSE error frame alone left a hollow view).
   await getJSON(base);
+  if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint or open a stream
   setCrumb(name);
   view.innerHTML = '';
   // Ephemeral notification banners live here; the prompts host holds pending
@@ -1110,9 +1126,10 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
 }
 
 // --- config ------------------------------------------------------------------
-async function renderConfig() {
+async function renderConfig(gen) {
   setCrumb('config');
   const data = await getJSON('/api/config');
+  if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint
   view.innerHTML = '';
   const card = el('div', 'card');
   card.appendChild(el('h2', null, 'Config'));
