@@ -24,6 +24,7 @@ from agent6.ui.cli._common import (
     _runs_dir,
     _state_dir,
 )
+from agent6.ui.cli._steer import repl_prompt_sigint
 from agent6.viewmodel import first_task_line, newest_run_dir, run_mtime
 from agent6.workflows.loop import (
     RunResult,
@@ -228,7 +229,8 @@ def run_ask_repl(
             pending = ""
         else:
             try:
-                question = input("\nask> ").strip()
+                with repl_prompt_sigint():
+                    question = input("\nask> ").strip()
             except (EOFError, KeyboardInterrupt):
                 print(file=sys.stderr)
                 break

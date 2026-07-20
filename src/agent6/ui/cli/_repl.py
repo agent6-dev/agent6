@@ -25,6 +25,7 @@ from agent6.init import init_workspace
 from agent6.tools.mcp_client import MCPManager
 from agent6.ui.cli._common import _runs_dir
 from agent6.ui.cli._interact import _pause
+from agent6.ui.cli._steer import repl_prompt_sigint
 from agent6.ui.cli.plan_watch import (
     event_epoch,
     format_plain_event,
@@ -87,7 +88,8 @@ def build_repl_hook(
         )
         while True:
             try:
-                raw = input("agent6> ").strip()
+                with repl_prompt_sigint():
+                    raw = input("agent6> ").strip()
             except (EOFError, KeyboardInterrupt):
                 print("[agent6] EOF - stopping interactively.", file=sys.stderr)
                 return "stop"

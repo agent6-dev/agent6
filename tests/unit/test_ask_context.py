@@ -313,3 +313,43 @@ def test_prompt_revision_context_names_non_git_directory(tmp_path: Path) -> None
         recent_log="",
     )
     assert "branch=main" in format_prompt_revision_context(git_repo)
+
+
+def test_ask_repl_prompt_uses_default_sigint(monkeypatch: pytest.MonkeyPatch) -> None:
+    """At the idle ask> prompt no step is in flight: the run's escalating steer
+    handler printed a lying "pausing after this step" banner, PEP 475 retried
+    input() (three presses to leave), and the armed stage opened a phantom
+    pause menu on the next question. The prompt must run under the DEFAULT
+    handler so one Ctrl-C raises and exits, arming nothing."""
+    import signal
+    from typing import Any, cast
+
+    from agent6.ui.cli._ask import run_ask_repl
+    from agent6.workflows.loop import Workflow
+
+    fired: list[object] = []
+
+    def steer_style_handler(_signum: int, _frame: object) -> None:
+        fired.append(True)  # swallows, like the escalation's stage-1 arm
+
+    prev = signal.signal(signal.SIGINT, steer_style_handler)
+    try:
+        seen: list[object] = []
+
+        def fake_input(prompt: str = "") -> str:
+            seen.append(signal.getsignal(signal.SIGINT))
+            raise KeyboardInterrupt  # the operator leaves the REPL
+
+        monkeypatch.setattr("builtins.input", fake_input)
+        result = run_ask_repl(
+            cast("Workflow", object()),
+            cast("Any", object()),
+            cast("Any", object()),
+            first_question="",
+        )
+        assert result.reason == "ask_repl_empty"
+        assert seen == [signal.default_int_handler]
+        # and the surrounding run handler is back after the prompt
+        assert signal.getsignal(signal.SIGINT) is steer_style_handler
+    finally:
+        signal.signal(signal.SIGINT, prev)

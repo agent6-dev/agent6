@@ -16,7 +16,7 @@ import subprocess
 import sys
 import tempfile
 import termios
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -46,6 +46,22 @@ class SteerState:
     # Polled during a streaming call: True aborts the in-flight model call so
     # the steer prompt runs now instead of at the next between-step boundary.
     interrupt: Callable[[], bool]
+
+
+@contextlib.contextmanager
+def repl_prompt_sigint() -> Generator[None]:
+    """Default Ctrl-C for the duration of an idle REPL prompt (ask> /
+    agent6>). No step is in flight there, so the run's escalating steer
+    handler would lie ("pausing after this step"), PEP 475 would retry the
+    interrupted input() (three presses to leave), and the armed stage would
+    open a phantom pause menu on the next question. The escalation applies
+    only while a leg runs; at the prompt one Ctrl-C simply raises."""
+    prev = signal.getsignal(signal.SIGINT)
+    signal.signal(signal.SIGINT, signal.default_int_handler)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGINT, prev)
 
 
 def select_revised_prompt(
