@@ -279,6 +279,28 @@ def test_uncommitted_refusal_tracks_git_state(tmp_path: Path) -> None:
     assert uncommitted_refusal(f, tmp_path) is not None  # modified again
 
 
+def test_uncommitted_scripts_warning_tracks_bundle_state(tmp_path: Path) -> None:
+    """The committed-machine gate checked only the .asm.toml, so an uncommitted
+    `scripts/` bundle (trusted logic a tool executes) ran unreviewed. The bundle
+    warns (not refuses) when dirty."""
+    from agent6.app.machine.run import uncommitted_scripts_warning
+
+    f = tmp_path / "tiny.asm.toml"
+    f.write_text(TINY, encoding="utf-8")
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "do.py").write_text("print('hi')\n", encoding="utf-8")
+    # No git repo, or no bundle: no warning.
+    assert uncommitted_scripts_warning(f, tmp_path) is None
+    _git_init(tmp_path)
+    assert uncommitted_scripts_warning(f, tmp_path) is not None  # untracked bundle
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "add"], check=True)
+    assert uncommitted_scripts_warning(f, tmp_path) is None  # committed clean
+    (scripts / "do.py").write_text("print('changed')\n", encoding="utf-8")
+    assert uncommitted_scripts_warning(f, tmp_path) is not None  # modified script
+
+
 def test_run_refuses_rerun_of_ended_instance(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

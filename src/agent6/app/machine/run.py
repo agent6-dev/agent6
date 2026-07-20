@@ -100,6 +100,37 @@ def uncommitted_refusal(path: Path, cwd: Path) -> str | None:
     )
 
 
+def uncommitted_scripts_warning(path: Path, cwd: Path) -> str | None:
+    """A warning if the machine's ``scripts/`` bundle has uncommitted changes,
+    else None. The bundle is trusted logic a tool/agent may execute, so like the
+    ``.asm.toml`` it should be committed. Unlike the file it only WARNS (not every
+    machine carries scripts, and iterating on one the operator is actively editing
+    is common). Skipped outside a git repo or when the bundle resolves outside the
+    repo tree; a broken-git probe warns rather than reading as clean."""
+    if not is_git_repo(cwd):
+        return None
+    scripts = path.parent / "scripts"
+    if not scripts.exists():
+        return None
+    try:
+        rel = scripts.resolve().relative_to(cwd.resolve()).as_posix()
+    except ValueError:
+        return None
+    try:
+        if not paths_dirty(cwd, (rel,)):
+            return None
+    except GitError as exc:
+        print(
+            f"[agent6] WARNING: could not check {rel} for uncommitted changes: {exc}",
+            file=sys.stderr,
+        )
+        return None
+    return (
+        f"{scripts} has uncommitted changes; `machine run` executes its scripts as "
+        "trusted logic. Review and commit the bundle for a reproducible run."
+    )
+
+
 def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
     path: Path,
     frontend: MachineFrontend,
@@ -141,6 +172,9 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
     if uncommitted is not None:
         reporter.err(f"REFUSING: {uncommitted}")
         return 1
+    scripts_warning = uncommitted_scripts_warning(path, cwd)
+    if scripts_warning is not None:
+        reporter.err(f"WARNING: {scripts_warning}")
     states = list(spec.states.values())
     has_agent_state = any(getattr(s, "kind", None) == "agent" for s in states)
     # mode="run" agent states edit + commit; they need a resolved git identity.
