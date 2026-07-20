@@ -197,7 +197,9 @@ def parse_response(  # noqa: PLR0912, PLR0915
     # Treat negative or non-numeric values as absent.
     reported_cost = 0.0
     raw_cost = usage.get("cost")
-    if isinstance(raw_cost, int | float) and raw_cost > 0:
+    # not-bool: bool subclasses int, and float(True) == 1.0 would record a
+    # phantom dollar per call that becomes the AUTHORITATIVE reported figure.
+    if isinstance(raw_cost, int | float) and not isinstance(raw_cost, bool) and raw_cost > 0:
         reported_cost = float(raw_cost)
     return ProviderResponse(
         text=text,

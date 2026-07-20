@@ -522,3 +522,16 @@ def test_metered_gate_coerces_gateway_typed_counts() -> None:
         with pytest.raises(ProviderError) as ei:
             _openai_gate(bad, source="t")
         assert ei.value.status_code == 422
+
+
+def test_boolean_reported_cost_reads_as_absent() -> None:
+    """bool subclasses int: usage.cost == true yielded float(True) == a
+    phantom $1.00 recorded per call, which becomes the AUTHORITATIVE reported
+    figure and can trip the max_usd hard stop."""
+    resp = _parse_response(
+        {
+            "choices": [{"message": {"role": "assistant", "content": "hi"}}],
+            "usage": {"prompt_tokens": 500, "completion_tokens": 100, "cost": True},
+        }
+    )
+    assert resp.cost_usd == 0.0
