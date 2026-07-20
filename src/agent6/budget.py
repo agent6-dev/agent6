@@ -24,11 +24,12 @@ process exits with a distinct exit code so resume tooling can
 recognise the condition.
 
 USD budgets: configure `[budget].best_effort_usd_limit` to specify a
-dollar cap; the config loader converts it to token ceilings at load
-time using the worker model's pricing (see `usd_budget_to_tokens` in
-this module). Tokens stay the authoritative ceiling because token
-counts are exact and provider-returned; the USD cap is a more
-operator-friendly knob that translates once at startup.
+dollar cap. It flows to `BudgetTracker.max_usd`, the single USD bound,
+enforced at runtime against the estimated spend (provider-reported cost
+when available, else price x tokens, INCLUDING cache_read/cache_creation
+cost the token caps omit). Best-effort: with no price data and no reported
+cost it does nothing. The token ceilings are a separate, operator-declared
+bound; the two are independent knobs, not one derived from the other.
 
 This module is import-light (stdlib + agent6.models.pricing, which is itself
 stdlib + cache-file reads); the AnthropicProvider wires it in via
@@ -45,64 +46,8 @@ from agent6.models.pricing import lookup_price
 # There is NO static price table. Prices come from the provider's own models
 # endpoint, fetched + cached by agent6.models.cache and read back through
 # agent6.models.pricing.lookup_price. A model without a published price is reported
-# as "$? (unknown price)" and the USD->token budget conversion does not apply
-# to it: an unknown price is honest, an outdated hardcoded one is wrong.
-
-
-def usd_budget_to_tokens(
-    max_usd: float,
-    *,
-    worker_model: str,
-) -> tuple[int, int] | None:
-    """Convert an operator-friendly USD cap into (max_input_tokens,
-    max_output_tokens) for a given worker model's pricing.
-
-    Pricing comes from the provider-fetched cache (agent6.models.pricing). Returns
-    None when the model has no known price: the USD->token tightening simply
-    does not apply, the operator token ceilings stand as configured, and the
-    runtime `max_usd` ceiling still enforces wherever the provider reports
-    per-call cost (OpenRouter `usage.cost`) or a cached price exists.
-
-    Each axis is sized so that THAT axis alone reaching its cap costs ~max_usd.
-    The authoritative bound is the runtime USD ceiling (BudgetTracker.max_usd):
-    this conversion only runs when `best_effort_usd_limit > 0`, so that ceiling
-    is always active, it bounds the cache-INCLUSIVE COMBINED spend, and on any
-    mixed workload it trips before either axis alone is exhausted. The per-axis
-    caps are a backstop (each bounds its own axis to ~max_usd).
-
-    Sizing each axis to the full budget -- rather than splitting it by an
-    assumed input:output ratio -- is what lets an output-heavy workload use the
-    whole budget. A reasoning model whose reasoning_content dominates output
-    (e.g. GLM, Kimi K2.x) spends far more on output than a 5:1 code-edit ratio
-    assumes; a ratio-split output cap would halt such a run at a fraction of the
-    USD budget (output cap hit while input sat almost untouched) even though the
-    USD ceiling had plenty of room.
-
-    Example: at $3/M in, $15/M out, usd_budget_to_tokens(5.0, ...) returns
-    (max_input=1_666_666, max_output=333_333) - each axis alone is ~$5.
-    """
-    if max_usd <= 0:
-        raise ValueError(f"max_usd must be positive, got {max_usd}")
-    price = lookup_price(worker_model)
-    if price is None:
-        return None
-    in_per_mtok, out_per_mtok = price
-    if in_per_mtok <= 0 or out_per_mtok <= 0:
-        # A free or provider-unpriced model (OpenRouter has reported 0/0 for
-        # some routes, e.g. z-ai/glm-5.2 transiently): a USD budget can't be
-        # turned into a token ceiling, and the runtime USD tracker reads the
-        # same 0 cost, so there is nothing to convert. Return None like the
-        # no-price case (caller keeps the operator token ceilings) instead of
-        # dividing by zero.
-        return None
-    # Clamp to at least one token: an extreme-but-legal tiny USD budget can
-    # floor to 0 here, which would synthesize an invalid 0 token ceiling (the
-    # BudgetConfig validators require gt=0). The runtime USD ceiling (max_usd
-    # via BudgetTracker) still enforces the true dollar bound, so a 1-token
-    # floor just means the run stops after a single tiny call.
-    max_input_tokens = max(1, int((max_usd * 1_000_000) / in_per_mtok))
-    max_output_tokens = max(1, int((max_usd * 1_000_000) / out_per_mtok))
-    return max_input_tokens, max_output_tokens
+# as "$? (unknown price)" and the runtime USD ceiling does not bind for it:
+# an unknown price is honest, an outdated hardcoded one is wrong.
 
 
 class BudgetExceeded(Exception):
@@ -206,15 +151,13 @@ class BudgetTracker:
 
     max_input_tokens: int
     max_output_tokens: int
-    # Estimated-dollar ceiling (0 = off). Set from `[budget]
-    # best_effort_usd_limit`. This is the AUTHORITATIVE spend bound when
-    # `usd_budget_to_tokens` derives the token caps (it sizes each axis to the
-    # full budget on purpose). Unlike the token caps -- which `record`
-    # thresholds on fresh input/output only -- this bounds the estimated spend
-    # INCLUDING cache_read/cache_creation tokens, which cost real money but
-    # never count toward the token caps, and bounds COMBINED in+out so it trips
-    # before either full-budget axis cap on a mixed workload. Without it, a
-    # heavily-cached run can blow well past `max_usd`.
+    # Estimated-dollar ceiling (0 = off). Set directly from `[budget]
+    # best_effort_usd_limit`; the single USD bound. Unlike the token caps --
+    # which `record` thresholds on fresh input/output only -- this bounds the
+    # estimated spend INCLUDING cache_read/cache_creation tokens, which cost
+    # real money but never count toward the token caps, and bounds COMBINED
+    # in+out. Without it, a heavily-cached run can blow well past its dollar
+    # budget while the token caps still read plenty of headroom.
     max_usd: float = 0.0
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _per_model: dict[str, _ModelTotals] = field(default_factory=dict)

@@ -42,8 +42,6 @@ from pydantic import (
     model_validator,
 )
 
-from agent6.budget import usd_budget_to_tokens
-
 
 class ConfigError(Exception):
     """Raised when the config file is missing, malformed, or fails validation."""
@@ -1119,44 +1117,6 @@ class Config(BaseModel):
                 )
         return self
 
-    @model_validator(mode="after")
-    def _apply_usd_budget_override(self) -> Config:
-        """When `[budget].best_effort_usd_limit > 0`, convert to token ceilings via the
-        worker model's pricing and apply as a TIGHTER upper bound on top
-        of any explicit `max_input_tokens` / `max_output_tokens`. The
-        smaller of (operator-set, USD-converted) wins per axis - both
-        are valid ceilings; the lower one is the effective cap.
-        Operators who want USD only can set the token ceilings to large
-        placeholder values (e.g. 999_999_999) and the USD conversion
-        will dominate."""
-        if self.budget.best_effort_usd_limit <= 0:
-            return self
-        worker = self.models.resolve("worker")
-        if worker is None:
-            # No worker model to price against yet; the conversion is
-            # applied once a runnable config is assembled.
-            return self
-        converted = usd_budget_to_tokens(
-            self.budget.best_effort_usd_limit, worker_model=worker.model
-        )
-        if converted is None:
-            # No cached price for the worker model (pricing comes from the
-            # provider's models endpoint; anthropic publishes none). The
-            # operator token ceilings stand; the runtime estimated-USD ceiling
-            # still applies where per-call cost is reported or priced.
-            return self
-        usd_in, usd_out = converted
-        new_in = min(self.budget.max_input_tokens, usd_in)
-        new_out = min(self.budget.max_output_tokens, usd_out)
-        if new_in == self.budget.max_input_tokens and new_out == self.budget.max_output_tokens:
-            return self
-        new_budget = BudgetConfig(
-            max_input_tokens=new_in,
-            max_output_tokens=new_out,
-            best_effort_usd_limit=self.budget.best_effort_usd_limit,
-        )
-        return self.model_copy(update={"budget": new_budget})
-
     def with_budget_overrides(
         self,
         *,
@@ -1166,9 +1126,10 @@ class Config(BaseModel):
     ) -> Config:
         """Return a copy with budget fields overridden (e.g. from CLI flags).
 
-        Re-validates through ``model_validate`` so the USD->token conversion
-        in ``_apply_usd_budget_override`` runs again on the new values.
-        ``None`` means "keep the existing value".
+        The token ceilings are the operator's DECLARED values and are never
+        rewritten from ``best_effort_usd_limit``; the USD limit is enforced at
+        runtime by ``BudgetTracker.max_usd`` (cache-inclusive, the authoritative
+        bound). ``None`` means "keep the existing value".
         """
         if max_usd is None and max_input_tokens is None and max_output_tokens is None:
             return self
@@ -1221,8 +1182,9 @@ class Config(BaseModel):
 
         Overrides the ``worker`` role (the role machine agent loops run as)
         and the budget caps. ``None`` means "inherit the effective config".
-        Re-validates so the USD->token conversion and provider-name checks
-        run against the merged result.
+        Re-validates so the provider-name checks run against the merged result;
+        the token ceilings stay the declared values (USD is enforced at runtime
+        by ``BudgetTracker.max_usd``).
         """
         data = self.model_dump(mode="python")
         worker = data.setdefault("models", {}).get("worker")

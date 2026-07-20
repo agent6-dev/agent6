@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Unit tests for the USD-to-tokens budget converter (~budget.py).
+"""Unit tests for USD budget enforcement guards.
+
+USD is a single runtime bound (`BudgetTracker.max_usd`), not a load-time
+token conversion: the config-side guards here refuse an unenforceable
+`--max-usd` flag and warn on an unenforceable config limit.
 
 Pricing has no static table: it comes from the provider-fetched models cache
 (agent6.models.pricing reads $AGENT6_CACHE_HOME/models/*.json). Tests inject prices
@@ -15,9 +19,6 @@ from typing import Any
 
 import pytest
 
-from agent6.budget import usd_budget_to_tokens
-
-# $3/M in, $15/M out: the worked example in the usd_budget_to_tokens docstring.
 PRICED_MODEL = "test/priced-model"
 CHEAP_MODEL = "test/cheap-model"
 
@@ -39,59 +40,33 @@ def price_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     return cache
 
 
-def _convert(max_usd: float, model: str) -> tuple[int, int]:
-    converted = usd_budget_to_tokens(max_usd, worker_model=model)
-    assert converted is not None
-    return converted
+def test_max_usd_override_does_not_ratchet_token_caps(price_cache: Path) -> None:
+    """A later --max-usd (via with_budget_overrides) must not be bounded by an
+    earlier USD limit. The token ceilings are the operator's DECLARED values,
+    never rewritten from best_effort_usd_limit; USD is enforced by the runtime
+    BudgetTracker.max_usd. Previously a load-time USD->token conversion
+    overwrote the declared caps, and with_budget_overrides re-fed the tightened
+    value as if operator-set, so raising the USD limit could never win."""
+    from agent6.config import Config
 
-
-def test_usd_converter_priced_model(price_cache: Path) -> None:
-    """$3/M input + $15/M output, $5 budget. Each axis is sized to the FULL
-    budget (the runtime USD ceiling bounds combined spend), so input alone is
-    ~$5 of input tokens and output alone is ~$5 of output tokens."""
-    max_in, max_out = _convert(5.0, PRICED_MODEL)
-    assert abs(max_in - int(5.0 * 1_000_000 / 3.0)) <= 1  # 1_666_666
-    assert abs(max_out - int(5.0 * 1_000_000 / 15.0)) <= 1  # 333_333
-
-
-def test_usd_converter_output_axis_gets_full_budget(price_cache: Path) -> None:
-    """Regression: an output-heavy (e.g. reasoning) workload must be able to
-    spend the whole USD budget on output. The output cap must equal max_usd /
-    output_price, NOT a small ratio-split fraction of it -- the bug that halted
-    a $3 GLM 5.2 run at $0.66 because its 1:1 reasoning I/O blew a 1/6 output
-    cap while the input cap sat 94% unused."""
-    # $15/M out, $5 budget -> the full budget buys 333_333 output tokens.
-    _, max_out = _convert(5.0, PRICED_MODEL)
-    assert max_out == int(5.0 * 1_000_000 / 15.0)
-    # ...not the old 1/6 split (which would have been ~55_555).
-    assert max_out > 5 * 55_555
-
-
-def test_usd_converter_unknown_model_returns_none(price_cache: Path) -> None:
-    """No cached price means NO conversion: unknown beats a wrong fallback."""
-    assert usd_budget_to_tokens(5.0, worker_model="nobody/unpriced-model") is None
-
-
-def test_usd_converter_cheap_model_buys_more_tokens(price_cache: Path) -> None:
-    # Same $1 budget buys 11x more input tokens at $0.27/M vs $3/M.
-    cheap_in, _ = _convert(1.0, CHEAP_MODEL)
-    priced_in, _ = _convert(1.0, PRICED_MODEL)
-    assert cheap_in > 10 * priced_in
-
-
-def test_usd_converter_rejects_zero_or_negative(price_cache: Path) -> None:
-    with pytest.raises(ValueError):
-        usd_budget_to_tokens(0.0, worker_model=PRICED_MODEL)
-    with pytest.raises(ValueError):
-        usd_budget_to_tokens(-1.0, worker_model=PRICED_MODEL)
-
-
-def test_usd_converter_scale_linearity(price_cache: Path) -> None:
-    """Doubling the budget doubles both token ceilings (within rounding)."""
-    in_5, out_5 = _convert(5.0, PRICED_MODEL)
-    in_10, out_10 = _convert(10.0, PRICED_MODEL)
-    assert abs((in_10 / in_5) - 2.0) < 0.01
-    assert abs((out_10 / out_5) - 2.0) < 0.01
+    cfg = Config.model_validate(
+        {
+            "providers": {"p": {"api_format": "openai", "base_url": "http://localhost:1"}},
+            "models": {"worker": {"provider": "p", "model": PRICED_MODEL}},
+            "budget": {
+                "best_effort_usd_limit": 5.0,
+                "max_input_tokens": 999_999_999,
+                "max_output_tokens": 999_999_999,
+            },
+        }
+    )
+    # Declared ceilings are preserved verbatim (priced worker, USD limit set).
+    assert cfg.budget.max_input_tokens == 999_999_999
+    assert cfg.budget.max_output_tokens == 999_999_999
+    # Raising the USD limit takes full effect; nothing ratchets it down.
+    out = cfg.with_budget_overrides(max_usd=50.0)
+    assert out.budget.best_effort_usd_limit == 50.0
+    assert out.budget.max_input_tokens == 999_999_999
 
 
 def test_explicit_usd_flag_refused_when_unpriced(

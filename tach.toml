@@ -230,7 +230,7 @@ depends_on = ["agent6.config.model"]
 
 [[modules]]
 path = "agent6.config.model"
-depends_on = ["agent6.budget"]
+depends_on = []
 
 [[modules]]
 path = "agent6.paths"
