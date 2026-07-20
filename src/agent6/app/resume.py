@@ -56,7 +56,7 @@ from agent6.app.providers import (
     role_temperature,
 )
 from agent6.app.reporter import STDIO_REPORTER, Reporter
-from agent6.app.run import RunFrontend
+from agent6.app.run import RunFrontend, apply_spawned_away_default
 from agent6.budget import BudgetTracker
 from agent6.config import (
     Config,
@@ -275,6 +275,12 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         write_steer_answer(layout.run_dir, steer.strip())
     if sys.stdin.isatty():  # a foreground start clears a stale detach away-mode
         clear_away_mode(layout.run_dir)
+    else:
+        # A front-end (web/TUI) or a detach spawns resume with no terminal; honor
+        # AGENT6_DETACHED_AWAY so ask_user/approvals WAIT for a viewer instead of
+        # fabricating an empty answer. Mirrors run_task; a pure headless resume
+        # (CI) sets no env, so this is a no-op and keeps the non-hanging default.
+        apply_spawned_away_default(layout.run_dir)
     # Record this worker's pid so `agent6 runs show` can probe liveness even while
     # the worker is blocked in a long provider call (which emits no events).
     write_worker_pid(layout.run_dir, os.getpid())

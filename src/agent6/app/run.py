@@ -131,7 +131,7 @@ class SteerHooks(Protocol):
     interrupt: Callable[[], bool]
 
 
-def _apply_spawned_away_default(run_dir: Path) -> None:
+def apply_spawned_away_default(run_dir: Path) -> None:
     """Honor AGENT6_DETACHED_AWAY, set by a front-end launcher (web/TUI hub) that
     spawns a run detached and drives it over the bridge. Without it a spawned run
     with no terminal fabricates empty ask_user answers when no viewer is live;
@@ -359,7 +359,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         # connected. The launcher sets AGENT6_DETACHED_AWAY so approvals AND
         # questions WAIT for a front-end instead. A pure headless run (CI, no
         # launcher) sets no env, so it keeps its non-hanging default.
-        _apply_spawned_away_default(layout.run_dir)
+        apply_spawned_away_default(layout.run_dir)
     # Record this worker's pid so `agent6 runs show` can probe liveness even while
     # the worker is blocked in a long provider call (which emits no events).
     write_worker_pid(layout.run_dir, os.getpid())

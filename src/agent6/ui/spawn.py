@@ -38,8 +38,11 @@ def spawn_detached_resume(cwd: Path, run_id: str, *, steer: str = "") -> str:
     The caller must have released the run's worker lock first, so the child
     acquires it cleanly. ``AGENT6_STREAM_TO_LOG=1`` keeps the headless child
     emitting delta events, so a later ``agent6 attach`` shows its full reasoning,
-    not just tool calls. argv is the agent6 exe + the run id (never LLM output).
-    Returns "" on success, else an error message."""
+    not just tool calls. ``AGENT6_DETACHED_AWAY=wait`` makes the terminal-less
+    child WAIT for a front-end at an ask/approval instead of fabricating an empty
+    answer (every caller here is a front-end or a detach the operator re-attaches
+    to). argv is the agent6 exe + the run id (never LLM output). Returns "" on
+    success, else an error message."""
     argv = [agent6_exe(), "resume", run_id]
     if steer:
         argv.append(f"--steer={steer}")
@@ -51,7 +54,7 @@ def spawn_detached_resume(cwd: Path, run_id: str, *, steer: str = "") -> str:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
-            env={**os.environ, "AGENT6_STREAM_TO_LOG": "1"},
+            env={**os.environ, "AGENT6_STREAM_TO_LOG": "1", "AGENT6_DETACHED_AWAY": "wait"},
         )
     except OSError as exc:
         return f"could not spawn background resume: {exc}"

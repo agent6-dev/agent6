@@ -294,11 +294,11 @@ def test_spawned_away_default_sets_wait_from_env(
 ) -> None:
     # A front-end launcher (web/TUI hub) sets AGENT6_DETACHED_AWAY so a spawned,
     # terminal-less run WAITS for a viewer instead of fabricating empty answers.
-    from agent6.app.run import _apply_spawned_away_default  # pyright: ignore[reportPrivateUsage]
+    from agent6.app.run import apply_spawned_away_default
     from agent6.runs.ipc import away_mode
 
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "wait")
-    _apply_spawned_away_default(tmp_path)
+    apply_spawned_away_default(tmp_path)
     assert away_mode(tmp_path) == "wait"
 
 
@@ -307,11 +307,11 @@ def test_spawned_away_default_is_noop_without_env(
 ) -> None:
     # A pure headless run (no launcher, no env) is untouched, keeping its
     # non-hanging default so CI never blocks on an unanswerable question.
-    from agent6.app.run import _apply_spawned_away_default  # pyright: ignore[reportPrivateUsage]
+    from agent6.app.run import apply_spawned_away_default
     from agent6.runs.ipc import away_mode
 
     monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
-    _apply_spawned_away_default(tmp_path)
+    apply_spawned_away_default(tmp_path)
     assert away_mode(tmp_path) == ""
 
 

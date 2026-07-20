@@ -145,6 +145,9 @@ def test_spawn_detached_resume_argv_and_stream_env(monkeypatch: pytest.MonkeyPat
     env = kw["env"]
     assert isinstance(env, dict)
     assert env["AGENT6_STREAM_TO_LOG"] == "1"  # headless child still emits deltas for watch
+    # No terminal, so the child must WAIT for a front-end at an ask/approval
+    # instead of fabricating an empty answer (parity with the fresh-run spawns).
+    assert env["AGENT6_DETACHED_AWAY"] == "wait"
 
 
 def test_spawn_detached_resume_reports_oserror(monkeypatch: pytest.MonkeyPatch) -> None:
