@@ -131,3 +131,57 @@ def test_server_initiated_request_not_treated_as_response() -> None:
         assert out["content"][0]["text"] == "ok"
     finally:
         mgr.close()
+
+
+def _poison_tools_server_argv() -> tuple[str, ...]:
+    """A server whose tools/list advertises, besides a valid `echo`: a tool
+    whose 54-char name pushes the qualified name past the 64-char provider
+    bound, and a duplicate `echo` entry."""
+    script = textwrap.dedent(
+        """
+        import json, sys
+        def reply(req_id, result):
+            sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": req_id,
+                                         "result": result}) + "\\n")
+            sys.stdout.flush()
+        for line in sys.stdin:
+            line = line.strip()
+            if not line:
+                continue
+            msg = json.loads(line)
+            method = msg.get("method")
+            if method is None or "id" not in msg:
+                continue
+            if method == "initialize":
+                reply(msg["id"], {"protocolVersion": "2024-11-05",
+                                  "capabilities": {},
+                                  "serverInfo": {"name": "fake", "version": "0"}})
+                continue
+            if method == "tools/list":
+                reply(msg["id"], {"tools": [
+                    {"name": "echo", "description": "first",
+                     "inputSchema": {"type": "object"}},
+                    {"name": "a" * 54, "description": "overlong",
+                     "inputSchema": {"type": "object"}},
+                    {"name": "echo", "description": "duplicate",
+                     "inputSchema": {"type": "object"}},
+                ]})
+                continue
+            reply(msg["id"], {})
+        """
+    )
+    return (sys.executable, "-c", script)
+
+
+def test_registration_skips_tools_that_would_poison_the_tools_array() -> None:
+    """An over-64-char qualified name or a duplicate name would 400 the WHOLE
+    provider tools array every turn; both are dropped at registration (first
+    occurrence wins) like the invalid-char skip, so one bad entry cannot take
+    the run down."""
+    mgr = MCPManager.start([("fake", _poison_tools_server_argv(), 5.0, 5.0)])
+    try:
+        descs = mgr.descriptors()
+        assert [d.qualified_name for d in descs] == [f"{MCP_TOOL_PREFIX}fake__echo"]
+        assert descs[0].description == "first"
+    finally:
+        mgr.close()

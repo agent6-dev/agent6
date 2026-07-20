@@ -73,6 +73,11 @@ MCP_TOOL_PREFIX = "mcp__"
 # a built-in, so tools whose names don't match are skipped at registration.
 _VALID_MCP_TOOL_NAME = re.compile(r"^[A-Za-z0-9_-]+$")
 
+# The 64-char cross-provider bound from that grammar, applied to the WHOLE
+# qualified name (prefix + operator server name + separators + tool name):
+# one over-limit entry would invalidate the entire tools array.
+_MAX_QUALIFIED_TOOL_NAME_LEN = 64
+
 
 class MCPError(RuntimeError):
     """Anything the MCP client refuses to do or could not complete."""
@@ -167,30 +172,36 @@ class _MCPServer:
             self.close()
             raise MCPError(f"server {self.name!r} tools/list returned no tools array")
         descs: list[MCPToolDescriptor] = []
+        seen: set[str] = set()
         for entry in tools_raw:
             if not isinstance(entry, dict):
                 continue
             tname = entry.get("name")
             if not isinstance(tname, str) or not tname:
                 continue
-            if not _VALID_MCP_TOOL_NAME.match(tname):
+            if not _VALID_MCP_TOOL_NAME.match(tname) or tname in seen:
                 # Skip tools whose names can't form a valid provider tool name
-                # (mcp__<server>__<tool> must be [A-Za-z0-9_-]); advertising one
-                # would break the whole tools array at call time. Silently skip,
+                # (mcp__<server>__<tool> must be [A-Za-z0-9_-]) and duplicates
+                # of an already-registered name (first wins): either would
+                # break the whole tools array at call time. Silently skip,
                 # consistent with the non-string-name skip just above.
                 continue
             desc = entry.get("description")
             schema = entry.get("inputSchema")
             if not isinstance(schema, dict):
                 schema = {"type": "object"}
-            descs.append(
-                MCPToolDescriptor(
-                    server_name=self.name,
-                    tool_name=tname,
-                    description=str(desc) if desc is not None else "",
-                    input_schema=schema,
-                )
+            qualified = MCPToolDescriptor(
+                server_name=self.name,
+                tool_name=tname,
+                description=str(desc) if desc is not None else "",
+                input_schema=schema,
             )
+            if len(qualified.qualified_name) > _MAX_QUALIFIED_TOOL_NAME_LEN:
+                # Providers cap tool names at 64 chars; registering this one
+                # would 400 every request carrying the tools array.
+                continue
+            seen.add(tname)
+            descs.append(qualified)
         self._tools = tuple(descs)
 
     @property
