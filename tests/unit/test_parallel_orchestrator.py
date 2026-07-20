@@ -1194,6 +1194,59 @@ def test_build_lane_spawner_over_cap_refused(
     assert called == []  # nothing cloned or spawned
 
 
+def test_run_lane_to_completion_cleans_up_imported_clone(
+    origin: Path, tmp_path: Path, runtime: LaneRuntime
+) -> None:
+    """The coordinator path must honor the module contract 'clones + lane state
+    are torn down after import': every /parallel group otherwise leaked one full
+    repo clone + state dir + lane config per lane, forever. Only the imported
+    (ok=True) lane is cleaned; a failed import keeps its clone (it may hold the
+    only copy of the branch)."""
+    from agent6.config.layer import resolved_state_dir
+
+    origin_state = resolved_state_dir(origin)
+    cfg = Config()
+    spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
+    spec = LaneSpec(
+        lane=1, run_id="co-p9-l1", workdir=tmp_path / "work" / "grp" / "lane-1", model=None
+    )
+    res = parallel.run_lane_to_completion(
+        spec,
+        "do it",
+        cfg=cfg,
+        origin=origin,
+        origin_state=origin_state,
+        group="p9",
+        runtime=runtime,
+        spawner=spawner,
+        poll_interval_s=0.01,
+    )
+    assert res.ok
+    assert not spec.workdir.exists()  # the clone is gone
+    assert not spec.workdir.parent.exists()  # the emptied group dir is rmdir'd
+
+    # Import refused (branch already exists): the lane keeps its clone.
+    create_branch(origin, "agent6/co-p8-l1")
+    create_branch(origin, "main")
+    spawner2 = _FakeSpawner(origin, origin_state, tmp_path / "lane-state-2")
+    spec2 = LaneSpec(
+        lane=1, run_id="co-p8-l1", workdir=tmp_path / "work" / "grp8" / "lane-1", model=None
+    )
+    res2 = parallel.run_lane_to_completion(
+        spec2,
+        "do it",
+        cfg=cfg,
+        origin=origin,
+        origin_state=origin_state,
+        group="p8",
+        runtime=runtime,
+        spawner=spawner2,
+        poll_interval_s=0.01,
+    )
+    assert not res2.ok
+    assert spec2.workdir.exists()  # unimported lane retains its workspace
+
+
 def test_build_lane_spawner_builds_specs_and_preserves_order(
     origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runtime: LaneRuntime
 ) -> None:

@@ -374,6 +374,13 @@ def run_lane_to_completion(
             f"[agent6] lane {spec.lane} [{spec.run_id}]: imported, but the lineage"
             f" stamp failed: {stamp_err}"
         )
+    # The module contract ("clones + lane state are torn down after import")
+    # applies to this path too; the fan-out's teardown lives in run_parallel.
+    # Success only: the early ok=False returns above keep everything, since an
+    # unimported lane's clone may hold the only copy of its branch. Thread-pool
+    # safe: each lane removes only its own dirs, and the group-dir rmdir inside
+    # _cleanup succeeds only for whichever lane empties it last.
+    _cleanup([spec], workdir_root=spec.workdir.parent, cfg=cfg)
     return LaneResult(spec=spec, run_dir=dest, branch=res.branch, ok=True, error="")
 
 
