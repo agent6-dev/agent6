@@ -26,6 +26,15 @@ from pathlib import Path
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*$")
 _KEY_RE = re.compile(r"^([A-Za-z0-9_-]+):\s*(.*)$")
 
+
+def is_valid_skill_name(name: str) -> bool:
+    """True iff *name* is a valid skill name: alphanumeric-plus-hyphen, so it is
+    also a single safe path component. Discovery and install both gate on this;
+    an install path built from an unvalidated name would let `../` or an absolute
+    path in untrusted SKILL.md frontmatter escape the skills dir."""
+    return bool(_NAME_RE.match(name))
+
+
 SKILL_STATES = ("enabled", "disabled", "always")
 
 
@@ -106,7 +115,7 @@ def _load_skill(skill_dir: Path) -> tuple[Skill | None, list[str]]:
     description = fields.get("description", "")
     if not name or not description:
         return None, [f"{path}: missing required frontmatter name/description", *warnings]
-    if not _NAME_RE.match(name):
+    if not is_valid_skill_name(name):
         return None, [f"{path}: invalid skill name {name!r}", *warnings]
     prefixed = [f"{path}: {w}" for w in warnings]
     if name != skill_dir.name:

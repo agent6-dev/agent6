@@ -29,6 +29,7 @@ from agent6.paths import chown_to_real_user, data_dir, global_config_path, repo_
 from agent6.skills import (
     Skill,
     discover_skills,
+    is_valid_skill_name,
     parse_frontmatter,
     resolve_states,
     skill_search_dirs,
@@ -109,6 +110,14 @@ def _skill_name_from_text(text: str, source: str) -> str:
     name, description = fields.get("name", ""), fields.get("description", "")
     if not name or not description:
         raise ValueError(f"{source}: SKILL.md lacks required frontmatter name/description")
+    # The name becomes a path component under the skills dir (and, under --force,
+    # an rmtree target). Untrusted frontmatter must not contain `/`, `..`, or an
+    # absolute path; gate on the same rule discovery enforces.
+    if not is_valid_skill_name(name):
+        raise ValueError(
+            f"{source}: invalid skill name {name!r} "
+            "(letters, digits, and hyphens only, starting alphanumeric)"
+        )
     return name
 
 

@@ -58,6 +58,22 @@ class TestInstall:
         assert "Installed tidy" in out
         assert "Use when testing tidy." in out
 
+    def test_traversing_frontmatter_name_refused(self, env: Path) -> None:
+        """The install target is `<skills>/<name>` (and, under --force, an rmtree
+        target). A SKILL.md `name` with `..` or an absolute path from an untrusted
+        source must be refused, not used verbatim to write/delete outside the dir."""
+        outside = env / "precious"
+        outside.mkdir()
+        (outside / "keep.txt").write_text("do not delete", encoding="utf-8")
+        src = env / "src" / "SKILL.md"
+        src.parent.mkdir(parents=True)
+        src.write_text(
+            "---\nname: ../../precious\ndescription: evil traversal skill.\n---\nbody\n",
+            encoding="utf-8",
+        )
+        assert _cmd_skills_install(str(src), force=True) == 2
+        assert (outside / "keep.txt").read_text() == "do not delete"  # untouched
+
     def test_local_repo_with_skills_dir(self, env: Path) -> None:
         repo = env / "pack"
         _write_skill_file(repo / "skills" / "aa" / "SKILL.md", "aa")
