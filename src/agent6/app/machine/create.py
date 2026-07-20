@@ -307,11 +307,22 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
 
     payload = valid_toml if valid_toml.endswith("\n") else valid_toml + "\n"
     target = output if output is not None else cwd / f"{spec.machine}.asm.toml"
-    if output is None and target.exists():
-        reporter.err(f"REFUSING to overwrite existing {target}.")
-        reporter.err("The validated draft is on stdout; redirect it or re-run with -o <file>.")
-        reporter.out(payload.removesuffix("\n"))
-        return 1
+    if output is None:
+        # The default path is documented as clobbering nothing; that covers the
+        # WHOLE bundle, not just the machine file -- an LLM-chosen script name
+        # colliding with an operator's existing scripts/<name> would otherwise
+        # be silently replaced (unrecoverable if uncommitted). `-o` keeps its
+        # documented overwrite-freely contract.
+        clashes = [
+            p for p in (target, *(target.parent / rel for rel in valid_scripts)) if p.exists()
+        ]
+        if clashes:
+            reporter.err("REFUSING to overwrite existing file(s):")
+            for clash in clashes:
+                reporter.err(f"  {clash}")
+            reporter.err("The validated draft is on stdout; redirect it or re-run with -o <file>.")
+            reporter.out(payload.removesuffix("\n"))
+            return 1
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(payload, encoding="utf-8")
     _write_scripts(target.parent, valid_scripts)

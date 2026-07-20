@@ -612,6 +612,40 @@ def test_create_writes_script_bundle(
     assert "1 script(s)" in out.err
 
 
+def test_create_refuses_to_overwrite_existing_script(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The default (no -o) path is documented as clobbering NOTHING; that must
+    cover the whole bundle. An operator's pre-existing scripts/run.py whose
+    name collides with an LLM-chosen bundle script was silently replaced
+    (unrecoverable if uncommitted) while the sibling .asm.toml got a refusal."""
+    monkeypatch.chdir(tmp_path)
+    sentinel = "# operator-authored, do not clobber\n"
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "run.py").write_text(sentinel, encoding="utf-8")
+    _stub_preflight(monkeypatch)
+    _stub_runner(
+        monkeypatch,
+        [
+            AgentExecResult(
+                reason="finish_run",
+                payload={
+                    TOML_PAYLOAD_KEY: SCRIPT_MACHINE,
+                    SCRIPTS_PAYLOAD_KEY: {"scripts/run.py": SCRIPT_BODY},
+                },
+                usd=0.02,
+            )
+        ],
+    )
+    code = main(["machine", "create", "Run a script"])
+    assert code == 1
+    out = capsys.readouterr()
+    assert "REFUSING to overwrite" in out.err
+    assert "scripts/run.py" in out.err  # the clashing path is named
+    assert (tmp_path / "scripts" / "run.py").read_text(encoding="utf-8") == sentinel
+    assert not (tmp_path / "scripted.asm.toml").exists()  # no half-written bundle
+
+
 def test_create_rejects_missing_script_then_succeeds(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
