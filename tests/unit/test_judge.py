@@ -161,3 +161,20 @@ def test_mechanical_ranking_stable_within_ties() -> None:
         CandidateBrief(run_id="second", task="t", diff="", verify_ok=True, cost_usd=0.1),
     ]
     assert mechanical_ranking(candidates) == ("first", "second")
+
+
+def test_compare_degrades_on_budget_exhaustion_instead_of_crashing() -> None:
+    """Every provider raises BudgetExceeded from its up-front budget.check(),
+    and the judge's tracker seeds max_usd from the run's own USD limit.
+    Escaping compare() crashed the --parallel compare step AFTER the whole
+    fan-out (no winner stamp, no report); the documented contract is
+    JudgeError on the second failure so rank() falls back to mechanical
+    ranking."""
+    from agent6.budget import BudgetExceeded
+
+    class _BrokeProvider:
+        def call(self, **kw: Any) -> Any:
+            raise BudgetExceeded("USD budget exhausted")
+
+    with pytest.raises(JudgeError):
+        compare(cast(Provider, _BrokeProvider()), "m1", _candidates())
