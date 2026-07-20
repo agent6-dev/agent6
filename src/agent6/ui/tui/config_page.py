@@ -40,9 +40,11 @@ try:
 except ImportError as e:  # pragma: no cover - clear runtime message
     raise SystemExit("The config page needs textual: pip install 'agent6[tui]'") from e
 
+from agent6.config import ConfigError
 from agent6.config.io import format_toml_value
 from agent6.config.layer import (
     PROVIDER_PRESETS,
+    EffectiveConfig,
     load_effective,
     provider_choices,
     set_config_table,
@@ -626,6 +628,7 @@ class ConfigScreen(Screen[None]):
     def __init__(self, repo_root: Path) -> None:
         super().__init__()
         self.repo_root = repo_root
+        self._eff: EffectiveConfig | None = None
         self._view: ConfigView | None = None
         self._settings: dict[str, ConfigSetting] = {}
         self._table_keys: dict[str, list[str]] = {}
@@ -675,11 +678,25 @@ class ConfigScreen(Screen[None]):
 
     def _rebuild_view(self) -> None:
         eff = load_effective(self.repo_root, None)
+        self._eff = eff
         self._view = build_config_view(eff, resolved=resolved_adaptive_values(eff.config))
         self._settings = {s.key: s for s in self._view.settings}
 
     def _reload(self) -> None:
-        self._rebuild_view()
+        # Every interactive re-read funnels through here. An external hand-edit
+        # can invalidate the on-disk config while the page is open; keep the
+        # last-good view and point at the fix instead of crashing the TUI out
+        # of the action handler (the hub's open guard documents that intent).
+        try:
+            self._rebuild_view()
+        except ConfigError as exc:
+            self.notify(
+                f"config is invalid on disk; showing the last-loaded values."
+                f" Run `agent6 config fix` (or edit the file). {exc}",
+                severity="error",
+                timeout=10.0,
+            )
+            return
         self._refresh()
 
     def on_mount(self) -> None:
@@ -942,16 +959,22 @@ class ConfigScreen(Screen[None]):
         as free text: a `models.<role>.provider` field offers the names of the
         providers you've configured (so you pick, not retype)."""
         if setting.key.startswith("models.") and setting.key.endswith(".provider"):
-            providers = load_effective(self.repo_root, None).config.providers
-            return tuple(sorted(providers)) or None
+            if self._eff is None:
+                return None
+            return tuple(sorted(self._eff.config.providers)) or None
         return None
 
     def _model_provider(self, setting: ConfigSetting) -> str | None:
         """The provider name for a `models.<role>.model` field (from the role's
         configured provider), else None."""
         parts = setting.key.split(".")
-        if len(parts) == 3 and parts[0] == "models" and parts[2] == "model":
-            role_cfg = getattr(load_effective(self.repo_root, None).config.models, parts[1], None)
+        if (
+            len(parts) == 3
+            and parts[0] == "models"
+            and parts[2] == "model"
+            and self._eff is not None
+        ):
+            role_cfg = getattr(self._eff.config.models, parts[1], None)
             provider = getattr(role_cfg, "provider", None)
             return provider or None
         return None

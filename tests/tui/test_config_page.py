@@ -1057,3 +1057,34 @@ def test_reset_on_a_profile_sourced_setting_tells_the_truth(repo: Path) -> None:
             assert "profile" in notes[-1]
 
     asyncio.run(scenario())
+
+
+def test_reload_on_an_invalid_on_disk_config_keeps_the_last_good_view(repo: Path) -> None:
+    """Hand-editing the config invalid in another terminal then pressing r must
+    notify with the `agent6 config fix` pointer and keep the last-good table,
+    not crash the whole TUI out of the action handler (the hub's open guard
+    already documents that intent)."""
+
+    async def scenario() -> None:
+        app = _Host(repo)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, ConfigScreen)
+            baseline = _row_total(screen)
+            assert baseline > 10
+            gdir = Path(os.environ["AGENT6_CONFIG_HOME"])
+            (gdir / "config.toml").write_text(
+                _GLOBAL + '\n[workflow]\nplan = "yess"\n', encoding="utf-8"
+            )
+            await pilot.press("r")
+            await pilot.pause()
+            assert isinstance(app.screen, ConfigScreen)  # still alive
+            assert _row_total(screen) == baseline  # last-good view retained
+            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            assert any("config fix" in m for m in notes), notes
+            # Edit must not crash either (the choice helpers no longer re-read disk).
+            await pilot.press("e")
+            await pilot.pause()
+
+    asyncio.run(scenario())
