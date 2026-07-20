@@ -135,6 +135,11 @@ class RunSnapshot(BaseModel):
     gateless_ever_committed: bool = False
     metric_best_score: float | None = None
     metric_at_ceiling: bool = False
+    # /parallel groups dispatched so far. Run-lifetime, not leg-lifetime: lane
+    # ids and their imported branches embed the group number
+    # (`<run>-p<N>-l<i>`), so a resume that restarted at p1 rebuilt a prior
+    # group's exact ids and collided on its clone dirs / branches.
+    parallel_groups_dispatched: int = 0
     # Fork extras: the workspace HEAD and curator graph_version at this turn, so
     # ``fork --at-turn N`` cuts the branch at the right sha and clones the DAG as of
     # that version. Best-effort at write time: "" / 0 when git/curator was

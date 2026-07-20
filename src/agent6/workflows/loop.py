@@ -391,6 +391,7 @@ def _restore_completion_state(state: _LoopState, snap: RunSnapshot) -> None:
     state.review_rejections_total = snap.review_rejections_total
     state.verify_ever_passed = snap.verify_ever_passed
     state.gateless_ever_committed = snap.gateless_ever_committed
+    state.parallel_groups_dispatched = snap.parallel_groups_dispatched
     if snap.metric_at_ceiling or snap.metric_best_score is not None:
         # Seed one synthetic sample so `_metric_at_ceiling` and the plateau guard
         # see the prior best (we persist a compact summary, not the full history,
@@ -2898,6 +2899,7 @@ class Workflow:
             review_rejections_total=state.review_rejections_total,
             verify_ever_passed=state.verify_ever_passed,
             gateless_ever_committed=state.gateless_ever_committed,
+            parallel_groups_dispatched=state.parallel_groups_dispatched,
             metric_best_score=best.score if best is not None else None,
             metric_at_ceiling=self._metric_at_ceiling(state.metric_history),
             head_sha=self._checkpoint_head_sha(),

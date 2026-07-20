@@ -85,6 +85,40 @@ def test_snapshot_persists_completion_scalars(tmp_path: Path) -> None:
     assert loaded.metric_at_ceiling is True
 
 
+def test_snapshot_persists_and_restores_parallel_group_counter(tmp_path: Path) -> None:
+    """The /parallel group counter is run-lifetime state: lane ids embed it
+    (`<run>-p<N>-l<i>`) and so do the imported branches. In-memory only, every
+    resume restarted at p1, so the first post-resume dispatch rebuilt the exact
+    ids of a prior group -- clone dirs collided or, cache clean, the lanes ran
+    to completion and then failed import on the already-existing branch,
+    stranding paid work. Persist it like the sibling completion scalars."""
+    from agent6.workflows.loop import (
+        _restore_completion_state,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    snap = tmp_path / "loop_state.json"
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=(),
+            metric=SimpleNamespace(goal="maximize"),
+        )
+    )
+    wf = _wf(resume_state_path=snap, config=config)
+    state = _LoopState(original_task="t", tool_calls=0)
+    state.parallel_groups_dispatched = 2
+    wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
+        system="s", messages=[], tool_calls=0, next_iteration=4, root_task_id=None, state=state
+    )
+    loaded = load_run_snapshot(snap)
+    assert loaded.parallel_groups_dispatched == 2
+
+    fresh = _LoopState(original_task="t", tool_calls=0)
+    _restore_completion_state(fresh, loaded)
+    assert fresh.parallel_groups_dispatched == 2  # the next dispatch is p3, not p1
+
+
 def test_pre_version_bump_snapshot_refused_loudly(tmp_path: Path) -> None:
     """An in-flight run written before a state-format change (an older
     SNAPSHOT_VERSION) must refuse to resume/fork with a clear reason -- never a
