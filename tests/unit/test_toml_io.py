@@ -10,9 +10,42 @@ from pathlib import Path
 from agent6.config.io import (
     _toml_repr,  # pyright: ignore[reportPrivateUsage]
     parse_cli_value,  # pyright: ignore[reportPrivateUsage]
+    remove_toml_leaf,
     remove_toml_table,
     upsert_toml_leaf,  # pyright: ignore[reportPrivateUsage]
 )
+
+
+def test_remove_toml_leaf_deletes_whole_multiline_array(tmp_path: Path) -> None:
+    """A multi-line array value must be removed whole. Deleting only the opening
+    `leaf = [` line orphaned the continuation lines, leaving unparseable TOML
+    (and `config fix` then reported the file it 'repaired' as invalid)."""
+    path = tmp_path / "c.toml"
+    path.write_text(
+        '[sandbox]\nallow_urls = [\n  "http://x",\n  "http://y",\n]\ntool_network = "block"\n'
+    )
+    assert remove_toml_leaf(path, "sandbox.allow_urls") is True
+    out = path.read_text()
+    tomllib.loads(out)  # must stay valid TOML
+    assert "allow_urls" not in out
+    assert 'tool_network = "block"' in out  # sibling + header preserved
+
+
+def test_remove_toml_leaf_deletes_whole_multiline_string(tmp_path: Path) -> None:
+    path = tmp_path / "c.toml"
+    path.write_text('[a]\nx = """\nmultiline\nstring\n"""\ny = 1\n')
+    assert remove_toml_leaf(path, "a.x") is True
+    out = path.read_text()
+    assert tomllib.loads(out) == {"a": {"y": 1}}
+
+
+def test_remove_toml_leaf_multiline_last_leaf_drops_header(tmp_path: Path) -> None:
+    path = tmp_path / "c.toml"
+    path.write_text("[sandbox]\nallow_urls = [\n  1,\n]\n")
+    assert remove_toml_leaf(path, "sandbox.allow_urls") is True
+    out = path.read_text()
+    tomllib.loads(out)
+    assert "[sandbox]" not in out  # empty section header dropped
 
 
 def test_remove_toml_table_drops_header_body_and_subtables(tmp_path: Path) -> None:

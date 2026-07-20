@@ -162,6 +162,52 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
     _write(path, "\n".join(lines).rstrip("\n") + "\n")
 
 
+def _scan_toml_line(text: str, depth: int, triple: str | None) -> tuple[int, str | None]:
+    """Advance the (bracket-depth, open-triple-quote) state across one line, so
+    ``_value_line_span`` can tell where a multi-line value ends. Brackets and
+    quotes inside a string, and everything after a ``#`` comment, do not count."""
+    i, n = 0, len(text)
+    while i < n:
+        if triple is not None:
+            triple, i = (None, i + 3) if text.startswith(triple, i) else (triple, i + 1)
+            continue
+        if text.startswith('"""', i) or text.startswith("'''", i):
+            triple, i = text[i : i + 3], i + 3
+            continue
+        ch = text[i]
+        if ch in ('"', "'"):
+            i += 1
+            while i < n and text[i] != ch:
+                i += 2 if (ch == '"' and text[i] == "\\") else 1
+            i += 1
+            continue
+        if ch == "#":
+            break  # rest of the line is a comment
+        depth += (ch in "[{") - (ch in "]}")
+        i += 1
+    return depth, triple
+
+
+def _value_line_span(lines: list[str], start: int) -> int:
+    """How many lines the TOML value assigned on ``lines[start]`` spans (>=1).
+
+    A multi-line array (``leaf = [``...``]``) or triple-quoted string occupies
+    several lines; deleting only the opening line orphans the rest and leaves an
+    unparseable file."""
+    eq = lines[start].find("=")
+    text = lines[start][eq + 1 :] if eq != -1 else lines[start]
+    depth, triple = 0, None
+    idx = start
+    while True:
+        depth, triple = _scan_toml_line(text, depth, triple)
+        if triple is None and depth <= 0:
+            return idx - start + 1
+        idx += 1
+        if idx >= len(lines):
+            return idx - start  # unterminated value: consume to EOF
+        text = lines[idx]
+
+
 def remove_toml_leaf(path: Path, dotted_key: str) -> bool:
     """Delete a single ``table.leaf`` line from *path*. Returns True if removed.
     Removing the section's last leaf drops the now-empty ``[table]`` header too
@@ -182,9 +228,11 @@ def remove_toml_leaf(path: Path, dotted_key: str) -> bool:
     leaf_re = re.compile(rf"^\s*{re.escape(leaf)}\s*=")
     for j in range(start + 1, end):
         if leaf_re.match(lines[j]):
-            del lines[j]
-            if all(not rest.strip() for rest in lines[start + 1 : end - 1]):
-                del lines[start : end - 1]
+            span = _value_line_span(lines, j)
+            del lines[j : j + span]
+            remaining_end = end - span  # next section header shifted up by span
+            if all(not rest.strip() for rest in lines[start + 1 : remaining_end]):
+                del lines[start:remaining_end]
             out = "\n".join(lines).rstrip("\n") + "\n" if lines else ""
             _write(path, out)
             return True
