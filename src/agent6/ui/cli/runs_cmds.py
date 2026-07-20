@@ -190,9 +190,11 @@ def _dirty_worktree_note(cwd: Path, run_branch: object) -> str:
     the current branch must equal run_branch. Best-effort; git errors -> "" ."""
     if not run_branch:
         return ""
+    # Same host-RCE hardening as the diff/probe above: `git status` refreshes the
+    # index and would fire a poisoned `.git/config` core.fsmonitor on the host.
     try:
         current = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            ["git", *git_hardening_flags(), "rev-parse", "--abbrev-ref", "HEAD"],
             cwd=cwd,
             check=False,
             capture_output=True,
@@ -201,7 +203,11 @@ def _dirty_worktree_note(cwd: Path, run_branch: object) -> str:
         if current.returncode != 0 or current.stdout.strip() != str(run_branch):
             return ""
         status = subprocess.run(
-            ["git", "status", "--porcelain"], cwd=cwd, check=False, capture_output=True, text=True
+            ["git", *git_hardening_flags(), "status", "--porcelain"],
+            cwd=cwd,
+            check=False,
+            capture_output=True,
+            text=True,
         )
     except OSError:
         return ""
