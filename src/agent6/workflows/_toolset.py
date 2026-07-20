@@ -14,18 +14,7 @@ from typing import Any, Literal
 from agent6.providers import ToolDefinition
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 from agent6.tools.results import ToolResult
-from agent6.tools.schema import (
-    ALL_TOOLS,
-    ASK_EXTRA_TOOLS,
-    LOOP_EXTRA_TOOLS,
-    MACHINE_EXTRA_TOOLS,
-    PLAN_EXTRA_TOOLS,
-    ApplyEditInput,
-    ApplyPatchInput,
-    RunCommandInput,
-    RunVerifyInput,
-    UseSkillInput,
-)
+from agent6.tools.schema import UseSkillInput, mode_tools
 from agent6.workflows._review import ReviewDispatch
 
 # The ONLY tools an explore-tier reviewer may use: read-only navigation, no
@@ -49,48 +38,15 @@ def tool_definitions(
     *,
     mode: Literal["run", "plan", "ask", "machine", "agent"] = "run",
 ) -> list[ToolDefinition]:
-    """Build the tool list exposed to the loop. Filters by what the
-    dispatcher actually allows (e.g. run_command may be disabled).
-
-    ``mode="plan"`` filters mutating tools
-    (``apply_edit``/``apply_patch``) out of ``ALL_TOOLS`` and swaps
-    ``LOOP_EXTRA_TOOLS`` for ``PLAN_EXTRA_TOOLS`` (drops
-    ``finish_run``/``run_metric_command``, adds ``finish_planning``).
-    ``mode="machine"`` (machine authoring) keeps only read-only navigation +
-    ``finish_run`` so the agent's one job is to emit a `.asm.toml`.
-    """
+    """Build the tool list exposed to the loop: the mode's surface
+    (``schema.mode_tools``, which the dispatcher also enforces as its
+    backstop) filtered by what the dispatcher actually allows (e.g.
+    run_command may be disabled)."""
     available = set(dispatcher.available_tool_names())
-    extras: tuple[type[Any], ...]
-    if mode == "plan":
-        extras = PLAN_EXTRA_TOOLS
-    elif mode == "ask":
-        extras = ASK_EXTRA_TOOLS
-    elif mode in ("machine", "agent"):
-        extras = MACHINE_EXTRA_TOOLS
-    else:
-        extras = LOOP_EXTRA_TOOLS
-    base_tools: tuple[type[Any], ...] = ALL_TOOLS
-    if mode in ("plan", "ask"):
-        # Plan and ask are read-only; filter mutating tools even if the
-        # dispatcher would otherwise allow them (the dispatcher's own
-        # mode guard is the second line of defence).
-        blocked = {ApplyEditInput.TOOL_NAME, ApplyPatchInput.TOOL_NAME}
-        base_tools = tuple(cls for cls in ALL_TOOLS if cls.TOOL_NAME not in blocked)
-    elif mode in ("machine", "agent"):
-        # Authoring / machine agent-state: read-only navigation + finish_run
-        # only, no edit/patch/verify/run_command. The deliverable is the
-        # finish_run payload, not a file edit or a command run, and weak models
-        # otherwise wander off editing the repo (observed live on Kimi K2.6).
-        blocked = {
-            ApplyEditInput.TOOL_NAME,
-            ApplyPatchInput.TOOL_NAME,
-            RunVerifyInput.TOOL_NAME,
-            RunCommandInput.TOOL_NAME,
-        }
-        base_tools = tuple(cls for cls in ALL_TOOLS if cls.TOOL_NAME not in blocked)
+    surface = mode_tools(mode)
     out: list[ToolDefinition] = []
-    for cls in (*base_tools, *extras):
-        if cls.TOOL_NAME not in available and cls not in extras:
+    for cls in (*surface.base, *surface.extras):
+        if cls.TOOL_NAME not in available and cls not in surface.extras:
             # Extras (finish_run / finish_planning / run_metric / dag_*) are
             # always exposed even though they're not in ALL_TOOLS.
             continue

@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from functools import cache
 from typing import Any, ClassVar, Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -609,6 +611,52 @@ ASK_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (Agent6DocsInput,)
 # plus `finish_run`, no edit/patch/verify/run_command/DAG/metric tools, which
 # only tempt a weak model into writing the file or spelunking the repo.
 MACHINE_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (FinishRunInput,)
+
+
+@dataclass(frozen=True, slots=True)
+class ModeTools:
+    """One mode's LLM tool surface: `base` (ALL_TOOLS minus the mode's blocked
+    mutators) plus `extras` (its control tools). `tool_definitions` exposes
+    exactly `base + extras`; the dispatcher refuses names outside `permitted`
+    as its backstop, so exposure and enforcement cannot drift apart.
+    `permitted` is `names` plus agent6_docs, which is exposed only in ask
+    (elsewhere it is tool-list noise) but safe to execute anywhere -- a
+    read-only doc fetch the in-loop review seat uses in every mode."""
+
+    base: tuple[type[_ToolInput], ...]
+    extras: tuple[type[_ToolInput], ...]
+    names: frozenset[str]
+    permitted: frozenset[str]
+
+
+@cache
+def mode_tools(mode: Literal["run", "plan", "ask", "machine", "agent"]) -> ModeTools:
+    if mode == "plan":
+        extras: tuple[type[_ToolInput], ...] = PLAN_EXTRA_TOOLS
+    elif mode == "ask":
+        extras = ASK_EXTRA_TOOLS
+    elif mode in ("machine", "agent"):
+        extras = MACHINE_EXTRA_TOOLS
+    else:
+        extras = LOOP_EXTRA_TOOLS
+    blocked: set[str] = set()
+    if mode != "run":
+        # Read-only modes: no in-process file mutation.
+        blocked = {ApplyEditInput.TOOL_NAME, ApplyPatchInput.TOOL_NAME}
+    if mode in ("machine", "agent"):
+        # Machine authoring / agent states additionally never run commands:
+        # the deliverable is the finish_run payload, and command tools only
+        # tempt a weak model into spelunking (observed live on Kimi K2.6).
+        # `ask` keeps run_command for read-only, approval-gated investigation.
+        blocked |= {RunVerifyInput.TOOL_NAME, RunCommandInput.TOOL_NAME}
+    base = tuple(cls for cls in ALL_TOOLS if cls.TOOL_NAME not in blocked)
+    names = frozenset(cls.TOOL_NAME for cls in (*base, *extras))
+    return ModeTools(
+        base=base,
+        extras=extras,
+        names=names,
+        permitted=names | {Agent6DocsInput.TOOL_NAME},
+    )
 
 
 def schemas_as_provider_tools() -> list[dict[str, Any]]:

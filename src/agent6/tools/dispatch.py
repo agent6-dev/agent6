@@ -87,6 +87,7 @@ from agent6.tools.schema import (
     RunVerifyInput,
     UserQuestion,
     UseSkillInput,
+    mode_tools,
 )
 from agent6.types import CommandResult, JailPolicy, SandboxProfile
 
@@ -408,29 +409,14 @@ class ToolDispatcher:
             raise ToolError(
                 f"{name} is disabled (AGENT6_DISABLE_APPLY_EDIT=1); use apply_patch instead"
             )
-        if self._mode in ("plan", "ask", "machine") and name in {
-            ApplyEditInput.TOOL_NAME,
-            ApplyPatchInput.TOOL_NAME,
-        }:
-            # Backstop the read-only guarantee at the dispatcher, not just by
-            # omitting these from the LLM's tool list.
-            raise ToolError(f"{name} is not available in {self._mode} mode (read-only)")
-        if self._mode == "machine" and name in {
-            RunCommandInput.TOOL_NAME,
-            RunVerifyInput.TOOL_NAME,
-        }:
-            # machine-authoring + machine agent-state loops never run commands
-            # (unlike `ask`, which allows read-only run_command investigation).
-            raise ToolError(f"{name} is not available in {self._mode} mode (read-only)")
-        if self._mode != "run" and name in {
-            AskUserInput.TOOL_NAME,
-            AddMemoryInput.TOOL_NAME,
-            InvalidateMemoryInput.TOOL_NAME,
-            UseSkillInput.TOOL_NAME,
-        }:
-            # Run-mode tools (LOOP_EXTRA_TOOLS only); backstop them so a future
-            # tool-list regression can't pause a plan/ask/machine loop
-            # (ask_user) or let it write cross-run memories.
+        if name not in mode_tools(self._mode).permitted:
+            # Backstop the mode's tool surface at the dispatcher, not just by
+            # omitting tools from the LLM's list: a tool-list regression or a
+            # hallucinated name must not mutate the repo or run commands
+            # (including the approval-gate-free metric command) from a
+            # read-only mode, pause a non-run loop (ask_user), or write
+            # cross-run memories. Enforcing membership in the same surface
+            # `tool_definitions` exposes means the two cannot drift.
             raise ToolError(f"{name} is not available in {self._mode} mode")
         return self._run_handler(name, raw_input)
 

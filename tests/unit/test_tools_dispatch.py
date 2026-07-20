@@ -214,6 +214,52 @@ def test_ask_user_refused_outside_run_mode(tmp_path: Path) -> None:
         d.dispatch("ask_user", {"questions": [{"question": "q?"}]})
 
 
+@pytest.mark.parametrize("mode", ["plan", "ask", "machine"])
+def test_run_metric_refused_outside_run_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    """run_metric_command executes the operator's metric command with no
+    approval gate; it is run-only (LOOP_EXTRA_TOOLS) and the dispatcher must
+    backstop it in every other mode even with [workflow.metric] configured."""
+    body = _VALID_TOML + (
+        "\n[workflow.metric]\n"
+        'command = ["/usr/bin/python3", "-c", "print(\\"CYCLES: 42\\")"]\n'
+        'pattern = "CYCLES:\\\\s*(\\\\d+)"\n'
+        'goal = "minimize"\n'
+    )
+    p = tmp_path / "agent6.toml"
+    p.write_text(body, encoding="utf-8")
+    from agent6.config import load_config
+
+    cfg = load_config(p)
+    fired: list[object] = []
+
+    def fake_run_in_jail(policy: object) -> None:
+        fired.append(policy)
+
+    monkeypatch.setattr("agent6.tools.dispatch.run_in_jail", fake_run_in_jail)
+    d = ToolDispatcher(root=tmp_path, config=cfg, mode=mode)  # type: ignore[arg-type]
+    with pytest.raises(ToolError, match=f"not available in {mode} mode"):
+        d.dispatch("run_metric_command", {})
+    assert fired == []
+
+
+def test_mode_backstop_is_the_mode_tool_surface(tmp_path: Path) -> None:
+    """The backstop derives from the same per-mode surface tool_definitions
+    exposes, so a control tool outside a mode's surface is refused without
+    needing its own hand-list entry (finish_planning in run and run_metric
+    outside run were the gaps the hand-lists missed). agent6_docs is the one
+    exemption: exposed only in ask, but a read-only doc fetch the review seat
+    dispatches in every mode, so it stays permitted everywhere."""
+    cfg = _config(tmp_path)
+    run = ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(ToolError, match="not available in run mode"):
+        run.dispatch("finish_planning", {})
+    assert run.dispatch("agent6_docs", {}).to_wire()["available"]
+    machine = ToolDispatcher(root=tmp_path, config=cfg, mode="machine")
+    assert machine.dispatch("agent6_docs", {}).to_wire()["available"]
+
+
 def test_absolute_path_rejected(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     d = ToolDispatcher(root=tmp_path, config=cfg)

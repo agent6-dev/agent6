@@ -110,7 +110,7 @@ def test_plan_extra_tools_includes_finish_planning_excludes_finish_run() -> None
 
 def test_dispatch_finish_planning_returns_ack(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
+    d = ToolDispatcher(root=tmp_path, config=cfg, mode="plan")
     out = d.dispatch(
         "finish_planning",
         {"summary": "looks good", "plan_markdown": "# Plan\n\n## Tasks\n- t1\n"},
@@ -122,8 +122,8 @@ def test_dispatch_finish_planning_returns_ack(tmp_path: Path) -> None:
 
 def test_dispatch_finish_planning_rejects_empty(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(ToolError):
+    d = ToolDispatcher(root=tmp_path, config=cfg, mode="plan")
+    with pytest.raises(ToolError, match="summary"):
         d.dispatch("finish_planning", {"summary": "", "plan_markdown": "x"})
 
 
