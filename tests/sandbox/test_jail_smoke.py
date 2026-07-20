@@ -352,6 +352,26 @@ def test_jail_extra_ro_paths_mount_at_their_real_location(jail_bin: Path, tmp_pa
     assert ungranted.returncode != 0
 
 
+def test_jail_preserves_non_utf8_output(jail_bin: Path, tmp_path: Path) -> None:
+    """A command emitting non-UTF-8 bytes must return a lossy-decoded result,
+    not a silently empty stdout. read_to_string dropped the whole stream to ""
+    on the first invalid byte (grep over a binary, cat of a latin-1 file)."""
+    for profile in ("strict", "hardened"):
+        res = run_in_jail(
+            JailPolicy(
+                cwd=tmp_path,
+                argv=("/bin/sh", "-c", "printf 'caf'; printf '\\351'; printf 'x'"),
+                profile=profile,
+                timeout_s=10.0,
+            )
+        )
+        assert res.returncode == 0, f"{profile} stderr: {res.stderr!r}"
+        # 0xe9 decodes to the replacement char; the surrounding bytes survive.
+        assert res.stdout.startswith("caf"), f"{profile} stdout: {res.stdout!r}"
+        assert res.stdout.endswith("x"), f"{profile} stdout: {res.stdout!r}"
+        assert "�" in res.stdout, f"{profile} stdout: {res.stdout!r}"
+
+
 def test_jail_strict_seccomp_blocks_modern_mount_api(jail_bin: Path, tmp_path: Path) -> None:
     """A strict jailed child is userns-root over its own mount ns; without the
     modern mount API in the seccomp deny-list it could mount_setattr(2) away the

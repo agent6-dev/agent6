@@ -1047,17 +1047,22 @@ fn run_child(policy: &Policy, cwd: &Path) -> io::Result<()> {
     // polling try_wait() forever.
     let stdout_pipe = child.stdout.take().expect("stdout piped");
     let stderr_pipe = child.stderr.take().expect("stderr piped");
+    // Read as BYTES, then decode lossily. read_to_string returns Err and
+    // leaves the buffer EMPTY on the first non-UTF-8 byte (a grep over a
+    // binary, a latin-1 file, git output with a non-UTF-8 commit message), so
+    // the whole stream was silently dropped to "" while the real rc was
+    // reported — every consumer misled. from_utf8_lossy keeps the output.
     let stdout_handle = std::thread::spawn(move || {
-        let mut buf = String::new();
+        let mut buf = Vec::new();
         let mut s = stdout_pipe;
-        let _ = s.read_to_string(&mut buf);
-        buf
+        let _ = s.read_to_end(&mut buf);
+        String::from_utf8_lossy(&buf).into_owned()
     });
     let stderr_handle = std::thread::spawn(move || {
-        let mut buf = String::new();
+        let mut buf = Vec::new();
         let mut s = stderr_pipe;
-        let _ = s.read_to_string(&mut buf);
-        buf
+        let _ = s.read_to_end(&mut buf);
+        String::from_utf8_lossy(&buf).into_owned()
     });
 
     let returncode: i32;
