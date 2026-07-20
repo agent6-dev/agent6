@@ -372,6 +372,29 @@ def test_jail_preserves_non_utf8_output(jail_bin: Path, tmp_path: Path) -> None:
         assert "�" in res.stdout, f"{profile} stdout: {res.stdout!r}"
 
 
+def test_jail_backgrounded_pipe_holder_does_not_hang(jail_bin: Path, tmp_path: Path) -> None:
+    """A command that backgrounds a process inheriting stdout, then exits 0,
+    must return promptly with rc=0 -- not block on the reader join until the
+    (30s-sleeping) grandchild dies and then report a false rc=124 timeout.
+    The process-group teardown runs on the normal-exit path, not only on
+    timeout. Hardened has no PID namespace, so it is the exposed profile."""
+    import time
+
+    start = time.monotonic()
+    res = run_in_jail(
+        JailPolicy(
+            cwd=tmp_path,
+            argv=("/bin/sh", "-c", "sleep 30 & echo done; exit 0"),
+            profile="hardened",
+            timeout_s=10.0,
+        )
+    )
+    elapsed = time.monotonic() - start
+    assert res.returncode == 0, f"stderr: {res.stderr!r}"
+    assert "done" in res.stdout
+    assert elapsed < 8.0, f"launcher blocked on the backgrounded fd-holder ({elapsed:.1f}s)"
+
+
 def test_jail_strict_seccomp_blocks_modern_mount_api(jail_bin: Path, tmp_path: Path) -> None:
     """A strict jailed child is userns-root over its own mount ns; without the
     modern mount API in the seccomp deny-list it could mount_setattr(2) away the

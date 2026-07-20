@@ -29,8 +29,8 @@ use landlock::{
 use nix::mount::{mount, umount2, MntFlags, MsFlags};
 use nix::sched::{unshare, CloneFlags};
 use nix::sys::statvfs::{statvfs, FsFlags};
-use nix::sys::wait::{waitpid, WaitStatus};
-use nix::unistd::{chdir, fork, getgid, getuid, pivot_root, ForkResult};
+use nix::sys::wait::{waitid, waitpid, Id, WaitPidFlag, WaitStatus};
+use nix::unistd::{chdir, fork, getgid, getuid, pivot_root, ForkResult, Pid};
 use seccompiler::{BpfProgram, SeccompAction, SeccompFilter, TargetArch};
 use serde::Deserialize;
 
@@ -1065,60 +1065,54 @@ fn run_child(policy: &Policy, cwd: &Path) -> io::Result<()> {
         String::from_utf8_lossy(&buf).into_owned()
     });
 
-    let returncode: i32;
+    // Poll the direct child WITHOUT reaping it (WNOWAIT leaves the zombie), so
+    // child_pid (== pgid) cannot be recycled by the kernel before we tear the
+    // group down below. try_wait() would reap on exit, forcing the old
+    // two-path dance (killpg-before-wait on timeout, skip-killpg on normal
+    // exit) — and skipping the killpg on normal exit leaked backgrounded
+    // grandchildren that held the stdout/stderr pipe open, hanging the reader
+    // joins and turning a successful command into a false rc=124 timeout.
+    // waitid (not waitpid): WNOWAIT is a waitid(2) flag — glibc's waitpid
+    // rejects it with EINVAL. WEXITED selects exited children; WNOHANG polls.
+    let child_wait = Pid::from_raw(child_pid);
+    let wait_flags = WaitPidFlag::WEXITED | WaitPidFlag::WNOHANG | WaitPidFlag::WNOWAIT;
     let mut timed_out = false;
-    // Track whether try_wait()/wait() has already reaped the direct child. Once
-    // reaped, child_pid (== pgid) is free for the kernel to reuse for an
-    // UNRELATED process group, so a blind post-loop killpg(child_pid) could
-    // SIGKILL a stranger. The timeout branch does its own killpg BEFORE waiting
-    // (the pid is still ours there), so it is safe regardless.
-    let mut reaped = false;
     loop {
-        match child.try_wait()? {
-            Some(status) => {
-                returncode = status
-                    .code()
-                    .unwrap_or_else(|| status.signal().map(|s| 128 + s).unwrap_or(-1));
-                reaped = true;
-                break;
-            }
-            None => {
+        match waitid(Id::Pid(child_wait), wait_flags) {
+            Ok(WaitStatus::StillAlive) => {
                 if start.elapsed() > timeout {
-                    // Kill the whole process group, not just the direct child,
-                    // so backgrounded grandchildren can't keep running / hold
-                    // the pipe write-end open. This runs BEFORE wait(), while
-                    // child_pid is still unambiguously our process group.
-                    unsafe {
-                        libc::killpg(child_pid, libc::SIGKILL);
-                    }
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    returncode = 124;
                     timed_out = true;
                     break;
                 }
                 std::thread::sleep(Duration::from_millis(50));
             }
+            // Exited/Signaled (peeked, not reaped) or an unexpected wait error:
+            // proceed to the unified teardown + real reap below.
+            _ => break,
         }
     }
-    // Reap the whole process group on exit so any backgrounded fd-holder is gone
-    // and the pipe write-end is closed (read_to_string() then gets EOF instead of
-    // the reader-thread joins below blocking until those grandchildren exit). This
-    // also, by design, means a command's process group does not outlive the
-    // command: a daemon the command backgrounded is torn down here rather than
-    // leaking — the sandbox-appropriate behavior (in strict mode the PID namespace
-    // already enforces this; this makes hardened mode match).
-    //
-    // ONLY when the child was not already reaped on the normal path: once
-    // try_wait() has reaped it, child_pid may have been recycled by the kernel
-    // for an unrelated process group, and killpg(child_pid) would signal that
-    // stranger. The normal-exit case (reaped == true) skips this; the timeout
-    // case already killpg'd above before waiting.
-    if !reaped {
-        unsafe {
-            libc::killpg(child_pid, libc::SIGKILL);
-        }
+    // Kill the whole process group BEFORE reaping — one path for both normal
+    // exit and timeout. The direct child is still an unreaped zombie (normal
+    // exit) or alive (timeout), so child_pid == pgid is unambiguously ours,
+    // with no pid-reuse hazard. This tears down any backgrounded grandchild
+    // that inherited the stdout/stderr write-end, so read_to_end() gets EOF
+    // and the reader joins finish; it also means a command's process group
+    // does not outlive the command (a backgrounded daemon is torn down, not
+    // leaked — strict's PID namespace already enforces this; hardened now
+    // matches).
+    unsafe {
+        libc::killpg(child_pid, libc::SIGKILL);
     }
+    // Reap the direct child for its real exit code (the group SIGKILL above
+    // already terminated it on the timeout path).
+    let status = child.wait()?;
+    let returncode: i32 = if timed_out {
+        124
+    } else {
+        status
+            .code()
+            .unwrap_or_else(|| status.signal().map(|s| 128 + s).unwrap_or(-1))
+    };
     let stdout = stdout_handle.join().unwrap_or_default();
     let mut stderr = stderr_handle.join().unwrap_or_default();
     if timed_out {
