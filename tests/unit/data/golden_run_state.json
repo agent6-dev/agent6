@@ -66,10 +66,10 @@
     "stderr_tail": ""
   },
   "budget": {
-    "input_total": 5850,
-    "output_total": 82,
-    "input_cap": 1500000,
-    "output_cap": 200000,
+    "input_total": 0,
+    "output_total": 0,
+    "input_cap": 0,
+    "output_cap": 0,
     "usd_total": 0.004841036,
     "usd_prior_legs": 0.004841036,
     "usd_partial": false

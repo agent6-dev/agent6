@@ -217,18 +217,32 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
 
     match events.parse_event(event):
         case events.RunStart(user_task=task):
-            return replace(state, user_task=task)
+            # A run.start begins a leg: by definition it is running. The ask REPL
+            # re-enters wf.run() per follow-up on the same log, so a second
+            # run.start must clear the prior leg's terminal state. Unlike
+            # ResumeStart, do NOT bank usd: the REPL reuses one BudgetTracker,
+            # so usd_total is already cumulative across legs.
+            return replace(state, user_task=task, finished=False, end_reason="")
 
         case events.ResumeStart():
             # A resume restarts a finished/stopped run in place (it appends to the
             # same log): it is running again, so clear the terminal state. The new
-            # leg's budget counters start fresh, so bank the cumulative spend now;
-            # usd_total keeps its value until the leg's first budget.update.
+            # leg's budget counters start fresh, so bank the cumulative spend now
+            # (usd_total keeps its value until the leg's first budget.update) and
+            # zero the token counters/caps: BudgetView documents them as the
+            # CURRENT leg's, and scan_run_log resets for the same reason.
             return replace(
                 state,
                 finished=False,
                 end_reason="",
-                budget=replace(state.budget, usd_prior_legs=state.budget.usd_total),
+                budget=replace(
+                    state.budget,
+                    usd_prior_legs=state.budget.usd_total,
+                    input_total=0,
+                    output_total=0,
+                    input_cap=0,
+                    output_cap=0,
+                ),
             )
 
         case events.GraphUpdate(nodes=nodes, cursor=cursor):

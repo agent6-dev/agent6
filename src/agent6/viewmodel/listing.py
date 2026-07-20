@@ -280,6 +280,7 @@ def scan_run_log(logs: Path) -> LogScan:  # noqa: PLR0915 (linear fold, like bui
                     iteration = ev["iteration"]
                 if etype == "run.start":
                     saw_start = True
+                    finished = False  # a leg is starting (ask REPL re-runs in place)
                     mode = str(ev.get("mode", mode))
                     task = str(ev.get("user_task", ""))
                     if start_ep is None:

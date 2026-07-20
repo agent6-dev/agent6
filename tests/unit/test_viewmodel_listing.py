@@ -442,3 +442,21 @@ def test_summary_gateless_settle_reads_finished_unverified(tmp_path: Path) -> No
     )
     s = summarize_run_dir(rd)
     assert (s.status, s.reason) == ("finished", "unverified")
+
+
+def test_summary_second_run_start_reads_running(tmp_path: Path) -> None:
+    """An ask REPL follow-up re-runs on the same log via a plain run.start; the
+    hub row must read "running" while the follow-up leg streams, not the prior
+    leg's "answered"."""
+    rd = _write_run(
+        tmp_path,
+        "asks",
+        "ask-repl",
+        [
+            {"type": "run.start", "mode": "ask", "user_task": "q"},
+            {"type": "run.end", "all_passed": True, "reason": "answered"},
+            {"type": "run.start", "mode": "ask", "user_task": "q2"},
+            {"type": "role.call", "role": "worker", "model": "m"},
+        ],
+    )
+    assert summarize_run_dir(rd, stale_after_s=10_000_000).status == "running"

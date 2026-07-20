@@ -433,3 +433,51 @@ def test_role_result_tracks_context_tokens_and_provider() -> None:
     assert s.last_role is not None and s.last_role.ctx_tokens == 43_000  # carried over
     s = apply_event(s, {"type": "role.result", "role": "worker", "ok": False, "error": "boom"})
     assert s.last_role is not None and s.last_role.ctx_tokens == 43_000  # kept on error
+
+
+def test_run_start_after_run_end_unfinishes_without_banking() -> None:
+    """The ask REPL re-enters wf.run() per follow-up, emitting a fresh run.start
+    on the same log with no resume marker. A run.start begins a leg: it must
+    clear the terminal state (or the streaming follow-up renders "answered").
+    It must NOT bank usd like ResumeStart: the REPL reuses one BudgetTracker,
+    so usd_total is already cumulative and banking would double-count."""
+    s = initial_state()
+    s = apply_event(s, {"type": "run.start", "user_task": "q"})
+    s = apply_event(s, {"type": "budget.update", "usd_total": 0.02})
+    s = apply_event(s, {"type": "run.end", "all_passed": False, "reason": "answered"})
+    s = apply_event(s, {"type": "run.start", "user_task": "follow-up"})
+    s = apply_event(s, {"type": "role.call", "role": "worker", "model": "m"})
+    assert s.finished is False
+    assert s.end_reason == ""
+    assert run_status_label(s) == "running"
+    s = apply_event(s, {"type": "budget.update", "usd_total": 0.03})
+    assert s.budget.usd_total == pytest.approx(0.03)
+    assert s.budget.usd_prior_legs == pytest.approx(0.0)
+
+
+def test_resume_resets_the_leg_token_counters() -> None:
+    """ResumeStart banks usd but must also drop the dead leg's token counters
+    and caps: BudgetView documents them as the CURRENT leg's, and scan_run_log
+    already resets -- until the resumed leg's first budget.update the header
+    would otherwise render the finished leg's ~100%%."""
+    s = initial_state()
+    s = apply_event(s, {"type": "run.start", "user_task": "t"})
+    s = apply_event(
+        s,
+        {
+            "type": "budget.update",
+            "input_total": 9500,
+            "output_total": 480,
+            "input_cap": 10000,
+            "output_cap": 500,
+            "usd_total": 0.2,
+        },
+    )
+    s = apply_event(s, {"type": "run.end", "all_passed": False, "reason": "budget_exhausted"})
+    s = apply_event(s, {"type": "loop.resume.start"})
+    assert s.budget.input_total == 0
+    assert s.budget.output_total == 0
+    assert s.budget.input_cap == 0
+    assert s.budget.output_cap == 0
+    assert s.budget.usd_total == pytest.approx(0.2)
+    assert s.budget.usd_prior_legs == pytest.approx(0.2)
