@@ -111,15 +111,22 @@ def _require_metered_usage(usage: object, *, source: str) -> None:
     turn legitimately reports ``input_tokens: 0`` with ``cache_read_input_tokens``
     > 0, so a plain ``input_tokens > 0`` check would false-reject it."""
     if isinstance(usage, Mapping):
-        input_tokens = usage.get("input_tokens")
-        output_tokens = usage.get("output_tokens")
-        cache_read = usage.get("cache_read_input_tokens") or 0
-        cache_creation = usage.get("cache_creation_input_tokens") or 0
-        if (
-            isinstance(input_tokens, int)
-            and isinstance(output_tokens, int)
-            and input_tokens + cache_read + cache_creation > 0
-        ):
+        # Coerce numerically (the streaming path already does): a proxy typing
+        # counts as floats/strings is meterable; the isinstance(int) gate
+        # rejected it with a NON-retryable 422. Absent/zero/non-numeric still
+        # fails closed below.
+        def _count(key: str) -> int:
+            try:
+                return int(usage.get(key) or 0)
+            except (TypeError, ValueError):
+                return 0
+
+        total_input = (
+            _count("input_tokens")
+            + _count("cache_read_input_tokens")
+            + _count("cache_creation_input_tokens")
+        )
+        if total_input > 0:
             return
     raise ProviderError(
         f"{source} reported no usage input tokens (usage.input_tokens missing or 0); "

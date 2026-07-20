@@ -501,3 +501,24 @@ def test_anthropic_malformed_content_is_provider_error() -> None:
         with pytest.raises(ProviderError) as ei:
             _anthropic_parse(body)
         assert ei.value.status_code is None
+
+
+def test_metered_gate_coerces_gateway_typed_counts() -> None:
+    """A gateway serializing counts as floats/strings ("700", 700.0) is
+    meterable -- parse_response coerces them -- but the isinstance(int) gate
+    raised a NON-retryable 422, killing a budgeted run on its first call.
+    Absent/zero/non-numeric still fails closed."""
+    from agent6.providers.anthropic import (
+        _require_metered_usage as _anthropic_gate,  # pyright: ignore[reportPrivateUsage]
+    )
+    from agent6.providers.openai import (
+        _require_metered_usage as _openai_gate,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    _openai_gate({"prompt_tokens": 700.0, "completion_tokens": 50}, source="t")
+    _openai_gate({"prompt_tokens": "700"}, source="t")  # missing completion is fine
+    _anthropic_gate({"input_tokens": 700.0, "output_tokens": 3}, source="t")
+    for bad in ({"prompt_tokens": 0}, {"prompt_tokens": "abc"}, {}):
+        with pytest.raises(ProviderError) as ei:
+            _openai_gate(bad, source="t")
+        assert ei.value.status_code == 422

@@ -129,9 +129,17 @@ def _require_metered_usage(usage: object, *, source: str) -> None:
     for a real call, so require it strictly positive; a run must not proceed on a
     call it cannot meter."""
     if isinstance(usage, Mapping):
-        prompt = usage.get("prompt_tokens")
-        completion = usage.get("completion_tokens")
-        if isinstance(prompt, int) and isinstance(completion, int) and prompt > 0:
+        # Coerce numerically, mirroring parse_response: a gateway serializing
+        # counts as JSON floats/strings (700.0, "700") is meterable, and the
+        # old isinstance(int) gate rejected it with a NON-retryable 422 --
+        # killing a budgeted run on its first call. Absent/zero/non-numeric
+        # still fails closed below. completion_tokens presence is not
+        # required: the docstring's contract gates on the input side only.
+        try:
+            prompt = int(usage.get("prompt_tokens") or 0)
+        except (TypeError, ValueError):
+            prompt = 0
+        if prompt > 0:
             return
     raise ProviderError(
         f"{source} reported no usage input tokens (usage.prompt_tokens missing or 0); "
