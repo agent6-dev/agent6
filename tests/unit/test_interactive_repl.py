@@ -85,6 +85,35 @@ def _budget() -> BudgetTracker:
     return BudgetTracker(max_input_tokens=1000, max_output_tokens=1000)
 
 
+def test_hook_pauses_the_console_heartbeat_while_prompting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The REPL prompt must sit inside the console view's pause(): the run is
+    waiting on the OPERATOR, and without the pause the heartbeat's per-tick
+    line-erase wiped the "agent6> " prompt and the typed characters, replacing
+    them with a lying "working…" spinner (keystrokes were submitted blind)."""
+    import contextlib
+    from collections.abc import Iterator
+
+    states: list[str] = []
+
+    class _FakeConsole:
+        @contextlib.contextmanager
+        def pause(self) -> Iterator[None]:
+            states.append("paused")
+            yield
+            states.append("resumed")
+
+    def _input(_p: str = "") -> str:
+        assert states == ["paused"], "input() ran outside the console pause"
+        return ""
+
+    monkeypatch.setattr("builtins.input", _input)
+    hook = build_repl_hook(tmp_path, _budget(), console_view=_FakeConsole())  # type: ignore[arg-type]
+    assert hook(1, "a" * 40) == "continue"
+    assert states == ["paused", "resumed"]
+
+
 def test_hook_empty_input_continues(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("builtins.input", lambda _p="": "")
     hook = build_repl_hook(tmp_path, _budget())

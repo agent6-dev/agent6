@@ -128,7 +128,7 @@ def run_frontend() -> RunFrontend:
         prompt_detach_away_mode=prompt_detach_away_mode,
         select_revised_prompt=select_revised_prompt,
         build_repl_hook=lambda cwd, budget, run_id, mcp_manager: build_repl_hook(
-            cwd, budget, run_id=run_id, mcp_manager=mcp_manager
+            cwd, budget, run_id=run_id, mcp_manager=mcp_manager, console_view=console_cell[0]
         ),
         run_ask_repl=lambda wf, budget, layout, first_question: run_ask_repl(
             wf, budget, layout, first_question=first_question

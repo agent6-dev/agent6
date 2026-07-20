@@ -10,7 +10,10 @@ import json
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from agent6.ui.cli._console_view import ConsoleView
 
 from agent6.budget import BudgetTracker
 from agent6.config.layer import repo_config_path_for
@@ -21,6 +24,7 @@ from agent6.git_ops import (
 from agent6.init import init_workspace
 from agent6.tools.mcp_client import MCPManager
 from agent6.ui.cli._common import _runs_dir
+from agent6.ui.cli._interact import _pause
 from agent6.ui.cli.plan_watch import (
     event_epoch,
     format_plain_event,
@@ -55,6 +59,7 @@ def build_repl_hook(
     *,
     run_id: str = "",
     mcp_manager: MCPManager | None = None,
+    console_view: ConsoleView | None = None,
 ) -> Callable[[int, str], Literal["continue", "stop"]]:
     """Build the after_auto_commit hook for ``agent6 run -i``.
 
@@ -66,6 +71,15 @@ def build_repl_hook(
     """
 
     def hook(iteration: int, sha: str) -> Literal["continue", "stop"]:
+        # The whole prompt session sits inside the console-view pause: the run
+        # is waiting on the OPERATOR, and the heartbeat's per-tick line-erase
+        # would otherwise wipe the "agent6> " prompt and the typed characters,
+        # replacing them with a lying "working…" spinner (same wiring as the
+        # approval/question prompts).
+        with _pause(console_view):
+            return _prompt_loop(iteration, sha)
+
+    def _prompt_loop(iteration: int, sha: str) -> Literal["continue", "stop"]:
         print(
             f"\n[agent6] iter {iteration} committed {sha[:12]}. "
             f"REPL: /continue /cost /diff /watch /mcp /init /undo /help /quit",
