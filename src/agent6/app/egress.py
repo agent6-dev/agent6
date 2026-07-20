@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent6.app.reporter import STDIO_REPORTER, Reporter
-from agent6.config import Config
+from agent6.config import Config, is_loopback_host
 from agent6.config.layer import resolved_state_dir
 from agent6.providers.egress import clear_routes, parse_endpoint, register_route
 from agent6.sandbox import (
@@ -105,8 +105,15 @@ def warn_if_unsandboxed(
 
 
 def _is_loopback(host: str) -> bool:
-    """True for a loopback host (a local model endpoint, e.g. Ollama)."""
-    return host in ("localhost", "127.0.0.1", "::1", "0.0.0.0") or host.startswith("127.")  # noqa: S104
+    """True for a loopback host (a local model endpoint, e.g. Ollama).
+
+    Parses the address via ``config.is_loopback_host`` (the one source of
+    truth); a routable NAME like ``127.foo.example.com`` is NOT loopback.
+    ``0.0.0.0`` stays allowed here: a provider bound to the wildcard is
+    reached over loopback from this host (a client-connect reading, unlike
+    the web bind gate's).
+    """
+    return is_loopback_host(host) or host == "0.0.0.0"  # noqa: S104
 
 
 def check_network_profile(cfg: Config, selected_profile: SandboxProfile) -> str | None:

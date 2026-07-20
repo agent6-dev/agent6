@@ -39,7 +39,12 @@ def _cfg(agent_network: str = "providers", tool_network: str = "block") -> Confi
 
 def test_is_loopback() -> None:
     assert _is_loopback("127.0.0.1") and _is_loopback("localhost") and _is_loopback("::1")
+    assert _is_loopback("127.8.4.2")  # anywhere in 127.0.0.0/8
+    assert _is_loopback("0.0.0.0")  # client-connect wildcard reaches loopback
     assert not _is_loopback("api.anthropic.com")
+    # Regression: a routable NAME that merely starts with "127." must not slip
+    # past the agent_network='local' loopback-only gate.
+    assert not _is_loopback("127.foo.example.com")
 
 
 # --- check_network_profile (profile compatibility) ------------------------
