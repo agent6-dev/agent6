@@ -262,3 +262,27 @@ def test_went_quiet_nudges_reset_after_successful_turn(tmp_path: Path) -> None:
     final_messages: list[dict[str, Any]] = last_args.kwargs.get("messages") or last_args.args[1]
     # Three nudges total: one for the first empty, two for the second streak.
     assert len(_nudge_blocks(final_messages)) == 3
+
+
+def test_went_quiet_budget_refills_on_a_bounced_prose_turn(tmp_path: Path) -> None:
+    """The refill contract is "reset on any NON-EMPTY turn", not only tool_use
+    turns. Interleaving quiet streaks with bounced prose turns (the silent-
+    no-work gate) drained one shared budget and ended the run as went_quiet
+    although no streak reached the cap. Each bounced prose turn must refill
+    the budget for the next streak."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+
+    provider = MagicMock()
+    provider.call.side_effect = [
+        _resp_text("I think the answer is..."),  # iter 1: prose, bounced (early stall)
+        _empty_resp(),  # iter 2: quiet -> nudge 1/1
+        _resp_text("Let me explain more..."),  # iter 3: prose, bounced -> REFILL
+        _empty_resp(),  # iter 4: quiet -> nudge 1/1 again (old code: budget dead -> went_quiet)
+        _resp_with_tool("read_file", {"path": "x.txt"}, tu_id="t1"),  # iter 5
+        _resp_text("done"),  # iter 6: legitimate silent finish
+    ]
+    wf = _build_wf(repo, provider, went_quiet_max_nudges=1)
+    result = wf.run("task")
+    assert result.reason != "went_quiet"
+    assert result.completed is True

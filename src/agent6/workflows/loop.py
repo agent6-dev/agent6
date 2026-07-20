@@ -2358,6 +2358,14 @@ class Workflow:
         or a confused agent) that bench scoring must NOT treat as success."""
         text = resp.text.strip() if resp.text else ""
         if text:
+            # A prose turn is NON-EMPTY: the went_quiet nudge budget refills
+            # here exactly as on a tool_use turn (the documented per-streak
+            # contract, "reset on any non-empty turn"). Without this, quiet
+            # streaks interleaved with bounced prose turns (silent-finish
+            # gates, question nudges) drained one shared budget and ended the
+            # run as went_quiet although no streak reached the cap -- and the
+            # starvation output-cap backoff stayed stuck reduced.
+            state.went_quiet_nudges_used = 0
             return self._handle_silent_finish(text, conversation, state, iteration=iteration)
         return self._handle_went_quiet(resp, conversation, state, iteration=iteration)
 
