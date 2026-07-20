@@ -256,6 +256,10 @@ class LspClient:
             abs_path = path.resolve()
             try:
                 text = abs_path.read_text(encoding="utf-8")
+            except UnicodeDecodeError as exc:
+                # A ValueError, not OSError: without its own arm it escaped as
+                # an opaque codec error instead of the standard wording.
+                raise LspError(f"File is not UTF-8 text: {path}") from exc
             except OSError as exc:
                 raise LspError(f"cannot read {path}: {exc}") from exc
             pos = _symbol_position(text, symbol)

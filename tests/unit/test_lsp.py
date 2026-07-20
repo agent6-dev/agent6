@@ -10,7 +10,9 @@ is not available so the suite stays portable. Pure-logic tests
 from __future__ import annotations
 
 import shutil
+import subprocess
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -152,6 +154,25 @@ def test_find_ty_argv_prefers_ty_over_uvx(monkeypatch: pytest.MonkeyPatch) -> No
     assert argv is not None
     assert argv[0] == "/fake/ty"
     assert argv[1] == "server"
+
+
+def test_query_non_utf8_file_raises_clean_lsp_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A non-UTF-8 source raises UnicodeDecodeError -- a ValueError the
+    OSError-only read guard missed, leaking an opaque codec error through the
+    generic dispatch handler. It must become the subsystem LspError with the
+    same "not UTF-8 text" wording read_file uses for the identical file."""
+    bad = tmp_path / "latin.py"
+    bad.write_bytes(b"x = 'caf\xe9'\n")
+    client = LspClient(tmp_path)
+
+    def fake_start(self: LspClient) -> None:
+        self._proc = cast("subprocess.Popen[bytes]", object())  # pyright: ignore[reportPrivateUsage]
+
+    monkeypatch.setattr(LspClient, "start", fake_start)
+    with pytest.raises(LspError, match="not UTF-8"):
+        client.find_definition(bad, "x")
 
 
 def test_dispatch_find_definition_lsp_no_server_raises(
