@@ -279,9 +279,17 @@ def parse_checkoff(text: str) -> tuple[list[str], list[str]]:
         return [], []
     if not isinstance(data, dict):
         return [], []
-    completed = [s for s in data.get("completed_ids", []) if isinstance(s, str) and s]
-    new_tasks = [s.strip() for s in data.get("new_tasks", []) if isinstance(s, str) and s.strip()]
-    return completed, new_tasks
+    return _nonempty_strs(data.get("completed_ids")), _nonempty_strs(data.get("new_tasks"))
+
+
+def _nonempty_strs(value: object) -> list[str]:
+    """The stripped, non-empty strings in a JSON *value*, or [] if it is not a
+    list. Keeps parse_checkoff total: a present-but-non-list field (``null``
+    when nothing completed, a number, a bool -- all natural summariser output)
+    yields [] rather than raising when iterated."""
+    if not isinstance(value, list):
+        return []
+    return [s.strip() for s in value if isinstance(s, str) and s.strip()]
 
 
 def strip_checkoff(text: str) -> str:

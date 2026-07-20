@@ -70,6 +70,20 @@ def test_parse_checkoff_absent_or_malformed() -> None:
     )
 
 
+def test_parse_checkoff_present_but_non_list_field_is_total() -> None:
+    # A present-but-non-list value (null when nothing completed, a number, a
+    # bool) must yield [] -- .get(key, []) returns the value as-is, so the old
+    # `for s in None` raised TypeError and crashed the run (deterministically,
+    # since the summariser runs at temperature 0.0, making resume re-crash).
+    for bad in ("null", "0", "false", '"a string"'):
+        assert parse_checkoff(
+            f'```checkoff\n{{"completed_ids": {bad}, "new_tasks": {bad}}}\n```'
+        ) == (
+            [],
+            [],
+        )
+
+
 def test_strip_checkoff_removes_block() -> None:
     text = 'the summary\n\n```checkoff\n{"completed_ids": []}\n```'
     assert strip_checkoff(text) == "the summary"
