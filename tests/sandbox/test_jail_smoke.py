@@ -352,6 +352,37 @@ def test_jail_extra_ro_paths_mount_at_their_real_location(jail_bin: Path, tmp_pa
     assert ungranted.returncode != 0
 
 
+def test_jail_strict_seccomp_blocks_modern_mount_api(jail_bin: Path, tmp_path: Path) -> None:
+    """A strict jailed child is userns-root over its own mount ns; without the
+    modern mount API in the seccomp deny-list it could mount_setattr(2) away the
+    RO flag on the .git protect bind and defeat protect_git. The syscall must
+    return EPERM. Uses ctypes so no extra tooling is needed."""
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir()
+    (git_dir / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+    prog = (
+        "import ctypes, ctypes.util, os\n"
+        "libc = ctypes.CDLL(ctypes.util.find_library('c'), use_errno=True)\n"
+        # mount_setattr(dirfd=AT_FDCWD, path, flags=0, attr=NULL, size=0):
+        # NULL attr makes it a pure permission probe -- EPERM (seccomp) vs
+        # EFAULT/EINVAL (syscall reached the kernel) is what we assert on.
+        "r = libc.syscall(442, -100, b'/workspace/.git', 0, 0, 0)\n"
+        "e = ctypes.get_errno()\n"
+        "print('EPERM' if (r == -1 and e == 1) else f'REACHED:{e}')\n"
+    )
+    res = run_in_jail(
+        JailPolicy(
+            cwd=tmp_path,
+            argv=("/usr/bin/python3", "-c", prog),
+            profile="strict",
+            extra_protect_paths=(git_dir,),
+            timeout_s=10.0,
+        )
+    )
+    assert res.returncode == 0, f"stderr: {res.stderr!r}"
+    assert "EPERM" in res.stdout, f"mount_setattr not blocked: {res.stdout!r}"
+
+
 def test_jail_extra_rw_paths_mount_at_their_real_location(jail_bin: Path, tmp_path: Path) -> None:
     # extra_rw (the machine data dir) is writable AT the host abspath, so
     # $AGENT6_MACHINE_DATA_DIR is the same string in every profile.

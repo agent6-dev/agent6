@@ -898,6 +898,19 @@ fn apply_seccomp() -> io::Result<()> {
         libc::SYS_mount,
         libc::SYS_umount2,
         libc::SYS_pivot_root,
+        // Modern mount API (new_mount_api, Linux 5.2+). A strict jailed child
+        // is userns-root with CAP_SYS_ADMIN over its own mount namespace and
+        // never drops caps, so without these it could mount_setattr(2) away the
+        // MOUNT_ATTR_RDONLY on the .git protect bind (or open_tree+move_mount to
+        // relocate it) and defeat protect_git. Classic mount(2) is already
+        // denied above; these complete the coverage.
+        libc::SYS_mount_setattr,
+        libc::SYS_open_tree,
+        libc::SYS_move_mount,
+        libc::SYS_fsopen,
+        libc::SYS_fsconfig,
+        libc::SYS_fsmount,
+        libc::SYS_fspick,
         libc::SYS_setns,
         libc::SYS_unshare,
         libc::SYS_kexec_load,
