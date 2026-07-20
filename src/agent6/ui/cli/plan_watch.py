@@ -7,6 +7,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import shlex
 import subprocess
 import sys
 import time
@@ -94,8 +95,10 @@ def _cmd_plan_edit(run_id: str) -> int:
         return 2
     plan = _runs_dir(Path.cwd()) / resolved / "plan.md"
     editor = os.environ.get("EDITOR", "vi")
+    # $EDITOR may be a command with flags ("code --wait"); split it.
+    argv = shlex.split(editor) or ["vi"]
     try:
-        result = subprocess.run([editor, str(plan)], check=False)
+        result = subprocess.run([*argv, str(plan)], check=False)
     except OSError as exc:
         print(f"ERROR: failed to spawn editor {editor!r}: {exc}", file=sys.stderr)
         return 1

@@ -132,6 +132,29 @@ def test_plan_edit_invokes_editor(
     assert "edited" in plan.read_text(encoding="utf-8")
 
 
+def test_plan_edit_honors_a_multi_word_editor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """$EDITOR may be a command with flags ("code --wait"); the steer editor
+    already splits it, but plan edit spawned the whole string as one binary
+    name and failed every time for VS Code/emacsclient users."""
+    monkeypatch.chdir(tmp_path)
+    plan = _seed_plan(tmp_path, "happy-tree-efgh", "original\n")
+    marker = tmp_path / "editor_ran"
+    script = tmp_path / "fake_editor.sh"
+    script.write_text(
+        f'#!/bin/sh\n[ "$1" = --wait ] || exit 3\nshift\necho edited >> $1\ntouch {marker}\n',
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+    monkeypatch.setenv("EDITOR", f"{script} --wait")
+    rc = main(["plan", "edit", "happy-tree-efgh"])
+    assert rc == 0
+    assert marker.exists()
+    assert "edited" in plan.read_text(encoding="utf-8")
+
+
 def test_run_from_plan_and_task_mutually_exclusive(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
