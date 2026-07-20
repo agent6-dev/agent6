@@ -53,9 +53,12 @@ def _cmd_config_show(config_path: Path | None, *, as_json: bool, key: str = "") 
     if isinstance(eff, int):
         return eff
     resolved = models_registry.resolved_adaptive_values(eff.config)
-    if key and not as_json:
-        # `config show <key>`: one leaf (or a whole section prefix), untruncated.
-        detail = render_key_detail(eff, key, resolved=resolved, color=sys.stdout.isatty())
+    if key:
+        # `config show <key>`: one leaf (or a whole section prefix), untruncated
+        # (JSON mode filters to the same match set).
+        detail = render_key_detail(
+            eff, key, resolved=resolved, color=sys.stdout.isatty(), as_json=as_json
+        )
         if detail is None:
             print(
                 f"ERROR: no config key matches {key!r} (see `agent6 config show`).",

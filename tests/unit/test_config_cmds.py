@@ -643,3 +643,30 @@ def test_config_set_invalid_provider_value_names_the_field(
     assert "merged config layers" not in err and ".anthropic." not in err
     # A partial-entry write some member accepts still lands (never reverted).
     assert main(["config", "set", "providers.p.base_url", "https://x.example/v1"]) == 0
+
+
+def test_config_show_key_with_json_filters_to_the_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`config show <key> --json` dumped the ENTIRE config, silently ignoring
+    the key; it must filter like the text path and error on an unknown key."""
+    import json as jsonlib
+
+    from agent6.paths import global_config_path
+    from agent6.ui.cli import main
+
+    gpath = global_config_path()
+    gpath.parent.mkdir(parents=True, exist_ok=True)
+    gpath.write_text("", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["config", "show", "sandbox.agent_network", "--json"]) == 0
+    payload = jsonlib.loads(capsys.readouterr().out)
+    assert set(payload) == {"sandbox.agent_network"}
+
+    assert main(["config", "show", "sandbox", "--json"]) == 0
+    payload = jsonlib.loads(capsys.readouterr().out)
+    assert payload and all(k.startswith("sandbox.") for k in payload)
+
+    assert main(["config", "show", "nope.nope", "--json"]) == 2
+    assert "no config key matches" in capsys.readouterr().err

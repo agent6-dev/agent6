@@ -244,12 +244,28 @@ def _truncate(text: str, width: int) -> str:
     return text[: width - 1] + "\u2026"
 
 
+def _leaf_json(s: ConfigSetting) -> dict[str, Any]:
+    """One leaf's machine-readable view (shared by the full dump and the
+    single-key path, so the two JSON shapes cannot drift)."""
+    return {
+        "value": s.value,
+        "effective": s.effective_value,
+        "default": s.default,
+        "source": s.source,
+        "modified": s.modified,
+        "adaptive": s.is_adaptive,
+        "type": s.py_type,
+        "choices": list(s.choices) if s.choices is not None else None,
+    }
+
+
 def render_key_detail(
     eff: EffectiveConfig,
     key: str,
     *,
     resolved: dict[str, Any] | None = None,
     color: bool = False,
+    as_json: bool = False,
 ) -> str | None:
     """Render one config leaf (or a whole section prefix) UNTRUNCATED, for
     ``agent6 config show <key>``: the full-width table clips long values (e.g. a
@@ -259,6 +275,10 @@ def render_key_detail(
     matched = [s for s in view.settings if s.key == key or s.key.startswith(key + ".")]
     if not matched:
         return None
+    if as_json:
+        return json.dumps(
+            {s.key: _leaf_json(s) for s in matched}, indent=2, sort_keys=True, default=str
+        )
     lines: list[str] = []
     for s in matched:
         value = (
@@ -299,19 +319,7 @@ def render_show(
     """
     view = build_config_view(eff, resolved=resolved)
     if as_json:
-        payload = {
-            s.key: {
-                "value": s.value,
-                "effective": s.effective_value,
-                "default": s.default,
-                "source": s.source,
-                "modified": s.modified,
-                "adaptive": s.is_adaptive,
-                "type": s.py_type,
-                "choices": list(s.choices) if s.choices is not None else None,
-            }
-            for s in view.settings
-        }
+        payload = {s.key: _leaf_json(s) for s in view.settings}
         return json.dumps(payload, indent=2, sort_keys=True, default=str)
 
     by_section: dict[str, list[ConfigSetting]] = {}
