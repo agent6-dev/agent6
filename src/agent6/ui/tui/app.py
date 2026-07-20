@@ -61,9 +61,11 @@ from agent6.runs.ipc import (
     clear_frontend_pid,
     clear_steer_answer,
     frontend_is_live,
+    read_worker_pid,
     request_compact,
     request_steer,
     request_stop,
+    worker_is_alive,
     set_session_allow,
     write_answer,
     write_frontend_pid,
@@ -505,7 +507,7 @@ class DashboardScreen(Screen[None]):
         # Relabel every paint: mode flips on finished, and the context readout
         # in the subtitle moves with the run.
         self.query_one("#dash-input", SteerInput).set_mode(
-            live=not s.finished, ctx_pct=tui.context_pct()
+            live=not s.finished and not tui.run_ended, ctx_pct=tui.context_pct()
         )
         role = s.last_role
         # Live heartbeat: a spinner + seconds since the last event, shown while
@@ -518,11 +520,16 @@ class DashboardScreen(Screen[None]):
         role_line = f"{role.role} / {role.model}{beat}" if role else "(idle)"
         done_n = sum(1 for t in s.tasks if t.status in ("passed", "skipped"))
         step = f"tasks: {done_n}/{len(s.tasks)}" if s.tasks else "tasks: —"
-        if not s.finished:
-            finished = ""
-        else:  # colour the shared label: green passed, yellow deliberate end, red involuntary
+        if s.finished:  # colour the shared label: green passed, yellow deliberate, red involuntary
             color = _end_color(s.all_passed, s.end_reason)
             finished = f"[b {color}]{escape(run_status_label(s))}[/]"
+        elif tui.run_ended:
+            # Crashed: pid recorded but dead, no run.end. The hub's word for
+            # this is "stale"; here the actionable truth is what happened +
+            # the way out.
+            finished = "[b red]worker exited[/]"
+        else:
+            finished = ""
         cost = f"[b]{format_cost(s.budget.usd_total, partial=s.budget.usd_partial)}[/]"
         # The token-budget consumption as a readout. Labelled "token budget": a
         # bare "budget: 11%" right after "cost: $0.05" reads as a dollar cap.
@@ -564,6 +571,12 @@ class DashboardScreen(Screen[None]):
             spinner = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[tui.spin % 10]
             secs = int(time.monotonic() - tui.last_event_at)
             st.append(f"{spinner} {role.role} working… {secs}s", style="dim italic")
+        elif tui.run_ended:
+            st.append(
+                "worker exited without finishing (crashed or killed) — type a"
+                " follow-up below or press r to resume",
+                style="bold red",
+            )
         else:
             st.append("(waiting for the model…)", style="dim")
         stream.update(st)
@@ -813,6 +826,9 @@ class Agent6TUI(MuxPointerShapes, App[int]):
             self._seen_approval_ids.clear()
             self._seen_question_ids.clear()
         if self.exit_on_end and event.get("type") == "run.end":
+            # run_ended means "the worker is gone": a clean run.end in
+            # co-process mode here, OR a crashed worker via the _tick probe
+            # (any mode). state.finished stays the clean-end render signal.
             self.run_ended = True
         # Coalesce: mark dirty and let the 0.2s _tick repaint once. Replaying a
         # finished run floods hundreds of events on open; rendering each one would
@@ -854,6 +870,17 @@ class Agent6TUI(MuxPointerShapes, App[int]):
                 self._heartbeat_at = now
                 self.spin += 1
                 self._light_dirty = True
+                # Dead-worker probe, piggybacked on the ~1/s cadence (a file
+                # read + os.kill, same cost class as the spinner tick). A worker
+                # killed without a run.end (kill -9 / OOM) folds to
+                # finished=False forever; every other surface probes worker.pid
+                # (the hub's "stale", the web's refusals) -- the dashboard must
+                # not be the one pane that spins "working…" over a corpse.
+                # Gated on a RECORDED pid: a run without one keeps the
+                # log-silence heartbeat (mirrors listing._running_is_stale).
+                if read_worker_pid(self.run_dir) is not None and not worker_is_alive(self.run_dir):
+                    self.run_ended = True
+                    self._dirty = True
         # Coalesced repaint: once per tick, and only when the dashboard is the
         # active, mounted screen. A pushed viewer, a modal, or shutdown leaves the
         # dashboard covered or torn down, so querying its widgets raises; defer
@@ -1000,7 +1027,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
     def action_resume(self) -> None:
         """Resume a finished/stopped run: it continues in the background (appending
         to the same log) and this dashboard follows straight through."""
-        if not self.state.finished:
+        if self.run_controllable():
             self.notify("run is still going -- nothing to resume", severity="warning")
             return
         err = spawn_detached_resume(Path.cwd(), self.run_dir.name)
@@ -1046,9 +1073,10 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         return min(100, round(100 * role.ctx_tokens / window))
 
     def run_controllable(self) -> bool:
-        """Steer/Stop are no-ops once the run is over: finished (the case that
-        matters for `agent6 attach`, where `run_ended` never trips) or the
-        co-process app closing on run.end."""
+        """Steer/Stop are no-ops once the WORKER is gone: a clean finish
+        (state.finished), the co-process app closing on run.end, or a crashed
+        worker (run_ended via the _tick pid probe). The composer then routes
+        to resume instead."""
         return not self.run_ended and not self.state.finished
 
     def action_toggle_dashboard(self) -> None:

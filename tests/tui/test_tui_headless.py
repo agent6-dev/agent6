@@ -991,6 +991,61 @@ def test_pushed_conversation_viewer_still_dismisses(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_dashboard_detects_a_dead_worker_and_tells_the_truth(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """A worker killed without a run.end (kill -9 / OOM) must not render as a
+    live spinner forever. Every other surface probes worker.pid (the hub says
+    "stale", the web refuses steer); the dashboard was the one surface with no
+    liveness check: it spun "working…", accepted steer with a success toast
+    nobody would read, and REFUSED resume -- the one correct action. The ~1/s
+    heartbeat probe flips run_ended, the body says the worker exited, and the
+    composer routes to resume."""
+    import json
+
+    from agent6.ui.tui import app as app_mod
+
+    events = [
+        {"type": "run.start", "run_id": "dead-01", "mode": "run", "user_task": "t"},
+        {"type": "role.call", "role": "worker", "model": "m", "provider": "p"},
+    ]
+    (tmp_path / "logs.jsonl").write_text(
+        "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
+    )
+    (tmp_path / "worker.pid").write_text("999999999", encoding="utf-8")  # dead pid
+
+    spawned: list[tuple[str, str]] = []
+
+    def _fake_resume(_cwd: Path, rid: str, *, steer: str = "") -> str:
+        spawned.append((rid, steer))
+        return ""
+
+    monkeypatch.setattr(app_mod, "spawn_detached_resume", _fake_resume)
+
+    async def scenario() -> None:
+        app = Agent6TUI(tmp_path)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await _show_dashboard(pilot)
+            app._heartbeat_at = 0.0  # age the throttle so the probe fires now
+            app._tick()
+            await pilot.pause()
+            assert app.run_ended is True
+            assert app.run_controllable() is False
+            body = str(app._dash.query_one("#stream-body", Static).render())
+            assert "worker exited" in body
+            assert "working…" not in body
+            # The composer routes to resume (not a steer nobody will read).
+            app.submit_instruction("carry on")
+            assert spawned == [("dead-01", "carry on")] or spawned == [
+                (tmp_path.name, "carry on")
+            ]
+            # And action_resume resumes instead of refusing "still going".
+            app.action_resume()
+            assert len(spawned) == 2
+
+    asyncio.run(scenario())
+
+
 def test_dashboard_heartbeat_ticks_while_active(tmp_path: Path) -> None:
     """An attached dashboard on a live-but-silent run shows a ticking "working…
     Ns" heartbeat, so a thinking / resuming run reads as alive, not hung. The
