@@ -358,6 +358,22 @@ def _plan_merge(  # noqa: PLR0911
     if isinstance(res, int):
         return res
     layout, manifest = res
+    # A live run keeps the shared checkout on its run branch and its tree is
+    # clean for the whole duration of every provider call, so every guard below
+    # passes mid-run -- and execute_merge would then switch the checkout to the
+    # base branch under the worker, whose next auto-commit lands mid-run WIP
+    # directly on it. Liveness is the gate, matching stop/resume/compact. The
+    # run's own end-of-run finalize_auto_merge is unaffected (it calls
+    # execute_merge directly, not this planner).
+    if worker_is_alive(layout.run_dir):
+        print(
+            f"REFUSING: run {run_id!r} is still live; merging now would switch the"
+            " shared checkout out from under the worker and its next auto-commit"
+            " would land on the base branch. Stop it first:\n"
+            f"    agent6 runs stop {run_id}",
+            file=sys.stderr,
+        )
+        return 2
     run_branch = manifest.run_branch
     if not run_branch:
         print(

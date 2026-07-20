@@ -88,6 +88,33 @@ def test_runs_merge_squash_is_one_commit_and_records_manifest(
     assert m["merged"]["sha"]
 
 
+def test_runs_merge_refuses_while_the_worker_is_alive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Merging a LIVE run hijacks the shared checkout: execute_merge switches
+    it to the base branch and the still-running worker's next auto-commit then
+    lands mid-run WIP directly on the base. A run's tree is clean for the whole
+    duration of every provider call, so every other _plan_merge guard passes
+    mid-run; the liveness gate is the one that must refuse (matching
+    stop/resume/compact). Killing the worker (stale pid) restores the merge."""
+    from agent6.runs.ipc import write_worker_pid
+
+    monkeypatch.chdir(tmp_path)
+    base = _setup_run(tmp_path, "run-LIVE11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    layout = RunLayout(state_dir=resolved_state_dir(tmp_path), run_id="run-LIVE11")
+    write_worker_pid(layout.run_dir, os.getpid())  # this test process = a live worker
+
+    rc = main(["runs", "merge", "run-LIVE11"])
+    assert rc == 2
+    assert "still live" in capsys.readouterr().err
+    assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "0"  # nothing landed
+
+    write_worker_pid(layout.run_dir, 999_999_999)  # dead pid -> a finished/crashed run merges
+    rc = main(["runs", "merge", "run-LIVE11"])
+    assert rc == 0
+    assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "1"
+
+
 def test_runs_merge_strategy_merge_keeps_history(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
