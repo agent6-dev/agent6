@@ -23,7 +23,8 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use landlock::{
-    Access, AccessFs, PathBeneath, PathFd, Ruleset, RulesetAttr, RulesetCreatedAttr, ABI,
+    Access, AccessFs, PathBeneath, PathFd, Ruleset, RulesetAttr, RulesetCreatedAttr,
+    RulesetStatus, ABI,
 };
 use nix::mount::{mount, umount2, MntFlags, MsFlags};
 use nix::sched::{unshare, CloneFlags};
@@ -860,9 +861,24 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
         }
     }
 
-    ruleset
+    // Fail CLOSED. Hardened has no mount namespace, so Landlock is the ONLY
+    // filesystem boundary. The landlock crate defaults to BestEffort, so on a
+    // kernel without Landlock restrict_self() returns Ok(NotEnforced) rather
+    // than erroring — enforcing nothing. Refuse instead of running a child
+    // with zero confinement behind the "hardened" label. (PartiallyEnforced on
+    // an older ABI is real, if reduced, confinement and is accepted.) The
+    // Python profile resolution already refuses hardened without Landlock; this
+    // is the launcher's own boundary check, not a substitute for it.
+    let status = ruleset
         .restrict_self()
         .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("restrict_self: {e}")))?;
+    if status.ruleset == RulesetStatus::NotEnforced {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            "hardened profile requires Landlock, but the kernel enforced no \
+             ruleset (Landlock unavailable); refusing to run unconfined",
+        ));
+    }
     Ok(())
 }
 
