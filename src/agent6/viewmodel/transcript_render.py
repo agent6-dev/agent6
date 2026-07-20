@@ -181,10 +181,19 @@ def _response_turns(resp: dict[str, Any], shape: str, names: dict[str, str]) -> 
 
 
 def fold_conversation(transcripts: list[dict[str, Any]]) -> list[Turn]:
-    """Fold per-call transcripts into one ordered conversation (no double-print)."""
+    """Fold per-call transcripts into one ordered conversation (no double-print).
+
+    Reconciles each request against the PRIOR one instead of predicting: a
+    recorded response only reappears as the next request's ``msgs[prev_len]``
+    when the history actually grew. Error transcripts (a 5xx body) and
+    empty-response retries re-send the identical message list, so blindly
+    assuming one committed assistant message per transcript misread every
+    provider retry as a compaction restart and re-printed the whole history.
+    """
     turns: list[Turn] = []
     names: dict[str, str] = {}  # tool_call/use id -> tool name (to label results)
-    prev_len = 0
+    prev_len = 0  # messages of the prior request already emitted
+    pending_response = False  # the prior transcript's response yielded turns
     for t in transcripts:
         seq = int(t.get("seq", 0))
         req = _request_body(t)
@@ -200,15 +209,21 @@ def fold_conversation(transcripts: list[dict[str, Any]]) -> list[Turn]:
         if len(msgs) < prev_len:  # a context-compaction restart shrank the history
             turns.append(Turn(role="marker", text="context summarised / restarted", seq=seq))
             prev_len = 0
-        for m in msgs[prev_len:]:
+            pending_response = False
+        # The previously-emitted response is msgs[prev_len] only when the
+        # history grew; a retry that re-sends the identical list skips nothing.
+        start = prev_len + 1 if pending_response and len(msgs) > prev_len else prev_len
+        for m in msgs[start:]:
             if isinstance(m, dict):
                 for tt in _message_turns(m, shape, names):
                     tt.seq = seq
                     turns.append(tt)
-        for rt in _response_turns(resp, shape, names):  # this call's assistant output
+        response_turns = _response_turns(resp, shape, names)  # this call's assistant output
+        for rt in response_turns:
             rt.seq = seq
             turns.append(rt)
-        prev_len = len(msgs) + 1  # the response becomes msgs[len] in the next request
+        prev_len = len(msgs)
+        pending_response = bool(response_turns)
     return turns
 
 

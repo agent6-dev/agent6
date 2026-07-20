@@ -174,6 +174,22 @@ def test_render_flags_hide_thinking_and_tools() -> None:
     assert "-> read_file(" in md2 and "FULL FILE CONTENTS" not in md2
 
 
+def test_provider_retry_does_not_duplicate_history() -> None:
+    """A transient 5xx writes an error transcript (string body, no assistant
+    turns) and the retry re-sends the IDENTICAL message list. The fold must
+    treat that as no growth -- not as a compaction restart that prints a false
+    'context summarised' marker and the entire history twice."""
+    error_attempt = {
+        "seq": 2,
+        "request": _OPENAI[1]["request"],
+        "response": {"status": 502, "body": "Bad Gateway"},
+    }
+    retry = {**_OPENAI[1], "seq": 3}
+    turns = fold_conversation([_OPENAI[0], error_attempt, retry])
+    assert [t.role for t in turns] == ["system", "user", "assistant", "tool", "assistant"]
+    assert not any(t.role == "marker" for t in turns)
+
+
 def test_compaction_restart_shows_marker() -> None:
     # seq 3's request is SHORTER than the prior history -> a summarise/restart.
     transcripts = [
