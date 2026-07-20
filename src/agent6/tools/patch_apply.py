@@ -415,9 +415,14 @@ def apply_v4a_text(patch_text: str, original: str | None) -> tuple[str, str]:  #
     if verb == "Delete":
         raise PatchError("V4A file deletion (`*** Delete File:`) is not supported")
     section = body[start_idx + 1 :]
-    # Drop a `*** Move to:` line (rename); we only honour the content change at
-    # the original path and leave any rename to the caller's explicit tools.
-    section = [ln for ln in section if not ln.startswith("*** Move to:")]
+    # Drop a `*** Move to:` line (rename; we only honour the content change at the
+    # original path) and the optional `*** End of File` marker GPT emits for a
+    # hunk that reaches EOF (our matching is whole-file, so it needs no anchor).
+    section = [
+        ln
+        for ln in section
+        if not ln.startswith("*** Move to:") and ln.strip() != "*** End of File"
+    ]
 
     if verb == "Add":
         if original is not None:
@@ -445,7 +450,8 @@ def apply_v4a_text(patch_text: str, original: str | None) -> tuple[str, str]:  #
                 f"V4A hunk for {path!r} has no context/removed lines to anchor on; "
                 "include the surrounding lines so the change can be located"
             )
-        count = content.count(old_block)
+        matches = _line_anchored_indices(content, old_block)
+        count = len(matches)
         if count == 0:
             raise PatchError(
                 f"V4A hunk context not found in {path!r}. The ` `/`-` lines must match "
@@ -453,7 +459,8 @@ def apply_v4a_text(patch_text: str, original: str | None) -> tuple[str, str]:  #
                 f"Expected block:\n{_render_lines(old_block.split(chr(10)))}"
             )
         if count == 1:
-            content = content.replace(old_block, new_block, 1)
+            idx = matches[0]
+            content = content[:idx] + new_block + content[idx + len(old_block) :]
             continue
         # The block itself repeats; the `@@ <section>` hints disambiguate it. We
         # only apply when the hints pin a SINGLE occurrence -- otherwise the hunk
@@ -530,7 +537,29 @@ def _v4a_locate_with_hints(content: str, hints: tuple[str, ...], old_block: str)
             return None
         last_hint_pos = pos
         search_from = pos + len(hint)
-    region = content[last_hint_pos:]
-    if region.count(old_block) != 1:
+    after = [i for i in _line_anchored_indices(content, old_block) if i >= last_hint_pos]
+    if len(after) != 1:
         return None
-    return last_hint_pos + region.index(old_block)
+    return after[0]
+
+
+def _line_anchored_indices(content: str, block: str) -> list[int]:
+    """Start indices where *block* occurs aligned to line boundaries: the match
+    must begin at BOF or just after a newline and end at EOF or just before a
+    newline. A V4A hunk block is always whole lines, so a substring match that
+    straddles a line boundary (``-x = 1`` inside ``x = 10``) is a false positive
+    that would splice mid-line and silently corrupt the file."""
+    out: list[int] = []
+    start = 0
+    width = len(block)
+    while True:
+        i = content.find(block, start)
+        if i == -1:
+            break
+        at_start = i == 0 or content[i - 1] == "\n"
+        end = i + width
+        at_end = end == len(content) or content[end] == "\n"
+        if at_start and at_end:
+            out.append(i)
+        start = i + 1
+    return out

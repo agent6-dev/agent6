@@ -269,3 +269,35 @@ def test_v4a_multi_file_rejected() -> None:
 def test_v4a_delete_rejected() -> None:
     with pytest.raises(PatchError, match="deletion"):
         apply_v4a_text("*** Begin Patch\n*** Delete File: a.py\n*** End Patch", "x\n")
+
+
+def test_v4a_partial_line_match_rejected_not_spliced() -> None:
+    """A `-` line that is only a SUBSTRING of a longer on-disk line must not
+    match: substring `.replace` spliced mid-line and silently corrupted the file
+    (`-x = 1` against `x = 10` produced `0`). Matching is line-anchored."""
+    patch = "*** Begin Patch\n*** Update File: a.py\n@@\n-x = 1\n*** End Patch"
+    with pytest.raises(PatchError, match="context not found"):
+        apply_v4a_text(patch, "x = 10\n")
+
+
+def test_v4a_straddling_block_rejected() -> None:
+    """A multi-line block whose first line straddles a longer on-disk line
+    (`-value = 1` inside `myvalue = 1`) must not match."""
+    patch = "*** Begin Patch\n*** Update File: a.py\n@@\n-value = 1\n-b\n+c\n*** End Patch"
+    with pytest.raises(PatchError, match="context not found"):
+        apply_v4a_text(patch, "myvalue = 1\nb\n")
+
+
+def test_v4a_full_line_delete_still_applies() -> None:
+    """Line-anchoring must not break a legitimate whole-line match."""
+    patch = "*** Begin Patch\n*** Update File: a.py\n@@\n-x = 1\n+x = 2\n*** End Patch"
+    assert apply_v4a_text(patch, "x = 1\n") == ("a.py", "x = 2\n")
+
+
+def test_v4a_end_of_file_marker_accepted() -> None:
+    """GPT emits `*** End of File` for a hunk reaching EOF; it is a marker, not a
+    hunk line, so it must be dropped rather than raising 'Unexpected V4A line'."""
+    patch = (
+        "*** Begin Patch\n*** Update File: m.py\n@@\n last\n+added\n*** End of File\n*** End Patch"
+    )
+    assert apply_v4a_text(patch, "last\n") == ("m.py", "last\nadded\n")
