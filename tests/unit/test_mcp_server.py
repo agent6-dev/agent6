@@ -18,6 +18,7 @@ from agent6.graph.models import TaskNode
 from agent6.graph.storage import write_node
 from agent6.runs.layout import RunLayout
 from agent6.tools.dispatch import ToolError
+from agent6.tools.errors import OperatorCommandUnexecutable
 from agent6.tools.results import ExecResult, PatchResult, ToolResult
 from agent6.ui.mcp_server import MCPServer, _deny_approver  # pyright: ignore[reportPrivateUsage]
 
@@ -428,6 +429,36 @@ def test_apply_patch_surfaces_tool_error(tmp_path: Path, monkeypatch: pytest.Mon
     )
     assert resps[0]["result"]["isError"] is True
     assert "patch did not apply" in resps[0]["result"]["content"][0]["text"]
+
+
+def test_unexecutable_operator_command_surfaces_as_iserror(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """OperatorCommandUnexecutable is deliberately not a ToolError (the loop
+    aborts a run on it), but the MCP server's contract is isError results:
+    letting it escape killed the whole `agent6 mcp serve` process, and every
+    later client call died on a broken pipe."""
+    server = _server(tmp_path)
+
+    def fake_dispatch(name: str, args: dict[str, Any]) -> ToolResult:
+        raise OperatorCommandUnexecutable("verify command not found on the jail PATH")
+
+    monkeypatch.setattr(server._dispatcher, "dispatch", fake_dispatch)  # type: ignore[attr-defined]
+    resps = _roundtrip(
+        server,
+        [
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "run_verify", "arguments": {}},
+            },
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+        ],
+    )
+    assert resps[0]["result"]["isError"] is True
+    assert "jail PATH" in resps[0]["result"]["content"][0]["text"]
+    assert resps[1]["id"] == 2  # the server survived and answered the next call
 
 
 # ---------------------------------------------------------------------------

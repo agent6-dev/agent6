@@ -41,6 +41,7 @@ from agent6.graph.storage import load_graph
 from agent6.runs.layout import RunLayout, is_safe_run_id
 from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.tools.dispatch import ToolDispatcher, ToolError
+from agent6.tools.errors import OperatorCommandUnexecutable
 from agent6.viewmodel import run_mtime
 
 _PROTOCOL_VERSION = "2024-11-05"
@@ -304,7 +305,10 @@ class MCPServer:
             raise _RpcError(-32602, "arguments must be an object")
         try:
             payload = self._tools[name].handler(args)
-        except ToolError as exc:
+        except (ToolError, OperatorCommandUnexecutable) as exc:
+            # OperatorCommandUnexecutable aborts a RUN loudly by design; here
+            # the contract is an isError result -- escaping killed the whole
+            # serve process and every later client call died on a broken pipe.
             return {
                 "content": [{"type": "text", "text": str(exc)}],
                 "isError": True,
