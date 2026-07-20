@@ -361,3 +361,34 @@ def test_worker_is_alive_reads_a_foreign_owned_pid_as_dead(
     assert not worker_is_alive(d)
     write_worker_pid(d, os.getpid())
     assert worker_is_alive(d)
+
+
+def test_concurrent_answer_writers_do_not_race_on_the_temp(tmp_path: Path) -> None:
+    """Two concurrently-live front-ends (attach + web) answering the same
+    prompt both wrote the SAME sibling .tmp: the loser hit FileNotFoundError
+    after the winner's rename -- a 500 on an answer that actually landed. The
+    durable write now uses a unique mkstemp temp per call."""
+    import threading
+
+    from agent6.runs.ipc import write_answer
+
+    d = tmp_path / "run"
+    d.mkdir()
+    barrier = threading.Barrier(2)
+    errors: list[Exception] = []
+
+    def _answer() -> None:
+        try:
+            barrier.wait(timeout=5)
+            for _ in range(50):
+                write_answer(d, "approval-1", approved=True)
+        except Exception as exc:
+            errors.append(exc)
+
+    t1, t2 = threading.Thread(target=_answer), threading.Thread(target=_answer)
+    t1.start()
+    t2.start()
+    t1.join(timeout=15)
+    t2.join(timeout=15)
+    assert errors == []
+    assert (d / "approvals" / "approval-1.answer").read_text(encoding="utf-8") == "yes"

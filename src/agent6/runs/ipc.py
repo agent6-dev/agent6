@@ -29,6 +29,8 @@ import time
 from collections.abc import Sequence
 from pathlib import Path
 
+from agent6.portable import atomic_write
+
 APPROVAL_DIR_NAME = "approvals"
 QUESTION_DIR_NAME = "questions"
 FRONTEND_PID_FILE = "frontend.pid"
@@ -149,15 +151,16 @@ def frontend_is_live(run_dir: Path) -> bool:
 
 
 def _write_answer_atomic(target: Path, text: str) -> None:
-    """Write an answer file via temp + fsync + rename (the journal.poke pattern).
+    """Write an answer file via a UNIQUE temp + fsync + atomic replace.
 
-    The reader polls on existence every 0.2s; a plain write_text exposes an
-    empty/partial file it would consume as deny / ""."""
-    tmp = target.with_suffix(".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    with tmp.open("r", encoding="utf-8") as fh:
-        os.fsync(fh.fileno())
-    tmp.rename(target)
+    The reader polls on existence every 0.2s, so a plain write_text would
+    expose an empty/partial file it consumes as deny / "". The temp must be
+    unique per call (portable.atomic_write's mkstemp): two concurrently-live
+    front-ends (attach + web on one run, or two web threads) answering the
+    same prompt raced on the old fixed sibling .tmp -- the loser hit
+    FileNotFoundError after the winner's rename, a 500 on an answer that
+    actually landed."""
+    atomic_write(target, text)
 
 
 def _await_answer(

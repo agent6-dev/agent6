@@ -364,7 +364,9 @@ depends_on = ["agent6.portable"]
 # app, the viewmodel, and the three front-ends all read/write run state without
 # a ui edge.
 path = "agent6.runs.ipc"
-depends_on = []
+# atomic_write: the answer files need a unique-temp durable write (two live
+# front-ends answering one prompt raced on a shared .tmp).
+depends_on = ["agent6.portable"]
 
 [[modules]]
 path = "agent6.graph.storage"
