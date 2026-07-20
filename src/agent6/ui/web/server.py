@@ -621,8 +621,21 @@ class _Handler(BaseHTTPRequestHandler):
         # (merged_into lands after the run ends; a reopen/reconnect re-reads).
         header = model.manifest_header(run_dir)
 
-        def frame() -> dict[str, Any]:
-            return {**run_state_as_dict(state), **header}
+        def frame(*, dead: bool = False) -> dict[str, Any]:
+            d = {**run_state_as_dict(state), **header}
+            if dead and not d.get("finished"):
+                # Fold the liveness truth the dead-worker branch already knows
+                # into the frame: a crashed run (no run.end) folds to
+                # finished=false/"running", but s.finished is the client's ONLY
+                # stream-terminate signal (onerror deliberately lets
+                # EventSource auto-retry). Without this the close never sticks:
+                # the tab reconnects and re-folds the whole log every ~18s
+                # forever, painting a live "working…" spinner over a dead run.
+                # "stale" is the hub's word for the same pid-dead condition, so
+                # the two surfaces agree.
+                d["finished"] = True
+                d["status_label"] = "stale"
+            return d
 
         try:
             state = initial_state()
@@ -637,7 +650,7 @@ class _Handler(BaseHTTPRequestHandler):
                     # otherwise pin this worker forever: once its worker.pid points
                     # at a dead process, send a final snapshot and close.
                     if read_worker_pid(run_dir) is not None and not worker_is_alive(run_dir):
-                        self._sse_send(frame())
+                        self._sse_send(frame(dead=True))
                         return
                     continue
                 # Fold everything already queued into ONE frame. On connect the
@@ -712,6 +725,17 @@ class _Handler(BaseHTTPRequestHandler):
                 and not worker_is_alive(machine_dir)
                 and not model.machine_is_parked(machine_dir)
             ):
+                # Synthesize a truthful terminal before closing: m.ended is the
+                # client's only terminate signal (same auto-retry story as the
+                # run stream), and machine_status_word's word for a dead,
+                # unparked pid is "stopped". A bare return left the tab
+                # reconnecting forever over a "running" machine.
+                payload["machine"]["ended"] = {
+                    "status": "stopped",
+                    "reason": "worker died",
+                    "state": payload["machine"].get("current", ""),
+                }
+                self._sse_send(payload)
                 return
             time.sleep(_MACHINE_POLL_S)
 

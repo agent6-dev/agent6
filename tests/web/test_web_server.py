@@ -712,6 +712,82 @@ def test_sse_run_closes_even_if_tailer_dies(
         conn.close()
 
 
+def test_sse_run_dead_worker_frame_is_terminal(
+    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run whose worker died without a run.end must close its SSE stream with
+    a TERMINAL frame: finished=True + status_label="stale" (the hub's word for
+    the same pid-dead condition). The fold alone says finished=false/"running",
+    and s.finished is the client's only stream-terminate signal (onerror
+    deliberately lets EventSource auto-retry) -- so the old fold-only frame made
+    the tab reconnect and re-fold the whole log every ~18s forever, over a live
+    "working…" spinner on a dead run."""
+    import agent6.ui.web.server as server_mod
+
+    monkeypatch.setattr(server_mod, "_HEARTBEAT_S", 0.2)
+    _make_run(
+        tmp_path,
+        "dead-worker",
+        [{"type": "run.start", "user_task": "x"}, {"type": "role.call", "role": "worker"}],
+    )
+    run_dir = resolved_state_dir(tmp_path) / "runs" / "dead-worker"
+    (run_dir / "worker.pid").write_text("999999999", encoding="utf-8")
+    _srv, port = server
+    conn = HTTPConnection("127.0.0.1", port, timeout=5)
+    try:
+        conn.request("GET", "/api/run/dead-worker/events")
+        resp = conn.getresponse()
+        assert resp.status == 200
+        seen = resp.read()  # must reach EOF (the close sticks), not hang
+    finally:
+        conn.close()
+    frames = [f for f in seen.split(b"\n\n") if f.startswith(b"data:")]
+    last = json.loads(frames[-1][len(b"data:") :])
+    assert last["finished"] is True
+    assert last["status_label"] == "stale"
+
+
+def test_sse_machine_dead_worker_frame_is_terminal(
+    server: tuple[WebServer, int],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A machine that died mid-state (no MachineEnd) must close its SSE stream
+    with a synthesized truthful terminal (ended.status="stopped") -- m.ended is
+    the client's only terminate signal, and the old bare return left the tab
+    reconnecting forever over a "running" machine."""
+    import agent6.ui.web.server as server_mod
+
+    monkeypatch.setattr(server_mod, "_MACHINE_POLL_S", 0.05)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "tiny.asm.toml").write_text(TINY, encoding="utf-8")
+    assert main(["machine", "run", str(tmp_path / "tiny.asm.toml")]) == 0
+    capsys.readouterr()
+    inst = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    # Un-end the journal (drop the MachineEnd line): the machine now reads as
+    # mid-state, and its recorded worker pid points at a dead process.
+    journal = inst / "journal.jsonl"
+    lines = journal.read_text(encoding="utf-8").splitlines()
+    assert "end" in lines[-1]
+    journal.write_text("\n".join(lines[:-1]) + "\n", encoding="utf-8")
+    (inst / "worker.pid").write_text("999999999", encoding="utf-8")
+    _srv, port = server
+    conn = HTTPConnection("127.0.0.1", port, timeout=5)
+    try:
+        conn.request("GET", "/api/machine/tiny/events")
+        resp = conn.getresponse()
+        assert resp.status == 200
+        seen = resp.read()  # must reach EOF, not hang
+    finally:
+        conn.close()
+    frames = [f for f in seen.split(b"\n\n") if f.startswith(b"data:")]
+    last = json.loads(frames[-1][len(b"data:") :])
+    assert last["machine"]["ended"] is not None
+    assert last["machine"]["ended"]["status"] == "stopped"
+    assert "died" in last["machine"]["ended"]["reason"]
+
+
 # --- POST hardening -----------------------------------------------------------
 
 
