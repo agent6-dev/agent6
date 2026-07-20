@@ -75,6 +75,44 @@ def test_all_green_finish_is_headlined_passed(tmp_path: Path, capsys: object) ->
     assert "passed" in out
 
 
+def test_end_banner_does_not_offer_merge_for_an_auto_merged_branch(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """auto_merge already merged (and auto_prune may have deleted) the run
+    branch, so the footer must say it merged, not tell the operator to run
+    `agent6 runs merge` on a branch that is gone."""
+    layout = _layout(
+        tmp_path,
+        "r-merged",
+        [
+            {"type": "run.start", "run_id": "r-merged", "user_task": "t"},
+            {"type": "run.end", "reason": "finish_run", "all_passed": True},
+        ],
+    )
+    layout.manifest_path.write_text(
+        json.dumps(
+            {
+                "run_branch": "agent6/r-merged",
+                "base_branch": "main",
+                "merged": {"into": "main", "sha": "abc123def456", "ts": "2026-01-01T00:00:00Z"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = RunResult(
+        completed=True, reason="finish_run", summary="done", iterations=1, tool_calls=1
+    )
+    print_run_end(
+        result,
+        layout=layout,
+        budget=BudgetTracker(max_input_tokens=1000, max_output_tokens=1000),
+        console_stream=False,
+    )
+    out = capsys.readouterr().out
+    assert "changes merged into main" in out
+    assert "runs merge" not in out
+
+
 def test_end_banner_warns_when_checkout_is_parked_on_the_run_branch(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

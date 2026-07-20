@@ -110,11 +110,19 @@ def print_run_end(
     _print_run_total_across_legs(layout)
     run_branch = ""
     base_branch = ""
+    merged_into = ""
     with contextlib.suppress(ManifestError):
         manifest = read_manifest(layout.run_dir)
         run_branch = manifest.run_branch or ""
         base_branch = manifest.base_branch
-    if result.completed and run_branch:
+        if manifest.merged is not None:
+            merged_into = manifest.merged.into or base_branch
+    if result.completed and run_branch and merged_into:
+        # auto_merge already merged this branch into the base (and auto_prune may
+        # have deleted it); don't tell the operator to merge it again.
+        print(f"\nchanges merged into {merged_into}")
+        print(f"  inspect:     agent6 runs diff {layout.run_id}")
+    elif result.completed and run_branch:
         print(f"\nchanges are on {run_branch}")
         print(f"  merge with:  agent6 runs merge {layout.run_id}")
         print(f"  inspect:     agent6 runs diff {layout.run_id}")
