@@ -173,3 +173,15 @@ def test_segment_is_a_frozen_dataclass() -> None:
     assert isinstance(seg, Segment)
     with pytest.raises(AttributeError):
         seg.spec = "3"  # type: ignore[misc]
+
+
+def test_superscript_digit_is_not_a_lane_count() -> None:
+    """str.isdigit() is True for superscripts int() rejects, so '/parallel ²'
+    classified '²' as a spec and int('²') raised a bare ValueError past every
+    DirectiveError-catching caller (500 in the web composer; escaped the
+    coordinator's never-end-the-run guard). isdecimal() is exactly int()'s
+    accepted set: a superscript is now ordinary task text / a model token."""
+    assert parse_spec("\u00b2") == ["\u00b2"]  # a (bogus) model token, no raise
+    assert _segs("/parallel \u00b2 fix the bug") == [("", "\u00b2 fix the bug")]
+    # A genuine Unicode decimal digit still counts as a lane count (int('٢')==2).
+    assert parse_spec("\u0662") == [None, None]

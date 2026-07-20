@@ -64,7 +64,12 @@ def parse_spec(spec: str) -> list[str | None]:
     s = spec.strip()
     if not s:
         return [None]
-    if s.isdigit():
+    # isdecimal, not isdigit: isdigit() is True for superscripts/circled
+    # digits ('\u00b2') that int() rejects, so the guard raised a bare
+    # ValueError past every DirectiveError-catching caller (the coordinator's
+    # never-end-the-run contract included). isdecimal() is exactly the set
+    # int() parses for a stripped, sign-less string.
+    if s.isdecimal():
         n = int(s)
         if n < 1:
             raise DirectiveError("parallel lane count must be >= 1")
@@ -102,7 +107,7 @@ def _is_spec_token(token: str) -> bool:
     slash-containing word -- see the module docstring for the path caveat). A
     bare word (``fix``, a single model name with no comma or slash) is task
     text."""
-    return token.isdigit() or "," in token or "/" in token
+    return token.isdecimal() or "," in token or "/" in token
 
 
 def _parse_segment(raw: str) -> Segment:
