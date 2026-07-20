@@ -751,6 +751,11 @@ def test_run_command_disabled_when_no(tmp_path: Path) -> None:
         ["/usr/bin/git", "reset", "--hard"],
         ["git", "-C", ".", "restore", "src/foo.py"],
         ["git", "--no-pager", "stash", "push"],
+        # branch/update-ref force-delete or move refs; the documented absolute
+        # boundary (the operator-only `runs prune --delete-squashed` relies on it).
+        ["git", "branch", "-D", "agent6/run-branch"],
+        ["git", "branch", "-f", "main", "HEAD~20"],
+        ["git", "update-ref", "-d", "refs/heads/main"],
         # `env` wrapper must not slip a mutating git command past the refusal.
         ["env", "git", "clean", "-fdx"],
         ["env", "FOO=bar", "git", "reset", "--hard"],

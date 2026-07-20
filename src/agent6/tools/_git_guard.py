@@ -10,10 +10,16 @@ from pathlib import Path
 
 from agent6.tools.errors import ToolDenied
 
+# Whole subcommands refused for the model: any form that can mutate the repo.
+# `branch` and `update-ref` are here because `git branch -D`/`-f` and
+# `update-ref -d` force-delete/move refs (the documented absolute boundary the
+# operator-only `runs prune --delete-squashed` relies on); listing branches has
+# read-only alternatives (`git log --all`, `git for-each-ref`, `git status`).
 _GIT_MUTATING_SUBCOMMANDS = frozenset(
     {
         "add",
         "am",
+        "branch",
         "checkout",
         "cherry-pick",
         "clean",
@@ -29,6 +35,7 @@ _GIT_MUTATING_SUBCOMMANDS = frozenset(
         "rm",
         "stash",
         "switch",
+        "update-ref",
     }
 )
 _GIT_GLOBAL_OPTIONS_WITH_VALUE = frozenset(
