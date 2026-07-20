@@ -207,13 +207,14 @@ def _rg_text(field: object) -> str:
 
 
 def _run_id_from_path(path: Path) -> str:
-    """The run/ask id owning a match file: the child of a runs/ or asks/ dir."""
+    """The run/ask id owning a match file: the child of the DEEPEST
+    runs/asks/machine-drafts segment (a state-base ancestor may reuse a
+    bucket name, e.g. XDG_STATE_HOME=/mnt/runs/state)."""
     parts = path.parts
-    for anchor in ("runs", "asks", "machine-drafts"):
-        if anchor in parts:
-            i = parts.index(anchor)
-            if i + 1 < len(parts):
-                return parts[i + 1]
+    anchors = {"runs", "asks", "machine-drafts"}
+    for i in range(len(parts) - 2, -1, -1):
+        if parts[i] in anchors:
+            return parts[i + 1]
     return path.parent.name
 
 

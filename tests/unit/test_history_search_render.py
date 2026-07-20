@@ -58,6 +58,16 @@ def test_window_decodes_backslashes_not_bare_backslash_space() -> None:
 def test_run_id_from_path_finds_the_run_dir_child() -> None:
     assert _run_id_from_path(Path("/s/runs/deep-poppy-AB/logs.jsonl")) == "deep-poppy-AB"
     assert _run_id_from_path(Path("/s/asks/quiet-fox-CD/transcripts/0003.json")) == "quiet-fox-CD"
+    # A state-base ANCESTOR sharing a bucket name must not shadow the real
+    # bucket (XDG_STATE_HOME=/mnt/runs/state mislabelled every hit as "state").
+    assert (
+        _run_id_from_path(Path("/mnt/runs/state/agent6/repo-x/runs/deep-poppy-AB/logs.jsonl"))
+        == "deep-poppy-AB"
+    )
+    assert (
+        _run_id_from_path(Path("/mnt/asks/state/agent6/repo-x/asks/quiet-fox-CD/logs.jsonl"))
+        == "quiet-fox-CD"
+    )
 
 
 def test_parse_extracts_event_type_and_time_for_logs_jsonl() -> None:
