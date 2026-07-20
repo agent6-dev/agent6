@@ -2262,6 +2262,21 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: Path) -> None:
 # --- tier-aware metric targets --------------------------------------------
 
 
+def test_extract_metric_targets_ignores_arrow_output() -> None:
+    """Grader progress arrows ('epoch 2 -> 27.0') are not thresholds: the bare
+    '>' alternative also matched the second char of '->', fabricating an
+    unmeetable 'drive the metric above <current>' directive from the grader's
+    own echo of the score."""
+    from agent6.workflows._metric import (
+        extract_metric_targets as _extract_metric_targets,
+    )
+
+    text = "epoch 1 -> 12.0\nepoch 2 -> 27.0\nbest => 30\nSCORE: 27\n"
+    assert _extract_metric_targets(text, goal="maximize") == ()
+    # Real assert-style thresholds still extract.
+    assert _extract_metric_targets("assert score > 25", goal="maximize") == (25.0,)
+
+
 def test_extract_metric_targets_minimize_picks_upper_bounds() -> None:
     from agent6.workflows._metric import (
         extract_metric_targets as _extract_metric_targets,

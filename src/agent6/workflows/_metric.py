@@ -49,7 +49,11 @@ def coerce_metric_score(value: Any) -> float | None:
 # A comparison operator followed by a numeric literal, e.g. the
 # ``< 1487`` in ``assert cycles() < 1487``. Underscores in the literal
 # (Python int separators) are tolerated and stripped.
-METRIC_TARGET_RE = re.compile(r"(<=|>=|<|>)\s*([0-9][0-9_]*(?:\.[0-9]+)?)")
+# (?<![-=<>!]) rejects the '>' inside '->' / '=>' arrows (and the tail of
+# '>>' / '!>'): grader progress logs like 'epoch 2 -> 27.0' were captured as
+# thresholds, fabricating an unmeetable 'drive the metric above <current>'
+# directive from the grader's own echo of the score.
+METRIC_TARGET_RE = re.compile(r"(?<![-=<>!])(<=|>=|<|>)\s*([0-9][0-9_]*(?:\.[0-9]+)?)")
 
 
 def extract_metric_targets(
