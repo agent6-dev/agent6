@@ -535,3 +535,42 @@ def test_boolean_reported_cost_reads_as_absent() -> None:
         }
     )
     assert resp.cost_usd == 0.0
+
+
+def test_credential_refresh_roundtrip_is_recorded(tmp_path: Any) -> None:
+    """The 401/403 that triggers a token refresh hit the wire; the transcript
+    contract is one file per round-trip (the streaming path records it; the
+    non-streaming refresh branch silently dropped it)."""
+    from pathlib import Path
+
+    from agent6.providers import TranscriptSink
+    from agent6.providers.token_command import CommandToken
+
+    sink = TranscriptSink(Path(tmp_path) / "transcripts")
+    calls = {"n": 0}
+
+    def _post(url: str, *, headers: Any, content: Any, timeout: Any) -> Any:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _FakeJSONResponse(status_code=401, text='{"error": "expired"}')
+        return _FakeJSONResponse(
+            status_code=200,
+            text=json.dumps(
+                {
+                    "choices": [{"message": {"role": "assistant", "content": "hi"}}],
+                    "usage": {"prompt_tokens": 5, "completion_tokens": 2},
+                }
+            ),
+        )
+
+    cred = CommandToken(["echo", "tok"])
+    provider = OpenAIProvider(
+        api_key="", model="gpt-4o-mini", transcript_sink=sink, credential=cred
+    )
+    with mock.patch("agent6.providers._transport.http_post", side_effect=_post):
+        provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
+    statuses = sorted(
+        json.loads(p.read_text(encoding="utf-8"))["response"]["status"]
+        for p in (Path(tmp_path) / "transcripts").glob("*.json")
+    )
+    assert statuses == [200, 401]
