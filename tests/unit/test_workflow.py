@@ -120,6 +120,61 @@ def test_run_silent_finish_stays_silent_finish() -> None:
     assert result.reason == "silent_finish"
 
 
+class _EventCapture:
+    def __init__(self) -> None:
+        self.events: list[dict[str, Any]] = []
+
+    def emit(self, event_type: str, /, **fields: Any) -> None:
+        self.events.append({"type": event_type, **fields})
+
+
+def _cfg_with_verify() -> Any:
+    return MagicMock(
+        prompt=MagicMock(system_prompt_file=""),
+        workflow=MagicMock(
+            verify_command=("true",),
+            require_verify_to_finish=False,
+            metric=SimpleNamespace(goal=None),
+        ),
+    )
+
+
+def test_run_silent_finish_over_red_verify_is_not_passed() -> None:
+    """A run-mode silent finish (prose, no tool_use) over a RED or stale verify
+    must emit run.end all_passed=False — the same honest-finish rule as the
+    explicit finish_run path, so no surface renders the failed run as 'passed'."""
+    ev = _EventCapture()
+    wf = _wf(mode="run", config=_cfg_with_verify(), events=ev)
+    result = wf._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
+        "I tried, but the tests still fail.",
+        Conversation(),
+        _state(ever_edited=True, verify_ever_passed=True, last_verify_ok=False),
+        iteration=5,
+    )
+    assert result is not None and result.reason == "silent_finish"
+    ends = [e for e in ev.events if e["type"] == "run.end"]
+    assert ends and ends[-1]["all_passed"] is False
+
+
+def test_run_silent_finish_over_green_verify_stays_passed() -> None:
+    """The mirror: a clean green tree still ends passed (no false negative)."""
+    ev = _EventCapture()
+    wf = _wf(mode="run", config=_cfg_with_verify(), events=ev)
+    wf._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
+        "Done, all green.",
+        Conversation(),
+        _state(
+            ever_edited=True,
+            verify_ever_passed=True,
+            last_verify_ok=True,
+            edited_since_verify=False,
+        ),
+        iteration=5,
+    )
+    ends = [e for e in ev.events if e["type"] == "run.end"]
+    assert ends and ends[-1]["all_passed"] is True
+
+
 def _turn(**kw: Any) -> Any:
     """A bare _TurnState for direct turn-phase method tests."""
     from agent6.workflows.loop import _TurnState  # pyright: ignore[reportPrivateUsage]

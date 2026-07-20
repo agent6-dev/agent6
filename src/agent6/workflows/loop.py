@@ -2474,7 +2474,14 @@ class Workflow:
                 f"LOOP: silent_finish at iter {iteration} - agent emitted text but no tool_use"
             )
         self._final_checkpoint(iteration)
-        self._emit_run_end_passed(reason=reason, iterations=iteration)
+        # Honest finish, same rule as the explicit finish_run path: a run/plan
+        # silent finish over a red or stale verify is "finished", not "passed".
+        # Ask mode's prose answer is the success (it never runs verify), so it
+        # always ends passed.
+        if reason == "silent_finish" and self._tree_is_verify_green(state) is False:
+            self._emit("run.end", reason=reason, iterations=iteration, all_passed=False)
+        else:
+            self._emit_run_end_passed(reason=reason, iterations=iteration)
         return RunResult(
             completed=True,
             reason=reason,
