@@ -231,6 +231,62 @@ def test_watch_finished_instance_shows_overview_and_end(
     assert "OK: ended in 'done'" in out
 
 
+def _stalled_instance(tmp_path: Path, *, parked: bool) -> None:
+    """An instance whose journal has begun but not ended, with a dead worker
+    pid -- plus an armed pending wait when *parked*."""
+    from agent6.machine.journal import MachineJournal, PendingWait
+
+    inst = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    inst.mkdir(parents=True)
+    (tmp_path / "tiny.asm.toml").write_text(TINY, encoding="utf-8")
+    (inst / "machine.asm.toml").write_text(TINY, encoding="utf-8")
+    (inst / "journal.jsonl").write_text(
+        '{"type":"machine.begin","ts":"2026-07-12T00:00:00+00:00","machine":"tiny","version":1}\n',
+        encoding="utf-8",
+    )
+    (inst / "worker.pid").write_text("999999", encoding="utf-8")
+    if parked:
+        MachineJournal(inst).write_pending_wait(PendingWait(state="route", wake_epoch=None))
+
+
+def _watch_in_thread(timeout_s: float) -> tuple[list[int], bool]:
+    import threading
+
+    result: list[int] = []
+    t = threading.Thread(target=lambda: result.append(main(["attach", "tiny"])), daemon=True)
+    t.start()
+    t.join(timeout=timeout_s)
+    return result, t.is_alive()
+
+
+def test_watch_exits_on_a_parked_machine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A parked (--exit-on-wait) machine has an armed wait and no worker: the
+    docstring promises watch "exits when the machine ends/waits", but the loop
+    only ever ended on MachineEnd and spun silently forever."""
+    monkeypatch.chdir(tmp_path)
+    _stalled_instance(tmp_path, parked=True)
+    result, still_running = _watch_in_thread(5.0)
+    assert not still_running, "watch loop failed to terminate on a parked machine"
+    assert result == [0]
+    out = capsys.readouterr().out
+    assert "WAITING" in out and "machine poke tiny" in out
+
+
+def test_watch_exits_on_a_crashed_machine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A crashed worker (stale worker.pid, no MachineEnd, no armed wait) left
+    watch presenting "watching..." forever over a dead machine."""
+    monkeypatch.chdir(tmp_path)
+    _stalled_instance(tmp_path, parked=False)
+    result, still_running = _watch_in_thread(5.0)
+    assert not still_running, "watch loop failed to terminate on a crashed machine"
+    assert result == [1]
+    assert "STOPPED" in capsys.readouterr().err
+
+
 def test_replay_pluralizes_the_transition_count(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

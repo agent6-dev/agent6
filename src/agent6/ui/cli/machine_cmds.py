@@ -70,6 +70,7 @@ from agent6.viewmodel import (
     MachineWatchCursor,
     event_epoch,
     fold_machine,
+    machine_status_word,
 )
 from agent6.viewmodel.format import format_cost
 
@@ -532,7 +533,32 @@ def _render_overview(ms: MachineState) -> str:
     return "\n".join(lines)
 
 
-def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0912
+def _watch_liveness_exit(
+    journal: MachineJournal, root: Path, machine_id: str, ms: MachineState
+) -> int | None:
+    """Watch's exit code when nothing will ever append to the journal: parked
+    (an armed --exit-on-wait wait, no worker) or crashed (stale worker.pid, no
+    end, no wait). None while a live worker may still write. Routed through
+    machine_status_word, the one owner of the running/waiting/stopped
+    distinction, so watch agrees with status/TUI/web."""
+    parked = journal.read_pending_wait() is not None
+    word = machine_status_word(ms, parked=parked, alive=worker_is_alive(root))
+    current = next((st.name for st in ms.states if st.is_current), "?")
+    if word == "waiting":
+        print(
+            f"\nWAITING in {current!r} (poke to resume):"
+            f" agent6 machine poke {machine_id} [--message TEXT]"
+        )
+        return 0
+    if word == "stopped" and read_worker_pid(root) is not None:
+        # The pid guard keeps a valid instance that never started from
+        # reading as crashed (same guard as the web machine loop).
+        print(f"\nSTOPPED: worker exited in {current!r} without ending", file=sys.stderr)
+        return 1
+    return None
+
+
+def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912
     """Follow a running machine: the state overview, each transition as it lands,
     and the current agent state's live reasoning (its per-state logs.jsonl). Exits
     when the machine ends/waits, or on Ctrl-C. Read-only."""
@@ -558,6 +584,9 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0912
     if ms.ended is not None:
         print(f"\n{ms.ended.status.upper()}: ended in {ms.ended.state!r} ({ms.ended.reason})")
         return 0 if ms.ended.status == "ok" else 1
+    code = _watch_liveness_exit(journal, root, machine_id, ms)
+    if code is not None:
+        return code
 
     print("\n[agent6] watching (Ctrl-C to stop)...", file=sys.stderr)
     print(
@@ -596,6 +625,9 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0912
                     f" {ms.ended.transitions} transitions ({ms.ended.reason})"
                 )
                 return 0 if ms.ended.status == "ok" else 1
+            code = _watch_liveness_exit(journal, root, machine_id, ms)
+            if code is not None:
+                return code
             time.sleep(0.5)
     except KeyboardInterrupt:
         print("\n[agent6] watch: stopped.", file=sys.stderr)
