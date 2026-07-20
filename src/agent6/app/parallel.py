@@ -403,6 +403,17 @@ def build_lane_spawner(
     `--auto-approve` to every lane, same as `max_usd`."""
 
     def dispatch(lanes: list[LaneTask], group: str) -> list[LaneResult]:
+        # The documented hard cap on lanes per fan-out binds here too: the
+        # /parallel steer uses the same grammar as run --parallel (which
+        # build_lane_specs refuses up front), so a fat-fingered `/parallel 40`
+        # must not clone the repo 40x and spawn 40 detached runs. First, before
+        # any model-cache lookup or spec build; the loop's group-failure
+        # feedback delivers the refusal to the coordinator.
+        if len(lanes) > cfg.parallel.max_lanes:
+            raise ParallelError(
+                f"/parallel requests {len(lanes)} lanes but [parallel].max_lanes ="
+                f" {cfg.parallel.max_lanes}. Request fewer, or raise [parallel].max_lanes."
+            )
         # Validate the per-lane models before any clone: a refusal raises, and the
         # loop's group-failure feedback delivers the message to the coordinator
         # (keeping workflows free of a models dependency); no cache = warn + proceed.

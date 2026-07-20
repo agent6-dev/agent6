@@ -1169,6 +1169,31 @@ def test_run_lane_to_completion_failed_spawn_imports_nothing(
     assert not branch_exists(origin, "agent6/co-p1-l1")
 
 
+def test_build_lane_spawner_over_cap_refused(
+    origin: Path, monkeypatch: pytest.MonkeyPatch, runtime: LaneRuntime
+) -> None:
+    """[parallel].max_lanes is documented as a hard cap per fan-out, and a live
+    /parallel steer is a fan-out: it must refuse over-cap BEFORE any clone or
+    spawn, exactly as `run --parallel` does in build_lane_specs. The loop turns
+    the raise into 'group dispatch failed' coordinator feedback."""
+    from agent6.config.layer import resolved_state_dir
+
+    cfg = Config.model_validate({"parallel": {"max_lanes": 2}})
+    called: list[str] = []
+
+    def fake_rltc(spec: LaneSpec, task: str, **kw: object) -> LaneResult:
+        called.append(spec.run_id)
+        return LaneResult(spec=spec, run_dir=spec.workdir, branch="b", ok=True, error="")
+
+    monkeypatch.setattr(parallel, "run_lane_to_completion", fake_rltc)
+    dispatch = parallel.build_lane_spawner(
+        cfg, origin, resolved_state_dir(origin), coordinator_run_id="co", runtime=runtime
+    )
+    with pytest.raises(ParallelError, match="max_lanes"):
+        dispatch([LaneTask(task="t", model=None)] * 3, "p1")
+    assert called == []  # nothing cloned or spawned
+
+
 def test_build_lane_spawner_builds_specs_and_preserves_order(
     origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runtime: LaneRuntime
 ) -> None:
