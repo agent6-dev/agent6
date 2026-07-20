@@ -68,7 +68,7 @@ def upsert_toml_table(path: Path, table: str, fields: dict[str, str | bool | Non
     _write(path, "\n".join(new_lines).rstrip("\n") + "\n")
 
 
-def _toml_repr(value: object) -> str:  # noqa: PLR0911
+def format_toml_value(value: object) -> str:  # noqa: PLR0911
     """Serialize a scalar, list, or (inline-table) dict to its TOML literal form."""
     if isinstance(value, bool):  # bool first: it is a subclass of int
         return "true" if value else "false"
@@ -79,7 +79,7 @@ def _toml_repr(value: object) -> str:  # noqa: PLR0911
     if isinstance(value, str):
         return _toml_value(value)
     if isinstance(value, (list, tuple)):
-        return "[" + ", ".join(_toml_repr(v) for v in value) + "]"
+        return "[" + ", ".join(format_toml_value(v) for v in value) + "]"
     if isinstance(value, dict):
         # Inline table, e.g. an OpenRouter routing value:
         #   extra_body = { provider = { sort = "throughput" } }
@@ -87,7 +87,7 @@ def _toml_repr(value: object) -> str:  # noqa: PLR0911
         # wholesale (a nested `[table]` would collide with the inline parent).
         if not value:
             return "{}"
-        items = ", ".join(f"{_toml_key(k)} = {_toml_repr(v)}" for k, v in value.items())
+        items = ", ".join(f"{_toml_key(k)} = {format_toml_value(v)}" for k, v in value.items())
         return "{ " + items + " }"
     raise ValueError(f"cannot serialize {value!r} to TOML")
 
@@ -135,7 +135,7 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
     Creates the ``[table]`` block if it is absent.
     """
     table, leaf = _split_dotted_key(dotted_key)
-    new_line = f"{leaf} = {_toml_repr(value)}"
+    new_line = f"{leaf} = {format_toml_value(value)}"
     text = path.read_text(encoding="utf-8") if path.is_file() else ""
     lines = text.splitlines()
     header = f"[{table}]"

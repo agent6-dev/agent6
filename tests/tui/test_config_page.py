@@ -347,6 +347,56 @@ def test_model_field_is_a_typeahead_picker(repo: Path, monkeypatch: pytest.Monke
     asyncio.run(scenario())
 
 
+def test_list_setting_prefill_saves_back_unchanged(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A list-valued setting must prefill the edit box in a form that SAVES:
+    the display formatter rendered [uv, run, pytest] (unquoted, not TOML), so
+    an untouched Save failed revalidation ("Input should be a valid tuple") --
+    there was no format in which the shown value saved. The box now prefills
+    the exact inverse of parse_cli_value."""
+    gdir = tmp_path / "g"
+    gdir.mkdir()
+    (gdir / "config.toml").write_text(
+        _GLOBAL + '\n[workflow]\nverify_command = ["uv", "run", "pytest"]\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(gdir))
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "cache"))
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+
+    async def scenario() -> None:
+        app = _Host(repo_root)
+        async with app.run_test(size=(100, 44)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, ConfigScreen)
+            tbl = screen.query_one("#tbl-workflow", DataTable)
+            tbl.focus()
+            ridx = next(
+                r
+                for r in range(tbl.row_count)
+                if str(tbl.get_row_at(r)[0]).strip() == "verify_command"
+            )
+            tbl.move_cursor(row=ridx)
+            await pilot.pause()
+            screen.action_edit()
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, EditModal)
+            field = modal.query_one("#edit-value", Input)
+            assert field.value == '["uv", "run", "pytest"]'  # round-trippable TOML
+            modal.action_save()  # untouched Save must succeed, not error
+            await pilot.pause()
+            assert isinstance(app.screen, ConfigScreen)
+
+    asyncio.run(scenario())
+    saved = load_effective(repo_root, None).config.workflow.verify_command
+    assert saved == ("uv", "run", "pytest")  # unchanged, not corrupted to a str
+
+
 def test_editing_a_model_survives_a_broken_secrets_file(
     repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

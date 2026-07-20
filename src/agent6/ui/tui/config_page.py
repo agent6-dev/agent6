@@ -40,6 +40,7 @@ try:
 except ImportError as e:  # pragma: no cover - clear runtime message
     raise SystemExit("The config page needs textual: pip install 'agent6[tui]'") from e
 
+from agent6.config.io import format_toml_value
 from agent6.config.layer import (
     PROVIDER_PRESETS,
     load_effective,
@@ -255,7 +256,13 @@ class EditModal(ModalScreen[tuple[str, str, bool] | None]):
                     style="dim",
                 )
             )
-            current = _fmt(s.value if s.value is not None else s.default)
+            # The DISPLAY formatter (_fmt) renders lists unquoted ([uv, run,
+            # pytest]) -- friendly in the table, but not valid TOML, so an
+            # untouched Save of a list/dict field failed revalidation ("Input
+            # should be a valid tuple"). Prefill the edit box with the exact
+            # inverse of parse_cli_value instead; scalars stay bare.
+            raw = s.value if s.value is not None else s.default
+            current = format_toml_value(raw) if isinstance(raw, (list, tuple, dict)) else _fmt(raw)
             if self._typeahead is not None:
                 # Big open list (e.g. model ids): type to narrow over suggestions.
                 yield TypeaheadField(

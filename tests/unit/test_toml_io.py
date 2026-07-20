@@ -8,7 +8,7 @@ import tomllib
 from pathlib import Path
 
 from agent6.config.io import (
-    _toml_repr,  # pyright: ignore[reportPrivateUsage]
+    format_toml_value,
     parse_cli_value,  # pyright: ignore[reportPrivateUsage]
     remove_toml_leaf,
     remove_toml_table,
@@ -66,16 +66,24 @@ def test_remove_toml_table_absent_returns_false(tmp_path: Path) -> None:
     assert path.read_text(encoding="utf-8") == "[budget]\nmax_usd = 1.0\n"
 
 
+def test_format_toml_value_round_trips_through_parse_cli_value() -> None:
+    # The serializer is the exact inverse of parse_cli_value: what an editor
+    # prefills from it must save back unchanged (the TUI edit box relies on
+    # this for list/dict fields).
+    assert parse_cli_value(format_toml_value(("uv", "run", "pytest"))) == ["uv", "run", "pytest"]
+    assert parse_cli_value(format_toml_value([])) == []
+
+
 def test_toml_repr_serializes_nested_dict_as_inline_table() -> None:
     # An OpenRouter routing value round-trips through the inline-table form.
     val = {"provider": {"sort": "throughput"}}
-    rendered = _toml_repr(val)  # pyright: ignore[reportPrivateUsage]
+    rendered = format_toml_value(val)
     assert rendered == '{ provider = { sort = "throughput" } }'
     assert tomllib.loads(f"x = {rendered}")["x"] == val
 
 
 def test_toml_repr_empty_dict() -> None:
-    assert _toml_repr({}) == "{}"  # pyright: ignore[reportPrivateUsage]
+    assert format_toml_value({}) == "{}"
 
 
 def test_config_set_whole_extra_body_value_round_trips(tmp_path: Path) -> None:
