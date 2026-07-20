@@ -221,6 +221,11 @@ def apply_agent_landlock(
         raise LandlockNotSupportedError("Landlock is not available on this kernel (ABI 0).")
 
     handled_fs = _FS_ALL_BITS
+    if abi < 3:
+        # TRUNCATE is an ABI-3 right; the kernel EINVALs any handled bit above
+        # its ABI, and pre-ABI-3 truncation is governed by WRITE_FILE anyway,
+        # so masking it loses no enforcement. Mirrors the net gating below.
+        handled_fs &= ~_LANDLOCK_ACCESS_FS_TRUNCATE
     # NET_BIND_TCP is declared "handled" but NEVER granted below (only CONNECT
     # rules are added). That is deliberate, not an omission: marking it handled
     # makes Landlock DENY all TCP bind()/listen() for the agent process, which
