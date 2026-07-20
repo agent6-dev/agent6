@@ -1036,9 +1036,7 @@ def test_dashboard_detects_a_dead_worker_and_tells_the_truth(
             assert "working…" not in body
             # The composer routes to resume (not a steer nobody will read).
             app.submit_instruction("carry on")
-            assert spawned == [("dead-01", "carry on")] or spawned == [
-                (tmp_path.name, "carry on")
-            ]
+            assert spawned == [(tmp_path.name, "carry on")]
             # And action_resume resumes instead of refusing "still going".
             app.action_resume()
             assert len(spawned) == 2

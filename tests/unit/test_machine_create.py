@@ -744,20 +744,6 @@ def test_timed_out_agent_state_salvages_spend_from_its_event_log(
     import subprocess as sp
 
     events_log = tmp_path / "logs.jsonl"
-    events_log.write_text(
-        json.dumps({"type": "budget.update", "input_total": 100, "output_total": 5})
-        + "\n"
-        + json.dumps(
-            {
-                "type": "budget.update",
-                "input_total": 66084,
-                "output_total": 838,
-                "usd_total": 0.0588752,
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
 
     class _HungProc:
         pid = 424242
@@ -769,6 +755,26 @@ def test_timed_out_agent_state_salvages_spend_from_its_event_log(
             return 0
 
     def _popen(*_args: Any, **_kwargs: Any) -> _HungProc:
+        # The subprocess writes its budget.update lines DURING the call --
+        # after run_agent captured the log offset (the offset scopes a shared
+        # draft log to this call's own events; see the double-book fix).
+        # Writing at spawn time mirrors that, where a pre-seeded log would
+        # simulate a PRIOR call's spend and correctly salvage $0.
+        with events_log.open("a", encoding="utf-8") as fh:
+            fh.write(
+                json.dumps({"type": "budget.update", "input_total": 100, "output_total": 5}) + "\n"
+            )
+            fh.write(
+                json.dumps(
+                    {
+                        "type": "budget.update",
+                        "input_total": 66084,
+                        "output_total": 838,
+                        "usd_total": 0.0588752,
+                    }
+                )
+                + "\n"
+            )
         return _HungProc()
 
     def _getpgid(_pid: int) -> int:
