@@ -65,8 +65,8 @@ from agent6.runs.ipc import (
     request_compact,
     request_steer,
     request_stop,
-    worker_is_alive,
     set_session_allow,
+    worker_is_alive,
     write_answer,
     write_frontend_pid,
     write_question_answers,
@@ -491,6 +491,18 @@ class DashboardScreen(Screen[None]):
 
     # --- rendering ---------------------------------------------------
 
+    def _end_label(self, s: RunState) -> str:
+        """The top-line end label: the coloured shared status for a finished
+        run (green passed, yellow deliberate end, red involuntary), "worker
+        exited" for a crashed one (pid recorded but dead, no run.end -- the
+        hub's "stale"), else empty while live."""
+        if s.finished:
+            color = _end_color(s.all_passed, s.end_reason)
+            return f"[b {color}]{escape(run_status_label(s))}[/]"
+        if self._tui.run_ended:
+            return "[b red]worker exited[/]"
+        return ""
+
     def render_heartbeat(self) -> None:
         """The CHEAP once-a-second repaint: the top status line, the composer
         bar's labels, and the live stream pane. The full pane rebuild
@@ -520,16 +532,7 @@ class DashboardScreen(Screen[None]):
         role_line = f"{role.role} / {role.model}{beat}" if role else "(idle)"
         done_n = sum(1 for t in s.tasks if t.status in ("passed", "skipped"))
         step = f"tasks: {done_n}/{len(s.tasks)}" if s.tasks else "tasks: —"
-        if s.finished:  # colour the shared label: green passed, yellow deliberate, red involuntary
-            color = _end_color(s.all_passed, s.end_reason)
-            finished = f"[b {color}]{escape(run_status_label(s))}[/]"
-        elif tui.run_ended:
-            # Crashed: pid recorded but dead, no run.end. The hub's word for
-            # this is "stale"; here the actionable truth is what happened +
-            # the way out.
-            finished = "[b red]worker exited[/]"
-        else:
-            finished = ""
+        finished = self._end_label(s)
         cost = f"[b]{format_cost(s.budget.usd_total, partial=s.budget.usd_partial)}[/]"
         # The token-budget consumption as a readout. Labelled "token budget": a
         # bare "budget: 11%" right after "cost: $0.05" reads as a dollar cap.
@@ -841,6 +844,19 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         else:
             self._dirty = True
 
+    def _probe_worker_liveness(self) -> None:
+        """Dead-worker probe, piggybacked on the ~1/s heartbeat cadence (a
+        file read + os.kill, same cost class as the spinner tick). A worker
+        killed without a run.end (kill -9 / OOM) folds to finished=False
+        forever; every other surface probes worker.pid (the hub's "stale",
+        the web's refusals) -- the dashboard must not be the one pane that
+        spins "working…" over a corpse. Gated on a RECORDED pid: a run
+        without one keeps the log-silence heartbeat (mirrors
+        listing._running_is_stale)."""
+        if read_worker_pid(self.run_dir) is not None and not worker_is_alive(self.run_dir):
+            self.run_ended = True
+            self._dirty = True
+
     def _tick(self) -> None:
         # Re-assert the bridge if a peer viewer went away. Throttled: the probe
         # reads frontend.pid + signals the process, needless 5x a second.
@@ -870,17 +886,7 @@ class Agent6TUI(MuxPointerShapes, App[int]):
                 self._heartbeat_at = now
                 self.spin += 1
                 self._light_dirty = True
-                # Dead-worker probe, piggybacked on the ~1/s cadence (a file
-                # read + os.kill, same cost class as the spinner tick). A worker
-                # killed without a run.end (kill -9 / OOM) folds to
-                # finished=False forever; every other surface probes worker.pid
-                # (the hub's "stale", the web's refusals) -- the dashboard must
-                # not be the one pane that spins "working…" over a corpse.
-                # Gated on a RECORDED pid: a run without one keeps the
-                # log-silence heartbeat (mirrors listing._running_is_stale).
-                if read_worker_pid(self.run_dir) is not None and not worker_is_alive(self.run_dir):
-                    self.run_ended = True
-                    self._dirty = True
+                self._probe_worker_liveness()
         # Coalesced repaint: once per tick, and only when the dashboard is the
         # active, mounted screen. A pushed viewer, a modal, or shutdown leaves the
         # dashboard covered or torn down, so querying its widgets raises; defer
