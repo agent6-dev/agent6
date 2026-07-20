@@ -9,6 +9,7 @@ Starts the stdlib server on an ephemeral loopback port and drives it with
 from __future__ import annotations
 
 import json
+import os
 import socket
 import threading
 from collections.abc import Iterator
@@ -345,10 +346,26 @@ def test_steer_writes_answer_and_request(server: tuple[WebServer, int], tmp_path
     run_dir = resolved_state_dir(tmp_path) / "runs" / "steer-run"
     run_dir.mkdir(parents=True)
     (run_dir / "logs.jsonl").write_text("", encoding="utf-8")
+    (run_dir / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     status, body = _post(port, "/api/run/steer-run/steer", {"text": "focus on tests"})
     assert status == 200 and body["ok"] is True
     assert (run_dir / "steer.answer").read_text(encoding="utf-8") == "focus on tests"
     assert (run_dir / "steer.request").exists()
+
+
+def test_steer_refused_on_a_dead_run(server: tuple[WebServer, int], tmp_path: Path) -> None:
+    """A crashed run (no run.end, dead worker) folds as unfinished, so the
+    composer offers steer; the action must refuse like stop_step/compact do
+    instead of toasting "steer sent" for a marker nothing will ever read (the
+    next resume even deletes it via clear_pending_answers)."""
+    _srv, port = server
+    _make_run(tmp_path, "run-sd", [{"type": "run.start"}, {"type": "run.end"}])
+    status, data = _post(port, "/api/run/run-sd/steer", {"text": "abort"})
+    assert status == 422
+    assert "not live" in str(data["error"])
+    run_dir = resolved_state_dir(tmp_path) / "runs" / "run-sd"
+    assert not (run_dir / "steer.answer").exists()
+    assert not (run_dir / "steer.request").exists()
 
 
 def test_approve_id_traversal_is_contained(server: tuple[WebServer, int], tmp_path: Path) -> None:

@@ -210,6 +210,11 @@ def steer(cwd: Path, run_id: str, text: str) -> tuple[bool, str]:
     run_dir = model.run_dir_for(cwd, run_id)
     if run_dir is None:
         return False, f"no run {run_id!r}"
+    if not worker_is_alive(run_dir):
+        # A crashed run folds as unfinished, so the composer still offers
+        # steer; nothing would ever read the marker (and the next resume
+        # deletes it), so refuse like the stop/compact siblings.
+        return False, "run is not live"
     write_steer_answer(run_dir, text)  # ready before the run reads it
     request_steer(run_dir)
     return True, "steer requested"
