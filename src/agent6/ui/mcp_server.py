@@ -38,7 +38,7 @@ from agent6 import __version__
 from agent6.config import Config
 from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.graph.storage import load_graph
-from agent6.runs.layout import RunLayout
+from agent6.runs.layout import RunLayout, is_safe_run_id
 from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 from agent6.viewmodel import run_mtime
@@ -352,6 +352,10 @@ class MCPServer:
     def _h_query_dag(self, args: dict[str, Any]) -> dict[str, Any]:
         run_id_arg = args.get("run_id")
         if isinstance(run_id_arg, str) and run_id_arg:
+            # Client-supplied: reject a traversing/absolute id before it builds a
+            # run dir, so a query cannot read another repo's state (or anywhere).
+            if not is_safe_run_id(run_id_arg):
+                raise ToolError(f"invalid run_id: {run_id_arg!r}")
             run_id = run_id_arg
         else:
             resolved = _most_recent_run_id(self._agent6_dir)

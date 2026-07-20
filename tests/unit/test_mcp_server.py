@@ -250,6 +250,27 @@ def test_query_dag_missing_run_returns_tool_error(tmp_path: Path) -> None:
     assert "no runs" in resps[0]["result"]["content"][0]["text"]
 
 
+@pytest.mark.parametrize("bad", ["../../elsewhere/runs/x", "/etc", "a/b", ".."])
+def test_query_dag_rejects_traversing_run_id(tmp_path: Path, bad: str) -> None:
+    """A client-supplied run_id builds `state_dir/runs/<run_id>`; a `..` or
+    absolute id would read another repo's state (or anywhere). It must be
+    rejected as a single-component id, like the web surface's guard."""
+    server = _server(tmp_path)
+    resps = _roundtrip(
+        server,
+        [
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "query_dag", "arguments": {"run_id": bad}},
+            }
+        ],
+    )
+    assert resps[0]["result"]["isError"] is True
+    assert "invalid run_id" in resps[0]["result"]["content"][0]["text"]
+
+
 def test_query_dag_reads_persisted_nodes(tmp_path: Path) -> None:
     layout = RunLayout(state_dir=resolved_state_dir(tmp_path), run_id="r1")
     layout.ensure()

@@ -13,6 +13,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+def is_safe_run_id(run_id: str) -> bool:
+    """True iff *run_id* is a single path component (no separator, not `.`/`..`).
+
+    ``RunLayout.run_dir`` is ``state_dir / subdir / run_id``: an unchecked id
+    with ``/`` or ``..`` traverses out of the runs dir, and pathlib treats an
+    absolute right operand as a replacement, so an externally supplied id must
+    be validated at every trust boundary before it reaches a layout."""
+    return bool(run_id) and "/" not in run_id and "\\" not in run_id and run_id not in {".", ".."}
+
+
 @dataclass(frozen=True, slots=True)
 class RunLayout:
     """Filesystem layout for one `agent6 run`.
