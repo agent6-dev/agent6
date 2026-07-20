@@ -20,7 +20,7 @@ from agent6.config import (
 from agent6.config.layer import (
     PROVIDER_PRESETS,
     repo_config_path_for,
-    set_config_table,
+    set_config_leaves,
 )
 from agent6.models.cache import probe_provider_key
 from agent6.paths import global_config_path
@@ -210,10 +210,12 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True) -> int:  
     fields: dict[str, str | bool | None] = {"api_format": api_format}
     if api_format == "openai" and base_url and base_url != "https://api.openai.com/v1":
         fields["base_url"] = base_url
-    # Shared edit path: persist [providers.<name>], re-validate the merged config,
-    # and roll the file back on failure so a bad endpoint never leaves config.toml
+    # Leaf surgery, not a whole-block replace: connect is the documented
+    # add/UPDATE path, and a re-run (key rotation, base_url fix) must preserve
+    # hand-added sibling keys and comments. Revalidates the merged config and
+    # rolls the file back on failure so a bad endpoint never leaves config.toml
     # broken (the key, saved above, is a harmless orphan until a valid retry).
-    err = set_config_table(Path.cwd(), f"providers.{name}", fields, to_repo=to_repo)
+    err = set_config_leaves(Path.cwd(), f"providers.{name}", fields, to_repo=to_repo)
     if err is not None:
         print(f"Refusing: that would make the config invalid:\n{err}", file=sys.stderr)
         return 2

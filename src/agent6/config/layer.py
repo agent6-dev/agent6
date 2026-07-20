@@ -849,6 +849,32 @@ PROVIDER_PRESETS: dict[str, dict[str, str]] = {
 }
 
 
+def set_config_leaves(
+    repo_root: Path,
+    table: str,
+    fields: dict[str, str | bool | None],
+    *,
+    to_repo: bool = False,
+) -> str | None:
+    """Upsert individual ``[table]`` leaves, preserving sibling keys and
+    comments verbatim -- the UPDATE counterpart to :func:`set_config_table`'s
+    whole-block replace (which `agent6 connect` used to reach for, erasing
+    hand-added provider keys on every re-run). One revalidate+rollback wraps
+    all the leaf writes, so a bad merged config restores the prior file whole.
+    ``None`` field values are omitted."""
+    target = _write_target(repo_root, to_repo=to_repo)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    prior = target.read_text(encoding="utf-8") if target.is_file() else None
+    for key, val in fields.items():
+        if val is not None:
+            upsert_toml_leaf(target, f"{table}.{key}", val)
+    err = _revalidate(repo_root, target, prior)
+    if err is None:
+        chown_to_real_user(target.parent)
+        chown_to_real_user(target)
+    return err
+
+
 def unset_config_value(repo_root: Path, dotted_key: str, *, to_repo: bool = False) -> str | None:
     """Remove one leaf so it reverts to the next layer / built-in default.
 

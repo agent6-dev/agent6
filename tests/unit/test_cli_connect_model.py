@@ -60,6 +60,35 @@ def test_connect_stores_key_and_provider_and_never_execs(
     assert calls == []
 
 
+def test_connect_preserves_hand_edited_provider_keys(
+    iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """connect is the documented add/UPDATE path; re-running it for a key
+    rotation must not erase the operator's hand-added sibling keys (it replaced
+    the whole [providers.<name>] block)."""
+    gc = tmp_path / "g" / "config.toml"
+    gc.parent.mkdir(parents=True, exist_ok=True)
+    gc.write_text(
+        "[providers.openrouter]\n"
+        'api_format = "openai"\n'
+        'base_url = "https://openrouter.ai/api/v1"\n'
+        "# hand-added\n"
+        "http_timeout_s = 120\n"
+        'extra_body = { provider = { sort = "throughput" } }\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-or-FAKE")
+    monkeypatch.setattr("builtins.input", lambda prompt="": "")  # accept the preset base_url
+    rc = main(["connect", "--provider", "openrouter"])
+    assert rc == 0
+    text = gc.read_text(encoding="utf-8")
+    assert "[providers.openrouter]" in text
+    assert 'api_format = "openai"' in text
+    assert "http_timeout_s = 120" in text
+    assert "extra_body" in text
+    assert "# hand-added" in text
+
+
 def test_connect_validates_key_and_reports_ok(
     iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
