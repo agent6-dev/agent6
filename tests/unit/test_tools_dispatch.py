@@ -902,6 +902,15 @@ def test_grep_rejects_overlong_pattern(tmp_path: Path) -> None:
         d.dispatch("grep", {"pattern": "a" * 1001, "path": "."})
 
 
+def test_grep_rejects_nonexistent_path(tmp_path: Path) -> None:
+    """grep on a missing path must error like its sibling fs tools, not return
+    an empty hit list indistinguishable from "searched, no matches"."""
+    cfg = _config(tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(ToolError, match="No such path"):
+        d.dispatch("grep", {"pattern": "hello", "path": "no/such/dir"})
+
+
 def test_list_dir(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "x").mkdir()

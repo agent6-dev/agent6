@@ -114,6 +114,20 @@ def list_dir(root: Path, raw: dict[str, Any]) -> ListDirResult:
     return ListDirResult(entries=tuple(entries))
 
 
+def _grep_targets(abs_path: Path, rel_path: str) -> tuple[list[Path], Path | None]:
+    """The files a grep of `abs_path` scans, plus the base below which hidden
+    entries (.git, ...) are skipped: the requested directory, or None for an
+    explicitly-named file, so `grep <pat> .github/` (or a hidden file named
+    directly) is still searched."""
+    if abs_path.is_file():
+        return [abs_path], None
+    if abs_path.is_dir():
+        return [p for p in abs_path.rglob("*") if p.is_file()], abs_path
+    # rglob on a missing path yields nothing, which would render as a
+    # confident "searched, no matches"; error like the sibling fs tools.
+    raise ToolError(f"No such path: {rel_path}")
+
+
 def grep(root: Path, raw: dict[str, Any]) -> GrepResult:
     args = GrepInput.model_validate(raw)
     sp = resolve_in_root(root, args.path)
@@ -124,18 +138,7 @@ def grep(root: Path, raw: dict[str, Any]) -> GrepResult:
         raise ToolError(f"Invalid regex: {exc}") from exc
     deadline = time.monotonic() + MAX_GREP_WALL_S
     hits: list[dict[str, Any]] = []
-    targets: list[Path]
-    # Skip hidden files/dirs (.git, ...) only when they are BELOW
-    # the requested path, so an explicit `grep <pat> .github/` (or a hidden
-    # file named directly) is still searched. `skip_base` is the requested
-    # directory; for an explicitly-named file there is nothing to skip.
-    skip_base: Path | None
-    if sp.abs_path.is_file():
-        targets = [sp.abs_path]
-        skip_base = None
-    else:
-        targets = [p for p in sp.abs_path.rglob("*") if p.is_file()]
-        skip_base = sp.abs_path
+    targets, skip_base = _grep_targets(sp.abs_path, args.path)
     root_resolved = root.resolve()
     for path in targets:
         if skip_base is not None and any(
