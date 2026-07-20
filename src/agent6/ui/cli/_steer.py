@@ -52,8 +52,23 @@ def select_revised_prompt(
     original: str,
     revised: str,
     questions: tuple[str, ...],
+    console_view: ConsoleView | None = None,
 ) -> str | None:
-    """Interactive accept/edit/skip prompt for prompt.revise_prompt."""
+    """Interactive accept/edit/skip prompt for prompt.revise_prompt.
+
+    ``console_view``, when given, has its heartbeat suspended for the whole
+    exchange (the spinner's per-tick line-erase otherwise wipes the choice
+    prompt and the typed echo while the operator reads the proposal)."""
+    pause = console_view.pause if console_view is not None else contextlib.nullcontext
+    with pause():
+        return _select_revised_prompt(original, revised, questions)
+
+
+def _select_revised_prompt(
+    original: str,
+    revised: str,
+    questions: tuple[str, ...],
+) -> str | None:
     print("\n[agent6] prompt revision proposed:", file=sys.stderr)
     print("\n--- revised ---", file=sys.stderr)
     print(revised, file=sys.stderr)

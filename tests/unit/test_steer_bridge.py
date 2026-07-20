@@ -174,3 +174,36 @@ def test_prompt_pauses_the_console_spinner(tmp_path: Path, monkeypatch: pytest.M
     finally:
         steer.restore()
     assert calls == ["pause", "prompt", "resume"]
+
+
+def test_revision_selector_pauses_the_console_spinner(monkeypatch: pytest.MonkeyPatch) -> None:
+    """select_revised_prompt blocks on input() for as long as the operator
+    reads the proposal; without ConsoleView.pause() the heartbeat erases the
+    choice prompt (and the typed echo) every 0.5s -- the one foreground-CLI
+    interactive prompt that was never handed the view."""
+    import contextlib
+    from collections.abc import Generator
+    from typing import cast
+
+    from agent6.ui.cli._console_view import ConsoleView
+    from agent6.ui.cli._steer import select_revised_prompt
+
+    calls: list[str] = []
+
+    class FakeView:
+        @contextlib.contextmanager
+        def pause(self) -> Generator[None]:
+            calls.append("pause")
+            yield
+            calls.append("resume")
+
+    def fake_input(prompt: str = "") -> str:
+        calls.append("prompt")
+        return "a"
+
+    monkeypatch.setattr("builtins.input", fake_input)
+    out = select_revised_prompt("orig", "rev", (), cast("ConsoleView", FakeView()))
+    assert out == "rev"
+    assert calls == ["pause", "prompt", "resume"]
+    # And the bare (console_view=None) path still works.
+    assert select_revised_prompt("orig", "rev", ()) == "rev"

@@ -126,7 +126,9 @@ def run_frontend() -> RunFrontend:
         confirm_run_on_run_branch=confirm_run_on_run_branch,
         choose_branch_start_point=choose_branch_start_point,
         prompt_detach_away_mode=prompt_detach_away_mode,
-        select_revised_prompt=select_revised_prompt,
+        select_revised_prompt=lambda original, revised, questions: select_revised_prompt(
+            original, revised, questions, console_cell[0]
+        ),
         build_repl_hook=lambda cwd, budget, run_id, mcp_manager: build_repl_hook(
             cwd, budget, run_id=run_id, mcp_manager=mcp_manager, console_view=console_cell[0]
         ),
