@@ -120,6 +120,8 @@ def _parse_pricing(payload: object) -> dict[str, tuple[float, float]]:
         pricing = item.get("pricing")
         if not (isinstance(mid, str) and mid and isinstance(pricing, dict)):
             continue
+        if isinstance(pricing.get("prompt"), bool) or isinstance(pricing.get("completion"), bool):
+            continue  # float(True)=1.0 would fabricate a $1/MTok price
         try:
             in_mtok = float(pricing.get("prompt", "")) * 1_000_000
             out_mtok = float(pricing.get("completion", "")) * 1_000_000
@@ -145,7 +147,15 @@ def _parse_context(payload: object) -> dict[str, int]:
             continue
         mid = item.get("id")
         ctx = item.get("context_length")
-        if isinstance(mid, str) and mid and isinstance(ctx, int) and ctx > 0:
+        # not-bool: bool subclasses int, so JSON `true` would cache a 1-token
+        # context window and collapse the compaction thresholds every turn.
+        if (
+            isinstance(mid, str)
+            and mid
+            and isinstance(ctx, int)
+            and not isinstance(ctx, bool)
+            and ctx > 0
+        ):
             out[mid] = ctx
     return out
 
@@ -311,6 +321,6 @@ def cached_context_window(provider_name: str, keys: tuple[str, ...]) -> int | No
         return None
     for key in keys:
         val = ctx.get(key)
-        if isinstance(val, int) and val > 0:
+        if isinstance(val, int) and not isinstance(val, bool) and val > 0:
             return val
     return None

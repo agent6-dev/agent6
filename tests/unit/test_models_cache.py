@@ -168,3 +168,34 @@ def test_fetch_models_live_bypasses_ttl_and_signals_failure(
 
     monkeypatch.setattr(httpx2, "get", _fail)
     assert models_cache.fetch_models_live("o", entry, None) is None
+
+
+def test_boolean_context_and_pricing_values_are_rejected(tmp_path: Path) -> None:
+    """bool subclasses int: a provider entry with context_length: true cached a
+    1-token window (collapsing the compaction thresholds every turn), and
+    pricing true would coerce to $1/MTok. Both must read as absent."""
+    from agent6.models.cache import (
+        _parse_context,  # pyright: ignore[reportPrivateUsage]
+        _parse_pricing,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    payload = {
+        "data": [
+            {
+                "id": "vendor/x",
+                "context_length": True,
+                "pricing": {"prompt": True, "completion": "1"},
+            },
+            {
+                "id": "vendor/y",
+                "context_length": 200_000,
+                "pricing": {"prompt": "3", "completion": "15"},
+            },
+        ]
+    }
+    ctx = _parse_context(payload)
+    assert "vendor/x" not in ctx
+    assert ctx["vendor/y"] == 200_000
+    pricing = _parse_pricing(payload)
+    assert "vendor/x" not in pricing
+    assert "vendor/y" in pricing
