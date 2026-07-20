@@ -100,6 +100,20 @@ def clear_frontend_pid(run_dir: Path) -> None:
         p.unlink()
 
 
+def release_frontend_pid(run_dir: Path, pid: int) -> None:
+    """Unlink frontend.pid only when it still points at *pid*: a front-end
+    releasing its claim must not deregister another live owner (the same
+    owned-check the TUI's on_unmount and the web's release_run do inline)."""
+    p = run_dir / FRONTEND_PID_FILE
+    try:
+        if p.read_text(encoding="utf-8").strip() != str(pid):
+            return
+    except OSError:
+        return
+    with contextlib.suppress(FileNotFoundError):
+        p.unlink()
+
+
 def _pid_alive(pid: int) -> bool:
     """True iff a live process WE OWN has *pid* (signal 0 probes without killing).
 

@@ -15,6 +15,7 @@ from pathlib import Path
 from agent6.runs.ipc import (
     clear_pending_answers,
     frontend_is_live,
+    release_frontend_pid,
     request_steer,
     steer_request_pending,
     write_frontend_pid,
@@ -71,3 +72,23 @@ def _find_dead_pid() -> int:
             continue
     # Fallback: very unlikely to be reached.
     return 2_000_000
+
+
+def test_release_frontend_pid_only_clears_its_own_slot(tmp_path: Path) -> None:
+    """CLI attach's exit must not deregister ANOTHER live front-end: with a
+    browser watching an away=wait run, an unconditional clear made the worker's
+    frontend_is_live() go False forever, so an answer given in the still-open
+    web modal was written but never read. release only unlinks when the file
+    still points at the releasing pid."""
+    run_dir = tmp_path / "r"
+    run_dir.mkdir()
+    # A foreign live owner (this test process stands in for the web server).
+    write_frontend_pid(run_dir, os.getpid())
+    release_frontend_pid(run_dir, _find_dead_pid())  # the exiting attach's pid
+    assert (run_dir / "frontend.pid").exists()
+    assert frontend_is_live(run_dir)
+    # The owner itself releasing clears the slot.
+    release_frontend_pid(run_dir, os.getpid())
+    assert not (run_dir / "frontend.pid").exists()
+    # Missing file: a no-op.
+    release_frontend_pid(run_dir, os.getpid())

@@ -15,8 +15,9 @@ from pathlib import Path
 
 from agent6.runs.id import RunIdError, resolve_run_id
 from agent6.runs.ipc import (
-    clear_frontend_pid,
+    frontend_is_live,
     read_worker_pid,
+    release_frontend_pid,
     set_session_allow,
     worker_is_alive,
     write_answer,
@@ -522,7 +523,10 @@ def _install_front_end(target: Path, view: ConsoleView) -> _CliFrontEnd | None:
         print(f"[agent6] following {target.name}. Ctrl-C to exit.", file=sys.stderr)
         return None
     front_end = _CliFrontEnd(target, view)
-    write_frontend_pid(target, os.getpid())
+    if not frontend_is_live(target):
+        # Claim only a free slot: clobbering a live web/TUI owner would break
+        # its bridge when this attach exits.
+        write_frontend_pid(target, os.getpid())
     print(
         f"[agent6] attached to {target.name}: approvals and questions prompt here."
         " Ctrl-C to detach.",
@@ -570,7 +574,8 @@ def _watch_transcript(target: Path) -> int:
     finally:
         view.close()  # stop the heartbeat thread, clear any spinner line
         if front_end is not None:
-            clear_frontend_pid(target)
+            # Release, never clear: another live front-end may own the slot.
+            release_frontend_pid(target, os.getpid())
     if not interrupted and not _run_has_ended(events_path):
         _print_crashed_line(target)
     return 0
