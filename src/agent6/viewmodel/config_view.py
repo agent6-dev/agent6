@@ -51,7 +51,7 @@ class ConfigSetting:
     value: Any  # raw effective value (None for an unset/adaptive setting)
     effective_value: Any  # resolved value; == value unless a caller resolves it
     default: Any  # the built-in default (None if unknown / no static default)
-    source: str  # layer that set it: default/global/repo/flag/machine
+    source: str  # layer that set it: default/global/repo/profile/flag/machine
     modified: bool  # a layer set it (source != "default")
     is_adaptive: bool  # effective_value was resolved away from the raw value
     py_type: str  # str | int | bool | float | choice | list | table

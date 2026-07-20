@@ -20,6 +20,7 @@ from textual.widgets import DataTable, Input, OptionList
 from agent6.config.layer import load_effective
 from agent6.ui.tui.config_page import ConfigScreen, EditModal, HelpScreen
 from agent6.ui.tui.menubar import MenuBar
+from agent6.viewmodel.config_view import build_config_view
 
 _GLOBAL = """\
 [providers.anthropic]
@@ -1021,5 +1022,38 @@ def test_up_off_first_setting_reveals_top_header_then_filter(repo: Path) -> None
             await pilot.press("up")
             await pilot.pause()
             assert isinstance(screen.focused, Input)  # Up off the top header -> filter
+
+    asyncio.run(scenario())
+
+
+def test_reset_on_a_profile_sourced_setting_tells_the_truth(repo: Path) -> None:
+    """A [profiles.<name>] leaf renders modified with source "profile", and no
+    config-file unset can revert it; Reset must say the profile owns it, not
+    lie "already at its default"."""
+    gdir = Path(os.environ["AGENT6_CONFIG_HOME"])
+    (gdir / "config.toml").write_text(
+        'profile = "fast"\n' + _GLOBAL + '\n[profiles.fast.review]\ntrigger = "off"\n',
+        encoding="utf-8",
+    )
+
+    async def scenario() -> None:
+        app = _Host(repo)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, ConfigScreen)
+            setting = next(
+                s
+                for s in build_config_view(load_effective(repo, None)).settings
+                if s.key == "review.trigger"
+            )
+            assert setting.source == "profile" and setting.modified
+            screen._current_setting = lambda: setting  # type: ignore[method-assign]
+            screen.action_reset()
+            await pilot.pause()
+            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            assert notes, "no notification fired"
+            assert "already at its default" not in notes[-1]
+            assert "profile" in notes[-1]
 
     asyncio.run(scenario())

@@ -1001,8 +1001,7 @@ class ConfigScreen(Screen[None]):
                 return
             action, raw, to_repo = result
             if action == "unset":
-                if setting.source not in ("global", "repo"):
-                    self.notify(f"{setting.key} is already at its default.")
+                if self._refuse_unset(setting):
                     return
                 err = unset_config_value(
                     self.repo_root, setting.key, to_repo=setting.source == "repo"
@@ -1030,13 +1029,28 @@ class ConfigScreen(Screen[None]):
             modal = EditModal(setting)
         self.app.push_screen(modal, _done)
 
+    def _refuse_unset(self, setting: ConfigSetting) -> bool:
+        """Notify-and-True when the setting cannot be unset here. "Already at
+        its default" is only truthful when it IS the default; a profile-sourced
+        leaf (source "profile") is modified but lives in the synthesized
+        [profiles.<name>] layer, which no config-file unset can revert."""
+        if not setting.modified:
+            self.notify(f"{setting.key} is already at its default.")
+            return True
+        if setting.source not in ("global", "repo"):
+            self.notify(
+                f"{setting.key} is set by the active profile; edit the profile to change it.",
+                severity="warning",
+            )
+            return True
+        return False
+
     def action_reset(self) -> None:
         setting = self._current_setting()
         if setting is None:
             self.notify("Select a setting first.", severity="warning")
             return
-        if not setting.modified or setting.source not in ("global", "repo"):
-            self.notify(f"{setting.key} is already at its default.", severity="information")
+        if self._refuse_unset(setting):
             return
         err = unset_config_value(self.repo_root, setting.key, to_repo=setting.source == "repo")
         if err:
