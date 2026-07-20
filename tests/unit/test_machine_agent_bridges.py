@@ -3,7 +3,7 @@
 """Tests for the machine `agent` state interactivity bridges.
 
 Answers live in the per-state dir; the liveness gate probes the instance dir
-where a front-end registers `frontend.pid`.
+where a front-end registers its `frontends/` claim.
 """
 
 from __future__ import annotations
@@ -18,8 +18,8 @@ from agent6.app.machine_agent import (
 )
 from agent6.events import EventSink
 from agent6.runs.ipc import (
+    register_frontend,
     write_answer,
-    write_frontend_pid,
     write_question_answers,
     write_steer_answer,
 )
@@ -38,20 +38,20 @@ def test_stale_answers_cleared_before_state_reexecution(tmp_path: Path) -> None:
     # counters; an answer file left by the aborted attempt must not satisfy this
     # execution's first prompt. Building the bridges drops the stale files.
     instance, state, events = _dirs(tmp_path)
-    write_frontend_pid(instance, os.getpid())
+    register_frontend(instance, os.getpid())
     write_answer(state, "approval-1", approved=True)  # stale: from the aborted attempt
     write_question_answers(state, "question-1", ["stale"])
     _build_machine_bridges(instance, state, events)
     assert not (state / "approvals" / "approval-1.answer").exists()
     assert not (state / "questions" / "question-1.answer").exists()
     # The instance-dir front-end registration is untouched (it lives one level up).
-    assert (instance / "frontend.pid").exists()
+    assert (instance / "frontends" / str(os.getpid())).exists()
 
 
 def test_headless_defaults_when_no_frontend(tmp_path: Path) -> None:
     instance, state, events = _dirs(tmp_path)
     b = _build_machine_bridges(instance, state, events)
-    # No frontend.pid on the instance dir: deny approvals, empty answers, no steer.
+    # No front-end claim on the instance dir: deny approvals, empty answers, no steer.
     assert b.approve("run rm -rf?") is False
     assert b.ask((UserQuestion(question="pick", options=("a", "b")),)) == ("",)
     assert b.steer_requested() is False
@@ -60,7 +60,7 @@ def test_headless_defaults_when_no_frontend(tmp_path: Path) -> None:
 
 def test_approval_answer_read_from_per_state_dir(tmp_path: Path) -> None:
     instance, state, events = _dirs(tmp_path)
-    write_frontend_pid(instance, os.getpid())  # a live front-end owns the instance
+    register_frontend(instance, os.getpid())  # a live front-end owns the instance
     b = _build_machine_bridges(instance, state, events)  # clears pre-existing answers
     # A real front-end writes the answer AFTER approve() emits the prompt (approve
     # clears any premature pre-write first). A writer thread does exactly that;
@@ -74,7 +74,7 @@ def test_approval_answer_read_from_per_state_dir(tmp_path: Path) -> None:
 
 def test_question_answer_read_from_per_state_dir(tmp_path: Path) -> None:
     instance, state, events = _dirs(tmp_path)
-    write_frontend_pid(instance, os.getpid())
+    register_frontend(instance, os.getpid())
     b = _build_machine_bridges(instance, state, events)
     threading.Thread(
         target=lambda: (time.sleep(0.2), write_question_answers(state, "question-1", ["chosen"])),
@@ -88,7 +88,7 @@ def test_machine_approval_ignores_a_premature_answer(tmp_path: Path) -> None:
     # the prompt is emitted (a premature /api/machine/<name>/approve) is cleared
     # and not consumed -- the headless default (deny) applies instead.
     instance, state, events = _dirs(tmp_path)
-    write_frontend_pid(instance, os.getpid())
+    register_frontend(instance, os.getpid())
     b = _build_machine_bridges(instance, state, events)
     write_answer(state, "approval-1", approved=True)  # premature: no prompt yet
     # No writer thread: nothing arrives after the prompt, so with the premature
@@ -110,7 +110,7 @@ def test_machine_approval_ignores_a_premature_answer(tmp_path: Path) -> None:
 
 def test_steer_request_and_answer_bridge(tmp_path: Path) -> None:
     instance, state, events = _dirs(tmp_path)
-    write_frontend_pid(instance, os.getpid())
+    register_frontend(instance, os.getpid())
     b = _build_machine_bridges(instance, state, events)
     # A front-end drops a steer.request in the per-state dir.
     from agent6.runs.ipc import request_steer

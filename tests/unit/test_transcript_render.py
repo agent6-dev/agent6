@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 
+from agent6.runs.ipc import register_frontend
 from agent6.viewmodel.transcript_render import (
     fold_conversation,
     load_transcripts,
@@ -281,7 +282,7 @@ def test_cmd_history_transcript_latest_uses_log_activity_not_dir_touch(
         (runs / name / "logs.jsonl").write_text('{"type":"run.start"}\n', encoding="utf-8")
     os.utime(runs / "older-run" / "logs.jsonl", (100, 100))
     os.utime(runs / "newer-run" / "logs.jsonl", (1000, 1000))
-    (runs / "older-run" / "frontend.pid").write_text("12345", encoding="utf-8")
+    register_frontend(runs / "older-run", 12345)
 
     assert _cmd_history_transcript("", as_json=True, no_thinking=False, tools="both", seq="") == 0
     captured = capsys.readouterr()

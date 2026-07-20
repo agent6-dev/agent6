@@ -26,7 +26,7 @@ def run_mtime(run_dir: Path) -> float:
     """Last-activity time of a run: the mtime of its ``logs.jsonl`` (when the run
     last appended an event), falling back to the dir mtime before the log exists.
 
-    NOT the run-directory mtime: a viewer writes ``frontend.pid`` / ``approvals/``
+    NOT the run-directory mtime: a viewer writes its ``frontends/`` claim / ``approvals/``
     into the dir on open, bumping the DIRECTORY mtime, so sorting by it floats a
     merely-viewed run to "most recent". Keying off the log keeps "when" stable.
     """
@@ -40,7 +40,7 @@ def run_mtime(run_dir: Path) -> float:
 
 def newest_run_dir(buckets: Iterable[Path]) -> Path | None:
     """The most recently active run dir (by logs.jsonl mtime, not dir mtime: a
-    viewer writing frontend.pid must not float a run to latest) across the given
+    viewer's front-end claim must not float a run to latest) across the given
     bucket dirs.
 
     The one run-recency query: callers name the buckets in scope explicitly --

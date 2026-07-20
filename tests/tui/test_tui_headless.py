@@ -482,28 +482,32 @@ def test_conversation_and_dashboard_footers_match(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_dashboard_does_not_clobber_live_frontend_pid(tmp_path: Path) -> None:
-    """A live peer front-end (a web viewer) already owns frontend.pid: the
-    dashboard must not overwrite it on mount or clear it on exit (the web side
-    ref-counts; clobbering strands its viewers)."""
+def test_dashboard_claims_are_per_process(tmp_path: Path) -> None:
+    """Concurrent front-ends hold independent claims: mounting registers OUR
+    claim without touching a live peer's, and unmount removes only ours -- the
+    single-slot frontend.pid (where one viewer's exit could deregister
+    another) is gone."""
+    import os
     import subprocess
     import sys
 
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
-    # A real same-user process stands in for the live peer front-end.
     peer = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
     try:
-        (tmp_path / "frontend.pid").write_text(str(peer.pid), encoding="utf-8")
+        from agent6.runs.ipc import frontend_is_live, register_frontend
+
+        register_frontend(tmp_path, peer.pid)  # a live web viewer's claim
 
         async def scenario() -> None:
             app = Agent6TUI(tmp_path)
             async with app.run_test() as pilot:
                 await pilot.pause()
-                app._tick()
-                await pilot.pause()
-                assert (tmp_path / "frontend.pid").read_text(encoding="utf-8") == str(peer.pid)
-            # On unmount the pid is not ours, so it must survive.
-            assert (tmp_path / "frontend.pid").read_text(encoding="utf-8") == str(peer.pid)
+                assert (tmp_path / "frontends" / str(os.getpid())).exists()  # ours
+                assert (tmp_path / "frontends" / str(peer.pid)).exists()  # peer intact
+            # Unmount removed only our claim; the peer keeps bridging.
+            assert not (tmp_path / "frontends" / str(os.getpid())).exists()
+            assert (tmp_path / "frontends" / str(peer.pid)).exists()
+            assert frontend_is_live(tmp_path)
 
         asyncio.run(scenario())
     finally:
@@ -511,28 +515,23 @@ def test_dashboard_does_not_clobber_live_frontend_pid(tmp_path: Path) -> None:
         peer.wait()
 
 
-def test_dashboard_claims_stale_pid_and_self_heals(tmp_path: Path) -> None:
-    """A stale frontend.pid (dead process) is claimed on mount; if a peer owner
-    goes away mid-session the next tick re-claims; unmount clears only our own."""
+def test_dead_peer_claim_does_not_mask_the_live_dashboard(tmp_path: Path) -> None:
+    """A hard-killed viewer's stale claim must not affect liveness: the probe
+    reads the dashboard's own live claim (and prunes the dead one)."""
     import os
 
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
-    (tmp_path / "frontend.pid").write_text("999999999", encoding="utf-8")  # dead
+    from agent6.runs.ipc import frontend_is_live, register_frontend
+
+    register_frontend(tmp_path, 999999999)  # dead
 
     async def scenario() -> None:
         app = Agent6TUI(tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
-            assert (tmp_path / "frontend.pid").read_text(encoding="utf-8") == str(os.getpid())
-            # A peer owner appears then dies: the next PROBE re-claims the
-            # bridge (the liveness check is throttled to ~2s, so age the window
-            # rather than wait it out).
-            (tmp_path / "frontend.pid").write_text("999999999", encoding="utf-8")
-            app._claim_checked_at = 0.0
-            app._tick()
-            await pilot.pause()
-            assert (tmp_path / "frontend.pid").read_text(encoding="utf-8") == str(os.getpid())
-        assert not (tmp_path / "frontend.pid").exists()  # ours, cleared on unmount
+            assert frontend_is_live(tmp_path)  # our claim carries it
+            assert not (tmp_path / "frontends" / "999999999").exists()  # pruned
+            assert (tmp_path / "frontends" / str(os.getpid())).exists()
 
     asyncio.run(scenario())
 

@@ -58,17 +58,16 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 
 from agent6.models.registry import context_window
 from agent6.runs.ipc import (
-    clear_frontend_pid,
     clear_steer_answer,
-    frontend_is_live,
     read_worker_pid,
+    register_frontend,
     request_compact,
     request_steer,
     request_stop,
     set_session_allow,
+    unregister_frontend,
     worker_is_alive,
     write_answer,
-    write_frontend_pid,
     write_question_answers,
     write_steer_answer,
 )
@@ -740,7 +739,6 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         self._seen_steer = 0
         self._dirty = False  # a structural event arrived; _tick coalesces the repaint
         self._light_dirty = False  # only stream deltas / heartbeat: light repaint
-        self._claim_checked_at = 0.0  # last frontend.pid liveness probe (file IO)
         self._stop = threading.Event()
         # When True (the auto-spawned co-process of `agent6 run`), close the
         # dashboard once the run ends so the parent command returns; `agent6
@@ -764,7 +762,9 @@ class Agent6TUI(MuxPointerShapes, App[int]):
 
     def on_mount(self) -> None:
         setup_theme(self)  # apply the saved theme before the first paint
-        self._ensure_claim()
+        # Per-process claim file: nothing to defend or re-assert, concurrent
+        # web/TUI/attach viewers each hold their own.
+        register_frontend(self.run_dir, os.getpid())
         self.sub_title = f"run · {self.run_dir.name}"  # menu-bar title context
         # A steer request already in the log is historical (e.g. a CLI Ctrl-C that
         # detached, whose run.steer_requested replays on open); only prompt for ones
@@ -792,26 +792,10 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         self._thread = threading.Thread(target=self._reader_loop, daemon=True)
         self._thread.start()
 
-    def _ensure_claim(self) -> None:
-        """Claim frontend.pid only when no live front-end owns it, so a concurrent
-        web/TUI viewer on the same run is not clobbered. Re-asserted each tick, so
-        if the owner goes away the bridge self-heals to this still-open dashboard
-        (the same pattern as MachineWatchScreen)."""
-        if not frontend_is_live(self.run_dir):
-            write_frontend_pid(self.run_dir, os.getpid())
-
     def on_unmount(self) -> None:
         self._stop.set()
-        # Stop claiming the run's prompts, but only if frontend.pid is still ours
-        # (a concurrent viewer may own it).
-        try:
-            owned = (self.run_dir / "frontend.pid").read_text(encoding="utf-8").strip() == str(
-                os.getpid()
-            )
-        except OSError:
-            owned = False
-        if owned:
-            clear_frontend_pid(self.run_dir)
+        # Drop only our own front-end claim; concurrent viewers keep theirs.
+        unregister_frontend(self.run_dir, os.getpid())
 
     # --- reader thread -----------------------------------------------
 
@@ -870,12 +854,6 @@ class Agent6TUI(MuxPointerShapes, App[int]):
             self._dirty = True
 
     def _tick(self) -> None:
-        # Re-assert the bridge if a peer viewer went away. Throttled: the probe
-        # reads frontend.pid + signals the process, needless 5x a second.
-        now = time.monotonic()
-        if now - self._claim_checked_at >= 2.0:
-            self._claim_checked_at = now
-            self._ensure_claim()
         for ap in self.state.pending_approvals:
             if not ap.answered and ap.id not in self._seen_approval_ids:
                 self._seen_approval_ids.add(ap.id)

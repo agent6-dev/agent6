@@ -15,13 +15,12 @@ from pathlib import Path
 
 from agent6.runs.id import RunIdError, resolve_run_id
 from agent6.runs.ipc import (
-    frontend_is_live,
     read_worker_pid,
-    release_frontend_pid,
+    register_frontend,
     set_session_allow,
+    unregister_frontend,
     worker_is_alive,
     write_answer,
-    write_frontend_pid,
     write_question_answers,
 )
 from agent6.runs.manifest import ManifestError, RunManifest, read_manifest
@@ -422,7 +421,7 @@ class _CliFrontEnd:
     or ``ask_user`` question, it prompts on the controlling terminal with the SAME
     CLI prompts a foreground run uses and writes the answer back over the file
     bridge -- so watching a detached run is "as if you never detached". The
-    caller registers ``frontend.pid`` so the worker's approver bridges to it (a
+    caller registers a ``frontends/`` claim so the worker's approver bridges to it (a
     live front-end always wins over the detach away-mode).
 
     Prompt ids are deterministic counters, and the log replays from the start on
@@ -523,10 +522,7 @@ def _install_front_end(target: Path, view: ConsoleView) -> _CliFrontEnd | None:
         print(f"[agent6] following {target.name}. Ctrl-C to exit.", file=sys.stderr)
         return None
     front_end = _CliFrontEnd(target, view)
-    if not frontend_is_live(target):
-        # Claim only a free slot: clobbering a live web/TUI owner would break
-        # its bridge when this attach exits.
-        write_frontend_pid(target, os.getpid())
+    register_frontend(target, os.getpid())
     print(
         f"[agent6] attached to {target.name}: approvals and questions prompt here."
         " Ctrl-C to detach.",
@@ -574,8 +570,7 @@ def _watch_transcript(target: Path) -> int:
     finally:
         view.close()  # stop the heartbeat thread, clear any spinner line
         if front_end is not None:
-            # Release, never clear: another live front-end may own the slot.
-            release_frontend_pid(target, os.getpid())
+            unregister_frontend(target, os.getpid())  # our claim only
     if not interrupted and not _run_has_ended(events_path):
         _print_crashed_line(target)
     return 0

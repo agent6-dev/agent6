@@ -101,7 +101,7 @@ def _run_dirs_newest_first(runs: Path) -> list[Path]:
     ``<adjective>-<noun>`` and the embedded ms timestamp rolls over -- so a
     name sort picks the alphabetically-last run, not the latest. Sort by
     logs.jsonl activity instead of directory mtime so a front-end writing
-    frontend.pid into an older run does not make it look newest.
+    front-end claims into an older run does not make it look newest.
     """
     return sorted(
         (d for d in runs.iterdir() if d.is_dir()),

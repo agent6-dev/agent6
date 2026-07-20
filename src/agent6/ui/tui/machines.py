@@ -45,15 +45,14 @@ from agent6.machine import (
     validate_semantics,
 )
 from agent6.runs.ipc import (
-    clear_frontend_pid,
     clear_steer_answer,
-    frontend_is_live,
     read_worker_pid,
+    register_frontend,
     request_steer,
     set_session_allow,
+    unregister_frontend,
     worker_is_alive,
     write_answer,
-    write_frontend_pid,
     write_question_answers,
     write_steer_answer,
 )
@@ -125,7 +124,7 @@ class MachineWatchScreen(Screen[None]):
     state's reasoning streamed from its per-state logs.jsonl -- the in-TUI
     equivalent of `agent6 attach`. Polls every 0.5s.
 
-    Interactive: while open it registers as the answer front-end (frontend.pid on
+    Interactive: while open it registers as an answer front-end (a frontends/ claim on
     the instance dir), so the current agent state's `run_command` approvals and
     `ask_user` questions pop as modals here; `s` steers that state, `m` sends a
     message (a poke payload) to a waiting machine, and a `machine.notify` (or the
@@ -180,7 +179,9 @@ class MachineWatchScreen(Screen[None]):
         # notification history so past notifies are not re-announced on open. The
         # dir may not exist yet (watching a just-spawned run), so create it first.
         self._root.mkdir(parents=True, exist_ok=True)
-        self._ensure_claim()
+        # Per-process claim file: nothing to defend or re-assert, concurrent
+        # web/TUI watchers each hold their own.
+        register_frontend(self._root, os.getpid())
         try:
             events = self._journal.read()
         except JournalError:
@@ -193,24 +194,9 @@ class MachineWatchScreen(Screen[None]):
         self._poll()
         self.set_interval(0.5, self._poll)
 
-    def _ensure_claim(self) -> None:
-        """Claim the instance frontend.pid only when no live front-end owns it, so
-        a concurrent web/TUI watcher is not clobbered. Re-asserted each poll, so if
-        the owner goes away the bridge self-heals to this still-open watcher."""
-        if not frontend_is_live(self._root):
-            write_frontend_pid(self._root, os.getpid())
-
     def on_unmount(self) -> None:
-        # Stop claiming the machine's prompts, but only if frontend.pid is still
-        # ours (a concurrent watcher may own it).
-        try:
-            owned = (self._root / "frontend.pid").read_text(encoding="utf-8").strip() == str(
-                os.getpid()
-            )
-        except OSError:
-            owned = False
-        if owned:
-            clear_frontend_pid(self._root)
+        # Drop only our own front-end claim; concurrent watchers keep theirs.
+        unregister_frontend(self._root, os.getpid())
 
     def _state_dir(self) -> Path | None:
         """The current agent state's per-state dir (where its answer files live)."""
@@ -278,7 +264,6 @@ class MachineWatchScreen(Screen[None]):
     def _poll(self) -> None:
         if self._ended:
             return
-        self._ensure_claim()  # re-assert the bridge if a peer watcher went away
         try:
             ms = fold_machine(self._spec, self._journal.read())
         except JournalError as exc:

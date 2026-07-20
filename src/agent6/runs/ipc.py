@@ -8,7 +8,7 @@ answers prompts by writing files. When an approval is needed:
 
 1. The workflow process writes an `approval.prompt` event to logs.jsonl
    and then polls `<run_dir>/approvals/<id>.answer` for a result.
-2. If `<run_dir>/frontend.pid` exists and points at a live process, the
+2. If a `<run_dir>/frontends/` claim points at a live process, the
    workflow process waits for the front-end to write the answer file.
    Otherwise it falls back to a plain stdin prompt.
 3. The front-end (when present) presents a modal / control, then writes
@@ -33,7 +33,7 @@ from agent6.portable import atomic_write
 
 APPROVAL_DIR_NAME = "approvals"
 QUESTION_DIR_NAME = "questions"
-FRONTEND_PID_FILE = "frontend.pid"
+FRONTENDS_DIR = "frontends"
 WORKER_PID_FILE = "worker.pid"  # the run's worker process, for `agent6 runs show` liveness
 STEER_ANSWER_FILE = "steer.answer"
 
@@ -66,14 +66,11 @@ def _answer_path(directory: Path, answer_id: str) -> Path:
 def clear_pending_answers(run_dir: Path) -> None:
     """Drop stale bridge state at run/resume START: leftover `*.answer` files
     from a prior session (the id counters reset, so an old answer would be read
-    instead of prompting), a leftover `steer.request` marker (which would
-    otherwise trigger a phantom steer prompt that no live front-end answers), and a
-    stale `frontend.pid` from a hard-killed front-end (which would otherwise make the
-    answer-poll block until timeout). Best-effort.
-
-    The `frontend.pid` is only dropped when NO live front-end owns it: a concurrently-live
-    `agent6 attach` watcher must keep bridging the resumed run's approval/question
-    modals, so we must not unlink a pid that still points at a running process."""
+    instead of prompting) and a leftover `steer.request` marker (which would
+    otherwise trigger a phantom steer prompt that no live front-end answers).
+    Best-effort. Stale front-end claims need no sweep here: `frontend_is_live`
+    prunes dead claims on every probe, and live watchers' claims must survive
+    so their modals stay wired up."""
     for sub in (APPROVAL_DIR_NAME, QUESTION_DIR_NAME):
         d = run_dir / sub
         if d.is_dir():
@@ -86,32 +83,22 @@ def clear_pending_answers(run_dir: Path) -> None:
     # re-stop (or re-compact) the fresh one.
     clear_stop_request(run_dir)
     clear_compact_request(run_dir)
-    if not frontend_is_live(run_dir):  # only drop a STALE pid (hard-killed front-end)
-        clear_frontend_pid(run_dir)
 
 
-def write_frontend_pid(run_dir: Path, pid: int) -> None:
-    (run_dir / FRONTEND_PID_FILE).write_text(str(pid), encoding="utf-8")
+def register_frontend(run_dir: Path, pid: int) -> None:
+    """Register *pid* as a live answering front-end: one claim file per
+    front-end (``frontends/<pid>``), so any number can watch concurrently
+    (web + TUI + attach, or several of one kind) and none can deregister
+    another. The name is the claim; the file is empty."""
+    d = run_dir / FRONTENDS_DIR
+    d.mkdir(parents=True, exist_ok=True)
+    (d / str(pid)).touch()
 
 
-def clear_frontend_pid(run_dir: Path) -> None:
-    p = run_dir / FRONTEND_PID_FILE
-    with contextlib.suppress(FileNotFoundError):
-        p.unlink()
-
-
-def release_frontend_pid(run_dir: Path, pid: int) -> None:
-    """Unlink frontend.pid only when it still points at *pid*: a front-end
-    releasing its claim must not deregister another live owner (the same
-    owned-check the TUI's on_unmount and the web's release_run do inline)."""
-    p = run_dir / FRONTEND_PID_FILE
-    try:
-        if p.read_text(encoding="utf-8").strip() != str(pid):
-            return
-    except OSError:
-        return
-    with contextlib.suppress(FileNotFoundError):
-        p.unlink()
+def unregister_frontend(run_dir: Path, pid: int) -> None:
+    """Drop *pid*'s own claim; other front-ends' claims are untouched."""
+    with contextlib.suppress(OSError):
+        (run_dir / FRONTENDS_DIR / str(pid)).unlink()
 
 
 def _pid_alive(pid: int) -> bool:
@@ -154,14 +141,25 @@ def worker_is_alive(run_dir: Path) -> bool:
 
 
 def frontend_is_live(run_dir: Path) -> bool:
-    p = run_dir / FRONTEND_PID_FILE
-    if not p.exists():
-        return False
+    """True when ANY registered front-end is a live process we own. Prunes
+    dead claims (hard-killed front-ends) in passing so a stale claim can
+    never block the answer poll and the dir stays tidy."""
     try:
-        pid = int(p.read_text(encoding="utf-8").strip())
-    except (OSError, ValueError):
+        entries = list((run_dir / FRONTENDS_DIR).iterdir())
+    except OSError:
         return False
-    return _pid_alive(pid)
+    live = False
+    for f in entries:
+        try:
+            pid = int(f.name)
+        except ValueError:
+            pid = -1
+        if pid > 0 and _pid_alive(pid):
+            live = True
+        else:
+            with contextlib.suppress(OSError):
+                f.unlink()
+    return live
 
 
 def _write_answer_atomic(target: Path, text: str) -> None:
@@ -297,7 +295,7 @@ def read_answer(
     """Called by the workflow. Returns True/False, or None on timeout or once the
     front-end has stayed dead past ``dead_grace_s`` (a shorter drop keeps waiting).
 
-    ``live_dir`` overrides which dir the liveness gate probes for ``frontend.pid``
+    ``live_dir`` overrides which dir the liveness gate probes for front-end claims
     (defaults to ``run_dir``). A machine agent state reads answers from its
     per-state dir but the front-end registers on the instance dir, so it passes
     the instance dir here."""

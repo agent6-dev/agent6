@@ -35,11 +35,10 @@ from agent6 import __version__
 from agent6.config import is_loopback_host
 from agent6.machine import MachineError
 from agent6.runs.ipc import (
-    FRONTEND_PID_FILE,
-    clear_frontend_pid,
     read_worker_pid,
+    register_frontend,
+    unregister_frontend,
     worker_is_alive,
-    write_frontend_pid,
 )
 from agent6.ui.web import actions, model
 from agent6.ui.web.page import (
@@ -131,7 +130,8 @@ class ConfigSetBody(_Body):
 class WebServer(ThreadingHTTPServer):
     """A ThreadingHTTPServer that carries the repo cwd its handlers read from,
     and tracks which runs a browser is actively watching so it can register this
-    process as the answering front-end (frontend.pid) only while someone is looking."""
+    process as an answering front-end (a frontends/ claim) only while someone
+    is looking."""
 
     daemon_threads = True
     allow_reuse_address = True
@@ -144,20 +144,22 @@ class WebServer(ThreadingHTTPServer):
         self._watch_counts: dict[str, int] = {}
 
     def claim_run(self, run_dir: Path) -> None:
-        """A browser opened this run's stream: become the run's answer front-end
-        (write our pid to frontend.pid) so its approval/question/steer prompts
-        bridge here. Reference-counted across concurrent viewers."""
+        """A browser opened this run's stream: register as an answer front-end
+        so its approval/question/steer prompts bridge here. Reference-counted
+        across concurrent viewers; the claim file is per-process, so other
+        front-ends (TUI, attach) are never displaced."""
         key = str(run_dir)
         with self._pid_lock:
             n = self._watch_counts.get(key, 0) + 1
             self._watch_counts[key] = n
             if n == 1:
-                write_frontend_pid(run_dir, os.getpid())
+                register_frontend(run_dir, os.getpid())
 
     def release_run(self, run_dir: Path) -> None:
-        """The last browser watching this run went away: stop claiming its prompts
-        (clear frontend.pid, but only if it still points at us) so the run falls
-        back to its headless behaviour instead of blocking on answers no one gives."""
+        """The last browser watching this run went away: drop our own claim so
+        the run falls back to its headless behaviour instead of blocking on
+        answers no one gives. The count transition and the claim change share
+        the lock so a concurrent claim_run cannot interleave."""
         key = str(run_dir)
         with self._pid_lock:
             n = self._watch_counts.get(key, 1) - 1
@@ -165,18 +167,7 @@ class WebServer(ThreadingHTTPServer):
                 self._watch_counts[key] = n
                 return
             self._watch_counts.pop(key, None)
-            # Read + clear under the same lock: otherwise a concurrent claim_run
-            # could re-write frontend.pid (to our own pid) between the count
-            # hitting 0 and the clear, and the owned-check would then wrongly
-            # unbridge a viewer that just started streaming.
-            try:
-                owned = (run_dir / FRONTEND_PID_FILE).read_text(encoding="utf-8").strip() == str(
-                    os.getpid()
-                )
-            except OSError:
-                owned = False
-            if owned:
-                clear_frontend_pid(run_dir)
+            unregister_frontend(run_dir, os.getpid())
 
 
 class _IPv6WebServer(WebServer):

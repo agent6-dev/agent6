@@ -358,9 +358,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     if worker_lock_fd is None:
         reporter.err(SINGLE_WRITER_BUSY.format(rid=effective_run_id))
         return 2
-    # Drop stale approve/ask/steer answers + frontend.pid from a prior session (the
+    # Drop stale approve/ask/steer answers from a prior session (the
     # id counters reset on resume, so an old answer must not be read instead of
-    # re-prompting; a stale frontend.pid would otherwise stall the answer-poll).
+    # re-prompting; dead front-end claims are pruned by the liveness probe).
     clear_pending_answers(layout.run_dir)
     if sys.stdin.isatty():  # a foreground start clears a stale detach away-mode
         clear_away_mode(layout.run_dir)

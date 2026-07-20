@@ -149,7 +149,7 @@ class _MachineBridges:
     """The interactivity bridges for one machine `agent` state.
 
     Answers are read from the per-state dir, but a front-end registers
-    `frontend.pid` on the instance dir, so the liveness gate probes the instance
+    a `frontends/` claim on the instance dir, so the liveness gate probes the instance
     dir (`live_dir`). Prompt/answer events go to the per-state log the front-end
     already tails, so its RunState fold surfaces them like a run's.
     """
@@ -166,13 +166,13 @@ def _build_machine_bridges(
 ) -> _MachineBridges:
     """Wire run-level approval/question/steer bridges to a machine agent state.
 
-    A no live front-end (`frontend.pid` on the instance dir) makes each bridge a
+    No live front-end (a `frontends/` claim on the instance dir) makes each bridge a
     safe headless default: deny an approval, answer a question with "", no steer.
     """
     # Crash recovery re-executes the same `<seq>-<state>` dir and its prompt-id
     # counters restart at 1, so an answer file left by the aborted attempt would
     # satisfy this execution's first prompt unseen. Drop the stale bridge state
-    # first (frontend.pid lives on the instance dir, so this touches none).
+    # first (front-end claims live on the instance dir, so this touches none).
     clear_pending_answers(state_dir)
     counters = {"approval": 0, "question": 0}
 
@@ -338,7 +338,7 @@ def run_one(
         read_only = mode in ("machine", "agent")
         # Bridge run-level interactivity (approve/ask_user/steer) to a front-end
         # watching this machine: answers land in the per-state dir, the liveness
-        # gate probes the instance dir where the front-end registers frontend.pid.
+        # gate probes the instance dir where the front-end registers its claim.
         # Needs a per-state log (events_sink) for the front-end to see the prompt.
         bridges: _MachineBridges | None = None
         if events_sink is not None and req.events_log is not None:

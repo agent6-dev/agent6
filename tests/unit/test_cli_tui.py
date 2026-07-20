@@ -163,19 +163,19 @@ def test_approver_headless_no_frontend_waits_not_denies(
     import threading
     import time
 
-    from agent6.runs.ipc import write_answer, write_frontend_pid
+    from agent6.runs.ipc import register_frontend, write_answer
 
     log = tmp_path / "logs.jsonl"
     events = EventSink(log)
     # Use the REAL frontend_is_live: nothing is attached at approve() time (the
     # writer sleeps first), so the approver reaches the wait path; once the
-    # writer registers frontend.pid, the wait picks up its answer.
+    # writer registers its front-end claim, the wait picks up its answer.
     monkeypatch.setattr(interactmod, "_has_controlling_tty", lambda: False)  # headless
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)  # never stdin
 
     def attach_and_answer() -> None:
         time.sleep(0.3)
-        write_frontend_pid(tmp_path, os.getpid())
+        register_frontend(tmp_path, os.getpid())
         write_answer(tmp_path, "approval-1", approved=True)
 
     threading.Thread(target=attach_and_answer, daemon=True).start()
@@ -351,11 +351,11 @@ def test_approver_away_wait_blocks_for_a_front_end_when_none_attached(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # away="wait" with NOTHING attached: block until a front-end attaches and
-    # answers. A writer thread attaches (frontend.pid) + answers after a beat.
+    # answers. A writer thread attaches (a front-end claim) + answers after a beat.
     import threading
     import time
 
-    from agent6.runs.ipc import set_away_mode, write_answer, write_frontend_pid
+    from agent6.runs.ipc import register_frontend, set_away_mode, write_answer
 
     log = tmp_path / "logs.jsonl"
     events = EventSink(log)
@@ -364,7 +364,7 @@ def test_approver_away_wait_blocks_for_a_front_end_when_none_attached(
 
     def attach_and_answer() -> None:
         time.sleep(0.3)
-        write_frontend_pid(tmp_path, os.getpid())  # a front-end re-attaches
+        register_frontend(tmp_path, os.getpid())  # a front-end re-attaches
         write_answer(tmp_path, "approval-1", approved=True)  # and answers
 
     threading.Thread(target=attach_and_answer, daemon=True).start()

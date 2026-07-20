@@ -13,6 +13,7 @@ import pytest
 from agent6.config.layer import resolved_state_dir
 from agent6.graph.models import TaskNode
 from agent6.graph.storage import write_node
+from agent6.runs.ipc import register_frontend
 from agent6.runs.layout import RunLayout
 from agent6.ui.cli import main
 
@@ -109,7 +110,7 @@ def test_history_graph_uses_most_recent_when_no_arg(
         (runs / name / "logs.jsonl").write_text('{"type":"run.start"}\n', encoding="utf-8")
     os.utime(runs / "older-run-AAAA11" / "logs.jsonl", (100, 100))
     os.utime(runs / "newer-run-BBBB22" / "logs.jsonl", (1000, 1000))
-    (runs / "older-run-AAAA11" / "frontend.pid").write_text("12345", encoding="utf-8")
+    register_frontend(runs / "older-run-AAAA11", 12345)
     rc = main(["runs", "graph"])
     captured = capsys.readouterr()
     assert rc == 0

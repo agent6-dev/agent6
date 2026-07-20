@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from agent6.config.layer import resolved_state_dir
+from agent6.runs.ipc import register_frontend
 from agent6.ui.cli._ask import (
     build_ask_run_digest as _build_ask_run_digest,
 )
@@ -158,7 +159,7 @@ def test_ask_list_uses_log_activity_not_frontend_dir_touch(
         )
     os.utime(asks / "older-ask" / "logs.jsonl", (100, 100))
     os.utime(asks / "newer-ask" / "logs.jsonl", (1000, 1000))
-    (asks / "older-ask" / "frontend.pid").write_text("12345", encoding="utf-8")
+    register_frontend(asks / "older-ask", 12345)
 
     assert cmd_ask_list() == 0
     lines = capsys.readouterr().out.splitlines()

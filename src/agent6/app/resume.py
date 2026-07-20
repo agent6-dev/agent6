@@ -267,7 +267,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     if worker_lock_fd is None:
         reporter.err(SINGLE_WRITER_BUSY.format(rid=run_id))
         return 2
-    # Drop a prior session's stale answer files + frontend.pid (the id counters reset
+    # Drop a prior session's stale answer files (the id counters reset
     # on resume, an old answer must not be read instead of re-prompting).
     clear_pending_answers(layout.run_dir)
     if steer.strip():

@@ -125,7 +125,7 @@ def build_approver(
 ) -> Callable[[str], bool]:
     """Build the `run_command` approver, bridged to a live TUI when present.
 
-    Emits an `approval.prompt` event; if a TUI is live (it wrote `frontend.pid`) the
+    Emits an `approval.prompt` event; if a TUI is live (it wrote `front-end claim`) the
     answer comes from its Allow/Deny modal via the file bridge
     (`approvals/<id>.answer`), otherwise -- or if the TUI dies / times out -- it
     falls back to the stdin `[y/N]` prompt. Emits `approval.answer` either way.
@@ -148,7 +148,7 @@ def build_approver(
         events.emit("approval.prompt", id=prompt_id, prompt=prompt)
         # A live front-end ALWAYS gets asked, in its own UI, regardless of the
         # detach away-mode: away-mode governs only the window when nothing is
-        # attached. (A foreground run writes no frontend.pid, so it falls through
+        # attached. (A foreground run writes no front-end claim, so it falls through
         # to the stdin prompt below.)
         if frontend_is_live(run_dir):
             answer = read_answer(run_dir, prompt_id)  # the front-end wrote "allow session" itself

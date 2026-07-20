@@ -16,6 +16,7 @@ from agent6.config import Config, load_config
 from agent6.config.layer import resolved_state_dir
 from agent6.graph.models import TaskNode
 from agent6.graph.storage import write_node
+from agent6.runs.ipc import register_frontend
 from agent6.runs.layout import RunLayout
 from agent6.tools.dispatch import ToolError
 from agent6.tools.errors import OperatorCommandUnexecutable
@@ -488,5 +489,5 @@ def test_most_recent_run_id_uses_log_activity_not_name_or_dir_touch(tmp_path: Pa
     (newer / "logs.jsonl").write_text('{"type":"run.start"}\n', encoding="utf-8")
     os.utime(older / "logs.jsonl", (1000, 1000))
     os.utime(newer / "logs.jsonl", (2000, 2000))
-    (older / "frontend.pid").write_text("12345", encoding="utf-8")
+    register_frontend(older, 12345)
     assert _most_recent_run_id(tmp_path) == "aaa-newer-BBB222"
