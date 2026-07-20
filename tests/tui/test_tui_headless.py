@@ -762,6 +762,48 @@ def test_compact_now_drops_the_marker_for_a_live_run(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_payload_literal_does_not_swallow_a_real_steer(tmp_path: Path) -> None:
+    # The seed counts steers the same way the fold does: an event whose PAYLOAD
+    # contains the quoted literal (a grep of the source for the event name) must
+    # not inflate the baseline, or the NEXT real steer is silently swallowed
+    # while the run blocks awaiting an instruction.
+    from agent6.ui.tui.conversation import SteerInput
+
+    (tmp_path / "logs.jsonl").write_text(
+        "".join(
+            json.dumps(e) + "\n"
+            for e in (
+                _ev(type="run.start", user_task="x"),
+                _ev(
+                    type="tool.call",
+                    name="run_command",
+                    args={"argv": ["rg", "run.steer_requested", "src/"]},
+                ),
+                _ev(type="role.call", role="worker", model="kimi"),
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    async def scenario() -> None:
+        app = Agent6TUI(tmp_path)
+        async with app.run_test() as pilot:
+            await _show_dashboard(pilot)
+            app._dash.query_one("#log").focus()
+            await pilot.pause()
+            for _ in range(50):  # let the reader thread replay the existing log
+                await pilot.pause()
+            assert app._seen_steer == 0  # pyright: ignore[reportPrivateUsage]
+            assert app.state.steer_requests == 0
+            app._handle_event(_ev(type="run.steer_requested", source="sigint"))  # pyright: ignore[reportPrivateUsage]
+            app._tick()  # pyright: ignore[reportPrivateUsage]
+            bar = app._dash.query_one(SteerInput)
+            await _settle_focus(pilot, bar)
+            assert app.focused is bar
+
+    asyncio.run(scenario())
+
+
 def test_historical_steer_request_does_not_grab_the_bar_on_open(tmp_path: Path) -> None:
     # A CLI Ctrl-C that DETACHED leaves run.steer_requested in the log. Opening the
     # TUI must not treat that stale (already-handled) request as live -- only one

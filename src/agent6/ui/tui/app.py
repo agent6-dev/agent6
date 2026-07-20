@@ -97,6 +97,7 @@ from agent6.viewmodel.state import (
     RunState,
     ToolCallView,
     apply_event,
+    fold_run,
     initial_state,
     run_status_label,
 )
@@ -768,9 +769,12 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         # A steer request already in the log is historical (e.g. a CLI Ctrl-C that
         # detached, whose run.steer_requested replays on open); only prompt for ones
         # that arrive AFTER we start watching, so opening a run never pops a stale,
-        # already-handled steer modal.
+        # already-handled steer modal. Seed with the SAME fold _tick compares
+        # against: a byte-substring count also matched the literal inside event
+        # payloads (a grep of the source for the event name), over-seeding the
+        # baseline and swallowing the next real steer.
         with contextlib.suppress(OSError):
-            self._seen_steer = self.logs_path.read_bytes().count(b'"run.steer_requested"')
+            self._seen_steer = fold_run(tail_events(self.logs_path, follow=False)).steer_requests
         # Pushed (not the app's default screen): only the push path loads a
         # screen's CSS, and the hub pushes its HomeScreen the same way. The
         # conversation opens on top -- the primary view -- with the dashboard
