@@ -312,7 +312,9 @@ depends_on = []
 
 [[modules]]
 path = "agent6.graph.models"
-depends_on = []
+# graph.ulid: the id validator enforces the ULID alphabet at the reload trust
+# boundary (an id becomes a filesystem path component).
+depends_on = ["agent6.graph.ulid"]
 
 [[modules]]
 path = "agent6.graph.ulid"

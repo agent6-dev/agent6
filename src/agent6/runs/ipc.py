@@ -99,14 +99,16 @@ def clear_frontend_pid(run_dir: Path) -> None:
 
 
 def _pid_alive(pid: int) -> bool:
-    """True if a process with *pid* exists (signal 0 probes without killing)."""
+    """True iff a live process WE OWN has *pid* (signal 0 probes without killing).
+
+    PermissionError reads as DEAD: agent6's workers and front-ends are always
+    spawned by the same user that later probes them, so a foreign-owned pid
+    can only mean the original process died and the kernel reused the number
+    for another user's process -- a run rendered "running" forever off such a
+    pid hung the /parallel lane await permanently."""
     try:
         os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True  # exists but is owned by another user
-    except OSError:
+    except (ProcessLookupError, PermissionError, OSError):
         return False
     return True
 
@@ -143,13 +145,7 @@ def frontend_is_live(run_dir: Path) -> bool:
         pid = int(p.read_text(encoding="utf-8").strip())
     except (OSError, ValueError):
         return False
-    try:
-        os.kill(pid, 0)
-    except (ProcessLookupError, PermissionError):
-        return False
-    except OSError:
-        return False
-    return True
+    return _pid_alive(pid)
 
 
 def _write_answer_atomic(target: Path, text: str) -> None:

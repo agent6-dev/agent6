@@ -343,3 +343,21 @@ def test_status_text_labels_leg_scoped_figures_on_a_resumed_run(
     out = capsys.readouterr().out
     assert "in=300 out=50 (latest leg)" in out
     assert "cost $0.0250 (all 2 legs)" in out
+
+
+def test_worker_is_alive_reads_a_foreign_owned_pid_as_dead(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A worker is always spawned by the probing user, so PermissionError on
+    the recorded pid means the worker died and the kernel reused the number
+    for another user's process. Reading it as alive rendered a crashed run
+    "running" forever and hung the /parallel lane await permanently."""
+    if os.geteuid() == 0:
+        pytest.skip("root can signal any pid; the foreign-owner probe needs a non-root euid")
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    d = tmp_path / "run"
+    d.mkdir()
+    write_worker_pid(d, 1)  # init: exists, foreign-owned -> PermissionError
+    assert not worker_is_alive(d)
+    write_worker_pid(d, os.getpid())
+    assert worker_is_alive(d)
