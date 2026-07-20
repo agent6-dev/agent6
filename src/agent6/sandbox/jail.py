@@ -109,6 +109,17 @@ class JailUnavailableError(Exception):
     """`agent6-jail` could not be located or refused to set up the namespace."""
 
 
+def _lossy_text(v: object) -> str:
+    """Decode child/launcher output for surfaces: one decode policy for this
+    module. Command output is not guaranteed UTF-8 (grep over a binary, a
+    latin-1 file), so bytes decode with errors="replace" -- a lossy result
+    beats a crash or a dropped stream. str passes through; anything else
+    (None from a drained pipe) is ""."""
+    if isinstance(v, bytes):
+        return v.decode(errors="replace")
+    return v if isinstance(v, str) else ""
+
+
 # Override for tests; checked first.
 _ENV_VAR = "AGENT6_JAIL_BIN"
 
@@ -171,39 +182,34 @@ def _run_unsandboxed(policy: JailPolicy) -> CommandResult:
     env = {**os.environ, **{k: v for k, v in policy.env}}
     start = time.monotonic()
     # Unsandboxed escape hatch (non-Linux only); see run_in_jail docstring.
+    # Output is captured as bytes and decoded lossily: the strict text=True
+    # decode raised UnicodeDecodeError out of communicate() on any non-UTF-8
+    # byte, breaking the return-a-result contract.
     try:
         proc = subprocess.run(
             list(policy.argv),
             cwd=str(policy.cwd),
             env=env,
             capture_output=True,
-            text=True,
             check=False,
             timeout=policy.timeout_s,
         )
     except subprocess.TimeoutExpired as exc:
-        # Match the jailed profiles' contract: a timeout is an rc=124 result, not
-        # a raised exception the caller would have to special-case. (text=True
-        # makes the partial output str at runtime; the stub still types it bytes,
-        # so coerce defensively.)
-        def _text(v: object) -> str:
-            if isinstance(v, bytes):
-                return v.decode(errors="replace")
-            return v if isinstance(v, str) else ""
-
+        # Match the jailed profiles' contract: a timeout is an rc=124 result,
+        # not a raised exception the caller would have to special-case.
         return CommandResult(
             argv=tuple(policy.argv),
             returncode=124,
-            stdout=_text(exc.stdout),
-            stderr=_text(exc.stderr),
+            stdout=_lossy_text(exc.stdout),
+            stderr=_lossy_text(exc.stderr),
             duration_s=time.monotonic() - start,
         )
     duration = time.monotonic() - start
     return CommandResult(
         argv=tuple(policy.argv),
         returncode=int(proc.returncode),
-        stdout=proc.stdout,
-        stderr=proc.stderr,
+        stdout=_lossy_text(proc.stdout),
+        stderr=_lossy_text(proc.stderr),
         duration_s=duration,
     )
 
@@ -277,11 +283,10 @@ def run_in_jail(policy: JailPolicy) -> CommandResult:
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True,
         start_new_session=True,
     )
     try:
-        out, err = launcher.communicate(input=spec, timeout=policy.timeout_s + 5.0)
+        raw_out, raw_err = launcher.communicate(input=spec.encode(), timeout=policy.timeout_s + 5.0)
     except subprocess.TimeoutExpired as exc:
         # Kill the whole group, then drain whatever output was produced. Mirror
         # _run_unsandboxed: surface a timeout as the documented rc=124 result, not
@@ -291,27 +296,21 @@ def run_in_jail(policy: JailPolicy) -> CommandResult:
         except (ProcessLookupError, PermissionError):
             launcher.kill()
         try:
-            out, err = launcher.communicate(timeout=5.0)
+            raw_out, raw_err = launcher.communicate(timeout=5.0)
         except subprocess.TimeoutExpired:
-            out, err = "", ""
-
-        def _text(v: object) -> str:
-            if isinstance(v, bytes):
-                return v.decode(errors="replace")
-            return v if isinstance(v, str) else ""
-
+            raw_out, raw_err = b"", b""
         return CommandResult(
             argv=tuple(policy.argv),
             returncode=124,
-            stdout=_text(out) or _text(exc.stdout),
-            stderr=_text(err) or _text(exc.stderr),
+            stdout=_lossy_text(raw_out) or _lossy_text(exc.stdout),
+            stderr=_lossy_text(raw_err) or _lossy_text(exc.stderr),
             duration_s=time.monotonic() - start,
         )
     proc = subprocess.CompletedProcess(
         args=[str(binary)],
         returncode=launcher.returncode,
-        stdout=out,
-        stderr=err,
+        stdout=_lossy_text(raw_out),
+        stderr=_lossy_text(raw_err),
     )
     duration = time.monotonic() - start
     # The launcher prints a single JSON line on stdout describing the child's result,

@@ -70,6 +70,29 @@ def test_none_profile_overlays_policy_env(tmp_path: Path) -> None:
     assert "set-by-policy" in res.stdout
 
 
+def test_none_profile_preserves_non_utf8_output_lossily(tmp_path: Path) -> None:
+    # Child output is not guaranteed UTF-8 (grep over a binary, cat of a
+    # latin-1 file). The contract is a returned CommandResult with a lossy
+    # decode, never a UnicodeDecodeError escaping communicate().
+    res = run_in_jail(
+        JailPolicy(
+            cwd=tmp_path,
+            argv=(
+                sys.executable,
+                "-c",
+                "import sys;"
+                " sys.stdout.buffer.write(b'caf\\xe9 out');"
+                " sys.stderr.buffer.write(b'caf\\xe9 err')",
+            ),
+            profile="none",
+            timeout_s=30.0,
+        )
+    )
+    assert res.returncode == 0
+    assert res.stdout == "caf� out"
+    assert res.stderr == "caf� err"
+
+
 def test_none_profile_timeout_returns_124_not_exception(tmp_path: Path) -> None:
     # The jailed profiles surface a timeout as rc=124; the `none` path used to
     # leak subprocess.TimeoutExpired instead. It must match the contract.
