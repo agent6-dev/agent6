@@ -189,7 +189,12 @@ def _run(
             full_argv,
             cwd=cwd,
             capture_output=True,
-            text=True,
+            # Bytes, decoded lossily below: git diff/show emit raw file bytes,
+            # so a changed non-UTF-8 text file (latin-1 has no NULs, so git does
+            # not classify it binary) would make a strict text=True decode raise
+            # UnicodeDecodeError mid-run. Filenames are core.quotePath-escaped to
+            # ASCII, and shas/porcelain status are ASCII, so replacement only
+            # ever touches diff/show content.
             check=False,
             env=env,
             # A local git op is fast; a bound turns a pathological hang (a wedged
@@ -211,8 +216,8 @@ def _run(
     result = CommandResult(
         argv=full_argv,
         returncode=proc.returncode,
-        stdout=proc.stdout,
-        stderr=proc.stderr,
+        stdout=proc.stdout.decode(errors="replace"),
+        stderr=proc.stderr.decode(errors="replace"),
         duration_s=0.0,
     )
     if check and not result.ok:
@@ -222,12 +227,12 @@ def _run(
         # not stderr. Capturing only stderr produced empty error strings
         # like "git commit -m <subject> failed: " that gave the operator
         # zero signal when triaging a failed auto-commit in the wild.
-        stderr_msg = proc.stderr.strip()
-        stdout_msg = proc.stdout.strip()
+        stderr_msg = result.stderr.strip()
+        stdout_msg = result.stdout.strip()
         if stderr_msg and stdout_msg:
             detail = f"{stderr_msg} | stdout: {stdout_msg}"
         else:
-            detail = stderr_msg or stdout_msg or f"exit {proc.returncode}"
+            detail = stderr_msg or stdout_msg or f"exit {result.returncode}"
         raise GitError(f"git {' '.join(args)} failed: {detail}")
     return result
 

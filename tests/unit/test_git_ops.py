@@ -773,6 +773,24 @@ def test_squash_merge_noop_when_nothing_to_merge(tmp_path: Path) -> None:
     assert status(tmp_path).is_clean
 
 
+def test_diff_of_non_utf8_file_does_not_crash(tmp_path: Path) -> None:
+    # git diff/show emit raw file bytes; a latin-1 text file (no NULs, so git
+    # does not treat it as binary) put non-UTF-8 bytes in the output, and the
+    # strict text=True decode raised UnicodeDecodeError mid-run with no run.end.
+    # Both diff surfaces must return a (lossily-decoded) string instead.
+    _init_repo(tmp_path)
+    base = status(tmp_path).head_sha
+    (tmp_path / "latin1.txt").write_bytes(b"caf\xe9 au lait\n")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "add latin1"], check=True)
+    sha = status(tmp_path).head_sha
+
+    since = diff_since(tmp_path, base)
+    assert "latin1.txt" in since  # the diff was produced, not dropped to a crash
+    shown = commit_diff(tmp_path, sha)
+    assert "latin1.txt" in shown
+
+
 def test_list_run_commits_preserves_body_with_separator_bytes(tmp_path: Path) -> None:
     _init_repo(tmp_path)
     base = status(tmp_path).head_sha

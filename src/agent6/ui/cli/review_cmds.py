@@ -61,13 +61,18 @@ def _collect_review_diff(
         diff_args = [git, *hardening, "diff", *DIFF_SHOW_SAFETY_FLAGS, f"{base}..{head}"]
         if paths:
             diff_args.extend(["--", *paths])
-        return subprocess.run(diff_args, cwd=root, capture_output=True, text=True, check=False)
+        # errors="replace" (implies text mode): git diff emits raw file bytes,
+        # so a changed non-UTF-8 file must not crash the review with a strict
+        # decode. Mirrors git_ops._run.
+        return subprocess.run(
+            diff_args, cwd=root, capture_output=True, errors="replace", check=False
+        )
 
     status = subprocess.run(
         [git, *hardening, "status", "--porcelain", "-z"],
         cwd=root,
         capture_output=True,
-        text=True,
+        errors="replace",
         check=False,
     )
     untracked = [entry[3:] for entry in status.stdout.split("\0") if entry.startswith("?? ")]
@@ -77,7 +82,12 @@ def _collect_review_diff(
         diff_args = [git, *hardening, "diff", *DIFF_SHOW_SAFETY_FLAGS, "HEAD"]
         if paths:
             diff_args.extend(["--", *paths])
-        return subprocess.run(diff_args, cwd=root, capture_output=True, text=True, check=False)
+        # errors="replace" (implies text mode): git diff emits raw file bytes,
+        # so a changed non-UTF-8 file must not crash the review with a strict
+        # decode. Mirrors git_ops._run.
+        return subprocess.run(
+            diff_args, cwd=root, capture_output=True, errors="replace", check=False
+        )
     finally:
         if untracked:
             subprocess.run(
@@ -202,7 +212,7 @@ def _cmd_review(  # noqa: PLR0911
         [git, *git_hardening_flags(), "log", "-n", "10", "--oneline"],
         cwd=root,
         capture_output=True,
-        text=True,
+        errors="replace",
         check=False,
     )
     recent_log = log_proc.stdout if log_proc.returncode == 0 else ""
