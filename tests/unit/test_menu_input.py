@@ -138,6 +138,29 @@ def test_menu_rows_clamp_to_narrow_terminals(monkeypatch: pytest.MonkeyPatch) ->
         assert len(visible) < 20  # descriptions clamped
 
 
+def test_input_row_never_exceeds_the_terminal_width(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The 57-col real prompt overflowed narrow terminals (only the typed line
+    was windowed, with an 8-col floor): the wrapped row broke the cursor-up
+    math and every keystroke walked a garbled menu down the screen. The WHOLE
+    row -- prompt clamped first, line windowed into the remainder -- must fit
+    width-1, like the menu rows already do."""
+    import re
+
+    from agent6.ui.cli._menu_input import _Reader  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli._steer_menu import PROMPT
+
+    for width in (20, 50, 60, 67, 120):
+        monkeypatch.setattr("agent6.ui.cli._menu_input._width", lambda w=width: w)
+        r = _Reader(PROMPT, MENU_COMMANDS, [])
+        r.line = "/status"
+        r.cur = len(r.line)
+        out: list[str] = []
+        r.render(out.append)
+        first = "".join(out).split("\r\n")[0]
+        printable = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", first).replace("\r", "")
+        assert len(printable) <= width - 1, (width, len(printable), printable)
+
+
 def test_read_key_decodes_bytes_from_a_pipe() -> None:
     """The raw decoder: control keys, CSI sequences, bare Esc, UTF-8 text."""
     r, w = os.pipe()

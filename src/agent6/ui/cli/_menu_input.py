@@ -16,8 +16,9 @@ prompt. Unix-only by design: callers gate on :func:`menu_capable` and fall
 back to a plain prompt elsewhere.
 
 Rendering uses CR, erase-below, cursor-up/right, reverse and dim only, safe
-under tmux/byobu. The input line is windowed to the terminal width so the
-redraw never wraps (wrapping would break the cursor-up arithmetic).
+under tmux/byobu. The input row (prompt clamped, line windowed into the
+remainder) fits the terminal width so the redraw never wraps (wrapping would
+break the cursor-up arithmetic).
 """
 
 from __future__ import annotations
@@ -139,11 +140,15 @@ class _Reader:
 
     def render(self, write: Callable[[str], None]) -> None:
         width = _width()
-        # Window the line so prompt+line never wraps (cursor math stays 1-row).
-        avail = max(8, width - len(self.prompt) - 2)
+        # Budget the WHOLE input row to width-1 like the menu rows: clamp the
+        # prompt first, then window the line into the remainder. An overflow
+        # floor here wrapped the row on narrow terminals, and the wrapped row
+        # broke the cursor-up arithmetic (garbling the menu every keystroke).
+        prompt = self.prompt[: width - 1]
+        avail = max(0, width - 1 - len(prompt))
         start = 0 if self.cur < avail else self.cur - avail + 1
         visible = self.line[start : start + avail]
-        out = ["\r\x1b[J", self.prompt, visible]
+        out = ["\r\x1b[J", prompt, visible]
         if self.menu is not None:
             pad = max(len(c) for c in self.menu)
             for i, cmd in enumerate(self.menu):
@@ -157,7 +162,7 @@ class _Reader:
                     row = f"\x1b[7m{row}\x1b[27m"
                 out.append("\r\n" + row)
             out.append(f"\x1b[{len(self.menu)}A")
-        col = len(self.prompt) + (self.cur - start)
+        col = len(prompt) + (self.cur - start)
         out.append("\r" + (f"\x1b[{col}C" if col else ""))
         write("".join(out))
 
