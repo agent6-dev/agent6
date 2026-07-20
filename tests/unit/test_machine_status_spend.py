@@ -102,3 +102,33 @@ def test_read_budget_totals_offset_scopes_to_one_call(tmp_path: Path) -> None:
             + "\n"
         )
     assert read_budget_totals(log, from_offset=offset) == Spend(0.05, 2, 1)
+
+
+def test_unpriced_spend_reads_as_a_partial_lower_bound(tmp_path: Path) -> None:
+    """An unpriced model's spend is a LOWER BOUND: the run surface marks it
+    '~', and machine status must agree instead of rendering '$0.0000' as if
+    exact -- the machine ledger burning real money against a $0 figure."""
+    import json
+
+    from agent6.app.machine._spend import Spend, read_budget_totals
+    from agent6.viewmodel.format import format_cost
+
+    log = tmp_path / "logs.jsonl"
+    log.write_text(
+        json.dumps(
+            {
+                "type": "budget.update",
+                "usd_total": 0.0,
+                "usd_partial": True,
+                "input_total": 900,
+                "output_total": 50,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    spend = read_budget_totals(log)
+    assert spend.partial is True
+    assert format_cost(spend.usd, partial=spend.partial).startswith("~$")
+    # The flag survives folding with priced (non-partial) slices.
+    assert (spend + Spend(1.0)).partial is True

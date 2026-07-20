@@ -120,13 +120,19 @@ def _result(
     reason: str, payload: dict[str, Any] | None, budget: BudgetTracker | None
 ) -> AgentExecResult:
     usd = 0.0
+    partial = False
     inp = out = 0
     if budget is not None:
-        usd, _ = budget.estimate_usd()
+        usd, partial = budget.estimate_usd()
         snap = budget.snapshot()
         inp, out = snap.input_total, snap.output_total
     return AgentExecResult(
-        reason=reason, payload=payload, usd=usd, input_tokens=inp, output_tokens=out
+        reason=reason,
+        payload=payload,
+        usd=usd,
+        usd_partial=partial,
+        input_tokens=inp,
+        output_tokens=out,
     )
 
 
@@ -431,6 +437,7 @@ def build_machine_agent_runner(
                 reason=reason,
                 payload=None,
                 usd=spend.usd,
+                usd_partial=spend.partial,
                 input_tokens=spend.input_tokens,
                 output_tokens=spend.output_tokens,
             )

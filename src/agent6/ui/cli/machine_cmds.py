@@ -71,6 +71,7 @@ from agent6.viewmodel import (
     event_epoch,
     fold_machine,
 )
+from agent6.viewmodel.format import format_cost
 
 
 def _fail(path: Path, problems: list[str], label: str = "") -> int:
@@ -447,7 +448,10 @@ def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
         print(f"  status: {status}")
     print(f"  state: {result.state!r}")
     print(f"  transitions: {result.transitions}")
-    print(f"  spend: ${spend.usd:.4f} (in={spend.input_tokens} tok, out={spend.output_tokens} tok)")
+    print(
+        f"  spend: {format_cost(spend.usd, partial=spend.partial)}"
+        f" (in={spend.input_tokens} tok, out={spend.output_tokens} tok)"
+    )
     state_spec = spec.states.get(result.state)
     if alive and pending is None and state_spec is not None and state_spec.kind == "wait":
         # A foreground run blocked in a wait writes no pending-wait record (that

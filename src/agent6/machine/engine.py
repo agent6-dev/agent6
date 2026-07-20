@@ -181,6 +181,10 @@ class AgentExecResult(BaseModel):
     reason: str
     payload: dict[str, Any] | None
     usd: float = 0.0
+    # True when `usd` is a known under-estimate (an unpriced model in the
+    # loop's per-model breakdown); threaded into the AgentFact so the booked
+    # ledger keeps the '~' truth. Defaults False for old result.json files.
+    usd_partial: bool = False
     input_tokens: int = 0
     output_tokens: int = 0
 
@@ -689,6 +693,7 @@ def _execute(
                 reason=result.reason,
                 payload=payload,
                 usd=result.usd,
+                usd_partial=result.usd_partial,
                 input_tokens=result.input_tokens,
                 output_tokens=result.output_tokens,
             ),

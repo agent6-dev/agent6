@@ -127,6 +127,10 @@ class AgentFact(BaseModel):
     reason: str
     payload: dict[str, Any] | None = None
     usd: float = 0.0
+    # True when `usd` is a known under-estimate (an unpriced model contributed
+    # $0); machine status renders it with the shared '~' marker. Defaults False
+    # so old journals parse unchanged.
+    usd_partial: bool = False
     input_tokens: int = Field(default=0, ge=0)
     output_tokens: int = Field(default=0, ge=0)
 

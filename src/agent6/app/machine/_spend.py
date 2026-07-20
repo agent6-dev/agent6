@@ -24,17 +24,24 @@ from agent6.viewmodel.machine_state import newest_state_log
 
 @dataclass(frozen=True, slots=True)
 class Spend:
-    """A dollar + token spend triple, summable so booked and live spend fold."""
+    """A dollar + token spend triple, summable so booked and live spend fold.
+
+    ``partial`` marks a known under-estimate (an unpriced model contributed
+    $0 to the dollar figure); it ORs across folds so one unpriceable slice
+    taints the total, and the render adds the shared '~' marker instead of
+    showing a lower bound as exact."""
 
     usd: float = 0.0
     input_tokens: int = 0
     output_tokens: int = 0
+    partial: bool = False
 
     def __add__(self, other: Spend) -> Spend:
         return Spend(
             self.usd + other.usd,
             self.input_tokens + other.input_tokens,
             self.output_tokens + other.output_tokens,
+            self.partial or other.partial,
         )
 
 
@@ -55,6 +62,7 @@ def read_budget_totals(log_path: Path, *, from_offset: int = 0) -> Spend:
     $0, so a 24/7 machine burns real money against a $0 ledger and its budget
     guard never trips)."""
     usd, tin, tout = 0.0, 0, 0
+    partial = False
     with contextlib.suppress(OSError):
         with log_path.open("rb") as fh:
             if from_offset > 0:
@@ -69,7 +77,10 @@ def read_budget_totals(log_path: Path, *, from_offset: int = 0) -> Spend:
                 usd = float(e.get("usd_total", usd) or 0.0)
                 tin = int(e.get("input_total", tin) or 0)
                 tout = int(e.get("output_total", tout) or 0)
-    return Spend(usd, tin, tout)
+                # Sticky, like the run surface: once any update flags an
+                # under-estimate the whole figure is one.
+                partial = partial or bool(e.get("usd_partial", False))
+    return Spend(usd, tin, tout, partial)
 
 
 def _state_dir_seq(dir_name: str) -> int | None:
@@ -95,7 +106,12 @@ def machine_spend(events: Sequence[object], root: Path, *, alive: bool) -> tuple
         if isinstance(event, StepEvent):
             step_seqs.add(event.seq)
             if isinstance(event.fact, AgentFact):
-                total += Spend(event.fact.usd, event.fact.input_tokens, event.fact.output_tokens)
+                total += Spend(
+                    event.fact.usd,
+                    event.fact.input_tokens,
+                    event.fact.output_tokens,
+                    event.fact.usd_partial,
+                )
     inflight_state = ""
     newest = newest_state_log(root) if alive else None
     if newest is not None:

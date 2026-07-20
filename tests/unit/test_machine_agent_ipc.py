@@ -67,7 +67,7 @@ _RESULT = AgentExecResult(
 
 _RESULT_BYTES = (
     '{"reason":"finish_run","payload":{"ok":true,"notes":"queue drained"},'
-    '"usd":0.0588752,"input_tokens":66084,"output_tokens":838}'
+    '"usd":0.0588752,"usd_partial":false,"input_tokens":66084,"output_tokens":838}'
 )
 
 
