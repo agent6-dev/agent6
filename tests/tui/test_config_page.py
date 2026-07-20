@@ -413,8 +413,12 @@ def test_editing_a_model_survives_a_broken_secrets_file(
     secrets.chmod(0o644)  # group/other-readable -> load_secrets raises
 
     models = ["claude-sonnet-4-5"]
-    monkeypatch.setattr(cp, "cached_models", lambda *_a, **_k: models)
-    monkeypatch.setattr(cp, "list_models", lambda *_a, **_k: models)
+
+    def _models(*_a: object, **_k: object) -> list[str]:
+        return models
+
+    monkeypatch.setattr(cp, "cached_models", _models)
+    monkeypatch.setattr(cp, "list_models", _models)
 
     async def scenario() -> None:
         app = _Host(repo)

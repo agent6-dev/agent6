@@ -92,17 +92,18 @@ def test_hook_pauses_the_console_heartbeat_while_prompting(
     waiting on the OPERATOR, and without the pause the heartbeat's per-tick
     line-erase wiped the "agent6> " prompt and the typed characters, replacing
     them with a lying "working…" spinner (keystrokes were submitted blind)."""
-    import contextlib
-    from collections.abc import Iterator
-
     states: list[str] = []
 
-    class _FakeConsole:
-        @contextlib.contextmanager
-        def pause(self) -> Iterator[None]:
+    class _FakePause:
+        def __enter__(self) -> None:
             states.append("paused")
-            yield
+
+        def __exit__(self, *exc: object) -> None:
             states.append("resumed")
+
+    class _FakeConsole:
+        def pause(self) -> _FakePause:
+            return _FakePause()
 
     def _input(_p: str = "") -> str:
         assert states == ["paused"], "input() ran outside the console pause"
