@@ -221,11 +221,11 @@ def test_web_new_work_preflight_refuses_while_checkout_busy(
     from agent6.ui.web import actions
 
     spawned: list[str] = []
-    monkeypatch.setattr(
-        actions,
-        "spawn_and_locate",
-        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not spawn")),
-    )
+
+    def must_not_spawn(*a: object, **k: object) -> tuple[Path | None, str]:
+        raise AssertionError("must not spawn")
+
+    monkeypatch.setattr(actions, "spawn_and_locate", must_not_spawn)
     state = resolved_state_dir(repo)
     holder_fd = acquire_repo_writer(state, "run-LIVE")
     try:

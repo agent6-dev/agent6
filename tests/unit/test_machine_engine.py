@@ -761,12 +761,12 @@ def test_live_world_run_tool_maps_rc124_to_timed_out(
     res = world.run_tool(("sleep", "99"), 1.0)
     assert res.timed_out is True
     assert res.exit_code == 124
+
     # A normal nonzero exit stays not-timed-out.
-    monkeypatch.setattr(
-        engine,
-        "run_in_jail",
-        lambda p: CommandResult(argv=p.argv, returncode=2, stdout="", stderr="", duration_s=0.0),
-    )
+    def plain_nonzero(policy: JailPolicy) -> CommandResult:
+        return CommandResult(argv=policy.argv, returncode=2, stdout="", stderr="", duration_s=0.0)
+
+    monkeypatch.setattr(engine, "run_in_jail", plain_nonzero)
     res2 = world.run_tool(("false",), 1.0)
     assert res2.timed_out is False
     assert res2.exit_code == 2
