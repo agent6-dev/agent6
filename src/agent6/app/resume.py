@@ -426,7 +426,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 f"namespace via broker pid {guard.broker.pid}"
             )
 
-        landlock_err = maybe_apply_agent_landlock(cfg, selected_profile, env, reporter=reporter)
+        landlock_err = maybe_apply_agent_landlock(cfg, selected_profile, reporter=reporter)
         if landlock_err is not None:
             reporter.err(f"REFUSING: {landlock_err}")
             # The egress broker is already running; the outer finally tears it

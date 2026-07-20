@@ -232,17 +232,21 @@ fixed argv depending only on operator input, never LLM output.
 
 You set `sandbox.profile`; it resolves against the host to the *effective*
 profile. No silent downgrade: a request the host can't meet is refused, and
-`auto` reaches `none` only by detecting a non-Linux host.
+`auto` reaches `none` only when the host offers no confinement mechanism at
+all (non-Linux, or a Linux kernel with neither userns nor Landlock) -- always
+loudly. Capabilities are probed (`unshare` for userns, the Landlock ABI
+syscall for hardened), never guessed from the kernel version.
 
 | `sandbox.profile` | Host | Effective |
 |---|---|---|
 | `auto` *(default)* | Linux + user namespaces | `strict` |
-| `auto` | Linux, no user namespaces | `hardened` |
+| `auto` | Linux, no userns, Landlock | `hardened` |
+| `auto` | Linux, no userns, no Landlock | `none` (loud warning) |
 | `auto` | non-Linux | `none` |
 | `strict` | Linux + user namespaces | `strict` |
 | `strict` | else | ⛔ refuse |
-| `hardened` | Linux | `hardened` |
-| `hardened` | non-Linux | ⛔ refuse |
+| `hardened` | Linux + Landlock | `hardened` |
+| `hardened` | else | ⛔ refuse (Landlock is hardened's only FS boundary) |
 | `none` *(opt-out)* | any | `none` (the environment is the boundary) |
 
 - **strict**: full namespaces + `pivot_root` + Landlock + seccomp + `NO_NEW_PRIVS`.

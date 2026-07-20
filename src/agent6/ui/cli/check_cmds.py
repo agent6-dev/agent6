@@ -227,10 +227,10 @@ def _cmd_check(config_path: Path | None, *, section: str) -> int:
 def _check_config_section(cfg: Config) -> list[_DoctorCheck]:
     """Environment detection + profile selection + static config checks."""
     env = detect_env()
-    print(f"  kernel: {env.kernel.raw} (Landlock TCP: {env.kernel.supports_landlock_tcp})")
+    print(f"  kernel: {env.kernel.raw}")
     print(f"  userns supported: {env.userns_supported}")
     print(f"  sandbox available: {env.sandbox_available}")
-    abi_str = str(landlock_abi()) if env.sandbox_available else "n/a (no Linux sandbox)"
+    abi_str = str(env.landlock_abi) if env.sandbox_available else "n/a (no Linux sandbox)"
     print(f"  Landlock ABI: {abi_str}")
     print(
         f"  sandbox.profile = {cfg.sandbox.profile}"

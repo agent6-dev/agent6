@@ -21,6 +21,7 @@ def _env(userns: bool, *, sandbox: bool = True) -> Environment:
         container_signals=(),
         kernel=KernelInfo(raw="7.0.0", major=7, minor=0),
         userns_supported=userns,
+        landlock_abi=4 if sandbox else 0,
         sandbox_available=sandbox,
     )
 

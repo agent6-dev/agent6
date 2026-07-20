@@ -197,7 +197,13 @@ depends_on = ["agent6.paths"]
 
 [[modules]]
 path = "agent6.sandbox"
-depends_on = [ "agent6.types"]
+depends_on = [ "agent6.sandbox.landlock", "agent6.types"]
+
+[[modules]]
+# Pure-ctypes Landlock syscall wrapper: a leaf, so detection can probe the
+# kernel's ABI without pulling the rest of the sandbox stack into its graph.
+path = "agent6.sandbox.landlock"
+depends_on = []
 
 [[modules]]
 path = "agent6.tools"
@@ -264,7 +270,7 @@ depends_on = ["agent6.config", "agent6.models.cache", "agent6.models.registry", 
 
 [[modules]]
 path = "agent6.sandbox.detect"
-depends_on = ["agent6.types"]
+depends_on = ["agent6.sandbox.landlock", "agent6.types"]
 
 [[modules]]
 path = "agent6.types"

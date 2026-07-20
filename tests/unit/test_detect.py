@@ -20,20 +20,11 @@ from agent6.sandbox.detect import (
 def test_parse_kernel_basic() -> None:
     k = _parse_kernel("6.7.5-arch1")
     assert (k.major, k.minor) == (6, 7)
-    assert k.supports_landlock_tcp is True
-    assert k.supports_landlock_fs is True
 
 
 def test_parse_kernel_too_old() -> None:
     k = _parse_kernel("5.10.0")
-    assert k.supports_landlock_tcp is False
-    assert k.supports_landlock_fs is False
-
-
-def test_parse_kernel_landlock_fs_only() -> None:
-    k = _parse_kernel("6.6.99")
-    assert k.supports_landlock_fs is True
-    assert k.supports_landlock_tcp is False
+    assert (k.major, k.minor) == (5, 10)
 
 
 def test_parse_kernel_unknown() -> None:
@@ -77,12 +68,13 @@ def test_detect_container_signals_podman(monkeypatch: pytest.MonkeyPatch) -> Non
     assert "/.dockerenv" not in signals
 
 
-def _env(*, userns: bool) -> Environment:
+def _env(*, userns: bool, landlock_abi: int = 4) -> Environment:
     return Environment(
         in_container=False,
         container_signals=(),
         kernel=KernelInfo(raw="6.14.0", major=6, minor=14),
         userns_supported=userns,
+        landlock_abi=landlock_abi,
         sandbox_available=True,
     )
 
@@ -92,12 +84,21 @@ def test_detected_profile_strict_when_userns_supported() -> None:
 
 
 def test_detected_profile_hardened_when_userns_blocked() -> None:
-    assert _env(userns=False).detected_profile == "hardened"
+    assert _env(userns=False, landlock_abi=1).detected_profile == "hardened"
+
+
+def test_detected_profile_none_without_userns_or_landlock() -> None:
+    # hardened's ONLY filesystem boundary is Landlock (no mount namespace).
+    # A Linux host offering neither userns nor Landlock has no confinement
+    # mechanism at all, so the truthful resolution is `none` (callers warn
+    # loudly), never a hardened that would silently confine nothing.
+    assert _env(userns=False, landlock_abi=0).detected_profile == "none"
 
 
 def test_select_profile_auto_follows_environment() -> None:
     assert select_profile("auto", _env(userns=True)) == "strict"
     assert select_profile("auto", _env(userns=False)) == "hardened"
+    assert select_profile("auto", _env(userns=False, landlock_abi=0)) == "none"
 
 
 def test_select_profile_strict_refuses_silent_downgrade() -> None:
@@ -109,8 +110,16 @@ def test_select_profile_strict_passes_when_supported() -> None:
     assert select_profile("strict", _env(userns=True)) == "strict"
 
 
-def test_select_profile_hardened_always_ok() -> None:
+def test_select_profile_hardened_ok_with_landlock() -> None:
     assert select_profile("hardened", _env(userns=True)) == "hardened"
+    assert select_profile("hardened", _env(userns=False, landlock_abi=1)) == "hardened"
+
+
+def test_select_profile_hardened_refuses_without_landlock() -> None:
+    # Mirrors the strict/userns refusal: an explicit request the kernel cannot
+    # back is refused with a remedy, never silently under-delivered.
+    with pytest.raises(ProfileUnavailableError, match="Landlock"):
+        select_profile("hardened", _env(userns=False, landlock_abi=0))
 
 
 def _env_c(*, userns: bool, in_container: bool) -> Environment:
@@ -119,6 +128,7 @@ def _env_c(*, userns: bool, in_container: bool) -> Environment:
         container_signals=("docker",) if in_container else (),
         kernel=KernelInfo(raw="6.14.0", major=6, minor=14),
         userns_supported=userns,
+        landlock_abi=4,
         sandbox_available=True,
     )
 
@@ -135,14 +145,18 @@ def test_select_profile_explicit_none_is_self_authorizing(
     assert select_profile("none", _env_c(userns=False, in_container=True)) == "none"
 
 
-def test_select_profile_auto_never_reaches_none_on_linux(
+def test_select_profile_auto_reaches_none_only_without_any_mechanism(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Unsandboxing is never implicit: `auto` on a Linux host resolves to
-    # strict/hardened by detection, never to none.
+    # `auto` resolves to none only when the host offers NO confinement
+    # mechanism (non-Linux, or Linux without userns AND without Landlock);
+    # with either mechanism present it resolves to the real profile. The
+    # none resolution is loud: callers warn, and auto-approved run_command
+    # additionally hits the unconfined confirm gate.
     monkeypatch.delenv("AGENT6_DANGEROUSLY_DISABLE_SANDBOX", raising=False)
     assert select_profile("auto", _env_c(userns=True, in_container=False)) == "strict"
     assert select_profile("auto", _env_c(userns=False, in_container=False)) == "hardened"
+    assert select_profile("auto", _env(userns=False, landlock_abi=0)) == "none"
 
 
 def test_env_setter_forces_none_over_any_config(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -161,9 +175,28 @@ def test_env_setter_forces_none_on_non_linux(monkeypatch: pytest.MonkeyPatch) ->
         container_signals=(),
         kernel=KernelInfo(raw="", major=0, minor=0),
         userns_supported=False,
+        landlock_abi=0,
         sandbox_available=False,
     )
     assert select_profile("strict", env) == "none"
+
+
+def test_probe_landlock_abi_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A probe error must read as "no Landlock" (0): profile resolution then
+    # refuses hardened / resolves auto to the loudly-warned none, instead of
+    # promising confinement the kernel may not deliver.
+    from agent6.sandbox.landlock import LandlockError
+
+    detect_mod.probe_landlock_abi.cache_clear()
+
+    def _boom() -> int:
+        raise LandlockError("probe failed")
+
+    monkeypatch.setattr(detect_mod, "landlock_abi", _boom)
+    try:
+        assert detect_mod.probe_landlock_abi() == 0
+    finally:
+        detect_mod.probe_landlock_abi.cache_clear()
 
 
 def test_sandbox_disabled_by_env_helper(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -175,8 +208,9 @@ def test_sandbox_disabled_by_env_helper(monkeypatch: pytest.MonkeyPatch) -> None
     assert detect_mod.sandbox_disabled_by_env() is False
 
 
-def test_select_profile_auto_never_unsandboxes_on_linux() -> None:
-    # The critical invariant: auto NEVER silently resolves to none on Linux.
+def test_select_profile_auto_never_unsandboxes_while_a_mechanism_exists() -> None:
+    # The critical invariant: auto NEVER resolves to none while the host still
+    # offers a real confinement mechanism (userns or Landlock).
     assert select_profile("auto", _env_c(userns=True, in_container=True)) != "none"
     assert select_profile("auto", _env_c(userns=False, in_container=True)) != "none"
     assert select_profile("hardened", _env(userns=False)) == "hardened"
@@ -194,6 +228,7 @@ def _no_sandbox_env() -> Environment:
         container_signals=(),
         kernel=KernelInfo(raw="unknown", major=0, minor=0),
         userns_supported=False,
+        landlock_abi=0,
         sandbox_available=False,
     )
 

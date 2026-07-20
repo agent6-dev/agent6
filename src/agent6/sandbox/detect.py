@@ -2,8 +2,9 @@
 # Copyright 2026 Eric Lesiuta
 """Environment + kernel detection for the sandbox.
 
-Read-only, and a leaf: imports only `agent6.types`, never the rest of the
-sandbox stack. Probes shell out with fixed argv from operator input only.
+Read-only, and a leaf: imports only `agent6.types` and the sibling `landlock`
+probe, never the rest of the sandbox stack. Probes shell out with fixed argv
+from operator input only.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from agent6.sandbox.landlock import LandlockError, landlock_abi
 from agent6.types import SandboxProfile
 
 
@@ -27,16 +29,6 @@ class KernelInfo:
     major: int
     minor: int
 
-    @property
-    def supports_landlock_tcp(self) -> bool:
-        """Landlock ABI v4 (TCP rules) requires Linux >= 6.7."""
-        return (self.major, self.minor) >= (6, 7)
-
-    @property
-    def supports_landlock_fs(self) -> bool:
-        """Landlock FS rules require Linux >= 5.13 (ABI v1)."""
-        return (self.major, self.minor) >= (5, 13)
-
 
 @dataclass(frozen=True, slots=True)
 class Environment:
@@ -46,6 +38,10 @@ class Environment:
     container_signals: tuple[str, ...]
     kernel: KernelInfo
     userns_supported: bool
+    # The probed Landlock ABI version (0 = no Landlock). The syscall probe,
+    # not a kernel-version guess: a >=5.13 kernel can still ship with the
+    # Landlock LSM compiled out or disabled via `lsm=`.
+    landlock_abi: int
     sandbox_available: bool
 
     @property
@@ -61,11 +57,17 @@ class Environment:
         on hosts where userns is blocked (default-seccomp Docker,
         AppArmor-restricted Ubuntu, locked-down kiosks) we fall back to
         `hardened`, which keeps Landlock + seccomp + NO_NEW_PRIVS but skips
-        namespaces. `hardened` is still real kernel-enforced isolation.
+        namespaces. `hardened`'s ONLY filesystem boundary is Landlock, so it
+        additionally requires the Landlock probe to succeed; a host offering
+        neither userns nor Landlock has no confinement mechanism at all and
+        resolves to `none` -- truthfully unsandboxed and loudly warned, never
+        a hardened label that would silently confine nothing.
         """
         if not self.sandbox_available:
             return "none"
-        return "strict" if self.userns_supported else "hardened"
+        if self.userns_supported:
+            return "strict"
+        return "hardened" if self.landlock_abi >= 1 else "none"
 
 
 _KERNEL_VERSION_RE = re.compile(r"^(\d+)\.(\d+)")
@@ -146,6 +148,23 @@ def probe_userns_supported() -> bool:
     return result.returncode == 0
 
 
+@functools.lru_cache(maxsize=1)
+def probe_landlock_abi() -> int:
+    """The kernel's Landlock ABI version, 0 when unavailable.
+
+    Fail-closed: a probe error reads as "no Landlock", so profile resolution
+    refuses `hardened` / resolves `auto` to the loudly-warned `none` instead
+    of promising confinement the kernel may not deliver. Cached for the
+    process lifetime; this never changes mid-run.
+    """
+    if not sandbox_available():
+        return 0
+    try:
+        return max(0, landlock_abi())
+    except LandlockError:
+        return 0
+
+
 def apparmor_userns_restricted() -> bool:
     """True iff the kernel restricts unprivileged user namespaces via AppArmor.
 
@@ -177,13 +196,14 @@ def sandbox_available() -> bool:
 
 
 def detect() -> Environment:
-    """Detect kernel + container indicators + userns capability."""
+    """Detect kernel + container indicators + userns/Landlock capability."""
     signals = detect_container_signals()
     return Environment(
         in_container=bool(signals),
         container_signals=signals,
         kernel=read_kernel(),
         userns_supported=probe_userns_supported(),
+        landlock_abi=probe_landlock_abi(),
         sandbox_available=sandbox_available(),
     )
 
@@ -219,9 +239,11 @@ def select_profile(requested: str, env: Environment) -> SandboxProfile:
             f"platform, or run agent6 on Linux for kernel-enforced isolation."
         )
     if requested == "auto":
-        # `auto` reaches `none` only by detection (non-Linux above); on Linux it
-        # always resolves to strict/hardened. Unsandboxing is never implicit: it
-        # takes an explicit `none`, the flag, or the env setter.
+        # `auto` reaches `none` only when the host offers no confinement
+        # mechanism at all: non-Linux (above), or a Linux kernel with neither
+        # userns (no strict) nor Landlock (no hardened). Even then it is never
+        # silent: callers warn loudly, and the auto-approved-run_command combo
+        # additionally hits the unconfined confirm gate.
         return env.detected_profile
     if requested == "none":
         # Explicit opt-out of agent6's kernel sandbox: commands run with NO
@@ -242,5 +264,13 @@ def select_profile(requested: str, env: Environment) -> SandboxProfile:
             )
         return "strict"
     if requested == "hardened":
+        if env.landlock_abi < 1:
+            raise ProfileUnavailableError(
+                "sandbox.profile = 'hardened' requires Landlock (Linux >= 5.13 "
+                "with the Landlock LSM enabled), which this kernel does not "
+                "provide -- without it hardened would apply no filesystem "
+                "confinement at all. Set profile = 'auto', or 'none' to run "
+                "unsandboxed."
+            )
         return "hardened"
     raise ProfileUnavailableError(f"unknown sandbox.profile: {requested!r}")

@@ -27,7 +27,7 @@ from agent6.sandbox import (
     fork_host_spawner,
     start_egress_broker,
 )
-from agent6.sandbox.detect import Environment, probe_userns_supported
+from agent6.sandbox.detect import probe_userns_supported
 from agent6.sandbox.jail import locate_jail_binary
 from agent6.types import SandboxProfile
 
@@ -86,10 +86,11 @@ def warn_if_unsandboxed(
 ) -> None:
     """Print a prominent warning when running without the kernel sandbox.
 
-    The `none` profile is reached either on a non-Linux host (no kernel sandbox)
-    or when the operator EXPLICITLY sets `profile = "none"` on Linux (the
-    unsandboxed opt-out, intended for inside a container). Either way commands
-    run as plain subprocesses with no agent6 confinement, so say so loudly.
+    The `none` profile is reached on a host with no confinement mechanism at
+    all (non-Linux, or a Linux kernel offering neither userns nor Landlock),
+    or when the operator EXPLICITLY sets `profile = "none"` (the unsandboxed
+    opt-out, intended for inside a container). Either way commands run as
+    plain subprocesses with no agent6 confinement, so say so loudly.
     """
     if selected_profile != "none":
         return
@@ -318,7 +319,6 @@ def lane_launcher(guard: EgressGuard) -> HostLaneLaunch | None:
 def maybe_apply_agent_landlock(
     cfg: Config,
     selected_profile: SandboxProfile,
-    env: Environment,
     *,
     reporter: Reporter = STDIO_REPORTER,
 ) -> str | None:
@@ -327,15 +327,16 @@ def maybe_apply_agent_landlock(
     Returns ``None`` when nothing is to be done or confinement succeeds, or a
     ready-to-print error message when the run must be refused.
 
-    Only the ``hardened`` profile takes this path. The ``strict`` profile
-    instead runs every child command in its own user+mount+pid+net namespace
-    (a stronger boundary) and confines provider egress with the broker;
-    Landlocking the agent there would break the jail's ``pivot_root(2)`` /
-    ``mount(2)`` on kernels at ABI >= 7. Irrevocable, and applied before any
-    provider or network object is built so it covers the whole run and every
-    child it spawns.
+    Only the ``hardened`` profile takes this path, and profile resolution
+    (``detect.select_profile``) only selects hardened when the Landlock probe
+    succeeded. The ``strict`` profile instead runs every child command in its
+    own user+mount+pid+net namespace (a stronger boundary) and confines
+    provider egress with the broker; Landlocking the agent there would break
+    the jail's ``pivot_root(2)`` / ``mount(2)`` on kernels at ABI >= 7.
+    Irrevocable, and applied before any provider or network object is built so
+    it covers the whole run and every child it spawns.
     """
-    if selected_profile != "hardened" or not env.kernel.supports_landlock_fs:
+    if selected_profile != "hardened":
         return None
     cwd = Path.cwd().resolve()
     # The agent persists run state (including the in-process curator's graph)
@@ -444,13 +445,11 @@ def maybe_apply_agent_landlock(
             write_paths=write_paths,
             tcp_connect_ports=ports,
         )
-    except LandlockNotSupportedError:
-        reporter.err(
-            "[agent6] WARNING: Landlock unavailable; agent process is NOT "
-            "filesystem/network confined"
-        )
-        return None
-    except OSError as exc:
+    except (LandlockNotSupportedError, OSError) as exc:
+        # Fail closed: hardened's only filesystem boundary is Landlock, so a
+        # kernel that cannot apply it refuses the run. (LandlockNotSupported
+        # is a can't-happen safety net here -- profile resolution already
+        # probed the ABI before selecting hardened.)
         return f"could not apply agent Landlock confinement: {exc}"
     tcp_note = (
         f", tcp connect ports {report.tcp_connect_ports}"

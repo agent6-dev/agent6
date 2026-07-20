@@ -357,8 +357,9 @@ class SandboxConfig(BaseModel):
     # self-authorizing: an operator-only, LLM-unreachable config value, so writing
     # it is the consent (the loud run-startup warning is the safety net). The
     # per-invocation forms are `--dangerously-disable-sandbox` /
-    # AGENT6_DANGEROUSLY_DISABLE_SANDBOX. `auto` never resolves to none on Linux
-    # (only by detection on a non-Linux host) -- see detect.select_profile.
+    # AGENT6_DANGEROUSLY_DISABLE_SANDBOX. `auto` resolves to none only when the
+    # host offers no confinement mechanism at all (non-Linux, or a Linux kernel
+    # with neither userns nor Landlock) -- see detect.select_profile.
     profile: Literal["auto", "strict", "hardened", "none"] = "auto"
     # Where the agent PROCESS (its own LLM/provider HTTP) may connect:
     #  - `providers`: only the configured `[providers.*]` endpoints, plus any

@@ -73,7 +73,6 @@ from agent6.runs.ipc import (
     session_allow_set,
     steer_request_pending,
 )
-from agent6.sandbox.detect import detect
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.schema import UserQuestion
 from agent6.types import SandboxProfile
@@ -281,7 +280,7 @@ def run_one(
         return _result("error", None, None)
     budget: BudgetTracker | None = None
     try:
-        landlock_err = maybe_apply_agent_landlock(cfg, profile, detect())
+        landlock_err = maybe_apply_agent_landlock(cfg, profile)
         if landlock_err is not None:
             reporter.err(f"REFUSING: {landlock_err}")
             return _result("error", None, None)

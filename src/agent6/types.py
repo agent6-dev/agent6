@@ -15,11 +15,12 @@ from typing import Literal
 
 TernaryMode = Literal["no", "ask", "yes"]
 # `none` is the UNSANDBOXED profile: child commands run as plain subprocesses
-# with no kernel-enforced confinement. Reached when the host has no Linux
-# sandbox (macOS / non-Linux), or as a deliberate operator opt-out on any host
-# via `sandbox.profile = "none"`, `--dangerously-disable-sandbox`, or
+# with no kernel-enforced confinement. Reached when the host has no confinement
+# mechanism at all (non-Linux, or a Linux kernel offering neither userns nor
+# Landlock), or as a deliberate operator opt-out on any host via
+# `sandbox.profile = "none"`, `--dangerously-disable-sandbox`, or
 # `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1` (self-authorizing, with a loud warning;
-# see `detect.select_profile`). `auto` never resolves here on Linux.
+# see `detect.select_profile`).
 SandboxProfile = Literal["strict", "hardened", "none"]
 
 

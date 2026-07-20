@@ -16,18 +16,7 @@ import pytest
 
 from agent6.app import egress as cli  # maybe_apply_agent_landlock lives here now
 from agent6.sandbox import LandlockNotSupportedError
-from agent6.sandbox.detect import Environment, KernelInfo
 from agent6.sandbox.landlock import LandlockReport
-
-
-def _env(*, major: int, minor: int) -> Environment:
-    return Environment(
-        in_container=False,
-        container_signals=(),
-        kernel=KernelInfo(raw=f"{major}.{minor}.0", major=major, minor=minor),
-        userns_supported=True,
-        sandbox_available=True,
-    )
 
 
 def _cfg(agent_network: str = "providers") -> Any:
@@ -57,7 +46,7 @@ def test_agent_landlock_applied_on_hardened(monkeypatch: pytest.MonkeyPatch) -> 
         return _report()
 
     monkeypatch.setattr(cli, "apply_agent_landlock", _rec)
-    err = cli.maybe_apply_agent_landlock(_cfg(), "hardened", _env(major=6, minor=14))
+    err = cli.maybe_apply_agent_landlock(_cfg(), "hardened")
     assert err is None
     assert len(calls) == 1
     # Ports are derived from the configured providers (default 443 here),
@@ -77,7 +66,7 @@ def test_agent_landlock_read_roots_include_python_install(
         return _report()
 
     monkeypatch.setattr(cli, "apply_agent_landlock", _rec)
-    cli.maybe_apply_agent_landlock(_cfg(), "hardened", _env(major=6, minor=14))
+    cli.maybe_apply_agent_landlock(_cfg(), "hardened")
     reads = calls[0]["read_paths"]
     # The agent (and the curator subprocess it re-execs) must read its own
     # Python install + source, or running from an unrelated cwd fails.
@@ -105,7 +94,7 @@ def test_agent_landlock_read_roots_include_jail_child_exec_dirs(
         return _report()
 
     monkeypatch.setattr(cli, "apply_agent_landlock", _rec)
-    cli.maybe_apply_agent_landlock(_cfg(), "hardened", _env(major=6, minor=14))
+    cli.maybe_apply_agent_landlock(_cfg(), "hardened")
     reads = calls[0]["read_paths"]
     assert Path("/usr") in reads
     assert Path("/etc") in reads
@@ -123,9 +112,7 @@ def test_agent_landlock_open_network_imposes_no_tcp_rule(monkeypatch: pytest.Mon
         return _report()
 
     monkeypatch.setattr(cli, "apply_agent_landlock", _rec)
-    err = cli.maybe_apply_agent_landlock(
-        _cfg(agent_network="open"), "hardened", _env(major=6, minor=14)
-    )
+    err = cli.maybe_apply_agent_landlock(_cfg(agent_network="open"), "hardened")
     assert err is None
     # FS Landlock still applies on hardened, but agent_network="open" imposes
     # no TCP-connect restriction.
@@ -140,32 +127,23 @@ def test_agent_landlock_skipped_on_strict(monkeypatch: pytest.MonkeyPatch) -> No
         return _report()
 
     monkeypatch.setattr(cli, "apply_agent_landlock", _rec)
-    err = cli.maybe_apply_agent_landlock(_cfg(), "strict", _env(major=6, minor=14))
+    err = cli.maybe_apply_agent_landlock(_cfg(), "strict")
     assert err is None
     assert calls == []
 
 
-def test_agent_landlock_skipped_when_kernel_too_old(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[dict[str, Any]] = []
-
-    def _rec(**kwargs: Any) -> LandlockReport:
-        calls.append(kwargs)
-        return _report()
-
-    monkeypatch.setattr(cli, "apply_agent_landlock", _rec)
-    err = cli.maybe_apply_agent_landlock(_cfg(), "hardened", _env(major=5, minor=10))
-    assert err is None
-    assert calls == []
-
-
-def test_agent_landlock_warns_when_unsupported(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_agent_landlock_refuses_when_unsupported(monkeypatch: pytest.MonkeyPatch) -> None:
     def _raise(**kwargs: Any) -> LandlockReport:
         raise LandlockNotSupportedError("ABI 0")
 
     monkeypatch.setattr(cli, "apply_agent_landlock", _raise)
-    err = cli.maybe_apply_agent_landlock(_cfg(), "hardened", _env(major=6, minor=14))
-    # A kernel without Landlock degrades with a warning, not a refusal.
-    assert err is None
+    err = cli.maybe_apply_agent_landlock(_cfg(), "hardened")
+    # Profile resolution only selects hardened when the Landlock probe
+    # succeeded, so this is a can't-happen safety net -- and it fails CLOSED:
+    # hardened's only filesystem boundary is Landlock, so no Landlock means
+    # refuse, never run unconfined behind a "hardened" label.
+    assert err is not None
+    assert "Landlock" in err
 
 
 def test_agent_landlock_refuses_on_oserror(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -173,7 +151,7 @@ def test_agent_landlock_refuses_on_oserror(monkeypatch: pytest.MonkeyPatch) -> N
         raise OSError("EPERM")
 
     monkeypatch.setattr(cli, "apply_agent_landlock", _raise)
-    err = cli.maybe_apply_agent_landlock(_cfg(), "hardened", _env(major=6, minor=14))
+    err = cli.maybe_apply_agent_landlock(_cfg(), "hardened")
     # A kernel that supports Landlock but rejects our ruleset is fail-closed:
     # the run is refused rather than proceeding unconfined.
     assert err is not None
