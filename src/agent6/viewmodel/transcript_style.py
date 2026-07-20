@@ -105,7 +105,11 @@ def item_lines(item: TranscriptItem, *, detail: DetailLevel) -> list[Line]:
     lines: list[Line] = []
     if item.kind == "thinking":
         if detail == "expanded":
-            lines.append([(f"{THINK} {item.body}", "thinking")])
+            # One entry per body line (the contract every consumer's line
+            # arithmetic relies on), continuation lines aligned under the glyph.
+            body_lines = item.body.split("\n")
+            lines.append([(f"{THINK} {body_lines[0]}", "thinking")])
+            lines.extend([(f"  {ln}", "thinking")] for ln in body_lines[1:])
         elif detail == "collapsed":
             # One line OF the reasoning as the summary (first non-empty line,
             # clipped), so collapsed still says what the model is thinking
@@ -142,9 +146,11 @@ def item_lines(item: TranscriptItem, *, detail: DetailLevel) -> list[Line]:
             if item.ok
             else [(f"{DONE} {item.name or 'stopped'}", "done-fail")]
         )
-        if item.body:
-            badge.append((f"  {item.body}", "body"))
+        body_lines = item.body.split("\n") if item.body else []
+        if body_lines:
+            badge.append((f"  {body_lines[0]}", "body"))
         lines.append([])  # a blank line sets the verdict apart
         lines.append(badge)
+        lines.extend([(f"  {ln}", "body")] for ln in body_lines[1:])
         lines.append([(item.detail, "done-detail")])
     return lines

@@ -88,7 +88,8 @@ def test_thinking_detail_levels() -> None:
     long = item_lines(TranscriptItem("thinking", body="x" * 400), detail="collapsed")
     assert long[0][0][0].endswith("…") and len(long[0][0][0]) < 200
     expanded = item_lines(item, detail="expanded")
-    assert expanded[0][0][1] == "thinking" and expanded[0][0][0].endswith("plan the fix\nb\nc")
+    assert expanded[0][0][1] == "thinking" and expanded[0][0][0].endswith("plan the fix")
+    assert [line[0][0].strip() for line in expanded[1:]] == ["b", "c"]
 
 
 def test_tool_head_is_one_call_span_plus_arg() -> None:
@@ -96,3 +97,29 @@ def test_tool_head_is_one_call_span_plus_arg() -> None:
     head = item_lines(item, detail="collapsed")[0]
     assert head[0][1] == "call" and "read_file" in head[0][0]
     assert head[1][1] == "arg" and "a.py" in head[1][0]
+
+
+def test_every_line_is_a_single_line() -> None:
+    """item_lines' contract is one entry per rendered LINE; a span embedding
+    newlines desyncs every consumer that counts entries (the TUI scroll-anchor
+    math splits the content on newlines and pairs it with per-entry counters).
+    Expanded thinking and a multi-line finish summary were the violators."""
+    multi = "first thought\nsecond thought\nthird"
+    for item in (
+        TranscriptItem("thinking", body=multi),
+        TranscriptItem("done", ok=True, body="all good\non two lines", detail="finish_run"),
+    ):
+        for detail in ("expanded", "collapsed", "hidden"):
+            for line in item_lines(item, detail=detail):  # type: ignore[arg-type]
+                for chunk, _style in line:
+                    assert "\n" not in chunk, (item.kind, detail, chunk)
+
+
+def test_expanded_thinking_renders_every_body_line() -> None:
+    body = "alpha\nbeta\ngamma"
+    lines = item_lines(TranscriptItem("thinking", body=body), detail="expanded")
+    text = ["".join(c for c, _s in line) for line in lines]
+    assert any("alpha" in t for t in text)
+    assert any("beta" in t for t in text)
+    assert any("gamma" in t for t in text)
+    assert len(text) == 3
