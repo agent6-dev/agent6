@@ -283,3 +283,34 @@ def test_materialize_roundtrips(repo: Path, tmp_path: Path) -> None:
 def test_missing_flag_file_errors(repo: Path, tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="not found"):
         load_effective(repo, tmp_path / "does-not-exist.toml")
+
+
+def test_provenance_survives_a_format_changing_provider_replace(repo: Path) -> None:
+    """_deep_merge wholesale-REPLACES a provider entry when api_format flips
+    between layers; the old separate provenance pass kept the discarded lower
+    layer's stale source entries, so `config show` attributed refilled model
+    DEFAULTS (base_url, timeouts) to a file holding different values -- with
+    the operator-set marker. Provenance is now stamped in the same walk as
+    the merge."""
+    gpath = repo.parent / "g" / "config.toml"
+    gpath.write_text(
+        gpath.read_text(encoding="utf-8")
+        + "\n[providers.foo]\n"
+        + 'api_format = "openai"\n'
+        + 'base_url = "https://x.example/v1"\n'
+        + "http_timeout_s = 30.0\n",
+        encoding="utf-8",
+    )
+    rpath = repo_config_path_for(repo)
+    rpath.write_text(
+        rpath.read_text(encoding="utf-8") + '\n[providers.foo]\napi_format = "anthropic"\n',
+        encoding="utf-8",
+    )
+    eff = load_effective(repo)
+    foo = eff.config.providers["foo"]
+    assert foo.api_format == "anthropic"
+    assert foo.base_url == "https://api.anthropic.com/v1"  # refilled default
+    assert eff.sources["providers.foo.api_format"] == "repo"
+    # The refilled defaults are DEFAULTS, not phantom global values.
+    assert eff.sources["providers.foo.base_url"] == "default"
+    assert eff.sources["providers.foo.http_timeout_s"] == "default"

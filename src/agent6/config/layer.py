@@ -239,27 +239,72 @@ def available_profile_names(repo_root: Path, explicit_path: Path | None = None) 
     return sorted(names)
 
 
+def _format_changed(val: object, existing: object) -> bool:
+    """The one wholesale-REPLACE rule the merge and the provenance walk share:
+    a discriminated dict (e.g. a [providers.<name>] entry) whose ``api_format``
+    changes between layers must REPLACE, not deep-merge -- the lower layer's
+    format-specific keys (an anthropic prompt_caching, say) are invalid under
+    the new format and would otherwise survive the merge and surface as a
+    confusing extra_forbidden error."""
+    return (
+        isinstance(val, dict)
+        and isinstance(existing, dict)
+        and "api_format" in val
+        and "api_format" in existing
+        and val.get("api_format") != existing.get("api_format")
+    )
+
+
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     out = dict(base)
     for key, val in override.items():
         existing = out.get(key)
         if isinstance(val, dict) and isinstance(existing, dict):
-            # A discriminated dict (e.g. a [providers.<name>] entry) whose
-            # `api_format` changes between layers must REPLACE, not deep-merge:
-            # the lower layer's format-specific keys (an anthropic prompt_caching,
-            # say) are invalid under the new format and would otherwise survive
-            # the merge and surface as a confusing extra_forbidden error.
-            if (
-                "api_format" in val
-                and "api_format" in existing
-                and val.get("api_format") != existing.get("api_format")
-            ):
-                out[key] = val
-            else:
-                out[key] = _deep_merge(existing, val)
+            out[key] = val if _format_changed(val, existing) else _deep_merge(existing, val)
         else:
             out[key] = val
     return out
+
+
+def _merge_layers(layers: list[Layer]) -> tuple[dict[str, Any], dict[str, str]]:
+    """Deep-merge *layers* low->high and stamp per-leaf provenance IN the same
+    walk, so the two can never diverge. A separate provenance pass silently
+    lied whenever the merge dropped a subtree: an api_format-changing provider
+    replace discarded the lower layer's leaves, but their stale source entries
+    survived and `config show` attributed model DEFAULTS (refilled base_url,
+    timeouts) to a file holding different values. On any wholesale replace the
+    stale sub-provenance dies with the subtree, then the winner's leaves are
+    stamped."""
+    merged: dict[str, Any] = {}
+    sources: dict[str, str] = {}
+
+    def walk(
+        base: dict[str, Any], override: dict[str, Any], layer_name: str, prefix: str
+    ) -> dict[str, Any]:
+        out = dict(base)
+        for key, val in override.items():
+            path = f"{prefix}{key}"
+            existing = out.get(key)
+            if (
+                isinstance(val, dict)
+                and isinstance(existing, dict)
+                and not _format_changed(val, existing)
+            ):
+                out[key] = walk(existing, val, layer_name, f"{path}.")
+            else:
+                for stale in [k for k in sources if k == path or k.startswith(f"{path}.")]:
+                    del sources[stale]
+                out[key] = val
+                if isinstance(val, dict) and val:
+                    for leaf in flatten_leaves(val, prefix=f"{path}."):
+                        sources[leaf] = layer_name
+                else:
+                    sources[path] = layer_name
+        return out
+
+    for layer in layers:
+        merged = walk(merged, layer.data, layer.name, "")
+    return merged, sources
 
 
 def flatten_leaves(data: dict[str, Any], prefix: str = "") -> dict[str, Any]:
@@ -303,12 +348,7 @@ def _leaf_fix_hint(
 
 def _effective_from_layers(layers: list[Layer], *, source: str) -> EffectiveConfig:
     """Merge *layers* low->high, validate, and build the per-leaf source map."""
-    merged: dict[str, Any] = {}
-    source_of_leaf: dict[str, str] = {}
-    for layer in layers:
-        merged = _deep_merge(merged, layer.data)
-        for leaf in flatten_leaves(layer.data):
-            source_of_leaf[leaf] = layer.name
+    merged, source_of_leaf = _merge_layers(layers)
     config = validate_config(merged, source=source, locate=_leaf_fix_hint(layers, source_of_leaf))
     # Source map over the *effective* config: every leaf the model
     # produced, attributed to the layer that set it or "default".
@@ -463,13 +503,9 @@ def _fix_scope_layers(repo_root: Path, machine: Path | None) -> list[Layer]:
 def _merge_with_origin(layers: list[Layer]) -> tuple[dict[str, Any], dict[str, Layer]]:
     """Deep-merge *layers* low->high and map each dotted leaf to the Layer that set
     it (the highest one), so an invalid leaf names its own file."""
-    merged: dict[str, Any] = {}
-    origin: dict[str, Layer] = {}
-    for layer in layers:
-        merged = _deep_merge(merged, layer.data)
-        for leaf in flatten_leaves(layer.data):
-            origin[leaf] = layer
-    return merged, origin
+    merged, sources = _merge_layers(layers)
+    by_name = {layer.name: layer for layer in layers}
+    return merged, {leaf: by_name[name] for leaf, name in sources.items() if name in by_name}
 
 
 def _removable_for(loc: str, origin: dict[str, Layer]) -> tuple[str, Layer, bool] | None:
