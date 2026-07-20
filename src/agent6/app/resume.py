@@ -56,7 +56,7 @@ from agent6.app.providers import (
     role_temperature,
 )
 from agent6.app.reporter import STDIO_REPORTER, Reporter
-from agent6.app.run import RunFrontend, apply_spawned_away_default
+from agent6.app.run import RunFrontend, apply_spawned_away_default, run_task
 from agent6.budget import BudgetTracker
 from agent6.config import (
     Config,
@@ -104,8 +104,10 @@ from agent6.runs.ipc import (
 from agent6.runs.layout import RunLayout
 from agent6.runs.lock import (
     SINGLE_WRITER_BUSY,
+    acquire_repo_writer,
     acquire_single_writer,
     release_single_writer,
+    repo_writer_holder,
 )
 from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.sandbox.detect import ProfileUnavailableError, select_profile
@@ -288,7 +290,79 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     detach_requested = False
     cfg: Config | None = None  # bound below; the finally reads it (detach away-mode)
     guard = EgressGuard()  # replaced at egress start; the finally tears it down
+    repo_lock_fd: int | None = None
     try:
+        # The original run's manifest drives resume: `mode` (a plan run resumes
+        # read-only with the plan tools, never as a write run), `profile` (resume
+        # has no --profile flag), `base_sha` (the review-panel diff base), and
+        # `run_branch` (the head guard + the checkout below). Read FIRST: a
+        # PARKED run (manifest carries parked_task, no snapshot exists) is
+        # started fresh below instead of hitting the no-snapshot refusal.
+        # `mode` is security-relevant: a damaged run dir (unreadable, corrupt, or
+        # an unknown mode value) must NOT fall open to the more-privileged "run"
+        # (write) mode. read_manifest / strict_mode fail loud on any of those --
+        # the underlying cause carries in the ManifestError detail -- rather than
+        # silently escalating a plan run to a write run.
+        try:
+            manifest = read_manifest(layout.run_dir)
+            mode = manifest.strict_mode()
+        except ManifestError as exc:
+            reporter.err(f"ERROR: cannot read run manifest {layout.manifest_path}: {exc}")
+            return 2
+
+        if manifest.parked_task:
+            # Parked at submission (the checkout was busy): nothing ever ran, so
+            # "resume" is its fresh start. Hand the verbatim saved task to
+            # run_task under the same run id; it re-acquires both locks itself
+            # (and re-parks with a fresh message if the checkout is STILL busy),
+            # so release ours first. Its manifest rewrite clears parked_task.
+            try:
+                cfg = load_effective(
+                    cwd, config_path, profile=profile or manifest.workflow.profile
+                ).config
+                set_repo_hook_policy(cfg.git.run_repo_hooks)
+                if budget_overrides is not None:
+                    cfg = budget_overrides.apply(cfg)
+                if sandbox_overrides is not None:
+                    cfg = sandbox_overrides.apply(cfg)
+                cfg.require_runnable("worker")
+            except ConfigError as exc:
+                reporter.err(f"CONFIG ERROR:\n{exc}")
+                return 2
+            reporter.err(
+                f"[agent6] run {run_id!r} was parked at submission (the checkout was"
+                " busy); starting it now."
+            )
+            saved_task = manifest.parked_task
+            clear_worker_pid(layout.run_dir)
+            release_single_writer(worker_lock_fd)
+            worker_lock_fd = None
+            return run_task(
+                cfg,
+                saved_task,
+                frontend=frontend,
+                run_id=run_id,
+                mode=mode,
+                budget_overrides=budget_overrides,
+                sandbox_overrides=sandbox_overrides,
+                profile=profile,
+                reporter=reporter,
+            )
+
+        # One live run-mode worker per CHECKOUT (see acquire_repo_writer): a
+        # resumed run drives the shared working tree exactly like a fresh one.
+        if mode == "run":
+            repo_lock_fd = acquire_repo_writer(state_dir, run_id)
+            if repo_lock_fd is None:
+                holder = repo_writer_holder(state_dir) or "another run"
+                reporter.err(
+                    f"REFUSING: run {holder!r} is already driving this checkout; a"
+                    " second run-mode worker would interleave auto-commits on the"
+                    " one working tree. Wait for it, or stop it first:\n"
+                    f"    agent6 runs stop {holder}"
+                )
+                return 2
+
         snapshot_path = layout.run_dir / "loop_state.json"
         if not snapshot_path.is_file():
             reporter.err(f"ERROR: no resume snapshot at {snapshot_path}; nothing to resume.")
@@ -309,22 +383,6 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         except (ValueError, OSError) as exc:
             reporter.err(f"ERROR: {exc}")
             return 1
-
-        # The original run's manifest drives resume: `mode` (a plan run resumes
-        # read-only with the plan tools, never as a write run), `profile` (resume
-        # has no --profile flag), `base_sha` (the review-panel diff base), and
-        # `run_branch` (the head guard + the checkout below).
-        # `mode` is security-relevant: a damaged run dir (unreadable, corrupt, or
-        # an unknown mode value) must NOT fall open to the more-privileged "run"
-        # (write) mode. read_manifest / strict_mode fail loud on any of those --
-        # the underlying cause carries in the ManifestError detail -- rather than
-        # silently escalating a plan run to a write run.
-        try:
-            manifest = read_manifest(layout.run_dir)
-            mode = manifest.strict_mode()
-        except ManifestError as exc:
-            reporter.err(f"ERROR: cannot read run manifest {layout.manifest_path}: {exc}")
-            return 2
         manifest_profile = manifest.workflow.profile
         resume_base_sha = manifest.base_sha
         run_branch = manifest.run_branch or ""
@@ -664,6 +722,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         frontend.close_console_view()  # stop the heartbeat thread, clear any spinner line
         clear_worker_pid(layout.run_dir)
         stop_egress(guard)
+        release_single_writer(repo_lock_fd)
         release_single_writer(worker_lock_fd)
         if detach_requested and cfg is not None:
             if cfg.sandbox.run_commands == "ask" and not session_allow_set(layout.run_dir):

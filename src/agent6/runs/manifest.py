@@ -122,6 +122,11 @@ class RunManifest(BaseModel):
     run_branch: str | None = None
     models: ModelsBrief = ModelsBrief()
     workflow: WorkflowStamp = WorkflowStamp()
+    # A parked run: submitted while another run-mode worker held the checkout
+    # (the repo.lock refusal). Holds the VERBATIM task -- user_task above is
+    # the truncated display twin -- and non-empty means the run never started:
+    # `agent6 resume <id>` starts it fresh, whose manifest rewrite clears it.
+    parked_task: str = ""
     # fork lineage (a non-forked run leaves these null)
     parent_run_id: str | None = None
     forked_from_turn: int | None = None

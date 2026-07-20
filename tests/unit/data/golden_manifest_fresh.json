@@ -23,6 +23,7 @@
     "revise_prompt": "on",
     "profile": "strict"
   },
+  "parked_task": "",
   "parent_run_id": null,
   "forked_from_turn": null,
   "forked_from_sha": null,

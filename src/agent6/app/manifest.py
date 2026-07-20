@@ -57,6 +57,7 @@ def write_run_manifest(
     cfg: Config,
     mode: str = "run",
     effective_profile: str = "",
+    parked_task: str = "",
     parent_run_id: str | None = None,
     forked_from_turn: int | None = None,
     forked_from_sha: str | None = None,
@@ -95,6 +96,7 @@ def write_run_manifest(
             # `profile`), so `agent6 resume` re-applies the same strategy.
             profile=effective_profile,
         ),
+        parked_task=parked_task,
         parent_run_id=parent_run_id,
         forked_from_turn=forked_from_turn,
         forked_from_sha=forked_from_sha,

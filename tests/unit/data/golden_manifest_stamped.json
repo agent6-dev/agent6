@@ -20,6 +20,7 @@
     "revise_prompt": "off",
     "profile": ""
   },
+  "parked_task": "",
   "parent_run_id": "r-parent",
   "forked_from_turn": 7,
   "forked_from_sha": "2222222222222222222222222222222222222222",

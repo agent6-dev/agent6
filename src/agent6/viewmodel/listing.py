@@ -334,6 +334,7 @@ def summarize_run_dir(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) ->
     logs = run_dir / "logs.jsonl"
     scan = scan_run_log(logs) if logs.is_file() else LogScan()
     mode, task = scan.mode, scan.task
+    parked = False
     if not scan.saw_start:
         # Before run.start the log carries no mode/task: either a launching run
         # still in preflight (verify inference is a ~80s LLM call BEFORE the
@@ -345,6 +346,7 @@ def summarize_run_dir(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) ->
             manifest = read_manifest(run_dir)
             mode = manifest.mode
             task = manifest.user_task or "(no logs)"
+            parked = bool(manifest.parked_task)
     word, reason = status_word(
         finished=scan.finished, all_passed=scan.all_passed, end_reason=scan.end_reason
     )
@@ -356,6 +358,10 @@ def summarize_run_dir(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) ->
             # died before starting) reads "created": it never started work, so
             # neither a cryptic "?" nor a false "stale".
             word, reason = ("starting" if worker_is_alive(run_dir) else "created"), ""
+            if word == "created" and parked:
+                # Parked at submission (the checkout was busy; see
+                # acquire_repo_writer): saved, never started, resumable.
+                word, reason = "parked", "resume to start"
         elif _running_is_stale(run_dir, stale_after_s):
             word = "stale"
         elif scan.last_type in ("approval.prompt", "question.prompt"):

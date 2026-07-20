@@ -152,6 +152,9 @@ depends_on = [
   "agent6.viewmodel",
   "agent6.ui.spawn",
   "agent6.runs.ipc",
+  # new-work preflight: refuse a run submission while a live worker holds the
+  # checkout, instead of spawning a doomed detached run
+  "agent6.runs.lock",
   "agent6.runs.manifest",
   "agent6.config",
   "agent6.config.layer",

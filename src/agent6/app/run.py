@@ -102,9 +102,12 @@ from agent6.runs.ipc import (
 from agent6.runs.layout import RunLayout
 from agent6.runs.lock import (
     SINGLE_WRITER_BUSY,
+    acquire_repo_writer,
     acquire_single_writer,
     release_single_writer,
+    repo_writer_holder,
 )
+from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.sandbox.detect import ProfileUnavailableError, select_profile
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.mcp_client import MCPManager
@@ -331,13 +334,21 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     # An explicit --run-id that already has a run is a resume, not a fresh start:
     # reusing the dir would write a new manifest + loop_state beside the old run's
     # graph/checkpoints/transcripts (mixed state). Refuse and point at resume.
-    # (ask sessions are transient Q&A, so reusing their dir is fine.)
+    # (ask sessions are transient Q&A, so reusing their dir is fine.) The one
+    # reusable dir is a PARKED run (manifest carries parked_task, nothing else
+    # ever ran): starting it IS its fresh start, and the manifest rewrite below
+    # un-parks it.
     if run_id and mode != "ask" and layout.manifest_path.exists():
-        reporter.err(
-            f"ERROR: run {run_id!r} already exists. Use `agent6 resume {run_id}` to "
-            "continue it, or choose a different --run-id."
-        )
-        return 2
+        try:
+            parked = read_manifest(layout.run_dir).parked_task
+        except ManifestError:
+            parked = ""
+        if not parked:
+            reporter.err(
+                f"ERROR: run {run_id!r} already exists. Use `agent6 resume {run_id}` to "
+                "continue it, or choose a different --run-id."
+            )
+            return 2
     layout.ensure()
     # One authoritative writer per run dir. Acquire BEFORE touching any shared
     # run state (clearing answers, the worker pid, the curator) so a second
@@ -364,6 +375,45 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     # the worker is blocked in a long provider call (which emits no events).
     write_worker_pid(layout.run_dir, os.getpid())
 
+    # One live run-mode worker per CHECKOUT, not just per run dir: auto-commits
+    # are `git add -A` on whatever HEAD points at, so a second concurrent run
+    # that checks out its own branch makes both workers commit each other's
+    # in-flight edits onto whichever branch won the last checkout. Taken BEFORE
+    # any tree mutation (auto-stash, branch cut). plan/ask are read-only and
+    # skip it. A refused submission is PARKED, not dropped: the manifest saves
+    # the verbatim task and `agent6 resume <id>` starts it once the checkout
+    # frees up.
+    repo_lock_fd: int | None = None
+    if mode == "run":
+        repo_lock_fd = acquire_repo_writer(layout.state_dir, effective_run_id)
+        if repo_lock_fd is None:
+            holder = repo_writer_holder(layout.state_dir) or "another run"
+            write_run_manifest(
+                layout,
+                run_id=effective_run_id,
+                user_task=task,
+                base_sha=base_sha,
+                base_branch=pre_status.branch if pre_status is not None else "",
+                run_branch=None,
+                cfg=cfg,
+                mode=mode,
+                effective_profile=selected_profile,
+                parked_task=task,
+            )
+            reporter.err(
+                f"REFUSING: run {holder!r} is already driving this checkout; a second"
+                " run-mode worker would interleave auto-commits on the one working"
+                f" tree. Your task was parked as run {effective_run_id!r}:\n"
+                f"    agent6 resume {effective_run_id}    (start it once the checkout"
+                " is free)\n"
+                f"or hand it to the live run as an isolated lane by steering"
+                f" {holder!r} with:\n"
+                "    /parallel 1 <the same task>"
+            )
+            clear_worker_pid(layout.run_dir)
+            release_single_writer(worker_lock_fd)
+            return 2
+
     # Enforce the dirty-tree policy BEFORE cutting the run branch, so the
     # branch is cut from a clean tree and the agent's per-step auto-commits
     # (`git add -A`) never swallow the user's pre-existing uncommitted work.
@@ -381,6 +431,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             except GitError as exc:
                 reporter.err(f"ERROR: could not auto-stash before run: {exc}")
                 clear_worker_pid(layout.run_dir)
+                release_single_writer(repo_lock_fd)
                 release_single_writer(worker_lock_fd)
                 discard_husk_dir(layout.run_dir)
                 return 2
@@ -395,6 +446,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 "or set [git].require_clean_worktree=false to override."
             )
             clear_worker_pid(layout.run_dir)
+            release_single_writer(repo_lock_fd)
             release_single_writer(worker_lock_fd)
             discard_husk_dir(layout.run_dir)
             return 2
@@ -420,6 +472,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             if branch_choice.abort:
                 reporter.err("[agent6] aborted; nothing was started.")
                 clear_worker_pid(layout.run_dir)
+                release_single_writer(repo_lock_fd)
                 release_single_writer(worker_lock_fd)
                 discard_husk_dir(layout.run_dir)
                 return 0
@@ -746,6 +799,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 run_branch=run_branch,
                 auto_pop=cfg.git.auto_stash_pop,
             )
+        release_single_writer(repo_lock_fd)
         release_single_writer(worker_lock_fd)
         if detach_requested:
             # Ask how to handle approvals while away BEFORE spawning, so the marker is

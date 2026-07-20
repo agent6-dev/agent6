@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from agent6.config import ConfigError
-from agent6.config.layer import load_effective
+from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.directive import DirectiveError, Segment, parse_directive, parse_spec
 from agent6.machine import JournalError, MachineError, MachineJournal, load_machine
 from agent6.models.validate import refusal_message, validate_spec_models
@@ -33,6 +33,7 @@ from agent6.runs.ipc import (
     write_question_answers,
     write_steer_answer,
 )
+from agent6.runs.lock import repo_writer_held, repo_writer_holder
 from agent6.ui.spawn import (
     agent6_exe,
     run_cli_capture,
@@ -47,7 +48,9 @@ from agent6.viewmodel import newest_state_log
 NEW_WORK_MODES = frozenset({"run", "plan", "ask"})
 
 
-def spawn_new_work(cwd: Path, mode: str, task: str, profile: str = "") -> tuple[str | None, str]:
+def spawn_new_work(  # noqa: PLR0911
+    cwd: Path, mode: str, task: str, profile: str = ""
+) -> tuple[str | None, str]:
     """Spawn `agent6 <mode> [--profile P] <task>` detached and return the new run
     id (its dir name) to open, or (None, diagnostic). Mirrors the TUI hub: the
     detached run is told to stream reasoning to its log so the dashboard is live.
@@ -60,6 +63,19 @@ def spawn_new_work(cwd: Path, mode: str, task: str, profile: str = "") -> tuple[
         return None, f"unknown mode {mode!r}"
     if not task.strip():
         return None, "empty task"
+    if mode == "run":
+        # One live run-mode worker per checkout (acquire_repo_writer): refuse
+        # up front so the composer shows why, instead of spawning a detached
+        # run that parks itself and times out the locate. plan/ask are
+        # read-only and spawn freely. Advisory probe; the lock is the boundary.
+        state = resolved_state_dir(cwd)
+        if repo_writer_held(state):
+            holder = repo_writer_holder(state) or "another run"
+            return None, (
+                f"run {holder} is already driving this checkout; steer it with"
+                " this task (or /parallel it) from its run view, or wait for it"
+                " to finish"
+            )
     segments = None
     if mode == "run":
         try:

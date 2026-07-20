@@ -63,3 +63,64 @@ SINGLE_WRITER_BUSY = (
     "interleave on the run branch). Wait for that process to finish; a crashed "
     "one releases the lock automatically."
 )
+
+
+def acquire_repo_writer(state_dir: Path, run_id: str) -> int | None:
+    """Take a non-blocking exclusive lock on ``<state-dir>/repo.lock``: one live
+    ``run``-mode worker per CHECKOUT.
+
+    Run-mode workers share one working tree: each auto-commit is a plain
+    ``git add -A`` + commit on whatever HEAD points at, so a second concurrent
+    run that checks out its own branch makes BOTH workers commit each other's
+    in-flight edits onto whichever branch was checked out last -- the same
+    interleaving corruption the run-dir lock prevents for one run, at repo
+    scope. plan/ask make no commits and never take this lock.
+
+    The holder stamps its run id into the file so a refusal can name the live
+    run. Same crash-safety as ``acquire_single_writer``: flock releases on
+    process death, so a crashed worker never wedges the checkout. Release with
+    ``release_single_writer``.
+    """
+    state_dir.mkdir(parents=True, exist_ok=True)
+    fd = os.open(state_dir / "repo.lock", os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        lock_exclusive(fd, blocking=False)
+    except OSError:
+        os.close(fd)
+        return None
+    os.ftruncate(fd, 0)
+    os.write(fd, f"{run_id}\n".encode())
+    return fd
+
+
+def repo_writer_holder(state_dir: Path) -> str:
+    """The run id the current ``repo.lock`` holder stamped, or "" unknown.
+    Advisory (for refusal messages); the flock is the boundary."""
+    try:
+        return (state_dir / "repo.lock").read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def repo_writer_held(state_dir: Path) -> bool:
+    """True when a live worker holds the checkout's ``repo.lock``.
+
+    An advisory probe for front-end preflight (the web hub refuses a New Work
+    submission up front instead of spawning a doomed run); momentarily
+    acquires and releases without stamping. The lock itself remains the hard
+    boundary -- a race past this probe still parks at ``acquire_repo_writer``.
+    """
+    lock_path = state_dir / "repo.lock"
+    if not lock_path.exists():
+        return False
+    try:
+        fd = os.open(lock_path, os.O_RDWR)
+    except OSError:
+        return False
+    try:
+        lock_exclusive(fd, blocking=False)
+    except OSError:
+        os.close(fd)
+        return True
+    release_single_writer(fd)
+    return False
