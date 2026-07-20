@@ -94,10 +94,15 @@ refuses `push`, `--force`, and history rewrites unconditionally.
 
 ## Benchmarks
 
-Reproducible harnesses live under [bench/](bench/): real-world SWE-bench-Lite-style tasks,
-head-to-head runs against Claude Code / opencode / aider, `machine create` validation, and
-a perf-optimization harness. See each directory's README for recorded numbers (single runs,
-no variance measured; re-run before quoting).
+Reproducible harnesses live under [bench/](bench/). The headline one is the
+cross-model sweep ([bench/sweep](bench/sweep/)): replicated runs on real-world
+tasks, scored out-of-band by each project's own test suite, reported with
+confidence intervals for success rate and cost plus a latency comparison.
+Also there: real-world
+SWE-bench-Lite-style tasks, head-to-head runs against Claude Code / opencode /
+aider, `machine create` validation, and a perf-optimization harness. The
+recorded numbers in those are mostly small-n exploratory runs; re-run before
+quoting.
 
 ## Contributing
 
