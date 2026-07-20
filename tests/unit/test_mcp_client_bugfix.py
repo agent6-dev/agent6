@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import sys
 import textwrap
+import time
 
 import pytest
 
@@ -183,5 +184,67 @@ def test_registration_skips_tools_that_would_poison_the_tools_array() -> None:
         descs = mgr.descriptors()
         assert [d.qualified_name for d in descs] == [f"{MCP_TOOL_PREFIX}fake__echo"]
         assert descs[0].description == "first"
+    finally:
+        mgr.close()
+
+
+def _slow_call_server_argv() -> tuple[str, ...]:
+    """Handshake replies promptly; every tools/call sleeps 0.5s before
+    replying, so a short-call-timeout client times out and the reply arrives
+    late."""
+    script = textwrap.dedent(
+        """
+        import json, sys, time
+        def reply(req_id, result):
+            sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": req_id,
+                                         "result": result}) + "\\n")
+            sys.stdout.flush()
+        for line in sys.stdin:
+            line = line.strip()
+            if not line:
+                continue
+            msg = json.loads(line)
+            method = msg.get("method")
+            if method is None or "id" not in msg:
+                continue
+            if method == "initialize":
+                reply(msg["id"], {"protocolVersion": "2024-11-05",
+                                  "capabilities": {},
+                                  "serverInfo": {"name": "fake", "version": "0"}})
+                continue
+            if method == "tools/list":
+                reply(msg["id"], {"tools": [
+                    {"name": "slow", "description": "slow echo",
+                     "inputSchema": {"type": "object"}},
+                ]})
+                continue
+            if method == "tools/call":
+                time.sleep(0.5)
+                reply(msg["id"], {"content": [{"type": "text", "text": "late"}]})
+                continue
+            reply(msg["id"], {})
+        """
+    )
+    return (sys.executable, "-c", script)
+
+
+def test_timed_out_requests_leave_no_pending_residue() -> None:
+    """A reply landing after its caller timed out must be dropped, not stored:
+    the reader retained ANY response-shaped message forever once no _request
+    was left to pop it, growing _pending (up to 8 MiB per entry) without
+    bound against a slow or runaway server."""
+    mgr = MCPManager.start([("fake", _slow_call_server_argv(), 5.0, 0.15)])
+    try:
+        srv = mgr._servers["fake"]  # pyright: ignore[reportPrivateUsage]
+        for _ in range(2):
+            with pytest.raises(MCPError, match="timed out"):
+                mgr.call(f"{MCP_TOOL_PREFIX}fake__slow", {})
+        # The server answers sequentially (0.5s each), so both late replies
+        # have flushed well before 2s; the drop is unobservable from outside,
+        # so wait past that point and then prove nothing was retained.
+        time.sleep(2.0)
+        with srv._pending_cv:  # pyright: ignore[reportPrivateUsage]
+            pending = dict(srv._pending)  # pyright: ignore[reportPrivateUsage]
+        assert pending == {}
     finally:
         mgr.close()

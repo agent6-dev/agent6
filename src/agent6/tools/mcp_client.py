@@ -111,7 +111,12 @@ class _MCPServer:
     _proc: subprocess.Popen[bytes] | None = None
     _next_id: int = 1
     _id_lock: threading.Lock = field(default_factory=threading.Lock)
-    _pending: dict[int, dict[str, Any]] = field(default_factory=dict)
+    # One slot per in-flight request: _request registers `id -> None` before
+    # writing, the reader fills ONLY registered slots, and the requester's
+    # finally clears its slot -- so a reply landing after a timeout (or a
+    # duplicate/unsolicited response shape) is dropped, and _pending is
+    # bounded by the number of concurrently outstanding requests.
+    _pending: dict[int, dict[str, Any] | None] = field(default_factory=dict)
     _pending_cv: threading.Condition = field(default_factory=threading.Condition)
     _reader: threading.Thread | None = None
     _reader_stop: threading.Event = field(default_factory=threading.Event)
@@ -283,21 +288,26 @@ class _MCPServer:
             "method": method,
             "params": params,
         }
-        self._write_line(payload)
-        deadline = time.monotonic() + timeout_s
         with self._pending_cv:
-            while req_id not in self._pending:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise MCPError(
-                        f"server {self.name!r} timed out after {timeout_s:.1f}s on {method}"
-                    )
-                # If the reader thread died (server crashed mid-call)
-                # we'd otherwise wait the full timeout for nothing.
-                if self._reader is not None and not self._reader.is_alive():
-                    raise MCPError(f"server {self.name!r} died before responding to {method}")
-                self._pending_cv.wait(timeout=min(remaining, 0.25))
-            response = self._pending.pop(req_id)
+            self._pending[req_id] = None
+        try:
+            self._write_line(payload)
+            deadline = time.monotonic() + timeout_s
+            with self._pending_cv:
+                while (response := self._pending[req_id]) is None:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise MCPError(
+                            f"server {self.name!r} timed out after {timeout_s:.1f}s on {method}"
+                        )
+                    # If the reader thread died (server crashed mid-call)
+                    # we'd otherwise wait the full timeout for nothing.
+                    if self._reader is not None and not self._reader.is_alive():
+                        raise MCPError(f"server {self.name!r} died before responding to {method}")
+                    self._pending_cv.wait(timeout=min(remaining, 0.25))
+        finally:
+            with self._pending_cv:
+                self._pending.pop(req_id, None)
         if "error" in response:
             err = response["error"]
             msg = err.get("message", "(no message)") if isinstance(err, dict) else str(err)
@@ -357,8 +367,9 @@ class _MCPServer:
             # response. Notifications (no id) and server requests are ignored.
             if isinstance(req_id, int) and "method" not in msg:
                 with self._pending_cv:
-                    self._pending[req_id] = msg
-                    self._pending_cv.notify_all()
+                    if req_id in self._pending:
+                        self._pending[req_id] = msg
+                        self._pending_cv.notify_all()
 
 
 @dataclass
