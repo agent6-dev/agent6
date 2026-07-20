@@ -24,11 +24,32 @@ def _write(path: Path, text: str) -> None:
     atomic_write(path, text)
 
 
+_TOML_ESCAPES = {
+    "\\": "\\\\",
+    '"': '\\"',
+    "\b": "\\b",
+    "\t": "\\t",
+    "\n": "\\n",
+    "\f": "\\f",
+    "\r": "\\r",
+}
+
+
 def _toml_value(value: str | bool) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{escaped}"'
+    # TOML basic strings forbid literal control chars: escape them (else a
+    # newline-bearing value writes unparseable TOML the set-path then reports
+    # as success). Byte-identical output for control-char-free strings.
+    out: list[str] = []
+    for ch in value:
+        if ch in _TOML_ESCAPES:
+            out.append(_TOML_ESCAPES[ch])
+        elif ord(ch) < 0x20 or ch == "\x7f":
+            out.append(f"\\u{ord(ch):04X}")
+        else:
+            out.append(ch)
+    return '"' + "".join(out) + '"'
 
 
 def upsert_toml_table(path: Path, table: str, fields: dict[str, str | bool | None]) -> None:

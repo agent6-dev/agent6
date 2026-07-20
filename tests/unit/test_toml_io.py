@@ -105,3 +105,16 @@ def test_config_set_whole_extra_body_value_round_trips(tmp_path: Path) -> None:
     assert parsed["providers"]["openrouter"]["extra_body"] == {"provider": {"sort": "latency"}}
     # the sibling key survived the surgery
     assert parsed["providers"]["openrouter"]["api_format"] == "openai"
+
+
+def test_control_chars_serialize_to_valid_toml(tmp_path: Path) -> None:
+    """TOML basic strings forbid literal control chars; the serializer escaped
+    only backslash and quote, so a newline-bearing value wrote unparseable TOML
+    that `config set` then reported as success (blaming another layer)."""
+    path = tmp_path / "c.toml"
+    path.write_text("", encoding="utf-8")
+    upsert_toml_leaf(path, "git.name", "a\nb\tc\rd\x1be")  # pyright: ignore[reportPrivateUsage]
+    parsed = tomllib.loads(path.read_text(encoding="utf-8"))
+    assert parsed["git"]["name"] == "a\nb\tc\rd\x1be"
+    # control-char-free strings serialize byte-identically to before
+    assert format_toml_value('quote"and\\back') == '"quote\\"and\\\\back"'
