@@ -132,6 +132,7 @@ class SteerHooks(Protocol):
     restore: Callable[[], None]
     abort_pending: Callable[[], bool]
     interrupt: Callable[[], bool]
+    reset_stage: Callable[[], None]
 
 
 def apply_spawned_away_default(run_dir: Path) -> None:
@@ -665,6 +666,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 steer_requested=steer_state.requested,
                 steer_clear=steer_state.clear,
                 steer_prompt=steer_state.prompt,
+                steer_reset=steer_state.reset_stage,
                 # "Compact now" from a front-end: the same file-bridge
                 # pattern as steer, honored at the next pre-call boundary.
                 compact_requested=lambda: compact_request_pending(layout.run_dir),

@@ -561,6 +561,9 @@ class Workflow:
     steer_requested: Callable[[], bool] = field(default=lambda: False)
     steer_clear: Callable[[], None] = field(default=lambda: None)
     steer_prompt: Callable[[], str | None] = field(default=lambda: None)
+    # Called at each leg entry (run/resume): disarms a SIGINT stage the prior
+    # leg never consumed, without touching the steer marker files.
+    steer_reset: Callable[[], None] = field(default=lambda: None)
     # Manual compaction request (the TUI's "Compact now"): polled at the same
     # pre-call boundary as the tiered thresholds; a positive forces the tier-2
     # summarise-and-restart. The marker travels the same file bridge as steer.
@@ -696,6 +699,7 @@ class Workflow:
 
     def run(self, user_task: str) -> RunResult:
         """Drive the single-loop agent to completion."""
+        self.steer_reset()  # a leg starts with no armed Ctrl-C
         if self.mode == "plan" and self.plan_output_path is None:
             raise ValueError("Workflow(mode='plan') requires plan_output_path to be set")
         # The run dir name is the authoritative run id; stamp it into run.start so
@@ -801,6 +805,7 @@ class Workflow:
         DAG state on disk is restored by spawning a curator against the
         same run layout in the CLI.
         """
+        self.steer_reset()  # a leg starts with no armed Ctrl-C
         if self.resume_state_path is None:
             raise ResumeError("resume() called but resume_state_path is None")
         try:

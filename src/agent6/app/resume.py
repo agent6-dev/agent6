@@ -622,6 +622,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 curator=curator,
                 steer_requested=steer_state.requested,
                 steer_clear=steer_state.clear,
+                steer_reset=steer_state.reset_stage,
                 steer_prompt=steer_state.prompt,
                 # "Compact now" from a front-end: the same file-bridge
                 # pattern as steer, honored at the next pre-call boundary.

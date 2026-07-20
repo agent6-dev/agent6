@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import builtins
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -207,3 +208,62 @@ def test_revision_selector_pauses_the_console_spinner(monkeypatch: pytest.Monkey
     assert calls == ["pause", "prompt", "resume"]
     # And the bare (console_view=None) path still works.
     assert select_revised_prompt("orig", "rev", ()) == "rev"
+
+
+def test_reset_stage_disarms_without_touching_the_markers(tmp_path: Path) -> None:
+    """A stage armed in one leg must not leak into the next (phantom pause
+    menu; stage 2 aborts the next leg's first call). reset_stage zeroes ONLY
+    the SIGINT stage: the steer marker files stay, because resume --steer
+    seeds the next leg through them."""
+    import signal
+
+    from agent6.runs.ipc import request_steer, steer_request_pending, write_steer_answer
+    from agent6.ui.cli._steer import install_steer_sigint
+
+    events = MagicMock()
+    steer = install_steer_sigint(events, tmp_path)
+    try:
+        handler = signal.getsignal(signal.SIGINT)
+        assert callable(handler)
+        handler(signal.SIGINT, None)  # 1st Ctrl-C arms stage 1
+        assert steer.requested()
+        steer.reset_stage()
+        assert not steer.requested()  # the armed stage is gone
+        # A front-end marker steer is the OTHER requested() source and must
+        # survive a leg boundary (a web steer typed near leg end reaches the
+        # next leg); reset_stage leaves both files alone.
+        write_steer_answer(tmp_path, "carry on")
+        request_steer(tmp_path)
+        steer.reset_stage()
+        assert (tmp_path / "steer.answer").exists()
+        assert steer_request_pending(tmp_path)
+        assert steer.requested()  # marker-driven, by design
+    finally:
+        steer.restore()
+
+
+def test_workflow_run_resets_the_steer_stage_at_leg_entry() -> None:
+    """Each wf.run() leg starts with no armed Ctrl-C (the ask REPL re-enters
+    run() per follow-up under one installed handler): the reset fires at the
+    very top of run(), before any other leg work."""
+    import contextlib
+
+    from agent6.workflows.loop import Workflow
+
+    resets: list[bool] = []
+
+    def spy() -> None:
+        resets.append(True)
+
+    wf = Workflow(
+        root=Path("/tmp"),
+        config=MagicMock(),
+        provider=MagicMock(),
+        dispatcher=MagicMock(),
+        mode="ask",
+        steer_reset=spy,
+    )
+    for expected in (1, 2):
+        with contextlib.suppress(Exception):  # mocks explode later in the leg
+            wf.run("q")
+        assert len(resets) == expected

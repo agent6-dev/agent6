@@ -46,6 +46,11 @@ class SteerState:
     # Polled during a streaming call: True aborts the in-flight model call so
     # the steer prompt runs now instead of at the next between-step boundary.
     interrupt: Callable[[], bool]
+    # Called at each leg entry (wf.run/resume): a stage armed in a finished leg
+    # must not open a phantom pause (or abort the first call) in the next one.
+    # Zeroes only the SIGINT stage; the steer marker files stay, because
+    # resume --steer seeds the next leg through them.
+    reset_stage: Callable[[], None]
 
 
 @contextlib.contextmanager
@@ -304,6 +309,9 @@ def install_steer_sigint(
         with contextlib.suppress(Exception):
             signal.signal(signal.SIGINT, previous)
 
+    def reset_stage() -> None:
+        state["stage"] = 0
+
     return SteerState(
         requested=requested,
         clear=clear,
@@ -311,6 +319,7 @@ def install_steer_sigint(
         restore=restore,
         abort_pending=lambda: steer_answer_is_abort(run_dir),
         interrupt=interrupt,
+        reset_stage=reset_stage,
     )
 
 
@@ -341,6 +350,7 @@ def file_bridge_steer(run_dir: Path) -> SteerState:
         restore=lambda: None,
         abort_pending=lambda: steer_answer_is_abort(run_dir),
         interrupt=lambda: steer_request_pending(run_dir),
+        reset_stage=lambda: None,  # no SIGINT stage on the file bridge
     )
 
 
