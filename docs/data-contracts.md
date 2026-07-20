@@ -147,7 +147,7 @@ Members: `MachineBegin`, `StepEvent`, `MachineNotify`, `MachineEnd`
 
 - **Written by:** machine/{engine, journal}
 - **Read by:** machine/{__init__, dryrun}, viewmodel/{machine_state}
-- **Guarded by:** [golden_journal.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_journal.jsonl) (4 test files exercise it)
+- **Guarded by:** [golden_journal.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_journal.jsonl) (5 test files exercise it)
 
 ## TaskNode
 

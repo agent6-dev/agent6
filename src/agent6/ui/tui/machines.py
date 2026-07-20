@@ -185,7 +185,11 @@ class MachineWatchScreen(Screen[None]):
             events = self._journal.read()
         except JournalError:
             events = []  # the first poll surfaces the corruption in the header
-        self._cursor.seed_notifications(fold_machine(self._spec, events))
+        seeded = fold_machine(self._spec, events)
+        self._cursor.seed_notifications(seeded)
+        # An end that predates the open is history, not news (same as the web's
+        # endedNotified seed); a machine ending WHILE watched still announces.
+        self._end_notified = seeded.ended is not None
         self._poll()
         self.set_interval(0.5, self._poll)
 

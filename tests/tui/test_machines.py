@@ -173,6 +173,49 @@ def test_watch_screen_shows_states_transitions_and_end(tmp_path: Path, monkeypat
     asyncio.run(scenario())
 
 
+def test_watch_screen_does_not_reannounce_a_stale_end(tmp_path: Path, monkeypatch: object) -> None:
+    """Reviewing a machine that finished long ago must not pop a fresh toast +
+    desktop notification for the stale end; the end flag seeds from the same
+    fold that seeds notification history. A machine ending WHILE watched still
+    announces (ended is None at mount)."""
+    from agent6.config.layer import resolved_state_dir
+    from agent6.machine import load_machine
+    from agent6.ui.cli import main as cli_main
+    from agent6.ui.tui import machines as machines_mod
+
+    monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]
+    fired: list[tuple[str, str]] = []
+
+    def fake_notify(title: str, body: str) -> None:
+        fired.append((title, body))
+
+    monkeypatch.setattr(machines_mod, "desktop_notify", fake_notify)  # type: ignore[attr-defined]
+    f = tmp_path / "tiny.asm.toml"
+    f.write_text(TINY, encoding="utf-8")
+    assert cli_main(["machine", "run", str(f)]) == 0
+    instance = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    spec = load_machine(f)
+
+    class _Host(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(MachineWatchScreen(instance, spec))
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            for _ in range(4):  # let a few polls run
+                await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, MachineWatchScreen)
+            assert screen._end_notified is True  # pyright: ignore[reportPrivateUsage]
+            assert fired == []  # no desktop notification for the day-old end
+            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            assert not any(m == "ok" or m.endswith(" ok") for m in notes), notes
+
+    asyncio.run(scenario())
+
+
 def test_watch_screen_disables_steer_and_message_when_ended(
     tmp_path: Path, monkeypatch: object
 ) -> None:
