@@ -95,3 +95,19 @@ def test_evaluate_chained_comparison() -> None:
     pred = parse_predicate("0 < n and n < 10")
     assert evaluate(pred, {"n": 5}) is True
     assert evaluate(pred, {"n": 50}) is False
+
+
+def test_order_preserves_large_int_precision() -> None:
+    """Ordering coerced both operands through float(), collapsing distinct
+    ints above 2^53 (nanosecond epochs: float spacing ~256 at 1.75e18) to the
+    same value -- `a > b` read False for a = b + 100 and the machine silently
+    skipped events after its cursor. Python orders numbers natively and
+    exactly; the coercion is gone."""
+    a = 1_750_000_000_000_000_100
+    b = 1_750_000_000_000_000_000
+    pred = parse_predicate("a > b")
+    assert evaluate(pred, {"a": a, "b": b}) is True
+    assert evaluate(pred, {"a": b, "b": a}) is False
+    # The fail-loud path for non-comparable operands is intact.
+    with pytest.raises(PredicateError, match="cannot order"):
+        evaluate(parse_predicate("x < y"), {"x": 1, "y": "s"})

@@ -239,16 +239,19 @@ def _compare(op: ast.cmpop, left: object, right: object) -> bool:
 
 
 def _order(op: ast.cmpop, left: object, right: object) -> bool:
-    lhs = _as_number(left) if _is_number(left) and _is_number(right) else left
-    rhs = _as_number(right) if _is_number(left) and _is_number(right) else right
+    # No numeric coercion: Python orders int/int, int/float, float/float
+    # natively and EXACTLY, while the old float() rewrite collapsed distinct
+    # ints above 2^53 (nanosecond epochs) to the same value -- `a > b` read
+    # False for a = b + 100 -- and made `>` lossy while `==` was exact.
+    # Non-comparable operands still raise TypeError -> PredicateError.
     try:
         if isinstance(op, ast.Lt):
-            return lhs < rhs  # type: ignore[operator]
+            return left < right  # type: ignore[operator]
         if isinstance(op, ast.LtE):
-            return lhs <= rhs  # type: ignore[operator]
+            return left <= right  # type: ignore[operator]
         if isinstance(op, ast.Gt):
-            return lhs > rhs  # type: ignore[operator]
-        return lhs >= rhs  # type: ignore[operator]
+            return left > right  # type: ignore[operator]
+        return left >= right  # type: ignore[operator]
     except TypeError as exc:
         raise PredicateError(f"cannot order {left!r} and {right!r}") from exc
 
@@ -274,10 +277,6 @@ def _resolve(reference: Reference, blackboard: Mapping[str, object]) -> object:
             raise PredicateError(f"missing field {key!r} in {reference.dotted!r}")
         value = value[key]
     return value
-
-
-def _is_number(value: object) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def _as_number(value: object) -> float:
