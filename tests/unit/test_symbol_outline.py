@@ -27,12 +27,12 @@ def test_outline_block_renders_simple_outline(tmp_path: Path) -> None:
     f.parent.mkdir(parents=True)
     f.touch()
     syms = [
-        Symbol(name="Foo", kind="class", path=f, line=0, col=0),
-        Symbol(name="bar", kind="function", path=f, line=10, col=0),
+        Symbol(name="Foo", kind="class", path=f, line=1, col=1),
+        Symbol(name="bar", kind="function", path=f, line=11, col=1),
     ]
     out = _build_symbol_outline_block({f: syms}, root=tmp_path)
     assert "pkg/mod.py:" in out
-    # Line numbers are rendered 1-based in the block.
+    # Symbol lines are 1-based at the source; the block renders them verbatim.
     assert "class Foo:1" in out
     assert "function bar:11" in out
 

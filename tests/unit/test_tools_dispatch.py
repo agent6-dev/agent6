@@ -1008,6 +1008,26 @@ def test_outline_returns_symbols(tmp_path: Path) -> None:
     assert out["truncated"] is False
 
 
+def test_nav_tools_report_one_based_lines_matching_grep(tmp_path: Path) -> None:
+    """outline/find_definition/find_references share grep's (and the LSP
+    twins') 1-based line/col convention: `class Bar` on source line 3 is line 3
+    on every surface, not tree-sitter's 0-based start_point."""
+    cfg = _config(tmp_path)
+    src = "def foo():\n    pass\nclass Bar:\n    pass\nfoo()\n"
+    (tmp_path / "a.py").write_text(src, encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    hit = d.dispatch("grep", {"pattern": "class Bar", "path": "a.py"}).to_wire()["hits"][0]
+    assert hit["line"] == 3
+    outline = {s["name"]: s for s in d.dispatch("outline", {"path": "a.py"}).to_wire()["symbols"]}
+    assert outline["Bar"]["line"] == 3
+    assert outline["foo"]["line"] == 1
+    assert outline["foo"]["col"] == 5  # "foo" starts at the 5th character of "def foo():"
+    defs = d.dispatch("find_definition", {"name": "Bar"}).to_wire()["definitions"]
+    assert [x["line"] for x in defs] == [3]
+    refs = d.dispatch("find_references", {"name": "foo"}).to_wire()["references"]
+    assert sorted(r["line"] for r in refs) == [1, 5]  # definition + call
+
+
 def test_outline_rejects_directory(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "sub").mkdir()

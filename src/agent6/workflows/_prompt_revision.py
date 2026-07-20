@@ -89,7 +89,7 @@ def format_prompt_revision_context(repo: RepoSummary) -> str:
         parts.append("Git co-change pairs:\n" + lines)
     if repo.hot_symbols:
         lines = "\n".join(
-            f"  {s.name} ({s.kind}) at {s.def_path}:{s.def_line + 1}, {s.files_referenced} files"
+            f"  {s.name} ({s.kind}) at {s.def_path}:{s.def_line}, {s.files_referenced} files"
             for s in repo.hot_symbols[:12]
         )
         parts.append("Hot symbols:\n" + lines)

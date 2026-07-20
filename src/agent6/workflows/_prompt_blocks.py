@@ -161,7 +161,7 @@ def repo_priors_block(repo: RepoSummary) -> str:
     hot_symbols_block = ""
     if repo.hot_symbols:
         lines = "\n".join(
-            f"  {s.name} ({s.kind}) at {s.def_path}:{s.def_line + 1},"
+            f"  {s.name} ({s.kind}) at {s.def_path}:{s.def_line},"
             f" referenced across {s.files_referenced} files"
             for s in repo.hot_symbols[:15]
         )

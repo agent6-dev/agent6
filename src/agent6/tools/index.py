@@ -55,7 +55,9 @@ from tree_sitter_language_pack import get_language
 
 @dataclass(frozen=True, slots=True)
 class Symbol:
-    """A definition site. `path` is absolute; `line`/`col` are 0-indexed."""
+    """A definition site. `path` is absolute; `line`/`col` are 1-based,
+    the convention every emitting surface shares (grep, the LSP twins, the
+    system-prompt repo map)."""
 
     name: str
     kind: str  # 'function' | 'class' | 'method' | 'struct' | 'enum' | ...
@@ -66,7 +68,7 @@ class Symbol:
 
 @dataclass(frozen=True, slots=True)
 class Reference:
-    """An identifier occurrence. `path` is absolute; `line`/`col` are 0-indexed.
+    """An identifier occurrence. `path` is absolute; `line`/`col` are 1-based.
 
     Includes the definition site itself. Callers that want call-sites-only
     should subtract the result of `find_definition(name)`.
@@ -554,8 +556,8 @@ class SymbolIndex:
                         name=name,
                         kind=kind,
                         path=p,
-                        line=n.start_point[0],
-                        col=n.start_point[1],
+                        line=n.start_point[0] + 1,
+                        col=n.start_point[1] + 1,
                     )
                 )
         refs: list[Reference] = []
@@ -569,8 +571,8 @@ class SymbolIndex:
                     Reference(
                         name=name,
                         path=p,
-                        line=n.start_point[0],
-                        col=n.start_point[1],
+                        line=n.start_point[0] + 1,
+                        col=n.start_point[1] + 1,
                     )
                 )
         self._symbols[p] = syms

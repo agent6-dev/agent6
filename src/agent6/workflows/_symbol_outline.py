@@ -88,7 +88,7 @@ def build_symbol_outline_block(
         )[:SYMBOL_OUTLINE_MAX_PER_FILE]
         kept.sort(key=lambda s: s.line)
         header = f"{rel_str}:"
-        body_lines = [f"  {s.kind} {s.name}:{s.line + 1}" for s in kept]
+        body_lines = [f"  {s.kind} {s.name}:{s.line}" for s in kept]
         if len(syms) > SYMBOL_OUTLINE_MAX_PER_FILE:
             body_lines.append(f"  ... (+{len(syms) - SYMBOL_OUTLINE_MAX_PER_FILE} more)")
         chunk = "\n".join([header, *body_lines])

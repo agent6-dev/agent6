@@ -88,7 +88,7 @@ def test_find_definition_locates_single_def(py_project: Path) -> None:
     assert len(defs) == 1
     assert defs[0].kind == "class"
     assert defs[0].path == (py_project / "a.py").resolve()
-    assert defs[0].line == 3
+    assert defs[0].line == 4
 
 
 def test_find_definition_returns_empty_for_unknown_name(py_project: Path) -> None:
@@ -125,7 +125,7 @@ def test_find_references_filters_comments_and_strings(tmp_path: Path) -> None:
     assert len(refs) == 2
     assert all(isinstance(r, Reference) for r in refs)
     lines = sorted(r.line for r in refs)
-    assert lines == [0, 5]
+    assert lines == [1, 6]
 
 
 def test_find_references_spans_files(py_project: Path) -> None:
