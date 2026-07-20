@@ -44,6 +44,7 @@ Read a run's manifest.json into the typed RunManifest. The single reader + the o
 | `run_branch` | `str | None` | `None` |
 | `models` | `ModelsBrief` | `ModelsBrief()` |
 | `workflow` | `WorkflowStamp` | `WorkflowStamp()` |
+| `parked_task` | `str` | `''` |
 | `parent_run_id` | `str | None` | `None` |
 | `forked_from_turn` | `int | None` | `None` |
 | `forked_from_sha` | `str | None` | `None` |
@@ -53,8 +54,8 @@ Read a run's manifest.json into the typed RunManifest. The single reader + the o
 | `compare` | `CompareStamp | None` | `None` |
 
 - **Written by:** app/{manifest}
-- **Read by:** app/{compare, finalize, fork, merge, parallel, preflight, resume}, ui/{mcp_server}, ui/cli/{_ask, _steer_menu, plan_watch, runs_cmds}, ui/web/{model}, viewmodel/{format, listing}
-- **Guarded by:** [test_runs_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_runs_manifest.py) (2 test files exercise it)
+- **Read by:** app/{compare, finalize, fork, merge, parallel, preflight, resume, run}, ui/{mcp_server}, ui/cli/{_ask, _steer_menu, plan_watch, runs_cmds}, ui/web/{model}, viewmodel/{format, listing}
+- **Guarded by:** [test_runs_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_runs_manifest.py) (3 test files exercise it)
 
 ## RunSnapshot
 
@@ -79,6 +80,7 @@ How a run ends and how it resumes: the RunResult the workflow returns, the Resum
 | `gateless_ever_committed` | `bool` | `False` |
 | `metric_best_score` | `float | None` | `None` |
 | `metric_at_ceiling` | `bool` | `False` |
+| `parallel_groups_dispatched` | `int` | `0` |
 | `head_sha` | `str` | `''` |
 | `graph_version` | `int` | `0` |
 
