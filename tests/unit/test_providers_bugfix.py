@@ -460,3 +460,44 @@ def test_anthropic_connection_error_names_url_and_format() -> None:
     msg = str(ei.value)
     assert "api.anthropic.com" in msg
     assert "anthropic format" in msg
+
+
+def test_non_object_json_200_is_retryable_provider_error() -> None:
+    """Valid JSON that is not an object (an array from a glitching gateway)
+    would AttributeError past the ProviderError-only retry; it must convert
+    to a retryable ProviderError like the non-JSON case."""
+    provider = OpenAIProvider(api_key="sk-test", model="gpt-4o-mini")
+    resp = _FakeJSONResponse(status_code=200, text='["not", "an", "object"]')
+    with (
+        mock.patch("agent6.providers._transport.http_post", return_value=resp),
+        pytest.raises(ProviderError) as ei,
+    ):
+        provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
+    assert ei.value.status_code is None
+    assert "non-object" in str(ei.value)
+
+
+def test_openai_malformed_choices_entry_is_provider_error() -> None:
+    """choices[0] null/string (a flaky local endpoint) must raise a retryable
+    ProviderError, not an AttributeError that kills the run."""
+    for body in ('{"choices": [null]}', '{"choices": ["err"]}'):
+        with pytest.raises(ProviderError) as ei:
+            _parse_response(json.loads(body))
+        assert ei.value.status_code is None
+
+
+def test_anthropic_malformed_content_is_provider_error() -> None:
+    """content as a bare string, or a list holding a non-dict element, must
+    raise a retryable ProviderError, not iterate characters into an
+    AttributeError."""
+    from agent6.providers.anthropic import (
+        _parse_response as _anthropic_parse,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    for body in (
+        {"content": "hello", "usage": {"input_tokens": 5, "output_tokens": 3}},
+        {"content": [{"type": "text", "text": "hi"}, "oops"], "usage": {}},
+    ):
+        with pytest.raises(ProviderError) as ei:
+            _anthropic_parse(body)
+        assert ei.value.status_code is None

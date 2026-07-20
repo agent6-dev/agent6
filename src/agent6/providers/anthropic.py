@@ -658,9 +658,23 @@ class AnthropicProvider:
 
 def _parse_response(data: dict[str, Any]) -> ProviderResponse:
     content = data.get("content") or []
+    if not isinstance(content, list):
+        # A misbehaving Anthropic-format proxy returning `content` as a bare
+        # string would iterate characters and AttributeError past the loop's
+        # ProviderError-only retry. Raise retryably (status_code unset), like
+        # the non-JSON and truncation guards.
+        raise ProviderError(
+            f"Anthropic response `content` was {type(content).__name__}, not a"
+            " list (malformed 2xx from upstream gateway)"
+        )
     text_parts: list[str] = []
     tool_uses: list[dict[str, Any]] = []
     for block in content:
+        if not isinstance(block, dict):
+            raise ProviderError(
+                "Anthropic response content block was not an object"
+                " (malformed 2xx from upstream gateway)"
+            )
         block_type = block.get("type")
         if block_type == "text":
             text_parts.append(str(block.get("text", "")))

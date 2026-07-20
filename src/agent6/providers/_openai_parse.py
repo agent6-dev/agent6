@@ -20,7 +20,7 @@ from agent6.providers._openai_recovery import (
     coerce_text_tool_calls,
     lenient_json_object,
 )
-from agent6.providers.types import ProviderResponse
+from agent6.providers.types import ProviderError, ProviderResponse
 
 
 def parse_response(  # noqa: PLR0912, PLR0915
@@ -36,6 +36,13 @@ def parse_response(  # noqa: PLR0912, PLR0915
     tool_uses: tuple[dict[str, Any], ...] = ()
     if choices:
         first = choices[0]
+        if not isinstance(first, dict):
+            # A malformed 2xx (choices[0] null/string from a flaky local
+            # endpoint) must surface as a retryable ProviderError, not an
+            # AttributeError that bypasses the loop's retry wrapper.
+            raise ProviderError(
+                f"OpenAI choices[0] is {type(first).__name__}, not an object (malformed 2xx body)"
+            )
         message = first.get("message") or {}
         text = str(message.get("content") or "")
         # Kimi (``reasoning_content``), DeepSeek-R1 /

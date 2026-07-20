@@ -125,31 +125,48 @@ class ProviderCall:
                     status_code=resp.status_code,
                     retry_after_s=parse_retry_after(resp.headers),
                 )
-            try:
-                data: dict[str, Any] = resp.json()
-            except (json.JSONDecodeError, ValueError) as exc:
-                # A 2xx with a non-JSON body (transient proxy/gateway glitch)
-                # would otherwise raise a JSONDecodeError that the retry loop
-                # doesn't catch (it only handles ProviderError), aborting the
-                # run. Convert to a retryable ProviderError. Leaving
-                # status_code unset marks it retryable.
-                self.record(headers, resp.status_code, resp.text[:8192])
-                raise ProviderError(
-                    f"non-JSON response from {self.api_label} "
-                    f"(status {resp.status_code}): {resp.text[:500]}"
-                ) from exc
-            self.record(headers, resp.status_code, data)
-            if self.budget is not None:
-                self.require_metered(data)
-            parsed = self.parse(data)
-            if self.budget is not None:
-                self.budget.record(
-                    model=self.model,
-                    input_tokens=parsed.input_tokens,
-                    output_tokens=parsed.output_tokens,
-                    cache_read_tokens=parsed.cache_read_tokens,
-                    cache_creation_tokens=parsed.cache_creation_tokens,
-                    cost_usd=parsed.cost_usd,
-                )
-            return parsed
+            return self._decode_success(headers, resp)
         raise ProviderError(f"{self.api_label} auth retry exhausted")  # pragma: no cover
+
+    def _decode_success(self, headers: dict[str, str], resp: httpx2.Response) -> ProviderResponse:
+        """A 2xx body -> ProviderResponse: decode, record, meter, budget."""
+        try:
+            # Annotated Any: json() returns whatever the body holds; the
+            # dict shape is PROVEN by the guard below, not assumed.
+            data: Any = resp.json()
+        except (json.JSONDecodeError, ValueError) as exc:
+            # A 2xx with a non-JSON body (transient proxy/gateway glitch)
+            # would otherwise raise a JSONDecodeError that the retry loop
+            # doesn't catch (it only handles ProviderError), aborting the
+            # run. Convert to a retryable ProviderError. Leaving
+            # status_code unset marks it retryable.
+            self.record(headers, resp.status_code, resp.text[:8192])
+            raise ProviderError(
+                f"non-JSON response from {self.api_label} "
+                f"(status {resp.status_code}): {resp.text[:500]}"
+            ) from exc
+        if not isinstance(data, dict):
+            # A 2xx whose valid JSON is not an object (array/string from a
+            # glitching gateway): every consumer downstream assumes a dict,
+            # and the AttributeError it would raise bypasses the loop's
+            # ProviderError-only retry. Same retryable conversion as the
+            # non-JSON branch above.
+            self.record(headers, resp.status_code, resp.text[:8192])
+            raise ProviderError(
+                f"{self.api_label} returned a non-object JSON body "
+                f"(status {resp.status_code}): {resp.text[:500]}"
+            )
+        self.record(headers, resp.status_code, data)
+        if self.budget is not None:
+            self.require_metered(data)
+        parsed = self.parse(data)
+        if self.budget is not None:
+            self.budget.record(
+                model=self.model,
+                input_tokens=parsed.input_tokens,
+                output_tokens=parsed.output_tokens,
+                cache_read_tokens=parsed.cache_read_tokens,
+                cache_creation_tokens=parsed.cache_creation_tokens,
+                cost_usd=parsed.cost_usd,
+            )
+        return parsed
