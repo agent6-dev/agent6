@@ -447,14 +447,21 @@ fn setup_rootfs(policy: &Policy) -> io::Result<()> {
             Some(""),
             &target,
             Some(""),
-            // MS_NOSUID | MS_NODEV are required on the remount in a user
-            // namespace — the kernel refuses to clear them, and bind
-            // remounts in older kernels do not preserve them automatically.
+            // MS_NOSUID | MS_NODEV are an unconditional floor (secure-by-default
+            // even if the statvfs in carried_mount_flags fails). carried_mount_flags
+            // adds the source's OTHER locked flags (noexec, the atime family): in
+            // a user namespace the copied source mount's flags are locked, and a
+            // remount that tries to CLEAR one is refused EPERM — so a workspace on
+            // a noexec filesystem (a common CIS hardening for /home) failed every
+            // jailed command under the default strict + protect_git config. Its
+            // two sibling remounts (tool_paths, extra_ro_paths) already carry it;
+            // this one was missed.
             MsFlags::MS_BIND
                 | MsFlags::MS_REMOUNT
                 | MsFlags::MS_RDONLY
                 | MsFlags::MS_NOSUID
-                | MsFlags::MS_NODEV,
+                | MsFlags::MS_NODEV
+                | carried_mount_flags(&target),
             Some(""),
         )
         .map_err(|e| {
