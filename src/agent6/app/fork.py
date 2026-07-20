@@ -231,7 +231,11 @@ def create_fork(  # noqa: PLR0911
         return "", 1
 
     try:
-        cfg = load_effective(cwd, config_path).config
+        # The source's profile: resume replays it (profile or manifest_profile),
+        # so the child manifest's models/workflow stamp must be derived from
+        # the SAME profiled config or `runs show` reports a model the forked
+        # run never uses.
+        cfg = load_effective(cwd, config_path, profile=src_profile).config
     except ConfigError as exc:
         reporter.err(f"CONFIG ERROR:\n{exc}")
         return "", 2
