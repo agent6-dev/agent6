@@ -793,12 +793,25 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         clear_worker_pid(layout.run_dir)
         stop_egress(guard)
         if stashed:
-            finalize_auto_stash(
-                cwd,
-                base_branch=base_branch,
-                run_branch=run_branch,
-                auto_pop=cfg.git.auto_stash_pop,
-            )
+            if detach_requested:
+                # The run is NOT over: the detached resume needs the checkout
+                # left on the run branch, and popping the stash now would
+                # either kill it (tracked dirt -> ensure_on_run_branch refuses
+                # with stderr at /dev/null: a silent dead continuation) or,
+                # for untracked-only dirt, feed the user's pre-run files into
+                # the agent's auto-commits. Leave the stash and say so.
+                reporter.err(
+                    "[agent6] pre-run changes remain stashed while the run continues"
+                    " in the background; after it ends, restore them with:"
+                    f" git checkout {base_branch} && git stash pop"
+                )
+            else:
+                finalize_auto_stash(
+                    cwd,
+                    base_branch=base_branch,
+                    run_branch=run_branch,
+                    auto_pop=cfg.git.auto_stash_pop,
+                )
         release_single_writer(repo_lock_fd)
         release_single_writer(worker_lock_fd)
         if detach_requested:
