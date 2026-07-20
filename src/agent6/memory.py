@@ -31,14 +31,18 @@ can search and we can parse without YAML:
 
 from __future__ import annotations
 
+import contextlib
+import os
 import re
+from collections.abc import Generator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
 from agent6.graph.ulid import new_ulid
-from agent6.portable import atomic_write
+from agent6.portable import atomic_write, lock_exclusive, unlock
 
 MemoryScope = Literal["facts", "decisions", "preferences"]
 _SCOPES: tuple[MemoryScope, ...] = ("facts", "decisions", "preferences")
@@ -147,6 +151,28 @@ def _render_file(scope: MemoryScope, entries: list[MemoryEntry]) -> str:
     return "\n".join(out).rstrip() + "\n"
 
 
+@contextmanager
+def _lock_memories(state_dir: Path) -> Generator[None]:
+    """Serialize the whole-file read-modify-write both mutators do.
+
+    The scope files are shared by every run in the repo (cross-run memory) and
+    each mutation REWRITES the whole file (parse -> mutate -> atomic rename),
+    so two unlocked writers are a lost update: a concurrent add drops an
+    entry, and an add landing after an invalidate resurrects the retired
+    memory into every later run's memory block. Same flock shape as the graph
+    curator's; blocking, released on process death."""
+    memories = state_dir / "memories"
+    memories.mkdir(parents=True, exist_ok=True)
+    fd = os.open(memories / ".lock", os.O_WRONLY | os.O_CREAT, 0o600)
+    try:
+        lock_exclusive(fd, blocking=True)
+        yield
+    finally:
+        with contextlib.suppress(OSError):
+            unlock(fd)
+        os.close(fd)
+
+
 def add(state_dir: Path, scope: MemoryScope, body: str) -> MemoryEntry:
     """Append a new entry. Returns the persisted entry (with assigned id)."""
     body = body.strip()
@@ -160,10 +186,11 @@ def add(state_dir: Path, scope: MemoryScope, body: str) -> MemoryEntry:
             "memory body has a line shaped like an entry delimiter (`### <26-char id>`); reword it"
         )
     path = _scope_path(state_dir, scope)
-    entries = _parse_file(path, scope)
-    entry = MemoryEntry(id=new_ulid(), scope=scope, created_at=_now(), body=body)
-    entries.append(entry)
-    atomic_write(path, _render_file(scope, entries))
+    with _lock_memories(state_dir):
+        entries = _parse_file(path, scope)
+        entry = MemoryEntry(id=new_ulid(), scope=scope, created_at=_now(), body=body)
+        entries.append(entry)
+        atomic_write(path, _render_file(scope, entries))
     return entry
 
 
@@ -182,23 +209,24 @@ def invalidate(state_dir: Path, memory_id: str, reason: str) -> MemoryEntry:
     reason = " ".join(reason.split())
     if not reason:
         raise MemoryStoreError("invalidation reason must be non-empty")
-    for scope in _SCOPES:
-        path = _scope_path(state_dir, scope)
-        entries = _parse_file(path, scope)
-        for i, e in enumerate(entries):
-            if e.id != memory_id:
-                continue
-            if e.invalidated_at:
-                raise MemoryStoreError(f"memory {memory_id} already invalidated")
-            updated = MemoryEntry(
-                id=e.id,
-                scope=scope,
-                created_at=e.created_at,
-                invalidated_at=_now(),
-                invalidation_reason=reason,
-                body=e.body,
-            )
-            entries[i] = updated
-            atomic_write(path, _render_file(scope, entries))
-            return updated
+    with _lock_memories(state_dir):
+        for scope in _SCOPES:
+            path = _scope_path(state_dir, scope)
+            entries = _parse_file(path, scope)
+            for i, e in enumerate(entries):
+                if e.id != memory_id:
+                    continue
+                if e.invalidated_at:
+                    raise MemoryStoreError(f"memory {memory_id} already invalidated")
+                updated = MemoryEntry(
+                    id=e.id,
+                    scope=scope,
+                    created_at=e.created_at,
+                    invalidated_at=_now(),
+                    invalidation_reason=reason,
+                    body=e.body,
+                )
+                entries[i] = updated
+                atomic_write(path, _render_file(scope, entries))
+                return updated
     raise MemoryStoreError(f"no memory with id {memory_id!r}")

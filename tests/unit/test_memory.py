@@ -104,3 +104,38 @@ def test_add_normal_markdown_heading_still_allowed(tmp_path: Path) -> None:
     assert len(again) == 1
     assert again[0].id == e.id
     assert again[0].body == "### My Section\nbody content"
+
+
+def test_concurrent_writers_cannot_lose_or_resurrect_entries(tmp_path: Path) -> None:
+    """Both mutators rewrite the WHOLE shared scope file; unlocked, the loser
+    of two concurrent read-modify-writes was silently discarded (a dropped
+    add, or an invalidation resurrected by a racing add). The mutators now
+    hold the memories flock; two threaded writers must both land."""
+    import threading
+
+    from agent6 import memory as mem
+
+    state = tmp_path / "state"
+    first = mem.add(state, "facts", "entry one")
+    barrier = threading.Barrier(2)
+    errors: list[Exception] = []
+
+    def _add(body: str) -> None:
+        try:
+            barrier.wait(timeout=5)
+            mem.add(state, "facts", body)
+        except Exception as exc:
+            errors.append(exc)
+
+    t1 = threading.Thread(target=_add, args=("entry two",))
+    t2 = threading.Thread(target=_add, args=("entry three",))
+    t1.start()
+    t2.start()
+    t1.join(timeout=10)
+    t2.join(timeout=10)
+    assert errors == []
+    bodies = {e.body for e in mem.list_entries(state, "facts")}
+    assert {"entry one", "entry two", "entry three"} <= bodies  # nothing lost
+    mem.invalidate(state, first.id, "stale")
+    active = {e.body for e in mem.list_entries(state, "facts") if not e.invalidated_at}
+    assert "entry one" not in active
