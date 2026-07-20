@@ -331,3 +331,29 @@ def test_profile_key_is_rejected_in_flag_and_machine_layers(repo: Path, tmp_path
         load_effective(repo, explicit)
     with pytest.raises(ConfigError, match="profile"):
         load_effective_with_overlay(repo, {"profile": "ultra"})
+
+
+def test_materialize_quotes_non_bare_keys(repo: Path, tmp_path: Path) -> None:
+    """A provider hand-named with a space or dot is valid input, so the
+    serializer must quote it: raw interpolation emitted an unparseable
+    `[providers.my provider]` header (or a silently re-nested dotted one),
+    and `config fill --force` then replaced the operator's working config
+    with the broken output."""
+    from agent6.config import Config, load_config
+    from agent6.config.layer import materialize
+
+    cfg = Config.model_validate(
+        {
+            "providers": {
+                "my provider": {"api_format": "openai", "base_url": "https://x.example/v1"},
+                "openrouter.free": {"api_format": "openai", "base_url": "https://o.example/v1"},
+            },
+            "skills": {"state": {"org.some.skill": "enabled"}},
+        }
+    )
+    out = tmp_path / "materialized.toml"
+    out.write_text(materialize(cfg), encoding="utf-8")
+    reloaded = load_config(out)
+    assert "my provider" in reloaded.providers
+    assert "openrouter.free" in reloaded.providers  # not silently re-nested
+    assert reloaded.skills.state == {"org.some.skill": "enabled"}

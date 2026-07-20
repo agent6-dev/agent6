@@ -27,6 +27,7 @@ stack. See :func:`_apply_profile`.
 from __future__ import annotations
 
 import contextlib
+import re
 import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -642,6 +643,18 @@ def _toml_str(value: str) -> str:
     return f'"{escaped}"'
 
 
+def _toml_key(key: str) -> str:
+    """A TOML key: bare when it matches the bare-key grammar, else quoted.
+
+    A provider hand-named "my provider" or "openrouter.free" is valid input
+    (the loader accepts it), so the serializer must quote it -- raw
+    interpolation emitted `[providers.my provider]` (unparseable) or
+    `[providers.openrouter.free]` (silently re-nested), and `config fill
+    --force` then replaced the operator's working config with the broken
+    output."""
+    return key if re.fullmatch(r"[A-Za-z0-9_-]+", key) else _toml_str(key)
+
+
 def _toml_scalar(value: Any) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
@@ -673,16 +686,16 @@ def _emit_table(path: str, data: dict[str, Any], lines: list[str]) -> None:
     if scalars or is_leaf:
         lines.append(f"[{path}]")
         for key, value in scalars.items():
-            lines.append(f"{key} = {_toml_scalar(value)}")
+            lines.append(f"{_toml_key(key)} = {_toml_scalar(value)}")
         lines.append("")
     for key, sub in subtables.items():
-        _emit_table(f"{path}.{key}" if path else key, sub, lines)
+        _emit_table(f"{path}.{_toml_key(key)}" if path else _toml_key(key), sub, lines)
     for key, arr in arraytables.items():
         for item in arr:
-            lines.append(f"[[{path}.{key}]]" if path else f"[[{key}]]")
+            lines.append(f"[[{path}.{_toml_key(key)}]]" if path else f"[[{_toml_key(key)}]]")
             for k2, v2 in item.items():
                 if v2 is not None and not isinstance(v2, dict):
-                    lines.append(f"{k2} = {_toml_scalar(v2)}")
+                    lines.append(f"{_toml_key(k2)} = {_toml_scalar(v2)}")
             lines.append("")
 
 
@@ -731,7 +744,7 @@ def materialize(config: Config, *, for_repo: bool = False) -> str:
                 lines.append(f"[[{section}]]")
                 for k2, v2 in item.items():
                     if v2 is not None and not isinstance(v2, dict):
-                        lines.append(f"{k2} = {_toml_scalar(v2)}")
+                        lines.append(f"{_toml_key(k2)} = {_toml_scalar(v2)}")
                 lines.append("")
     return "\n".join(lines).rstrip("\n") + "\n"
 
