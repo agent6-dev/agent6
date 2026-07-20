@@ -1065,7 +1065,9 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   // Track which per-state dir this frame rendered so prompt answers + steer route
   // to that exact state (ids reset per state; the machine may advance meanwhile).
   cards._state = (data.reasoning || {}).state_dir || '';
-  paintPrompts(cards, data.reasoning || {});
+  // An ended machine takes no input: painting {} reconciles any existing
+  // approval/question boxes away, matching the Steer/Message disable below.
+  paintPrompts(cards, m.ended ? {} : (data.reasoning || {}));
   machineNotify(ctx, m);
   if (m.ended && !ctx.endedNotified) {
     ctx.endedNotified = true;

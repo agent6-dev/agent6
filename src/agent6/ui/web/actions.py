@@ -316,6 +316,8 @@ def machine_approve(
     """Answer a pending approval in the agent state the prompt was rendered from
     (``state``; newest when absent). ``session`` auto-approves every later
     run_command in that state."""
+    if _machine_has_ended(cwd, name):
+        return False, f"machine {name!r} has ended; the prompt is closed"
     state_dir = _machine_state_dir(cwd, name, state)
     if state_dir is None:
         return False, f"no active agent state for machine {name!r}"
@@ -330,6 +332,8 @@ def machine_answer(
 ) -> tuple[bool, str]:
     """Answer a pending `ask_user` prompt in the agent state the prompt was rendered
     from (``state``; newest when absent). One answer per question, by index."""
+    if _machine_has_ended(cwd, name):
+        return False, f"machine {name!r} has ended; the prompt is closed"
     state_dir = _machine_state_dir(cwd, name, state)
     if state_dir is None:
         return False, f"no active agent state for machine {name!r}"

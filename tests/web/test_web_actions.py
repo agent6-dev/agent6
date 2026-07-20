@@ -340,6 +340,22 @@ def test_machine_poke_refuses_ended_machine(tmp_path: Path) -> None:
     assert not (inst / "signal").exists()  # nothing pretends to be delivered
 
 
+def test_machine_approve_refuses_ended_machine(tmp_path: Path) -> None:
+    inst = _ended_machine(tmp_path, "tiny")
+    ok, msg = actions.machine_approve(tmp_path, "tiny", "approval-1", True)
+    assert not ok
+    assert "ended" in msg
+    assert not list((inst / "states" / "0000-route").glob("**/*.answer"))
+
+
+def test_machine_answer_refuses_ended_machine(tmp_path: Path) -> None:
+    inst = _ended_machine(tmp_path, "tiny")
+    ok, msg = actions.machine_answer(tmp_path, "tiny", "question-1", ["yes"])
+    assert not ok
+    assert "ended" in msg
+    assert not list((inst / "states" / "0000-route").glob("**/*.answer"))
+
+
 def test_machine_steer_refuses_ended_machine(tmp_path: Path) -> None:
     inst = _ended_machine(tmp_path, "tiny")
     ok, msg = actions.machine_steer(tmp_path, "tiny", "do more")
