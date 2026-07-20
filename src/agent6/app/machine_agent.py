@@ -408,11 +408,25 @@ def build_machine_agent_runner(
     """
 
     def run_agent(request: AgentRequest, events_log: Path | None = None) -> AgentExecResult:
+        # The salvage below must see only THIS call's events: machine create
+        # shares one draft log across attempts, and an attempt that died before
+        # its first budget.update would otherwise salvage the PRIOR attempt's
+        # cumulative totals and double-book them. (Per-state logs are fresh per
+        # execution, so the offset is 0 there.)
+        start_offset = 0
+        if events_log is not None:
+            with contextlib.suppress(OSError):
+                start_offset = events_log.stat().st_size
+
         def salvaged(reason: str) -> AgentExecResult:
             # No result.json (killed/timed-out/crashed): recover the loop's
             # running budget.update totals from the state's own event log, else a
             # timed-out state books $0 and the budget guard never trips.
-            spend = read_budget_totals(events_log) if events_log is not None else Spend()
+            spend = (
+                read_budget_totals(events_log, from_offset=start_offset)
+                if events_log is not None
+                else Spend()
+            )
             return AgentExecResult(
                 reason=reason,
                 payload=None,

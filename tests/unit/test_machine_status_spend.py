@@ -67,3 +67,38 @@ def test_spend_does_not_double_count_a_booked_state(tmp_path: Path) -> None:
     _state_log(tmp_path, 0, "s0", 0.10)  # same seq as the booked step
     spend, inflight = machine_spend(events, tmp_path, alive=True)
     assert abs(spend.usd - 0.10) < 1e-9 and inflight == ""
+
+
+def test_read_budget_totals_offset_scopes_to_one_call(tmp_path: Path) -> None:
+    """machine create shares ONE draft log across attempts; a retry that died
+    before its first budget.update must salvage $0, not the prior attempt's
+    cumulative totals (which double-booked spend and lied on the draft
+    dashboard). from_offset scopes the read to events after the caller's
+    spawn point."""
+    import json
+
+    from agent6.app.machine._spend import Spend, read_budget_totals
+
+    log = tmp_path / "logs.jsonl"
+    log.write_text(
+        json.dumps(
+            {"type": "budget.update", "usd_total": 0.90, "input_total": 9, "output_total": 3}
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    offset = log.stat().st_size
+    # Attempt 2 died before any budget.update: nothing after the offset.
+    assert read_budget_totals(log, from_offset=offset) == Spend()
+    # Without the offset the prior attempt's totals still read (machine states
+    # pass 0 on their fresh per-state logs).
+    assert read_budget_totals(log).usd == 0.90
+    # Attempt 2 then emits its own update: only ITS totals salvage.
+    with log.open("a", encoding="utf-8") as fh:
+        fh.write(
+            json.dumps(
+                {"type": "budget.update", "usd_total": 0.05, "input_total": 2, "output_total": 1}
+            )
+            + "\n"
+        )
+    assert read_budget_totals(log, from_offset=offset) == Spend(0.05, 2, 1)

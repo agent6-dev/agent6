@@ -38,19 +38,29 @@ class Spend:
         )
 
 
-def read_budget_totals(log_path: Path) -> Spend:
+def read_budget_totals(log_path: Path, *, from_offset: int = 0) -> Spend:
     """The latest running budget totals from an agent state's per-state event log,
     or ``Spend()`` if there is none / the log is unreadable.
 
-    Each turn's ``budget.update`` event carries cumulative totals, so the last one
-    is the running total. Recovers spend for a timed-out/killed subprocess whose
-    ``result.json`` never landed, and reads the LIVE total of an in-flight state
-    whose ``StepEvent`` is not written yet (observed live: a 600s hunt state spent
-    $0.059 that would otherwise book as $0, so a 24/7 machine burns real money
-    against a $0 ledger and its budget guard never trips)."""
+    Each turn's ``budget.update`` event carries cumulative totals FROM THAT
+    CALL'S OWN BudgetTracker, so the last one is the running total -- of
+    whichever call wrote it. ``from_offset`` scopes the read to events appended
+    after a byte offset: a caller salvaging one call on a SHARED log (machine
+    create's draft log spans every attempt) must pass the log size captured
+    before its spawn, or a call that died before its first budget.update reads
+    the PRIOR call's totals and double-books them. Recovers spend for a
+    timed-out/killed subprocess whose ``result.json`` never landed, and reads
+    the LIVE total of an in-flight state whose ``StepEvent`` is not written yet
+    (observed live: a 600s hunt state spent $0.059 that would otherwise book as
+    $0, so a 24/7 machine burns real money against a $0 ledger and its budget
+    guard never trips)."""
     usd, tin, tout = 0.0, 0, 0
     with contextlib.suppress(OSError):
-        for line in log_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        with log_path.open("rb") as fh:
+            if from_offset > 0:
+                fh.seek(from_offset)
+            body = fh.read().decode("utf-8", errors="replace")
+        for line in body.splitlines():
             try:
                 e = json.loads(line)
             except ValueError:
