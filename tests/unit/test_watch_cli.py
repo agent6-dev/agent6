@@ -102,3 +102,42 @@ def test_watch_ambiguous_prefix_surfaces_disambiguation(
     err = capsys.readouterr().err
     assert "ambiguous" in err
     assert "no run or machine matches" not in err
+
+
+def test_attach_to_a_crashed_run_ends_readonly_with_a_truthful_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A crashed worker never writes run.end: attach used to replay, re-ask the
+    dead worker's pending approval, then follow forever behind a "working"
+    spinner while `runs show` called the same run stopped. With a stale
+    worker.pid it must render read-only, never prompt, and end with the
+    truthful crashed line."""
+    import threading
+
+    from agent6.ui.cli import plan_watch as pw
+
+    _make_run(
+        tmp_path,
+        "dead-run",
+        [
+            {"type": "run.start", "user_task": "t"},
+            {"type": "tool.call", "name": "run_command", "args": {}},
+            {"type": "approval.prompt", "id": "approval-1", "prompt": "run?"},
+        ],
+    )
+    monkeypatch.chdir(tmp_path)
+    run_dir = resolved_state_dir(tmp_path) / "runs" / "dead-run"
+    (run_dir / "worker.pid").write_text("999999", encoding="utf-8")
+
+    def _no_prompt(*a: object, **k: object) -> None:
+        raise AssertionError("a dead worker's prompt must not be re-asked")
+
+    monkeypatch.setattr(pw._CliFrontEnd, "handle", _no_prompt)  # pyright: ignore[reportPrivateUsage]
+    result: list[int] = []
+    t = threading.Thread(target=lambda: result.append(main(["attach", "dead-run"])), daemon=True)
+    t.start()
+    t.join(timeout=5)
+    assert not t.is_alive(), "attach failed to terminate on a crashed run"
+    assert result == [0]
+    err = capsys.readouterr().err
+    assert "crashed or killed" in err

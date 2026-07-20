@@ -493,6 +493,44 @@ class _CliFrontEnd:
             self.handle("question", pid, event.get("questions", []))
 
 
+def _print_crashed_line(target: Path) -> None:
+    print(
+        f"[agent6] {target.name}: worker not running and the run never ended"
+        f" (crashed or killed); see `agent6 runs show {target.name}`.",
+        file=sys.stderr,
+    )
+
+
+def _render_dead_run(target: Path, events_path: Path) -> int:
+    """Crashed/killed: no run.end will ever come and no worker reads answers.
+    Render the log read-only (no front-end, no re-asked prompts), then say
+    what `runs show` already knows."""
+    view = ConsoleView(sys.stdout)
+    try:
+        for event in tail_events(events_path, follow=False):
+            view.feed(event)
+    finally:
+        view.close()
+    _print_crashed_line(target)
+    return 0
+
+
+def _install_front_end(target: Path, view: ConsoleView) -> _CliFrontEnd | None:
+    """Attach as the answering front-end on an interactive terminal (both
+    streams a tty); piped/redirected stays a pure reader (None)."""
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        print(f"[agent6] following {target.name}. Ctrl-C to exit.", file=sys.stderr)
+        return None
+    front_end = _CliFrontEnd(target, view)
+    write_frontend_pid(target, os.getpid())
+    print(
+        f"[agent6] attached to {target.name}: approvals and questions prompt here."
+        " Ctrl-C to detach.",
+        file=sys.stderr,
+    )
+    return front_end
+
+
 def _watch_transcript(target: Path) -> int:
     """Follow a run's conversation live and, on an interactive terminal, ATTACH
     to it as a front-end: fold ``logs.jsonl`` through the same ``ConsoleView`` as
@@ -505,33 +543,36 @@ def _watch_transcript(target: Path) -> int:
     if not events_path.is_file():
         print(f"ERROR: no logs.jsonl in {target}", file=sys.stderr)
         return 2
+
+    def worker_dead() -> bool:
+        # pid None is NOT dead: a not-yet-started or mid-detach-handoff worker
+        # clears the pid, and a live detached run must keep being followed.
+        return read_worker_pid(target) is not None and not worker_is_alive(target)
+
+    if worker_dead():
+        return _render_dead_run(target, events_path)
     view = ConsoleView(sys.stdout)
-    # Interactive (both streams a tty): become an answering front-end. Piped: read-only.
-    front_end: _CliFrontEnd | None = None
-    if sys.stdin.isatty() and sys.stdout.isatty():
-        front_end = _CliFrontEnd(target, view)
-        write_frontend_pid(target, os.getpid())
-        print(
-            f"[agent6] attached to {target.name}: approvals and questions prompt here."
-            " Ctrl-C to detach.",
-            file=sys.stderr,
-        )
-    else:
-        print(f"[agent6] following {target.name}. Ctrl-C to exit.", file=sys.stderr)
+    front_end = _install_front_end(target, view)
+    interrupted = False
     try:
         if front_end is not None:
             for kind, prompt_id, content in front_end.open_prompts_at_attach(events_path):
                 front_end.handle(kind, prompt_id, content)  # a prompt already pending at attach
-        for event in tail_events(events_path, follow=True, stop_when_finished=True):
+        for event in tail_events(
+            events_path, follow=True, stop_when_finished=True, should_stop=worker_dead
+        ):
             view.feed(event)
             if front_end is not None:
                 front_end.react(event)
     except KeyboardInterrupt:
+        interrupted = True
         print("\n[agent6] watch: stopped.", file=sys.stderr)
     finally:
         view.close()  # stop the heartbeat thread, clear any spinner line
         if front_end is not None:
             clear_frontend_pid(target)
+    if not interrupted and not _run_has_ended(events_path):
+        _print_crashed_line(target)
     return 0
 
 
