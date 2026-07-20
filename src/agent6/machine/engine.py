@@ -35,7 +35,7 @@ from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict
 
-from agent6.machine._semantics import validate_finish_payload
+from agent6.machine._semantics import validate_record_payload
 from agent6.machine.journal import (
     AgentFact,
     BranchFact,
@@ -439,7 +439,9 @@ def initial_blackboard(spec: MachineSpec) -> dict[str, Any]:
     return blackboard
 
 
-def _apply_capture(state: ToolState, stdout: str, blackboard: dict[str, Any]) -> None:
+def _apply_capture(
+    spec: MachineSpec, state: ToolState, stdout: str, blackboard: dict[str, Any]
+) -> None:
     capture = state.capture
     if capture is None:
         return
@@ -447,6 +449,23 @@ def _apply_capture(state: ToolState, stdout: str, blackboard: dict[str, Any]) ->
         result_obj: Any = json.loads(stdout) if stdout.strip() else None
     except json.JSONDecodeError as exc:
         raise StateRuntimeError(f"tool stdout is not valid JSON for capture: {exc}") from exc
+    # Validate the parsed stdout against the tool's declared output_schema
+    # before it touches the blackboard -- the capture gate docs/state-machines.md
+    # §5.4 promises ("a malformed output halts the machine loudly"). Without it a
+    # nonconforming value (a str where the schema says int) silently corrupts the
+    # blackboard and misroutes downstream branches. Raised as a StateRuntimeError
+    # so _step halts cleanly before journaling a poison fact, exactly like the
+    # invalid-JSON case above and the agent finish_run path. output_schema is
+    # optional on a tool (unlike an agent state); a schema-less tool declares no
+    # shape, so there is nothing to check.
+    if state.output_schema is not None:
+        problems = validate_record_payload(
+            spec, state.output_schema, result_obj, where="tool stdout"
+        )
+        if problems:
+            raise StateRuntimeError(
+                "tool stdout does not match output_schema: " + "; ".join(problems)
+            )
     if capture.stdout_json is not None:
         blackboard[capture.stdout_json] = result_obj
         return
@@ -469,7 +488,9 @@ def _apply_agent_capture(state: AgentState, payload: Any, blackboard: dict[str, 
             blackboard[target] = render_value(template, scope, where=f"agent capture.set.{target}")
 
 
-def reduce(state: StateSpec, fact: Fact, blackboard: dict[str, Any]) -> dict[str, Any]:
+def reduce(
+    spec: MachineSpec, state: StateSpec, fact: Fact, blackboard: dict[str, Any]
+) -> dict[str, Any]:
     """Apply a journaled *fact* to the blackboard, returning a new dict."""
     updated = dict(blackboard)
     if (
@@ -478,7 +499,7 @@ def reduce(state: StateSpec, fact: Fact, blackboard: dict[str, Any]) -> dict[str
         and not fact.timed_out
         and fact.exit_code == 0
     ):
-        _apply_capture(state, fact.stdout, updated)
+        _apply_capture(spec, state, fact.stdout, updated)
     elif isinstance(state, AgentState) and isinstance(fact, AgentFact) and fact.outcome == "ok":
         _apply_agent_capture(state, fact.payload, updated)
     return updated
@@ -584,7 +605,9 @@ def _agent_outcome(
     if result.reason == "timeout":
         return "timeout"
     if result.reason == "finish_run" and result.payload is not None:
-        problems = validate_finish_payload(spec, state.output_schema, result.payload)
+        problems = validate_record_payload(
+            spec, state.output_schema, result.payload, where="finish_run payload"
+        )
         if not problems:
             return "ok"
     return "failed"
@@ -776,7 +799,7 @@ def _rebuild_from_journal(eng: _EngineState, events: list[Any]) -> None:
                 " archive the instance directory to start fresh."
             )
         try:
-            blackboard = reduce(state_spec, event.fact, blackboard)
+            blackboard = reduce(spec, state_spec, event.fact, blackboard)
         except _STATE_RUNTIME_ERRORS as exc:
             # An older journal (written before captures were validated pre-journal)
             # can hold a fact that no longer reduces. Surface it as a clean error,
@@ -898,7 +921,7 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: PLR0912, PLR091
         # later reduce (resume/status/replay), bricking the instance. The side
         # effect already ran; halting loudly matches the §4.2 capture contract.
         try:
-            next_blackboard = reduce(current, fact, blackboard)
+            next_blackboard = reduce(spec, current, fact, blackboard)
         except _STATE_RUNTIME_ERRORS as exc:
             return _end_failed(journal, world, state, transitions, exc)
         journal.append(

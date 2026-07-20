@@ -440,6 +440,23 @@ def test_branch_routes_to_ok_when_empty(tmp_path: Path) -> None:
     assert world.calls == [("scan",)]
 
 
+def test_tool_stdout_violating_output_schema_halts(tmp_path: Path) -> None:
+    """A tool whose parsed stdout does not match its declared output_schema must
+    halt the machine loudly (a clean failed MachineResult), not silently capture
+    a mistyped value that corrupts the blackboard and misroutes downstream
+    branches. scan_result.items is list[str]; emit a bare string instead."""
+    journal, f = _load(tmp_path, COUNTER)
+    spec = load_machine(f)
+    world = FakeWorld({"scan": _ok('{"items": "notalist"}')})
+    result = drive(spec, journal, world, live=True)
+    assert result.status == "failed"
+    assert "output_schema" in result.reason
+    # The capture never ran, so the poison value is not journaled and no
+    # snapshot carries a corrupted `items`.
+    snap = journal.latest_snapshot()
+    assert snap is None or snap.blackboard.get("items") == []
+
+
 def test_tool_nonzero_routes_to_failure(tmp_path: Path) -> None:
     journal, f = _load(tmp_path, COUNTER)
     spec = load_machine(f)

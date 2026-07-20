@@ -5,7 +5,7 @@
 Parsing is pydantic (the shapes in `model`); this module adds the cross-
 cutting load-time rules the spec requires (global name uniqueness, the
 ownership wall, reference/field type checks, total branches, reachability)
-plus `load_machine` and `validate_finish_payload`. Every violation is a
+plus `load_machine` and `validate_record_payload`. Every violation is a
 load-time error aggregated into MachineError.
 """
 
@@ -303,9 +303,13 @@ def _py_type(value: Any) -> str:
 # --------------------------------------------------------------------------
 
 
-def validate_finish_payload(spec: MachineSpec, schema_name: str, payload: Any) -> list[str]:
-    """Strictly validate an agent `finish_run` *payload* against a record schema.
+def validate_record_payload(
+    spec: MachineSpec, schema_name: str, payload: Any, *, where: str
+) -> list[str]:
+    """Strictly validate a captured *payload* against a record schema.
 
+    The one runtime capture gate for both an agent `finish_run` payload and a
+    `tool` state's parsed stdout (*where* names which, for the error text).
     Stricter than the load-time placeholder check on variable defaults: every
     non-optional field must be present, `enum` constraints are enforced, and
     nested records recurse. Presumes *spec* already passed `validate_semantics`,
@@ -313,9 +317,7 @@ def validate_finish_payload(spec: MachineSpec, schema_name: str, payload: Any) -
     conforms, or a list of human-readable problems otherwise.
     """
     schema_names = frozenset(spec.schemas)
-    return _check_record_strict(
-        payload, schema_name, spec.schemas, schema_names, "finish_run payload"
-    )
+    return _check_record_strict(payload, schema_name, spec.schemas, schema_names, where)
 
 
 def _check_record_strict(

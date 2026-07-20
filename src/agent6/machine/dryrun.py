@@ -26,7 +26,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from agent6.machine._semantics import validate_finish_payload
+from agent6.machine._semantics import validate_record_payload
 from agent6.machine.engine import EngineError, initial_blackboard, reduce
 from agent6.machine.journal import AgentFact, ToolFact
 from agent6.machine.model import (
@@ -137,7 +137,7 @@ def _check_tool(
     else:
         stdout = ""
     fact = ToolFact(exit_code=0, stdout=stdout, timed_out=False)
-    reduce(state, fact, blackboard)  # exercises capture rendering; raises on a bad template
+    reduce(spec, state, fact, blackboard)  # exercises capture rendering; raises on a bad template
     goto = state.on["ok"]
     if goto not in spec.states:
         return StateCheck(name, "tool", False, "ok", goto, f"on.ok -> {goto!r} is not a state")
@@ -148,11 +148,13 @@ def _check_agent(
     spec: MachineSpec, name: str, state: AgentState, blackboard: dict[str, Any]
 ) -> StateCheck:
     payload = synthesize_record(spec, state.output_schema)
-    problems = validate_finish_payload(spec, state.output_schema, payload)
+    problems = validate_record_payload(
+        spec, state.output_schema, payload, where="finish_run payload"
+    )
     if problems:  # pragma: no cover - synthesis is schema-valid by construction
         return StateCheck(name, "agent", False, "ok", None, "; ".join(problems))
     fact = AgentFact(outcome="ok", reason="finish_run", payload=payload)
-    reduce(state, fact, blackboard)  # exercises capture rendering; raises on a bad template
+    reduce(spec, state, fact, blackboard)  # exercises capture rendering; raises on a bad template
     goto = state.on["ok"]
     if goto not in spec.states:
         return StateCheck(name, "agent", False, "ok", goto, f"on.ok -> {goto!r} is not a state")

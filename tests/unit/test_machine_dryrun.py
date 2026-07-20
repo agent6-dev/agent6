@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from agent6.machine import dry_run, load_machine
-from agent6.machine._semantics import validate_finish_payload
+from agent6.machine._semantics import validate_record_payload
 from agent6.machine.dryrun import synthesize_record
 
 # tool -> branch -> (agent | tool) -> terminal, with a typed capture + an enum.
@@ -89,7 +89,7 @@ def test_synthesize_record_is_schema_valid(tmp_path: Path) -> None:
     # enum field -> first member; scalar -> zero value.
     assert payload == {"label": "low", "score": 0}
     # And it passes the same strict check the live agent path uses.
-    assert validate_finish_payload(spec, "review", payload) == []
+    assert validate_record_payload(spec, "review", payload, where="finish_run payload") == []
 
 
 def test_synthesize_handles_lists(tmp_path: Path) -> None:
