@@ -19,12 +19,12 @@ from agent6.sandbox import LandlockNotSupportedError
 from agent6.sandbox.landlock import LandlockReport
 
 
-def _cfg(agent_network: str = "providers") -> Any:
+def _cfg(agent_network: str = "providers", extra_read_paths: tuple[str, ...] = ()) -> Any:
     # Minimal stand-in: one OpenAI-compatible provider on the default port.
     entry = SimpleNamespace(base_url="https://openrouter.ai/api/v1")
     return SimpleNamespace(
         providers=SimpleNamespace(values=lambda: [entry]),
-        sandbox=SimpleNamespace(agent_network=agent_network),
+        sandbox=SimpleNamespace(agent_network=agent_network, extra_read_paths=extra_read_paths),
     )
 
 
@@ -130,6 +130,46 @@ def test_agent_landlock_skipped_on_strict(monkeypatch: pytest.MonkeyPatch) -> No
     err = cli.maybe_apply_agent_landlock(_cfg(), "strict")
     assert err is None
     assert calls == []
+
+
+def test_agent_landlock_read_roots_include_jail_child_dynamic_grants(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The superset invariant also covers the jail child's DYNAMIC grants.
+
+    The hardened jail child gets read+exec on the operator tool mounts
+    (operator_tool_paths) and on sandbox.extra_read_paths. Landlock rulesets
+    intersect across nested restrict_self calls, so a dir absent from the
+    agent's own read set is denied to the child even though the child's
+    ruleset grants it -- every exec under it then fails rc 127. The agent
+    read set must therefore carry both dynamic sets, sourced from the same
+    producers that build the jail policy.
+    """
+    tool_dir = tmp_path / "opt-tools"
+    tool_dir.mkdir()
+    extra_dir = tmp_path / "toolchain"
+    extra_dir.mkdir()
+    missing = tmp_path / "not-there"
+    calls: list[dict[str, Any]] = []
+
+    def _rec(**kwargs: Any) -> LandlockReport:
+        calls.append(kwargs)
+        return _report()
+
+    monkeypatch.setattr(cli, "apply_agent_landlock", _rec)
+    monkeypatch.setattr(cli, "operator_tool_paths", lambda: ("/usr/bin:/bin", (tool_dir,)))
+    err = cli.maybe_apply_agent_landlock(
+        _cfg(extra_read_paths=(str(extra_dir), str(missing))), "hardened"
+    )
+    assert err is None
+    reads = calls[0]["read_paths"]
+    assert tool_dir in reads
+    assert extra_dir in reads
+    # A nonexistent grant is skipped (the jail skips it too), not crashed on.
+    assert missing not in reads
+    # Read+exec only: the dynamic grants never widen the write set.
+    writes = calls[0]["write_paths"]
+    assert tool_dir not in writes and extra_dir not in writes
 
 
 def test_agent_landlock_refuses_when_unsupported(monkeypatch: pytest.MonkeyPatch) -> None:

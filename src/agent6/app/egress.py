@@ -28,7 +28,7 @@ from agent6.sandbox import (
     start_egress_broker,
 )
 from agent6.sandbox.detect import probe_userns_supported
-from agent6.sandbox.jail import locate_jail_binary
+from agent6.sandbox.jail import locate_jail_binary, operator_tool_paths
 from agent6.types import SandboxProfile
 
 
@@ -368,16 +368,17 @@ def maybe_apply_agent_landlock(
     run_paths = (Path("/run"),) if Path("/run").exists() else ()
     proc_paths = (Path("/proc"),) if Path("/proc").exists() else ()
     # The jail launcher (agent6-jail, hardened profile) grants the CHILD
-    # read+execute on these system dirs by opening each one from inside THIS
-    # already-Landlocked process (PathFd::new in apply_landlock_hardened). If a
-    # dir is not in the agent's own read set, that open is denied, the child's
-    # rule for it is silently skipped, and the child cannot exec ANY binary that
-    # needs it -- every run_command / verify / commit then fails with execve
-    # EACCES (returncode 127) on a no-userns host. So the agent read set must be
-    # a SUPERSET of the jail child's read+exec roots. /usr + /etc are already
-    # below; add the rest. /dev is the one that bites on a merged-/usr host
-    # (where /bin /lib /lib64 /sbin are symlinks into /usr); the others matter on
-    # a split-/usr host. Must mirror apply_landlock_hardened's ro_paths.
+    # read+execute on its ro_paths by opening each one from inside THIS
+    # already-Landlocked process (PathFd::new in apply_landlock_hardened), and
+    # nested Landlock rulesets INTERSECT. If a dir is not in the agent's own
+    # read set, the child's rule for it is denied/stripped and the child cannot
+    # exec ANY binary that needs it -- every run_command / verify / commit then
+    # fails with execve EACCES (returncode 127) on a no-userns host. So the
+    # agent read set must be a SUPERSET of the jail child's read+exec roots:
+    # the fixed system dirs here (/usr + /etc are above; /dev is the one that
+    # bites on a merged-/usr host, the others on split-/usr), plus the two
+    # DYNAMIC sets appended below, sourced from the same producers that build
+    # the jail policy so they cannot drift.
     sys_exec_dirs = tuple(
         p
         for p in (
@@ -415,6 +416,12 @@ def maybe_apply_agent_landlock(
     # otherwise EACCES under the agent-process Landlock.
     jail_bin = locate_jail_binary()
     jail_paths = (jail_bin.resolve().parent,) if jail_bin is not None else ()
+    # The jail child's dynamic read+exec grants: operator tool mounts
+    # (uv/node/... outside the system dirs) and sandbox.extra_read_paths.
+    # Read+exec only, never write. Nonexistent grants are skipped exactly as
+    # the jail skips them.
+    tool_mounts = operator_tool_paths()[1]
+    extra_read = tuple(p for p in (Path(x) for x in cfg.sandbox.extra_read_paths) if p.exists())
     read_paths = (
         cwd,
         state,
@@ -428,6 +435,8 @@ def maybe_apply_agent_landlock(
         *proc_paths,
         *py_paths,
         *jail_paths,
+        *tool_mounts,
+        *extra_read,
     )
     write_paths = (cwd, state, tmp, *dev_files, *proc_paths)
     # Hardened can't run the broker, so we fall back to Landlock TCP-connect
