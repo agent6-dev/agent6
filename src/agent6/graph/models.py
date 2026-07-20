@@ -19,7 +19,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from agent6.graph.ulid import CROCKFORD
 
 _MODEL_CONFIG = ConfigDict(extra="forbid", frozen=True)
 
@@ -79,6 +81,20 @@ class TaskNode(BaseModel):
     created_by: NodeActor
     commit_sha: str = ""
     notes: str = ""
+
+    @field_validator("id")
+    @classmethod
+    def _id_is_crockford(cls, v: str) -> str:
+        # The id becomes a filesystem path component (node_md_path builds the
+        # on-disk path from the ancestor id chain), so the RELOAD trust
+        # boundary must reject a crafted 26-char id carrying separators
+        # ('../zzz...') that would make the next write_node escape graph_dir.
+        # A bad-id file then fails validation -> load_graph skips it with a
+        # warning, exactly like every other corrupt node file. new_ulid()
+        # always emits valid Crockford, so real ids are unaffected.
+        if any(ch not in CROCKFORD for ch in v):
+            raise ValueError(f"node id is not Crockford base32: {v!r}")
+        return v
 
 
 # ---- curator intent payloads ---------------------------------------------

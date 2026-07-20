@@ -18,7 +18,9 @@ import threading
 import time
 from dataclasses import dataclass
 
-_CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+# Public: the ULID alphabet. TaskNode's id validator enforces it at the
+# graph-reload trust boundary (an id becomes a filesystem path component).
+CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 
 @dataclass
@@ -56,6 +58,6 @@ def new_ulid() -> str:
         value = (_state.last_ms << 80) | _state.last_rand
     chars: list[str] = []
     for _ in range(26):
-        chars.append(_CROCKFORD[value & 0x1F])
+        chars.append(CROCKFORD[value & 0x1F])
         value >>= 5
     return "".join(reversed(chars))

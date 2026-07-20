@@ -140,3 +140,26 @@ def test_list_checkpoint_turns(tmp_path: Path) -> None:
     # A stray non-numeric file is ignored.
     (layout.checkpoints_dir / "notes.json").write_text("{}", encoding="utf-8")
     assert list_checkpoint_turns(layout) == [1, 2, 3, 10]
+
+
+def test_load_graph_skips_a_path_traversing_node_id(tmp_path: Path, capsys: object) -> None:
+    """A node .md whose 26-char id carries path separators ('../zzz...') must
+    be SKIPPED like every other corrupt file -- unvalidated, it survived load
+    and the next write_node resolved OUTSIDE graph_dir (an atomic write landed
+    above the run's graph tree). The Crockford charset validator at the reload
+    boundary turns it into the standard skip-with-warning."""
+    from agent6.graph.storage import load_graph
+    from agent6.runs.layout import RunLayout
+
+    layout = RunLayout(state_dir=tmp_path / "state", run_id="r1")
+    layout.ensure()
+    bad_id = "../zzzzzzzzzzzzzzzzzzzzzzz"
+    assert len(bad_id) == 26
+    (layout.graph_dir / "planted.md").write_text(
+        f"---\nid: {bad_id}\nparent_id: null\ntitle: evil\n"
+        "status: pending\ncreated_at: 2026-01-01T00:00:00+00:00\n"
+        "updated_at: 2026-01-01T00:00:00+00:00\ncreated_by: worker\n---\nbody\n",
+        encoding="utf-8",
+    )
+    nodes = load_graph(layout)
+    assert bad_id not in nodes  # skipped, not loaded
