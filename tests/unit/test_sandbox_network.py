@@ -338,3 +338,26 @@ def test_egress_fails_closed_and_cleans_up_on_socket_error(
     assert guard == EgressGuard()
     assert err is not None and "too many open files" in err
     assert not sock.exists()  # the socket dir was cleaned up, not leaked
+
+
+def test_egress_fails_closed_when_sock_dir_creation_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # mkdtemp itself failing (full/read-only /tmp) must produce the same
+    # documented graceful refusal as every later setup failure, not escape as
+    # an uncaught OSError that crashes the run.
+    import agent6.app.egress as eg
+
+    def _boom_mkdtemp(**_k: object) -> str:
+        raise OSError("No space left on device")
+
+    monkeypatch.setattr(eg.tempfile, "mkdtemp", _boom_mkdtemp)
+    cfg = validate_config(
+        {
+            "providers": {"anthropic": {"api_format": "anthropic"}},
+            "sandbox": {"agent_network": "providers"},
+        }
+    )
+    guard, err = maybe_start_egress(cfg, "strict")
+    assert guard == EgressGuard()
+    assert err is not None and "confinement" in err and "No space left" in err

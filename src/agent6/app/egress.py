@@ -249,25 +249,28 @@ def maybe_start_egress(
         endpoints = eps
     else:  # providers
         endpoints = _provider_endpoints(cfg) | _allow_url_endpoints(cfg)
-    sock_dir = Path(tempfile.mkdtemp(prefix="agent6-egress-"))
+    sock_dir: Path | None = None
     broker: BrokerHandle | None = None
     spawner: HostSpawner | None = None
     try:
+        sock_dir = Path(tempfile.mkdtemp(prefix="agent6-egress-"))
         if detach_exe is not None:
             spawner = fork_host_spawner([detach_exe])
         broker = start_egress_broker(endpoints, sock_dir=sock_dir)
         enter_network_isolation()
     except (EgressBrokerError, OSError) as exc:
-        # OSError covers a socket bind/listen failure inside start_egress_broker
-        # (resource exhaustion, permissions) AND a failure of
-        # enter_network_isolation AFTER the helper children have been forked.
-        # Fail closed: reap whatever started, clean up the socket dir, and
-        # refuse the run rather than leak a process/dir or run unconfined.
+        # OSError covers the socket-dir mkdtemp (full/read-only /tmp), a socket
+        # bind/listen failure inside start_egress_broker (resource exhaustion,
+        # permissions), AND a failure of enter_network_isolation AFTER the
+        # helper children have been forked. Fail closed: reap whatever started,
+        # clean up the socket dir, and refuse the run rather than leak a
+        # process/dir or run unconfined.
         if spawner is not None:
             spawner.close()
         if broker is not None:
             broker.close()
-        shutil.rmtree(sock_dir, ignore_errors=True)
+        if sock_dir is not None:
+            shutil.rmtree(sock_dir, ignore_errors=True)
         return EgressGuard(), f"could not establish agent-network confinement: {exc}"
     for ep in endpoints:
         uds = broker.uds_for(ep.host, ep.port)
