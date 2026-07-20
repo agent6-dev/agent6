@@ -109,9 +109,12 @@ def tool_definitions(
             )
         )
     # Any MCP tools the dispatcher's manager discovered get
-    # appended verbatim. Names already carry the `mcp__<server>__`
-    # prefix so they can never collide with built-in tool names.
-    mgr = getattr(dispatcher, "_mcp_manager", None)
+    # appended verbatim -- in run mode ONLY. MCP tools are arbitrary external
+    # capabilities agent6 cannot classify as read-only, so the read-only modes
+    # (plan/ask/machine/agent) must not offer them at all; the dispatcher
+    # refuses mcp__* in those modes as the backstop. Names already carry the
+    # `mcp__<server>__` prefix so they can never collide with built-ins.
+    mgr = getattr(dispatcher, "_mcp_manager", None) if mode == "run" else None
     if mgr is not None:
         for desc in mgr.descriptors():
             schema = dict(desc.input_schema)

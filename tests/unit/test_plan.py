@@ -7,13 +7,14 @@ tool-filter, and the Workflow's plan-output side effect.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
 
 from agent6.config import Config, load_config
 from agent6.tools.dispatch import ToolDispatcher, ToolError
+from agent6.tools.mcp_client import MCPManager
 from agent6.tools.schema import (
     PLAN_EXTRA_TOOLS,
     ApplyEditInput,
@@ -355,6 +356,48 @@ def test_tool_definitions_machine_and_agent_modes_are_read_only_finish(tmp_path:
         assert RunCommandInput.TOOL_NAME not in names, mode
         assert DagAddTaskInput.TOOL_NAME not in names, mode
         assert FinishPlanningInput.TOOL_NAME not in names, mode
+
+
+def test_mcp_tools_are_run_mode_only(tmp_path: Path) -> None:
+    """MCP tools are arbitrary external capabilities agent6 cannot classify as
+    read-only. They were appended to the tool list in EVERY mode and the
+    dispatcher routed mcp__* before its mode guards, so a "read-only"
+    plan/ask (or a machine-authoring loop told not to touch anything) could
+    call a mutating filesystem/GitHub MCP tool. Both layers now gate on run
+    mode: the list omits them, and the dispatcher refuses them."""
+    from types import SimpleNamespace
+
+    from agent6.tools.dispatch import ToolError
+
+    cfg = _config(tmp_path)
+    fake_mgr = SimpleNamespace(
+        descriptors=lambda: [
+            SimpleNamespace(
+                qualified_name="mcp__fs__write_file",
+                tool_name="write_file",
+                description="write a file",
+                input_schema={"type": "object"},
+            )
+        ]
+    )
+
+    d_run = ToolDispatcher(root=tmp_path, config=cfg)
+    d_run._mcp_manager = cast("MCPManager", fake_mgr)  # pyright: ignore[reportPrivateUsage]
+    run_names = {t.name for t in loopmod.tool_definitions(d_run, mode="run")}
+    assert "mcp__fs__write_file" in run_names
+
+    for mode in ("plan", "ask", "machine", "agent"):
+        d = ToolDispatcher(root=tmp_path, config=cfg)
+        d._mcp_manager = cast("MCPManager", fake_mgr)  # pyright: ignore[reportPrivateUsage]
+        names = {t.name for t in loopmod.tool_definitions(d, mode=mode)}  # pyright: ignore[reportPrivateUsage]
+        assert "mcp__fs__write_file" not in names, mode
+
+    # The dispatcher backstop: a read-only-mode dispatcher refuses mcp__* even
+    # if a tool-list regression re-exposed it.
+    d_plan = ToolDispatcher(root=tmp_path, config=cfg, mode="plan")
+    d_plan._mcp_manager = cast("MCPManager", fake_mgr)  # pyright: ignore[reportPrivateUsage]
+    with pytest.raises(ToolError, match="not available in plan mode"):
+        d_plan._dispatch_inner("mcp__fs__write_file", {})  # pyright: ignore[reportPrivateUsage]
 
 
 def test_build_system_prompt_machine_and_agent_modes(tmp_path: Path) -> None:
