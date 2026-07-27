@@ -60,6 +60,39 @@ def test_unknown_saved_theme_falls_back(cfg: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_extra_builtin_themes_register_and_apply(cfg: Path) -> None:
+    """The four extra built-ins (alice/snow light, rose/grimm dark) are
+    registered by setup_theme and each applies cleanly (colors parse)."""
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            for name in ("alice", "snow", "rose", "grimm"):
+                assert name in app.available_themes
+                app.theme = name
+                await pilot.pause()
+                assert app.current_theme.name == name
+            assert app.available_themes["alice"].dark is False
+            assert app.available_themes["snow"].dark is False
+            assert app.available_themes["rose"].dark is True
+            assert app.available_themes["grimm"].dark is True
+
+    asyncio.run(scenario())
+
+
+def test_saved_extra_theme_applies_on_mount(cfg: Path) -> None:
+    save_theme("grimm")
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert app.theme == "grimm"  # parsed from ui.toml and applied
+
+    asyncio.run(scenario())
+
+
 async def _select_theme(pilot: object, field: ChoiceField, target: str) -> None:
     """Highlight down to *target*, then Space to select it (applies live)."""
     for _ in range(len(field._options)):  # pyright: ignore[reportPrivateUsage]
@@ -102,6 +135,22 @@ def test_picker_enter_keeps_and_persists(cfg: Path) -> None:
             await pilot.pause()
             assert app.theme == "dracula"
             assert get_theme() == "dracula"  # persisted
+
+    asyncio.run(scenario())
+
+
+def test_picker_selects_extra_builtin_and_persists(cfg: Path) -> None:
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.push_screen(ThemePicker())
+            await pilot.pause()
+            await _select_theme(pilot, app.screen.query_one(ChoiceField), "alice")
+            assert app.theme == "alice"  # listed and applied live
+            await pilot.press("enter")
+            await pilot.pause()
+            assert get_theme() == "alice"  # persisted
 
     asyncio.run(scenario())
 

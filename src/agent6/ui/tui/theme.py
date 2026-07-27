@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""TUI theming: two branded themes (``agent6-dark`` / ``agent6-light``), a
+"""TUI theming: the branded themes (``agent6-dark`` / ``agent6-light``) plus
+four extra built-ins (``alice``, ``snow``, ``rose``, ``grimm``), a
 live-previewing picker (every registered theme, sorted alphabetically) reachable
 from the View menu, and the wiring that loads the saved theme on startup and
 persists any change.
@@ -38,8 +39,7 @@ from agent6.ui.tui.settings import DEFAULT_THEME, get_theme, save_theme
 from agent6.ui.tui.widgets import FORM_CSS, ChoiceField
 
 # Branded defaults: a deep, low-saturation dark and a soft light, both with a
-# green focus accent over a blue selection primary (mirrors lazygit's
-# green-active-border / blue-selection split).
+# green focus accent over a blue selection primary.
 AGENT6_DARK = Theme(
     name="agent6-dark",
     primary="#7AA2F7",  # selection / cursor / resting card borders
@@ -89,6 +89,100 @@ AGENT6_LIGHT = Theme(
         "scrollbar-background-hover": "#EAECF2",
         "scrollbar-background-active": "#EAECF2",
         "scrollbar-corner-color": "#EAECF2",
+    },
+)
+
+# Extra built-ins: two light storybook palettes (alice, snow) and two dark
+# (rose, grimm).
+ALICE = Theme(
+    name="alice",
+    primary="#D3A129",
+    secondary="#3B78D0",
+    accent="#6F87A8",
+    foreground="#25272C",
+    background="#FFFDF7",
+    surface="#FFF7E6",
+    panel="#F4EBCF",
+    success="#2E7D57",
+    warning="#B77900",
+    error="#B83F48",
+    dark=False,
+    variables={
+        "border": "#B77900",
+        "border-blurred": "#D8CBA7",
+        "footer-key-foreground": "#3B78D0",
+        "input-selection-background": "#3B78D0 25%",
+        "block-cursor-background": "#D3A129",
+        "block-cursor-foreground": "#25272C",
+    },
+)
+
+SNOW = Theme(
+    name="snow",
+    primary="#4D91B2",
+    secondary="#315D8C",
+    accent="#7CC6D8",
+    foreground="#152733",
+    background="#F6FBFD",
+    surface="#EAF4F8",
+    panel="#D9EAF1",
+    success="#3B8C73",
+    warning="#A96E21",
+    error="#B8444A",
+    dark=False,
+    variables={
+        "border": "#315D8C",
+        "border-blurred": "#B4CCD8",
+        "footer-key-foreground": "#315D8C",
+        "input-selection-background": "#7CC6D8 35%",
+        "block-cursor-background": "#315D8C",
+        "block-cursor-foreground": "#F6FBFD",
+    },
+)
+
+ROSE = Theme(
+    name="rose",
+    primary="#D4494F",
+    secondary="#58AE9E",
+    accent="#4E86C4",
+    foreground="#E8ECEF",
+    background="#171A1E",
+    surface="#20252A",
+    panel="#2A3036",
+    success="#58AE9E",
+    warning="#D1A33B",
+    error="#E2555A",
+    dark=True,
+    variables={
+        "border": "#D4494F",
+        "border-blurred": "#465057",
+        "footer-key-foreground": "#D1A33B",
+        "input-selection-background": "#4E86C4 35%",
+        "block-cursor-background": "#58AE9E",
+        "block-cursor-foreground": "#171A1E",
+    },
+)
+
+GRIMM = Theme(
+    name="grimm",
+    primary="#C34D55",
+    secondary="#D2A33F",
+    accent="#8E5A78",
+    foreground="#F2E9E4",
+    background="#160F13",
+    surface="#24161C",
+    panel="#311C24",
+    success="#4C936B",
+    warning="#D2A33F",
+    error="#E45A62",
+    dark=True,
+    variables={
+        "border": "#C34D55",
+        "border-blurred": "#59343F",
+        "footer-key-foreground": "#D2A33F",
+        "input-selection-background": "#C34D55 35%",
+        "block-cursor-background": "#D2A33F",
+        "block-cursor-foreground": "#160F13",
     },
 )
 
@@ -175,7 +269,7 @@ class MuxPointerShapes:
 
 
 def setup_theme(app: App[Any]) -> None:
-    """Register the branded themes, apply the saved one, and persist changes.
+    """Register the built-in themes, apply the saved one, and persist changes.
 
     Call from ``App.on_mount``. Subscribing to ``theme_changed_signal`` means
     EVERY path that changes the theme — the View>Theme picker, the built-in
@@ -183,7 +277,7 @@ def setup_theme(app: App[Any]) -> None:
     Also installs the half-height horizontal scrollbar renderer (a class-level
     hook, so one assignment restyles every bar in the process)."""
     ScrollBar.renderer = ThinScrollBarRender
-    for theme in (AGENT6_DARK, AGENT6_LIGHT):
+    for theme in (AGENT6_DARK, AGENT6_LIGHT, ALICE, SNOW, ROSE, GRIMM):
         if theme.name not in app.available_themes:
             app.register_theme(theme)
     wanted = get_theme()
