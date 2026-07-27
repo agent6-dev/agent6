@@ -158,3 +158,23 @@ class TestResolveStates:
     def test_unknown_name_warns(self, tmp_path: Path) -> None:
         r = skills.resolve_states(self._skills(tmp_path), {"ghost": "disabled"})
         assert any("ghost" in w for w in r.warnings)
+
+
+def test_unreadable_skill_warns_instead_of_crashing_every_run(tmp_path: Path) -> None:
+    """A SKILL.md with one non-UTF-8 byte (or an unreadable file) crashed
+    discovery, and discovery runs at startup: every `agent6 run` then died with
+    a bare UnicodeDecodeError naming no file, after run.start and before any
+    run.end. A bad skill must degrade to a warning like every other malformed
+    one, leaving the healthy skills usable."""
+    bad = tmp_path / "broken"
+    bad.mkdir()
+    (bad / "SKILL.md").write_bytes(b"---\nname: broken\ndescription: caf\xe9\n---\nbody\n")
+    good = tmp_path / "healthy"
+    good.mkdir()
+    (good / "SKILL.md").write_text(
+        "---\nname: healthy\ndescription: works\n---\nbody\n", encoding="utf-8"
+    )
+
+    found, warnings = skills.discover_skills([tmp_path])
+    assert [s.name for s in found] == ["healthy"]
+    assert any("broken" in w for w in warnings)

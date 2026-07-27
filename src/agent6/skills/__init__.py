@@ -109,7 +109,13 @@ def parse_frontmatter(text: str) -> tuple[dict[str, str], list[str]]:
 
 def _load_skill(skill_dir: Path) -> tuple[Skill | None, list[str]]:
     path = skill_dir / "SKILL.md"
-    text = path.read_text(encoding="utf-8")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        # Discovery runs at startup, so one unreadable or non-UTF-8 SKILL.md
+        # took down EVERY run with a bare decode error naming no file. Degrade
+        # to the warning every other malformed skill gets.
+        return None, [f"{path}: unreadable ({exc})"]
     fields, warnings = parse_frontmatter(text)
     name = fields.get("name", "")
     description = fields.get("description", "")
