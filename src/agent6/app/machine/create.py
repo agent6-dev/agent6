@@ -320,12 +320,20 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
             reporter.err("The validated draft is on stdout; redirect it or re-run with -o <file>.")
             reporter.out(payload.removesuffix("\n"))
             return 1
-    # End the watchable session (the file-write below is fast and event-less);
-    # all_passed marks a valid machine authored and placeable.
+    # The writes decide the outcome, so run.end waits for them.
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(payload, encoding="utf-8")
+        _write_scripts(target.parent, valid_scripts)
+    except OSError as exc:
+        events.emit("run.end", reason="write_failed", iterations=attempt, all_passed=False)
+        reporter.err(f"FAILED: could not write the bundle to {target.parent}: {exc}")
+        reporter.err("The validated draft is on stdout; redirect it or re-run with -o <file>.")
+        reporter.out(payload.removesuffix("\n"))
+        return 1
+    # End the watchable session; all_passed marks a valid machine authored AND
+    # written.
     events.emit("run.end", reason="machine_created", iterations=attempt, all_passed=True)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(payload, encoding="utf-8")
-    _write_scripts(target.parent, valid_scripts)
     scripts_note = f" + {len(valid_scripts)} script(s)" if valid_scripts else ""
     reporter.err(
         f"OK: wrote draft to {target} ({spec.machine}, {len(spec.states)} states){scripts_note}."

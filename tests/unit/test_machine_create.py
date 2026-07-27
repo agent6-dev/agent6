@@ -386,6 +386,42 @@ def test_create_collision_refusal_ends_the_watchable_log_as_failed(
     assert end["reason"] == "output_collision"
 
 
+def test_create_write_failure_ends_the_watchable_log_as_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """machine_created was emitted before the bundle writes, so a write that
+    fails (read-only target dir) raised out of the CLI with the log already
+    claiming success. The write failure ends the log as its own failure token,
+    keeps the paid-for draft on stdout, and exits 1."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    _stub_preflight(monkeypatch)
+    _stub_runner(
+        monkeypatch,
+        [AgentExecResult(reason="finish_run", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0)],
+    )
+
+    real_write = _create._write_scripts  # pyright: ignore[reportPrivateUsage]
+
+    def denied(base_dir: Path, scripts: dict[str, str]) -> None:
+        if str(base_dir).startswith(str(tmp_path / "state")):
+            real_write(base_dir, scripts)  # scratch-validation writes proceed
+            return
+        raise PermissionError("scripts/: Permission denied")  # the output dir only
+
+    monkeypatch.setattr(_create, "_write_scripts", denied)
+    assert main(["machine", "create", "Greet the user"]) == 1
+    out = capsys.readouterr()
+    assert "could not write" in out.err
+    assert out.out.startswith('machine = "greeter"')  # the draft is not lost
+    logs = list((tmp_path / "state").glob("**/machine-drafts/*/logs.jsonl"))
+    assert len(logs) == 1
+    events = [json.loads(line) for line in logs[0].read_text(encoding="utf-8").splitlines()]
+    end = next(e for e in events if e["type"] == "run.end")
+    assert end["all_passed"] is False
+    assert end["reason"] == "write_failed"
+
+
 def test_create_output_flag_overwrites(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
