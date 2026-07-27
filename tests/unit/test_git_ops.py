@@ -633,7 +633,7 @@ def test_git_runs_under_a_pinned_locale(tmp_path: Path) -> None:
     so the bystander's stash was destroyed with no record of it."""
     _init_repo(tmp_path)
     seen: dict[str, str] = {}
-    real = subprocess.run
+    real = subprocess.Popen
 
     def capture(argv: object, **kwargs: object) -> object:
         env = kwargs.get("env")
@@ -641,9 +641,99 @@ def test_git_runs_under_a_pinned_locale(tmp_path: Path) -> None:
             seen.update({k: v for k, v in env.items() if k in ("LC_ALL", "LANG")})  # pyright: ignore[reportUnknownArgumentType]
         return real(argv, **kwargs)  # pyright: ignore[reportArgumentType, reportCallIssue]
 
-    with mock.patch.object(git_ops.subprocess, "run", capture):
+    with mock.patch.object(git_ops.subprocess, "Popen", capture):
         git_ops._run(tmp_path, "stash", "list", check=False)  # pyright: ignore[reportPrivateUsage]
     assert seen.get("LC_ALL") == "C"
+
+
+class _HungGit:
+    """Popen stand-in for a git stuck past the timeout: the first
+    communicate() times out (creating *lock* if given -- a lock appearing
+    mid-window); terminate() exits it, unless *ignores_term* (wedged
+    uninterruptible), where only kill() reaps it."""
+
+    def __init__(self, *, lock: Path | None = None, ignores_term: bool = False) -> None:
+        self.lock = lock
+        self.ignores_term = ignores_term
+        self.calls: list[str] = []
+
+    def communicate(self, timeout: float | None = None) -> tuple[bytes, bytes]:
+        if "kill" in self.calls:
+            return b"", b""
+        if "terminate" in self.calls:
+            if self.ignores_term:
+                raise subprocess.TimeoutExpired(cmd="git", timeout=timeout or 0)
+            return b"", b""
+        if self.lock is not None:
+            self.lock.write_text("", encoding="utf-8")
+        raise subprocess.TimeoutExpired(cmd="git", timeout=timeout or 0)
+
+    def terminate(self) -> None:
+        self.calls.append("terminate")
+
+    def kill(self) -> None:
+        self.calls.append("kill")
+
+
+def test_timeout_terminates_first_and_leaves_a_survivor_lock(tmp_path: Path) -> None:
+    """A timed-out git gets SIGTERM, and git's TERM handler removes its own
+    lockfiles; SIGKILL only follows an ignored TERM. After a graceful TERM
+    exit a lock still on disk is a concurrent git's (git cleaned its own), so
+    nothing is deleted."""
+    _init_repo(tmp_path)
+    lock = tmp_path / ".git" / "index.lock"
+    fake = _HungGit(lock=lock)
+
+    def fake_popen(*_a: object, **_k: object) -> _HungGit:
+        return fake
+
+    with (
+        mock.patch.object(git_ops.subprocess, "Popen", fake_popen),
+        pytest.raises(GitError, match="timed out"),
+    ):
+        git_ops._run(tmp_path, "commit", "-m", "x", check=False)  # pyright: ignore[reportPrivateUsage]
+    assert fake.calls == ["terminate"]  # graceful exit: never escalated to KILL
+    assert lock.exists()  # a survivor lock after TERM is not ours to delete
+
+
+def test_timeout_keeps_a_preexisting_index_lock(tmp_path: Path) -> None:
+    """A lock that already existed when the timed-out git was spawned belongs
+    to a CONCURRENT git process (operator shell, another lane); deleting it
+    would break git's index mutual exclusion, even on the SIGKILL path."""
+    _init_repo(tmp_path)
+    lock = tmp_path / ".git" / "index.lock"
+    lock.write_text("held by a concurrent git\n", encoding="utf-8")
+    fake = _HungGit(ignores_term=True)
+
+    def fake_popen(*_a: object, **_k: object) -> _HungGit:
+        return fake
+
+    with (
+        mock.patch.object(git_ops.subprocess, "Popen", fake_popen),
+        pytest.raises(GitError, match="timed out"),
+    ):
+        git_ops._run(tmp_path, "status", check=False)  # pyright: ignore[reportPrivateUsage]
+    assert lock.exists()  # never ours to delete
+
+
+def test_timeout_clears_the_lock_its_own_child_created(tmp_path: Path) -> None:
+    """A child that ignores TERM (a wedged filesystem) is SIGKILLed, skipping
+    git's own lockfile cleanup; a lock that appeared under this child is
+    cleared so the run's remaining git ops recover."""
+    _init_repo(tmp_path)
+    lock = tmp_path / ".git" / "index.lock"
+    fake = _HungGit(lock=lock, ignores_term=True)
+
+    def fake_popen(*_a: object, **_k: object) -> _HungGit:
+        return fake
+
+    with (
+        mock.patch.object(git_ops.subprocess, "Popen", fake_popen),
+        pytest.raises(GitError, match="timed out"),
+    ):
+        git_ops._run(tmp_path, "commit", "-m", "x", check=False)  # pyright: ignore[reportPrivateUsage]
+    assert fake.calls == ["terminate", "kill"]  # TERM tried before KILL
+    assert not lock.exists()  # the dead child's own lock is cleared
 
 
 def test_find_stash_missing_returns_none(tmp_path: Path) -> None:

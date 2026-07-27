@@ -31,6 +31,10 @@ class GitError(Exception):
 # second; this only fires on a pathological hang (stuck filesystem, held lock).
 _GIT_TIMEOUT_S = 120.0
 
+# How long a timed-out git gets to exit on SIGTERM before SIGKILL. Its TERM
+# handler only has to unlink its lockfiles, so this is generous.
+_GIT_TERM_GRACE_S = 5.0
+
 
 class GitSafetyError(GitError):
     """Refused to perform a destructive git operation."""
@@ -186,31 +190,44 @@ def _run(
     if argv and argv[0] in ("diff", "show"):
         argv[1:1] = DIFF_SHOW_SAFETY_FLAGS
     full_argv = (_git(), *hardening, *argv)
+    index_lock = cwd / ".git" / "index.lock"
+    lock_preexisted = index_lock.exists()
+    proc = subprocess.Popen(
+        full_argv,
+        cwd=cwd,
+        # Bytes, decoded lossily below: git diff/show emit raw file bytes,
+        # so a changed non-UTF-8 text file (latin-1 has no NULs, so git does
+        # not classify it binary) would make a strict text=True decode raise
+        # UnicodeDecodeError mid-run. Filenames are core.quotePath-escaped to
+        # ASCII, and shas/porcelain status are ASCII, so replacement only
+        # ever touches diff/show content.
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+    )
     try:
-        proc = subprocess.run(
-            full_argv,
-            cwd=cwd,
-            capture_output=True,
-            # Bytes, decoded lossily below: git diff/show emit raw file bytes,
-            # so a changed non-UTF-8 text file (latin-1 has no NULs, so git does
-            # not classify it binary) would make a strict text=True decode raise
-            # UnicodeDecodeError mid-run. Filenames are core.quotePath-escaped to
-            # ASCII, and shas/porcelain status are ASCII, so replacement only
-            # ever touches diff/show content.
-            check=False,
-            env=env,
-            # A local git op is fast; a bound turns a pathological hang (a wedged
-            # NFS/filesystem, an index.lock held by a crashed process) into a
-            # loud error instead of a silent freeze with no feedback.
-            timeout=_GIT_TIMEOUT_S,
-        )
+        # A local git op is fast; a bound turns a pathological hang (a wedged
+        # NFS/filesystem, an index.lock held by a crashed process) into a
+        # loud error instead of a silent freeze with no feedback.
+        out, err = proc.communicate(timeout=_GIT_TIMEOUT_S)
     except subprocess.TimeoutExpired as exc:
-        # subprocess SIGKILLs the timed-out git; if it died mid-commit/add it
-        # leaves .git/index.lock, and every later git op then fails "Unable to
-        # create '.git/index.lock'". The child is dead, so clearing the stale
-        # lock is safe and lets the run's remaining git ops recover.
-        with contextlib.suppress(OSError):
-            (cwd / ".git" / "index.lock").unlink(missing_ok=True)
+        # SIGTERM first: git's TERM handler unlinks its own lockfiles
+        # (index.lock included), so a terminated child cleans up after itself
+        # and a lock still on disk afterwards is a concurrent git's.
+        proc.terminate()
+        try:
+            proc.communicate(timeout=_GIT_TERM_GRACE_S)
+        except subprocess.TimeoutExpired:
+            # TERM ignored (wedged uninterruptible): SIGKILL skips git's
+            # cleanup, so clear the lock -- ONLY when it appeared under this
+            # child. One that predates the spawn belongs to a concurrent git
+            # process (operator shell, another lane), and deleting it would
+            # break git's index mutual exclusion.
+            proc.kill()
+            proc.communicate()
+            if not lock_preexisted:
+                with contextlib.suppress(OSError):
+                    index_lock.unlink(missing_ok=True)
         raise GitError(
             f"git {' '.join(args)} timed out after {_GIT_TIMEOUT_S:.0f}s"
             " (a stuck filesystem or a held .git/index.lock?)"
@@ -218,8 +235,8 @@ def _run(
     result = CommandResult(
         argv=full_argv,
         returncode=proc.returncode,
-        stdout=proc.stdout.decode(errors="replace"),
-        stderr=proc.stderr.decode(errors="replace"),
+        stdout=out.decode(errors="replace"),
+        stderr=err.decode(errors="replace"),
         duration_s=0.0,
     )
     if check and not result.ok:
