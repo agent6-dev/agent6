@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import sys
 import textwrap
+import threading
 
 import pytest
 
@@ -189,3 +190,33 @@ def test_manager_close_is_idempotent() -> None:
     mgr = MCPManager.start([("fake", _fake_server_argv(), 5.0, 5.0)])
     mgr.close()
     mgr.close()  # must not raise
+
+
+def test_concurrent_calls_do_not_interleave_stdin_writes() -> None:
+    """tools/call from concurrent threads (explore-review seats share one
+    dispatcher across a thread pool) must serialize on the server's stdin:
+    pipe writes larger than PIPE_BUF interleave across unlocked writers,
+    corrupting the JSON-RPC framing -- the server read malformed JSON and
+    died, failing every in-flight call."""
+    mgr = MCPManager.start([("fake", _fake_server_argv(), 10.0, 30.0)])
+    try:
+        payloads = {i: f"p{i}-" + "x" * 300_000 for i in range(8)}
+        results: dict[int, str] = {}
+        errors: list[Exception] = []
+
+        def call(i: int) -> None:
+            try:
+                out = mgr.call(f"{MCP_TOOL_PREFIX}fake__echo", {"text": payloads[i]})
+                results[i] = out["content"][0]["text"]
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=call, args=(i,)) for i in payloads]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+        assert not errors
+        assert results == payloads
+    finally:
+        mgr.close()

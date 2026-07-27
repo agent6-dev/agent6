@@ -111,6 +111,10 @@ class _MCPServer:
     _proc: subprocess.Popen[bytes] | None = None
     _next_id: int = 1
     _id_lock: threading.Lock = field(default_factory=threading.Lock)
+    # Serializes stdin writes: concurrent tools/call threads (explore-review
+    # seats share one dispatcher) interleave pipe writes larger than PIPE_BUF,
+    # corrupting the JSON-RPC framing for every in-flight request.
+    _stdin_lock: threading.Lock = field(default_factory=threading.Lock)
     # One slot per in-flight request: _request registers `id -> None` before
     # writing, the reader fills ONLY registered slots, and the requester's
     # finally clears its slot -- so a reply landing after a timeout (or a
@@ -324,8 +328,9 @@ class _MCPServer:
             raise MCPError(f"server {self.name!r} is not writable (process gone)")
         line = json.dumps(obj, separators=(",", ":")).encode("utf-8") + b"\n"
         try:
-            proc.stdin.write(line)
-            proc.stdin.flush()
+            with self._stdin_lock:
+                proc.stdin.write(line)
+                proc.stdin.flush()
         except (BrokenPipeError, OSError) as exc:
             raise MCPError(f"server {self.name!r} stdin closed: {exc}") from exc
 
