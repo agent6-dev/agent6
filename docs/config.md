@@ -301,6 +301,15 @@ register as `/<name>` pause-menu commands (built-ins always win collisions) and
 work with `agent6 run --skill <name>`. See [security.md](security.md) for the
 trust model.
 
+The format is shared with Claude Code, Pi, and most agentskills.io tooling, so
+skills migrate in both directions: point `extra_dirs` at an existing collection
+(`~/.claude/skills`, `~/.pi/agent/skills`, `~/.agents/skills`) to load it
+as-is, or `agent6 skills install <path-or-git-url>` to copy it. Repo-local
+skill directories (`.claude/skills`, `.pi/skills`, `.agents/skills` inside a
+checkout) are deliberately NOT discovered: repo content is not config (a cloned
+repo must not inject commands into your pause menu); install or list them
+explicitly.
+
 | Field | Default | Meaning |
 |---|---|---|
 | `enabled` | `true` | Master switch: off = no index block, no `use_skill` tool, no slash commands. |

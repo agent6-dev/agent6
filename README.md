@@ -23,13 +23,21 @@ open-ended agent loop.
 - Plan, run, review, and ask modes; a live terminal dashboard and a zero-dependency
   browser UI (`agent6 web`, phone-friendly); persistent transcripts and a searchable
   run history
+- Transparent, steerable context compaction: every surface shows what left the
+  model's context and the summary a restart continued from; `/compact [focus]`
+  compacts on demand, `/pin <text>` makes an instruction survive compaction
+  verbatim, and `agent6 memory pin` keeps a load-bearing memory in every run's
+  prompt
 - State machines (`agent6 machine`) for long-running automated tasks: LLM-drafted,
   operator-reviewed, journaled, and replayable; they can pause for operator input,
   accept events, be steered from any front-end, and notify you when they need attention
 - Skills: install standard SKILL.md packs (superpowers, caveman, any
   agentskills.io repo) with `agent6 skills install <url>`; they index into the
   system prompt, load on demand via a read-only tool, and fire as `/name`
-  pause-menu commands or `run --skill`; nothing in a skill is ever executed
+  pause-menu commands or `run --skill`; nothing in a skill is ever executed.
+  The format is shared with Claude Code and Pi, and `[skills].extra_dirs` loads
+  an existing `~/.claude/skills`-style collection in place. Repo instructions
+  are read from `AGENTS.md` (a repo using `CLAUDE.md` can symlink it)
 - Small, fixed LLM tool surface; the only extension point is operator-configured MCP
   servers, off by default
 - Eight runtime dependencies, no telemetry, no auto-update

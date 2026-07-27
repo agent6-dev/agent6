@@ -138,7 +138,15 @@ Notes:
   which tracked tasks the transcript shows finished and what new work it
   found, then marks the finished ones `passed` and queues the new ones in
   the DAG -- so task state stays accurate even though weak models rarely
-  call `update_task` themselves.
+  call `update_task` themselves. Compaction is visible, not silent: the
+  events carry what was elided (call identities, gist paths) and the full
+  restart summary, every conversation view marks elisions and restarts in
+  place, and `/status` shows the elided/gist counts. The operator steers
+  it with `/compact [focus]` (pause menu and composers; the focus text is
+  appended to the summariser request) and `/pin <text>`, a steer the loop
+  records and re-injects verbatim into every tier-2 restart (total pins
+  capped at 4000 chars; an over-cap pin is delivered as an ordinary steer
+  and the refusal is loud). Pins persist in the resume snapshot.
 - **Cross-run memory.** At run start the loop loads the active entries
   from the per-repo memory store (`<state-dir>/<repo-id>/memories/`,
   written by `agent6 memory add` or a previous run) and injects them as a
@@ -153,7 +161,9 @@ Notes:
   twice: an advisory when verify first goes green after a red one, and a
   once-deferred `finish_run` after such a recovery if nothing was
   recorded. Each fires at most once per run and never on a run whose
-  verify never failed.
+  verify never failed. `agent6 memory pin <id>` exempts a load-bearing
+  entry from the block's newest-win trim (never from the byte bound:
+  pins over the cap elide oldest-first, and `memory list` warns).
 - **Skills.** At run start the loop resolves operator-installed SKILL.md
   packs (`<data-dir>/skills/`, plus `[skills].extra_dirs`) through the
   dispatcher's single resolution, so the `<skills>` system-prompt index and
