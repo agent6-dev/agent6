@@ -281,20 +281,11 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
         input_total=total_in,
         output_total=total_out,
     )
-    # End the watchable session (the file-write below is fast and event-less);
-    # all_passed marks whether a valid machine was authored, for the TUI status.
-    # `iterations` = authoring attempts made, so run.end keeps one shape.
-    ok = spec is not None and valid_toml is not None
-    events.emit(
-        "run.end",
-        # A token, like every other run.end reason: the listing prints it as the
-        # detail beside "failed", where a prose sentence contradicted the word.
-        reason="machine_created" if ok else "no_valid_machine",
-        iterations=attempt,
-        all_passed=ok,
-    )
-
+    # run.end reasons below are tokens, like every other emitter's: the listing
+    # prints the reason as the detail beside "failed", where a prose sentence
+    # contradicted the word. `iterations` = authoring attempts made.
     if spec is None or valid_toml is None:
+        events.emit("run.end", reason="no_valid_machine", iterations=attempt, all_passed=False)
         reporter.err(f"FAILED: no valid machine after {max_attempts} attempt(s).")
         if diagnostics:
             reporter.err("Last diagnostics:")
@@ -320,12 +311,18 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
             p for p in (target, *(target.parent / rel for rel in valid_scripts)) if p.exists()
         ]
         if clashes:
+            # The refusal fails the command with nothing written; run.end must
+            # say so, not machine_created.
+            events.emit("run.end", reason="output_collision", iterations=attempt, all_passed=False)
             reporter.err("REFUSING to overwrite existing file(s):")
             for clash in clashes:
                 reporter.err(f"  {clash}")
             reporter.err("The validated draft is on stdout; redirect it or re-run with -o <file>.")
             reporter.out(payload.removesuffix("\n"))
             return 1
+    # End the watchable session (the file-write below is fast and event-less);
+    # all_passed marks a valid machine authored and placeable.
+    events.emit("run.end", reason="machine_created", iterations=attempt, all_passed=True)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(payload, encoding="utf-8")
     _write_scripts(target.parent, valid_scripts)

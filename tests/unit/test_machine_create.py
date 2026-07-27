@@ -361,6 +361,31 @@ def test_create_refuses_to_overwrite_default_path(
     assert out.out.startswith('machine = "greeter"')
 
 
+def test_create_collision_refusal_ends_the_watchable_log_as_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The collision refusal exits 1 and writes nothing, but run.end had
+    already said machine_created / all_passed=true -- a failed create rendered
+    as done on every watch surface. The refusal ends the log as its own
+    failure token instead."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    (tmp_path / "greeter.asm.toml").write_text("# do not clobber\n", encoding="utf-8")
+    _stub_preflight(monkeypatch)
+    _stub_runner(
+        monkeypatch,
+        [AgentExecResult(reason="finish_run", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0)],
+    )
+    assert main(["machine", "create", "Greet the user"]) == 1
+    capsys.readouterr()
+    logs = list((tmp_path / "state").glob("**/machine-drafts/*/logs.jsonl"))
+    assert len(logs) == 1
+    events = [json.loads(line) for line in logs[0].read_text(encoding="utf-8").splitlines()]
+    end = next(e for e in events if e["type"] == "run.end")
+    assert end["all_passed"] is False
+    assert end["reason"] == "output_collision"
+
+
 def test_create_output_flag_overwrites(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
