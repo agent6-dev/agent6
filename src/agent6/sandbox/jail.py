@@ -125,6 +125,15 @@ _ENV_VAR = "AGENT6_JAIL_BIN"
 
 
 def locate_jail_binary() -> Path | None:
+    """The launcher binary: an explicit override, else the one the build hook
+    bundled into the installed package, else one on PATH.
+
+    No source-tree fallback. The build hook compiles the crate into
+    ``sandbox/_bin/`` on every install, editable ones included, so a checkout
+    with cargo already has it there: rebuild and reinstall to pick a change up,
+    or point ``AGENT6_JAIL_BIN`` at a ``cargo build`` output while iterating on
+    the crate itself.
+    """
     override = os.environ.get(_ENV_VAR)
     if override:
         p = Path(override)
@@ -136,20 +145,7 @@ def locate_jail_binary() -> Path | None:
         return bundled
     # Look in PATH
     found = shutil.which("agent6-jail")
-    if found:
-        return Path(found)
-    # Look beside the repo (un-bundled dev checkout fallback). The crate
-    # lives at src/agent6/jail; this file is src/agent6/sandbox/jail.py, so
-    # the crate is one level up from the sandbox package.
-    pkg_root = Path(__file__).resolve().parents[1]
-    candidates = [
-        pkg_root / "jail" / "target" / "release" / "agent6-jail",
-        pkg_root / "jail" / "target" / "debug" / "agent6-jail",
-    ]
-    for cand in candidates:
-        if cand.is_file():
-            return cand
-    return None
+    return Path(found) if found else None
 
 
 def _policy_to_json(policy: JailPolicy) -> str:
