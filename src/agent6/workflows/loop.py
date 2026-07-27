@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from agent6.budget import BudgetExceeded, BudgetTracker
 from agent6.config import Config
-from agent6.directive import DirectiveError, Segment, parse_directive, parse_pin, parse_spec
+from agent6.directive import DirectiveError, Segment, parse_directive, parse_pin
 from agent6.git_ops import GitError, commit_all, commit_diff, diff_since
 from agent6.git_ops import status as git_status
 from agent6.graph.curator import GraphCurator
@@ -159,6 +159,13 @@ from agent6.workflows._nudges import (
     verify_failure_signature,
 )
 from agent6.workflows._panel import ReviewContext, ReviewDecision, render_findings
+from agent6.workflows._parallel_dispatch import (
+    LaneJoin,
+    join_lane_result,
+    segment_lanes,
+    segment_stamp,
+    summary_text,
+)
 from agent6.workflows._prompt_blocks import build_system_prompt
 from agent6.workflows._prompt_revision import (
     PromptRevision,
@@ -188,10 +195,7 @@ from agent6.workflows._toolset import (
 )
 from agent6.workflows.subrun import (
     GroupLaneSpawner,
-    LaneResult,
-    LaneTask,
     SubrunError,
-    join_branch,
 )
 
 # A re-served tool result must exceed this many bytes before the back-to-back
@@ -264,22 +268,6 @@ def _plan_is_title_only(plan_md: str) -> bool:
     return not any(
         line.strip() and not line.lstrip().startswith("#") for line in plan_md.splitlines()
     )
-
-
-@dataclass(frozen=True, slots=True)
-class _LaneJoin:
-    """Per-lane outcome of a `/parallel` dispatch, for the summary + events.
-
-    ``status`` is one of "joined" (branch merged, ``sha`` set), "conflict"
-    (imported but the merge conflicted; the branch exists locally for a manual
-    merge), or "failed" (the lane never produced an importable branch).
-    """
-
-    run_id: str
-    branch: str
-    status: Literal["joined", "conflict", "failed"]
-    sha: str
-    detail: str
 
 
 @dataclass(slots=True)
@@ -3921,7 +3909,7 @@ class Workflow:
             return
         try:
             # One DAG node per SEGMENT (task); its lanes join under it.
-            per_segment = [self._segment_lanes(seg) for seg in segments]
+            per_segment = [segment_lanes(seg) for seg in segments]
         except DirectiveError as exc:
             self._inject_parallel_feedback(
                 conversation, f"bad /parallel spec: {exc}; nothing dispatched."
@@ -3981,7 +3969,7 @@ class Workflow:
         # Join every lane sequentially in dispatch order (a merge mutates the one
         # workspace, so joins can never run concurrently), then stamp one DAG node
         # per segment from its lanes' joins.
-        joined = [self._join_lane_result(res) for res in results]
+        joined = [join_lane_result(self.root, res) for res in results]
         cursor = 0
         for nid, seg_lanes in zip(node_ids, per_segment, strict=True):
             width = len(seg_lanes)
@@ -3998,12 +3986,6 @@ class Workflow:
         if failures:
             self._emit("loop.parallel.failed", group=group, lanes=failures)
         self._inject_parallel_summary(conversation, group, joined)
-
-    def _segment_lanes(self, seg: Segment) -> list[LaneTask]:
-        """Expand one segment into its lanes: `parse_spec` maps the spec to one
-        model per lane (`None` = the worker model). Raises DirectiveError on a
-        bad spec (zero lanes, empty model list)."""
-        return [LaneTask(task=seg.task, model=model) for model in parse_spec(seg.spec)]
 
     def _ensure_clean_for_dispatch(self, iteration: int) -> bool:
         """True when the worktree is clean enough to cut lanes from HEAD. A dirty
@@ -4068,42 +4050,11 @@ class Workflow:
         except Exception as exc:
             self._log(f"PARALLEL: DAG node stamp failed for {node_id}: {exc}")
 
-    def _join_lane_result(self, res: LaneResult) -> _LaneJoin:
-        """Join one returned lane's branch into the coordinator's branch. A failed
-        lane (nothing imported) or a conflicted merge yields a non-"joined" status;
-        a clean merge yields "joined" with the sha. Never raises; DAG stamping is
-        the segment's (see `_stamp_segment_node`)."""
-        rid = res.spec.run_id
-        if not res.ok:
-            return _LaneJoin(rid, res.branch, "failed", "", res.error)
-        try:
-            sha = join_branch(self.root, res.branch)
-        except SubrunError as exc:
-            return _LaneJoin(rid, res.branch, "failed", "", str(exc))
-        if sha is None:
-            return _LaneJoin(rid, res.branch, "conflict", "", "merge conflict")
-        return _LaneJoin(rid, res.branch, "joined", sha, "")
-
-    def _stamp_segment_node(self, node_id: str | None, lanes: list[_LaneJoin]) -> None:
-        """Stamp one segment's DAG node from its lanes' joins. A single-lane
-        segment reduces to the old shape (passed with the join sha, or failed).
-        A multi-lane segment passes when any lane joined -- recording the LAST
-        joined sha -- and the note names every lane; else it fails. NodeStatus has
-        no "blocked", so a conflict counts as not-joined."""
-        joined = [j for j in lanes if j.status == "joined"]
-        note = "; ".join(self._lane_note(j) for j in lanes)
-        if joined:
-            self._stamp_parallel_node(node_id, status="passed", note=note, sha=joined[-1].sha)
-        else:
-            self._stamp_parallel_node(node_id, status="failed", note=note)
-
-    @staticmethod
-    def _lane_note(j: _LaneJoin) -> str:
-        if j.status == "joined":
-            return f"{j.run_id} joined at {j.sha[:12]}"
-        if j.status == "conflict":
-            return f"{j.run_id} conflicted; merge manually"
-        return f"{j.run_id} failed: {j.detail}"
+    def _stamp_segment_node(self, node_id: str | None, lanes: list[LaneJoin]) -> None:
+        """Stamp one segment's DAG node from its lanes' joins (the reduction
+        lives in `segment_stamp`)."""
+        status, note, sha = segment_stamp(lanes)
+        self._stamp_parallel_node(node_id, status=status, note=note, sha=sha)
 
     def _inject_parallel_feedback(self, conversation: Conversation, msg: str) -> None:
         """Answer a `/parallel` steer with a one-line notice and continue."""
@@ -4111,24 +4062,10 @@ class Workflow:
         conversation.notice(f"[parallel] {msg}")
 
     def _inject_parallel_summary(
-        self, conversation: Conversation, group: str, joined: list[_LaneJoin]
+        self, conversation: Conversation, group: str, joined: list[LaneJoin]
     ) -> None:
-        """Inject ONE user message summarizing every lane's outcome so the model
-        continues informed (joined sha, conflict-to-resolve, or failure reason)."""
-        lines = [f"[parallel] group {group} complete ({len(joined)} lane(s)):"]
-        for j in joined:
-            if j.status == "joined":
-                lines.append(f"  - {j.run_id} ({j.branch}): joined at {j.sha[:12]}")
-            elif j.status == "conflict":
-                lines.append(
-                    f"  - {j.run_id} ({j.branch}): CONFLICT -- branch imported but the merge"
-                    f" conflicted. It exists locally; run `git merge {j.branch}` and resolve,"
-                    " or discard it."
-                )
-            else:
-                lines.append(f"  - {j.run_id} ({j.branch}): FAILED -- {j.detail}; nothing joined.")
-        lines.append("Review what landed and continue.")
-        conversation.notice("\n".join(lines))
+        """Inject the lane-outcome summary so the model continues informed."""
+        conversation.notice(summary_text(group, joined))
 
     def _log(self, msg: str) -> None:
         self.logger(f"[agent6] {msg}")
