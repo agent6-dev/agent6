@@ -716,7 +716,10 @@ class OpenAIProvider:
             slot["function"]["arguments"] = args
             final_tool_calls.append(slot)
 
-        message: dict[str, Any] = {"content": "".join(text_parts)}
+        # role: a non-streamed response message always carries it, and the
+        # recorded body is read back as a transcript, so the synthesised one
+        # must too.
+        message: dict[str, Any] = {"role": "assistant", "content": "".join(text_parts)}
         if reasoning_parts:
             message["reasoning_content"] = "".join(reasoning_parts)
         if final_tool_calls:

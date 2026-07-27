@@ -473,3 +473,71 @@ def test_cmd_history_transcript_latest_uses_log_activity_not_dir_touch(
     captured = capsys.readouterr()
     assert json.loads(captured.out)[0]["seq"] == 1
     assert "newer-run" in captured.err
+
+
+def test_streamed_openai_response_without_a_role_is_the_assistant() -> None:
+    """The streaming path synthesises choices[0].message with no "role" key (a
+    real OpenAI response always carries one), and that body is what the recorder
+    writes. Rendering it fell through to the generic branch, so the model's words
+    printed under '## user', tool_calls were dropped, reasoning was lost, and the
+    unresolved call id left every later result unlabelled."""
+    streamed = [
+        {
+            "seq": 1,
+            "request": {"body": {"messages": [{"role": "user", "content": "do X"}]}},
+            "response": {
+                "body": {
+                    "choices": [
+                        {
+                            "message": {  # no "role" -- exactly what _call_streaming records
+                                "content": "working on it",
+                                "reasoning_content": "let me think",
+                                "tool_calls": [
+                                    {
+                                        "id": "c1",
+                                        "function": {
+                                            "name": "read_file",
+                                            "arguments": '{"path":"a.py"}',
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                }
+            },
+        },
+        {
+            "seq": 2,
+            "request": {
+                "body": {
+                    "messages": [
+                        {"role": "user", "content": "do X"},
+                        {
+                            "role": "assistant",
+                            "content": "working on it",
+                            "tool_calls": [
+                                {
+                                    "id": "c1",
+                                    "function": {
+                                        "name": "read_file",
+                                        "arguments": '{"path":"a.py"}',
+                                    },
+                                }
+                            ],
+                        },
+                        {"role": "tool", "tool_call_id": "c1", "content": "FULL FILE CONTENTS"},
+                    ]
+                }
+            },
+            "response": {"body": {"choices": [{"message": {"content": "all done"}}]}},
+        },
+    ]
+    turns = fold_conversation(streamed)
+    assert [t.role for t in turns] == ["user", "assistant", "tool", "assistant"]
+    a1 = turns[1]
+    assert a1.thinking == "let me think"
+    assert a1.tool_calls and a1.tool_calls[0][0] == "read_file"
+    assert turns[2].tool_name == "read_file"  # the call id resolved to a name
+    md = render_markdown(turns, run_id="r1", show_thinking=True)
+    assert "## assistant" in md and "-> read_file(" in md
