@@ -75,6 +75,7 @@ from agent6.events import EventSink
 from agent6.git_ops import (
     CommitIdentity,
     GitError,
+    auto_stash_message,
     create_branch,
     dirty_paths,
     stash_all,
@@ -427,7 +428,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     if mode == "run" and pre_status is not None and not pre_status.is_clean:
         if cfg.git.auto_stash:
             try:
-                stash_all(cwd, f"agent6 auto-stash before run {effective_run_id}")
+                stash_all(cwd, auto_stash_message(effective_run_id))
                 stashed = True
             except GitError as exc:
                 reporter.err(f"ERROR: could not auto-stash before run: {exc}")
@@ -813,6 +814,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                     base_branch=base_branch,
                     run_branch=run_branch,
                     auto_pop=cfg.git.auto_stash_pop,
+                    run_id=layout.run_id,
                 )
         release_single_writer(repo_lock_fd)
         release_single_writer(worker_lock_fd)

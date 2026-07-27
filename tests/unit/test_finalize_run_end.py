@@ -245,3 +245,58 @@ def test_end_banner_stays_quiet_on_a_single_leg_run(
         console_stream=False,
     )
     assert "RUN TOTAL" not in capsys.readouterr().out
+
+
+def test_finalize_auto_stash_pops_the_run_stash_not_the_latest(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The finalizer restores THE stash the run pushed (found by its run-id
+    message), not stash@{0}: a stash pushed during the run otherwise got
+    popped as the 'pre-run work' while the real pre-run work stayed hidden."""
+    import subprocess
+
+    from agent6.app.finalize import finalize_auto_stash
+    from agent6.git_ops import auto_stash_message, stash_all
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+
+    git("init", "-q")
+    git("config", "user.email", "t@t")
+    git("config", "user.name", "t")
+    (repo / "base.txt").write_text("base\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "base")
+    (repo / "pre.txt").write_text("pre-run work\n", encoding="utf-8")
+    stash_all(repo, auto_stash_message("r1"))
+    (repo / "mid.txt").write_text("mid-run work\n", encoding="utf-8")
+    stash_all(repo, "operator stash pushed mid-run")
+    base = subprocess.run(
+        ["git", "-C", str(repo), "branch", "--show-current"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    finalize_auto_stash(repo, base_branch=base, run_branch=None, auto_pop=True, run_id="r1")
+    assert "restored your pre-run changes" in capsys.readouterr().err
+    assert (repo / "pre.txt").is_file()
+    assert not (repo / "mid.txt").exists()  # the mid-run stash stays a stash
+
+
+def test_finalize_auto_stash_reports_a_vanished_stash(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A stash the operator already popped mid-run is reported, not silently
+    'restored' (and no longer pops whatever happens to sit at stash@{0})."""
+    import subprocess
+
+    from agent6.app.finalize import finalize_auto_stash
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
+    finalize_auto_stash(repo, base_branch="master", run_branch=None, auto_pop=True, run_id="r1")
+    assert "auto-stash not found" in capsys.readouterr().err

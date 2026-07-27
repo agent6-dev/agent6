@@ -18,9 +18,11 @@ from agent6.config import Config, NotifyConfig
 from agent6.git_ops import (
     CommitIdentity,
     GitError,
+    auto_stash_message,
     branch_exists,
     create_branch,
     delete_branch_if_merged,
+    find_stash,
     restore_stash,
     verify_git_identity,
 )
@@ -246,13 +248,31 @@ def finalize_auto_merge(cwd: Path, *, layout: RunLayout, cfg: Config) -> None:
 
 
 def finalize_auto_stash(
-    cwd: Path, *, base_branch: str, run_branch: str | None, auto_pop: bool
+    cwd: Path, *, base_branch: str, run_branch: str | None, auto_pop: bool, run_id: str
 ) -> None:
     """Restore or report the pre-run auto-stash so the user's work is never left in a
     hidden stash. With auto_pop off, print how to pop it. With auto_pop on, pop it
     onto the base branch when that is safe (clean worktree, conflict-free apply);
-    otherwise leave the stash with a message. Never reset --hard (refused)."""
-    recover = f"git checkout {base_branch} && git stash pop" if run_branch else "git stash pop"
+    otherwise leave the stash with a message. Never reset --hard (refused).
+
+    The stash is found by the run-id message the run pushed it with, and
+    restored by its immutable sha, never by position: a stash pushed DURING
+    the run sat at stash@{0}, so a positional pop restored the wrong work and
+    left the pre-run work hidden. The printed manual-recovery hint applies by
+    sha too (``git stash apply <sha>``), which stays correct however the
+    stash stack shifts later -- a positional ``pop 'stash@{N}'`` printed now
+    but run after another stash push would restore the wrong one."""
+    message = auto_stash_message(run_id)
+    entry = find_stash(cwd, message)
+    if entry is None:
+        print(
+            "[agent6] pre-run auto-stash not found (already restored?); nothing to pop",
+            file=sys.stderr,
+        )
+        return
+    # apply-by-sha is identity-stable; drop it yourself once you've confirmed.
+    apply = f"git stash apply {entry.sha}"
+    recover = f"git checkout {base_branch} && {apply}" if run_branch else apply
     if not auto_pop:
         print(
             f"[agent6] pre-run changes are stashed; restore them with: {recover}", file=sys.stderr
@@ -272,7 +292,7 @@ def finalize_auto_stash(
         if not branch_exists(cwd, base_branch):
             print(
                 f"[agent6] base branch {base_branch} no longer exists; pre-run changes left "
-                f"stashed (recover with: git stash pop)",
+                f"stashed (recover with: {apply})",
                 file=sys.stderr,
             )
             return
@@ -285,12 +305,12 @@ def finalize_auto_stash(
                 file=sys.stderr,
             )
             return
-    if restore_stash(cwd):
+    if restore_stash(cwd, entry):
         print(f"[agent6] restored your pre-run changes onto {base_branch}", file=sys.stderr)
     else:
         print(
             "[agent6] restoring your pre-run changes hit a conflict; resolve the markers"
-            " (your stash is preserved at stash@{0})",
+            f" (your stash is preserved; re-apply with: git stash apply {entry.sha})",
             file=sys.stderr,
         )
 

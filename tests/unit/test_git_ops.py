@@ -13,6 +13,7 @@ from agent6.git_ops import (
     CommitIdentity,
     GitError,
     GitSafetyError,
+    auto_stash_message,
     clone_repo,
     commit_all,
     commit_diff,
@@ -24,6 +25,7 @@ from agent6.git_ops import (
     diff_since,
     dirty_paths,
     fetch_branch,
+    find_stash,
     init_repo,
     is_git_repo,
     list_run_commits,
@@ -516,7 +518,9 @@ def test_restore_stash_clean_apply_restores_and_drops(tmp_path: Path) -> None:
     (tmp_path / "wip.txt").write_text("work in progress\n", encoding="utf-8")
     stash_all(tmp_path, "agent6 auto-stash")
     assert not (tmp_path / "wip.txt").exists()  # stashed away, tree clean
-    assert restore_stash(tmp_path) is True
+    entry = find_stash(tmp_path, "agent6 auto-stash")
+    assert entry is not None
+    assert restore_stash(tmp_path, entry) is True
     assert (tmp_path / "wip.txt").read_text(encoding="utf-8") == "work in progress\n"
     listing = subprocess.run(
         ["git", "-C", str(tmp_path), "stash", "list"], capture_output=True, text=True, check=True
@@ -531,11 +535,64 @@ def test_restore_stash_conflict_keeps_stash(tmp_path: Path) -> None:
     # A conflicting commit on the same line means the stash cannot apply cleanly.
     (tmp_path / "README.md").write_text("committed change\n", encoding="utf-8")
     commit_all(tmp_path, "conflicting commit")
-    assert restore_stash(tmp_path) is False
+    entry = find_stash(tmp_path, "agent6 auto-stash")
+    assert entry is not None
+    assert restore_stash(tmp_path, entry) is False
     listing = subprocess.run(
         ["git", "-C", str(tmp_path), "stash", "list"], capture_output=True, text=True, check=True
     ).stdout
     assert "agent6 auto-stash" in listing  # preserved, never dropped on conflict
+
+
+def test_find_stash_targets_the_run_stash_not_the_latest(tmp_path: Path) -> None:
+    """A stash pushed DURING the run sits at stash@{0}; the old positional
+    restore popped it (the wrong work) and left the pre-run work hidden. The
+    run's stash is found by its run-id message and restored; the other stash
+    is untouched."""
+    _init_repo(tmp_path)
+    (tmp_path / "pre.txt").write_text("pre-run work\n", encoding="utf-8")
+    stash_all(tmp_path, auto_stash_message("sunny-otter-AAA111"))
+    (tmp_path / "mid.txt").write_text("mid-run stash by someone else\n", encoding="utf-8")
+    stash_all(tmp_path, "user work stashed mid-run")
+    entry = find_stash(tmp_path, auto_stash_message("sunny-otter-AAA111"))
+    assert entry is not None
+    assert entry.ref == "stash@{1}"
+    assert restore_stash(tmp_path, entry) is True
+    assert (tmp_path / "pre.txt").read_text(encoding="utf-8") == "pre-run work\n"
+    assert not (tmp_path / "mid.txt").exists()  # the mid-run stash stays a stash
+    listing = subprocess.run(
+        ["git", "-C", str(tmp_path), "stash", "list"], capture_output=True, text=True, check=True
+    ).stdout
+    assert "user work stashed mid-run" in listing
+    assert "agent6 auto-stash" not in listing
+
+
+def test_find_stash_missing_returns_none(tmp_path: Path) -> None:
+    _init_repo(tmp_path)
+    assert find_stash(tmp_path, auto_stash_message("nope")) is None
+
+
+def test_restore_stash_survives_index_shift_after_lookup(tmp_path: Path) -> None:
+    """A stash pushed AFTER the lookup shifts every stash@{N}, so restoring by
+    the recorded position applied the wrong stash (and dropped it). The entry
+    is applied and dropped by its sha, resolved fresh at drop time."""
+    _init_repo(tmp_path)
+    (tmp_path / "pre.txt").write_text("pre-run work\n", encoding="utf-8")
+    stash_all(tmp_path, auto_stash_message("sunny-otter-AAA111"))
+    entry = find_stash(tmp_path, auto_stash_message("sunny-otter-AAA111"))
+    assert entry is not None and entry.ref == "stash@{0}"
+    # The shift: a stash pushed after the lookup makes the recorded position
+    # point at someone else's work.
+    (tmp_path / "mid.txt").write_text("mid work\n", encoding="utf-8")
+    stash_all(tmp_path, "pushed after lookup")
+    assert restore_stash(tmp_path, entry) is True
+    assert (tmp_path / "pre.txt").read_text(encoding="utf-8") == "pre-run work\n"
+    assert not (tmp_path / "mid.txt").exists()  # the other stash stays a stash
+    listing = subprocess.run(
+        ["git", "-C", str(tmp_path), "stash", "list"], capture_output=True, text=True, check=True
+    ).stdout
+    assert "pushed after lookup" in listing
+    assert "agent6 auto-stash" not in listing  # ours was dropped, by identity
 
 
 def _commit_file(repo: Path, name: str, content: str, msg: str) -> str:

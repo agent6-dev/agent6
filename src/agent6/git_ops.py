@@ -310,16 +310,57 @@ def stash_all(path: Path, message: str) -> None:
     _run(path, "stash", "push", "--include-untracked", "--message", message)
 
 
-def restore_stash(path: Path) -> bool:
-    """Apply the latest stash back onto the working tree. On a clean apply, drop
-    the stash and return True. On conflict (or any non-zero apply), leave the
-    stash in place so the user's work is never lost, and return False. We never
-    `reset --hard` to undo a conflicted apply (refused), so a conflict leaves the
-    markers for the user to resolve with their stash still safe at stash@{0}."""
-    if _run(path, "stash", "apply", check=False).ok:
-        _run(path, "stash", "drop", check=False)
-        return True
-    return False
+def auto_stash_message(run_id: str) -> str:
+    """The auto-stash identity: the run pushes with this message and the
+    finalizer finds the stash BY it -- never by position, since stash@{0} may
+    be a stash someone else pushed while the run was running."""
+    return f"agent6 auto-stash before run {run_id}"
+
+
+@dataclass(frozen=True, slots=True)
+class StashEntry:
+    """One ``git stash list`` entry: its position at lookup time (``ref``,
+    e.g. ``stash@{1}``, for operator-facing hints only) and its immutable
+    commit (``sha``). Anything that mutates restores by sha: the position
+    shifts the moment anyone pushes or drops a stash."""
+
+    ref: str
+    sha: str
+
+
+def find_stash(path: Path, message: str) -> StashEntry | None:
+    """The newest stash whose subject carries *message*, or None.
+    ``git stash push -m MSG`` records ``On <branch>: MSG``, so a substring
+    match on the subject finds it."""
+    res = _run(path, "stash", "list", "--format=%gd%x09%H%x09%gs", check=False)
+    for line in res.stdout.splitlines():
+        ref, _, rest = line.partition("\t")
+        sha, _, subject = rest.partition("\t")
+        if message in subject:
+            return StashEntry(ref=ref, sha=sha)
+    return None
+
+
+def restore_stash(path: Path, stash: StashEntry) -> bool:
+    """Apply *stash* back onto the working tree BY SHA -- a stash@{N} recorded
+    earlier applies whatever sits at that position NOW, which is the wrong
+    stash the moment another one was pushed. On a clean apply, drop the entry
+    (``git stash drop`` only takes a positional ref, so it is re-resolved from
+    the sha at that instant; the residual list-to-drop window is milliseconds,
+    and even a mis-drop leaves the commit recoverable from git's output).
+    On conflict (or any non-zero apply), leave everything in place so the
+    user's work is never lost, and return False. We never `reset --hard` to
+    undo a conflicted apply (refused), so a conflict leaves the markers for
+    the user to resolve with their stash still intact."""
+    if not _run(path, "stash", "apply", stash.sha, check=False).ok:
+        return False
+    res = _run(path, "stash", "list", "--format=%gd%x09%H", check=False)
+    for line in res.stdout.splitlines():
+        ref, _, sha = line.partition("\t")
+        if sha == stash.sha:
+            _run(path, "stash", "drop", ref, check=False)
+            break
+    return True
 
 
 def branch_exists(path: Path, name: str) -> bool:
