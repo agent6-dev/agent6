@@ -19,7 +19,7 @@ from agent6.app._setup import check_provider_keys, detect_env
 from agent6.app.egress import (
     check_network_profile,
     resolve_strict_egress_viability,
-    warn_if_unsandboxed,
+    warn_sandbox_gaps,
 )
 from agent6.app.machine._bundle import validate_bundle
 from agent6.app.machine._frontend import MachineFrontend
@@ -132,8 +132,9 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     if missing is not None:
         reporter.err(missing)
         return 2
+    env = detect_env()
     try:
-        profile = select_profile(cfg.sandbox.profile, detect_env())
+        profile = select_profile(cfg.sandbox.profile, env)
     except ProfileUnavailableError as exc:
         reporter.err(f"REFUSING: {exc}")
         return 2
@@ -145,7 +146,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     if net_err is not None:
         reporter.err(f"REFUSING: {net_err}")
         return 2
-    warn_if_unsandboxed(profile, reporter=reporter)
+    warn_sandbox_gaps(profile, env, reporter=reporter)
 
     scratch = resolved_state_dir(cwd) / "machine-drafts" / new_friendly_id()
     scratch.mkdir(parents=True, exist_ok=True)

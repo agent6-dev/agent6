@@ -35,7 +35,7 @@ from agent6.app.egress import (
     resolve_strict_egress_viability,
     spawn_detached,
     stop_egress,
-    warn_if_unsandboxed,
+    warn_sandbox_gaps,
 )
 from agent6.app.finalize import (
     finalize_auto_merge,
@@ -263,7 +263,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     except ProfileUnavailableError as exc:
         reporter.err(f"REFUSING: {exc}")
         return 2
-    warn_if_unsandboxed(selected_profile, reporter=reporter)
+    warn_sandbox_gaps(selected_profile, env, reporter=reporter)
     if not frontend.confirm_unconfined_autorun(selected_profile, cfg):
         reporter.err("[agent6] aborted.")
         return 1

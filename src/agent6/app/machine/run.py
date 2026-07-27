@@ -19,7 +19,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from agent6.app._setup import check_provider_keys, detect_env
-from agent6.app.egress import resolve_strict_egress_viability, warn_if_unsandboxed
+from agent6.app.egress import resolve_strict_egress_viability, warn_sandbox_gaps
 from agent6.app.machine._bundle import validate_bundle
 from agent6.app.machine._frontend import MachineFrontend
 from agent6.app.machine._preflight import (
@@ -182,7 +182,8 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
     tool_states = [s for s in states if isinstance(s, ToolState)]
     agent_runner: Callable[[AgentRequest, Path | None], AgentExecResult] | None = None
     # Default profile for confinement-free machines: resolve from the host.
-    profile: SandboxProfile = detect_env().detected_profile
+    env = detect_env()
+    profile: SandboxProfile = env.detected_profile
     # The running machine's own file + scripts bundle are read-only in every
     # run jail, so a tool/agent can't rewrite its own logic or bundled scripts.
     protect_paths = machine_protect_paths(path, cwd)
@@ -218,7 +219,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             reporter.err(f"CONFIG ERROR:\n{exc}")
             return 2
         try:
-            profile = select_profile(cfg.sandbox.profile, detect_env())
+            profile = select_profile(cfg.sandbox.profile, env)
         except ProfileUnavailableError as exc:
             reporter.err(f"REFUSING: {exc}")
             return 2
@@ -282,7 +283,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 protect_paths,
                 commit_identity,
             )
-    warn_if_unsandboxed(profile, reporter=reporter)
+    warn_sandbox_gaps(profile, env, reporter=reporter)
     root = resolved_state_dir(cwd) / "machines" / spec.machine
     journal = MachineJournal(root, snapshot_keep=snapshot_keep)
     # Persistent, writable scratch for tool scripts (see LiveWorld.data_dir).

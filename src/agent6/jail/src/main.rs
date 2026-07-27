@@ -689,6 +689,13 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
                 })?;
         }
     }
+    // Deliberately no NotEnforced check (contrast apply_landlock_hardened):
+    // strict's boundary is namespaces + the pivoted rootfs with MS_RDONLY
+    // binds + seccomp; Landlock is defense-in-depth, and the profile contract
+    // (docs/security.md) admits strict on Landlock-less kernels. The gap is
+    // not silent: `warn_sandbox_gaps` says so once at run entry. Warning here
+    // instead would land on every spawn's stderr, inside model-visible tool
+    // output.
     ruleset
         .restrict_self()
         .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("restrict_self: {e}")))?;

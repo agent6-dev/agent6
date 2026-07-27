@@ -128,7 +128,8 @@ process irrevocably, inherited by every child:
   (it would let a child write escape sequences to the parent's terminal).
 - Mounts a fresh private `/proc`; if that fails, leaves `/proc` empty (never the
   host's, which would leak process info).
-- Applies Landlock FS rules (net confinement is the namespace).
+- Applies Landlock FS rules (net confinement is the namespace); best-effort:
+  a kernel without Landlock skips this layer, warned loudly at run entry.
 - Installs a seccomp deny-list: dangerous syscalls (ptrace, mount, setns,
   unshare, kexec, bpf, perf, keyctl, module loading, reboot, clock-set, …)
   return `EPERM`, the rest allowed.
@@ -253,6 +254,10 @@ syscall for hardened), never guessed from the kernel version.
 | `none` *(opt-out)* | any | `none` (the environment is the boundary) |
 
 - **strict**: full namespaces + `pivot_root` + Landlock + seccomp + `NO_NEW_PRIVS`.
+    - On a kernel without Landlock the jail's in-rootfs Landlock layer is
+      skipped (namespaces, read-only binds, and seccomp still confine) with a
+      loud once-per-run warning; hardened has no mounts to fall back on, so it
+      refuses instead.
 - **hardened**: Landlock + seccomp + `NO_NEW_PRIVS`, no namespaces.
     - Works in default-seccomp Docker (the container blocks the inner
       `clone(CLONE_NEW*)`); the container is the blast radius.

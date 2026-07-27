@@ -27,7 +27,7 @@ from agent6.sandbox import (
     fork_host_spawner,
     start_egress_broker,
 )
-from agent6.sandbox.detect import probe_userns_supported
+from agent6.sandbox.detect import Environment, probe_userns_supported
 from agent6.sandbox.jail import locate_jail_binary, operator_tool_paths
 from agent6.types import SandboxProfile
 
@@ -81,27 +81,41 @@ def _allow_url_endpoints(cfg: Config) -> set[Endpoint]:
     return eps
 
 
-def warn_if_unsandboxed(
-    selected_profile: SandboxProfile, *, reporter: Reporter = STDIO_REPORTER
+def warn_sandbox_gaps(
+    selected_profile: SandboxProfile, env: Environment, *, reporter: Reporter = STDIO_REPORTER
 ) -> None:
-    """Print a prominent warning when running without the kernel sandbox.
+    """Print a prominent warning when the profile confines less than it promises.
 
-    The `none` profile is reached on a host with no confinement mechanism at
-    all (non-Linux, or a Linux kernel offering neither userns nor Landlock),
-    or when the operator EXPLICITLY sets `profile = "none"` (the unsandboxed
+    `none` is reached on a host with no confinement mechanism at all
+    (non-Linux, or a Linux kernel offering neither userns nor Landlock), or
+    when the operator EXPLICITLY sets `profile = "none"` (the unsandboxed
     opt-out, intended for inside a container). Either way commands run as
     plain subprocesses with no agent6 confinement, so say so loudly.
+
+    `strict` needs only userns; on a kernel without Landlock the jail's
+    best-effort ruleset enforces nothing (`restrict_self` returns NotEnforced)
+    while namespaces + the pivoted read-only rootfs + seccomp still confine.
+    That is a documented layer going missing, so it is loud too -- here, once
+    per run, not in the launcher: a per-spawn stderr warning would land in
+    every tool result and prompt the model to fight the sandbox.
     """
-    if selected_profile != "none":
-        return
-    reporter.err(
-        "[agent6] WARNING: running UNSANDBOXED (sandbox.profile = 'none'). "
-        "Commands -- including the LLM's run_command and verify_command -- "
-        "execute as plain subprocesses with NO filesystem, network, or syscall "
-        "confinement; the agent is contained only by the surrounding environment "
-        "(e.g. the container it runs in). Use 'auto'/'strict'/'hardened' for "
-        "kernel-enforced isolation."
-    )
+    if selected_profile == "none":
+        reporter.err(
+            "[agent6] WARNING: running UNSANDBOXED (sandbox.profile = 'none'). "
+            "Commands -- including the LLM's run_command and verify_command -- "
+            "execute as plain subprocesses with NO filesystem, network, or syscall "
+            "confinement; the agent is contained only by the surrounding environment "
+            "(e.g. the container it runs in). Use 'auto'/'strict'/'hardened' for "
+            "kernel-enforced isolation."
+        )
+    elif selected_profile == "strict" and env.landlock_abi < 1:
+        reporter.err(
+            "[agent6] WARNING: 'strict' is running WITHOUT its Landlock layer: "
+            "this kernel offers no Landlock (needs Linux >= 5.13 with the "
+            "Landlock LSM enabled). Namespaces, the pivoted read-only rootfs, "
+            "and seccomp still confine commands; the in-jail Landlock "
+            "defense-in-depth is absent."
+        )
 
 
 def _is_loopback(host: str) -> bool:
