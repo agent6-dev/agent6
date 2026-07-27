@@ -257,6 +257,27 @@ def test_config_set_rejects_a_newly_invalid_value(
     assert not gpath.is_file() or "decompose" not in gpath.read_text(encoding="utf-8")
 
 
+def test_a_refused_write_still_hands_the_config_back_to_the_operator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Under sudo the config dir is created as root and every write publishes a
+    fresh root-owned inode -- the rollback of a refused value included. The
+    handover ran only after a successful write, so `sudo agent6 config set` with
+    a bad value left the operator's own config owned by root."""
+    from agent6.paths import global_config_path
+    from agent6.ui.cli import main
+
+    handed: list[Path] = []
+    monkeypatch.setattr(cc, "chown_to_real_user", handed.append)
+    gpath = global_config_path()
+    gpath.write_text("[budget]\nbest_effort_usd_limit = 5.0\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["config", "set", "prompt.decompose", "bogus"]) == 2  # rolled back
+    assert gpath in handed  # the rolled-back file is the operator's again
+    assert gpath.parent in handed  # and so is the dir the write may have created
+
+
 def test_config_set_reverts_a_write_that_trips_a_non_pydantic_check(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

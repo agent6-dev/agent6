@@ -84,27 +84,38 @@ def _cmd_config_path() -> int:
     return 0
 
 
+def _open_target(target: Path) -> None:
+    """Create the config dir and hand it straight back to the real operator.
+
+    Under sudo the dir is created as root; handing it back only after a
+    successful write left a root-owned dir behind on every refusal.
+    """
+    target.parent.mkdir(parents=True, exist_ok=True)
+    chown_to_real_user(target.parent)
+
+
 def _cmd_config_fill(config_path: Path | None, *, to_repo: bool, force: bool) -> int:
     target = repo_config_path_for(Path.cwd()) if to_repo else global_config_path()
-    target.parent.mkdir(parents=True, exist_ok=True)
+    _open_target(target)
     # Load the effective config, existence-check, and publish all under the
     # target's lock and via atomic_write: reading the merged config BEFORE the
     # lock let a concurrent `config set` land in between, and the plain
     # write_text then overwrote it with the stale snapshot (lost update) and
     # could tear on a crash.
-    with locked_file(target):
-        eff = load_config_or_exit(Path.cwd(), config_path)
-        if isinstance(eff, int):
-            return eff
-        if target.is_file() and not force:
-            print(
-                f"ERROR: {target} already exists. Re-run with --force to overwrite.",
-                file=sys.stderr,
-            )
-            return 2
-        atomic_write(target, materialize(eff.config, for_repo=to_repo))
-    chown_to_real_user(target.parent)
-    chown_to_real_user(target)
+    try:
+        with locked_file(target):
+            eff = load_config_or_exit(Path.cwd(), config_path)
+            if isinstance(eff, int):
+                return eff
+            if target.is_file() and not force:
+                print(
+                    f"ERROR: {target} already exists. Re-run with --force to overwrite.",
+                    file=sys.stderr,
+                )
+                return 2
+            atomic_write(target, materialize(eff.config, for_repo=to_repo))
+    finally:
+        chown_to_real_user(target)
     print(f"Wrote fully-resolved config to {target}")
     return 0
 
@@ -388,23 +399,26 @@ def _cmd_config_set(key: str, value: str, *, repo: bool, machine: Path | None) -
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
-    target.parent.mkdir(parents=True, exist_ok=True)
+    _open_target(target)
     parsed = parse_cli_value(value)
-    with locked_file(target):
-        prior = target.read_text(encoding="utf-8") if target.is_file() else None
-        was_valid = machine is None and _merged_config_error() is None  # loads BEFORE this write?
-        try:
-            upsert_toml_leaf(target, prefix + key, parsed)
-        except ValueError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
-            return 2
-        if err := _revalidate_config(
-            target, prior, machine=machine, was_valid=was_valid, written=(key, parsed)
-        ):
-            print(f"ERROR: {err}", file=sys.stderr)
-            return 2
-    chown_to_real_user(target.parent)
-    chown_to_real_user(target)
+    try:
+        with locked_file(target):
+            prior = target.read_text(encoding="utf-8") if target.is_file() else None
+            was_valid = machine is None and _merged_config_error() is None  # BEFORE this write?
+            try:
+                upsert_toml_leaf(target, prefix + key, parsed)
+            except ValueError as exc:
+                print(f"ERROR: {exc}", file=sys.stderr)
+                return 2
+            if err := _revalidate_config(
+                target, prior, machine=machine, was_valid=was_valid, written=(key, parsed)
+            ):
+                print(f"ERROR: {err}", file=sys.stderr)
+                return 2
+    finally:
+        # Every publish -- the rollback of a refused value included -- replaces
+        # the target's inode, so the handover belongs on every exit path.
+        chown_to_real_user(target)
     print(f"Set {key} = {format_value(parsed)} in {target}")
     return 0
 
@@ -422,21 +436,23 @@ def _cmd_config_unset(key: str, *, repo: bool, machine: Path | None) -> int:  # 
     if not target.is_file():
         print(f"ERROR: {target} does not exist; nothing to unset.", file=sys.stderr)
         return 2
-    with locked_file(target):
-        prior = target.read_text(encoding="utf-8")
-        was_valid = machine is None and _merged_config_error() is None  # loads BEFORE this unset?
-        try:
-            removed = remove_toml_leaf(target, prefix + key)
-        except ValueError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
-            return 2
-        if not removed:
-            print(f"{key} is not set in {target}; nothing to unset.")
-            return 0
-        if err := _revalidate_config(target, prior, machine=machine, was_valid=was_valid):
-            print(f"ERROR: unsetting {key} left an invalid config:\n{err}", file=sys.stderr)
-            return 2
-    chown_to_real_user(target)
+    try:
+        with locked_file(target):
+            prior = target.read_text(encoding="utf-8")
+            was_valid = machine is None and _merged_config_error() is None  # BEFORE this unset?
+            try:
+                removed = remove_toml_leaf(target, prefix + key)
+            except ValueError as exc:
+                print(f"ERROR: {exc}", file=sys.stderr)
+                return 2
+            if not removed:
+                print(f"{key} is not set in {target}; nothing to unset.")
+                return 0
+            if err := _revalidate_config(target, prior, machine=machine, was_valid=was_valid):
+                print(f"ERROR: unsetting {key} left an invalid config:\n{err}", file=sys.stderr)
+                return 2
+    finally:
+        chown_to_real_user(target)
     print(f"Unset {key} in {target}")
     return 0
 
@@ -461,9 +477,7 @@ def _schema_says_not_a_list(key: str) -> bool:
     return leaf is not None and leaf[0] is not None and not isinstance(leaf[0], (list, tuple))
 
 
-def _config_list_edit(  # noqa: PLR0911
-    key: str, value: str, *, repo: bool, machine: Path | None, add: bool
-) -> int:
+def _config_list_edit(key: str, value: str, *, repo: bool, machine: Path | None, add: bool) -> int:
     """Shared body for `config add` / `config remove` on a list field."""
     if err := _reject_machine_protected(key, machine):
         print(f"ERROR: {err}", file=sys.stderr)
@@ -476,6 +490,15 @@ def _config_list_edit(  # noqa: PLR0911
     # The lock spans from the current-items read: the list RMW starts there,
     # and two concurrent adds otherwise both read the same base list and the
     # later publish drops the earlier element.
+    try:
+        return _locked_list_edit(target, prefix, key, value, machine=machine, add=add)
+    finally:
+        chown_to_real_user(target)
+
+
+def _locked_list_edit(  # noqa: PLR0911
+    target: Path, prefix: str, key: str, value: str, *, machine: Path | None, add: bool
+) -> int:
     with locked_file(target):
         current = read_toml_leaf(read_toml_file(target), prefix + key)
         if current is None:
@@ -498,7 +521,7 @@ def _config_list_edit(  # noqa: PLR0911
                 print(f"{format_value(parsed)} not in {key}.")
                 return 0
             items = [x for x in items if x != parsed]
-        target.parent.mkdir(parents=True, exist_ok=True)
+        _open_target(target)
         prior = target.read_text(encoding="utf-8") if target.is_file() else None
         was_valid = machine is None and _merged_config_error() is None  # loads BEFORE this edit?
         try:
@@ -509,8 +532,6 @@ def _config_list_edit(  # noqa: PLR0911
         if err := _revalidate_config(target, prior, machine=machine, was_valid=was_valid):
             print(f"ERROR: {value!r} is not valid for {key}:\n{err}", file=sys.stderr)
             return 2
-    chown_to_real_user(target.parent)
-    chown_to_real_user(target)
     verb, prep = ("Added", "to") if add else ("Removed", "from")
     print(f"{verb} {format_value(parsed)} {prep} {key} in {target}")
     return 0
