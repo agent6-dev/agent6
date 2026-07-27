@@ -2124,7 +2124,12 @@ class Workflow:
             assert turn.metric_plateau_finish is not None
             self._log(f"LOOP: metric_plateau at iter {turn.iteration}")
             self._final_checkpoint(turn.iteration)
-            self._emit_run_end_passed(reason="metric_plateau", iterations=turn.iteration)
+            # Ground on the tree like the sibling clean ends (finish_run,
+            # verify_settled): an edit after the plateau's green verify means
+            # nothing verified the FINAL tree, so this must not claim passed.
+            self._emit_run_end_grounded(
+                reason="metric_plateau", iteration=turn.iteration, state=state
+            )
             return RunResult(
                 completed=True,
                 reason="metric_plateau",
@@ -2177,12 +2182,9 @@ class Workflow:
             # finish_run over a red/stale verify is "finished", not "passed"
             # -- all_passed reflects the actual verify state, never just "the
             # model called finish_run".
-            if turn.finish_kind == "finish_run" and self._tree_is_verify_green(state) is False:
-                self._emit(
-                    "run.end",
-                    reason=turn.finish_kind,
-                    iterations=turn.iteration,
-                    all_passed=False,
+            if turn.finish_kind == "finish_run":
+                self._emit_run_end_grounded(
+                    reason=turn.finish_kind, iteration=turn.iteration, state=state
                 )
             else:
                 self._emit_run_end_passed(reason=turn.finish_kind, iterations=turn.iteration)
@@ -2781,6 +2783,15 @@ class Workflow:
         if not self.config.workflow.verify_command:
             return None
         return state.last_verify_ok is True and not state.edited_since_verify
+
+    def _emit_run_end_grounded(self, *, reason: str, iteration: int, state: _LoopState) -> None:
+        """Emit a clean end honestly: all_passed only when the FINAL tree is
+        verify-green. finish_run and metric_plateau ground the same way, so
+        'passed' can never mean 'ended over a red or stale verify'."""
+        if self._tree_is_verify_green(state) is False:
+            self._emit("run.end", reason=reason, iterations=iteration, all_passed=False)
+        else:
+            self._emit_run_end_passed(reason=reason, iterations=iteration)
 
     def _emit_graph_snapshot(self) -> None:
         """Emit the current task DAG so a live viewer (the TUI) can render it.

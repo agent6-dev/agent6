@@ -5725,3 +5725,66 @@ def test_stop_request_honored_after_a_prose_turn(tmp_path: Path) -> None:
     assert result.completed is False
     assert calls["n"] == 1  # stopped at the FIRST boundary; no further provider calls
     assert cleared["n"] == 1  # the marker was consumed, not left pending
+
+
+def test_metric_plateau_over_a_stale_verify_is_not_passed() -> None:
+    """The plateau stop grounds on the tree like its sibling clean ends
+    (finish_run, verify_settled): a same-turn edit AFTER the green verify
+    means nothing verified the FINAL tree, so the end must not claim
+    all_passed=True."""
+    from agent6.workflows._conversation import ToolUse
+    from agent6.workflows.loop import _TurnState  # pyright: ignore[reportPrivateUsage]
+
+    ev = _EventCapture()
+    wf = _wf(mode="run", config=_cfg_with_verify(), events=ev, root=Path("/tmp"))
+    turn = _TurnState(
+        iteration=7,
+        resp=MagicMock(),
+        assistant=AssistantTurn(
+            raw_content=(),
+            tool_uses=(ToolUse(id="tu1", name="apply_edit", input={}),),
+        ),
+        plateau_should_stop=True,
+        metric_plateau_finish="score plateaued at 10",
+    )
+    state = _state(
+        ever_edited=True,
+        verify_ever_passed=True,
+        last_verify_ok=True,
+        edited_since_verify=True,  # the green verify predates the last edit
+    )
+    with patch.object(wf, "_worktree_dirty", return_value=False):
+        result = wf._turn_stop_checks(state, turn)  # pyright: ignore[reportPrivateUsage]
+    assert result is not None and result.reason == "metric_plateau"
+    ends = [e for e in ev.events if e["type"] == "run.end"]
+    assert ends and ends[-1]["all_passed"] is False
+
+
+def test_metric_plateau_over_a_green_tree_stays_passed() -> None:
+    """The mirror: a verified-green tree at the plateau still ends passed."""
+    from agent6.workflows._conversation import ToolUse
+    from agent6.workflows.loop import _TurnState  # pyright: ignore[reportPrivateUsage]
+
+    ev = _EventCapture()
+    wf = _wf(mode="run", config=_cfg_with_verify(), events=ev, root=Path("/tmp"))
+    turn = _TurnState(
+        iteration=7,
+        resp=MagicMock(),
+        assistant=AssistantTurn(
+            raw_content=(),
+            tool_uses=(ToolUse(id="tu1", name="run_verify_command", input={}),),
+        ),
+        plateau_should_stop=True,
+        metric_plateau_finish="score plateaued at 10",
+    )
+    state = _state(
+        ever_edited=True,
+        verify_ever_passed=True,
+        last_verify_ok=True,
+        edited_since_verify=False,
+    )
+    with patch.object(wf, "_worktree_dirty", return_value=False):
+        result = wf._turn_stop_checks(state, turn)  # pyright: ignore[reportPrivateUsage]
+    assert result is not None and result.reason == "metric_plateau"
+    ends = [e for e in ev.events if e["type"] == "run.end"]
+    assert ends and ends[-1]["all_passed"] is True
