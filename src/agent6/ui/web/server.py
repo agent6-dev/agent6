@@ -613,10 +613,10 @@ class _Handler(BaseHTTPRequestHandler):
         header = model.manifest_header(run_dir)
 
         def frame(*, dead: bool = False) -> dict[str, Any]:
-            d = {**run_state_as_dict(state), **header}
-            # Per frame, not once at connect: a parked run the operator resumes
-            # starts logging into this same stream, and the label has to follow.
-            model.apply_dir_status(d, run_dir, state)
+            # run_dir per frame, not once at connect: a parked run the operator
+            # resumes starts logging into this same stream, and the label (and
+            # `live`) have to follow.
+            d = {**run_state_as_dict(state, run_dir), **header}
             if dead and not d.get("finished"):
                 # Fold the liveness truth the dead-worker branch already knows
                 # into the frame: a crashed run (no run.end) folds to

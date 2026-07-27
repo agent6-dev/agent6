@@ -318,3 +318,38 @@ def test_run_snapshot_leaves_a_finished_run_alone(tmp_path: Path) -> None:
     )
     (d / "worker.pid").write_text("999999 12345678", encoding="utf-8")
     assert model.run_snapshot(d)["status_label"] == "passed"
+
+
+def test_run_snapshot_marks_a_parked_run_not_live(tmp_path: Path) -> None:
+    """The page keys its composer and Stop/Compact buttons on liveness. The fold
+    calls every unfinished run "running", so a parked run offered a steer
+    composer and a Stop button that both dead-ended while resume -- the one
+    action that works -- was unreachable. `live` is the dir-aware answer."""
+    import os
+
+    from agent6.runs.ipc import write_worker_pid
+
+    parked = model.runs_root(tmp_path) / "parked2"
+    parked.mkdir(parents=True)
+    (parked / "manifest.json").write_text(
+        json.dumps({"run_id": "parked2", "parked_task": "do the thing"}), encoding="utf-8"
+    )
+    assert model.run_snapshot(parked)["live"] is False
+
+    crashed = _run(tmp_path, "crashed2", [{"type": "run.start", "mode": "run", "user_task": "t"}])
+    (crashed / "worker.pid").write_text("999999999", encoding="utf-8")
+    assert model.run_snapshot(crashed)["live"] is False
+
+    alive = _run(tmp_path, "alive2", [{"type": "run.start", "mode": "run", "user_task": "t"}])
+    write_worker_pid(alive, os.getpid())
+    assert model.run_snapshot(alive)["live"] is True
+
+    done = _run(
+        tmp_path,
+        "done2",
+        [
+            {"type": "run.start", "mode": "run", "user_task": "t"},
+            {"type": "run.end", "reason": "finish_run", "iterations": 1, "all_passed": True},
+        ],
+    )
+    assert model.run_snapshot(done)["live"] is False

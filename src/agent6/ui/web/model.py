@@ -24,7 +24,6 @@ from agent6.runs.ipc import worker_is_alive
 from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.secrets import resolve_api_key
 from agent6.viewmodel import (
-    RunState,
     fold_machine,
     fold_run,
     fold_transcript,
@@ -35,14 +34,11 @@ from agent6.viewmodel import (
     newest_state_log,
     run_compare,
     run_state_as_dict,
-    status_facts,
-    status_for_run_dir,
     summarize_run_dir,
     tail_events,
     task_snippet,
 )
 from agent6.viewmodel.config_view import render_show
-from agent6.viewmodel.format import status_label
 from agent6.viewmodel.transcript_style import item_lines
 
 RUN_SUBDIRS = ("runs", "asks")
@@ -269,24 +265,13 @@ def run_snapshot(run_dir: Path) -> dict[str, Any]:
     `agent6 attach <id> --json`), plus dir-derived metadata: the authoritative
     run id and the manifest's branch/compare facts."""
     state = fold_run(tail_events(run_dir / "logs.jsonl", follow=False))
-    snap = run_state_as_dict(state)
+    snap = run_state_as_dict(state, run_dir)
     # The dir we looked up under is the authoritative run id: stamp it so the
     # payload never carries an empty run_id (older logs predate run.start
     # carrying one) and matches sibling endpoints like /conversation.
     snap["run_id"] = snap.get("run_id") or run_dir.name
     snap.update(manifest_header(run_dir))
-    apply_dir_status(snap, run_dir, state)
     return snap
-
-
-def apply_dir_status(payload: dict[str, Any], run_dir: Path, state: RunState) -> None:
-    """Overwrite the payload's fold-only ``status_label`` with THE dir-aware
-    one (``status_for_run_dir``), so every header built from a payload speaks
-    the hub's word -- the one-shot snapshot and the SSE frame alike. The fold
-    alone reads every unfinished state as "running"; the dir knows
-    parked/starting/created/stale/waiting. For a finished run the two agree by
-    construction, so this never touches an end label."""
-    payload["status_label"] = status_label(*status_for_run_dir(run_dir, status_facts(state)))
 
 
 def conversation_items(log_path: Path) -> list[dict[str, Any]]:

@@ -16,11 +16,18 @@ from __future__ import annotations
 import shlex
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field, replace
+from pathlib import Path
 from typing import Any, Literal
 
 from agent6.viewmodel import events
 from agent6.viewmodel.format import status_label
-from agent6.viewmodel.listing import StatusFacts, status_word
+from agent6.viewmodel.listing import StatusFacts, status_for_run_dir, status_word
+
+# Status words for a run that can still receive operator input over the file
+# bridge. Anything else (parked/created: never started, stale: worker gone, and
+# every end word) means a surface must offer resume instead -- a steer or stop
+# marker there is read by nobody.
+LIVE_STATUS_WORDS = frozenset({"running", "starting", "waiting"})
 
 NodeStatus = Literal["pending", "in_progress", "passed", "failed", "skipped", "obsolete"]
 
@@ -686,13 +693,23 @@ def status_facts(state: RunState) -> StatusFacts:
     )
 
 
-def run_state_as_dict(state: RunState) -> dict[str, Any]:
+def run_state_as_dict(state: RunState, run_dir: Path | None = None) -> dict[str, Any]:
     """The JSON-able wire form of a RunState, stable field names: what
     `agent6 attach --json` and a web client serialize. Tuples become lists, nested
     view dataclasses become dicts. `status_label` is a computed convenience the
-    web/CLI render verbatim so the label logic lives in one place."""
+    web/CLI render verbatim so the label logic lives in one place.
+
+    Pass *run_dir* whenever the caller has one: the label is then THE dir-aware
+    status (parked/starting/stale/waiting, not the fold's blanket "running"), and
+    ``live`` says whether steer/stop/compact would reach anything. Without it the
+    payload keeps the fold-only label -- correct only for a genuinely dir-less
+    stream."""
     d = asdict(state)
     d["status_label"] = run_status_label(state)
+    if run_dir is not None:
+        word, reason = status_for_run_dir(run_dir, status_facts(state))
+        d["status_label"] = status_label(word, reason)
+        d["live"] = word in LIVE_STATUS_WORDS
     # log_tail is LogLine objects now; the wire form stays a flat list of strings
     # (web + `watch --json` consumers render lines verbatim). task_id filtering is
     # a TUI-local concern that reads the RunState directly.

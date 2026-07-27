@@ -540,7 +540,14 @@ function makeComposer(id) {
     }
   };
   root.appendChild(growGrip(ta)); root.appendChild(ta); root.appendChild(hint);
-  root.setState = (s) => { if (!busy && typeof s.finished === 'boolean') { finished = s.finished; apply(); } };
+  // `live` is the dir-aware truth (a parked or stale run is not live even
+  // though the fold says unfinished); fall back to the fold for a payload
+  // that predates it.
+  root.setState = (s) => {
+    if (busy) return;
+    if (typeof s.live === 'boolean') { finished = !s.live; apply(); }
+    else if (typeof s.finished === 'boolean') { finished = s.finished; apply(); }
+  };
   apply();
   return root;
 }
@@ -780,7 +787,8 @@ function paintRun(cards, s) {
   if (!cards._readOnly) paintPrompts(cards, s);
   // Stop/compact only mean something on a live run; a finished run ignores the
   // bridge markers. The composer flips to resume mode instead of disabling.
-  if (cards._live_btns) for (const b of cards._live_btns) b.disabled = s.finished;
+  const notLive = typeof s.live === 'boolean' ? !s.live : !!s.finished;
+  if (cards._live_btns) for (const b of cards._live_btns) b.disabled = notLive;
   // Merge needs a run branch: an ask (or a branch_per_run=false run) has none,
   // and a merged branch is gone, so clicking could only produce a git error.
   if (cards._merge_btn) {

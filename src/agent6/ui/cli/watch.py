@@ -55,7 +55,9 @@ def _run_json_snapshot(run_dir: Path) -> int:
     if not logs.is_file():
         print(f"ERROR: no logs.jsonl in {run_dir}", file=sys.stderr)
         return 2
-    snap = run_state_as_dict(fold_run(tail_events(logs, follow=False)))
+    # With the run dir in hand the label is the dir-aware status (parked /
+    # stale / waiting), not the fold's blanket "running".
+    snap = run_state_as_dict(fold_run(tail_events(logs, follow=False)), run_dir)
     snap["run_id"] = snap.get("run_id") or run_dir.name  # authoritative from the dir
     print(json.dumps(snap))
     return 0
