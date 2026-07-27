@@ -209,7 +209,9 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     mem_inv = _sub(mem_sub, "invalidate", help="Mark a memory entry as invalidated.")
     mem_inv.add_argument("memory_id", help="26-char ULID of the entry to invalidate.")
     mem_inv.add_argument("reason", help="Why this entry is no longer valid.")
-    mem_pin = _sub(mem_sub, "pin", help="Pin an entry: exempt from the <memories> block trim.")
+    mem_pin = _sub(
+        mem_sub, "pin", help="Pin an entry: trimmed last (the <memories> byte cap still binds)."
+    )
     mem_pin.add_argument("memory_id", help="26-char ULID of the entry to pin.")
     mem_unpin = _sub(mem_sub, "unpin", help="Unpin an entry (newest-win trim applies again).")
     mem_unpin.add_argument("memory_id", help="26-char ULID of the entry to unpin.")

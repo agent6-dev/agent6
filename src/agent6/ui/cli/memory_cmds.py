@@ -102,7 +102,7 @@ def _cmd_memory_pin(memory_id: str) -> int:
     except MemoryStoreError as exc:
         print(f"MEMORY ERROR: {exc}", file=sys.stderr)
         return 2
-    print(f"pinned {entry.scope} {entry.id} (exempt from the <memories> block trim)")
+    print(f"pinned {entry.scope} {entry.id} (trimmed last; the <memories> byte cap still binds)")
     return 0
 
 
