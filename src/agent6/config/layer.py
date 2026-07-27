@@ -29,7 +29,7 @@ from __future__ import annotations
 import contextlib
 import re
 import tomllib
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, get_args
@@ -761,6 +761,38 @@ def _write_target(repo_root: Path, *, to_repo: bool) -> Path:
     return repo_config_path_for(repo_root) if to_repo else global_config_path()
 
 
+def _prepare_write_target(repo_root: Path, *, to_repo: bool) -> Path:
+    """The config file to write, its directory created and already handed back
+    to the real operator.
+
+    Under ``sudo`` the directory is created as root, so the handover belongs at
+    creation: a writer that fails, or is killed inside the lock, must not leave
+    a root-owned directory behind, or every later non-root write dies creating
+    its atomic-write temp file there with no way back but a manual chown.
+    """
+    target = _write_target(repo_root, to_repo=to_repo)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    chown_to_real_user(target.parent)
+    return target
+
+
+@contextlib.contextmanager
+def _writing_config(target: Path) -> Generator[None]:
+    """Hold the config write lock, and hand *target* back to the real operator
+    on every exit path.
+
+    Under ``sudo`` every publish creates the file as root -- including
+    :func:`_revalidate`'s rollback, which republishes through ``atomic_write``
+    onto a new inode -- so the handover cannot be conditional on the edit
+    turning out to be valid.
+    """
+    with locked_file(target):
+        try:
+            yield
+        finally:
+            chown_to_real_user(target)
+
+
 def _revalidate(repo_root: Path, target: Path, prior: str | None) -> str | None:
     """Re-load the merged config after an edit; restore *prior* (or delete a
     freshly-created file) and return the error string if the edit is invalid.
@@ -789,19 +821,14 @@ def set_config_value(
     error string when the edit produced an invalid config (the file is rolled
     back and left as it was), else None.
     """
-    target = _write_target(repo_root, to_repo=to_repo)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    with locked_file(target):
+    target = _prepare_write_target(repo_root, to_repo=to_repo)
+    with _writing_config(target):
         prior = target.read_text(encoding="utf-8") if target.is_file() else None
         try:
             upsert_toml_leaf(target, dotted_key, parse_cli_value(raw_value))
         except ValueError as exc:
             return str(exc)
-        err = _revalidate(repo_root, target, prior)
-    if err is None:
-        chown_to_real_user(target.parent)
-        chown_to_real_user(target)
-    return err
+        return _revalidate(repo_root, target, prior)
 
 
 def set_config_table(
@@ -815,19 +842,14 @@ def set_config_table(
     ``[providers.<name>]`` entry from the TUI's add-provider form). Revalidates
     the merged config and rolls the file back on failure. Returns an error string
     on invalid config, else None. ``None`` field values are omitted."""
-    target = _write_target(repo_root, to_repo=to_repo)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    with locked_file(target):
+    target = _prepare_write_target(repo_root, to_repo=to_repo)
+    with _writing_config(target):
         prior = target.read_text(encoding="utf-8") if target.is_file() else None
         try:
             upsert_toml_table(target, table, fields)
         except ValueError as exc:
             return str(exc)
-        err = _revalidate(repo_root, target, prior)
-    if err is None:
-        chown_to_real_user(target.parent)
-        chown_to_real_user(target)
-    return err
+        return _revalidate(repo_root, target, prior)
 
 
 def provider_choices() -> dict[str, list[str]]:
@@ -869,18 +891,13 @@ def set_config_leaves(
     hand-added provider keys on every re-run). One revalidate+rollback wraps
     all the leaf writes, so a bad merged config restores the prior file whole.
     ``None`` field values are omitted."""
-    target = _write_target(repo_root, to_repo=to_repo)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    with locked_file(target):
+    target = _prepare_write_target(repo_root, to_repo=to_repo)
+    with _writing_config(target):
         prior = target.read_text(encoding="utf-8") if target.is_file() else None
         for key, val in fields.items():
             if val is not None:
                 upsert_toml_leaf(target, f"{table}.{key}", val)
-        err = _revalidate(repo_root, target, prior)
-    if err is None:
-        chown_to_real_user(target.parent)
-        chown_to_real_user(target)
-    return err
+        return _revalidate(repo_root, target, prior)
 
 
 def unset_config_value(repo_root: Path, dotted_key: str, *, to_repo: bool = False) -> str | None:
@@ -892,7 +909,7 @@ def unset_config_value(repo_root: Path, dotted_key: str, *, to_repo: bool = Fals
     target = _write_target(repo_root, to_repo=to_repo)
     if not target.is_file():
         return None
-    with locked_file(target):
+    with _writing_config(target):
         prior = target.read_text(encoding="utf-8")
         try:
             removed = remove_toml_leaf(target, dotted_key)
@@ -900,7 +917,4 @@ def unset_config_value(repo_root: Path, dotted_key: str, *, to_repo: bool = Fals
             return str(exc)
         if not removed:
             return None
-        err = _revalidate(repo_root, target, prior)
-    if err is None:
-        chown_to_real_user(target)
-    return err
+        return _revalidate(repo_root, target, prior)

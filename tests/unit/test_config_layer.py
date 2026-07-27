@@ -408,3 +408,38 @@ def test_concurrent_rollback_does_not_erase_a_valid_write(
     eff = load_effective(repo)
     assert eff.config.git.auto_stash is True  # B's update survived A's rollback
     assert eff.config.sandbox.run_commands == "yes"  # A rolled back to the prior value
+
+
+def test_config_write_hands_the_dir_over_before_writing(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Under `sudo` the config dir is created as root. Handing it back only
+    after a SUCCESSFUL write stranded it root-owned whenever the write failed
+    or the writer was killed inside the lock, and every later non-root write
+    then died PermissionError creating its atomic-write temp file there."""
+    from agent6.config import layer as layer_mod
+
+    handed: list[Path] = []
+    monkeypatch.setattr(layer_mod, "chown_to_real_user", handed.append)
+
+    def killed(*_args: object, **_kwargs: object) -> None:
+        raise KeyboardInterrupt  # stands in for the operator killing the writer
+
+    monkeypatch.setattr(layer_mod, "upsert_toml_leaf", killed)
+    with pytest.raises(KeyboardInterrupt):
+        set_config_value(repo, "git.auto_stash", "true", to_repo=True)
+    assert handed[0] == repo_config_path_for(repo).parent  # before the write, not after it
+
+
+def test_config_write_hands_the_file_over_after_a_rejected_edit(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A rejected edit rolls back through atomic_write, i.e. republishes the
+    file as a NEW inode owned by root under `sudo`, so the handover cannot be
+    conditional on the edit being valid."""
+    from agent6.config import layer as layer_mod
+
+    handed: list[Path] = []
+    monkeypatch.setattr(layer_mod, "chown_to_real_user", handed.append)
+    assert set_config_value(repo, "sandbox.run_commands", "bogus_value", to_repo=True) is not None
+    assert repo_config_path_for(repo) in handed
