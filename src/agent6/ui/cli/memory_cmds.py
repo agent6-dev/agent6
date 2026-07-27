@@ -41,13 +41,13 @@ def _cmd_memory_add(scope: MemoryScope, body: str) -> int:
 def _cmd_memory_list(scope: MemoryScope | None, *, include_invalidated: bool) -> int:
     try:
         entries = memory_list(_state_dir(Path.cwd()), scope)
+        # The block trims across ALL scopes, so the over-cap warning must too --
+        # a --scope listing would otherwise miss a global overflow.
+        everything = entries if scope is None else memory_list(_state_dir(Path.cwd()), None)
     except MemoryStoreError as exc:
         print(f"MEMORY ERROR: {exc}", file=sys.stderr)
         return 2
     shown = [e for e in entries if include_invalidated or e.is_active]
-    # The block trims across ALL scopes, so the over-cap warning must too --
-    # a --scope listing would otherwise miss a global overflow.
-    everything = entries if scope is None else memory_list(_state_dir(Path.cwd()), None)
     pinned_cost = sum(
         min(len(e.body), MEMORY_ENTRY_MAX_CHARS) + 48
         for e in everything

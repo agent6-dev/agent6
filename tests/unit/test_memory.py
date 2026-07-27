@@ -184,3 +184,18 @@ def test_pin_refused_on_invalidated_but_unpin_allowed(tmp_path: Path) -> None:
     # ...but pinning one is refused: inactive entries never render.
     with pytest.raises(MemoryStoreError, match="invalidated"):
         set_pinned(tmp_path, e.id, True)
+
+
+def test_an_undecodable_store_file_raises_a_memory_store_error(tmp_path: Path) -> None:
+    """One non-UTF-8 byte in a memories file raised a bare UnicodeDecodeError.
+    Every run builds the memory block at startup and both call sites degrade on
+    MemoryStoreError/OSError only, so the ValueError went straight through and
+    killed the run after run.start, naming no file."""
+    add(tmp_path, "facts", "readable")
+    bad = tmp_path / "memories" / "decisions.md"
+    bad.write_bytes(b"id: x\nscope: decisions\n\xff\xfe body\n")
+
+    with pytest.raises(MemoryStoreError, match=r"decisions\.md"):
+        list_entries(tmp_path)
+    # The healthy scope on its own is still listable.
+    assert [e.body for e in list_entries(tmp_path, "facts")] == ["readable"]

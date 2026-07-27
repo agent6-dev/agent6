@@ -88,7 +88,14 @@ def _now() -> str:
 def _parse_file(path: Path, scope: MemoryScope) -> list[MemoryEntry]:
     if not path.is_file():
         return []
-    lines = path.read_text(encoding="utf-8").splitlines()
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, ValueError) as exc:
+        # The store's own error type, so the block builders' degrade-to-none
+        # guard covers an unreadable or non-UTF-8 file too: memory is context,
+        # and one stray byte must not kill every run in the repo.
+        raise MemoryStoreError(f"cannot read {path}: {exc}") from exc
+    lines = text.splitlines()
     entries: list[MemoryEntry] = []
     current_id: str | None = None
     meta: dict[str, str] = {}

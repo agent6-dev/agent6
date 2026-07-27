@@ -101,3 +101,19 @@ def test_list_warns_when_pins_exceed_the_block_cap(
     # The cap is global: a scope-filtered listing must still warn.
     assert _cmd_memory_list("decisions", include_invalidated=False) == 0
     assert "exceed the memory block cap" in capsys.readouterr().out
+
+
+def test_list_of_one_scope_reports_an_unreadable_other_scope(
+    env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The over-cap warning re-reads EVERY scope, and that read sat outside the
+    error guard: `memory list --scope facts` died with a raw traceback when an
+    unrelated scope's file was unreadable, where it used to print the listing."""
+    from agent6.ui.cli._common import _state_dir  # pyright: ignore[reportPrivateUsage]
+
+    assert _cmd_memory_add("facts", "a fact") == 0
+    bad = _state_dir(Path.cwd()) / "memories" / "decisions.md"
+    bad.write_bytes(b"id: x\nscope: decisions\n\xff\xfe body\n")
+
+    assert _cmd_memory_list("facts", include_invalidated=False) == 2
+    assert "MEMORY ERROR" in capsys.readouterr().err
