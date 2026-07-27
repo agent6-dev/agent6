@@ -18,9 +18,17 @@ not double-printed and a mid-run context-compaction reset shows as a marker.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+# Matches ELISION_PREFIX in workflows/_compaction.py -- duplicated so the
+# read-model needs no runtime import of the engine; a test pins the equality
+# and the placeholder bytes themselves are pinned in the compaction tests.
+ELISION_MARKER_PREFIX = "<elided by context compaction"
+_GIST_MARKER_PREFIX = ELISION_MARKER_PREFIX + " (distilled)"
+_ELIDED_IDENTITY_RE = re.compile(r": the result of (.+?) was replaced")
 
 
 @dataclass
@@ -180,6 +188,61 @@ def _response_turns(resp: dict[str, Any], shape: str, names: dict[str, str]) -> 
     return []
 
 
+def _elided_strings(msg: dict[str, Any]) -> list[str]:
+    """Every elision-placeholder string one wire message carries (either shape:
+    an OpenAI ``role: tool`` string content, or Anthropic ``tool_result`` items)."""
+    out: list[str] = []
+    content = msg.get("content")
+    if isinstance(content, str):
+        if content.startswith(ELISION_MARKER_PREFIX):
+            out.append(content)
+    elif isinstance(content, list):
+        for item in content:
+            if isinstance(item, dict):
+                inner = item.get("content")
+                if isinstance(inner, str) and inner.startswith(ELISION_MARKER_PREFIX):
+                    out.append(inner)
+    return out
+
+
+def _elision_identity(placeholder: str) -> str:
+    """The elided call's identity, recovered from the placeholder's own copy."""
+    m = _ELIDED_IDENTITY_RE.search(placeholder)
+    return m.group(1) if m else "a tool result"
+
+
+def _elision_label(placeholder: str) -> str:
+    label = _elision_identity(placeholder)
+    if placeholder.startswith(_GIST_MARKER_PREFIX):
+        label += " (distilled gist kept)"
+    return label
+
+
+def _elision_marker(prev: list[Any], msgs: list[Any], upto: int) -> str:
+    """Marker text when old tool_results were mutated into elision placeholders
+    between two request snapshots, or "" when none were. The conversation view
+    keeps showing the original results; this line is the truth about what the
+    MODEL still sees. Compares by identity, not placeholder bytes, so a gist
+    demoting to the bare marker is not re-reported as a fresh elision."""
+    labels: list[str] = []
+    for i in range(min(upto, len(prev), len(msgs))):
+        cur_m, prev_m = msgs[i], prev[i]
+        if not isinstance(cur_m, dict) or not isinstance(prev_m, dict):
+            continue
+        before = {_elision_identity(s) for s in _elided_strings(prev_m)}
+        labels.extend(
+            _elision_label(s) for s in _elided_strings(cur_m) if _elision_identity(s) not in before
+        )
+    if not labels:
+        return ""
+    shown = ", ".join(labels[:6]) + (f", +{len(labels) - 6} more" if len(labels) > 6 else "")
+    noun = "result" if len(labels) == 1 else "results"
+    return (
+        f"context compaction: elided {len(labels)} older tool {noun}"
+        f" from the model's context: {shown}"
+    )
+
+
 def fold_conversation(transcripts: list[dict[str, Any]]) -> list[Turn]:
     """Fold per-call transcripts into one ordered conversation (no double-print).
 
@@ -193,6 +256,7 @@ def fold_conversation(transcripts: list[dict[str, Any]]) -> list[Turn]:
     turns: list[Turn] = []
     names: dict[str, str] = {}  # tool_call/use id -> tool name (to label results)
     prev_len = 0  # messages of the prior request already emitted
+    prev_msgs: list[Any] = []  # the prior request's messages, for elision diffing
     pending_response = False  # the prior transcript's response yielded turns
     for t in transcripts:
         seq = int(t.get("seq", 0))
@@ -210,6 +274,8 @@ def fold_conversation(transcripts: list[dict[str, Any]]) -> list[Turn]:
             turns.append(Turn(role="marker", text="context summarised / restarted", seq=seq))
             prev_len = 0
             pending_response = False
+        elif marker := _elision_marker(prev_msgs, msgs, prev_len):
+            turns.append(Turn(role="marker", text=marker, seq=seq))
         # The previously-emitted response is msgs[prev_len] only when the
         # history grew; a retry that re-sends the identical list skips nothing.
         start = prev_len + 1 if pending_response and len(msgs) > prev_len else prev_len
@@ -223,6 +289,7 @@ def fold_conversation(transcripts: list[dict[str, Any]]) -> list[Turn]:
             rt.seq = seq
             turns.append(rt)
         prev_len = len(msgs)
+        prev_msgs = list(msgs)
         pending_response = bool(response_turns)
     return turns
 

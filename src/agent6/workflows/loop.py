@@ -3150,11 +3150,17 @@ class Workflow:
         if stats.elided:
             detail = f", {stats.gisted} kept as distilled gists" if stats.gisted else ""
             self._log(f"LOOP: compaction elided {stats.elided} old tool_result blocks{detail}")
-            self._emit("loop.compact.dropped", n=stats.elided)
+            self._emit("loop.compact.dropped", n=stats.elided, calls=list(stats.elided_calls))
         if stats.demoted:
             self._log(f"LOOP: compaction demoted {stats.demoted} gists to bare placeholders")
         if stats.gisted or stats.demoted:
-            self._emit("loop.compact.gists", gisted=stats.gisted, demoted=stats.demoted)
+            self._emit(
+                "loop.compact.gists",
+                gisted=stats.gisted,
+                demoted=stats.demoted,
+                paths=list(stats.gist_paths),
+                demoted_paths=list(stats.demoted_paths),
+            )
         # Tier 2 must measure something tier 1 does NOT already bound. Tier 1
         # just capped tool_result bytes to ``compact_drop_at_chars``, so
         # re-measuring only tool_results here could never exceed the (larger)
@@ -3255,7 +3261,7 @@ class Workflow:
             self._apply_compaction_checkoff(raw, valid_ids={tid for tid, _ in open_tasks})
         summary = strip_checkoff(raw) if open_tasks else raw
         conversation.restart(context_restart_notice(self.mode) + summary)
-        self._emit("loop.compact.summarise.done", summary_chars=len(summary))
+        self._emit("loop.compact.summarise.done", summary_chars=len(summary), summary=summary)
         return True
 
     def _open_tasks_for_checkoff(self) -> list[tuple[str, str]]:

@@ -52,17 +52,14 @@ ELISION_GIST_PREFIX = ELISION_PREFIX + " (distilled)"
 _ELISION_HINT_MAX_CHARS = 120
 
 
-def elision_placeholder(tool_name: str, tool_input: Any) -> str:
-    """Identity-bearing tier-1 placeholder.
+def call_label(tool_name: str, tool_input: Any) -> str:
+    """Short identity for a tool call ("read_file src/foo.py").
 
-    Names the elided call (tool + its key argument) so the model can re-issue
-    or skip it without scanning up for the paired tool_use block; a bare
-    marker made weak models lose track of WHAT was elided and re-read the
-    wrong files. Unknown tool (orphan result) falls back to the generic
-    marker.
+    The placeholder hint, shared with the ``loop.compact.*`` event payloads so
+    every surface can say WHAT left the model's context, not just how much.
     """
     if not tool_name or not isinstance(tool_input, dict):
-        return ELISION_PLACEHOLDER
+        return tool_name
     hint = ""
     if tool_name == "read_file":
         hint = str(tool_input.get("path", ""))
@@ -78,7 +75,21 @@ def elision_placeholder(tool_name: str, tool_input: Any) -> str:
         hint = str(tool_input.get("name", ""))
     if len(hint) > _ELISION_HINT_MAX_CHARS:
         hint = hint[:_ELISION_HINT_MAX_CHARS] + "..."
-    described = f"{tool_name} {hint}".rstrip()
+    return f"{tool_name} {hint}".rstrip()
+
+
+def elision_placeholder(tool_name: str, tool_input: Any) -> str:
+    """Identity-bearing tier-1 placeholder.
+
+    Names the elided call (tool + its key argument) so the model can re-issue
+    or skip it without scanning up for the paired tool_use block; a bare
+    marker made weak models lose track of WHAT was elided and re-read the
+    wrong files. Unknown tool (orphan result) falls back to the generic
+    marker.
+    """
+    if not tool_name or not isinstance(tool_input, dict):
+        return ELISION_PLACEHOLDER
+    described = call_label(tool_name, tool_input)
     return (
         f"{ELISION_PREFIX}: the result of {described} was replaced with this "
         f"short marker to keep the loop's cumulative input bounded. If you "
@@ -122,11 +133,15 @@ Gister = Callable[[tuple[GistRequest, ...]], Mapping[str, str]]
 @dataclass(frozen=True, slots=True)
 class CompactionStats:
     """One tier-1 pass: fresh tool_results elided (of which gisted), plus
-    gist placeholders demoted to the bare marker."""
+    gist placeholders demoted to the bare marker — with the identities of
+    each (``call_label`` strings / read paths) for the event stream."""
 
     elided: int = 0
     gisted: int = 0
     demoted: int = 0
+    elided_calls: tuple[str, ...] = ()
+    gist_paths: tuple[str, ...] = ()
+    demoted_paths: tuple[str, ...] = ()
 
 
 def elision_gist_placeholder(path: str, gist: str) -> str:
@@ -453,7 +468,14 @@ def compact_old_tool_results(
         walk.distill(gister)
     walk.apply()
     walk.demote()
-    return CompactionStats(elided=walk.elided, gisted=walk.gisted, demoted=walk.demoted)
+    return CompactionStats(
+        elided=walk.elided,
+        gisted=walk.gisted,
+        demoted=walk.demoted,
+        elided_calls=tuple(walk.elided_calls),
+        gist_paths=tuple(walk.gist_paths),
+        demoted_paths=tuple(walk.demoted_paths),
+    )
 
 
 def _result_at(conversation: Conversation, turn_idx: int, item_idx: int) -> ToolResultItem:
@@ -480,6 +502,9 @@ class _Tier1Pass:
     elided: int = 0
     gisted: int = 0
     demoted: int = 0
+    elided_calls: list[str] = field(default_factory=list)
+    gist_paths: list[str] = field(default_factory=list)
+    demoted_paths: list[str] = field(default_factory=list)
 
     def _item(self, turn_idx: int, item_idx: int) -> ToolResultItem:
         return _result_at(self.conversation, turn_idx, item_idx)
@@ -547,13 +572,16 @@ class _Tier1Pass:
             placeholder = elision_placeholder(call.name, call.input)
             gist = self.gists.get((turn_idx, item_idx))
             if gist is not None and isinstance(call.input, dict):
-                candidate = elision_gist_placeholder(str(call.input.get("path", "")), gist)
+                path = str(call.input.get("path", ""))
+                candidate = elision_gist_placeholder(path, gist)
                 if len(candidate) < size:  # a gist longer than the content is useless
                     placeholder = candidate
                     self.gisted += 1
+                    self.gist_paths.append(path)
             self.conversation.set_result_content(turn_idx, item_idx, placeholder)
             self.total -= size - len(placeholder)
             self.elided += 1
+            self.elided_calls.append(call_label(call.name, call.input))
 
     def demote(self) -> None:
         """Still over budget (gist extras, or a shrunken budget with nothing
@@ -575,3 +603,7 @@ class _Tier1Pass:
             self.conversation.set_result_content(turn_idx, item_idx, bare)
             self.total -= len(item.content) - len(bare)
             self.demoted += 1
+            call = item.for_call
+            self.demoted_paths.append(
+                str(call.input.get("path", "")) if isinstance(call.input, dict) else ""
+            )

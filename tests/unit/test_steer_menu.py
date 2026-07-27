@@ -190,6 +190,38 @@ def test_pause_menu_status_shows_ctx_and_profile(
     assert "ctx 90,000 tok" in printed
     assert "(45%)" in printed  # 90k of the 200k sonnet window
     assert "profile paranoid" in printed
+    assert "elided" not in printed  # no compaction yet: no elision suffix
+
+
+def test_pause_menu_status_shows_compaction_truth(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Once compaction has elided results, /status says how many left the
+    model's context (and how many survive as distilled gists)."""
+    import json
+
+    from agent6.ui.cli._steer_menu import pause_menu
+
+    (tmp_path / "logs.jsonl").write_text(
+        "".join(
+            json.dumps(e) + "\n"
+            for e in (
+                {"type": "run.start", "user_task": "polish", "mode": "run"},
+                {"type": "loop.compact.dropped", "n": 9, "calls": ["read_file a.py"]},
+                {
+                    "type": "loop.compact.gists",
+                    "gisted": 3,
+                    "demoted": 0,
+                    "paths": ["a.py", "b.py", "c.py"],
+                    "demoted_paths": [],
+                },
+            )
+        ),
+        encoding="utf-8",
+    )
+    assert pause_menu(tmp_path, input_fn=_feed(["/status"])) is None
+    printed = capsys.readouterr().out
+    assert "elided 9 (3 gists)" in printed
 
 
 # --- skill slash commands ----------------------------------------------------

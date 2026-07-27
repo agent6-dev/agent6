@@ -163,6 +163,11 @@ class RunState:
     # Monotonic count of mid-run steer requests (Ctrl-C). The TUI compares it
     # against its own "seen" count to pop a steer modal exactly once per press.
     steer_requests: int = 0
+    # Context-compaction truth for the status surfaces: cumulative tool_results
+    # elided from the model's context, and gists currently held (created minus
+    # demoted -- a demoted gist is back to a bare marker).
+    compact_elided: int = 0
+    compact_gists_live: int = 0
 
 
 def initial_state() -> RunState:
@@ -421,6 +426,13 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
             )
             return replace(state, pending_questions=new_q)
 
+        case events.CompactDropped(n=n):
+            return replace(state, compact_elided=state.compact_elided + n)
+
+        case events.CompactGists(gisted=gisted, demoted=demoted):
+            live = max(0, state.compact_gists_live + gisted - demoted)
+            return replace(state, compact_gists_live=live)
+
         case events.SteerRequested():
             return replace(state, steer_requests=state.steer_requests + 1)
 
@@ -548,6 +560,23 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
                 salient = f"{role} in={tin} out={tout}"
         case "loop.provider.retry":
             salient = f"attempt {event.get('attempt')}: {str(event.get('error', ''))[:160]}"
+        case "loop.compact.dropped":
+            calls = event.get("calls", []) or []
+            named = ", ".join(str(c) for c in calls)
+            salient = f"elided {event.get('n')} old tool results"
+            if named:
+                salient += f": {named[:160]}"
+        case "loop.compact.gists":
+            parts = []
+            if event.get("gisted"):
+                paths = ", ".join(str(p) for p in (event.get("paths", []) or []))
+                parts.append(f"{event.get('gisted')} distilled ({paths[:120]})")
+            if event.get("demoted"):
+                dem = ", ".join(str(p) for p in (event.get("demoted_paths", []) or []))
+                parts.append(f"{event.get('demoted')} demoted ({dem[:120]})")
+            salient = "; ".join(parts)
+        case "loop.compact.summarise.done":
+            salient = f"restarted on a {event.get('summary_chars')}-char progress summary"
         case "loop.resume.start":
             salient = f"iteration={event.get('iteration')} messages={event.get('messages')}"
         case "budget.update":

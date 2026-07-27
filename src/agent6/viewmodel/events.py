@@ -191,6 +191,22 @@ class QuestionAnswer:
 
 
 @dataclass(frozen=True, slots=True)
+class CompactDropped:
+    """loop.compact.dropped: tier-1 elision, with the elided call identities."""
+
+    n: int
+    calls: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CompactGists:
+    """loop.compact.gists: gists created / demoted in a tier-1 pass."""
+
+    gisted: int
+    demoted: int
+
+
+@dataclass(frozen=True, slots=True)
 class SteerRequested:
     """run.steer_requested: an operator Ctrl-C mid-run."""
 
@@ -229,6 +245,8 @@ Event = (
     | ApprovalAnswer
     | QuestionPrompt
     | QuestionAnswer
+    | CompactDropped
+    | CompactGists
     | SteerRequested
     | RunEnd
     | RawEvent
@@ -338,6 +356,14 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
             raw_ans = raw.get("answers", ()) or ()
             answers = tuple(str(a) for a in raw_ans) if isinstance(raw_ans, (list, tuple)) else ()
             return QuestionAnswer(id=str(raw.get("id", "")), answers=answers)
+        case "loop.compact.dropped":
+            raw_calls = raw.get("calls", ()) or ()
+            calls = tuple(str(c) for c in raw_calls) if isinstance(raw_calls, (list, tuple)) else ()
+            return CompactDropped(n=_as_int(raw.get("n")), calls=calls)
+        case "loop.compact.gists":
+            return CompactGists(
+                gisted=_as_int(raw.get("gisted")), demoted=_as_int(raw.get("demoted"))
+            )
         case "run.steer_requested":
             return SteerRequested()
         case "run.end":

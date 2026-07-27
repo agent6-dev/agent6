@@ -7,8 +7,10 @@ from __future__ import annotations
 from typing import Any
 
 from agent6.workflows._compaction import (
+    call_label,
     compact_old_tool_results,
     context_chars,
+    elision_placeholder,
     parse_checkoff,
     strip_checkoff,
 )
@@ -332,3 +334,44 @@ def test_compact_placeholder_carries_tool_identity() -> None:
     elided = _result_contents(conv)[0]
     assert elided.startswith("<elided by context compaction")
     assert "read_file src/lib.py" in elided
+
+
+def test_call_label_identities() -> None:
+    assert call_label("read_file", {"path": "src/foo.py"}) == "read_file src/foo.py"
+    assert (
+        call_label("read_file", {"path": "a.py", "offset": 10, "limit": 40})
+        == "read_file a.py (offset=10, limit=40)"
+    )
+    assert call_label("grep", {"pattern": "needle"}) == "grep pattern 'needle'"
+    assert call_label("list_dir", {"path": "src"}) == "list_dir src"
+    assert call_label("find_definition", {"name": "Foo"}) == "find_definition Foo"
+    assert call_label("frobnicate", {"x": 1}) == "frobnicate"
+    assert call_label("frobnicate", None) == "frobnicate"
+    assert call_label("", None) == ""
+    long_path = "d/" * 80
+    assert call_label("read_file", {"path": long_path}) == f"read_file {long_path[:120]}..."
+
+
+def test_elision_placeholder_unchanged_by_label_refactor() -> None:
+    """Pins the exact placeholder bytes: the call_label extraction must not
+    drift the prompt copy the idempotency walk and the model both key on."""
+    assert elision_placeholder("read_file", {"path": "src/foo.py"}) == (
+        "<elided by context compaction: the result of read_file src/foo.py was"
+        " replaced with this short marker to keep the loop's cumulative input"
+        " bounded. If you still need it, re-read only the part you need"
+        " (read_file with a targeted offset/limit); do not re-issue the"
+        " identical call.>"
+    )
+
+
+def test_stats_carry_elided_identities() -> None:
+    big = "x" * 1000
+    conv = Conversation()
+    _add_exchange(conv, ("read_file", {"path": "a.py"}, big))
+    _add_exchange(conv, ("read_file", {"path": "b.py"}, big))
+    _add_exchange(conv, ("read_file", {"path": "c.py"}, big))
+    stats = compact_old_tool_results(conv, max_total_bytes=1500, keep_recent=2)
+    assert stats.elided == 1
+    assert stats.elided_calls == ("read_file a.py",)
+    assert stats.gist_paths == ()
+    assert stats.demoted_paths == ()

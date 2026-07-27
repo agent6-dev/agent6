@@ -521,3 +521,46 @@ def test_interleaved_result_for_an_earlier_call_pairs_by_call_id() -> None:
     a, b = s.tool_calls
     assert (a.result_summary, a.ok) == ("sa", True)
     assert b.ok is None  # still in flight
+
+
+def test_compaction_events_fold_into_elision_counters() -> None:
+    """/status truth source: cumulative elided count, LIVE gist count (a demoted
+    gist is no longer held as a gist)."""
+    s = initial_state()
+    s = apply_event(
+        s, {"type": "loop.compact.dropped", "n": 3, "calls": ["read_file a.py", "grep 'q'"]}
+    )
+    s = apply_event(
+        s,
+        {
+            "type": "loop.compact.gists",
+            "gisted": 2,
+            "demoted": 1,
+            "paths": ["a.py", "b.py"],
+            "demoted_paths": ["c.py"],
+        },
+    )
+    s = apply_event(s, {"type": "loop.compact.dropped", "n": 1, "calls": ["read_file d.py"]})
+    assert s.compact_elided == 4
+    assert s.compact_gists_live == 1
+
+
+def test_format_log_line_compaction_identities() -> None:
+    dropped = format_log_line(
+        {"type": "loop.compact.dropped", "n": 2, "calls": ["read_file a.py", "grep 'q'"]}
+    )
+    assert "elided 2" in dropped and "read_file a.py" in dropped and "grep 'q'" in dropped
+    gists = format_log_line(
+        {
+            "type": "loop.compact.gists",
+            "gisted": 1,
+            "demoted": 1,
+            "paths": ["a.py"],
+            "demoted_paths": ["b.py"],
+        }
+    )
+    assert "1 distilled (a.py)" in gists and "1 demoted (b.py)" in gists
+    done = format_log_line(
+        {"type": "loop.compact.summarise.done", "summary_chars": 2341, "summary": "did things"}
+    )
+    assert "2341-char progress summary" in done

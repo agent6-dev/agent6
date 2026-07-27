@@ -161,5 +161,7 @@
   "finish_summary": "all green",
   "latest_diff": "diff --git a/src/x.py b/src/x.py\n@@ -1 +1,2 @@\n+added\n",
   "steer_requests": 1,
+  "compact_elided": 0,
+  "compact_gists_live": 0,
   "status_label": "passed"
 }

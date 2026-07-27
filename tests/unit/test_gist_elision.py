@@ -200,3 +200,21 @@ def test_read_file_text_from_result_unwraps_shapes() -> None:
     assert read_file_text_from_result(truncated) == "the head"
     assert read_file_text_from_result(json.dumps({"error": "Not a file: x"})) == ""
     assert read_file_text_from_result("plain non-json payload") == "plain non-json payload"
+
+
+def test_stats_carry_gist_and_demotion_identities() -> None:
+    doc = "authoritative spec. " * 300
+    conv = Conversation()
+    _add_read(conv, "docs/spec.md", doc)
+    _add_read(conv, "b.py", "x" * 500)
+    _add_read(conv, "c.py", "y" * 500)
+    gister = _SpyGister({"docs/spec.md": "spec facts " * 30})
+    first = compact_old_tool_results(conv, max_total_bytes=1800, keep_recent=2, gister=gister)
+    assert first.elided_calls == ("read_file docs/spec.md",)
+    assert first.gist_paths == ("docs/spec.md",)
+    assert first.demoted_paths == ()
+    tighter = compact_old_tool_results(conv, max_total_bytes=1100, keep_recent=2, gister=gister)
+    assert tighter.demoted == 1
+    assert tighter.demoted_paths == ("docs/spec.md",)
+    assert tighter.elided_calls == ()
+    assert tighter.gist_paths == ()

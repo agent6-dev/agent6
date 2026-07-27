@@ -2451,6 +2451,83 @@ def _compact_via_wire(wf: Workflow, messages: list[dict[str, Any]]) -> bool:
     return out
 
 
+def _read_history(*reads: tuple[str, str]) -> list[dict[str, Any]]:
+    """An original task message plus one read_file exchange per (path, content)."""
+    msgs: list[dict[str, Any]] = [
+        {"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}
+    ]
+    for i, (path, content) in enumerate(reads):
+        msgs.append(
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": f"t{i}",
+                        "name": "read_file",
+                        "input": {"path": path},
+                    }
+                ],
+            }
+        )
+        msgs.append(
+            {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": f"t{i}", "content": content}],
+            }
+        )
+    return msgs
+
+
+def test_tier1_compact_event_names_what_was_elided() -> None:
+    """loop.compact.dropped carries the elided call identities, not just a count."""
+    ev = _EventCapture()
+    wf = _wf(
+        events=ev,
+        compact_drop_at_chars=1500,
+        compact_summarise_at_chars=10**9,
+        compact_elision_gists=False,
+    )
+    msgs = _read_history(("a.py", "X" * 1000), ("b.py", "X" * 1000), ("c.py", "X" * 1000))
+    _compact_via_wire(wf, msgs)
+    dropped = [e for e in ev.events if e["type"] == "loop.compact.dropped"]
+    assert dropped and dropped[-1]["calls"] == ["read_file a.py"]
+
+
+def test_tier1_gist_event_carries_paths() -> None:
+    import json
+
+    ev = _EventCapture()
+    summariser = MagicMock()
+    summariser.call.return_value = _resp("docs/spec.md: spec facts distilled")
+    wf = _wf(
+        events=ev,
+        summariser_provider=summariser,
+        compact_drop_at_chars=1800,
+        compact_summarise_at_chars=10**9,
+        compact_elision_gists=True,
+    )
+    doc = json.dumps({"content": "authoritative spec. " * 300})
+    msgs = _read_history(("docs/spec.md", doc), ("b.py", "x" * 500), ("c.py", "y" * 500))
+    _compact_via_wire(wf, msgs)
+    gists = [e for e in ev.events if e["type"] == "loop.compact.gists"]
+    assert gists
+    assert gists[-1]["paths"] == ["docs/spec.md"]
+    assert gists[-1]["demoted_paths"] == []
+
+
+def test_summarise_done_event_carries_summary_text() -> None:
+    """The full summary rides the event so surfaces can show what the model now
+    works from; summary_chars alone hid the post-restart worldview."""
+    ev = _EventCapture()
+    summariser = MagicMock()
+    summariser.call.return_value = _resp("done: tried A; best=42 at sha9")
+    wf = _wf(events=ev, summariser_provider=summariser)
+    _restart_via_wire(wf, _long_history(6))
+    done = [e for e in ev.events if e["type"] == "loop.compact.summarise.done"]
+    assert done and done[-1]["summary"] == "done: tried A; best=42 at sha9"
+
+
 def test_summarise_and_restart_replaces_history() -> None:
     summariser = MagicMock()
     summariser.call.return_value = _resp("done: tried A (kept), B (reverted); best=42 at sha9")

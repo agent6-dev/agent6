@@ -142,6 +142,8 @@ def _print_status(run_dir: Path) -> None:
         window = context_window(role.provider, role.model) if role.model else None
         pct = f" ({min(100, round(100 * role.ctx_tokens / window))}%)" if window else ""
         ctx = f" · ctx {role.ctx_tokens:,} tok{pct}"
+    if s.compact_elided:
+        ctx += f" · elided {s.compact_elided} ({s.compact_gists_live} gists)"
     profile = _read_profile(run_dir)
     prof = f" · profile {profile}" if profile else ""
     print(f"[agent6] {label} · tasks {tasks} · {len(s.tool_calls)} tools · cost {cost}{ctx}{prof}")

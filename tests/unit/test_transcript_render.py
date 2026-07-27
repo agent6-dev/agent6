@@ -215,6 +215,134 @@ def test_compaction_restart_shows_marker() -> None:
     assert turns[-1].text == "resumed"
 
 
+_BARE_ELIDED_A = (
+    "<elided by context compaction: the result of read_file a.py was replaced"
+    " with this short marker to keep the loop's cumulative input bounded. If"
+    " you still need it, re-read only the part you need (read_file with a"
+    " targeted offset/limit); do not re-issue the identical call.>"
+)
+_GIST_ELIDED_A = (
+    "<elided by context compaction (distilled): the result of read_file a.py"
+    " was replaced by this distilled gist; if the gist is not enough, re-read"
+    " only the part you need (read_file with a targeted offset/limit).\n"
+    "gist: R01 headers under 80 chars>"
+)
+
+
+def _anthropic_followup(elided_content: str) -> dict[str, Any]:
+    """A seq-3 anthropic call: history grew by (assistant, user) AND the old
+    tool_result at index 2 was mutated in place to an elision placeholder."""
+    return {
+        "seq": 3,
+        "request": {
+            "body": {
+                "system": "SYSTEM PROMPT",
+                "messages": [
+                    {"role": "user", "content": [{"type": "text", "text": "do X"}]},
+                    {
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "id": "u1",
+                                "name": "read_file",
+                                "input": {"path": "a.py"},
+                            }
+                        ],
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": "u1",
+                                "content": elided_content,
+                            }
+                        ],
+                    },
+                    {"role": "assistant", "content": [{"type": "text", "text": "all done"}]},
+                    {"role": "user", "content": [{"type": "text", "text": "next step"}]},
+                ],
+            }
+        },
+        "response": {"body": {"role": "assistant", "content": [{"type": "text", "text": "ok"}]}},
+    }
+
+
+def test_tier1_elision_shows_marker_with_identity() -> None:
+    """When a later request mutates an old tool_result into an elision
+    placeholder, the conversation view says so instead of silently implying the
+    model still sees the original."""
+    turns = fold_conversation([*_ANTHROPIC, _anthropic_followup(_BARE_ELIDED_A)])
+    markers = [t for t in turns if t.role == "marker"]
+    assert len(markers) == 1
+    assert "elided 1 older tool result" in markers[0].text
+    assert "read_file a.py" in markers[0].text
+    # The original result stays displayed; history is not re-printed.
+    assert sum(1 for t in turns if t.text == "FULL FILE CONTENTS") == 1
+    assert turns[-1].text == "ok"
+
+
+def test_tier1_elision_marker_flags_kept_gists() -> None:
+    turns = fold_conversation([*_ANTHROPIC, _anthropic_followup(_GIST_ELIDED_A)])
+    markers = [t for t in turns if t.role == "marker"]
+    assert len(markers) == 1
+    assert "read_file a.py (distilled gist kept)" in markers[0].text
+
+
+def test_tier1_elision_marker_openai_shape() -> None:
+    followup = {
+        "seq": 3,
+        "request": {
+            "body": {
+                "messages": [
+                    {"role": "system", "content": "SYSTEM PROMPT"},
+                    {"role": "user", "content": "do X"},
+                    {
+                        "role": "assistant",
+                        "content": "working on it",
+                        "tool_calls": [
+                            {
+                                "id": "c1",
+                                "function": {"name": "read_file", "arguments": '{"path":"a.py"}'},
+                            }
+                        ],
+                    },
+                    {"role": "tool", "content": _BARE_ELIDED_A, "tool_call_id": "c1"},
+                    {"role": "assistant", "content": "all done"},
+                    {"role": "user", "content": "next"},
+                ]
+            }
+        },
+        "response": {"body": {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}},
+    }
+    turns = fold_conversation([*_OPENAI, followup])
+    markers = [t for t in turns if t.role == "marker"]
+    assert len(markers) == 1
+    assert "elided 1 older tool result" in markers[0].text
+    assert "read_file a.py" in markers[0].text
+
+
+def test_gist_demotion_is_not_reported_as_a_fresh_elision() -> None:
+    """A gist decaying to the bare marker changes the placeholder bytes, but the
+    result was already reported elided -- no second 'elided' marker."""
+    seq4 = _anthropic_followup(_BARE_ELIDED_A)
+    seq4["seq"] = 4
+    turns = fold_conversation([*_ANTHROPIC, _anthropic_followup(_GIST_ELIDED_A), seq4])
+    markers = [t for t in turns if t.role == "marker"]
+    assert len(markers) == 1  # the original gist elision only
+    assert "distilled gist kept" in markers[0].text
+
+
+def test_elision_marker_prefix_matches_the_compaction_placeholder() -> None:
+    """The renderer detects placeholders by prefix; this pins the cross-module
+    coupling without a runtime viewmodel->workflows import."""
+    from agent6.viewmodel.transcript_render import ELISION_MARKER_PREFIX
+    from agent6.workflows._compaction import ELISION_PREFIX
+
+    assert ELISION_MARKER_PREFIX == ELISION_PREFIX
+
+
 def test_load_transcripts_sorted_by_seq(tmp_path: Path) -> None:
     d = tmp_path / "transcripts"
     d.mkdir()
