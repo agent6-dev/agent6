@@ -241,24 +241,6 @@ def _unstarted_status(run_dir: Path) -> tuple[str, str]:
     return "created", ""
 
 
-def parked_status_word(run_dir: Path, *, log_count: int) -> tuple[str, str] | None:
-    """``("parked", "resume to start")`` when *run_dir* holds a submission the
-    busy-checkout refusal saved, else None.
-
-    A parked run has no events by construction, so a header folded from the
-    event stream alone reads it as "running" while the listing (which reads the
-    manifest) calls it parked. Any header built from a run DIR can ask this and
-    agree. Gated on *log_count* so a resumed run is never mislabelled: resume
-    clears ``parked_task``, but only once it is under way.
-    """
-    if log_count:
-        return None
-    with contextlib.suppress(ManifestError):
-        if read_manifest(run_dir).parked_task:
-            return PARKED_STATUS
-    return None
-
-
 def _running_is_stale(run_dir: Path, stale_after_s: float) -> bool:
     """Probe the worker pid when the run recorded one: a killed run reads
     "stale" at once (not after the silence window), and a live worker blocked

@@ -276,6 +276,36 @@ def test_run_snapshot_labels_a_dead_worker_stale(tmp_path: Path) -> None:
     assert model.run_snapshot(d)["status_label"] == "stale"
 
 
+def test_run_snapshot_labels_waiting_starting_created(tmp_path: Path) -> None:
+    """The run page speaks EVERY listing word, not just parked/stale: blocked
+    on an operator answer reads "waiting · needs answer" (it read "running"
+    and sent the operator off to wait on the model while the run waited on
+    THEM), a live pre-run.start worker "starting", a never-started dir
+    "created"."""
+    import os
+
+    from agent6.runs.ipc import write_worker_pid
+
+    d = _run(
+        tmp_path,
+        "blocked1",
+        [
+            {"type": "run.start", "mode": "run", "user_task": "t"},
+            {"type": "approval.prompt", "id": "approval-1", "prompt": "rm -rf?"},
+        ],
+    )
+    write_worker_pid(d, os.getpid())
+    assert model.run_snapshot(d)["status_label"] == "waiting · needs answer"
+
+    e = model.runs_root(tmp_path) / "fresh1"
+    e.mkdir(parents=True)
+    (e / "manifest.json").write_text(json.dumps({"run_id": "fresh1"}), encoding="utf-8")
+    write_worker_pid(e, os.getpid())
+    assert model.run_snapshot(e)["status_label"] == "starting"
+    (e / "worker.pid").unlink()
+    assert model.run_snapshot(e)["status_label"] == "created"
+
+
 def test_run_snapshot_leaves_a_finished_run_alone(tmp_path: Path) -> None:
     """The dir-derived relabels never touch a run that ended on its own terms."""
     d = _run(
