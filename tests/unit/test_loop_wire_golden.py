@@ -208,14 +208,14 @@ def _run_scenario(tmp_dir: Path) -> dict[str, Any]:
     steer = _SteerOnce()
     pre_restart_state: list[str] = []
 
-    def _compact_requested() -> bool:
+    def _compact_requested() -> str | None:
         if compact_flag[0] and not pre_restart_state:
             # Capture the richest on-disk snapshot (post-tools iteration 4:
             # gist placeholder + interleaved notice + steer + nudge) before
             # the forced restart replaces the history; the resume leg re-enters
             # from these bytes.
             pre_restart_state.append(snap_path.read_text(encoding="utf-8"))
-        return compact_flag[0]
+        return "" if compact_flag[0] else None  # a plain /compact carries no focus
 
     def _compact_clear() -> None:
         compact_flag[0] = False

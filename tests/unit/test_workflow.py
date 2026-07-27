@@ -2532,6 +2532,45 @@ def test_summarise_done_event_carries_summary_text() -> None:
     assert done and done[-1]["summary"] == "done: tried A; best=42 at sha9"
 
 
+def test_forced_compact_threads_focus_to_summariser() -> None:
+    """/compact <focus>: the marker's text reaches the summariser prompt and the
+    loop.compact.requested event, so the operator steers WHAT the summary keeps."""
+    ev = _EventCapture()
+    summariser = MagicMock()
+    summariser.call.return_value = _resp("s")
+    cleared: list[bool] = []
+    wf = _wf(
+        events=ev,
+        summariser_provider=summariser,
+        compact_requested=lambda: "weigh the auth decisions",
+        compact_clear=lambda: cleared.append(True),
+        compact_drop_at_chars=10**9,
+        compact_summarise_at_chars=10**9,
+    )
+    assert _compact_via_wire(wf, _long_history(3)) is True
+    assert cleared == [True]
+    sent = str(summariser.call.call_args)
+    assert "Operator focus for this summary" in sent
+    assert "weigh the auth decisions" in sent
+    req = [e for e in ev.events if e["type"] == "loop.compact.requested"]
+    assert req and req[-1]["focus"] == "weigh the auth decisions"
+
+
+def test_forced_compact_plain_keeps_prompt_unfocused() -> None:
+    """A plain /compact ("" focus) forces tier-2 with the byte-identical
+    summariser prompt of an automatic tier-2 (no focus clause)."""
+    summariser = MagicMock()
+    summariser.call.return_value = _resp("s")
+    wf = _wf(
+        summariser_provider=summariser,
+        compact_requested=lambda: "",
+        compact_drop_at_chars=10**9,
+        compact_summarise_at_chars=10**9,
+    )
+    assert _compact_via_wire(wf, _long_history(3)) is True
+    assert "Operator focus" not in str(summariser.call.call_args)
+
+
 def test_summarise_and_restart_reinjects_pins_verbatim() -> None:
     """Pins are re-shown verbatim in the restart message (before the summary
     label, as standing orders), and the summariser is told not to restate them."""
@@ -3064,7 +3103,7 @@ def test_compact_request_forces_a_tier2_restart() -> None:
     wf = _wf(
         summariser_provider=summariser,
         compact_summarise_at_chars=500_000,
-        compact_requested=lambda: pending["req"],
+        compact_requested=lambda: "" if pending["req"] else None,
         compact_clear=lambda: pending.__setitem__("req", False),
     )
     small = _big_text_history("TASK: x", blocks=2, block_chars=100)  # nowhere near tier 2

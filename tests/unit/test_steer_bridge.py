@@ -267,3 +267,17 @@ def test_workflow_run_resets_the_steer_stage_at_leg_entry() -> None:
         with contextlib.suppress(Exception):  # mocks explode later in the leg
             wf.run("q")
         assert len(resets) == expected
+
+
+def test_compact_request_carries_focus(tmp_path: Path) -> None:
+    """The compact marker body is the operator's optional summary focus:
+    "" = plain compact, None = no request pending."""
+    from agent6.runs.ipc import clear_compact_request, read_compact_request, request_compact
+
+    assert read_compact_request(tmp_path) is None
+    request_compact(tmp_path)
+    assert read_compact_request(tmp_path) == ""
+    request_compact(tmp_path, focus="weigh the auth decisions")
+    assert read_compact_request(tmp_path) == "weigh the auth decisions"
+    clear_compact_request(tmp_path)
+    assert read_compact_request(tmp_path) is None

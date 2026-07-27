@@ -17,7 +17,7 @@ steering instruction, so no quoting is ever needed:
 
     /status   run status: tasks, tools, cost, ctx, profile
     /tasks    the task graph with statuses
-    /compact  compact the context before the next model call
+    /compact  compact the context now (`/compact <focus>` steers the summary)
     /continue resume unchanged (same as Enter)
     /stop     stop the run now (resumable with `agent6 resume`)
     /detach   keep the run going in the background
@@ -53,7 +53,7 @@ MENU_COMMANDS: dict[str, str] = {
     "/status": "run status: tasks, tools, cost, context, profile",
     "/tasks": "the task graph with statuses",
     "/pin": "list pinned instructions (pin one with `/pin <text>`)",
-    "/compact": "compact the context before the next model call",
+    "/compact": "compact the context now; `/compact <focus>` steers the summary",
     "/continue": "resume the run unchanged (same as Enter)",
     "/stop": "stop the run now (resume later with `agent6 resume`)",
     "/detach": "keep the run going in the background",
@@ -232,10 +232,19 @@ def pause_menu(  # noqa: PLR0911, PLR0912
         if word in ("/h", "/?"):
             word = "/help"
         if args:
-            # Only a skill command takes arguments; any other line with spaces
-            # stays a verbatim steer (the pre-skills contract).
+            # Only /compact and skill commands take arguments; any other line
+            # with spaces stays a verbatim steer (the loop itself parses the
+            # /pin and /parallel directives out of steer text).
+            builtin = [c for c in MENU_COMMANDS if c.startswith(word)]
             smatches = [word] if word in skills else [c for c in skills if c.startswith(word)]
-            if len(smatches) == 1:
+            if builtin == ["/compact"] and not smatches:
+                request_compact(run_dir, focus=args.strip())
+                print(
+                    "[agent6] compaction requested (focus noted);"
+                    " applies before the next model call"
+                )
+                continue
+            if len(smatches) == 1 and not builtin:
                 return skill_steer_payload(smatches[0][1:], skills[smatches[0]][1], args.strip())
             return stripped
         if word in MENU_COMMANDS or word in skills:  # exact match (never both: the

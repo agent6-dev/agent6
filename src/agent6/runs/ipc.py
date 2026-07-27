@@ -435,11 +435,22 @@ def clear_stop_request(run_dir: Path) -> None:
 COMPACT_REQUEST_FILE = "compact.request"
 
 
-def request_compact(run_dir: Path) -> None:
-    """TUI-initiated manual compaction: drop a marker the run polls at its next
-    safe boundary and honors by forcing a context compaction (mirrors steer)."""
+def request_compact(run_dir: Path, focus: str = "") -> None:
+    """Front-end-initiated manual compaction: drop a marker the run polls at its
+    next safe boundary and honors by forcing a context compaction (mirrors
+    steer). The marker body is the operator's optional summary *focus*
+    (`/compact <focus>`); "" is a plain compact."""
     with contextlib.suppress(OSError):
-        (run_dir / COMPACT_REQUEST_FILE).write_text("", encoding="utf-8")
+        (run_dir / COMPACT_REQUEST_FILE).write_text(focus, encoding="utf-8")
+
+
+def read_compact_request(run_dir: Path) -> str | None:
+    """The pending compact request's focus text, or None when no request is
+    pending ("" = a plain compact with no focus)."""
+    try:
+        return (run_dir / COMPACT_REQUEST_FILE).read_text(encoding="utf-8")
+    except OSError:
+        return None
 
 
 def compact_request_pending(run_dir: Path) -> bool:

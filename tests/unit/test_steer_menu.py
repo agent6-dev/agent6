@@ -333,3 +333,24 @@ def test_pause_menu_status_and_bare_pin_list_pins(
         pause_menu(tmp_path, input_fn=_feed(["/pin keep the API stable"]))
         == "/pin keep the API stable"
     )
+
+
+def test_pause_menu_compact_accepts_focus(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`/compact <focus>` routes to the compact request with the focus text;
+    an ambiguous prefix with args stays a verbatim steer."""
+    from agent6.runs.ipc import read_compact_request
+    from agent6.ui.cli._steer_menu import pause_menu
+
+    (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+    assert pause_menu(tmp_path, input_fn=_feed(["/compact keep the auth decisions"])) is None
+    assert read_compact_request(tmp_path) == "keep the auth decisions"
+    assert "compaction requested" in capsys.readouterr().out
+    # unique prefix with args routes too
+    assert pause_menu(tmp_path, input_fn=_feed(["/comp focus on the parser"])) is None
+    assert read_compact_request(tmp_path) == "focus on the parser"
+    # /c is ambiguous (/compact, /continue): the line stays a steer
+    assert pause_menu(tmp_path, input_fn=_feed(["/c keep it"])) == "/c keep it"
+    # /pin with args is the loop's directive, never a menu route
+    assert pause_menu(tmp_path, input_fn=_feed(["/pin keep it"])) == "/pin keep it"

@@ -579,7 +579,7 @@ class Workflow:
     # Manual compaction request (the TUI's "Compact now"): polled at the same
     # pre-call boundary as the tiered thresholds; a positive forces the tier-2
     # summarise-and-restart. The marker travels the same file bridge as steer.
-    compact_requested: Callable[[], bool] = field(default=lambda: False)
+    compact_requested: Callable[[], str | None] = field(default=lambda: None)
     compact_clear: Callable[[], None] = field(default=lambda: None)
     # Operator "stop after this step": polled at each completed-iteration
     # boundary (post tool results + auto-commit), ending the run cleanly there.
@@ -3149,10 +3149,11 @@ class Workflow:
         marker is consumed here so one request means one compaction.
         """
         forced = self.compact_requested()
-        if forced:
+        if forced is not None:
             self.compact_clear()
-            self._log("LOOP: operator requested a manual compaction")
-            self._emit("loop.compact.requested")
+            focus_note = f" (focus: {forced[:80]})" if forced else ""
+            self._log(f"LOOP: operator requested a manual compaction{focus_note}")
+            self._emit("loop.compact.requested", focus=forced)
         stats = compact_old_tool_results(
             conversation,
             max_total_bytes=self.compact_drop_at_chars,
@@ -3185,8 +3186,9 @@ class Workflow:
         # Tier 2 needs at least an original-task turn plus enough history
         # to be worth summarising; below that a restart would lose more than
         # it saves.
-        if (forced or total > self.compact_summarise_at_chars) and len(conversation) > 3:
-            return self._summarise_and_restart(conversation, state)
+        over = total > self.compact_summarise_at_chars
+        if (forced is not None or over) and len(conversation) > 3:
+            return self._summarise_and_restart(conversation, state, focus=forced or "")
         return False
 
     def _distill_gists(self, requests: tuple[GistRequest, ...]) -> dict[str, str]:
@@ -3211,7 +3213,9 @@ class Workflow:
             return {}
         return parse_gist_lines(resp.text or "", paths=[r.path for r in requests])
 
-    def _summarise_and_restart(self, conversation: Conversation, state: _LoopState) -> bool:
+    def _summarise_and_restart(
+        self, conversation: Conversation, state: _LoopState, *, focus: str = ""
+    ) -> bool:
         """Replace the history with (original task + a model-written progress
         summary), in place. The loop only calls this at the top of an
         iteration, where the history is balanced (every ``tool_use`` already
@@ -3244,13 +3248,18 @@ class Workflow:
             )
         else:
             checkoff_req = ""
+        focus_req = (
+            f"\n\nOperator focus for this summary — weigh these aspects heavily:\n{focus}"
+            if focus
+            else ""
+        )
         pins_req = ""
         if state.pins:
             pin_lines = "\n".join(f"{i}. {p}" for i, p in enumerate(state.pins, start=1))
             pins_req = PINS_NO_RESTATE_CLAUSE + pin_lines
         user_msg = (
             "Summarise the following agent transcript for a context restart."
-            f"{checkoff_req}{pins_req}\n\nTRANSCRIPT (oldest first):\n{transcript}"
+            f"{checkoff_req}{focus_req}{pins_req}\n\nTRANSCRIPT (oldest first):\n{transcript}"
         )
         self._log(f"LOOP: tier-2 compaction summarise-and-restart ({len(conversation)} msgs)")
         self._emit("loop.compact.summarise.call", messages=len(conversation))

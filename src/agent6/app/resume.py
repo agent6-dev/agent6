@@ -95,7 +95,7 @@ from agent6.runs.ipc import (
     clear_pending_answers,
     clear_stop_request,
     clear_worker_pid,
-    compact_request_pending,
+    read_compact_request,
     request_steer,
     session_allow_set,
     stop_request_pending,
@@ -626,7 +626,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 steer_prompt=steer_state.prompt,
                 # "Compact now" from a front-end: the same file-bridge
                 # pattern as steer, honored at the next pre-call boundary.
-                compact_requested=lambda: compact_request_pending(layout.run_dir),
+                compact_requested=lambda: read_compact_request(layout.run_dir),
                 compact_clear=lambda: clear_compact_request(layout.run_dir),
                 stop_requested=lambda: stop_request_pending(layout.run_dir),
                 stop_clear=lambda: clear_stop_request(layout.run_dir),
