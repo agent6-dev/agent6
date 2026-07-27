@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import stat
+import threading
 from pathlib import Path
 
 import pytest
@@ -70,3 +71,26 @@ def test_save_secret_does_not_follow_a_planted_tmp_symlink(gcfg: Path, tmp_path:
     assert victim.read_text(encoding="utf-8") == "KEEP ME\n"  # untouched
     assert secrets.resolve_api_key("anthropic", None) == "sk-ant-xyz"
     assert not (gcfg / "secrets.toml").is_symlink()
+
+
+def test_concurrent_save_secret_loses_no_provider(gcfg: Path) -> None:
+    """Two concurrent connects both read the same base file and the later
+    publish silently dropped the earlier provider's credential (lost update).
+    save_secret serializes on portable.locked_file, removed on release."""
+    n = 8
+    barrier = threading.Barrier(n)
+
+    def save(i: int) -> None:
+        barrier.wait()
+        secrets.save_secret(f"prov{i}", f"sk-{i}")
+
+    threads = [threading.Thread(target=save, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+    for i in range(n):
+        assert secrets.resolve_api_key(f"prov{i}", None) == f"sk-{i}"
+    p = secrets.save_secret("final", "sk-final")
+    assert stat.S_IMODE(p.stat().st_mode) == 0o600
+    assert not p.with_name(p.name + ".lock").exists()

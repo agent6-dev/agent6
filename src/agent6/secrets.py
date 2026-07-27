@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from agent6.paths import RealUser, chown_to_real_user, effective_user, secrets_path
-from agent6.portable import atomic_write
+from agent6.portable import atomic_write, locked_file
 
 
 class SecretsError(Exception):
@@ -108,37 +108,41 @@ def save_secret(
     """Persist ``[providers.<name>].api_key`` (and any *extra* string fields).
 
     Rewrites the whole file atomically, preserving other providers'
-    entries, then forces ``0600`` and chowns back to the real user.
+    entries, then forces ``0600`` and chowns back to the real user. The
+    read-merge-publish cycle runs under ``locked_file``: two concurrent
+    ``agent6 connect`` invocations both read the same base file, and the
+    later publish silently dropped the earlier provider's credential.
     """
     user = user or effective_user()
     path = secrets_path(user)
-    data: dict[str, Any] = {}
-    if path.exists():
-        _require_safe_perms(path, user)
-        try:
-            data = tomllib.loads(path.read_text(encoding="utf-8"))
-        except tomllib.TOMLDecodeError as exc:
-            raise SecretsError(f"{path} is not valid TOML: {exc}") from exc
-    providers = data.get("providers")
-    if not isinstance(providers, dict):
-        providers = {}
-    entry = {"api_key": api_key}
-    if extra:
-        entry.update(extra)
-    providers[provider_name] = entry
-    data["providers"] = providers
+    with locked_file(path):
+        data: dict[str, Any] = {}
+        if path.exists():
+            _require_safe_perms(path, user)
+            try:
+                data = tomllib.loads(path.read_text(encoding="utf-8"))
+            except tomllib.TOMLDecodeError as exc:
+                raise SecretsError(f"{path} is not valid TOML: {exc}") from exc
+        providers = data.get("providers")
+        if not isinstance(providers, dict):
+            providers = {}
+        entry = {"api_key": api_key}
+        if extra:
+            entry.update(extra)
+        providers[provider_name] = entry
+        data["providers"] = providers
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.parent.chmod(0o700)
-    text = _render_secrets_toml(data)
-    # atomic_write uses tempfile.mkstemp: an unpredictable name opened O_EXCL at
-    # 0600, so a pre-planted `secrets.toml.tmp` symlink can no longer redirect
-    # this write (the old fixed `.tmp` + O_CREAT|O_TRUNC followed a symlink,
-    # letting an unprivileged user retarget a root write under `sudo connect`).
-    # A new file inherits mkstemp's 0600; an existing one keeps its mode. Force
-    # 0600 anyway so a pre-existing wider-mode file is tightened.
-    atomic_write(path, text)
-    path.chmod(0o600)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.parent.chmod(0o700)
+        text = _render_secrets_toml(data)
+        # atomic_write uses tempfile.mkstemp: an unpredictable name opened O_EXCL at
+        # 0600, so a pre-planted `secrets.toml.tmp` symlink can no longer redirect
+        # this write (the old fixed `.tmp` + O_CREAT|O_TRUNC followed a symlink,
+        # letting an unprivileged user retarget a root write under `sudo connect`).
+        # A new file inherits mkstemp's 0600; an existing one keeps its mode. Force
+        # 0600 anyway so a pre-existing wider-mode file is tightened.
+        atomic_write(path, text)
+        path.chmod(0o600)
     chown_to_real_user(path.parent, user)
     chown_to_real_user(path, user)
     return path
