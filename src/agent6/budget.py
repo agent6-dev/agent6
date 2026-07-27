@@ -85,10 +85,12 @@ class ModelUsage:
 @dataclass(frozen=True, slots=True)
 class _ModelCost:
     """One model's resolved cost: the USD figure plus whether it is the
-    provider-reported sum (vs the price-table estimate)."""
+    provider-reported sum (vs the price-table estimate), and whether that
+    figure is a known under-estimate (some calls priced by neither)."""
 
     usd: float
     reported: bool
+    partial: bool = False
 
 
 def _model_cost_usd(model: str, t: _ModelTotals | ModelUsage) -> _ModelCost | None:
@@ -116,6 +118,13 @@ def _model_cost_usd(model: str, t: _ModelTotals | ModelUsage) -> _ModelCost | No
         return _ModelCost(t.reported_cost_usd, reported=True)
     price = lookup_price(model)
     if price is None:
+        # No table price AND only some calls reported one: keep what WAS
+        # reported rather than dropping the model's whole spend. Returning
+        # unknown here zeroed real dollars out of the estimate and out of the
+        # best-effort USD cap, which then never tripped. The caller flags the
+        # figure partial either way (see any_unknown).
+        if t.reported_cost_usd > 0.0:
+            return _ModelCost(t.reported_cost_usd, reported=True, partial=True)
         return None
     in_usd = t.input_tokens * price[0] / 1e6
     cache_creation_usd = t.cache_creation_tokens * (price[0] * 1.25) / 1e6
@@ -314,6 +323,7 @@ class BudgetTracker:
             if cost is None:
                 any_unknown = True
                 continue
+            any_unknown = any_unknown or cost.partial
             total_usd += cost.usd
         return total_usd, any_unknown
 
@@ -331,7 +341,9 @@ class BudgetTracker:
                 any_unknown = True
             else:
                 total_usd += cost.usd
-                cost_str = f"${cost.usd:.4f} (reported)" if cost.reported else f"${cost.usd:.4f}"
+                any_unknown = any_unknown or cost.partial
+                note = " (reported, some calls unpriced)" if cost.partial else " (reported)"
+                cost_str = f"${cost.usd:.4f}{note}" if cost.reported else f"${cost.usd:.4f}"
             lines.append(
                 f"  {model}: "
                 f"in={totals.input_tokens} out={totals.output_tokens} "

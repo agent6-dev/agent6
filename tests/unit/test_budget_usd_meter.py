@@ -239,3 +239,30 @@ def test_fraction_remaining_ignores_usd_when_no_ceiling() -> None:
     )
     # 1 - max(50k/100k, 2k/20k) = 1 - 0.5 = 0.5; the cache cost is invisible here.
     assert bt.fraction_remaining() == pytest.approx(0.5)
+
+
+def test_partially_reported_unpriced_model_keeps_the_reported_spend() -> None:
+    """A model with no cached price where SOME calls reported usage.cost: the
+    all-or-nothing rule fell through to the price table, found none, and
+    returned unknown -- dropping the reported dollars entirely, so the estimate
+    read $0.00 and the best-effort USD cap never tripped however much was spent.
+    Keep what the provider did report, marked partial."""
+    bt = BudgetTracker(max_input_tokens=10_000_000, max_output_tokens=10_000_000)
+    bt.record(
+        model="future/unpriced-model",
+        input_tokens=1_000,
+        output_tokens=500,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+        cost_usd=0.60,  # the provider reported this call
+    )
+    bt.record(
+        model="future/unpriced-model",
+        input_tokens=1_000,
+        output_tokens=500,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,  # this one's usage block carried no cost
+    )
+    usd, partial = bt.estimate_usd()
+    assert usd == pytest.approx(0.60)  # not dropped to 0.0
+    assert partial is True  # and flagged as an under-estimate
