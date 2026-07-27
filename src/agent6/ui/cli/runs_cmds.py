@@ -529,19 +529,24 @@ def _prune_squash_merged(
             f" advanced since the merge; review, then: git branch -D {br})"
         )
         return False
-    confirmed = delete_squashed and bool(recorded_tip) and branch_exists(cwd, merged_into)
-    if confirmed and sha is not None and force_delete_squash_merged_branch(cwd, br):
-        print(f"[agent6] deleted {br} (squash-merged into {merged_into})")
-        # A faded undelete hint: the commit survives in the reflog until GC.
-        print(sgr(f"          undelete: git branch {br} {sha[:12]}", "2"))
-        return True
-    if delete_squashed and not recorded_tip:
-        # Merged before agent6 recorded the merged tip, so the delete cannot be
-        # confirmed. Naming the manual command matters: the operator IS running
-        # --delete-squashed, and pointing them back at it would be a loop.
+    # Confirmable = the manifest recorded the merged tip AND the base it went
+    # into still exists. Both are needed to prove the delete is content-safe,
+    # so both decide the advice: pointing at --delete-squashed for a branch it
+    # will skip is a loop, whether or not the operator already ran it.
+    confirmable = bool(recorded_tip) and branch_exists(cwd, merged_into)
+    if delete_squashed and confirmable and sha is not None:
+        if force_delete_squash_merged_branch(cwd, br):
+            print(f"[agent6] deleted {br} (squash-merged into {merged_into})")
+            # A faded undelete hint: the commit survives in the reflog until GC.
+            print(sgr(f"          undelete: git branch {br} {sha[:12]}", "2"))
+            return True
+        print(f"[agent6] kept {br} (squash-merged into {merged_into}; git refused the delete)")
+        return False
+    if not confirmable:
+        missing = "no recorded merge tip" if not recorded_tip else f"no {merged_into} branch"
         print(
-            f"[agent6] kept {br} (squash-merged into {merged_into}, but there is no"
-            f" recorded merge tip to confirm it; review, then: git branch -D {br})"
+            f"[agent6] kept {br} (squash-merged into {merged_into}, but there is"
+            f" {missing} to confirm it; review, then: git branch -D {br})"
         )
         return False
     print(

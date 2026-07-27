@@ -271,3 +271,58 @@ def test_runs_prune_says_why_a_pre_tip_manifest_is_kept(
     assert "git branch -D agent6/pretip1" in text
     # It must NOT tell the operator to re-run the command that just skipped it.
     assert "remove with: runs prune --delete-squashed" not in text
+
+
+def test_plain_prune_never_points_at_a_flag_that_would_skip_the_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The advice loop was only closed on the path the operator was already on.
+    Plain `runs prune` still advertised --delete-squashed for a branch that
+    command refuses -- and every manifest written before the tip stamp is such a
+    branch, so it was the default. Same for a recorded tip whose base branch is
+    gone: the confirmation needs both."""
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+
+    _make_branch(tmp_path, "pretip2", "s.txt")
+    _git(tmp_path, "merge", "--squash", "agent6/pretip2")
+    _git(tmp_path, "commit", "-q", "-m", "squash pretip2")
+    layout = RunLayout(state_dir=resolved_state_dir(tmp_path), run_id="pretip2")
+    layout.ensure()
+    layout.manifest_path.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "run_id": "pretip2",
+                "base_sha": base,
+                "base_branch": "main",
+                "run_branch": "agent6/pretip2",
+                "user_task": "t",
+                "merged": {"into": "main", "sha": "0" * 40},  # pre-tip manifest
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert main(["runs", "prune"]) == 0
+    plain = "".join(capsys.readouterr())
+    assert "no recorded merge tip" in plain
+    assert "git branch -D agent6/pretip2" in plain
+    assert "remove with: runs prune --delete-squashed" not in plain
+
+    # A recorded tip is not enough on its own: --delete-squashed also needs the
+    # base branch to confirm against, so a deleted base must not be advertised.
+    _manifest(tmp_path, "pretip2", base, merged=True)
+    _git(tmp_path, "checkout", "-q", "-b", "elsewhere")
+    _git(tmp_path, "branch", "-q", "-m", "main", "renamed")
+    assert main(["runs", "prune", "--delete-squashed"]) == 0
+    no_base = "".join(capsys.readouterr())
+    assert _branch_exists(tmp_path, "agent6/pretip2")
+    assert "remove with: runs prune --delete-squashed" not in no_base
