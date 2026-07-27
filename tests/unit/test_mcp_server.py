@@ -491,3 +491,49 @@ def test_most_recent_run_id_uses_log_activity_not_name_or_dir_touch(tmp_path: Pa
     os.utime(newer / "logs.jsonl", (2000, 2000))
     register_frontend(older, 12345)
     assert _most_recent_run_id(tmp_path) == "aaa-newer-BBB222"
+
+
+# ---------------------------------------------------------------------------
+# Input bounding
+# ---------------------------------------------------------------------------
+
+
+def test_serve_bounds_every_stdin_read(tmp_path: Path) -> None:
+    """serve() reads with an explicit size bound (mirroring the embedded
+    client's _read_loop): the old unbounded readline() buffered an entire
+    runaway line into memory BEFORE the 4 MiB check, so the cap could not
+    prevent memory exhaustion."""
+    from agent6.ui import mcp_server as mod
+
+    sizes: list[int | None] = []
+
+    class _RecordingStdin(io.BytesIO):
+        def readline(self, size: int | None = -1) -> bytes:
+            sizes.append(size)
+            return super().readline(size)
+
+    server = _server(tmp_path)
+    msg = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+    server._stdin = _RecordingStdin(msg.encode() + b"\n")  # type: ignore[attr-defined]
+    server._stdout = io.BytesIO()  # type: ignore[attr-defined]
+    server.serve()
+    assert sizes and all(s == mod._MAX_LINE_BYTES + 1 for s in sizes)  # pyright: ignore[reportPrivateUsage]
+
+
+def test_serve_drains_oversized_line_and_recovers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An over-limit line is discarded in bounded chunks up to its newline; the
+    next request on the stream is served normally."""
+    from agent6.ui import mcp_server as mod
+
+    monkeypatch.setattr(mod, "_MAX_LINE_BYTES", 128)
+    server = _server(tmp_path)
+    junk = b"x" * 500 + b"\n"
+    msg = json.dumps({"jsonrpc": "2.0", "id": 7, "method": "initialize", "params": {}}).encode()
+    server._stdin = io.BytesIO(junk + msg + b"\n")  # type: ignore[attr-defined]
+    server._stdout = io.BytesIO()  # type: ignore[attr-defined]
+    server.serve()
+    server._stdout.seek(0)  # type: ignore[attr-defined]
+    resps = [json.loads(line) for line in server._stdout.readlines()]  # type: ignore[attr-defined]
+    assert [r["id"] for r in resps] == [7]

@@ -154,10 +154,19 @@ class MCPServer:
         answered on stdout. Notifications (no ``id``) are ignored."""
         try:
             while True:
-                line = self._stdin.readline()
+                # Bounded read (mirrors tools/mcp_client._read_loop): an
+                # unbounded readline() buffers the entire line into memory
+                # BEFORE the size check, so the cap could not prevent memory
+                # exhaustion by a runaway client.
+                line = self._stdin.readline(_MAX_LINE_BYTES + 1)
                 if not line:
                     return
                 if len(line) > _MAX_LINE_BYTES:
+                    # Oversized: drain the rest of this line (up to its
+                    # newline) in bounded chunks, discarding, then drop the
+                    # whole payload.
+                    while line and not line.endswith(b"\n"):
+                        line = self._stdin.readline(_MAX_LINE_BYTES + 1)
                     continue
                 try:
                     msg = json.loads(line)
