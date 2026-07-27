@@ -98,6 +98,10 @@ def test_status_waiting_when_blocked_on_an_operator_answer(
 def test_status_crashed_when_pid_dead_and_no_run_end(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """A dead worker without a run.end leads with the hub's word ("stale") plus
+    this surface's diagnostic detail. The old lead word was "stopped" -- the
+    hub's word for an OPERATOR stop (steer_abort), so the same run read as
+    deliberately stopped in one surface and crashed in the other."""
     d = _make_run(
         tmp_path,
         monkeypatch,
@@ -109,7 +113,45 @@ def test_status_crashed_when_pid_dead_and_no_run_end(
     (d / "worker.pid").write_text("999999")  # almost certainly not a live pid
     assert not worker_is_alive(d)
     _cmd_status("winsome-dawn-YWH5ZS")
-    assert "likely crashed or killed" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "state:      stale (no worker, no run.end: likely crashed or killed)" in out
+    assert "stopped" not in out
+
+
+def test_status_words_lead_with_the_listing_word_in_every_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`runs show --json` "state" leads with exactly the word the hub row shows
+    for the SAME dir, for every non-run.end state: "created" (was "unknown"),
+    "starting" (was a bare "running" while the hub said starting), "waiting",
+    "stale". One decision -- status_for_run_dir -- so the two can't drift."""
+    from agent6.viewmodel.listing import summarize_run_dir
+
+    d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "run.start", "mode": "run"}])
+
+    def state_word() -> str:
+        assert _cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
+        word = json.loads(capsys.readouterr().out)["state"].split(" (")[0]
+        assert word == summarize_run_dir(d).status
+        return word
+
+    write_worker_pid(d, os.getpid())
+    assert state_word() == "running"
+    (d / "logs.jsonl").unlink()
+    assert state_word() == "starting"
+    (d / "worker.pid").write_text("999999999", encoding="utf-8")
+    assert state_word() == "created"
+    (d / "logs.jsonl").write_text(
+        json.dumps({"ts": _ts(30), "type": "run.start", "mode": "run"})
+        + "\n"
+        + json.dumps({"ts": _ts(9), "type": "approval.prompt", "id": "a1", "prompt": "ok?"})
+        + "\n",
+        encoding="utf-8",
+    )
+    write_worker_pid(d, os.getpid())
+    assert state_word() == "waiting"
+    (d / "worker.pid").write_text("999999999", encoding="utf-8")
+    assert state_word() == "stale"
 
 
 def test_status_leads_with_the_listing_word_then_the_raw_reason(

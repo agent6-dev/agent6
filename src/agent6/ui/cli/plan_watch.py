@@ -34,12 +34,11 @@ from agent6.ui.cli._common import (
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._interact import default_stdin_approver, default_stdin_questioner
 from agent6.viewmodel import (
-    OPERATOR_PROMPT_EVENTS,
     LogScan,
     event_epoch,
     run_mtime,
     scan_run_log,
-    status_word,
+    status_for_run_dir,
     tail_events,
 )
 from agent6.viewmodel.format import format_compare, format_cost
@@ -208,30 +207,26 @@ def _print_parallel_compare(manifest: RunManifest) -> None:
         print(f"  judge: {rationale}")
 
 
-def _status_state(scan: LogScan, *, alive: bool, last_age: float | None, parked: bool) -> str:
+def _status_state(run_dir: Path, scan: LogScan, *, last_age: float | None) -> str:
     """The one-line state `runs show` prints (and emits as --json "state").
 
-    Leads with the SAME words the listing uses where they overlap (status_word
-    for the finished outcome, "waiting (needs answer)" for a run blocked on an
-    unanswered approval/question via OPERATOR_PROMPT_EVENTS, "parked" for a
-    submission the busy-checkout refusal saved), so the two surfaces can't
-    disagree -- an operator told "likely a provider call" while the run sat
-    blocked on THEM waited on the wrong party."""
+    Leads with the LISTING's word -- ``status_for_run_dir``, the one decision
+    every surface feeds -- then appends this surface's diagnostic detail (what
+    to do, or why the word applies). The pre-unification words lied twice: a
+    crashed run led with "stopped" (the hub's word for an OPERATOR stop) and a
+    launching run with "running" (the hub said "starting")."""
+    word, _reason = status_for_run_dir(run_dir, scan.status_facts())
     if scan.finished:
-        word, _ = status_word(finished=True, all_passed=scan.all_passed, end_reason=scan.end_reason)
         return f"{word} ({scan.end_reason})"
-    if alive and scan.last_type in OPERATOR_PROMPT_EVENTS:
-        return "waiting (needs answer -- attach to respond)"
-    if alive and last_age is not None and last_age > 120:
-        return "running (long step, likely a provider call)"
-    if alive:
-        return "running"
-    if scan.last_ep is None:
-        # Parked at submission (the checkout was busy; see acquire_repo_writer):
-        # a saved, resumable run, not a husk -- and `resume` is the one action
-        # that starts it, so the state has to name it.
-        return "parked (resume to start)" if parked else "unknown (no events yet)"
-    return "stopped (no worker, no run.end: likely crashed or killed)"
+    detail = {
+        "waiting": "needs answer -- attach to respond",
+        "stale": "no worker, no run.end: likely crashed or killed",
+        "parked": "resume to start",
+        "created": "no events yet",
+    }.get(word, "")
+    if word == "running" and last_age is not None and last_age > 120:
+        detail = "long step, likely a provider call"
+    return f"{word} ({detail})" if detail else word
 
 
 def _cmd_status(run_id: str, *, as_json: bool = False) -> int:
@@ -268,7 +263,7 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:
         else None
     )
 
-    state = _status_state(scan, alive=alive, last_age=last_age, parked=bool(manifest.parked_task))
+    state = _status_state(target, scan, last_age=last_age)
 
     worker = manifest.models.worker
     model = (worker.model if worker else "") or "?"
