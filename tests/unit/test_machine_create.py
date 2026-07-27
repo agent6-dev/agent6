@@ -792,3 +792,31 @@ def test_timed_out_agent_state_salvages_spend_from_its_event_log(
     assert res.reason == "timeout"
     assert res.usd == pytest.approx(0.0588752)
     assert (res.input_tokens, res.output_tokens) == (66084, 838)
+
+
+def test_create_failure_end_reason_names_the_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A create that never produced a valid machine folds to ("failed", reason),
+    and that reason is the detail every listing prints beside the word. It has to
+    name the failure like every other emitter's token, not read as success prose
+    under a failed status."""
+    from agent6.viewmodel.listing import status_word
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    _stub_preflight(monkeypatch)
+    _stub_runner(
+        monkeypatch,
+        [AgentExecResult(reason="max_iterations", payload=None, usd=0.0)],
+    )
+    assert main(["machine", "create", "Greet the user", "--max-attempts", "1"]) == 1
+
+    logs = list((tmp_path / "state").glob("**/machine-drafts/*/logs.jsonl"))
+    events = [json.loads(line) for line in logs[0].read_text(encoding="utf-8").splitlines()]
+    end = next(e for e in events if e["type"] == "run.end")
+    assert end["all_passed"] is False
+    word, detail = status_word(finished=True, all_passed=False, end_reason=end["reason"])
+    assert word == "failed"
+    assert " " not in detail  # a token, like every other run.end reason
+    assert "finished" not in detail  # never success prose under a failed status

@@ -284,11 +284,14 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     # End the watchable session (the file-write below is fast and event-less);
     # all_passed marks whether a valid machine was authored, for the TUI status.
     # `iterations` = authoring attempts made, so run.end keeps one shape.
+    ok = spec is not None and valid_toml is not None
     events.emit(
         "run.end",
-        reason="machine create finished",
+        # A token, like every other run.end reason: the listing prints it as the
+        # detail beside "failed", where a prose sentence contradicted the word.
+        reason="machine_created" if ok else "no_valid_machine",
         iterations=attempt,
-        all_passed=spec is not None and valid_toml is not None,
+        all_passed=ok,
     )
 
     if spec is None or valid_toml is None:
