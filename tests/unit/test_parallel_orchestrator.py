@@ -65,6 +65,9 @@ def _write_fake_run(run_dir: Path, task: str, *, status: str, cost: float) -> No
         events.append({"type": "run.end", "reason": "finish_run", "all_passed": True})
     elif status == "failed":
         events.append({"type": "run.end", "reason": "provider_error", "all_passed": False})
+    elif status == "stale":
+        # Died without a run.end (OOM/SIGKILL): a recorded pid that is gone.
+        (run_dir / "worker.pid").write_text("999999999", encoding="utf-8")
     else:  # "finished": a deliberate finish without all-passed
         events.append({"type": "run.end", "reason": "finish_run", "all_passed": False})
     (run_dir / "logs.jsonl").write_text(
@@ -1399,3 +1402,48 @@ def test_run_lane_to_completion_interrupted_stops_lane_and_skips_import(
     assert "interrupted" in res.error
     assert stop_request_pending(lane_dir) is True  # the lane was asked to stop
     assert lane_dir.is_dir()  # nothing was moved/imported
+
+
+def test_crashed_lane_is_not_a_rankable_candidate(
+    origin: Path, tmp_path: Path, runtime: LaneRuntime, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A lane that died without a run.end folds to "stale", which verify_ok maps
+    to None -- the same tri-state as a clean unverified finish. Mechanical
+    ranking then sorts by cost, so the cheapest (earliest-crashing) lane ranked
+    first and was stamped compare.winner=true, wearing the winner glyph in every
+    listing while the report called it "no-verify"."""
+    from agent6.config.layer import resolved_state_dir
+
+    origin_state = resolved_state_dir(origin)
+    cfg = Config()
+    lanes = _specs(tmp_path, cfg, "crsh", "2")
+    spawner = _FakeSpawner(
+        origin,
+        origin_state,
+        tmp_path / "lane-state",
+        status_by_lane={1: "stale", 2: "finished"},
+        cost_by_lane={1: 0.001, 2: 2.0},
+    )
+
+    rc = run_parallel(
+        "do the task",
+        lanes,
+        cfg=cfg,
+        origin=origin,
+        origin_state=origin_state,
+        runtime=runtime,
+        spawner=spawner,
+        fanout_id="crsh",
+    )
+    assert rc == 0
+    out = "".join(capsys.readouterr())
+    # The crashed lane never wins, and the surface says it crashed.
+    crashed = json.loads(
+        (origin_state / "runs" / "crsh-l1" / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert (crashed.get("compare") or {}).get("winner") is not True
+    survivor = json.loads(
+        (origin_state / "runs" / "crsh-l2" / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert survivor["compare"]["winner"] is True
+    assert "crsh-l1" in out and "crashed" in out

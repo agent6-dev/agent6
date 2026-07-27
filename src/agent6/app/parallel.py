@@ -282,6 +282,18 @@ def bridge_spawner(
 # ---------------------------------------------------------------------------
 
 
+# Status words for a lane that reached terminal WITHOUT its own run.end: the
+# worker died (stale) or never started (created/parked/?). The awaiting gate
+# deliberately accepts them so the await cannot hang, but they are not results:
+# a crashed lane must never rank as a candidate, win a compare, or join a
+# coordinator's branch as a successful lane.
+_DIED_WITHOUT_END = frozenset({"stale", "created", "parked", "?"})
+
+
+def _lane_died(status: str) -> bool:
+    return status in _DIED_WITHOUT_END
+
+
 def _lane_terminal(run_dir: Path, status: str, worker_is_alive: Callable[[Path], bool]) -> bool:
     """Terminal gate for an awaited lane: the fold left "running" AND the worker
     pid is cleared/dead. run.end lands in logs.jsonl before the lane's teardown
@@ -433,6 +445,18 @@ def run_lane_to_completion(
     # safe: each lane removes only its own dirs, and the group-dir rmdir inside
     # _cleanup succeeds only for whichever lane empties it last.
     _cleanup([spec], workdir_root=spec.workdir.parent, cfg=cfg)
+    status = summarize_run_dir(dest).status
+    if _lane_died(status):
+        # The branch is imported (nothing lost), but the lane never finished:
+        # joining it into the coordinator as a success told the model "joined
+        # at <sha>" for half-done work.
+        return LaneResult(
+            spec=spec,
+            run_dir=dest,
+            branch=res.branch,
+            ok=False,
+            error=f"crashed before finishing ({status}); branch imported as {res.branch}",
+        )
     return LaneResult(spec=spec, run_dir=dest, branch=res.branch, ok=True, error="")
 
 
@@ -828,6 +852,19 @@ def _import_lanes(
                 f" lineage stamp failed: {stamp_err}"
             )
         summary = summarize_run_dir(dest)
+        if _lane_died(summary.status):
+            # Imported (its branch is safe in the origin) but NOT a candidate:
+            # verify_ok reads a crash as the same tri-state as a clean unverified
+            # finish, so ranking by cost floated the earliest-crashing lane to
+            # first place and stamped it the winner.
+            failed.append(
+                (
+                    res,
+                    f"crashed before finishing ({summary.status}); branch imported as"
+                    f" {res.branch}, not ranked",
+                )
+            )
+            continue
         candidates.append(
             CandidateBrief(
                 run_id=res.spec.run_id,
