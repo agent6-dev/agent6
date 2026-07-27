@@ -347,6 +347,10 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 budget_overrides=budget_overrides,
                 sandbox_overrides=sandbox_overrides,
                 profile=profile,
+                # Hand --steer through: the bridge files seeded above are
+                # wiped by run_task's own stale-state clear, so a parked
+                # resume's follow-up was silently lost.
+                initial_steer=steer,
                 reporter=reporter,
             )
 

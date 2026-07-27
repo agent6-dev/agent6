@@ -95,9 +95,11 @@ from agent6.runs.ipc import (
     clear_stop_request,
     clear_worker_pid,
     read_compact_request,
+    request_steer,
     session_allow_set,
     set_away_mode,
     stop_request_pending,
+    write_steer_answer,
     write_worker_pid,
 )
 from agent6.runs.layout import RunLayout
@@ -220,12 +222,18 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     budget_overrides: BudgetOverrides | None = None,
     sandbox_overrides: SandboxOverrides | None = None,
     profile: str = "",
+    initial_steer: str = "",
     reporter: Reporter = STDIO_REPORTER,
 ) -> int:
     """Single-loop agent: one provider, one LLM driving via tool
     calls over the fixed tool surface, deterministic harness (jail +
     budget + verify timeout + DAG curator for persistence/resume).
     Sole ``agent6 run`` path; returns the process exit code.
+
+    ``initial_steer`` queues an operator follow-up for the loop's first
+    boundary, seeded AFTER this function's own stale-state clear -- the
+    parked-resume delegation passes `resume --steer` through it (a pre-seeded
+    bridge file would be wiped by that clear and silently lost).
 
     The caller (`ui/cli/run.py`) has already built *cfg* (config + overrides),
     resolved the task text, checked the git-repo wall / runnable roles /
@@ -363,6 +371,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     # id counters reset on resume, so an old answer must not be read instead of
     # re-prompting; dead front-end claims are pruned by the liveness probe).
     clear_pending_answers(layout.run_dir)
+    if initial_steer.strip():
+        request_steer(layout.run_dir)
+        write_steer_answer(layout.run_dir, initial_steer.strip())
     if sys.stdin.isatty():  # a foreground start clears a stale detach away-mode
         clear_away_mode(layout.run_dir)
     else:

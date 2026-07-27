@@ -293,3 +293,66 @@ def test_parked_manifest_records_the_config_profile_not_the_sandbox_one(repo: Pa
     assert m.workflow.profile == _load_cfg().profile  # the CONFIG profile ("")
     # The exact call resume makes with it must not blow up on a sandbox word.
     load_effective(repo, None, profile=m.workflow.profile)
+
+
+def test_parked_resume_passes_the_steer_through_to_run_task(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`resume --steer` on a PARKED run: the bridge files resume seeds are
+    wiped by run_task's own stale-state clear, so the follow-up must ride the
+    delegation (initial_steer) instead of dying on the floor."""
+    from agent6.app import resume as resume_mod
+    from agent6.app.manifest import write_run_manifest
+
+    state = resolved_state_dir(repo)
+    layout = RunLayout(state_dir=state, run_id="run-PSTEER")
+    layout.ensure()
+    write_run_manifest(
+        layout,
+        run_id="run-PSTEER",
+        user_task="do the saved thing",
+        base_sha="",
+        base_branch="main",
+        run_branch=None,
+        cfg=_load_cfg(),
+        mode="run",
+        parked_task="do the saved thing",
+    )
+    called: dict[str, Any] = {}
+
+    def fake_run_task(cfg: Config, task: str, **kw: Any) -> int:
+        called["initial_steer"] = kw.get("initial_steer")
+        return 0
+
+    monkeypatch.setattr(resume_mod, "run_task", fake_run_task)
+    rc = resume_mod.resume_task(
+        None, "run-PSTEER", frontend=MagicMock(), force=False, steer="also update the docs"
+    )
+    assert rc == 0
+    assert called["initial_steer"] == "also update the docs"
+
+
+def test_run_task_seeds_initial_steer_after_its_stale_state_clear(repo: Path) -> None:
+    """run_task's initial_steer lands on the bridge AFTER clear_pending_answers,
+    so the loop's first boundary poll finds it (a pre-seeded file would be
+    wiped by that same clear)."""
+    from agent6.app.run import run_task
+    from agent6.runs.ipc import read_steer_answer, steer_request_pending
+
+    state = resolved_state_dir(repo)
+    holder_fd = acquire_repo_writer(state, "run-LIVE")
+    try:
+        rc = run_task(
+            _load_cfg(),
+            "do the thing",
+            frontend=MagicMock(),
+            run_id="run-STEERSEED",
+            mode="run",
+            initial_steer="focus on tests",
+        )
+    finally:
+        release_single_writer(holder_fd)
+    assert rc == 2  # parked (checkout busy) -- but the steer already landed
+    d = RunLayout(state_dir=state, run_id="run-STEERSEED").run_dir
+    assert steer_request_pending(d)
+    assert read_steer_answer(d) == "focus on tests"
