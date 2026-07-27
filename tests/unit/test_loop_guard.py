@@ -332,3 +332,91 @@ def test_max_iterations_stop_checkpoints_the_dirty_worktree(tmp_path: Path) -> N
 
     assert result.reason == "max_iterations"
     assert "checkpoint (iter 3)" in _git_log(repo)
+
+
+def test_budget_exhausted_checkpoints_the_dirty_worktree(tmp_path: Path) -> None:
+    """Every harness-initiated end must checkpoint (the loop-guard rule): a
+    BudgetExceeded on the next provider call ended the run with the prior
+    turn's run_command edit only in the worktree, invisible to runs
+    diff/merge/score."""
+    from agent6.budget import BudgetExceeded
+
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    provider = MagicMock()
+    provider.call.side_effect = [
+        _resp_with_tool("read_file", {"path": "x.txt"}),
+        BudgetExceeded("input cap reached"),
+    ]
+    wf = _gated_wf(repo, provider, _dirtying_dispatcher(repo), max_iterations=5)
+    result = wf.run("do the thing")
+    assert result.reason == "budget_exhausted"
+    assert "checkpoint (iter" in _git_log(repo)
+
+
+def test_provider_error_checkpoints_the_dirty_worktree(tmp_path: Path) -> None:
+    """A fatal provider error (permanent status / retries exhausted) is a
+    harness-initiated end too; the run is resumable and its edits must be in
+    git history like every sibling stop."""
+    from agent6.providers import ProviderError
+
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    provider = MagicMock()
+    provider.call.side_effect = [
+        _resp_with_tool("read_file", {"path": "x.txt"}),
+        ProviderError("HTTP 401", status_code=401),
+    ]
+    wf = _gated_wf(repo, provider, _dirtying_dispatcher(repo), max_iterations=5)
+    result = wf.run("do the thing")
+    assert result.reason == "provider_error"
+    assert "checkpoint (iter" in _git_log(repo)
+
+
+def test_went_quiet_checkpoints_the_dirty_worktree(tmp_path: Path, monkeypatch: Any) -> None:
+    """A model that starves into empty turns after making real edits must not
+    lose them from git history on the way out."""
+    monkeypatch.delenv("AGENT6_WENT_QUIET_MAX_NUDGES", raising=False)
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    provider = MagicMock()
+    provider.call.side_effect = [
+        _resp_with_tool("read_file", {"path": "x.txt"}),
+        _resp_text(""),  # no text, no tool_use -> went_quiet
+    ]
+    wf = _gated_wf(
+        repo, provider, _dirtying_dispatcher(repo), max_iterations=5, went_quiet_max_nudges=0
+    )
+    result = wf.run("do the thing")
+    assert result.reason == "went_quiet"
+    assert "checkpoint (iter" in _git_log(repo)
+
+
+def test_unexecutable_verify_abort_checkpoints_the_dirty_worktree(tmp_path: Path) -> None:
+    """The worst sibling: the operator's verify command cannot execute in the
+    jail, so verify can NEVER go green and the per-turn auto-commit never
+    fires -- ALL of the run's edits existed only in the worktree at the
+    abort."""
+    from agent6.tools.dispatch import OperatorCommandUnexecutable
+
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    provider = MagicMock()
+    provider.call.side_effect = [
+        _resp_with_tool("read_file", {"path": "x.txt"}),
+        _resp_with_tool("run_verify_command", {}, tu_id="tu2"),
+        _resp_text("never reached"),
+    ]
+    dispatcher = MagicMock()
+
+    def dispatch(name: str, *_a: Any, **_k: Any) -> RawResult:
+        if name == "run_verify_command":
+            raise OperatorCommandUnexecutable("verify binary missing from the jail PATH")
+        (repo / "edit.txt").write_text("run_command wrote this\n")
+        return RawResult({"content": "hi\n"})
+
+    dispatcher.dispatch.side_effect = dispatch
+    wf = _gated_wf(repo, provider, dispatcher, max_iterations=5)
+    result = wf.run("do the thing")
+    assert result.reason == "verify_command_unexecutable"
+    assert "checkpoint (iter" in _git_log(repo)

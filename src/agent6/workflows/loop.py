@@ -1045,6 +1045,7 @@ class Workflow:
             )
         except BudgetExceeded as exc:
             self._log(f"LOOP: budget exhausted at iter {iteration} ({exc})")
+            self._final_checkpoint(iteration)
             self._emit(
                 "run.end",
                 reason="budget_exhausted",
@@ -1086,6 +1087,7 @@ class Workflow:
             # goes in this one diagnostic log line; the end-block summary below
             # stays concise so the raw blob is not echoed to the operator twice.
             self._log(f"LOOP: provider error at iter {iteration}: {exc}{hint}")
+            self._final_checkpoint(iteration)
             self._emit(
                 "run.end",
                 reason="provider_error",
@@ -2647,6 +2649,7 @@ class Workflow:
                 nudges_max=effective_max_nudges,
             )
             return None
+        self._final_checkpoint(iteration)
         self._emit(
             "run.end",
             reason="went_quiet",
@@ -3070,6 +3073,10 @@ class Workflow:
         path and the auto-metric-after-verify path so the same misconfiguration
         ends the same way regardless of who triggered the command."""
         self._log(f"LOOP: aborting -- {exc}")
+        # The worst checkpoint case of all the harness ends: verify can never
+        # go green here, so the per-turn auto-commit never fired and ALL of
+        # the run's edits may exist only in the worktree.
+        self._final_checkpoint(iteration)
         self._emit(
             "run.end",
             reason="verify_command_unexecutable",
