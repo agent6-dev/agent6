@@ -201,7 +201,7 @@ The security boundary. Profiles and the network model are specified in
 | Field | Default | Meaning |
 |---|---|---|
 | `require_clean_worktree` | `true` | Refuse to start on a dirty worktree. |
-| `auto_stash` | `false` | Stash uncommitted changes before the run. Restored at run end per `auto_stash_pop`; otherwise agent6 prints how to `git stash pop` them (never silently left). |
+| `auto_stash` | `false` | Stash uncommitted changes before the run. Restored at run end per `auto_stash_pop`; otherwise agent6 prints how to `git stash apply <sha>` them (by sha, so a stash pushed later cannot shift what you restore; never silently left). |
 | `auto_stash_pop` | `false` | When `auto_stash` stashed changes, pop them back at run end if it is safe: clean worktree and a conflict-free apply, switching back to the base branch first under `branch_per_run`. On any conflict or doubt, leave the stash and print how to restore it. Never `reset --hard`. |
 | `branch_per_run` | `true` | Cut a fresh `agent6/<slug>` branch off HEAD (else stay on the current branch and remember the starting sha). |
 | `branch_from` | `"current"` | Where the run branch is cut from when you are **not** on the base branch (e.g. still on a previous run's `agent6/*` branch): `current` cuts from HEAD, stacking on it (serial runs pile up); `base` cuts from the base line (the nearest non-run branch this branch descends from), so each run starts clean; `ask` prompts (base / stack / abort), non-interactive falling back to `base`. No effect when you are already on a base branch. |

@@ -300,3 +300,47 @@ def test_finalize_auto_stash_reports_a_vanished_stash(
     subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
     finalize_auto_stash(repo, base_branch="master", run_branch=None, auto_pop=True, run_id="r1")
     assert "auto-stash not found" in capsys.readouterr().err
+
+
+def test_stash_recovery_hint_is_identity_stable(tmp_path: Path) -> None:
+    """The hint a DETACHED run prints has the longest window of all -- the
+    operator comes back hours later -- and it still named a positional
+    `git stash pop`, the exact failure `restore_stash` was changed to avoid.
+    One owner builds the sha-based line for every caller."""
+    import subprocess
+
+    from agent6.app.finalize import stash_recovery_hint
+    from agent6.git_ops import auto_stash_message, stash_all
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
+    (repo / "f.txt").write_text("base\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=repo, check=True)
+    (repo / "f.txt").write_text("pre-run work\n", encoding="utf-8")
+    stash_all(repo, auto_stash_message("r9"))
+    # A stash pushed later shifts every position; the hint must not care.
+    (repo / "f.txt").write_text("someone else\n", encoding="utf-8")
+    stash_all(repo, "an unrelated stash")
+
+    hint = stash_recovery_hint(repo, run_id="r9", base_branch="main")
+    assert hint is not None
+    assert "git stash pop" not in hint  # positional restores the wrong stash
+    assert "git stash apply " in hint and "git checkout main" in hint
+    sha = hint.rsplit(" ", 1)[1]
+    assert len(sha) == 40
+    # The sha names the RUN's stash, not the newest one.
+    subject = subprocess.run(
+        ["git", "log", "-1", "--format=%s", sha],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert "r9" in subject
+
+    # No stash for that run: the caller gets None and says so its own way.
+    assert stash_recovery_hint(repo, run_id="nope", base_branch="main") is None

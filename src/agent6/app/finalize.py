@@ -247,6 +247,27 @@ def finalize_auto_merge(cwd: Path, *, layout: RunLayout, cfg: Config) -> None:
         print(f"[agent6] auto_merge failed: {outcome.error}", file=sys.stderr)
 
 
+def _stash_apply_cmd(sha: str, base_branch: str, *, needs_checkout: bool) -> str:
+    """The manual-recovery command for a stash, worded once for every caller.
+
+    Always apply-by-SHA: a positional ``pop 'stash@{N}'`` printed now but run
+    later restores whatever sits at that position by then, which is how a
+    bystander's stash got applied and the pre-run work stayed hidden."""
+    apply = f"git stash apply {sha}"
+    return f"git checkout {base_branch} && {apply}" if needs_checkout else apply
+
+
+def stash_recovery_hint(cwd: Path, *, run_id: str, base_branch: str) -> str | None:
+    """How to restore this run's pre-run auto-stash by hand, or None when the
+    run pushed no stash. For callers that must tell the operator where their
+    work went without restoring it (a detached run keeps the checkout on its
+    run branch, so the stash has to wait)."""
+    entry = find_stash(cwd, auto_stash_message(run_id))
+    if entry is None:
+        return None
+    return _stash_apply_cmd(entry.sha, base_branch, needs_checkout=True)
+
+
 def finalize_auto_stash(
     cwd: Path, *, base_branch: str, run_branch: str | None, auto_pop: bool, run_id: str
 ) -> None:
@@ -272,7 +293,7 @@ def finalize_auto_stash(
         return
     # apply-by-sha is identity-stable; drop it yourself once you've confirmed.
     apply = f"git stash apply {entry.sha}"
-    recover = f"git checkout {base_branch} && {apply}" if run_branch else apply
+    recover = _stash_apply_cmd(entry.sha, base_branch, needs_checkout=bool(run_branch))
     if not auto_pop:
         print(
             f"[agent6] pre-run changes are stashed; restore them with: {recover}", file=sys.stderr

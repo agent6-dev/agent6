@@ -44,6 +44,7 @@ from agent6.app.finalize import (
     print_interrupt_end,
     print_run_end,
     run_exit_code,
+    stash_recovery_hint,
 )
 from agent6.app.manifest import (
     write_run_manifest,
@@ -823,10 +824,19 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 # with stderr at /dev/null: a silent dead continuation) or,
                 # for untracked-only dirt, feed the user's pre-run files into
                 # the agent's auto-commits. Leave the stash and say so.
+                # By sha, never by position: this hint has the LONGEST window of
+                # any -- the operator reads it now and runs it after a
+                # background run that may take hours, by which point a
+                # positional pop restores whatever else was stashed meanwhile.
+                hint = stash_recovery_hint(cwd, run_id=effective_run_id, base_branch=base_branch)
                 reporter.err(
                     "[agent6] pre-run changes remain stashed while the run continues"
                     " in the background; after it ends, restore them with:"
-                    f" git checkout {base_branch} && git stash pop"
+                    f" {hint}"
+                    if hint
+                    else "[agent6] pre-run changes remain stashed while the run continues"
+                    " in the background, but the stash could not be located; check"
+                    " `git stash list`"
                 )
             else:
                 finalize_auto_stash(
