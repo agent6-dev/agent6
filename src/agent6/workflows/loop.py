@@ -916,6 +916,13 @@ class Workflow:
                 result = self._handle_no_tool_use(got, conversation, state, iteration=iteration)
                 if result is not None:
                     return result
+                # A prose turn is a completed iteration too: without this
+                # boundary a model answering in prose could never be stopped
+                # or steered (the stop marker sat pending while the run kept
+                # calling the provider).
+                outcome = self._operator_boundary(conversation, iteration, state)
+                if outcome is not None:
+                    return outcome
                 continue
             turn = _TurnState(iteration=iteration, resp=got, assistant=assistant)
             result = self._turn_dispatch_tools(state, turn)
@@ -954,29 +961,7 @@ class Workflow:
             result = self._turn_stop_checks(state, turn)
             if result is not None:
                 return result
-            # Operator "stop after this step" (a front-end's stop.request
-            # marker): honored here at the completed-iteration boundary, so the
-            # step's tool results and auto-commit have all landed. The
-            # per-iteration snapshot is the resume point, as with an abort.
-            if self.stop_requested():
-                self.stop_clear()
-                self._log(f"LOOP: operator stop at the step boundary (iter {iteration})")
-                self._emit("run.end", reason="steer_abort", iterations=iteration, all_passed=False)
-                return RunResult(
-                    completed=False,
-                    reason="steer_abort",
-                    summary=f"operator stopped the run after step {iteration}",
-                    iterations=iteration,
-                    tool_calls=state.tool_calls,
-                )
-            # Poll the steering flag between iterations. The operator can press
-            # Ctrl-C once to drop a steering instruction into the conversation;
-            # a second Ctrl-C within 2s raises KeyboardInterrupt and aborts.
-            # The safe boundary is AFTER a complete iter so we never split a
-            # tool_use / tool_result pair.
-            outcome = self._steer_outcome(
-                self._maybe_handle_steer(conversation, iteration, state), iteration, state
-            )
+            outcome = self._operator_boundary(conversation, iteration, state)
             if outcome is not None:
                 return outcome
 
@@ -3744,6 +3729,33 @@ class Workflow:
             satisfied=satisfied,
         )
         return CritiqueResult(text=text, satisfied=satisfied)
+
+    def _operator_boundary(
+        self, conversation: Conversation, iteration: int, state: _LoopState
+    ) -> RunResult | None:
+        """The end-of-iteration operator-control boundary, run after EVERY
+        completed iteration (tool turns and prose turns alike): honor a
+        pending "stop after this step" marker, then poll the steering flag.
+        The safe point is AFTER a complete iteration, so a stop or an
+        injected instruction never splits a tool_use / tool_result pair; the
+        per-iteration snapshot is the resume point."""
+        if self.stop_requested():
+            self.stop_clear()
+            self._log(f"LOOP: operator stop at the step boundary (iter {iteration})")
+            self._emit("run.end", reason="steer_abort", iterations=iteration, all_passed=False)
+            return RunResult(
+                completed=False,
+                reason="steer_abort",
+                summary=f"operator stopped the run after step {iteration}",
+                iterations=iteration,
+                tool_calls=state.tool_calls,
+            )
+        # The operator can press Ctrl-C once to drop a steering instruction
+        # into the conversation; a second Ctrl-C within 2s raises
+        # KeyboardInterrupt and aborts.
+        return self._steer_outcome(
+            self._maybe_handle_steer(conversation, iteration, state), iteration, state
+        )
 
     def _steer_outcome(
         self, steer_result: str | None, iteration: int, state: _LoopState

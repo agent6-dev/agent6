@@ -5668,3 +5668,60 @@ def test_refused_finish_tool_is_not_captured_as_a_finish() -> None:
     out = wf._turn_dispatch_tools(_state(), turn)  # pyright: ignore[reportPrivateUsage]
     assert out is None  # the refusal is served as an error result, not an abort
     assert turn.finish_signal is None  # and never captured as a finish
+
+
+def test_stop_request_honored_after_a_prose_turn(tmp_path: Path) -> None:
+    """ "Stop after this step" is honored at the end of EVERY completed
+    iteration, including one with no tool_use: the boundary poll only ran on
+    the tool path, so a model answering in prose kept the run calling the
+    provider with the stop marker pending forever."""
+
+    calls = {"n": 0}
+
+    class ProviderStub:
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            del kwargs
+            calls["n"] += 1
+            return ProviderResponse(
+                text="still thinking about the approach",
+                tool_uses=(),
+                stop_reason="end_turn",
+                input_tokens=1,
+                output_tokens=1,
+                cache_read_tokens=0,
+                cache_creation_tokens=0,
+                raw={"content": [{"type": "text", "text": "still thinking about the approach"}]},
+            )
+
+    cleared = {"n": 0}
+    config = SimpleNamespace(
+        workflow=SimpleNamespace(
+            require_verify_to_finish=False,
+            spec_recheck_on_finish=False,
+            verify_command=("true",),
+            metric=SimpleNamespace(goal=None),
+        ),
+    )
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        provider=ProviderStub(),
+        dispatcher=MagicMock(),
+        max_iterations=5,
+        stop_requested=lambda: True,
+        stop_clear=lambda: cleared.__setitem__("n", cleared["n"] + 1),
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\ngo"}]}]
+    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        system="system",
+        conversation=Conversation.from_wire(messages),
+        tools=[],
+        tool_calls=0,
+        start_iteration=1,
+        root_task_id=None,
+        original_task="t",
+    )
+    assert result.reason == "steer_abort"
+    assert result.completed is False
+    assert calls["n"] == 1  # stopped at the FIRST boundary; no further provider calls
+    assert cleared["n"] == 1  # the marker was consumed, not left pending
