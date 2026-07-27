@@ -15,9 +15,9 @@ grounding/aggregation stays in ``_panel`` so it is testable without the network.
 from __future__ import annotations
 
 import json
+import threading
 import time
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -282,11 +282,54 @@ def run_panel(
         return structured_review(s.provider, seat_ctx, seat=s.persona, model=s.model)
 
     if concurrency > 1 and len(seats) > 1:
-        with ThreadPoolExecutor(max_workers=min(concurrency, len(seats))) as pool:
-            verdicts = list(pool.map(_run, seats))  # map preserves input order
+        verdicts = _run_seats_concurrently(seats, _run, concurrency)
     else:
         verdicts = [_run(s) for s in seats]
     return aggregate_verdicts(verdicts, ctx, decision=decision, quorum=quorum, panel_id=panel_id)
+
+
+def _run_seats_concurrently(
+    seats: list[ReviewSeat],
+    run_seat: Callable[[ReviewSeat], ReviewVerdict],
+    concurrency: int,
+) -> list[ReviewVerdict]:
+    """Run the seat calls on daemon threads; results stay in seat order.
+
+    Deliberately not a ThreadPoolExecutor: its workers are non-daemon and
+    joined at interpreter exit, and an in-flight seat call is a non-streaming
+    provider POST with no abort hook -- Ctrl-C on `agent6 review` therefore
+    hung until every in-flight AND queued seat finished instead of exiting.
+    Daemon threads die with the process, and the timeout-polling wait lets
+    KeyboardInterrupt land promptly on the main thread."""
+    slots: list[ReviewVerdict | None] = [None] * len(seats)
+    errors: list[BaseException] = []
+    gate = threading.Semaphore(min(concurrency, len(seats)))
+    done = threading.Semaphore(0)
+
+    def work(i: int, seat: ReviewSeat) -> None:
+        with gate:
+            try:
+                slots[i] = run_seat(seat)
+            except BaseException as exc:  # surfaced below; a pool would do the same
+                errors.append(exc)
+            finally:
+                done.release()
+
+    threads = [
+        threading.Thread(target=work, args=(i, s), name=f"review-seat-{i}", daemon=True)
+        for i, s in enumerate(seats)
+    ]
+    for t in threads:
+        t.start()
+    for _ in seats:
+        while not done.acquire(timeout=0.2):
+            pass
+    if errors:
+        raise errors[0]
+    verdicts = [v for v in slots if v is not None]
+    if len(verdicts) != len(seats):  # a worker ended with neither verdict nor error
+        raise RuntimeError("review seat thread ended without a verdict")
+    return verdicts
 
 
 __all__ = [

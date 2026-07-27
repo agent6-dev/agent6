@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+import pytest
+
 from agent6.providers import Provider, ProviderError
 from agent6.tools.results import RawResult, ToolResult
 from agent6.workflows._panel import ReviewContext
@@ -369,3 +371,71 @@ def test_explore_review_honors_verdict_alongside_tool_use_on_last_iter() -> None
         max_iters=1,
     )
     assert v.error is None and v.verdict == "block"
+
+
+def test_run_panel_concurrent_seats_run_on_daemon_threads() -> None:
+    """The seat pool must not block process exit: an in-flight seat call is a
+    non-streaming POST with no abort hook, and ThreadPoolExecutor workers are
+    joined at interpreter exit -- Ctrl-C on `agent6 review` hung until every
+    seat finished. Daemon threads die with the process."""
+    import threading
+
+    daemons: list[bool] = []
+
+    class _ThreadProbeProvider:
+        def call(self, **kw: Any) -> Any:
+            daemons.append(threading.current_thread().daemon)
+            return _Resp(_BLOCK_JSON)
+
+    seats = [
+        ReviewSeat(persona=f"s{i}", model="m", provider=cast(Provider, _ThreadProbeProvider()))
+        for i in range(3)
+    ]
+    res = run_panel(seats, _ctx(), decision="advisory", quorum=2, panel_id="p", concurrency=3)
+    assert len(res.per_seat) == 3
+    assert daemons == [True, True, True]
+
+
+def test_run_panel_concurrent_seat_crash_propagates() -> None:
+    """An unexpected seat-thread exception (not the ProviderError abstain path)
+    surfaces from run_panel, matching the old pool.map semantics."""
+
+    class _BoomProvider:
+        def call(self, **kw: Any) -> Any:
+            raise RuntimeError("unexpected seat crash")
+
+    seats = [
+        ReviewSeat(persona="a", model="m", provider=_prov(_BLOCK_JSON)),
+        ReviewSeat(persona="b", model="m", provider=cast(Provider, _BoomProvider())),
+    ]
+    with pytest.raises(RuntimeError, match="unexpected seat crash"):
+        run_panel(seats, _ctx(), decision="advisory", quorum=2, panel_id="p", concurrency=2)
+
+
+def test_run_panel_concurrency_limit_is_honored() -> None:
+    """min(concurrency, len(seats)) seats run at once; the rest queue."""
+    import threading
+    import time as _time
+
+    lock = threading.Lock()
+    active = 0
+    peak = 0
+
+    class _SlowProvider:
+        def call(self, **kw: Any) -> Any:
+            nonlocal active, peak
+            with lock:
+                active += 1
+                peak = max(peak, active)
+            _time.sleep(0.05)
+            with lock:
+                active -= 1
+            return _Resp(_BLOCK_JSON)
+
+    seats = [
+        ReviewSeat(persona=f"s{i}", model="m", provider=cast(Provider, _SlowProvider()))
+        for i in range(6)
+    ]
+    res = run_panel(seats, _ctx(), decision="advisory", quorum=2, panel_id="p", concurrency=2)
+    assert len(res.per_seat) == 6
+    assert peak <= 2
