@@ -1193,3 +1193,39 @@ def test_dashboard_follows_live_appends_after_attach(tmp_path: Path) -> None:
             return app._dash.query_one("#tools", DataTable).row_count
 
     assert asyncio.run(scenario()) == 2
+
+
+def test_composer_compact_directive_routes_to_compact_request(tmp_path: Path) -> None:
+    """A composer `/compact <focus>` on a LIVE run becomes a compact request
+    carrying the focus (no steer files); `/pin <text>` stays a steer for the
+    loop's own parser."""
+    import json
+    import os
+
+    events = [
+        {"type": "run.start", "run_id": "live-01", "mode": "run", "user_task": "t"},
+        {"type": "role.call", "role": "worker", "model": "m", "provider": "p"},
+    ]
+    (tmp_path / "logs.jsonl").write_text(
+        "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
+    )
+    (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")  # live
+
+    async def scenario() -> None:
+        app = Agent6TUI(tmp_path)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await _show_dashboard(pilot)
+            app.submit_instruction("/compact keep the auth decisions")
+            await pilot.pause()
+            assert (tmp_path / "compact.request").read_text(encoding="utf-8") == (
+                "keep the auth decisions"
+            )
+            assert not (tmp_path / "steer.answer").exists()
+            assert not (tmp_path / "steer.request").exists()
+            app.submit_instruction("/pin keep the API stable")
+            await pilot.pause()
+            assert (tmp_path / "steer.answer").read_text(encoding="utf-8") == (
+                "/pin keep the API stable"
+            )
+
+    asyncio.run(scenario())

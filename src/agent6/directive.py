@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The steer-directive grammars (`/parallel`, `/pin`), shared by the
-coordinator steer parser (``workflows/loop.py``) and the web + TUI composers.
+"""The steer-directive grammars (`/parallel`, `/pin`, `/compact`), shared by
+the coordinator steer parser (``workflows/loop.py``) and the web + TUI composers.
 
     /parallel [spec] <task text> [/parallel [spec] <task text>]...
     /pin <instruction that must survive context compaction>
+    /compact [focus text for the summary]
 
 - ``spec`` is a positive int (lane count) or a comma-separated model list, and
   is OPTIONAL: omitted means one lane on the configured worker model. A
@@ -100,6 +101,21 @@ def parse_pin(text: str) -> str | None:
     if not instruction:
         raise DirectiveError("pin needs an instruction: /pin <text that must survive compaction>")
     return instruction
+
+
+# A leading `/compact` token, same discipline as _PIN_TOKEN. Parsed by the
+# composers (web/TUI) and the CLI pause menu, NOT by the loop: a compact
+# request is an out-of-band marker, not steer text.
+_COMPACT_TOKEN = re.compile(r"\A\s*/compact(?=\s|\Z)")
+
+
+def parse_compact(text: str) -> str | None:
+    """The summary focus a `/compact` composer message carries ("" for a bare
+    /compact), or ``None`` when *text* is not a compact directive."""
+    m = _COMPACT_TOKEN.match(text)
+    if m is None:
+        return None
+    return text[m.end() :].strip()
 
 
 def parse_directive(text: str) -> list[Segment] | None:

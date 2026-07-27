@@ -219,3 +219,23 @@ def test_parse_pin_bare_token_raises() -> None:
         parse_pin("/pin")
     with pytest.raises(DirectiveError):
         parse_pin("  /pin   ")
+
+
+# --- /compact composer directive ----------------------------------------------
+
+
+def test_parse_compact_returns_focus() -> None:
+    from agent6.directive import parse_compact
+
+    assert parse_compact("/compact keep the auth decisions") == "keep the auth decisions"
+    assert parse_compact("  /compact   focus on tests ") == "focus on tests"
+    assert parse_compact("/compact") == ""  # bare = plain compact
+    assert parse_compact("   /compact   ") == ""
+
+
+def test_parse_compact_none_unless_leading_exact_token() -> None:
+    from agent6.directive import parse_compact
+
+    assert parse_compact("please /compact this") is None
+    assert parse_compact("/compaction is neat") is None
+    assert parse_compact("ordinary steer") is None

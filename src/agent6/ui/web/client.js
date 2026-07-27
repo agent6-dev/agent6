@@ -503,7 +503,7 @@ function makeComposer(id) {
       ta.placeholder = 'continue the run…';
       hint.textContent = 'Enter resumes this run with the instruction (empty = just resume) · Shift+Enter newline';
     } else {
-      ta.placeholder = 'steer the run…';
+      ta.placeholder = 'steer the run… (/pin pins an instruction, /compact [focus] compacts)';
       hint.textContent = 'Enter sends the instruction at the run’s next safe boundary · Shift+Enter newline';
     }
   };

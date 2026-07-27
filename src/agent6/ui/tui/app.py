@@ -56,6 +56,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
         " Reinstall agent6, or `pip install textual`."
     ) from e
 
+from agent6.directive import parse_compact
 from agent6.models.registry import context_window
 from agent6.runs.ipc import (
     clear_steer_answer,
@@ -934,6 +935,13 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         (after the current step, never mid tool-call) -- the run keeps going.
         Finished: resume THIS run with the instruction as the follow-up."""
         if self.run_controllable():
+            focus = parse_compact(text)
+            if focus is not None:
+                # `/compact [focus]` is an out-of-band request, not steer text;
+                # /pin and /parallel stay steers the loop parses itself.
+                request_compact(self.run_dir, focus=focus)
+                self.notify("compaction requested; applies before the next model call")
+                return
             self._seed_steer(text)
             self.notify("steering the run…")
         else:

@@ -204,7 +204,7 @@ class SteerInput(TextArea):
         plus the context-window fill when known, right where you type. Only
         writes on a real change: this runs on every heartbeat, and same-value
         style writes still cost a refresh."""
-        title = "steer the run" if live else "continue the run"
+        title = "steer the run (/pin, /compact [focus])" if live else "continue the run"
         keys = "Enter sends · Ctrl-J newline" if live else "Enter resumes · Ctrl-J newline"
         ctx = f"ctx {ctx_pct}% · " if ctx_pct is not None else ""
         subtitle = f"{ctx}{keys}"

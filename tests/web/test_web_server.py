@@ -1029,3 +1029,23 @@ def test_config_suggest_endpoint(server: tuple[WebServer, int]) -> None:
     st, body, _ = _get(port, "/api/config/suggest/models.worker.provider")
     assert st == 200
     assert json.loads(body) == {"values": []}
+
+
+def test_steer_compact_directive_routes_to_compact_request(
+    server: tuple[WebServer, int], tmp_path: Path
+) -> None:
+    """A composer `/compact <focus>` on a live run becomes a compact request
+    carrying the focus -- never a steer message the loop would read as text."""
+    _srv, port = server
+    run_dir = resolved_state_dir(tmp_path) / "runs" / "compact-run"
+    run_dir.mkdir(parents=True)
+    (run_dir / "logs.jsonl").write_text("", encoding="utf-8")
+    (run_dir / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    status, body = _post(
+        port, "/api/run/compact-run/steer", {"text": "/compact keep the auth decisions"}
+    )
+    assert status == 200 and body["ok"] is True
+    assert "compaction requested" in body["message"]
+    assert (run_dir / "compact.request").read_text(encoding="utf-8") == "keep the auth decisions"
+    assert not (run_dir / "steer.answer").exists()
+    assert not (run_dir / "steer.request").exists()

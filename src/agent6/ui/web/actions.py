@@ -19,7 +19,7 @@ from typing import Any
 
 from agent6.config import ConfigError
 from agent6.config.layer import load_effective, resolved_state_dir
-from agent6.directive import DirectiveError, Segment, parse_directive, parse_spec
+from agent6.directive import DirectiveError, Segment, parse_compact, parse_directive, parse_spec
 from agent6.machine import JournalError, MachineError, MachineJournal, load_machine
 from agent6.models.validate import refusal_message, validate_spec_models
 from agent6.runs.ipc import (
@@ -225,6 +225,12 @@ def steer(cwd: Path, run_id: str, text: str) -> tuple[bool, str]:
         # steer; nothing would ever read the marker (and the next resume
         # deletes it), so refuse like the stop/compact siblings.
         return False, "run is not live"
+    focus = parse_compact(text)
+    if focus is not None:
+        # `/compact [focus]` is an out-of-band request, not steer text the
+        # loop should read; /pin and /parallel stay steers the loop parses.
+        request_compact(run_dir, focus=focus)
+        return True, "compaction requested"
     write_steer_answer(run_dir, text)  # ready before the run reads it
     request_steer(run_dir)
     return True, "steer requested"
