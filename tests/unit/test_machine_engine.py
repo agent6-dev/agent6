@@ -1326,3 +1326,31 @@ def test_live_world_run_tool_uses_the_shared_jail_tool_paths(
     assert policy.tool_paths == (Path("/fake/real-tools"),)  # with its mounts
     assert "/host/only/path" not in env.values()
     assert env["UV_NO_SYNC"] == "1"  # same offline-jail rule as run_command
+
+
+def test_a_captured_lone_surrogate_never_reaches_the_blackboard(tmp_path: Path) -> None:
+    """The journal writers survive a lone surrogate, but the value stayed raw on
+    the blackboard, so the poison just moved one step downstream: the next agent
+    state serializes the blackboard into its request payload and
+    model_dump_json raises PydanticSerializationError -- a ValueError, caught by
+    neither the engine's _STATE_RUNTIME_ERRORS nor run_machine's handler. Same
+    traceback with no MachineEnd the sanitizing commit set out to remove."""
+    from pydantic import BaseModel
+
+    from agent6.machine.engine import _apply_capture  # pyright: ignore[reportPrivateUsage]
+    from agent6.machine.model import ToolState
+
+    class _Payload(BaseModel):  # the agent request's shape, minimally
+        task: str
+
+    _journal, f = _load(tmp_path, COUNTER)
+    spec = load_machine(f)
+    state = spec.states["scan"]
+    assert isinstance(state, ToolState)
+    blackboard: dict[str, Any] = {}
+    # The journal sanitizes on write, so only the IN-MEMORY value matters here.
+    _apply_capture(spec, state, '{"items": ["emoji tail \\ud83d"]}', blackboard)
+
+    captured = blackboard["items"][0]
+    assert "emoji tail" in captured  # kept, not dropped
+    _Payload(task=captured).model_dump_json()  # the sink that raised

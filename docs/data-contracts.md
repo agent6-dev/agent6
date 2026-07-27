@@ -136,7 +136,7 @@ Parse and validate a `.asm.toml` machine file into a `MachineSpec`.
 
 - **Written by:** machine/{_semantics}
 - **Read by:** machine/{__init__, dryrun, engine, graph, journal}, viewmodel/{machine_state}
-- **Guarded by:** [test_machine_model.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_machine_model.py) (3 test files exercise it)
+- **Guarded by:** [test_machine_model.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_machine_model.py) (4 test files exercise it)
 
 ## JournalEvent
 

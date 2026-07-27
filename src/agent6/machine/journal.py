@@ -235,6 +235,24 @@ class PendingWait(BaseModel):
 # --------------------------------------------------------------------------
 
 
+def scrub_lone_surrogates(value: Any) -> Any:
+    """A parsed-JSON value with any lone surrogate replaced.
+
+    Applied at the two trust boundaries that produce them -- a tool's captured
+    stdout and a ``machine poke`` payload -- so the blackboard never holds one.
+    Sanitizing only the journal writers moved the crash one step downstream
+    instead of removing it: the next agent state serializes the blackboard into
+    its request payload, and ``model_dump_json`` raises a
+    ``PydanticSerializationError`` that no handler on that path catches.
+    """
+    try:
+        json.dumps(value, ensure_ascii=False).encode("utf-8")
+    except UnicodeEncodeError:
+        clean = json.dumps(value, ensure_ascii=False).encode("utf-8", "replace").decode("utf-8")
+        return json.loads(clean)
+    return value
+
+
 def dump_json(model: BaseModel, *, indent: int | None = None) -> str:
     """One journal/snapshot record as JSON, lone-surrogate safe.
 
@@ -420,7 +438,7 @@ class MachineJournal:
         if not raw.strip():
             return True, None
         try:
-            return True, json.loads(raw)
+            return True, scrub_lone_surrogates(json.loads(raw))
         except json.JSONDecodeError:
             return True, None
 
