@@ -2787,11 +2787,14 @@ class Workflow:
     def _emit_run_end_grounded(self, *, reason: str, iteration: int, state: _LoopState) -> None:
         """Emit a clean end honestly: all_passed only when the FINAL tree is
         verify-green. finish_run and metric_plateau ground the same way, so
-        'passed' can never mean 'ended over a red or stale verify'."""
-        if self._tree_is_verify_green(state) is False:
-            self._emit("run.end", reason=reason, iterations=iteration, all_passed=False)
-        else:
-            self._emit_run_end_passed(reason=reason, iterations=iteration)
+        'passed' can never mean 'ended over a red or stale verify'.
+
+        The roots pass either way, like the settled path: the DAG tracks work
+        items and the run-level word carries the verify truth, so grounding it
+        there too left a red-verify finish reading ``tasks 0/1`` forever."""
+        self._pass_pending_root_tasks()
+        green = self._tree_is_verify_green(state) is not False
+        self._emit("run.end", reason=reason, iterations=iteration, all_passed=green)
 
     def _emit_graph_snapshot(self) -> None:
         """Emit the current task DAG so a live viewer (the TUI) can render it.

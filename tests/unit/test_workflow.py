@@ -5788,3 +5788,44 @@ def test_metric_plateau_over_a_green_tree_stays_passed() -> None:
     assert result is not None and result.reason == "metric_plateau"
     ends = [e for e in ev.events if e["type"] == "run.end"]
     assert ends and ends[-1]["all_passed"] is True
+
+
+def test_a_red_verify_finish_still_passes_its_root_tasks() -> None:
+    """A deliberate end over a red verify passed its roots on the settled path
+    and not on the finish_run/metric_plateau path, so the same epistemic state
+    (completed, not verify-green) left one of them reading `tasks 0/1` forever.
+    The DAG tracks work items; the run-level word carries the verify truth."""
+
+    class _FakeClient:
+        def __init__(self) -> None:
+            self._nodes: dict[str, dict[str, Any]] = {
+                "root1": {"parent_id": None, "status": "pending"}
+            }
+            self.passed: list[str] = []
+
+        def nodes(self) -> dict[str, Any]:
+            return _typed(self._nodes)
+
+        def update_status(self, intent: Any) -> None:
+            self.passed.append(intent.id)
+            self._nodes[intent.id]["status"] = intent.new_status
+
+    fake = _FakeClient()
+    wf = _wf(
+        curator=fake,
+        config=MagicMock(
+            prompt=MagicMock(system_prompt_file=""),
+            workflow=MagicMock(verify_command=("false",), require_verify_to_finish=False),
+        ),
+    )
+    state = _state()
+    state.last_verify_ok = False  # red tree: all_passed must stay False
+    state.edited_since_verify = True
+    events: list[dict[str, Any]] = []
+    wf._emit = lambda event_type, **fields: events.append({"type": event_type, **fields})  # pyright: ignore[reportPrivateUsage]
+
+    wf._emit_run_end_grounded(reason="finish_run", iteration=3, state=state)  # pyright: ignore[reportPrivateUsage]
+
+    (end,) = [e for e in events if e["type"] == "run.end"]
+    assert end["all_passed"] is False  # the verify truth is unchanged...
+    assert fake.passed == ["root1"]  # ...and the work item is no longer pending
