@@ -14,6 +14,7 @@
 //! Exits 0 if it successfully ran the child (regardless of child exit code).
 //! Exits non-zero only when sandbox SETUP failed — in that case stderr explains why.
 
+use std::collections::VecDeque;
 use std::ffi::{CString, OsStr};
 use std::fs;
 use std::io::{self, Read, Write};
@@ -1054,23 +1055,8 @@ fn run_child(policy: &Policy, cwd: &Path) -> io::Result<()> {
     // polling try_wait() forever.
     let stdout_pipe = child.stdout.take().expect("stdout piped");
     let stderr_pipe = child.stderr.take().expect("stderr piped");
-    // Read as BYTES, then decode lossily. read_to_string returns Err and
-    // leaves the buffer EMPTY on the first non-UTF-8 byte (a grep over a
-    // binary, a latin-1 file, git output with a non-UTF-8 commit message), so
-    // the whole stream was silently dropped to "" while the real rc was
-    // reported — every consumer misled. from_utf8_lossy keeps the output.
-    let stdout_handle = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let mut s = stdout_pipe;
-        let _ = s.read_to_end(&mut buf);
-        String::from_utf8_lossy(&buf).into_owned()
-    });
-    let stderr_handle = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let mut s = stderr_pipe;
-        let _ = s.read_to_end(&mut buf);
-        String::from_utf8_lossy(&buf).into_owned()
-    });
+    let stdout_handle = std::thread::spawn(move || read_capped(stdout_pipe));
+    let stderr_handle = std::thread::spawn(move || read_capped(stderr_pipe));
 
     // Poll the direct child WITHOUT reaping it (WNOWAIT leaves the zombie), so
     // child_pid (== pgid) cannot be recycled by the kernel before we tear the
@@ -1138,4 +1124,85 @@ fn run_child(policy: &Policy, cwd: &Path) -> io::Result<()> {
 
 fn io_err<E: std::fmt::Display>(e: E) -> io::Error {
     io::Error::new(io::ErrorKind::Other, format!("{e}"))
+}
+
+// Retained-output cap per stream: head + tail, middle dropped with a marker.
+// The child's memory_limit_mb binds the CHILD; nothing bound the launcher's
+// buffers, so an endless writer grew them until the HOST ran out of memory
+// before the timeout. 4 MiB + 4 MiB keeps real build/test logs (whose tail
+// carries the verdict) intact while bounding the launcher and the JSON result
+// line the Python side buffers in turn.
+const STREAM_RETAIN_HEAD: usize = 4 * 1024 * 1024;
+const STREAM_RETAIN_TAIL: usize = 4 * 1024 * 1024;
+
+/// Drain `stream` to EOF, retaining at most head+tail bytes, decoded lossily.
+/// Bytes (not read_to_string): a strict decode returned Err and dropped the
+/// whole stream to "" on the first non-UTF-8 byte (a grep over a binary, a
+/// latin-1 file), misleading every consumer while the real rc was reported.
+fn read_capped(mut stream: impl Read) -> String {
+    let mut head: Vec<u8> = Vec::new();
+    let mut tail: VecDeque<u8> = VecDeque::new();
+    let mut dropped: u64 = 0;
+    let mut chunk = [0u8; 64 * 1024];
+    loop {
+        match stream.read(&mut chunk) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => {
+                let mut rest = &chunk[..n];
+                if head.len() < STREAM_RETAIN_HEAD {
+                    let take = (STREAM_RETAIN_HEAD - head.len()).min(rest.len());
+                    head.extend_from_slice(&rest[..take]);
+                    rest = &rest[take..];
+                }
+                if !rest.is_empty() {
+                    tail.extend(rest.iter().copied());
+                    if tail.len() > STREAM_RETAIN_TAIL {
+                        let excess = tail.len() - STREAM_RETAIN_TAIL;
+                        tail.drain(..excess);
+                        dropped += excess as u64;
+                    }
+                }
+            }
+        }
+    }
+    let mut out = head;
+    if dropped > 0 {
+        out.extend_from_slice(
+            format!("\n[agent6-jail] output over the retained cap; {dropped} bytes omitted here\n")
+                .as_bytes(),
+        );
+    }
+    out.extend(tail.iter().copied());
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn read_capped_passes_small_output_through_verbatim() {
+        let data = b"hello \xe9 world\n"; // non-UTF-8 byte survives lossily
+        let out = read_capped(&data[..]);
+        assert_eq!(out, String::from_utf8_lossy(data));
+        assert!(!out.contains("omitted"));
+    }
+
+    #[test]
+    fn read_capped_keeps_head_and_tail_and_marks_the_drop() {
+        // 3x the total cap: the head keeps the start, the tail keeps the end,
+        // and the marker names how many bytes fell in between.
+        let total = 3 * (STREAM_RETAIN_HEAD + STREAM_RETAIN_TAIL);
+        let mut data = vec![b'x'; total];
+        data[..5].copy_from_slice(b"START");
+        let end = data.len();
+        data[end - 3..].copy_from_slice(b"END");
+        let out = read_capped(&data[..]);
+        assert!(out.starts_with("START"));
+        assert!(out.ends_with("END"));
+        let dropped = total - STREAM_RETAIN_HEAD - STREAM_RETAIN_TAIL;
+        assert!(out.contains(&format!("{dropped} bytes omitted")));
+        // Bounded: retained payload + marker, nowhere near `total`.
+        assert!(out.len() < STREAM_RETAIN_HEAD + STREAM_RETAIN_TAIL + 200);
+    }
 }
