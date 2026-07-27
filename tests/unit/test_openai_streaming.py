@@ -23,6 +23,7 @@ the provider:
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 from unittest import mock
 
@@ -661,3 +662,39 @@ def test_empty_role_delta_stays_in_the_prefill_budget(monkeypatch: pytest.Monkey
     # It survived past the 0.2s mid-stream budget and fired on the 0.6s prefill
     # budget -> the empty role delta did not flip the phase.
     assert time.monotonic() - started >= 0.45
+
+
+def test_a_stream_cut_before_usage_is_recorded_as_truncated(tmp_path: Path) -> None:
+    """The retryable raise landed AFTER the 200 was written, so the transcript
+    showed a clean successful call for an attempt that was actually cut and
+    re-issued -- while the sibling truncation one branch up records status 0.
+    An audit of a retried run could not see what happened."""
+    from agent6.providers.types import TranscriptSink
+
+    provider = OpenAIProvider(
+        api_key="sk-test",
+        model="kimi",
+        budget=BudgetTracker(max_input_tokens=1000, max_output_tokens=1000),
+        transcript_sink=TranscriptSink(tmp_path),
+    )
+    lines = _chunk(  # finish_reason, then the connection drops: no usage, no [DONE]
+        {"choices": [{"index": 0, "delta": {"content": "done"}, "finish_reason": "stop"}]}
+    )
+
+    def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
+        return _FakeStreamResponse(status_code=200, lines=lines)
+
+    with (
+        mock.patch("httpx2.stream", side_effect=fake_stream),
+        pytest.raises(ProviderError),
+    ):
+        provider.call(
+            system="sys",
+            messages=[{"role": "user", "content": "x"}],
+            text_delta_callback=lambda _p: None,
+        )
+
+    recorded = [json.loads(p.read_text(encoding="utf-8")) for p in sorted(tmp_path.glob("*.json"))]
+    assert recorded, "the cut attempt was not recorded at all"
+    assert [r["response"]["status"] for r in recorded] == [0]  # never a clean 200
+    assert "truncat" in str(recorded[0]["response"]["body"]).lower()
