@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 
 from agent6.runs.manifest import CompareStamp
@@ -460,3 +461,25 @@ def test_summary_second_run_start_reads_running(tmp_path: Path) -> None:
         ],
     )
     assert summarize_run_dir(rd, stale_after_s=10_000_000).status == "running"
+
+
+def test_newest_run_dir_skips_husks_that_no_listing_shows(tmp_path: Path) -> None:
+    """A husk (a dir a crash orphaned before any manifest or log) is hidden by
+    every listing, but the recency query returned it, so a bare `attach` /
+    `runs show` / `runs stop` targeted a phantom the operator cannot see -- and
+    could miss a live run whose log was quiet during a long provider call."""
+    from agent6.viewmodel.listing import newest_run_dir
+
+    bucket = tmp_path / "runs"
+    bucket.mkdir()
+    real = bucket / "real-run-0001"
+    real.mkdir()
+    (real / "logs.jsonl").write_text(
+        json.dumps({"type": "run.start", "mode": "run", "user_task": "t"}) + "\n", encoding="utf-8"
+    )
+    os.utime(real, (time.time() - 7200, time.time() - 7200))
+    os.utime(real / "logs.jsonl", (time.time() - 7200, time.time() - 7200))
+    husk = bucket / "zz-husk-0002"  # newer, but nothing ever ran
+    husk.mkdir()
+
+    assert newest_run_dir([bucket]) == real

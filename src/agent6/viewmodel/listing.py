@@ -48,11 +48,16 @@ def newest_run_dir(buckets: Iterable[Path]) -> Path | None:
     ``RUN_BUCKETS`` dir for a cross-bucket listing (attach / runs stop). A
     missing bucket dir is skipped; returns None when no bucket holds a run.
     Callers that key off the id take ``.name`` of the result.
+
+    Husks are skipped, like every listing skips them: a crash-orphaned dir with
+    no manifest and no log is newer than the real runs, so returning it pointed
+    bare `attach` / `runs show` / `runs stop` at a phantom the operator cannot
+    see in any listing.
     """
     runs: list[Path] = []
     for bucket in buckets:
         if bucket.is_dir():
-            runs.extend(p for p in bucket.iterdir() if p.is_dir())
+            runs.extend(p for p in bucket.iterdir() if p.is_dir() and not is_run_husk(p))
     dirs = sorted(runs, key=run_mtime, reverse=True)
     return dirs[0] if dirs else None
 
