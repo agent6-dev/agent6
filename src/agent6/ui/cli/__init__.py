@@ -19,6 +19,7 @@ from agent6.app._setup import (
     BudgetOverrides,
     SandboxOverrides,
 )
+from agent6.config import ConfigError
 from agent6.ui.cli._ask import (
     build_ask_run_digest,
     cmd_ask_list,
@@ -132,12 +133,19 @@ def cli_main() -> int:
     ``main`` itself is left unguarded so tests and ``python -m`` see real
     tracebacks. argparse's ``SystemExit`` (bad args / --help) is not an
     ``Exception`` and passes through untouched.
+
+    A ``ConfigError`` is the operator's config, not a bug: it reports as
+    ``CONFIG ERROR`` / exit 2, matching ``load_config_or_exit`` for the commands
+    that hit a bad config before they get to load it.
     """
     try:
         return main()
     except KeyboardInterrupt:
         print("\nagent6: interrupted.", file=sys.stderr)
         return 130
+    except ConfigError as exc:
+        print(f"CONFIG ERROR:\n{exc}", file=sys.stderr)
+        return 2
     except Exception as exc:  # top-level last resort; re-raised under AGENT6_DEBUG
         if os.environ.get("AGENT6_DEBUG") == "1":
             raise
