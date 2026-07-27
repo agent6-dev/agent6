@@ -266,3 +266,30 @@ def test_runs_show_reports_a_parked_run_as_parked(
     out = capsys.readouterr().out
     assert "parked" in out
     assert "unknown" not in out
+
+
+def test_parked_manifest_records_the_config_profile_not_the_sandbox_one(repo: Path) -> None:
+    """The parked manifest's workflow.profile is what resume feeds back to
+    load_effective; the park path stamped the SANDBOX profile there
+    ('strict'/'hardened'/'none'), so `agent6 resume <parked-id>` died with
+    "CONFIG ERROR: unknown profile 'strict'" on every sandboxed host."""
+    from agent6.app.run import run_task
+    from agent6.config.layer import load_effective
+
+    state = resolved_state_dir(repo)
+    holder_fd = acquire_repo_writer(state, "run-LIVE")
+    try:
+        rc = run_task(
+            _load_cfg(),
+            "do the thing",
+            frontend=MagicMock(),
+            run_id="run-PROF",
+            mode="run",
+        )
+    finally:
+        release_single_writer(holder_fd)
+    assert rc == 2
+    m = read_manifest(RunLayout(state_dir=state, run_id="run-PROF").run_dir)
+    assert m.workflow.profile == _load_cfg().profile  # the CONFIG profile ("")
+    # The exact call resume makes with it must not blow up on a sandbox word.
+    load_effective(repo, None, profile=m.workflow.profile)

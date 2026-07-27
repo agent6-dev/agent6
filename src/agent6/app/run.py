@@ -399,7 +399,10 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 run_branch=None,
                 cfg=cfg,
                 mode=mode,
-                effective_profile=selected_profile,
+                # The CONFIG profile, not the sandbox one: resume feeds this
+                # back to load_effective, and a sandbox word ("strict") there
+                # made every parked resume die with "unknown profile".
+                effective_profile=profile or cfg.profile,
                 parked_task=task,
             )
             reporter.err(
