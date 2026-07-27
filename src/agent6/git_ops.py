@@ -341,26 +341,58 @@ def find_stash(path: Path, message: str) -> StashEntry | None:
     return None
 
 
+# `git stash drop` names the commit it removed: "Dropped stash@{0} (<sha>)".
+_DROPPED_SHA_RE = re.compile(r"^Dropped .*\(([0-9a-f]{7,64})\)", re.MULTILINE)
+
+
 def restore_stash(path: Path, stash: StashEntry) -> bool:
     """Apply *stash* back onto the working tree BY SHA -- a stash@{N} recorded
     earlier applies whatever sits at that position NOW, which is the wrong
-    stash the moment another one was pushed. On a clean apply, drop the entry
-    (``git stash drop`` only takes a positional ref, so it is re-resolved from
-    the sha at that instant; the residual list-to-drop window is milliseconds,
-    and even a mis-drop leaves the commit recoverable from git's output).
+    stash the moment another one was pushed. On a clean apply, drop the entry.
     On conflict (or any non-zero apply), leave everything in place so the
     user's work is never lost, and return False. We never `reset --hard` to
     undo a conflicted apply (refused), so a conflict leaves the markers for
     the user to resolve with their stash still intact."""
     if not _run(path, "stash", "apply", stash.sha, check=False).ok:
         return False
-    res = _run(path, "stash", "list", "--format=%gd%x09%H", check=False)
-    for line in res.stdout.splitlines():
-        ref, _, sha = line.partition("\t")
-        if sha == stash.sha:
-            _run(path, "stash", "drop", ref, check=False)
-            break
+    _drop_by_sha(path, stash.sha)
     return True
+
+
+def _drop_by_sha(path: Path, sha: str) -> None:
+    """Drop the stash entry whose commit is *sha*, putting back a bystander we
+    take by mistake.
+
+    ``git stash drop`` addresses an entry by POSITION and refuses a sha outright
+    ("is not a stash reference"), so the position has to be re-resolved from the
+    list -- and a stash pushed in between shifts every position, aiming the drop
+    at someone else's entry. git names the commit it dropped, so check it: one
+    that is not ours is stored straight back under its own subject (position is
+    not identity, so it returns at the top of the stack). Ours then stays
+    listed; re-resolving to drop it again would race the same way, and leaking
+    our own stash beats taking a second bystander.
+    """
+    listed = _run(path, "stash", "list", "--format=%gd%x09%H", check=False)
+    ref = ""
+    for line in listed.stdout.splitlines():
+        entry_ref, _, entry_sha = line.partition("\t")
+        if entry_sha == sha:
+            ref = entry_ref
+            break
+    if not ref:
+        return
+    dropped = _DROPPED_SHA_RE.search(_run(path, "stash", "drop", ref, check=False).stdout)
+    if dropped is None:
+        return  # no drop happened, or git stopped naming what it dropped
+    taken = dropped.group(1)
+    # Prefix either way: git prints the full oid today, but an abbreviated one
+    # must not read as a stranger's stash and get stored back on top of us.
+    if sha.startswith(taken) or taken.startswith(sha):
+        return
+    # A stash commit's own subject is the "On <branch>: <message>" the reflog
+    # showed, so the restored entry reads exactly as it did before.
+    subject = _run(path, "log", "-1", "--format=%s", taken, check=False).stdout.strip()
+    _run(path, "stash", "store", "-m", subject or "restored by agent6", taken, check=False)
 
 
 def branch_exists(path: Path, name: str) -> bool:

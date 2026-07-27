@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from agent6 import git_ops
 from agent6.git_ops import (
     CommitIdentity,
     GitError,
@@ -565,6 +566,47 @@ def test_find_stash_targets_the_run_stash_not_the_latest(tmp_path: Path) -> None
     ).stdout
     assert "user work stashed mid-run" in listing
     assert "agent6 auto-stash" not in listing
+
+
+def test_restore_stash_raced_drop_puts_the_bystander_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`git stash drop` takes only a POSITION (git refuses a sha outright), so a
+    stash pushed between the list that resolves ours and the drop shifts the
+    stack and the drop takes a bystander's entry. Its commit must come back."""
+    _init_repo(tmp_path)
+    (tmp_path / "pre.txt").write_text("pre-run work\n", encoding="utf-8")
+    stash_all(tmp_path, auto_stash_message("sunny-otter-AAA111"))
+    entry = find_stash(tmp_path, auto_stash_message("sunny-otter-AAA111"))
+    assert entry is not None
+
+    real_run = git_ops._run  # pyright: ignore[reportPrivateUsage]
+    raced = False
+
+    def racing_run(
+        path: Path, *args: str, check: bool = True, env_extra: dict[str, str] | None = None
+    ) -> git_ops.CommandResult:
+        nonlocal raced
+        res = real_run(path, *args, check=check, env_extra=env_extra)
+        if not raced and args[:2] == ("stash", "list"):
+            raced = True  # ours slides to stash@{1}; the recorded ref now names theirs
+            (tmp_path / "README.md").write_text("bystander work\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", str(tmp_path), "stash", "push", "-q", "-m", "bystander", "--"],
+                check=True,
+            )
+        return res
+
+    monkeypatch.setattr(git_ops, "_run", racing_run)
+    assert restore_stash(tmp_path, entry) is True
+    assert (tmp_path / "pre.txt").read_text(encoding="utf-8") == "pre-run work\n"
+    listing = subprocess.run(
+        ["git", "-C", str(tmp_path), "stash", "list"], capture_output=True, text=True, check=True
+    ).stdout
+    assert "bystander" in listing  # never silently destroyed
+    # Ours survives too: re-resolving to drop it again would race the same way,
+    # so a raced restore leaks its own stash rather than risk a second bystander.
+    assert auto_stash_message("sunny-otter-AAA111") in listing
 
 
 def test_find_stash_missing_returns_none(tmp_path: Path) -> None:
