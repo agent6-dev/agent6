@@ -27,7 +27,8 @@ import shutil
 import threading
 import time
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor
+from concurrent.futures import wait as futures_wait
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -562,6 +563,14 @@ def build_lane_spawner(
             pool = ThreadPoolExecutor(max_workers=len(pairs))
             try:
                 futures = [pool.submit(one, p) for p in pairs]
+                # FIRST_EXCEPTION: a lane thread that RAISES (a bug, not a lane
+                # failure -- those return ok=False) aborts the group now, not
+                # after every earlier-submitted lane happens to finish.
+                done, _ = futures_wait(futures, return_when=FIRST_EXCEPTION)
+                for f in done:
+                    exc = f.exception()
+                    if exc is not None:
+                        raise exc
                 results = [f.result() for f in futures]  # submit order = lane order
             except BaseException:
                 # Lane threads notice hard_stop within a poll tick, request a

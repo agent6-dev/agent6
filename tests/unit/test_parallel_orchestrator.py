@@ -311,6 +311,48 @@ def test_coordinator_dispatch_refuses_unknown_model(
         dispatch([LaneTask(task="do it", model="moonshotai/kimi-k2.7")], "p1")
 
 
+def test_coordinator_dispatch_aborts_promptly_on_a_lane_thread_raise(
+    origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runtime: LaneRuntime
+) -> None:
+    """A lane thread that RAISES (a bug, not a lane failure -- those return
+    ok=False) must abort the group NOW: awaiting futures in submission order
+    left the raise unobserved (and hard_stop unset) until every
+    earlier-submitted lane happened to finish on its own."""
+    import time
+
+    origin_state = tmp_path / "ostate"
+    origin_state.mkdir()
+    seen: dict[str, bool] = {}
+
+    def fake_lane(spec: LaneSpec, task: str, **kwargs: object) -> LaneResult:
+        import threading
+
+        hard_stop = kwargs["hard_stop"]
+        assert isinstance(hard_stop, threading.Event)
+        if spec.lane == 1:
+            # Stands in for a long-running healthy lane: it unblocks only when
+            # the dispatcher propagates the other lane's failure.
+            seen["lane1_released_by_stop"] = hard_stop.wait(timeout=8.0)
+            return LaneResult(spec=spec, run_dir=tmp_path / "l1", branch="b1", ok=True, error="")
+        raise RuntimeError("lane thread blew up")
+
+    monkeypatch.setattr(parallel, "run_lane_to_completion", fake_lane)
+    dispatch = parallel.build_lane_spawner(
+        _provider_cfg(), origin, origin_state, coordinator_run_id="coord", runtime=runtime
+    )
+    start = time.monotonic()
+    with pytest.raises(RuntimeError, match="lane thread blew up"):
+        dispatch([LaneTask(task="a", model=None), LaneTask(task="b", model=None)], "p1")
+    assert time.monotonic() - start < 4.0  # not after lane 1's own sweet time
+    # The dispatcher re-raises without joining still-running lane threads
+    # (deliberate: teardown must not block on lanes), so give lane 1's thread
+    # a bounded moment to record that hard_stop released it.
+    deadline = time.monotonic() + 2.0
+    while "lane1_released_by_stop" not in seen and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert seen.get("lane1_released_by_stop") is True  # hard_stop actually fired
+
+
 # ---------------------------------------------------------------------------
 # Coordinator lane spawn escapes the egress netns (Fix W1)
 # ---------------------------------------------------------------------------
