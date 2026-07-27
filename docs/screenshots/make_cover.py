@@ -4,16 +4,17 @@
 """Compose the README cover image from the three UI screenshots.
 
 The three screenshots are stacked full-frame with the same positioning, and two
-slightly-leaning vertical cuts reveal the layers: the CLI on the left, the TUI
-dashboard in the middle, the web run view on the right. Each panel therefore
-shows THAT region of its own UI, as if one interface were peeled between its
-three skins. Thin accent hairlines mark the cuts; a small CLI / TUI / WEB tag
-sits at the bottom of each panel.
+vertical cuts split the canvas into equal thirds, revealing the layers: the CLI
+on the left, the TUI dashboard in the middle, the web run view on the right.
+Each panel therefore shows THAT region of its own UI, as if one interface were
+peeled between its three skins. The dressing reuses the app's own look (the web
+UI's design tokens): accent hairlines on the cuts, a status-pill tag per panel,
+a hairline border and rounded corners on the canvas.
 
 Inputs come from the docs media pipeline (docs/screenshots/out/): the TUI PNG
 from tour.tape, web-shot.png from web_demo.py's desktop tour, and a frame
-pulled out of cli-demo.webm. Output: out/cover.png (1600x900). Runs in the
-pages workflow after the media steps; needs Pillow and ffmpeg.
+pulled out of cli-demo.webm. Output: out/cover.png (1600x900, RGBA). Runs in
+the pages workflow after the media steps; needs Pillow and ffmpeg.
 
   python3 docs/screenshots/make_cover.py [--out PATH]
 """
@@ -34,16 +35,17 @@ except ImportError:  # pragma: no cover - docs tool
 OUT_DIR = Path(__file__).parent / "out"
 
 W, H = 1600, 900
-BG = "#0e1116"  # the app background
-ACCENT = "#6ea8fe"
+# The web UI's dark-theme tokens (src/agent6/ui/web/styles.css :root).
+BG = "#0e1116"  # --bg
+BORDER = "#2a3140"  # --border
+ACCENT = "#6ea8fe"  # --accent
+PILL_FILL = (14, 17, 22, 235)  # --bg, near-opaque, so tags read over content
 
-# The two cuts, as (x at y=0, x at y=H): near-vertical, leaning the same way
-# (~5 degrees). Left of CUTA: the CLI. Between: the TUI (the widest panel).
-# Right of CUTB: the web run view.
-CUTA = (590, 500)
-CUTB = (1160, 1070)
-GAP = 9  # bg-coloured breathing room each side of a cut
+CUTS = (W // 3, 2 * W // 3)  # even thirds: CLI | TUI | WEB
+GAP = 10  # bg-coloured breathing room each side of a cut
 LINE = 2  # the accent hairline itself
+RADIUS = 18  # canvas corner radius
+SS = 2  # supersample factor for the overlay (pills, border) and corner mask
 
 
 def _font(size: int) -> ImageFont.FreeTypeFont:
@@ -92,13 +94,19 @@ def _cover_fit(img: Image.Image, top_crop: int = 0, x_shift: int = 0) -> Image.I
     return out
 
 
-def _panel_mask(left: tuple[int, int] | None, right: tuple[int, int] | None) -> Image.Image:
-    """A full-canvas mask for the panel between two cuts (None = canvas edge)."""
-    l0, l1 = left if left else (0, 0)
-    r0, r1 = right if right else (W, W)
-    mask = Image.new("L", (W, H), 0)
-    ImageDraw.Draw(mask).polygon([(l0, 0), (r0, 0), (r1, H), (l1, H)], fill=255)
-    return mask
+def _tracked_text(
+    draw: ImageDraw.ImageDraw,
+    xy: tuple[float, float],
+    text: str,
+    font: ImageFont.FreeTypeFont,
+    track: float,
+    fill: str,
+) -> None:
+    """Draw *text* with *track* extra px between characters (PIL has none)."""
+    x, y = xy
+    for ch in text:
+        draw.text((x, y), ch, font=font, fill=fill)
+        x += draw.textlength(ch, font=font) + track
 
 
 def main() -> None:
@@ -114,40 +122,60 @@ def main() -> None:
             sys.exit(f"make_cover.py: missing input {p} (run the media pipeline first)")
 
     cli = _cover_fit(_cli_frame(cli_webm), top_crop=48, x_shift=36)
-    tui = _cover_fit(Image.open(tui_png).convert("RGB"), top_crop=0, x_shift=430)
+    # 422 puts the middle cut in the gap between the transcript's line-number
+    # gutter and its event column (measured: no x is clean for both that and
+    # the menu bar's "View", and a ragged gutter is the worse clip).
+    tui = _cover_fit(Image.open(tui_png).convert("RGB"), top_crop=0, x_shift=422)
     # x_shift lands the WEB slice on the run view's details drawer (task graph /
     # budget / tool calls, logical x ~216-513 of the 1280-wide shot): the
     # conversation-primary layout keeps the widgets there, and the slice right
-    # of CUTB would otherwise show the conversation's quiet right margin.
-    web = _cover_fit(Image.open(web_png).convert("RGB"), top_crop=285, x_shift=988)
+    # of the cut would otherwise show the conversation's quiet right margin.
+    web = _cover_fit(Image.open(web_png).convert("RGB"), top_crop=285, x_shift=942)
 
     canvas = Image.new("RGB", (W, H), BG)
-    for img, left, right in ((cli, None, CUTA), (tui, CUTA, CUTB), (web, CUTB, None)):
-        canvas = Image.composite(img, canvas, _panel_mask(left, right))
+    for img, x0, x1 in ((cli, 0, CUTS[0]), (tui, CUTS[0], CUTS[1]), (web, CUTS[1], W)):
+        canvas.paste(img.crop((x0, 0, x1, H)), (x0, 0))
 
     # The cuts: a bg-coloured gap with a centred accent hairline.
     draw = ImageDraw.Draw(canvas)
-    for x0, x1 in (CUTA, CUTB):
-        draw.line([(x0, 0), (x1, H)], fill=BG, width=GAP * 2)
-        draw.line([(x0, 0), (x1, H)], fill=ACCENT, width=LINE)
+    for x in CUTS:
+        draw.rectangle((x - GAP, 0, x + GAP, H), fill=BG)
+        draw.line([(x, 0), (x, H)], fill=ACCENT, width=LINE)
 
-    # A small tag at the bottom of each panel, on a quiet pill so it reads over
-    # any content: CLI / TUI / WEB, centred between that panel's bottom cuts.
-    font = _font(22)
-    overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    # The dressing, supersampled for crisp curves: a CLI / TUI / WEB tag per
+    # panel styled like the app's status pills (accent text and border on a
+    # near-bg fill), plus the canvas hairline border.
+    font = _font(23 * SS)
+    track = 4 * SS
+    overlay = Image.new("RGBA", (W * SS, H * SS), (0, 0, 0, 0))
     odraw = ImageDraw.Draw(overlay)
-    centres = ((0 + CUTA[1]) // 2, (CUTA[1] + CUTB[1]) // 2, (CUTB[1] + W) // 2)
+    centres = (CUTS[0] // 2, (CUTS[0] + CUTS[1]) // 2, (CUTS[1] + W) // 2)
     for label, cx in zip(("CLI", "TUI", "WEB"), centres, strict=True):
-        tw = odraw.textlength(label, font=font)
-        tx, ty = cx - tw / 2, H - 52
+        tw = sum(odraw.textlength(ch, font=font) for ch in label) + track * (len(label) - 1)
+        top, bottom = odraw.textbbox((0, 0), label, font=font)[1::2]
+        pad_x, pad_y = 17 * SS, 10 * SS
+        tx, ty = cx * SS - tw / 2, (H - 62) * SS
+        box = (tx - pad_x, ty + top - pad_y, tx + tw + pad_x, ty + bottom + pad_y)
         odraw.rounded_rectangle(
-            (tx - 14, ty - 8, tx + tw + 14, ty + 30), radius=8, fill=(14, 17, 22, 220)
+            box, radius=(box[3] - box[1]) / 2, fill=PILL_FILL, outline=ACCENT, width=SS
         )
-        odraw.text((tx, ty), label, font=font, fill="#8b95a5")
-    canvas = Image.alpha_composite(canvas.convert("RGBA"), overlay).convert("RGB")
+        _tracked_text(odraw, (tx, ty), label, font, track, ACCENT)
+    odraw.rounded_rectangle(
+        (0, 0, W * SS - 1, H * SS - 1), radius=RADIUS * SS, outline=BORDER, width=2 * SS
+    )
+    overlay = overlay.resize((W, H), Image.LANCZOS)
+    out = Image.alpha_composite(canvas.convert("RGBA"), overlay)
+
+    # Rounded corners: transparent outside the border, so the cover sits as a
+    # card on any README background.
+    mask = Image.new("L", (W * SS, H * SS), 0)
+    ImageDraw.Draw(mask).rounded_rectangle(
+        (0, 0, W * SS - 1, H * SS - 1), radius=RADIUS * SS, fill=255
+    )
+    out.putalpha(mask.resize((W, H), Image.LANCZOS))
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    canvas.save(args.out)
+    out.save(args.out)
     print(f"make_cover: wrote {args.out} ({W}x{H})")
 
 
