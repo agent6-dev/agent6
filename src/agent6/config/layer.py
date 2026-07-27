@@ -58,6 +58,7 @@ from agent6.paths import (
     repo_config_path,
     state_dir,
 )
+from agent6.portable import atomic_write, locked_file
 
 LayerName = Literal["default", "profile", "global", "repo", "flag", "machine"]
 
@@ -762,14 +763,18 @@ def _write_target(repo_root: Path, *, to_repo: bool) -> Path:
 
 def _revalidate(repo_root: Path, target: Path, prior: str | None) -> str | None:
     """Re-load the merged config after an edit; restore *prior* (or delete a
-    freshly-created file) and return the error string if the edit is invalid."""
+    freshly-created file) and return the error string if the edit is invalid.
+    The rollback publishes atomically, and the caller holds ``locked_file``
+    across its whole write+revalidate+rollback cycle -- an unserialized
+    rollback erased a concurrent writer's just-validated update by restoring
+    a snapshot taken before it landed."""
     try:
         load_effective(repo_root, None)
     except ConfigError as exc:
         if prior is None:
             target.unlink(missing_ok=True)
         else:
-            target.write_text(prior, encoding="utf-8")
+            atomic_write(target, prior)
         return str(exc)
     return None
 
@@ -786,12 +791,13 @@ def set_config_value(
     """
     target = _write_target(repo_root, to_repo=to_repo)
     target.parent.mkdir(parents=True, exist_ok=True)
-    prior = target.read_text(encoding="utf-8") if target.is_file() else None
-    try:
-        upsert_toml_leaf(target, dotted_key, parse_cli_value(raw_value))
-    except ValueError as exc:
-        return str(exc)
-    err = _revalidate(repo_root, target, prior)
+    with locked_file(target):
+        prior = target.read_text(encoding="utf-8") if target.is_file() else None
+        try:
+            upsert_toml_leaf(target, dotted_key, parse_cli_value(raw_value))
+        except ValueError as exc:
+            return str(exc)
+        err = _revalidate(repo_root, target, prior)
     if err is None:
         chown_to_real_user(target.parent)
         chown_to_real_user(target)
@@ -811,12 +817,13 @@ def set_config_table(
     on invalid config, else None. ``None`` field values are omitted."""
     target = _write_target(repo_root, to_repo=to_repo)
     target.parent.mkdir(parents=True, exist_ok=True)
-    prior = target.read_text(encoding="utf-8") if target.is_file() else None
-    try:
-        upsert_toml_table(target, table, fields)
-    except ValueError as exc:
-        return str(exc)
-    err = _revalidate(repo_root, target, prior)
+    with locked_file(target):
+        prior = target.read_text(encoding="utf-8") if target.is_file() else None
+        try:
+            upsert_toml_table(target, table, fields)
+        except ValueError as exc:
+            return str(exc)
+        err = _revalidate(repo_root, target, prior)
     if err is None:
         chown_to_real_user(target.parent)
         chown_to_real_user(target)
@@ -864,11 +871,12 @@ def set_config_leaves(
     ``None`` field values are omitted."""
     target = _write_target(repo_root, to_repo=to_repo)
     target.parent.mkdir(parents=True, exist_ok=True)
-    prior = target.read_text(encoding="utf-8") if target.is_file() else None
-    for key, val in fields.items():
-        if val is not None:
-            upsert_toml_leaf(target, f"{table}.{key}", val)
-    err = _revalidate(repo_root, target, prior)
+    with locked_file(target):
+        prior = target.read_text(encoding="utf-8") if target.is_file() else None
+        for key, val in fields.items():
+            if val is not None:
+                upsert_toml_leaf(target, f"{table}.{key}", val)
+        err = _revalidate(repo_root, target, prior)
     if err is None:
         chown_to_real_user(target.parent)
         chown_to_real_user(target)
@@ -884,14 +892,15 @@ def unset_config_value(repo_root: Path, dotted_key: str, *, to_repo: bool = Fals
     target = _write_target(repo_root, to_repo=to_repo)
     if not target.is_file():
         return None
-    prior = target.read_text(encoding="utf-8")
-    try:
-        removed = remove_toml_leaf(target, dotted_key)
-    except ValueError as exc:
-        return str(exc)
-    if not removed:
-        return None
-    err = _revalidate(repo_root, target, prior)
+    with locked_file(target):
+        prior = target.read_text(encoding="utf-8")
+        try:
+            removed = remove_toml_leaf(target, dotted_key)
+        except ValueError as exc:
+            return str(exc)
+        if not removed:
+            return None
+        err = _revalidate(repo_root, target, prior)
     if err is None:
         chown_to_real_user(target)
     return err

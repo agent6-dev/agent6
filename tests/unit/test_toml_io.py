@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import threading
 import tomllib
 from pathlib import Path
 
@@ -118,3 +119,29 @@ def test_control_chars_serialize_to_valid_toml(tmp_path: Path) -> None:
     assert parsed["git"]["name"] == "a\nb\tc\rd\x1be"
     # control-char-free strings serialize byte-identically to before
     assert format_toml_value('quote"and\\back') == '"quote\\"and\\\\back"'
+
+
+def test_concurrent_leaf_writes_lose_no_update(tmp_path: Path) -> None:
+    """Two writers racing the read-surgery-publish cycle both read the same
+    base text, and the later publish silently dropped the earlier one's key
+    (lost update: a CLI `config set` racing the web/TUI config editor). The
+    writers serialize on portable.locked_file, which is removed on release."""
+    path = tmp_path / "config.toml"
+    n_writers, n_keys = 8, 5
+    barrier = threading.Barrier(n_writers)
+
+    def writer(i: int) -> None:
+        barrier.wait()
+        for j in range(n_keys):
+            upsert_toml_leaf(path, f"t{i}.k{j}", i * 100 + j)
+
+    threads = [threading.Thread(target=writer, args=(i,)) for i in range(n_writers)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    assert {f"t{i}.k{j}" for i in range(n_writers) for j in range(n_keys)} == {
+        f"{table}.{leaf}" for table, leaves in data.items() for leaf in leaves
+    }
+    assert not (tmp_path / "config.toml.lock").exists()

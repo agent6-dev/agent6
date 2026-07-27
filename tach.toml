@@ -80,6 +80,7 @@ depends_on = [
   "agent6.events",
   "agent6.git_ops",
   "agent6.init",
+  "agent6.portable",
   "agent6.ui.tui",
   "agent6.ui.web",
   "agent6.ui.spawn",
@@ -249,7 +250,7 @@ depends_on = ["agent6.config.model", "agent6.portable"]
 
 [[modules]]
 path = "agent6.config.layer"
-depends_on = ["agent6.config.model", "agent6.config.io", "agent6.paths"]
+depends_on = ["agent6.config.model", "agent6.config.io", "agent6.paths", "agent6.portable"]
 
 [[modules]]
 path = "agent6.models.cache"

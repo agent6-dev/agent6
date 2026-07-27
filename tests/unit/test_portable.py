@@ -151,3 +151,132 @@ def test_atomic_write_preserves_existing_mode(tmp_path: Path) -> None:
     target.chmod(0o640)
     atomic_write(target, "second")  # a re-publish must keep the file's own mode
     assert stat.S_IMODE(target.stat().st_mode) == 0o640
+
+
+def test_locked_file_is_same_thread_reentrant(tmp_path: Path) -> None:
+    """A transaction (write + revalidate + rollback) holds locked_file around
+    per-write helpers that each take it too; flock on a second fd of the same
+    file self-deadlocks the process, so the nested acquire must be a no-op.
+    Run in a worker thread so a regression fails the join instead of hanging
+    the suite."""
+    import threading
+
+    target = tmp_path / "c.toml"
+    entered: list[str] = []
+
+    def nested() -> None:
+        with portable.locked_file(target):
+            entered.append("outer")
+            with portable.locked_file(target):
+                entered.append("inner")
+
+    t = threading.Thread(target=nested, daemon=True)
+    t.start()
+    t.join(timeout=5)
+    assert entered == ["outer", "inner"]
+    assert not t.is_alive()
+    assert not (tmp_path / "c.toml.lock").exists()  # released and cleaned once
+
+
+def test_locked_file_blocks_other_threads_despite_reentrancy(tmp_path: Path) -> None:
+    """Reentrancy is per-thread only: a second thread must still queue."""
+    import threading
+    import time
+
+    target = tmp_path / "c.toml"
+    order: list[str] = []
+    inside = threading.Event()
+    release = threading.Event()
+
+    def holder() -> None:
+        with portable.locked_file(target):
+            order.append("holder-in")
+            inside.set()
+            release.wait(timeout=5)
+        order.append("holder-out")
+
+    def contender() -> None:
+        inside.wait(timeout=5)
+        with portable.locked_file(target):
+            order.append("contender-in")
+
+    t1 = threading.Thread(target=holder, daemon=True)
+    t2 = threading.Thread(target=contender, daemon=True)
+    t1.start()
+    t2.start()
+    inside.wait(timeout=5)
+    time.sleep(0.1)  # give the contender time to reach (and block on) the lock
+    assert order == ["holder-in"]
+    release.set()
+    t1.join(timeout=5)
+    t2.join(timeout=5)
+    assert order == ["holder-in", "holder-out", "contender-in"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlinks + O_NOFOLLOW")
+def test_locked_file_refuses_a_symlinked_lock_and_fails_open(tmp_path: Path) -> None:
+    """A planted symlink at the predictable ``<name>.lock`` path must never be
+    followed: an earlier build chowned that fd as root, turning the lock into
+    an arbitrary-file ownership-transfer primitive under ``sudo``. O_NOFOLLOW
+    refuses it and the body runs unserialized (fail open); the symlink target
+    is neither opened for write, chowned, nor unlinked."""
+    target = tmp_path / "config.toml"
+    secret = tmp_path / "root_secret"
+    secret.write_text("do-not-touch", encoding="utf-8")
+    (tmp_path / "config.toml.lock").symlink_to(secret)
+
+    ran = False
+    with portable.locked_file(target):
+        ran = True
+    assert ran
+    assert secret.read_text(encoding="utf-8") == "do-not-touch"  # target untouched
+    assert secret.exists()
+    assert (tmp_path / "config.toml.lock").is_symlink()  # the symlink itself survives
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX symlinks")
+def test_locked_file_reentrant_across_atomic_write_of_symlinked_target(tmp_path: Path) -> None:
+    """Keying reentrancy on target.resolve() self-deadlocked a symlinked config:
+    the first atomic_write replaces the symlink with a regular file, so
+    resolve() (and the key) changed and the second nested acquire blocked on
+    the thread's own outer lock. The parent-resolved key is stable across the
+    write. Run in a worker thread so a regression fails the join, not hangs."""
+    import threading
+
+    real = tmp_path / "real.toml"
+    real.write_text("x = 0\n", encoding="utf-8")
+    target = tmp_path / "config.toml"
+    target.symlink_to(real)  # a dotfiles-style symlinked config
+    entered: list[str] = []
+
+    def txn() -> None:
+        with portable.locked_file(target):
+            entered.append("leaf-1")
+            atomic_write(target, "x = 1\n")  # replaces the symlink with a regular file
+            with portable.locked_file(target):
+                entered.append("leaf-2")
+
+    t = threading.Thread(target=txn, daemon=True)
+    t.start()
+    t.join(timeout=5)
+    assert entered == ["leaf-1", "leaf-2"]
+    assert not t.is_alive()
+    assert not target.is_symlink()  # the write did replace the symlink
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+def test_locked_file_fails_open_on_an_unreopenable_lock(tmp_path: Path) -> None:
+    """A stale lock a killed ``sudo`` writer left root-owned is unreopenable by
+    a later non-root process; rather than wedge every later write, the guard
+    fails open. Simulated portably with a 0000 lock the owner cannot open."""
+    target = tmp_path / "config.toml"
+    lock = tmp_path / "config.toml.lock"
+    lock.write_text("", encoding="utf-8")
+    lock.chmod(0o000)
+    try:
+        ran = False
+        with portable.locked_file(target):
+            ran = True
+        assert ran  # body ran despite the unopenable lock, no wedge, no raise
+    finally:
+        lock.chmod(0o600)

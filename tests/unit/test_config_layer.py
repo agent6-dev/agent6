@@ -357,3 +357,54 @@ def test_materialize_quotes_non_bare_keys(repo: Path, tmp_path: Path) -> None:
     assert "my provider" in reloaded.providers
     assert "openrouter.free" in reloaded.providers  # not silently re-nested
     assert reloaded.skills.state == {"org.some.skill": "enabled"}
+
+
+def test_concurrent_rollback_does_not_erase_a_valid_write(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Writer A publishes an invalid value and rolls back after revalidation;
+    writer B lands a valid value in between. A's rollback republished its
+    pre-B snapshot: B's update was silently erased (and B's own revalidate,
+    seeing A's junk still in the file, spuriously rejected B's write). The
+    whole write+revalidate+rollback cycle now holds locked_file, so B queues
+    until A has rolled back and then lands cleanly on the restored base."""
+    import threading
+    import time
+
+    from agent6.config import layer as layer_mod
+
+    a_in_revalidate = threading.Event()
+    b_attempted = threading.Event()
+    real_load = layer_mod.load_effective
+    calls = {"n": 0}
+
+    def gated_load(root: Path, flag: Path | None) -> object:
+        calls["n"] += 1
+        if calls["n"] == 1:  # A's revalidate: hold the transaction open
+            a_in_revalidate.set()
+            b_attempted.wait(timeout=5)
+            time.sleep(0.4)  # window for B to (old code) land / (fixed) queue
+        return real_load(root, flag)
+
+    monkeypatch.setattr(layer_mod, "load_effective", gated_load)
+    results: dict[str, str | None] = {}
+
+    def writer_a() -> None:
+        results["a"] = set_config_value(repo, "sandbox.run_commands", "bogus", to_repo=True)
+
+    def writer_b() -> None:
+        a_in_revalidate.wait(timeout=5)
+        b_attempted.set()
+        results["b"] = set_config_value(repo, "git.auto_stash", "true", to_repo=True)
+
+    ta = threading.Thread(target=writer_a, daemon=True)
+    tb = threading.Thread(target=writer_b, daemon=True)
+    ta.start()
+    tb.start()
+    ta.join(timeout=10)
+    tb.join(timeout=10)
+    assert results["a"] is not None  # the invalid write was rejected
+    assert results["b"] is None  # ...without taking B's valid write down with it
+    eff = load_effective(repo)
+    assert eff.config.git.auto_stash is True  # B's update survived A's rollback
+    assert eff.config.sandbox.run_commands == "yes"  # A rolled back to the prior value

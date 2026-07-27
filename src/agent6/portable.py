@@ -12,9 +12,12 @@ durable renames) working so the agent can run unsandboxed on macOS.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
 import tempfile
+import threading
+from collections.abc import Generator
 from pathlib import Path
 
 if sys.platform == "win32":
@@ -47,6 +50,114 @@ def unlock(fd: int) -> None:
         msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
     else:
         fcntl.flock(fd, fcntl.LOCK_UN)
+
+
+def _same_file(fd: int, path: Path) -> bool:
+    try:
+        a = os.fstat(fd)
+        b = path.stat()
+    except OSError:
+        return False
+    return (a.st_dev, a.st_ino) == (b.st_dev, b.st_ino)
+
+
+# Lock paths the CURRENT THREAD holds via locked_file, for reentrancy.
+_HELD_LOCKS = threading.local()
+
+
+def _acquire_lock(lock_path: Path) -> int | None:
+    """Open + flock *lock_path*, returning the held fd, or None when the lock
+    cannot be taken (see :func:`locked_file`'s fail-open contract).
+
+    ``O_NOFOLLOW`` refuses a planted symlink at the predictable lock path
+    outright -- never open, chown, or write the thing it points at. Any other
+    open/lock failure (a stale root-owned lock a non-root process can't
+    reopen) also returns None: the lock is an optimization, never a
+    correctness barrier, so a broken one is skipped, not followed or waited
+    on."""
+    flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_CLOEXEC", 0)
+    if sys.platform != "win32":
+        flags |= os.O_NOFOLLOW  # a symlinked lock path -> ELOOP -> fail open
+    while True:
+        try:
+            fd = os.open(lock_path, flags, 0o600)
+        except OSError:
+            return None
+        try:
+            lock_exclusive(fd, blocking=True)
+            if sys.platform == "win32" or _same_file(fd, lock_path):
+                return fd
+            # The previous holder unlinked this inode after we opened it; a
+            # fresh lock file may already be held by someone else -- retry.
+            unlock(fd)
+        except OSError:
+            os.close(fd)
+            return None
+        except BaseException:
+            os.close(fd)
+            raise
+        os.close(fd)
+
+
+@contextlib.contextmanager
+def locked_file(target: Path) -> Generator[None]:
+    """Serialize read-modify-write cycles on *target* across processes.
+
+    Blocks on a sibling ``<name>.lock`` file, NOT the target: atomic_write
+    replaces the target's inode on publish, so a lock taken on the target
+    itself would let a waiter queued on the orphaned old inode run
+    concurrently with a fresh locker -- exactly the lost update this guards
+    against.
+
+    The lock is a concurrency optimization, never a correctness barrier
+    (atomic_write already makes each publish all-or-nothing), so it FAILS
+    OPEN. If the lock cannot be opened or locked -- a planted symlink
+    (refused by ``O_NOFOLLOW``), or a stale root-owned lock a killed ``sudo``
+    writer left that a later non-root process can't reopen -- the body runs
+    unserialized rather than wedging or following the symlink. Worst case is
+    the unlocked write we already tolerated before this guard existed; it is
+    never a way to redirect or block a write.
+
+    The lock file is unlinked on release (no residue in a config dir or repo
+    worktree); the fstat/stat identity check after acquire detects a
+    concurrent unlink and retries on the fresh file. Crash-safe: flock dies
+    with the process. On Windows the lock file is left in place (an open
+    locked file cannot be unlinked), so no identity check needed.
+
+    Same-thread reentrant: a transaction (write + revalidate + rollback)
+    holds the lock across its whole cycle while the per-write helpers it
+    calls skip re-acquiring -- flock on a second fd of the same file would
+    self-deadlock the process. Other threads still block. The reentrancy key
+    is the lock path with its PARENT resolved: the parent dir survives an
+    atomic_write of the target, but the target's own inode does not, so a
+    symlinked config that a write replaces with a regular file does not shift
+    the key mid-transaction.
+    """
+    _ensure_parent_dirs(target.parent)
+    lock_path = target.with_name(target.name + ".lock")
+    key = str(target.parent.resolve() / lock_path.name)
+    held: set[str] = getattr(_HELD_LOCKS, "paths", set())
+    if key in held:
+        yield
+        return
+    fd = _acquire_lock(lock_path)
+    held.add(key)
+    _HELD_LOCKS.paths = held
+    try:
+        yield
+    finally:
+        held.discard(key)
+        if fd is not None:
+            # Unlink BEFORE unlock, while still the holder: waiters queued on
+            # this inode then fail the identity check and requeue on the fresh
+            # file. Unlock-first would let one win the orphaned inode while a
+            # newcomer locks a recreated file -- two concurrent "holders".
+            if sys.platform != "win32":
+                with contextlib.suppress(OSError):
+                    lock_path.unlink()
+            with contextlib.suppress(OSError):
+                unlock(fd)
+            os.close(fd)
 
 
 def fsync_dir(path: Path) -> None:

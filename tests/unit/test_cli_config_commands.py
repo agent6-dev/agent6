@@ -253,3 +253,80 @@ def test_effective_egress_unions_providers_and_allow_urls() -> None:
 
 def test_sandboxconfig_allow_urls_default() -> None:
     assert SandboxConfig().allow_urls == ()
+
+
+def test_concurrent_list_adds_lose_no_element(iso: Path) -> None:
+    """`config add` reads the current list well before it writes the extended
+    one; two concurrent adds both read the same base and the later publish
+    dropped the earlier element. The whole read-extend-revalidate cycle now
+    holds the target's lock."""
+    import threading
+
+    n = 2
+    per = 5
+    barrier = threading.Barrier(n)
+
+    def adder(i: int) -> None:
+        barrier.wait()
+        for j in range(per):
+            assert _run(["config", "add", "sandbox.allow_urls", f"http://h{i}-{j}"]) == 0
+
+    threads = [threading.Thread(target=adder, args=(i,), daemon=True) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=60)
+    data = _global_toml(iso)
+    sandbox = data.get("sandbox")
+    assert isinstance(sandbox, dict)
+    urls = set(sandbox.get("allow_urls", []))
+    assert urls == {f"http://h{i}-{j}" for i in range(n) for j in range(per)}
+
+
+def test_config_fill_serializes_against_a_concurrent_set(iso: Path) -> None:
+    """`config fill` read the effective config, then published it with an
+    unlocked, non-atomic write_text; a `config set` landing between the read
+    and the write was overwritten by the stale snapshot (lost update). fill now
+    holds the target's lock across load+publish, so a concurrent set blocks and
+    lands after -- its value survives."""
+    import threading
+    import time
+    from unittest import mock
+
+    from agent6.ui.cli import config_cmds
+
+    assert _run(["config", "set", "sandbox.memory_limit_mb", "512"]) == 0
+
+    fill_holds_lock = threading.Event()
+    release_fill = threading.Event()
+    real_load = config_cmds.load_config_or_exit
+    results: dict[str, object] = {}
+
+    def gated_load(root: Path, cfg: Path | None) -> object:
+        fill_holds_lock.set()  # reached inside `with locked_file(target)`
+        release_fill.wait(timeout=5)
+        return real_load(root, cfg)
+
+    def run_fill() -> None:
+        with mock.patch.object(config_cmds, "load_config_or_exit", gated_load):
+            results["fill"] = _run(["config", "fill", "--force"])
+
+    def run_set() -> None:
+        fill_holds_lock.wait(timeout=5)
+        results["set"] = _run(["config", "set", "sandbox.memory_limit_mb", "1234"])
+        results["set_done"] = True
+
+    tf = threading.Thread(target=run_fill, daemon=True)
+    ts = threading.Thread(target=run_set, daemon=True)
+    tf.start()
+    ts.start()
+    assert fill_holds_lock.wait(timeout=5)
+    time.sleep(0.3)  # let the set reach (and block on) the target lock
+    assert results.get("set_done") is None  # the set is queued behind fill
+    release_fill.set()
+    tf.join(timeout=10)
+    ts.join(timeout=10)
+    assert results["fill"] == 0 and results["set"] == 0
+    sandbox = _global_toml(iso)["sandbox"]
+    assert isinstance(sandbox, dict)
+    assert sandbox["memory_limit_mb"] == 1234  # the set survived

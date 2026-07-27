@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from agent6.config.model import ConfigError
-from agent6.portable import atomic_write
+from agent6.portable import atomic_write, locked_file
 
 
 def _write(path: Path, text: str) -> None:
@@ -59,6 +59,11 @@ def upsert_toml_table(path: Path, table: str, fields: dict[str, str | bool | Non
     Append-only-ish: we never round-trip the whole document through a TOML
     serializer (which would drop comments); we only rewrite the target
     table's span. ``None`` field values are omitted.
+
+    The read-surgery-publish cycle runs under ``locked_file`` (as do the
+    other writers below): two concurrent writers -- a CLI `config set` racing
+    the web/TUI config editor -- otherwise both read the same base text and
+    the second publish silently drops the first's update.
     """
     block_lines = [f"[{table}]"]
     for key, val in fields.items():
@@ -67,26 +72,27 @@ def upsert_toml_table(path: Path, table: str, fields: dict[str, str | bool | Non
         block_lines.append(f"{key} = {_toml_value(val)}")
     block = "\n".join(block_lines)
 
-    text = path.read_text(encoding="utf-8") if path.is_file() else ""
-    lines = text.splitlines()
-    header = f"[{table}]"
-    start: int | None = None
-    for i, line in enumerate(lines):
-        if line.strip() == header:
-            start = i
-            break
-    if start is None:
-        prefix = text if not text or text.endswith("\n") else text + "\n"
-        sep = "\n" if prefix and not prefix.endswith("\n\n") else ""
-        _write(path, prefix + sep + block + "\n")
-        return
-    end = len(lines)
-    for j in range(start + 1, len(lines)):
-        if lines[j].lstrip().startswith("["):
-            end = j
-            break
-    new_lines = lines[:start] + block.splitlines() + [""] + lines[end:]
-    _write(path, "\n".join(new_lines).rstrip("\n") + "\n")
+    with locked_file(path):
+        text = path.read_text(encoding="utf-8") if path.is_file() else ""
+        lines = text.splitlines()
+        header = f"[{table}]"
+        start: int | None = None
+        for i, line in enumerate(lines):
+            if line.strip() == header:
+                start = i
+                break
+        if start is None:
+            prefix = text if not text or text.endswith("\n") else text + "\n"
+            sep = "\n" if prefix and not prefix.endswith("\n\n") else ""
+            _write(path, prefix + sep + block + "\n")
+            return
+        end = len(lines)
+        for j in range(start + 1, len(lines)):
+            if lines[j].lstrip().startswith("["):
+                end = j
+                break
+        new_lines = lines[:start] + block.splitlines() + [""] + lines[end:]
+        _write(path, "\n".join(new_lines).rstrip("\n") + "\n")
 
 
 def format_toml_value(value: object) -> str:  # noqa: PLR0911
@@ -157,30 +163,31 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
     """
     table, leaf = _split_dotted_key(dotted_key)
     new_line = f"{leaf} = {format_toml_value(value)}"
-    text = path.read_text(encoding="utf-8") if path.is_file() else ""
-    lines = text.splitlines()
-    header = f"[{table}]"
-    start = next((i for i, line in enumerate(lines) if line.strip() == header), None)
-    if start is None:
-        prefix = text if (not text or text.endswith("\n")) else text + "\n"
-        sep = "\n" if prefix and not prefix.endswith("\n\n") else ""
-        _write(path, prefix + sep + header + "\n" + new_line + "\n")
-        return
-    end = next(
-        (j for j in range(start + 1, len(lines)) if lines[j].lstrip().startswith("[")),
-        len(lines),
-    )
-    leaf_re = re.compile(rf"^\s*{re.escape(leaf)}\s*=")
-    for j in range(start + 1, end):
-        if leaf_re.match(lines[j]):
-            lines[j] = new_line
-            _write(path, "\n".join(lines).rstrip("\n") + "\n")
+    with locked_file(path):
+        text = path.read_text(encoding="utf-8") if path.is_file() else ""
+        lines = text.splitlines()
+        header = f"[{table}]"
+        start = next((i for i, line in enumerate(lines) if line.strip() == header), None)
+        if start is None:
+            prefix = text if (not text or text.endswith("\n")) else text + "\n"
+            sep = "\n" if prefix and not prefix.endswith("\n\n") else ""
+            _write(path, prefix + sep + header + "\n" + new_line + "\n")
             return
-    insert_at = end
-    while insert_at - 1 > start and lines[insert_at - 1].strip() == "":
-        insert_at -= 1
-    lines[insert_at:insert_at] = [new_line]
-    _write(path, "\n".join(lines).rstrip("\n") + "\n")
+        end = next(
+            (j for j in range(start + 1, len(lines)) if lines[j].lstrip().startswith("[")),
+            len(lines),
+        )
+        leaf_re = re.compile(rf"^\s*{re.escape(leaf)}\s*=")
+        for j in range(start + 1, end):
+            if leaf_re.match(lines[j]):
+                lines[j] = new_line
+                _write(path, "\n".join(lines).rstrip("\n") + "\n")
+                return
+        insert_at = end
+        while insert_at - 1 > start and lines[insert_at - 1].strip() == "":
+            insert_at -= 1
+        lines[insert_at:insert_at] = [new_line]
+        _write(path, "\n".join(lines).rstrip("\n") + "\n")
 
 
 def _scan_toml_line(text: str, depth: int, triple: str | None) -> tuple[int, str | None]:
@@ -235,29 +242,30 @@ def remove_toml_leaf(path: Path, dotted_key: str) -> bool:
     (a dangling header otherwise accretes across unsets); a section that still
     holds comments is kept, they are the operator's."""
     table, leaf = _split_dotted_key(dotted_key)
-    if not path.is_file():
+    with locked_file(path):
+        if not path.is_file():
+            return False
+        lines = path.read_text(encoding="utf-8").splitlines()
+        header = f"[{table}]"
+        start = next((i for i, line in enumerate(lines) if line.strip() == header), None)
+        if start is None:
+            return False
+        end = next(
+            (j for j in range(start + 1, len(lines)) if lines[j].lstrip().startswith("[")),
+            len(lines),
+        )
+        leaf_re = re.compile(rf"^\s*{re.escape(leaf)}\s*=")
+        for j in range(start + 1, end):
+            if leaf_re.match(lines[j]):
+                span = _value_line_span(lines, j)
+                del lines[j : j + span]
+                remaining_end = end - span  # next section header shifted up by span
+                if all(not rest.strip() for rest in lines[start + 1 : remaining_end]):
+                    del lines[start:remaining_end]
+                out = "\n".join(lines).rstrip("\n") + "\n" if lines else ""
+                _write(path, out)
+                return True
         return False
-    lines = path.read_text(encoding="utf-8").splitlines()
-    header = f"[{table}]"
-    start = next((i for i, line in enumerate(lines) if line.strip() == header), None)
-    if start is None:
-        return False
-    end = next(
-        (j for j in range(start + 1, len(lines)) if lines[j].lstrip().startswith("[")),
-        len(lines),
-    )
-    leaf_re = re.compile(rf"^\s*{re.escape(leaf)}\s*=")
-    for j in range(start + 1, end):
-        if leaf_re.match(lines[j]):
-            span = _value_line_span(lines, j)
-            del lines[j : j + span]
-            remaining_end = end - span  # next section header shifted up by span
-            if all(not rest.strip() for rest in lines[start + 1 : remaining_end]):
-                del lines[start:remaining_end]
-            out = "\n".join(lines).rstrip("\n") + "\n" if lines else ""
-            _write(path, out)
-            return True
-    return False
 
 
 def remove_toml_table(path: Path, table: str) -> bool:
@@ -266,25 +274,26 @@ def remove_toml_table(path: Path, table: str) -> bool:
     ``config fix`` to drop an unknown/extra top-level table (e.g. a leftover
     ``[cli]`` from a removed feature), where deleting a single leaf would leave an
     empty-but-still-invalid table behind."""
-    if not path.is_file():
-        return False
-    lines = path.read_text(encoding="utf-8").splitlines()
-    kept: list[str] = []
-    dropping = False
-    removed = False
-    for line in lines:
-        stripped = line.strip()
-        if stripped.startswith("[") and stripped.endswith("]"):
-            name = stripped.strip("[]").strip()
-            dropping = name == table or name.startswith(f"{table}.")
-            removed = removed or dropping
-        if not dropping:
-            kept.append(line)
-    if not removed:
-        return False
-    out = "\n".join(kept).rstrip("\n") + "\n" if any(ln.strip() for ln in kept) else ""
-    _write(path, out)
-    return True
+    with locked_file(path):
+        if not path.is_file():
+            return False
+        lines = path.read_text(encoding="utf-8").splitlines()
+        kept: list[str] = []
+        dropping = False
+        removed = False
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                name = stripped.strip("[]").strip()
+                dropping = name == table or name.startswith(f"{table}.")
+                removed = removed or dropping
+            if not dropping:
+                kept.append(line)
+        if not removed:
+            return False
+        out = "\n".join(kept).rstrip("\n") + "\n" if any(ln.strip() for ln in kept) else ""
+        _write(path, out)
+        return True
 
 
 def read_toml_file(path: Path) -> dict[str, Any]:
