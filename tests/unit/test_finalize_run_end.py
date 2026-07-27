@@ -302,6 +302,46 @@ def test_finalize_auto_stash_reports_a_vanished_stash(
     assert "auto-stash not found" in capsys.readouterr().err
 
 
+def test_finalize_auto_stash_prints_a_failed_bystander_putback(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When the restore raises because a raced drop took a concurrent stash and
+    putting it back failed, finalization prints the recovery command and
+    finishes -- the loss must reach the operator, not crash the finalizer."""
+    import subprocess
+
+    from agent6.app import finalize as finalize_mod
+    from agent6.app.finalize import finalize_auto_stash
+    from agent6.git_ops import GitError, auto_stash_message, stash_all
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+
+    git("init", "-q", "-b", "main")
+    git("config", "user.email", "t@t")
+    git("config", "user.name", "t")
+    (repo / "base.txt").write_text("base\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "base")
+    (repo / "pre.txt").write_text("pre-run work\n", encoding="utf-8")
+    stash_all(repo, auto_stash_message("r1"))
+
+    def raising_restore(cwd: object, entry: object) -> bool:
+        raise GitError(
+            "a stash pushed concurrently ('x') was taken by a raced drop and putting"
+            " it back failed; restore it with:\n    git stash store -m 'x' abc123"
+        )
+
+    monkeypatch.setattr(finalize_mod, "restore_stash", raising_restore)
+    finalize_auto_stash(repo, base_branch="main", run_branch=None, auto_pop=True, run_id="r1")
+    err = capsys.readouterr().err
+    assert "restored your pre-run changes" in err
+    assert "git stash store" in err  # the recovery command reaches the operator
+
+
 def test_stash_recovery_hint_is_identity_stable(tmp_path: Path) -> None:
     """The hint a DETACHED run prints has the longest window of all -- the
     operator comes back hours later -- and it still named a positional

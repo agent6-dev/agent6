@@ -626,6 +626,49 @@ def test_find_stash_does_not_prefix_match_another_runs_stash(tmp_path: Path) -> 
     assert entry.ref == "stash@{1}"  # the l1 stash, not the newer l10 one
 
 
+def test_raced_drop_failed_putback_raises_with_recovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When the raced drop took a bystander's stash AND storing it back fails
+    (e.g. the stash ref lock is held by the very process that raced us), the
+    bystander's entry is gone from the list. That loss must not pass silently:
+    the restore raises, naming the orphaned commit and the exact
+    `git stash store` command that puts it back."""
+    _init_repo(tmp_path)
+    (tmp_path / "pre.txt").write_text("pre-run work\n", encoding="utf-8")
+    stash_all(tmp_path, auto_stash_message("sunny-otter-AAA111"))
+    entry = find_stash(tmp_path, auto_stash_message("sunny-otter-AAA111"))
+    assert entry is not None
+
+    real_run = git_ops._run  # pyright: ignore[reportPrivateUsage]
+    raced = False
+
+    def racing_run(
+        path: Path, *args: str, check: bool = True, env_extra: dict[str, str] | None = None
+    ) -> git_ops.CommandResult:
+        nonlocal raced
+        if args[:2] == ("stash", "store"):
+            return git_ops.CommandResult(
+                argv=("git", *args), returncode=1, stdout="", stderr="ref lock held", duration_s=0.0
+            )
+        res = real_run(path, *args, check=check, env_extra=env_extra)
+        if not raced and args[:2] == ("stash", "list"):
+            raced = True  # ours slides to stash@{1}; the recorded ref now names theirs
+            (tmp_path / "README.md").write_text("bystander work\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", str(tmp_path), "stash", "push", "-q", "-m", "bystander", "--"],
+                check=True,
+            )
+        return res
+
+    monkeypatch.setattr(git_ops, "_run", racing_run)
+    with pytest.raises(GitError) as excinfo:
+        restore_stash(tmp_path, entry)
+    msg = str(excinfo.value)
+    assert "git stash store" in msg  # the recovery command, ready to paste
+    assert "bystander" in msg  # names whose work went missing
+
+
 def test_git_runs_under_a_pinned_locale(tmp_path: Path) -> None:
     """The bystander rescue reads git's own sentence ("Dropped stash@{0} (sha)")
     to learn what it just dropped, and git translates that. On a host with git

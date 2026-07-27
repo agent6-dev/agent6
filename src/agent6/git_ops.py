@@ -373,7 +373,9 @@ def restore_stash(path: Path, stash: StashEntry) -> bool:
     On conflict (or any non-zero apply), leave everything in place so the
     user's work is never lost, and return False. We never `reset --hard` to
     undo a conflicted apply (refused), so a conflict leaves the markers for
-    the user to resolve with their stash still intact."""
+    the user to resolve with their stash still intact. Raises GitError when a
+    raced drop took a concurrent stash and putting it back failed; the apply
+    itself has landed by then, and the message carries the recovery command."""
     if not _run(path, "stash", "apply", stash.sha, check=False).ok:
         return False
     _drop_by_sha(path, stash.sha)
@@ -413,7 +415,17 @@ def _drop_by_sha(path: Path, sha: str) -> None:
     # A stash commit's own subject is the "On <branch>: <message>" the reflog
     # showed, so the restored entry reads exactly as it did before.
     subject = _run(path, "log", "-1", "--format=%s", taken, check=False).stdout.strip()
-    _run(path, "stash", "store", "-m", subject or "restored by agent6", taken, check=False)
+    subject = subject or "restored by agent6"
+    store = _run(path, "stash", "store", "-m", subject, taken, check=False)
+    if not store.ok:
+        # The bystander's entry is already gone from the list; its commit
+        # still exists under `taken`, so the message carries the recovery.
+        detail = store.stderr.strip() or store.stdout.strip() or f"exit {store.returncode}"
+        raise GitError(
+            f"a stash pushed concurrently ({subject!r}) was taken by a raced drop and "
+            f"putting it back failed ({detail}); restore it with:\n"
+            f"    git stash store -m {subject!r} {taken}"
+        )
 
 
 def branch_exists(path: Path, name: str) -> bool:

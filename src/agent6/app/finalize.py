@@ -326,7 +326,17 @@ def finalize_auto_stash(
                 file=sys.stderr,
             )
             return
-    if restore_stash(cwd, entry):
+    try:
+        restored = restore_stash(cwd, entry)
+    except GitError as exc:
+        # The apply itself landed; what failed is putting back a concurrent
+        # stash the raced drop displaced. Say both -- finalization continues.
+        print(
+            f"[agent6] restored your pre-run changes onto {base_branch}, but {exc}",
+            file=sys.stderr,
+        )
+        return
+    if restored:
         print(f"[agent6] restored your pre-run changes onto {base_branch}", file=sys.stderr)
     else:
         print(
