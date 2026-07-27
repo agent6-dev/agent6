@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
@@ -607,6 +608,26 @@ def test_restore_stash_raced_drop_puts_the_bystander_back(
     # Ours survives too: re-resolving to drop it again would race the same way,
     # so a raced restore leaks its own stash rather than risk a second bystander.
     assert auto_stash_message("sunny-otter-AAA111") in listing
+
+
+def test_git_runs_under_a_pinned_locale(tmp_path: Path) -> None:
+    """The bystander rescue reads git's own sentence ("Dropped stash@{0} (sha)")
+    to learn what it just dropped, and git translates that. On a host with git
+    l10n and a non-English LANG the match failed AFTER the drop had happened,
+    so the bystander's stash was destroyed with no record of it."""
+    _init_repo(tmp_path)
+    seen: dict[str, str] = {}
+    real = subprocess.run
+
+    def capture(argv: object, **kwargs: object) -> object:
+        env = kwargs.get("env")
+        if isinstance(env, dict):
+            seen.update({k: v for k, v in env.items() if k in ("LC_ALL", "LANG")})  # pyright: ignore[reportUnknownArgumentType]
+        return real(argv, **kwargs)  # pyright: ignore[reportArgumentType, reportCallIssue]
+
+    with mock.patch.object(git_ops.subprocess, "run", capture):
+        git_ops._run(tmp_path, "stash", "list", check=False)  # pyright: ignore[reportPrivateUsage]
+    assert seen.get("LC_ALL") == "C"
 
 
 def test_find_stash_missing_returns_none(tmp_path: Path) -> None:

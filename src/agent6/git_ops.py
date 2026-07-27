@@ -174,7 +174,9 @@ def _run(
     # GIT_TERMINAL_PROMPT=0: a git op that would otherwise block on a
     # username/password prompt (a network remote without cached creds) fails
     # fast instead of hanging with no output. Local ops are unaffected.
-    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", **(env_extra or {})}
+    # LC_ALL=C: git translates its human-readable output, and the bystander
+    # rescue reads one of those sentences to learn which stash it dropped.
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C", **(env_extra or {})}
     hardening = git_hardening_flags()
     # A poisoned `.git/config` reaches a host command two ways on a diff/show:
     # `diff.external` and per-file `diff.<d>.textconv`. The `-c` overrides above
