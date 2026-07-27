@@ -51,7 +51,7 @@ from agent6.git_ops import GitError, diff_since
 from agent6.git_ops import status as git_status
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
 from agent6.paths import cache_dir, state_dir
-from agent6.runs.ipc import request_stop, worker_is_alive
+from agent6.runs.ipc import request_stop, steer_answer_is_abort, worker_is_alive
 from agent6.runs.manifest import CompareStamp, ManifestError, read_manifest
 from agent6.viewmodel import summarize_run_dir
 from agent6.workflows.judge import CandidateBrief
@@ -295,15 +295,46 @@ def _lane_terminal(run_dir: Path, status: str, worker_is_alive: Callable[[Path],
 
 
 def _await_lane(
-    res: LaneResult, *, runtime: LaneRuntime, poll_interval_s: float = _POLL_INTERVAL_S
-) -> None:
-    """Block until *res*'s lane is terminal (`_lane_terminal`), awaited on its
-    REAL run dir. Same gate as the fan-out's `_await_lanes`, for a single lane."""
+    res: LaneResult,
+    *,
+    runtime: LaneRuntime,
+    poll_interval_s: float = _POLL_INTERVAL_S,
+    should_stop: Callable[[], bool] | None = None,
+) -> bool:
+    """Block until *res*'s lane is terminal (True), awaited on its REAL run
+    dir, or until *should_stop* goes true first (False): the coordinator's
+    abort channel must be able to interrupt a group await that otherwise
+    blocks until every lane ends. Same gate as the fan-out's `_await_lanes`,
+    for a single lane."""
     while True:
         summary = summarize_run_dir(res.run_dir)
         if _lane_terminal(res.run_dir, summary.status, worker_is_alive):
-            return
+            return True
+        if should_stop is not None and should_stop():
+            return False
         time.sleep(poll_interval_s)
+
+
+def _drain_lane(
+    res: LaneResult, *, poll_interval_s: float, hard_stop: threading.Event | None
+) -> bool:
+    """Bounded post-stop grace (mirrors the fan-out's stop_and_drain): True when
+    the lane lands terminal in time, so its finished work still imports; False
+    to leave it running un-imported. A hard stop (process teardown) skips the
+    wait."""
+    deadline = time.monotonic() + _STOP_GRACE_S
+    while time.monotonic() < deadline:
+        if hard_stop is not None and hard_stop.is_set():
+            return False
+        summary = summarize_run_dir(res.run_dir)
+        if _lane_terminal(res.run_dir, summary.status, worker_is_alive):
+            return True
+        if hard_stop is not None:
+            if hard_stop.wait(poll_interval_s):
+                return False
+        else:
+            time.sleep(poll_interval_s)
+    return False
 
 
 def run_lane_to_completion(
@@ -322,6 +353,8 @@ def run_lane_to_completion(
     import_lock: threading.Lock | None = None,
     poll_interval_s: float = _POLL_INTERVAL_S,
     reporter: Reporter = STDIO_REPORTER,
+    should_stop: Callable[[], bool] | None = None,
+    hard_stop: threading.Event | None = None,
 ) -> LaneResult:
     """Run ONE subordinate lane fully and import it into *origin*.
 
@@ -335,7 +368,12 @@ def run_lane_to_completion(
     git-mutating import step across that group (concurrent fetches into one repo
     race on refs/objects). *host_lane_launch* (set when the coordinator is inside
     the egress netns) routes the default bridge spawner's lane launch through the
-    host spawner. Tests inject a fake *spawner*."""
+    host spawner. Tests inject a fake *spawner*.
+
+    *should_stop* interrupts the await (the coordinator's abort channel or the
+    group teardown): the lane gets a clean stop request, then a bounded grace
+    (skipped once *hard_stop* is set) so a finishing lane still imports;
+    otherwise it is left running detached and NOT imported (`ok=False`)."""
     if spawner is None:
         spawner = functools.partial(
             bridge_spawner,
@@ -353,7 +391,21 @@ def run_lane_to_completion(
     # a hub can see it and answer its approvals/asks while it runs, not just at
     # import. Dropped just before import so import_run can place the real dir.
     _symlink_lane(origin_state, res)
-    _await_lane(res, runtime=runtime, poll_interval_s=poll_interval_s)
+    if not _await_lane(
+        res, runtime=runtime, poll_interval_s=poll_interval_s, should_stop=should_stop
+    ):
+        request_stop(res.run_dir)
+        if not _drain_lane(res, poll_interval_s=poll_interval_s, hard_stop=hard_stop):
+            # Still running: keep the clone + live symlink (they hold the only
+            # copy of its branch until an import) and report the truth.
+            return LaneResult(
+                spec=spec,
+                run_dir=res.run_dir,
+                branch=res.branch,
+                ok=False,
+                error="interrupted; lane was asked to stop and keeps running"
+                " detached; not imported",
+            )
     lock = import_lock if import_lock is not None else contextlib.nullcontext()
     link = _lane_link(origin_state, res.spec.run_id)
     had_link = link.is_symlink()
@@ -441,6 +493,16 @@ def build_lane_spawner(
         ]
         (origin_state / "runs").mkdir(parents=True, exist_ok=True)
         import_lock = threading.Lock()
+        coord_dir = origin_state / "runs" / coordinator_run_id
+        hard_stop = threading.Event()
+
+        def should_stop() -> bool:
+            # The coordinator's immediate-stop channel: a front-end Stop (or
+            # Ctrl-C steer -> abort) writes the "abort" steer answer, which the
+            # loop consumes at the boundary AFTER this dispatch returns.
+            # Without this poll, a stop during a /parallel group sat blocked
+            # until every lane finished on its own.
+            return hard_stop.is_set() or steer_answer_is_abort(coord_dir)
 
         def one(pair: tuple[LaneSpec, LaneTask]) -> LaneResult:
             spec, lane = pair
@@ -457,12 +519,28 @@ def build_lane_spawner(
                 host_lane_launch=host_lane_launch,
                 import_lock=import_lock,
                 reporter=reporter,
+                should_stop=should_stop,
+                hard_stop=hard_stop,
             )
 
         pairs = list(zip(specs, lanes, strict=True))
         if len(pairs) > 1:
-            with ThreadPoolExecutor(max_workers=len(pairs)) as pool:
-                return list(pool.map(one, pairs))  # map preserves input order
+            # Not a with-block: on KeyboardInterrupt __exit__ would join every
+            # lane await (each blocked until its lane ends on its own) -- the
+            # pool "remained alive after SIGINT and required termination".
+            pool = ThreadPoolExecutor(max_workers=len(pairs))
+            try:
+                futures = [pool.submit(one, p) for p in pairs]
+                results = [f.result() for f in futures]  # submit order = lane order
+            except BaseException:
+                # Lane threads notice hard_stop within a poll tick, request a
+                # clean stop on their lanes, and exit; the lanes themselves
+                # keep running detached.
+                hard_stop.set()
+                pool.shutdown(wait=False, cancel_futures=True)
+                raise
+            pool.shutdown(wait=True)
+            return results
         return [one(p) for p in pairs]
 
     return dispatch

@@ -1325,3 +1325,77 @@ def test_build_coordinator_spawner_forwards_auto_approve(
     )
 
     assert captured == [True, False]
+
+
+# ---------------------------------------------------------------------------
+# Interrupting a lane await (coordinator stop channel / group teardown)
+# ---------------------------------------------------------------------------
+
+
+def test_await_lane_returns_when_should_stop_fires(tmp_path: Path, runtime: LaneRuntime) -> None:
+    """The single-lane await honors should_stop: without it, the poll loop
+    blocked until the lane ended on its own, so a coordinator stop (or Ctrl-C
+    teardown) sat on a lane that might run for hours."""
+    import os as _os
+
+    lane_dir = tmp_path / "lane-run"
+    lane_dir.mkdir()
+    _write_fake_run(lane_dir / "sub", "t", status="running", cost=0.0)
+    from agent6.runs.ipc import write_worker_pid
+
+    run_dir = lane_dir / "sub"
+    write_worker_pid(run_dir, _os.getpid())  # a live lane: never terminal
+    spec = LaneSpec(lane=1, run_id="co-p1-l1", workdir=tmp_path / "w", model=None)
+    res = LaneResult(spec=spec, run_dir=run_dir, branch="agent6/x", ok=True, error="")
+    calls = {"n": 0}
+
+    def stop_after_two() -> bool:
+        calls["n"] += 1
+        return calls["n"] >= 2
+
+    assert (
+        parallel._await_lane(  # pyright: ignore[reportPrivateUsage]
+            res, runtime=runtime, poll_interval_s=0.01, should_stop=stop_after_two
+        )
+        is False
+    )
+
+
+def test_run_lane_to_completion_interrupted_stops_lane_and_skips_import(
+    origin: Path, tmp_path: Path, runtime: LaneRuntime
+) -> None:
+    """An interrupted await requests a clean stop on the lane and returns
+    ok=False WITHOUT importing (the lane keeps running detached); with
+    hard_stop set the bounded grace is skipped so teardown is prompt."""
+    import os as _os
+    import threading as _threading
+
+    from agent6.runs.ipc import stop_request_pending, write_worker_pid
+
+    lane_dir = tmp_path / "lane-run" / "sub"
+    _write_fake_run(lane_dir, "t", status="running", cost=0.0)
+    write_worker_pid(lane_dir, _os.getpid())  # live forever from the test's view
+    spec = LaneSpec(lane=1, run_id="co-p1-l1", workdir=tmp_path / "w", model=None)
+
+    def fake_spawner(spec: LaneSpec, task: str) -> LaneResult:
+        return LaneResult(spec=spec, run_dir=lane_dir, branch="agent6/x", ok=True, error="")
+
+    hard_stop = _threading.Event()
+    hard_stop.set()
+    res = parallel.run_lane_to_completion(
+        spec,
+        "do it",
+        cfg=Config(),
+        origin=origin,
+        origin_state=tmp_path / "ostate",
+        group="p1",
+        runtime=runtime,
+        spawner=fake_spawner,
+        poll_interval_s=0.01,
+        should_stop=hard_stop.is_set,
+        hard_stop=hard_stop,
+    )
+    assert res.ok is False
+    assert "interrupted" in res.error
+    assert stop_request_pending(lane_dir) is True  # the lane was asked to stop
+    assert lane_dir.is_dir()  # nothing was moved/imported
