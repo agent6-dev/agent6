@@ -338,14 +338,17 @@ def test_streaming_finish_reason_without_done_is_complete() -> None:
 
 
 def test_streaming_with_budget_requires_usage_trailer() -> None:
+    """A gateway that completes the stream ([DONE]) but meters nothing is a
+    permanent misconfiguration: fail closed and non-retryable."""
     provider = OpenAIProvider(
         api_key="sk-test",
         model="kimi",
         budget=BudgetTracker(max_input_tokens=1, max_output_tokens=1),
     )
-    lines = _chunk(
-        {"choices": [{"index": 0, "delta": {"content": "done"}, "finish_reason": "stop"}]}
-    )
+    lines = [
+        *_chunk({"choices": [{"index": 0, "delta": {"content": "done"}, "finish_reason": "stop"}]}),
+        "data: [DONE]",
+    ]
 
     def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
         return _FakeStreamResponse(status_code=200, lines=lines)
@@ -362,6 +365,37 @@ def test_streaming_with_budget_requires_usage_trailer() -> None:
     assert exc_info.value.status_code == 422
     assert provider.budget is not None
     assert provider.budget.snapshot().per_model == {}
+
+
+def test_streaming_cut_before_the_usage_trailer_is_retryable() -> None:
+    """stream_options.include_usage is always set, so the usage chunk arrives
+    AFTER finish_reason and before [DONE]. A connection dropped in that window
+    is a truncated stream -- it was classified as a permanent 422 (the
+    no-usage-accounting error), so the run died on a blip every other
+    truncation retries through."""
+    provider = OpenAIProvider(
+        api_key="sk-test",
+        model="kimi",
+        budget=BudgetTracker(max_input_tokens=1000, max_output_tokens=1000),
+    )
+    lines = _chunk(  # finish_reason, then the connection drops: no usage, no [DONE]
+        {"choices": [{"index": 0, "delta": {"content": "done"}, "finish_reason": "stop"}]}
+    )
+
+    def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
+        return _FakeStreamResponse(status_code=200, lines=lines)
+
+    with (
+        mock.patch("httpx2.stream", side_effect=fake_stream),
+        pytest.raises(ProviderError) as exc_info,
+    ):
+        provider.call(
+            system="sys",
+            messages=[{"role": "user", "content": "x"}],
+            text_delta_callback=lambda _p: None,
+        )
+    assert exc_info.value.status_code != 422  # retryable, not the permanent shape
+    assert "truncat" in str(exc_info.value).lower() or "cut off" in str(exc_info.value).lower()
 
 
 def test_no_callback_does_not_stream() -> None:

@@ -737,6 +737,15 @@ class OpenAIProvider:
         }
         call.record(status=200, response=synthesised)
         if self.budget is not None:
+            if not done_seen and not usage:
+                # include_usage is always set, so the usage chunk arrives AFTER
+                # finish_reason and before [DONE]: a stream that stopped in that
+                # window was cut, not unmetered. Raise the retryable truncation
+                # error rather than the permanent no-accounting 422.
+                raise ProviderError(
+                    f"OpenAI stream from {url} was cut off before its usage trailer"
+                    " (finish_reason seen, no [DONE], no usage); truncated response."
+                )
             _require_metered_usage(usage, source="OpenAI stream")
         parsed = parse_response(synthesised, tool_names=tool_names, tool_schemas=tool_schemas)
         if self.budget is not None:
