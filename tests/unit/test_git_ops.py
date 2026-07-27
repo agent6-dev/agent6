@@ -610,6 +610,22 @@ def test_restore_stash_raced_drop_puts_the_bystander_back(
     assert auto_stash_message("sunny-otter-AAA111") in listing
 
 
+def test_find_stash_does_not_prefix_match_another_runs_stash(tmp_path: Path) -> None:
+    """Lane run ids are ordinal (`…-l1`, `…-l10`), so one run's auto-stash
+    message is a PREFIX of another's stash subject; the substring lookup
+    returned the newer `-l10` stash when asked for `-l1`, and finalization
+    then applied and dropped the wrong work. The lookup must match the
+    pushed message exactly."""
+    _init_repo(tmp_path)
+    (tmp_path / "one.txt").write_text("lane l1 work\n", encoding="utf-8")
+    stash_all(tmp_path, auto_stash_message("fanout-l1"))
+    (tmp_path / "ten.txt").write_text("lane l10 work\n", encoding="utf-8")
+    stash_all(tmp_path, auto_stash_message("fanout-l10"))  # newer: listed first
+    entry = find_stash(tmp_path, auto_stash_message("fanout-l1"))
+    assert entry is not None
+    assert entry.ref == "stash@{1}"  # the l1 stash, not the newer l10 one
+
+
 def test_git_runs_under_a_pinned_locale(tmp_path: Path) -> None:
     """The bystander rescue reads git's own sentence ("Dropped stash@{0} (sha)")
     to learn what it just dropped, and git translates that. On a host with git

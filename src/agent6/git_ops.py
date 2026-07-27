@@ -331,14 +331,16 @@ class StashEntry:
 
 
 def find_stash(path: Path, message: str) -> StashEntry | None:
-    """The newest stash whose subject carries *message*, or None.
-    ``git stash push -m MSG`` records ``On <branch>: MSG``, so a substring
-    match on the subject finds it."""
+    """The newest stash pushed with exactly *message*, or None.
+    ``git stash push -m MSG`` records ``On <branch>: MSG`` and ':' cannot
+    appear in a ref name, so anchoring ``": MSG"`` at the end matches the
+    whole message -- lane run ids are ordinal (``…-l1``, ``…-l10``), so one
+    message can be a prefix of another."""
     res = _run(path, "stash", "list", "--format=%gd%x09%H%x09%gs", check=False)
     for line in res.stdout.splitlines():
         ref, _, rest = line.partition("\t")
         sha, _, subject = rest.partition("\t")
-        if message in subject:
+        if subject.endswith(f": {message}"):
             return StashEntry(ref=ref, sha=sha)
     return None
 
