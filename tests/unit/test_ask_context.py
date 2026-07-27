@@ -397,6 +397,34 @@ def test_ask_run_digest_pruned_branch_falls_back_to_merge_stamp(
     assert "run branch pruned" in digest
 
 
+def test_ask_run_digest_fast_forward_merge_keeps_earlier_commits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fast-forwarded run's merge stamp IS the run's tip commit, so the
+    `sha^..sha` fallback seeded only the LAST commit's diff: a two-commit run
+    lost its first change from the digest. The stamp's `tip` names that case
+    (sha == tip), and the digest diffs base..merged instead."""
+    rid = _make_run(tmp_path)  # leaves one commit on agent6/run
+    run_dir = resolved_state_dir(tmp_path) / "runs" / rid
+    m = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    (tmp_path / "second.py").write_text("y = 3  # second run commit\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "second run change")
+    tip = _git(tmp_path, "rev-parse", "HEAD")
+    _git(tmp_path, "checkout", "-q", "-b", "main-line", m["base_sha"])
+    _git(tmp_path, "merge", "-q", "--ff-only", "agent6/run")
+    assert _git(tmp_path, "rev-parse", "HEAD") == tip  # a true fast-forward
+    _git(tmp_path, "branch", "-D", "agent6/run")
+    m["merged"] = {"into": "main-line", "sha": tip, "tip": tip, "ts": "2026-07-26T00:00:00Z"}
+    (run_dir / "manifest.json").write_text(json.dumps(m), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    digest = _build_ask_run_digest(tmp_path, rid, latest=False)
+    assert digest is not None
+    assert "second run commit" in digest
+    assert "changed by the run" in digest  # the FIRST commit is not dropped
+    assert "fast-forward" in digest  # the label says what the range is
+
+
 def test_ask_run_digest_does_not_call_a_present_branch_pruned(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

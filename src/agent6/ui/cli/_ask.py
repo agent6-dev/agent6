@@ -19,7 +19,7 @@ from agent6.runs.id import (
     resolve_run_id,
 )
 from agent6.runs.layout import RunLayout
-from agent6.runs.manifest import ManifestError, read_manifest
+from agent6.runs.manifest import ManifestError, RunManifest, read_manifest
 from agent6.ui.cli._common import (
     _runs_dir,
     _state_dir,
@@ -135,6 +135,34 @@ def _git_diff_text(cwd: Path, range_spec: str) -> tuple[int, str, str]:
     )
 
 
+def _diff_via_merge_stamp(
+    cwd: Path, manifest: RunManifest, base_sha: str, run_branch: str | None
+) -> tuple[str, int, str, str] | None:
+    """(label, rc, diff, err) via the manifest's merge stamp, for a primary
+    range that is unreachable -- usually a run branch pruned after its merge,
+    but a gc'd base_sha does it with the branch still there. None without a
+    stamp. The label names which it was, since the model may go read the
+    branch."""
+    merged = manifest.merged
+    merged_sha = merged.sha if merged else ""
+    if not (run_branch and merged_sha):
+        return None
+    gone = branch_tip_sha(cwd, run_branch) is None
+    why = "run branch pruned" if gone else "base unreachable"
+    is_ff = merged is not None and merged_sha == merged.tip
+    if is_ff:
+        # Fast-forwarded: the stamped commit IS the run's tip, so its ^.. diff
+        # is the last commit only. The full run is base..merged, both in the
+        # base branch's history.
+        label = f"{base_sha[:12]}..{merged_sha[:12]} ({why}; fast-forward merge)"
+        rc, diff, err = _git_diff_text(cwd, f"{base_sha}..{merged_sha}")
+        if rc == 0:
+            return label, rc, diff, err
+    partial = "; last run commit only" if is_ff else ""
+    label = f"{merged_sha[:12]}^..{merged_sha[:12]} ({why}; merge commit{partial})"
+    return label, *_git_diff_text(cwd, f"{merged_sha}^..{merged_sha}")
+
+
 def build_ask_run_digest(cwd: Path, run_id: str, *, latest: bool) -> str | None:
     """Markdown digest of a prior run to seed an `ask`, or None (after printing
     an error) when the run can't be resolved."""
@@ -170,16 +198,10 @@ def build_ask_run_digest(cwd: Path, run_id: str, *, latest: bool) -> str | None:
     diff_body = "(no diff: the run recorded no base_sha)"
     if base_sha:
         rc, diff, err = _git_diff_text(cwd, f"{base_sha}..{head_ref}")
-        merged_sha = manifest.merged.sha if manifest.merged else ""
-        if rc != 0 and run_branch and merged_sha:
-            # The range is unreachable -- usually a run branch pruned after its
-            # merge, but a gc'd base_sha does it with the branch still there.
-            # The merge stamp's commit carries the run's content either way; the
-            # label names which it was, since the model may go read the branch.
-            gone = branch_tip_sha(cwd, run_branch) is None
-            why = "run branch pruned" if gone else "base unreachable"
-            diff_label = f"{merged_sha[:12]}^..{merged_sha[:12]} ({why}; merge commit)"
-            rc, diff, err = _git_diff_text(cwd, f"{merged_sha}^..{merged_sha}")
+        if rc != 0:
+            fallback = _diff_via_merge_stamp(cwd, manifest, base_sha, run_branch)
+            if fallback is not None:
+                diff_label, rc, diff, err = fallback
         if rc != 0:
             # Loud, never an empty diff block the model reads as "no changes".
             diff_body = f"(diff unavailable: git diff exited {rc}: {err.strip()[:300]})"
