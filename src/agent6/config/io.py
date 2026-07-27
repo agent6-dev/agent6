@@ -180,7 +180,10 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
         leaf_re = re.compile(rf"^\s*{re.escape(leaf)}\s*=")
         for j in range(start + 1, end):
             if leaf_re.match(lines[j]):
-                lines[j] = new_line
+                # Replace the WHOLE value: a multi-line array or triple-quoted
+                # string spans several lines, and rewriting only the opening one
+                # orphans the rest into unparseable TOML.
+                lines[j : j + _value_line_span(lines, j)] = [new_line]
                 _write(path, "\n".join(lines).rstrip("\n") + "\n")
                 return
         insert_at = end

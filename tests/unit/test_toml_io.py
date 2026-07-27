@@ -145,3 +145,28 @@ def test_concurrent_leaf_writes_lose_no_update(tmp_path: Path) -> None:
         f"{table}.{leaf}" for table, leaves in data.items() for leaf in leaves
     }
     assert not (tmp_path / "config.toml.lock").exists()
+
+
+def test_upsert_toml_leaf_replaces_a_whole_multiline_value(tmp_path: Path) -> None:
+    """A multi-line value must be replaced whole. Rewriting only its opening line
+    orphaned the rest, producing unparseable TOML from every config writer
+    (`config set`/`add`/`remove`, `connect`, the TUI and web editors) --
+    multi-line arrays are the hand-written form for allow_urls, personas,
+    verify_command."""
+    path = tmp_path / "config.toml"
+    path.write_text(
+        '[sandbox]\nallow_urls = [\n  "https://a.example",\n]\nprofile = "strict"\n',
+        encoding="utf-8",
+    )
+    upsert_toml_leaf(path, "sandbox.allow_urls", ["https://a.example", "https://b.example"])
+    data = tomllib.loads(path.read_text(encoding="utf-8"))  # parses at all
+    assert data["sandbox"]["allow_urls"] == ["https://a.example", "https://b.example"]
+    assert data["sandbox"]["profile"] == "strict"  # the sibling key survived
+
+
+def test_upsert_toml_leaf_replaces_a_whole_multiline_string(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text('[a]\nx = """\nmultiline\nstring\n"""\ny = 1\n', encoding="utf-8")
+    upsert_toml_leaf(path, "a.x", "flat")
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    assert data["a"] == {"x": "flat", "y": 1}
