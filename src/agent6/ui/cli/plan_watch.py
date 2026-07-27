@@ -208,14 +208,15 @@ def _print_parallel_compare(manifest: RunManifest) -> None:
         print(f"  judge: {rationale}")
 
 
-def _status_state(scan: LogScan, *, alive: bool, last_age: float | None) -> str:
+def _status_state(scan: LogScan, *, alive: bool, last_age: float | None, parked: bool) -> str:
     """The one-line state `runs show` prints (and emits as --json "state").
 
     Leads with the SAME words the listing uses where they overlap (status_word
     for the finished outcome, "waiting (needs answer)" for a run blocked on an
-    unanswered approval/question via OPERATOR_PROMPT_EVENTS), so the two
-    surfaces can't disagree -- an operator told "likely a provider call" while
-    the run sat blocked on THEM waited on the wrong party."""
+    unanswered approval/question via OPERATOR_PROMPT_EVENTS, "parked" for a
+    submission the busy-checkout refusal saved), so the two surfaces can't
+    disagree -- an operator told "likely a provider call" while the run sat
+    blocked on THEM waited on the wrong party."""
     if scan.finished:
         word, _ = status_word(finished=True, all_passed=scan.all_passed, end_reason=scan.end_reason)
         return f"{word} ({scan.end_reason})"
@@ -226,7 +227,10 @@ def _status_state(scan: LogScan, *, alive: bool, last_age: float | None) -> str:
     if alive:
         return "running"
     if scan.last_ep is None:
-        return "unknown (no events yet)"
+        # Parked at submission (the checkout was busy; see acquire_repo_writer):
+        # a saved, resumable run, not a husk -- and `resume` is the one action
+        # that starts it, so the state has to name it.
+        return "parked (resume to start)" if parked else "unknown (no events yet)"
     return "stopped (no worker, no run.end: likely crashed or killed)"
 
 
@@ -264,7 +268,7 @@ def _cmd_status(run_id: str, *, as_json: bool = False) -> int:
         else None
     )
 
-    state = _status_state(scan, alive=alive, last_age=last_age)
+    state = _status_state(scan, alive=alive, last_age=last_age, parked=bool(manifest.parked_task))
 
     worker = manifest.models.worker
     model = (worker.model if worker else "") or "?"

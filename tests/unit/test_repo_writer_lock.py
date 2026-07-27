@@ -235,3 +235,34 @@ def test_web_new_work_preflight_refuses_while_checkout_busy(
     assert run_id is None
     assert "run-LIVE" in err and "checkout" in err
     assert spawned == []
+
+
+def test_runs_show_reports_a_parked_run_as_parked(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The refusal hands the operator a run id to resume, so `runs show` on it has
+    to lead with the same word the listing uses. A parked run is a saved,
+    resumable submission -- never "unknown (no events yet)", which reads as a
+    broken husk and hides the one action that starts it."""
+    from agent6.app.run import run_task
+    from agent6.ui.cli.plan_watch import _cmd_status  # pyright: ignore[reportPrivateUsage]
+
+    state = resolved_state_dir(repo)
+    holder_fd = acquire_repo_writer(state, "run-LIVE")
+    try:
+        rc = run_task(
+            _load_cfg(),
+            "add a retry to the fetch helper",
+            frontend=MagicMock(),
+            run_id="run-PARKED",
+            mode="run",
+        )
+    finally:
+        release_single_writer(holder_fd)
+    assert rc == 2
+    capsys.readouterr()  # drop the refusal message
+
+    assert _cmd_status("run-PARKED") == 0
+    out = capsys.readouterr().out
+    assert "parked" in out
+    assert "unknown" not in out
