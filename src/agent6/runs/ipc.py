@@ -25,6 +25,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import subprocess
 import time
 from collections.abc import Sequence
 from pathlib import Path
@@ -116,10 +117,54 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
+# /proc exists on Linux; on macOS `ps` answers the same question instead.
+_HAS_PROC = Path("/proc").is_dir()
+
+
+def _ps_start_time(pid: int) -> str:
+    """Start-time identity via ``ps -o lstart=`` ("" for a dead pid or a host
+    without ps). Fixed argv over a pid agent6 itself recorded, never LLM
+    output; see the subprocess allowlist in docs/security.md."""
+    try:
+        proc = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "lstart="],
+            capture_output=True,
+            check=False,
+            timeout=5.0,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if proc.returncode != 0:
+        return ""
+    return proc.stdout.decode(errors="replace").strip()
+
+
+def _proc_start_time(pid: int) -> str:
+    """Start-time identity for *pid*, or "" when it cannot be read (the
+    process just exited): field 22 of /proc/<pid>/stat on Linux, ``ps`` where
+    /proc is absent (macOS -- whose small pid_max recycles pids fast, so the
+    plain kill-0 probe misread reuse as liveness there too). The comm field
+    may contain spaces/parens, so split after the LAST ')'."""
+    if not _HAS_PROC:
+        return _ps_start_time(pid)
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text(encoding="ascii", errors="replace")
+    except OSError:
+        return ""
+    rest = stat.rpartition(")")[2].split()
+    return rest[19] if len(rest) > 19 else ""
+
+
 def write_worker_pid(run_dir: Path, pid: int) -> None:
     """Record the run's worker pid so `agent6 runs show` can probe liveness even
-    while the worker is blocked in a long provider call (no events emitted)."""
-    (run_dir / WORKER_PID_FILE).write_text(str(pid), encoding="utf-8")
+    while the worker is blocked in a long provider call (no events emitted).
+    The start-time identity rides along after the pid (/proc ticks on Linux,
+    `ps` lstart text elsewhere) so a recycled pid -- same number, different
+    process, after a SIGKILL'd worker left the file behind -- cannot make a
+    dead run read running forever, which blocked resume and hung the
+    /parallel lane await."""
+    record = f"{pid} {_proc_start_time(pid)}".rstrip()
+    (run_dir / WORKER_PID_FILE).write_text(record, encoding="utf-8")
 
 
 def clear_worker_pid(run_dir: Path) -> None:
@@ -127,17 +172,34 @@ def clear_worker_pid(run_dir: Path) -> None:
         (run_dir / WORKER_PID_FILE).unlink()
 
 
-def read_worker_pid(run_dir: Path) -> int | None:
+def _read_pid_record(run_dir: Path) -> tuple[int, str] | None:
+    """The recorded ``(pid, start_time)``; start_time is "" when none was
+    recorded. Split once only: the `ps` lstart identity contains spaces."""
     try:
-        return int((run_dir / WORKER_PID_FILE).read_text(encoding="utf-8").strip())
-    except (OSError, ValueError):
+        tokens = (run_dir / WORKER_PID_FILE).read_text(encoding="utf-8").split(maxsplit=1)
+        return int(tokens[0]), tokens[1].strip() if len(tokens) > 1 else ""
+    except (OSError, ValueError, IndexError):
         return None
 
 
+def read_worker_pid(run_dir: Path) -> int | None:
+    rec = _read_pid_record(run_dir)
+    return None if rec is None else rec[0]
+
+
 def worker_is_alive(run_dir: Path) -> bool:
-    """True iff the run dir has a worker.pid pointing at a live process."""
-    pid = read_worker_pid(run_dir)
-    return pid is not None and _pid_alive(pid)
+    """True iff worker.pid points at a live process that IS the recorded worker:
+    the pid is alive AND, when a start time was recorded, today's start time
+    matches. A recycled pid fails the match and reads dead."""
+    rec = _read_pid_record(run_dir)
+    if rec is None:
+        return False
+    pid, recorded_start = rec
+    if not _pid_alive(pid):
+        return False
+    if not recorded_start:
+        return True
+    return _proc_start_time(pid) == recorded_start
 
 
 def frontend_is_live(run_dir: Path) -> bool:

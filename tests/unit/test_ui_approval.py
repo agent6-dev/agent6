@@ -195,3 +195,59 @@ def test_answer_landing_at_deadline_is_consumed(
     monkeypatch.setattr(ipc, "time", _Clock())
     assert ipc.read_answer(tmp_path, "abc", timeout_s=0.05, poll_s=0.1) is True
     assert not (tmp_path / "approvals" / "abc.answer").exists()
+
+
+@pytest.mark.skipif(not Path("/proc/self/stat").exists(), reason="needs /proc (Linux)")
+def test_worker_pid_recycled_pid_reads_dead(tmp_path: Path) -> None:
+    """worker.pid proves identity, not just 'some same-user process owns this
+    number': after a SIGKILL'd worker left the file behind, a recycled pid made
+    the dead run read running forever -- blocking resume and hanging the
+    /parallel lane await. The recorded kernel start time disambiguates."""
+    from agent6.runs import ipc
+
+    ipc.write_worker_pid(tmp_path, os.getpid())
+    assert ipc.worker_is_alive(tmp_path) is True
+    pid_s, start = (tmp_path / "worker.pid").read_text(encoding="utf-8").split()
+    # Same pid, different process: simulate the recycle by shifting the
+    # recorded start time.
+    (tmp_path / "worker.pid").write_text(f"{pid_s} {int(start) - 7}", encoding="utf-8")
+    assert ipc.read_worker_pid(tmp_path) == os.getpid()
+    assert ipc.worker_is_alive(tmp_path) is False
+
+
+def test_worker_pid_without_start_time_probes_pid_only(tmp_path: Path) -> None:
+    """A record with no start time (written on a host without /proc) degrades
+    to the plain pid probe."""
+    from agent6.runs import ipc
+
+    (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    assert ipc.worker_is_alive(tmp_path) is True
+    (tmp_path / "worker.pid").write_text("999999999", encoding="utf-8")
+    assert ipc.worker_is_alive(tmp_path) is False
+
+
+def test_ps_start_time_reports_self_and_rejects_dead() -> None:
+    from agent6.runs import ipc
+
+    assert ipc._ps_start_time(os.getpid())  # pyright: ignore[reportPrivateUsage]
+    assert ipc._ps_start_time(999999999) == ""  # pyright: ignore[reportPrivateUsage]
+
+
+def test_worker_pid_identity_via_ps_where_proc_is_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """macOS has no /proc, so the first fix degraded to the plain kill-0 probe
+    there and pid reuse still misread a dead run as running. `ps -o lstart=`
+    supplies the identity; its value contains spaces, so the record splits
+    once only."""
+    from agent6.runs import ipc
+
+    monkeypatch.setattr(ipc, "_HAS_PROC", False)
+    ipc.write_worker_pid(tmp_path, os.getpid())
+    record = (tmp_path / "worker.pid").read_text(encoding="utf-8")
+    assert len(record.split(maxsplit=1)) == 2  # pid + a spaced lstart identity
+    assert ipc.read_worker_pid(tmp_path) == os.getpid()
+    assert ipc.worker_is_alive(tmp_path) is True
+    # Same pid, different start time = a recycled pid: reads dead.
+    (tmp_path / "worker.pid").write_text(f"{os.getpid()} Sun Jan  4 00:00:00 1970")
+    assert ipc.worker_is_alive(tmp_path) is False

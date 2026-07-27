@@ -25,6 +25,7 @@ ALLOWED = {
     "app/machine_agent.py",
     "git_ops.py",
     "providers/token_command.py",
+    "runs/ipc.py",
     "sandbox/detect.py",
     "sandbox/host_spawn.py",
     "sandbox/jail.py",

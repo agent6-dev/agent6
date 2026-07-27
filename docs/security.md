@@ -194,6 +194,9 @@ fixed argv depending only on operator input, never LLM output.
 - `tools/mcp_client.py`: operator-configured `[mcp.servers.*]` server commands.
 - `providers/token_command.py`: the operator-configured
   `[providers.*].token_command` that mints a provider bearer; argv from config.
+- `runs/ipc.py`: `ps -p <pid> -o lstart=` on hosts without /proc (macOS) for
+  the worker.pid start-time identity; fixed argv over a pid agent6 itself
+  recorded.
 - `ui/spawn.py`: the shared front-end spawn helper; spawns the agent6 CLI
   detached for run/machine launches and captures `runs merge`/`prune`/
   `config set`; argv is the agent6 exe plus operator-chosen args.
