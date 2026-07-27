@@ -115,6 +115,26 @@ def fmt_run_event(e: dict[str, Any]) -> str:
     return t
 
 
+def _git_diff_text(cwd: Path, range_spec: str) -> tuple[int, str, str]:
+    """Hardened ``git diff <range>``, bytes-captured and lossy-decoded: the old
+    ``text=True`` strict decode raised UnicodeDecodeError out of communicate()
+    on a valid non-UTF-8 diff (a latin-1 file), crashing ``ask --run``."""
+    # operator-controlled argv, no LLM input (same as `agent6 runs diff`).
+    # Hardening flags: a poisoned .git/config diff.external or diff.*.textconv
+    # would otherwise run on the host when the operator asks about a prior run.
+    proc = subprocess.run(
+        ["git", *git_hardening_flags(), "diff", *DIFF_SHOW_SAFETY_FLAGS, range_spec],
+        cwd=cwd,
+        capture_output=True,
+        check=False,
+    )
+    return (
+        proc.returncode,
+        proc.stdout.decode(errors="replace"),
+        proc.stderr.decode(errors="replace"),
+    )
+
+
 def build_ask_run_digest(cwd: Path, run_id: str, *, latest: bool) -> str | None:
     """Markdown digest of a prior run to seed an `ask`, or None (after printing
     an error) when the run can't be resolved."""
@@ -146,24 +166,23 @@ def build_ask_run_digest(cwd: Path, run_id: str, *, latest: bool) -> str | None:
     base_sha = manifest.base_sha
     run_branch = manifest.run_branch
     head_ref = run_branch if run_branch else "HEAD"
-    diff = ""
+    diff_label = f"{base_sha}..{head_ref}"
+    diff_body = "(no diff: the run recorded no base_sha)"
     if base_sha:
-        # operator-controlled argv, no LLM input (same as `agent6 runs diff`).
-        # Hardening flags: a poisoned .git/config diff.external or diff.*.textconv
-        # would otherwise run on the host when the operator asks about a prior run.
-        argv = ["git", *git_hardening_flags(), "diff", *DIFF_SHOW_SAFETY_FLAGS]
-        proc = subprocess.run(
-            [*argv, f"{base_sha}..{head_ref}"],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        diff = proc.stdout
-    cap = 8000
-    diff_excerpt = diff[:cap]
-    if len(diff) > cap:
-        diff_excerpt += "\n... (diff truncated; read more with git)"
+        rc, diff, err = _git_diff_text(cwd, f"{base_sha}..{head_ref}")
+        merged_sha = manifest.merged.sha if manifest.merged else ""
+        if rc != 0 and run_branch and merged_sha:
+            # The run branch was pruned after its merge; the merge stamp's
+            # commit carries the run's content, so diff that instead.
+            diff_label = f"{merged_sha[:12]}^..{merged_sha[:12]} (run branch pruned; merge commit)"
+            rc, diff, err = _git_diff_text(cwd, f"{merged_sha}^..{merged_sha}")
+        if rc != 0:
+            # Loud, never an empty diff block the model reads as "no changes".
+            diff_body = f"(diff unavailable: git diff exited {rc}: {err.strip()[:300]})"
+        else:
+            cap = 8000
+            tail = "\n... (diff truncated; read more with git)" if len(diff) > cap else ""
+            diff_body = f"```diff\n{diff[:cap]}{tail}\n```"
     return (
         f'<prior-run id="{target}">\n'
         "This question is about a PRIOR agent6 run. Its run state lives outside the"
@@ -171,7 +190,7 @@ def build_ask_run_digest(cwd: Path, run_id: str, *, latest: bool) -> str | None:
         " about it is in this digest.\n\n"
         f"## Run task\n{manifest.user_task}\n\n"
         f"## Outcome / key events\n{summarize_run_log(layout.logs_path)}\n\n"
-        f"## Diff base_sha..{head_ref} (truncated)\n```diff\n{diff_excerpt}\n```\n"
+        f"## Diff {diff_label}\n{diff_body}\n"
         f"</prior-run>"
     )
 

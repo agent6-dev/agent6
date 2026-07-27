@@ -354,3 +354,61 @@ def test_ask_repl_prompt_uses_default_sigint(monkeypatch: pytest.MonkeyPatch) ->
         assert signal.getsignal(signal.SIGINT) is steer_style_handler
     finally:
         signal.signal(signal.SIGINT, prev)
+
+
+def test_ask_run_digest_survives_non_utf8_diff(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A valid diff over non-UTF-8 content (a latin-1 file) crashed the digest:
+    text=True's strict decode raised UnicodeDecodeError out of communicate().
+    Bytes are captured and decoded lossily instead."""
+    rid = _make_run(tmp_path)
+    (tmp_path / "latin.txt").write_bytes(b"caf\xe9 r\xe9sum\xe9\n")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "latin-1 bytes")
+    monkeypatch.chdir(tmp_path)
+    digest = _build_ask_run_digest(tmp_path, rid, latest=False)
+    assert digest is not None
+    assert "latin.txt" in digest
+    assert "changed by the run" in digest
+
+
+def test_ask_run_digest_pruned_branch_falls_back_to_merge_stamp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """After a squash-merged run branch is pruned, the digest ran `git diff
+    base..gone-branch`, swallowed the failure, and seeded an EMPTY diff -- even
+    though the manifest's merge stamp still names the commit that carries the
+    run's content. The stamped commit is diffed instead."""
+    rid = _make_run(tmp_path)
+    run_dir = resolved_state_dir(tmp_path) / "runs" / rid
+    m = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    _git(tmp_path, "checkout", "-q", m["base_sha"])
+    _git(tmp_path, "merge", "--squash", "agent6/run")
+    _git(tmp_path, "commit", "-qm", "squash-merge run")
+    merge_sha = _git(tmp_path, "rev-parse", "HEAD")
+    _git(tmp_path, "branch", "-D", "agent6/run")
+    m["merged"] = {"into": "master", "sha": merge_sha, "ts": "2026-07-24T00:00:00Z"}
+    (run_dir / "manifest.json").write_text(json.dumps(m), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    digest = _build_ask_run_digest(tmp_path, rid, latest=False)
+    assert digest is not None
+    assert "changed by the run" in digest
+    assert "run branch pruned" in digest
+
+
+def test_ask_run_digest_reports_unavailable_diff(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A diff the repo can no longer produce (branch gone, no merge stamp) was
+    rendered as an empty diff block the model reads as "no changes"; the digest
+    now says why the diff is unavailable."""
+    rid = _make_run(tmp_path)
+    run_dir = resolved_state_dir(tmp_path) / "runs" / rid
+    m = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    _git(tmp_path, "checkout", "-q", m["base_sha"])
+    _git(tmp_path, "branch", "-D", "agent6/run")
+    monkeypatch.chdir(tmp_path)
+    digest = _build_ask_run_digest(tmp_path, rid, latest=False)
+    assert digest is not None
+    assert "diff unavailable" in digest
