@@ -248,3 +248,87 @@ def test_loop_guard_kill_disabled_when_threshold_zero(tmp_path: Path) -> None:
 
     assert result.completed is True
     assert provider.call.call_count == 7
+
+
+def _gated_wf(repo: Path, provider: MagicMock, dispatcher: MagicMock, **kw: Any) -> Workflow:
+    """A GATED workflow (verify_command set), where the per-turn auto-commit
+    fires only on a green verify -- so a run_command-authored edit stays in the
+    worktree and only a final checkpoint can get it into git history."""
+    return Workflow(
+        root=repo,
+        config=MagicMock(
+            prompt=MagicMock(system_prompt_file=""),
+            workflow=MagicMock(verify_command=("true",), require_verify_to_finish=False),
+        ),
+        provider=provider,
+        dispatcher=dispatcher,
+        logger=_silent,
+        provider_retry_count=0,
+        provider_retry_delay_s=0.0,
+        **kw,
+    )
+
+
+def _dirtying_dispatcher(repo: Path) -> MagicMock:
+    """A dispatcher whose tool leaves an uncommitted edit, as run_command does."""
+    dispatcher = MagicMock()
+
+    def dispatch(*_args: Any, **_kwargs: Any) -> RawResult:
+        (repo / "edit.txt").write_text("run_command wrote this\n")
+        return RawResult({"content": "hi\n"})
+
+    dispatcher.dispatch.side_effect = dispatch
+    return dispatcher
+
+
+def _git_log(repo: Path) -> str:
+    return _sp.run(
+        ["git", "log", "--oneline"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout
+
+
+def test_loop_guard_kill_checkpoints_the_dirty_worktree(tmp_path: Path) -> None:
+    """A harness-initiated stop must not drop run_command-authored edits: every
+    agent6 surface (runs diff, merge, resume, score) reads git history, not the
+    worktree, so a kill that leaves the tree dirty loses the work from all of
+    them. The sibling max_iterations stop already checkpoints."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    provider = MagicMock()
+    provider.call.side_effect = [
+        _resp_with_tool("read_file", {"path": "x.txt"}, tu_id=f"t{i}") for i in range(12)
+    ] + [_resp_text("never reached")]
+
+    wf = _gated_wf(
+        repo,
+        provider,
+        _dirtying_dispatcher(repo),
+        max_iterations=20,
+        loop_guard_kill_threshold=5,
+    )
+    result = wf.run("loop forever")
+
+    assert result.reason == "loop_guard_killed"
+    assert "checkpoint (iter 5)" in _git_log(repo)
+
+
+def test_max_iterations_stop_checkpoints_the_dirty_worktree(tmp_path: Path) -> None:
+    """The contract the loop-guard kill has to match."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    provider = MagicMock()
+    provider.call.side_effect = [
+        _resp_with_tool("read_file", {"path": "x.txt"}, tu_id=f"t{i}") for i in range(12)
+    ]
+
+    wf = _gated_wf(
+        repo,
+        provider,
+        _dirtying_dispatcher(repo),
+        max_iterations=3,
+        loop_guard_kill_threshold=0,
+    )
+    result = wf.run("keep going")
+
+    assert result.reason == "max_iterations"
+    assert "checkpoint (iter 3)" in _git_log(repo)

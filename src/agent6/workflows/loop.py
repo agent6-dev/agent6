@@ -2169,6 +2169,7 @@ class Workflow:
                 f" {latched_name} called {state.repeat_streak}x in a row"
                 f" (threshold={self.loop_guard_kill_threshold})"
             )
+            self._final_checkpoint(turn.iteration)
             self._emit(
                 "run.end",
                 reason="loop_guard_killed",
