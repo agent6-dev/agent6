@@ -175,6 +175,18 @@ def _write_answer_atomic(target: Path, text: str) -> None:
     atomic_write(target, text)
 
 
+def _consume_answer(target: Path) -> str | None:
+    """Read + delete *target* (consume, so it is never re-read on a later
+    prompt/resume), or None when absent."""
+    try:
+        txt = target.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    with contextlib.suppress(FileNotFoundError):
+        target.unlink()
+    return txt
+
+
 def _await_answer(
     target: Path, live: Path, *, timeout_s: float, poll_s: float, dead_grace_s: float
 ) -> str | None:
@@ -183,17 +195,13 @@ def _await_answer(
     Returns None when the front-end registered on *live* stays dead for
     *dead_grace_s* consecutive seconds (see FRONTEND_DEAD_GRACE_S) or when
     *timeout_s* elapses. A file that vanishes between polls is not-yet-answered,
-    never an error."""
+    never an error. A final consume runs before either None verdict: an answer
+    landing between the round's read and the verdict was silently ignored (the
+    prompt denied) with the completed answer file left on disk."""
     deadline = time.monotonic() + timeout_s
     dead_since: float | None = None
     while time.monotonic() < deadline:
-        try:
-            txt = target.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            txt = None
-        if txt is not None:
-            with contextlib.suppress(FileNotFoundError):
-                target.unlink()  # consume: never re-read on a later prompt/resume
+        if (txt := _consume_answer(target)) is not None:
             return txt
         if frontend_is_live(live):
             dead_since = None
@@ -202,9 +210,9 @@ def _await_answer(
             if dead_since is None:
                 dead_since = now
             if now - dead_since >= dead_grace_s:
-                return None
+                break
         time.sleep(poll_s)
-    return None
+    return _consume_answer(target)
 
 
 def write_answer(run_dir: Path, prompt_id: str, *, approved: bool) -> None:

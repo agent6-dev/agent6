@@ -10,6 +10,8 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
+
 from agent6.runs.ipc import (
     frontend_is_live,
     read_answer,
@@ -151,3 +153,45 @@ def test_answer_writes_leave_no_tmp_and_are_never_torn(tmp_path: Path) -> None:
     write_steer_answer(tmp_path, "steer text")
     assert not list(tmp_path.glob("*.tmp"))
     assert (tmp_path / "steer.answer").read_text(encoding="utf-8") == "steer text"
+
+
+def test_answer_landing_during_dead_verdict_is_consumed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An answer written between the round's read and the frontend-dead verdict
+    was ignored: read_answer returned None (deny) while the completed answer
+    file stayed on disk. The final consume honors it."""
+    from agent6.runs import ipc
+
+    def write_then_dead(_live: Path) -> bool:
+        write_answer(tmp_path, "abc", approved=True)
+        return False
+
+    monkeypatch.setattr(ipc, "frontend_is_live", write_then_dead)
+    assert ipc.read_answer(tmp_path, "abc", timeout_s=5.0, poll_s=0.01, dead_grace_s=0.0) is True
+    assert not (tmp_path / "approvals" / "abc.answer").exists()
+
+
+def test_answer_landing_at_deadline_is_consumed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Same race on the timeout exit: the answer lands during the final sleep,
+    after the last read; the deadline then expires. Honored, not dropped."""
+    from agent6.runs import ipc
+
+    register_frontend(tmp_path, os.getpid())
+
+    class _Clock:
+        def __init__(self) -> None:
+            self.now = 0.0
+
+        def monotonic(self) -> float:
+            return self.now
+
+        def sleep(self, s: float) -> None:
+            self.now += s
+            write_answer(tmp_path, "abc", approved=True)
+
+    monkeypatch.setattr(ipc, "time", _Clock())
+    assert ipc.read_answer(tmp_path, "abc", timeout_s=0.05, poll_s=0.1) is True
+    assert not (tmp_path / "approvals" / "abc.answer").exists()
