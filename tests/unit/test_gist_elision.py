@@ -230,7 +230,35 @@ def test_gist_placeholder_identity_matches_bare_for_long_paths() -> None:
 
     long_path = "docs/" + "d" * 130 + ".md"
     ident = re.compile(r": the result of (.+?) was replaced")
-    gist_m = ident.search(elision_gist_placeholder(long_path, "the gist"))
+    label = call_label("read_file", {"path": long_path})
+    gist_m = ident.search(elision_gist_placeholder(label, "the gist"))
     bare_m = ident.search(elision_placeholder("read_file", {"path": long_path}))
     assert gist_m is not None and bare_m is not None
     assert gist_m.group(1) == bare_m.group(1) == call_label("read_file", {"path": long_path})
+
+
+def test_gist_placeholder_identity_matches_bare_for_a_ranged_read() -> None:
+    """The placeholder rebuilt the identity from the path alone, so a gisted
+    read_file with offset/limit carried a DIFFERENT identity than its bare
+    marker: the differ read the demotion as a fresh elision and every surface
+    reported a second, phantom marker for one read."""
+    import re
+
+    from agent6.workflows._compaction import call_label, elision_placeholder
+
+    conv = Conversation()
+    _add_call(conv, "read_file", {"path": "a.py", "offset": 100, "limit": 500}, "z" * 4000)
+    _add_read(conv, "b.py", "y" * 500)
+    _add_read(conv, "c.py", "y" * 500)
+    compact_old_tool_results(
+        conv, max_total_bytes=1800, keep_recent=2, gister=_SpyGister({"a.py": "the gist " * 10})
+    )
+
+    text = str(conv.turns[1].items[0].content)  # pyright: ignore[reportAttributeAccessIssue]
+    assert text.startswith(ELISION_GIST_PREFIX)
+    ident = re.compile(r": the result of (.+?) was replaced")
+    got = ident.search(text)
+    bare = ident.search(elision_placeholder("read_file", {"path": "a.py", "offset": 100}))
+    assert got is not None and bare is not None
+    assert got.group(1) == call_label("read_file", {"path": "a.py", "offset": 100, "limit": 500})
+    assert "offset=100" in got.group(1)  # the range is part of the identity

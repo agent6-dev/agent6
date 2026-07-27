@@ -144,11 +144,15 @@ class CompactionStats:
     demoted_paths: tuple[str, ...] = ()
 
 
-def elision_gist_placeholder(path: str, gist: str) -> str:
-    """Tier-1 placeholder that keeps a distilled gist of the elided read. Names
-    the call through ``call_label`` so the gist and bare markers carry the SAME
-    identity (the conversation differ dedupes a gist->bare demotion on it)."""
-    described = call_label("read_file", {"path": path})
+def elision_gist_placeholder(described: str, gist: str) -> str:
+    """Tier-1 placeholder that keeps a distilled gist of the elided read.
+
+    Takes the caller's ``call_label`` rather than rebuilding one, so the gist
+    and bare markers carry the SAME identity (the conversation differ dedupes a
+    gist->bare demotion on it). Rebuilding it from the path alone dropped a
+    ranged read's offset/limit and every demotion re-reported as a fresh
+    elision.
+    """
     return (
         f"{ELISION_GIST_PREFIX}: the result of {described} was replaced "
         f"by this distilled gist; if the gist is not enough, re-read only "
@@ -576,7 +580,7 @@ class _Tier1Pass:
             gist = self.gists.get((turn_idx, item_idx))
             if gist is not None and isinstance(call.input, dict):
                 path = str(call.input.get("path", ""))
-                candidate = elision_gist_placeholder(path, gist)
+                candidate = elision_gist_placeholder(call_label(call.name, call.input), gist)
                 if len(candidate) < size:  # a gist longer than the content is useless
                     placeholder = candidate
                     self.gisted += 1
