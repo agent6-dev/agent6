@@ -111,3 +111,13 @@ def test_order_preserves_large_int_precision() -> None:
     # The fail-loud path for non-comparable operands is intact.
     with pytest.raises(PredicateError, match="cannot order"):
         evaluate(parse_predicate("x < y"), {"x": 1, "y": "s"})
+
+
+def test_in_with_an_unhashable_left_operand_is_a_predicate_error() -> None:
+    """`item in record` hashes the left operand, so a list/record var raised a
+    raw TypeError. PredicateError is what the engine catches and journals; the
+    bare TypeError escaped run_machine as a traceback with no MachineEnd, so
+    `machine check` passed and `machine run` crashed un-ended."""
+    pred = parse_predicate("item in blob")
+    with pytest.raises(PredicateError, match="`in`"):
+        evaluate(pred, {"item": [1, 2], "blob": {"a": 1}})

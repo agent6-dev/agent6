@@ -263,7 +263,13 @@ def _contains(container: object, item: object) -> bool:
         return item in container
     if not isinstance(container, (list, tuple, dict)):
         raise PredicateError(f"value is not a container for `in`: {container!r}")
-    return item in container
+    try:
+        return item in container
+    except TypeError as exc:
+        # A dict container hashes the left operand, so an unhashable one (a
+        # list/record-typed var) raised a bare TypeError -- which is not what the
+        # engine catches, so it escaped as a traceback with no journaled end.
+        raise PredicateError(f"cannot use `in` with {item!r} and {container!r}") from exc
 
 
 def _resolve(reference: Reference, blackboard: Mapping[str, object]) -> object:
