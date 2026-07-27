@@ -78,6 +78,7 @@ _ADAPTIVE_THINKING_MARKERS = (
     "opus-4-6",
     "opus-4-7",
     "opus-4-8",
+    "opus-5",
     "sonnet-4-6",
     "sonnet-5",
 )
@@ -90,6 +91,7 @@ _SUMMARISE_DISPLAY_MARKERS = (
     "mythos-preview",
     "opus-4-7",
     "opus-4-8",
+    "opus-5",
     "sonnet-5",
 )
 
