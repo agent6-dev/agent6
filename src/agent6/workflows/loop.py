@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from agent6.budget import BudgetExceeded, BudgetTracker
 from agent6.config import Config
 from agent6.directive import DirectiveError, Segment, parse_directive, parse_pin
-from agent6.git_ops import GitError, commit_all, commit_diff, diff_since
+from agent6.git_ops import GitError, commit_all, commit_diff, diff_since, dirty_paths
 from agent6.git_ops import status as git_status
 from agent6.graph.curator import GraphCurator
 from agent6.graph.models import (
@@ -220,6 +220,9 @@ _STARVATION_BACKOFF_AFTER_QUIETS = 2
 # an ordinary steer (the instruction still reaches the model once); only its
 # survives-compaction durability is refused.
 PINS_MAX_CHARS = 4_000
+
+# Paths counted for the operator-stop dirty-tree note; a bigger tree reads "N+".
+_DIRTY_NOTE_CAP = 500
 
 
 def _summarise_assistant_text_for_commit(
@@ -1066,7 +1069,7 @@ class Workflow:
             return RunResult(
                 completed=False,
                 reason="steer_abort",
-                summary=f"operator stopped the run at iter {iteration}",
+                summary=f"operator stopped the run at iter {iteration}{self._dirty_tree_note()}",
                 iterations=iteration,
                 tool_calls=state.tool_calls,
             )
@@ -1435,7 +1438,10 @@ class Workflow:
                 return RunResult(
                     completed=True,
                     reason="interactive_stop",
-                    summary=f"stopped interactively after iter {turn.iteration}",
+                    summary=(
+                        f"stopped interactively after iter {turn.iteration}"
+                        f"{self._dirty_tree_note()}"
+                    ),
                     iterations=turn.iteration,
                     tool_calls=state.tool_calls,
                 )
@@ -2708,6 +2714,26 @@ class Workflow:
         except (GitError, OSError):
             return False
 
+    def _dirty_tree_note(self) -> str:
+        """Summary suffix naming an uncommitted worktree, or "" when clean.
+
+        An operator stop deliberately skips ``_final_checkpoint``: committing
+        over someone who is taking over would remove their choice to discard.
+        The work is still in the checkout, but nothing reads it there --
+        ``runs diff`` and ``runs merge`` both read git history -- so the state
+        is stated rather than left silent."""
+        if self.mode != "run":
+            return ""
+        try:
+            paths = dirty_paths(self.root, limit=_DIRTY_NOTE_CAP)
+        except (GitError, OSError):
+            return ""
+        if not paths:
+            return ""
+        more = "+" if len(paths) == _DIRTY_NOTE_CAP else ""
+        noun = "file" if len(paths) == 1 and not more else "files"
+        return f"; worktree left dirty ({len(paths)}{more} {noun} uncommitted, not checkpointed)"
+
     def _final_checkpoint(self, iteration: int) -> None:
         """Best-effort commit of any dirty worktree on a successful exit so
         run_command-authored edits on a gated run aren't lost from git history.
@@ -3767,7 +3793,9 @@ class Workflow:
             return RunResult(
                 completed=False,
                 reason="steer_abort",
-                summary=f"operator stopped the run after step {iteration}",
+                summary=(
+                    f"operator stopped the run after step {iteration}{self._dirty_tree_note()}"
+                ),
                 iterations=iteration,
                 tool_calls=state.tool_calls,
             )

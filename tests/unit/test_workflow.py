@@ -5829,3 +5829,27 @@ def test_a_red_verify_finish_still_passes_its_root_tasks() -> None:
     (end,) = [e for e in events if e["type"] == "run.end"]
     assert end["all_passed"] is False  # the verify truth is unchanged...
     assert fake.passed == ["root1"]  # ...and the work item is no longer pending
+
+
+def test_an_operator_stop_names_the_worktree_it_leaves_dirty(tmp_path: Path) -> None:
+    """An operator stop deliberately does NOT checkpoint -- committing over
+    someone taking over would remove their choice to discard -- but it said
+    nothing, so uncommitted work was invisible to `runs diff` and `runs merge`
+    with no hint it existed. A clean tree adds nothing."""
+    import subprocess
+
+    subprocess.run(["git", "init", "-q", "-b", "main", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.email", "t@t"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "t"], check=True)
+    (tmp_path / "a.txt").write_text("x\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-qm", "init"], check=True)
+
+    wf = _wf(root=tmp_path, mode="run")
+    assert wf._dirty_tree_note() == ""  # pyright: ignore[reportPrivateUsage]
+
+    (tmp_path / "a.txt").write_text("edited\n", encoding="utf-8")
+    (tmp_path / "new.txt").write_text("untracked\n", encoding="utf-8")
+    note = wf._dirty_tree_note()  # pyright: ignore[reportPrivateUsage]
+    assert "worktree left dirty" in note
+    assert "2 file" in note  # the real count, not a capped one
