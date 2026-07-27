@@ -128,9 +128,16 @@ def test_pause_menu_prefixes_and_word_rule(
 ) -> None:
     """A unique prefix fires the command, an ambiguous one re-asks, and a line
     with spaces is always a steering instruction (no quoting needed)."""
+    import json
+
     from agent6.ui.cli._steer_menu import pause_menu
 
-    (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+    # A run mid-pause always has run.start on disk (the menu is Ctrl-C on a
+    # live attach); a fresh log mtime reads "running".
+    (tmp_path / "logs.jsonl").write_text(
+        json.dumps({"type": "run.start", "user_task": "t", "mode": "run"}) + "\n",
+        encoding="utf-8",
+    )
     # /sta is uniquely /status; /st matches /status and /stop -> re-ask.
     assert pause_menu(tmp_path, input_fn=_feed(["/sta", "/st", "/stop"])) == "abort"
     printed = capsys.readouterr().out
@@ -155,6 +162,27 @@ def test_pause_menu_compact_requests_compaction(
     assert pause_menu(tmp_path, input_fn=_feed(["/compact"])) is None  # EOF -> continue
     assert read_compact_request(tmp_path) == ""  # marker pending, no focus
     assert "compaction requested" in capsys.readouterr().out
+
+
+def test_pause_menu_status_tells_the_truth_about_a_dead_worker(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """/status in the pause menu of an ATTACHED run whose worker died prints
+    the hub's word ('stale'), not 'running' -- the fold-only label sent the
+    operator back to waiting on a run nothing was executing."""
+    import json
+
+    from agent6.ui.cli._steer_menu import pause_menu
+
+    (tmp_path / "logs.jsonl").write_text(
+        json.dumps({"type": "run.start", "user_task": "t", "mode": "run"}) + "\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "worker.pid").write_text("999999999", encoding="utf-8")  # dead
+    assert pause_menu(tmp_path, input_fn=_feed(["/status", "/continue"])) == ""
+    printed = capsys.readouterr().out
+    assert "stale" in printed
+    assert "running" not in printed
 
 
 def test_pause_menu_status_shows_ctx_and_profile(

@@ -42,9 +42,9 @@ from agent6.runs.ipc import request_compact
 from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.skills import discover_skills, resolve_states, skill_search_dirs
 from agent6.ui.cli._menu_input import menu_capable, menu_input
-from agent6.viewmodel import fold_run, tail_events
-from agent6.viewmodel.format import TASK_STATUS_GLYPH, format_cost
-from agent6.viewmodel.state import RunState, run_status_label
+from agent6.viewmodel import fold_run, status_for_run_dir, tail_events
+from agent6.viewmodel.format import TASK_STATUS_GLYPH, format_cost, status_label
+from agent6.viewmodel.state import RunState, status_facts
 
 PROMPT = "[agent6] paused: Enter=continue · type to steer · /help: "
 
@@ -132,7 +132,9 @@ def _read_profile(run_dir: Path) -> str:
 
 def _print_status(run_dir: Path) -> None:
     s = _fold(run_dir)
-    label = run_status_label(s) if s.finished else "running"
+    # THE dir decision, not the fold alone: an attached run's worker can be
+    # gone ("stale"), and the fold-only label called that "running".
+    label = status_label(*status_for_run_dir(run_dir, status_facts(s)))
     done = sum(1 for t in s.tasks if t.status in ("passed", "skipped"))
     tasks = f"{done}/{len(s.tasks)}" if s.tasks else "—"
     role = s.last_role
