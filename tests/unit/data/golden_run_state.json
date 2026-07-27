@@ -155,6 +155,7 @@
       "sha": "29251c4be62e06bd4de05693aeff4472db5c5626"
     }
   ],
+  "started": true,
   "finished": true,
   "all_passed": true,
   "end_reason": "finish_run",

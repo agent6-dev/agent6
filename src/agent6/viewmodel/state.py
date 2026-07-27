@@ -20,7 +20,7 @@ from typing import Any, Literal
 
 from agent6.viewmodel import events
 from agent6.viewmodel.format import status_label
-from agent6.viewmodel.listing import status_word
+from agent6.viewmodel.listing import StatusFacts, status_word
 
 NodeStatus = Literal["pending", "in_progress", "passed", "failed", "skipped", "obsolete"]
 
@@ -155,6 +155,7 @@ class RunState:
     log_tail: tuple[LogLine, ...] = ()  # most-recent-last, bounded
     log_count: int = 0  # monotonic total log lines ever (log_tail is windowed)
     recent_diffs: tuple[DiffView, ...] = ()  # auto-commit diffs, bounded, for task filtering
+    started: bool = False  # a run.start was folded (a parked/created run has none)
     finished: bool = False
     all_passed: bool | None = None
     end_reason: str = ""  # run.end reason: finish_run | steer_abort | provider_error | ...
@@ -202,6 +203,15 @@ SESSION_START_EVENTS = frozenset({"run.start", "loop.resume.start"})
 LOG_NOISE_EVENTS = frozenset({"loop.tool.call", "loop.budget"})
 
 
+def _answered_only[PromptT: (ApprovalPrompt, QuestionPrompt)](
+    prompts: tuple[PromptT, ...],
+) -> tuple[PromptT, ...]:
+    """Drop unanswered prompts at a leg boundary: they belong to the leg that
+    died holding them, and the new leg re-asks with restarted ids (see the
+    RunStart/ResumeStart arms)."""
+    return tuple(p for p in prompts if p.answered)
+
+
 def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PLR0911, PLR0912, PLR0915
     """Fold one event into the run state. Pure function.
 
@@ -230,7 +240,15 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
             # run.start must clear the prior leg's terminal state. Unlike
             # ResumeStart, do NOT bank usd: the REPL reuses one BudgetTracker,
             # so usd_total is already cumulative across legs.
-            return replace(state, user_task=task, finished=False, end_reason="")
+            return replace(
+                state,
+                user_task=task,
+                started=True,
+                finished=False,
+                end_reason="",
+                pending_approvals=_answered_only(state.pending_approvals),
+                pending_questions=_answered_only(state.pending_questions),
+            )
 
         case events.ResumeStart():
             # A resume restarts a finished/stopped run in place (it appends to the
@@ -239,10 +257,15 @@ def apply_event(state: RunState, event: dict[str, Any]) -> RunState:  # noqa: PL
             # (usd_total keeps its value until the leg's first budget.update) and
             # zero the token counters/caps: BudgetView documents them as the
             # CURRENT leg's, and scan_run_log resets for the same reason.
+            # Unanswered prompts are the DEAD leg's: the resumed leg re-asks
+            # with restarted ids, so a held-over orphan would read "waiting"
+            # forever and duplicate when the same id is re-prompted.
             return replace(
                 state,
                 finished=False,
                 end_reason="",
+                pending_approvals=_answered_only(state.pending_approvals),
+                pending_questions=_answered_only(state.pending_questions),
                 budget=replace(
                     state.budget,
                     usd_prior_legs=state.budget.usd_total,
@@ -636,15 +659,31 @@ def fold_run(events: Iterable[dict[str, Any]]) -> RunState:
 
 
 def run_status_label(state: RunState) -> str:
-    """The header status word, distinguishing a stop from a finish from an error --
-    all three set finished=True, so the reason is what tells them apart. A user who
-    stopped a run must not see a bare 'finished' (which reads as 'it completed').
-    The decision lives in ``viewmodel.summary.status_word`` so listings and
-    headers can never disagree about how a run ended."""
+    """The status label for a stream with genuinely NO run dir (the
+    ``attach --json`` wire form). It distinguishes a stop from a finish from an
+    error (all three set finished=True; the reason tells them apart) via the
+    shared ``listing.status_word``, but it folds events alone, so it reads
+    every unfinished state as "running". A surface that HAS a run dir must call
+    ``listing.status_for_run_dir`` with ``status_facts`` instead -- the dir
+    knows parked/starting/created/stale/waiting, this cannot."""
     word, reason = status_word(
         finished=state.finished, all_passed=bool(state.all_passed), end_reason=state.end_reason
     )
     return status_label(word, reason)
+
+
+def status_facts(state: RunState) -> StatusFacts:
+    """The fold's answers to the status questions -- the typed twin of
+    ``LogScan.status_facts()``, for surfaces that hold a ``RunState``. The two
+    producers must agree on the same log (pinned by the status matrix test)."""
+    return StatusFacts(
+        started=state.started,
+        finished=state.finished,
+        all_passed=bool(state.all_passed),
+        end_reason=state.end_reason,
+        operator_blocked=any(not a.answered for a in state.pending_approvals)
+        or any(not q.answered for q in state.pending_questions),
+    )
 
 
 def run_state_as_dict(state: RunState) -> dict[str, Any]:

@@ -1,0 +1,150 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Eric Lesiuta
+"""One status decision for any run with a dir.
+
+``status_for_run_dir`` is the single place a run's status word is decided from
+its dir; listings (``summarize_run_dir``) and every header feed it facts from
+either producer -- the tolerant scanner (``LogScan``) or the typed fold
+(``RunState``). The matrix pins the word per dir state for BOTH producers and
+for the listing, so no two surfaces can disagree about any non-``run.end``
+state (parked/created/starting/stale/waiting each shipped a real
+surface-disagreement bug before this existed).
+"""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+
+import pytest
+
+from agent6.viewmodel.listing import (
+    LogScan,
+    scan_run_log,
+    status_for_run_dir,
+    summarize_run_dir,
+)
+from agent6.viewmodel.state import fold_run, status_facts
+
+LIVE = os.getpid()
+DEAD = 999999999
+
+
+def _mk(
+    tmp_path: Path,
+    name: str,
+    events: list[dict[str, object]] | None,
+    *,
+    parked: str = "",
+    pid: int | None = None,
+) -> Path:
+    d = tmp_path / name
+    d.mkdir()
+    manifest: dict[str, object] = {"mode": "run", "run_id": name, "user_task": "t"}
+    if parked:
+        manifest["parked_task"] = parked
+    (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    if events is not None:
+        (d / "logs.jsonl").write_text(
+            "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
+        )
+    if pid is not None:
+        (d / "worker.pid").write_text(str(pid), encoding="utf-8")
+    return d
+
+
+_START: dict[str, object] = {"type": "run.start", "mode": "run", "user_task": "t"}
+_TOOL: dict[str, object] = {"type": "tool.call", "name": "grep", "args": {}}
+_APPROVAL: dict[str, object] = {"type": "approval.prompt", "id": "approval-1", "prompt": "ok?"}
+_QUESTION: dict[str, object] = {
+    "type": "question.prompt",
+    "id": "q-1",
+    "questions": [{"question": "x?"}],
+}
+
+
+_ANSWER: dict[str, object] = {"type": "approval.answer", "id": "approval-1", "approved": True}
+_RESUME: dict[str, object] = {"type": "loop.resume.start", "iteration": 2}
+
+
+def _end(reason: str, all_passed: bool = False) -> dict[str, object]:
+    return {"type": "run.end", "reason": reason, "all_passed": all_passed}
+
+
+# (name, events (None = no logs.jsonl), parked_task, pid, expected word, expected reason)
+MATRIX: list[tuple[str, list[dict[str, object]] | None, str, int | None, str, str]] = [
+    ("created", None, "", None, "created", ""),
+    ("parked", None, "fix it", None, "parked", "resume to start"),
+    # A parked run being resumed: a live worker in its pre-run.start preflight
+    # window reads "starting" even while the manifest still carries parked_task
+    # (resume clears it only once under way).
+    ("parked-resuming", None, "fix it", LIVE, "starting", ""),
+    ("starting", [], "", LIVE, "starting", ""),
+    ("running", [_START, _TOOL], "", LIVE, "running", ""),
+    ("waiting-approval", [_START, _APPROVAL], "", LIVE, "waiting", "needs answer"),
+    ("waiting-question", [_START, _QUESTION], "", LIVE, "waiting", "needs answer"),
+    (
+        "answered-runs-on",
+        [_START, _APPROVAL, _ANSWER],
+        "",
+        LIVE,
+        "running",
+        "",
+    ),
+    # A crash while waiting, then a resume: the new leg re-prompts with fresh
+    # ids, so the orphaned prompt must not read "waiting" (or duplicate) forever.
+    (
+        "resumed-past-orphaned-prompt",
+        [_START, _APPROVAL, _RESUME, _TOOL],
+        "",
+        LIVE,
+        "running",
+        "",
+    ),
+    ("stale", [_START, _TOOL], "", DEAD, "stale", ""),
+    ("stale-beats-waiting", [_START, _APPROVAL], "", DEAD, "stale", ""),
+    ("passed", [_START, _end("finish_run", True)], "", None, "passed", ""),
+    ("finished", [_START, _end("finish_run")], "", None, "finished", ""),
+    ("settled", [_START, _end("settled")], "", None, "finished", "unverified"),
+    ("failed", [_START, _end("provider_error")], "", None, "failed", "provider_error"),
+    ("stopped", [_START, _end("steer_abort")], "", None, "stopped", ""),
+    ("planned", [_START, _end("finish_planning")], "", None, "planned", ""),
+    ("answered", [_START, _end("answered")], "", None, "answered", ""),
+]
+
+
+@pytest.mark.parametrize(("name", "events", "parked", "pid", "word", "reason"), MATRIX)
+def test_both_fact_producers_and_the_listing_agree(
+    tmp_path: Path,
+    name: str,
+    events: list[dict[str, object]] | None,
+    parked: str,
+    pid: int | None,
+    word: str,
+    reason: str,
+) -> None:
+    d = _mk(tmp_path, name, events, parked=parked, pid=pid)
+    logs = d / "logs.jsonl"
+    scan = scan_run_log(logs) if logs.is_file() else LogScan()
+    fold = fold_run([] if events is None else events)
+    assert status_for_run_dir(d, scan.status_facts()) == (word, reason)
+    assert status_for_run_dir(d, status_facts(fold)) == (word, reason)
+    summary = summarize_run_dir(d)
+    assert (summary.status, summary.reason) == (word, reason)
+
+
+def test_resume_clears_orphaned_pending_prompts() -> None:
+    """A leg boundary invalidates unanswered prompts: the resumed leg re-asks
+    with restarted ids, so a held-over pending entry would both mislabel the
+    run "waiting" and duplicate when the new leg's same-id prompt arrives."""
+    events = [
+        _START,
+        _APPROVAL,
+        _QUESTION,
+        {"type": "loop.resume.start", "iteration": 2},
+        _APPROVAL,
+    ]
+    state = fold_run(events)
+    assert len(state.pending_approvals) == 1  # the new leg's, not the orphan + a dup
+    assert state.pending_questions == ()

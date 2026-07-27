@@ -189,6 +189,58 @@ OPERATOR_PROMPT_EVENTS = frozenset({"approval.prompt", "question.prompt"})
 PARKED_STATUS = ("parked", "resume to start")
 
 
+@dataclass(frozen=True, slots=True)
+class StatusFacts:
+    """The event-derived inputs to :func:`status_for_run_dir`, producible from
+    either event reader -- ``LogScan.status_facts()`` (the tolerant scanner
+    behind listings and ``runs show``) and ``state.status_facts`` (the typed
+    fold behind the live views) -- so every surface feeds the one status
+    decision the same answers for the same log."""
+
+    started: bool = False  # a run.start was seen (a parked/created run has none)
+    finished: bool = False
+    all_passed: bool = False
+    end_reason: str = ""
+    operator_blocked: bool = False  # alive but waiting on an unanswered approval/question
+
+
+def status_for_run_dir(
+    run_dir: Path, facts: StatusFacts, *, stale_after_s: float = STALE_AFTER_S
+) -> tuple[str, str]:
+    """THE ``(word, reason)`` for a run that has a dir on disk.
+
+    Every listing and header feeds this the event facts and lets the DIR
+    supply what events cannot: a parked submission (manifest), worker
+    liveness (worker.pid), log silence. The pure fold's ``run_status_label``
+    is only for a stream with genuinely no dir (``attach --json``); a surface
+    with a run dir that folds events alone reads every non-``run.end`` state
+    as "running" and disagrees with the hub -- parked/starting/created/stale/
+    waiting each shipped a real surface-disagreement bug before this existed.
+    """
+    if facts.finished:
+        return status_word(finished=True, all_passed=facts.all_passed, end_reason=facts.end_reason)
+    if not facts.started:
+        return _unstarted_status(run_dir)
+    if _running_is_stale(run_dir, stale_after_s):
+        return "stale", ""
+    if facts.operator_blocked:
+        return "waiting", "needs answer"
+    return "running", ""
+
+
+def _unstarted_status(run_dir: Path) -> tuple[str, str]:
+    """Status before any run.start: a live worker is still launching (egress +
+    verify inference run before the loop's first turn) -> "starting". No live
+    worker is either a parked submission (the busy-checkout refusal saved it;
+    resume starts it) or a never-started dir (`fork --no-run`) -> "created"."""
+    if worker_is_alive(run_dir):
+        return "starting", ""
+    with contextlib.suppress(ManifestError):
+        if read_manifest(run_dir).parked_task:
+            return PARKED_STATUS
+    return "created", ""
+
+
 def parked_status_word(run_dir: Path, *, log_count: int) -> tuple[str, str] | None:
     """``("parked", "resume to start")`` when *run_dir* holds a submission the
     busy-checkout refusal saved, else None.
@@ -245,6 +297,18 @@ class LogScan:
     start_ep: float | None = None  # run.start ts (epoch seconds)
     last_ep: float | None = None  # last event with a parseable ts
     last_type: str | None = None  # last event's type
+
+    def status_facts(self) -> StatusFacts:
+        """This scan's answers to the status questions, for status_for_run_dir.
+        The typed fold's ``state.status_facts`` must agree on the same log
+        (pinned by the status matrix test)."""
+        return StatusFacts(
+            started=self.saw_start,
+            finished=self.finished,
+            all_passed=self.all_passed,
+            end_reason=self.end_reason,
+            operator_blocked=self.last_type in OPERATOR_PROMPT_EVENTS,
+        )
 
 
 def _tolerant_usd(raw: object, last_good: float) -> float:
@@ -364,7 +428,6 @@ def summarize_run_dir(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) ->
     logs = run_dir / "logs.jsonl"
     scan = scan_run_log(logs) if logs.is_file() else LogScan()
     mode, task = scan.mode, scan.task
-    parked = False
     if not scan.saw_start:
         # Before run.start the log carries no mode/task: either a launching run
         # still in preflight (verify inference is a ~80s LLM call BEFORE the
@@ -376,28 +439,7 @@ def summarize_run_dir(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) ->
             manifest = read_manifest(run_dir)
             mode = manifest.mode
             task = manifest.user_task or "(no logs)"
-            parked = bool(manifest.parked_task)
-    word, reason = status_word(
-        finished=scan.finished, all_passed=scan.all_passed, end_reason=scan.end_reason
-    )
-    if word == "running":
-        if not scan.saw_start:
-            # No run.start yet. A live worker means the run is still launching
-            # (egress + verify inference); show "starting", not a bare "running"
-            # on an empty row. No live worker (a `fork --no-run`, or a run that
-            # died before starting) reads "created": it never started work, so
-            # neither a cryptic "?" nor a false "stale".
-            word, reason = ("starting" if worker_is_alive(run_dir) else "created"), ""
-            if word == "created" and parked:
-                # Parked at submission (the checkout was busy; see
-                # acquire_repo_writer): saved, never started, resumable.
-                word, reason = PARKED_STATUS
-        elif _running_is_stale(run_dir, stale_after_s):
-            word = "stale"
-        elif scan.last_type in OPERATOR_PROMPT_EVENTS:
-            # Alive but blocked on the OPERATOR: an unanswered command
-            # approval or ask_user question.
-            word, reason = "waiting", "needs answer"
+    word, reason = status_for_run_dir(run_dir, scan.status_facts(), stale_after_s=stale_after_s)
     if mode == "ask":
         with contextlib.suppress(OSError):
             task = (run_dir / "transcript.md").read_text(encoding="utf-8", errors="replace")

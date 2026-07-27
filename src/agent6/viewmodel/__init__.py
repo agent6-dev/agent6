@@ -29,6 +29,7 @@ from agent6.viewmodel.listing import (
     OPERATOR_PROMPT_EVENTS,
     LogScan,
     RunSummary,
+    StatusFacts,
     first_task_line,
     is_run_husk,
     is_winner,
@@ -37,6 +38,7 @@ from agent6.viewmodel.listing import (
     run_compare,
     run_mtime,
     scan_run_log,
+    status_for_run_dir,
     status_word,
     summarize_run_dir,
     task_snippet,
@@ -71,6 +73,7 @@ from agent6.viewmodel.state import (
     initial_state,
     run_state_as_dict,
     run_status_label,
+    status_facts,
 )
 from agent6.viewmodel.tail import LogTail, tail_events
 from agent6.viewmodel.transcript import (
@@ -96,6 +99,7 @@ __all__ = [
     "RoleCall",
     "RunState",
     "RunSummary",
+    "StatusFacts",
     "TaskNodeView",
     "ToolCallView",
     "TranscriptFold",
@@ -125,6 +129,8 @@ __all__ = [
     "run_status_label",
     "salient_arg",
     "scan_run_log",
+    "status_facts",
+    "status_for_run_dir",
     "status_word",
     "summarize_run_dir",
     "tail_events",
