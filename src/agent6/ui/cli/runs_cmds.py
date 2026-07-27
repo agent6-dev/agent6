@@ -500,6 +500,57 @@ def _manifest_merged_into(state_dir: Path, branch: str) -> str:
     return manifest.merged.into if (manifest.merged and manifest.merged.sha) else ""
 
 
+def _merged_tip(state_dir: Path, branch: str) -> str:
+    """The run-branch tip recorded when the merge happened, or "" when none was
+    recorded (a pre-``tip`` manifest, or no readable manifest)."""
+    run_id = branch.removeprefix("agent6/")
+    try:
+        manifest = read_manifest(RunLayout(state_dir=state_dir, run_id=run_id).run_dir)
+    except ManifestError:
+        return ""
+    return manifest.merged.tip if manifest.merged else ""
+
+
+def _prune_squash_merged(
+    cwd: Path, br: str, merged_into: str, *, state_dir: Path, delete_squashed: bool
+) -> bool:
+    """Handle one squash-merged run branch: force-delete it when that is
+    provably content-safe, else keep it and say exactly why. Returns whether it
+    was deleted.
+
+    The force-delete is content-safe only when the branch STILL POINTS where the
+    merge left it: a resumed run keeps committing on the same branch under the
+    same merge stamp, and those commits are in no other ref."""
+    sha = branch_tip_sha(cwd, br)
+    recorded_tip = _merged_tip(state_dir, br)
+    if sha is not None and recorded_tip and recorded_tip != sha:
+        print(
+            f"[agent6] kept {br} (squash-merged into {merged_into}, but the branch"
+            f" advanced since the merge; review, then: git branch -D {br})"
+        )
+        return False
+    confirmed = delete_squashed and bool(recorded_tip) and branch_exists(cwd, merged_into)
+    if confirmed and sha is not None and force_delete_squash_merged_branch(cwd, br):
+        print(f"[agent6] deleted {br} (squash-merged into {merged_into})")
+        # A faded undelete hint: the commit survives in the reflog until GC.
+        print(sgr(f"          undelete: git branch {br} {sha[:12]}", "2"))
+        return True
+    if delete_squashed and not recorded_tip:
+        # Merged before agent6 recorded the merged tip, so the delete cannot be
+        # confirmed. Naming the manual command matters: the operator IS running
+        # --delete-squashed, and pointing them back at it would be a loop.
+        print(
+            f"[agent6] kept {br} (squash-merged into {merged_into}, but there is no"
+            f" recorded merge tip to confirm it; review, then: git branch -D {br})"
+        )
+        return False
+    print(
+        f"[agent6] kept {br} (squash-merged into {merged_into}, unreachable; "
+        f"remove with: runs prune --delete-squashed, or: git branch -D {br})"
+    )
+    return False
+
+
 def _cmd_prune(*, delete_squashed: bool = False) -> int:
     """Delete agent6/* run branches that `git branch -d` can safely remove
     (reachable-merged into HEAD, i.e. merge/ff strategies). Report squash-merged
@@ -548,21 +599,14 @@ def _cmd_prune(*, delete_squashed: bool = False) -> int:
                 f"{current!r}; re-run prune on {merged_into}, or: git branch -D {br})"
             )
             continue
-        # Squash-merged into its base: content is in the base commit but the branch
-        # is unreachable, so `git branch -d` refuses it.
-        if delete_squashed and branch_exists(cwd, merged_into):
-            sha = branch_tip_sha(cwd, br)
-            if sha is not None and force_delete_squash_merged_branch(cwd, br):
-                squashed_deleted += 1
-                print(f"[agent6] deleted {br} (squash-merged into {merged_into})")
-                # A faded undelete hint: the commit survives in the reflog until GC.
-                print(sgr(f"          undelete: git branch {br} {sha[:12]}", "2"))
-                continue
-        merged_kept += 1
-        print(
-            f"[agent6] kept {br} (squash-merged into {merged_into}, unreachable; "
-            f"remove with: runs prune --delete-squashed, or: git branch -D {br})"
-        )
+        # Squash-merged into its base: content is in the base commit but the
+        # branch is unreachable, so `git branch -d` refuses it.
+        if _prune_squash_merged(
+            cwd, br, merged_into, state_dir=state_dir, delete_squashed=delete_squashed
+        ):
+            squashed_deleted += 1
+        else:
+            merged_kept += 1
     kept = merged_kept + unmerged_kept
     total_deleted = deleted + squashed_deleted
     squashed_note = f" ({squashed_deleted} squash-merged)" if squashed_deleted else ""

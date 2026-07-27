@@ -71,6 +71,11 @@ class MergeStamp(BaseModel):
     into: str = ""
     sha: str = ""
     ts: str = ""
+    # The RUN BRANCH tip that was merged (``sha`` is the commit in the base).
+    # `runs prune --delete-squashed` force-deletes only when the branch still
+    # points here: a resumed run keeps committing on the same branch under this
+    # stamp, and those commits exist in no other ref.
+    tip: str = ""
 
 
 class CompareStamp(BaseModel):

@@ -192,7 +192,12 @@ def test_write_manifest_bytes_stamped_lane(tmp_path: Path) -> None:
         parent_run_id="r-parent",
         forked_from_turn=7,
         forked_from_sha="2" * 40,
-        merged=MergeStamp(into="master", sha="3" * 40, ts="2026-07-16T01:00:00.000000+00:00"),
+        merged=MergeStamp(
+            into="master",
+            sha="3" * 40,
+            ts="2026-07-16T01:00:00.000000+00:00",
+            tip="4" * 40,
+        ),
         parallel_id="p-abc",
         lane=1,
         compare=CompareStamp(

@@ -15,9 +15,9 @@ from agent6.runs.layout import RunLayout
 from agent6.ui.cli import main
 
 
-def _git(repo: Path, *args: str) -> str:
+def _git(repo: Path, *args: str, check: bool = True) -> str:
     return subprocess.run(
-        ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
+        ["git", "-C", str(repo), *args], check=check, capture_output=True, text=True
     ).stdout.strip()
 
 
@@ -33,10 +33,10 @@ def _make_branch(repo: Path, run_id: str, fname: str) -> None:
     _git(repo, "checkout", "-q", "main")
 
 
-def _manifest(repo: Path, run_id: str, base: str, *, merged: bool) -> None:
+def _manifest(repo: Path, run_id: str, base: str, *, merged: bool, merged_tip: str = "") -> None:
     layout = RunLayout(state_dir=resolved_state_dir(repo), run_id=run_id)
     layout.ensure()
-    data = {
+    data: dict[str, object] = {
         "version": 2,
         "run_id": run_id,
         "base_sha": base,
@@ -45,8 +45,8 @@ def _manifest(repo: Path, run_id: str, base: str, *, merged: bool) -> None:
         "user_task": "t",
     }
     if merged:
-        data["merged_into"] = "main"
-        data["merged_sha"] = "0" * 40
+        tip = merged_tip or _git(repo, "rev-parse", f"agent6/{run_id}", check=False)
+        data["merged"] = {"into": "main", "sha": "0" * 40, "tip": tip}
     layout.manifest_path.write_text(json.dumps(data) + "\n", encoding="utf-8")
 
 
@@ -187,3 +187,87 @@ def test_runs_prune_no_branches(
     rc = main(["runs", "prune"])
     assert rc == 0
     assert "no agent6/* run branches" in capsys.readouterr().out
+
+
+def test_runs_prune_delete_squashed_keeps_a_branch_that_advanced_after_the_merge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The one sanctioned force-delete must prove the CURRENT tip is what was
+    merged. A run that is squash-merged and then resumed keeps committing on the
+    same branch under a stale merge stamp; force-deleting it destroys commits
+    that exist in no other ref (reflog-only recovery)."""
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+
+    _make_branch(tmp_path, "resmd33", "s.txt")
+    merged_tip = _git(tmp_path, "rev-parse", "agent6/resmd33")
+    _git(tmp_path, "merge", "--squash", "agent6/resmd33")
+    _git(tmp_path, "commit", "-q", "-m", "squash resmd33")
+    _manifest(tmp_path, "resmd33", base, merged=True, merged_tip=merged_tip)
+    # The operator resumes the run: a new commit lands on the run branch only.
+    _git(tmp_path, "checkout", "-q", "agent6/resmd33")
+    (tmp_path / "after.txt").write_text("post-merge work\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "agent6 iter 2: post-merge follow-up work")
+    after = _git(tmp_path, "rev-parse", "HEAD")
+    _git(tmp_path, "checkout", "-q", "main")
+
+    rc = main(["runs", "prune", "--delete-squashed"])
+    text = "".join(capsys.readouterr())
+    assert rc == 0
+    assert _branch_exists(tmp_path, "agent6/resmd33")  # the post-merge commit survives
+    assert _git(tmp_path, "rev-parse", "agent6/resmd33") == after
+    assert "advanced since the merge" in text
+
+
+def test_runs_prune_says_why_a_pre_tip_manifest_is_kept(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run merged before agent6 recorded the merged tip cannot be confirmed,
+    so --delete-squashed keeps it. The message must say that and name the manual
+    command -- it told the operator to run `runs prune --delete-squashed`, the
+    very command that had just skipped the branch."""
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+
+    _make_branch(tmp_path, "pretip1", "s.txt")
+    _git(tmp_path, "merge", "--squash", "agent6/pretip1")
+    _git(tmp_path, "commit", "-q", "-m", "squash pretip1")
+    # A manifest written before MergeStamp.tip existed: merged, but no tip.
+    layout = RunLayout(state_dir=resolved_state_dir(tmp_path), run_id="pretip1")
+    layout.ensure()
+    layout.manifest_path.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "run_id": "pretip1",
+                "base_sha": base,
+                "base_branch": "main",
+                "run_branch": "agent6/pretip1",
+                "user_task": "t",
+                "merged": {"into": "main", "sha": "0" * 40},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert main(["runs", "prune", "--delete-squashed"]) == 0
+    text = "".join(capsys.readouterr())
+    assert _branch_exists(tmp_path, "agent6/pretip1")  # unconfirmed: kept
+    assert "no recorded merge tip" in text
+    assert "git branch -D agent6/pretip1" in text
+    # It must NOT tell the operator to re-run the command that just skipped it.
+    assert "remove with: runs prune --delete-squashed" not in text

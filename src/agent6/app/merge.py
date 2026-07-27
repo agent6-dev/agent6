@@ -22,6 +22,7 @@ from agent6.git_ops import (
     GitError,
     MergeResult,
     branch_exists,
+    branch_tip_sha,
     condense_commit_message,
     create_branch,
     is_ancestor,
@@ -45,10 +46,14 @@ class MergeOutcome:
     error: str = ""
 
 
-def record_merge_in_manifest(layout: RunLayout, *, merged_into: str, merged_sha: str) -> None:
+def record_merge_in_manifest(
+    layout: RunLayout, *, merged_into: str, merged_sha: str, merged_tip: str = ""
+) -> None:
     """Record a successful merge in the run manifest so later tooling can tell a
-    merged run branch from an unmerged one. Best-effort: a missing/corrupt manifest
-    must not fail a merge that already happened."""
+    merged run branch from an unmerged one. *merged_tip* is the run-branch tip
+    that was merged: `runs prune --delete-squashed` force-deletes only a branch
+    still pointing there. Best-effort: a missing/corrupt manifest must not fail a
+    merge that already happened."""
     try:
         m = read_manifest(layout.run_dir)
     except ManifestError:
@@ -58,6 +63,7 @@ def record_merge_in_manifest(layout: RunLayout, *, merged_into: str, merged_sha:
             "merged": MergeStamp(
                 into=merged_into,
                 sha=merged_sha,
+                tip=merged_tip,
                 ts=_dt.datetime.now(tz=_dt.UTC).isoformat(timespec="seconds"),
             )
         }
@@ -171,5 +177,10 @@ def execute_merge(
     restore_checkout(cwd, land_on, target)
     if result.conflicted:
         return MergeOutcome("conflict", conflicts=result.conflicts)
-    record_merge_in_manifest(layout, merged_into=target, merged_sha=result.merged_sha)
+    record_merge_in_manifest(
+        layout,
+        merged_into=target,
+        merged_sha=result.merged_sha,
+        merged_tip=branch_tip_sha(cwd, run_branch) or "",
+    )
     return MergeOutcome("merged", merged_sha=result.merged_sha)
