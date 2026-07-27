@@ -20,7 +20,7 @@ from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.machine import JournalError, MachineError, MachineJournal, load_machine
 from agent6.models.cache import cached_models, list_models
 from agent6.models.validate import known_models
-from agent6.runs.ipc import worker_is_alive
+from agent6.runs.ipc import read_worker_pid, worker_is_alive
 from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.secrets import resolve_api_key
 from agent6.viewmodel import (
@@ -32,6 +32,7 @@ from agent6.viewmodel import (
     machine_state_as_dict,
     machine_status_word,
     newest_state_log,
+    parked_status_word,
     run_compare,
     run_state_as_dict,
     summarize_run_dir,
@@ -39,6 +40,7 @@ from agent6.viewmodel import (
     task_snippet,
 )
 from agent6.viewmodel.config_view import render_show
+from agent6.viewmodel.format import status_label
 from agent6.viewmodel.transcript_style import item_lines
 
 RUN_SUBDIRS = ("runs", "asks")
@@ -271,7 +273,27 @@ def run_snapshot(run_dir: Path) -> dict[str, Any]:
     # carrying one) and matches sibling endpoints like /conversation.
     snap["run_id"] = snap.get("run_id") or run_dir.name
     snap.update(manifest_header(run_dir))
+    apply_dir_status(snap, run_dir)
     return snap
+
+
+def apply_dir_status(payload: dict[str, Any], run_dir: Path) -> None:
+    """Relabel a run payload with the status facts the event fold cannot see.
+
+    Anything without a ``run.end`` folds to "running", but the run DIR knows
+    two cases that are not: a parked submission (no events by construction) and
+    a recorded worker pid that is gone (the run died). The hub rows already say
+    "parked" and "stale" for exactly these, so every header built from a
+    payload gets the same word here -- the one-shot snapshot and the SSE frame
+    alike, which otherwise disagreed until the stream's first heartbeat."""
+    word = parked_status_word(run_dir, log_count=int(payload.get("log_count") or 0))
+    if word is not None:
+        payload["status_label"] = status_label(*word)
+        return
+    if payload.get("finished"):
+        return
+    if read_worker_pid(run_dir) is not None and not worker_is_alive(run_dir):
+        payload["status_label"] = "stale"
 
 
 def conversation_items(log_path: Path) -> list[dict[str, Any]]:

@@ -184,6 +184,29 @@ def status_word(*, finished: bool, all_passed: bool, end_reason: str) -> tuple[s
 OPERATOR_PROMPT_EVENTS = frozenset({"approval.prompt", "question.prompt"})
 
 
+# The word + detail a parked submission reads as, defined once: the hub
+# listing and every run header print this pair.
+PARKED_STATUS = ("parked", "resume to start")
+
+
+def parked_status_word(run_dir: Path, *, log_count: int) -> tuple[str, str] | None:
+    """``("parked", "resume to start")`` when *run_dir* holds a submission the
+    busy-checkout refusal saved, else None.
+
+    A parked run has no events by construction, so a header folded from the
+    event stream alone reads it as "running" while the listing (which reads the
+    manifest) calls it parked. Any header built from a run DIR can ask this and
+    agree. Gated on *log_count* so a resumed run is never mislabelled: resume
+    clears ``parked_task``, but only once it is under way.
+    """
+    if log_count:
+        return None
+    with contextlib.suppress(ManifestError):
+        if read_manifest(run_dir).parked_task:
+            return PARKED_STATUS
+    return None
+
+
 def _running_is_stale(run_dir: Path, stale_after_s: float) -> bool:
     """Probe the worker pid when the run recorded one: a killed run reads
     "stale" at once (not after the silence window), and a live worker blocked
@@ -368,7 +391,7 @@ def summarize_run_dir(run_dir: Path, *, stale_after_s: float = STALE_AFTER_S) ->
             if word == "created" and parked:
                 # Parked at submission (the checkout was busy; see
                 # acquire_repo_writer): saved, never started, resumable.
-                word, reason = "parked", "resume to start"
+                word, reason = PARKED_STATUS
         elif _running_is_stale(run_dir, stale_after_s):
             word = "stale"
         elif scan.last_type in OPERATOR_PROMPT_EVENTS:

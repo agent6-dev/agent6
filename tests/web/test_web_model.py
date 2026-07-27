@@ -251,3 +251,40 @@ def test_parallel_models_suggestions_scoped_to_worker_provider(
     (cache / "w.json").write_text(json.dumps({"models": ["w/model-a"]}), encoding="utf-8")
     (cache / "s.json").write_text(json.dumps({"models": ["s/only-model"]}), encoding="utf-8")
     assert model.config_suggestions(tmp_path, "parallel.models") == ["w/base-model", "w/model-a"]
+
+
+def test_run_snapshot_labels_a_parked_submission(tmp_path: Path) -> None:
+    """A parked run (the busy-checkout refusal saved the task) has no events by
+    construction, so the event fold alone reads it as "running" while the hub row
+    says parked. The run page must not disagree with the hub about the same run."""
+    d = model.runs_root(tmp_path) / "parked1"
+    d.mkdir(parents=True)
+    (d / "manifest.json").write_text(
+        json.dumps({"run_id": "parked1", "parked_task": "do the thing"}), encoding="utf-8"
+    )
+    assert model.run_snapshot(d)["status_label"] == "parked · resume to start"
+    (hub_row,) = model.hub_payload(tmp_path)["runs"]
+    assert hub_row["status"] == "parked"  # the two surfaces lead with one word
+
+
+def test_run_snapshot_labels_a_dead_worker_stale(tmp_path: Path) -> None:
+    """A run whose recorded worker is gone and that never logged run.end folds to
+    "running". The hub calls it stale off the same pid probe; the one-shot payload
+    the page first paints from has to say so too, not only the SSE frame."""
+    d = _run(tmp_path, "crashed1", [{"type": "run.start", "mode": "run", "user_task": "t"}])
+    (d / "worker.pid").write_text("999999 12345678", encoding="utf-8")  # dead pid
+    assert model.run_snapshot(d)["status_label"] == "stale"
+
+
+def test_run_snapshot_leaves_a_finished_run_alone(tmp_path: Path) -> None:
+    """The dir-derived relabels never touch a run that ended on its own terms."""
+    d = _run(
+        tmp_path,
+        "done1",
+        [
+            {"type": "run.start", "mode": "run", "user_task": "t"},
+            {"type": "run.end", "reason": "finish_run", "iterations": 1, "all_passed": True},
+        ],
+    )
+    (d / "worker.pid").write_text("999999 12345678", encoding="utf-8")
+    assert model.run_snapshot(d)["status_label"] == "passed"
