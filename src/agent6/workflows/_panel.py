@@ -148,6 +148,40 @@ def _norm_path(p: str) -> str:
     return re.sub(r"^[ab]/", "", _unquote_git_path(p))
 
 
+def _split_cite(file_line: str) -> tuple[str, tuple[int, int] | None]:
+    """One citation parsed into ``(normalized path, cited line span or None)``.
+
+    The forms a reviewer writes: 'foo.py', 'a/foo.py:2', 'foo.py:2-4',
+    'foo.py:2:' and 'foo.py:12:5' (the standard compiler/grep -n
+    ``path:line:col``). ONE owner, because grounding and dedup each parsed this
+    with a single rpartition: a line:col citation read the COLUMN as the line
+    and 'foo.py:12' as the path, so grounding missed and a real block was
+    silently downgraded to a warning.
+    """
+    cite = file_line.strip().rstrip(":")
+    if not cite:
+        return "", None
+    parts = cite.split(":")
+    # Trailing numeric fields are position (line, then column); the path is
+    # whatever precedes them. A Windows-style 'C:\\x.py' keeps its drive letter
+    # because that field is not numeric-only.
+    nums: list[str] = []
+    while len(parts) > 1 and _is_span(parts[-1]):
+        nums.insert(0, parts.pop())
+    path = _norm_path(":".join(parts))
+    if not nums:
+        return path, None
+    ends = nums[0].split("-", 1)  # "2-4" -> ["2", "4"]; "2" -> ["2"]
+    lo, hi = int(ends[0]), int(ends[-1])
+    return path, (min(lo, hi), max(lo, hi))  # a reversed range normalizes
+
+
+def _is_span(field: str) -> bool:
+    """True for a numeric position field: a line ("12") or a range ("2-4")."""
+    ends = field.split("-", 1)
+    return all(e.isdigit() for e in ends) and bool(ends[0])
+
+
 def is_grounded(file_line: str, ranges: dict[str, list[tuple[int, int]]]) -> bool:
     """True iff the citation refers to something the diff actually changed:
     a touched path (path-only citation) or a line/range that OVERLAPS a touched
@@ -155,35 +189,21 @@ def is_grounded(file_line: str, ranges: dict[str, list[tuple[int, int]]]) -> boo
     inside a touched range, not just the start line A -- otherwise a finding that
     cites a real changed range whose start happens to be unchanged-but-interior
     (e.g. the hunk modified the middle of the cited span) would be wrongly treated
-    as ungrounded and a legit block silently downgraded to warn. Tolerates a
-    trailing colon ("path:line:") and a range ("path:2-4")."""
-    cite = file_line.strip().rstrip(":")
-    if not cite:
+    as ungrounded and a legit block silently downgraded to warn."""
+    path, span = _split_cite(file_line)
+    if not path:
         return False
-    path, sep, line = cite.rpartition(":")
-    ends = line.split("-", 1)  # "2-4" -> ["2", "4"]; "2" -> ["2"]
-    lo_end = ends[0]
-    hi_end = ends[1] if len(ends) > 1 else ends[0]
-    if sep and path and lo_end.isdigit() and hi_end.isdigit():
-        c_lo, c_hi = int(lo_end), int(hi_end)
-        if c_lo > c_hi:  # a malformed reversed range ("4-2"): normalize, don't drop
-            c_lo, c_hi = c_hi, c_lo
-        # overlap of the cited [c_lo, c_hi] with any touched [lo, hi]
-        return any(c_lo <= hi and lo <= c_hi for (lo, hi) in ranges.get(_norm_path(path), ()))
-    # path-only citation: grounded if the diff touched that file at all
-    return _norm_path(cite) in ranges
+    if span is None:  # path-only: grounded if the diff touched that file at all
+        return path in ranges
+    c_lo, c_hi = span
+    return any(c_lo <= hi and lo <= c_hi for (lo, hi) in ranges.get(path, ()))
 
 
 def _cite_path(file_line: str) -> str:
-    """The normalized path of a citation, dropping any line/range suffix:
-    'a/foo.py:2', 'foo.py:2-4', 'foo.py:' and 'foo.py' all -> 'foo.py'. Mirrors
-    the path half of `is_grounded` so dedup keys on (path, category) as documented
-    and a line-drifted re-citation of the same finding still dedups."""
-    cite = file_line.strip().rstrip(":")
-    path, sep, line = cite.rpartition(":")
-    if sep and path and line.split("-", 1)[0].isdigit():
-        return _norm_path(path)
-    return _norm_path(cite)
+    """The normalized path of a citation, dropping any position suffix, so dedup
+    keys on (path, category) as documented and a line-drifted re-citation of the
+    same finding still dedups."""
+    return _split_cite(file_line)[0]
 
 
 def _dedup_key(f: Finding) -> tuple[str, str]:

@@ -18,6 +18,7 @@ from agent6.workflows._panel import (
     ReviewContext,
     ReviewDecision,
     ReviewVerdict,
+    _cite_path,  # pyright: ignore[reportPrivateUsage]
     aggregate_verdicts,
     diff_touched_ranges,
     is_grounded,
@@ -84,6 +85,17 @@ def test_is_grounded_line_in_range_path_only_and_misses() -> None:
     assert not is_grounded("foo.py:99", ranges)  # outside the touched range
     assert not is_grounded("other.py:1", ranges)  # file not in the diff
     assert not is_grounded("", ranges)
+
+
+def test_is_grounded_accepts_a_line_col_citation() -> None:
+    """`path:line:col` is the standard compiler/grep -n location a reviewer
+    copies. The single rpartition read the COLUMN as the line and the rest as
+    the path, so the lookup missed and a real block was silently downgraded to
+    a warning."""
+    ranges = diff_touched_ranges(SAMPLE_DIFF)
+    assert is_grounded("foo.py:11:5", ranges)  # line 11 is inside 10..14
+    assert not is_grounded("foo.py:99:5", ranges)  # column must not rescue it
+    assert _cite_path("foo.py:11:5") == "foo.py"  # dedup keys on the same path
 
 
 # --- executable grounding in aggregation --------------------------------------
