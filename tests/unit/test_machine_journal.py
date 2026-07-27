@@ -492,3 +492,33 @@ def test_source_roundtrip(tmp_path: Path) -> None:
 def test_read_source_missing_raises(tmp_path: Path) -> None:
     with pytest.raises(JournalError):
         read_source(tmp_path / "absent")
+
+
+def test_append_and_snapshot_survive_a_lone_surrogate(tmp_path: Path) -> None:
+    """json.loads legally produces lone surrogates from \\udXXX escapes, and two
+    trust boundaries feed that straight into the journal (a tool's captured
+    stdout, a `machine poke --data` payload). pydantic's model_dump_json raises
+    on them, and the raw error escaped run_machine: a traceback, no MachineEnd,
+    and every restart re-crashed at the next snapshot write. The event log solved
+    this class already (EventSink encodes with errors='replace')."""
+    j = _journal(tmp_path)
+    j.begin(machine="demo", version=1)
+    poison = "emoji tail \ud83d"  # a split surrogate pair, as json.loads yields it
+    j.append(
+        StepEvent(
+            ts="t",
+            seq=0,
+            state="scan",
+            label="ok",
+            goto="done",
+            fact=ToolFact(exit_code=0, stdout=poison, timed_out=False),
+        )
+    )
+    events = j.read()
+    assert len(events) == 2  # written and re-readable, not a crash
+    assert isinstance(events[1], StepEvent)
+    assert isinstance(events[1].fact, ToolFact)
+    assert "emoji tail" in events[1].fact.stdout
+    # The snapshot writer takes the same value on every subsequent step.
+    j.write_snapshot(Snapshot(seq=0, state="scan", blackboard={"note": poison}))
+    assert j.latest_snapshot() is not None

@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
+from pydantic_core import PydanticSerializationError
 
 from agent6.machine.model import MachineError
 from agent6.portable import atomic_write, lock_exclusive, unlock
@@ -234,6 +235,28 @@ class PendingWait(BaseModel):
 # --------------------------------------------------------------------------
 
 
+def dump_json(model: BaseModel, *, indent: int | None = None) -> str:
+    """One journal/snapshot record as JSON, lone-surrogate safe.
+
+    ``json.loads`` legally yields lone surrogates from ``\\udXXX`` escapes, and
+    they reach these writers from a tool's captured stdout and a ``machine poke``
+    payload. ``model_dump_json`` raises on them, which crashed the run before it
+    could journal a MachineEnd and re-crashed on every restart. Replace them
+    (the same call EventSink makes for logs.jsonl) so the audit trail is written
+    and stays valid UTF-8 for every reader."""
+    try:
+        return model.model_dump_json(indent=indent)
+    except PydanticSerializationError:
+        raw = json.dumps(
+            model.model_dump(mode="json"),
+            ensure_ascii=False,
+            indent=indent,
+            separators=None if indent is not None else (",", ":"),
+            default=str,
+        )
+        return raw.encode("utf-8", "replace").decode("utf-8")
+
+
 class MachineJournal:
     """Append-only event log plus snapshots for one machine instance."""
 
@@ -267,7 +290,7 @@ class MachineJournal:
         concatenating onto the fragment (which `read` would then reject).
         """
         self._heal_torn_tail()
-        line = event.model_dump_json()
+        line = dump_json(event)
         with self.journal_path.open("a", encoding="utf-8") as fh:
             fh.write(line + "\n")
             fh.flush()
@@ -324,7 +347,7 @@ class MachineJournal:
         """
         self.snapshots_dir.mkdir(parents=True, exist_ok=True)
         dest = self.snapshots_dir / f"{snapshot.seq}.json"
-        atomic_write(dest, snapshot.model_dump_json(indent=2) + "\n")
+        atomic_write(dest, dump_json(snapshot, indent=2) + "\n")
         if self.snapshot_keep <= 0:
             return
         with suppress(OSError):
@@ -426,7 +449,7 @@ class MachineJournal:
     def write_pending_wait(self, pending: PendingWait) -> None:
         """Persist the armed next-wake instant atomically (temp file + rename)."""
         self.root.mkdir(parents=True, exist_ok=True)
-        atomic_write(self.wait_path, pending.model_dump_json(indent=2) + "\n")
+        atomic_write(self.wait_path, dump_json(pending, indent=2) + "\n")
 
     def clear_pending_wait(self) -> None:
         self.wait_path.unlink(missing_ok=True)
