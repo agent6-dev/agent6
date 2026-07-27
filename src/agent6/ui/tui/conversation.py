@@ -606,8 +606,12 @@ class ConversationScreen(Screen[None]):
 
     def _sync_input(self) -> None:
         """Show the composer bar (steer when live, continue when finished on the
-        primary view) and keep its labels matching the run's state. The context
-        readout comes from the Agent6TUI host (pushed viewers have no fold)."""
+        primary view) and keep its labels matching the run's state. The
+        liveness and context readout come from the Agent6TUI host when there is
+        one -- its dir status knows a dead worker and a parked run, which the
+        event stream alone cannot (this screen's own _live stayed True over a
+        corpse, so typed steers went to a run that would never read them);
+        pushed viewers on another host keep the event-derived tracking."""
         with contextlib.suppress(NoMatches):
             bar = self.query_one("#conv-input", SteerInput)
             shown = self._bar_shown()
@@ -616,7 +620,16 @@ class ConversationScreen(Screen[None]):
             if bar.display:
                 pct_fn = getattr(self.app, "context_pct", None)
                 pct = pct_fn() if callable(pct_fn) else None
-                bar.set_mode(live=self._live, ctx_pct=pct if isinstance(pct, int) else None)
+                live_fn = getattr(self.app, "run_controllable", None)
+                live = bool(live_fn()) if callable(live_fn) else self._live
+                bar.set_mode(live=live, ctx_pct=pct if isinstance(pct, int) else None)
+
+    def refresh_liveness(self) -> None:
+        """Relabel the composer for a liveness change that came with no event
+        to poll (the host's dir-status probe: a worker died, a parked run got
+        resumed) -- called by the Agent6TUI host, covered or not, so the two
+        run views can never disagree about the bar's mode."""
+        self._sync_input()
 
     def focus_bar(self) -> None:
         """Focus the composer bar if it is shown (an external steer request
@@ -637,20 +650,22 @@ class ConversationScreen(Screen[None]):
         self._scroll().focus()
 
     def on_steer_input_submitted(self, message: SteerInput.Submitted) -> None:
-        """A line typed into the composer bar. Live: drop a steer request + the
-        instruction over the file bridge (the run injects it at its next safe
-        boundary and keeps going). Finished (primary view): resume THIS run with
-        the instruction pre-seeded as the follow-up."""
-        run_dir = self._logs_path.parent
+        """A line typed into the composer bar. With an Agent6TUI host, the host
+        owns the routing (submit_instruction): live steer vs resume by its dir
+        status, plus the `/compact [focus]` parse -- this screen's own live
+        path sent '/compact …' to the model as a literal steer while the bar's
+        title advertised it. A pushed viewer on another host keeps the direct
+        live-steer bridge."""
+        submit = getattr(self.app, "submit_instruction", None)  # the Agent6TUI host
+        if callable(submit):
+            submit(message.text)
+            return
         if self._live:
+            run_dir = self._logs_path.parent
             clear_steer_answer(run_dir)  # discard any stale answer -> the run waits for this one
             request_steer(run_dir)
             write_steer_answer(run_dir, message.text)
             self.notify("steering the run…")
-        elif self._primary:
-            resume = getattr(self.app, "resume_with_instruction", None)  # the Agent6TUI host
-            if callable(resume):
-                resume(message.text)
 
     # -- copy ---------------------------------------------------------------
     def _emit(self, seq: str) -> None:

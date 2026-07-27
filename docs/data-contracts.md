@@ -54,7 +54,7 @@ Read a run's manifest.json into the typed RunManifest. The single reader + the o
 | `compare` | `CompareStamp | None` | `None` |
 
 - **Written by:** app/{manifest}
-- **Read by:** app/{compare, finalize, fork, merge, parallel, preflight, resume, run}, ui/{mcp_server}, ui/cli/{_ask, _steer_menu, plan_watch, runs_cmds}, ui/web/{model}, viewmodel/{format, listing}
+- **Read by:** app/{compare, finalize, fork, merge, parallel, preflight, resume, run}, ui/{mcp_server}, ui/cli/{_ask, _steer_menu, plan_watch, runs_cmds}, ui/tui/{app}, ui/web/{model}, viewmodel/{format, listing}
 - **Guarded by:** [test_runs_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_runs_manifest.py) (3 test files exercise it)
 
 ## RunSnapshot

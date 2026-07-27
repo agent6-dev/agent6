@@ -584,12 +584,17 @@ def test_steer_request_marker_round_trip(tmp_path: Path) -> None:
 def test_dashboard_bar_is_default_focus_and_steers(tmp_path: Path) -> None:
     """The dashboard opens ready to type -- the composer bar is the default focus
     (like the conversation) -- and Enter drops the steer.request marker + the
-    instruction together, for the run to inject at its next boundary."""
-    from agent6.runs.ipc import steer_request_pending
+    instruction together, for the run to inject at its next boundary. The run
+    must be LIVE (a recorded live worker): a dir with no worker routes the
+    composer to resume instead, because a steer file there is never read."""
+    import os
+
+    from agent6.runs.ipc import steer_request_pending, write_worker_pid
     from agent6.ui.tui.conversation import SteerInput
 
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+        write_worker_pid(tmp_path, os.getpid())
         app = Agent6TUI(tmp_path)
         async with app.run_test(size=(100, 30)) as pilot:
             await _show_dashboard(pilot)
@@ -653,13 +658,16 @@ def test_finished_run_bar_resumes_with_the_instruction(tmp_path: Path, monkeypat
 
 
 def test_stop_now_aborts_via_bridge(tmp_path: Path) -> None:
-    """Run > Stop now confirms, then writes an abort over the file bridge -- the
-    stream watchdog interrupts the in-flight turn."""
-    from agent6.runs.ipc import steer_request_pending
+    """Run > Stop now on a LIVE run confirms, then writes an abort over the
+    file bridge -- the stream watchdog interrupts the in-flight turn."""
+    import os
+
+    from agent6.runs.ipc import steer_request_pending, write_worker_pid
     from agent6.ui.tui.modals import ConfirmModal
 
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+        write_worker_pid(tmp_path, os.getpid())
         app = Agent6TUI(tmp_path)
         async with app.run_test(size=(100, 30)) as pilot:
             await pilot.pause()
@@ -675,13 +683,17 @@ def test_stop_now_aborts_via_bridge(tmp_path: Path) -> None:
 
 
 def test_stop_after_step_drops_the_marker(tmp_path: Path) -> None:
-    """Run > Stop after this step confirms, then drops the stop.request marker the
-    loop honors at its next completed-iteration boundary."""
-    from agent6.runs.ipc import stop_request_pending
+    """Run > Stop after this step on a LIVE run confirms, then drops the
+    stop.request marker the loop honors at its next completed-iteration
+    boundary."""
+    import os
+
+    from agent6.runs.ipc import stop_request_pending, write_worker_pid
     from agent6.ui.tui.modals import ConfirmModal
 
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+        write_worker_pid(tmp_path, os.getpid())
         app = Agent6TUI(tmp_path)
         async with app.run_test(size=(100, 30)) as pilot:
             await pilot.pause()
@@ -740,10 +752,13 @@ def test_compact_now_drops_the_marker_for_a_live_run(tmp_path: Path) -> None:
     """The Run menu's "Compact context now" drops the compact.request marker for
     the run to honor at its next boundary; a finished run refuses (nothing to
     compact)."""
-    from agent6.runs.ipc import read_compact_request
+    import os
+
+    from agent6.runs.ipc import read_compact_request, write_worker_pid
 
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+        write_worker_pid(tmp_path, os.getpid())
         app = Agent6TUI(tmp_path)
         async with app.run_test(size=(100, 30)) as pilot:
             await pilot.pause()
@@ -1040,8 +1055,8 @@ def test_dashboard_detects_a_dead_worker_and_tells_the_truth(
     "stale", the web refuses steer); the dashboard was the one surface with no
     liveness check: it spun "working…", accepted steer with a success toast
     nobody would read, and REFUSED resume -- the one correct action. The ~1/s
-    heartbeat probe flips run_ended, the body says the worker exited, and the
-    composer routes to resume."""
+    heartbeat probe flips the dir status to stale, the body says the worker
+    exited, and the composer routes to resume."""
     import json
 
     from agent6.ui.tui import app as app_mod
@@ -1070,7 +1085,7 @@ def test_dashboard_detects_a_dead_worker_and_tells_the_truth(
             app._heartbeat_at = 0.0  # age the throttle so the probe fires now
             app._tick()
             await pilot.pause()
-            assert app.run_ended is True
+            assert app.worker_lost is True
             assert app.run_controllable() is False
             body = str(app._dash.query_one("#stream-body", Static).render())
             assert "worker exited" in body

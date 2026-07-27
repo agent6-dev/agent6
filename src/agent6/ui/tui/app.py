@@ -60,18 +60,17 @@ from agent6.directive import parse_compact
 from agent6.models.registry import context_window
 from agent6.runs.ipc import (
     clear_steer_answer,
-    read_worker_pid,
     register_frontend,
     request_compact,
     request_steer,
     request_stop,
     set_session_allow,
     unregister_frontend,
-    worker_is_alive,
     write_answer,
     write_question_answers,
     write_steer_answer,
 )
+from agent6.runs.manifest import ManifestError, read_manifest
 from agent6.ui.spawn import agent6_exe, spawn_and_locate, spawn_detached_resume
 from agent6.ui.tui import clipboard
 from agent6.ui.tui.conversation import RUN_MENU, ConversationScreen, SteerInput
@@ -87,7 +86,8 @@ from agent6.ui.tui.modals import (
 from agent6.ui.tui.settings import get_copy_method
 from agent6.ui.tui.theme import PALETTE_CSS, MuxPointerShapes, open_theme_picker, setup_theme
 from agent6.viewmodel import run_compare
-from agent6.viewmodel.format import TASK_STATUS_GLYPH, format_compare, format_cost
+from agent6.viewmodel.format import TASK_STATUS_GLYPH, format_compare, format_cost, status_label
+from agent6.viewmodel.listing import status_for_run_dir
 from agent6.viewmodel.state import (
     MAX_LOG_TAIL,
     SESSION_START_EVENTS,
@@ -100,6 +100,7 @@ from agent6.viewmodel.state import (
     fold_run,
     initial_state,
     run_status_label,
+    status_facts,
 )
 from agent6.viewmodel.tail import tail_events
 
@@ -493,16 +494,20 @@ class DashboardScreen(Screen[None]):
     # --- rendering ---------------------------------------------------
 
     def _end_label(self, s: RunState) -> str:
-        """The top-line end label: the coloured shared status for a finished
-        run (green passed, yellow deliberate end, red involuntary), "worker
-        exited" for a crashed one (pid recorded but dead, no run.end -- the
-        hub's "stale"), else empty while live."""
+        """The top-line status label, from THE dir decision (status_for_run_dir,
+        the same word the hub row shows): coloured end words for a finished run
+        (green passed, yellow deliberate end, red involuntary), red "stale" for
+        a lost worker, yellow "parked · resume to start", dim created/starting
+        pre-start; empty while running (the heartbeat line carries live
+        activity)."""
+        word, reason = self._tui.dir_status
+        if word == "running":
+            return ""
         if s.finished:
             color = _end_color(s.all_passed, s.end_reason)
-            return f"[b {color}]{escape(run_status_label(s))}[/]"
-        if self._tui.run_ended:
-            return "[b red]worker exited[/]"
-        return ""
+        else:
+            color = {"stale": "red", "parked": "yellow", "waiting": "yellow"}.get(word, "dim")
+        return f"[b {color}]{escape(status_label(word, reason))}[/]"
 
     def render_heartbeat(self) -> None:
         """The CHEAP once-a-second repaint: the top status line, the composer
@@ -520,12 +525,12 @@ class DashboardScreen(Screen[None]):
         # Relabel every paint: mode flips on finished, and the context readout
         # in the subtitle moves with the run.
         self.query_one("#dash-input", SteerInput).set_mode(
-            live=not s.finished and not tui.run_ended, ctx_pct=tui.context_pct()
+            live=tui.run_controllable(), ctx_pct=tui.context_pct()
         )
         role = s.last_role
         # Live heartbeat: a spinner + seconds since the last event, shown while
         # the run is active. Silent thinking / the resume gap now visibly tick.
-        active = not s.finished and not tui.run_ended
+        active = tui.run_controllable()
         beat = ""
         if active and role is not None:
             spinner = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[tui.spin % 10]
@@ -545,13 +550,21 @@ class DashboardScreen(Screen[None]):
         self.query_one("#top", Static).update(
             f"[b]agent6[/]  {step}   role: {escape(role_line)}   cost: {cost}{budget}{ctx}"
             f"   {finished}\n"
-            f"task: {escape(s.user_task[:120])}"
+            f"task: {escape((s.user_task or tui.fallback_task)[:120])}"
             f"{escape(self._compare_top())}"
         )
 
         # Live reasoning / response pane. Built as rich Text so model output is
         # never parsed as markup.
-        stream = self.query_one("#stream-body", Static)
+        self.query_one("#stream-body", Static).update(self._stream_story(s, active=active))
+
+    def _stream_story(self, s: RunState, *, active: bool) -> Text:
+        """What the stream pane says: the end story for a finished run, live
+        deltas or the working heartbeat while active, and a truthful line for
+        every dead state (stale/parked/created) -- never "(waiting for the
+        model…)" over a run no model will ever touch."""
+        tui = self._tui
+        role = s.last_role
         st = Text()
         streaming = (
             role is not None and role.in_flight and (role.streamed_thinking or role.streamed_text)
@@ -575,15 +588,23 @@ class DashboardScreen(Screen[None]):
             spinner = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[tui.spin % 10]
             secs = int(time.monotonic() - tui.last_event_at)
             st.append(f"{spinner} {role.role} working… {secs}s", style="dim italic")
-        elif tui.run_ended:
+        elif tui.dir_status[0] == "stale":
             st.append(
                 "worker exited without finishing (crashed or killed) — type a"
                 " follow-up below or press r to resume",
                 style="bold red",
             )
+        elif tui.dir_status[0] == "parked":
+            # No model is coming: the busy-checkout refusal saved the task and
+            # the run never started. Resume is the one action.
+            st.append("parked — the checkout was busy at submission\n", style="bold yellow")
+            st.append("type the go-ahead below or press r to resume", style="dim")
+        elif tui.dir_status[0] == "created":
+            st.append("created — the run has not started\n", style="bold")
+            st.append("type a follow-up below or press r to resume", style="dim")
         else:
             st.append("(waiting for the model…)", style="dim")
-        stream.update(st)
+        return st
 
     def render_state(self) -> None:  # noqa: PLR0912, PLR0915
         self.render_heartbeat()
@@ -745,7 +766,17 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         # dashboard once the run ends so the parent command returns; `agent6
         # watch` leaves this False and keeps following.
         self.exit_on_end = exit_on_end
-        self.run_ended = False
+        # THE (word, reason) for this run -- status_for_run_dir, the same
+        # decision the hub row shows -- refreshed on the ~1/s heartbeat.
+        # Derived, never latched: a crash->resume flips it back to running
+        # (the old one-way run_ended latch kept "worker exited" painted over
+        # the live resumed leg and dropped operator steers).
+        self.dir_status: tuple[str, str] = status_for_run_dir(run_dir, status_facts(self.state))
+        # Header task line for a run with no run.start yet (parked/created):
+        # the fold has no user_task, but the manifest knows the work.
+        self.fallback_task = ""
+        with contextlib.suppress(ManifestError):
+            self.fallback_task = read_manifest(run_dir).user_task
         # Live heartbeat: a run can be silent for a whole reasoning turn (or the
         # resume context-rebuild gap). Track when the last event landed and
         # repaint ~1/s while active so an elapsed timer + spinner visibly tick --
@@ -784,8 +815,8 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         self.push_screen(self._dash)
         self.install_screen(self._conv, "conversation")
         self.push_screen(self._conv)
-        # Auto-spawn close: the reader thread sets `run_ended` on `run.end`; we
-        # poll it from a timer in the app's OWN loop and exit there. Exit()
+        # Auto-spawn close: the exit condition (run over, prompts answered) is
+        # polled from a timer in the app's OWN loop and exits there. Exit()
         # scheduled from inside a call_from_thread callback does not take effect,
         # but exiting from a timer callback does. The same timer also drives the
         # approval / question / steer modals.
@@ -825,11 +856,11 @@ class Agent6TUI(MuxPointerShapes, App[int]):
             # block forever on a modal that never opens.
             self._seen_approval_ids.clear()
             self._seen_question_ids.clear()
-        if self.exit_on_end and event.get("type") == "run.end":
-            # run_ended means "the worker is gone": a clean run.end in
-            # co-process mode here, OR a crashed worker via the _tick probe
-            # (any mode). state.finished stays the clean-end render signal.
-            self.run_ended = True
+        if event.get("type") == "run.end" or event.get("type") in SESSION_START_EVENTS:
+            # A terminal / leg-boundary event changes the status NOW: refresh
+            # synchronously so the label and the composer routing never serve
+            # the previous state for up to a heartbeat.
+            self._refresh_dir_status()
         # Coalesce: mark dirty and let the 0.2s _tick repaint once. Replaying a
         # finished run floods hundreds of events on open; rendering each one would
         # rebuild the whole dashboard per event (UI thrash, and vhs can't capture
@@ -841,18 +872,24 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         else:
             self._dirty = True
 
-    def _probe_worker_liveness(self) -> None:
-        """Dead-worker probe, piggybacked on the ~1/s heartbeat cadence (a
-        file read + os.kill, same cost class as the spinner tick). A worker
-        killed without a run.end (kill -9 / OOM) folds to finished=False
-        forever; every other surface probes worker.pid (the hub's "stale",
-        the web's refusals) -- the dashboard must not be the one pane that
-        spins "working…" over a corpse. Gated on a RECORDED pid: a run
-        without one keeps the log-silence heartbeat (mirrors
-        listing._running_is_stale)."""
-        if read_worker_pid(self.run_dir) is not None and not worker_is_alive(self.run_dir):
-            self.run_ended = True
+    @property
+    def worker_lost(self) -> bool:
+        """The recorded worker is gone without a run.end (kill -9 / OOM) --
+        the hub's "stale". Derived from dir_status, so a resume that brings a
+        live worker back clears it."""
+        return self.dir_status[0] == "stale"
+
+    def _refresh_dir_status(self) -> None:
+        """Recompute dir_status (a pid probe + a manifest read pre-start; the
+        same cost class as the spinner tick, so it rides the ~1/s heartbeat).
+        A change repaints and relabels BOTH composer bars -- the covered
+        screen's too, which otherwise kept a stale label until its next
+        event-driven paint (the two bars visibly disagreed live)."""
+        status = status_for_run_dir(self.run_dir, status_facts(self.state))
+        if status != self.dir_status:
+            self.dir_status = status
             self._dirty = True
+            self._conv.refresh_liveness()
 
     def _tick(self) -> None:
         for ap in self.state.pending_approvals:
@@ -868,16 +905,17 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         if self.state.steer_requests > self._seen_steer:
             self._seen_steer = self.state.steer_requests
             self._steer_request_to_bar()
-        # Heartbeat: while the run is active but silent, advance the spinner
-        # ~1/s so the "working… Ns" timer ticks -- an attached viewer can see
-        # the run is alive (thinking / resuming), not hung.
-        if not self.state.finished and not self.run_ended:
-            now = time.monotonic()
-            if now - self._heartbeat_at >= 1.0:
-                self._heartbeat_at = now
+        # Heartbeat: refresh the dir status ~1/s (always -- it is how a death,
+        # a parked resume, or a revival is noticed with no event to trigger a
+        # paint), and while the run is live advance the spinner so the
+        # "working… Ns" timer visibly ticks (thinking, not hung).
+        now = time.monotonic()
+        if now - self._heartbeat_at >= 1.0:
+            self._heartbeat_at = now
+            self._refresh_dir_status()
+            if self.run_controllable():
                 self.spin += 1
                 self._light_dirty = True
-                self._probe_worker_liveness()
         # Coalesced repaint: once per tick, and only when the dashboard is the
         # active, mounted screen. A pushed viewer, a modal, or shutdown leaves the
         # dashboard covered or torn down, so querying its widgets raises; defer
@@ -896,11 +934,12 @@ class Agent6TUI(MuxPointerShapes, App[int]):
                 self._light_dirty = False
                 with contextlib.suppress(NoMatches):
                     self._dash.render_heartbeat()
-        # Exit only once the run ended AND nothing is still awaiting an answer,
-        # so a final approval/question isn't dropped on the way out.
+        # Exit only once the run ended (a clean run.end, or the worker died
+        # without one) AND nothing is still awaiting an answer, so a final
+        # approval/question isn't dropped on the way out.
         if (
             self.exit_on_end
-            and self.run_ended
+            and (self.state.finished or self.worker_lost)
             and all(ap.answered for ap in self.state.pending_approvals)
             and all(q.answered for q in self.state.pending_questions)
         ):
@@ -1077,11 +1116,11 @@ class Agent6TUI(MuxPointerShapes, App[int]):
         return min(100, round(100 * role.ctx_tokens / window))
 
     def run_controllable(self) -> bool:
-        """Steer/Stop are no-ops once the WORKER is gone: a clean finish
-        (state.finished), the co-process app closing on run.end, or a crashed
-        worker (run_ended via the _tick pid probe). The composer then routes
-        to resume instead."""
-        return not self.run_ended and not self.state.finished
+        """True while the run can receive operator input over the file bridge:
+        the dir status is a live word. Parked/created (never started), stale
+        (worker gone), and every end word route the composer to resume -- the
+        one action that will actually be read."""
+        return self.dir_status[0] in ("running", "starting", "waiting")
 
     def action_toggle_dashboard(self) -> None:
         """Flip between the conversation (the primary view) and the dashboard
