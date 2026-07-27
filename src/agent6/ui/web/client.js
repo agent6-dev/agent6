@@ -512,14 +512,17 @@ function makeComposer(id) {
     try {
       await postJSON('/api/run/' + encodeURIComponent(id) + '/resume', { text });
       toast('resuming the run…');
-      // The resume is a detached spawn: wait for it to take over (the folded
-      // state un-finishes once it appends events), then re-open the view so
-      // the SSE stream and controls come back live.
+      // The resume is a detached spawn: wait for it to come LIVE, then re-open
+      // the view so the SSE stream and controls come back. Waiting on
+      // `finished === false` declared takeover on the first poll, because the
+      // parked and stale runs this composer offers resume for are already
+      // unfinished — so a resume that died on spawn (its stderr goes to
+      // DEVNULL) reported success and the operator saw nothing.
       for (let i = 0; i < 25; i++) {
         await new Promise(r => setTimeout(r, 1000));
         if (!root.isConnected) return; // navigated away
         let s; try { s = await getJSON('/api/run/' + encodeURIComponent(id)); } catch (_) { continue; }
-        if (s && s.finished === false) { ta.value = ''; route(); return; }
+        if (s && s.live === true) { ta.value = ''; route(); return; }
       }
       toast('the resume has not started yet; check `agent6 runs`', true);
     } catch (e) { toast(e.message, true); }

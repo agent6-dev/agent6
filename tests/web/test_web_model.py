@@ -353,3 +353,24 @@ def test_run_snapshot_marks_a_parked_run_not_live(tmp_path: Path) -> None:
         ],
     )
     assert model.run_snapshot(done)["live"] is False
+
+
+def test_the_states_that_offer_resume_are_not_live(tmp_path: Path) -> None:
+    """The composer's resume-takeover poll waits for the run to come alive. It
+    polled `finished === false`, which is ALREADY true for the parked and stale
+    runs it routes into resume mode, so takeover was declared on the first poll
+    and a resume that died on spawn was reported as success -- the spawn's
+    stderr goes to DEVNULL, so nothing else could surface it. `live` is what
+    separates the two, and both these states must read false."""
+    parked = model.runs_root(tmp_path) / "parked-live"
+    parked.mkdir(parents=True)
+    (parked / "manifest.json").write_text(
+        json.dumps({"run_id": "parked-live", "parked_task": "t"}), encoding="utf-8"
+    )
+    stale = _run(tmp_path, "stale-live", [{"type": "run.start", "mode": "run", "user_task": "t"}])
+    (stale / "worker.pid").write_text("999999 12345678", encoding="utf-8")  # dead pid
+
+    for d in (parked, stale):
+        snap = model.run_snapshot(d)
+        assert snap["finished"] is False, d.name  # why the old poll fired at once
+        assert snap["live"] is False, d.name  # ...and what actually distinguishes them
