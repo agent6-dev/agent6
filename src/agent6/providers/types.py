@@ -101,8 +101,8 @@ def _max_seq_in_dir(transcripts_dir: Path) -> int:
     """The highest seq already recorded in *transcripts_dir*, or 0 if empty.
 
     The seq is the 6-digit suffix of each committed `<ts>-<seq>.json` file
-    (in-flight `.json.tmp` files don't match the glob). A non-conforming stray
-    `.json` is skipped, not fatal."""
+    (atomic_write's in-flight temp is a `.tmp` dotfile, so the glob never sees
+    it). A non-conforming stray `.json` is skipped, not fatal."""
     seqs = [
         int(tail)
         for p in transcripts_dir.glob("*.json")
